@@ -1685,3 +1685,36 @@ fn payload_field_wire_rejects_a_table_count_disagreeing_with_the_rows() {
         .to_string();
     assert!(error.contains("table_count"), "{error}");
 }
+
+#[test]
+fn object_graph_head_tokens_result() {
+    let bytes = object_graph_stream();
+
+    assert!(parse(&bytes).is_some());
+}
+
+#[test]
+fn object_payload_fields_and_list_items_result() {
+    for payload in [&[0x83, 0xfe][..], &[0x3b, 0x81, 0x82, 0xfe][..]] {
+        assert!(decode_payload(payload).is_some());
+    }
+}
+
+#[test]
+fn object_bulk_rows_result() {
+    let bytes = [0x81, 0x82, 0x80, 0, 0, 0, 0];
+
+    let parsed = super::parse_bulk_table_rows(&bytes, 0, 1).expect("one row");
+    assert_eq!(parsed.0.len(), 1);
+}
+
+#[test]
+fn grouped_alias_storage_result() {
+    let mut bytes = vec![0x02, 0x00];
+    bytes.extend_from_slice(&0xafu32.to_le_bytes());
+    bytes.extend_from_slice(&0x148u32.to_le_bytes());
+    bytes.extend_from_slice(&[0x00, 0x05, 0x00, 0x01, 0x00, 0x00, 0x00, 0x30, 0x00, 0x00]);
+    bytes.extend(surface_alias_stream());
+
+    assert_eq!(surface_aliases(&bytes).len(), 1);
+}

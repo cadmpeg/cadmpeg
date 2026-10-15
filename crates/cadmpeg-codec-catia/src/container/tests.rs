@@ -1245,3 +1245,60 @@ fn canonical_record_streams_reuse_the_brep_storage() {
         .any(|stream| stream.as_ptr() == brep[main.len()..].as_ptr()
             && stream.len() == brep.len() - main.len()));
 }
+
+#[test]
+fn logical_stream_roster_result() {
+    let bytes = outer_directory_catpart();
+    let scan = crate::test_support::with_service_context(|ctx| scan_bytes(ctx, bytes))
+        .expect("service budget admits outer directory");
+    let streams =
+        crate::test_support::with_service_context(|ctx| super::logical_record_streams(ctx, &scan))
+            .expect("service budget admits logical streams");
+    assert_eq!(streams.len(), 1);
+}
+
+#[test]
+fn fbb_run_roster_result() {
+    let bytes = [0x30, 0x04, 0x04, 0xff, 0, 0, 0, 0];
+    let ranges = super::fbb_run_ranges(&bytes);
+    assert_eq!(ranges, vec![0..8]);
+}
+
+#[test]
+fn summary_attribute_result() {
+    let scan = crate::test_support::with_service_context(|ctx| scan_bytes(ctx, standard_catpart()))
+        .expect("service resource budget");
+    assert!(!summarize_service(&scan).entries.is_empty());
+}
+
+#[test]
+fn container_notes_result() {
+    let scan = crate::test_support::with_service_context(|ctx| scan_bytes(ctx, standard_catpart()))
+        .expect("service resource budget");
+    let notes = super::notes(&scan);
+    assert!(!notes.is_empty());
+}
+
+#[test]
+fn outer_container_stream_identity_result() {
+    let (bytes, _) = crate::test_support::test_container::outer_container_catpart(b"graph");
+    let scan = crate::test_support::with_service_context(|ctx| scan_bytes(ctx, bytes))
+        .expect("service budget admits outer container");
+    let outer = scan.outer.as_ref().expect("outer directory");
+    assert_eq!(outer_container_declarations(&scan.data, outer).len(), 1);
+}
+
+#[test]
+fn record_source_inner_extents_result() {
+    let bytes = outer_directory_catpart();
+    let scan = crate::test_support::with_service_context(|ctx| scan_bytes(ctx, bytes))
+        .expect("service budget admits outer directory");
+    assert_eq!(super::consolidated_record_sources(&scan).len(), 1);
+}
+
+#[test]
+fn directory_descriptor_result() {
+    let bytes = outer_directory_catpart();
+    let parsed = super::parse_outer_stream_directory(&bytes).expect("valid directory");
+    assert_eq!(parsed.descriptors.len(), 1);
+}

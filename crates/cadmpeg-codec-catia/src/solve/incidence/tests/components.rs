@@ -1171,3 +1171,132 @@ fn compact_face_quotient_state_cap_is_exhausted() {
 }
 
 mod component_search;
+
+#[test]
+fn incidence_component_preflight_result() {
+    let choices = vec![vec![[0, 0], [1, 1]], vec![[2, 2], [3, 3]]];
+    let edge_faces = [[0, 0], [0, 0]];
+    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        crate::solve::incidence::component_incidence_pair_solutions(
+            ctx,
+            &choices,
+            &edge_faces,
+            1,
+            4,
+            None,
+            None,
+            None,
+            &|_| Ok(true),
+        )
+    };
+    crate::test_support::with_service_context(|ctx| {
+        assert_eq!(
+            run(ctx).expect("service budget").expect("solutions").len(),
+            4
+        );
+    });
+}
+
+#[test]
+fn incidence_component_order_result() {
+    let choices = vec![vec![[0, 0]], vec![[1, 1]]];
+    let dependencies = [Vec::new(), vec![0]];
+    let components = vec![vec![0], vec![1]];
+    catia_test_context!(service_ctx);
+    let mut service_components = components.clone();
+    assert!(
+        crate::solve::incidence::order_incidence_components_by_constraints(
+            &service_ctx,
+            &mut service_components,
+            &choices,
+            AssignmentOrder::new(None, Some(&dependencies)),
+        )
+        .expect("service budget")
+        .is_some()
+    );
+}
+
+#[test]
+fn incidence_component_search_result() {
+    use std::ops::ControlFlow;
+
+    let choices = vec![vec![[0, 0], [1, 1]], vec![[2, 2], [3, 3]]];
+    let edge_faces = [[0, 0], [0, 0]];
+    let outcome = crate::test_support::with_service_context(|ctx| {
+        crate::solve::incidence::visit_component_incidence_pair_solutions(
+            ctx,
+            &choices,
+            &edge_faces,
+            1,
+            4,
+            None,
+            None,
+            None,
+            &|_| Ok(true),
+            &mut |_| Ok(ControlFlow::Break(())),
+        )
+    })
+    .expect("service budget");
+    assert!(matches!(
+        outcome,
+        crate::solve::incidence::IncidenceSolve::Solved(1)
+    ));
+}
+
+#[test]
+fn deferred_boundary_closure_result() {
+    let domain = crate::solve::missing_edge::MeshDeferredFaceBoundary {
+        cycles: vec![crate::solve::missing_edge::MeshDeferredBoundaryCycle {
+            length: 4,
+            exact_uses: Vec::new(),
+        }],
+        missing_edges: vec![0, 1],
+    };
+    let pairs = [[0, 1], [0, 1]];
+    assert!(
+        crate::solve::incidence::deferred_boundary_closes(&domain, &pairs)
+            .expect("service resource budget")
+    );
+}
+
+#[test]
+fn compact_partial_subtour_result() {
+    let domain = MeshFaceBoundaryDomain::UnorderedFullCycle(vec![0, 1, 2, 3, 4]);
+    let assignment = [Some([0, 1]), Some([1, 2]), Some([2, 0]), Some([3, 4]), None];
+    catia_test_context!(service_ctx);
+    assert!(
+        !compact_boundary_domain_viable(&service_ctx, &domain, &assignment, None)
+            .expect("service resource budget")
+    );
+}
+
+#[test]
+fn compact_boundary_viability_result() {
+    let domain = MeshFaceBoundaryDomain::UnorderedFullCycle(vec![0, 1, 2]);
+    let assignment = [Some([0, 1]), Some([1, 2]), Some([2, 0])];
+    catia_test_context!(service_ctx);
+    assert!(
+        compact_boundary_domain_viable(&service_ctx, &domain, &assignment, None)
+            .expect("service resource budget")
+    );
+}
+
+#[test]
+fn component_face_viability_result() {
+    let faces = HashSet::from([0]);
+    let assignment = [Some([0, 1]), Some([1, 2]), Some([2, 0])];
+    let choices = vec![vec![[0, 1]], vec![[1, 2]], vec![[2, 0]]];
+    let face_edges = vec![vec![0, 1, 2]];
+    let domains = [MeshFaceBoundaryDomain::UnorderedFullCycle(vec![0, 1, 2])];
+    catia_test_context!(service_ctx);
+    assert!(crate::solve::incidence::component_incidence_faces_viable(
+        &service_ctx,
+        &faces,
+        &assignment,
+        &choices,
+        &face_edges,
+        Some(&domains),
+        3,
+    )
+    .expect("service resource budget"));
+}

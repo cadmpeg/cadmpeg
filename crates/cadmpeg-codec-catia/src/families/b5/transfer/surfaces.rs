@@ -1053,6 +1053,7 @@ fn emit_extrusion_procedure(
 #[cfg(test)]
 mod tests {
     use super::{append_quadratic_span_knots, emit_extrusion_procedure};
+    use crate::families::b5::transfer::surfaces::revolve_nurbs;
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::geometry::CurveGeometry;
     use cadmpeg_ir::geometry::ProceduralCurveDefinition;
@@ -1228,5 +1229,62 @@ mod tests {
                 .map(cadmpeg_ir::geometry::RecordBounds::get),
             Some([Some(-2.0), Some(3.0), Some(0.0), Some(1.0)])
         );
+    }
+
+    #[test]
+    fn revolution_control_rows_result() {
+        use cadmpeg_ir::geometry::nurbs::NurbsCurve;
+        use cadmpeg_ir::math::Point3;
+        let profile = NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 0.0, 1.0)],
+            None,
+            false,
+        )
+        .expect("fixture constructor admission")
+        .expect("valid revolution profile");
+        let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+            revolve_nurbs(
+                ctx,
+                &profile,
+                [0.0; 3],
+                [0.0, 0.0, 1.0],
+                [[0.0, std::f64::consts::FRAC_PI_2], [0.0, 1.0]],
+                &"test record",
+                &mut crate::nurbs::LaneRefusals::new(),
+            )
+        };
+        let admitted =
+            crate::test_support::with_service_context(run).expect("service resource budget");
+        assert!(admitted.is_some());
+    }
+}
+
+#[cfg(test)]
+mod carrier_resource_tests {
+    use super::{surface_carrier, B5SurfaceCarrier};
+    use crate::families::b5::graph::B5Surface;
+    use cadmpeg_ir::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
+    use cadmpeg_ir::math::Point3;
+
+    #[test]
+    fn nurbs_surface_carrier_result() {
+        let surface = B5Surface::Nurbs(
+            NurbsSurface::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
+                NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+                NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+                NurbsSurfaceLanes::new(vec![vec![Point3::new(0.0, 0.0, 0.0); 2]; 2], None),
+                false,
+            )
+            .expect("fixture constructor admission")
+            .expect("valid bilinear surface"),
+        );
+        let admitted =
+            crate::test_support::with_service_context(|ctx| surface_carrier(ctx, &surface))
+                .expect("service profile");
+        assert!(matches!(admitted, B5SurfaceCarrier::Analytic(_)));
     }
 }

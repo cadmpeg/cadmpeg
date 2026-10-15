@@ -1,5 +1,8 @@
+use crate::families::b5::graph::collect_object_stream_frames;
 use crate::families::b5::graph::controls::{B5EdgeTerminalControl, B5VertexIncidenceControl};
 use crate::families::b5::graph::tests::object_stream_pcurve;
+use crate::families::b5::graph::topology_surface_references;
+use crate::families::b5::graph::ObjectFrame;
 use crate::families::b5::graph::{
     a8_class21_pcurves, admit_dependency_records, edge_vertex_references, face_loop_owner_counts,
     framed_records, implicit_pcurve_bindings, is_referenced_geometry_class, object_stream_frames,
@@ -1475,5 +1478,107 @@ fn dependency_closure_admits_each_identity_once_through_back_references() {
             .map(|record| record.object_id)
             .collect::<Vec<_>>(),
         (0..=COUNT).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn retained_object_frames_result() {
+    let bytes = crate::test_support::test_b5::b5_closed_triangle_stream();
+    let admitted = collect_object_stream_frames(&bytes);
+    let scanned = object_stream_frames(&bytes).collect::<Vec<_>>();
+    assert_eq!(admitted.len(), scanned.len());
+    assert!(admitted.iter().zip(scanned).all(|(left, right)| {
+        (
+            left.start,
+            left.end,
+            left.family,
+            left.class,
+            left.object_id,
+        ) == (
+            right.start,
+            right.end,
+            right.family,
+            right.class,
+            right.object_id,
+        )
+    }));
+}
+
+#[test]
+fn object_population_selection_result() {
+    let bytes = crate::test_support::test_b5::b5_closed_triangle_stream();
+    let selected = select_object_stream_population(std::slice::from_ref(&bytes), None);
+    assert!(selected.selected());
+    assert_eq!(selected.source(), bytes);
+}
+
+#[test]
+fn topology_run_ranges_result() {
+    let bytes = crate::test_support::test_b5::b5_closed_triangle_stream();
+    let ranges = topology_root_run_ranges(&bytes);
+    assert_eq!(ranges, vec![0..bytes.len()]);
+}
+
+#[test]
+fn a8_class21_jet_result() {
+    let payload = a8_class21_test_payload();
+    assert!(
+        crate::test_support::with_service_context(|ctx| parse_a8_class21_pcurve(ctx, 7, &payload))
+            .expect("service resource budget")
+            .is_some()
+    );
+}
+
+#[test]
+fn typed_edge_record_index_result() {
+    let records = [B5Record {
+        offset: 0,
+        family: 0xb5,
+        class: 0x5e,
+        object_id: 17,
+        payload: vec![0x85, 0x92, 0x8f, 0x95, 0x93, 0x94, 0x21],
+    }];
+    let edges = typed_edge_records_from_records(&records);
+    assert!(!edges.is_empty());
+}
+
+#[test]
+fn typed_vertex_incidence_link_index_result() {
+    let records = [B5Record {
+        offset: 0,
+        family: 0xb5,
+        class: 0x5d,
+        object_id: 17,
+        payload: vec![0x81, 0x92, 0x04],
+    }];
+    let links = typed_vertex_incidence_links_from_records(&records);
+    assert!(!links.is_empty());
+}
+
+#[test]
+fn b5_record_payload_and_dependency_closure_result() {
+    let bytes = [0u8; 9];
+    let frame = ObjectFrame {
+        start: 0,
+        end: bytes.len(),
+        family: 0xb5,
+        class: 0x18,
+        object_id: 9,
+    };
+    let record = B5Record {
+        offset: 0,
+        family: 0xb5,
+        class: 0x5f,
+        object_id: 7,
+        payload: vec![0x81, 0x89],
+    };
+    let candidates = HashMap::from([(9, Some(frame))]);
+    assert_eq!(
+        admit_dependency_records(&bytes, &mut vec![record.clone()], &candidates, None).len(),
+        2
+    );
+    assert_eq!(
+        topology_surface_references(&[record]),
+        std::collections::HashSet::from([9])
     );
 }

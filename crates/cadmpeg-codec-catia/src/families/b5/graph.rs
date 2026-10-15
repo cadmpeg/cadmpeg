@@ -6590,3 +6590,14 @@ fn uncounted_references(bytes: &[u8]) -> Option<Vec<u32>> {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod nested_frame_work_tests {
+
+    #[test]
+    fn nested_a8_frame_scanning_result() {
+        let bytes =
+            crate::test_support::test_b5::a8_elided_surface_stream_with_native_vertex_chain();
+        assert!(!crate::families::b5::graph::collect_object_stream_frames(&bytes).is_empty());
+    }
+}

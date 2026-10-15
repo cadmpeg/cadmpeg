@@ -224,3 +224,21 @@ fn omits_all_parents_in_an_owner_cycle() {
         .iter()
         .all(|feature| ir.model.feature_parent(&feature.id).is_none()));
 }
+
+#[test]
+fn feature_parent_lookup_result() {
+    let native = CatiaNative {
+        design_objects: vec![design_object("synthetic:test:object#one", None)],
+        ..CatiaNative::default()
+    };
+    let mut ir = CadIr::empty();
+    ir.model
+        .features
+        .push(feature("one", "synthetic:test:object#one"));
+    let transfer = DesignFeatureTransfer::default();
+    crate::test_support::with_service_context(|ctx| {
+        transfer.assign_feature_parents(ctx, &mut ir, &native)
+    })
+    .expect("service profile admits parent indexes");
+    assert!(ir.model.feature_parent(&ir.model.features[0].id).is_none());
+}

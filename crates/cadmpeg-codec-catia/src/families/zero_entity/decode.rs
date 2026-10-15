@@ -1309,6 +1309,7 @@ pub(in crate::families) fn try_decode_zero_entity(
 #[cfg(test)]
 mod tests {
     use super::{transfer_closed_wire_loops, WireTransferCounts};
+    use crate::families::zero_entity::decode::closed_wire_loop_members;
     use crate::families::zero_entity::records::{ZeroEntityLoopClass, ZeroEntityLoopMembers};
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::features::FinitePoint3;
@@ -2014,5 +2015,74 @@ mod tests {
 
         assert_eq!(counts, WireTransferCounts::default());
         assert!(ir.model.bodies.is_empty());
+    }
+
+    #[test]
+    fn zero_entity_coverage_result() {
+        let build = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+            super::zero_entity_coverage(ctx, 1, 1, WireTransferCounts::default(), None)
+        };
+        let service = crate::test_support::with_service_context(build)
+            .expect("service profile admits zero-entity coverage");
+        assert_eq!(
+            service.get(crate::coverage::TRANSFERRED_ZERO_ENTITY_SUPPORT_CURVE_COUNT.as_str()),
+            Some(&1)
+        );
+    }
+
+    #[test]
+    fn zero_entity_closed_wire_members_result() {
+        let point = Point3::new(0.0, 0.0, 0.0);
+        let run = crate::families::zero_entity::records::ZeroEntitySupportRun {
+            carrier_pos: 0,
+            carrier_record_ordinal: 1,
+            face: None,
+            supports: vec![support(7, 10, [point, point])],
+        };
+        let loop_record = crate::families::zero_entity::records::ZeroEntityLoop {
+            pos: 20,
+            record_ordinal: 2,
+            tag: [0x62, 0x14],
+            members: ZeroEntityLoopMembers::try_new(2, 1, NonZeroUsize::MIN)
+                .expect("one loop member"),
+            typed_references: vec![1],
+            support_record_ordinals: vec![7],
+            loop_class: ZeroEntityLoopClass::Outer41,
+            forward_senses: vec![true],
+            oriented_model_endpoints: finite_pairs(vec![[point, point]]),
+        };
+        let curve_ids = HashMap::from([(
+            7,
+            CurveId::mint("catia:test:wire#0".to_string()).expect("identity grammar"),
+        )]);
+        let service = crate::test_support::with_service_context(|ctx| {
+            closed_wire_loop_members(ctx, &run, &loop_record, &curve_ids)
+        });
+        assert_eq!(
+            service
+                .expect("service resource budget")
+                .expect("closed wire")
+                .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn zero_entity_wire_nurbs_copy_result() {
+        let nurbs = NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+            None,
+            false,
+        )
+        .expect("fixture constructor admission")
+        .expect("valid linear NURBS");
+        let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs));
+        let service = crate::test_support::with_service_context(|ctx| {
+            geometry.try_clone_for_decode(ctx, "catia_zero_wire_curve_copy")
+        });
+        assert_eq!(service.expect("service budget"), geometry);
     }
 }

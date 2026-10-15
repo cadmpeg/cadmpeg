@@ -1,6 +1,8 @@
 use crate::families::b5::graph::controls::{B5FramingControl, B5VertexIncidenceControl};
 use crate::families::b5::graph::tests::extended_loop_metadata;
 use crate::families::b5::graph::tests::test_pcurve;
+use crate::families::b5::graph::typed_face_records_from_records;
+use crate::families::b5::graph::typed_loop_records_from_records;
 use crate::families::b5::graph::vertex_refs::B5VertexRef;
 use crate::families::b5::graph::{
     canonical_point, canonical_surface_id, counted_references, distance_squared,
@@ -1205,3 +1207,154 @@ fn native_vertex_identity_retains_finite_separated_lifts_with_tolerance() {
 }
 
 mod incidence_loci;
+
+#[test]
+fn topology_binding_result() {
+    let point = crate::test_support::test_b5::point([0.0, 0.0, 0.0]);
+    let loops = BTreeMap::new();
+    let pcurves = BTreeMap::new();
+    let opaque_pcurves = BTreeMap::new();
+    let surfaces = BTreeMap::new();
+    let profiles = BTreeMap::new();
+    let edge_parameter_incidences = BTreeMap::new();
+    let parameter_incidences = BTreeMap::new();
+    let geometry = B5PcurveContext {
+        pcurves: &pcurves,
+        opaque_pcurves: &opaque_pcurves,
+        surfaces: &surfaces,
+        profiles: &profiles,
+        edge_parameter_incidences: &edge_parameter_incidences,
+        parameter_incidences: &parameter_incidences,
+    };
+    let native = BTreeMap::from([(7, [11, 12])]);
+    let geometric = BTreeMap::from([(7, [0, 0])]);
+    assert!(crate::test_support::with_service_context(|ctx| {
+        super::super::bind_native_vertices(
+            ctx,
+            &loops,
+            &geometry,
+            &native,
+            &geometric,
+            &BTreeMap::new(),
+            &[point],
+        )
+    })
+    .is_ok());
+}
+
+#[test]
+fn targeted_surface_records_and_resolution_result() {
+    let surface = B5Surface::Unknown {
+        family: 0xb5,
+        class: 0x27,
+        payload: vec![1, 2, 3],
+    };
+    let resolved = HashMap::from([(9, Some(surface.clone()))]);
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| {
+            super::super::resolve_targeted_surface(
+                ctx,
+                9,
+                &HashMap::new(),
+                &HashMap::new(),
+                &resolved,
+                &HashMap::new(),
+            )
+        })
+        .expect("service budget"),
+        Some(surface)
+    );
+}
+
+#[test]
+fn loop_record_nested_collections_result() {
+    let record = B5Record {
+        offset: 0,
+        family: 0xb5,
+        class: 0x62,
+        object_id: 400,
+        payload: vec![
+            0x83, 0x89, 0x8a, 0x8b, 0x81, 0x05, 0x05, 0x03, 0x01, 0x00, 0xff, 0xff, 0x01, 0x00,
+            0x01,
+        ],
+    };
+    let parsed = typed_loop_records_from_records(&[record]);
+    assert_eq!(parsed.get(&400).map(|loop_| loop_.members.len()), Some(1));
+}
+
+#[test]
+fn b5_candidate_indexes_and_alias_walk_result() {
+    let plane = B5Surface::Plane {
+        origin: crate::test_support::test_b5::point([0.0; 3]),
+        frame: crate::test_support::test_b5::plane_frame([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
+        direction_v: crate::test_support::test_b5::exact_unit([0.0, 1.0, 0.0]),
+        u_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
+        v_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
+    };
+
+    assert!(super::super::merge_surface_candidate(
+        &mut BTreeMap::new(),
+        &mut HashSet::new(),
+        1,
+        plane
+    ));
+}
+
+#[test]
+fn loop_sense_vectors_result() {
+    let loop_ = B5Loop {
+        object_id: 1,
+        members: test_loop_members(&[2, 3], &[4, 5]),
+        metadata: test_loop_metadata(),
+        surface: 10,
+    };
+    assert_eq!(loop_.edge_senses().len(), 2);
+    assert_eq!(loop_.pcurve_senses().len(), 2);
+}
+
+#[test]
+fn class21_pcurve_lanes_and_typed_index_result() {
+    let record = B5Record {
+        offset: 0,
+        family: 0xb5,
+        class: 0x21,
+        object_id: 2,
+        payload: crate::test_support::test_b5::b5_linear_pcurve_payload(1, [0.0, 0.0], [1.0, 0.0]),
+    };
+    assert_eq!(
+        super::super::typed_class_21_pcurves_from_records(&[record]).len(),
+        1
+    );
+}
+
+#[test]
+fn counted_face_reference_list_result() {
+    let record = B5Record {
+        offset: 0,
+        family: 0xb5,
+        class: 0x5f,
+        object_id: 3,
+        payload: vec![0x82, 0x81, 0x82, 0x03],
+    };
+    let parsed = parse_face_record(&record);
+    assert_eq!(
+        parsed.as_ref().map(|face| face.references.as_slice()),
+        Some([1, 2].as_slice())
+    );
+}
+
+#[test]
+fn typed_face_record_index_result() {
+    let records = [B5Record {
+        offset: 0,
+        family: 0xb5,
+        class: 0x5f,
+        object_id: 3,
+        payload: vec![0x82, 0x81, 0x82, 0x03],
+    }];
+    let parsed = typed_face_records_from_records(&records);
+    assert_eq!(
+        parsed.get(&3).map(|face| face.references.as_slice()),
+        Some([1, 2].as_slice())
+    );
+}

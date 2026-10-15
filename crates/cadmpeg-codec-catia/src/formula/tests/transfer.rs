@@ -1435,3 +1435,103 @@ fn decode_rejects_a_formula_with_ambiguous_input_binding() {
         1
     );
 }
+
+#[test]
+fn formula_unscoped_entity_index_result() {
+    let bytes = standard_catpart_with_typed_formula_inputs(
+        4,
+        false,
+        &[("#1_", "LENGTH", "Thickness", "#1_", 35.0)],
+        "LENGTH",
+        Some(33.0),
+        "#1_-2mm",
+    );
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let mut ir = CadIr::empty();
+    let admitted = crate::test_support::with_service_context(|ctx| {
+        crate::formula::transfer_parameters(
+            ctx,
+            &mut ir,
+            &native,
+            &mut cadmpeg_ir::Annotations::default(),
+            &crate::decode::ModelingGraphScope::Unresolved,
+        )
+    })
+    .expect("service profile admits formula scan");
+    assert!(admitted.consumed_object_records.is_empty());
+    assert!(ir.model.parameters.is_empty());
+}
+
+#[test]
+fn definition_chain_history_id_result() {
+    let bytes = crate::test_support::test_formula::standard_catpart_with_definition_chain_type(
+        "Boolean",
+        &[0x84, 0x88, 0x82, 0x32, 4, 0, 0, 0, 0x81],
+    );
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let entity = native
+        .entity_records
+        .iter()
+        .find(|entity| entity.definition_chain_value().is_some())
+        .expect("definition chain entity");
+    let chain = entity.definition_chain_value().expect("typed chain");
+    let admitted = crate::test_support::with_service_context(|ctx| {
+        super::super::definition_chain_parameter_candidate(ctx, entity, chain)
+    })
+    .expect("service profile admits definition candidate");
+    assert!(admitted.is_some());
+}
+
+#[test]
+fn typed_parameter_history_id_result() {
+    let bytes = standard_catpart_with_typed_formula_inputs(
+        4,
+        false,
+        &[("#1_", "LENGTH", "Thickness", "#1_", 35.0)],
+        "LENGTH",
+        Some(33.0),
+        "#1_-2mm",
+    );
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let entity = native
+        .entity_records
+        .iter()
+        .find(|entity| entity.parameter_value().is_some())
+        .expect("typed parameter entity");
+    let value = entity.parameter_value().expect("typed parameter");
+    let admitted = crate::test_support::with_service_context(|ctx| {
+        super::super::typed_entity_parameter_candidate(ctx, entity, value, "LENGTH")
+    })
+    .expect("service profile admits typed candidate");
+    assert!(admitted.is_some());
+}
+
+#[test]
+fn typed_parameter_name_and_native_ref_result() {
+    let bytes = standard_catpart_with_typed_formula_inputs(
+        4,
+        false,
+        &[("#1_", "LENGTH", "Thickness", "#1_", 35.0)],
+        "LENGTH",
+        Some(33.0),
+        "#1_-2mm",
+    );
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let entity = native
+        .entity_records
+        .iter()
+        .find(|entity| entity.parameter_value().is_some())
+        .expect("typed parameter entity");
+    let value = entity.parameter_value().expect("typed parameter");
+    let admitted = crate::test_support::with_service_context(|ctx| {
+        super::super::typed_entity_parameter_candidate(ctx, entity, value, "LENGTH")
+    })
+    .expect("service profile admits typed candidate")
+    .expect("typed candidate");
+
+    assert_eq!(admitted.parameter.name, value.name.value);
+    assert_eq!(
+        admitted.parameter.native_ref.as_deref(),
+        Some(entity.id.as_str())
+    );
+}

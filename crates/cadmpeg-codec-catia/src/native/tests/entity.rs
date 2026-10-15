@@ -1425,3 +1425,133 @@ fn the_minimal_parsed_entity_frame_is_the_empty_nested_body() {
         frame.len()
     );
 }
+
+#[test]
+fn definition_selection_result() {
+    let records = [object_graph_record(&[0x04, 0x01, 0x81, 0x81], &[0xfe])];
+    let mut bytes =
+        entity_table_record_with_definition_and_value(1, &[0, 0, 0x32, 4, 0, 0, 0], &[]);
+    bytes.push(0xde);
+    bytes.extend(object_graph_from_records(&records));
+    bytes.extend(catalog_stream(&[
+        "CATCatalogManager",
+        "catalogManager",
+        "catalogLinks",
+        "",
+        "Sketch",
+    ]));
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let record = &native.entity_records[0];
+    let selectors =
+        crate::entity_table::parse_definition_schema_selectors(record.definition_prefix());
+    let catalog = native.catalogs.first();
+    let admitted = super::super::definition_schema_selections(&selectors, catalog);
+    assert_eq!(admitted, record.definition_schema_selections);
+}
+
+#[test]
+fn reference_signature_cohort_result() {
+    let value = [
+        0x32, 3, 0, 0, 0, 0x82, 0xe8, 0xe0, 0x0a, 0x37, 0x85, 0x81, b'2', b'(', b'E', b')', 0xfe,
+        0x32, 4, 0, 0, 0, 0x82, 0xe9, 0xe0, 0x17, 0x08, 0x37, 0xfe, 0xfe, 0xfe,
+    ];
+    let records = [
+        object_graph_record(&[0x04, 0x01, 0x81, 0x81], &[0xfe]),
+        object_graph_record(&[0x04, 0x01, 0x82, 0x81], &[0xfe]),
+        object_graph_record(&[0x04, 0x01, 0x83, 0x81], &[0xfe]),
+    ];
+    let mut bytes = entity_table_record_with_value(1, &value);
+    bytes.extend(entity_table_record_with_value(2, &value));
+    bytes.extend(entity_table_record_with_definition_and_value(
+        3,
+        &[0x01],
+        &[0xfe],
+    ));
+    bytes.push(0xde);
+    bytes.extend(object_graph_from_records(&records));
+    let native = crate::native::CatiaNative::decode(&bytes);
+    assert_eq!(native.reference_signature_cohorts.len(), 1);
+    let cohorts = super::super::derive_reference_signature_cohorts(&native.entity_records);
+    assert_eq!(cohorts, native.reference_signature_cohorts);
+}
+
+#[test]
+fn native_entity_value_field_view_result() {
+    let value = [0x32, 4, 0, 0, 0];
+    let records = [object_graph_record(&[0x04, 0x01, 0x81, 0x81], &[0xfe])];
+    let mut bytes = entity_table_record_with_value(1, &value);
+    bytes.push(0xde);
+    bytes.extend(object_graph_from_records(&records));
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let record = &native.entity_records[0];
+    let fields = record.value_fields();
+    assert_eq!(
+        fields,
+        [crate::value_block::ValueField::SchemaSelector {
+            ordinal: 4,
+            offset: 0,
+        }]
+    );
+}
+
+#[test]
+fn entity_value_selection_result() {
+    let native =
+        crate::native::CatiaNative::decode(&standard_catpart_with_entity_value_schema_selection());
+    let record = &native.entity_records[0];
+    let catalog = native.catalogs.first();
+    let fields = record.value_fields();
+    let packets = record.value_packets(&fields);
+    let admitted = super::super::entity_value_schema_selections(&fields, catalog, &packets);
+    assert_eq!(admitted, record.value_schema_selections);
+}
+
+#[test]
+fn repeated_reference_selection_result() {
+    let native = crate::native::CatiaNative::decode(
+        &standard_catpart_with_repeated_reference_schema_selection(),
+    );
+    let record = &native.object_graphs[0].records[0];
+    let preamble = crate::object_graph::repeated_reference_schema_preamble(&record.payload);
+    let catalog = native.catalogs.first();
+    let admitted = super::super::repeated_reference_schema_selection(preamble.as_ref(), catalog);
+    assert_eq!(admitted, record.repeated_reference_schema_selection);
+}
+
+#[test]
+fn native_value_productions_result() {
+    let scalar_suffix = [0x85, 0x96, 0x82, 0x6a, 0xe7, 0x81, 0x52];
+    let native =
+        crate::native::CatiaNative::decode(&standard_catpart_with_parameter_value(&scalar_suffix));
+    let entity = &native.entity_records[0];
+    let fields = entity.value_fields();
+    let service = super::super::value_production(entity, &native.object_graphs[0].records, &fields);
+    assert_eq!(service, entity.value_production);
+}
+
+#[test]
+fn native_definition_value_and_chain_result() {
+    let definition = [0x00, 0x08, 0x32, 4, 0, 0, 0];
+    let definition_native =
+        crate::native::CatiaNative::decode(&standard_catpart_with_definition_value(
+            &definition,
+            &[0xfe],
+            &[0xd1, 0x67, 0x88, 0x81, 0xbd, 0xe8, 0x81, 0x49],
+        ));
+    let definition_entity = &definition_native.entity_records[0];
+    assert!(definition_entity.definition_value().is_some());
+
+    let chain_native =
+        crate::native::CatiaNative::decode(&standard_catpart_with_definition_chain_value(&[
+            0x84, 0x88, 0x82, 0x32, 4, 0, 0, 0, 0x87,
+        ]));
+    let chain_entity = &chain_native.entity_records[0];
+    assert!(chain_entity.definition_chain_value().is_some());
+    let chain_fields = chain_entity.value_fields();
+    let service = super::super::value_production(
+        chain_entity,
+        &chain_native.object_graphs[0].records,
+        &chain_fields,
+    );
+    assert_eq!(service, chain_entity.value_production);
+}

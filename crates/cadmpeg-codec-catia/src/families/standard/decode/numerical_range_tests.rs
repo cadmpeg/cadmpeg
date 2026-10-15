@@ -118,3 +118,11 @@ fn numerical_0922b_surface_membership_large_plane() {
         assert_eq!(r, Ok(Some(true)));
     }
 }
+
+#[test]
+fn bezier_parameter_search_result() {
+    let point = Point3::new(0.0, 0.0, 0.0);
+    let mut parameters = Vec::new();
+    collect_bezier_point_parameters([point; 6], [0.0, 1.0], point, 0.01, 1.0, &mut parameters);
+    assert!(!parameters.is_empty());
+}

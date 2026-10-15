@@ -788,3 +788,41 @@ fn rejects_unclosed_and_nonidentifier_type_descriptors() {
 
     assert!(parse_runs(&bytes)[0].type_descriptors.is_empty());
 }
+
+#[test]
+fn legacy_schema_program_and_identifiers_result() {
+    let mut bytes = Vec::new();
+    identity(&mut bytes, 1);
+    bytes.extend_from_slice(CATALOG_OPEN);
+    bytes.extend_from_slice(SCHEMA_PROGRAM_PREFIX);
+    bytes.extend_from_slice(&[4, b'F', b'o', b'o', 0x81, 0xfe]);
+    bytes.extend_from_slice(SCHEMA_PROGRAM_FOOTER);
+    let catalog_offset = 8;
+    let program = super::parse_schema_program(&bytes, catalog_offset, None)
+        .expect("fixture has schema program");
+    assert_eq!(program.identifiers[0].value, "Foo");
+}
+
+#[test]
+fn legacy_relation_signature_result() {
+    let signature = "(#2_ : #Out Real,#1_ : #In Real) : VoidType\n";
+    let admitted = super::parse_relation_signature(signature).expect("valid relation signature");
+    assert_eq!(admitted.inputs[0].parameter, "#1_");
+}
+
+#[test]
+fn void_relation_result_type_result() {
+    let signature = super::LegacyRelationSignature {
+        inputs: Vec::new(),
+        result: super::LegacyRelationResult::Void {
+            output: super::LegacyRelationParameter {
+                parameter: "#2_".to_string(),
+                value_type: "Length".to_string(),
+            },
+        },
+    };
+    let (inputs, output, result_type) = signature.into_parts();
+    assert!(inputs.is_empty());
+    assert_eq!(output.expect("void relation has output").parameter, "#2_");
+    assert_eq!(result_type, "VoidType");
+}

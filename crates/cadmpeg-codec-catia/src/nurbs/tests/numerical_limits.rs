@@ -422,3 +422,45 @@ fn helix_cache_computes_finite_sagitta_without_doubling_radius() {
         assert!((cache.fit_tolerance.get() / expected - 1.0).abs() < RELATIVE_ROUNDOFF);
     }
 }
+
+#[test]
+fn reversed_nurbs_copies_result() {
+    let curve = NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+        None,
+        false,
+    )
+    .expect("fixture constructor admission")
+    .expect("linear model curve");
+
+    let reversed = crate::test_support::with_service_context(|ctx| {
+        reverse_nurbs_curve(ctx, &curve, [0.0, 1.0])
+    })
+    .expect("service profile admits reverse copy")
+    .expect("valid reversed curve");
+    assert_eq!(
+        reversed
+            .control_points()
+            .first()
+            .copied()
+            .map(cadmpeg_ir::features::FinitePoint3::get),
+        Some(Point3::new(1.0, 0.0, 0.0))
+    );
+}
+
+#[test]
+fn quintic_jet_result() {
+    let run = || {
+        quintic_jet_bspline(
+            5,
+            &[0.0, 1.0],
+            &[[0.0, 0.0], [1.0, 0.0]],
+            &[[1.0, 0.0]; 2],
+            &[[0.0, 0.0]; 2],
+        )
+    };
+    assert!(run().is_some());
+}

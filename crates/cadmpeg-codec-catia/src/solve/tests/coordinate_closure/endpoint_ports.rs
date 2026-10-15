@@ -402,3 +402,16 @@ fn distinct_coordinate_bijections_remain_ambiguous() {
         None
     );
 }
+
+#[test]
+fn duplicate_face_visitor_result() {
+    let serialized = [[0usize, 0]];
+    let allowed = [vec![0usize, 1]];
+    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        visit_duplicate_face_assignments(ctx, &serialized, &allowed, 2, 4, |_| Ok(true))
+    };
+    assert_eq!(
+        crate::test_support::with_service_context(run).expect("service budget"),
+        Some(DuplicateFaceAssignmentVisit::Complete)
+    );
+}

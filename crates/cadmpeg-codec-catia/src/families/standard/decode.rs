@@ -787,6 +787,29 @@ mod consolidated_revolution_binding_tests {
             Some([0.0, 0.5])
         );
     }
+
+    #[test]
+    fn revolution_binding_result() {
+        let mut ir = CadIr::empty();
+        ir.model.points.push(Point::new(
+            PointId::mint("catia:test:point#revolution-limit").expect("identity grammar"),
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
+                .expect("finite point"),
+            None,
+        ));
+        assert_eq!(
+            crate::test_support::with_service_context(|ctx| {
+                bind_consolidated_revolution_faces_and_seams(
+                    ctx,
+                    &mut ir,
+                    &mut AnnotationBuilder::new(),
+                    &[],
+                )
+            })
+            .expect("service context admits one point"),
+            (0, 0)
+        );
+    }
 }
 
 fn refine_consolidated_analytic_surfaces(
@@ -1098,6 +1121,15 @@ mod consolidated_analytic_refinement_tests {
         assert!(
             matches!(surfaces[1], Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface))) if { cone_surface.half_angle().get() == 0.25 })
         );
+    }
+
+    #[test]
+    fn cylinder_refinement_result() {
+        let bytes = crate::test_support::test_b2::b2_cylinder_stream();
+        let records = crate::wire::records::consolidated_records(&bytes);
+        let mut surfaces = [];
+        let refined = refine_consolidated_analytic_surfaces(&bytes, &records, &mut surfaces);
+        assert!(refined.is_empty());
     }
 }
 

@@ -317,3 +317,25 @@ fn native_edge_carrier_binding_requires_equal_object_identity() {
         vec![Some(900)]
     );
 }
+
+#[test]
+fn port_domain_pruning_result() {
+    let ports = [[10, 11], [11, 12]];
+    let candidates = [vec![[0, 1]], vec![[1, 2]]];
+    for deferred in [&[][..], &[false, true][..]] {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("service decode context");
+        assert_eq!(
+            prune_edge_candidates_by_port_domains_with_deferred(
+                &ctx,
+                &ports,
+                &candidates,
+                deferred,
+            )
+            .expect("service resource budget"),
+            Some(candidates.to_vec())
+        );
+    }
+}

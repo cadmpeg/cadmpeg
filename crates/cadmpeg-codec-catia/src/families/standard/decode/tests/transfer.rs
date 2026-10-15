@@ -1024,3 +1024,82 @@ fn standard_decode_transfers_consolidated_guide_curve() {
     assert_eq!(nurbs.control_points().first().unwrap().x, 0.0);
     assert_eq!(nurbs.control_points().last().unwrap().z, 4.0);
 }
+
+#[test]
+fn standard_population_entity_rewrite_result() {
+    use super::super::StandardPopulationScope;
+    use cadmpeg_ir::document::EntityRewrite;
+    use cadmpeg_ir::ids::BodyId;
+    use cadmpeg_ir::topology::{Body, BodyKind};
+    let body = Body {
+        id: BodyId::mint("catia:standard:body#0").expect("identity"),
+        kind: BodyKind::Solid,
+        regions: Vec::new(),
+        transform: None,
+        name: None,
+        color: None,
+        visible: None,
+    };
+    let admitted = crate::test_support::with_service_context(|ctx| {
+        StandardPopulationScope {
+            scope: "population-1",
+            ctx,
+        }
+        .rewrite(body)
+    })
+    .expect("service profile admits rewrite");
+    assert_eq!(admitted.id.as_str(), "catia:standard:population-1/body#0");
+}
+
+#[test]
+fn standard_initial_carrier_identity_result() {
+    let file = standard_catpart();
+    let scan = crate::test_support::with_service_context(|ctx| {
+        crate::container::scan_bytes(ctx, file.clone())
+    })
+    .expect("service scan");
+    let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        super::super::try_decode_standard_population(
+            ctx,
+            &scan,
+            None,
+            &mut crate::nurbs::LaneRefusals::new(),
+            &[],
+            &std::collections::HashMap::new(),
+        )
+    };
+    assert!(crate::test_support::with_service_context(decode)
+        .expect("service budget")
+        .is_some());
+}
+
+#[test]
+fn standard_revolution_procedure_copy_result() {
+    let directrix = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+        None,
+        false,
+    )
+    .expect("fixture constructor admission")
+    .expect("valid directrix");
+    let procedure = super::super::StandardSurfaceProcedure::Revolution(Box::new(
+        crate::families::b5::transfer::ResolvedRevolutionSurface {
+            directrix,
+            axis_origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                .expect("finite origin"),
+            axis_direction: cadmpeg_ir::units::UnitVector3::new(Vector3::new(0.0, 0.0, 1.0))
+                .expect("unit axis"),
+            angular_interval: [0.0, 1.0],
+            angular_parameter_interval: [0.0, 1.0],
+            parameter_interval: [0.0, 1.0],
+        },
+    ));
+    let service = crate::test_support::with_service_context(|ctx| {
+        super::super::copy_standard_procedure(ctx, &procedure)
+    })
+    .expect("service budget");
+    assert!(service == procedure);
+}

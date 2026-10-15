@@ -46,3 +46,220 @@ fn b5_topology_entity_limit_refuses_before_first_model_append() {
         assert_eq!(ir.model.entity_count(), 0);
     });
 }
+
+#[test]
+fn b5_emit_points_result() {
+    let bytes = crate::test_support::test_b5::b5_closed_triangle_stream();
+    let graph = crate::test_support::with_service_context(|ctx| {
+        crate::families::b5::graph::parse(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new())
+    })
+    .expect("service resource budget")
+    .expect("closed B5 triangle graph");
+    let payload = cadmpeg_ir::ids::UnknownId::mint("catia:payload:unknown#test".to_string())
+        .expect("identity grammar");
+    let plan = crate::test_support::with_service_context(|ctx| {
+        super::build_plan(
+            ctx,
+            &graph,
+            &payload,
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+    })
+    .expect("service resource budget")
+    .expect("complete B5 plan");
+    let admitted = crate::test_support::with_service_context(|ctx| {
+        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+        let mut ir = cadmpeg_ir::CadIr::empty();
+        super::vertices::emit_vertices(
+            &mut ir,
+            &mut cadmpeg_ir::AnnotationBuilder::new(),
+            &graph,
+            &plan,
+            &mut admission,
+        )?;
+        Ok::<_, cadmpeg_core::CodecError>(ir.model.points.len())
+    })
+    .expect("service resource budget");
+    assert!(admitted > 0);
+}
+
+#[test]
+fn b5_pcurve_occurrence_groups_result() {
+    let bytes = crate::test_support::test_b5::b5_closed_triangle_stream();
+    let graph = crate::test_support::with_service_context(|ctx| {
+        crate::families::b5::graph::parse(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new())
+    })
+    .expect("service resource budget")
+    .expect("closed B5 triangle graph");
+    let payload = cadmpeg_ir::ids::UnknownId::mint("catia:payload:unknown#test".to_string())
+        .expect("identity grammar");
+    let plan = crate::test_support::with_service_context(|ctx| {
+        super::build_plan(
+            ctx,
+            &graph,
+            &payload,
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+    })
+    .expect("service resource budget")
+    .expect("complete B5 plan");
+    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+        let mut ir = cadmpeg_ir::CadIr::empty();
+        super::pcurves::emit_pcurves(
+            &mut ir,
+            &mut cadmpeg_ir::AnnotationBuilder::new(),
+            &graph,
+            &plan,
+            &mut admission,
+        )
+    };
+    let admitted = crate::test_support::with_service_context(run).expect("service resource budget");
+    assert!(!admitted.is_empty());
+}
+
+#[test]
+fn b5_surface_id_map_result() {
+    let bytes = crate::test_support::test_b5::b5_closed_triangle_stream();
+    let graph = crate::test_support::with_service_context(|ctx| {
+        crate::families::b5::graph::parse(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new())
+    })
+    .expect("service resource budget")
+    .expect("closed B5 triangle graph");
+    let payload = cadmpeg_ir::ids::UnknownId::mint("catia:payload:unknown#test".to_string())
+        .expect("identity grammar");
+    let make_plan = || {
+        crate::test_support::with_service_context(|ctx| {
+            super::build_plan(
+                ctx,
+                &graph,
+                &payload,
+                &mut crate::nurbs::LaneRefusals::new(),
+            )
+        })
+        .expect("service resource budget")
+        .expect("complete B5 plan")
+    };
+
+    let mut service_plan = make_plan();
+    let admitted = crate::test_support::with_service_context(|ctx| {
+        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+        super::surfaces::emit_surfaces(
+            &mut cadmpeg_ir::CadIr::empty(),
+            &mut cadmpeg_ir::AnnotationBuilder::new(),
+            &graph,
+            &mut service_plan,
+            &mut admission,
+        )
+    })
+    .expect("service resource budget");
+    assert!(!admitted.is_empty());
+}
+
+#[test]
+fn b5_edge_id_map_result() {
+    let bytes = crate::test_support::test_b5::b5_closed_triangle_stream();
+    let graph = crate::test_support::with_service_context(|ctx| {
+        crate::families::b5::graph::parse(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new())
+    })
+    .expect("service resource budget")
+    .expect("closed B5 triangle graph");
+    let payload = cadmpeg_ir::ids::UnknownId::mint("catia:payload:unknown#test".to_string())
+        .expect("identity grammar");
+    let make_plan = || {
+        let mut plan = crate::test_support::with_service_context(|ctx| {
+            super::build_plan(
+                ctx,
+                &graph,
+                &payload,
+                &mut crate::nurbs::LaneRefusals::new(),
+            )
+        })
+        .expect("service resource budget")
+        .expect("complete B5 plan");
+        plan.exact_support_edges.clear();
+        plan.exact_support_curves.clear();
+        plan.edge_helix_plan.clear();
+        plan
+    };
+    let surfaces = std::collections::HashMap::new();
+    let mut service_plan = make_plan();
+    let emitted = crate::test_support::with_service_context(|ctx| {
+        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+        super::edges::emit_edges(
+            &mut cadmpeg_ir::CadIr::empty(),
+            &mut cadmpeg_ir::AnnotationBuilder::new(),
+            &graph,
+            &payload,
+            &mut service_plan,
+            &surfaces,
+            &mut admission,
+        )
+    })
+    .expect("service resource budget");
+    assert!(!emitted.is_empty());
+}
+
+#[test]
+fn b5_region_id_map_result() {
+    let bytes = crate::test_support::test_b5::b5_closed_triangle_stream();
+    let graph = crate::test_support::with_service_context(|ctx| {
+        crate::families::b5::graph::parse(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new())
+    })
+    .expect("service resource budget")
+    .expect("closed B5 triangle graph");
+    let payload = cadmpeg_ir::ids::UnknownId::mint("catia:payload:unknown#test".to_string())
+        .expect("identity grammar");
+
+    let admitted = crate::test_support::with_service_context(|ctx| {
+        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+        super::transfer(
+            &mut cadmpeg_ir::CadIr::empty(),
+            &mut cadmpeg_ir::AnnotationBuilder::new(),
+            graph.clone(),
+            &payload,
+            &mut crate::nurbs::LaneRefusals::new(),
+            &mut admission,
+        )
+    })
+    .expect("service resource budget");
+    assert!(admitted);
+}
+
+#[test]
+fn b5_ownership_result() {
+    let bytes = crate::test_support::test_b5::b5_closed_triangle_stream();
+    let graph = crate::test_support::with_service_context(|ctx| {
+        crate::families::b5::graph::parse(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new())
+    })
+    .expect("service resource budget")
+    .expect("closed B5 triangle graph");
+    crate::test_support::with_service_context(|ctx| {
+        assert!(super::faces::ownership_plan(ctx, &graph)
+            .expect("service decode")
+            .is_some());
+    });
+}
+
+#[test]
+fn b5_loop_orientation_result() {
+    use std::collections::BTreeMap;
+    let bytes = crate::test_support::test_b5::b5_closed_triangle_stream();
+    let graph = crate::test_support::with_service_context(|ctx| {
+        crate::families::b5::graph::parse(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new())
+    })
+    .expect("service resource budget")
+    .expect("closed B5 triangle graph");
+    let reversed = graph
+        .loops
+        .iter()
+        .map(|(id, loop_)| (*id, loop_.edge_senses()))
+        .collect::<BTreeMap<_, _>>();
+    crate::test_support::with_service_context(|ctx| {
+        assert!(
+            super::faces::orient_loop_members(ctx, &graph, reversed.clone())
+                .expect("service decode")
+                .is_some()
+        );
+    });
+}

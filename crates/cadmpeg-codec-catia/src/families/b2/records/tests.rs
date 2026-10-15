@@ -1468,3 +1468,29 @@ fn b2_spatial_circle_stream() -> Vec<u8> {
 mod carrier_records;
 mod indexed_wrappers;
 mod spatial_and_consolidated;
+
+#[test]
+fn b2_owner_packet_collection_result() {
+    let bytes = b2_all_compact_owner_packet_stream();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    assert_eq!(
+        crate::families::b2::records::b2_owner_packets_from_records(&bytes, &records).count(),
+        1
+    );
+}
+
+#[test]
+fn b2_offset_support_parser_result() {
+    let bytes = b2_offset_support_stream();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    let service = crate::families::b2::records::b2_offset_supports_from_records(&bytes, &records);
+    assert_eq!(service.len(), 1);
+}
+
+#[test]
+fn b2_construction_offset_support_result() {
+    let bytes = b2_construction_use_stream();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    let service = crate::families::b2::records::b2_offset_supports_from_records(&bytes, &records);
+    assert_eq!(service.len(), 1);
+}

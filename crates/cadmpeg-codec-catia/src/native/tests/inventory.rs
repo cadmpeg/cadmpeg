@@ -795,3 +795,60 @@ fn native_namespace_rejects_alias_row_views_disagreeing_with_their_source_bytes(
         assert!(error.to_string().contains(field), "{error}");
     }
 }
+
+#[test]
+fn native_value_selector_views_result() {
+    let mut bytes = value_block_stream(&[0x32, 4, 0, 0, 0, 0x81]);
+    bytes.extend(catalog_stream(&[
+        "CATCatalogManager",
+        "catalogManager",
+        "catalogLinks",
+        "",
+        "Sketch",
+    ]));
+    let native = crate::test_support::with_service_context(|ctx| {
+        crate::native::CatiaNative::decode_with_records(
+            ctx,
+            &bytes,
+            &[],
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+    })
+    .expect("service decode");
+    assert_eq!(native.value_blocks.len(), 1);
+    assert_eq!(native.value_blocks[0].schema_selections.len(), 1);
+}
+
+#[test]
+fn native_catalog_projection_result() {
+    let catalog = crate::catalog::Catalog {
+        pos: 16,
+        total_len: 24,
+        entries: vec![crate::catalog::CatalogEntry {
+            ordinal: 0,
+            pos: 20,
+            value: "Part".to_string(),
+        }],
+    };
+    let run = || super::super::CatiaCatalog::from_source(catalog.clone());
+    assert_eq!(run().entries.len(), 1);
+}
+
+#[test]
+fn native_alias_graph_link_result() {
+    let mut stream = object_graph_stream();
+    let mut alias = surface_alias_stream();
+    alias[13..16].copy_from_slice(&[3, 0, 2]);
+    stream.extend(alias);
+    let (bytes, _) = outer_container_catpart(&stream);
+    let native = crate::test_support::with_service_context(|ctx| {
+        super::super::CatiaNative::decode_with_record_sources(
+            ctx,
+            &bytes,
+            &[],
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+    })
+    .expect("service decode");
+    assert!(native.alias_rows[0].object_graph.is_some());
+}

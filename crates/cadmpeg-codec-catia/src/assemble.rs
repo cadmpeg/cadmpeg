@@ -948,6 +948,7 @@ pub(crate) fn quintic_jet_pcurve(
 
 #[cfg(test)]
 mod route_tests {
+    use crate::assemble::source_meta;
     use crate::assemble::{
         circle_parameter_range_from_surface_branch, neutral_model_is_admissible,
         unresolved_carrier_counts,
@@ -1448,5 +1449,115 @@ mod route_tests {
             );
         });
         assert_eq!(unresolved_carrier_counts(&ir), (0, 0));
+    }
+
+    #[test]
+    fn annotation_result() {
+        let annotations = crate::test_support::with_service_context(|ctx| {
+            let mut builder = cadmpeg_ir::AnnotationBuilder::new();
+            super::annotate(
+                ctx,
+                &mut builder,
+                "catia:test:curve#0",
+                "CATPart",
+                17,
+                format_args!("record:{:08x}", 7),
+                cadmpeg_ir::Exactness::Derived,
+            )
+            .expect("service profile admits annotation");
+            builder.build()
+        });
+        let note = &annotations.provenance["catia:test:curve#0"];
+        assert_eq!(note.stream(), "catia:CATPart");
+        assert_eq!(note.offset, 17);
+        assert_eq!(note.tag.as_deref(), Some("record:00000007"));
+    }
+
+    #[test]
+    fn container_report_losses_result() {
+        let scan = crate::test_support::with_service_context(|ctx| {
+            crate::container::scan_bytes(
+                ctx,
+                crate::test_support::test_container::standard_catpart(),
+            )
+        })
+        .expect("service profile admits container scan");
+        let report = super::build_container_report(&scan);
+        assert_eq!(report.losses.len(), 2);
+        assert!(report.losses[0]
+            .message
+            .contains("No B-rep geometry was transferred"));
+        assert!(report.losses[1].message.contains("topology graph"));
+    }
+
+    #[test]
+    fn payload_carrier_links_result() {
+        let mut ir = CadIr::empty();
+        let id = CurveId::mint("catia:test:curve#link".to_string()).expect("identity grammar");
+        ir.model.curves.push(Curve {
+            parameter_range: None,
+            id: id.clone(),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
+            source_object: None,
+        });
+        let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+            let mut payload = UnknownRecord::retained(
+                UnknownId::mint("catia:test:unknown#payload".to_string())
+                    .expect("identity grammar"),
+                0,
+                Vec::new(),
+                Vec::new(),
+            );
+            let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+            super::link_payload_carriers(ctx, &ir, &mut payload, &mut annotations)?;
+            Ok::<_, cadmpeg_core::CodecError>(payload.links().to_vec())
+        };
+        assert_eq!(
+            crate::test_support::with_service_context(run).expect("service resource budget"),
+            [id.as_str()]
+        );
+    }
+
+    #[test]
+    fn unresolved_carrier_inventory_and_note_result() {
+        let mut ir = CadIr::empty();
+        let id =
+            CurveId::mint("catia:test:curve#unresolved".to_string()).expect("identity grammar");
+        ir.model.curves.push(Curve {
+            parameter_range: None,
+            id,
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
+            source_object: None,
+        });
+        let mut losses = Vec::new();
+        super::insert_unresolved_carrier_loss(&ir, &mut losses);
+        assert_eq!(losses.len(), 1);
+    }
+
+    #[test]
+    fn source_metadata_result() {
+        let scan = crate::test_support::with_service_context(|ctx| {
+            crate::container::scan_bytes(
+                ctx,
+                crate::test_support::test_container::standard_catpart(),
+            )
+        })
+        .expect("service budget admits container scan");
+        let matched =
+            crate::dialect::classify(&scan).expect("service budget admits dialect classification");
+        let source =
+            crate::test_support::with_service_context(|ctx| source_meta(ctx, &scan, &matched))
+                .expect("service budget admits source metadata");
+        assert_eq!(source.attributes["file_size"], scan.data.len().to_string());
+    }
+
+    #[test]
+    fn cgm_source_object_identity_result() {
+        let source =
+            super::cgm_source("surface", 0x1234).expect("service profile admits source identity");
+        assert_eq!(source.object_id.as_str(), "cgm-surface:001234");
+        let key = super::cgm_source_key("frame", format_args!("{:010}", 23))
+            .expect("service profile admits frame identity");
+        assert_eq!(key.object_id.as_str(), "cgm-frame:0000000023");
     }
 }

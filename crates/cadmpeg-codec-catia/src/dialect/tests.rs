@@ -216,3 +216,20 @@ fn an_absent_declaration_leaves_the_identity_intact() {
         );
     }
 }
+
+#[test]
+fn declared_version_result() {
+    let bytes = outer_body_catpart(&summary_preview_segment());
+    let scan = crate::test_support::with_service_context(|ctx| {
+        container::scan_bytes(ctx, bytes.as_slice())
+    })
+    .expect("service budget admits version fixture");
+    let matched = classify_service(&scan);
+    assert_eq!(matched.declared()[DECLARED_VERSION], "5");
+}
+
+#[test]
+fn residual_dialect_loss_result() {
+    let matched = matched(Variant::Unknown);
+    assert!(dialect_loss(&matched).is_some());
+}
