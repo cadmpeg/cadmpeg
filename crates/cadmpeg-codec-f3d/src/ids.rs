@@ -583,8 +583,8 @@ pub(crate) fn neutral_assembly_legacy_object_id(
     )
 }
 
-/// The neutral embedded-asset key for one exact archive entry.
-#[cfg(test)]
+/// The neutral embedded-asset key for one exact archive entry: the encoded
+/// entry name after its encoded byte length.
 pub(crate) fn neutral_asset_id(entry_name: &str) -> cadmpeg_ir::assets::AssetId {
     let entry_name = cadmpeg_ir::ids::IdentityKeyTail::percent_encode(entry_name);
     let key = cadmpeg_ir::ids::IdentityKey::from(entry_name.as_str().len())

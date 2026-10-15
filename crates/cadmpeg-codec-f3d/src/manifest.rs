@@ -21,7 +21,7 @@ const DESIGN_ASSET_TYPE: &str = "FusionAssetType";
 pub(crate) const TOP_LEVEL_MANIFEST_VERSION: &str = "3-2-0-0";
 
 fn parse_malformed(field: &str, message: impl std::fmt::Display) -> CodecError {
-    CodecError::Malformed(format!("F3D {field}: {message}"))
+    CodecError::malformed(format_args!("F3D {field}: {message}"))
 }
 
 const GENERATED_DESIGN_ASSET_BASE: &str = "FusionAssetName";

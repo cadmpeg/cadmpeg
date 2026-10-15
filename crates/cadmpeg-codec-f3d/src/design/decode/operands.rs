@@ -78,7 +78,7 @@ use crate::records::{
         sketch_profile::DesignSketchProfileRegionSelection,
     },
 };
-use cadmpeg_core::decode::{index_from_u32, DecodeContext, View};
+use cadmpeg_core::decode::{index_from_u32, DecodeContext, View, WorkBudget};
 use cadmpeg_core::CodecError;
 use std::collections::{HashMap, HashSet};
 
@@ -3915,7 +3915,11 @@ pub(crate) fn decode_body_recipe_operands(
     let mut owner_counts = HashMap::<String, u32>::new();
     for operand in &out {
         if let Some(count) = owner_counts.get_mut(&operand.id) {
-            *count = count.saturating_add(1);
+            // Only a count of exactly one is kept, so a count that cannot
+            // grow further already means more than one.
+            if let Some(next) = count.checked_add(1) {
+                *count = next;
+            }
         } else {
             owner_counts.insert(operand.id.clone(), 1_u32);
         }
@@ -5059,14 +5063,64 @@ fn parse_edge_operand(
     .map(Ok)
 }
 
+/// Work cap for the side-sequence search of one recipe program.
+///
+/// Each search level tries every payload-prefix split of a candidate side,
+/// and each candidate side branches the search, so a crafted program grows
+/// the work combinatorially. Decoded Design recipe programs stay several
+/// orders of magnitude below this cap.
+pub(crate) const RECIPE_SIDE_SEARCH_WORK: usize = 1 << 22;
+
 pub(crate) fn edge_recipe_structure_with_context(
     ctx: &DecodeContext<'_>,
+    program: &[i32],
+) -> Result<Option<crate::records::topology::edge_recipe::DesignEdgeRecipeStructure>, CodecError> {
+    edge_recipe_structure_within(ctx, &WorkBudget::new(RECIPE_SIDE_SEARCH_WORK), program)
+}
+
+/// Count the recipe programs whose side-sequence search stops at
+/// [`RECIPE_SIDE_SEARCH_WORK`]. Their recipe structures stay unresolved.
+pub(crate) fn recipe_side_searches_exhausted(
+    ctx: &DecodeContext<'_>,
+    edge_operands: &[DesignEdgeOperand],
+    face_operands: &[crate::records::topology::face::DesignFaceOperand],
+) -> Result<usize, CodecError> {
+    let mut exhausted = 0;
+    for operand in edge_operands
+        .iter()
+        .filter(|operand| operand.recipe_structure.is_none())
+    {
+        let budget = WorkBudget::new(RECIPE_SIDE_SEARCH_WORK);
+        edge_recipe_structure_within(ctx, &budget, &operand.recipe_program)?;
+        exhausted += usize::from(budget.exhausted());
+    }
+    for node in face_operands
+        .iter()
+        .flat_map(|operand| &operand.recipe_nodes)
+        .filter(|node| node.recipe_structure.is_none())
+    {
+        let Some(tail) = node.program.get(3..) else {
+            continue;
+        };
+        let budget = WorkBudget::new(RECIPE_SIDE_SEARCH_WORK);
+        face_recipe_structure_within(ctx, &budget, tail)?;
+        exhausted += usize::from(budget.exhausted());
+    }
+    Ok(exhausted)
+}
+
+/// Decode the edge-recipe structure within `budget`. A search that exhausts
+/// the budget yields no structure.
+pub(crate) fn edge_recipe_structure_within(
+    ctx: &DecodeContext<'_>,
+    budget: &WorkBudget<'_>,
     program: &[i32],
 ) -> Result<Option<crate::records::topology::edge_recipe::DesignEdgeRecipeStructure>, CodecError> {
     let Some(tail) = program.get(7..) else {
         return Ok(None);
     };
-    edge_recipe_structure_tail(ctx, tail)
+    let structure = edge_recipe_structure_tail(ctx, budget, tail)?;
+    Ok(structure.filter(|_| !budget.exhausted()))
 }
 
 /// Decode the alternate two-clause edge-recipe grammar owned by `SurfacePatch`.
@@ -5178,6 +5232,7 @@ fn edge_recipe_local_topology_references(
 
 fn edge_recipe_structure_tail(
     ctx: &DecodeContext<'_>,
+    budget: &WorkBudget<'_>,
     program: &[i32],
 ) -> Result<Option<crate::records::topology::edge_recipe::DesignEdgeRecipeStructure>, CodecError> {
     let Some((&root, mut remaining)) = program.split_first() else {
@@ -5197,7 +5252,7 @@ fn edge_recipe_structure_tail(
     for RecipeSideSequence {
         sides,
         remaining: tail,
-    } in edge_recipe_side_sequences(ctx, remaining, side_count)?
+    } in edge_recipe_side_sequences(ctx, budget, remaining, side_count)?
     {
         if !matches!(tail, [] | [-1 | 0]) {
             continue;
@@ -5218,10 +5273,14 @@ struct RecipeSideSequence<'a> {
 
 fn edge_recipe_side_sequences<'w>(
     ctx: &DecodeContext<'_>,
+    budget: &WorkBudget<'_>,
     words: &'w [i32],
     side_count: usize,
 ) -> Result<Vec<RecipeSideSequence<'w>>, CodecError> {
     let _depth = ctx.enter_nested("f3d recipe side recursion")?;
+    if !budget.charge() {
+        return Ok(Vec::new());
+    }
     if side_count == 0 {
         return Ok(vec![RecipeSideSequence {
             sides: Vec::new(),
@@ -5229,7 +5288,7 @@ fn edge_recipe_side_sequences<'w>(
         }]);
     }
     let mut out = Vec::new();
-    for (side, tail) in edge_recipe_counted_side_candidates(words) {
+    for (side, tail) in edge_recipe_counted_side_candidates(budget, words) {
         let remaining = if side_count == 1 {
             tail
         } else if let Some(remaining) = recipe_delimiter(tail) {
@@ -5240,8 +5299,11 @@ fn edge_recipe_side_sequences<'w>(
         for RecipeSideSequence {
             sides: mut following,
             remaining: tail,
-        } in edge_recipe_side_sequences(ctx, remaining, side_count - 1)?
+        } in edge_recipe_side_sequences(ctx, budget, remaining, side_count - 1)?
         {
+            if !budget.charge() {
+                return Ok(Vec::new());
+            }
             following.insert(0, copy_recipe_side(&side));
             out.push(RecipeSideSequence {
                 sides: following,
@@ -5289,7 +5351,10 @@ fn complete_recipe_payload_prefix(prefix: &[i32]) -> bool {
     field_count > 0
 }
 
-fn edge_recipe_counted_side_candidates(words: &[i32]) -> Vec<(DesignTopologyRecipeSide, &[i32])> {
+fn edge_recipe_counted_side_candidates<'w>(
+    budget: &WorkBudget<'_>,
+    words: &'w [i32],
+) -> Vec<(DesignTopologyRecipeSide, &'w [i32])> {
     let Some(field_count) = words
         .first()
         .and_then(|word| u32::try_from(*word).ok())
@@ -5330,6 +5395,10 @@ fn edge_recipe_counted_side_candidates(words: &[i32]) -> Vec<(DesignTopologyReci
     }
     let mut candidates = Vec::new();
     for entry_count_at in 0..remaining.len() {
+        // The prefix check scans `entry_count_at` words.
+        if !budget.charge_by(entry_count_at + 1) {
+            return Vec::new();
+        }
         if !complete_recipe_payload_prefix(&remaining[..entry_count_at]) {
             continue;
         }
@@ -5364,6 +5433,16 @@ pub(crate) fn face_recipe_structure_with_context(
     ctx: &DecodeContext<'_>,
     program: &[i32],
 ) -> Result<Option<crate::records::topology::face::DesignFaceRecipeStructure>, CodecError> {
+    face_recipe_structure_within(ctx, &WorkBudget::new(RECIPE_SIDE_SEARCH_WORK), program)
+}
+
+/// Decode the face-recipe structure within `budget`. A search that exhausts
+/// the budget yields no structure.
+pub(crate) fn face_recipe_structure_within(
+    ctx: &DecodeContext<'_>,
+    budget: &WorkBudget<'_>,
+    program: &[i32],
+) -> Result<Option<crate::records::topology::face::DesignFaceRecipeStructure>, CodecError> {
     let Some((&root, remaining)) = program.split_first() else {
         return Ok(None);
     };
@@ -5386,7 +5465,7 @@ pub(crate) fn face_recipe_structure_with_context(
     for RecipeSideSequence {
         sides,
         remaining: tail,
-    } in edge_recipe_side_sequences(ctx, remaining, 2)?
+    } in edge_recipe_side_sequences(ctx, budget, remaining, 2)?
     {
         let postlude = match tail {
             [] | [-1 | 0] => None,
@@ -5406,7 +5485,7 @@ pub(crate) fn face_recipe_structure_with_context(
             postlude_value: postlude,
         });
     }
-    Ok(structure)
+    Ok(structure.filter(|_| !budget.exhausted()))
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

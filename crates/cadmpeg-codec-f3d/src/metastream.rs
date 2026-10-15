@@ -332,7 +332,7 @@ fn parse_error(issue: ParseIssue, stream: &str) -> CodecError {
         ParseIssue::Malformed(failure) => failure,
         ParseIssue::Resource(error) => return error,
     };
-    CodecError::Malformed(format!(
+    CodecError::malformed(format_args!(
         "invalid F3D MetaStream {} at byte {}: {stream}",
         failure.field, failure.offset
     ))

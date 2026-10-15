@@ -85,6 +85,7 @@ pub(super) fn exact_rectangular_pattern_construction(
                     v_extent.evaluated_value_offset(),
                 ],
                 instances: None,
+                instance_search_capped: false,
             },
         )
         .ok()?;
@@ -93,11 +94,28 @@ pub(super) fn exact_rectangular_pattern_construction(
     let Some(mut construction) = parsed else {
         return Ok(None);
     };
-    let instances = exact_rectangular_pattern_instances(bytes, records, scope, &construction);
-    construction
-        .try_set_instances(instances)
-        .map_err(CodecError::malformed)?;
+    match exact_rectangular_pattern_instances(bytes, records, scope, &construction) {
+        InstanceSearch::Resolved(instances) => construction
+            .try_set_instances(Some(*instances))
+            .map_err(CodecError::malformed)?,
+        InstanceSearch::Unresolved => {}
+        InstanceSearch::Capped => construction
+            .mark_instance_search_capped()
+            .map_err(CodecError::malformed)?,
+    }
     Ok(Some(construction))
+}
+
+/// Outcome of the rectangular-pattern instance search.
+#[derive(Debug, PartialEq)]
+enum InstanceSearch {
+    /// One exact instance run.
+    Resolved(Box<DesignRectangularPatternInstances>),
+    /// No unique exact instance run.
+    Unresolved,
+    /// The instance count, a record span, the aggregate span or the search
+    /// work exceeded its local cap.
+    Capped,
 }
 
 fn exact_rectangular_pattern_instances(
@@ -105,7 +123,7 @@ fn exact_rectangular_pattern_instances(
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     construction: &DesignRectangularPatternConstruction,
-) -> Option<DesignRectangularPatternInstances> {
+) -> InstanceSearch {
     (|| {
         let mut active = [
             (construction.u_count(), construction.u_extent()),
@@ -120,7 +138,7 @@ fn exact_rectangular_pattern_instances(
         let count = usize::try_from(count).ok()?;
         // Instances past the search cap are left unresolved.
         if count > 4_096 {
-            return None;
+            return Some(InstanceSearch::Capped);
         }
         if scope.reference_members().len() != count.checked_add(6)?
             || !scope
@@ -159,9 +177,12 @@ fn exact_rectangular_pattern_instances(
                 .min()?;
             let span = end.checked_sub(start)?;
             // Spans past the scan caps leave the instances unresolved.
-            scanned_bytes = scanned_bytes.checked_add(span)?;
+            let Some(total) = scanned_bytes.checked_add(span) else {
+                return Some(InstanceSearch::Capped);
+            };
+            scanned_bytes = total;
             if span > 1_048_576 || scanned_bytes > 16_777_216 {
-                return None;
+                return Some(InstanceSearch::Capped);
             }
             candidates.push(exact_rigid_transform_candidates(bytes, start, end)?);
         }
@@ -172,7 +193,7 @@ fn exact_rectangular_pattern_instances(
         for first in first_candidates {
             for final_candidate in final_candidates {
                 if !budget.charge() {
-                    return None;
+                    return Some(InstanceSearch::Capped);
                 }
                 if !same_transform_basis(&first.0, &final_candidate.0) {
                     continue;
@@ -193,7 +214,7 @@ fn exact_rectangular_pattern_instances(
                     let mut matched = None;
                     for candidate in record_candidates {
                         if !budget.charge() {
-                            return None;
+                            return Some(InstanceSearch::Capped);
                         }
                         if same_transform_basis(&first.0, &candidate.0)
                             && translation_delta(&first.0, &candidate.0)
@@ -246,8 +267,11 @@ fn exact_rectangular_pattern_instances(
                 },
             });
         }
-        Some(DesignRectangularPatternInstances::Bodies(instances))
+        Some(InstanceSearch::Resolved(Box::new(
+            DesignRectangularPatternInstances::Bodies(instances),
+        )))
     })()
+    .unwrap_or(InstanceSearch::Unresolved)
 }
 
 type TransformCandidate = (crate::records::sketch_placement::SketchPlacementMatrix, u64);
