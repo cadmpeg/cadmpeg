@@ -29,15 +29,13 @@ fn type230_form1_entity_table_boundary_follows_island_count() {
     };
 
     assert_eq!(entity_primary_end(&record, &directory), Some(10));
-    let analysis = crate::test_support::with_service_context(&[], |ctx| {
-        super::analyze_trailing_pointer_groups_for_global_table_with_context(
+    let analysis = {
+        super::analyze_trailing_pointer_groups_for_global_table(
             &record,
             &directory,
             crate::global::GlobalTable::V5Later,
-            ctx,
         )
-        .expect("test-only trailing pointer analysis")
-    });
+    };
     let groups = analysis.groups().expect("Type 230 Form 1 table boundary");
     assert_eq!(groups.token_start, 10);
     assert_eq!(groups.associations().copied().collect::<Vec<_>>(), vec![1]);

@@ -1,110 +1,103 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Local depth and expansion ceilings retain their resource failure class.
+//! Local depth and expansion ceilings refuse the input as malformed.
 
 use std::collections::BTreeMap;
 
-use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
-use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::DecodePolicy;
 
 use crate::parse::{
     AnchorResolver, ReferenceEntry, ReferenceName, ReferenceResolver, ResolveError, Value,
 };
 use crate::test_support::{with_policy_context, with_service_context};
 
-fn assert_local_refusal(error: ResolveError, operation: &'static str) {
-    let parsed = error.into_parse_error(0).into_codec_error();
-    assert!(matches!(parsed, CodecError::ResourceLimit(refusal)
-        if refusal.dimension == ResourceDimension::Codec(operation)
-            && refusal.operation == operation));
+fn assert_malformed(error: &ResolveError, expected: &str) {
+    assert!(
+        matches!(error, ResolveError::Syntax(message) if message == expected),
+        "{expected}: {error:?}"
+    );
 }
 
 #[test]
-fn parameter_local_depth_refuses_as_resource() {
+fn parameter_local_depth_omits_the_record() {
     std::thread::Builder::new().stack_size(16 * 1024 * 1024).spawn(|| {
         let nested = format!("{}1{}", "(".repeat(257), ")".repeat(257));
         let source = format!("ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM({nested});ENDSEC;END-ISO-10303-21;");
         let mut policy = DecodePolicy::service();
         policy.limits.max_recursion_depth = 1024;
         with_policy_context(source.as_bytes(), &policy, |source, ctx| {
-            assert!(matches!(crate::parse::parse_with_context(source, ctx),
-                Err(CodecError::ResourceLimit(refusal)) if refusal.operation == "step_parse_parameter_depth_limit"));
+            let (exchange, diagnostics) = crate::parse::parse_with_context(source, ctx)
+                .expect("an over-deep record is omitted");
+            assert!(exchange.records().is_empty());
+            assert!(diagnostics.iter().any(|diagnostic| {
+                diagnostic.kind == crate::parse::ParseDiagnosticKind::RecordOmitted
+                    && diagnostic.message.contains("parameter nesting exceeds 256 levels")
+            }));
         });
     }).expect("fixture operation succeeds").join().expect("fixture operation succeeds");
 }
 
 #[test]
-fn anchor_local_depth_refuses_as_resource() {
+fn anchor_local_depth_is_malformed() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_recursion_depth = 1024;
     with_policy_context(b"", &policy, |_, ctx| {
         let anchors = BTreeMap::new();
-        let mut stack_storage = ctx
-            .reserve_scoped(0, "test anchor stack")
-            .expect("empty stack scope fits");
         let error = AnchorResolver::new(&anchors, ctx)
-            .expect("empty resolver scope fits")
-            .resolve(
-                &Value::Integer(1),
-                &mut Vec::new(),
-                &mut stack_storage,
-                10,
-                256,
-            )
+            .resolve(&Value::Integer(1), &mut Vec::new(), 10, 256)
             .expect_err("local ceiling refuses");
-        assert_local_refusal(error, "step_anchor_depth_limit");
+        assert_malformed(&error, "anchor reference nesting exceeds 256 levels");
     });
 }
 
 #[test]
-fn reference_local_depth_refuses_as_resource() {
+fn reference_local_depth_is_malformed() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_recursion_depth = 1024;
     with_policy_context(b"", &policy, |_, ctx| {
         let anchors = BTreeMap::new();
         let error = ReferenceResolver::new(&[], &anchors, ctx)
-            .expect("fixture operation succeeds")
             .resolve_value(&Value::Integer(1), 256)
             .expect_err("local ceiling refuses");
-        assert_local_refusal(error, "step_reference_depth_limit");
+        assert_malformed(&error, "external reference nesting exceeds 256 levels");
     });
 }
 
 #[test]
-fn anchor_memo_output_node_slice_refuses_as_resource() {
+fn anchor_memo_output_node_slice_is_malformed() {
     with_service_context(b"", |_, ctx| {
         let anchors = BTreeMap::from([(
             "a".into(),
             Value::List(vec![Value::Integer(1), Value::Integer(2)]),
         )]);
-        let mut resolver = AnchorResolver::new(&anchors, ctx).expect("empty resolver scope fits");
+        let mut resolver = AnchorResolver::new(&anchors, ctx);
         let value = Value::Resource("#a".into());
         resolver
             .resolve_root(&value)
             .expect("fixture operation succeeds");
         resolver.remaining_nodes = 2;
-        assert_local_refusal(
-            resolver
+        assert_malformed(
+            &resolver
                 .resolve_root(&value)
                 .expect_err("local ceiling refuses"),
-            "step_anchor_output_node_limit",
+            "anchor expansion exceeds 1000000 value nodes",
         );
     });
 }
 
 #[test]
-fn anchor_first_expansion_output_node_slice_refuses_as_resource() {
+fn anchor_first_expansion_output_node_slice_is_malformed() {
     with_service_context(b"", |_, ctx| {
         let anchors = BTreeMap::from([(
             "a".into(),
             Value::List(vec![Value::Integer(1), Value::Integer(2)]),
         )]);
-        let mut resolver = AnchorResolver::new(&anchors, ctx).expect("empty resolver scope fits");
+        let mut resolver = AnchorResolver::new(&anchors, ctx);
         resolver.remaining_nodes = 2;
-        assert_local_refusal(
-            resolver
+        assert_malformed(
+            &resolver
                 .resolve_root(&Value::Resource("#a".into()))
                 .expect_err("local ceiling refuses"),
-            "step_anchor_output_node_limit",
+            "anchor expansion exceeds 1000000 value nodes",
         );
     });
 }
@@ -117,8 +110,7 @@ fn reference_output_node_slice_refuses_before_leaf_copy() {
             name: ReferenceName::Value(2),
             uri: "#a".into(),
         }];
-        let mut resolver =
-            ReferenceResolver::new(&references, &anchors, ctx).expect("fixture operation succeeds");
+        let mut resolver = ReferenceResolver::new(&references, &anchors, ctx);
         resolver.remaining_nodes = 1;
         assert_eq!(
             resolver
@@ -126,11 +118,11 @@ fn reference_output_node_slice_refuses_before_leaf_copy() {
                 .expect("fixture operation succeeds"),
             anchors["a"]
         );
-        assert_local_refusal(
-            resolver
+        assert_malformed(
+            &resolver
                 .resolve_value(&Value::ExternalReference(2), 0)
                 .expect_err("local ceiling refuses"),
-            "step_reference_output_node_limit",
+            "external reference expansion exceeds 1000000 value nodes",
         );
     });
 }
@@ -146,20 +138,19 @@ fn reference_output_node_slice_refuses_before_list_storage() {
             name: ReferenceName::Value(2),
             uri: "#a".into(),
         }];
-        let mut resolver =
-            ReferenceResolver::new(&references, &anchors, ctx).expect("fixture operation succeeds");
+        let mut resolver = ReferenceResolver::new(&references, &anchors, ctx);
         resolver.remaining_nodes = 2;
-        assert_local_refusal(
-            resolver
+        assert_malformed(
+            &resolver
                 .resolve_value(&Value::ExternalReference(2), 0)
                 .expect_err("local ceiling refuses"),
-            "step_reference_output_node_limit",
+            "external reference expansion exceeds 1000000 value nodes",
         );
     });
 }
 
 #[test]
-fn value_node_count_depth_refuses_in_the_depth_dimension() {
+fn value_node_count_depth_is_malformed() {
     let mut value = Value::Integer(1);
     for _ in 0..256 {
         value = Value::List(vec![value]);
@@ -167,21 +158,21 @@ fn value_node_count_depth_refuses_in_the_depth_dimension() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_recursion_depth = 1024;
     with_policy_context(b"", &policy, |_, ctx| {
-        assert_local_refusal(
-            crate::parse::value_node_count(&value, 1_000_000, ctx)
+        assert_malformed(
+            &crate::parse::value_node_count(&value, 1_000_000, ctx)
                 .expect_err("local ceiling refuses"),
-            "step_value_node_count_depth_limit",
+            "anchor value nesting exceeds 256 levels",
         );
     });
 }
 
 #[test]
-fn value_node_count_nodes_refuse_in_the_node_dimension() {
+fn value_node_count_nodes_are_malformed() {
     with_service_context(b"", |_, ctx| {
-        assert_local_refusal(
-            crate::parse::value_node_count(&Value::Integer(1), 0, ctx)
+        assert_malformed(
+            &crate::parse::value_node_count(&Value::Integer(1), 0, ctx)
                 .expect_err("local ceiling refuses"),
-            "step_value_node_count_node_limit",
+            "anchor value exceeds the expansion node limit",
         );
     });
 }

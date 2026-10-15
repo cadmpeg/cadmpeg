@@ -9,14 +9,6 @@ use crate::records::FeatureHistory;
 use cadmpeg_ir::attributes::AttributeValue;
 use std::collections::BTreeMap;
 
-fn with_test_ctx<T>(run: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T) -> T {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("test decode context");
-    run(&ctx)
-}
-
 #[test]
 fn custom_properties_are_document_attributes_not_model_features() {
     let mut property = feature("property # µ%", None, 0);
@@ -38,10 +30,8 @@ fn custom_properties_are_document_attributes_not_model_features() {
     )
     .unwrap()
     .is_empty());
-    let attributes = with_test_ctx(|ctx| {
-        custom_property_attributes(ctx, std::slice::from_ref(&history))
-            .expect("custom-property projection")
-    });
+    let attributes = custom_property_attributes(std::slice::from_ref(&history))
+        .expect("custom-property projection");
     assert_eq!(attributes.len(), 1);
     assert_eq!(
         attributes[0].id.as_str(),

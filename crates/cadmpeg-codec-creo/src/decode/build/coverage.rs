@@ -974,7 +974,6 @@ pub(super) struct LegacyNumericCoverage {
 }
 
 pub(super) fn legacy_numeric_coverage<K, T>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     records: &[crate::legacy::ValueRecord<K>],
 ) -> Result<LegacyNumericCoverage, CodecError>
 where
@@ -989,9 +988,7 @@ where
         counts.elements = counts
             .elements
             .checked_add(record.payload.element_count())
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit("creo legacy numeric element count", u64::MAX, u64::MAX)
-            })?;
+            .ok_or_else(|| CodecError::malformed("Creo legacy numeric element count overflows"))?;
     }
     Ok(counts)
 }
@@ -999,25 +996,14 @@ where
 #[cfg(test)]
 mod tests {
     use super::collect_feature_coverage;
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::report::decode::Coverage;
 
     #[test]
-    fn feature_coverage_refuses_before_first_report_node() {
+    fn feature_coverage_of_empty_scan_reports_no_transferred_features() {
         let scan = crate::test_support::empty_container_scan();
         let ir = CadIr::empty();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let error = collect_feature_coverage(&ctx, &scan, &ir, 0, 0, 0, &mut Coverage::default())
-            .expect_err("first coverage node exceeds cap");
-        assert!(matches!(error, CodecError::ResourceLimit(resource)
-            if resource.dimension == ResourceDimension::CollectionItems
-                && resource.operation == "decode coverage nodes"));
-
         let arena = DecodeArena::new();
         let policy = DecodePolicy::service();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");

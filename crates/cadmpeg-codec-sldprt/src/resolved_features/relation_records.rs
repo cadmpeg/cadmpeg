@@ -11,7 +11,6 @@ use crate::records::{
     FeatureInputRelationFamily, FeatureInputRelationInstance, FeatureInputScalar,
     FeatureInputScalarRole,
 };
-use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use std::collections::{HashMap, HashSet};
 
@@ -21,45 +20,28 @@ use std::collections::{HashMap, HashSet};
 /// next start, so its end is `None`: the interval is open, and every offset at
 /// or after its start is inside it.
 pub(super) fn feature_intervals(
-    ctx: &DecodeContext<'_>,
     histories: &[crate::records::FeatureHistory],
     lane: &FeatureInputLane,
-) -> Result<Vec<(u64, Option<u64>, String)>, CodecError> {
+) -> Vec<(u64, Option<u64>, String)> {
     let mut starts = Vec::new();
     for history in histories {
         for feature in &history.features {
-            ctx.charge_work(1, "scan SLDPRT feature intervals")?;
             if is_history_metadata_record(feature, &history.features) {
                 continue;
             }
             if let Some(name) = feature_object_name(feature, lane) {
-                ctx.reserve_vec(&mut starts, 1, "collect SLDPRT feature intervals")?;
-                let id = ctx.format_retained(
-                    format_args!("{}", feature.id),
-                    "retain SLDPRT feature interval identity",
-                )?;
-                starts.push((name.offset, id));
+                starts.push((name.offset, feature.id.clone()));
             }
         }
     }
-    ctx.sort_unstable_by(
-        &mut starts,
-        |(left, _), (right, _)| left.cmp(right),
-        |_| 0,
-        "sort SLDPRT feature intervals",
-    )?;
+    starts.sort_unstable_by_key(|(left, _)| *left);
     starts.dedup_by_key(|(offset, _)| *offset);
     let mut intervals = Vec::new();
-    ctx.reserve_vec(
-        &mut intervals,
-        starts.len(),
-        "collect SLDPRT feature intervals",
-    )?;
     let mut starts = starts.into_iter().peekable();
     while let Some((start, feature)) = starts.next() {
         intervals.push((start, starts.peek().map(|(next, _)| *next), feature));
     }
-    Ok(intervals)
+    intervals
 }
 
 /// The interval that contains `offset`, if one does.
@@ -141,59 +123,33 @@ fn relation_scope_end(
 
 #[cfg(test)]
 fn relation_declaration_candidates<'a>(
-    ctx: &DecodeContext<'_>,
     classes: &'a [FeatureInputClass],
     scalars: &'a [FeatureInputScalar],
     intervals: &[(u64, Option<u64>, String)],
-) -> Result<
-    Vec<(
-        &'a FeatureInputClass,
-        &'a FeatureInputScalar,
-        FeatureInputRelationFamily,
-    )>,
-    CodecError,
-> {
-    relation_declaration_candidates_impl(ctx, classes, scalars, intervals, false)
+) -> Vec<(
+    &'a FeatureInputClass,
+    &'a FeatureInputScalar,
+    FeatureInputRelationFamily,
+)> {
+    relation_declaration_candidates_impl(classes, scalars, intervals, false)
 }
 
 fn relation_declaration_candidates_impl<'a>(
-    ctx: &DecodeContext<'_>,
     classes: &'a [FeatureInputClass],
     scalars: &'a [FeatureInputScalar],
     intervals: &[(u64, Option<u64>, String)],
     allow_dynamic: bool,
-) -> Result<
-    Vec<(
-        &'a FeatureInputClass,
-        &'a FeatureInputScalar,
-        FeatureInputRelationFamily,
-    )>,
-    CodecError,
-> {
-    let search_steps = classes
-        .len()
-        .checked_add(scalars.len())
-        .and_then(|step| step.checked_add(intervals.len()))
-        .and_then(|step| classes.len().checked_mul(step))
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit("match SLDPRT relation declarations", u64::MAX - 1, u64::MAX)
-        })?;
-    ctx.charge_work(
-        u64::try_from(search_steps).map_err(|_| {
-            ctx.refuse_codec_limit("match SLDPRT relation declarations", u64::MAX - 1, u64::MAX)
-        })?,
-        "match SLDPRT relation declarations",
-    )?;
-    let mut candidates = Vec::new();
-    for class in classes {
-        if let Some(candidate) =
+) -> Vec<(
+    &'a FeatureInputClass,
+    &'a FeatureInputScalar,
+    FeatureInputRelationFamily,
+)> {
+    classes
+        .iter()
+        .filter_map(|class| {
             relation_declaration_candidate(class, classes, scalars, intervals, allow_dynamic)
-        {
-            ctx.reserve_vec(&mut candidates, 1, "collect SLDPRT relation candidates")?;
-            candidates.push(candidate);
-        }
-    }
-    Ok(candidates)
+        })
+        .collect()
 }
 
 fn relation_declaration_candidate<'a>(
@@ -231,39 +187,24 @@ fn relation_declaration_candidate<'a>(
     Some((class, scalar, family))
 }
 
-pub(super) fn unique_relation_declaration_candidates_charged<'a>(
-    ctx: &DecodeContext<'_>,
+pub(super) fn unique_relation_declaration_candidates<'a>(
     classes: &'a [FeatureInputClass],
     scalars: &'a [FeatureInputScalar],
     intervals: &[(u64, Option<u64>, String)],
-) -> Result<
-    Vec<(
-        &'a FeatureInputClass,
-        &'a FeatureInputScalar,
-        FeatureInputRelationFamily,
-    )>,
-    CodecError,
-> {
-    let candidates = relation_declaration_candidates_impl(ctx, classes, scalars, intervals, false)?;
+) -> Vec<(
+    &'a FeatureInputClass,
+    &'a FeatureInputScalar,
+    FeatureInputRelationFamily,
+)> {
+    let candidates = relation_declaration_candidates_impl(classes, scalars, intervals, false);
     let mut counts = HashMap::<&str, usize>::new();
     for (_, scalar, _) in &candidates {
-        if let Some(count) = counts.get_mut(scalar.id.as_str()) {
-            *count = count.checked_add(1).ok_or_else(|| {
-                ctx.refuse_codec_limit("count SLDPRT relation candidates", u64::MAX - 1, u64::MAX)
-            })?;
-        } else {
-            ctx.reserve_map(&mut counts, 1, "index SLDPRT relation candidates")?;
-            counts.insert(scalar.id.as_str(), 1);
-        }
+        *counts.entry(scalar.id.as_str()).or_default() += 1;
     }
-    let mut unique = Vec::new();
-    for candidate in candidates {
-        if counts.get(candidate.1.id.as_str()) == Some(&1) {
-            ctx.reserve_vec(&mut unique, 1, "collect SLDPRT unique relations")?;
-            unique.push(candidate);
-        }
-    }
-    Ok(unique)
+    candidates
+        .into_iter()
+        .filter(|candidate| counts.get(candidate.1.id.as_str()) == Some(&1))
+        .collect()
 }
 
 struct RelationGroup<'a> {
@@ -275,7 +216,6 @@ struct RelationGroup<'a> {
 }
 
 pub(super) fn relation_instances(
-    ctx: &DecodeContext<'_>,
     histories: &[crate::records::FeatureHistory],
     lane: &FeatureInputLane,
 ) -> Result<Vec<FeatureInputRelationInstance>, CodecError> {
@@ -285,27 +225,18 @@ pub(super) fn relation_instances(
         .flat_map(|history| &history.features)
         .filter(|feature| feature.xml_tag.eq_ignore_ascii_case("Sketch"))
     {
-        ctx.reserve_set(&mut sketch_features, 1, "index SLDPRT relation records")?;
         sketch_features.insert(feature.id.as_str());
     }
-    let intervals = feature_intervals(ctx, histories, lane)?;
+    let intervals = feature_intervals(histories, lane);
     let declaration_candidates =
-        relation_declaration_candidates_impl(ctx, &lane.classes, &lane.scalars, &intervals, true)?;
+        relation_declaration_candidates_impl(&lane.classes, &lane.scalars, &intervals, true);
     let mut candidate_counts = HashMap::<&str, usize>::new();
     for (_, scalar, _) in &declaration_candidates {
-        if let Some(count) = candidate_counts.get_mut(scalar.id.as_str()) {
-            *count = count.checked_add(1).ok_or_else(|| {
-                ctx.refuse_codec_limit("count SLDPRT relation candidates", u64::MAX - 1, u64::MAX)
-            })?;
-        } else {
-            ctx.reserve_map(&mut candidate_counts, 1, "index SLDPRT relation records")?;
-            candidate_counts.insert(scalar.id.as_str(), 1);
-        }
+        *candidate_counts.entry(scalar.id.as_str()).or_default() += 1;
     }
     let mut declarations = HashMap::new();
     for (class, scalar, family) in declaration_candidates {
         if candidate_counts.get(scalar.id.as_str()) == Some(&1) {
-            ctx.reserve_map(&mut declarations, 1, "index SLDPRT relation records")?;
             declarations.insert(
                 scalar.id.as_str(),
                 (class.offset, family, class.id.as_str()),
@@ -315,32 +246,12 @@ pub(super) fn relation_instances(
     // Name lookup keeps the first directory record at a repeated identity.
     let mut names_by_id = HashMap::<&str, &str>::new();
     for name in &lane.names {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(name.id.len()),
-            "index SLDPRT relation scalar names",
-        )?;
-        ctx.admit_hash_map_entry(
-            &mut names_by_id,
-            &name.id.as_str(),
-            "index SLDPRT relation scalar names",
-        )?;
         names_by_id
             .entry(name.id.as_str())
             .or_insert(name.value.as_str());
     }
     let mut groups = Vec::<RelationGroup<'_>>::new();
     for (scalar_index, scalar) in lane.scalars.iter().enumerate() {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(scalar.id.len())
-                .checked_add(cadmpeg_core::decode::u64_from_index(
-                    scalar.feature_ref.as_deref().map_or(0, str::len),
-                ))
-                .and_then(|work| work.checked_add(1))
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit("group SLDPRT relation scalars", u64::MAX - 1, u64::MAX)
-                })?,
-            "group SLDPRT relation scalars",
-        )?;
         let Some(feature_ref) = scalar
             .feature_ref
             .as_deref()
@@ -364,23 +275,6 @@ pub(super) fn relation_instances(
             };
             // Charge the class interval search and operand comparisons only
             // when this scalar can extend an existing group.
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(lane.classes.len())
-                    .checked_add(cadmpeg_core::decode::u64_from_index(group.operands.len()))
-                    .and_then(|work| {
-                        work.checked_add(cadmpeg_core::decode::u64_from_index(
-                            scalar.operands.len(),
-                        ))
-                    })
-                    .ok_or_else(|| {
-                        ctx.refuse_codec_limit(
-                            "group SLDPRT relation scalars",
-                            u64::MAX - 1,
-                            u64::MAX,
-                        )
-                    })?,
-                "group SLDPRT relation scalars",
-            )?;
             let same_scope = group.feature_ref == feature_ref
                 && *last_index + 1 == scalar_index
                 && !lane.classes.iter().any(|class| {
@@ -403,24 +297,6 @@ pub(super) fn relation_instances(
             if repeated_circle_display {
                 let scalar_name = names_by_id.get(scalar.name.as_str()).copied();
                 for (_, candidate) in &group.scalars {
-                    ctx.charge_work(
-                        cadmpeg_core::decode::u64_from_index(candidate.name.len())
-                            .checked_add(cadmpeg_core::decode::u64_from_index(scalar.name.len()))
-                            .and_then(|work| {
-                                work.checked_add(cadmpeg_core::decode::u64_from_index(
-                                    scalar_name.map_or(0, str::len),
-                                ))
-                            })
-                            .and_then(|work| work.checked_add(16))
-                            .ok_or_else(|| {
-                                ctx.refuse_codec_limit(
-                                    "group SLDPRT relation scalars",
-                                    u64::MAX - 1,
-                                    u64::MAX,
-                                )
-                            })?,
-                        "group SLDPRT relation scalars",
-                    )?;
                     if candidate.role != FeatureInputScalarRole::Display
                         || candidate.operands.len() != 1
                         || candidate.operands[0].kind != scalar.operands[0].kind
@@ -435,20 +311,10 @@ pub(super) fn relation_instances(
                 }
             }
             if repeated_circle_display {
-                ctx.reserve_vec(
-                    &mut group.scalars,
-                    1,
-                    "collect SLDPRT relation scalar groups",
-                )?;
                 group.scalars.push((scalar_index, scalar));
             } else if same_scope && same_operands && scalar.role == FeatureInputScalarRole::Driving
             {
                 if group.scalars.len() == 1 {
-                    ctx.reserve_vec(
-                        &mut group.scalars,
-                        1,
-                        "collect SLDPRT relation scalar groups",
-                    )?;
                     group.scalars.push((scalar_index, scalar));
                 } else {
                     let next = RelationGroup {
@@ -456,13 +322,8 @@ pub(super) fn relation_instances(
                         family: group.family,
                         class_ref: group.class_ref,
                         operands: &scalar.operands,
-                        scalars: ctx.alloc_filled(
-                            1,
-                            (scalar_index, scalar),
-                            "collect SLDPRT relation scalar groups",
-                        )?,
+                        scalars: vec![(scalar_index, scalar)],
                     };
-                    ctx.reserve_vec(&mut groups, 1, "collect SLDPRT relation groups")?;
                     groups.push(next);
                 }
             }
@@ -498,24 +359,14 @@ pub(super) fn relation_instances(
                 group.family = *family;
                 group.class_ref = *class_ref;
             }
-            ctx.reserve_vec(
-                &mut group.scalars,
-                1,
-                "collect SLDPRT relation scalar groups",
-            )?;
             group.scalars.push((scalar_index, scalar));
         } else {
-            ctx.reserve_vec(&mut groups, 1, "collect SLDPRT relation groups")?;
             groups.push(RelationGroup {
                 feature_ref,
                 family: *family,
                 class_ref,
                 operands: &scalar.operands,
-                scalars: ctx.alloc_filled(
-                    1,
-                    (scalar_index, scalar),
-                    "collect SLDPRT relation scalar groups",
-                )?,
+                scalars: vec![(scalar_index, scalar)],
             });
         }
     }
@@ -527,31 +378,23 @@ pub(super) fn relation_instances(
         .map_or(lane.id.as_str(), |(_, key)| key);
     for (ordinal, group) in groups.into_iter().enumerate() {
         for (_, scalar) in &group.scalars {
-            ctx.charge_work(1, "index SLDPRT claimed relation scalars")?;
-            ctx.reserve_set(&mut claimed_scalar_refs, 1, "index SLDPRT relation records")?;
             claimed_scalar_refs.insert(scalar.id.as_str());
         }
         let offset = group.scalars[0].1.offset;
-        let ordinal = u32::try_from(ordinal).map_err(|_| {
-            ctx.refuse_codec_limit("number SLDPRT relation instances", u64::MAX - 1, u64::MAX)
-        })?;
-        ctx.reserve_vec(&mut instances, 1, "collect SLDPRT relation instances")?;
+        let ordinal = u32::try_from(ordinal)
+            .map_err(|_| CodecError::malformed("SLDPRT relation instance ordinal overflows u32"))?;
         instances.push(FeatureInputRelationInstance {
-            id: ctx.format_retained(
-                format_args!("sldprt:feature-input:relation-instance#{lane_key}:{offset}"),
-                "retain SLDPRT relation instance identity",
-            )?,
-            parent: copy_relation_text(ctx, &lane.id)?,
+            id: format!("sldprt:feature-input:relation-instance#{lane_key}:{offset}"),
+            parent: lane.id.clone(),
             ordinal,
             offset,
             family: group.family,
-            class_ref: copy_relation_text(ctx, group.class_ref)?,
-            feature_ref: copy_relation_text(ctx, group.feature_ref)?,
+            class_ref: group.class_ref.to_owned(),
+            feature_ref: group.feature_ref.to_owned(),
             scalars: crate::records::relation_scalars::RelationScalars::from_scalars(
-                ctx,
                 group.scalars.into_iter().map(|(_, scalar)| scalar),
             )?,
-            operands: copy_relation_operands(ctx, group.operands)?,
+            operands: group.operands.to_vec(),
         });
     }
     // A class can declare more than one scalar relation. The ordinary
@@ -563,10 +406,6 @@ pub(super) fn relation_instances(
     // input associates it with more than one class. Non-sketch bindings remain
     // native-only, matching the existing relation-instance scope.
     for binding in &lane.relation_bindings {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(lane.scalars.len()),
-            "promote SLDPRT relation bindings",
-        )?;
         let Some(feature_ref) = binding
             .feature_ref
             .as_deref()
@@ -584,118 +423,47 @@ pub(super) fn relation_instances(
         if claimed_scalar_refs.contains(binding.scalar_ref.as_str()) {
             continue;
         }
-        ctx.reserve_set(&mut claimed_scalar_refs, 1, "index SLDPRT relation records")?;
         claimed_scalar_refs.insert(binding.scalar_ref.as_str());
-        ctx.reserve_vec(&mut instances, 1, "collect SLDPRT relation instances")?;
         instances.push(FeatureInputRelationInstance {
-            id: ctx.format_retained(
-                format_args!(
-                    "sldprt:feature-input:relation-instance#{lane_key}:{}",
-                    scalar.offset
-                ),
-                "retain SLDPRT relation instance identity",
-            )?,
-            parent: copy_relation_text(ctx, &lane.id)?,
+            id: format!(
+                "sldprt:feature-input:relation-instance#{lane_key}:{}",
+                scalar.offset
+            ),
+            parent: lane.id.clone(),
             ordinal: u32::try_from(instances.len()).map_err(|_| {
-                ctx.refuse_codec_limit("number SLDPRT relation instances", u64::MAX - 1, u64::MAX)
+                CodecError::malformed("SLDPRT relation instance ordinal overflows u32")
             })?,
             offset: scalar.offset,
             family: binding.family,
-            class_ref: copy_relation_text(ctx, &binding.class_ref)?,
-            feature_ref: copy_relation_text(ctx, feature_ref)?,
-            scalars: crate::records::relation_scalars::RelationScalars::from_scalars(
-                ctx,
-                [scalar],
-            )?,
-            operands: copy_relation_operands(ctx, &scalar.operands)?,
+            class_ref: binding.class_ref.clone(),
+            feature_ref: feature_ref.to_owned(),
+            scalars: crate::records::relation_scalars::RelationScalars::from_scalars([scalar])?,
+            operands: scalar.operands.clone(),
         });
     }
-    ctx.sort_unstable_by(
-        &mut instances,
-        |left, right| (left.offset, left.ordinal).cmp(&(right.offset, right.ordinal)),
-        |_| 0,
-        "sort SLDPRT relation instances",
-    )?;
+    instances.sort_unstable_by(|left, right| {
+        (left.offset, left.ordinal).cmp(&(right.offset, right.ordinal))
+    });
     for (ordinal, relation) in instances.iter_mut().enumerate() {
-        relation.ordinal = u32::try_from(ordinal).map_err(|_| {
-            ctx.refuse_codec_limit("number SLDPRT relation instances", u64::MAX - 1, u64::MAX)
-        })?;
+        relation.ordinal = u32::try_from(ordinal)
+            .map_err(|_| CodecError::malformed("SLDPRT relation instance ordinal overflows u32"))?;
     }
-    bind_detached_relation_drivers(ctx, &mut instances, lane)?;
-    bind_circle_dimension_centers(ctx, &mut instances, lane)?;
-    bind_relation_geometry_operands(ctx, &mut instances, lane)?;
+    bind_detached_relation_drivers(&mut instances, lane)?;
+    bind_circle_dimension_centers(&mut instances, lane)?;
+    bind_relation_geometry_operands(&mut instances, lane);
     Ok(instances)
 }
 
-fn copy_relation_text(ctx: &DecodeContext<'_>, text: &str) -> Result<String, CodecError> {
-    let copy_work = cadmpeg_core::decode::u64_from_index(text.len())
-        .checked_mul(4)
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "retain SLDPRT relation record identity",
-                u64::MAX - 1,
-                u64::MAX,
-            )
-        })?;
-    ctx.charge_work(copy_work, "retain SLDPRT relation record identity")?;
-    ctx.format_retained(
-        format_args!("{text}"),
-        "retain SLDPRT relation record identity",
-    )
-}
-
-fn collect_relation_vec<T>(
-    ctx: &DecodeContext<'_>,
-    items: impl Iterator<Item = T>,
-) -> Result<Vec<T>, CodecError> {
-    let mut values = Vec::new();
-    for item in items {
-        ctx.charge_work(1, "scan SLDPRT relation candidates")?;
-        ctx.reserve_vec(&mut values, 1, "collect SLDPRT relation candidates")?;
-        values.push(item);
-    }
-    Ok(values)
-}
-
-fn copy_relation_operands(
-    ctx: &DecodeContext<'_>,
-    operands: &[FeatureInputOperand],
-) -> Result<Vec<FeatureInputOperand>, CodecError> {
-    let mut copy = Vec::new();
-    ctx.reserve_vec(
-        &mut copy,
-        operands.len(),
-        "collect SLDPRT relation operands",
-    )?;
-    for operand in operands {
-        copy.push(FeatureInputOperand {
-            offset: operand.offset,
-            reference_ref: copy_relation_text(ctx, &operand.reference_ref)?,
-            kind: operand.kind,
-            entity_index: operand.entity_index,
-            entity_ref: operand
-                .entity_ref
-                .as_deref()
-                .map(|id| copy_relation_text(ctx, id))
-                .transpose()?,
-        });
-    }
-    Ok(copy)
-}
-
 pub(super) fn bind_circle_dimension_centers(
-    ctx: &DecodeContext<'_>,
     relations: &mut [FeatureInputRelationInstance],
     lane: &FeatureInputLane,
 ) -> Result<(), CodecError> {
     let mut scalars = HashMap::new();
     for scalar in &lane.scalars {
-        ctx.reserve_map(&mut scalars, 1, "index SLDPRT relation records")?;
         scalars.insert(scalar.id.as_str(), scalar);
     }
     let mut names = HashMap::new();
     for name in &lane.names {
-        ctx.reserve_map(&mut names, 1, "index SLDPRT relation records")?;
         names.insert(name.id.as_str(), name.value.as_str());
     }
     for relation in relations.iter_mut().filter(|relation| {
@@ -719,21 +487,19 @@ pub(super) fn bind_circle_dimension_centers(
             continue;
         };
         let first = &relation.operands[0];
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(lane.scalars.len()),
-            "match SLDPRT circle center scalars",
-        )?;
-        let candidates = collect_relation_vec(
-            ctx,
-            lane.scalars.iter().enumerate().filter(|scalar| {
+        let candidates = lane
+            .scalars
+            .iter()
+            .enumerate()
+            .filter(|scalar| {
                 let scalar = scalar.1;
                 scalar.feature_ref == display.feature_ref
                     && names.get(scalar.name.as_str()) == Some(display_name)
                     && matches!(scalar.operands.as_slice(), [candidate, _]
                         if candidate.kind == first.kind
                             && candidate.entity_index == first.entity_index)
-            }),
-        )?;
+            })
+            .collect::<Vec<_>>();
         if candidates.first().map(|candidate| candidate.0) != Some(display_index + 1)
             || candidates.windows(2).any(|pair| pair[1].0 != pair[0].0 + 1)
         {
@@ -766,10 +532,10 @@ pub(super) fn bind_circle_dimension_centers(
         }) else {
             continue;
         };
-        relation.operands = copy_relation_operands(ctx, &source.operands)?;
+        relation.operands = source.operands.clone();
         for (_, scalar) in candidates {
             if !relation.scalar_refs().contains(&scalar.id) {
-                relation.scalars.push(ctx, &scalar.id)?;
+                relation.scalars.push(&scalar.id)?;
             }
         }
     }
@@ -790,37 +556,27 @@ fn same_scalar_operands(left: &FeatureInputScalar, right: &FeatureInputScalar) -
 }
 
 pub(super) fn circle_dimension_handle_driver<'a>(
-    ctx: &DecodeContext<'_>,
     relation: &FeatureInputRelationInstance,
     lane: &'a FeatureInputLane,
-) -> Result<Option<&'a FeatureInputScalar>, CodecError> {
+) -> Option<&'a FeatureInputScalar> {
     if relation.family != FeatureInputRelationFamily::CircleDiameter
         || relation.parameter_scalar_ref().is_some()
         || relation.scalar_refs().len() != 1
     {
-        return Ok(None);
+        return None;
     }
-    let mut scalars = collect_relation_vec(ctx, lane.scalars.iter())?;
-    ctx.sort_unstable_by(
-        &mut scalars,
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
-        "sort SLDPRT relation scalars",
-    )?;
+    let mut scalars = lane.scalars.iter().collect::<Vec<_>>();
+    scalars.sort_unstable_by_key(|left| left.offset);
     let mut names = HashMap::new();
     for name in &lane.names {
-        ctx.reserve_map(&mut names, 1, "index SLDPRT relation records")?;
         names.insert(name.id.as_str(), name.value.as_str());
     }
-    let Some(first) = relation
+    let first = relation
         .scalar_refs()
         .first()
         .and_then(|id| scalars.iter().find(|scalar| scalar.id == *id))
         .copied()
-        .filter(|scalar| scalar.role == FeatureInputScalarRole::Display)
-    else {
-        return Ok(None);
-    };
+        .filter(|scalar| scalar.role == FeatureInputScalarRole::Display)?;
     // No following relation class states no upper bound on this relation.
     let next_relation_offset = lane
         .classes
@@ -828,16 +584,6 @@ pub(super) fn circle_dimension_handle_driver<'a>(
         .filter(|class| class.offset > first.offset && relation_family(&class.name).is_some())
         .map(|class| class.offset)
         .min();
-    let scan_steps = scalars
-        .len()
-        .checked_mul(lane.classes.len())
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit("match SLDPRT circle handle driver", u64::MAX - 1, u64::MAX)
-        })?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(scan_steps),
-        "match SLDPRT circle handle driver",
-    )?;
     let mut candidates = scalars.windows(2).filter_map(|pair| {
         let display = pair[0];
         let driving = pair[1];
@@ -868,22 +614,19 @@ pub(super) fn circle_dimension_handle_driver<'a>(
             .then_some(driving)
     });
     let first = candidates.next();
-    Ok(first.filter(|_| candidates.next().is_none()))
+    first.filter(|_| candidates.next().is_none())
 }
 
 pub(super) fn bind_detached_relation_drivers(
-    ctx: &DecodeContext<'_>,
     relations: &mut [FeatureInputRelationInstance],
     lane: &FeatureInputLane,
 ) -> Result<(), CodecError> {
     let mut scalars = HashMap::new();
     for scalar in &lane.scalars {
-        ctx.reserve_map(&mut scalars, 1, "index SLDPRT relation records")?;
         scalars.insert(scalar.id.as_str(), scalar);
     }
     let mut names = HashMap::new();
     for name in &lane.names {
-        ctx.reserve_map(&mut names, 1, "index SLDPRT relation records")?;
         names.insert(name.id.as_str(), name.value.as_str());
     }
     let mut claimed = HashSet::new();
@@ -891,7 +634,6 @@ pub(super) fn bind_detached_relation_drivers(
         .iter()
         .flat_map(crate::records::FeatureInputRelationInstance::scalar_refs)
     {
-        ctx.reserve_set(&mut claimed, 1, "index SLDPRT relation records")?;
         claimed.insert(id.as_str());
     }
     let mut drivers = HashMap::<(&str, &str), Vec<&FeatureInputScalar>>::new();
@@ -900,21 +642,17 @@ pub(super) fn bind_detached_relation_drivers(
             && scalar.operands.is_empty()
             && !claimed.contains(scalar.id.as_str())
     }) {
-        ctx.charge_work(1, "match SLDPRT detached relation drivers")?;
         let (Some(feature), Some(name)) = (
             scalar.feature_ref.as_deref(),
             names.get(scalar.name.as_str()).copied(),
         ) else {
             continue;
         };
-        ctx.reserve_map(&mut drivers, 1, "index SLDPRT relation records")?;
         let values = drivers.entry((feature, name)).or_default();
-        ctx.reserve_vec(values, 1, "collect SLDPRT detached relation drivers")?;
         values.push(scalar);
     }
     let mut candidates = HashMap::<(String, String), Vec<usize>>::new();
     for (index, relation) in relations.iter().enumerate() {
-        ctx.charge_work(1, "match SLDPRT detached relation candidates")?;
         if relation.parameter_scalar_ref().is_some() {
             continue;
         }
@@ -927,20 +665,11 @@ pub(super) fn bind_detached_relation_drivers(
         let Some(name) = relation_names.next() else {
             continue;
         };
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(relation.scalar_refs().len()),
-            "compare SLDPRT detached relation names",
-        )?;
         if relation_names.any(|candidate| candidate != name) {
             continue;
         }
-        let key = (
-            copy_relation_text(ctx, &relation.feature_ref)?,
-            copy_relation_text(ctx, name)?,
-        );
-        ctx.reserve_map(&mut candidates, 1, "index SLDPRT relation records")?;
+        let key = (relation.feature_ref.clone(), name.to_owned());
         let values = candidates.entry(key).or_default();
-        ctx.reserve_vec(values, 1, "collect SLDPRT detached relation candidates")?;
         values.push(index);
     }
     for (key, relation_indices) in candidates {
@@ -954,7 +683,7 @@ pub(super) fn bind_detached_relation_drivers(
             continue;
         };
         let relation = &mut relations[*relation_index];
-        relation.scalars.push_parameter(ctx, &driver.id)?;
+        relation.scalars.push_parameter(&driver.id)?;
     }
     Ok(())
 }
@@ -1133,27 +862,18 @@ fn relation_target_value(
 }
 
 fn feature_entities<'a>(
-    ctx: &DecodeContext<'_>,
     lane: &'a FeatureInputLane,
     feature: &str,
-) -> Result<Vec<&'a crate::records::SketchInputEntity>, CodecError> {
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(lane.sketch_entities.len()),
-        "scan SLDPRT relation feature entities",
-    )?;
-    let mut entities = collect_relation_vec(
-        ctx,
-        lane.sketch_entities
-            .iter()
-            .filter(|entity| entity.feature_ref.as_deref() == Some(feature)),
-    )?;
-    ctx.sort_unstable_by(
-        &mut entities,
-        |left, right| (left.offset(), left.ordinal()).cmp(&(right.offset(), right.ordinal())),
-        |_| 0,
-        "sort SLDPRT relation feature entities",
-    )?;
-    Ok(entities)
+) -> Vec<&'a crate::records::SketchInputEntity> {
+    let mut entities = lane
+        .sketch_entities
+        .iter()
+        .filter(|entity| entity.feature_ref.as_deref() == Some(feature))
+        .collect::<Vec<_>>();
+    entities.sort_unstable_by(|left, right| {
+        (left.offset(), left.ordinal()).cmp(&(right.offset(), right.ordinal()))
+    });
+    entities
 }
 
 fn is_finite_point(entity: &crate::records::SketchInputEntity) -> bool {
@@ -1166,70 +886,48 @@ fn is_finite_point(entity: &crate::records::SketchInputEntity) -> bool {
 }
 
 fn push_point_candidate<'a>(
-    ctx: &DecodeContext<'_>,
     candidates: &mut Vec<&'a crate::records::SketchInputEntity>,
     seen: &mut HashSet<&'a str>,
     candidate: Option<&'a crate::records::SketchInputEntity>,
-) -> Result<(), CodecError> {
+) {
     let Some(candidate) = candidate.filter(|candidate| is_finite_point(candidate)) else {
-        return Ok(());
+        return;
     };
-    if !seen.contains(candidate.id()) {
-        ctx.reserve_set(seen, 1, "index SLDPRT relation records")?;
-        seen.insert(candidate.id());
-        ctx.reserve_vec(candidates, 1, "collect SLDPRT dynamic point candidates")?;
+    if seen.insert(candidate.id()) {
         candidates.push(candidate);
     }
-    Ok(())
 }
 
 fn dynamic_point_candidates<'a>(
-    ctx: &DecodeContext<'_>,
     entities: &[&'a crate::records::SketchInputEntity],
     operand: &FeatureInputOperand,
     use_explicit: bool,
-) -> Result<Vec<&'a crate::records::SketchInputEntity>, CodecError> {
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(entities.len()),
-        "scan SLDPRT dynamic point candidates",
-    )?;
+) -> Vec<&'a crate::records::SketchInputEntity> {
     let address = usize::from(operand.entity_index);
     if let Some(entity_ref) = operand.entity_ref.as_deref().filter(|_| use_explicit) {
-        return collect_relation_vec(
-            ctx,
-            entities
-                .iter()
-                .copied()
-                .filter(|entity| entity.id() == entity_ref && is_finite_point(entity)),
-        );
+        return entities
+            .iter()
+            .copied()
+            .filter(|entity| entity.id() == entity_ref && is_finite_point(entity))
+            .collect();
     }
     let mut candidates = Vec::new();
     let mut seen = HashSet::new();
-    push_point_candidate(
-        ctx,
-        &mut candidates,
-        &mut seen,
-        entities.get(address).copied(),
-    )?;
+    push_point_candidate(&mut candidates, &mut seen, entities.get(address).copied());
     let coordinate_point = entities
         .iter()
         .copied()
         .filter(|entity| is_finite_point(entity))
         .nth(address);
-    push_point_candidate(ctx, &mut candidates, &mut seen, coordinate_point)?;
+    push_point_candidate(&mut candidates, &mut seen, coordinate_point);
     for entity in entities.iter().copied().filter(|entity| {
         entity.object_index() == Some(u32::from(operand.entity_index))
             || entity.local_id() == Some(u32::from(operand.entity_index))
     }) {
-        push_point_candidate(ctx, &mut candidates, &mut seen, Some(entity))?;
+        push_point_candidate(&mut candidates, &mut seen, Some(entity));
     }
-    ctx.sort_unstable_by(
-        &mut candidates,
-        |left, right| left.id().cmp(right.id()),
-        |entity| entity.id().len(),
-        "sort SLDPRT dynamic point candidates",
-    )?;
-    Ok(candidates)
+    candidates.sort_unstable_by(|left, right| left.id().cmp(right.id()));
+    candidates
 }
 
 fn dynamic_solver_line<'a>(
@@ -1329,27 +1027,12 @@ fn dynamic_curve_reference_is_valid(
 }
 
 fn dynamic_point_matches<'a>(
-    ctx: &DecodeContext<'_>,
     first_candidates: &[&'a crate::records::SketchInputEntity],
     second_candidates: &[&'a crate::records::SketchInputEntity],
     target: f64,
     horizontal: Option<bool>,
-) -> Result<Vec<(&'a str, &'a str)>, CodecError> {
+) -> Vec<(&'a str, &'a str)> {
     let mut matches = Vec::<(&str, &str)>::new();
-    let steps = first_candidates
-        .len()
-        .checked_mul(second_candidates.len())
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "match SLDPRT dynamic relation points",
-                u64::MAX - 1,
-                u64::MAX,
-            )
-        })?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(steps),
-        "match SLDPRT dynamic relation points",
-    )?;
     for first in first_candidates {
         let Some(first_coordinates) = first
             .coordinates_m
@@ -1372,41 +1055,32 @@ fn dynamic_point_matches<'a>(
                 |horizontal| axis_distance(first_coordinates, second_coordinates, horizontal),
             );
             if same_relation_dimension(measured, target) {
-                ctx.reserve_vec(&mut matches, 1, "collect SLDPRT dynamic point matches")?;
                 matches.push((first.id(), second.id()));
             }
         }
     }
-    Ok(matches)
+    matches
 }
 
 fn bind_dynamic_point_relation(
-    ctx: &DecodeContext<'_>,
     relation: &mut FeatureInputRelationInstance,
     entities: &[&crate::records::SketchInputEntity],
     target: f64,
     horizontal: Option<bool>,
-) -> Result<(), CodecError> {
+) {
     let [first, second] = relation.operands.as_slice() else {
         clear_relation_operands(relation);
-        return Ok(());
+        return;
     };
-    let first_candidates = dynamic_point_candidates(ctx, entities, first, true)?;
-    let second_candidates = dynamic_point_candidates(ctx, entities, second, true)?;
-    let coordinate_points = collect_relation_vec(
-        ctx,
-        entities
-            .iter()
-            .copied()
-            .filter(|entity| is_finite_point(entity)),
-    )?;
-    let mut matches = dynamic_point_matches(
-        ctx,
-        &first_candidates,
-        &second_candidates,
-        target,
-        horizontal,
-    )?;
+    let first_candidates = dynamic_point_candidates(entities, first, true);
+    let second_candidates = dynamic_point_candidates(entities, second, true);
+    let coordinate_points = entities
+        .iter()
+        .copied()
+        .filter(|entity| is_finite_point(entity))
+        .collect::<Vec<_>>();
+    let mut matches =
+        dynamic_point_matches(&first_candidates, &second_candidates, target, horizontal);
     if matches.is_empty() {
         let first_fallback = if first.entity_ref.is_none() {
             &coordinate_points
@@ -1418,26 +1092,25 @@ fn bind_dynamic_point_relation(
         } else {
             &second_candidates
         };
-        matches = dynamic_point_matches(ctx, first_fallback, second_fallback, target, horizontal)?;
+        matches = dynamic_point_matches(first_fallback, second_fallback, target, horizontal);
     }
     if matches.is_empty() {
         let first_relaxed = if first.entity_ref.is_some() {
-            Some(dynamic_point_candidates(ctx, entities, first, false)?)
+            Some(dynamic_point_candidates(entities, first, false))
         } else {
             None
         };
         let second_relaxed = if second.entity_ref.is_some() {
-            Some(dynamic_point_candidates(ctx, entities, second, false)?)
+            Some(dynamic_point_candidates(entities, second, false))
         } else {
             None
         };
         matches = dynamic_point_matches(
-            ctx,
             first_relaxed.as_deref().unwrap_or(&first_candidates),
             second_relaxed.as_deref().unwrap_or(&second_candidates),
             target,
             horizontal,
-        )?;
+        );
     }
     if matches.is_empty() {
         let first_relaxed = if first.entity_ref.is_some() {
@@ -1450,81 +1123,68 @@ fn bind_dynamic_point_relation(
         } else {
             &second_candidates
         };
-        matches = dynamic_point_matches(ctx, first_relaxed, second_relaxed, target, horizontal)?;
+        matches = dynamic_point_matches(first_relaxed, second_relaxed, target, horizontal);
     }
-    ctx.sort_unstable_by(
-        &mut matches,
-        Ord::cmp,
-        |(first, second)| first.len() + second.len(),
-        "sort SLDPRT dynamic point matches",
-    )?;
+    matches.sort_unstable_by(Ord::cmp);
     matches.dedup();
     if let [(first, second)] = matches.as_slice() {
-        relation.operands[0].entity_ref = Some(copy_relation_text(ctx, first)?);
-        relation.operands[1].entity_ref = Some(copy_relation_text(ctx, second)?);
+        relation.operands[0].entity_ref = Some((*first).to_owned());
+        relation.operands[1].entity_ref = Some((*second).to_owned());
     } else {
         clear_relation_operands(relation);
     }
-    Ok(())
 }
 
 fn bind_dynamic_point_line_relation(
-    ctx: &DecodeContext<'_>,
     relation: &mut FeatureInputRelationInstance,
     entities: &[&crate::records::SketchInputEntity],
     target: f64,
-) -> Result<(), CodecError> {
+) {
     let Ok([point_operand, line_operand]) =
         <&mut [FeatureInputOperand; 2]>::try_from(relation.operands.as_mut_slice())
     else {
         clear_relation_operands(relation);
-        return Ok(());
+        return;
     };
     if dynamic_curve_reference_is_valid(entities, line_operand.entity_ref.as_deref()) {
-        return Ok(());
+        return;
     }
     line_operand.entity_ref = None;
     let line_index = line_operand.entity_index;
-    let point_candidates = dynamic_point_candidates(ctx, entities, point_operand, true)?;
+    let point_candidates = dynamic_point_candidates(entities, point_operand, true);
     let Some(line_markers) = dynamic_solver_line(entities, line_index) else {
         clear_relation_operands(relation);
-        return Ok(());
+        return;
     };
     let [Some(first), Some(second)] = line_markers.map(|marker| marker.coordinates_m) else {
         clear_relation_operands(relation);
-        return Ok(());
+        return;
     };
     let direction = [second[0] - first[0], second[1] - first[1]];
     let length = direction[0].hypot(direction[1]);
     if length <= SKETCH_POINT_TOLERANCE {
         clear_relation_operands(relation);
-        return Ok(());
+        return;
     }
-    let mut matches = collect_relation_vec(
-        ctx,
-        point_candidates.iter().filter_map(|point| {
+    let mut matches = point_candidates
+        .iter()
+        .filter_map(|point| {
             let coordinates = point.coordinates_m?.get();
             let measured = ((coordinates[0] - first[0]) * direction[1]
                 - (coordinates[1] - first[1]) * direction[0])
                 .abs()
                 / length;
             same_relation_dimension(measured, target).then(|| point.id())
-        }),
-    )?;
-    ctx.sort_unstable_by(
-        &mut matches,
-        Ord::cmp,
-        |id| id.len(),
-        "sort SLDPRT dynamic point-line matches",
-    )?;
+        })
+        .collect::<Vec<_>>();
+    matches.sort_unstable_by(Ord::cmp);
     matches.dedup();
     if let [point] = matches.as_slice() {
-        relation.operands[0].entity_ref = Some(copy_relation_text(ctx, point)?);
+        relation.operands[0].entity_ref = Some((*point).to_owned());
         relation.operands[1].entity_ref = None;
     } else {
         clear_relation_operands(relation);
     }
-    Ok(())
 }
 
 fn bind_dynamic_line_relation(
@@ -1601,10 +1261,9 @@ fn bind_dynamic_line_relation(
 }
 
 fn bind_relation_geometry_operands(
-    ctx: &DecodeContext<'_>,
     relations: &mut [FeatureInputRelationInstance],
     lane: &FeatureInputLane,
-) -> Result<(), CodecError> {
+) {
     for relation in relations.iter_mut().filter(|relation| {
         relation_uses_dynamic_operands(relation)
             || (matches!(
@@ -1621,10 +1280,6 @@ fn bind_relation_geometry_operands(
             continue;
         }
         let dynamic = relation_uses_dynamic_operands(relation);
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(lane.scalars.len()),
-            "find SLDPRT relation target value",
-        )?;
         let Some(target) = relation_target_value(relation, lane) else {
             if dynamic {
                 clear_relation_operands(relation);
@@ -1640,23 +1295,19 @@ fn bind_relation_geometry_operands(
             }
             continue;
         }
-        let entities = feature_entities(ctx, lane, relation.feature_ref.as_str())?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(entities.len()),
-            "bind SLDPRT dynamic relation geometry",
-        )?;
+        let entities = feature_entities(lane, relation.feature_ref.as_str());
         match relation.family {
             FeatureInputRelationFamily::PointPointDistance => {
-                bind_dynamic_point_relation(ctx, relation, &entities, target.get(), None)?;
+                bind_dynamic_point_relation(relation, &entities, target.get(), None);
             }
             FeatureInputRelationFamily::PointPointHorizontalDistance => {
-                bind_dynamic_point_relation(ctx, relation, &entities, target.get(), Some(true))?;
+                bind_dynamic_point_relation(relation, &entities, target.get(), Some(true));
             }
             FeatureInputRelationFamily::PointPointVerticalDistance => {
-                bind_dynamic_point_relation(ctx, relation, &entities, target.get(), Some(false))?;
+                bind_dynamic_point_relation(relation, &entities, target.get(), Some(false));
             }
             FeatureInputRelationFamily::PointLineDistance => {
-                bind_dynamic_point_line_relation(ctx, relation, &entities, target.get())?;
+                bind_dynamic_point_line_relation(relation, &entities, target.get());
             }
             FeatureInputRelationFamily::LineLineDistance => {
                 bind_dynamic_line_relation(relation, &entities, target.get(), false);
@@ -1667,7 +1318,6 @@ fn bind_relation_geometry_operands(
             FeatureInputRelationFamily::CircleDiameter => {}
         }
     }
-    Ok(())
 }
 
 pub(super) fn scalar_role(payload: &[u8], trailer_offset: usize) -> FeatureInputScalarRole {
@@ -1806,13 +1456,7 @@ mod binary_relation_operand_tests {
             vec![operand(0), operand(1), operand(2)],
         ] {
             let mut point_line = relation(operands.clone());
-            bind_dynamic_point_line_relation(
-                &cadmpeg_test_support::service_decode_context(),
-                &mut point_line,
-                &[],
-                1.0,
-            )
-            .unwrap();
+            bind_dynamic_point_line_relation(&mut point_line, &[], 1.0);
             assert!(point_line
                 .operands
                 .iter()
@@ -2110,24 +1754,20 @@ mod relation_records_tests {
         let unstatable = class(u64::MAX - 100, "sgPntPntHorDist");
         let following = scalar(u64::MAX - 50, FeatureInputScalarRole::Driving);
         assert!(relation_declaration_candidates(
-            &cadmpeg_test_support::service_decode_context(),
             std::slice::from_ref(&unstatable),
             std::slice::from_ref(&following),
-            &[],
+            &[]
         )
-        .unwrap()
         .is_empty());
 
         let stated = class(1_000, "sgPntPntHorDist");
         let within = scalar(1_050, FeatureInputScalarRole::Driving);
         assert_eq!(
             relation_declaration_candidates(
-                &cadmpeg_test_support::service_decode_context(),
                 std::slice::from_ref(&stated),
                 std::slice::from_ref(&within),
-                &[],
+                &[]
             )
-            .unwrap()
             .len(),
             1
         );
@@ -2142,12 +1782,7 @@ mod relation_records_tests {
         let driving = scalar(40, FeatureInputScalarRole::Driving);
         let lane = lane(vec![relation_class], vec![native, driving.clone()]);
 
-        let instances = relation_instances(
-            &cadmpeg_test_support::service_decode_context(),
-            &sketch_history(),
-            &lane,
-        )
-        .unwrap();
+        let instances = relation_instances(&sketch_history(), &lane).unwrap();
         let [relation] = instances.as_slice() else {
             panic!("one relation instance");
         };
@@ -2172,12 +1807,7 @@ mod relation_records_tests {
             value: "Sketch".into(),
         });
 
-        let instances = relation_instances(
-            &cadmpeg_test_support::service_decode_context(),
-            &sketch_history(),
-            &lane,
-        )
-        .unwrap();
+        let instances = relation_instances(&sketch_history(), &lane).unwrap();
         let [relation] = instances.as_slice() else {
             panic!("one relation instance");
         };
@@ -2203,12 +1833,7 @@ mod relation_records_tests {
             value: "Sketch".into(),
         });
 
-        let instances = relation_instances(
-            &cadmpeg_test_support::service_decode_context(),
-            &sketch_history(),
-            &lane,
-        )
-        .unwrap();
+        let instances = relation_instances(&sketch_history(), &lane).unwrap();
         let [relation] = instances.as_slice() else {
             panic!("one relation instance");
         };
@@ -2231,12 +1856,7 @@ mod relation_records_tests {
         );
 
         let history = sketch_history();
-        let instances = relation_instances(
-            &cadmpeg_test_support::service_decode_context(),
-            &history,
-            &lane,
-        )
-        .unwrap();
+        let instances = relation_instances(&history, &lane).unwrap();
         let [relation] = instances.as_slice() else {
             panic!("one relation instance");
         };
@@ -2267,12 +1887,7 @@ mod relation_records_tests {
         let second = scalar(40, FeatureInputScalarRole::Display);
         let lane = lane(vec![vertical, horizontal], vec![first, second]);
 
-        let relations = relation_instances(
-            &cadmpeg_test_support::service_decode_context(),
-            &sketch_history(),
-            &lane,
-        )
-        .unwrap();
+        let relations = relation_instances(&sketch_history(), &lane).unwrap();
         assert_eq!(relations.len(), 2);
         assert_eq!(
             relations
@@ -2295,13 +1910,9 @@ mod relation_records_tests {
             vec![scalar(30, FeatureInputScalarRole::Driving)],
         );
 
-        assert!(relation_instances(
-            &cadmpeg_test_support::service_decode_context(),
-            &sketch_history(),
-            &lane
-        )
-        .unwrap()
-        .is_empty());
+        assert!(relation_instances(&sketch_history(), &lane)
+            .unwrap()
+            .is_empty());
     }
 
     /// Two features, so the first interval ends at the second's start. A class
@@ -2344,12 +1955,7 @@ mod relation_records_tests {
             },
         ];
 
-        let intervals = feature_intervals(
-            &cadmpeg_test_support::service_decode_context(),
-            &history,
-            &lane,
-        )
-        .unwrap();
+        let intervals = feature_intervals(&history, &lane);
         assert_eq!(
             intervals,
             vec![
@@ -2360,14 +1966,7 @@ mod relation_records_tests {
         // 150 is past 10 + UNKNOWN_FEATURE_SPAN and inside the interval.
         assert!(relation_scalar.offset > 10 + UNKNOWN_FEATURE_SPAN);
         assert_eq!(
-            relation_declaration_candidates(
-                &cadmpeg_test_support::service_decode_context(),
-                &lane.classes,
-                &lane.scalars,
-                &intervals
-            )
-            .unwrap()
-            .len(),
+            relation_declaration_candidates(&lane.classes, &lane.scalars, &intervals).len(),
             1
         );
     }
@@ -2392,21 +1991,9 @@ mod relation_records_tests {
             value: "Sketch".into(),
         }];
 
-        let intervals = feature_intervals(
-            &cadmpeg_test_support::service_decode_context(),
-            &history,
-            &lane,
-        )
-        .unwrap();
+        let intervals = feature_intervals(&history, &lane);
         assert_eq!(
-            relation_declaration_candidates(
-                &cadmpeg_test_support::service_decode_context(),
-                &lane.classes,
-                &lane.scalars,
-                &intervals
-            )
-            .unwrap()
-            .len(),
+            relation_declaration_candidates(&lane.classes, &lane.scalars, &intervals).len(),
             1,
             "the open last interval bounds no scalar offset"
         );
@@ -2446,13 +2033,7 @@ mod relation_records_tests {
             },
         ];
 
-        assert!(relation_instances(
-            &cadmpeg_test_support::service_decode_context(),
-            &history,
-            &lane
-        )
-        .unwrap()
-        .is_empty());
+        assert!(relation_instances(&history, &lane).unwrap().is_empty());
     }
 
     #[test]
@@ -2490,12 +2071,7 @@ mod relation_records_tests {
             },
         ];
 
-        let relations = relation_instances(
-            &cadmpeg_test_support::service_decode_context(),
-            &history,
-            &lane,
-        )
-        .unwrap();
+        let relations = relation_instances(&history, &lane).unwrap();
         let [relation] = relations.as_slice() else {
             panic!("metadata must not terminate the sketch interval");
         };
@@ -2513,12 +2089,7 @@ mod relation_records_tests {
             ],
         );
 
-        let relations = relation_instances(
-            &cadmpeg_test_support::service_decode_context(),
-            &sketch_history(),
-            &lane,
-        )
-        .unwrap();
+        let relations = relation_instances(&sketch_history(), &lane).unwrap();
         assert_eq!(relations.len(), 2);
         assert_eq!(
             relations
@@ -2565,12 +2136,7 @@ mod relation_records_tests {
             feature_ref: Some("sketch".into()),
         });
 
-        let instances = relation_instances(
-            &cadmpeg_test_support::service_decode_context(),
-            &sketch_history(),
-            &lane,
-        )
-        .unwrap();
+        let instances = relation_instances(&sketch_history(), &lane).unwrap();
         assert_eq!(instances.len(), 2);
         assert_eq!(instances[1].offset, 30);
         assert_eq!(
@@ -2610,12 +2176,7 @@ mod relation_records_tests {
             },
         ];
 
-        let instances = relation_instances(
-            &cadmpeg_test_support::service_decode_context(),
-            &sketch_history(),
-            &lane,
-        )
-        .unwrap();
+        let instances = relation_instances(&sketch_history(), &lane).unwrap();
         let [relation] = instances.as_slice() else {
             panic!("one circle relation");
         };
@@ -2623,13 +2184,7 @@ mod relation_records_tests {
         assert_eq!(relation.display_scalar_ref(), Some("scalar-20"));
         assert!(relation.parameter_scalar_ref().is_none());
         assert_eq!(
-            circle_dimension_handle_driver(
-                &cadmpeg_test_support::service_decode_context(),
-                relation,
-                &lane
-            )
-            .unwrap()
-            .map(|scalar| scalar.id.as_str()),
+            circle_dimension_handle_driver(relation, &lane).map(|scalar| scalar.id.as_str()),
             Some("scalar-50")
         );
     }
@@ -2658,24 +2213,13 @@ mod relation_records_tests {
             })
             .collect();
 
-        let instances = relation_instances(
-            &cadmpeg_test_support::service_decode_context(),
-            &sketch_history(),
-            &lane,
-        )
-        .unwrap();
+        let instances = relation_instances(&sketch_history(), &lane).unwrap();
         let [relation] = instances.as_slice() else {
             panic!("one circle relation");
         };
         assert_eq!(relation.scalar_refs().len(), 1);
         assert!(relation.parameter_scalar_ref().is_none());
-        assert!(circle_dimension_handle_driver(
-            &cadmpeg_test_support::service_decode_context(),
-            relation,
-            &lane
-        )
-        .unwrap()
-        .is_none());
+        assert!(circle_dimension_handle_driver(relation, &lane).is_none());
     }
 
     #[test]
@@ -2712,12 +2256,7 @@ mod relation_records_tests {
             },
         ];
 
-        let instances = relation_instances(
-            &cadmpeg_test_support::service_decode_context(),
-            &sketch_history(),
-            &lane,
-        )
-        .unwrap();
+        let instances = relation_instances(&sketch_history(), &lane).unwrap();
         let [relation] = instances.as_slice() else {
             panic!("one repeated circle relation");
         };
@@ -2813,12 +2352,7 @@ mod relation_records_tests {
             )],
         );
 
-        let instances = relation_instances(
-            &cadmpeg_test_support::service_decode_context(),
-            &sketch_history(),
-            &lane,
-        )
-        .unwrap();
+        let instances = relation_instances(&sketch_history(), &lane).unwrap();
         let [relation] = instances.as_slice() else {
             panic!("one dynamically tagged relation");
         };
@@ -2842,12 +2376,7 @@ mod relation_records_tests {
         );
         lane.sketch_entities = dynamic_point_markers();
 
-        let instances = relation_instances(
-            &cadmpeg_test_support::service_decode_context(),
-            &sketch_history(),
-            &lane,
-        )
-        .unwrap();
+        let instances = relation_instances(&sketch_history(), &lane).unwrap();
         let [relation] = instances.as_slice() else {
             panic!("one dynamically tagged relation");
         };
@@ -2873,12 +2402,7 @@ mod relation_records_tests {
         let mut lane = lane(vec![class(10, "sgPntPntDist")], vec![driving]);
         lane.sketch_entities = dynamic_point_markers();
 
-        let instances = relation_instances(
-            &cadmpeg_test_support::service_decode_context(),
-            &sketch_history(),
-            &lane,
-        )
-        .unwrap();
+        let instances = relation_instances(&sketch_history(), &lane).unwrap();
         let [relation] = instances.as_slice() else {
             panic!("one dynamically tagged relation");
         };
@@ -2935,12 +2459,7 @@ mod relation_records_tests {
             ),
         ];
 
-        let instances = relation_instances(
-            &cadmpeg_test_support::service_decode_context(),
-            &sketch_history(),
-            &lane,
-        )
-        .unwrap();
+        let instances = relation_instances(&sketch_history(), &lane).unwrap();
         let [relation] = instances.as_slice() else {
             panic!("one dynamically tagged relation");
         };
@@ -2977,12 +2496,7 @@ mod relation_records_tests {
         );
         lane.sketch_entities = dynamic_point_markers();
 
-        let instances = relation_instances(
-            &cadmpeg_test_support::service_decode_context(),
-            &sketch_history(),
-            &lane,
-        )
-        .unwrap();
+        let instances = relation_instances(&sketch_history(), &lane).unwrap();
         let [relation] = instances.as_slice() else {
             panic!("one grouped relation instance");
         };
@@ -3012,12 +2526,7 @@ mod relation_records_tests {
         let mut lane = lane(vec![class(10, "sgPntPntDist")], vec![display]);
         lane.sketch_entities = dynamic_point_markers();
 
-        let instances = relation_instances(
-            &cadmpeg_test_support::service_decode_context(),
-            &sketch_history(),
-            &lane,
-        )
-        .unwrap();
+        let instances = relation_instances(&sketch_history(), &lane).unwrap();
         let [relation] = instances.as_slice() else {
             panic!("one dynamically tagged relation");
         };
@@ -3046,12 +2555,7 @@ mod relation_records_tests {
         lane.sketch_entities = dynamic_point_markers();
         lane.sketch_entities[3].coordinates_m = cadmpeg_ir::units::FiniteVector::new([1.0, 0.0]);
 
-        let instances = relation_instances(
-            &cadmpeg_test_support::service_decode_context(),
-            &sketch_history(),
-            &lane,
-        )
-        .unwrap();
+        let instances = relation_instances(&sketch_history(), &lane).unwrap();
         let [relation] = instances.as_slice() else {
             panic!("one dynamically tagged relation");
         };
@@ -3111,12 +2615,7 @@ mod relation_records_tests {
             ),
         ];
 
-        let instances = relation_instances(
-            &cadmpeg_test_support::service_decode_context(),
-            &sketch_history(),
-            &lane,
-        )
-        .unwrap();
+        let instances = relation_instances(&sketch_history(), &lane).unwrap();
         let [relation] = instances.as_slice() else {
             panic!("one dynamically tagged relation");
         };
@@ -3165,12 +2664,7 @@ mod relation_records_tests {
             ),
         ];
 
-        let instances = relation_instances(
-            &cadmpeg_test_support::service_decode_context(),
-            &sketch_history(),
-            &lane,
-        )
-        .unwrap();
+        let instances = relation_instances(&sketch_history(), &lane).unwrap();
         let [relation] = instances.as_slice() else {
             panic!("one dynamically tagged relation");
         };
@@ -3220,12 +2714,7 @@ mod relation_records_tests {
             ),
         ];
 
-        let instances = relation_instances(
-            &cadmpeg_test_support::service_decode_context(),
-            &sketch_history(),
-            &lane,
-        )
-        .unwrap();
+        let instances = relation_instances(&sketch_history(), &lane).unwrap();
         let [relation] = instances.as_slice() else {
             panic!("one dynamically tagged angle relation");
         };

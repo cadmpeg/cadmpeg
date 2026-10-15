@@ -7,7 +7,7 @@ use crate::directory::DirectoryEntry;
 use crate::global::{ProjectedGlobal, RealPrecision};
 use crate::loss::IgesLossCode;
 use crate::parameter::ParameterRecord;
-use cadmpeg_core::decode::{refuse_local_limit, DecodeContext};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::eval::finite_or_refusal;
 use cadmpeg_ir::features::FinitePoint3;
@@ -183,65 +183,53 @@ fn add_edge(
         return Ok(None);
     };
     let stem = crate::ids::Stem::directory(entry.sequence);
-    let start_point = crate::ids::point_admitted(&stem.tail(crate::ids::Word::Start), ctx)?;
-    sequences.record_point(&start_point, &stem, ctx)?;
-    let end_point = crate::ids::point_admitted(&stem.tail(crate::ids::Word::End), ctx)?;
-    sequences.record_point(&end_point, &stem, ctx)?;
-    let start_vertex = crate::ids::vertex_admitted(&stem.tail(crate::ids::Word::Start), ctx)?;
-    let end_vertex = crate::ids::vertex_admitted(&stem.tail(crate::ids::Word::End), ctx)?;
-    let curve = crate::ids::curve_admitted(&stem, ctx)?;
-    let edge = crate::ids::edge_admitted(&stem, ctx)?;
-    ctx.reserve_vec(&mut ir.model.points, 2, "iges spline neutral point slots")?;
+    let start_point = crate::ids::point(&stem.tail(crate::ids::Word::Start));
+    sequences.record_point(&start_point, &stem);
+    let end_point = crate::ids::point(&stem.tail(crate::ids::Word::End));
+    sequences.record_point(&end_point, &stem);
+    let start_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::Start));
+    let end_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::End));
+    let curve = crate::ids::curve(&stem);
+    let edge = crate::ids::edge(&stem);
+
     ctx.charge_entities(2, "iges_geometry_splines")?;
     ir.model.points.extend([
-        Point::new(
-            start_point.try_clone_for_decode(ctx, "iges splines identity copy")?,
-            start,
-            None,
-        ),
-        Point::new(
-            end_point.try_clone_for_decode(ctx, "iges splines identity copy")?,
-            end,
-            None,
-        ),
+        Point::new(start_point.clone(), start, None),
+        Point::new(end_point.clone(), end, None),
     ]);
-    ctx.reserve_vec(
-        &mut ir.model.vertices,
-        2,
-        "iges spline neutral vertex slots",
-    )?;
+
     ctx.charge_entities(2, "iges_geometry_splines")?;
     ir.model.vertices.extend([
         Vertex {
-            id: start_vertex.try_clone_for_decode(ctx, "iges splines identity copy")?,
+            id: start_vertex.clone(),
             point: start_point,
             tolerance: None,
         },
         Vertex {
-            id: end_vertex.try_clone_for_decode(ctx, "iges splines identity copy")?,
+            id: end_vertex.clone(),
             point: end_point,
             tolerance: None,
         },
     ]);
-    sequences.record_curve(&curve, entry.sequence, ctx)?;
-    ctx.reserve_vec(&mut ir.model.curves, 1, "iges spline neutral curve slots")?;
+    sequences.record_curve(&curve, entry.sequence);
+
     ctx.charge_entities(1, "iges_geometry_splines")?;
     ir.model.curves.push(Curve {
         parameter_range: None,
-        id: curve.try_clone_for_decode(ctx, "iges splines identity copy")?,
+        id: curve.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
-        source_object: Some(match source_object(entry, ctx) {
+        source_object: Some(match source_object(entry) {
             Ok(source) => source,
             Err(error) => {
-                super::non_resource_error(error, ctx)?;
+                super::non_resource_error(error)?;
                 return Ok(None);
             }
         }),
     });
-    ctx.reserve_vec(&mut ir.model.edges, 1, "iges spline neutral edge slots")?;
+
     ctx.charge_entities(1, "iges_geometry_splines")?;
     ir.model.edges.push(Edge {
-        id: edge.try_clone_for_decode(ctx, "iges splines identity copy")?,
+        id: edge.clone(),
         carrier: cadmpeg_ir::topology::EdgeCarrier::Bounded(curve, parameter_range.into()),
         start: start_vertex,
         end: end_vertex,
@@ -260,21 +248,11 @@ pub(super) fn project(
 ) -> Result<WireProjectionOutcome, CodecError> {
     let mut records = BTreeMap::new();
     for record in parameters {
-        ctx.insert_btree_map(
-            &mut records,
-            record.directory_sequence,
-            record,
-            "iges splines parameter index",
-        )?;
+        records.insert(record.directory_sequence, record);
     }
     let mut entries = BTreeMap::new();
     for entry in directory {
-        ctx.insert_btree_map(
-            &mut entries,
-            entry.sequence,
-            entry,
-            "iges splines directory index",
-        )?;
+        entries.insert(entry.sequence, entry);
     }
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
@@ -287,11 +265,10 @@ pub(super) fn project(
         let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "Parameter Data record is missing"),
-            )?;
+            );
             continue;
         };
         let curve_type = record.integer(1);
@@ -304,55 +281,40 @@ pub(super) fn project(
         let dimensions = declared_dimensions.unwrap_or(3);
         let Some(raw_segment_count) = record.integer(4) else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "spline header segment count is invalid"),
-            )?;
+            );
             continue;
         };
-        if let Some(observed) = u64::try_from(raw_segment_count)
-            .ok()
-            .filter(|count| *count > cadmpeg_core::decode::u64_from_index(MAX_SPLINE_SEGMENTS))
-        {
-            return Err(refuse_local_limit(
-                "iges_spline_segments",
-                cadmpeg_core::decode::u64_from_index(MAX_SPLINE_SEGMENTS),
-                observed,
-            ));
-        }
         let Some(segment_count) = usize::try_from(raw_segment_count)
             .ok()
-            .filter(|count| *count > 0)
+            .filter(|count| (1..=MAX_SPLINE_SEGMENTS).contains(count))
         else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("segment count is outside 1..={MAX_SPLINE_SEGMENTS}"),
-            )?;
+            );
             continue;
         };
         let Some(breakpoint_count) = segment_count.checked_add(1) else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "breakpoint count overflows"),
-            )?;
+            );
             continue;
         };
-        let Some(breakpoints) = ctx.collect_options(
-            (5..5 + breakpoint_count).map(|index| record.number(index).and_then(FiniteReal::new)),
-            "iges spline curve breakpoints",
-        )?
+        let Some(breakpoints) = (5..5 + breakpoint_count)
+            .map(|index| record.number(index).and_then(FiniteReal::new))
+            .collect::<Option<Vec<_>>>()
         else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "breakpoint array is truncated or non-finite"),
-            )?;
+            );
             continue;
         };
         if breakpoints
@@ -360,35 +322,30 @@ pub(super) fn project(
             .any(|pair| pair[0].get() >= pair[1].get())
         {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "breakpoints are not strictly increasing"),
-            )?;
+            );
             continue;
         }
         let coefficient_start = 6 + segment_count;
         let Some(coefficient_count) = segment_count.checked_mul(12) else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "coefficient count overflows"),
-            )?;
+            );
             continue;
         };
-        let Some(coefficients) = ctx.collect_options(
-            (coefficient_start..coefficient_start + coefficient_count)
-                .map(|index| record.number(index).and_then(FiniteReal::new)),
-            "iges spline curve coefficients",
-        )?
+        let Some(coefficients) = (coefficient_start..coefficient_start + coefficient_count)
+            .map(|index| record.number(index).and_then(FiniteReal::new))
+            .collect::<Option<Vec<_>>>()
         else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "coefficient array is truncated or non-finite"),
-            )?;
+            );
             continue;
         };
         let transform = match resolve_transform(
@@ -403,12 +360,11 @@ pub(super) fn project(
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
-                super::push_geometry_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
+                super::push_geometry_loss(&mut losses, entry, format_args!("{message}"));
                 continue;
             }
         };
-        let control_count = segment_count * 3 + 1;
-        let mut control_points = ctx.collection_vec(control_count, "iges spline curve controls")?;
+        let mut control_points = Vec::new();
         let mut continuous = true;
         let precision = global.real_precision();
         let resolution = global.minimum_resolution_mm();
@@ -556,16 +512,15 @@ pub(super) fn project(
                     }
                 }
             }
-            let Some(bezier) = ctx.collect_options(
-                (0..4).map(|index| {
+            let Some(bezier) = (0..4)
+                .map(|index| {
                     transform.apply_point(Point3::new(
                         x[index] * factor,
                         y[index] * factor,
                         z[index] * factor,
                     ))
-                }),
-                "iges spline curve Bezier controls",
-            )?
+                })
+                .collect::<Option<Vec<_>>>()
             else {
                 continuous = false;
                 break;
@@ -579,22 +534,19 @@ pub(super) fn project(
         }
         if !continuous {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!(
                     "{}",
                     "spline segments are positionally discontinuous, degenerate, or non-finite"
                 ),
-            )?;
+            );
             continue;
         }
         let tail_start = coefficient_start + coefficient_count;
-        let tail = ctx.collect_options(
-            (tail_start..tail_start + 12)
-                .map(|index| record.number(index).and_then(FiniteReal::new)),
-            "iges spline curve terminal derivatives",
-        )?;
+        let tail = (tail_start..tail_start + 12)
+            .map(|index| record.number(index).and_then(FiniteReal::new))
+            .collect::<Option<Vec<_>>>();
         let last_values: [f64; 12] =
             std::array::from_fn(|index| coefficients[coefficients.len() - 12 + index].get());
         let last_segment_start = coefficient_start + (segment_count - 1) * 12;
@@ -631,7 +583,7 @@ pub(super) fn project(
             }
             Some(_) => None,
         };
-        let mut knots = ctx.collection_vec(segment_count * 3 + 5, "iges spline curve knots")?;
+        let mut knots = Vec::new();
         knots.extend([breakpoints[0].get(); 4]);
         for breakpoint in &breakpoints[1..segment_count] {
             knots.extend([breakpoint.get(); 3]);
@@ -647,11 +599,10 @@ pub(super) fn project(
             Ok(nurbs) => nurbs,
             Err(error) => {
                 super::push_geometry_loss(
-                    ctx,
                     &mut losses,
                     entry,
                     format_args!("converted spline cardinalities are inconsistent: {error}"),
-                )?;
+                );
                 continue;
             }
         };
@@ -665,14 +616,13 @@ pub(super) fn project(
         )?
         else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "converted spline endpoints cannot be evaluated"),
-            )?;
+            );
             continue;
         };
-        ctx.reserve_vec(&mut wire_edges, 1, "iges spline wire edge slots")?;
+
         wire_edges.push(edge);
         for reason in [
             claim_inconsistent.then_some(
@@ -684,20 +634,15 @@ pub(super) fn project(
         .flatten()
         {
             super::push_attributed_loss(
-                ctx,
                 &mut losses,
                 entry,
                 IgesLossCode::SplineClaimRecovered,
                 format_args!("{reason}; retained the coefficient-defined curve"),
-            )?;
+            );
         }
-        super::push_attributed_loss(ctx, &mut losses, entry, IgesLossCode::SplineHeaderNotTransferred,
-            format_args!("Type 112 curve type, continuity, and dimensionality are retained only in native parameters"))?;
-        ctx.insert_btree_set(
-            &mut decoded,
-            entry.sequence,
-            "iges splines decoded sequences",
-        )?;
+        super::push_attributed_loss(&mut losses, entry, IgesLossCode::SplineHeaderNotTransferred,
+            format_args!("Type 112 curve type, continuity, and dimensionality are retained only in native parameters"));
+        decoded.insert(entry.sequence);
     }
 
     for entry in directory
@@ -707,83 +652,45 @@ pub(super) fn project(
         let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "Parameter Data record is missing"),
-            )?;
+            );
             continue;
         };
         let (Some(curve_type), Some(patch_type)) = (record.integer(1), record.integer(2)) else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "spline-surface type fields are not integers"),
-            )?;
+            );
             continue;
         };
         if !(1..=6).contains(&curve_type) || !matches!(patch_type, 0 | 1) {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "spline-surface type enum is out of range"),
-            )?;
+            );
             continue;
         }
         let dimensions = [record.integer(3), record.integer(4)];
         let [Some(raw_u_segments), Some(raw_v_segments)] = dimensions else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "spline-surface dimensions are invalid"),
-            )?;
+            );
             continue;
         };
-        if raw_u_segments > 0 && raw_v_segments > 0 {
-            let requested = u64::try_from(raw_u_segments)
-                .ok()
-                .and_then(|value| value.checked_mul(3))
-                .and_then(|value| value.checked_add(1))
-                .and_then(|u_count| {
-                    u64::try_from(raw_v_segments)
-                        .ok()
-                        .and_then(|value| value.checked_mul(3))
-                        .and_then(|value| value.checked_add(1))
-                        .and_then(|v_count| u_count.checked_mul(v_count))
-                });
-            match requested {
-                None => {
-                    return Err(refuse_local_limit(
-                        "iges_spline_surface_poles",
-                        cadmpeg_core::decode::u64_from_index(MAX_SPLINE_SURFACE_POLES),
-                        u64::MAX,
-                    ));
-                }
-                Some(requested)
-                    if requested
-                        > cadmpeg_core::decode::u64_from_index(MAX_SPLINE_SURFACE_POLES) =>
-                {
-                    return Err(refuse_local_limit(
-                        "iges_spline_surface_poles",
-                        cadmpeg_core::decode::u64_from_index(MAX_SPLINE_SURFACE_POLES),
-                        requested,
-                    ));
-                }
-                Some(_) => {}
-            }
-        }
         let [Some(u_segments), Some(v_segments)] = [raw_u_segments, raw_v_segments]
             .map(|value| usize::try_from(value).ok().filter(|count| *count > 0))
         else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "spline-surface dimensions are invalid"),
-            )?;
+            );
             continue;
         };
         let (Some(u_count), Some(v_count)) = (
@@ -795,71 +702,60 @@ pub(super) fn project(
                 .and_then(|value| value.checked_add(1)),
         ) else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "spline-surface pole dimensions overflow"),
-            )?;
+            );
             continue;
         };
-        let Some(pole_count) = u_count.checked_mul(v_count) else {
-            return Err(refuse_local_limit(
-                "iges_spline_surface_poles",
-                cadmpeg_core::decode::u64_from_index(MAX_SPLINE_SURFACE_POLES),
-                u64::MAX,
-            ));
+        let Some(pole_count) = u_count
+            .checked_mul(v_count)
+            .filter(|count| *count <= MAX_SPLINE_SURFACE_POLES)
+        else {
+            super::push_geometry_loss(
+                &mut losses,
+                entry,
+                format_args!("spline-surface pole count exceeds {MAX_SPLINE_SURFACE_POLES}"),
+            );
+            continue;
         };
-        if pole_count > MAX_SPLINE_SURFACE_POLES {
-            return Err(refuse_local_limit(
-                "iges_spline_surface_poles",
-                cadmpeg_core::decode::u64_from_index(MAX_SPLINE_SURFACE_POLES),
-                cadmpeg_core::decode::u64_from_index(pole_count),
-            ));
-        }
         let Some(u_breakpoint_count) = u_segments.checked_add(1) else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "u-breakpoint count overflows"),
-            )?;
+            );
             continue;
         };
         let Some(v_breakpoint_count) = v_segments.checked_add(1) else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "v-breakpoint count overflows"),
-            )?;
+            );
             continue;
         };
-        let Some(u_breakpoints) = ctx.collect_options(
-            (5..5 + u_breakpoint_count).map(|index| record.number(index).and_then(FiniteReal::new)),
-            "iges spline surface u breakpoints",
-        )?
+        let Some(u_breakpoints) = (5..5 + u_breakpoint_count)
+            .map(|index| record.number(index).and_then(FiniteReal::new))
+            .collect::<Option<Vec<_>>>()
         else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "u-breakpoints are truncated or non-finite"),
-            )?;
+            );
             continue;
         };
         let v_breakpoint_start = 5 + u_breakpoint_count;
-        let Some(v_breakpoints) = ctx.collect_options(
-            (v_breakpoint_start..v_breakpoint_start + v_breakpoint_count)
-                .map(|index| record.number(index).and_then(FiniteReal::new)),
-            "iges spline surface v breakpoints",
-        )?
+        let Some(v_breakpoints) = (v_breakpoint_start..v_breakpoint_start + v_breakpoint_count)
+            .map(|index| record.number(index).and_then(FiniteReal::new))
+            .collect::<Option<Vec<_>>>()
         else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "v-breakpoints are truncated or non-finite"),
-            )?;
+            );
             continue;
         };
         if u_breakpoints
@@ -870,11 +766,10 @@ pub(super) fn project(
                 .any(|pair| pair[0].get() >= pair[1].get())
         {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "spline-surface breakpoints are not increasing"),
-            )?;
+            );
             continue;
         }
         let transform = match resolve_transform(
@@ -889,18 +784,17 @@ pub(super) fn project(
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
-                super::push_geometry_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
+                super::push_geometry_loss(&mut losses, entry, format_args!("{message}"));
                 continue;
             }
         };
         let coefficient_start = v_breakpoint_start + v_breakpoint_count;
         let Some(block_columns) = v_segments.checked_add(1) else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "spline-surface block stride overflows"),
-            )?;
+            );
             continue;
         };
         let Some(total_block_count) = u_segments
@@ -908,11 +802,10 @@ pub(super) fn project(
             .and_then(|rows| rows.checked_mul(block_columns))
         else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "spline-surface placeholder grid overflows"),
-            )?;
+            );
             continue;
         };
         let Some(required_parameter_count) = total_block_count
@@ -920,11 +813,10 @@ pub(super) fn project(
             .and_then(|count| coefficient_start.checked_add(count))
         else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "spline-surface parameter count overflows"),
-            )?;
+            );
             continue;
         };
         let placeholders_truncated = record.parameter_end() < required_parameter_count;
@@ -948,7 +840,6 @@ pub(super) fn project(
                 };
                 let mut values = [0.0; 48];
                 for (offset, value) in values.iter_mut().enumerate() {
-                    ctx.charge_work(1, "iges spline surface patch coefficients")?;
                     let Some(coefficient) = record
                         .number(block_start + offset)
                         .and_then(FiniteReal::new)
@@ -991,23 +882,22 @@ pub(super) fn project(
         }
         if !valid {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!(
                     "{}",
                     "spline-surface patch indexing or continuity is invalid"
                 ),
-            )?;
+            );
             continue;
         }
-        let mut u_knots = ctx.collection_vec(u_segments * 3 + 5, "iges spline surface u knots")?;
+        let mut u_knots = Vec::new();
         u_knots.extend([u_breakpoints[0].get(); 4]);
         for breakpoint in &u_breakpoints[1..u_segments] {
             u_knots.extend([breakpoint.get(); 3]);
         }
         u_knots.extend([u_breakpoints[u_segments].get(); 4]);
-        let mut v_knots = ctx.collection_vec(v_segments * 3 + 5, "iges spline surface v knots")?;
+        let mut v_knots = Vec::new();
         v_knots.extend([v_breakpoints[0].get(); 4]);
         for breakpoint in &v_breakpoints[1..v_segments] {
             v_knots.extend([breakpoint.get(); 3]);
@@ -1015,17 +905,15 @@ pub(super) fn project(
         v_knots.extend([v_breakpoints[v_segments].get(); 4]);
         let (Ok(_u_count), Ok(_v_count)) = (u32::try_from(u_count), u32::try_from(v_count)) else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "spline-surface pole dimensions exceed u32"),
-            )?;
+            );
             continue;
         };
-        let mut rows = ctx.collection_vec(u_count, "iges spline surface pole rows")?;
+        let mut rows = Vec::new();
         'rows: for points in grid.chunks(v_count) {
-            let mut row =
-                ctx.collection_vec(points.len(), "iges spline surface pole row controls")?;
+            let mut row = Vec::new();
             for point in points {
                 let Some(point) = point else {
                     valid = false;
@@ -1037,11 +925,10 @@ pub(super) fn project(
         }
         if !valid {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "spline-surface patch grid is incomplete"),
-            )?;
+            );
             continue;
         }
         let construction = match KnotVector::new(ctx, u_knots)? {
@@ -1061,48 +948,37 @@ pub(super) fn project(
             Ok(nurbs) => nurbs,
             Err(error) => {
                 super::push_geometry_loss(
-                    ctx,
                     &mut losses,
                     entry,
                     format_args!(
                         "converted spline-surface cardinalities are inconsistent: {error}"
                     ),
-                )?;
+                );
                 continue;
             }
         };
         sequences.record_surface(
-            &crate::ids::surface_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)?,
+            &crate::ids::surface(&crate::ids::Stem::directory(entry.sequence)),
             entry.sequence,
-            ctx,
-        )?;
-        ctx.reserve_vec(
-            &mut ir.model.surfaces,
-            1,
-            "iges spline neutral surface slots",
-        )?;
+        );
+
         ctx.charge_entities(1, "iges_geometry_splines")?;
         ir.model.surfaces.push(Surface {
-            id: crate::ids::surface_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)?,
+            id: crate::ids::surface(&crate::ids::Stem::directory(entry.sequence)),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)),
-            source_object: Some(source_object(entry, ctx)?),
+            source_object: Some(source_object(entry)?),
         });
         if placeholders_truncated {
-            super::push_attributed_loss(ctx, &mut losses, entry, IgesLossCode::SplineClaimRecovered,
-                format_args!("unused trailing spline-surface placeholders are missing; retained the coefficient-defined patches"))?;
+            super::push_attributed_loss(&mut losses, entry, IgesLossCode::SplineClaimRecovered,
+                format_args!("unused trailing spline-surface placeholders are missing; retained the coefficient-defined patches"));
         }
         super::push_attributed_loss(
-            ctx,
             &mut losses,
             entry,
             IgesLossCode::SplineHeaderNotTransferred,
             format_args!("Type 114 curve and patch types are retained only in native parameters"),
-        )?;
-        ctx.insert_btree_set(
-            &mut decoded,
-            entry.sequence,
-            "iges splines decoded sequences",
-        )?;
+        );
+        decoded.insert(entry.sequence);
     }
 
     Ok(WireProjectionOutcome {

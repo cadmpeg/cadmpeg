@@ -6,64 +6,6 @@ use crate::{
 };
 
 #[test]
-fn admitted_nurbs_curve_mapping_refuses_knot_and_pole_limits() {
-    use crate::geometry::nurbs::NurbsCurve;
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    let curve = NurbsCurve::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
-        1,
-        vec![0.0, 0.0, 1.0, 1.0],
-        vec![Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0)],
-        Some(vec![1.0, 0.5]),
-        false,
-    )
-    .expect("fixture constructor admission")
-    .expect("rational curve");
-    for limit in [0, 4] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-        let error = curve
-            .map_control_points(&ctx, "mapped NURBS fixture", |point| {
-                Point3::new(point.x + 2.0, point.y, point.z)
-            })
-            .expect_err("knot or pole limit refuses the map");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-            if resource.operation == "mapped NURBS fixture"
-                && resource.dimension == ResourceDimension::CollectionItems)
-        );
-    }
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::service();
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-    let mapped = curve
-        .map_control_points(&ctx, "mapped NURBS fixture", |point| {
-            Point3::new(point.x + 2.0, point.y, point.z)
-        })
-        .expect("mapping resources")
-        .expect("finite mapped curve");
-    assert_eq!(mapped.knots(), curve.knots());
-    assert_eq!(mapped.weights(), curve.weights());
-    assert_eq!(
-        mapped.control_points(),
-        vec![Point3::new(3.0, 2.0, 3.0), Point3::new(6.0, 5.0, 6.0),]
-    );
-    assert!(curve
-        .map_control_points(&ctx, "mapped NURBS fixture", |_| Point3::new(
-            f64::INFINITY,
-            0.0,
-            0.0
-        ),)
-        .expect("mapping resources")
-        .is_none());
-    assert_eq!(curve.control_points()[0], Point3::new(1.0, 2.0, 3.0));
-}
-
-#[test]
 fn admitted_nurbs_surface_grid_preserves_constructor_wire_and_errors() {
     use crate::features::FinitePoint3;
     use crate::geometry::nurbs::{KnotVector, NurbsPoleGrid, NurbsSurface, NurbsSurfaceAxis};
@@ -148,52 +90,6 @@ fn admitted_nurbs_surface_grid_preserves_constructor_wire_and_errors() {
     assert_eq!(
         ragged.to_string(),
         "control_points row must contain 2 values, found 1"
-    );
-}
-
-#[test]
-fn knot_copy_refuses_collection_limit_before_allocation() {
-    let knots = super::KnotVector::new(
-        &cadmpeg_test_support::service_decode_context(),
-        vec![0.0, 0.0, 1.0, 1.0],
-    )
-    .expect("fixture knot admission")
-    .expect("valid knots");
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 3;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty input");
-    let error = knots
-        .try_clone_for_decode(&ctx, "knot copy")
-        .expect_err("limit");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-            && limit.operation == "knot copy")
-    );
-}
-
-#[test]
-fn knot_copy_refuses_retained_limit_before_allocation() {
-    let knots = super::KnotVector::new(
-        &cadmpeg_test_support::service_decode_context(),
-        vec![0.0, 0.0, 1.0, 1.0],
-    )
-    .expect("fixture knot admission")
-    .expect("valid knots");
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = 31;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty input");
-    let error = knots
-        .try_clone_for_decode(&ctx, "knot copy")
-        .expect_err("limit");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-            && limit.operation == "knot copy")
     );
 }
 
@@ -300,42 +196,6 @@ fn admitted_nurbs_surface_keeps_outer_and_inner_pole_storage() {
         inner_storage
     );
     assert_eq!(rebuilt, original);
-}
-
-#[test]
-fn nurbs_curve_copy_refuses_knot_and_pole_limits() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    let curve = curve();
-    let knot_count = u64::try_from(curve.knots().len()).unwrap();
-    let pole_count = u64::try_from(curve.pole_count()).unwrap();
-    for (dimension, limit) in [
-        (ResourceDimension::CollectionItems, knot_count - 1),
-        (
-            ResourceDimension::CollectionItems,
-            knot_count + pole_count - 1,
-        ),
-        (ResourceDimension::RetainedBytes, knot_count * 8 - 1),
-    ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        match dimension {
-            ResourceDimension::CollectionItems => policy.limits.max_collection_items = limit,
-            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = limit,
-            _ => panic!("unexpected test dimension"),
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty test input fits input limit");
-        let error = curve
-            .try_clone_for_decode(&ctx, "copy NURBS curve")
-            .expect_err("copy exceeds resource limit");
-        let CodecError::ResourceLimit(refusal) = error else {
-            panic!("expected resource refusal, got {error:?}");
-        };
-        assert_eq!(refusal.dimension, dimension);
-        assert_eq!(refusal.operation, "copy NURBS curve");
-    }
 }
 
 #[test]
@@ -1507,61 +1367,6 @@ fn context_free_pole_reconstruction_does_not_enter_a_decode_constructor() {
 }
 
 #[test]
-fn weighted_pole_pairing_admits_each_slot_and_visit_before_weight() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-    use std::cell::Cell;
-
-    for (dimension, cap, completed) in [
-        (ResourceDimension::RetainedBytes, 0, 0),
-        (ResourceDimension::CollectionItems, 0, 0),
-        (ResourceDimension::MaterializedBytes, 0, 0),
-        (ResourceDimension::WorkUnits, 0, 0),
-        (ResourceDimension::WorkUnits, 1, 1),
-    ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        match dimension {
-            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = cap,
-            ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
-            ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = cap,
-            ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
-            _ => panic!("fixture dimension"),
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let mut storage = ctx.reserve_scoped(0, "test pairing scope").expect("scope");
-        let visits = Cell::new(0);
-        let run = || {
-            super::weighted_poles(
-                vec![3_u32, 7],
-                vec![1.0, 2.0],
-                |output| ctx.reserve_vec(output, 1, "test weighted pairing"),
-                || ctx.charge_work(1, "test weighted pairing"),
-                |_, value| {
-                    visits.set(visits.get() + 1);
-                    Ok::<_, CodecError>(crate::scalar::NonZeroReal::new(value).expect("weight"))
-                },
-            )
-        };
-        let result = if dimension == ResourceDimension::MaterializedBytes {
-            storage.with_storage(run)
-        } else {
-            run()
-        };
-        let Err(CodecError::ResourceLimit(limit)) = result else {
-            panic!("pair admission must refuse before conversion");
-        };
-        assert_eq!(limit.dimension, dimension);
-        assert_eq!(limit.operation, "test weighted pairing");
-        assert_eq!(visits.get(), completed);
-        drop(storage);
-        assert!(
-            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
-        );
-    }
-}
-
-#[test]
 fn standard_weighted_pole_pairing_preserves_order_and_first_refusal() {
     use super::{NurbsError, NurbsPoles3, WeightedPole3};
     use crate::scalar::{FiniteReal, NonZeroReal};
@@ -1627,160 +1432,6 @@ fn standard_weighted_pole_pairing_preserves_order_and_first_refusal() {
         serde_json::from_value::<NurbsPoles3<u32>>(wire).expect("standard reconstruction"),
         expected
     );
-}
-
-#[test]
-fn raw_lane_constructors_share_caller_work_and_keep_refusal() {
-    use crate::features::FinitePoint3;
-    use crate::geometry::nurbs::{NurbsCurve, NurbsSurfaceAxis, NurbsSurfaceLanes};
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 8;
-    policy.limits.max_retained_bytes = 0;
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    let point = FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).expect("finite pole");
-    let knots = vec![0.0, 0.0, 1.0, 1.0];
-    let original_knots = knots.as_ptr();
-    let curve = NurbsCurve::from_lanes(&ctx, 1, knots, vec![point; 2], None, false)
-        .expect("both knot scans fit")
-        .expect("valid curve");
-    assert_eq!(curve.knots().as_ptr(), original_knots);
-    let result = NurbsSurface::from_lanes(
-        &ctx,
-        NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-        NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-        NurbsSurfaceLanes::new(vec![vec![point; 2]; 2], None),
-        false,
-    );
-    let Err(CodecError::ResourceLimit(limit)) = result else {
-        panic!("surface construction must use the exhausted caller account");
-    };
-    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-    assert_eq!(limit.operation, "IR NURBS grid row shape");
-    assert_eq!(limit.used, 8);
-    assert_eq!(limit.additional, 1);
-    assert!(
-        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
-    );
-    assert_eq!(curve.knots().as_slice(), &[0.0, 0.0, 1.0, 1.0]);
-}
-
-#[test]
-fn shared_pole_conversion_refuses_before_visits_and_keeps_order() {
-    use super::{NurbsPoleGrid, NurbsPoles3, PoleValue, WeightedPole3};
-    use crate::features::FinitePoint3;
-    use crate::scalar::NonZeroReal;
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-    use std::cell::Cell;
-
-    #[derive(Clone, Copy)]
-    struct Pole<'a>(&'a Cell<usize>, Point3);
-    impl PoleValue<FinitePoint3> for Pole<'_> {
-        fn admit(self) -> Option<FinitePoint3> {
-            self.0.set(self.0.get() + 1);
-            FinitePoint3::new(self.1)
-        }
-    }
-
-    for shape in 0..4 {
-        let grid = shape >= 2;
-        let mut cases = vec![
-            (ResourceDimension::RetainedBytes, 0, 0),
-            (ResourceDimension::CollectionItems, 0, 0),
-            (ResourceDimension::MaterializedBytes, 0, 0),
-            (ResourceDimension::WorkUnits, 0, 0),
-            (ResourceDimension::WorkUnits, 1, usize::from(!grid)),
-        ];
-        if grid {
-            cases.extend([
-                (ResourceDimension::WorkUnits, 2, 1),
-                (ResourceDimension::WorkUnits, 3, 2),
-                (ResourceDimension::WorkUnits, 4, 2),
-                (ResourceDimension::WorkUnits, 5, 3),
-            ]);
-        }
-        for (dimension, cap, completed) in cases {
-            let visits = Cell::new(0);
-            let points = vec![Pole(&visits, Point3::new(2.0, 3.0, 5.0)); 2];
-            let weighted = || {
-                points
-                    .iter()
-                    .copied()
-                    .map(|point| WeightedPole3 {
-                        point,
-                        weight: NonZeroReal::new(3.0).expect("weight"),
-                    })
-                    .collect::<Vec<_>>()
-            };
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            match dimension {
-                ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = cap,
-                ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
-                ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = cap,
-                ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
-                _ => unreachable!(),
-            }
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-            let mut storage = ctx
-                .reserve_scoped(0, "pole conversion scope")
-                .expect("empty scope");
-            let convert = || match shape {
-                0 => super::map_curve_poles(
-                    &ctx,
-                    NurbsPoles3::Polynomial {
-                        points: points.clone(),
-                    },
-                )
-                .map(|_| ()),
-                1 => super::map_curve_poles(&ctx, NurbsPoles3::Rational { points: weighted() })
-                    .map(|_| ()),
-                2 => super::map_surface_poles(
-                    &ctx,
-                    NurbsPoleGrid::Polynomial {
-                        rows: vec![points.clone(); 2],
-                    },
-                )
-                .map(|_| ()),
-                3 => super::map_surface_poles(
-                    &ctx,
-                    NurbsPoleGrid::Rational {
-                        rows: vec![weighted(); 2],
-                    },
-                )
-                .map(|_| ()),
-                _ => unreachable!(),
-            };
-            let result = if dimension == ResourceDimension::MaterializedBytes {
-                storage.with_storage(convert)
-            } else {
-                convert()
-            };
-            let Err(super::admitted::ConstructionError::Resource(CodecError::ResourceLimit(limit))) =
-                result
-            else {
-                panic!("storage and work refusal must precede conversion");
-            };
-            assert_eq!(visits.get(), completed);
-            assert_eq!(limit.dimension, dimension);
-            let operation =
-                if grid && (dimension != ResourceDimension::WorkUnits || cap == 0 || cap == 3) {
-                    "IR NURBS admitted grid rows"
-                } else {
-                    "IR NURBS admitted poles"
-                };
-            assert_eq!(limit.operation, operation);
-            drop(storage);
-            assert!(
-                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
-            );
-        }
-    }
 }
 
 #[test]
@@ -1853,127 +1504,38 @@ fn admitted_pole_conversion_keeps_all_four_owned_storage_shapes() {
 }
 
 #[test]
-fn surface_shape_visits_refuse_before_each_row_and_keep_semantic_order() {
-    use super::{NurbsError, NurbsPoleGrid, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
-    use crate::features::FinitePoint3;
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    let point = FinitePoint3::new(Point3::new(2.0, 3.0, 5.0)).expect("point");
-    for ragged in [false, true] {
-        let rows = vec![vec![point; 2], vec![point; if ragged { 1 } else { 2 }]];
-        for cap in [0, 1] {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-            let result = super::require_surface_shape(
-                &ctx,
-                1,
-                4,
-                1,
-                4,
-                &NurbsPoleGrid::Polynomial { rows: rows.clone() },
-            );
-            let Err(super::admitted::ConstructionError::Resource(CodecError::ResourceLimit(limit))) =
-                result
-            else {
-                panic!("each row width needs caller work before comparison");
-            };
-            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-            assert_eq!(limit.operation, "IR NURBS grid row shape");
-            assert_eq!(limit.used, cap);
-            assert_eq!(limit.additional, 1);
-            assert!(
-                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
-            );
-        }
-        let standard = super::require_surface_shape(
-            &super::StandardNurbsAdmission,
-            1,
-            4,
-            1,
-            4,
-            &NurbsPoleGrid::Polynomial { rows: rows.clone() },
-        );
-        let admitted = NurbsSurface::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
-            NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-            NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-            NurbsSurfaceLanes::new(rows, None),
-            false,
-        )
-        .expect("admission")
-        .map(|_| ());
-        assert_eq!(admitted, standard);
-        if ragged {
-            assert_eq!(
-                standard,
-                Err(NurbsError::Structure(
-                    "control_points row must contain 2 values, found 1".to_owned()
-                ))
-            );
-        } else {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = 0;
-            policy.limits.max_collection_items = 0;
-            policy.limits.max_work_units = 2;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-            assert!(super::require_surface_shape(
-                &ctx,
-                1,
-                4,
-                1,
-                4,
-                &NurbsPoleGrid::Polynomial {
-                    rows: vec![vec![point; 2]; 2]
-                }
-            )
-            .is_ok());
-            assert!(ctx.finish_session().is_ok());
-        }
-    }
-}
-
-#[test]
-fn surface_pairing_rows_refuse_first_and_later_visits() {
-    use super::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
-    use crate::features::FinitePoint3;
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    let point = FinitePoint3::new(Point3::new(2.0, 3.0, 5.0)).expect("point");
-    for (cap, operation) in [
-        (0, "IR NURBS paired grid rows"),
-        (1, "IR NURBS paired poles"),
-        (3, "IR NURBS paired grid rows"),
-        (4, "IR NURBS paired poles"),
-        (6, "IR NURBS grid row shape"),
-        (7, "IR NURBS grid row shape"),
-    ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let result = NurbsSurface::from_lanes(
-            &ctx,
-            NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-            NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-            NurbsSurfaceLanes::new(vec![vec![point; 2]; 2], Some(vec![vec![3.0; 2]; 2])),
-            false,
-        );
-        let Err(CodecError::ResourceLimit(limit)) = result else {
-            panic!("pair and shape visits must use the same caller account");
-        };
-        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-        assert_eq!(limit.operation, operation);
-        assert_eq!(limit.used, cap);
-        assert_eq!(limit.additional, 1);
-        assert!(
-            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
-        );
-    }
+fn nurbs_curve_mapping_maps_poles_and_keeps_knots_and_weights() {
+    use crate::geometry::nurbs::NurbsCurve;
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let curve = NurbsCurve::from_lanes(
+        &ctx,
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0)],
+        Some(vec![1.0, 0.5]),
+        false,
+    )
+    .expect("fixture constructor admission")
+    .expect("rational curve");
+    let mapped = curve
+        .map_control_points(&ctx, "mapped NURBS fixture", |point| {
+            Point3::new(point.x + 2.0, point.y, point.z)
+        })
+        .expect("mapping admission")
+        .expect("finite mapped curve");
+    assert_eq!(mapped.knots(), curve.knots());
+    assert_eq!(mapped.weights(), curve.weights());
+    assert_eq!(
+        mapped.control_points(),
+        vec![Point3::new(3.0, 2.0, 3.0), Point3::new(6.0, 5.0, 6.0)]
+    );
+    assert!(curve
+        .map_control_points(&ctx, "mapped NURBS fixture", |_| {
+            Point3::new(f64::INFINITY, 0.0, 0.0)
+        })
+        .expect("mapping admission")
+        .is_none());
+    assert_eq!(curve.control_points()[0], Point3::new(1.0, 2.0, 3.0));
 }
 
 mod bspline;
@@ -1981,8 +1543,6 @@ mod bspline;
 mod pairing;
 
 mod construction;
-
-mod transposition;
 
 mod knot_edits;
 

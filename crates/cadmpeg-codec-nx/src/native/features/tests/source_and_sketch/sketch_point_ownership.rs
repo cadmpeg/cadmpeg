@@ -18,11 +18,11 @@ use crate::om::scalar_pair::{PairPosition, SketchPairForm};
 fn sketch_point_groups(
     points: &[FeatureSketchPoint],
 ) -> Vec<crate::native::features::FeatureSketchPointGroup> {
-    crate::test_support::with_decode_context(|ctx| feature_sketch_point_groups(ctx, points))
-        .expect("sketch point groups")
+    feature_sketch_point_groups(points)
 }
 
-fn sketch_group_limit(dimension: cadmpeg_core::decode::ResourceDimension) {
+#[test]
+fn sketch_point_group_route_admits_one_group() {
     let point = FeatureSketchPoint {
         id: "nx:feature-history:sketch-point#0-0".into(),
         operation_label: "operation".into(),
@@ -32,49 +32,6 @@ fn sketch_group_limit(dimension: cadmpeg_core::decode::ResourceDimension) {
         scalar_fields: ["scalar-a".into(), "scalar-b".into()],
     };
     assert_eq!(sketch_point_groups(std::slice::from_ref(&point)).len(), 1);
-
-    let adjust: fn(&mut cadmpeg_core::decode::DecodePolicy) = match dimension {
-        cadmpeg_core::decode::ResourceDimension::CollectionItems => |policy| {
-            policy.limits.max_collection_items = 0;
-        },
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes => |policy| {
-            policy.limits.max_retained_bytes = 0;
-        },
-        cadmpeg_core::decode::ResourceDimension::MaterializedBytes => |policy| {
-            policy.limits.max_materialized_bytes = 0;
-        },
-        cadmpeg_core::decode::ResourceDimension::WorkUnits => |policy| {
-            policy.limits.max_work_units = 0;
-        },
-        _ => panic!("unsupported sketch group test dimension"),
-    };
-    crate::test_support::with_decode_context_over(&[], adjust, |ctx| {
-        let error =
-            feature_sketch_point_groups(ctx, &[point]).expect_err("sketch group resource limit");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == dimension)
-        );
-    });
-}
-
-#[test]
-fn sketch_point_group_route_refuses_collection_limit() {
-    sketch_group_limit(cadmpeg_core::decode::ResourceDimension::CollectionItems);
-}
-
-#[test]
-fn sketch_point_group_route_refuses_retained_limit() {
-    sketch_group_limit(cadmpeg_core::decode::ResourceDimension::RetainedBytes);
-}
-
-#[test]
-fn sketch_point_group_route_refuses_scoped_limit() {
-    sketch_group_limit(cadmpeg_core::decode::ResourceDimension::MaterializedBytes);
-}
-
-#[test]
-fn sketch_point_group_route_refuses_work_limit() {
-    sketch_group_limit(cadmpeg_core::decode::ResourceDimension::WorkUnits);
 }
 
 #[test]
@@ -135,16 +92,10 @@ fn sketch_named_records_own_fixed_pairs_within_their_intervals() {
         ..pair.clone()
     };
     let pairs = [pair, auxiliary_pair];
-    let records = crate::test_support::with_decode_context(|ctx| {
-        feature_sketch_payload_named_records(ctx, &[payload], &names, &[], &pairs, &[])
-    })
-    .expect("named sketch payload records");
+    let records = feature_sketch_payload_named_records(&[payload], &names, &[], &pairs, &[]);
     assert_eq!(records[0].fixed_pairs, ["pair", "auxiliary-pair"]);
     assert!(records[1].fixed_pairs.is_empty());
-    let points = crate::test_support::with_decode_context(|ctx| {
-        feature_sketch_fixed_points(ctx, &records, &names, &pairs)
-    })
-    .unwrap();
+    let points = feature_sketch_fixed_points(&records, &names, &pairs);
     assert_eq!(points.len(), 1);
     assert_eq!(points[0].name, "Point1");
     assert_eq!(
@@ -188,9 +139,8 @@ fn sketch_named_point_block_uses_require_exact_shared_block_identity() {
             data_block: block.map(str::to_string),
             source_offset: 200 + u64::from(ordinal),
         };
-    let uses = crate::test_support::with_decode_context(|ctx| {
+    let uses = {
         feature_sketch_named_point_block_uses(
-            ctx,
             &[
                 reference("miss", 0, 2, Some("block-9")),
                 reference("hit", 1, 2, Some("block-11")),
@@ -198,7 +148,7 @@ fn sketch_named_point_block_uses_require_exact_shared_block_identity() {
             ],
             &[point],
         )
-    })
+    }
     .unwrap();
     assert_eq!(uses.len(), 1);
     assert_eq!(uses[0].sketch_reference, "hit");
@@ -252,13 +202,9 @@ fn sketch_preceding_named_point_uses_require_a_complete_unique_consecutive_lane(
             "nx:om-data-blocks-2:block#11",
         ],
     );
-    let uses = crate::test_support::with_decode_context(|ctx| {
-        feature_sketch_preceding_named_point_uses(
-            ctx,
-            &references,
-            std::slice::from_ref(&preceding),
-        )
-    })
+    let uses = {
+        feature_sketch_preceding_named_point_uses(&references, std::slice::from_ref(&preceding))
+    }
     .unwrap();
     assert_eq!(uses.len(), 1);
     assert_eq!(uses[0].first_sketch_reference, references[0].id);
@@ -269,9 +215,9 @@ fn sketch_preceding_named_point_uses_require_a_complete_unique_consecutive_lane(
         "nx:offset-store:named-point#2-11",
         &["nx:om-data-blocks-2:block#11"],
     );
-    assert!(crate::test_support::with_decode_context(|ctx| {
-        feature_sketch_preceding_named_point_uses(ctx, &references, &[preceding.clone(), ambiguous])
-    })
+    assert!({
+        feature_sketch_preceding_named_point_uses(&references, &[preceding.clone(), ambiguous])
+    }
     .unwrap()
     .is_empty());
     let gap = point(
@@ -282,33 +228,25 @@ fn sketch_preceding_named_point_uses_require_a_complete_unique_consecutive_lane(
         "nx:offset-store:named-point#3-11",
         &["nx:om-data-blocks-3:block#11"],
     );
-    assert!(crate::test_support::with_decode_context(|ctx| {
-        feature_sketch_preceding_named_point_uses(ctx, &references, &[gap, other_store])
-    })
-    .unwrap()
-    .is_empty());
+    assert!(
+        feature_sketch_preceding_named_point_uses(&references, &[gap, other_store])
+            .unwrap()
+            .is_empty()
+    );
 
     let unresolved = [references[0].clone(), reference(1, 2, None)];
-    assert!(crate::test_support::with_decode_context(|ctx| {
-        feature_sketch_preceding_named_point_uses(
-            ctx,
-            &unresolved,
-            std::slice::from_ref(&preceding),
-        )
-    })
+    assert!({
+        feature_sketch_preceding_named_point_uses(&unresolved, std::slice::from_ref(&preceding))
+    }
     .unwrap()
     .is_empty());
     let noncontiguous = [
         references[0].clone(),
         reference(2, 3, Some("nx:om-data-blocks-2:block#13")),
     ];
-    assert!(crate::test_support::with_decode_context(|ctx| {
-        feature_sketch_preceding_named_point_uses(
-            ctx,
-            &noncontiguous,
-            std::slice::from_ref(&preceding),
-        )
-    })
+    assert!({
+        feature_sketch_preceding_named_point_uses(&noncontiguous, std::slice::from_ref(&preceding))
+    }
     .unwrap()
     .is_empty());
     let mut bad_terminal = serde_json::to_value(&references[1]).unwrap();
@@ -362,15 +300,13 @@ fn sketch_point_uses_retain_identical_witnesses_and_reject_conflicts() {
     second_block_use.source_offset = 301;
 
     let groups = sketch_point_groups(std::slice::from_ref(&point));
-    let uses = crate::test_support::with_decode_context(|ctx| {
+    let uses = {
         feature_sketch_point_uses(
-            ctx,
             &groups,
             std::slice::from_ref(&named_point),
             &[second_block_use.clone(), block_use.clone()],
         )
-    })
-    .unwrap();
+    };
     assert_eq!(uses.len(), 1);
     assert_eq!(uses[0].sketch_point_group, groups[0].id);
     assert_eq!(uses[0].named_point, named_point.id);
@@ -398,40 +334,27 @@ fn sketch_point_uses_retain_identical_witnesses_and_reject_conflicts() {
         cadmpeg_ir::units::FiniteVector::new([1.0, f64::from_bits(2.0_f64.to_bits() + 1)])
             .expect("finite coordinates");
     let different_groups = sketch_point_groups(std::slice::from_ref(&different));
-    assert!(
-        crate::test_support::with_decode_context(|ctx| feature_sketch_point_uses(
-            ctx,
-            &different_groups,
-            std::slice::from_ref(&named_point),
-            std::slice::from_ref(&block_use),
-        ))
-        .unwrap()
-        .is_empty()
-    );
+    assert!(feature_sketch_point_uses(
+        &different_groups,
+        std::slice::from_ref(&named_point),
+        std::slice::from_ref(&block_use),
+    )
+    .is_empty());
     let mut duplicate = point.clone();
     duplicate.id = "payload-point-2".to_string();
     let duplicate_groups = sketch_point_groups(&[point.clone(), duplicate.clone()]);
     assert_eq!(duplicate_groups[0].points, [point.id.clone(), duplicate.id]);
-    let uses = crate::test_support::with_decode_context(|ctx| {
+    let uses = {
         feature_sketch_point_uses(
-            ctx,
             &duplicate_groups,
             std::slice::from_ref(&named_point),
             std::slice::from_ref(&block_use),
         )
-    })
-    .unwrap();
+    };
     assert_eq!(uses[0].sketch_point_group, duplicate_groups[0].id);
     let conflicting_groups = sketch_point_groups(&[point, different]);
     assert!(conflicting_groups.is_empty());
     assert!(
-        crate::test_support::with_decode_context(|ctx| feature_sketch_point_uses(
-            ctx,
-            &conflicting_groups,
-            &[named_point],
-            &[block_use]
-        ))
-        .unwrap()
-        .is_empty()
+        feature_sketch_point_uses(&conflicting_groups, &[named_point], &[block_use]).is_empty()
     );
 }

@@ -1002,7 +1002,7 @@ fn patched_retained_metadata(
         cadmpeg_ir::Exactness::ByteExact,
     )?;
     let mut sections = vec![("SWObjects".to_owned(), payload)];
-    crate::writer::patch_retained_swobjects_metadata(&ctx, &ir, &annotations, &mut sections, 1.0)?;
+    crate::writer::patch_retained_swobjects_metadata(&ir, &annotations, &mut sections, 1.0)?;
     Ok(sections.remove(0).1)
 }
 

@@ -40,37 +40,9 @@ pub(crate) fn extract_streams(bytes: &[u8]) -> Vec<crate::parasolid::Stream> {
         |ctx| {
             let root = cadmpeg_core::decode::View::over_retained(bytes);
             let container =
-                crate::container::scan_bytes(ctx, bytes.to_vec()).expect("test SPLMSSTR container");
+                crate::container::scan_bytes(bytes.to_vec()).expect("test SPLMSSTR container");
             crate::parasolid::extract_streams(ctx, root, &container)
                 .expect("test Parasolid streams")
         },
     )
-}
-
-/// Admit earlier collection storage, then refuse the named operation.
-pub(crate) fn resource_refusal_at<T>(
-    root: &[u8],
-    dimension: cadmpeg_core::decode::ResourceDimension,
-    operation: &str,
-    decode: impl Fn(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<T, cadmpeg_core::CodecError>,
-) -> cadmpeg_core::CodecError {
-    use cadmpeg_core::decode::ResourceDimension;
-    cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
-        with_decode_context_over(
-            root,
-            |policy| match dimension {
-                ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = cap,
-                ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = cap,
-                ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
-                _ => panic!("unsupported resource test dimension"),
-            },
-            |ctx| {
-                let result = decode(ctx);
-                if let Err(cadmpeg_core::CodecError::ResourceLimit(resource)) = &result {
-                    assert_eq!(ctx.resource_refusal().as_ref(), Some(resource));
-                }
-                result
-            },
-        )
-    })
 }

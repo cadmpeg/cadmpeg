@@ -4,9 +4,8 @@ use crate::native::features::feature_datum_csys_constructions;
 use crate::test_support::test_om::composed_feature_history_payload_over_sort_scratch;
 use crate::test_support::test_prt::prt_with_named_payloads;
 
-fn datum_csys_refusal(
-    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
-) -> cadmpeg_core::CodecError {
+#[test]
+fn datum_csys_admits_fixture() {
     let mut frame = vec![
         0x13, 0x00, 0x00, 0x01, 0x00, 0x00, 0x01, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00,
     ];
@@ -19,64 +18,15 @@ fn datum_csys_refusal(
         &[(&[3, 0xff, 0xff, 0xff], "DATUM_CSYS", frame)],
         &store,
     );
-    let container = crate::test_support::with_decode_context(|ctx| {
-        crate::container::scan_bytes(
-            ctx,
-            prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]),
-        )
-    })
+    let container = {
+        crate::container::scan_bytes(prt_with_named_payloads(&[(
+            "/Root/UG_PART/UG_PART",
+            payload,
+        )]))
+    }
     .expect("synthetic datum CSYS container");
-    let admitted = crate::test_support::with_decode_context(|ctx| {
-        feature_datum_csys_constructions(ctx, &container)
-    })
-    .expect("admitted datum CSYS constructions");
+    let admitted =
+        feature_datum_csys_constructions(&container).expect("admitted datum CSYS constructions");
     assert_eq!(admitted.len(), 1);
     assert_eq!(admitted[0].frame.members().len(), 8);
-
-    crate::test_support::with_decode_context_over(
-        &[],
-        |policy| {
-            configure(policy);
-        },
-        |ctx| {
-            feature_datum_csys_constructions(ctx, &container)
-                .expect_err("datum CSYS construction resource limit")
-        },
-    )
-}
-
-#[test]
-fn datum_csys_construction_refuses_collection_limit() {
-    let error = datum_csys_refusal(|policy| policy.limits.max_collection_items = 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
-    );
-}
-
-#[test]
-fn datum_csys_construction_refuses_retained_limit() {
-    let error = datum_csys_refusal(|policy| policy.limits.max_retained_bytes = 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
-    );
-}
-
-#[test]
-fn datum_csys_construction_refuses_scoped_limit() {
-    let error = datum_csys_refusal(|policy| policy.limits.max_materialized_bytes = 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
-    );
-}
-
-#[test]
-fn datum_csys_construction_refuses_work_limit() {
-    let error = datum_csys_refusal(|policy| policy.limits.max_work_units = 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
-    );
 }

@@ -1,9 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Native object identities coupled to their persisted names.
 
-use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_core::CodecError;
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ObjectIdentity {
     id: String,
@@ -11,16 +8,15 @@ pub(crate) struct ObjectIdentity {
 }
 
 impl ObjectIdentity {
-    pub(crate) fn from_name(ctx: &DecodeContext<'_>, name: String) -> Result<Self, CodecError> {
-        let id = super::native_id_charged(ctx, "object", &name)?;
-        Ok(Self { id, name })
+    pub(crate) fn from_name(name: String) -> Self {
+        let id = super::native_id("object", &name);
+        Self { id, name }
     }
 
     pub(crate) fn try_new(id: String, name: String) -> Result<Self, String> {
-        if !id
-            .strip_prefix("fcstd:native:object#")
-            .is_some_and(|key| key.bytes().eq(super::encoded_segment_bytes(&name)))
-        {
+        if !id.strip_prefix("fcstd:native:object#").is_some_and(|key| {
+            key == cadmpeg_ir::ids::IdentityKey::encode_segment(&name).into_string()
+        }) {
             return Err("object id disagrees with persisted name".to_owned());
         }
         Ok(Self { id, name })
@@ -47,12 +43,7 @@ mod tests {
                 ObjectIdentity::try_new(id.clone(), name.to_owned()).expect("encoded name");
             assert_eq!(identity.id(), &id);
             assert_eq!(identity.name(), name);
-            crate::test_support::with_service_context(&[], |ctx| {
-                assert_eq!(
-                    ObjectIdentity::from_name(ctx, name.to_owned()).expect("derived identity"),
-                    identity
-                );
-            });
+            assert_eq!(ObjectIdentity::from_name(name.to_owned()), identity);
         }
         for id in ["", "fcstd:native:object#B", "fcstd:native:joint#A"] {
             assert!(ObjectIdentity::try_new(id.to_owned(), "A".to_owned()).is_err());

@@ -80,38 +80,31 @@ pub(super) fn line_reference_direction(payload: &[u8], class_offset: u64) -> Opt
 }
 
 pub(super) fn declared_line_reference_directions(
-    ctx: &DecodeContext<'_>,
     payload: &[u8],
     class_offset: u64,
     object_end: usize,
-) -> Result<Vec<UnitVector3>, CodecError> {
+) -> Vec<UnitVector3> {
     const HANDLES: [u8; 8] = [0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff];
 
     let Ok(class_offset) = usize::try_from(class_offset) else {
-        return Ok(Vec::new());
+        return Vec::new();
     };
     let Some(end) = super::DeclaredEnd::of(object_end, payload.len()).map(super::DeclaredEnd::get)
     else {
-        return Ok(Vec::new());
+        return Vec::new();
     };
     let mut directions = Vec::new();
     if let Some(direction) = line_reference_direction(&payload[..end], u64_from_index(class_offset))
     {
-        ctx.reserve_vec(
-            &mut directions,
-            1,
-            "collect SLDPRT declared line directions",
-        )?;
         directions.push(direction);
     }
     let Some(final_handle) = end
         .checked_sub(88)
         .filter(|final_handle| *final_handle >= class_offset)
     else {
-        return Ok(directions);
+        return directions;
     };
     for handle in class_offset..=final_handle {
-        ctx.charge_work(1, "scan SLDPRT declared line directions")?;
         if payload.get(handle..handle + HANDLES.len()) != Some(HANDLES.as_slice()) {
             continue;
         }
@@ -147,16 +140,11 @@ pub(super) fn declared_line_reference_directions(
         };
         if let Some(candidate) = candidate {
             if !directions.contains(&candidate) {
-                ctx.reserve_vec(
-                    &mut directions,
-                    1,
-                    "collect SLDPRT declared line directions",
-                )?;
                 directions.push(candidate);
             }
         }
     }
-    Ok(directions)
+    directions
 }
 
 pub(super) fn linear_pattern_display_directions(
@@ -246,43 +234,35 @@ pub(super) fn typed_linear_pattern_dimensions(
 
 #[cfg(test)]
 pub(super) fn compact_line_reference_direction(
-    ctx: &DecodeContext<'_>,
     payload: &[u8],
     object_start: usize,
     object_end: usize,
     excluded_handles: &[usize],
-) -> Result<Option<UnitVector3>, CodecError> {
-    let directions = compact_line_reference_directions(
-        ctx,
-        payload,
-        object_start,
-        object_end,
-        excluded_handles,
-    )?;
+) -> Option<UnitVector3> {
+    let directions =
+        compact_line_reference_directions(payload, object_start, object_end, excluded_handles);
     let [direction] = directions.as_slice() else {
-        return Ok(None);
+        return None;
     };
-    Ok(Some(*direction))
+    Some(*direction)
 }
 
 pub(super) fn compact_line_reference_directions(
-    ctx: &DecodeContext<'_>,
     payload: &[u8],
     object_start: usize,
     object_end: usize,
     excluded_handles: &[usize],
-) -> Result<Vec<UnitVector3>, CodecError> {
+) -> Vec<UnitVector3> {
     const HANDLES: [u8; 8] = [0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff];
     let Some(end) = super::DeclaredEnd::of(object_end, payload.len()).map(super::DeclaredEnd::get)
     else {
-        return Ok(Vec::new());
+        return Vec::new();
     };
     let Some(final_handle) = end.checked_sub(80).filter(|end| *end >= object_start) else {
-        return Ok(Vec::new());
+        return Vec::new();
     };
     let mut unique_directions = Vec::new();
     for handle in object_start..=final_handle {
-        ctx.charge_work(1, "scan SLDPRT compact line directions")?;
         if excluded_handles.contains(&handle) {
             continue;
         }
@@ -325,11 +305,6 @@ pub(super) fn compact_line_reference_directions(
             if directions.len() == 1 {
                 let candidate = directions[0];
                 if !unique_directions.contains(&candidate) {
-                    ctx.reserve_vec(
-                        &mut unique_directions,
-                        1,
-                        "collect SLDPRT compact line directions",
-                    )?;
                     unique_directions.push(candidate);
                 }
             }
@@ -447,31 +422,23 @@ pub(super) fn compact_line_reference_directions(
         if directions.len() == 1 {
             let candidate = directions[0];
             if !unique_directions.contains(&candidate) {
-                ctx.reserve_vec(
-                    &mut unique_directions,
-                    1,
-                    "collect SLDPRT compact line directions",
-                )?;
                 unique_directions.push(candidate);
             }
         }
     }
-    Ok(unique_directions)
+    unique_directions
 }
 
 fn revolution_line_reference_inputs(
-    ctx: &DecodeContext<'_>,
     payload: &[u8],
     object_start: usize,
     object_end: usize,
     profile_sources: &HashSet<u32>,
-) -> Result<Option<(u32, cadmpeg_ir::features::FinitePoint3, UnitVector3)>, CodecError> {
+) -> Option<(u32, cadmpeg_ir::features::FinitePoint3, UnitVector3)> {
     const HANDLE: [u8; 4] = [0xc7, 0xcf, 0xff, 0xff];
     const NATIVE_TO_IR: f64 = 1000.0;
 
-    let Some(search_end) = super::DeclaredEnd::of(object_end, payload.len()) else {
-        return Ok(None);
-    };
+    let search_end = super::DeclaredEnd::of(object_end, payload.len())?;
     let search_end = search_end.get();
     let scalar = |offset: usize| {
         let value = View::f64_le_at(payload, offset)?;
@@ -512,12 +479,9 @@ fn revolution_line_reference_inputs(
             })
         })
     };
-    let Some(scan_end) = search_end.checked_sub(64) else {
-        return Ok(None);
-    };
+    let scan_end = search_end.checked_sub(64)?;
     let mut candidates = Vec::new();
     for handle_start in object_start..scan_end {
-        ctx.charge_work(1, "scan SLDPRT revolution line references")?;
         if payload.get(handle_start..handle_start + 4) != Some(HANDLE.as_slice()) {
             continue;
         }
@@ -565,11 +529,6 @@ fn revolution_line_reference_inputs(
                     )),
                     square_sum_unit_direction([dx, dy, dz]),
                 ) {
-                    ctx.reserve_vec(
-                        &mut candidates,
-                        1,
-                        "collect SLDPRT revolution line references",
-                    )?;
                     candidates.push((handle_start, 6, (source, origin, direction)));
                 }
             }
@@ -594,11 +553,6 @@ fn revolution_line_reference_inputs(
                     && next_class_after_zeros(compact_end, 24).is_some()
                 {
                     if let Some(axis) = axis_record(compact_frame, 9) {
-                        ctx.reserve_vec(
-                            &mut candidates,
-                            1,
-                            "collect SLDPRT revolution line references",
-                        )?;
                         candidates.push((handle_start, 9, (source, axis.0, axis.1)));
                     }
                 }
@@ -611,11 +565,6 @@ fn revolution_line_reference_inputs(
                     && next_class_after_zeros(addressed_end, 24).is_some()
                 {
                     if let Some(axis) = axis_record(addressed_frame, 8) {
-                        ctx.reserve_vec(
-                            &mut candidates,
-                            1,
-                            "collect SLDPRT revolution line references",
-                        )?;
                         candidates.push((handle_start, 8, (source, axis.0, axis.1)));
                     }
                 }
@@ -638,11 +587,6 @@ fn revolution_line_reference_inputs(
                     && next_class_after_zeros(record_end, 24).is_some()
                 {
                     if let Some(axis) = axis_record(frame, 8) {
-                        ctx.reserve_vec(
-                            &mut candidates,
-                            1,
-                            "collect SLDPRT revolution line references",
-                        )?;
                         candidates.push((handle_start, 8, (source, axis.0, axis.1)));
                     }
                 }
@@ -667,11 +611,6 @@ fn revolution_line_reference_inputs(
                 source_cell(source_offset),
                 axis_record(handle_start + 24, 7),
             ) {
-                ctx.reserve_vec(
-                    &mut candidates,
-                    1,
-                    "collect SLDPRT revolution line references",
-                )?;
                 candidates.push((handle_start, 7, (source, axis.0, axis.1)));
                 continue;
             }
@@ -709,11 +648,6 @@ fn revolution_line_reference_inputs(
                     let record_end = frame + scalar_count * 8;
                     if next_class_after_zeros(record_end, 24).is_some() {
                         if let Some(axis) = axis_record(frame, scalar_count) {
-                            ctx.reserve_vec(
-                                &mut candidates,
-                                1,
-                                "collect SLDPRT revolution line references",
-                            )?;
                             candidates.push((handle_start, scalar_count, (source, axis.0, axis.1)));
                             continue;
                         }
@@ -727,9 +661,7 @@ fn revolution_line_reference_inputs(
             continue;
         }
         for handle_count in [2usize, 3] {
-            let Some(handles_end) = handle_start.checked_add(handle_count * HANDLE.len()) else {
-                return Ok(None);
-            };
+            let handles_end = handle_start.checked_add(handle_count * HANDLE.len())?;
             if (0..handle_count).any(|index| {
                 let offset = handle_start + index * HANDLE.len();
                 payload.get(offset..offset + HANDLE.len()) != Some(HANDLE.as_slice())
@@ -737,9 +669,7 @@ fn revolution_line_reference_inputs(
             {
                 continue;
             }
-            let Some(address) = View::u32_le_at(payload, handles_end + 4) else {
-                return Ok(None);
-            };
+            let address = View::u32_le_at(payload, handles_end + 4)?;
             if address == 0 {
                 continue;
             }
@@ -749,7 +679,6 @@ fn revolution_line_reference_inputs(
                 continue;
             };
             for offset in object_start..source_end {
-                ctx.charge_work(1, "scan SLDPRT revolution profile sources")?;
                 if let Some(source) = source_cell(offset) {
                     if unique_source.is_some_and(|known| known != source) {
                         conflicting_source = true;
@@ -811,11 +740,6 @@ fn revolution_line_reference_inputs(
                     let candidate = (source, origin, direction);
                     let ranked = (handle_start, scalar_count, candidate);
                     if !candidates.contains(&ranked) {
-                        ctx.reserve_vec(
-                            &mut candidates,
-                            1,
-                            "collect SLDPRT revolution line references",
-                        )?;
                         candidates.push(ranked);
                     }
                 }
@@ -827,60 +751,45 @@ fn revolution_line_reference_inputs(
         if let Some(current) = ranks.get_mut(handle) {
             *current = (*current).max(*rank);
         } else {
-            ctx.insert_hash_map(
-                &mut ranks,
-                *handle,
-                *rank,
-                "index SLDPRT revolution line reference ranks",
-            )?;
+            ranks.insert(*handle, *rank);
         }
     }
     let mut selected = Vec::new();
     for (handle, rank, candidate) in candidates {
         if ranks.get(&handle) == Some(&rank) {
-            ctx.reserve_vec(
-                &mut selected,
-                1,
-                "collect SLDPRT ranked revolution references",
-            )?;
             selected.push(candidate);
         }
     }
     let mut candidates = selected;
-    ctx.stable_sort_by(
-        &mut candidates,
-        |left, right| {
-            (
-                left.0,
+    candidates.sort_by(|left, right| {
+        (
+            left.0,
+            [
+                left.1.x.to_bits(),
+                left.1.y.to_bits(),
+                left.1.z.to_bits(),
+                left.2.as_raw().x.to_bits(),
+                left.2.as_raw().y.to_bits(),
+                left.2.as_raw().z.to_bits(),
+            ],
+        )
+            .cmp(&(
+                right.0,
                 [
-                    left.1.x.to_bits(),
-                    left.1.y.to_bits(),
-                    left.1.z.to_bits(),
-                    left.2.as_raw().x.to_bits(),
-                    left.2.as_raw().y.to_bits(),
-                    left.2.as_raw().z.to_bits(),
+                    right.1.x.to_bits(),
+                    right.1.y.to_bits(),
+                    right.1.z.to_bits(),
+                    right.2.as_raw().x.to_bits(),
+                    right.2.as_raw().y.to_bits(),
+                    right.2.as_raw().z.to_bits(),
                 ],
-            )
-                .cmp(&(
-                    right.0,
-                    [
-                        right.1.x.to_bits(),
-                        right.1.y.to_bits(),
-                        right.1.z.to_bits(),
-                        right.2.as_raw().x.to_bits(),
-                        right.2.as_raw().y.to_bits(),
-                        right.2.as_raw().z.to_bits(),
-                    ],
-                ))
-        },
-        |_| 0,
-        "sort SLDPRT revolution line references",
-    )?;
+            ))
+    });
     candidates.dedup();
     let [candidate] = candidates.as_slice() else {
-        return Ok(None);
+        return None;
     };
-    Ok(Some(*candidate))
+    Some(*candidate)
 }
 
 pub(super) fn temporary_axis_reference(
@@ -953,53 +862,14 @@ pub(super) fn temporary_axis_reference(
         .then_some(first)
 }
 
-fn push_revolution_vote<T>(
-    ctx: &DecodeContext<'_>,
-    votes: &mut HashMap<String, Vec<T>>,
-    id: &str,
-    value: T,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    ctx.charge_work(1, operation)?;
-    if let Some(values) = votes.get_mut(id) {
-        ctx.reserve_vec(values, 1, operation)?;
-        values.push(value);
-        return Ok(());
-    }
-    ctx.reserve_map(votes, 1, operation)?;
-    let id = ctx.format_retained(format_args!("{id}"), "retain SLDPRT revolution vote ID")?;
-    let mut values = Vec::new();
-    ctx.reserve_vec(&mut values, 1, operation)?;
-    values.push(value);
-    votes.insert(id, values);
-    Ok(())
-}
-
 /// Add profile ownership and placed axes carried by revolution reference records.
 pub(crate) fn enrich_history_revolution_inputs(
-    ctx: &DecodeContext<'_>,
     histories: &mut [crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-) -> Result<(), CodecError> {
+) {
     let mut name_counts = HashMap::<String, usize>::new();
     for feature in histories.iter().flat_map(|history| &history.features) {
-        ctx.charge_work(1, "count SLDPRT revolution feature names")?;
-        if let Some(count) = name_counts.get_mut(feature.name.as_str()) {
-            *count = count.checked_add(1).ok_or_else(|| {
-                ctx.refuse_codec_limit(
-                    "count SLDPRT revolution feature names",
-                    u64::MAX - 1,
-                    u64::MAX,
-                )
-            })?;
-        } else {
-            ctx.reserve_map(&mut name_counts, 1, "index SLDPRT revolution feature names")?;
-            let name = ctx.format_retained(
-                format_args!("{}", feature.name),
-                "retain SLDPRT revolution feature name",
-            )?;
-            name_counts.insert(name, 1);
-        }
+        *name_counts.entry(feature.name.clone()).or_default() += 1;
     }
     for feature in histories
         .iter_mut()
@@ -1011,24 +881,13 @@ pub(crate) fn enrich_history_revolution_inputs(
         }
         let mut object_ids = Vec::new();
         for lane in lanes {
-            ctx.charge_work(1, "find SLDPRT revolution profile source")?;
             if let Some(id) =
                 feature_object_name(feature, lane).and_then(|name| name.object_id?.value())
             {
-                ctx.reserve_vec(
-                    &mut object_ids,
-                    1,
-                    "collect SLDPRT revolution profile sources",
-                )?;
                 object_ids.push(id);
             }
         }
-        ctx.sort_unstable_by(
-            &mut object_ids,
-            Ord::cmp,
-            |_| 0,
-            "sort SLDPRT revolution profile sources",
-        )?;
+        object_ids.sort_unstable_by(Ord::cmp);
         object_ids.dedup();
         if let [object_id] = object_ids.as_slice() {
             feature.source_id = FeatureSource::from_value(*object_id);
@@ -1048,36 +907,12 @@ pub(crate) fn enrich_history_revolution_inputs(
                     .iter()
                     .filter_map(|lane| feature_object_name(feature, lane)?.object_id?.value()),
             ) {
-                ctx.charge_work(1, "index SLDPRT revolution profile sources")?;
-                ctx.insert_hash_set(
-                    &mut sources,
-                    source,
-                    "index SLDPRT revolution profile sources",
-                )?;
+                sources.insert(source);
             }
         }
-        ctx.reserve_vec(
-            &mut profile_sources,
-            1,
-            "collect SLDPRT revolution profile sets",
-        )?;
         profile_sources.push(sources);
         for feature in &history.features {
-            ctx.charge_work(1, "index SLDPRT revolution profile owners")?;
-            if let Some(owner) = profile_source_owner.get_mut(feature.id.as_str()) {
-                *owner = history_index;
-            } else {
-                ctx.reserve_map(
-                    &mut profile_source_owner,
-                    1,
-                    "index SLDPRT revolution profile owners",
-                )?;
-                let id = ctx.format_retained(
-                    format_args!("{}", feature.id),
-                    "retain SLDPRT revolution profile owner",
-                )?;
-                profile_source_owner.insert(id, history_index);
-            }
+            profile_source_owner.insert(feature.id.clone(), history_index);
         }
     }
     let mut profiles = HashMap::<String, Vec<Option<u32>>>::new();
@@ -1087,18 +922,11 @@ pub(crate) fn enrich_history_revolution_inputs(
         for history in histories.iter() {
             let mut objects = Vec::new();
             for feature in &history.features {
-                ctx.charge_work(1, "scan SLDPRT revolution feature objects")?;
                 if let Some(name) = feature_object_name(feature, lane) {
-                    ctx.reserve_vec(&mut objects, 1, "collect SLDPRT revolution feature objects")?;
                     objects.push((name.offset, feature));
                 }
             }
-            ctx.sort_unstable_by(
-                &mut objects,
-                |(left, _), (right, _)| left.cmp(right),
-                |_| 0,
-                "sort SLDPRT revolution feature objects",
-            )?;
+            objects.sort_unstable_by_key(|(left, _)| *left);
             for (index, &(start, feature)) in objects.iter().enumerate() {
                 if !matches!(
                     feature.input_class.as_deref(),
@@ -1126,35 +954,27 @@ pub(crate) fn enrich_history_revolution_inputs(
                     .and_then(|(offset, _)| usize::try_from(*offset).ok())
                     .unwrap_or(lane.native_payload.len());
                 let line_reference = revolution_line_reference_inputs(
-                    ctx,
                     &lane.native_payload,
                     start,
                     end,
                     known_profiles,
-                )?;
+                );
                 let placed_axis = line_reference
                     .map(|(_, origin, direction)| (origin, direction))
                     .or_else(|| temporary_axis_reference(&lane.native_payload, start, end));
-                push_revolution_vote(
-                    ctx,
-                    &mut profiles,
-                    &feature.id,
-                    immediate_profile.or_else(|| line_reference.map(|input| input.0)),
-                    "collect SLDPRT revolution profile votes",
-                )?;
-                push_revolution_vote(
-                    ctx,
-                    &mut inputs,
-                    &feature.id,
-                    placed_axis,
-                    "collect SLDPRT revolution axis votes",
-                )?;
+                profiles
+                    .entry(feature.id.clone())
+                    .or_default()
+                    .push(immediate_profile.or_else(|| line_reference.map(|input| input.0)));
+                inputs
+                    .entry(feature.id.clone())
+                    .or_default()
+                    .push(placed_axis);
             }
         }
     }
     for history in histories.iter_mut() {
         for feature in &mut history.features {
-            ctx.charge_work(1, "resolve SLDPRT revolution votes")?;
             if !feature.properties.contains_key("Profile") {
                 if let Some(votes) = profiles.get(&feature.id) {
                     if let Some(Some(first)) = votes.first() {
@@ -1164,16 +984,10 @@ pub(crate) fn enrich_history_revolution_inputs(
                                 .and_then(|owner| profile_sources.get(*owner))
                                 .is_some_and(|sources| sources.contains(first))
                         {
-                            let value = ctx.format_retained(
-                                format_args!("{first}"),
-                                "retain SLDPRT revolution profile property",
-                            )?;
-                            ctx.insert_btree_map(
-                                &mut feature.properties,
+                            feature.properties.insert(
                                 cadmpeg_core::nonblank_literal!("Profile"),
-                                value,
-                                "insert SLDPRT revolution profile property",
-                            )?;
+                                first.to_string(),
+                            );
                         }
                     }
                 }
@@ -1190,40 +1004,27 @@ pub(crate) fn enrich_history_revolution_inputs(
             if !feature.properties.contains_key("AxisOrigin")
                 && !feature.properties.contains_key("AxisDirection")
             {
-                let origin = ctx.format_retained(
-                    format_args!(
-                        "{}mm,{}mm,{}mm",
-                        first.0.get().x,
-                        first.0.get().y,
-                        first.0.get().z
-                    ),
-                    "retain SLDPRT revolution axis origin",
-                )?;
-                let direction = ctx.format_retained(
-                    format_args!(
-                        "{},{},{}",
-                        first.1.as_raw().x,
-                        first.1.as_raw().y,
-                        first.1.as_raw().z
-                    ),
-                    "retain SLDPRT revolution axis direction",
-                )?;
-                ctx.insert_btree_map(
-                    &mut feature.properties,
-                    cadmpeg_core::nonblank_literal!("AxisOrigin"),
-                    origin,
-                    "insert SLDPRT revolution axis properties",
-                )?;
-                ctx.insert_btree_map(
-                    &mut feature.properties,
-                    cadmpeg_core::nonblank_literal!("AxisDirection"),
-                    direction,
-                    "insert SLDPRT revolution axis properties",
-                )?;
+                let origin = format!(
+                    "{}mm,{}mm,{}mm",
+                    first.0.get().x,
+                    first.0.get().y,
+                    first.0.get().z
+                );
+                let direction = format!(
+                    "{},{},{}",
+                    first.1.as_raw().x,
+                    first.1.as_raw().y,
+                    first.1.as_raw().z
+                );
+                feature
+                    .properties
+                    .insert(cadmpeg_core::nonblank_literal!("AxisOrigin"), origin);
+                feature
+                    .properties
+                    .insert(cadmpeg_core::nonblank_literal!("AxisDirection"), direction);
             }
         }
     }
-    Ok(())
 }
 
 /// Bind revolution axes from profile records or complete coaxial generated geometry.
@@ -1237,33 +1038,15 @@ pub(crate) fn bind_profile_revolution_axes(
 ) -> Result<(), CodecError> {
     let mut native_by_id = HashMap::new();
     for feature in histories.iter().flat_map(|history| &history.features) {
-        ctx.charge_work(1, "index SLDPRT native revolution features")?;
-        ctx.insert_hash_map(
-            &mut native_by_id,
-            feature.id.as_str(),
-            feature,
-            "index SLDPRT native revolution features",
-        )?;
+        native_by_id.insert(feature.id.as_str(), feature);
     }
     let mut model_by_id = HashMap::new();
     for (index, feature) in model_features.iter().enumerate() {
-        ctx.charge_work(1, "index SLDPRT model revolution features")?;
-        ctx.insert_hash_map(
-            &mut model_by_id,
-            &feature.id,
-            index,
-            "index SLDPRT model revolution features",
-        )?;
+        model_by_id.insert(&feature.id, index);
     }
     let mut sketch_by_id = HashMap::new();
     for sketch in sketches {
-        ctx.charge_work(1, "index SLDPRT revolution sketches")?;
-        ctx.insert_hash_map(
-            &mut sketch_by_id,
-            &sketch.id,
-            sketch,
-            "index SLDPRT revolution sketches",
-        )?;
+        sketch_by_id.insert(&sketch.id, sketch);
     }
     let mut assignments = Vec::<(usize, cadmpeg_ir::features::RevolutionAxis)>::new();
 
@@ -1347,52 +1130,35 @@ pub(crate) fn bind_profile_revolution_axes(
         };
         let mut candidates = Vec::new();
         for lane in lanes {
-            ctx.charge_work(1, "scan SLDPRT revolution axis lanes")?;
             if let Some(axis) = profile_roster_construction_axis(
-                ctx,
                 lane,
                 profile_native,
                 sketch,
                 generated_axis_surfaces,
-            )? {
-                ctx.reserve_vec(
-                    &mut candidates,
-                    1,
-                    "collect SLDPRT revolution axis candidates",
-                )?;
+            ) {
                 candidates.push(axis);
             }
         }
-        ctx.stable_sort_by(
-            &mut candidates,
-            |left, right| {
-                [
-                    left.origin.x.to_bits(),
-                    left.origin.y.to_bits(),
-                    left.origin.z.to_bits(),
-                    left.direction.x.to_bits(),
-                    left.direction.y.to_bits(),
-                    left.direction.z.to_bits(),
-                ]
-                .cmp(&[
-                    right.origin.x.to_bits(),
-                    right.origin.y.to_bits(),
-                    right.origin.z.to_bits(),
-                    right.direction.x.to_bits(),
-                    right.direction.y.to_bits(),
-                    right.direction.z.to_bits(),
-                ])
-            },
-            |_| 0,
-            "sort SLDPRT revolution axis candidates",
-        )?;
+        candidates.sort_by(|left, right| {
+            [
+                left.origin.x.to_bits(),
+                left.origin.y.to_bits(),
+                left.origin.z.to_bits(),
+                left.direction.x.to_bits(),
+                left.direction.y.to_bits(),
+                left.direction.z.to_bits(),
+            ]
+            .cmp(&[
+                right.origin.x.to_bits(),
+                right.origin.y.to_bits(),
+                right.origin.z.to_bits(),
+                right.direction.x.to_bits(),
+                right.direction.y.to_bits(),
+                right.direction.z.to_bits(),
+            ])
+        });
         candidates.dedup();
         if let [axis] = candidates.as_slice() {
-            ctx.reserve_vec(
-                &mut assignments,
-                1,
-                "collect SLDPRT revolution axis assignments",
-            )?;
             assignments.push((
                 feature_index,
                 axis.try_clone_for_decode(ctx, "SLDPRT revolution axis assignment copy")?,
@@ -1416,24 +1182,20 @@ pub(crate) fn bind_profile_revolution_axes(
 }
 
 fn profile_roster_construction_axis(
-    ctx: &DecodeContext<'_>,
     lane: &FeatureInputLane,
     profile_native: &str,
     sketch: &Sketch,
     surfaces: &[Surface],
-) -> Result<Option<cadmpeg_ir::features::RevolutionAxis>, CodecError> {
+) -> Option<cadmpeg_ir::features::RevolutionAxis> {
     const QUANTUM: f64 = 1e-8;
     const NATIVE_TO_IR: f64 = 1000.0;
-    let Some((origin, normal, u_axis)) = sketch.resolved_placement() else {
-        return Ok(None);
-    };
+    let (origin, normal, u_axis) = sketch.resolved_placement()?;
 
     let mut markers = Vec::new();
     for marker in &lane.sketch_entities {
-        ctx.reserve_vec(&mut markers, 1, "collect SLDPRT revolution profile markers")?;
         markers.push(marker);
     }
-    let markers = super::endpoints::coordinate_rosters::CoordinateRosters::new(ctx, markers)?;
+    let markers = super::endpoints::coordinate_rosters::CoordinateRosters::new(markers);
     let mut first_axis = None;
     let mut second_axis = None;
     for marker in lane
@@ -1447,7 +1209,7 @@ fn profile_roster_construction_axis(
         if !marker_is_selected_construction_line(&lane.native_payload, offset) {
             continue;
         }
-        let endpoints = roster_curve_endpoint_markers(ctx, &lane.native_payload, marker, &markers)?;
+        let endpoints = roster_curve_endpoint_markers(&lane.native_payload, marker, &markers);
         let [start, end] = endpoints.as_slice() else {
             continue;
         };
@@ -1463,40 +1225,32 @@ fn profile_roster_construction_axis(
         (Some(endpoints), None) => {
             let (Some(start), Some(end)) = (endpoints[0].coordinates_m, endpoints[1].coordinates_m)
             else {
-                return Ok(None);
+                return None;
             };
             Some([start.get(), end.get()])
         }
         (None, None) => {
             if let Some(endpoints) =
-                profile_roster_implicit_axis_endpoints(ctx, lane, profile_native, &markers)?
+                profile_roster_implicit_axis_endpoints(lane, profile_native, &markers)
             {
                 let (Some(start), Some(end)) =
                     (endpoints[0].coordinates_m, endpoints[1].coordinates_m)
                 else {
-                    return Ok(None);
+                    return None;
                 };
                 Some([start.get(), end.get()])
             } else {
-                match profile_roster_origin_axis_endpoints(ctx, lane, profile_native, &markers)? {
+                match profile_roster_origin_axis_endpoints(lane, profile_native, &markers) {
                     Some(endpoints) => Some(endpoints),
-                    None => profile_roster_principal_axis_endpoints(
-                        ctx,
-                        lane,
-                        profile_native,
-                        &markers,
-                    )?,
+                    None => profile_roster_principal_axis_endpoints(lane, profile_native, &markers),
                 }
             }
         }
-        _ => return Ok(None),
+        _ => return None,
     };
-    let Some(transform) = sketch_frame_marker_transform(sketch, QUANTUM) else {
-        return Ok(None);
-    };
+    let transform = sketch_frame_marker_transform(sketch, QUANTUM)?;
     let Some([native_start, native_end]) = native_endpoints else {
         return profile_generated_surface_axis(
-            ctx,
             lane,
             profile_native,
             &markers,
@@ -1516,7 +1270,7 @@ fn profile_roster_construction_axis(
         ))
     };
     let (Some(start), Some(end)) = (project(native_start), project(native_end)) else {
-        return Ok(None);
+        return None;
     };
     let v_axis = normal.cross(u_axis.get());
     let point = |point: Point2| {
@@ -1531,42 +1285,37 @@ fn profile_roster_construction_axis(
     let delta = Vector3::new(end.x - start.x, end.y - start.y, end.z - start.z);
     let length = (delta.x * delta.x + delta.y * delta.y + delta.z * delta.z).sqrt();
     if !length.is_finite() || length <= EPS_AXES_PROFILE_ROSTER_CONSTRUCTION_AXIS_E9 {
-        return Ok(None);
+        return None;
     }
     let (Some(origin), Some(direction)) = (
         cadmpeg_ir::features::FinitePoint3::new(start),
         UnitVector3::normalized_by_square_sum_division(delta),
     ) else {
-        return Ok(None);
+        return None;
     };
-    Ok(Some(cadmpeg_ir::features::RevolutionAxis {
+    Some(cadmpeg_ir::features::RevolutionAxis {
         origin,
         direction: cadmpeg_ir::features::FeatureDirection3::from(direction),
         reference: None,
-    }))
+    })
 }
 
 fn profile_generated_surface_axis(
-    ctx: &DecodeContext<'_>,
     lane: &FeatureInputLane,
     profile_native: &str,
     markers: &[&SketchInputEntity],
     sketch: &Sketch,
     transform: &MarkerTransform,
     surfaces: &[Surface],
-) -> Result<Option<cadmpeg_ir::features::RevolutionAxis>, CodecError> {
+) -> Option<cadmpeg_ir::features::RevolutionAxis> {
     const QUANTUM: f64 = 1e-8;
     const NATIVE_TO_IR: f64 = 1000.0;
     const LINE_TOLERANCE: f64 = 1e-6;
     let coordinate_rosters =
-        super::endpoints::coordinate_rosters::CoordinateRosters::borrowed(ctx, markers)?;
-    let Some((origin, normal, u_axis)) = sketch.resolved_placement() else {
-        return Ok(None);
-    };
+        super::endpoints::coordinate_rosters::CoordinateRosters::borrowed(markers);
+    let (origin, normal, u_axis) = sketch.resolved_placement()?;
 
-    let Some(mut axis) = common_generated_surface_axis(surfaces) else {
-        return Ok(None);
-    };
+    let mut axis = common_generated_surface_axis(surfaces)?;
     let relative_origin = Vector3::new(
         axis.origin.x - origin.x,
         axis.origin.y - origin.y,
@@ -1575,7 +1324,7 @@ fn profile_generated_surface_axis(
     if axis.direction.dot(normal.get()).abs() > EPS_AXES_PROFILE_GENERATED_SURFACE_AXIS_E9
         || relative_origin.dot(normal.get()).abs() > LINE_TOLERANCE
     {
-        return Ok(None);
+        return None;
     }
     let origin_offset = Vector3::new(
         origin.x - axis.origin.x,
@@ -1587,13 +1336,11 @@ fn profile_generated_surface_axis(
         axis.origin = origin;
     } else {
         let projection = origin_offset.dot(axis.direction.get());
-        let Some(projected_origin) = cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+        let projected_origin = cadmpeg_ir::features::FinitePoint3::new(Point3::new(
             axis.origin.x + projection * axis.direction.x,
             axis.origin.y + projection * axis.direction.y,
             axis.origin.z + projection * axis.direction.z,
-        )) else {
-            return Ok(None);
-        };
+        ))?;
         axis.origin = projected_origin;
     }
     let mut endpoint_ids = HashSet::new();
@@ -1609,33 +1356,24 @@ fn profile_generated_surface_axis(
         .filter(|marker| marker.feature_ref.as_deref() == Some(profile_native))
     {
         let curve_endpoints =
-            roster_curve_endpoint_markers(ctx, &lane.native_payload, curve, &coordinate_rosters)?;
+            roster_curve_endpoint_markers(&lane.native_payload, curve, &coordinate_rosters);
         for endpoint in curve_endpoints
             .into_iter()
             .filter(|endpoint| endpoint.object_index().is_some())
         {
-            ctx.charge_work(1, "scan SLDPRT generated revolution axis endpoints")?;
             if endpoint_ids.contains(endpoint.id()) {
                 continue;
             }
-            ctx.insert_hash_set(
-                &mut endpoint_ids,
-                endpoint.id(),
-                "index SLDPRT generated revolution axis endpoints",
-            )?;
-            let Some(coordinates) = endpoint.coordinates_m else {
-                return Ok(None);
-            };
+            endpoint_ids.insert(endpoint.id());
+            let coordinates = endpoint.coordinates_m?;
             let [u, v] = coordinates.get();
-            let Some(point) = transform.apply(quantize(
+            let point = transform.apply(quantize(
                 Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR),
                 QUANTUM,
-            )) else {
-                return Ok(None);
-            };
+            ))?;
             let (Some(u_cells), Some(v_cells)) = (f64_from_i64(point.0), f64_from_i64(point.1))
             else {
-                return Ok(None);
+                return None;
             };
             let point = Point3::new(
                 origin.x + u_cells * QUANTUM * u_axis.x + v_cells * QUANTUM * v_axis.x,
@@ -1656,9 +1394,9 @@ fn profile_generated_surface_axis(
         }
     }
     if !observed_two || !off_axis || (positive && negative) {
-        return Ok(None);
+        return None;
     }
-    Ok(Some(axis))
+    Some(axis)
 }
 
 fn common_generated_surface_axis(
@@ -1724,44 +1462,37 @@ fn common_generated_surface_axis(
 }
 
 fn profile_curve_endpoint_ids<'a>(
-    ctx: &DecodeContext<'_>,
     lane: &FeatureInputLane,
     profile_native: &str,
     markers: &[&'a SketchInputEntity],
     indexed_only: bool,
-) -> Result<HashSet<&'a str>, CodecError> {
+) -> HashSet<&'a str> {
     let coordinate_rosters =
-        super::endpoints::coordinate_rosters::CoordinateRosters::borrowed(ctx, markers)?;
+        super::endpoints::coordinate_rosters::CoordinateRosters::borrowed(markers);
     let mut ids = HashSet::new();
     for curve in markers
         .iter()
         .copied()
         .filter(|marker| marker.feature_ref.as_deref() == Some(profile_native))
     {
-        ctx.charge_work(1, "scan SLDPRT profile curve endpoints")?;
         for endpoint in
-            roster_curve_endpoint_markers(ctx, &lane.native_payload, curve, &coordinate_rosters)?
+            roster_curve_endpoint_markers(&lane.native_payload, curve, &coordinate_rosters)
         {
             if (indexed_only && endpoint.object_index().is_none()) || ids.contains(endpoint.id()) {
                 continue;
             }
-            ctx.insert_hash_set(
-                &mut ids,
-                endpoint.id(),
-                "index SLDPRT profile curve endpoints",
-            )?;
+            ids.insert(endpoint.id());
         }
     }
-    Ok(ids)
+    ids
 }
 
 fn profile_roster_origin_axis_endpoints(
-    ctx: &DecodeContext<'_>,
     lane: &FeatureInputLane,
     profile_native: &str,
     markers: &[&SketchInputEntity],
-) -> Result<Option<[[f64; 2]; 2]>, CodecError> {
-    let curve_endpoints = profile_curve_endpoint_ids(ctx, lane, profile_native, markers, true)?;
+) -> Option<[[f64; 2]; 2]> {
+    let curve_endpoints = profile_curve_endpoint_ids(lane, profile_native, markers, true);
     let mut unreferenced_points = markers.iter().copied().filter(|marker| {
         marker.feature_ref.as_deref() == Some(profile_native)
             && matches!(
@@ -1772,16 +1503,14 @@ fn profile_roster_origin_axis_endpoints(
             && !curve_endpoints.contains(marker.id())
     });
     let (Some(origin), None) = (unreferenced_points.next(), unreferenced_points.next()) else {
-        return Ok(None);
+        return None;
     };
-    let Some(coordinates) = origin.coordinates_m else {
-        return Ok(None);
-    };
+    let coordinates = origin.coordinates_m?;
     let [origin_u, origin_v] = coordinates.get();
     if origin_u.abs() > EPS_AXES_PROFILE_ROSTER_ORIGIN_AXIS_ENDPOINTS_E9
         || origin_v.abs() > EPS_AXES_PROFILE_ROSTER_ORIGIN_AXIS_ENDPOINTS_E9
     {
-        return Ok(None);
+        return None;
     }
     let candidates = markers
         .iter()
@@ -1795,23 +1524,13 @@ fn profile_roster_origin_axis_endpoints(
         });
     let mut candidates_sorted = Vec::new();
     for candidate in candidates {
-        ctx.reserve_vec(
-            &mut candidates_sorted,
-            1,
-            "collect SLDPRT origin axis candidates",
-        )?;
         candidates_sorted.push(candidate);
     }
-    ctx.stable_sort_by(
-        &mut candidates_sorted,
-        |left, right| {
-            left[1][0]
-                .total_cmp(&right[1][0])
-                .then(left[1][1].total_cmp(&right[1][1]))
-        },
-        |_| 0,
-        "sort SLDPRT origin axis candidates",
-    )?;
+    candidates_sorted.sort_by(|left, right| {
+        left[1][0]
+            .total_cmp(&right[1][0])
+            .then(left[1][1].total_cmp(&right[1][1]))
+    });
     let mut lines = Vec::<[[f64; 2]; 2]>::new();
     for candidate in candidates_sorted {
         let [u, v] = [candidate[1][0] - origin_u, candidate[1][1] - origin_v];
@@ -1824,7 +1543,6 @@ fn profile_roster_origin_axis_endpoints(
         }) {
             continue;
         }
-        ctx.reserve_vec(&mut lines, 1, "collect SLDPRT distinct origin axis lines")?;
         lines.push(candidate);
     }
     let incidence = |line: &[[f64; 2]; 2]| {
@@ -1849,25 +1567,22 @@ fn profile_roster_origin_axis_endpoints(
             })
             .count()
     };
-    let Some(maximum_incidence) = lines.iter().map(incidence).max() else {
-        return Ok(None);
-    };
+    let maximum_incidence = lines.iter().map(incidence).max()?;
     let mut selected = lines
         .iter()
         .filter(|line| incidence(line) == maximum_incidence);
     let (Some(axis), None) = (selected.next(), selected.next()) else {
-        return Ok(None);
+        return None;
     };
-    Ok(Some(*axis))
+    Some(*axis)
 }
 
 fn profile_roster_principal_axis_endpoints(
-    ctx: &DecodeContext<'_>,
     lane: &FeatureInputLane,
     profile_native: &str,
     markers: &[&SketchInputEntity],
-) -> Result<Option<[[f64; 2]; 2]>, CodecError> {
-    let curve_endpoints = profile_curve_endpoint_ids(ctx, lane, profile_native, markers, true)?;
+) -> Option<[[f64; 2]; 2]> {
+    let curve_endpoints = profile_curve_endpoint_ids(lane, profile_native, markers, true);
     let incidence = |axis: &[[f64; 2]; 2]| {
         let [axis_u, axis_v] = axis[1];
         markers
@@ -1892,30 +1607,27 @@ fn profile_roster_principal_axis_endpoints(
         })
         .map(|axis| (incidence(&axis), axis))
         .collect::<Vec<_>>();
-    let Some(maximum_incidence) = candidates.iter().map(|(count, _)| *count).max() else {
-        return Ok(None);
-    };
+    let maximum_incidence = candidates.iter().map(|(count, _)| *count).max()?;
     if maximum_incidence < 2 {
-        return Ok(None);
+        return None;
     }
     let selected = candidates
         .iter()
         .filter(|(count, _)| *count == maximum_incidence)
         .collect::<Vec<_>>();
     let [(_, axis)] = selected.as_slice() else {
-        return Ok(None);
+        return None;
     };
-    Ok(Some(*axis))
+    Some(*axis)
 }
 
 fn profile_roster_implicit_axis_endpoints<'a>(
-    ctx: &DecodeContext<'_>,
     lane: &FeatureInputLane,
     profile_native: &str,
     markers: &[&'a SketchInputEntity],
-) -> Result<Option<[&'a SketchInputEntity; 2]>, CodecError> {
+) -> Option<[&'a SketchInputEntity; 2]> {
     let coordinate_rosters =
-        super::endpoints::coordinate_rosters::CoordinateRosters::borrowed(ctx, markers)?;
+        super::endpoints::coordinate_rosters::CoordinateRosters::borrowed(markers);
     let curve_candidates = markers.iter().copied().filter(|marker| {
         let Ok(offset) = usize::try_from(marker.offset()) else {
             return false;
@@ -1936,7 +1648,7 @@ fn profile_roster_implicit_axis_endpoints<'a>(
         current_code_two || detailed_indexed_curve
     });
     let curve_candidates = curve_candidates.take(2).collect::<Vec<_>>();
-    let curve_endpoints = profile_curve_endpoint_ids(ctx, lane, profile_native, markers, false)?;
+    let curve_endpoints = profile_curve_endpoint_ids(lane, profile_native, markers, false);
     let candidates = markers.iter().copied().filter(|marker| {
         marker.feature_ref.as_deref() == Some(profile_native)
             && matches!(
@@ -1948,17 +1660,12 @@ fn profile_roster_implicit_axis_endpoints<'a>(
     });
     let mut unreferenced_points = Vec::new();
     for marker in candidates {
-        ctx.reserve_vec(
-            &mut unreferenced_points,
-            1,
-            "collect SLDPRT unreferenced profile points",
-        )?;
         unreferenced_points.push(marker);
     }
     if let [start, end] = unreferenced_points.as_slice() {
         let endpoints = [*start, *end];
         if bounded_profile_axis_endpoints(profile_native, markers, &curve_endpoints, endpoints) {
-            return Ok(Some(endpoints));
+            return Some(endpoints);
         }
     }
     let selected_endpoints = unreferenced_points
@@ -1974,7 +1681,7 @@ fn profile_roster_implicit_axis_endpoints<'a>(
     if let [start, end] = selected_endpoints.as_slice() {
         let endpoints = [*start, *end];
         if bounded_profile_axis_endpoints(profile_native, markers, &curve_endpoints, endpoints) {
-            return Ok(Some(endpoints));
+            return Some(endpoints);
         }
     }
     if let [end] = selected_endpoints.as_slice() {
@@ -1984,15 +1691,9 @@ fn profile_roster_implicit_axis_endpoints<'a>(
             .filter(|marker| marker.feature_ref.as_deref() == Some(profile_native));
         let mut owned = Vec::new();
         for marker in owned_markers {
-            ctx.reserve_vec(&mut owned, 1, "collect SLDPRT owned profile markers")?;
             owned.push(marker);
         }
-        ctx.sort_unstable_by(
-            &mut owned,
-            |left, right| left.offset().cmp(&right.offset()),
-            |_| 0,
-            "sldprt profile axis owned markers sort",
-        )?;
+        owned.sort_unstable_by_key(|left| left.offset());
         if let Some(start) = owned
             .windows(2)
             .find_map(|pair| (pair[1].id() == end.id()).then_some(pair[0]))
@@ -2007,7 +1708,7 @@ fn profile_roster_implicit_axis_endpoints<'a>(
             let endpoints = [start, *end];
             if bounded_profile_axis_endpoints(profile_native, markers, &curve_endpoints, endpoints)
             {
-                return Ok(Some(endpoints));
+                return Some(endpoints);
             }
         }
     }
@@ -2023,12 +1724,8 @@ fn profile_roster_implicit_axis_endpoints<'a>(
         }) {
             continue;
         }
-        let endpoints = roster_curve_endpoint_markers(
-            ctx,
-            &lane.native_payload,
-            candidate,
-            &coordinate_rosters,
-        )?;
+        let endpoints =
+            roster_curve_endpoint_markers(&lane.native_payload, candidate, &coordinate_rosters);
         let [start, end] = endpoints.as_slice() else {
             continue;
         };
@@ -2036,40 +1733,28 @@ fn profile_roster_implicit_axis_endpoints<'a>(
         if !bounded_profile_axis_endpoints(profile_native, markers, &curve_endpoints, endpoints) {
             continue;
         }
-        ctx.reserve_vec(
-            &mut boundary_relations,
-            1,
-            "collect SLDPRT profile boundary relations",
-        )?;
         boundary_relations.push(endpoints);
     }
-    ctx.sort_unstable_by(
-        &mut boundary_relations,
-        |left, right| {
-            [left[0].offset(), left[1].offset()].cmp(&[right[0].offset(), right[1].offset()])
-        },
-        |_| 0,
-        "sldprt profile axis boundary relations sort",
-    )?;
+    boundary_relations.sort_unstable_by(|left, right| {
+        [left[0].offset(), left[1].offset()].cmp(&[right[0].offset(), right[1].offset()])
+    });
     boundary_relations.dedup_by_key(|endpoints| [endpoints[0].id(), endpoints[1].id()]);
     match boundary_relations.as_slice() {
-        [endpoints] => return Ok(Some(*endpoints)),
+        [endpoints] => return Some(*endpoints),
         [] => {}
-        _ => return Ok(None),
+        _ => return None,
     }
     let [candidate] = curve_candidates.as_slice() else {
-        return Ok(None);
+        return None;
     };
     let endpoints =
-        roster_curve_endpoint_markers(ctx, &lane.native_payload, candidate, &coordinate_rosters)?;
+        roster_curve_endpoint_markers(&lane.native_payload, candidate, &coordinate_rosters);
     let [start, end] = endpoints.as_slice() else {
-        return Ok(None);
+        return None;
     };
     let endpoints = [*start, *end];
-    Ok(
-        bounded_profile_axis_endpoints(profile_native, markers, &curve_endpoints, endpoints)
-            .then_some(endpoints),
-    )
+    bounded_profile_axis_endpoints(profile_native, markers, &curve_endpoints, endpoints)
+        .then_some(endpoints)
 }
 
 fn bounded_profile_axis_endpoints(

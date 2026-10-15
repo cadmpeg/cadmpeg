@@ -236,13 +236,11 @@ impl DecodeResult {
                 FormatIdentity::Classified { dialects } => FormatIdentity::classified(
                     dialects.try_clone_for_decode(ctx, "decode result classification")?,
                 ),
-                FormatIdentity::Unclassified { format } => FormatIdentity::unclassified(
-                    ctx.copy_retained_text(format, "decode result classification")?,
-                ),
+                FormatIdentity::Unclassified { format } => {
+                    FormatIdentity::unclassified(format.to_owned())
+                }
             },
-            None => FormatIdentity::unclassified(
-                ctx.copy_retained_text(format.as_str(), "decode result classification")?,
-            ),
+            None => FormatIdentity::unclassified(format.as_str().to_owned()),
         };
         ir.finalize(ctx)?;
         Ok(Self {
@@ -468,23 +466,16 @@ impl<C: CodecBackend + ?Sized> Codec for C {
         let decoded = self.decode_impl(ctx, root)?;
         let result = DecodeResult::new(decoded, C::FORMAT, options.container_only, ctx)?;
         if result.report().format() != C::FORMAT.as_str() {
-            return Err(CodecError::WrongFormat(ctx.format_retained(
-                format_args!(
-                    "codec {:?} decoded a {:?} document",
-                    C::FORMAT.as_str(),
-                    result.report().format()
-                ),
-                "decode format refusal",
-            )?)
+            return Err(CodecError::WrongFormat(format!(
+                "codec {:?} decoded a {:?} document",
+                C::FORMAT.as_str(),
+                result.report().format()
+            ))
             .into());
         }
         crate::validate::evaluation_cycles::admit_evaluation_cycles(ctx, result.ir())?;
         let strict_loss_index =
             if options.policy.mode == DecodeMode::Strict && !options.container_only {
-                ctx.charge_work(
-                    cadmpeg_core::decode::u64_from_index(result.report().losses.len()),
-                    "decode strict loss scan",
-                )?;
                 result
                     .report()
                     .losses
@@ -496,10 +487,7 @@ impl<C: CodecBackend + ?Sized> Codec for C {
             };
         if let Some(loss_index) = strict_loss_index {
             let (_, report, _) = result.into_parts();
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<DecodeReport>()),
-                "decode strict rejection report",
-            )?;
+
             let rejection = StrictDecodeRejection::new(report, loss_index);
             return Err(DecodeFailure::StrictRejected { rejection });
         }

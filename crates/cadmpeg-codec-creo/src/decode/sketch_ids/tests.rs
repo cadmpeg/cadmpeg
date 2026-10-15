@@ -1,126 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
 use super::{
     feature_sketch_record_id_in_scan, model_sketch_id, owning_feature_definition_ref,
-    section_owner_feature_id, sketch_constraint_id_admitted, sketch_entity_id_admitted,
-    sketch_feature_id_admitted, sketch_native_ref_admitted, sketch_point_ref_admitted,
-    sketch_section_curve_id_admitted, sketch_table_headers, typed_sketch_section_curve_id_admitted,
+    section_owner_feature_id, sketch_constraint_id_admitted, sketch_native_ref_admitted,
+    sketch_table_headers,
 };
 
-fn with_retained_limit<T>(limit: u64, run: impl FnOnce(&DecodeContext<'_>) -> T) -> T {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    run(&ctx)
-}
-
-#[test]
-fn sketch_entity_identity_refuses_before_retained_formatting() {
-    let sketch = cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#40").expect("sketch ID");
-    let expected = "creo:featdefs:sketch_entity#40:7";
-    assert!(
-        matches!(with_retained_limit(cadmpeg_core::decode::u64_from_index(expected.len()) - 1, |ctx| {
-        sketch_entity_id_admitted(ctx, &sketch, 7)
-    }), Err(cadmpeg_core::CodecError::ResourceLimit(resource))
-        if resource.dimension == ResourceDimension::RetainedBytes
-            && resource.operation == "creo sketch entity identity")
-    );
-    assert_eq!(
-        with_retained_limit(
-            cadmpeg_core::decode::u64_from_index(expected.len()),
-            |ctx| { sketch_entity_id_admitted(ctx, &sketch, 7) }
-        )
-        .expect("exact cap admits entity ID")
-        .expect("valid entity ID")
-        .as_str(),
-        expected
-    );
-}
-
-#[test]
-fn sketch_point_reference_refuses_before_retained_formatting() {
-    let sketch = cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#40").expect("sketch ID");
-    let expected = "creo:featdefs:sketch#40:point#7";
-    assert!(
-        matches!(with_retained_limit(cadmpeg_core::decode::u64_from_index(expected.len()) - 1, |ctx| {
-        sketch_point_ref_admitted(ctx, &sketch, 7)
-    }), Err(cadmpeg_core::CodecError::ResourceLimit(resource))
-        if resource.dimension == ResourceDimension::RetainedBytes
-            && resource.operation == "creo sketch point reference")
-    );
-    assert_eq!(
-        with_retained_limit(
-            cadmpeg_core::decode::u64_from_index(expected.len()),
-            |ctx| { sketch_point_ref_admitted(ctx, &sketch, 7) }
-        )
-        .expect("exact retained cap admits point ref"),
-        expected
-    );
-}
-
-#[test]
-fn section_curve_identity_and_reference_refuse_before_formatting() {
-    let sketch = cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#40").expect("sketch ID");
-    let expected = "creo:featdefs:section_curve#40:7";
-    let limit = cadmpeg_core::decode::u64_from_index(expected.len()) - 1;
-    for (operation, result) in [
-        (
-            "creo section curve reference",
-            with_retained_limit(limit, |ctx| {
-                sketch_section_curve_id_admitted(ctx, &sketch, 7).map(|text| text.len())
-            }),
-        ),
-        (
-            "creo section curve identity",
-            with_retained_limit(limit, |ctx| {
-                typed_sketch_section_curve_id_admitted(ctx, &sketch, 7)
-                    .map(|id| id.map(|id| id.as_str().len()).unwrap_or_default())
-            }),
-        ),
-    ] {
-        assert!(
-            matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(resource))
-            if resource.dimension == ResourceDimension::RetainedBytes
-                && resource.operation == operation)
-        );
-    }
-    assert_eq!(
-        with_retained_limit(
-            cadmpeg_core::decode::u64_from_index(expected.len()),
-            |ctx| { typed_sketch_section_curve_id_admitted(ctx, &sketch, 7) }
-        )
-        .expect("exact cap admits curve ID")
-        .expect("valid curve ID")
-        .as_str(),
-        expected
-    );
-}
-
-#[test]
-fn sketch_feature_identity_refuses_before_formatting() {
-    let sketch = cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#40").expect("sketch ID");
-    let expected = "creo:model:sketch_feature#40";
-    assert!(
-        matches!(with_retained_limit(cadmpeg_core::decode::u64_from_index(expected.len()) - 1, |ctx| {
-        sketch_feature_id_admitted(ctx, &sketch)
-    }), Err(cadmpeg_core::CodecError::ResourceLimit(resource))
-        if resource.dimension == ResourceDimension::RetainedBytes
-            && resource.operation == "creo sketch feature identity")
-    );
-    assert_eq!(
-        with_retained_limit(
-            cadmpeg_core::decode::u64_from_index(expected.len()),
-            |ctx| { sketch_feature_id_admitted(ctx, &sketch) }
-        )
-        .expect("exact cap admits feature ID")
-        .expect("valid feature ID")
-        .as_str(),
-        expected
-    );
-}
 use crate::decode::native_records::CreoSketchTableKind;
 use crate::feature::definitions::{
     DefinitionIdentity, FeatureDefinition, FeatureTrimBucket, FeatureTrimEntityTable,
@@ -150,142 +35,51 @@ fn definition() -> FeatureDefinition {
 }
 
 #[test]
-fn sketch_constraint_identity_and_native_ref_refuse_retained_bytes() {
+fn sketch_constraint_identity_and_native_ref_name_the_sketch() {
     let sketch = cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#40").expect("sketch ID");
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
-        "creo:featdefs:sketch_constraint#40:equation:offset:28".len(),
-    ) - 1;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    let error = sketch_constraint_id_admitted(&ctx, &sketch, "equation:offset:28")
-        .expect_err("constraint ID exceeds retained cap");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::RetainedBytes
-            && resource.operation == "creo sketch constraint identity")
-    );
-    policy.limits.max_retained_bytes =
-        cadmpeg_core::decode::u64_from_index("creo:featdefs:sketch#40".len()) - 1;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    let error =
-        sketch_native_ref_admitted(&ctx, &sketch).expect_err("native ref exceeds retained cap");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::RetainedBytes
-            && resource.operation == "creo sketch native reference")
-    );
-    let service = DecodePolicy::service();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &service).expect("empty root");
     assert_eq!(
-        sketch_constraint_id_admitted(&ctx, &sketch, "equation:offset:28")
+        sketch_constraint_id_admitted(&sketch, "equation:offset:28")
             .expect("service constraint ID")
-            .expect("valid constraint ID")
             .as_str(),
         "creo:featdefs:sketch_constraint#40:equation:offset:28"
     );
     assert_eq!(
-        sketch_native_ref_admitted(&ctx, &sketch).expect("service native ref"),
+        sketch_native_ref_admitted(&sketch),
         "creo:featdefs:sketch#40"
     );
 }
 
 #[test]
-fn section_owner_feature_identity_refuses_before_formatting() {
+fn section_owner_feature_identity_names_the_feature() {
     let scan = crate::test_support::empty_container_scan();
     let sketch = cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#917").expect("sketch ID");
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes =
-        cadmpeg_core::decode::u64_from_index("creo:model:sketch_feature#917".len()) - 1;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    let error = section_owner_feature_id(&ctx, &scan, 917, &sketch)
-        .expect_err("owner feature ID exceeds retained cap");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::RetainedBytes
-            && resource.operation == "creo section owner feature identity")
-    );
-    let service = DecodePolicy::service();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &service).expect("empty root");
     assert_eq!(
-        section_owner_feature_id(&ctx, &scan, 917, &sketch)
+        section_owner_feature_id(&scan, 917, &sketch)
             .expect("service owner ID")
-            .expect("valid owner ID")
             .as_str(),
         "creo:model:sketch_feature#917"
     );
 }
 
 #[test]
-fn model_sketch_identity_refuses_before_formatting_and_uniqueness_scan() {
+fn model_sketch_identity_uses_the_unique_definition_offset() {
     let mut scan = crate::test_support::empty_container_scan();
     let mut source = definition();
     source.offset = 9;
     scan.features.definitions.push(source);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    let error = model_sketch_id(&ctx, &scan, &scan.features.definitions[0])
-        .expect_err("one definition needs one scan unit");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::WorkUnits
-            && resource.operation == "creo model sketch identity uniqueness")
-    );
-    policy.limits.max_work_units = DecodePolicy::service().limits.max_work_units;
-    policy.limits.max_retained_bytes =
-        cadmpeg_core::decode::u64_from_index("creo:model:sketch#offset:9".len()) - 1;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    let error = model_sketch_id(&ctx, &scan, &scan.features.definitions[0])
-        .expect_err("identity text exceeds retained cap");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::RetainedBytes
-            && resource.operation == "creo model sketch identity")
-    );
-    let id = crate::decode::with_test_decode_ctx(|ctx| {
-        model_sketch_id(ctx, &scan, &scan.features.definitions[0])
-    })
-    .expect("service identity admitted")
-    .expect("valid sketch identity");
+    let id = { model_sketch_id(&scan, &scan.features.definitions[0]) }
+        .expect("service identity admitted");
     assert_eq!(id.as_str(), "creo:model:sketch#offset:9");
 }
 
 #[test]
-fn native_sketch_identity_refuses_before_formatting_and_uniqueness_scan() {
+fn native_sketch_identity_uses_the_unique_definition_offset() {
     let mut scan = crate::test_support::empty_container_scan();
     let mut source = definition();
     source.offset = 9;
     scan.features.definitions.push(source);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    let error = feature_sketch_record_id_in_scan(&ctx, &scan, &scan.features.definitions[0])
-        .expect_err("one definition needs one scan unit");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::WorkUnits
-            && resource.operation == "creo native sketch identity uniqueness")
-    );
-    policy.limits.max_work_units = DecodePolicy::service().limits.max_work_units;
-    policy.limits.max_retained_bytes =
-        cadmpeg_core::decode::u64_from_index("creo:featdefs:sketch#offset:9".len()) - 1;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    let error = feature_sketch_record_id_in_scan(&ctx, &scan, &scan.features.definitions[0])
-        .expect_err("native identity exceeds retained cap");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::RetainedBytes
-            && resource.operation == "creo native sketch identity")
-    );
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| {
-            feature_sketch_record_id_in_scan(ctx, &scan, &scan.features.definitions[0])
-        })
-        .expect("service native identity"),
+        feature_sketch_record_id_in_scan(&scan, &scan.features.definitions[0]),
         "creo:featdefs:sketch#offset:9"
     );
 }
@@ -300,17 +94,11 @@ fn owning_definition_lookup_keeps_unique_owner_rule() {
     };
     scan.features.definitions.push(owned.clone());
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| owning_feature_definition_ref(ctx, &scan, 40))
-            .expect("ID admitted")
-            .as_deref(),
+        owning_feature_definition_ref(&scan, 40).as_deref(),
         Some("creo:featdefs:feature_definition#17")
     );
     scan.features.definitions.push(owned);
-    assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| owning_feature_definition_ref(ctx, &scan, 40))
-            .expect("lookup admitted"),
-        None
-    );
+    assert_eq!(owning_feature_definition_ref(&scan, 40), None);
 }
 
 fn bucket() -> FeatureTrimBucket {
@@ -345,63 +133,12 @@ fn trim_vertices(buckets: Vec<FeatureTrimBucket>) -> FeatureTrimVertexTable {
     }
 }
 
-fn limited_headers(
-    definition: &FeatureDefinition,
-    max_collection_items: u64,
-) -> cadmpeg_core::CodecError {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = max_collection_items;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    match sketch_table_headers(&ctx, definition) {
-        Err(error) => error,
-        Ok(_) => panic!("headers exceed the collection limit"),
-    }
-}
-
-#[test]
-fn sketch_headers_refuse_before_outer_row() {
-    let mut definition = definition();
-    definition.trim_entities = Some(trim_entities(Vec::new()));
-    let error = limited_headers(&definition, 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == "creo sketch table headers")
-    );
-}
-
-#[test]
-fn sketch_headers_refuse_before_trim_entity_bucket_rows() {
-    let mut definition = definition();
-    definition.trim_entities = Some(trim_entities(vec![bucket()]));
-    let error = limited_headers(&definition, 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == "creo sketch trim entity headers")
-    );
-}
-
-#[test]
-fn sketch_headers_refuse_before_trim_vertex_bucket_rows() {
-    let mut definition = definition();
-    definition.trim_vertices = Some(trim_vertices(vec![bucket()]));
-    let error = limited_headers(&definition, 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == "creo sketch trim vertex headers")
-    );
-}
-
 #[test]
 fn sketch_headers_keep_source_offset_order_and_bucket_values() {
     let mut definition = definition();
     definition.trim_entities = Some(trim_entities(vec![bucket()]));
     definition.trim_vertices = Some(trim_vertices(vec![bucket()]));
-    let headers = crate::decode::with_test_decode_ctx(|ctx| sketch_table_headers(ctx, &definition))
-        .expect("two headers fit the service limits");
+    let headers = sketch_table_headers(&definition).expect("two headers fit the service limits");
     assert_eq!(headers.len(), 2);
     assert_eq!((headers[0].offset, headers[1].offset), (11, 12));
     for header in headers {

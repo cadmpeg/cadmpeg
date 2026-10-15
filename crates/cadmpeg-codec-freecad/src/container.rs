@@ -68,10 +68,6 @@ pub(crate) fn has_document_markers(
         }
         _ => return Ok(false),
     };
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(document.len()) * 2,
-        "scan FreeCAD probe XML",
-    )?;
     Ok(contains(document, b"<Document") && contains(document, b"SchemaVersion"))
 }
 
@@ -114,10 +110,6 @@ pub(crate) fn scan<'a, 'ctx>(
     root: View<'a>,
 ) -> Result<Scan<'a, 'ctx>, CodecError> {
     let archive = ArchiveSnapshot::new(ctx, root)?;
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(archive.entries().len()),
-        "fcstd ZIP entries",
-    )?;
     if !archive
         .entries()
         .iter()
@@ -129,27 +121,20 @@ pub(crate) fn scan<'a, 'ctx>(
     }
     let document_view = archive.open(ctx, "Document.xml")?;
     let document_bytes = document_view.window();
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(document_bytes.len()),
-        "FCStd Document.xml lexical admission",
-    )?;
-    if let Some((node_count, object_count)) = xml_envelope_counts(document_bytes) {
+    if let Some((_, object_count)) = xml_envelope_counts(document_bytes) {
         ctx.charge_entities(object_count, "admit FCStd document objects")?;
-        ctx.charge_collection_items(node_count, "FCStd Document.xml node tree")?;
     }
     let mut losses = Vec::new();
     let document_xml = admit_document(ctx, document_bytes)?;
-    let (document, schema_version) = parse_document(ctx, document_xml.document(), &mut losses)?;
+    let (document, schema_version) = parse_document(document_xml.document(), &mut losses)?;
     let mut data = BTreeMap::new();
     let mut unreadable_entries = Vec::new();
     for file in archive.entries() {
-        let name = ctx.copy_retained_text(&file.name, "FCStd archive entry name")?;
+        let name = file.name.clone();
         if !crate::native::is_safe_entry_name(&name) {
-            return Err(crate::resource::malformed_charged(
-                ctx,
-                format_args!("unsafe ZIP entry path {name:?}"),
-                "FCStd unsafe entry name diagnostic",
-            ));
+            return Err(CodecError::malformed(format_args!(
+                "unsafe ZIP entry path {name:?}"
+            )));
         }
         let view = if file.name == "Document.xml" {
             document_view
@@ -168,50 +153,35 @@ pub(crate) fn scan<'a, 'ctx>(
                         .window()
                         .get(start_index..end_index)
                         .ok_or_else(|| CodecError::malformed("ZIP payload escapes archive"))?;
-                    ctx.push_vec(
-                        &mut losses,
-                        crate::loss::FreecadLossCode::ArchiveEntryUnreadable.note(
-                            ctx.format_retained(
-                                format_args!(
-                                    "{} cannot be opened: {error}; stored payload retained",
-                                    file.name
-                                ),
-                                "FCStd unreadable entry loss",
-                            )?,
+                    losses.push(crate::loss::FreecadLossCode::ArchiveEntryUnreadable.note(
+                        format!(
+                            "{} cannot be opened: {error}; stored payload retained",
+                            file.name
                         ),
-                        "FCStd unreadable entry losses",
+                    ));
+                    ctx.retain_bytes(
+                        cadmpeg_core::decode::u64_from_index(bytes.len()),
+                        "FCStd unreadable stored payload",
                     )?;
-                    ctx.push_vec(
-                        &mut unreadable_entries,
-                        UnreadableEntry {
-                            id: ctx.format_retained(
-                                format_args!("fcstd:native:unreadable_entry#{name}"),
-                                "FCStd unreadable entry identity",
-                            )?,
-                            name,
-                            data_start: range.start,
-                            data_end: end,
-                            stored_data: ctx
-                                .copy_retained(bytes, "FCStd unreadable stored payload")?
-                                .into(),
-                            error: ctx.format_retained(
-                                format_args!("{error}"),
-                                "FCStd unreadable entry diagnostic",
-                            )?,
-                        },
-                        "FCStd unreadable entries",
-                    )?;
+                    unreadable_entries.push(UnreadableEntry {
+                        id: format!("fcstd:native:unreadable_entry#{name}"),
+                        name,
+                        data_start: range.start,
+                        data_end: end,
+                        stored_data: bytes.to_vec().into(),
+                        error: format!("{error}"),
+                    });
                     continue;
                 }
             }
         };
-        ctx.insert_btree_map(&mut data, name, view, "FCStd archive entry map")?;
+        data.insert(name, view);
     }
     let physical_ledger = archive.physical_ledger(ctx)?;
-    let mut ledger = ctx.collection_vec(physical_ledger.len(), "FCStd archive ledger records")?;
+    let mut ledger = Vec::new();
     for (index, span) in physical_ledger.into_iter().enumerate() {
         ledger.push(ArchiveSpan {
-            id: crate::native::native_id_charged(ctx, "archive-span", &index.to_string())?,
+            id: crate::native::native_id("archive-span", index.to_string()),
             span: crate::native::ByteSpan::try_new(span.start, span.end)
                 .map_err(CodecError::Malformed)?,
             role: crate::native::ArchiveSpanRole::from(&span.role),
@@ -234,166 +204,78 @@ pub(crate) fn entry_records(
     scan: &Scan<'_, '_>,
     properties: &[PropertyRecord],
 ) -> Result<Vec<EntryRecord>, CodecError> {
-    let mut records = ctx.collection_vec(scan.entries.len(), "FCStd entry records")?;
-    let mut name_storage = ctx.reserve_scoped(0, "FCStd unreadable entry lookup")?;
+    let mut records = Vec::new();
     let mut unreadable_names = HashSet::new();
     for entry in &scan.unreadable_entries {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(entry.name.len()),
-            "FCStd unreadable entry name hashing",
-        )?;
-        name_storage.with_storage(|| {
-            ctx.insert_hash_set(
-                &mut unreadable_names,
-                entry.name.as_str(),
-                "FCStd unreadable entry lookup",
-            )
-        })?;
+        unreadable_names.insert(entry.name.as_str());
     }
-    let (references, _reference_storage) =
-        ctx.with_scoped_storage("FCStd entry reference index", || {
-            let mut references = HashMap::<&str, Vec<usize>>::new();
-            for (index, property) in properties.iter().enumerate() {
-                ctx.charge_work(1, "FCStd entry reference index construction")?;
-                for name in property.side_entries() {
-                    ctx.charge_work(
-                        cadmpeg_core::decode::u64_from_index(name.len()).max(1),
-                        "FCStd entry reference index construction",
-                    )?;
-                    if !references.contains_key(name.as_str()) {
-                        ctx.reserve_map(&mut references, 1, "FCStd entry reference index")?;
-                    }
-                    ctx.charge_work(
-                        cadmpeg_core::decode::u64_from_index(name.len()).max(1),
-                        "FCStd entry reference index construction",
-                    )?;
-                    let owners = references.entry(name.as_str()).or_default();
-                    // Repeated side-entry markers in one property yield one owner.
-                    if owners.last() != Some(&index) {
-                        ctx.reserve_vec(owners, 1, "FCStd entry reference index")?;
-                        owners.push(index);
-                    }
+    let references = {
+        let mut references = HashMap::<&str, Vec<usize>>::new();
+        for (index, property) in properties.iter().enumerate() {
+            for name in property.side_entries() {
+                let owners = references.entry(name.as_str()).or_default();
+                // Repeated side-entry markers in one property yield one owner.
+                if owners.last() != Some(&index) {
+                    owners.push(index);
                 }
             }
-            Ok::<_, CodecError>(references)
-        })?;
+        }
+        Ok::<_, CodecError>(references)
+    }?;
     for entry in &scan.entries {
         let Some(bytes) = scan.data.get(&entry.name).map(|view| view.window()) else {
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(entry.name.len()),
-                "FCStd unreadable entry lookup hashing",
-            )?;
             if unreadable_names.contains(entry.name.as_str()) {
                 // Stored source-only bytes have no expanded-byte coverage.
                 continue;
             }
-            return Err(CodecError::Malformed(ctx.format_retained(
-                format_args!("entry {} disappeared after scan", entry.name),
-                "FCStd missing entry error",
-            )?));
+            return Err(CodecError::malformed(format_args!(
+                "entry {} disappeared after scan",
+                entry.name
+            )));
         };
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(entry.name.len()).max(1),
-            "FCStd entry reference index lookup",
-        )?;
         let owners = references
             .get(entry.name.as_str())
             .map_or(&[][..], Vec::as_slice);
-        let mut referenced_by =
-            ctx.collection_vec(owners.len(), "FCStd entry referencing properties")?;
+        let mut referenced_by = Vec::new();
         for &index in owners {
-            ctx.charge_work(1, "FCStd entry reference index lookup")?;
-            referenced_by.push(
-                ctx.copy_retained_text(&properties[index].id, "FCStd entry referencing identity")?,
-            );
+            referenced_by.push(properties[index].id.clone());
         }
+        ctx.retain_bytes(
+            cadmpeg_core::decode::u64_from_index(bytes.len()),
+            "retain FCStd entry",
+        )?;
         records.push(EntryRecord::new(
-            ctx,
-            crate::native::native_id_charged(ctx, "entry", &entry.name)?,
-            ctx.copy_retained_text(&entry.name, "FCStd entry record name")?,
+            crate::native::native_id("entry", &entry.name),
+            entry.name.clone(),
             entry.role,
             referenced_by,
-            ctx.copy_retained(bytes, "retain FCStd entry")?,
+            bytes.to_vec(),
         )?);
     }
     Ok(records)
 }
 
 pub(crate) fn source_attributes(
-    ctx: &DecodeContext<'_>,
     scan: &Scan<'_, '_>,
 ) -> Result<BTreeMap<NonBlankString, String>, CodecError> {
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(scan.document.root_name.len()),
-        "FCStd source root",
-    )?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(scan.document.document_kind().as_str().len()),
-        "FCStd source kind",
-    )?;
-    for (index, domain) in scan.document.domains.iter().enumerate() {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(domain.len()),
-            "FCStd source domain list",
-        )?;
-        if index != 0 {
-            ctx.charge_work(1, "FCStd source domain list")?;
-        }
-    }
-    if let Some(version) = &scan.document.program_version {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(version.len()),
-            "FCStd source program version",
-        )?;
-    }
     let mut attributes = BTreeMap::new();
     for (key, value) in [
-        (
-            "document_root",
-            ctx.copy_retained_text(&scan.document.root_name, "FCStd source root")?,
-        ),
-        (
-            "object_count",
-            ctx.format_retained(
-                format_args!("{}", scan.document.object_count),
-                "FCStd source object count",
-            )?,
-        ),
+        ("document_root", scan.document.root_name.clone()),
+        ("object_count", format!("{}", scan.document.object_count)),
         (
             "document_kind",
-            ctx.copy_retained_text(scan.document.document_kind().as_str(), "FCStd source kind")?,
+            scan.document.document_kind().as_str().to_owned(),
         ),
-        (
-            "application_domains",
-            ctx.join_retained(&scan.document.domains, ",", "FCStd source domain list")?,
-        ),
-        (
-            "archive_entry_count",
-            ctx.format_retained(
-                format_args!("{}", scan.entries.len()),
-                "FCStd source entry count",
-            )?,
-        ),
-        (
-            "physical_ledger_spans",
-            ctx.format_retained(
-                format_args!("{}", scan.ledger.len()),
-                "FCStd source ledger spans",
-            )?,
-        ),
+        ("application_domains", scan.document.domains.join(",")),
+        ("archive_entry_count", format!("{}", scan.entries.len())),
+        ("physical_ledger_spans", format!("{}", scan.ledger.len())),
     ]
     .into_iter()
     .chain(
         scan.ledger
             .last()
             .map(|last| {
-                Ok::<_, CodecError>((
-                    "physical_archive_bytes",
-                    ctx.format_retained(
-                        format_args!("{}", last.span.end()),
-                        "FCStd source archive bytes",
-                    )?,
-                ))
+                Ok::<_, CodecError>(("physical_archive_bytes", format!("{}", last.span.end())))
             })
             .transpose()?,
     )
@@ -401,19 +283,10 @@ pub(crate) fn source_attributes(
         scan.document
             .program_version
             .as_ref()
-            .map(|value| {
-                Ok::<_, CodecError>((
-                    "program_version",
-                    ctx.copy_retained_text(value, "FCStd source program version")?,
-                ))
-            })
+            .map(|value| Ok::<_, CodecError>(("program_version", value.to_owned())))
             .transpose()?,
     ) {
-        ctx.admit_retained_btree_record::<NonBlankString, String>(
-            0,
-            "FCStd source attribute records",
-        )?;
-        let key = NonBlankString::new(ctx.copy_retained_text(key, "FCStd source attribute key")?)
+        let key = NonBlankString::new(key.to_owned())
             .ok_or_else(|| CodecError::malformed("source attribute key is empty"))?;
         attributes.insert(key, value);
     }
@@ -421,10 +294,7 @@ pub(crate) fn source_attributes(
 }
 
 /// Summarize one scan.
-pub(crate) fn summarize(
-    ctx: &DecodeContext<'_>,
-    scan: &Scan<'_, '_>,
-) -> Result<ContainerSummary, CodecError> {
+pub(crate) fn summarize(scan: &Scan<'_, '_>) -> ContainerSummary {
     let matched = crate::dialect::FcstdDialect::classify(&scan.document, &scan.schema_version);
     let mut losses = Vec::new();
     for loss in scan
@@ -432,81 +302,45 @@ pub(crate) fn summarize(
         .iter()
         .chain(crate::dialect::FcstdDialect::dialect_loss(&matched).iter())
     {
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(loss.message.len()),
-            "FCStd summary loss message",
-        )?;
-        ctx.push_vec(&mut losses, loss.clone(), "FCStd summary losses")?;
+        losses.push(loss.clone());
     }
-    let mut entries = ctx.collection_vec(scan.entries.len(), "FCStd summary entries")?;
+    let mut entries = Vec::new();
     for entry in &scan.entries {
         let mut attributes = BTreeMap::new();
         for (key, value) in &entry.attributes {
-            ctx.insert_btree_map(
-                &mut attributes,
-                ctx.copy_retained_text(key, "FCStd summary attribute key")?,
-                ctx.copy_retained_text(value, "FCStd summary attribute value")?,
-                "FCStd summary entry attributes",
-            )?;
+            attributes.insert(key.to_owned(), value.to_owned());
         }
         entries.push(ContainerEntry {
-            name: ctx.copy_retained_text(&entry.name, "FCStd summary entry name")?,
+            name: entry.name.clone(),
             role: entry.role,
             storage: entry.storage.clone(),
             attributes,
         });
     }
-    Ok(ContainerSummary::classified(
+    ContainerSummary::classified(
         cadmpeg_core::dialect::DialectLayers::of(matched),
         cadmpeg_ir::ContainerKind::Zip,
         entries,
         losses,
-        summary_notes(ctx, scan)?,
-    ))
+        summary_notes(scan),
+    )
 }
 
 /// Notes shared by inspect and decode without reclassifying host identity.
-pub(crate) fn summary_notes(
-    ctx: &DecodeContext<'_>,
-    scan: &Scan<'_, '_>,
-) -> Result<Vec<String>, CodecError> {
-    let mut notes = ctx.collection_vec(
-        6 + usize::from(scan.document.program_version.is_some()),
-        "FCStd summary notes",
-    )?;
+pub(crate) fn summary_notes(scan: &Scan<'_, '_>) -> Vec<String> {
+    let mut notes = Vec::new();
     notes.extend([
-        ctx.format_retained(
-            format_args!("SchemaVersion={}", scan.schema_version),
-            "FCStd schema note",
-        )?,
-        ctx.format_retained(
-            format_args!("FileVersion={}", scan.document.file_version.as_str()),
-            "FCStd file version note",
-        )?,
-        ctx.format_retained(
-            format_args!("document root={}", scan.document.root_name),
-            "FCStd document root note",
-        )?,
-        ctx.format_retained(
-            format_args!("document kind={}", scan.document.document_kind().as_str()),
-            "FCStd document kind note",
-        )?,
-        ctx.format_retained(
-            format_args!("object count={}", scan.document.object_count),
-            "FCStd object count note",
-        )?,
-        ctx.format_retained(
-            format_args!("physical ledger spans={} coverage=exact", scan.ledger.len()),
-            "FCStd physical ledger note",
-        )?,
+        format!("SchemaVersion={}", scan.schema_version),
+        format!("FileVersion={}", scan.document.file_version.as_str()),
+        format!("document root={}", scan.document.root_name),
+        format!("document kind={}", scan.document.document_kind().as_str()),
+        format!("object count={}", scan.document.object_count),
+        format!("physical ledger spans={} coverage=exact", scan.ledger.len()),
     ]);
     if let Some(version) = &scan.document.program_version {
-        notes.push(ctx.format_retained(
-            format_args!("ProgramVersion={version}"),
-            "FCStd program version note",
-        )?);
+        notes.push(format!("ProgramVersion={version}"));
     }
-    Ok(notes)
+    notes
 }
 
 fn classify(name: &str) -> ContainerRole {
@@ -526,7 +360,6 @@ fn classify(name: &str) -> ContainerRole {
 }
 
 pub(crate) fn canonical_attribute(
-    ctx: &DecodeContext<'_>,
     root: roxmltree::Node<'_, '_>,
     canonical: &str,
     alias: &str,
@@ -535,9 +368,7 @@ pub(crate) fn canonical_attribute(
         (Some(_), Some(_)) => Err(CodecError::malformed(format_args!(
             "Document element has both {canonical} and {alias} attributes"
         ))),
-        (Some(value), None) => Ok(Some(
-            ctx.copy_retained_text(value, "FCStd document attribute")?,
-        )),
+        (Some(value), None) => Ok(Some(value.to_owned())),
         (None, Some(_)) => Err(CodecError::malformed(format_args!(
             "Document element uses unsupported {alias}; expected {canonical}"
         ))),
@@ -670,10 +501,6 @@ pub(crate) fn admit_document<'input, 'ctx>(
     ctx: &'ctx DecodeContext<'_>,
     bytes: &'input [u8],
 ) -> Result<AdmittedXml<'input, 'ctx>, CodecError> {
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(bytes.len()),
-        "validate FreeCAD XML UTF-8",
-    )?;
     let text = std::str::from_utf8(bytes)
         .map_err(|_| CodecError::Malformed("Document.xml is not UTF-8".into()))?;
     let admitted_xml = match ctx.parse_xml(text, "FreeCAD document XML tree") {
@@ -683,10 +510,9 @@ pub(crate) fn admit_document<'input, 'ctx>(
             let CodecError::Malformed(error) = error else {
                 return Err(error);
             };
-            return Err(CodecError::Malformed(ctx.format_retained(
-                format_args!("invalid Document.xml: {error}"),
-                "FCStd document parse error",
-            )?));
+            return Err(CodecError::malformed(format_args!(
+                "invalid Document.xml: {error}"
+            )));
         }
     };
     Ok(admitted_xml)
@@ -694,37 +520,32 @@ pub(crate) fn admit_document<'input, 'ctx>(
 
 /// Read container metadata from the admitted persistence tree.
 pub(crate) fn parse_document(
-    ctx: &DecodeContext<'_>,
     xml: &roxmltree::Document<'_>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(DocumentFacts, String), CodecError> {
     let root = xml.root_element();
     if root.tag_name().name() != "Document" {
-        return Err(CodecError::WrongFormat(ctx.format_retained(
-            format_args!(
-                "Document.xml root is {}, expected Document",
-                root.tag_name().name()
-            ),
-            "FCStd document root error",
-        )?));
+        return Err(CodecError::WrongFormat(format!(
+            "Document.xml root is {}, expected Document",
+            root.tag_name().name()
+        )));
     }
-    let schema_version = canonical_attribute(ctx, root, "SchemaVersion", "schemaVersion")?
+    let schema_version = canonical_attribute(root, "SchemaVersion", "schemaVersion")?
         .ok_or_else(|| CodecError::WrongFormat("Document.xml has no SchemaVersion".into()))?;
     let file_version = metadata_attribute(
-        ctx,
         root,
         "FileVersion",
         "fileVersion",
         crate::loss::FreecadLossCode::FileVersionNoncanonical,
         losses,
-    )?
+    )
     .unwrap_or_else(|| "0".into());
     let vocabulary = crate::persistence::Vocabulary::from_declaration(&schema_version)?;
     let file_version = crate::native::FileVersion::from(file_version);
     if file_version.value().is_none() {
-        ctx.push_vec(losses, crate::loss::FreecadLossCode::FileVersionUnverified.note(
-            ctx.format_retained(format_args!("Document FileVersion {:?} is not an unsigned integer; version-dependent inline element maps remain source-only", file_version.as_str()), "FCStd file version diagnostic")?
-        ), "FCStd container losses")?;
+        losses.push(crate::loss::FreecadLossCode::FileVersionUnverified.note(
+            format!("Document FileVersion {:?} is not an unsigned integer; version-dependent inline element maps remain source-only", file_version.as_str())
+        ));
     }
     let (declaration_tag, data_tag, record_tag) = vocabulary.tags();
     // discarded-value: the data section's uniqueness is the check; ? states its refusal and the node has no reader
@@ -743,24 +564,19 @@ pub(crate) fn parse_document(
             .and_then(|name| name.split_once("::"))
         {
             if !domain_set.contains(domain) {
-                ctx.insert_btree_set(
-                    &mut domain_set,
-                    ctx.copy_retained_text(domain, "FCStd document domain name")?,
-                    "FCStd document domains",
-                )?;
+                domain_set.insert(domain.to_owned());
             }
         }
     }
-    let mut domains = ctx.collection_vec(domain_set.len(), "FCStd document domain list")?;
+    let mut domains = Vec::new();
     domains.extend(domain_set);
     let program_version = metadata_attribute(
-        ctx,
         root,
         "ProgramVersion",
         "programVersion",
         crate::loss::FreecadLossCode::ProgramVersionNoncanonical,
         losses,
-    )?;
+    );
     let document = DocumentFacts {
         id: crate::native::native_id("document", "0"),
         file_version,
@@ -774,33 +590,25 @@ pub(crate) fn parse_document(
 
 /// Canonical metadata controls interpretation when a noncanonical alias conflicts.
 fn metadata_attribute(
-    ctx: &DecodeContext<'_>,
     root: roxmltree::Node<'_, '_>,
     canonical: &str,
     alias: &str,
     code: crate::loss::FreecadLossCode,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-) -> Result<Option<String>, CodecError> {
+) -> Option<String> {
     let value = root.attribute(canonical);
     if let Some(alias_value) = root.attribute(alias) {
         let message = if value.is_some_and(|value| value != alias_value) {
-            ctx.format_retained(format_args!("Document has conflicting {canonical} and {alias} declarations; retaining canonical {canonical}"), "FCStd metadata diagnostic")?
+            format!("Document has conflicting {canonical} and {alias} declarations; retaining canonical {canonical}")
         } else {
-            ctx.format_retained(
-                format_args!("Document uses {alias} metadata; read as {canonical}"),
-                "FCStd metadata diagnostic",
-            )?
+            format!("Document uses {alias} metadata; read as {canonical}")
         };
-        ctx.push_vec(losses, code.note(message), "FCStd container losses")?;
+        losses.push(code.note(message));
     }
-    value
-        .or_else(|| root.attribute(alias))
-        .map(|value| ctx.copy_retained_text(value, "FCStd version metadata"))
-        .transpose()
+    value.or_else(|| root.attribute(alias)).map(str::to_owned)
 }
 
 pub(crate) fn logical_ledger(
-    ctx: &DecodeContext<'_>,
     entries: &[EntryRecord],
     properties: &[PropertyRecord],
     gui: &gui::Graph,
@@ -810,42 +618,36 @@ pub(crate) fn logical_ledger(
 ) -> Result<Vec<LogicalSpan>, CodecError> {
     let mut typed_entries = HashSet::new();
     for payload in shape_payloads {
-        ctx.insert_hash_set(
-            &mut typed_entries,
-            payload.entry.as_str(),
-            "FCStd typed entry identities",
-        )?;
+        typed_entries.insert(payload.entry.as_str());
     }
     for name in string_tables
         .iter()
         .filter_map(|table| table.source_entry.as_deref())
     {
-        ctx.insert_hash_set(&mut typed_entries, name, "FCStd typed entry identities")?;
+        typed_entries.insert(name);
     }
     for name in element_maps
         .iter()
         .filter_map(|map| map.source_entry.as_deref())
     {
-        ctx.insert_hash_set(&mut typed_entries, name, "FCStd typed entry identities")?;
+        typed_entries.insert(name);
     }
     let mut output = Vec::new();
     for entry in entries {
         if typed_entries.contains(entry.id()) || typed_entries.contains(entry.name()) {
             push_logical_span(
-                ctx,
                 &mut output,
                 entry,
                 0,
                 entry.byte_len(),
                 LogicalClassification::Typed {
-                    owner: ctx.copy_retained_text(entry.id(), "FCStd logical span owner")?,
+                    owner: entry.id().to_owned(),
                 },
             )?;
         } else if entry.name() == "Document.xml" || entry.name() == "GuiDocument.xml" {
             let mut ranges = Vec::new();
             if entry.name() == "Document.xml" {
                 for property in properties {
-                    ctx.reserve_vec(&mut ranges, 1, "FCStd logical property ranges")?;
                     ranges.push((
                         property.xml.start(),
                         property.xml.end(),
@@ -854,12 +656,11 @@ pub(crate) fn logical_ledger(
                         } else {
                             "typed"
                         },
-                        ctx.copy_retained_text(&property.id, "FCStd logical range owner")?,
+                        property.id.clone(),
                     ));
                 }
             } else {
                 for property in &gui.properties {
-                    ctx.reserve_vec(&mut ranges, 1, "FCStd logical GUI ranges")?;
                     ranges.push((
                         property.xml.start(),
                         property.xml.end(),
@@ -869,37 +670,30 @@ pub(crate) fn logical_ledger(
                         } else {
                             "named_opaque"
                         },
-                        ctx.copy_retained_text(&property.id, "FCStd logical range owner")?,
+                        property.id.clone(),
                     ));
                 }
                 for document in &gui.documents {
                     for state in &document.states {
-                        ctx.reserve_vec(&mut ranges, 1, "FCStd logical GUI ranges")?;
                         ranges.push((
                             state.xml.start(),
                             state.xml.end(),
                             "typed",
-                            ctx.copy_retained_text(&state.id, "FCStd logical range owner")?,
+                            state.id.clone(),
                         ));
                     }
                 }
             }
-            ctx.stable_sort_by(
-                &mut ranges,
-                |left, right| left.0.cmp(&right.0),
-                |_| 0,
-                "FCStd logical GUI range sort",
-            )?;
+            ranges.sort_by_key(|left| left.0);
             let mut cursor = 0_u64;
             for (start, end, classification, owner) in ranges {
                 if start < cursor || end < start || end > entry.byte_len() {
-                    return Err(CodecError::Malformed(ctx.format_retained(
-                        format_args!("overlapping or invalid {} record spans", entry.name()),
-                        "FCStd logical span error",
-                    )?));
+                    return Err(CodecError::malformed(format_args!(
+                        "overlapping or invalid {} record spans",
+                        entry.name()
+                    )));
                 }
                 push_logical_span(
-                    ctx,
                     &mut output,
                     entry,
                     cursor,
@@ -910,11 +704,10 @@ pub(crate) fn logical_ledger(
                     "typed" => LogicalClassification::Typed { owner },
                     _ => LogicalClassification::NamedOpaque { owner },
                 };
-                push_logical_span(ctx, &mut output, entry, start, end, classification)?;
+                push_logical_span(&mut output, entry, start, end, classification)?;
                 cursor = end;
             }
             push_logical_span(
-                ctx,
                 &mut output,
                 entry,
                 cursor,
@@ -923,13 +716,12 @@ pub(crate) fn logical_ledger(
             )?;
         } else {
             push_logical_span(
-                ctx,
                 &mut output,
                 entry,
                 0,
                 entry.byte_len(),
                 LogicalClassification::NamedOpaque {
-                    owner: ctx.copy_retained_text(entry.id(), "FCStd logical span owner")?,
+                    owner: entry.id().to_owned(),
                 },
             )?;
         }
@@ -938,23 +730,17 @@ pub(crate) fn logical_ledger(
 }
 
 pub(crate) fn byte_coverage(
-    ctx: &DecodeContext<'_>,
     physical: &[ArchiveSpan],
     entries: &[EntryRecord],
     logical: &[LogicalSpan],
     physical_byte_len: u64,
-) -> Result<ByteCoverageRecord, CodecError> {
+) -> ByteCoverageRecord {
     let mut classification_bytes = BTreeMap::new();
     let mut named_opaque_entries = BTreeSet::new();
     for span in logical {
         let classification = span.classification.as_str();
         if !classification_bytes.contains_key(classification) {
-            ctx.insert_btree_map(
-                &mut classification_bytes,
-                ctx.copy_retained_text(classification, "FCStd coverage classification name")?,
-                0,
-                "FCStd coverage classifications",
-            )?;
+            classification_bytes.insert(classification.to_owned(), 0);
         }
         if let Some(bytes) = classification_bytes.get_mut(classification) {
             *bytes += span.span.end() - span.span.start();
@@ -964,22 +750,12 @@ pub(crate) fn byte_coverage(
             LogicalClassification::NamedOpaque { .. }
         ) && !named_opaque_entries.contains(&span.entry)
         {
-            ctx.insert_btree_set(
-                &mut named_opaque_entries,
-                ctx.copy_retained_text(&span.entry, "FCStd opaque entry name")?,
-                "FCStd opaque coverage entries",
-            )?;
+            named_opaque_entries.insert(span.entry.clone());
         }
     }
-    let mut ordered_physical =
-        ctx.collection_vec(physical.len(), "FCStd ordered physical spans")?;
+    let mut ordered_physical = Vec::new();
     ordered_physical.extend(physical.iter());
-    ctx.stable_sort_by(
-        &mut ordered_physical,
-        |left, right| left.span.start().cmp(&right.span.start()),
-        |_| 0,
-        "FCStd physical span sort",
-    )?;
+    ordered_physical.sort_by_key(|left| left.span.start());
     let physical_exact = ordered_physical
         .first()
         .is_some_and(|span| span.span.start() == 0)
@@ -996,15 +772,9 @@ pub(crate) fn byte_coverage(
         for entry in entries {
             let mut spans = Vec::new();
             for span in logical.iter().filter(|span| span.entry == entry.name()) {
-                ctx.reserve_vec(&mut spans, 1, "FCStd entry logical spans")?;
                 spans.push(span);
             }
-            ctx.stable_sort_by(
-                &mut spans,
-                |left, right| left.span.start().cmp(&right.span.start()),
-                |_| 0,
-                "FCStd entry logical span sort",
-            )?;
+            spans.sort_by_key(|left| left.span.start());
             let exact = if entry.byte_len() == 0 {
                 spans.is_empty()
             } else {
@@ -1022,10 +792,9 @@ pub(crate) fn byte_coverage(
             }
         }
     }
-    let mut opaque_entries =
-        ctx.collection_vec(named_opaque_entries.len(), "FCStd opaque coverage list")?;
+    let mut opaque_entries = Vec::new();
     opaque_entries.extend(named_opaque_entries);
-    Ok(ByteCoverageRecord {
+    ByteCoverageRecord {
         id: crate::native::native_id("byte-coverage", "0"),
         physical_byte_len,
         physical_span_count: physical.len(),
@@ -1038,11 +807,10 @@ pub(crate) fn byte_coverage(
         classification_bytes,
         named_opaque_entries: opaque_entries,
         exact: physical_exact && logical_exact,
-    })
+    }
 }
 
 fn push_logical_span(
-    ctx: &DecodeContext<'_>,
     output: &mut Vec<LogicalSpan>,
     entry: &EntryRecord,
     start: u64,
@@ -1052,10 +820,9 @@ fn push_logical_span(
     if start == end {
         return Ok(());
     }
-    ctx.reserve_vec(output, 1, "FCStd logical ledger spans")?;
     output.push(LogicalSpan {
         id: crate::native::native_id("logical-span", output.len().to_string()),
-        entry: ctx.copy_retained_text(entry.name(), "FCStd logical span entry")?,
+        entry: entry.name().to_owned(),
         span: crate::native::ByteSpan::try_new(start, end).map_err(CodecError::Malformed)?,
         classification,
     });

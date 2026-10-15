@@ -5,10 +5,8 @@ use super::{rmfastload_target_object_id, PartColorDefinition, RmFastLoadObjectId
 use crate::container::Container;
 use crate::om::color::PaletteIndex;
 use crate::om::column_row::{LinkedRow, TargetRow};
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
-use std::fmt::Write;
 
 mod borrowed_wires;
 mod wire;
@@ -70,71 +68,43 @@ pub(in crate::native) struct RmDisplayColorAssignment {
 }
 
 fn push_assignment(
-    ctx: &DecodeContext<'_>,
     assignments: &mut Vec<RmDisplayColorAssignment>,
     frame: DisplayColorFrame,
     target_object_id: Option<String>,
     color_definition: &str,
     source_entry: &str,
-) -> Result<(), CodecError> {
-    ctx.reserve_vec(assignments, 1, "NX display color assignments")?;
+) {
     assignments.push(RmDisplayColorAssignment {
         id: String::new(),
         ordinal: 0,
         frame,
         target_object_id,
-        color_definition: ctx
-            .copy_retained_text(color_definition, "retain NX display color text")?,
-        source_entry: ctx.copy_retained_text(source_entry, "retain NX display color text")?,
+        color_definition: color_definition.to_owned(),
+        source_entry: source_entry.to_owned(),
     });
-    Ok(())
-}
-
-fn assignment_id(ctx: &DecodeContext<'_>, ordinal: usize) -> Result<String, CodecError> {
-    let mut value = ordinal;
-    let mut digits = 1;
-    while value >= 10 {
-        value /= 10;
-        digits += 1;
-    }
-    let length = "nx:rm-display-color-assignments:assignment#"
-        .len()
-        .checked_add(digits)
-        .ok_or_else(|| ctx.refuse_codec_limit("NX display color identity length", 0, 1))?;
-    let mut id = ctx.retained_string(length, "retain NX display color identity")?;
-    write!(id, "nx:rm-display-color-assignments:assignment#{ordinal}")
-        .map_err(|_| ctx.refuse_codec_limit("write NX display color identity", 0, 1))?;
-    Ok(id)
 }
 
 fn finalize_assignments(
-    ctx: &DecodeContext<'_>,
     mut assignments: Vec<RmDisplayColorAssignment>,
 ) -> Result<Vec<RmDisplayColorAssignment>, CodecError> {
-    ctx.stable_sort_by(
-        &mut assignments,
-        |first, second| first.frame.offset().cmp(&second.frame.offset()),
-        |_| 0,
-        "sort NX display color assignments",
-    )?;
+    assignments.sort_by_key(|first| first.frame.offset());
     for (ordinal, assignment) in assignments.iter_mut().enumerate() {
         assignment.ordinal = u32::try_from(ordinal)
-            .map_err(|_| ctx.refuse_codec_limit("NX display color ordinal", 0, 1))?;
-        assignment.id = assignment_id(ctx, ordinal)?;
+            .map_err(|_| CodecError::malformed("NX display color ordinal overflows u32"))?;
+        assignment.id = format!("nx:rm-display-color-assignments:assignment#{ordinal}");
     }
     Ok(assignments)
 }
 
 /// Decode explicit display-color assignments from `RMFastLoad` linked rows.
 pub(in crate::native) fn rm_display_color_assignments(
-    ctx: &DecodeContext<'_>,
     container: &Container,
     color_definitions: &[PartColorDefinition],
     object_ids: &[RmFastLoadObjectId],
 ) -> Result<Vec<RmDisplayColorAssignment>, CodecError> {
     let mut assignments = Vec::new();
     for (entry, section) in container
-        .om_sections(ctx)?
+        .om_sections()?
         .into_iter()
         .filter(|(entry, _)| entry.name == "/Root/FastLoad/RMFastLoad")
     {
@@ -145,16 +115,13 @@ pub(in crate::native) fn rm_display_color_assignments(
         let record_area = record_area.bytes;
         let source_base = entry.file_span().map_or(0, |(offset, _)| offset)
             + cadmpeg_core::decode::u64_from_index(record_area_offset);
-        for row in crate::om::column_row::scan::linked_rows(ctx, record_area)? {
+        for row in crate::om::column_row::scan::linked_rows(record_area) {
             let Some(color) =
                 crate::om::column_row::scan::preceding_color(record_area, row.offset())
             else {
                 continue;
             };
-            ctx.charge_work(
-                u64_from_index(color_definitions.len()),
-                "match NX display color definition",
-            )?;
+
             let mut matches = color_definitions
                 .iter()
                 .filter(|definition| definition.color_index == color);
@@ -173,26 +140,22 @@ pub(in crate::native) fn rm_display_color_assignments(
             else {
                 continue;
             };
-            let target_object_id = rmfastload_target_object_id(ctx, object_ids, target_index)?;
+            let target_object_id = rmfastload_target_object_id(object_ids, target_index);
             push_assignment(
-                ctx,
                 &mut assignments,
                 frame,
                 target_object_id,
                 &definition.id,
                 &entry.name,
-            )?;
+            );
         }
-        for row in crate::om::column_row::scan::target_rows(ctx, record_area)? {
+        for row in crate::om::column_row::scan::target_rows(record_area) {
             let Some(color) =
                 crate::om::column_row::scan::preceding_color(record_area, row.offset())
             else {
                 continue;
             };
-            ctx.charge_work(
-                u64_from_index(color_definitions.len()),
-                "match NX display color definition",
-            )?;
+
             let mut matches = color_definitions
                 .iter()
                 .filter(|definition| definition.color_index == color);
@@ -211,115 +174,31 @@ pub(in crate::native) fn rm_display_color_assignments(
             else {
                 continue;
             };
-            let target_object_id = rmfastload_target_object_id(ctx, object_ids, target_index)?;
+            let target_object_id = rmfastload_target_object_id(object_ids, target_index);
             push_assignment(
-                ctx,
                 &mut assignments,
                 frame,
                 target_object_id,
                 &definition.id,
                 &entry.name,
-            )?;
+            );
         }
     }
-    finalize_assignments(ctx, assignments)
+    finalize_assignments(assignments)
 }
 
 #[cfg(test)]
 mod admission_tests {
-    use super::{finalize_assignments, push_assignment, RmDisplayColorAssignment};
-    use cadmpeg_core::decode::ResourceDimension;
-    use cadmpeg_core::CodecError;
+    use super::{push_assignment, RmDisplayColorAssignment};
 
     const ROW: &str = r#"{"id":"nx:rm-display-color-assignments:assignment#0","ordinal":0,"encoding":{"kind":"target","target_index":2,"raw_target_index":"02","target_index_source_offset":15,"indices":[3,4,5],"raw_indices":["03","04","05"],"index_source_offsets":[20,21,22],"mode":7},"color_index":128,"color_definition":"definition","raw_color_index":"8080","source_entry":"entry","source_offset":8,"row_source_offset":10}"#;
 
     #[test]
-    fn display_color_assignment_refuses_collection_limit() {
-        let row: RmDisplayColorAssignment = serde_json::from_str(ROW).unwrap();
-        let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
-            policy.limits.max_collection_items = 0;
-        };
-        let error = crate::test_support::with_decode_context_over(&[], adjust_policy, |ctx| {
-            push_assignment(ctx, &mut Vec::new(), row.frame, None, "definition", "entry")
-                .unwrap_err()
-        });
-        assert!(matches!(error, CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems));
-    }
-
-    #[test]
-    fn display_color_assignment_refuses_retained_limit() {
-        let row: RmDisplayColorAssignment = serde_json::from_str(ROW).unwrap();
-        let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
-            policy.limits.max_retained_bytes = 0;
-        };
-        let error = crate::test_support::with_decode_context_over(&[], adjust_policy, |ctx| {
-            push_assignment(ctx, &mut Vec::new(), row.frame, None, "definition", "entry")
-                .unwrap_err()
-        });
-        assert!(matches!(error, CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::RetainedBytes));
-    }
-
-    #[test]
     fn display_color_assignment_preserves_definition_and_source() {
         let row: RmDisplayColorAssignment = serde_json::from_str(ROW).unwrap();
-        crate::test_support::with_decode_context_over(
-            &[],
-            |_| {},
-            |ctx| {
-                let mut assignments = Vec::new();
-                push_assignment(
-                    ctx,
-                    &mut assignments,
-                    row.frame,
-                    None,
-                    "definition",
-                    "entry",
-                )
-                .unwrap();
-                assert_eq!(assignments[0].color_definition, "definition");
-                assert_eq!(assignments[0].source_entry, "entry");
-            },
-        );
-    }
-
-    #[test]
-    fn display_color_finalization_refuses_scoped_limit() {
-        // Twenty-one descending offsets require the stable sort's index scratch.
-        let rows: Vec<RmDisplayColorAssignment> = (0..21)
-            .rev()
-            .map(|index| {
-                let mut wire: serde_json::Value = serde_json::from_str(ROW).unwrap();
-                wire["source_offset"] = serde_json::json!(100 * index + 8);
-                wire["row_source_offset"] = serde_json::json!(100 * index + 10);
-                wire["encoding"]["target_index_source_offset"] =
-                    serde_json::json!(100 * index + 15);
-                wire["encoding"]["index_source_offsets"] =
-                    serde_json::json!([100 * index + 20, 100 * index + 21, 100 * index + 22]);
-                serde_json::from_value(wire).unwrap()
-            })
-            .collect();
-        let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
-            policy.limits.max_materialized_bytes = 0;
-        };
-        let error = crate::test_support::with_decode_context_over(&[], adjust_policy, |ctx| {
-            finalize_assignments(ctx, rows).unwrap_err()
-        });
-        assert!(matches!(error, CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::MaterializedBytes));
-    }
-
-    #[test]
-    fn display_color_finalization_refuses_work_limit() {
-        let row: RmDisplayColorAssignment = serde_json::from_str(ROW).unwrap();
-        let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
-            policy.limits.max_work_units = 0;
-        };
-        let error = crate::test_support::with_decode_context_over(&[], adjust_policy, |ctx| {
-            finalize_assignments(ctx, vec![row]).unwrap_err()
-        });
-        assert!(matches!(error, CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::WorkUnits));
+        let mut assignments = Vec::new();
+        push_assignment(&mut assignments, row.frame, None, "definition", "entry");
+        assert_eq!(assignments[0].color_definition, "definition");
+        assert_eq!(assignments[0].source_entry, "entry");
     }
 }

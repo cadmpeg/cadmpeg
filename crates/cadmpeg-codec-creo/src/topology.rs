@@ -7,7 +7,6 @@
 #![deny(clippy::disallowed_methods)]
 
 use cadmpeg_core::decode::id_from_index;
-use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
@@ -92,46 +91,31 @@ pub(crate) struct Loop {
 
 impl Loop {
     pub(crate) fn new(
-        ctx: &DecodeContext<'_>,
         face_id: Option<NonZeroU32>,
         half_edges: Vec<HalfEdgeId>,
         graph: &[HalfEdge],
-    ) -> Result<Option<Self>, CodecError> {
+    ) -> Option<Self> {
         if half_edges.is_empty() {
-            return Ok(None);
+            return None;
         }
-        let count = cadmpeg_core::decode::u64_from_index(half_edges.len());
-        let work = count
-            .checked_mul(cadmpeg_core::decode::u64_from_index(graph.len()))
-            .and_then(|work| {
-                count
-                    .checked_mul(count)
-                    .and_then(|unique| work.checked_add(unique))
-            })
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit("creo closed ring validation work", u64::MAX, u64::MAX)
-            })?;
-        ctx.charge_work(work, "creo closed ring validation work")?;
         for (index, (id, next)) in half_edges
             .iter()
             .zip(half_edges.iter().cycle().skip(1))
             .enumerate()
         {
             if half_edges.iter().take(index).any(|previous| previous == id) {
-                return Ok(None);
+                return None;
             }
             let mut candidates = graph.iter().filter(|edge| edge.id == *id);
-            let Some(edge) = candidates.next() else {
-                return Ok(None);
-            };
+            let edge = candidates.next()?;
             if candidates.next().is_some() || edge.face_id != face_id || edge.next != Some(*next) {
-                return Ok(None);
+                return None;
             }
         }
-        Ok(Some(Self {
+        Some(Self {
             face_id,
             half_edges,
-        }))
+        })
     }
 
     pub(crate) fn face_id(&self) -> Option<NonZeroU32> {
@@ -155,31 +139,18 @@ pub(crate) struct FaceComponent {
 }
 
 impl FaceComponent {
-    fn new(
-        ctx: &DecodeContext<'_>,
-        face_ids: Vec<u32>,
-        curve_ids: Vec<u32>,
-    ) -> Result<Option<Self>, CodecError> {
-        let work = cadmpeg_core::decode::u64_from_index(face_ids.len())
-            .checked_mul(2)
-            .and_then(|work| {
-                work.checked_add(cadmpeg_core::decode::u64_from_index(curve_ids.len()))
-            })
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit("creo face component validation work", u64::MAX, u64::MAX)
-            })?;
-        ctx.charge_work(work, "creo face component validation work")?;
+    fn new(face_ids: Vec<u32>, curve_ids: Vec<u32>) -> Option<Self> {
         if face_ids.is_empty()
             || face_ids.contains(&0)
             || face_ids.windows(2).any(|pair| pair[0] >= pair[1])
             || curve_ids.windows(2).any(|pair| pair[0] >= pair[1])
         {
-            return Ok(None);
+            return None;
         }
-        Ok(Some(Self {
+        Some(Self {
             face_ids,
             curve_ids,
-        }))
+        })
     }
     pub(crate) fn face_ids(&self) -> &[u32] {
         &self.face_ids
@@ -188,12 +159,8 @@ impl FaceComponent {
         &self.curve_ids
     }
     #[cfg(test)]
-    pub(crate) fn new_for_test(
-        ctx: &DecodeContext<'_>,
-        face_ids: Vec<u32>,
-        curve_ids: Vec<u32>,
-    ) -> Result<Option<Self>, CodecError> {
-        Self::new(ctx, face_ids, curve_ids)
+    pub(crate) fn new_for_test(face_ids: Vec<u32>, curve_ids: Vec<u32>) -> Option<Self> {
+        Self::new(face_ids, curve_ids)
     }
 }
 
@@ -207,33 +174,19 @@ pub(crate) struct TopologicalVertex {
 }
 
 impl TopologicalVertex {
-    fn new(
-        ctx: &DecodeContext<'_>,
-        id: u32,
-        half_edges: Vec<HalfEdgeId>,
-    ) -> Result<Option<Self>, CodecError> {
-        let Some(id) = NonZeroU32::new(id) else {
-            return Ok(None);
-        };
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(half_edges.len()),
-            "creo vertex orbit validation work",
-        )?;
+    fn new(id: u32, half_edges: Vec<HalfEdgeId>) -> Option<Self> {
+        let id = NonZeroU32::new(id)?;
         if half_edges.is_empty() || half_edges.windows(2).any(|pair| pair[0] >= pair[1]) {
-            return Ok(None);
+            return None;
         }
-        Ok(Some(Self { id, half_edges }))
+        Some(Self { id, half_edges })
     }
     pub(crate) fn half_edges(&self) -> &[HalfEdgeId] {
         &self.half_edges
     }
     #[cfg(test)]
-    pub(crate) fn new_for_test(
-        ctx: &DecodeContext<'_>,
-        id: u32,
-        half_edges: Vec<HalfEdgeId>,
-    ) -> Result<Option<Self>, CodecError> {
-        Self::new(ctx, id, half_edges)
+    pub(crate) fn new_for_test(id: u32, half_edges: Vec<HalfEdgeId>) -> Option<Self> {
+        Self::new(id, half_edges)
     }
 }
 
@@ -254,16 +207,10 @@ pub(crate) struct HalfEdgeVertexIncidence {
 /// when one or both successor end relations are unresolved. Callers that need
 /// a complete oriented edge must use [`edge_vertex_pairs`] instead.
 pub(crate) fn edge_start_vertex_pairs(
-    ctx: &DecodeContext<'_>,
     incidence: &[HalfEdgeVertexIncidence],
-) -> Result<BTreeMap<u32, [NonZeroU32; 2]>, CodecError> {
+) -> BTreeMap<u32, [NonZeroU32; 2]> {
     let mut by_curve = BTreeMap::<u32, [SingleSide<NonZeroU32>; 2]>::new();
     for binding in incidence {
-        ctx.admit_btree_entry(
-            &by_curve,
-            &binding.half_edge.curve_id,
-            "creo start-vertex pair group nodes",
-        )?;
         let sides = match by_curve.entry(binding.half_edge.curve_id) {
             std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
             std::collections::btree_map::Entry::Vacant(entry) => {
@@ -275,17 +222,13 @@ pub(crate) fn edge_start_vertex_pairs(
     let mut pairs = BTreeMap::new();
     for (curve_id, sides) in by_curve {
         if let (Some(first), Some(second)) = (sides[0].sole(), sides[1].sole()) {
-            ctx.insert_btree_map(
-                &mut pairs,
-                curve_id,
-                [*first, *second],
-                "creo start-vertex pair nodes",
-            )?;
+            pairs.insert(curve_id, [*first, *second]);
         }
     }
-    Ok(pairs)
+    pairs
 }
 
+#[derive(Clone)]
 enum SingleSide<T> {
     Empty,
     One(T),
@@ -314,18 +257,12 @@ impl<T> SingleSide<T> {
 /// edge contribute face carriers at the endpoint, even when only one side is a
 /// member of the outgoing orbit.
 pub(crate) fn vertex_incident_faces(
-    ctx: &DecodeContext<'_>,
     vertices: &[TopologicalVertex],
     edges: &[HalfEdge],
-) -> Result<BTreeMap<NonZeroU32, BTreeSet<u32>>, CodecError> {
+) -> BTreeMap<NonZeroU32, BTreeSet<u32>> {
     let mut by_id = BTreeMap::new();
     for edge in edges {
-        ctx.insert_btree_map(
-            &mut by_id,
-            edge.id,
-            edge.face_id,
-            "creo incident-face half-edge lookup nodes",
-        )?;
+        by_id.insert(edge.id, edge.face_id);
     }
     let mut by_vertex = BTreeMap::new();
     for vertex in vertices {
@@ -339,34 +276,23 @@ pub(crate) fn vertex_incident_faces(
                 },
             ] {
                 if let Some(face) = by_id.get(&side).copied().flatten().map(NonZeroU32::get) {
-                    ctx.insert_btree_set(&mut faces, face, "creo incident face nodes")?;
+                    faces.insert(face);
                 }
             }
         }
-        ctx.insert_btree_map(
-            &mut by_vertex,
-            vertex.id,
-            faces,
-            "creo incident-face vertex nodes",
-        )?;
+        by_vertex.insert(vertex.id, faces);
     }
-    Ok(by_vertex)
+    by_vertex
 }
 
 /// Resolve a curve's side-0 start and side-1 start as its oriented endpoint
 /// pair when at least one face loop supplies the corresponding end relation.
 /// Any supplied relation must agree with the opposite side's start vertex.
 pub(crate) fn edge_vertex_pairs(
-    ctx: &DecodeContext<'_>,
     incidence: &[HalfEdgeVertexIncidence],
-) -> Result<BTreeMap<u32, [NonZeroU32; 2]>, CodecError> {
+) -> BTreeMap<u32, [NonZeroU32; 2]> {
     let mut by_curve = BTreeMap::<u32, [SingleSide<&HalfEdgeVertexIncidence>; 2]>::new();
     for binding in incidence {
-        ctx.admit_btree_entry(
-            &by_curve,
-            &binding.half_edge.curve_id,
-            "creo edge-vertex pair group nodes",
-        )?;
         let sides = match by_curve.entry(binding.half_edge.curve_id) {
             std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
             std::collections::btree_map::Entry::Vacant(entry) => {
@@ -390,14 +316,9 @@ pub(crate) fn edge_vertex_pairs(
         {
             continue;
         }
-        ctx.insert_btree_map(
-            &mut pairs,
-            curve_id,
-            [forward.start_vertex_id, reverse.start_vertex_id],
-            "creo edge-vertex pair nodes",
-        )?;
+        pairs.insert(curve_id, [forward.start_vertex_id, reverse.start_vertex_id]);
     }
-    Ok(pairs)
+    pairs
 }
 
 /// What one half-edge set states about its topological vertices.
@@ -424,43 +345,21 @@ pub(crate) struct VertexOrbits {
 /// [`VertexOrbits::unstatable_orbits`] by its seed half-edge and refused at its
 /// own lane. The rest of
 /// the file's topology is unaffected, so it is not a whole-file refusal.
-pub(crate) fn vertex_orbits(
-    ctx: &DecodeContext<'_>,
-    edges: &[HalfEdge],
-) -> Result<VertexOrbits, CodecError> {
-    let lookup_work = half_edge_lookup_work(edges.len());
-    let mut scratch = ctx.reserve_scoped(0, "creo vertex graph workspace")?;
+pub(crate) fn vertex_orbits(edges: &[HalfEdge]) -> Result<VertexOrbits, CodecError> {
     let mut by_id = BTreeMap::new();
     for (position, edge) in edges.iter().enumerate() {
-        ctx.charge_work(lookup_work, "creo vertex graph assembly")?;
-        scratch.with_storage(|| {
-            ctx.insert_btree_map(
-                &mut by_id,
-                edge.id,
-                position,
-                "creo vertex-orbit half-edge lookup nodes",
-            )
-        })?;
+        by_id.insert(edge.id, position);
     }
-    let mut predecessors = scratch.with_storage(|| {
-        ctx.collect_indexed_vec(edges.len(), "creo vertex predecessor slots", |_| {
-            Ok(SingleSide::Empty)
-        })
-    })?;
+    let mut predecessors = vec![SingleSide::Empty; edges.len()];
     for edge in edges {
-        ctx.charge_work(lookup_work, "creo vertex graph assembly")?;
         if let Some(position) = edge.next.and_then(|next| by_id.get(&next)) {
             predecessors[*position].push(edge.id);
         }
     }
-    let mut parents = scratch
-        .with_storage(|| ctx.collection_vec(edges.len(), "creo vertex component parents"))?;
+    let mut parents = Vec::new();
     parents.extend(0..edges.len());
-    let mut sizes = scratch.with_storage(|| {
-        ctx.collect_indexed_vec(edges.len(), "creo vertex component sizes", |_| Ok(1usize))
-    })?;
+    let mut sizes = vec![1usize; edges.len()];
     for &position in by_id.values() {
-        ctx.charge_work(lookup_work, "creo vertex graph adjacency")?;
         let Some(previous) = predecessors[position].sole() else {
             continue;
         };
@@ -471,63 +370,46 @@ pub(crate) fn vertex_orbits(
         let Some(&other) = by_id.get(&twin_previous) else {
             continue;
         };
-        let mut left = vertex_component_root(ctx, &mut parents, position)?;
-        let mut right = vertex_component_root(ctx, &mut parents, other)?;
+        let mut left = vertex_component_root(&mut parents, position);
+        let mut right = vertex_component_root(&mut parents, other);
         if left != right {
             if sizes[left] < sizes[right] {
                 std::mem::swap(&mut left, &mut right);
             }
             // Disjoint component sizes sum to at most the admitted edge count.
-            ctx.charge_work(24, "creo vertex component union")?;
             parents[right] = left;
             sizes[left] += sizes[right];
         }
     }
-    let mut group_by_root = scratch.with_storage(|| {
-        ctx.collect_indexed_vec(edges.len(), "creo vertex component groups", |_| {
-            Ok(None::<usize>)
-        })
-    })?;
+    let mut group_by_root = vec![None::<usize>; edges.len()];
     let mut groups: Vec<Vec<HalfEdgeId>> = Vec::new();
     for (&half_edge, &position) in &by_id {
-        ctx.charge_work(8, "creo vertex graph seeds")?;
-        let root = vertex_component_root(ctx, &mut parents, position)?;
+        let root = vertex_component_root(&mut parents, position);
         let group = match group_by_root[root] {
             Some(group) => group,
             None => {
                 let group = groups.len();
-                scratch.with_storage(|| {
-                    ctx.reserve_vec(&mut groups, 1, "creo vertex component rows")
-                })?;
                 groups.push(Vec::new());
                 group_by_root[root] = Some(group);
                 group
             }
         };
-        ctx.charge_work(8, "creo vertex orbit projection")?;
-        ctx.reserve_vec(&mut groups[group], 1, "creo vertex orbit half-edges")?;
         groups[group].push(half_edge);
     }
     let mut vertices = Vec::new();
     let mut unstatable_orbits = Vec::new();
     for (position, half_edges) in groups.into_iter().enumerate() {
         let Some(id) = id_from_index(position).and_then(|position| position.checked_add(1)) else {
-            ctx.reserve_vec(&mut unstatable_orbits, 1, "creo unstatable vertex orbits")?;
             unstatable_orbits.push(half_edges[0]);
             continue;
         };
-        ctx.reserve_vec(&mut vertices, 1, "creo topological vertices")?;
-        let vertex = TopologicalVertex::new(ctx, id, half_edges)?
+        let vertex = TopologicalVertex::new(id, half_edges)
             .ok_or_else(|| CodecError::malformed("invalid derived Creo vertex orbit"))?;
         vertices.push(vertex);
     }
-    let mut start_vertex = scratch.with_storage(|| {
-        ctx.collect_indexed_vec(edges.len(), "creo start-vertex slots", |_| {
-            Ok(None::<NonZeroU32>)
-        })
-    })?;
+    let mut start_vertex = vec![None::<NonZeroU32>; edges.len()];
     for &position in by_id.values() {
-        let root = vertex_component_root(ctx, &mut parents, position)?;
+        let root = vertex_component_root(&mut parents, position);
         start_vertex[position] = group_by_root[root]
             .and_then(id_from_index)
             .and_then(|group| group.checked_add(1))
@@ -535,9 +417,7 @@ pub(crate) fn vertex_orbits(
     }
     let mut incidence = Vec::new();
     for edge in edges {
-        ctx.charge_work(lookup_work, "creo vertex graph assembly")?;
         if let Some(start_vertex_id) = by_id.get(&edge.id).and_then(|&slot| start_vertex[slot]) {
-            ctx.reserve_vec(&mut incidence, 1, "creo half-edge vertex incidence")?;
             incidence.push(HalfEdgeVertexIncidence {
                 half_edge: edge.id,
                 start_vertex_id,
@@ -555,124 +435,78 @@ pub(crate) fn vertex_orbits(
     })
 }
 
-// Numeric tree comparisons and row projection are bounded by tree depth.
-fn half_edge_lookup_work(entries: usize) -> u64 {
-    256 * (u64::from(usize::BITS - entries.leading_zeros()) + 2)
-}
-
-fn vertex_component_root(
-    ctx: &DecodeContext<'_>,
-    parents: &mut [usize],
-    mut position: usize,
-) -> Result<usize, CodecError> {
-    ctx.charge_work(8, "creo vertex graph traversal")?;
+fn vertex_component_root(parents: &mut [usize], mut position: usize) -> usize {
     while parents[position] != position {
-        ctx.charge_work(24, "creo vertex graph traversal")?;
         let parent = parents[position];
         parents[position] = parents[parent];
         position = parent;
     }
-    Ok(position)
+    position
 }
 
 /// Group bounded face references connected by uniquely identified curve
 /// topology rows.
 ///
 /// A curve contributes to a component when either of its sides names a face.
-pub(crate) fn face_components(
-    ctx: &DecodeContext<'_>,
-    rows: &[CurveTopologyRow],
-) -> Result<Vec<FaceComponent>, CodecError> {
-    let count = cadmpeg_core::decode::u64_from_index(rows.len());
-    let lookup_work = 256 * (u64::from(u64::BITS - count.leading_zeros()) + 2);
-    let rows = crate::identity::uniquely_identified_rows_checked(ctx, rows, |row| row.id)?;
+pub(crate) fn face_components(rows: &[CurveTopologyRow]) -> Result<Vec<FaceComponent>, CodecError> {
+    let rows = crate::identity::uniquely_identified_rows(rows, |row| row.id);
     let mut adjacency = BTreeMap::<u32, BTreeSet<u32>>::new();
     let mut face_curves = BTreeMap::<u32, BTreeSet<u32>>::new();
     for row in &rows {
-        ctx.charge_work(lookup_work, "creo face graph assembly")?;
         let [left, right] = row.faces;
         for face in [left, right].into_iter().flatten().map(NonZeroU32::get) {
-            face_set(ctx, &mut adjacency, face, "creo face adjacency nodes")?;
-            let curves = face_set(ctx, &mut face_curves, face, "creo face curve group nodes")?;
-            ctx.insert_btree_set(curves, row.id, "creo face curve member nodes")?;
+            face_set(&mut adjacency, face);
+            let curves = face_set(&mut face_curves, face);
+            curves.insert(row.id);
         }
         if let (Some(left), Some(right)) = (left, right) {
             if left != right {
-                let neighbors =
-                    face_set(ctx, &mut adjacency, left.get(), "creo face adjacency nodes")?;
-                ctx.insert_btree_set(neighbors, right.get(), "creo face adjacency links")?;
-                let neighbors = face_set(
-                    ctx,
-                    &mut adjacency,
-                    right.get(),
-                    "creo face adjacency nodes",
-                )?;
-                ctx.insert_btree_set(neighbors, left.get(), "creo face adjacency links")?;
+                let neighbors = face_set(&mut adjacency, left.get());
+                neighbors.insert(right.get());
+                let neighbors = face_set(&mut adjacency, right.get());
+                neighbors.insert(left.get());
             }
         }
     }
     let mut seen = BTreeSet::new();
     let mut components = Vec::new();
     for start in adjacency.keys().copied() {
-        ctx.charge_work(lookup_work, "creo face graph seeds")?;
         if seen.contains(&start) {
             continue;
         }
-        ctx.insert_btree_set(&mut seen, start, "creo seen component faces")?;
+        seen.insert(start);
         let mut pending = Vec::new();
-        ctx.reserve_vec(&mut pending, 1, "creo pending component faces")?;
         pending.push(start);
         let mut faces = BTreeSet::new();
         let mut curves = BTreeSet::new();
         while let Some(face) = pending.pop() {
-            ctx.charge_work(lookup_work, "creo face graph traversal")?;
-            ctx.insert_btree_set(&mut faces, face, "creo component face nodes")?;
+            faces.insert(face);
             for curve in face_curves.get(&face).into_iter().flatten().copied() {
-                ctx.charge_work(lookup_work, "creo face graph curve memberships")?;
-                ctx.insert_btree_set(&mut curves, curve, "creo component curve nodes")?;
+                curves.insert(curve);
             }
             for neighbour in adjacency.get(&face).into_iter().flatten().copied() {
-                ctx.charge_work(lookup_work, "creo face graph neighbours")?;
                 if !seen.contains(&neighbour) {
-                    ctx.insert_btree_set(&mut seen, neighbour, "creo seen component faces")?;
-                    ctx.reserve_vec(&mut pending, 1, "creo pending component faces")?;
+                    seen.insert(neighbour);
                     pending.push(neighbour);
                 }
             }
         }
         let mut face_ids = Vec::new();
-        ctx.reserve_vec(&mut face_ids, faces.len(), "creo component face IDs")?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(faces.len()),
-            "creo face component projection",
-        )?;
         face_ids.extend(faces);
         let mut curve_ids = Vec::new();
-        ctx.reserve_vec(&mut curve_ids, curves.len(), "creo component curve IDs")?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(curves.len()),
-            "creo face component projection",
-        )?;
         curve_ids.extend(curves);
-        ctx.reserve_vec(&mut components, 1, "creo face components")?;
-        let component = FaceComponent::new(ctx, face_ids, curve_ids)?
+        let component = FaceComponent::new(face_ids, curve_ids)
             .ok_or_else(|| CodecError::malformed("invalid derived Creo face component"))?;
         components.push(component);
     }
     Ok(components)
 }
 
-fn face_set<'a>(
-    ctx: &DecodeContext<'_>,
-    groups: &'a mut BTreeMap<u32, BTreeSet<u32>>,
-    id: u32,
-    operation: &'static str,
-) -> Result<&'a mut BTreeSet<u32>, CodecError> {
-    ctx.admit_btree_entry(groups, &id, operation)?;
-    Ok(match groups.entry(id) {
+fn face_set(groups: &mut BTreeMap<u32, BTreeSet<u32>>, id: u32) -> &mut BTreeSet<u32> {
+    match groups.entry(id) {
         std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
         std::collections::btree_map::Entry::Vacant(entry) => entry.insert(BTreeSet::new()),
-    })
+    }
 }
 
 /// Select the model body count using the settled metadata precedence.
@@ -698,24 +532,15 @@ pub(crate) fn selected_body_count(
 /// half-edge identity cannot distinguish their sides.
 ///
 /// Ambiguous or missing successors remain `None` and cannot form loops.
-pub(crate) fn build(
-    ctx: &DecodeContext<'_>,
-    rows: &[CurveTopologyRow],
-) -> Result<(Vec<HalfEdge>, Vec<Loop>), CodecError> {
-    let rows = crate::identity::uniquely_identified_rows_checked(ctx, rows, |row| row.id)?;
+pub(crate) fn build(rows: &[CurveTopologyRow]) -> Result<(Vec<HalfEdge>, Vec<Loop>), CodecError> {
+    let rows = crate::identity::uniquely_identified_rows(rows, |row| row.id);
     let mut face_sides: BTreeMap<Option<NonZeroU32>, Vec<HalfEdgeId>> = BTreeMap::new();
     for row in &rows {
         for side in [Side::Zero, Side::One] {
-            ctx.admit_btree_entry(
-                &face_sides,
-                &row.faces[side.index()],
-                "creo face-side group nodes",
-            )?;
             let sides = match face_sides.entry(row.faces[side.index()]) {
                 std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
                 std::collections::btree_map::Entry::Vacant(entry) => entry.insert(Vec::new()),
             };
-            ctx.reserve_vec(sides, 1, "creo face-side group members")?;
             sides.push(HalfEdgeId {
                 curve_id: row.id,
                 side,
@@ -724,13 +549,8 @@ pub(crate) fn build(
     }
     let mut edges = Vec::new();
     for row in rows {
-        ctx.reserve_vec(&mut edges, 2, "creo topology half-edges")?;
         for side in [Side::Zero, Side::One] {
             let face_id = row.faces[side.index()];
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(face_sides.get(&face_id).map_or(0, Vec::len)),
-                "creo topology successor scan",
-            )?;
             let mut candidates = face_sides
                 .get(&face_id)
                 .into_iter()
@@ -751,12 +571,7 @@ pub(crate) fn build(
             });
         }
     }
-    ctx.stable_sort_by(
-        edges.as_mut_slice(),
-        |left, right| left.id.cmp(&right.id),
-        |_| 0,
-        "creo build edges ordering",
-    )?;
+    edges.as_mut_slice().sort_by_key(|left| left.id);
     let by_id = |id: HalfEdgeId| {
         edges
             .binary_search_by_key(&id, |edge| edge.id)
@@ -767,14 +582,6 @@ pub(crate) fn build(
     let mut open = BTreeSet::new();
     let mut loops = Vec::new();
     for edge in &edges {
-        ctx.charge_work(
-            half_edge_lookup_work(consumed.len()),
-            "creo topology consumed lookup",
-        )?;
-        ctx.charge_work(
-            half_edge_lookup_work(open.len()),
-            "creo topology open lookup",
-        )?;
         if consumed.contains(&edge.id) || open.contains(&edge.id) {
             continue;
         }
@@ -783,14 +590,6 @@ pub(crate) fn build(
         let mut current = edge.id;
         let mut open_ended = false;
         loop {
-            ctx.charge_work(
-                half_edge_lookup_work(seen.len()),
-                "creo topology ring visited lookup",
-            )?;
-            ctx.charge_work(
-                half_edge_lookup_work(open.len()),
-                "creo topology open tail lookup",
-            )?;
             if open.contains(&current) {
                 open_ended = true;
                 break;
@@ -798,32 +597,16 @@ pub(crate) fn build(
             if seen.contains(&current) {
                 if current == edge.id {
                     for id in ring.iter().copied() {
-                        ctx.charge_work(
-                            half_edge_lookup_work(consumed.len()),
-                            "creo topology consumed membership",
-                        )?;
-                        ctx.insert_btree_set(
-                            &mut consumed,
-                            id,
-                            "creo consumed topology half-edges",
-                        )?;
+                        consumed.insert(id);
                     }
-                    ctx.reserve_vec(&mut loops, 1, "creo topology loops")?;
-                    let closed = Loop::new(ctx, edge.face_id, std::mem::take(&mut ring), &edges)?
-                        .ok_or_else(|| {
-                        CodecError::malformed("invalid derived Creo closed ring")
-                    })?;
+                    let closed = Loop::new(edge.face_id, std::mem::take(&mut ring), &edges)
+                        .ok_or_else(|| CodecError::malformed("invalid derived Creo closed ring"))?;
                     loops.push(closed);
                 }
                 break;
             }
-            ctx.insert_btree_set(&mut seen, current, "creo topology ring visit nodes")?;
-            ctx.reserve_vec(&mut ring, 1, "creo topology ring half-edges")?;
+            seen.insert(current);
             ring.push(current);
-            ctx.charge_work(
-                2 * u64::from(usize::BITS - edges.len().leading_zeros()),
-                "creo topology ring successor lookup",
-            )?;
             let Some(next) = by_id(current).and_then(|entry| entry.next) else {
                 open_ended = true;
                 break;
@@ -836,11 +619,7 @@ pub(crate) fn build(
         }
         if open_ended {
             for id in ring {
-                ctx.charge_work(
-                    half_edge_lookup_work(open.len()),
-                    "creo topology open membership",
-                )?;
-                ctx.insert_btree_set(&mut open, id, "creo topology open half-edges")?;
+                open.insert(id);
             }
         }
     }

@@ -250,9 +250,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         assert!(outside_parameters.is_none());
         let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::from_context(
             geometry_ctx,
-            cadmpeg_core::decode::u64_from_index(
-                crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK,
-            ),
+            crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK,
         );
         let continuation_parameters =
         crate::decode::blend::blend_surface_parameters_for_fit_with_source_continuation_and_budget(
@@ -271,9 +269,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
 
         let direct_geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::from_context(
             geometry_ctx,
-            cadmpeg_core::decode::u64_from_index(
-                crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK,
-            ),
+            crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK,
         );
         let mut direct_contact_seeds = crate::decode::blend::BlendContactSeedCache::default();
         let direct_parameters =
@@ -729,9 +725,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         let index = cadmpeg_ir::index::ModelIndex::build(&ir, cadmpeg_ir::index::StandardIndex);
         let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::from_context(
             geometry_ctx,
-            cadmpeg_core::decode::u64_from_index(
-                crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK,
-            ),
+            crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK,
         );
         let evaluated = crate::decode::blend::decoded_surface_point_with_geometry_and_budget(
             &index,

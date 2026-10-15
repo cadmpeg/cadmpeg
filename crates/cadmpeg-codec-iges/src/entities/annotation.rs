@@ -72,15 +72,15 @@ fn sectioned_area_curves_coplanar(
     let identity = Transform::identity();
     let mut active = BTreeSet::new();
     for sequence in sequences {
-        let curve_id = crate::ids::curve_admitted(&crate::ids::Stem::directory(sequence), ctx)?;
+        let curve_id = crate::ids::curve(&crate::ids::Stem::directory(sequence));
         let Some(curve) = index.curves(curve_id.as_str(), ctx)? else {
             return Ok(false);
         };
         if active.contains(&curve_id) {
             return Ok(false);
         }
-        let active_id = curve_id.try_clone_for_decode(ctx, "iges section active curve id")?;
-        ctx.insert_btree_set(&mut active, active_id, "iges section active curves")?;
+        let active_id = curve_id.clone();
+        active.insert(active_id);
         let Some(geometry) = curve.geometry.solved() else {
             return Ok(false);
         };
@@ -1057,21 +1057,11 @@ pub(super) fn project(
 ) -> Result<ProjectionOutcome, CodecError> {
     let mut records = BTreeMap::new();
     for record in parameters {
-        ctx.insert_btree_map(
-            &mut records,
-            record.directory_sequence,
-            record,
-            "iges annotation parameter index",
-        )?;
+        records.insert(record.directory_sequence, record);
     }
     let mut entries = BTreeMap::new();
     for entry in directory {
-        ctx.insert_btree_map(
-            &mut entries,
-            entry.sequence,
-            entry,
-            "iges annotation directory index",
-        )?;
+        entries.insert(entry.sequence, entry);
     }
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
@@ -1169,11 +1159,7 @@ pub(super) fn project(
             .transpose()?
             .unwrap_or(false);
         if valid {
-            ctx.insert_btree_set(
-                &mut decoded,
-                entry.sequence,
-                "iges annotation decoded sequences",
-            )?;
+            decoded.insert(entry.sequence);
         } else {
             let message = match kind {
                 AnnotationKind::AngularDimension
@@ -1197,7 +1183,7 @@ pub(super) fn project(
                 | AnnotationKind::NewGeneralNote
                 | AnnotationKind::Leader => "text count, presentation metrics, encoding, placement, or Directory use flag is invalid",
             };
-            super::push_entity_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
+            super::push_entity_loss(&mut losses, entry, format_args!("{message}"));
         }
     }
 

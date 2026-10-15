@@ -239,8 +239,7 @@ fn section_profile_prefers_a_resolved_sketch_chain() {
 }
 
 #[test]
-fn section_profile_lookup_refuses_scan_and_retained_sketch_copy() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+fn section_profile_lookup_resolves_the_feature_sketch() {
     let id = SketchId::mint("creo:model:sketch#40").expect("sketch ID");
     let mut profiles = cadmpeg_ir::sketches::SketchProfiles::default();
     crate::decode::with_test_decode_ctx(|ctx| {
@@ -264,27 +263,6 @@ fn section_profile_lookup_refuses_scan_and_retained_sketch_copy() {
         profiles,
         native_ref: None,
     });
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    let error = section_profile_ref(&ctx, &ir, "creo:featdefs:sketch#40".to_owned())
-        .expect_err("one sketch needs one lookup unit");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::WorkUnits
-            && resource.operation == "creo section profile sketch lookup")
-    );
-    policy.limits.max_work_units = DecodePolicy::service().limits.max_work_units;
-    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(id.as_str().len()) - 1;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    let error = section_profile_ref(&ctx, &ir, "creo:featdefs:sketch#40".to_owned())
-        .expect_err("selected sketch copy exceeds cap");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::RetainedBytes
-            && resource.operation == "creo section profile sketch identity")
-    );
     assert_eq!(
         crate::decode::with_test_decode_ctx(|ctx| {
             section_profile_ref(ctx, &ir, "creo:featdefs:sketch#40".to_owned())

@@ -1,5 +1,6 @@
 use cadmpeg_test_support::edit;
 
+use super::{solve_pcurve_vertex_domains, solve_pcurve_vertex_domains_with_authoritative_points};
 use crate::decode::analytic::edges::nonperiodic_nurbs_endpoint_points;
 use crate::decode::analytic::pcurve_geometry::{
     meridian_circle_pcurve, ruled_generator_line_pcurve, surface_of_revolution_parallel_pcurve,
@@ -9,8 +10,6 @@ use crate::decode::analytic::pcurves::{
     oriented_native_pcurve_endpoints, planar_curve_pcurve, unique_oriented_native_pcurve,
     OrientedNativePcurve,
 };
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     nurbs::NurbsCurve, pcurve::PcurveGeometry, CurveGeometry, SolvedCurveGeometry,
@@ -22,72 +21,7 @@ use std::collections::BTreeMap;
 
 const EPS_LATITUDE_RADIUS: f64 = 1.0e-12;
 
-fn solve_pcurve_vertex_domains(
-    constraints: &[([u32; 2], [[f64; 3]; 2])],
-    fixed_points: &BTreeMap<u32, [f64; 3]>,
-    analytic_domains: &BTreeMap<u32, Vec<[f64; 3]>>,
-    incident_curves: &BTreeMap<u32, Vec<&CurveGeometry>>,
-) -> BTreeMap<u32, [f64; 3]> {
-    crate::decode::with_test_decode_ctx(|ctx| {
-        super::solve_pcurve_vertex_domains(
-            ctx,
-            constraints,
-            fixed_points,
-            analytic_domains,
-            incident_curves,
-        )
-    })
-    .expect("service pcurve vertex domains")
-}
-
-fn solve_pcurve_vertex_domains_with_authoritative_points(
-    constraints: &[([u32; 2], [[f64; 3]; 2])],
-    fixed_points: &BTreeMap<u32, [f64; 3]>,
-    analytic_domains: &BTreeMap<u32, Vec<[f64; 3]>>,
-    incident_curves: &BTreeMap<u32, Vec<&CurveGeometry>>,
-    authoritative_points: &BTreeMap<u32, [f64; 3]>,
-) -> BTreeMap<u32, [f64; 3]> {
-    crate::decode::with_test_decode_ctx(|ctx| {
-        super::solve_pcurve_vertex_domains_with_authoritative_points(
-            ctx,
-            constraints,
-            fixed_points,
-            analytic_domains,
-            incident_curves,
-            authoritative_points,
-        )
-    })
-    .expect("service authoritative pcurve domains")
-}
-
-fn pcurve_domain_limit_error(
-    constraints: &[([u32; 2], [[f64; 3]; 2])],
-    fixed_points: &BTreeMap<u32, [f64; 3]>,
-    analytic_domains: &BTreeMap<u32, Vec<[f64; 3]>>,
-    limit: u64,
-) -> CodecError {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    super::solve_pcurve_vertex_domains_with_authoritative_points(
-        &ctx,
-        constraints,
-        fixed_points,
-        analytic_domains,
-        &BTreeMap::new(),
-        &BTreeMap::new(),
-    )
-    .expect_err("pcurve domain collection exceeds limit")
-}
-
-fn assert_pcurve_domain_refusal(error: &CodecError, operation: &'static str) {
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == operation));
-}
-
-fn path_activity_result(limit: u64) -> Result<super::PcurvePathActivity, CodecError> {
+fn path_activity() -> super::PcurvePathActivity {
     let mut scan = crate::test_support::empty_container_scan();
     scan.topology.loops.push(crate::test_support::closed_loop(
         std::num::NonZeroU32::new(5),
@@ -115,48 +49,12 @@ fn path_activity_result(limit: u64) -> Result<super::PcurvePathActivity, CodecEr
             next_edges: [8, 0],
             offset: 0,
         });
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    super::PcurvePathActivity::from_scan(&ctx, &scan)
-}
-
-#[test]
-fn pcurve_path_activity_refuses_active_path_node() {
-    assert_pcurve_domain_refusal(
-        &path_activity_result(0).expect_err("active path exceeds limit"),
-        "creo active pcurve path nodes",
-    );
-}
-
-#[test]
-fn pcurve_path_activity_refuses_topology_face_node() {
-    assert_pcurve_domain_refusal(
-        &path_activity_result(3).expect_err("topology face exceeds limit"),
-        "creo pcurve topology face nodes",
-    );
-}
-
-#[test]
-fn pcurve_path_activity_refuses_prototype_count_node() {
-    assert_pcurve_domain_refusal(
-        &path_activity_result(4).expect_err("prototype count exceeds limit"),
-        "creo pcurve prototype count nodes",
-    );
-}
-
-#[test]
-fn pcurve_path_activity_refuses_prototype_face_node() {
-    assert_pcurve_domain_refusal(
-        &path_activity_result(5).expect_err("prototype face exceeds limit"),
-        "creo pcurve prototype face nodes",
-    );
+    super::PcurvePathActivity::from_scan(&scan)
 }
 
 #[test]
 fn pcurve_path_activity_keeps_service_paths() {
-    let activity = path_activity_result(1_000_000).expect("service path activity");
+    let activity = path_activity();
     assert_eq!(
         activity.selected_paths(7, [std::num::NonZeroU32::new(5), None], false),
         Some([true, false]),
@@ -164,121 +62,6 @@ fn pcurve_path_activity_keeps_service_paths() {
     assert_eq!(
         activity.selected_paths(8, [std::num::NonZeroU32::new(6), None], true),
         Some([false, false]),
-    );
-}
-
-#[test]
-fn pcurve_domain_solver_refuses_self_loop_node() {
-    let point = [1.0, 0.0, 0.0];
-    assert_pcurve_domain_refusal(
-        &pcurve_domain_limit_error(
-            &[([1, 1], [point, point])],
-            &BTreeMap::new(),
-            &BTreeMap::new(),
-            0,
-        ),
-        "creo pcurve domain nodes",
-    );
-}
-
-#[test]
-fn pcurve_domain_solver_refuses_self_loop_point() {
-    let point = [1.0, 0.0, 0.0];
-    assert_pcurve_domain_refusal(
-        &pcurve_domain_limit_error(
-            &[([1, 1], [point, point])],
-            &BTreeMap::new(),
-            &BTreeMap::new(),
-            1,
-        ),
-        "creo pcurve domain points",
-    );
-}
-
-#[test]
-fn pcurve_domain_solver_refuses_two_vertex_node() {
-    let a = [1.0, 0.0, 0.0];
-    let b = [2.0, 0.0, 0.0];
-    assert_pcurve_domain_refusal(
-        &pcurve_domain_limit_error(&[([1, 2], [a, b])], &BTreeMap::new(), &BTreeMap::new(), 0),
-        "creo pcurve domain nodes",
-    );
-}
-
-#[test]
-fn pcurve_domain_solver_refuses_two_vertex_points() {
-    let a = [1.0, 0.0, 0.0];
-    let b = [2.0, 0.0, 0.0];
-    assert_pcurve_domain_refusal(
-        &pcurve_domain_limit_error(&[([1, 2], [a, b])], &BTreeMap::new(), &BTreeMap::new(), 1),
-        "creo pcurve domain points",
-    );
-}
-
-#[test]
-fn pcurve_domain_solver_refuses_analytic_domain_node() {
-    let domains = BTreeMap::from([(1, vec![[1.0, 0.0, 0.0]])]);
-    assert_pcurve_domain_refusal(
-        &pcurve_domain_limit_error(&[], &BTreeMap::new(), &domains, 0),
-        "creo pcurve domain nodes",
-    );
-}
-
-#[test]
-fn pcurve_domain_solver_refuses_analytic_domain_points() {
-    let domains = BTreeMap::from([(1, vec![[1.0, 0.0, 0.0]])]);
-    assert_pcurve_domain_refusal(
-        &pcurve_domain_limit_error(&[], &BTreeMap::new(), &domains, 1),
-        "creo analytic domain points",
-    );
-}
-
-#[test]
-fn pcurve_domain_solver_refuses_fixed_domain_node() {
-    let points = BTreeMap::from([(1, [1.0, 0.0, 0.0])]);
-    assert_pcurve_domain_refusal(
-        &pcurve_domain_limit_error(&[], &points, &BTreeMap::new(), 0),
-        "creo pcurve domain nodes",
-    );
-}
-
-#[test]
-fn pcurve_domain_solver_refuses_fixed_domain_point() {
-    let points = BTreeMap::from([(1, [1.0, 0.0, 0.0])]);
-    assert_pcurve_domain_refusal(
-        &pcurve_domain_limit_error(&[], &points, &BTreeMap::new(), 1),
-        "creo fixed domain points",
-    );
-}
-
-#[test]
-fn pcurve_domain_solver_refuses_retained_first_domain() {
-    let a = [1.0, 0.0, 0.0];
-    let b = [2.0, 0.0, 0.0];
-    assert_pcurve_domain_refusal(
-        &pcurve_domain_limit_error(&[([1, 2], [a, b])], &BTreeMap::new(), &BTreeMap::new(), 6),
-        "creo retained first pcurve domain",
-    );
-}
-
-#[test]
-fn pcurve_domain_solver_refuses_retained_second_domain() {
-    let a = [1.0, 0.0, 0.0];
-    let b = [2.0, 0.0, 0.0];
-    assert_pcurve_domain_refusal(
-        &pcurve_domain_limit_error(&[([1, 2], [a, b])], &BTreeMap::new(), &BTreeMap::new(), 8),
-        "creo retained second pcurve domain",
-    );
-}
-
-#[test]
-fn pcurve_domain_solver_refuses_solved_vertex_node() {
-    let a = [1.0, 0.0, 0.0];
-    let b = [2.0, 0.0, 0.0];
-    let fixed = BTreeMap::from([(1, a), (2, b)]);
-    assert_pcurve_domain_refusal(
-        &pcurve_domain_limit_error(&[([1, 2], [a, b])], &fixed, &BTreeMap::new(), 8),
-        "creo solved pcurve vertex nodes",
     );
 }
 
@@ -881,121 +664,6 @@ fn projects_exact_planar_carriers_without_changing_parameters() {
         ))
         .expect("service profile admits off-plane candidate")
         .is_none()
-    );
-}
-
-fn planar_nurbs_limit_error(max_collection_items: u64) -> cadmpeg_core::CodecError {
-    let nurbs = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-        NurbsCurve::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
-            1,
-            vec![2.0, 2.0, 5.0, 5.0],
-            vec![Point3::new(2.0, 4.0, 3.0), Point3::new(5.0, 7.0, 3.0)],
-            Some(vec![2.0, 1.0]),
-            false,
-        )
-        .expect("fixture constructor admission")
-        .expect("valid planar NURBS"),
-    ));
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = max_collection_items;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root");
-    planar_curve_pcurve(
-        &ctx,
-        &plane(),
-        &nurbs,
-        &"nurbs fixture",
-        &mut crate::lane_refusal::LaneRefusals::new(),
-    )
-    .expect_err("planar NURBS copy exceeds limit")
-}
-
-#[test]
-fn planar_nurbs_projection_refuses_knot_copy() {
-    let error = planar_nurbs_limit_error(2);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-            && resource.operation == "creo planar projected NURBS knots")
-    );
-}
-
-#[test]
-fn planar_nurbs_projection_refuses_pole_copy() {
-    let error = planar_nurbs_limit_error(0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-            && resource.operation == "creo planar projected NURBS poles")
-    );
-}
-
-#[test]
-fn planar_nurbs_projection_refuses_nonfinite_reason_copy() {
-    let diagonal_plane = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-        cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-            Point3::new(0.0, 0.0, 3.0),
-            Vector3::new(0.0, 0.0, 1.0),
-            Vector3::new(
-                std::f64::consts::FRAC_1_SQRT_2,
-                std::f64::consts::FRAC_1_SQRT_2,
-                0.0,
-            ),
-        )
-        .expect("valid diagonal plane"),
-    ));
-    let nurbs = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-        NurbsCurve::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
-            1,
-            vec![0.0, 0.0, 1.0, 1.0],
-            vec![Point3::new(f64::MAX, f64::MAX, 3.0); 2],
-            None,
-            false,
-        )
-        .expect("fixture constructor admission")
-        .expect("finite source poles"),
-    ));
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-        Some("creo planar projected NURBS refusal text"),
-        |cap| {
-            let trial_arena = cadmpeg_core::decode::DecodeArena::new();
-            let mut trial_policy = policy;
-            trial_policy.limits.max_retained_bytes = cap;
-            let (trial_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-                &[],
-                &trial_arena,
-                &trial_policy,
-            )
-            .expect("root");
-            planar_curve_pcurve(
-                &trial_ctx,
-                &diagonal_plane,
-                &nurbs,
-                &"nonfinite projection",
-                &mut crate::lane_refusal::LaneRefusals::new(),
-            )
-        },
-    );
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root");
-    let error = planar_curve_pcurve(
-        &ctx,
-        &diagonal_plane,
-        &nurbs,
-        &"nonfinite projection",
-        &mut crate::lane_refusal::LaneRefusals::new(),
-    )
-    .expect_err("nonfinite projection reason exceeds retained limit");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-            && resource.operation == "creo planar projected NURBS refusal text")
     );
 }
 

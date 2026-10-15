@@ -5,7 +5,7 @@ use super::{read_finite, Uuid};
 use crate::chunks::{BoundedReader, FramingError};
 
 #[test]
-fn canonical_json_sorts_nested_keys_and_refuses_collection_limit() {
+fn canonical_json_sorts_nested_keys() {
     #[derive(serde::Serialize)]
     struct Nested {
         z: u32,
@@ -20,22 +20,8 @@ fn canonical_json_sorts_nested_keys_and_refuses_collection_limit() {
         z: Nested { z: 2, a: 1 },
         a: 3,
     };
-    let service = cadmpeg_test_support::service_decode_context();
-    let text = super::admitted_canonical_json(&service, &value, "Rhino canonical JSON")
-        .expect("service policy admits JSON");
+    let text = super::canonical_json(&value).expect("JSON serializes");
     assert_eq!(text, r#"{"a":3,"z":{"a":1,"z":2}}"#);
-
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 3;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root fits");
-    let refusal = super::admitted_canonical_json(&ctx, &value, "Rhino canonical JSON")
-        .expect_err("four JSON map entries exceed three collection items");
-    assert!(
-        matches!(refusal, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "Rhino canonical JSON")
-    );
 }
 
 /// A non-finite value is refused at its own first byte, not after the read.

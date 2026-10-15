@@ -37,7 +37,6 @@ pub(super) fn fit_nurbs_surface_parameter_locally(
     tolerance: f64,
     budget: &WorkBudget<'_>,
 ) -> Result<Option<FinitePoint2>, ResourceLimit> {
-    ctx.charge_work_limit(0, "NX NURBS fit boundary")?;
     if !tolerance.is_finite() || tolerance < 0.0 {
         return Ok(None);
     }
@@ -113,7 +112,7 @@ pub(super) fn fit_nurbs_surface_parameter_locally(
 #[cfg(test)]
 mod tests {
     use super::{fit_nurbs_surface_parameter, fit_nurbs_surface_parameter_locally};
-    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_core::decode::WorkBudget;
     use cadmpeg_ir::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
     use cadmpeg_ir::math::{Point2, Point3};
 
@@ -141,7 +140,7 @@ mod tests {
     fn local_fit_certifies_an_unseeded_point_in_a_small_work_slice() {
         let surface = surface(vec![0.0, 0.0, 1.0, 1.0], &[0.0, 1.0]);
         crate::test_support::with_decode_context(|ctx| {
-            let budget = ctx.work_budget(10_000);
+            let budget = WorkBudget::new(10_000);
             let parameters = fit_nurbs_surface_parameter(
                 ctx,
                 &surface,
@@ -163,7 +162,7 @@ mod tests {
     fn stored_fit_seed_does_not_require_newton_derivatives() {
         let surface = surface(vec![0.0, 0.0, 1.0, 1.0], &[0.0, 1.0]);
         crate::test_support::with_decode_context(|ctx| {
-            let budget = ctx.work_budget(128);
+            let budget = WorkBudget::new(128);
             let parameters = fit_nurbs_surface_parameter(
                 ctx,
                 &surface,
@@ -182,7 +181,7 @@ mod tests {
     fn failed_local_branch_keeps_the_complete_search() {
         let surface = surface(vec![0.0, 0.0, 0.5, 1.0, 1.0], &[0.0, 0.0, 1.0]);
         crate::test_support::with_decode_context(|ctx| {
-            let budget = ctx.work_budget(2_000_000);
+            let budget = WorkBudget::new(2_000_000);
             let parameters = fit_nurbs_surface_parameter(
                 ctx,
                 &surface,
@@ -202,7 +201,7 @@ mod tests {
     fn failed_stored_seed_leaves_work_for_other_local_branches() {
         let surface = surface(vec![0.0, 0.0, 0.5, 1.0, 1.0], &[0.0, 0.0, 1.0]);
         crate::test_support::with_decode_context(|ctx| {
-            let budget = ctx.work_budget(10_000);
+            let budget = WorkBudget::new(10_000);
             assert!(fit_nurbs_surface_parameter_locally(
                 ctx,
                 &surface,
@@ -230,7 +229,7 @@ mod tests {
     fn local_inverse_without_a_fit_certificate_is_rejected() {
         let surface = surface(vec![0.0, 0.0, 1.0, 1.0], &[0.0, 1.0]);
         crate::test_support::with_decode_context(|ctx| {
-            let budget = ctx.work_budget(2_000_000);
+            let budget = WorkBudget::new(2_000_000);
             assert!(fit_nurbs_surface_parameter(
                 ctx,
                 &surface,
@@ -242,57 +241,5 @@ mod tests {
             .expect("bounded search")
             .is_none());
         });
-    }
-
-    #[test]
-    fn local_fit_propagates_the_original_session_refusal() {
-        let surface = surface(vec![0.0, 0.0, 1.0, 1.0], &[0.0, 1.0]);
-        crate::test_support::with_decode_context_over(
-            &[],
-            |policy| policy.limits.max_work_units = 0,
-            |ctx| {
-                let budget = ctx.work_budget(10_000);
-                let refusal = fit_nurbs_surface_parameter(
-                    ctx,
-                    &surface,
-                    Point3::new(0.3, 0.7, 0.0),
-                    None,
-                    EPS_FIT,
-                    &budget,
-                )
-                .expect_err("work remains mandatory");
-                assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
-                assert_eq!(ctx.resource_refusal(), Some(refusal));
-            },
-        );
-    }
-
-    #[test]
-    fn invalid_fit_tolerance_keeps_an_existing_session_refusal() {
-        let surface = surface(vec![0.0, 0.0, 1.0, 1.0], &[0.0, 1.0]);
-        crate::test_support::with_decode_context_over(
-            &[],
-            |policy| policy.limits.max_work_units = 0,
-            |ctx| {
-                let original = ctx
-                    .charge_work_limit(1, "synthetic preceding operation")
-                    .expect_err("establish the session refusal");
-                let budget = ctx.work_budget(10_000);
-                for tolerance in [-1.0, f64::NAN] {
-                    assert_eq!(
-                        fit_nurbs_surface_parameter(
-                            ctx,
-                            &surface,
-                            Point3::new(0.3, 0.7, 0.0),
-                            None,
-                            tolerance,
-                            &budget,
-                        )
-                        .expect_err("invalid tolerance does not absorb the refusal"),
-                        original,
-                    );
-                }
-            },
-        );
     }
 }

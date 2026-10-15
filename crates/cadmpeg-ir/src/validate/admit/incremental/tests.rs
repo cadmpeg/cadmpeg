@@ -3,7 +3,6 @@
 use crate::assets::{Asset, AssetContent, AssetData};
 use crate::draft::CommitSession;
 use crate::{Annotations, CadIr};
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
 fn asset_candidate(index: usize) -> CadIr {
     let mut candidate = CadIr::empty();
@@ -32,81 +31,6 @@ fn source_records() -> Vec<crate::UnknownRecord> {
             )
         })
         .collect()
-}
-
-#[test]
-fn incremental_admission_admits_thousands_at_a_budget_that_refuses_combined_scans() {
-    const COUNT: usize = 4096;
-    const WORK: u64 = 512_000_000;
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = WORK;
-    // Isolate work from cumulative collection charges in the comparison loop.
-    policy.limits.max_collection_items = WORK;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut session = CommitSession::new(CadIr::empty(), &ctx, Some("test")).unwrap();
-    session.replace_unknowns(source_records()).unwrap();
-    let annotations = Annotations::default();
-    for index in 0..COUNT {
-        let changes = annotations
-            .sparse_transaction(&ctx, "test admission annotations")
-            .unwrap();
-        session
-            .try_admit_append(
-                asset_candidate(index),
-                changes,
-                crate::RHINO_DRAFT_CHECKS,
-                |report, _| {
-                    assert!(report.unwrap().is_ok());
-                    Ok(Ok::<_, ()>(()))
-                },
-            )
-            .unwrap()
-            .unwrap();
-        let (report, _report_storage) = ctx
-            .with_scoped_storage("test instance admission report", || {
-                session.admit_appended(&annotations, crate::RHINO_INSTANCE_CHECKS)
-            })
-            .unwrap();
-        assert!(report.unwrap().is_ok());
-    }
-    assert_eq!(session.document().model.assets.len(), COUNT);
-    drop(session);
-    ctx.finish_session().unwrap();
-
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut ir = CadIr::empty();
-    let records = source_records();
-    let mut refused = false;
-    for index in 0..COUNT {
-        ir.model.assets.extend(asset_candidate(index).model.assets);
-        match ctx.with_scoped_storage("test combined admission report", || {
-            super::super::admit_with_native_unknowns(
-                &ctx,
-                &ir,
-                ("test", &records),
-                Some(&annotations),
-                crate::RHINO_DRAFT_CHECKS,
-                Vec::new(),
-            )
-        }) {
-            Ok((Ok(report), _report_storage)) => assert!(report.is_ok()),
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => {
-                assert_eq!(
-                    limit.dimension,
-                    cadmpeg_core::decode::ResourceDimension::WorkUnits
-                );
-                refused = true;
-                break;
-            }
-            other => panic!("unexpected combined admission result: {other:?}"),
-        }
-    }
-    assert!(
-        refused,
-        "the former combined scan exceeds this unchanged budget"
-    );
 }
 
 fn sourced_point(id: &str) -> crate::topology::Point {
@@ -443,32 +367,4 @@ fn accounted_commit_does_not_hide_annotation_errors_from_the_next_candidate() {
         annotations.exactness()[missing].entity(),
         crate::Exactness::Derived
     );
-}
-
-#[test]
-fn source_grammar_admission_releases_changed_position_storage_after_each_check() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_materialized_bytes = 64 * 1024;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut session = CommitSession::new(CadIr::empty(), &ctx, Some("test")).unwrap();
-    session
-        .replace_unknowns(vec![crate::UnknownRecord::retained(
-            "test:source:unknown#only".try_into().unwrap(),
-            0,
-            Vec::new(),
-            Vec::new(),
-        )])
-        .unwrap();
-    session.validate_source_records().unwrap().unwrap();
-    for _ in 0..1024 {
-        session.unknown_links_mut(0).unwrap().unwrap().1.clear();
-        session.validate_source_records().unwrap().unwrap();
-        let storage = ctx
-            .reserve_scoped(64 * 1024, "source grammar workspace released")
-            .unwrap();
-        drop(storage);
-    }
-    drop(session);
-    ctx.finish_session().unwrap();
 }

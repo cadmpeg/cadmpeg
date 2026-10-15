@@ -523,131 +523,48 @@ fn analytic_pcurve_admission_preserves_nonunit_axes_and_unordered_radii() {
 }
 
 #[test]
-fn signed_reversal_refuses_every_pass_before_any_carrier_changes() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    fn check<T: Clone + PartialEq + std::fmt::Debug>(
-        original: &T,
-        pole_count: usize,
-        knot_count: usize,
-        reverse: impl Fn(&mut T, &DecodeContext<'_>) -> Result<(), CodecError>,
-    ) {
-        let pole_swaps = u64::try_from(pole_count / 2).expect("pole swaps");
-        let knot_swaps = u64::try_from(knot_count / 2).expect("knot swaps");
-        let negations = u64::try_from(knot_count).expect("knot negations");
-        let total = pole_swaps + knot_swaps + negations;
-        for cap in 0..total {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-            let mut edited = original.clone();
-            let Err(CodecError::ResourceLimit(limit)) = reverse(&mut edited, &ctx) else {
-                panic!("every reversal pass requires admission");
-            };
-            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-            assert_eq!(
-                limit.operation,
-                if cap < pole_swaps {
-                    "IR signed pole reversal"
-                } else if cap < pole_swaps + knot_swaps {
-                    "IR signed knot reversal"
-                } else {
-                    "IR signed knot negation"
-                }
-            );
-            assert_eq!(&edited, original);
-            assert!(
-                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
-            );
-        }
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 2 * total;
-        policy.limits.max_retained_bytes = 0;
-        policy.limits.max_materialized_bytes = 0;
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let mut edited = original.clone();
-        reverse(&mut edited, &ctx).expect("first reversal");
-        assert_ne!(&edited, original);
-        reverse(&mut edited, &ctx).expect("second reversal");
-        assert_eq!(&edited, original);
-        ctx.finish_session().expect("exact work and zero storage");
-    }
-
-    let curve = curve();
-    check(
-        &curve,
-        curve.pole_rows().count(),
-        curve.knots().len(),
-        NurbsCurve::reverse_parameterization,
-    );
-    let pcurve = pcurve();
-    check(
-        &pcurve,
-        pcurve.pole_rows().count(),
-        pcurve.knots().len(),
-        PcurveNurbs::reverse_parameterization,
-    );
-}
-
-#[test]
-fn pole_mapping_admits_both_passes_before_callbacks_and_preserves_refusals() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
+fn pole_maps_visit_both_passes_refuse_a_late_pole_atomically_and_compose() {
     use std::cell::Cell;
 
     macro_rules! check {
         ($original:expr, $count:expr) => {{
             let original = $original;
-            let count = u64::try_from($count).expect("pole count");
-            for cap in 0..2 * count {
-                let arena = DecodeArena::new();
-                let mut policy = DecodePolicy::service();
-                policy.limits.max_work_units = cap;
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-                let mut edited = original.clone();
-                let called = Cell::new(false);
-                let Err(CodecError::ResourceLimit(limit)) = edited.try_map_control_points(|_, point| {
-                    called.set(true);
-                    Ok::<_, ()>(point.negated())
-                }, &ctx) else { panic!("both passes require admission"); };
-                assert!(!called.get());
-                assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-                assert_eq!(limit.operation, if cap < count { "IR pole edit validation" } else { "IR pole edit mutation" });
-                assert_eq!(edited, original);
-                assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
-            }
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = 4 * count;
-            policy.limits.max_retained_bytes = 0;
-            policy.limits.max_materialized_bytes = 0;
-            policy.limits.max_collection_items = 0;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            let count: usize = $count;
+            let ctx = cadmpeg_test_support::service_decode_context();
             let mut edited = original.clone();
-            let calls = Cell::new(0_u64);
+            let calls = Cell::new(0_usize);
             for _ in 0..2 {
-                edited.try_map_control_points(|_, point| {
-                    calls.set(calls.get() + 1);
-                    Ok::<_, ()>(point.negated())
-                }, &ctx).expect("exact work").expect("valid map");
+                edited
+                    .try_map_control_points(
+                        |_, point| {
+                            calls.set(calls.get() + 1);
+                            Ok::<_, ()>(point.negated())
+                        },
+                        &ctx,
+                    )
+                    .expect("pole edit admission")
+                    .expect("valid map");
             }
             assert_eq!(calls.get(), 4 * count);
             assert_eq!(edited, original);
-            ctx.finish_session().expect("zero storage and exact visits");
 
-            let arena = DecodeArena::new();
-            policy.limits.max_work_units = 2 * count;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
             let mut edited = original.clone();
-            assert_eq!(edited.try_map_control_points(|index, point| {
-                if u64::try_from(index).expect("index") + 1 == count { Err("last pole") } else { Ok(point.negated()) }
-            }, &ctx).expect("admission"), Err("last pole"));
+            assert_eq!(
+                edited
+                    .try_map_control_points(
+                        |index, point| {
+                            if index + 1 == count {
+                                Err("last pole")
+                            } else {
+                                Ok(point.negated())
+                            }
+                        },
+                        &ctx,
+                    )
+                    .expect("pole edit admission"),
+                Err("last pole")
+            );
             assert_eq!(edited, original);
-            ctx.finish_session().expect("semantic refusal stays distinct");
         }};
     }
     check!(curve(), curve().pole_count());
@@ -665,7 +582,7 @@ fn pole_mapping_admits_both_passes_before_callbacks_and_preserves_refusals() {
         )
         .expect("admission")
         .expect("curve"),
-        2_usize
+        2
     );
     check!(
         NurbsSurface::from_checked_lanes(
@@ -680,7 +597,7 @@ fn pole_mapping_admits_both_passes_before_callbacks_and_preserves_refusals() {
         )
         .expect("admission")
         .expect("surface"),
-        4_usize
+        4
     );
     check!(
         PcurveNurbs::from_lanes(
@@ -693,7 +610,7 @@ fn pole_mapping_admits_both_passes_before_callbacks_and_preserves_refusals() {
         )
         .expect("admission")
         .expect("pcurve"),
-        2_usize
+        2
     );
     check!(
         crate::geometry::nurbs::BsplineSurface::new(
@@ -706,7 +623,7 @@ fn pole_mapping_admits_both_passes_before_callbacks_and_preserves_refusals() {
         )
         .expect("admission")
         .expect("B-spline"),
-        4_usize
+        4
     );
     let spatial_curve = NurbsCurve::from_lanes(
         &ctx,
@@ -720,46 +637,13 @@ fn pole_mapping_admits_both_passes_before_callbacks_and_preserves_refusals() {
     .expect("positive-weight curve");
     check!(
         crate::sketches::SpatialSketchNurbsCurve::try_from(spatial_curve).expect("spatial curve"),
-        2_usize
+        2
     );
 }
 
 #[test]
-fn in_place_pcurve_mapping_admits_work_and_keeps_partial_semantic_edits() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
+fn in_place_pcurve_mapping_keeps_edits_before_a_refused_pole() {
     let original = pcurve();
-    let count = u64::try_from(original.pole_rows().count()).expect("count");
-    for cap in 0..count {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let mut edited = original.clone();
-        let mut called = false;
-        let Err(CodecError::ResourceLimit(limit)) = edited.try_map_control_points_in_place(
-            |point| {
-                called = true;
-                Ok::<_, ()>(point.negated())
-            },
-            &ctx,
-        ) else {
-            panic!("in-place pass requires admission");
-        };
-        assert!(!called);
-        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-        assert_eq!(edited, original);
-        assert!(
-            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
-        );
-    }
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = count;
-    policy.limits.max_retained_bytes = 0;
-    policy.limits.max_materialized_bytes = 0;
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     let mut edited = original.clone();
     let mut calls = 0;
     assert_eq!(
@@ -773,9 +657,9 @@ fn in_place_pcurve_mapping_admits_work_and_keeps_partial_semantic_edits() {
                         Ok(point.negated())
                     }
                 },
-                &ctx
+                &cadmpeg_test_support::service_decode_context(),
             )
-            .expect("work"),
+            .expect("pole edit admission"),
         Err("second pole")
     );
     assert_eq!(
@@ -789,6 +673,4 @@ fn in_place_pcurve_mapping_admits_work_and_keeps_partial_semantic_edits() {
         edited.pole_rows().point_at(1),
         original.pole_rows().point_at(1)
     );
-    ctx.finish_session()
-        .expect("partial semantic edit has no resource refusal");
 }

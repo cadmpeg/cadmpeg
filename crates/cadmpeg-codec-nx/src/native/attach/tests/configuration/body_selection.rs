@@ -143,51 +143,6 @@ fn feature_body_selection_retains_complete_input_local_identities_atomically() {
     });
 }
 
-fn feature_body_output_with_limit(
-    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
-) -> Result<Vec<cadmpeg_ir::ids::BodyId>, cadmpeg_core::CodecError> {
-    let body = BodyId::mint("test:model:entity#selected-body").unwrap();
-    let bindings = [crate::native::segments::SegmentBodyBinding {
-        id: "binding".into(),
-        stream_link: "stream".into(),
-        stream_ordinal: 0,
-        stream_kind: crate::parasolid::StreamKind::Partition,
-        body_object_index: 94,
-        body_alias_object_index: 94,
-        stream_role: 0,
-        source_offset: 0,
-    }];
-    let bodies = BTreeMap::from([(94, vec![body])]);
-
-    crate::test_support::with_decode_context_over(
-        &[],
-        |policy| {
-            configure(policy);
-        },
-        |ctx| feature_body_outputs(ctx, 94, &bindings, &bodies),
-    )
-}
-
-#[test]
-fn feature_body_output_refuses_collection_limit() {
-    let error = feature_body_output_with_limit(|policy| policy.limits.max_collection_items = 0)
-        .unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
-    );
-}
-
-#[test]
-fn feature_body_output_refuses_retained_limit() {
-    let error =
-        feature_body_output_with_limit(|policy| policy.limits.max_retained_bytes = 0).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
-    );
-}
-
 #[test]
 fn feature_body_selection_uses_complete_offset_store_proof_for_colliding_index() {
     use cadmpeg_ir::features::BodySelection;
@@ -331,9 +286,8 @@ fn native_primary_body_references_retain_only_proven_body_namespaces() {
         ),
     ];
 
-    let native = crate::test_support::with_decode_context(|ctx| {
+    let native = {
         native_primary_body_references(
-            ctx,
             &references,
             &data_block_uses,
             &[FeatureBodySegmentUse {
@@ -344,8 +298,7 @@ fn native_primary_body_references_retain_only_proven_body_namespaces() {
             &inputs,
             &blocks,
         )
-    })
-    .expect("admitted primary body references");
+    };
     assert_eq!(native.get("operation#segment"), Some(&10));
     assert_eq!(native.get("operation#exact"), Some(&99));
     assert!(!native.contains_key("operation#missing"));
@@ -431,10 +384,7 @@ fn segment_bound_bodies_form_the_exact_retained_history_input() {
         })
     );
     assert_eq!(
-        crate::test_support::with_decode_context(|ctx| {
-            crate::evaluation::evaluate_saved_body_census(ctx, &ir)
-        })
-        .expect("body census evaluation is admitted"),
+        crate::evaluation::saved_body_census_evidence(&ir),
         crate::evaluation::BodyCensusEvaluation::mismatch(
             vec![bound],
             ir.model.bodies.iter().map(|body| body.id.clone()).collect()
@@ -477,86 +427,6 @@ fn body_write_does_not_materialize_missing_neutral_geometry() {
     );
     assert!(ir.model.bodies.is_empty());
     assert!(ir.model.features.is_empty());
-}
-
-fn retained_history_input_result(
-    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
-) -> Result<Option<FeatureId>, cadmpeg_core::CodecError> {
-    let mut ir = CadIr::empty();
-    ir.model.bodies.push(cadmpeg_ir::topology::Body {
-        id: cadmpeg_ir::ids::BodyId::mint("nx:s2:body#3").unwrap(),
-        kind: cadmpeg_ir::topology::BodyKind::Solid,
-        regions: Vec::new(),
-        transform: None,
-        name: None,
-        color: None,
-        visible: None,
-    });
-    let binding = crate::native::segments::SegmentBodyBinding {
-        id: "nx:segment-body-bindings:binding#0".to_string(),
-        stream_link: "nx:segment-stream-links:link#0".to_string(),
-        stream_ordinal: 2,
-        stream_kind: crate::parasolid::StreamKind::Partition,
-        body_object_index: 10,
-        body_alias_object_index: 11,
-        stream_role: 19,
-        source_offset: 100,
-    };
-    let mut annotations = AnnotationBuilder::new();
-    let stream = StreamHandle::new(
-        &cadmpeg_test_support::service_decode_context(),
-        cadmpeg_ir::stream_name!("nx:container"),
-        "fixture stream handle",
-    )
-    .unwrap();
-
-    crate::test_support::with_decode_context_over(
-        &[],
-        |policy| {
-            configure(policy);
-        },
-        |ctx| attach_initial_segment_bodies(ctx, &mut ir, &[binding], &mut annotations, &stream),
-    )
-}
-
-#[test]
-fn retained_history_input_refuses_collection_limit() {
-    let error =
-        retained_history_input_result(|policy| policy.limits.max_collection_items = 0).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
-    );
-}
-
-#[test]
-fn retained_history_input_refuses_retained_limit() {
-    let error =
-        retained_history_input_result(|policy| policy.limits.max_retained_bytes = 0).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
-    );
-}
-
-#[test]
-fn retained_history_input_refuses_scoped_limit() {
-    let error = retained_history_input_result(|policy| policy.limits.max_materialized_bytes = 0)
-        .unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
-    );
-}
-
-#[test]
-fn retained_history_input_refuses_work_limit() {
-    let error =
-        retained_history_input_result(|policy| policy.limits.max_work_units = 0).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
-    );
 }
 
 #[test]
@@ -814,10 +684,7 @@ fn nx_boolean_offset_store_resolution_requires_one_unique_store() {
     };
     let resolution = |operation: &crate::native::features::FeatureBooleanOperation,
                       blocks: &[DataBlock]| {
-        crate::test_support::with_decode_context(|ctx| {
-            crate::native::segments::boolean_offset_store_resolution(ctx, operation, blocks)
-        })
-        .expect("admitted Boolean offset-store resolution")
+        crate::native::segments::boolean_offset_store_resolution(operation, blocks)
     };
     let same_store = vec![block(3, 401), block(3, 402), block(3, 403)];
     assert_eq!(
@@ -857,75 +724,4 @@ fn nx_boolean_offset_store_resolution_requires_one_unique_store() {
         resolution(&control_operation, &[control, block(3, 401), block(3, 402)],),
         crate::native::segments::BooleanOffsetStoreResolution::Unresolved
     ));
-}
-
-fn boolean_offset_store_refusal(
-    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
-) -> cadmpeg_core::CodecError {
-    use crate::native::features::{FeatureBooleanKind, FeatureBooleanOperation};
-    use crate::native::om::{DataBlock, DataBlockRole};
-    let operation = FeatureBooleanOperation {
-        id: "boolean#resource".to_string(),
-        operation_label: "operation#resource".to_string(),
-        kind: FeatureBooleanKind::Unite,
-        target: crate::test_support::native_references::boolean_reference(1, 0),
-        tools: vec![crate::test_support::native_references::boolean_reference(
-            2, 1,
-        )],
-        source_offset: 0,
-    };
-    let blocks = [1, 2].map(|index| DataBlock {
-        id: format!("block#{index}"),
-        section_ordinal: 0,
-        block_ordinal: index,
-        role: DataBlockRole::Column,
-        section_offset: 0,
-        byte_len: 0,
-        sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(&[]),
-        stable_identity: None,
-        source_entry: String::new(),
-        source_offset: 0,
-    });
-    crate::test_support::with_decode_context(|ctx| {
-        crate::native::segments::boolean_offset_store_resolution(ctx, &operation, &blocks)
-    })
-    .expect("admitted Boolean offset-store participants");
-
-    crate::test_support::with_decode_context_over(
-        &[],
-        |policy| {
-            configure(policy);
-        },
-        |ctx| {
-            crate::native::segments::boolean_offset_store_resolution(ctx, &operation, &blocks)
-                .expect_err("Boolean offset-store resource refusal")
-        },
-    )
-}
-
-#[test]
-fn boolean_offset_store_refuses_collection_limit() {
-    let error = boolean_offset_store_refusal(|policy| policy.limits.max_collection_items = 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
-    );
-}
-
-#[test]
-fn boolean_offset_store_refuses_retained_limit() {
-    let error = boolean_offset_store_refusal(|policy| policy.limits.max_retained_bytes = 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
-    );
-}
-
-#[test]
-fn boolean_offset_store_refuses_work_limit() {
-    let error = boolean_offset_store_refusal(|policy| policy.limits.max_work_units = 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
-    );
 }

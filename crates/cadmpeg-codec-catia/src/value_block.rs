@@ -3,8 +3,7 @@
 
 use cadmpeg_ir::native::bytes::NativeBytes;
 
-use cadmpeg_core::decode::{DecodeContext, View};
-use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::View;
 use serde::{Deserialize, Serialize};
 
 use crate::layout::value_block_7c0b as value_block;
@@ -209,35 +208,8 @@ pub(crate) enum ValueField {
     },
 }
 
-pub(crate) fn copy_fields_charged(
-    ctx: &DecodeContext<'_>,
-    fields: &[ValueField],
-) -> Result<Vec<ValueField>, CodecError> {
-    let mut copied = Vec::new();
-    for field in fields {
-        let copy = match field {
-            ValueField::Inline { bytes, offset } => ValueField::Inline {
-                bytes: InlineBytes(
-                    ctx.copy_slice(&bytes.0, "catia_native_value_inline_bytes")?
-                        .into(),
-                ),
-                offset: *offset,
-            },
-            ValueField::ByteString { bytes, offset } => ValueField::ByteString {
-                bytes: ctx
-                    .copy_slice(bytes, "catia_native_value_field_bytes")?
-                    .into(),
-                offset: *offset,
-            },
-            other => other.clone(),
-        };
-        ctx.push_vec(&mut copied, copy, "catia_native_value_fields")?;
-    }
-    Ok(copied)
-}
-
 /// Parse every exact `7C0B` value block immediately followed by `7C02`.
-pub(crate) fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Vec<ValueBlock>, CodecError> {
+pub(crate) fn parse(bytes: &[u8]) -> Vec<ValueBlock> {
     let mut blocks = Vec::<ValueBlock>::new();
     let mut enclosing_end = 0usize;
     for pos in memchr::memchr_iter(0x7c, bytes) {
@@ -256,23 +228,19 @@ pub(crate) fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Vec<ValueBl
         if pos < enclosing_end && declared_end.is_some_and(|end| end <= enclosing_end) {
             continue;
         }
-        let Some(block) = parse_candidate(ctx, bytes, pos)? else {
+        let Some(block) = parse_candidate(bytes, pos) else {
             continue;
         };
         if let Some(block_end) = block.pos.checked_add(block.total_len()) {
             enclosing_end = enclosing_end.max(block_end);
         }
-        ctx.push_vec(&mut blocks, block, "catia_value_blocks")?;
+        blocks.push(block);
     }
-    Ok(blocks)
+    blocks
 }
 
-fn parse_candidate(
-    ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-    pos: usize,
-) -> Result<Option<ValueBlock>, CodecError> {
-    let Some(payload) = (|| -> Option<_> {
+fn parse_candidate(bytes: &[u8], pos: usize) -> Option<ValueBlock> {
+    let payload = (|| -> Option<_> {
         let declared_len =
             usize::try_from(View::u32_le_at(bytes, pos + value_block::DECLARED_LEN)?).ok()?;
         if declared_len < value_block::LEN {
@@ -285,101 +253,15 @@ fn parse_candidate(
             return None;
         }
         Some(&bytes[pos + value_block::LEN..terminator])
-    })() else {
-        return Ok(None);
-    };
-    Ok(Some(ValueBlock {
+    })()?;
+    Some(ValueBlock {
         pos,
-        payload: ctx.copy_slice(payload, "catia_value_block_payload")?,
-    }))
+        payload: payload.to_vec(),
+    })
 }
 
 pub(crate) fn tokenize(payload: &[u8]) -> Vec<ValueField> {
     let mut fields = Vec::new();
-    let result = tokenize_with(
-        payload,
-        |field| {
-            fields.push(field);
-            Ok::<(), std::convert::Infallible>(())
-        },
-        |bytes| Ok::<Vec<u8>, std::convert::Infallible>(bytes.to_vec()),
-    );
-    match result {
-        Ok(()) => fields,
-        Err(never) => match never {},
-    }
-}
-
-pub(crate) fn tokenize_charged(
-    ctx: &DecodeContext<'_>,
-    payload: &[u8],
-) -> Result<Vec<ValueField>, CodecError> {
-    let mut fields = Vec::new();
-    tokenize_with(
-        payload,
-        |field| ctx.push_vec(&mut fields, field, "catia_value_fields"),
-        |bytes| ctx.copy_slice(bytes, "catia_value_field_bytes"),
-    )?;
-    Ok(fields)
-}
-
-pub(crate) fn copy_field_charged(
-    ctx: &DecodeContext<'_>,
-    field: &ValueField,
-) -> Result<ValueField, CodecError> {
-    Ok(match field {
-        ValueField::SchemaSelector { ordinal, offset } => ValueField::SchemaSelector {
-            ordinal: *ordinal,
-            offset: *offset,
-        },
-        ValueField::Binary64 { bits, offset } => ValueField::Binary64 {
-            bits: *bits,
-            offset: *offset,
-        },
-        ValueField::Marker { code, offset } => ValueField::Marker {
-            code: *code,
-            offset: *offset,
-        },
-        ValueField::Opcode { code, offset } => ValueField::Opcode {
-            code: *code,
-            offset: *offset,
-        },
-        ValueField::Separator { offset } => ValueField::Separator { offset: *offset },
-        ValueField::Inline { bytes, offset } => ValueField::Inline {
-            bytes: InlineBytes(
-                ctx.copy_slice(bytes.as_slice(), "catia_value_selection_inline_bytes")?
-                    .into(),
-            ),
-            offset: *offset,
-        },
-        ValueField::ByteString { bytes, offset } => ValueField::ByteString {
-            bytes: ctx
-                .copy_slice(bytes, "catia_value_selection_string_bytes")?
-                .into(),
-            offset: *offset,
-        },
-        ValueField::Atom {
-            value,
-            width,
-            offset,
-        } => ValueField::Atom {
-            value: *value,
-            width: *width,
-            offset: *offset,
-        },
-        ValueField::Terminator { offset } => ValueField::Terminator { offset: *offset },
-        ValueField::Literal { value, offset } => ValueField::Literal {
-            value: *value,
-            offset: *offset,
-        },
-    })
-}
-
-fn tokenize_with<E>(
-    payload: &[u8],
-    mut push: impl FnMut(ValueField) -> Result<(), E>,
-    mut copy: impl FnMut(&[u8]) -> Result<Vec<u8>, E>,
-) -> Result<(), E> {
     let mut at = 0;
     while at < payload.len() {
         let offset = at;
@@ -388,29 +270,29 @@ fn tokenize_with<E>(
             .filter(|prefix| *prefix == [0x87, 0xe6])
             .and_then(|_| View::u64_le_at(payload, at + 2))
         {
-            push(ValueField::Binary64 { bits, offset })?;
+            fields.push(ValueField::Binary64 { bits, offset });
             at += 10;
         } else if payload.get(at) == Some(&0x87)
             && payload
                 .get(at + 1)
                 .is_some_and(|code| matches!(code, 0xe7 | 0xe8))
         {
-            push(ValueField::Marker {
+            fields.push(ValueField::Marker {
                 code: payload[at + 1],
                 offset,
-            })?;
+            });
             at += 2;
         } else if payload[at] == 0x37 {
-            push(ValueField::Separator { offset })?;
+            fields.push(ValueField::Separator { offset });
             at += 1;
         } else if payload
             .get(at)
             .is_some_and(|code| (0xe6..=0xe9).contains(code))
         {
-            push(ValueField::Opcode {
+            fields.push(ValueField::Opcode {
                 code: payload[at],
                 offset,
-            })?;
+            });
             at += 1;
         } else if payload.get(at) == Some(&0x8e)
             && payload
@@ -422,16 +304,16 @@ fn tokenize_with<E>(
             let len = usize::from(code - 0xe7);
             let end = at + 3 + len;
             if end <= payload.len() {
-                push(ValueField::Inline {
-                    bytes: InlineBytes(copy(&payload[at + 3..end])?.into()),
+                fields.push(ValueField::Inline {
+                    bytes: InlineBytes(payload[at + 3..end].to_vec().into()),
                     offset,
-                })?;
+                });
                 at = end;
             } else {
-                push(ValueField::Literal {
+                fields.push(ValueField::Literal {
                     value: payload[at],
                     offset,
-                })?;
+                });
                 at += 1;
             }
         } else if let Some(len) = payload
@@ -442,16 +324,16 @@ fn tokenize_with<E>(
             let len = usize::try_from(len).ok();
             let end = len.and_then(|len| at.checked_add(5)?.checked_add(len));
             if let Some(end) = end.filter(|end| *end <= payload.len()) {
-                push(ValueField::ByteString {
-                    bytes: copy(&payload[at + 5..end])?.into(),
+                fields.push(ValueField::ByteString {
+                    bytes: payload[at + 5..end].to_vec().into(),
                     offset,
-                })?;
+                });
                 at = end;
             } else {
-                push(ValueField::Literal {
+                fields.push(ValueField::Literal {
                     value: payload[at],
                     offset,
-                })?;
+                });
                 at += 1;
             }
         } else if let Some(ordinal) = payload
@@ -459,41 +341,41 @@ fn tokenize_with<E>(
             .filter(|tag| **tag == 0x32)
             .and_then(|_| View::u32_le_at(payload, at + 1))
         {
-            push(ValueField::SchemaSelector { ordinal, offset })?;
+            fields.push(ValueField::SchemaSelector { ordinal, offset });
             at += 5;
         } else if payload
             .get(at)
             .is_some_and(|byte| (0x80..=0xd0).contains(byte))
         {
-            push(ValueField::Atom {
+            fields.push(ValueField::Atom {
                 value: u32::from(payload[at] - 0x80),
                 width: 1,
                 offset,
-            })?;
+            });
             at += 1;
         } else if payload
             .get(at)
             .is_some_and(|byte| (0xd1..=0xe4).contains(byte))
             && at + 2 <= payload.len()
         {
-            push(ValueField::Atom {
+            fields.push(ValueField::Atom {
                 value: u32::from(payload[at] - 0xd1) * 256 + u32::from(payload[at + 1]) + 1,
                 width: 2,
                 offset,
-            })?;
+            });
             at += 2;
         } else if payload[at] == 0xfe {
-            push(ValueField::Terminator { offset })?;
+            fields.push(ValueField::Terminator { offset });
             at += 1;
         } else {
-            push(ValueField::Literal {
+            fields.push(ValueField::Literal {
                 value: payload[at],
                 offset,
-            })?;
+            });
             at += 1;
         }
     }
-    Ok(())
+    fields
 }
 
 #[cfg(test)]

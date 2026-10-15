@@ -78,7 +78,7 @@ pub(crate) fn native_parameters_match_source(
 pub(crate) fn apply_feature_name_changes(
     parameters: &mut [DesignParameter],
     changes: &HashMap<FeatureId, (String, String)>,
-) -> Result<(), CodecError> {
+) {
     let owners = parameters
         .iter()
         .map(|parameter| (parameter.id.clone(), parameter.owner.clone()))
@@ -101,13 +101,7 @@ pub(crate) fn apply_feature_name_changes(
             .filter_map(|dependency| owners.get(dependency))
             .filter_map(|owner| owner.as_ref().and_then(|owner| changes.get(owner)))
             .collect::<Vec<_>>();
-        let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(
-            parameter.expression.as_bytes(),
-            &arena,
-            &DecodePolicy::service(),
-        )?;
-        let aliases = expression_identifier_tokens(&ctx, &parameter.expression)?
+        let aliases = expression_identifier_tokens(&parameter.expression)
             .unwrap_or_default()
             .into_iter()
             .filter_map(|token| {
@@ -121,13 +115,10 @@ pub(crate) fn apply_feature_name_changes(
                     })
             })
             .collect::<HashMap<_, _>>();
-        if let Some(rewritten) =
-            rewrite_parameter_expression(&ctx, &parameter.expression, &aliases)?
-        {
+        if let Some(rewritten) = rewrite_parameter_expression(&parameter.expression, &aliases) {
             parameter.expression = rewritten;
         }
     }
-    Ok(())
 }
 
 /// Resolve neutral/native feature edit authority and update the write history.
@@ -354,27 +345,24 @@ fn project_feature_model_with_native_inputs(
         &native.feature_input_lanes,
     )?;
     crate::resolved_features::operations::bind_sweep_operations(
-        &ctx,
         features,
         &histories,
         &native.feature_input_lanes,
         None,
-    )?;
+    );
     project_compact_and_generated(&ctx, features, &histories, &native.feature_input_lanes)?;
     crate::resolved_features::operations::bind_revolution_operations(
-        &ctx,
         features,
         &histories,
         &native.feature_input_lanes,
         None,
-    )?;
+    );
     // discarded-value: marking the features is the whole effect on the write route; the collected sketches have a reader only on the decode route
     let _ = crate::resolved_features::markers::spatial_sketches(
-        &ctx,
         features,
         &histories,
         &native.feature_input_lanes,
-    )?;
+    );
     Ok(projection)
 }
 
@@ -425,10 +413,9 @@ fn validate_compact_body_selection_edits(
                 .iter()
                 .map(u32::to_string)
                 .collect(),
-            crate::resolved_features::component_paths::compact_body_selection_value_charged(
-                &ctx,
+            crate::resolved_features::component_paths::compact_body_selection_value(
                 &selection.local_body_ids,
-            )?,
+            ),
             &ctx,
         )?
         .map_err(|error| CodecError::NotImplemented(error.to_string()))?;
@@ -510,11 +497,9 @@ fn validate_compact_edge_selection_edits(
                 feature.id
             )));
         };
-        let native =
-            crate::resolved_features::component_paths::compact_edge_selection_set_value_charged(
-                &ctx,
-                edge_selections,
-            )?;
+        let native = crate::resolved_features::component_paths::compact_edge_selection_set_value(
+            edge_selections,
+        );
         let generated = edge_selections
             .iter()
             .map(|selection| -> Result<Option<_>, CodecError> {
@@ -624,9 +609,8 @@ fn validate_compact_surface_selection_edits(
             _ => continue,
         };
         let native = crate::resolved_features::terminations::compact_surface_selection_value(
-            &ctx,
             &selection.components,
-        )?;
+        );
         let producer = if first_component {
             selection.producer_feature_refs.first().map(String::as_str)
         } else {

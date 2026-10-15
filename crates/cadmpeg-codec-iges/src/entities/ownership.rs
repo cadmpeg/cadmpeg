@@ -2,7 +2,6 @@
 //! Source construction ownership survives failure of a neutral owner projection.
 
 use crate::{directory::DirectoryEntry, parameter::ParameterRecord};
-use cadmpeg_core::{decode::DecodeContext, CodecError};
 use cadmpeg_ir::{CadIr, SourceGeometryRole};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -10,39 +9,25 @@ pub(crate) fn mark_supports(
     ir: &mut CadIr,
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
-    ctx: &DecodeContext<'_>,
-) -> Result<(), CodecError> {
-    let mut storage = ctx.reserve_scoped(0, "IGES source support ownership")?;
-    let mut records = BTreeMap::new();
-    for record in parameters {
-        storage.with_storage(|| {
-            ctx.insert_btree_map(
-                &mut records,
-                record.directory_sequence,
-                record,
-                "IGES support parameter index",
-            )
-        })?;
-    }
+) {
+    let records: BTreeMap<_, _> = parameters
+        .iter()
+        .map(|record| (record.directory_sequence, record))
+        .collect();
     let mut supports = BTreeSet::new();
     for owner in directory {
-        ctx.charge_work(1, "IGES source support owners")?;
         let Some(record) = records.get(&owner.sequence) else {
             continue;
         };
         visit_support_fields(owner, record, &mut |index| {
-            ctx.charge_work(1, "IGES declared support pointer")?;
             if let Some(target) = record
                 .integer(index)
                 .and_then(|value| u32::try_from(value).ok())
                 .filter(|value| *value > 0 && value % 2 == 1)
             {
-                storage.with_storage(|| {
-                    ctx.insert_btree_set(&mut supports, target, "IGES support identity index")
-                })?;
+                supports.insert(target);
             }
-            Ok(())
-        })?;
+        });
     }
     for source in ir
         .model
@@ -62,7 +47,6 @@ pub(crate) fn mark_supports(
                 .filter_map(|point| point.source_object.as_mut()),
         )
     {
-        ctx.charge_work(1, "IGES support association")?;
         if source
             .object_id
             .as_str()
@@ -73,7 +57,6 @@ pub(crate) fn mark_supports(
             source.geometry_role = Some(SourceGeometryRole::Support);
         }
     }
-    Ok(())
 }
 
 /// Read only entity-defined geometry pointer slots, including a readable prefix
@@ -81,8 +64,8 @@ pub(crate) fn mark_supports(
 fn visit_support_fields(
     owner: &DirectoryEntry,
     record: &ParameterRecord,
-    visit: &mut impl FnMut(usize) -> Result<(), CodecError>,
-) -> Result<(), CodecError> {
+    visit: &mut impl FnMut(usize),
+) {
     let fixed: &[usize] = match (owner.entity_type, owner.form) {
         (108, -1..=1) => &[5],
         (118, 0 | 1) | (120, 0) => &[1, 2],
@@ -97,14 +80,14 @@ fn visit_support_fields(
         _ => &[],
     };
     for index in fixed {
-        visit(*index)?;
+        visit(*index);
     }
     match (owner.entity_type, owner.form) {
         (102, 0) => visit_fixed_items(record, 1, 2, 1, visit),
         (504, 1) => visit_fixed_items(record, 1, 2, 5, visit),
         (141, 0) => visit_variable_items(record, 4, 5, 3, 1, 0, visit),
         (508, 1) => visit_variable_items(record, 1, 2, 5, 2, 1, visit),
-        _ => Ok(()),
+        _ => {}
     }
 }
 
@@ -121,18 +104,17 @@ fn visit_fixed_items(
     count_index: usize,
     start: usize,
     stride: usize,
-    visit: &mut impl FnMut(usize) -> Result<(), CodecError>,
-) -> Result<(), CodecError> {
+    visit: &mut impl FnMut(usize),
+) {
     let Some(available) = record.parameter_end().checked_sub(start) else {
-        return Ok(());
+        return;
     };
     let count = declared_count(record, count_index)
         .unwrap_or(0)
         .min(available.div_ceil(stride));
     for item in 0..count {
-        visit(start + item * stride)?;
+        visit(start + item * stride);
     }
-    Ok(())
 }
 
 fn visit_variable_items(
@@ -142,8 +124,8 @@ fn visit_variable_items(
     prefix: usize,
     pcurve_stride: usize,
     pointer_offset: usize,
-    visit: &mut impl FnMut(usize) -> Result<(), CodecError>,
-) -> Result<(), CodecError> {
+    visit: &mut impl FnMut(usize),
+) {
     let count = declared_count(record, count_index)
         .unwrap_or(0)
         .min(record.parameter_end() / prefix);
@@ -154,21 +136,20 @@ fn visit_variable_items(
         if available < prefix {
             break;
         }
-        visit(start + pointer_offset)?;
+        visit(start + pointer_offset);
         let Some(pcurves) = declared_count(record, start + prefix - 1) else {
             break;
         };
         start += prefix;
         let available = (available - prefix) / pcurve_stride;
         for item in 0..pcurves.min(available) {
-            visit(start + item * pcurve_stride + pcurve_stride - 1)?;
+            visit(start + item * pcurve_stride + pcurve_stride - 1);
         }
         if pcurves > available {
             break;
         }
         start += pcurves * pcurve_stride;
     }
-    Ok(())
 }
 
 #[cfg(test)]

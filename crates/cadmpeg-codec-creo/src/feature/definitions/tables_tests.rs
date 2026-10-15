@@ -5,35 +5,34 @@ use crate::feature::definitions::decode_variable_scalar;
 use crate::feature::definitions::definitions;
 use crate::feature::definitions::definitions_in_ranges;
 use crate::feature::definitions::depdb_definitions;
-use crate::feature::definitions::dimension_table as parse_dimension_table;
-use crate::feature::definitions::entity_intersection as parse_entity_intersection;
-use crate::feature::definitions::equation_table as parse_equation_table;
-use crate::feature::definitions::feature_relation_triples as parse_feature_relation_triples;
-use crate::feature::definitions::feature_skamps as parse_feature_skamps;
+use crate::feature::definitions::dimension_table;
+use crate::feature::definitions::entity_intersection;
+use crate::feature::definitions::equation_table;
+use crate::feature::definitions::feature_relation_triples;
+use crate::feature::definitions::feature_skamps;
 use crate::feature::definitions::named_solver_table_header;
 
-use crate::feature::definitions::positional_dimension as parse_positional_dimension;
-use crate::feature::definitions::positional_dimension_table as parse_positional_dimension_table;
-use crate::feature::definitions::positional_feature_skamps as parse_positional_feature_skamps;
+use crate::feature::definitions::positional_dimension;
+use crate::feature::definitions::positional_dimension_table;
+use crate::feature::definitions::positional_feature_skamps;
 
-use crate::feature::definitions::positional_relation_table as parse_positional_relation_table;
-use crate::feature::definitions::positional_relation_triples as parse_positional_relation_triples;
-use crate::feature::definitions::positional_section_3d as parse_positional_section_3d;
+use crate::feature::definitions::positional_relation_table;
+use crate::feature::definitions::positional_relation_triples;
+use crate::feature::definitions::positional_section_3d;
 
-use crate::feature::definitions::positional_variable_table as parse_positional_variable_table;
-use crate::feature::definitions::relation_table as parse_relation_table;
+use crate::feature::definitions::positional_variable_table;
+use crate::feature::definitions::relation_table;
 use crate::feature::definitions::section_3d as parse_section_3d;
-use crate::feature::definitions::self_described_positional_dimension_table as parse_self_described_positional_dimension_table;
+use crate::feature::definitions::self_described_positional_dimension_table;
 use crate::feature::definitions::test_support::with_points;
 
-use crate::feature::definitions::variable_table as parse_variable_table;
+use crate::feature::definitions::variable_table;
 use crate::feature::definitions::BinaryFlag;
 use crate::feature::definitions::FeatureDimensionReference;
 
 use crate::feature::definitions::FeatureSectionOrientation;
 use crate::feature::definitions::FeatureSectionPoint;
 
-use crate::feature::definitions::FeatureSegmentTable;
 use crate::feature::definitions::FeatureSkampItem;
 use crate::feature::definitions::FeatureVariableRow;
 use crate::feature::definitions::FeatureVariableTable;
@@ -42,19 +41,6 @@ use crate::feature::definitions::ScalarLane;
 
 use crate::psb;
 use crate::scalar;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-use cadmpeg_core::CodecError;
-
-fn entity_intersection(
-    entity_ids: &[u32],
-    segments: Option<&FeatureSegmentTable>,
-    variables: Option<&FeatureVariableTable>,
-) -> Option<[f64; 2]> {
-    crate::decode::with_test_decode_ctx(|ctx| {
-        parse_entity_intersection(ctx, entity_ids, segments, variables)
-    })
-    .expect("test trim intersection")
-}
 
 fn reconciled_points(
     variables: &FeatureVariableTable,
@@ -62,15 +48,11 @@ fn reconciled_points(
     std::collections::BTreeMap<u32, [Option<f64>; 2]>,
     std::collections::BTreeSet<u32>,
 ) {
-    crate::decode::with_test_decode_ctx(|ctx| {
-        variables
-            .reconciled_points(ctx)
-            .map(|result| (result.points, result.ambiguous))
-    })
-    .expect("test point reconciliation")
+    let reconciled = variables.reconciled_points();
+    (reconciled.points, reconciled.ambiguous)
 }
 
-const NAMED_DIMENSION_LIMIT_INPUT: &[u8] = b"dimtab_ptr\0\xf3\xf8\x01\xf7\x58\xfb\xe2\
+const NAMED_DIMENSION_INPUT: &[u8] = b"dimtab_ptr\0\xf3\xf8\x01\xf7\x58\xfb\xe2\
     \xe0\x01type\0\x02\xe0\x02value\0\x18\xe0\x01direct\0\x00\
     \xe0\x02aux_value\0\x18\xe0\x01ext_id\0\x02\
     dim_ref\0\xf1\xf8\x02\xf7\x60\xfb\xe2\
@@ -78,480 +60,111 @@ const NAMED_DIMENSION_LIMIT_INPUT: &[u8] = b"dimtab_ptr\0\xf3\xf8\x01\xf7\x58\xf
     \xe0\x01point\0\xf8\x02\x03\xe4\
     \xf1\xf7\x60\xe2\x02\x02\x14\xe4\xf3\xf7\x58\xe2";
 
-fn with_dimension_limits<T>(
-    payload: &[u8],
-    collection_limit: u64,
-    retained_limit: u64,
-    run: impl FnOnce(&DecodeContext<'_>) -> Result<T, CodecError>,
-) -> Result<T, CodecError> {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = collection_limit;
-    policy.limits.max_retained_bytes = retained_limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy)
-        .expect("dimension input fits root policy");
-    run(&ctx)
-}
-
-fn named_dimension_with_limits(
-    collection_limit: u64,
-    retained_limit: u64,
-) -> Result<Option<crate::feature::definitions::FeatureDimensionTable>, CodecError> {
-    with_dimension_limits(
-        NAMED_DIMENSION_LIMIT_INPUT,
-        collection_limit,
-        retained_limit,
-        |ctx| {
-            parse_dimension_table(
-                ctx,
-                NAMED_DIMENSION_LIMIT_INPUT,
-                0,
-                NAMED_DIMENSION_LIMIT_INPUT.len(),
-                &scalar::ScalarCache::default(),
-            )
-        },
+#[test]
+fn named_dimension_replays_both_reference_rows() {
+    let table = dimension_table(
+        NAMED_DIMENSION_INPUT,
+        0,
+        NAMED_DIMENSION_INPUT.len(),
+        &scalar::ScalarCache::default(),
     )
+    .expect("dimension admitted");
+    assert_eq!(
+        table.rows[0]
+            .references
+            .as_ref()
+            .expect("references")
+            .rows
+            .len(),
+        2
+    );
 }
 
-macro_rules! named_dimension_collection_limit_test {
-    ($name:ident, $limit:expr, $operation:literal) => {
-        #[test]
-        fn $name() {
-            assert!(matches!(named_dimension_with_limits($limit, u64::MAX),
-                Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == $operation));
-            let table = named_dimension_with_limits(3, crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::RetainedBytes, None, |cap| named_dimension_with_limits(u64::MAX, cap)))
-                .expect("dimension admitted").expect("dimension present");
-            assert_eq!(table.rows[0].references.as_ref().expect("references").rows.len(), 2);
-        }
-    };
-}
-
-named_dimension_collection_limit_test!(
-    dimension_reference_prototype_refuses_before_row_append,
-    0,
-    "creo dimension reference rows"
-);
-named_dimension_collection_limit_test!(
-    dimension_reference_replay_refuses_before_row_append,
-    1,
-    "creo dimension reference rows"
-);
-named_dimension_collection_limit_test!(
-    named_dimension_row_refuses_before_append,
-    2,
-    "creo dimension rows"
-);
+const POSITIONAL_DIMENSION_INPUT: &[u8] = &[1, 0x00, 0x04, 0xa6, 0, 0x18, 44];
 
 #[test]
-fn named_dimension_value_body_refuses_before_copy() {
-    assert!(
-        matches!(named_dimension_with_limits(3, crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo dimension value body"), |cap| named_dimension_with_limits(3, cap))), Err(CodecError::ResourceLimit(limit))
-        if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "creo dimension value body")
-    );
+fn positional_dimension_keeps_the_unresolved_token() {
     assert_eq!(
-        named_dimension_with_limits(
-            3,
-            crate::test_support::allocation_limit_at(
-                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-                None,
-                |cap| named_dimension_with_limits(u64::MAX, cap)
-            )
+        positional_dimension(
+            POSITIONAL_DIMENSION_INPUT,
+            0,
+            POSITIONAL_DIMENSION_INPUT.len(),
+            &scalar::ScalarCache::default(),
         )
         .expect("dimension admitted")
-        .expect("dimension present")
-        .rows
-        .len(),
-        1
-    );
-}
-
-#[test]
-fn named_dimension_auxiliary_body_refuses_before_copy() {
-    assert!(
-        matches!(named_dimension_with_limits(3, crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo dimension auxiliary body"), |cap| named_dimension_with_limits(3, cap))), Err(CodecError::ResourceLimit(limit))
-        if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "creo dimension auxiliary body")
-    );
-    assert_eq!(
-        named_dimension_with_limits(
-            3,
-            crate::test_support::allocation_limit_at(
-                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-                None,
-                |cap| named_dimension_with_limits(u64::MAX, cap)
-            )
-        )
-        .expect("dimension admitted")
-        .expect("dimension present")
-        .rows
-        .len(),
-        1
-    );
-}
-
-const POSITIONAL_DIMENSION_LIMIT_INPUT: &[u8] = &[1, 0x00, 0x04, 0xa6, 0, 0x18, 44];
-
-#[test]
-fn positional_dimension_unresolved_token_refuses_before_copy() {
-    let run = |limit| {
-        with_dimension_limits(POSITIONAL_DIMENSION_LIMIT_INPUT, u64::MAX, limit, |ctx| {
-            parse_positional_dimension(
-                ctx,
-                POSITIONAL_DIMENSION_LIMIT_INPUT,
-                0,
-                POSITIONAL_DIMENSION_LIMIT_INPUT.len(),
-                &scalar::ScalarCache::default(),
-            )
-        })
-    };
-    assert!(matches!(run(5), Err(CodecError::ResourceLimit(limit))
-        if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "creo dimension unresolved token"));
-    assert_eq!(
-        run(7)
-            .expect("dimension admitted")
-            .expect("row present")
-            .value
-            .unresolved_token(),
+        .value
+        .unresolved_token(),
         Some(&[0x00, 0x04, 0xa6][..])
     );
 }
 
-const POSITIONAL_DIMENSION_TABLE_LIMIT_INPUT: &[u8] = b"prefix\xf8\x02\xf7\x58\xfb\xe2\xf7\x59\
+const POSITIONAL_DIMENSION_TABLE_INPUT: &[u8] = b"prefix\xf8\x02\xf7\x58\xfb\xe2\xf7\x59\
     \x02\xe4\x00\x18\x2b\xf3\xf7\x58\xe2\x02\xe4\x00\x18\x2c";
 
-fn positional_dimension_table_with_limit(
-    collection_limit: u64,
-) -> Result<Option<crate::feature::definitions::FeatureDimensionTable>, CodecError> {
-    with_dimension_limits(
-        POSITIONAL_DIMENSION_TABLE_LIMIT_INPUT,
-        collection_limit,
-        u64::MAX,
-        |ctx| {
-            parse_positional_dimension_table(
-                ctx,
-                POSITIONAL_DIMENSION_TABLE_LIMIT_INPUT,
-                0,
-                POSITIONAL_DIMENSION_TABLE_LIMIT_INPUT.len(),
-                88,
-                &scalar::ScalarCache::default(),
-            )
-        },
-    )
-}
-
 #[test]
-fn positional_dimension_rows_refuse_before_each_append() {
-    for limit in [0, 1] {
-        assert!(matches!(positional_dimension_table_with_limit(limit),
-            Err(CodecError::ResourceLimit(refusal))
-            if refusal.dimension == ResourceDimension::CollectionItems
-                && refusal.operation == "creo dimension rows"));
-    }
-    let table = positional_dimension_table_with_limit(2)
-        .expect("dimension table admitted")
-        .expect("table present");
+fn positional_dimension_table_replays_both_rows() {
+    let table = positional_dimension_table(
+        POSITIONAL_DIMENSION_TABLE_INPUT,
+        0,
+        POSITIONAL_DIMENSION_TABLE_INPUT.len(),
+        88,
+        &scalar::ScalarCache::default(),
+    )
+    .expect("dimension table admitted");
     assert_eq!(table.rows.len(), 2);
     assert_eq!(table.rows[0].external_id, 43);
     assert_eq!(table.rows[1].external_id, 44);
 }
 
-#[test]
-fn positional_dimension_value_body_refuses_before_copy() {
-    assert!(matches!(with_dimension_limits(
-        POSITIONAL_DIMENSION_LIMIT_INPUT, u64::MAX, 2, |ctx| {
-            parse_positional_dimension(ctx, POSITIONAL_DIMENSION_LIMIT_INPUT, 0,
-                POSITIONAL_DIMENSION_LIMIT_INPUT.len(), &scalar::ScalarCache::default())
-        }), Err(CodecError::ResourceLimit(limit))
-        if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "creo dimension value body"));
-}
-
-#[test]
-fn positional_dimension_auxiliary_body_refuses_before_copy() {
-    assert!(matches!(with_dimension_limits(
-        POSITIONAL_DIMENSION_LIMIT_INPUT, u64::MAX, 6, |ctx| {
-            parse_positional_dimension(ctx, POSITIONAL_DIMENSION_LIMIT_INPUT, 0,
-                POSITIONAL_DIMENSION_LIMIT_INPUT.len(), &scalar::ScalarCache::default())
-        }), Err(CodecError::ResourceLimit(limit))
-        if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "creo dimension auxiliary body"));
-}
-
-fn dimension_table(
-    payload: &[u8],
-    start: usize,
-    end: usize,
-    cache: &scalar::ScalarCache,
-) -> Option<crate::feature::definitions::FeatureDimensionTable> {
-    crate::decode::with_test_decode_ctx(|ctx| {
-        parse_dimension_table(ctx, payload, start, end, cache)
-    })
-    .expect("dimension table admitted")
-}
-
-fn positional_dimension(
-    payload: &[u8],
-    start: usize,
-    end: usize,
-    cache: &scalar::ScalarCache,
-) -> Option<crate::feature::definitions::FeatureDimension> {
-    crate::decode::with_test_decode_ctx(|ctx| {
-        parse_positional_dimension(ctx, payload, start, end, cache)
-    })
-    .expect("positional dimension admitted")
-}
-
-fn positional_dimension_table(
-    payload: &[u8],
-    start: usize,
-    end: usize,
-    table_class: u32,
-    cache: &scalar::ScalarCache,
-) -> Option<crate::feature::definitions::FeatureDimensionTable> {
-    crate::decode::with_test_decode_ctx(|ctx| {
-        parse_positional_dimension_table(ctx, payload, start, end, table_class, cache)
-    })
-    .expect("positional dimension table admitted")
-}
-
-fn self_described_positional_dimension_table(
-    payload: &[u8],
-    start: usize,
-    end: usize,
-    cache: &scalar::ScalarCache,
-) -> Option<crate::feature::definitions::FeatureDimensionTable> {
-    crate::decode::with_test_decode_ctx(|ctx| {
-        parse_self_described_positional_dimension_table(ctx, payload, start, end, cache)
-    })
-    .expect("self-described dimension table admitted")
-}
-
-fn positional_section_3d(
-    payload: &[u8],
-    start: usize,
-    end: usize,
-) -> Option<crate::feature::definitions::FeatureSection3d> {
-    crate::decode::with_test_decode_ctx(|ctx| parse_positional_section_3d(ctx, payload, start, end))
-        .expect("positional section admitted")
-}
-
-fn equation_table(
-    payload: &[u8],
-    start: usize,
-    end: usize,
-) -> Option<crate::feature::definitions::FeatureEquationTable> {
-    crate::decode::with_test_decode_ctx(|ctx| parse_equation_table(ctx, payload, start, end))
-        .expect("equation table admitted")
-}
-
-fn feature_skamps(
-    payload: &[u8],
-    start: usize,
-    end: usize,
-) -> Vec<crate::feature::definitions::FeatureSkamp> {
-    crate::decode::with_test_decode_ctx(|ctx| parse_feature_skamps(ctx, payload, start, end))
-        .expect("skamps admitted")
-}
-
-fn positional_feature_skamps(
-    payload: &[u8],
-    start: usize,
-    end: usize,
-    table_class: u32,
-) -> Vec<crate::feature::definitions::FeatureSkamp> {
-    crate::decode::with_test_decode_ctx(|ctx| {
-        parse_positional_feature_skamps(ctx, payload, start, end, table_class)
-    })
-    .expect("positional skamps admitted")
-}
-
-fn feature_relation_triples(
-    payload: &[u8],
-    start: usize,
-    end: usize,
-) -> Vec<crate::feature::definitions::FeatureRelationTriple> {
-    crate::decode::with_test_decode_ctx(|ctx| {
-        parse_feature_relation_triples(ctx, payload, start, end)
-    })
-    .expect("triples admitted")
-}
-
-fn positional_relation_triples(
-    payload: &[u8],
-    start: usize,
-    end: usize,
-    table_class: u32,
-) -> Vec<crate::feature::definitions::FeatureRelationTriple> {
-    crate::decode::with_test_decode_ctx(|ctx| {
-        parse_positional_relation_triples(ctx, payload, start, end, table_class)
-    })
-    .expect("positional triples admitted")
-}
-
-fn relation_table(
-    payload: &[u8],
-    start: usize,
-    end: usize,
-) -> Option<crate::feature::definitions::FeatureRelationTable> {
-    crate::decode::with_test_decode_ctx(|ctx| parse_relation_table(ctx, payload, start, end))
-        .expect("relation table admitted")
-}
-
-fn positional_relation_table(
-    payload: &[u8],
-    start: usize,
-    end: usize,
-    table_class: u32,
-) -> Option<crate::feature::definitions::FeatureRelationTable> {
-    crate::decode::with_test_decode_ctx(|ctx| {
-        parse_positional_relation_table(ctx, payload, start, end, table_class)
-    })
-    .expect("positional relation table admitted")
-}
-
-const POSITIONAL_RELATION_LIMIT_INPUT: &[u8] = b"prefix\xf8\x03\xf7\x64\xfb\xe2\xf7\x65\
+const POSITIONAL_RELATION_INPUT: &[u8] = b"prefix\xf8\x03\xf7\x64\xfb\xe2\xf7\x65\
     prototype\xf1\xf7\x64\xe2\
     \x08\x00\x03\x0f\xf6\xe4\x01\xe4\x00\xe4\x0f\x10\x0f\x18\x00\xf6\x00\xe2";
 
-fn positional_relation_with_limits(
-    collection_limit: u64,
-    retained_limit: u64,
-) -> Result<Option<crate::feature::definitions::FeatureRelationTable>, CodecError> {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = collection_limit;
-    policy.limits.max_retained_bytes = retained_limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(POSITIONAL_RELATION_LIMIT_INPUT, &arena, &policy)
-        .expect("relation input fits root policy");
-    parse_positional_relation_table(
-        &ctx,
-        POSITIONAL_RELATION_LIMIT_INPUT,
+fn positional_relation_fixture() -> crate::feature::definitions::FeatureRelationTable {
+    positional_relation_table(
+        POSITIONAL_RELATION_INPUT,
         0,
-        POSITIONAL_RELATION_LIMIT_INPUT.len(),
+        POSITIONAL_RELATION_INPUT.len(),
         100,
     )
-}
-
-#[test]
-fn relation_operands_refuse_before_retained_copy() {
-    assert!(
-        matches!(positional_relation_with_limits(1, crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo relation operands"), |cap| positional_relation_with_limits(1, cap))), Err(CodecError::ResourceLimit(limit))
-        if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "creo relation operands")
-    );
-    let table = positional_relation_with_limits(
-        1,
-        crate::test_support::allocation_limit_at(
-            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-            None,
-            |cap| positional_relation_with_limits(u64::MAX, cap),
-        ),
-    )
     .expect("relation admitted")
-    .expect("table present");
-    assert_eq!(table.rows[0].operands.len(), 12);
 }
 
 #[test]
-fn relation_row_body_refuses_before_retained_copy() {
-    assert!(
-        matches!(positional_relation_with_limits(1, crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo relation row body"), |cap| positional_relation_with_limits(1, cap))), Err(CodecError::ResourceLimit(limit))
-        if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "creo relation row body")
-    );
-    let table = positional_relation_with_limits(
-        1,
-        crate::test_support::allocation_limit_at(
-            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-            None,
-            |cap| positional_relation_with_limits(u64::MAX, cap),
-        ),
-    )
-    .expect("relation admitted")
-    .expect("table present");
-    assert_eq!(table.rows[0].body.len(), 17);
+fn positional_relation_row_keeps_its_operands() {
+    assert_eq!(positional_relation_fixture().rows[0].operands.len(), 12);
 }
 
 #[test]
-fn relation_row_refuses_before_vec_growth() {
-    assert!(
-        matches!(positional_relation_with_limits(0, crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::RetainedBytes, None, |cap| positional_relation_with_limits(u64::MAX, cap))), Err(CodecError::ResourceLimit(limit))
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "creo relation rows")
-    );
-    assert_eq!(
-        positional_relation_with_limits(
-            1,
-            crate::test_support::allocation_limit_at(
-                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-                None,
-                |cap| positional_relation_with_limits(u64::MAX, cap)
-            )
-        )
-        .expect("relation admitted")
-        .expect("table present")
-        .rows
-        .len(),
-        1
-    );
+fn positional_relation_row_keeps_its_body() {
+    assert_eq!(positional_relation_fixture().rows[0].body.len(), 17);
 }
 
-const POSITIONAL_SECTION_LIMIT_INPUT: &[u8] = b"prefix\x07S2D0004\0\x01\xf6\xe1\xf6\x82\x01\xf6\
+const POSITIONAL_SECTION_INPUT: &[u8] = b"prefix\x07S2D0004\0\x01\xf6\xe1\xf6\x82\x01\xf6\
     \xf8\x02\xf7\x39\xfb\xe2\xf7\x3a\
     \x06\x05\xf6\x03\xf6\x00\xe3tail\xf2\xf7\x39\xe2\
     \x07\x05\xf6\x04\xf6\x01";
 
 #[test]
-fn positional_section_reference_planes_refuse_before_each_row() {
-    let run = |limit| {
-        with_trim_limits(limit, u64::MAX, |ctx| {
-            parse_positional_section_3d(
-                ctx,
-                POSITIONAL_SECTION_LIMIT_INPUT,
-                0,
-                POSITIONAL_SECTION_LIMIT_INPUT.len(),
-            )
-        })
-    };
-    for limit in [0, 1] {
-        assert!(matches!(run(limit), Err(CodecError::ResourceLimit(refusal))
-            if refusal.dimension == ResourceDimension::CollectionItems
-                && refusal.operation == "creo positional section reference planes"));
-    }
-    let section = run(2).expect("section admitted").expect("section present");
+fn positional_section_reads_both_reference_planes() {
+    let section =
+        positional_section_3d(POSITIONAL_SECTION_INPUT, 0, POSITIONAL_SECTION_INPUT.len())
+            .expect("section admitted");
     assert_eq!(
         section.reference_planes.entity_ids().collect::<Vec<_>>(),
         [6, 7]
     );
 }
 
-const NAMED_SECTION_LIMIT_INPUT: &[u8] = b"\xe0\x00gsec3d_ptr\0\
+const NAMED_SECTION_INPUT: &[u8] = b"\xe0\x00gsec3d_ptr\0\
     \xe0\x00ref_planes\0\xf8\x01\xf7\x01\xfb\xe2\
     dim_id_tab\0\xf8\x01\x2a";
 
 #[test]
-fn named_section_reference_plane_refuses_before_vec_growth() {
-    let run = |limit| {
-        with_trim_limits(limit, u64::MAX, |ctx| {
-            parse_section_3d(
-                ctx,
-                NAMED_SECTION_LIMIT_INPUT,
-                0,
-                NAMED_SECTION_LIMIT_INPUT.len(),
-            )
-        })
-    };
-    assert!(matches!(run(0), Err(CodecError::ResourceLimit(refusal))
-        if refusal.dimension == ResourceDimension::CollectionItems
-            && refusal.operation == "creo named section reference planes"));
+fn named_section_reads_its_reference_plane() {
     assert_eq!(
-        run(2)
+        parse_section_3d(NAMED_SECTION_INPUT, 0, NAMED_SECTION_INPUT.len())
             .expect("section admitted")
-            .expect("section present")
             .reference_planes
             .entity_ids()
             .collect::<Vec<_>>(),
@@ -560,132 +173,13 @@ fn named_section_reference_plane_refuses_before_vec_growth() {
 }
 
 #[test]
-fn named_section_dimension_id_refuses_before_vec_growth() {
-    let run = |limit| {
-        with_trim_limits(limit, u64::MAX, |ctx| {
-            parse_section_3d(
-                ctx,
-                NAMED_SECTION_LIMIT_INPUT,
-                0,
-                NAMED_SECTION_LIMIT_INPUT.len(),
-            )
-        })
-    };
-    assert!(matches!(run(1), Err(CodecError::ResourceLimit(refusal))
-        if refusal.dimension == ResourceDimension::CollectionItems
-            && refusal.operation == "creo section dimension IDs"));
+fn named_section_reads_its_dimension_id() {
     assert_eq!(
-        run(2)
+        parse_section_3d(NAMED_SECTION_INPUT, 0, NAMED_SECTION_INPUT.len())
             .expect("section admitted")
-            .expect("section present")
             .dimension_ids,
         [42]
     );
-}
-
-fn variable_table(
-    payload: &[u8],
-    start: usize,
-    end: usize,
-    cache: &scalar::ScalarCache,
-) -> Option<FeatureVariableTable> {
-    crate::decode::with_test_decode_ctx(|ctx| parse_variable_table(ctx, payload, start, end, cache))
-        .expect("variable table admitted")
-}
-
-fn positional_variable_table(
-    payload: &[u8],
-    start: usize,
-    end: usize,
-    table_class: u32,
-    cache: &scalar::ScalarCache,
-) -> Option<FeatureVariableTable> {
-    crate::decode::with_test_decode_ctx(|ctx| {
-        parse_positional_variable_table(ctx, payload, start, end, table_class, cache)
-    })
-    .expect("variable table admitted")
-}
-
-fn positional_variable_rows_with_limits(
-    collection_limit: u64,
-    retained_limit: u64,
-) -> Result<FeatureVariableTable, cadmpeg_core::CodecError> {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-
-    let payload = b"prefix\xf8\x02\xf7\x77\xfb\xe2\xf7\x78\
-            \x01\x07\x18\x18\x01\x00\x09\xf1\xf7\x77\xe2\
-            \x02\x07\x18\x18\x01\x00\x0a";
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = collection_limit;
-    policy.limits.max_retained_bytes = retained_limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy)?;
-    Ok(parse_positional_variable_table(
-        &ctx,
-        payload,
-        0,
-        payload.len(),
-        119,
-        &scalar::ScalarCache::default(),
-    )?
-    .expect("complete positional variable table"))
-}
-
-#[test]
-fn positional_variable_row_capacity_refuses_before_reservation() {
-    use cadmpeg_core::decode::ResourceDimension;
-    use cadmpeg_core::CodecError;
-
-    assert_eq!(
-        positional_variable_rows_with_limits(2, u64::MAX)
-            .expect("two rows admitted")
-            .rows
-            .len(),
-        2
-    );
-    let error =
-        positional_variable_rows_with_limits(1, u64::MAX).expect_err("two slots need two items");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "creo variable rows"));
-}
-
-#[test]
-fn positional_variable_value_body_refuses_before_retention() {
-    use cadmpeg_core::decode::ResourceDimension;
-    use cadmpeg_core::CodecError;
-
-    let error = positional_variable_rows_with_limits(
-        2,
-        crate::test_support::allocation_limit_at(
-            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-            Some("creo variable value body"),
-            |cap| positional_variable_rows_with_limits(2, cap),
-        ),
-    )
-    .expect_err("value needs one byte");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "creo variable value body"));
-}
-
-#[test]
-fn positional_variable_guess_body_refuses_before_retention() {
-    use cadmpeg_core::decode::ResourceDimension;
-    use cadmpeg_core::CodecError;
-
-    let error = positional_variable_rows_with_limits(
-        2,
-        crate::test_support::allocation_limit_at(
-            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-            Some("creo variable guess body"),
-            |cap| positional_variable_rows_with_limits(2, cap),
-        ),
-    )
-    .expect_err("guess needs one byte");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "creo variable guess body"));
 }
 
 #[test]
@@ -908,8 +402,7 @@ fn positional_definition_inherits_the_labeled_dimension_table_class() {
         .to_vec();
     payload.extend_from_slice(&[2, 0x46, 0x08, 0, 0, 0, 0, 0, 0, 0, 0x18, 43]);
 
-    let decoded = crate::decode::with_test_decode_ctx(|ctx| definitions(ctx, &payload))
-        .expect("definitions admitted");
+    let decoded = definitions(&payload).expect("definitions admitted");
     let dimensions = decoded[1].dimensions.as_ref().expect("positional dimtab");
 
     assert_eq!(decoded[1].identity.owner_feature_id(), Some(42));
@@ -928,8 +421,7 @@ fn depdb_gsec2d_definition_anchors_positional_table_replay() {
         .to_vec();
     payload.extend_from_slice(&[2, 0x46, 0x08, 0, 0, 0, 0, 0, 0, 0, 0x18, 43]);
 
-    let decoded = crate::decode::with_test_decode_ctx(|ctx| depdb_definitions(ctx, &payload))
-        .expect("definitions admitted");
+    let decoded = depdb_definitions(&payload).expect("definitions admitted");
     let dimensions = decoded[1].dimensions.as_ref().expect("positional dimtab");
 
     assert_eq!(decoded.len(), 2);
@@ -1101,7 +593,7 @@ fn radius_variables_do_not_create_section_points() {
 }
 
 #[test]
-fn reconciled_points_refuses_before_point_id_node() {
+fn reconciled_points_keep_a_section_point() {
     let table = with_points(
         FeatureVariableTable {
             declared_count: 0,
@@ -1115,11 +607,6 @@ fn reconciled_points_refuses_before_point_id_node() {
             v: Some(3.0),
         }],
     );
-    assert!(matches!(with_dimension_limits(&[0], 0, u64::MAX,
-        |ctx| table.reconciled_points(ctx)),
-        Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "creo reconciled point ID nodes"));
     assert_eq!(
         reconciled_points(&table).0.get(&7),
         Some(&[Some(2.0), Some(3.0)])
@@ -1235,9 +722,8 @@ fn named_gsec3d_uses_the_outer_plane_id_before_reference_rows() {
             \xe0\x01flip_flag\0\x00\
             \xe0\x00p_saved_result\0";
 
-    let definitions = crate::decode::with_test_decode_ctx(|ctx| {
+    let definitions = {
         definitions_in_ranges(
-            ctx,
             &payload[..],
             &[crate::feature::definitions::DefinitionStart {
                 offset: 0,
@@ -1246,7 +732,7 @@ fn named_gsec3d_uses_the_outer_plane_id_before_reference_rows() {
                 positional: false,
             }],
         )
-    })
+    }
     .expect("definitions admitted");
     let section = definitions[0].section_3d.as_ref().expect("named gsec3d");
 
@@ -1324,85 +810,13 @@ fn equation_table_accepts_final_row_at_table_separator() {
     assert_eq!(table.rows[0].body, [1, 4, 0x11, 0x12, 0xf6]);
 }
 
-const EQUATION_LIMIT_INPUT: &[u8] = b"eqtn_arr\0\xf2\xf8\x02\xf7\x80\x9f\xfb\xe2\
+const EQUATION_INPUT: &[u8] = b"eqtn_arr\0\xf2\xf8\x02\xf7\x80\x9f\xfb\xe2\
     \xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2\
     \x01\x04\x11\x12\xf6\xe2";
 
-fn equation_with_limits(
-    collection_limit: u64,
-    retained_limit: u64,
-) -> Result<Option<crate::feature::definitions::FeatureEquationTable>, CodecError> {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = collection_limit;
-    policy.limits.max_retained_bytes = retained_limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(EQUATION_LIMIT_INPUT, &arena, &policy)
-        .expect("equation root admitted");
-    parse_equation_table(&ctx, EQUATION_LIMIT_INPUT, 0, EQUATION_LIMIT_INPUT.len())
-}
-
 #[test]
-fn equation_prototype_body_refuses_before_retained_copy() {
-    assert!(
-        matches!(equation_with_limits(3, 10), Err(CodecError::ResourceLimit(limit))
-        if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "creo equation prototype body")
-    );
-}
-
-#[test]
-fn equation_arguments_refuse_before_vec_growth() {
-    assert!(
-        matches!(equation_with_limits(1, crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::RetainedBytes, None, |cap| equation_with_limits(u64::MAX, cap))), Err(CodecError::ResourceLimit(limit))
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "creo equation arguments")
-    );
-}
-
-#[test]
-fn equation_argument_body_refuses_before_retained_copy() {
-    assert!(
-        matches!(equation_with_limits(3, crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo equation argument body"), |cap| equation_with_limits(3, cap))), Err(CodecError::ResourceLimit(limit))
-        if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "creo equation argument body")
-    );
-}
-
-#[test]
-fn equation_auxiliary_body_refuses_before_retained_copy() {
-    assert!(
-        matches!(equation_with_limits(3, crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo equation auxiliary body"), |cap| equation_with_limits(3, cap))), Err(CodecError::ResourceLimit(limit))
-        if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "creo equation auxiliary body")
-    );
-}
-
-#[test]
-fn equation_row_body_refuses_before_retained_copy() {
-    assert!(
-        matches!(equation_with_limits(3, crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo equation row body"), |cap| equation_with_limits(3, cap))), Err(CodecError::ResourceLimit(limit))
-        if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "creo equation row body")
-    );
-}
-
-#[test]
-fn equation_row_refuses_before_vec_growth() {
-    assert!(
-        matches!(equation_with_limits(2, crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::RetainedBytes, None, |cap| equation_with_limits(u64::MAX, cap))), Err(CodecError::ResourceLimit(limit))
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "creo equation rows")
-    );
-    let table = equation_with_limits(
-        3,
-        crate::test_support::allocation_limit_at(
-            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-            None,
-            |cap| equation_with_limits(u64::MAX, cap),
-        ),
-    )
-    .expect("equation admitted")
-    .expect("table present");
+fn equation_row_reads_its_arguments() {
+    let table = equation_table(EQUATION_INPUT, 0, EQUATION_INPUT.len()).expect("equation admitted");
     assert_eq!(table.rows[0].arguments, [Some(17), Some(18)]);
 }
 
@@ -1612,102 +1026,12 @@ fn positional_solver_tables_retain_complete_prefix_rows() {
 }
 
 #[test]
-fn positional_skamp_items_refuse_before_vec_growth() {
+fn positional_skamp_table_reads_one_row() {
     let payload = b"\xf8\x01\xf7\x58\xfb\xe2\xf7\x59\
             \x01\x00\x00\x23\xf8\x01\xf7\x60\xfb\xe2\xf7\x61\x06\x00";
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy).expect("root admitted");
-    assert!(
-        matches!(parse_positional_feature_skamps(&ctx, payload, 0, payload.len(), 88),
-        Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "creo skamp items")
-    );
-}
-
-#[test]
-fn positional_skamp_rows_refuse_before_vec_growth() {
-    let payload = b"\xf8\x01\xf7\x58\xfb\xe2\xf7\x59\
-            \x01\x00\x00\x23\xf8\x01\xf7\x60\xfb\xe2\xf7\x61\x06\x00";
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 1;
-    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy).expect("root admitted");
-    assert!(
-        matches!(parse_positional_feature_skamps(&ctx, payload, 0, payload.len(), 88),
-        Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "creo skamp rows")
-    );
     assert_eq!(
         positional_feature_skamps(payload, 0, payload.len(), 88).len(),
         1
-    );
-}
-
-#[test]
-fn named_skamp_prototype_items_refuse_before_vec_growth() {
-    let payload = b"skamp_ptr\0\xf3\xf8\x01\xf7\x6b\xfb\xe2\
-            \xe0\x01id\0\x05\xe0\x01type\0\x02\xe0\x01flags\0\x03\
-            \xe0\x01status\0\x04\xe0\x00items\0\xf8\x01\xf7\x6c\xfb\xe2\
-            \xe0\x01ent_id\0\x2a\xe0\x01sense\0\x01\xf1\xf7\x6c\xe2\
-            \xf3\xf7\x6b\xe2";
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy).expect("root admitted");
-    assert!(
-        matches!(parse_feature_skamps(&ctx, payload, 0, payload.len()),
-        Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "creo skamp prototype items")
-    );
-}
-
-#[test]
-fn named_skamp_rows_refuse_before_vec_growth() {
-    let payload = b"skamp_ptr\0\xf3\xf8\x01\xf7\x6b\xfb\xe2\
-            \xe0\x01id\0\x05\xe0\x01type\0\x02\xe0\x01flags\0\x03\
-            \xe0\x01status\0\x04\xe0\x00items\0\xf8\x01\xf7\x6c\xfb\xe2\
-            \xe0\x01ent_id\0\x2a\xe0\x01sense\0\x01\xf1\xf7\x6c\xe2\
-            \xf3\xf7\x6b\xe2";
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 1;
-    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy).expect("root admitted");
-    assert!(
-        matches!(parse_feature_skamps(&ctx, payload, 0, payload.len()),
-        Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "creo skamp rows")
-    );
-}
-
-#[test]
-fn named_relation_triples_refuse_before_vec_growth() {
-    let payload = b"triples_ptr\0\xf4\x04\xf8\x01\xf7\x6d\xfb\xe2\
-            \xe0\x01rel_id\0\x07\xe0\x01eqn_id\0\x08\
-            \xe0\x01skamp_id\0\x05\xf1\xf7\x6d\xe2";
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy).expect("root admitted");
-    assert!(
-        matches!(parse_feature_relation_triples(&ctx, payload, 0, payload.len()),
-        Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "creo relation triples")
-    );
-}
-
-#[test]
-fn positional_relation_triples_refuse_before_vec_growth() {
-    let payload = b"\xf8\x01\xf7\x64\xfb\xe2\xf7\x65\x01\xf6\x04";
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy).expect("root admitted");
-    assert!(
-        matches!(parse_positional_relation_triples(&ctx, payload, 0, payload.len(), 100),
-        Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "creo relation triples")
     );
 }
 
@@ -1795,9 +1119,8 @@ fn positional_definition_preserves_its_named_solver_tables() {
     ]);
     payload.extend_from_slice(b"\xf1\xf7\x6a\xe2");
 
-    let definitions = crate::decode::with_test_decode_ctx(|ctx| {
+    let definitions = {
         definitions_in_ranges(
-            ctx,
             &payload,
             &[
                 crate::feature::definitions::DefinitionStart {
@@ -1814,7 +1137,7 @@ fn positional_definition_preserves_its_named_solver_tables() {
                 },
             ],
         )
-    })
+    }
     .expect("definitions admitted");
     let relations = definitions[1].relations.as_ref().expect("relations");
 
@@ -1857,20 +1180,6 @@ fn positional_triples_replay_nullable_relation_joins() {
     assert_eq!(triples[0].skamp_id, Some(4));
     assert_eq!(triples[1].relation_id, Some(2));
     assert_eq!(triples[1].skamp_id, Some(5));
-}
-
-fn with_trim_limits<T>(
-    collection_limit: u64,
-    work_limit: u64,
-    run: impl FnOnce(&DecodeContext<'_>) -> T,
-) -> T {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = collection_limit;
-    policy.limits.max_work_units = work_limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root fits the trim policy");
-    run(&ctx)
 }
 
 mod trim_tables;

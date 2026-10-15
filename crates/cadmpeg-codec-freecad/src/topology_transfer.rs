@@ -45,82 +45,6 @@ const EPS_TOPOLOGY_TRANSFER_GEOMETRY: f64 = 1.0e-9;
 const EPS_TOPOLOGY_TRANSFER_DEGENERATE: f64 = 1.0e-10;
 const EPS_TOPOLOGY_TRANSFER_EXACT_GEOMETRY: f64 = 1.0e-12;
 
-fn copy_shape_for_transfer(
-    ctx: &DecodeContext<'_>,
-    shape: &TextTShape,
-    operation: &'static str,
-) -> Result<TextTShape, CodecError> {
-    let mut children = ctx.collection_vec(shape.children.len(), operation)?;
-    children.extend(shape.children.iter().cloned());
-    let geometry = match &shape.geometry {
-        TextTShapeGeometry::Vertex {
-            tolerance,
-            point,
-            representations,
-        } => {
-            let mut copies = ctx.collection_vec(representations.len(), operation)?;
-            copies.extend(representations.iter().cloned());
-            TextTShapeGeometry::Vertex {
-                tolerance: *tolerance,
-                point: *point,
-                representations: copies,
-            }
-        }
-        TextTShapeGeometry::Edge {
-            tolerance,
-            same_parameter,
-            same_range,
-            degenerated,
-            representations,
-        } => {
-            let mut copies = ctx.collection_vec(representations.len(), operation)?;
-            for representation in representations {
-                let copy = match representation {
-                    TextEdgeRepresentation::PcurvePair {
-                        curves,
-                        continuity,
-                        surface,
-                        location,
-                        parameter_range,
-                        uv_endpoints,
-                    } => TextEdgeRepresentation::PcurvePair {
-                        curves: *curves,
-                        continuity: ctx.copy_retained_text(continuity, operation)?,
-                        surface: *surface,
-                        location: *location,
-                        parameter_range: *parameter_range,
-                        uv_endpoints: *uv_endpoints,
-                    },
-                    TextEdgeRepresentation::Regularity {
-                        continuity,
-                        surfaces,
-                        locations,
-                    } => TextEdgeRepresentation::Regularity {
-                        continuity: ctx.copy_retained_text(continuity, operation)?,
-                        surfaces: *surfaces,
-                        locations: *locations,
-                    },
-                    other => other.clone(),
-                };
-                copies.push(copy);
-            }
-            TextTShapeGeometry::Edge {
-                tolerance: *tolerance,
-                same_parameter: *same_parameter,
-                same_range: *same_range,
-                degenerated: *degenerated,
-                representations: copies,
-            }
-        }
-        other => other.clone(),
-    };
-    Ok(TextTShape {
-        geometry,
-        flags: shape.flags,
-        children,
-    })
-}
-
 struct IndexedPolygon {
     samples: PolylineSamples<FiniteReal, FinitePoint3>,
     deflection: cadmpeg_ir::scalar::NonNegativeReal,
@@ -133,7 +57,6 @@ impl IndexedPolygon {
     /// pairs them here and refuses a polygon whose lanes disagree. The IR
     /// carries the rows only.
     fn try_new(
-        ctx: &DecodeContext<'_>,
         nodes: Vec<FinitePoint3>,
         parameters: Option<Vec<FiniteReal>>,
         deflection: cadmpeg_ir::scalar::NonNegativeReal,
@@ -150,8 +73,7 @@ impl IndexedPolygon {
                         "polygon parameters length must equal nodes length".into(),
                     ));
                 }
-                let mut vertices =
-                    ctx.collection_vec(nodes.len(), "FreeCAD indexed polygon vertices")?;
+                let mut vertices = Vec::new();
                 for (point, parameter) in nodes.into_iter().zip(parameters) {
                     vertices.push(PolylineVertex { parameter, point });
                 }
@@ -196,8 +118,7 @@ pub(crate) fn transfer(
             .map_or(payload.property.as_str(), |property| {
                 property.owner.as_str()
             });
-        let source_object =
-            ctx.copy_retained_text(source_object, "FreeCAD topology source object")?;
+        let source_object = source_object.to_owned();
         let source_object = cadmpeg_core::text::NonBlankString::new(source_object)
             .ok_or_else(|| CodecError::malformed("source object_id must not be empty"))?;
         let mut builder = Builder::new(ctx, payload, tables, source_object)?;
@@ -206,38 +127,25 @@ pub(crate) fn transfer(
             builder.append_body(ctx, ir, root)?;
         }
         builder.emit_unowned_triangulations(ir)?;
-        ctx.reserve_vec(
-            &mut occurrences,
-            builder.occurrences.len(),
-            "FreeCAD topology occurrences",
-        )?;
         occurrences.extend(builder.occurrences);
-        ctx.reserve_vec(losses, builder.losses.len(), "FreeCAD topology losses")?;
         losses.extend(builder.losses);
     }
     close_radial_rings(ctx, &mut ir.model.coedges)?;
-    let referenced_pcurves = referenced_pcurve_ids(ctx, &ir.model.coedges)?;
+    let referenced_pcurves = referenced_pcurve_ids(&ir.model.coedges);
     ir.model
         .pcurves
         .retain(|pcurve| referenced_pcurves.contains(&pcurve.id));
     Ok(occurrences)
 }
 
-fn referenced_pcurve_ids<'a>(
-    ctx: &DecodeContext<'_>,
-    coedges: &'a [Coedge],
-) -> Result<HashSet<&'a PcurveId>, CodecError> {
+fn referenced_pcurve_ids(coedges: &[Coedge]) -> HashSet<&PcurveId> {
     let mut referenced = HashSet::new();
     for coedge in coedges {
         for pcurve in &coedge.pcurves {
-            ctx.insert_hash_set(
-                &mut referenced,
-                &pcurve.pcurve,
-                "FreeCAD referenced pcurves",
-            )?;
+            referenced.insert(&pcurve.pcurve);
         }
     }
-    Ok(referenced)
+    referenced
 }
 
 impl Tables<'_> {
@@ -308,7 +216,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
         tables: Tables<'a>,
         source_object: cadmpeg_core::text::NonBlankString,
     ) -> Result<Self, CodecError> {
-        let source_indices = source_topology_indices(ctx, tables)?;
+        let source_indices = source_topology_indices(tables)?;
         Ok(Self {
             ctx,
             procedural_admission: None,
@@ -333,10 +241,9 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
         Ok(SourceObjectAssociation {
             geometry_role: None,
             format: cadmpeg_ir::CodecFormat::Fcstd,
-            object_id: cadmpeg_core::text::NonBlankString::new(self.ctx.copy_retained_text(
-                self.source_object.as_str(),
-                "FreeCAD topology source association",
-            )?)
+            object_id: cadmpeg_core::text::NonBlankString::new(
+                self.source_object.as_str().to_owned(),
+            )
             .ok_or_else(|| CodecError::malformed("source object_id must not be empty"))?,
             name: None,
             color: None,
@@ -362,18 +269,11 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
         let Some(source_index) = self.source_indices.get(&(kind, key)).copied() else {
             return Ok(());
         };
-        self.ctx
-            .reserve_vec(&mut self.occurrences, 1, "FreeCAD topology occurrences")?;
         self.occurrences.push(TopologyOccurrence {
-            property: self.ctx.copy_retained_text(
-                &self.payload.property,
-                "FreeCAD topology occurrence property",
-            )?,
+            property: self.payload.property.clone(),
             indexed_name: indexed_name(kind),
             source_index,
-            topology_id: self
-                .ctx
-                .copy_retained_text(topology_id, "FreeCAD topology occurrence identity")?,
+            topology_id: topology_id.to_owned(),
         });
         Ok(())
     }
@@ -412,30 +312,20 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                         Ok(geometry) => geometry,
                         Err(PcurveGeometryError::Resource(error)) => return Err(error),
                         Err(error) => {
-                            self.ctx
-                                .reserve_vec(&mut self.losses, 1, "FreeCAD pcurve losses")?;
-                            self.losses.push(pcurve_loss(
-                                self.ctx,
-                                &self.payload.id,
-                                primary,
-                                Some(&error),
-                            )?);
+                            self.losses
+                                .push(pcurve_loss(&self.payload.id, primary, Some(&error)));
                             continue;
                         }
                     };
                 let Some(primary_geometry) = primary_read
                     .and_then(|geometry| transformed_pcurve_geometry(geometry, parameter_affine))
                 else {
-                    self.ctx
-                        .reserve_vec(&mut self.losses, 1, "FreeCAD pcurve losses")?;
                     self.losses
-                        .push(pcurve_loss(self.ctx, &self.payload.id, primary, None)?);
+                        .push(pcurve_loss(&self.payload.id, primary, None));
                     continue;
                 };
                 let primary_range =
                     normalize_pcurve_parameter_range(&primary_geometry, Some(parameter_range));
-                self.ctx
-                    .reserve_vec(&mut ir.model.pcurves, 1, "FreeCAD pcurves records")?;
                 ir.model.pcurves.push(Pcurve {
                     id: self.pcurve_id(position + 1, representation_index, false)?,
                     geometry: primary_geometry,
@@ -447,35 +337,25 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                             Ok(geometry) => geometry,
                             Err(PcurveGeometryError::Resource(error)) => return Err(error),
                             Err(error) => {
-                                self.ctx.reserve_vec(
-                                    &mut self.losses,
-                                    1,
-                                    "FreeCAD pcurve losses",
-                                )?;
                                 self.losses.push(pcurve_loss(
-                                    self.ctx,
                                     &self.payload.id,
                                     secondary,
                                     Some(&error),
-                                )?);
+                                ));
                                 continue;
                             }
                         };
                     let Some(secondary_geometry) = secondary_read.and_then(|geometry| {
                         transformed_pcurve_geometry(geometry, parameter_affine)
                     }) else {
-                        self.ctx
-                            .reserve_vec(&mut self.losses, 1, "FreeCAD pcurve losses")?;
                         self.losses
-                            .push(pcurve_loss(self.ctx, &self.payload.id, secondary, None)?);
+                            .push(pcurve_loss(&self.payload.id, secondary, None));
                         continue;
                     };
                     let secondary_range = normalize_pcurve_parameter_range(
                         &secondary_geometry,
                         Some(parameter_range),
                     );
-                    self.ctx
-                        .reserve_vec(&mut ir.model.pcurves, 1, "FreeCAD pcurves records")?;
                     ir.model.pcurves.push(Pcurve {
                         id: self.pcurve_id(position + 1, representation_index, true)?,
                         geometry: secondary_geometry,
@@ -498,31 +378,17 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             if self.emitted_triangulations.contains(&index) {
                 continue;
             }
-            self.ctx.reserve_vec(
-                &mut ir.model.tessellations,
-                1,
-                "FreeCAD tessellations records",
-            )?;
             ir.model.tessellations.push(
                 Tessellation::from_parts(
-                    cadmpeg_ir::tessellation::TessellationId::mint(
-                        crate::native::model_id_charged(
-                            self.ctx,
-                            "tessellation",
-                            &self.payload.id,
-                            &index.to_string(),
-                        )?,
-                    )
+                    cadmpeg_ir::tessellation::TessellationId::mint(crate::native::model_id(
+                        "tessellation",
+                        &self.payload.id,
+                        index.to_string(),
+                    ))
                     .map_err(|error| CodecError::malformed(error.to_string()))?,
                     cadmpeg_ir::tessellation::TessellationMesh::from_checked_list_lanes(
-                        self.ctx.copy_slice(
-                            triangulation.nodes(),
-                            "FreeCAD unowned triangulation nodes",
-                        )?,
-                        self.ctx.copy_slice(
-                            triangulation.triangles(),
-                            "FreeCAD unowned triangulation triangles",
-                        )?,
+                        triangulation.nodes().to_vec(),
+                        triangulation.triangles().to_vec(),
                         triangulation
                             .normals()
                             .map(|normals| {
@@ -549,45 +415,25 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
         representation: usize,
         secondary: bool,
     ) -> Result<PcurveId, CodecError> {
-        let key = self.ctx.format_retained(
-            format_args!(
-                "{}:{}:{}",
-                edge,
-                representation + 1,
-                usize::from(secondary) + 1
-            ),
-            "FreeCAD pcurve key",
-        )?;
-        PcurveId::mint(crate::native::model_id_charged_at(
-            self.ctx,
-            "pcurve",
-            &self.payload.id,
-            &key,
-            "FreeCAD pcurve identity",
-        )?)
-        .map_err(CodecError::malformed)
+        let key = format!(
+            "{}:{}:{}",
+            edge,
+            representation + 1,
+            usize::from(secondary) + 1
+        );
+        PcurveId::mint(crate::native::model_id("pcurve", &self.payload.id, &key))
+            .map_err(CodecError::malformed)
     }
 
     fn shell_component_id(&self, key: &str, component_index: usize) -> Result<ShellId, CodecError> {
-        let child = self.ctx.format_retained(
-            format_args!("{key}:component:{}", component_index + 1),
-            "FreeCAD shell component key",
-        )?;
-        ShellId::mint(crate::native::model_id_charged_at(
-            self.ctx,
-            "shell",
-            &self.payload.id,
-            &child,
-            "FreeCAD shell component identity",
-        )?)
-        .map_err(CodecError::malformed)
+        let child = format!("{key}:component:{}", component_index + 1);
+        ShellId::mint(crate::native::model_id("shell", &self.payload.id, &child))
+            .map_err(CodecError::malformed)
     }
 
     fn body_roots(&self) -> Result<Vec<BodyRoot>, CodecError> {
         let has_multiple_roots = self.tables.roots.len() > 1;
-        let mut roots = self
-            .ctx
-            .collection_vec(self.tables.roots.len(), "FreeCAD topology body roots")?;
+        let mut roots = Vec::new();
         for (index, root) in self.tables.roots.iter().enumerate() {
             self.shape(root.shape)?;
             let transform = self.tables.location(root.location)?;
@@ -634,14 +480,8 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             }
         }
         let body_key = self.topology_label(root.shape, Transform::identity())?;
-        let body_id = BodyId::mint(crate::native::model_id_charged_at(
-            self.ctx,
-            "body",
-            &self.payload.id,
-            &body_key,
-            "FreeCAD body identity",
-        )?)
-        .map_err(CodecError::malformed)?;
+        let body_id = BodyId::mint(crate::native::model_id("body", &self.payload.id, &body_key))
+            .map_err(CodecError::malformed)?;
         self.current_body =
             Some(body_id.try_clone_for_decode(self.ctx, "FreeCAD current body identity")?);
         let kind = match root_kind {
@@ -667,8 +507,6 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             ir.model.tessellations.truncate(tessellation_start);
             return Ok(());
         }
-        self.ctx
-            .reserve_vec(&mut ir.model.bodies, 1, "FreeCAD bodies records")?;
         ir.model.bodies.push(Body {
             id: body_id.try_clone_for_decode(self.ctx, "FreeCAD body record identity")?,
             kind,
@@ -706,8 +544,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             reversed,
         } = traversal;
         let _depth = ctx.enter_nested("transfer FCStd topology nesting")?;
-        let shape =
-            copy_shape_for_transfer(ctx, self.shape(shape_index)?, "FreeCAD region shape copy")?;
+        let shape = self.shape(shape_index)?.clone();
         if matches!(
             shape.kind(),
             TextShapeKind::Compound | TextShapeKind::CompSolid
@@ -730,14 +567,8 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             return Ok(());
         }
         let key = self.topology_label(shape_index, transform)?;
-        let region_id = RegionId::mint(crate::native::model_id_charged_at(
-            self.ctx,
-            "region",
-            &self.payload.id,
-            &key,
-            "FreeCAD region identity",
-        )?)
-        .map_err(CodecError::malformed)?;
+        let region_id = RegionId::mint(crate::native::model_id("region", &self.payload.id, &key))
+            .map_err(CodecError::malformed)?;
         let mut shells = Vec::new();
         if shape.kind() == TextShapeKind::Solid {
             for child in shape
@@ -746,18 +577,14 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                 .filter(|child| self.tables.tshapes[child.shape - 1].kind() == TextShapeKind::Shell)
             {
                 let added = self.append_shell(ctx, ir, &region_id, child, transform, reversed)?;
-                ctx.reserve_vec(&mut shells, added.len(), "FreeCAD region shells")?;
                 shells.extend(added);
             }
         } else {
             let added =
                 self.append_shell_shape(ctx, ir, &region_id, shape_index, transform, reversed)?;
-            ctx.reserve_vec(&mut shells, added.len(), "FreeCAD region shells")?;
             shells.extend(added);
         }
         if !shells.is_empty() {
-            self.ctx
-                .reserve_vec(&mut ir.model.regions, 1, "FreeCAD regions records")?;
             ir.model.regions.push(Region {
                 id: region_id.try_clone_for_decode(self.ctx, "FreeCAD region record identity")?,
                 body: body.try_clone_for_decode(self.ctx, "FreeCAD region body identity")?,
@@ -771,7 +598,6 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                     region_id.as_str(),
                 )?;
             }
-            ctx.reserve_vec(output, 1, "FreeCAD body regions")?;
             output.push(region_id);
         }
         Ok(())
@@ -808,33 +634,17 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
         transform: Transform,
         reversed: bool,
     ) -> Result<Vec<ShellId>, CodecError> {
-        let shape =
-            copy_shape_for_transfer(ctx, self.shape(shape_index)?, "FreeCAD shell shape copy")?;
+        let shape = self.shape(shape_index)?.clone();
         let key = self.topology_label(shape_index, transform)?;
-        let shell_id = ShellId::mint(crate::native::model_id_charged_at(
-            self.ctx,
-            "shell",
-            &self.payload.id,
-            &key,
-            "FreeCAD shell identity",
-        )?)
-        .map_err(CodecError::malformed)?;
+        let shell_id = ShellId::mint(crate::native::model_id("shell", &self.payload.id, &key))
+            .map_err(CodecError::malformed)?;
         if shape.kind() == TextShapeKind::Shell {
-            let face_count = shape
-                .children
-                .iter()
-                .filter(|child| self.tables.tshapes[child.shape - 1].kind() == TextShapeKind::Face)
-                .count();
-            let mut face_uses = self
-                .ctx
-                .collection_vec(face_count, "FreeCAD shell face uses")?;
+            let mut face_uses = Vec::new();
             face_uses.extend(shape.children.iter().filter(|child| {
                 self.tables.tshapes[child.shape - 1].kind() == TextShapeKind::Face
             }));
             let components = self.face_components(ctx, &face_uses, transform)?;
-            let mut shell_ids = self
-                .ctx
-                .collection_vec(components.len(), "FreeCAD shell components")?;
+            let mut shell_ids = Vec::new();
             for (component_index, component) in components.iter().enumerate() {
                 let component_id = if component_index == 0 {
                     shell_id
@@ -842,9 +652,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                 } else {
                     self.shell_component_id(&key, component_index)?
                 };
-                let mut faces = self
-                    .ctx
-                    .collection_vec(component.len(), "FreeCAD component faces")?;
+                let mut faces = Vec::new();
                 for &face_index in component {
                     if let Some(face) = self.append_face(
                         ir,
@@ -856,8 +664,6 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                         faces.push(face);
                     }
                 }
-                self.ctx
-                    .reserve_vec(&mut ir.model.shells, 1, "FreeCAD shells records")?;
                 ir.model.shells.push(
                     Shell::new(
                         component_id.try_clone_for_decode(
@@ -896,7 +702,6 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                 if let Some(face) =
                     self.append_face(ir, &shell_id, &shape_use, transform, reversed)?
                 {
-                    self.ctx.reserve_vec(&mut faces, 1, "FreeCAD shell faces")?;
                     faces.push(face);
                 }
             }
@@ -904,8 +709,6 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                 for child in &shape.children {
                     if self.shape(child.shape)?.kind() == TextShapeKind::Edge {
                         let edge = self.ensure_edge(ir, child, transform)?;
-                        self.ctx
-                            .reserve_vec(&mut wire_edges, 1, "FreeCAD wire edges")?;
                         wire_edges.push(edge);
                     }
                 }
@@ -921,8 +724,6 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                     location: 0.into(),
                 };
                 let edge = self.ensure_edge(ir, &edge_use, transform)?;
-                self.ctx
-                    .reserve_vec(&mut wire_edges, 1, "FreeCAD wire edges")?;
                 wire_edges.push(edge);
             }
             TextShapeKind::Vertex => {
@@ -932,8 +733,6 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                     location: 0.into(),
                 };
                 let vertex = self.ensure_vertex(ir, &vertex_use, transform)?;
-                self.ctx
-                    .reserve_vec(&mut ir.model.shells, 1, "FreeCAD shells records")?;
                 ir.model.shells.push(
                     Shell::new(
                         shell_id.try_clone_for_decode(
@@ -954,8 +753,6 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             }
             _ => {}
         }
-        self.ctx
-            .reserve_vec(&mut ir.model.shells, 1, "FreeCAD shells records")?;
         ir.model.shells.push(
             Shell::new(
                 shell_id.try_clone_for_decode(self.ctx, "FreeCAD shell record identity")?,
@@ -981,7 +778,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
         if face_uses.is_empty() {
             return Ok(vec![Vec::new()]);
         }
-        let mut connectivity = ctx.collection_vec(face_uses.len(), "FreeCAD face connectivity")?;
+        let mut connectivity = Vec::new();
         for face_use in face_uses {
             let face_transform = parent
                 .compose(self.tables.location(face_use.location)?)
@@ -1009,11 +806,8 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                             .compose(edge_transform)
                             .map_err(location_transform_error)?,
                     );
-                    let key = ctx.format_retained(
-                        format_args!("edge:{}", edge_key.0),
-                        "FreeCAD face connectivity edge identity",
-                    )?;
-                    ctx.insert_hash_set(&mut keys, key, "FreeCAD face connectivity edge keys")?;
+                    let key = format!("edge:{}", edge_key.0);
+                    keys.insert(key);
                     let edge = self.shape(edge_use.shape)?;
                     for vertex_use in edge.children.iter().filter(|child| {
                         self.tables.tshapes[child.shape - 1].kind() == TextShapeKind::Vertex
@@ -1027,15 +821,8 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                                 .compose(vertex_transform)
                                 .map_err(location_transform_error)?,
                         );
-                        let key = ctx.format_retained(
-                            format_args!("vertex:{}", vertex_key.0),
-                            "FreeCAD face connectivity vertex identity",
-                        )?;
-                        ctx.insert_hash_set(
-                            &mut keys,
-                            key,
-                            "FreeCAD face connectivity vertex keys",
-                        )?;
+                        let key = format!("vertex:{}", vertex_key.0);
+                        keys.insert(key);
                     }
                 }
             }
@@ -1057,11 +844,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             .compose(self.tables.location(face_use.location)?)
             .map_err(location_transform_error)?;
         let face_reversed = reversed ^ is_reversed(face_use.orientation);
-        let shape = copy_shape_for_transfer(
-            self.ctx,
-            self.shape(face_use.shape)?,
-            "FreeCAD face shape copy",
-        )?;
+        let shape = self.shape(face_use.shape)?.clone();
         let TextTShapeGeometry::Face {
             tolerance,
             surface,
@@ -1076,21 +859,15 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             .compose(self.tables.location(location)?)
             .map_err(location_transform_error)?;
         let face_key = self.topology_label(face_use.shape, face_transform)?;
-        let face_id = FaceId::mint(crate::native::model_id_charged_at(
-            self.ctx,
-            "face",
-            &self.payload.id,
-            &face_key,
-            "FreeCAD face identity",
-        )?)
-        .map_err(CodecError::malformed)?;
+        let face_id = FaceId::mint(crate::native::model_id("face", &self.payload.id, &face_key))
+            .map_err(CodecError::malformed)?;
         // OCCT triangulation nodes are already expressed in the face's surface-location frame.
         // Only the owning topological face placement remains to be applied here.
         let located_triangulation = triangulation
             .map(|index| {
                 let triangulation = index.resolve(self.tables.triangulations)?;
                 let index = index.index();
-                let mut vertices = self.ctx.collection_vec(triangulation.nodes().len(), "FreeCAD placed triangulation nodes")?;
+                let mut vertices = Vec::new();
                 for point in triangulation.nodes() {
                     vertices.push(face_transform.apply_point(point.get()).ok_or_else(|| {
                         CodecError::malformed(format_args!(
@@ -1099,7 +876,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                         ))
                     })?);
                 }
-                let triangles = self.ctx.copy_slice(triangulation.triangles(), "FreeCAD placed triangulation triangles")?;
+                let triangles = triangulation.triangles().to_vec();
                 let scale = uniform_scale(face_transform)?;
                 Ok::<_, CodecError>((index, triangulation, vertices, triangles, scale))
             })
@@ -1110,45 +887,21 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
         } else if let Some((index, triangulation, vertices, triangles, deflection_scale)) =
             &located_triangulation
         {
-            let key = self.ctx.format_retained(
-                format_args!("triangulation:{index}@{face_key}"),
-                "FreeCAD triangulation surface key",
-            )?;
-            let id = SurfaceId::mint(crate::native::model_id_charged_at(
-                self.ctx,
-                "surface",
-                &self.payload.id,
-                &key,
-                "FreeCAD triangulation surface identity",
-            )?)
-            .map_err(CodecError::malformed)?;
+            let key = format!("triangulation:{index}@{face_key}");
+            let id = SurfaceId::mint(crate::native::model_id("surface", &self.payload.id, &key))
+                .map_err(CodecError::malformed)?;
             let new_surface = !self.emitted_surfaces.contains(&id);
             if new_surface {
-                self.ctx.insert_hash_set(
-                    &mut self.emitted_surfaces,
-                    SurfaceId::mint(
-                        self.ctx
-                            .copy_retained_text(id.as_str(), "FreeCAD emitted surface identity")?,
-                    )
-                    .map_err(CodecError::malformed)?,
-                    "FreeCAD emitted surfaces",
-                )?;
-                self.ctx
-                    .reserve_vec(&mut ir.model.surfaces, 1, "FreeCAD surfaces records")?;
+                self.emitted_surfaces.insert(
+                    SurfaceId::mint(id.as_str().to_owned()).map_err(CodecError::malformed)?,
+                );
+
                 ir.model.surfaces.push(Surface {
-                    id: SurfaceId::mint(
-                        self.ctx.copy_retained_text(
-                            id.as_str(),
-                            "FreeCAD polygonal surface identity",
-                        )?,
-                    )
-                    .map_err(CodecError::malformed)?,
+                    id: SurfaceId::mint(id.as_str().to_owned()).map_err(CodecError::malformed)?,
                     geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Polygonal(
                         PolygonalSurface::from_admitted_scaled_deflection(
-                            self.ctx
-                                .copy_slice(vertices, "FreeCAD polygonal surface vertices")?,
-                            self.ctx
-                                .copy_slice(triangles, "FreeCAD polygonal surface triangles")?,
+                            vertices.clone(),
+                            triangles.clone(),
                             triangulation.deflection,
                             *deflection_scale,
                             self.ctx,
@@ -1165,32 +918,13 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
         if let Some((index, triangulation, vertices, triangles, deflection_scale)) =
             located_triangulation
         {
-            self.ctx.insert_hash_set(
-                &mut self.emitted_triangulations,
-                index,
-                "FreeCAD emitted triangulations",
-            )?;
-            let index_key = index.to_string();
-            let tessellation_key = self.ctx.join_retained(
-                &[index_key.as_str(), face_key.as_str()],
-                "@",
-                "FreeCAD tessellation key",
-            )?;
-            let mut faces = self.ctx.collection_vec(1, "FreeCAD tessellation faces")?;
-            faces.push(
-                FaceId::mint(
-                    self.ctx.copy_retained_text(
-                        face_id.as_str(),
-                        "FreeCAD tessellation face identity",
-                    )?,
-                )
-                .map_err(CodecError::malformed)?,
-            );
+            self.emitted_triangulations.insert(index);
+            let tessellation_key = format!("{index}@{face_key}");
+            let faces =
+                vec![FaceId::mint(face_id.as_str().to_owned()).map_err(CodecError::malformed)?];
             // An unshaded mesh is stated by absence, not by an empty lane.
             let normals = if let Some(native_normals) = triangulation.normals() {
-                let mut normals = self
-                    .ctx
-                    .collection_vec(native_normals.len(), "FreeCAD placed triangulation normals")?;
+                let mut normals = Vec::new();
                 for normal in native_normals {
                     normals.push(transform_normalized_vector(face_transform, normal.get()).ok_or_else(|| {
                         CodecError::malformed(format_args!(
@@ -1202,15 +936,9 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             } else {
                 None
             };
-            self.ctx.reserve_vec(
-                &mut ir.model.tessellations,
-                1,
-                "FreeCAD tessellations records",
-            )?;
             ir.model.tessellations.push(
                 Tessellation::from_parts(
-                    cadmpeg_ir::tessellation::TessellationId::mint(crate::native::model_id_charged_at(self.ctx, "tessellation",
-                        &self.payload.id, &tessellation_key, "FreeCAD tessellation identity")?)
+                    cadmpeg_ir::tessellation::TessellationId::mint(crate::native::model_id("tessellation", &self.payload.id, &tessellation_key))
                         .map_err(|error| CodecError::malformed(error.to_string()))?,
                     cadmpeg_ir::tessellation::TessellationMesh::from_checked_list_lanes(
                         vertices, triangles, normals,
@@ -1221,7 +949,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                     CodecError::malformed(format_args!("invalid triangulation: {error}"))
                 })?
                 .with_body(self.current_body.as_ref().map(|body| {
-                    BodyId::mint(self.ctx.copy_retained_text(body.as_str(), "FreeCAD tessellation body identity")?).map_err(CodecError::malformed)
+                    BodyId::mint(body.as_str().to_owned()).map_err(CodecError::malformed)
                 }).transpose()?)
                 .with_faces(faces)
                 .with_admitted_chordal_deflection(Some(
@@ -1247,19 +975,8 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             let wire_transform = face_transform
                 .compose(self.tables.location(wire_use.location)?)
                 .map_err(location_transform_error)?;
-            let wire = copy_shape_for_transfer(
-                self.ctx,
-                self.shape(wire_use.shape)?,
-                "FreeCAD wire shape copy",
-            )?;
-            let edge_count = wire
-                .children
-                .iter()
-                .filter(|child| self.tables.tshapes[child.shape - 1].kind() == TextShapeKind::Edge)
-                .count();
-            let mut edge_uses = self
-                .ctx
-                .collection_vec(edge_count, "FreeCAD wire edge uses")?;
+            let wire = self.shape(wire_use.shape)?.clone();
+            let mut edge_uses = Vec::new();
             edge_uses.extend(
                 wire.children
                     .iter()
@@ -1275,35 +992,16 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             if edge_uses.is_empty() {
                 continue;
             }
-            let loop_key = self.ctx.format_retained(
-                format_args!("{}:{}", face_key, loop_index + 1),
-                "FreeCAD face loop key",
-            )?;
-            let loop_id = LoopId::mint(crate::native::model_id_charged_at(
-                self.ctx,
-                "loop",
-                &self.payload.id,
-                &loop_key,
-                "FreeCAD face loop identity",
-            )?)
-            .map_err(CodecError::malformed)?;
-            let mut coedge_ids = self
-                .ctx
-                .collection_vec(edge_uses.len(), "FreeCAD loop coedge IDs")?;
+            let loop_key = format!("{}:{}", face_key, loop_index + 1);
+            let loop_id =
+                LoopId::mint(crate::native::model_id("loop", &self.payload.id, &loop_key))
+                    .map_err(CodecError::malformed)?;
+            let mut coedge_ids = Vec::new();
             for index in 0..edge_uses.len() {
-                let key = self.ctx.format_retained(
-                    format_args!("{}:{}:{}", face_key, loop_index + 1, index + 1),
-                    "FreeCAD face coedge key",
-                )?;
+                let key = format!("{}:{}:{}", face_key, loop_index + 1, index + 1);
                 coedge_ids.push(
-                    CoedgeId::mint(crate::native::model_id_charged_at(
-                        self.ctx,
-                        "coedge",
-                        &self.payload.id,
-                        &key,
-                        "FreeCAD face coedge identity",
-                    )?)
-                    .map_err(CodecError::malformed)?,
+                    CoedgeId::mint(crate::native::model_id("coedge", &self.payload.id, &key))
+                        .map_err(CodecError::malformed)?,
                 );
             }
             for (index, edge_use) in edge_uses.iter().enumerate() {
@@ -1315,8 +1013,6 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                     self.face_pcurve(edge_use, edge_transform, surface, surface_transform)?;
                 let id: CoedgeId = coedge_ids[index]
                     .try_clone_for_decode(self.ctx, "FreeCAD coedge radial identity")?;
-                self.ctx
-                    .reserve_vec(&mut ir.model.coedges, 1, "FreeCAD coedges records")?;
                 ir.model.coedges.push(Coedge {
                     id: id.try_clone_for_decode(self.ctx, "FreeCAD coedge record identity")?,
                     owner_loop: loop_id.try_clone_for_decode(self.ctx, "FreeCAD coedge loop identity")?,
@@ -1339,8 +1035,6 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                         .collect::<Result<Vec<_>, CodecError>>()?,
                 });
             }
-            self.ctx
-                .reserve_vec(&mut ir.model.loops, 1, "FreeCAD loops records")?;
             ir.model.loops.push(Loop {
                 id: loop_id.try_clone_for_decode(self.ctx, "FreeCAD loop record identity")?,
                 face: face_id.try_clone_for_decode(self.ctx, "FreeCAD loop face identity")?,
@@ -1348,15 +1042,11 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                     cadmpeg_ir::topology::LoopRing::new(self.ctx, coedge_ids, Vec::new())
                         .map_err(cadmpeg_core::CodecError::from)?
                         .map_err(|error| {
-                            crate::resource::malformed_charged(
-                                self.ctx,
-                                format_args!(
-                                    "FCStd face {} loop {} has invalid ring: {error}",
-                                    face_id,
-                                    loop_index + 1,
-                                ),
-                                "FreeCAD face ring diagnostic",
-                            )
+                            CodecError::malformed(format_args!(
+                                "FCStd face {} loop {} has invalid ring: {error}",
+                                face_id,
+                                loop_index + 1,
+                            ))
                         })?,
                 ),
             });
@@ -1366,11 +1056,8 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                 wire_transform,
                 loop_id.as_str(),
             )?;
-            self.ctx.reserve_vec(&mut loops, 1, "FreeCAD face loops")?;
             loops.push(loop_id);
         }
-        self.ctx
-            .reserve_vec(&mut ir.model.faces, 1, "FreeCAD faces records")?;
         ir.model.faces.push(Face {
             id: face_id.try_clone_for_decode(self.ctx, "FreeCAD face record identity")?,
             shell: shell.try_clone_for_decode(self.ctx, "FreeCAD face shell identity")?,
@@ -1411,11 +1098,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             self.bind_topology(TextShapeKind::Edge, edge_use.shape, transform, id.as_str())?;
             return Ok(id);
         }
-        let shape = copy_shape_for_transfer(
-            self.ctx,
-            self.shape(edge_use.shape)?,
-            "FreeCAD edge shape copy",
-        )?;
+        let shape = self.shape(edge_use.shape)?.clone();
         let TextTShapeGeometry::Edge {
             tolerance,
             degenerated,
@@ -1432,14 +1115,8 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
         let start = self.ensure_vertex(ir, start_use, transform)?;
         let end = self.ensure_vertex(ir, end_use, transform)?;
         let label = self.topology_label(edge_use.shape, transform)?;
-        let id = EdgeId::mint(crate::native::model_id_charged_at(
-            self.ctx,
-            "edge",
-            &self.payload.id,
-            &label,
-            "FreeCAD edge identity",
-        )?)
-        .map_err(CodecError::malformed)?;
+        let id = EdgeId::mint(crate::native::model_id("edge", &self.payload.id, &label))
+            .map_err(CodecError::malformed)?;
         let curve_representation =
             select_exact_curve_representation(edge_use.shape, &representations, &self.tables)?;
         let polygon_representation = if curve_representation.is_none() {
@@ -1479,8 +1156,6 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             .map_or(param_range, |curve| {
                 normalize_occt_curve_range(curve.geometry.solved()?, param_range)
             });
-        self.ctx
-            .reserve_vec(&mut ir.model.edges, 1, "FreeCAD edges records")?;
         ir.model.edges.push(Edge {
             id: id.try_clone_for_decode(self.ctx, "FreeCAD edge record identity")?,
             carrier: cadmpeg_ir::topology::EdgeCarrier::from_finite_parts(curve, param_range)
@@ -1490,13 +1165,8 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             tolerance: PositiveReal::from_finite(tolerance),
         });
         self.bind_topology(TextShapeKind::Edge, edge_use.shape, transform, id.as_str())?;
-        let cached_id = EdgeId::mint(
-            self.ctx
-                .copy_retained_text(id.as_str(), "FreeCAD cached edge identity")?,
-        )
-        .map_err(CodecError::malformed)?;
-        self.ctx
-            .insert_hash_map(&mut self.edges, key, cached_id, "FreeCAD cached edges")?;
+        let cached_id = EdgeId::mint(id.as_str().to_owned()).map_err(CodecError::malformed)?;
+        self.edges.insert(key, cached_id);
         Ok(id)
     }
 
@@ -1512,9 +1182,6 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             .compose(self.tables.location(representation.location())?)
             .map_err(location_transform_error)?;
         let scale = uniform_scale(carrier_transform)?;
-        let mut sample_storage = self
-            .ctx
-            .reserve_scoped(0, "FreeCAD polygon sample inputs")?;
         let IndexedPolygon {
             mut samples,
             deflection,
@@ -1522,24 +1189,18 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             TextEdgeRepresentation::Polygon3d { polygon, .. } => {
                 let polygon = &self.tables.polygons3d[polygon - 1];
                 IndexedPolygon::try_new(
-                    self.ctx,
                     if polygon.parameters.is_some() {
-                        sample_storage.with_storage(|| {
-                            self.ctx
-                                .copy_slice(&polygon.nodes, "FreeCAD standalone polygon nodes")
-                        })?
-                    } else {
                         self.ctx
                             .copy_slice(&polygon.nodes, "FreeCAD standalone polygon nodes")?
+                    } else {
+                        polygon.nodes.clone()
                     },
                     polygon
                         .parameters
                         .as_ref()
                         .map(|parameters| {
-                            sample_storage.with_storage(|| {
-                                self.ctx
-                                    .copy_slice(parameters, "FreeCAD standalone polygon parameters")
-                            })
+                            self.ctx
+                                .copy_slice(parameters, "FreeCAD standalone polygon parameters")
                         })
                         .transpose()?,
                     polygon.deflection,
@@ -1561,16 +1222,10 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                 ))
             }
         };
-        let id = self.polygon_curve_id(edge, ordinal, false)?;
-        self.ctx
-            .reserve_vec(&mut ir.model.curves, 1, "FreeCAD curves records")?;
+        let id = Self::polygon_curve_id(edge, ordinal, false)?;
         ir.model.curves.push(Curve {
             parameter_range: None,
-            id: CurveId::mint(
-                self.ctx
-                    .copy_retained_text(id.as_str(), "FreeCAD polygon curve record identity")?,
-            )
-            .map_err(CodecError::malformed)?,
+            id: CurveId::mint(id.as_str().to_owned()).map_err(CodecError::malformed)?,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Polyline({
                 place_polyline_samples(&mut samples, carrier_transform, self.ctx)?;
                 PolylineCurve::from_scaled_deflection(samples, deflection, scale, self.ctx)?
@@ -1588,11 +1243,9 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                 mut samples,
                 deflection,
             } = self.indexed_polygon(polygons[1], *triangulation)?;
-            self.ctx
-                .reserve_vec(&mut ir.model.curves, 1, "FreeCAD curves records")?;
             ir.model.curves.push(Curve {
                 parameter_range: None,
-                id: self.polygon_curve_id(edge, ordinal, true)?,
+                id: Self::polygon_curve_id(edge, ordinal, true)?,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Polyline({
                     place_polyline_samples(&mut samples, carrier_transform, self.ctx)?;
                     PolylineCurve::from_scaled_deflection(samples, deflection, scale, self.ctx)?
@@ -1605,21 +1258,14 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
     }
 
     fn polygon_curve_id(
-        &self,
         edge: &EdgeId,
         ordinal: usize,
         secondary: bool,
     ) -> Result<CurveId, CodecError> {
         let id = if secondary {
-            self.ctx.format_retained(
-                format_args!("{}:polygon:{}:secondary", edge.as_str(), ordinal + 1),
-                "FreeCAD secondary polygon curve identity",
-            )?
+            format!("{}:polygon:{}:secondary", edge.as_str(), ordinal + 1)
         } else {
-            self.ctx.format_retained(
-                format_args!("{}:polygon:{}", edge.as_str(), ordinal + 1),
-                "FreeCAD polygon curve identity",
-            )?
+            format!("{}:polygon:{}", edge.as_str(), ordinal + 1)
         };
         CurveId::mint(id).map_err(CodecError::malformed)
     }
@@ -1631,9 +1277,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
     ) -> Result<IndexedPolygon, CodecError> {
         let polygon = &self.tables.polygons_on_triangulations[index - 1];
         let triangulation = &self.tables.triangulations[triangulation_index - 1];
-        let mut points = self
-            .ctx
-            .collection_vec(polygon.nodes.len(), "FreeCAD indexed polygon points")?;
+        let mut points = Vec::new();
         for node in &polygon.nodes {
             let point = usize::try_from(*node)
                 .ok()
@@ -1652,7 +1296,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                     .copy_slice(parameters, "FreeCAD indexed polygon parameters")
             })
             .transpose()?;
-        IndexedPolygon::try_new(self.ctx, points, parameters, polygon.deflection)
+        IndexedPolygon::try_new(points, parameters, polygon.deflection)
     }
 
     fn polygon_parameters(&self, representation: &TextEdgeRepresentation) -> Option<&[FiniteReal]> {
@@ -1711,22 +1355,10 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             )));
         };
         let label = self.topology_label(vertex_use.shape, transform)?;
-        let point_id = PointId::mint(crate::native::model_id_charged_at(
-            self.ctx,
-            "point",
-            &self.payload.id,
-            &label,
-            "FreeCAD point identity",
-        )?)
-        .map_err(CodecError::malformed)?;
-        let vertex_id = VertexId::mint(crate::native::model_id_charged_at(
-            self.ctx,
-            "vertex",
-            &self.payload.id,
-            &label,
-            "FreeCAD vertex identity",
-        )?)
-        .map_err(CodecError::malformed)?;
+        let point_id = PointId::mint(crate::native::model_id("point", &self.payload.id, &label))
+            .map_err(CodecError::malformed)?;
+        let vertex_id = VertexId::mint(crate::native::model_id("vertex", &self.payload.id, &label))
+            .map_err(CodecError::malformed)?;
         // A finite point and a finite location still multiply and add to a
         // non-finite coordinate, which states no position.
         let Some(position) = transform.apply_point(point.get()) else {
@@ -1735,15 +1367,11 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                 vertex_use.shape
             )));
         };
-        self.ctx
-            .reserve_vec(&mut ir.model.points, 1, "FreeCAD points records")?;
         ir.model.points.push(Point::new(
             point_id.try_clone_for_decode(self.ctx, "FreeCAD point record identity")?,
             position,
             Some(self.source_association()?),
         ));
-        self.ctx
-            .reserve_vec(&mut ir.model.vertices, 1, "FreeCAD vertices records")?;
         ir.model.vertices.push(Vertex {
             id: vertex_id.try_clone_for_decode(self.ctx, "FreeCAD vertex record identity")?,
             point: point_id,
@@ -1755,17 +1383,9 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             transform,
             vertex_id.as_str(),
         )?;
-        let cached_id = VertexId::mint(
-            self.ctx
-                .copy_retained_text(vertex_id.as_str(), "FreeCAD cached vertex identity")?,
-        )
-        .map_err(CodecError::malformed)?;
-        self.ctx.insert_hash_map(
-            &mut self.vertices,
-            key,
-            cached_id,
-            "FreeCAD cached vertices",
-        )?;
+        let cached_id =
+            VertexId::mint(vertex_id.as_str().to_owned()).map_err(CodecError::malformed)?;
+        self.vertices.insert(key, cached_id);
         Ok(vertex_id)
     }
 
@@ -1775,42 +1395,21 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
         source: usize,
         transform: Transform,
     ) -> Result<CurveId, CodecError> {
-        let base_key = self
-            .ctx
-            .format_retained(format_args!("{source}"), "FreeCAD base curve key")?;
-        let base_id = CurveId::mint(crate::native::model_id_charged_at(
-            self.ctx,
+        let base_key = format!("{source}");
+        let base_id = CurveId::mint(crate::native::model_id(
             "curve",
             &self.payload.id,
             &base_key,
-            "FreeCAD base curve identity",
-        )?)
+        ))
         .map_err(CodecError::malformed)?;
         if is_identity(transform) {
             return Ok(base_id);
         }
-        let key = self.ctx.format_retained(
-            format_args!("{}@{}", source, transform_digest(transform)),
-            "FreeCAD located curve key",
-        )?;
-        let id = CurveId::mint(crate::native::model_id_charged_at(
-            self.ctx,
-            "curve",
-            &self.payload.id,
-            &key,
-            "FreeCAD located curve identity",
-        )?)
-        .map_err(CodecError::malformed)?;
-        let cached_id = CurveId::mint(
-            self.ctx
-                .copy_retained_text(id.as_str(), "FreeCAD emitted curve identity")?,
-        )
-        .map_err(CodecError::malformed)?;
-        if self.ctx.insert_hash_set(
-            &mut self.emitted_curves,
-            cached_id,
-            "FreeCAD emitted curves",
-        )? {
+        let key = format!("{}@{}", source, transform_digest(transform));
+        let id = CurveId::mint(crate::native::model_id("curve", &self.payload.id, &key))
+            .map_err(CodecError::malformed)?;
+        let cached_id = CurveId::mint(id.as_str().to_owned()).map_err(CodecError::malformed)?;
+        if self.emitted_curves.insert(cached_id) {
             let base = ir
                 .model
                 .curves
@@ -1827,8 +1426,6 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                     (source).try_clone_for_decode(self.ctx, "FreeCAD geometry source association")
                 })
                 .transpose()?;
-            self.ctx
-                .reserve_vec(&mut ir.model.curves, 1, "FreeCAD curves records")?;
             ir.model.curves.push(Curve {
                 parameter_range: None,
                 id: id.try_clone_for_decode(self.ctx, "FreeCAD located curve record identity")?,
@@ -1845,42 +1442,21 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
         source: usize,
         transform: Transform,
     ) -> Result<SurfaceId, CodecError> {
-        let base_key = self
-            .ctx
-            .format_retained(format_args!("{source}"), "FreeCAD base surface key")?;
-        let base_id = SurfaceId::mint(crate::native::model_id_charged_at(
-            self.ctx,
+        let base_key = format!("{source}");
+        let base_id = SurfaceId::mint(crate::native::model_id(
             "surface",
             &self.payload.id,
             &base_key,
-            "FreeCAD base surface identity",
-        )?)
+        ))
         .map_err(CodecError::malformed)?;
         if is_identity(transform) {
             return Ok(base_id);
         }
-        let key = self.ctx.format_retained(
-            format_args!("{}@{}", source, transform_digest(transform)),
-            "FreeCAD located surface key",
-        )?;
-        let id = SurfaceId::mint(crate::native::model_id_charged_at(
-            self.ctx,
-            "surface",
-            &self.payload.id,
-            &key,
-            "FreeCAD located surface identity",
-        )?)
-        .map_err(CodecError::malformed)?;
-        let cached_id = SurfaceId::mint(
-            self.ctx
-                .copy_retained_text(id.as_str(), "FreeCAD emitted surface identity")?,
-        )
-        .map_err(CodecError::malformed)?;
-        if self.ctx.insert_hash_set(
-            &mut self.emitted_surfaces,
-            cached_id,
-            "FreeCAD emitted surfaces",
-        )? {
+        let key = format!("{}@{}", source, transform_digest(transform));
+        let id = SurfaceId::mint(crate::native::model_id("surface", &self.payload.id, &key))
+            .map_err(CodecError::malformed)?;
+        let cached_id = SurfaceId::mint(id.as_str().to_owned()).map_err(CodecError::malformed)?;
+        if self.emitted_surfaces.insert(cached_id) {
             let base = ir
                 .model
                 .surfaces
@@ -1897,11 +1473,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                     (source).try_clone_for_decode(self.ctx, "FreeCAD geometry source association")
                 })
                 .transpose()?;
-            self.ctx
-                .charge_work(1, "FreeCAD surface construction lookup")?;
             let has_procedural_construction = base.geometry.procedural_construction().is_some();
-            self.ctx
-                .reserve_vec(&mut ir.model.surfaces, 1, "FreeCAD surfaces records")?;
             ir.model.surfaces.push(Surface {
                 id: id.try_clone_for_decode(self.ctx, "FreeCAD located surface record identity")?,
                 geometry,
@@ -1993,22 +1565,14 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             Ok(geometry) => geometry,
             Err(PcurveGeometryError::Resource(error)) => return Err(error),
             Err(error) => {
-                self.ctx
-                    .reserve_vec(&mut self.losses, 1, "FreeCAD pcurve losses")?;
-                self.losses.push(pcurve_loss(
-                    self.ctx,
-                    &self.payload.id,
-                    curve_index,
-                    Some(&error),
-                )?);
+                self.losses
+                    .push(pcurve_loss(&self.payload.id, curve_index, Some(&error)));
                 return Ok(None);
             }
         };
         let Some(geometry) = read else {
-            self.ctx
-                .reserve_vec(&mut self.losses, 1, "FreeCAD pcurve losses")?;
             self.losses
-                .push(pcurve_loss(self.ctx, &self.payload.id, curve_index, None)?);
+                .push(pcurve_loss(&self.payload.id, curve_index, None));
             return Ok(None);
         };
         let parameter_range = normalize_pcurve_parameter_range(&geometry, Some(parameter_range));
@@ -2029,13 +1593,10 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                 .compose(local)
                 .map_err(location_transform_error)?,
         );
-        match self.root_discriminator {
-            Some(ordinal) => self.ctx.format_retained(
-                format_args!("{label}~root{ordinal}"),
-                "FreeCAD topology root label",
-            ),
-            None => Ok(label),
-        }
+        Ok(match self.root_discriminator {
+            Some(ordinal) => format!("{label}~root{ordinal}"),
+            None => label,
+        })
     }
 }
 
@@ -2116,42 +1677,22 @@ fn connected_components(
         }
         assigned[seed] = true;
         let mut component = Vec::new();
-        let mut stack = ctx.collection_vec(1, "FreeCAD connected-component stack")?;
+        let mut stack = Vec::new();
         stack.push(seed);
         while let Some(current) = stack.pop() {
-            ctx.reserve_vec(&mut component, 1, "FreeCAD connected-component members")?;
             component.push(current);
             for candidate in 0..connectivity.len() {
                 if assigned[candidate] {
                     continue;
                 }
-                let probe = connectivity[current]
-                    .len()
-                    .min(connectivity[candidate].len());
-                let work = cadmpeg_core::decode::u64_from_index(probe)
-                    .checked_add(1)
-                    .ok_or_else(|| {
-                        cadmpeg_core::decode::refuse_local_limit(
-                            "FreeCAD connected-component comparison",
-                            u64::MAX,
-                            u64::MAX,
-                        )
-                    })?;
-                ctx.charge_work(work, "FreeCAD connected-component comparison")?;
                 if !connectivity[current].is_disjoint(&connectivity[candidate]) {
                     assigned[candidate] = true;
-                    ctx.reserve_vec(&mut stack, 1, "FreeCAD connected-component stack")?;
                     stack.push(candidate);
                 }
             }
         }
-        ctx.sort_unstable_by(
-            &mut component,
-            Ord::cmp,
-            |_| 0,
-            "FreeCAD connected-component members sort",
-        )?;
-        ctx.reserve_vec(&mut components, 1, "FreeCAD connected components")?;
+        component.sort_unstable_by(Ord::cmp);
+
         components.push(component);
     }
     Ok(components)
@@ -2202,20 +1743,15 @@ pub(crate) enum PcurveGeometryError {
 }
 
 fn pcurve_loss(
-    ctx: &DecodeContext<'_>,
     payload_id: &str,
     curve_index: usize,
     error: Option<&PcurveGeometryError>,
-) -> Result<LossNote, CodecError> {
+) -> LossNote {
     let message = match error {
-        Some(error) => ctx.format_retained(format_args!(
-            "payload {payload_id} curve2ds index {curve_index} could not enter neutral geometry: {error}"
-        ), "FreeCAD pcurve loss")?,
-        None => ctx.format_retained(format_args!(
-            "payload {payload_id} curve2ds index {curve_index} could not enter neutral geometry"
-        ), "FreeCAD pcurve loss")?,
+        Some(error) => format!("payload {payload_id} curve2ds index {curve_index} could not enter neutral geometry: {error}"),
+        None => format!("payload {payload_id} curve2ds index {curve_index} could not enter neutral geometry"),
     };
-    Ok(FreecadLossCode::PcurveNotTransferred.note(message))
+    FreecadLossCode::PcurveNotTransferred.note(message)
 }
 
 impl std::fmt::Display for PcurveGeometryError {
@@ -2333,8 +1869,7 @@ pub(crate) fn pcurve_geometry(
                     }
                     .into());
                 }
-                let mut rows = ctx
-                    .collection_vec(nurbs.control_points.len(), "FreeCAD pcurve rational poles")?;
+                let mut rows = Vec::new();
                 for (index, (point, weight)) in nurbs.control_points.iter().zip(weights).enumerate()
                 {
                     let Some(weight) = NonZeroReal::from_finite(*weight) else {
@@ -2353,11 +1888,10 @@ pub(crate) fn pcurve_geometry(
                 PcurveNurbsPoles::Rational { points: rows }
             } else {
                 PcurveNurbsPoles::Polynomial {
-                    points: ctx
-                        .copy_slice(&nurbs.control_points, "FreeCAD pcurve polynomial poles")?,
+                    points: nurbs.control_points.clone(),
                 }
             };
-            let mut knots = ctx.collection_vec(nurbs.knots.len(), "FreeCAD pcurve knots")?;
+            let mut knots = Vec::new();
             knots.extend(nurbs.knots.iter().map(|knot| knot.get()));
             Some(PcurveGeometry::Nurbs {
                 nurbs: PcurveNurbs::new(
@@ -2440,10 +1974,6 @@ fn transform_curve(
         cadmpeg_core::CodecError::NotImplemented("carrier has no solved geometry".into())
     })?;
     let basis = solved.try_clone_for_decode(ctx, "FreeCAD NURBS curve copy")?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<SolvedCurveGeometry>()),
-        "FreeCAD curve placement basis",
-    )?;
     Ok(CurveGeometry::Solved(SolvedCurveGeometry::Transformed(
         cadmpeg_ir::geometry::PlacedCurve::try_new(Box::new(basis), transform)
             .map_err(cadmpeg_core::CodecError::malformed)?,
@@ -2460,10 +1990,6 @@ fn transform_surface(
         cadmpeg_core::CodecError::NotImplemented("carrier has no solved geometry".into())
     })?;
     let basis = solved.try_clone_for_decode(ctx, "FreeCAD NURBS surface copy")?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<SolvedSurfaceGeometry>()),
-        "FreeCAD surface placement basis",
-    )?;
     Ok(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed(
         cadmpeg_ir::geometry::PlacedSurface::try_new(Box::new(basis), transform)
             .map_err(cadmpeg_core::CodecError::malformed)?,
@@ -2480,10 +2006,9 @@ fn place_polyline_samples(
     samples.edit_admitted_points(
         |point| match transform.apply_point(point.get()) {
             Some(point) => Ok(point),
-            None => Err(CodecError::Malformed(ctx.copy_retained_text(
-                "placed polyline sample contains a non-finite coordinate",
-                "FreeCAD polyline placement refusal",
-            )?)),
+            None => Err(CodecError::Malformed(
+                "placed polyline sample contains a non-finite coordinate".to_owned(),
+            )),
         },
         ctx,
     )??;
@@ -2503,7 +2028,6 @@ fn occurrence_label(shape: usize, transform: Transform) -> String {
 }
 
 fn source_topology_indices(
-    ctx: &DecodeContext<'_>,
     tables: Tables<'_>,
 ) -> Result<HashMap<(TextShapeKind, SourceOccurrenceKey), usize>, CodecError> {
     let mut indices = HashMap::new();
@@ -2519,35 +2043,22 @@ fn source_topology_indices(
     ] {
         let mut next_index = 1;
         for root in tables.roots {
-            let (mut stack, mut stack_reservation) =
-                ctx.temporary_vec(1, "FreeCAD source topology stack")?;
+            let mut stack = Vec::new();
             stack.push((root.clone(), Transform::identity()));
             while let Some((shape_use, parent)) = stack.pop() {
-                ctx.charge_work(1, "FreeCAD source topology scan")?;
                 let transform = parent
                     .compose(tables.location(shape_use.location)?)
                     .map_err(location_transform_error)?;
                 let shape = &tables.tshapes[shape_use.shape - 1];
                 if shape.kind() == target {
                     let key = (target, SourceOccurrenceKey::new(shape_use.shape, transform));
-                    if !indices.contains_key(&key) {
-                        ctx.insert_hash_map(
-                            &mut indices,
-                            key,
-                            next_index,
-                            "FreeCAD source topology index",
-                        )?;
+                    if let std::collections::hash_map::Entry::Vacant(e) = indices.entry(key) {
+                        e.insert(next_index);
                         next_index += 1;
                     }
                     continue;
                 }
                 if topology_rank(shape.kind()) < topology_rank(target) {
-                    ctx.reserve_scoped_vec(
-                        &mut stack_reservation,
-                        &mut stack,
-                        shape.children.len(),
-                        "FreeCAD source topology stack",
-                    )?;
                     stack.extend(
                         shape
                             .children
@@ -2633,10 +2144,9 @@ fn close_radial_rings(ctx: &DecodeContext<'_>, coedges: &mut [Coedge]) -> Result
             let key = coedge
                 .edge
                 .try_clone_for_decode(ctx, "FreeCAD radial edge identity")?;
-            ctx.insert_hash_map(&mut by_edge, key, Vec::new(), "FreeCAD radial edge index")?;
+            by_edge.insert(key, Vec::new());
         }
         if let Some(indices) = by_edge.get_mut(&coedge.edge) {
-            ctx.reserve_vec(indices, 1, "FreeCAD radial coedge members")?;
             indices.push(index);
         }
     }

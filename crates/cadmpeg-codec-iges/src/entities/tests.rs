@@ -1,54 +1,62 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use crate::loss::IgesLossCode;
-use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
-use crate::IgesCodec;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use std::collections::{BTreeMap, BTreeSet};
-use std::io::Cursor;
+use std::collections::BTreeMap;
 
 #[test]
-fn diagnostic_error_text_refuses_before_retained_copy() {
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let result = super::non_resource_error(CodecError::Malformed("invalid source".into()), &ctx);
-    assert!(
-        matches!(result, Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "iges diagnostic error text")
-    );
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::service();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+fn affine_parameter_map_retains_finite_ratio_of_overflowing_span() {
+    let (scale, offset) = crate::entities::affine_parameter_map([-f64::MAX, f64::MAX], [0.0, 1.0])
+        .expect("finite affine map");
+    assert!((scale * f64::MAX - 0.5).abs() < 8.0 * f64::EPSILON);
+    assert!((offset - 0.5).abs() < 8.0 * f64::EPSILON);
+}
+
+#[test]
+fn affine_parameter_map_retains_identity_between_overflowing_spans() {
     assert_eq!(
-        super::non_resource_error(CodecError::Malformed("invalid source".into()), &ctx).unwrap(),
+        crate::entities::affine_parameter_map([-f64::MAX, f64::MAX], [-f64::MAX, f64::MAX]),
+        Some((1.0, 0.0))
+    );
+}
+
+#[test]
+fn directed_cycle_detection_handles_long_branching_graphs_iteratively() {
+    let mut graph = (1..=100_000_u32)
+        .map(|sequence| (sequence, vec![sequence + 1]))
+        .collect::<BTreeMap<_, _>>();
+    graph.entry(50_000).or_default().push(100_001);
+    let mut visited = std::collections::BTreeSet::new();
+
+    assert!(!crate::entities::directed_cycle(
+        1,
+        &mut visited,
+        |sequence| graph.get(&sequence).into_iter().flatten().copied()
+    ));
+    assert_eq!(visited.len(), 100_001);
+
+    graph.insert(100_001, vec![50_000]);
+    assert!(crate::entities::directed_cycle(
+        1,
+        &mut std::collections::BTreeSet::new(),
+        |sequence| graph.get(&sequence).into_iter().flatten().copied()
+    ));
+}
+
+#[test]
+fn diagnostic_error_text_keeps_a_non_resource_error() {
+    assert_eq!(
+        super::non_resource_error(cadmpeg_core::CodecError::Malformed("invalid source".into()))
+            .unwrap(),
         "malformed container: invalid source"
     );
 }
 
-fn assert_entity_loss_limit(bytes: &[u8], operation: &str, retained: bool) {
-    cadmpeg_test_support::decode::resource_refusal_at(
-        &crate::IgesCodec,
-        bytes,
-        &mut DecodeOptions {
-            policy: DecodePolicy::service(),
-            ..DecodeOptions::default()
-        },
-        if retained {
-            ResourceDimension::RetainedBytes
-        } else {
-            ResourceDimension::CollectionItems
-        },
-        operation,
-        0,
-    );
-}
-
 #[test]
-fn entity_projection_losses_refuse_slots_and_messages() {
+fn invalid_entity_parameters_report_projection_losses() {
+    use crate::loss::IgesLossCode;
+    use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+
     let cases = [
         (110, 0, "110,0;", "endpoint coordinate"),
         (150, 0, "150,0;", "primitive dimensions"),
@@ -69,144 +77,22 @@ fn entity_projection_losses_refuse_slots_and_messages() {
             status: "00000000",
             parameters: parameters.into(),
         }]);
-        let service = IgesCodec
-            .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+        let result = crate::IgesCodec
+            .decode(&mut std::io::Cursor::new(&bytes), &DecodeOptions::default())
             .unwrap();
+        let expected = if matches!(entity_type, 308 | 212) {
+            IgesLossCode::EntityNotProjected.kind()
+        } else {
+            IgesLossCode::GeometryNotProjected.kind()
+        };
         assert!(
-            service.report().losses.iter().any(|loss| loss.code
-                == if matches!(entity_type, 308 | 212) {
-                    IgesLossCode::EntityNotProjected.kind()
-                } else {
-                    IgesLossCode::GeometryNotProjected.kind()
-                }
-                && loss.message.contains(reason)),
+            result
+                .report()
+                .losses
+                .iter()
+                .any(|loss| loss.code == expected && loss.message.contains(reason)),
             "{entity_type}: {:#?}",
-            service.report().losses
-        );
-        assert_entity_loss_limit(&bytes, "iges entity loss slots", false);
-        assert_entity_loss_limit(&bytes, "iges entity loss message", true);
-    }
-}
-
-#[test]
-fn entity_projector_indexes_refuse_collection_limits() {
-    let bytes = owned_test_file(&[OwnedTestEntity {
-        entity_type: 110,
-        form: 0,
-        label: "LINE".into(),
-        status: "00000000",
-        parameters: "110,0;".into(),
-    }]);
-    for name in [
-        "csg",
-        "structure",
-        "surfaces",
-        "trimming",
-        "splines",
-        "composite",
-        "annotation",
-    ] {
-        for index in ["parameter index", "directory index"] {
-            let operation = format!("iges {name} {index}");
-            assert_entity_loss_limit(&bytes, &operation, false);
-        }
-    }
-    // Released decode scratch peaks above these charges.
-    for name in ["brep", "offsets"] {
-        for index in ["parameter index", "directory index"] {
-            crate::test_support::decode_charges_collection(&bytes, &format!("iges {name} {index}"));
-        }
-    }
-}
-
-#[test]
-fn affine_parameter_map_retains_finite_ratio_of_overflowing_span() {
-    let (scale, offset) = crate::entities::affine_parameter_map([-f64::MAX, f64::MAX], [0.0, 1.0])
-        .expect("finite affine map");
-    assert!((scale * f64::MAX - 0.5).abs() < 8.0 * f64::EPSILON);
-    assert!((offset - 0.5).abs() < 8.0 * f64::EPSILON);
-}
-
-#[test]
-fn affine_parameter_map_retains_identity_between_overflowing_spans() {
-    assert_eq!(
-        crate::entities::affine_parameter_map([-f64::MAX, f64::MAX], [-f64::MAX, f64::MAX]),
-        Some((1.0, 0.0))
-    );
-}
-
-#[test]
-fn directed_cycle_detection_handles_long_branching_graphs_iteratively() {
-    {
-        let mut graph = (1..=100_000_u32)
-            .map(|sequence| (sequence, vec![sequence + 1]))
-            .collect::<BTreeMap<_, _>>();
-        graph.entry(50_000).or_default().push(100_001);
-        // The unchanged graph supplies the input-dependent byte envelope for its node storage.
-        let input = serde_json::to_vec(&graph).unwrap();
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let policy = cadmpeg_core::decode::DecodePolicy::service();
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&input, &arena, &policy).unwrap();
-        let decode_ctx = &ctx;
-        let mut visited = std::collections::BTreeSet::new();
-
-        assert!(
-            !crate::entities::directed_cycle(1, &mut visited, decode_ctx, |sequence| graph
-                .get(&sequence)
-                .into_iter()
-                .flatten()
-                .copied())
-            .unwrap()
-        );
-        assert_eq!(visited.len(), 100_001);
-
-        graph.insert(100_001, vec![50_000]);
-        assert!(crate::entities::directed_cycle(
-            1,
-            &mut std::collections::BTreeSet::new(),
-            decode_ctx,
-            |sequence| graph.get(&sequence).into_iter().flatten().copied()
-        )
-        .unwrap());
-    }
-}
-
-#[test]
-fn directed_cycle_refuses_stack_and_tree_nodes_before_allocation() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    let graph = [(1_u32, vec![2_u32]), (2, Vec::new())]
-        .into_iter()
-        .collect::<BTreeMap<_, _>>();
-    for (cap, operation) in [
-        (0, "iges cycle stack"),
-        (1, "iges cycle active"),
-        (6, "iges cycle visited"),
-    ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = crate::entities::directed_cycle(1, &mut BTreeSet::new(), &ctx, |sequence| {
-            graph.get(&sequence).into_iter().flatten().copied()
-        })
-        .unwrap_err();
-        assert!(
-            matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == operation)
+            result.report().losses
         );
     }
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    let mut visited = BTreeSet::new();
-    assert!(
-        !crate::entities::directed_cycle(1, &mut visited, &ctx, |sequence| graph
-            .get(&sequence)
-            .into_iter()
-            .flatten()
-            .copied(),)
-        .unwrap()
-    );
-    assert_eq!(visited, [1, 2].into());
 }

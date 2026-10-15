@@ -23,82 +23,15 @@ use crate::test_support::test_dump::utf16_bytes;
 use crate::wire::Uuid;
 use cadmpeg_ir::document::CadIr;
 
-fn with_collection_limit<R>(
+fn with_test_context<R>(
     bytes: &[u8],
-    limit: u64,
     f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> R,
 ) -> R {
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy)
         .expect("root bytes admitted");
     f(&ctx)
-}
-
-fn with_retained_limit<R>(
-    bytes: &[u8],
-    limit: u64,
-    f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> R,
-) -> R {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = limit;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy)
-        .expect("root bytes admitted");
-    f(&ctx)
-}
-
-fn modern_linetype_retained_refusal(limit: u64) -> PatternTransferError {
-    let bytes = modern_linetype(false);
-    with_retained_limit(&bytes, limit, |ctx| {
-        parse_linetype(
-            ctx,
-            &bytes,
-            0..bytes.len(),
-            ArchiveVersion::V8,
-            UnitBinding::Millimeters(StandardUnit::Inches.into()),
-            0,
-        )
-        .expect_err("linetype text exceeds retained limit")
-    })
-}
-
-#[test]
-fn linetype_id_refuses_retained_limit() {
-    assert!(
-        matches!(modern_linetype_retained_refusal(crate::test_support::retained_limit_at("Rhino linetype ID", 0, |cap| { match modern_linetype_retained_refusal(cap) { PatternTransferError::Framing(crate::chunks::FramingError::Resource(refusal)) => refusal, error => panic!("unexpected fixture refusal: {error:?}") } })), PatternTransferError::Framing(crate::chunks::FramingError::Resource(refusal)) if refusal.operation == "Rhino linetype ID")
-    );
-}
-
-#[test]
-fn linetype_source_uuid_refuses_retained_limit() {
-    assert!(
-        matches!(modern_linetype_retained_refusal(crate::test_support::retained_limit_at("Rhino linetype source UUID", 0, |cap| { match modern_linetype_retained_refusal(cap) { PatternTransferError::Framing(crate::chunks::FramingError::Resource(refusal)) => refusal, error => panic!("unexpected fixture refusal: {error:?}") } })), PatternTransferError::Framing(crate::chunks::FramingError::Resource(refusal)) if refusal.operation == "Rhino linetype source UUID")
-    );
-}
-
-#[test]
-fn legacy_linetype_name_refuses_retained_limit() {
-    let mut body = 4_i32.to_le_bytes().to_vec();
-    body.extend(utf16_bytes("dash"));
-    body.extend(0_i32.to_le_bytes());
-    body.extend([0x66; 16]);
-    let bytes = anonymous(15, &body);
-    let error = with_retained_limit(&bytes, 0, |ctx| {
-        parse_linetype(
-            ctx,
-            &bytes,
-            0..bytes.len(),
-            ArchiveVersion::V5,
-            UnitBinding::Millimeters(StandardUnit::Centimeters.into()),
-            0,
-        )
-        .expect_err("legacy linetype name exceeds retained limit")
-    });
-    assert!(
-        matches!(error, PatternTransferError::Framing(crate::chunks::FramingError::Resource(refusal)) if refusal.operation == "Rhino legacy linetype name")
-    );
 }
 
 fn modern_linetype_record(archive: ArchiveVersion, always_model_distance: bool) -> Vec<u8> {
@@ -234,166 +167,6 @@ fn legacy_hatch_pattern_record(archive: ArchiveVersion) -> Vec<u8> {
     }
 }
 
-fn hatch_pattern_collection_refusal(
-    archive: ArchiveVersion,
-    modern: bool,
-    limit: u64,
-) -> PatternTransferError {
-    let bytes = if modern {
-        modern_hatch_pattern_record(archive, 0, false)
-    } else {
-        legacy_hatch_pattern_record(archive)
-    };
-    let outer = crate::chunks::chunk_at(&bytes, 0, bytes.len(), archive, false)
-        .expect("hatch record chunk");
-    let record = crate::container::Record::long(outer.typecode, outer.range(), outer.body());
-    let range = crate::presentation::class_data(
-        &cadmpeg_test_support::service_decode_context(),
-        &bytes,
-        &record,
-        archive,
-        HATCH_PATTERN,
-    )
-    .expect("hatch class data");
-    with_collection_limit(&bytes, limit, |ctx| {
-        parse_hatch_pattern(
-            ctx,
-            &bytes,
-            range,
-            archive,
-            UnitBinding::Millimeters(StandardUnit::Centimeters.into()),
-            0,
-        )
-        .expect_err("hatch pattern exceeds collection limit")
-    })
-}
-
-fn hatch_pattern_retained_refusal(
-    archive: ArchiveVersion,
-    modern: bool,
-    limit: u64,
-) -> PatternTransferError {
-    let bytes = if modern {
-        modern_hatch_pattern_record(archive, 0, false)
-    } else {
-        legacy_hatch_pattern_record(archive)
-    };
-    let outer = crate::chunks::chunk_at(&bytes, 0, bytes.len(), archive, false)
-        .expect("hatch record chunk");
-    let record = crate::container::Record::long(outer.typecode, outer.range(), outer.body());
-    let range = crate::presentation::class_data(
-        &cadmpeg_test_support::service_decode_context(),
-        &bytes,
-        &record,
-        archive,
-        HATCH_PATTERN,
-    )
-    .expect("hatch class data");
-    with_retained_limit(&bytes, limit, |ctx| {
-        parse_hatch_pattern(
-            ctx,
-            &bytes,
-            range,
-            archive,
-            UnitBinding::Millimeters(StandardUnit::Centimeters.into()),
-            0,
-        )
-        .expect_err("hatch text exceeds retained limit")
-    })
-}
-
-macro_rules! hatch_text_limit {
-    ($name:ident, $archive:expr, $modern:expr, $limit:expr, $operation:literal) => {
-        #[test]
-        fn $name() {
-            assert!(matches!(
-                hatch_pattern_retained_refusal($archive, $modern, crate::test_support::retained_limit_at($operation, 0, |cap| { match hatch_pattern_retained_refusal($archive, $modern, cap) { PatternTransferError::Framing(crate::chunks::FramingError::Resource(limit)) => limit, error => panic!("unexpected resource refusal: {error:?}") } })),
-                PatternTransferError::Framing(crate::chunks::FramingError::Resource(refusal))
-                    if refusal.operation == $operation
-            ));
-        }
-    };
-}
-
-hatch_text_limit!(
-    legacy_hatch_name_refuses_retained_limit,
-    ArchiveVersion::V5,
-    false,
-    0,
-    "Rhino hatch name"
-);
-hatch_text_limit!(
-    legacy_hatch_description_refuses_retained_limit,
-    ArchiveVersion::V5,
-    false,
-    5,
-    "Rhino hatch description"
-);
-hatch_text_limit!(
-    legacy_hatch_id_refuses_retained_limit,
-    ArchiveVersion::V5,
-    false,
-    16,
-    "Rhino hatch ID"
-);
-hatch_text_limit!(
-    modern_hatch_description_refuses_retained_limit,
-    ArchiveVersion::V8,
-    true,
-    12,
-    "Rhino hatch description"
-);
-hatch_text_limit!(
-    modern_hatch_id_refuses_retained_limit,
-    ArchiveVersion::V8,
-    true,
-    30,
-    "Rhino hatch ID"
-);
-
-#[test]
-fn legacy_hatch_source_uuid_refuses_retained_limit() {
-    assert!(
-        matches!(hatch_pattern_retained_refusal(ArchiveVersion::V5, false, crate::test_support::retained_limit_at("Rhino hatch source UUID", 0, |cap| { match hatch_pattern_retained_refusal(ArchiveVersion::V5, false, cap) { PatternTransferError::Framing(crate::chunks::FramingError::Resource(refusal)) => refusal, error => panic!("unexpected fixture refusal: {error:?}") } })), PatternTransferError::Framing(crate::chunks::FramingError::Resource(refusal)) if refusal.operation == "Rhino hatch source UUID")
-    );
-}
-
-#[test]
-fn modern_hatch_lines_refuse_collection_limit() {
-    assert!(matches!(
-        hatch_pattern_collection_refusal(ArchiveVersion::V8, true, 0),
-        PatternTransferError::Framing(crate::chunks::FramingError::Resource(refusal))
-            if refusal.operation == "Rhino modern hatch lines"
-    ));
-}
-
-#[test]
-fn legacy_hatch_lines_refuse_collection_limit() {
-    assert!(matches!(
-        hatch_pattern_collection_refusal(ArchiveVersion::V5, false, 0),
-        PatternTransferError::Framing(crate::chunks::FramingError::Resource(refusal))
-            if refusal.operation == "Rhino legacy hatch lines"
-    ));
-}
-
-#[test]
-fn hatch_line_dashes_refuse_collection_limit() {
-    assert!(matches!(
-        hatch_pattern_collection_refusal(ArchiveVersion::V5, false, 1),
-        PatternTransferError::Framing(crate::chunks::FramingError::Resource(refusal))
-            if refusal.operation == "Rhino hatch line dashes"
-    ));
-}
-
-#[test]
-fn projected_hatch_lines_refuse_collection_limit() {
-    assert!(matches!(
-        hatch_pattern_collection_refusal(ArchiveVersion::V5, false, 3),
-        PatternTransferError::Framing(crate::chunks::FramingError::Resource(refusal))
-            if refusal.operation == "Rhino projected hatch lines"
-    ));
-}
-
 #[test]
 fn absent_component_index_does_not_alias_system_index_minus_one() {
     let record = LinetypeRecord {
@@ -427,7 +200,7 @@ fn legacy_linetype_preserves_print_lengths_and_wire_segment_tags() {
     body.extend([0x66; 16]);
     body.extend([0xaa, 0xbb]);
     let bytes = anonymous(15, &body);
-    let value = with_collection_limit(&bytes, u64::MAX, |ctx| {
+    let value = with_test_context(&bytes, |ctx| {
         parse_linetype(
             ctx,
             &bytes,
@@ -499,52 +272,10 @@ fn modern_linetype(always_model_distance: bool) -> Vec<u8> {
     bytes
 }
 
-fn linetype_collection_refusal(limit: u64) -> PatternTransferError {
-    let bytes = modern_linetype(false);
-    with_collection_limit(&bytes, limit, |ctx| {
-        parse_linetype(
-            ctx,
-            &bytes,
-            0..bytes.len(),
-            ArchiveVersion::V8,
-            UnitBinding::Millimeters(StandardUnit::Inches.into()),
-            0,
-        )
-        .expect_err("linetype exceeds collection limit")
-    })
-}
-
-#[test]
-fn linetype_segments_refuse_collection_limit() {
-    assert!(matches!(
-        linetype_collection_refusal(1),
-        PatternTransferError::Framing(crate::chunks::FramingError::Resource(refusal))
-            if refusal.operation == "Rhino linetype segments"
-    ));
-}
-
-#[test]
-fn linetype_taper_points_refuse_collection_limit() {
-    assert!(matches!(
-        linetype_collection_refusal(4),
-        PatternTransferError::Framing(crate::chunks::FramingError::Resource(refusal))
-            if refusal.operation == "Rhino linetype taper points"
-    ));
-}
-
-#[test]
-fn projected_linetype_segments_refuse_collection_limit() {
-    assert!(matches!(
-        linetype_collection_refusal(6),
-        PatternTransferError::Framing(crate::chunks::FramingError::Resource(refusal))
-            if refusal.operation == "Rhino projected linetype segments"
-    ));
-}
-
 #[test]
 fn modern_linetype_scales_only_model_distance_segments() {
     let model_distance_bytes = modern_linetype(true);
-    let model_distance = with_collection_limit(&model_distance_bytes, u64::MAX, |ctx| {
+    let model_distance = with_test_context(&model_distance_bytes, |ctx| {
         parse_linetype(
             ctx,
             &model_distance_bytes,
@@ -580,7 +311,7 @@ fn modern_linetype_scales_only_model_distance_segments() {
     );
     assert!(model_distance.always_model_distance);
 
-    let unbound_model_distance = with_collection_limit(&model_distance_bytes, u64::MAX, |ctx| {
+    let unbound_model_distance = with_test_context(&model_distance_bytes, |ctx| {
         parse_linetype(
             ctx,
             &model_distance_bytes,
@@ -596,7 +327,7 @@ fn modern_linetype_scales_only_model_distance_segments() {
     ));
 
     let print_distance_bytes = modern_linetype(false);
-    let print_distance = with_collection_limit(&print_distance_bytes, u64::MAX, |ctx| {
+    let print_distance = with_test_context(&print_distance_bytes, |ctx| {
         parse_linetype(
             ctx,
             &print_distance_bytes,
@@ -726,45 +457,6 @@ fn hatch_install_retains_document_distances_without_physical_units() {
     }
 }
 
-fn pattern_install_collection_refusal(
-    table_type: u32,
-    record: Vec<u8>,
-    limit: u64,
-) -> cadmpeg_core::CodecError {
-    let archive = ArchiveVersion::V8;
-    let unit = crate::test_support::test_dump::units_record(archive, 2);
-    let bytes = crate::test_support::test_dump::minimal_document(
-        "80",
-        &[
-            crate::test_support::test_dump::table(archive, 0x1000_0014, &[]),
-            crate::test_support::test_dump::table(archive, 0x1000_0015, &[unit]),
-            crate::test_support::test_dump::table(archive, table_type, &[record]),
-            crate::test_support::test_dump::table(archive, 0x1000_0013, &[]),
-        ],
-    );
-    let scan = crate::container::scan_owned(bytes.clone()).expect("complete pattern document");
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-        .expect("pattern root admitted");
-    install(&ctx, &scan, &mut CadIr::empty()).expect_err("pattern exceeds collection limit")
-}
-
-#[test]
-fn installed_linetype_refuses_collection_limit() {
-    assert!(
-        matches!(pattern_install_collection_refusal(LINETYPE_TABLE, modern_linetype_record(ArchiveVersion::V8, false), 7), cadmpeg_core::CodecError::ResourceLimit(refusal) if refusal.operation == "Rhino linetypes")
-    );
-}
-
-#[test]
-fn installed_hatch_refuses_collection_limit() {
-    assert!(
-        matches!(pattern_install_collection_refusal(HATCH_PATTERN_TABLE, legacy_hatch_pattern_record(ArchiveVersion::V8), 4), cadmpeg_core::CodecError::ResourceLimit(refusal) if refusal.operation == "Rhino hatch patterns")
-    );
-}
-
 #[test]
 fn modern_hatch_pattern_uses_its_explicit_unit_binding() {
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -888,7 +580,7 @@ fn solid_hatch_pattern_needs_no_length_binding() {
     bytes.extend(utf16_bytes("solid fill"));
     bytes.extend([0x77; 16]);
     for binding in [UnitBinding::Native, UnitBinding::Unavailable] {
-        let pattern = with_collection_limit(&bytes, u64::MAX, |ctx| {
+        let pattern = with_test_context(&bytes, |ctx| {
             parse_hatch_pattern(ctx, &bytes, 0..bytes.len(), ArchiveVersion::V5, binding, 23)
         })
         .expect("solid hatch has no dimensional payload");
@@ -928,7 +620,7 @@ fn legacy_hatch_pattern_scales_line_offsets_and_dashes() {
     bytes.extend(5.0_f64.to_le_bytes());
     bytes.extend((-2.0_f64).to_le_bytes());
     bytes.extend([0x77; 16]);
-    let value = with_collection_limit(&bytes, u64::MAX, |ctx| {
+    let value = with_test_context(&bytes, |ctx| {
         parse_hatch_pattern(
             ctx,
             &bytes,
@@ -956,7 +648,7 @@ fn legacy_hatch_pattern_scales_line_offsets_and_dashes() {
         crate::test_support::finite(0.5)
     );
 
-    let unbound = with_collection_limit(&bytes, u64::MAX, |ctx| {
+    let unbound = with_test_context(&bytes, |ctx| {
         parse_hatch_pattern(
             ctx,
             &bytes,
@@ -1012,7 +704,7 @@ fn modern_hatch_pattern_reads_nested_line_chunks() {
     let mut v8_body = body.clone();
     v8_body.extend([0xc7; 4]);
     let bytes = anonymous(0, &v8_body);
-    let value = with_collection_limit(&bytes, u64::MAX, |ctx| {
+    let value = with_test_context(&bytes, |ctx| {
         parse_hatch_pattern(
             ctx,
             &bytes,
@@ -1064,7 +756,7 @@ fn modern_hatch_pattern_reads_nested_line_chunks() {
     v9_body.extend([2, 1]);
     v9_body.extend([0xd8; 4]);
     let v9_bytes = anonymous(0, &v9_body);
-    let v9 = with_collection_limit(&v9_bytes, u64::MAX, |ctx| {
+    let v9 = with_test_context(&v9_bytes, |ctx| {
         parse_hatch_pattern(
             ctx,
             &v9_bytes,

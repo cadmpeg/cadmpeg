@@ -102,72 +102,38 @@ struct ExternalReferenceRecord {
     links: Vec<String>,
 }
 
-fn definition_id(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    id: Uuid,
-) -> Result<String, CodecError> {
-    ctx.format_retained(
-        format_args!("rhino:product:definition#{id}"),
-        "Rhino product definition ID",
-    )
+fn definition_id(id: Uuid) -> String {
+    format!("rhino:product:definition#{id}")
 }
 
-fn external_id(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    id: Uuid,
-) -> Result<String, CodecError> {
-    ctx.format_retained(
-        format_args!("rhino:product:external#{id}"),
-        "Rhino product external ID",
-    )
+fn external_id(id: Uuid) -> String {
+    format!("rhino:product:external#{id}")
 }
 
-fn external_record(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    definition_uuid: Uuid,
-    link: &LinkSource,
-) -> Result<Option<ExternalReferenceRecord>, CodecError> {
+fn external_record(definition_uuid: Uuid, link: &LinkSource) -> Option<ExternalReferenceRecord> {
     if matches!(link, LinkSource::None) {
-        return Ok(None);
+        return None;
     }
-    let definition = definition_id(ctx, definition_uuid)?;
-    let mut links = ctx.collection_vec(1, "Rhino external reference links")?;
-    links.push(definition);
+    let definition = definition_id(definition_uuid);
+    let links = vec![definition];
     let (full_path, relative_path, relative_path_preferred) = match link {
-        LinkSource::None => return Ok(None),
+        LinkSource::None => return None,
         LinkSource::Structured(value) => {
-            return Ok(Some(ExternalReferenceRecord {
-                id: external_id(ctx, definition_uuid)?,
-                definition_uuid: ctx.format_retained(
-                    format_args!("{definition_uuid}"),
-                    "Rhino external definition UUID",
-                )?,
-                full_path: ctx.copy_retained_text(&value.full_path, "Rhino external full path")?,
-                relative_path: ctx
-                    .copy_retained_text(&value.relative_path, "Rhino external relative path")?,
+            return Some(ExternalReferenceRecord {
+                id: external_id(definition_uuid),
+                definition_uuid: format!("{definition_uuid}"),
+                full_path: value.full_path.clone(),
+                relative_path: value.relative_path.clone(),
                 relative_path_preferred: false,
                 byte_count: Some(value.content_hash.byte_count),
                 hash_time: Some(value.content_hash.hash_time),
                 content_time: Some(value.content_hash.content_time),
-                name_sha1: Some(hex(
-                    ctx,
-                    &value.content_hash.name_sha1,
-                    "Rhino external name SHA-1",
-                )?),
-                content_sha1: Some(hex(
-                    ctx,
-                    &value.content_hash.content_sha1,
-                    "Rhino external content SHA-1",
-                )?),
+                name_sha1: Some(hex(&value.content_hash.name_sha1)),
+                content_sha1: Some(hex(&value.content_hash.content_sha1)),
                 path_status: Some(value.path_status),
-                embedded_file_uuid: value
-                    .embedded_file_id
-                    .map(|id| {
-                        ctx.format_retained(format_args!("{id}"), "Rhino external embedded UUID")
-                    })
-                    .transpose()?,
+                embedded_file_uuid: value.embedded_file_id.map(|id| format!("{id}")),
                 links,
-            }))
+            })
         }
         LinkSource::LegacyFull(path) => (path.as_str(), "", false),
         LinkSource::LegacyRelative {
@@ -179,14 +145,11 @@ fn external_record(
             true,
         ),
     };
-    Ok(Some(ExternalReferenceRecord {
-        id: external_id(ctx, definition_uuid)?,
-        definition_uuid: ctx.format_retained(
-            format_args!("{definition_uuid}"),
-            "Rhino external definition UUID",
-        )?,
-        full_path: ctx.copy_retained_text(full_path, "Rhino external full path")?,
-        relative_path: ctx.copy_retained_text(relative_path, "Rhino external relative path")?,
+    Some(ExternalReferenceRecord {
+        id: external_id(definition_uuid),
+        definition_uuid: format!("{definition_uuid}"),
+        full_path: full_path.to_owned(),
+        relative_path: relative_path.to_owned(),
         relative_path_preferred,
         byte_count: None,
         hash_time: None,
@@ -196,7 +159,7 @@ fn external_record(
         path_status: None,
         embedded_file_uuid: None,
         links,
-    }))
+    })
 }
 
 /// Installs the source product graph without requiring occurrence expansion.
@@ -209,17 +172,11 @@ pub(crate) fn install(
     let mut object_records = HashMap::<Uuid, Vec<(usize, String)>>::new();
     for (source_order, object) in scan.objects.iter().enumerate() {
         if let Some(identity) = object.identity() {
-            if !object_records.contains_key(&identity.object_id) {
-                ctx.reserve_map(&mut object_records, 1, "Rhino product object keys")?;
-            }
             let rows = object_records.entry(identity.object_id).or_default();
-            ctx.reserve_vec(rows, 1, "Rhino product object positions")?;
+
             rows.push((
                 source_order,
-                ctx.format_retained(
-                    format_args!("rhino:object:record#{source_order:06}"),
-                    "Rhino product object ID",
-                )?,
+                format!("rhino:object:record#{source_order:06}"),
             ));
         }
     }
@@ -227,13 +184,9 @@ pub(crate) fn install(
     let mut definitions = Vec::new();
     let mut external = Vec::new();
     for definition in scan.definitions.definitions() {
-        let external_reference = external_record(ctx, definition.id(), &definition.link)?;
-        let external_id = external_reference
-            .as_ref()
-            .map(|value| ctx.copy_retained_text(&value.id, "Rhino definition external ID"))
-            .transpose()?;
+        let external_reference = external_record(definition.id(), &definition.link);
+        let external_id = external_reference.as_ref().map(|value| value.id.clone());
         if let Some(value) = external_reference {
-            ctx.reserve_vec(&mut external, 1, "Rhino external references")?;
             external.push(value);
         }
         let mut links = Vec::new();
@@ -243,44 +196,27 @@ pub(crate) fn install(
             .filter_map(|id| object_records.get(id))
             .filter(|matches| matches.len() == 1)
         {
-            ctx.reserve_vec(&mut links, 1, "Rhino definition links")?;
-            links.push(ctx.copy_retained_text(&matches[0].1, "Rhino definition member link")?);
+            links.push(matches[0].1.clone());
         }
         if let Some(id) = &external_id {
-            ctx.reserve_vec(&mut links, 1, "Rhino definition links")?;
-            links.push(ctx.copy_retained_text(id, "Rhino definition external link")?);
+            links.push(id.to_owned());
         }
-        ctx.stable_sort_by(
-            &mut links,
-            Ord::cmp,
-            std::string::String::len,
-            "Rhino definition links sort",
-        )?;
+        links.sort_by(Ord::cmp);
         links.dedup();
         let mut member_object_ids = Vec::new();
         for id in &definition.members {
-            ctx.reserve_vec(&mut member_object_ids, 1, "Rhino definition member UUIDs")?;
-            member_object_ids.push(
-                ctx.format_retained(format_args!("{id}"), "Rhino definition member UUID text")?,
-            );
+            member_object_ids.push(format!("{id}"));
         }
-        ctx.reserve_vec(&mut definitions, 1, "Rhino product definitions")?;
+
         definitions.push(DefinitionRecord {
-            id: definition_id(ctx, definition.id())?,
+            id: definition_id(definition.id()),
             source_offset: cadmpeg_core::decode::u64_from_index(definition.source_range.start),
-            source_uuid: ctx.format_retained(
-                format_args!("{}", definition.id()),
-                "Rhino definition source UUID",
-            )?,
+            source_uuid: format!("{}", definition.id()),
             archive_index: definition.index,
-            name: ctx.copy_retained_text(&definition.name, "Rhino product definition name")?,
-            description: ctx.copy_retained_text(
-                &definition.description,
-                "Rhino product definition description",
-            )?,
-            url: ctx.copy_retained_text(&definition.url, "Rhino product definition URL")?,
-            url_tag: ctx
-                .copy_retained_text(&definition.url_tag, "Rhino product definition URL tag")?,
+            name: definition.name.clone(),
+            description: definition.description.clone(),
+            url: definition.url.clone(),
+            url_tag: definition.url_tag.clone(),
             kind: definition.kind,
             member_object_ids,
             units: &definition.units,
@@ -295,29 +231,15 @@ pub(crate) fn install(
     let mut member_definitions = HashMap::<Uuid, Vec<String>>::new();
     let mut definition_ids = HashSet::new();
     for definition in scan.definitions.definitions() {
-        if !definition_ids.contains(&definition.id()) {
-            ctx.reserve_set(&mut definition_ids, 1, "Rhino product definition keys")?;
-        }
         definition_ids.insert(definition.id());
         for member in &definition.members {
-            if !member_definitions.contains_key(member) {
-                ctx.reserve_map(&mut member_definitions, 1, "Rhino product member keys")?;
-            }
             let parents = member_definitions.entry(*member).or_default();
-            ctx.reserve_vec(parents, 1, "Rhino product member parents")?;
-            parents.push(ctx.format_retained(
-                format_args!("{}", definition.id()),
-                "Rhino product parent UUID",
-            )?);
+
+            parents.push(format!("{}", definition.id()));
         }
     }
     for parents in member_definitions.values_mut() {
-        ctx.stable_sort_by(
-            parents,
-            Ord::cmp,
-            std::string::String::len,
-            "Rhino product member parents sort",
-        )?;
+        parents.sort_by(Ord::cmp);
         parents.dedup();
     }
     let mut occurrences = Vec::new();
@@ -335,23 +257,14 @@ pub(crate) fn install(
         ) {
             Ok(reference) => reference,
             Err(error) => {
-                ctx.reserve_vec(&mut losses, 1, "Rhino product occurrence losses")?;
-                let loss = crate::wire::admitted_loss(
-                    ctx,
-                    RhinoLossCode::ProductOccurrenceDropped,
-                    format_args!(
-                        "product occurrence {} at offset {} (class {}) could not be transferred: {error}",
-                        identity.source_id, object.range.start, object.class_uuid
-                    ),
-                    "Rhino product occurrence loss text",
-                )?;
-                let tag = ctx.format_retained(
-                    format_args!(
-                        "PRODUCT_OCCURRENCE/source={}/class={}",
-                        identity.source_id, object.class_uuid
-                    ),
-                    "Rhino product occurrence loss tag",
-                )?;
+                let loss = RhinoLossCode::ProductOccurrenceDropped.note(format_args!(
+                    "product occurrence {} at offset {} (class {}) could not be transferred: {error}",
+                    identity.source_id, object.range.start, object.class_uuid
+                ));
+                let tag = format!(
+                    "PRODUCT_OCCURRENCE/source={}/class={}",
+                    identity.source_id, object.class_uuid
+                );
                 losses.push(
                     loss.with_provenance(
                         SourceProvenance::root(
@@ -365,20 +278,12 @@ pub(crate) fn install(
             }
         };
         let transform = OccurrenceTransform::from_source(reference.transform(), binding);
-        let definition = definition_id(ctx, reference.definition_id())?;
-        let object_record = ctx.format_retained(
-            format_args!("rhino:object:record#{source_order:06}"),
-            "Rhino occurrence object ID",
-        )?;
+        let definition = definition_id(reference.definition_id());
+        let object_record = format!("rhino:object:record#{source_order:06}");
         let mut parents = Vec::new();
         if let Some(source_parents) = member_definitions.get(&identity.object_id) {
-            ctx.reserve_vec(
-                &mut parents,
-                source_parents.len(),
-                "Rhino occurrence parents",
-            )?;
             for parent in source_parents {
-                parents.push(ctx.copy_retained_text(parent, "Rhino occurrence parent UUID")?);
+                parents.push(parent.to_owned());
             }
         }
         let key = if identity.object_id.is_nil()
@@ -386,46 +291,25 @@ pub(crate) fn install(
                 .get(&identity.object_id)
                 .is_some_and(|matches| matches.len() != 1)
         {
-            ctx.format_retained(
-                format_args!("record-{source_order:06}"),
-                "Rhino occurrence key",
-            )?
+            format!("record-{source_order:06}")
         } else {
-            ctx.format_retained(
-                format_args!("{}", identity.object_id),
-                "Rhino occurrence key",
-            )?
+            format!("{}", identity.object_id)
         };
-        let mut links = ctx.collection_vec(1, "Rhino occurrence links")?;
+        let mut links = Vec::new();
         links.push(object_record);
         if definition_ids.contains(&reference.definition_id()) {
-            ctx.reserve_vec(&mut links, 1, "Rhino occurrence links")?;
             links.push(definition);
         }
-        ctx.stable_sort_by(
-            &mut links,
-            Ord::cmp,
-            std::string::String::len,
-            "Rhino occurrence links sort",
-        )?;
-        ctx.reserve_vec(&mut occurrences, 1, "Rhino product occurrences")?;
+        links.sort_by(Ord::cmp);
+
         occurrences.push(OccurrenceRecord {
-            id: ctx.format_retained(
-                format_args!("rhino:product:occurrence#{key}"),
-                "Rhino product occurrence ID",
-            )?,
+            id: format!("rhino:product:occurrence#{key}"),
             source_offset: cadmpeg_core::decode::u64_from_index(object.range.start),
-            source_uuid: ctx.format_retained(
-                format_args!("{}", identity.object_id),
-                "Rhino occurrence source UUID",
-            )?,
-            definition_uuid: ctx.format_retained(
-                format_args!("{}", reference.definition_id()),
-                "Rhino occurrence definition UUID",
-            )?,
+            source_uuid: format!("{}", identity.object_id),
+            definition_uuid: format!("{}", reference.definition_id()),
             transform,
             parent_definition_uuids: parents,
-            name: ctx.copy_retained_text(&identity.name, "Rhino occurrence name")?,
+            name: identity.name.clone(),
             visible: identity.effective_visible,
             links,
         });
@@ -446,316 +330,6 @@ mod tests {
     };
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_test_support::{wire, EditableDecodeResult};
-
-    fn with_collection_limit<T>(
-        scan: &crate::container::Scan<'_>,
-        limit: u64,
-        test: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T,
-    ) -> T {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy)
-                .expect("root bytes admitted");
-        test(&ctx)
-    }
-
-    fn product_limit_error(
-        scan: &crate::container::Scan<'_>,
-        limit: u64,
-    ) -> cadmpeg_core::CodecError {
-        with_collection_limit(scan, limit, |ctx| {
-            install(ctx, scan, &mut CadIr::empty()).expect_err("product collection exceeds limit")
-        })
-    }
-
-    fn one_reference_scan() -> crate::container::Scan<'static> {
-        let archive = crate::chunks::ArchiveVersion::V5;
-        let payload = crate::test_support::test_dump::instance_reference_payload(
-            [0x51; 16],
-            cadmpeg_ir::transform::Transform::identity().rows(),
-        );
-        scan_with_objects(&[object_record_with_payload(
-            archive,
-            0x1000,
-            INSTANCE_REFERENCE_CLASS,
-            &payload,
-        )])
-    }
-
-    fn one_definition_scan() -> crate::container::Scan<'static> {
-        use crate::test_support::test_dump as support;
-        let archive = crate::chunks::ArchiveVersion::V5;
-        let payload = support::v5_definition_payload(archive, 6, [0x51; 16], &[[0x62; 16]], false);
-        let record = support::definition_record(archive, &payload);
-        crate::container::scan_owned(support::document_with_definitions(
-            "50",
-            archive,
-            &[record],
-            &[],
-        ))
-        .expect("definition document is framed")
-    }
-
-    fn one_linked_definition_scan(minor: u8) -> crate::container::Scan<'static> {
-        use crate::test_support::test_dump as support;
-        let archive = crate::chunks::ArchiveVersion::V5;
-        let payload = support::v5_definition_payload(archive, minor, [0x51; 16], &[], true);
-        let record = support::definition_record(archive, &payload);
-        crate::container::scan_owned(support::document_with_definitions(
-            "50",
-            archive,
-            &[record],
-            &[],
-        ))
-        .expect("linked definition document is framed")
-    }
-
-    #[test]
-    fn product_object_keys_refuse_collection_limit() {
-        let scan = one_reference_scan();
-        assert!(matches!(
-            product_limit_error(&scan, 0),
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.operation == "Rhino product object keys"
-        ));
-    }
-
-    #[test]
-    fn product_object_positions_refuse_collection_limit() {
-        let scan = one_reference_scan();
-        assert!(matches!(
-            product_limit_error(&scan, 1),
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.operation == "Rhino product object positions"
-        ));
-    }
-
-    #[test]
-    fn occurrence_links_refuse_collection_limit() {
-        let scan = one_reference_scan();
-        assert!(matches!(
-            product_limit_error(&scan, 2),
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.operation == "Rhino occurrence links"
-        ));
-    }
-
-    #[test]
-    fn product_occurrences_refuse_collection_limit() {
-        let scan = one_reference_scan();
-        assert!(matches!(
-            product_limit_error(&scan, 3),
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.operation == "Rhino product occurrences"
-        ));
-    }
-
-    #[test]
-    fn definition_member_uuids_refuse_collection_limit() {
-        let scan = one_definition_scan();
-        assert!(matches!(
-            product_limit_error(&scan, 0),
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.operation == "Rhino definition member UUIDs"
-        ));
-    }
-
-    #[test]
-    fn product_definitions_refuse_collection_limit() {
-        let scan = one_definition_scan();
-        assert!(matches!(
-            product_limit_error(&scan, 1),
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.operation == "Rhino product definitions"
-        ));
-    }
-
-    #[test]
-    fn product_definition_keys_refuse_collection_limit() {
-        let scan = one_definition_scan();
-        assert!(matches!(
-            product_limit_error(&scan, 2),
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.operation == "Rhino product definition keys"
-        ));
-    }
-
-    #[test]
-    fn product_member_keys_refuse_collection_limit() {
-        let scan = one_definition_scan();
-        assert!(matches!(
-            product_limit_error(&scan, 3),
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.operation == "Rhino product member keys"
-        ));
-    }
-
-    #[test]
-    fn product_member_parents_refuse_collection_limit() {
-        let scan = one_definition_scan();
-        assert!(matches!(
-            product_limit_error(&scan, 4),
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.operation == "Rhino product member parents"
-        ));
-        let mut ir = CadIr::empty();
-        install(
-            &cadmpeg_test_support::service_decode_context(),
-            &scan,
-            &mut ir,
-        )
-        .expect("service profile admits product definition");
-        assert_eq!(
-            ir.native.namespace("rhino").unwrap().arenas()["product_definitions"].len(),
-            1
-        );
-    }
-
-    #[test]
-    fn external_reference_links_refuse_collection_limit() {
-        let scan = one_linked_definition_scan(6);
-        assert!(matches!(
-            product_limit_error(&scan, 0),
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.operation == "Rhino external reference links"
-        ));
-    }
-
-    #[test]
-    fn external_references_refuse_collection_limit() {
-        let scan = one_linked_definition_scan(6);
-        assert!(matches!(
-            product_limit_error(&scan, 1),
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.operation == "Rhino external references"
-        ));
-        let mut ir = CadIr::empty();
-        install(
-            &cadmpeg_test_support::service_decode_context(),
-            &scan,
-            &mut ir,
-        )
-        .expect("service profile admits external reference");
-        assert_eq!(
-            ir.native.namespace("rhino").unwrap().arenas()["external_references"].len(),
-            1
-        );
-    }
-
-    #[test]
-    fn external_name_sha1_refuses_retained_limit() {
-        let scan = one_linked_definition_scan(7);
-        let link = &scan.definitions.definitions()[0].link;
-        assert!(matches!(link, crate::instances::LinkSource::Structured(_)));
-        let run = |cap| {
-            let arena = cadmpeg_core::decode::DecodeArena::new();
-            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-            policy.limits.max_retained_bytes = cap;
-            let (ctx, _) =
-                cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy)
-                    .expect("root bytes admitted");
-            let error = super::external_record(&ctx, scan.definitions.definitions()[0].id(), link)
-                .expect_err("name digest exceeds retained limit");
-            error
-        };
-        let error = run(crate::test_support::retained_limit_at(
-            "Rhino external name SHA-1",
-            0,
-            |cap| match run(cap) {
-                cadmpeg_core::CodecError::ResourceLimit(limit) => limit,
-                error => panic!("unexpected resource refusal: {error:?}"),
-            },
-        ));
-        assert!(matches!(
-            error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.operation == "Rhino external name SHA-1"
-        ));
-        assert!(super::external_record(
-            &cadmpeg_test_support::service_decode_context(),
-            scan.definitions.definitions()[0].id(),
-            link,
-        )
-        .expect("service profile admits digest")
-        .is_some());
-    }
-
-    #[test]
-    fn malformed_occurrence_loss_refuses_collection_limit() {
-        let scan = scan_with_objects(&[object_record_with_payload(
-            crate::chunks::ArchiveVersion::V5,
-            0x1000,
-            INSTANCE_REFERENCE_CLASS,
-            &[],
-        )]);
-        assert!(matches!(
-            product_limit_error(&scan, 2),
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.operation == "Rhino product occurrence losses"
-        ));
-    }
-
-    #[test]
-    fn malformed_occurrence_loss_copy_refuses_retained_limit() {
-        let scan = scan_with_objects(&[object_record_with_payload(
-            crate::chunks::ArchiveVersion::V5,
-            0x1000,
-            INSTANCE_REFERENCE_CLASS,
-            &[],
-        )]);
-        let mut limit = 0_u64;
-        let mut loss_text_refusals = 0;
-        for _ in 0..128 {
-            let arena = cadmpeg_core::decode::DecodeArena::new();
-            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-            policy.limits.max_retained_bytes = limit;
-            let (ctx, _) =
-                cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy)
-                    .expect("root bytes admitted");
-            let refusal = install(&ctx, &scan, &mut CadIr::empty())
-                .expect_err("loss text exceeds the retained limit");
-            let cadmpeg_core::CodecError::ResourceLimit(item) = refusal else {
-                panic!("expected a retained-byte refusal, got {refusal:?}");
-            };
-            if item.operation == "Rhino product occurrence loss text" {
-                loss_text_refusals += 1;
-                if loss_text_refusals == 2 {
-                    return;
-                }
-            }
-            limit = (item.used + item.additional).max(limit + 1);
-        }
-        panic!("product loss note copy was not reached");
-    }
-
-    #[test]
-    fn product_object_id_refuses_retained_limit() {
-        let scan = one_reference_scan();
-        let run = |cap| {
-            let arena = cadmpeg_core::decode::DecodeArena::new();
-            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-            policy.limits.max_retained_bytes = cap;
-            let (ctx, _) =
-                cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy)
-                    .expect("root bytes admitted");
-            install(&ctx, &scan, &mut CadIr::empty()).expect_err("object ID exceeds retained limit")
-        };
-        let error = run(crate::test_support::retained_limit_at(
-            "Rhino product object ID",
-            0,
-            |cap| match run(cap) {
-                cadmpeg_core::CodecError::ResourceLimit(limit) => limit,
-                error => panic!("unexpected resource refusal: {error:?}"),
-            },
-        ));
-        assert!(matches!(
-            error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.operation == "Rhino product object ID"
-        ));
-    }
 
     #[test]
     fn malformed_reference_is_reported_with_its_source_record() {

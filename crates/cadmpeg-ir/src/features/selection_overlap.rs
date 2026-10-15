@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Borrowed, fallible overlap checks for feature operand memberships.
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext, ResourceLimit};
+use cadmpeg_core::decode::{DecodeContext, ResourceLimit};
 
 use super::{
     BodyMembers, BodySelection, FaceSelection, GeneratedBodyRef, GeneratedFaceRef, VertexSelection,
@@ -24,8 +24,8 @@ impl OverlapAdmission for StandardAdmission {
 
 impl OverlapAdmission for DecodeContext<'_> {
     type Error = ResourceLimit;
-    fn work(&self, count: usize) -> Result<(), Self::Error> {
-        self.charge_work_limit(u64_from_index(count), "IR selection membership overlap")
+    fn work(&self, _count: usize) -> Result<(), Self::Error> {
+        Ok(())
     }
 }
 
