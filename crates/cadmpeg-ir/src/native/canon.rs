@@ -1,29 +1,36 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Canonical [`serde_json::Value`] construction for typed native records.
+//! Canonical JSON text for typed native records.
 //!
-//! Builds exactly the value `serde_json::to_value` produces for a record of
-//! finite numbers — the `Value` scalar conventions apply (an `f32` widens to
-//! `f64`, an integer map key becomes its decimal string) — and adds the three
-//! admissions the plain value serializer does not make: a NaN or infinite
-//! number is refused by its member path, where `serde_json::to_value` writes
-//! `null`; object keys must be distinct; and a `RawValue` payload is read
-//! through one-container replay, so a record nested deeper than the JSON
+//! Writes exactly the compact text `serde_json` writes for the
+//! `serde_json::to_value` tree of a record of finite numbers: object keys in
+//! key order at every depth, and the `Value` scalar conventions (an `f32`
+//! widens to `f64`, an integer map key becomes its decimal string). It adds the
+//! three admissions the plain value serializer does not make: a NaN or
+//! infinite number is refused by its member path, where `serde_json::to_value`
+//! writes `null`; object keys must be distinct; and a `RawValue` payload is
+//! read through one-container replay, so a record nested deeper than the JSON
 //! parser's recursion limit is still admitted.
+//!
+//! Every value is written in place into one output buffer. An object's members
+//! are written in arrival order; when they did not arrive in key order, the
+//! object's text is rewritten in key order when it closes.
 //!
 //! The serializer recurses one frame per container of the record it is handed,
 //! and a record field holding a `serde_json::Value` states its own shape, so
 //! the descent is counted against [`MAX_NATIVE_NESTING_DEPTH`].
 
+use std::borrow::Cow;
+use std::collections::BTreeMap;
 use std::fmt::{Display, Write as _};
 use std::io::{self, Write};
+use std::ops::Range;
 
 use cadmpeg_core::decode::{DecodeContext, DepthGuard};
 use cadmpeg_core::CodecError;
 
 use serde::ser::{self, Serialize};
-use serde_json::{Map, Value};
 
-use super::{nests_too_deep_message, MAX_NATIVE_NESTING_DEPTH};
+use super::{nests_too_deep_message, NativeConvertError, MAX_NATIVE_NESTING_DEPTH};
 
 // serde_json's RawValue Serialize protocol. The RawValue owner fixtures check
 // this spelling against the dependency's actual serializer.
@@ -31,41 +38,129 @@ const RAW_VALUE_STRUCT: &str = "$serde_json::private::RawValue";
 /// The depth-account operation of the canonical native value walk.
 pub(super) const WORK: &str = "construct canonical native value";
 
-/// One serialized value: any value, or an object kept apart so the record
-/// assembler can hoist its `id` member.
-pub(super) enum Node {
-    /// Any non-object value.
-    Value(Value),
-    /// An object's members, keyed by raw (unescaped) key.
-    Object(Map<String, Value>),
+/// What one serialized value leaves for the container that holds it.
+pub(super) enum Written {
+    /// The value's text is complete in the output.
+    Text,
+    /// An object whose members are in the output but not yet closed, kept
+    /// apart so the record assembler can hoist its `id` member.
+    Object(Members),
 }
 
-impl Node {
-    /// This value.
-    pub(super) fn into_value(self) -> Value {
-        match self {
-            Node::Value(value) => value,
-            Node::Object(entries) => Value::Object(entries),
+impl Written {
+    /// Complete an object's text in `out`. Other values are complete already.
+    pub(super) fn place(self, out: &mut Vec<u8>) {
+        if let Self::Object(members) = self {
+            members.close(out);
         }
     }
+}
 
-    /// Render this value as canonical JSON text: the tests' oracle for what a
-    /// record carrying this node serializes to.
-    #[cfg(test)]
-    fn render(self) -> String {
-        self.into_value().to_string()
+/// One object member written into the output.
+struct Member {
+    /// The member's `"key":value` text.
+    text: Range<usize>,
+    /// Where the value text starts.
+    value: usize,
+}
+
+/// An open object's distinct members, written into the output in arrival
+/// order and keyed by raw (unescaped) key.
+///
+/// An open object's text is always the tail of the output: a container writes
+/// nothing more until the object it holds is placed.
+pub(super) struct Members {
+    /// Where the object's `{` is.
+    start: usize,
+    entries: BTreeMap<Cow<'static, str>, Member>,
+    /// Whether the members arrived in key order, so the text is in order too.
+    in_order: bool,
+}
+
+impl Members {
+    /// Close the object in `out`, rewriting its members in key order when they
+    /// arrived in another order.
+    fn close(self, out: &mut Vec<u8>) {
+        if !self.in_order {
+            let body_start = self.start + 1;
+            let body = out.split_off(body_start);
+            for (index, member) in self.entries.values().enumerate() {
+                if index > 0 {
+                    out.push(b',');
+                }
+                out.extend_from_slice(
+                    &body[member.text.start - body_start..member.text.end - body_start],
+                );
+            }
+        }
+        out.push(b'}');
+    }
+
+    /// The record this root object states: its string `id` member, and its
+    /// text with `id` first and the other members in key order.
+    pub(super) fn into_record(
+        mut self,
+        out: Vec<u8>,
+    ) -> Result<(crate::ids::Identity, Box<str>), NativeConvertError> {
+        let id_first = self.start == 0
+            && self.in_order
+            && self
+                .entries
+                .first_key_value()
+                .is_some_and(|(key, _)| key == "id");
+        let member = self
+            .entries
+            .remove("id")
+            .ok_or(NativeConvertError::MissingId)?;
+        let id = serde_json::from_slice::<String>(&out[member.value..member.text.end])
+            .map_err(|_| NativeConvertError::MissingId)?;
+        let id = crate::ids::Identity::new(id)?;
+        let json = if id_first {
+            let mut json = out;
+            json.push(b'}');
+            json
+        } else {
+            let mut json = Vec::new();
+            json.push(b'{');
+            json.extend_from_slice(&out[member.text]);
+            for member in self.entries.values() {
+                json.push(b',');
+                json.extend_from_slice(&out[member.text.clone()]);
+            }
+            json.push(b'}');
+            json
+        };
+        let json = String::from_utf8(json).map_err(|_| {
+            NativeConvertError::ConversionMessage("canonical native text is not UTF-8".to_owned())
+        })?;
+        Ok((id, json.into_boxed_str()))
     }
 }
 
-/// An externally tagged variant: `{"Variant": payload}`.
-fn tagged(variant: &str, payload: Value) -> Node {
-    let mut entries = Map::new();
-    entries.insert(variant.to_owned(), payload);
-    Node::Value(Value::Object(entries))
+/// Write the opening of an externally tagged variant: `{"Variant":`.
+fn open_variant(out: &mut Vec<u8>, variant: &str) -> serde_json::Result<()> {
+    out.push(b'{');
+    serde_json::to_writer(&mut *out, variant)?;
+    out.push(b':');
+    Ok(())
+}
+
+/// The canonical text of one value that may enter `depth` containers.
+pub(super) fn to_text<'a, T: Serialize + ?Sized>(
+    ctx: &'a DecodeContext<'a>,
+    depth: usize,
+    value: &T,
+) -> Result<String, CanonError> {
+    let mut out = Vec::new();
+    value
+        .serialize(CanonText::within(ctx, depth, &mut out))?
+        .place(&mut out);
+    String::from_utf8(out)
+        .map_err(|_| <CanonError as ser::Error>::custom("canonical native text is not UTF-8"))
 }
 
 /// The text a `Display` value writes.
-fn collect_display_text<T: Display + ?Sized>(value: &T) -> Result<String, CanonError> {
+pub(super) fn collect_display_text<T: Display + ?Sized>(value: &T) -> Result<String, CanonError> {
     let mut text = String::new();
     write!(text, "{value}")
         .map_err(|_| <CanonError as ser::Error>::custom("a formatting error occurred"))?;
@@ -195,139 +290,171 @@ impl From<serde_json::Error> for CanonError {
     }
 }
 
-/// A finite number as a JSON value, or the refusal of a NaN or infinite one.
-fn number(value: f64) -> Result<Node, CanonError> {
-    if !value.is_finite() {
-        return Err(CanonError::NonFinite(Vec::new()));
+/// Enter one container of a value that may enter `depth` containers: the
+/// budget left inside it, or the refusal.
+fn enter<'a>(ctx: &'a DecodeContext<'a>, depth: usize) -> Result<(usize, DepthGuard<'a>), Error> {
+    match depth.checked_sub(1) {
+        Some(depth) => {
+            let nested = ctx.enter_nested(WORK)?;
+            Ok((depth, nested))
+        }
+        None => Err(ser::Error::custom(nests_too_deep_message())),
     }
-    serde_json::Number::from_f64(value)
-        .map(|number| Node::Value(Value::Number(number)))
-        .ok_or(CanonError::NonFinite(Vec::new()))
 }
 
-/// The canonical-value serializer. Every `serialize_*` returns a [`Node`].
-pub(super) struct CanonValue<'a> {
+/// Open an object of a value that may enter `depth` containers.
+fn open_map<'a, 'o>(
+    ctx: &'a DecodeContext<'a>,
+    depth: usize,
+    out: &'o mut Vec<u8>,
+) -> Result<CanonMap<'a, 'o>, Error> {
+    let (depth, nested) = enter(ctx, depth)?;
+    let start = out.len();
+    out.push(b'{');
+    Ok(CanonMap {
+        ctx,
+        _nested: nested,
+        out,
+        members: Members {
+            start,
+            entries: BTreeMap::new(),
+            in_order: true,
+        },
+        key: None,
+        depth,
+    })
+}
+
+/// The canonical-text serializer. Every `serialize_*` writes into `out`; an
+/// object is left open for its container to place.
+pub(super) struct CanonText<'a, 'o> {
     ctx: &'a DecodeContext<'a>,
     /// Containers this value may still enter.
     depth: usize,
+    out: &'o mut Vec<u8>,
 }
 
 type Error = CanonError;
 
-impl<'a> CanonValue<'a> {
+impl<'a, 'o> CanonText<'a, 'o> {
     /// The serializer for one whole typed record.
     ///
     /// A record's own object is the container a stored record never holds: it
     /// keeps the members as fields and measures each field on its own. One
     /// container beyond the field bound therefore admits exactly a
     /// [`MAX_NATIVE_NESTING_DEPTH`]-deep field.
-    pub(super) const fn for_record(ctx: &'a DecodeContext<'a>) -> Self {
-        Self {
-            ctx,
-            depth: MAX_NATIVE_NESTING_DEPTH + 1,
-        }
+    pub(super) fn for_record(ctx: &'a DecodeContext<'a>, out: &'o mut Vec<u8>) -> Self {
+        Self::within(ctx, MAX_NATIVE_NESTING_DEPTH + 1, out)
     }
 
     /// The serializer for a child value that may enter `depth` containers.
-    pub(super) const fn within(ctx: &'a DecodeContext<'a>, depth: usize) -> Self {
-        Self { ctx, depth }
+    pub(super) fn within(ctx: &'a DecodeContext<'a>, depth: usize, out: &'o mut Vec<u8>) -> Self {
+        Self { ctx, depth, out }
     }
 
-    /// The budget left after entering one container, or the refusal.
-    fn enter(&self) -> Result<(usize, DepthGuard<'a>), Error> {
-        match self.depth.checked_sub(1) {
-            Some(depth) => {
-                let nested = self.ctx.enter_nested(WORK)?;
-                Ok((depth, nested))
-            }
-            None => Err(ser::Error::custom(nests_too_deep_message())),
+    /// Write a value whose text `serde_json` already writes canonically.
+    fn scalar<T: Serialize + ?Sized>(self, value: &T) -> Result<Written, Error> {
+        serde_json::to_writer(self.out, value)?;
+        Ok(Written::Text)
+    }
+
+    /// Write a finite number, or refuse a NaN or infinite one.
+    fn number(self, value: f64) -> Result<Written, Error> {
+        if !value.is_finite() {
+            return Err(CanonError::NonFinite(Vec::new()));
         }
+        self.scalar(&value)
+    }
+
+    fn null(self) -> Written {
+        self.out.extend_from_slice(b"null");
+        Written::Text
     }
 }
 
-impl<'a> ser::Serializer for CanonValue<'a> {
-    type Ok = Node;
+impl<'a, 'o> ser::Serializer for CanonText<'a, 'o> {
+    type Ok = Written;
     type Error = Error;
-    type SerializeSeq = CanonSeq<'a>;
-    type SerializeTuple = CanonSeq<'a>;
-    type SerializeTupleStruct = CanonSeq<'a>;
-    type SerializeTupleVariant = CanonVariantSeq<'a>;
-    type SerializeMap = CanonMap<'a>;
-    type SerializeStruct = CanonStruct<'a>;
-    type SerializeStructVariant = CanonVariantMap<'a>;
+    type SerializeSeq = CanonSeq<'a, 'o>;
+    type SerializeTuple = CanonSeq<'a, 'o>;
+    type SerializeTupleStruct = CanonSeq<'a, 'o>;
+    type SerializeTupleVariant = CanonVariantSeq<'a, 'o>;
+    type SerializeMap = CanonMap<'a, 'o>;
+    type SerializeStruct = CanonStruct<'a, 'o>;
+    type SerializeStructVariant = CanonVariantMap<'a, 'o>;
 
-    fn serialize_bool(self, value: bool) -> Result<Node, Error> {
-        Ok(Node::Value(Value::Bool(value)))
+    fn serialize_bool(self, value: bool) -> Result<Written, Error> {
+        self.scalar(&value)
     }
 
-    fn serialize_i8(self, value: i8) -> Result<Node, Error> {
-        Ok(Node::Value(Value::from(value)))
+    fn serialize_i8(self, value: i8) -> Result<Written, Error> {
+        self.scalar(&value)
     }
 
-    fn serialize_i16(self, value: i16) -> Result<Node, Error> {
-        Ok(Node::Value(Value::from(value)))
+    fn serialize_i16(self, value: i16) -> Result<Written, Error> {
+        self.scalar(&value)
     }
 
-    fn serialize_i32(self, value: i32) -> Result<Node, Error> {
-        Ok(Node::Value(Value::from(value)))
+    fn serialize_i32(self, value: i32) -> Result<Written, Error> {
+        self.scalar(&value)
     }
 
-    fn serialize_i64(self, value: i64) -> Result<Node, Error> {
-        Ok(Node::Value(Value::from(value)))
+    fn serialize_i64(self, value: i64) -> Result<Written, Error> {
+        self.scalar(&value)
     }
 
-    fn serialize_i128(self, value: i128) -> Result<Node, Error> {
+    fn serialize_i128(self, value: i128) -> Result<Written, Error> {
         if let Ok(value) = i64::try_from(value) {
-            return Ok(Node::Value(Value::from(value)));
+            return self.scalar(&value);
         }
         if let Ok(value) = u64::try_from(value) {
-            return Ok(Node::Value(Value::from(value)));
+            return self.scalar(&value);
         }
         Err(ser::Error::custom("number out of range"))
     }
 
-    fn serialize_u8(self, value: u8) -> Result<Node, Error> {
-        Ok(Node::Value(Value::from(value)))
+    fn serialize_u8(self, value: u8) -> Result<Written, Error> {
+        self.scalar(&value)
     }
 
-    fn serialize_u16(self, value: u16) -> Result<Node, Error> {
-        Ok(Node::Value(Value::from(value)))
+    fn serialize_u16(self, value: u16) -> Result<Written, Error> {
+        self.scalar(&value)
     }
 
-    fn serialize_u32(self, value: u32) -> Result<Node, Error> {
-        Ok(Node::Value(Value::from(value)))
+    fn serialize_u32(self, value: u32) -> Result<Written, Error> {
+        self.scalar(&value)
     }
 
-    fn serialize_u64(self, value: u64) -> Result<Node, Error> {
-        Ok(Node::Value(Value::from(value)))
+    fn serialize_u64(self, value: u64) -> Result<Written, Error> {
+        self.scalar(&value)
     }
 
-    fn serialize_u128(self, value: u128) -> Result<Node, Error> {
+    fn serialize_u128(self, value: u128) -> Result<Written, Error> {
         if let Ok(value) = u64::try_from(value) {
-            return Ok(Node::Value(Value::from(value)));
+            return self.scalar(&value);
         }
         Err(ser::Error::custom("number out of range"))
     }
 
-    fn serialize_f32(self, value: f32) -> Result<Node, Error> {
-        number(f64::from(value))
+    fn serialize_f32(self, value: f32) -> Result<Written, Error> {
+        self.number(f64::from(value))
     }
 
-    fn serialize_f64(self, value: f64) -> Result<Node, Error> {
-        number(value)
+    fn serialize_f64(self, value: f64) -> Result<Written, Error> {
+        self.number(value)
     }
 
-    fn serialize_char(self, value: char) -> Result<Node, Error> {
-        Ok(Node::Value(Value::String(value.to_string())))
+    fn serialize_char(self, value: char) -> Result<Written, Error> {
+        self.scalar(&value)
     }
 
-    fn serialize_str(self, value: &str) -> Result<Node, Error> {
-        Ok(Node::Value(Value::String(value.to_owned())))
+    fn serialize_str(self, value: &str) -> Result<Written, Error> {
+        self.scalar(value)
     }
 
     /// Bytes render as the JSON array of their values, so they enter a
     /// container and are counted through [`Self::serialize_seq`].
-    fn serialize_bytes(self, value: &[u8]) -> Result<Node, Error> {
+    fn serialize_bytes(self, value: &[u8]) -> Result<Written, Error> {
         let mut bytes = self.serialize_seq(Some(value.len()))?;
         for byte in value {
             ser::SerializeSeq::serialize_element(&mut bytes, byte)?;
@@ -335,22 +462,22 @@ impl<'a> ser::Serializer for CanonValue<'a> {
         ser::SerializeSeq::end(bytes)
     }
 
-    fn serialize_none(self) -> Result<Node, Error> {
-        Ok(Node::Value(Value::Null))
+    fn serialize_none(self) -> Result<Written, Error> {
+        Ok(self.null())
     }
 
-    fn serialize_some<T: Serialize + ?Sized>(self, value: &T) -> Result<Node, Error> {
+    fn serialize_some<T: Serialize + ?Sized>(self, value: &T) -> Result<Written, Error> {
         let _depth = self.ctx.enter_nested(WORK)?;
 
         value.serialize(self)
     }
 
-    fn serialize_unit(self) -> Result<Node, Error> {
-        Ok(Node::Value(Value::Null))
+    fn serialize_unit(self) -> Result<Written, Error> {
+        Ok(self.null())
     }
 
-    fn serialize_unit_struct(self, _name: &'static str) -> Result<Node, Error> {
-        Ok(Node::Value(Value::Null))
+    fn serialize_unit_struct(self, _name: &'static str) -> Result<Written, Error> {
+        Ok(self.null())
     }
 
     fn serialize_unit_variant(
@@ -358,7 +485,7 @@ impl<'a> ser::Serializer for CanonValue<'a> {
         _name: &'static str,
         _index: u32,
         variant: &'static str,
-    ) -> Result<Node, Error> {
+    ) -> Result<Written, Error> {
         self.serialize_str(variant)
     }
 
@@ -366,7 +493,7 @@ impl<'a> ser::Serializer for CanonValue<'a> {
         self,
         _name: &'static str,
         value: &T,
-    ) -> Result<Node, Error> {
+    ) -> Result<Written, Error> {
         let _depth = self.ctx.enter_nested(WORK)?;
 
         value.serialize(self)
@@ -378,26 +505,30 @@ impl<'a> ser::Serializer for CanonValue<'a> {
         _index: u32,
         variant: &'static str,
         value: &T,
-    ) -> Result<Node, Error> {
-        let (depth, _nested) = self.enter()?;
-        let inner = value
-            .serialize(CanonValue::within(self.ctx, depth))
+    ) -> Result<Written, Error> {
+        let (depth, _nested) = enter(self.ctx, self.depth)?;
+        open_variant(self.out, variant)?;
+        value
+            .serialize(CanonText::within(self.ctx, depth, &mut *self.out))
             .map_err(|error| error.within(|| Step::Key(variant.to_owned())))?
-            .into_value();
-        Ok(tagged(variant, inner))
+            .place(self.out);
+        self.out.push(b'}');
+        Ok(Written::Text)
     }
 
-    fn serialize_seq(self, _len: Option<usize>) -> Result<CanonSeq<'a>, Error> {
-        let (depth, nested) = self.enter()?;
+    fn serialize_seq(self, _len: Option<usize>) -> Result<CanonSeq<'a, 'o>, Error> {
+        let (depth, nested) = enter(self.ctx, self.depth)?;
+        self.out.push(b'[');
         Ok(CanonSeq {
             ctx: self.ctx,
             _nested: nested,
-            out: Vec::new(),
+            out: self.out,
+            len: 0,
             depth,
         })
     }
 
-    fn serialize_tuple(self, len: usize) -> Result<CanonSeq<'a>, Error> {
+    fn serialize_tuple(self, len: usize) -> Result<CanonSeq<'a, 'o>, Error> {
         self.serialize_seq(Some(len))
     }
 
@@ -405,7 +536,7 @@ impl<'a> ser::Serializer for CanonValue<'a> {
         self,
         _name: &'static str,
         len: usize,
-    ) -> Result<CanonSeq<'a>, Error> {
+    ) -> Result<CanonSeq<'a, 'o>, Error> {
         self.serialize_seq(Some(len))
     }
 
@@ -415,33 +546,32 @@ impl<'a> ser::Serializer for CanonValue<'a> {
         _index: u32,
         variant: &'static str,
         len: usize,
-    ) -> Result<CanonVariantSeq<'a>, Error> {
-        let (depth, nested) = self.enter()?;
+    ) -> Result<CanonVariantSeq<'a, 'o>, Error> {
+        let (depth, nested) = enter(self.ctx, self.depth)?;
+        open_variant(self.out, variant)?;
         Ok(CanonVariantSeq {
             _nested: nested,
             variant,
-            seq: CanonValue::within(self.ctx, depth).serialize_seq(Some(len))?,
+            seq: CanonText::within(self.ctx, depth, self.out).serialize_seq(Some(len))?,
         })
     }
 
-    fn serialize_map(self, _len: Option<usize>) -> Result<CanonMap<'a>, Error> {
-        let (depth, nested) = self.enter()?;
-        Ok(CanonMap {
-            ctx: self.ctx,
-            _nested: nested,
-            entries: Map::new(),
-            key: None,
-            depth,
-        })
+    fn serialize_map(self, _len: Option<usize>) -> Result<CanonMap<'a, 'o>, Error> {
+        open_map(self.ctx, self.depth, self.out)
     }
 
     /// `RawValue`'s struct protocol carries one JSON value and is no container
     /// of its own, so the payload replays with this value's whole budget.
-    fn serialize_struct(self, name: &'static str, len: usize) -> Result<CanonStruct<'a>, Error> {
+    fn serialize_struct(
+        self,
+        name: &'static str,
+        len: usize,
+    ) -> Result<CanonStruct<'a, 'o>, Error> {
         if name == RAW_VALUE_STRUCT {
             Ok(CanonStruct::Raw {
                 ctx: self.ctx,
                 depth: self.depth,
+                out: self.out,
                 parsed: None,
             })
         } else {
@@ -454,84 +584,109 @@ impl<'a> ser::Serializer for CanonValue<'a> {
         _name: &'static str,
         _index: u32,
         variant: &'static str,
-        len: usize,
-    ) -> Result<CanonVariantMap<'a>, Error> {
-        let (depth, nested) = self.enter()?;
+        _len: usize,
+    ) -> Result<CanonVariantMap<'a, 'o>, Error> {
+        let (depth, nested) = enter(self.ctx, self.depth)?;
+        open_variant(self.out, variant)?;
         Ok(CanonVariantMap {
             _nested: nested,
             variant,
-            map: CanonValue::within(self.ctx, depth).serialize_map(Some(len))?,
+            map: open_map(self.ctx, depth, self.out)?,
         })
     }
 
-    fn collect_str<T: Display + ?Sized>(self, value: &T) -> Result<Node, Error> {
-        Ok(Node::Value(Value::String(collect_display_text(value)?)))
+    fn collect_str<T: Display + ?Sized>(self, value: &T) -> Result<Written, Error> {
+        let text = collect_display_text(value)?;
+        self.scalar(text.as_str())
     }
 }
 
-/// A sequence collected in visit order.
-pub(super) struct CanonSeq<'a> {
+/// A sequence written in visit order.
+pub(super) struct CanonSeq<'a, 'o> {
     ctx: &'a DecodeContext<'a>,
     _nested: DepthGuard<'a>,
-    out: Vec<Value>,
+    out: &'o mut Vec<u8>,
+    /// Elements written so far.
+    len: usize,
     /// Containers each element may still enter.
     depth: usize,
 }
 
-impl ser::SerializeSeq for CanonSeq<'_> {
-    type Ok = Node;
-    type Error = Error;
-
-    fn serialize_element<T: Serialize + ?Sized>(&mut self, value: &T) -> Result<(), Error> {
-        let index = self.out.len();
-        let element = value
-            .serialize(CanonValue::within(self.ctx, self.depth))
-            .map_err(|error| error.within(|| Step::Index(index)))?
-            .into_value();
-        self.out.push(element);
-        Ok(())
-    }
-
-    fn end(self) -> Result<Node, Error> {
-        Ok(Node::Value(Value::Array(self.out)))
+impl<'o> CanonSeq<'_, 'o> {
+    /// Write the closing bracket and give the output back.
+    fn close(self) -> &'o mut Vec<u8> {
+        self.out.push(b']');
+        self.out
     }
 }
 
-impl ser::SerializeTuple for CanonSeq<'_> {
-    type Ok = Node;
+impl ser::SerializeSeq for CanonSeq<'_, '_> {
+    type Ok = Written;
+    type Error = Error;
+
+    /// A refused element leaves no text behind.
+    fn serialize_element<T: Serialize + ?Sized>(&mut self, value: &T) -> Result<(), Error> {
+        let start = self.out.len();
+        if self.len > 0 {
+            self.out.push(b',');
+        }
+        let written = value
+            .serialize(CanonText::within(self.ctx, self.depth, &mut *self.out))
+            .map(|element| element.place(self.out));
+        match written {
+            Ok(()) => {
+                self.len += 1;
+                Ok(())
+            }
+            Err(error) => {
+                self.out.truncate(start);
+                let index = self.len;
+                Err(error.within(|| Step::Index(index)))
+            }
+        }
+    }
+
+    fn end(self) -> Result<Written, Error> {
+        self.close();
+        Ok(Written::Text)
+    }
+}
+
+impl ser::SerializeTuple for CanonSeq<'_, '_> {
+    type Ok = Written;
     type Error = Error;
 
     fn serialize_element<T: Serialize + ?Sized>(&mut self, value: &T) -> Result<(), Error> {
         ser::SerializeSeq::serialize_element(self, value)
     }
 
-    fn end(self) -> Result<Node, Error> {
+    fn end(self) -> Result<Written, Error> {
         ser::SerializeSeq::end(self)
     }
 }
 
-impl ser::SerializeTupleStruct for CanonSeq<'_> {
-    type Ok = Node;
+impl ser::SerializeTupleStruct for CanonSeq<'_, '_> {
+    type Ok = Written;
     type Error = Error;
 
     fn serialize_field<T: Serialize + ?Sized>(&mut self, value: &T) -> Result<(), Error> {
         ser::SerializeSeq::serialize_element(self, value)
     }
 
-    fn end(self) -> Result<Node, Error> {
+    fn end(self) -> Result<Written, Error> {
         ser::SerializeSeq::end(self)
     }
 }
 
 /// An externally tagged tuple variant: `{"Variant":[...]}`.
-pub(super) struct CanonVariantSeq<'a> {
+pub(super) struct CanonVariantSeq<'a, 'o> {
     _nested: DepthGuard<'a>,
     variant: &'static str,
-    seq: CanonSeq<'a>,
+    seq: CanonSeq<'a, 'o>,
 }
 
-impl ser::SerializeTupleVariant for CanonVariantSeq<'_> {
-    type Ok = Node;
+impl ser::SerializeTupleVariant for CanonVariantSeq<'_, '_> {
+    type Ok = Written;
     type Error = Error;
 
     fn serialize_field<T: Serialize + ?Sized>(&mut self, value: &T) -> Result<(), Error> {
@@ -540,52 +695,69 @@ impl ser::SerializeTupleVariant for CanonVariantSeq<'_> {
             .map_err(|error| error.within(|| Step::Key(variant.to_owned())))
     }
 
-    fn end(self) -> Result<Node, Error> {
-        let inner = ser::SerializeSeq::end(self.seq)?.into_value();
-        Ok(tagged(self.variant, inner))
+    fn end(self) -> Result<Written, Error> {
+        self.seq.close().push(b'}');
+        Ok(Written::Text)
     }
 }
 
-/// An object's distinct members, keyed by raw (unescaped) key.
-pub(super) struct CanonMap<'a> {
+/// An open object.
+pub(super) struct CanonMap<'a, 'o> {
     ctx: &'a DecodeContext<'a>,
     _nested: DepthGuard<'a>,
-    entries: Map<String, Value>,
+    out: &'o mut Vec<u8>,
+    members: Members,
     key: Option<String>,
     /// Containers each member value may still enter.
     depth: usize,
 }
 
-impl CanonMap<'_> {
-    fn insert<T: Serialize + ?Sized>(&mut self, key: String, value: &T) -> Result<(), Error> {
-        let depth = self.depth;
-        match self.entries.entry(key) {
-            serde_json::map::Entry::Vacant(entry) => {
-                let value = value
-                    .serialize(CanonValue::within(self.ctx, depth))
-                    .map_err(|error| error.within(|| Step::Key(entry.key().clone())))?
-                    .into_value();
-                entry.insert(value);
+impl<'o> CanonMap<'_, 'o> {
+    /// Admit one member. A refused value leaves no text behind.
+    fn insert<T: Serialize + ?Sized>(
+        &mut self,
+        key: Cow<'static, str>,
+        value: &T,
+    ) -> Result<(), Error> {
+        let entries = &mut self.members.entries;
+        let after_last = entries.last_key_value().is_none_or(|(last, _)| key > *last);
+        if !after_last && entries.contains_key(&key) {
+            return Err(CanonError::Message(format!("duplicate key {key}")));
+        }
+        let out = &mut *self.out;
+        let separator = out.len();
+        if !entries.is_empty() {
+            out.push(b',');
+        }
+        let text = out.len();
+        match write_member(self.ctx, self.depth, out, &key, value) {
+            Ok(value_start) => {
+                let member = Member {
+                    text: text..out.len(),
+                    value: value_start,
+                };
+                entries.insert(key, member);
+                self.members.in_order &= after_last;
                 Ok(())
             }
-            serde_json::map::Entry::Occupied(entry) => Err(CanonError::Message(format!(
-                "duplicate key {}",
-                entry.key()
-            ))),
+            Err(error) => {
+                out.truncate(separator);
+                Err(error.within(|| Step::Key(key.into_owned())))
+            }
         }
     }
 
-    fn insert_field<T: Serialize + ?Sized>(
-        &mut self,
-        key: &'static str,
-        value: &T,
-    ) -> Result<(), Error> {
-        self.insert(key.to_owned(), value)
+    /// The open object and its output, once no key waits for its value.
+    fn finish(self) -> Result<(Members, &'o mut Vec<u8>), Error> {
+        if self.key.is_some() {
+            return Err(ser::Error::custom("map ended before the pending value"));
+        }
+        Ok((self.members, self.out))
     }
 }
 
-impl ser::SerializeMap for CanonMap<'_> {
-    type Ok = Node;
+impl ser::SerializeMap for CanonMap<'_, '_> {
+    type Ok = Written;
     type Error = Error;
 
     fn serialize_key<T: Serialize + ?Sized>(&mut self, key: &T) -> Result<(), Error> {
@@ -603,31 +775,47 @@ impl ser::SerializeMap for CanonMap<'_> {
             .key
             .take()
             .ok_or_else(|| <Error as ser::Error>::custom("value serialized before key"))?;
-        self.insert(key, value)
+        self.insert(Cow::Owned(key), value)
     }
 
-    fn end(self) -> Result<Node, Error> {
-        if self.key.is_some() {
-            return Err(ser::Error::custom("map ended before the pending value"));
-        }
-        Ok(Node::Object(self.entries))
+    fn end(self) -> Result<Written, Error> {
+        let (members, _) = self.finish()?;
+        Ok(Written::Object(members))
     }
 }
 
+/// Write `"key":value` and state where the value starts.
+fn write_member<'a, T: Serialize + ?Sized>(
+    ctx: &'a DecodeContext<'a>,
+    depth: usize,
+    out: &mut Vec<u8>,
+    key: &str,
+    value: &T,
+) -> Result<usize, Error> {
+    serde_json::to_writer(&mut *out, key)?;
+    out.push(b':');
+    let value_start = out.len();
+    value
+        .serialize(CanonText::within(ctx, depth, &mut *out))?
+        .place(out);
+    Ok(value_start)
+}
+
 /// Ordinary struct members or one JSON value carried by `RawValue`'s protocol.
-pub(super) enum CanonStruct<'a> {
-    Object(CanonMap<'a>),
+pub(super) enum CanonStruct<'a, 'o> {
+    Object(CanonMap<'a, 'o>),
     Raw {
         ctx: &'a DecodeContext<'a>,
         /// Containers the payload may enter.
         depth: usize,
+        out: &'o mut Vec<u8>,
         /// The replayed payload, once its one field has arrived.
-        parsed: Option<Node>,
+        parsed: Option<Written>,
     },
 }
 
-impl ser::SerializeStruct for CanonStruct<'_> {
-    type Ok = Node;
+impl ser::SerializeStruct for CanonStruct<'_, '_> {
+    type Ok = Written;
     type Error = Error;
 
     fn serialize_field<T: Serialize + ?Sized>(
@@ -636,31 +824,43 @@ impl ser::SerializeStruct for CanonStruct<'_> {
         value: &T,
     ) -> Result<(), Error> {
         match self {
-            Self::Object(map) => map.insert_field(key, value),
-            Self::Raw { ctx, depth, parsed } => {
+            Self::Object(map) => map.insert(Cow::Borrowed(key), value),
+            Self::Raw {
+                ctx,
+                depth,
+                out,
+                parsed,
+            } => {
                 if key != RAW_VALUE_STRUCT || parsed.is_some() {
                     return Err(ser::Error::custom(
                         "raw JSON requires exactly one payload field",
                     ));
                 }
-                let text = value.serialize(CanonValue::within(ctx, *depth))?;
-                let Node::Value(Value::String(json)) = &text else {
+                let text = to_text(ctx, *depth, value)?;
+                let Ok(json) = serde_json::from_str::<String>(&text) else {
                     return Err(ser::Error::custom("raw JSON payload must be a string"));
                 };
-                // Replay through the same canonical constructor, so raw objects
+                // Replay through the same canonical writer, so raw objects
                 // obey duplicate-key, number, ordering and depth semantics too.
                 // The replay counts the text's containers and this serializer
                 // counts the containers it is driven through, from the same
                 // remaining budget, so both refuse at the same container.
-                let replayed = super::replay::emit(json, CanonValue::within(ctx, *depth), *depth);
-
-                *parsed = Some(replayed?);
-                Ok(())
+                let start = out.len();
+                match super::replay::emit(&json, CanonText::within(ctx, *depth, out), *depth) {
+                    Ok(replayed) => {
+                        *parsed = Some(replayed);
+                        Ok(())
+                    }
+                    Err(error) => {
+                        out.truncate(start);
+                        Err(error)
+                    }
+                }
             }
         }
     }
 
-    fn end(self) -> Result<Node, Error> {
+    fn end(self) -> Result<Written, Error> {
         match self {
             Self::Object(map) => ser::SerializeMap::end(map),
             Self::Raw {
@@ -675,14 +875,14 @@ impl ser::SerializeStruct for CanonStruct<'_> {
 }
 
 /// An externally tagged struct variant: `{"Variant":{...}}`.
-pub(super) struct CanonVariantMap<'a> {
+pub(super) struct CanonVariantMap<'a, 'o> {
     _nested: DepthGuard<'a>,
     variant: &'static str,
-    map: CanonMap<'a>,
+    map: CanonMap<'a, 'o>,
 }
 
-impl ser::SerializeStructVariant for CanonVariantMap<'_> {
-    type Ok = Node;
+impl ser::SerializeStructVariant for CanonVariantMap<'_, '_> {
+    type Ok = Written;
     type Error = Error;
 
     fn serialize_field<T: Serialize + ?Sized>(
@@ -692,13 +892,15 @@ impl ser::SerializeStructVariant for CanonVariantMap<'_> {
     ) -> Result<(), Error> {
         let variant = self.variant;
         self.map
-            .insert_field(key, value)
+            .insert(Cow::Borrowed(key), value)
             .map_err(|error| error.within(|| Step::Key(variant.to_owned())))
     }
 
-    fn end(self) -> Result<Node, Error> {
-        let inner = ser::SerializeMap::end(self.map)?.into_value();
-        Ok(tagged(self.variant, inner))
+    fn end(self) -> Result<Written, Error> {
+        let (members, out) = self.map.finish()?;
+        members.close(out);
+        out.push(b'}');
+        Ok(Written::Text)
     }
 }
 
