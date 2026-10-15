@@ -6403,13 +6403,18 @@ fn validate_edge_operands<'a>(
         &native.design_body_recipe_operands,
         &native.asm_histories,
     );
-    history::bind_edge_operand_history_candidates(
+    let expected_face_boundaries = history::bind_edge_operand_history_candidates(
         &mut expected_edge_operands,
         &native.design_parameter_scopes,
         &native.construction_recipes,
         &native.asm_histories,
         &scope_histories,
     )?;
+    validate_face_boundaries(
+        ctx,
+        findings,
+        (!historical_candidates_retained).then_some(expected_face_boundaries.as_slice()),
+    );
     let expected_edge_operands = expected_edge_operands
         .iter()
         .map(|operand| (operand.id.as_str(), operand))
@@ -6518,6 +6523,119 @@ fn validate_edge_operands<'a>(
         }
     }
     Ok(edge_operand_records)
+}
+
+/// Validate `asm_face_boundaries` and every edge-operand reference to them.
+///
+/// Each boundary belongs to one delta state, carries the identity derived from
+/// that state and its face slot, and is named by at least one reference
+/// context. Each context names result-state boundaries of its result faces and
+/// preceding-state boundaries of its preceding and support faces, in face
+/// order. `expected` holds the boundaries re-derived from retained historical
+/// topology, when the projection still retains it.
+fn validate_face_boundaries<'a>(
+    ctx: &Ctx<'a, '_>,
+    findings: &mut Vec<Finding>,
+    expected: Option<&[records::topology::historical_context::AsmFaceBoundary]>,
+) {
+    use records::topology::historical_context::AsmFaceBoundary;
+    let native = ctx.native;
+    let mut states = HashMap::new();
+    for history in &native.asm_histories {
+        for state in &history.states {
+            states.insert(state.id.as_str(), state);
+        }
+    }
+    let mut referenced = HashSet::new();
+    for operand in &native.design_edge_operands {
+        let stream = design_stream(&operand.id);
+        let result_state_id = ctx
+            .scopes_by_index
+            .get(&(stream, operand.scope_record_index))
+            .and_then(|scope| scope.history_state_id());
+        let mut result_parent = None;
+        let mut preceding_parent = None;
+        let mut valid = true;
+        let mut check =
+            |ids: &'a [String], slots: &[i64], parent: &mut Option<&'a str>, state_id| {
+                let mut remaining = slots.iter();
+                for id in ids {
+                    referenced.insert(id.as_str());
+                    let boundary = AsmFaceBoundary::find(&native.asm_face_boundaries, id);
+                    let state = boundary.and_then(|boundary| states.get(boundary.parent.as_str()));
+                    valid &= boundary.zip(state).is_some_and(|(boundary, state)| {
+                        Some(state.state_id) == state_id
+                            && *parent.get_or_insert(boundary.parent.as_str()) == boundary.parent
+                            && remaining.any(|slot| *slot == boundary.face_slot)
+                    });
+                }
+            };
+        for context in &operand.recipe_reference_contexts {
+            let slots = |faces: &[cadmpeg_ir::ids::FaceId]| {
+                faces
+                    .iter()
+                    .filter_map(|face| history::stable_ref(face.as_str()))
+                    .collect::<Vec<_>>()
+            };
+            check(
+                &context.result_face_boundary_ids,
+                &slots(&context.result_faces),
+                &mut result_parent,
+                result_state_id,
+            );
+            check(
+                &context.preceding_face_boundary_ids,
+                &slots(&context.preceding_faces),
+                &mut preceding_parent,
+                operand.recipe_state_id,
+            );
+            check(
+                &context.preceding_support_face_boundary_ids,
+                &context.preceding_support_face_slots,
+                &mut preceding_parent,
+                operand.recipe_state_id,
+            );
+        }
+        valid &= result_parent
+            .zip(preceding_parent)
+            .is_none_or(|(result, preceding)| {
+                states
+                    .get(result)
+                    .zip(states.get(preceding))
+                    .is_some_and(|(result, preceding)| result.parent == preceding.parent)
+            });
+        if !valid {
+            push_constant_finding(
+                findings,
+                Check::NativeLinks,
+                "Fusion Design edge operand names an invalid historical face boundary",
+                Some(operand.id.clone()),
+            );
+        }
+    }
+    let expected = expected.map(|expected| {
+        expected
+            .iter()
+            .map(|boundary| (boundary.id.as_str(), boundary))
+            .collect::<HashMap<_, _>>()
+    });
+    for boundary in &native.asm_face_boundaries {
+        let valid = states.get(boundary.parent.as_str()).is_some_and(|state| {
+            AsmFaceBoundary::identity(&state.id, state.byte_offset, boundary.face_slot).as_deref()
+                == Some(boundary.id.as_str())
+        }) && referenced.contains(boundary.id.as_str())
+            && expected
+                .as_ref()
+                .is_none_or(|expected| expected.get(boundary.id.as_str()) == Some(&boundary));
+        if !valid {
+            push_constant_finding(
+                findings,
+                Check::NativeLinks,
+                "Fusion ASM face boundary has an invalid state, identity, or reference",
+                Some(boundary.id.clone()),
+            );
+        }
+    }
 }
 
 fn validate_edge_treatment_vertex_operands<'a>(

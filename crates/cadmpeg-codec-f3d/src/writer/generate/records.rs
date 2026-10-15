@@ -151,6 +151,7 @@ pub(super) fn encode_design_bulkstream(
                 body_bindings: &native.design_body_bindings,
                 component_naming_spaces: &native.design_component_naming_spaces,
                 histories: &native.asm_histories,
+                face_boundaries: &native.asm_face_boundaries,
             },
         )?;
     if target.model.parameters != projected_parameters {
