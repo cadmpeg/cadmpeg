@@ -208,28 +208,24 @@ fn rational_pcurve_membership_finds_interior_points_without_sampling() {
     .unwrap();
     assert_eq!(
         crate::eval::nurbs_pcurve_contains_point(
-            &cadmpeg_test_support::service_decode_context(),
             2,
             &knots,
             &controls,
             Some(&weights),
             *interior.as_raw(),
             1.0e-9,
-        )
-        .expect("resource allocation did not fail"),
+        ),
         Some(true)
     );
     assert_eq!(
         crate::eval::nurbs_pcurve_contains_point(
-            &cadmpeg_test_support::service_decode_context(),
             2,
             &knots,
             &controls,
             Some(&weights),
             Point2::new(4.0, 4.0),
             1.0e-6,
-        )
-        .expect("resource allocation did not fail"),
+        ),
         Some(false)
     );
 }

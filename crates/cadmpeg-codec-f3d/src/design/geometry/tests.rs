@@ -986,24 +986,16 @@ fn historical_point_membership_respects_conic_domains_and_nurbs_endpoints() {
         })
         .unwrap(),
     );
-    assert!(
-        crate::test_support::with_decode_context(|decode_ctx| point_on_sketch_entity(
-            decode_ctx,
-            Point2::new(0.0, 2.0),
-            &arc,
-            EPS_CONTAINMENT_LINEAR
-        ))
-        .expect("resource allocation did not fail")
-    );
-    assert!(
-        !crate::test_support::with_decode_context(|decode_ctx| point_on_sketch_entity(
-            decode_ctx,
-            Point2::new(-2.0, 0.0),
-            &arc,
-            EPS_CONTAINMENT_LINEAR
-        ))
-        .expect("resource allocation did not fail")
-    );
+    assert!(point_on_sketch_entity(
+        Point2::new(0.0, 2.0),
+        &arc,
+        EPS_CONTAINMENT_LINEAR
+    ));
+    assert!(!point_on_sketch_entity(
+        Point2::new(-2.0, 0.0),
+        &arc,
+        EPS_CONTAINMENT_LINEAR
+    ));
     let clockwise_arc = entity(
         SketchGeometry::try_from(SketchGeometryDefinition::Arc {
             center: Point2::new(0.0, 0.0),
@@ -1013,22 +1005,14 @@ fn historical_point_membership_respects_conic_domains_and_nurbs_endpoints() {
         })
         .unwrap(),
     );
-    assert!(
-        crate::test_support::with_decode_context(|decode_ctx| point_lies_on_sketch_geometry(
-            decode_ctx,
-            Point2::new(std::f64::consts::SQRT_2, std::f64::consts::SQRT_2),
-            &clockwise_arc.geometry
-        ))
-        .expect("resource allocation did not fail")
-    );
-    assert!(
-        !crate::test_support::with_decode_context(|decode_ctx| point_lies_on_sketch_geometry(
-            decode_ctx,
-            Point2::new(-2.0, 0.0),
-            &clockwise_arc.geometry
-        ))
-        .expect("resource allocation did not fail")
-    );
+    assert!(point_lies_on_sketch_geometry(
+        Point2::new(std::f64::consts::SQRT_2, std::f64::consts::SQRT_2),
+        &clockwise_arc.geometry
+    ));
+    assert!(!point_lies_on_sketch_geometry(
+        Point2::new(-2.0, 0.0),
+        &clockwise_arc.geometry
+    ));
 
     let ellipse = entity(
         SketchGeometry::try_from(SketchGeometryDefinition::Ellipse {
@@ -1045,33 +1029,21 @@ fn historical_point_membership_respects_conic_domains_and_nurbs_endpoints() {
         })
         .unwrap(),
     );
-    assert!(
-        crate::test_support::with_decode_context(|decode_ctx| point_on_sketch_entity(
-            decode_ctx,
-            Point2::new(-1.0, -1.0),
-            &ellipse,
-            EPS_CONTAINMENT_LINEAR
-        ))
-        .expect("resource allocation did not fail")
-    );
-    assert!(
-        !crate::test_support::with_decode_context(|decode_ctx| point_on_sketch_entity(
-            decode_ctx,
-            Point2::new(3.0, -1.0),
-            &ellipse,
-            EPS_CONTAINMENT_LINEAR
-        ))
-        .expect("resource allocation did not fail")
-    );
-    assert!(
-        !crate::test_support::with_decode_context(|decode_ctx| point_on_sketch_entity(
-            decode_ctx,
-            Point2::new(-1.0, -0.9),
-            &ellipse,
-            EPS_CONTAINMENT_LINEAR
-        ))
-        .expect("resource allocation did not fail")
-    );
+    assert!(point_on_sketch_entity(
+        Point2::new(-1.0, -1.0),
+        &ellipse,
+        EPS_CONTAINMENT_LINEAR
+    ));
+    assert!(!point_on_sketch_entity(
+        Point2::new(3.0, -1.0),
+        &ellipse,
+        EPS_CONTAINMENT_LINEAR
+    ));
+    assert!(!point_on_sketch_entity(
+        Point2::new(-1.0, -0.9),
+        &ellipse,
+        EPS_CONTAINMENT_LINEAR
+    ));
 
     let nurbs = entity(SketchGeometry::nurbs(
         cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
@@ -1087,24 +1059,16 @@ fn historical_point_membership_respects_conic_domains_and_nurbs_endpoints() {
         )
         .unwrap(),
     ));
-    assert!(
-        crate::test_support::with_decode_context(|decode_ctx| point_on_sketch_entity(
-            decode_ctx,
-            Point2::new(3.0, 2.0),
-            &nurbs,
-            EPS_CONTAINMENT_LINEAR
-        ))
-        .expect("resource allocation did not fail")
-    );
-    assert!(
-        !crate::test_support::with_decode_context(|decode_ctx| point_on_sketch_entity(
-            decode_ctx,
-            Point2::new(2.0, 4.0),
-            &nurbs,
-            EPS_CONTAINMENT_LINEAR
-        ))
-        .expect("resource allocation did not fail")
-    );
+    assert!(point_on_sketch_entity(
+        Point2::new(3.0, 2.0),
+        &nurbs,
+        EPS_CONTAINMENT_LINEAR
+    ));
+    assert!(!point_on_sketch_entity(
+        Point2::new(2.0, 4.0),
+        &nurbs,
+        EPS_CONTAINMENT_LINEAR
+    ));
     let SketchGeometryDefinition::Nurbs { curve } = nurbs.geometry.definition() else {
         unreachable!()
     };
@@ -1119,15 +1083,11 @@ fn historical_point_membership_respects_conic_domains_and_nurbs_endpoints() {
         0.375,
     )
     .unwrap();
-    assert!(
-        crate::test_support::with_decode_context(|decode_ctx| point_on_sketch_entity(
-            decode_ctx,
-            *interior.as_raw(),
-            &nurbs,
-            EPS_CONTAINMENT_DISTANCE
-        ))
-        .expect("resource allocation did not fail")
-    );
+    assert!(point_on_sketch_entity(
+        *interior.as_raw(),
+        &nurbs,
+        EPS_CONTAINMENT_DISTANCE
+    ));
 }
 
 #[test]

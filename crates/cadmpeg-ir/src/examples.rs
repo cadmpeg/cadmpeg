@@ -43,7 +43,7 @@ pub enum ExampleError {
     Geometry(&'static str),
     /// A loop ring violated its structural contract.
     #[error(transparent)]
-    LoopRing(#[from] crate::topology::LoopRingAdmissionError),
+    LoopRing(#[from] crate::topology::LoopRingError),
     /// A shell had no admitted members.
     #[error(transparent)]
     Shell(#[from] crate::features::BodySelectionError),
@@ -238,10 +238,10 @@ pub fn unit_cube() -> Result<CadIr, ExampleError> {
         ir.model.loops.push(Loop {
             id: loop_id.clone(),
             face: cube_id!(FaceId, "face", name.clone()),
-            boundary: crate::topology::LoopBoundary::Ring(
-                crate::topology::LoopRing::new(coedge_ids.clone(), Vec::new())
-                    .map_err(crate::topology::LoopRingAdmissionError::from)?,
-            ),
+            boundary: crate::topology::LoopBoundary::Ring(crate::topology::LoopRing::new(
+                coedge_ids.clone(),
+                Vec::new(),
+            )?),
         });
         ir.model.faces.push(Face {
             id: cube_id!(FaceId, "face", name.clone()),
