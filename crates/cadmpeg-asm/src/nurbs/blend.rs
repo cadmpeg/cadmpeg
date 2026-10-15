@@ -9,8 +9,9 @@ use crate::nurbs::core::{
 use crate::nurbs::pcurve::pcurve_block_with_end;
 use crate::nurbs::proc_curve::{
     decode_embedded_surface_with_ranges, decode_par_int_cur_isoline,
-    embedded_base_curve_resolving_refs, embedded_surface, embedded_surface_with_ranges,
-    optional_embedded_surface_with_bounds, par_int_cur_isoline,
+    embedded_base_curve_resolving_refs, embedded_support, embedded_surface,
+    embedded_surface_with_ranges, optional_embedded_surface_with_bounds, par_int_cur_isoline,
+    EmbeddedSupport,
 };
 use crate::nurbs::proc_surface::{
     decode_nullable_embedded_pcurve, nullable_embedded_pcurve, revision_surface_tail,
@@ -23,6 +24,7 @@ use crate::nurbs::reader::{
     take_optional_range_value, take_tagged_int, Nullable, LEN_TO_MM,
 };
 use crate::nurbs::subtypes::subtype_span;
+use crate::nurbs::support_chart::SupportChart;
 use crate::nurbs::toks::{self, Cur, SubtypeTable};
 use crate::sab::Token;
 use cadmpeg_ir::features::FiniteVector3;
@@ -416,8 +418,11 @@ pub(super) fn rolling_ball_side(
         "blend_support_zero_curve" | "blendsupzro" => VariableBlendSupportKind::ZeroCurve,
         _ => return None,
     };
-    let surface =
-        propagate_resource!(optional_rolling_ball_surface(ctx, cur, reference_context)?).value();
+    let (surface, chart) =
+        match propagate_resource!(optional_rolling_ball_surface(ctx, cur, reference_context)?) {
+            Nullable::Value((surface, chart)) => (Some(surface), chart),
+            Nullable::Null => (None, SupportChart::Canonical),
+        };
     let saved = cur.pos();
     let curve = if cur.take_ident() == Some("null_curve") {
         None
@@ -429,7 +434,11 @@ pub(super) fn rolling_ball_side(
             reference_context
         )?))
     };
-    let pcurve = nullable_embedded_pcurve(cur)?.value();
+    let mut pcurve = nullable_embedded_pcurve(cur)?.value();
+    // The primary pcurve is the contact track in the support chart.
+    if let Some(pcurve) = &mut pcurve {
+        chart.normalize(pcurve)?;
+    }
     let location = cur.take_position()?;
     let secondary_pcurve = nullable_embedded_pcurve(cur)?.value();
     let extension_start = cur.pos();
@@ -463,15 +472,17 @@ pub(super) fn rolling_ball_side(
     }))
 }
 
-/// A support-surface slot: the `null_surface` ident, or an embedded surface and
-/// its parameter bounds. Token-space counterpart of
-/// [`decode_optional_rolling_ball_surface`].
+/// A rolling-ball support surface and the native chart of the pcurves on it.
+pub(super) type ChartedSupport = (RollingBallSupportSurface<SurfaceGeometry>, SupportChart);
+
+/// A support-surface slot: the `null_surface` ident, or an embedded surface,
+/// its parameter bounds, and the native chart of the pcurves on it.
+/// Token-space counterpart of [`decode_optional_rolling_ball_surface`].
 pub(super) fn optional_rolling_ball_surface(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     cur: &mut Cur<'_>,
     reference_context: Option<&SubtypeTable>,
-) -> Option<Result<Nullable<RollingBallSupportSurface<SurfaceGeometry>>, cadmpeg_core::CodecError>>
-{
+) -> Option<Result<Nullable<ChartedSupport>, cadmpeg_core::CodecError>> {
     let saved = cur.pos();
     if cur.take_ident() == Some("null_surface") {
         return Some(Ok(Nullable::Null));
@@ -480,13 +491,13 @@ pub(super) fn optional_rolling_ball_surface(
     rolling_ball_surface(ctx, cur, reference_context).map(|result| result.map(Nullable::Value))
 }
 
-/// Decode one rolling-ball support surface. Token-space counterpart of
-/// [`decode_rolling_ball_surface`].
+/// Decode one rolling-ball support surface and the native chart of the
+/// pcurves on it. Token-space counterpart of [`decode_rolling_ball_surface`].
 fn rolling_ball_surface(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     cur: &mut Cur<'_>,
     reference_context: Option<&SubtypeTable>,
-) -> Option<Result<RollingBallSupportSurface<SurfaceGeometry>, cadmpeg_core::CodecError>> {
+) -> Option<Result<ChartedSupport, cadmpeg_core::CodecError>> {
     let toks = cur.toks();
     let saved = cur.pos();
     let kind = cur.take_ident()?;
@@ -495,10 +506,13 @@ fn rolling_ball_surface(
             let (surface, surface_end) = surface_block(toks, cur.pos())?;
             cur.set_pos(surface_end);
             let ranges = surface_ranges(cur)?;
-            return Some(Ok(RollingBallSupportSurface {
-                surface: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
-                parameter_ranges: ranges,
-            }));
+            return Some(Ok((
+                RollingBallSupportSurface {
+                    surface: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
+                    parameter_ranges: ranges,
+                },
+                SupportChart::Canonical,
+            )));
         }
         cur.take_bool()?;
         let scope = toks::subtype_span(toks, cur.pos())?;
@@ -509,17 +523,23 @@ fn rolling_ball_surface(
         }?);
         cur.set_pos(cur.pos() + scope.tokens().len());
         let ranges = surface_ranges(cur)?;
-        return Some(Ok(RollingBallSupportSurface {
-            surface: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
-            parameter_ranges: ranges,
-        }));
+        return Some(Ok((
+            RollingBallSupportSurface {
+                surface: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
+                parameter_ranges: ranges,
+            },
+            SupportChart::Canonical,
+        )));
     }
     cur.set_pos(saved);
-    embedded_surface_with_ranges(cur).map(|surface| {
-        Ok(RollingBallSupportSurface {
-            surface: surface.surface,
-            parameter_ranges: surface.ranges,
-        })
+    embedded_surface_with_ranges(cur).map(|support| {
+        Ok((
+            RollingBallSupportSurface {
+                surface: support.surface,
+                parameter_ranges: support.ranges,
+            },
+            support.chart,
+        ))
     })
 }
 
@@ -657,12 +677,15 @@ pub(super) fn rolling_ball_curve(
     }))
 }
 
-fn rolling_ball_third_side(cur: &mut Cur<'_>) -> Option<EmbeddedRollingBallThirdSide> {
+pub(super) fn rolling_ball_third_side(cur: &mut Cur<'_>) -> Option<EmbeddedRollingBallThirdSide> {
     let label = cur.take_str()?.to_owned();
-    let surface = embedded_surface(cur)?;
+    let EmbeddedSupport { surface, chart, .. } = embedded_support(cur)?;
     let (curve, curve_end) = curve_block(cur.toks(), cur.pos())?;
     cur.set_pos(curve_end);
-    let pcurve = nullable_embedded_pcurve(cur)?.value();
+    let mut pcurve = nullable_embedded_pcurve(cur)?.value();
+    if let Some(pcurve) = &mut pcurve {
+        chart.normalize(pcurve)?;
+    }
     let direction = cur.take_vector3()?;
     let secondary_pcurve = nullable_embedded_pcurve(cur)?.value();
     let extension = cur.take_long()?;
@@ -1114,8 +1137,11 @@ fn vertex_blend_boundary(cur: &mut Cur<'_>) -> Option<EmbeddedVertexBlendBoundar
             }
         }
         "pcurve" => {
-            let surface = embedded_surface(cur)?;
-            let pcurve = nullable_embedded_pcurve(cur)?.value();
+            let EmbeddedSupport { surface, chart, .. } = embedded_support(cur)?;
+            let mut pcurve = nullable_embedded_pcurve(cur)?.value();
+            if let Some(pcurve) = &mut pcurve {
+                chart.normalize(pcurve)?;
+            }
             let sense = cur.take_bool()?;
             let fit_tolerance =
                 cadmpeg_ir::geometry::FitTolerance::try_new(cur.take_f64()?).ok()?;
@@ -1224,12 +1250,16 @@ fn revision_vertex_blend_boundary(
         "pcurve" => {
             let crate::nurbs::proc_curve::EmbeddedSurfaceWithBounds {
                 surface,
+                chart,
                 bounds: support_bounds,
             } = match optional_embedded_surface_with_bounds(ctx, cur, table)? {
                 Ok(surface) => surface,
                 Err(error) => return Some(Err(error)),
             };
-            let pcurve = nullable_embedded_pcurve(cur)?.value();
+            let mut pcurve = nullable_embedded_pcurve(cur)?.value();
+            if let Some(pcurve) = &mut pcurve {
+                chart.normalize(pcurve)?;
+            }
             let sense = cur.take_bool()?;
             let fit_tolerance =
                 cadmpeg_ir::geometry::FitTolerance::try_new(cur.take_f64()?).ok()?;

@@ -144,7 +144,7 @@ Optional side ranges, locations, and other doubles can occur after the actual of
 
 **Question.** On a native `cone` with nonzero `sine`, is the axial distance of a pcurve point the first chart coordinate times `|cosine| × u_scale` or times `u_scale`?
 
-**Known.** `asm.md` §6.2 "An embedded or face-bound pcurve on an analytic support" states `d = first × |cosine| × u_scale` along the native axis. Pcurves on circular cylinders with `cosine = 1` and with `cosine = -1` reach their edge vertices with `d = first × u_scale` along the native axis and the azimuth measured toward `axis × x`. The sign of `cosine` therefore does not change the chart. On a cylinder `|cosine| = 1`, so these pcurves do not separate the two scales. `SupportChart::from_fields` in `nurbs/support_chart.rs` implements the stated rule.
+**Known.** `asm.md` §6.2 "An embedded or face-bound pcurve on an analytic support" states `d = first × |cosine| × u_scale` along the native axis. Pcurves on circular cylinders with `cosine = 1` and with `cosine = -1` reach their edge vertices with `d = first × u_scale` along the native axis and the azimuth measured toward `axis × x`. The sign of `cosine` therefore does not change the chart. On a cylinder `|cosine| = 1`, so these pcurves do not separate the two scales. `analytic_support` in `nurbs/proc_curve.rs` implements the stated rule.
 
 **Need.** A pcurve with known edge vertices on a cone with nonzero `sine` separates the two scales. With the wrong scale, every cone pcurve point has the wrong axial distance, and `cadmpeg check` reports the miss at the edge vertices.
 
@@ -211,9 +211,17 @@ the record grammar does not identify one construction.
 
 **Question.** Does a `TRUE` v-sense logical (`reverse_v`) negate the second pcurve chart coordinate of a plane, sphere, or torus, and does a `TRUE` cone u-sense logical (`reversed`) negate the first cone chart coordinate?
 
-**Known.** `asm.md` §6.2 states both negations. The `forward_v` plane, sphere, and torus charts and the `forward` cylinder chart reach their edge vertices. No stream contains a pcurve on a `reverse_v` plane, sphere, or torus, on a `reversed` cone, on a sphere with a negative radius, or on a torus with a negative minor radius. `SupportChart::from_fields` in `nurbs/support_chart.rs` implements the stated rule.
+**Known.** `asm.md` §6.2 states both negations. The `forward_v` plane, sphere, and torus charts and the `forward` cylinder chart reach their edge vertices. No stream contains a pcurve on a `reverse_v` plane, sphere, or torus, on a `reversed` cone, on a sphere with a negative radius, or on a torus with a negative minor radius. `analytic_support` in `nurbs/proc_curve.rs` implements the stated rule.
 
 **Need.** A pcurve with known edge vertices on each of these supports confirms the rule. A wrong sign mirrors the pcurve in the support chart, and `cadmpeg check` reports the miss at the edge vertices.
+
+### GC-39. Chart of the secondary blend pcurves
+
+**Question.** In which chart are the secondary and tertiary pcurves of a rolling-ball side, the secondary and tertiary pcurves of a rolling-ball third side, the second pcurve of a G2 blend side, the tertiary pcurve of a G2 first-side `none` branch, and the post pcurve of a variable blend stored?
+
+**Known.** `asm.md` §6.2 gives the support chart of the primary side pcurve, which is the contact track. The layouts store the other pcurves after the same support, but no field relates them to that support or to another surface. The decoder keeps their stored control points. In the eight available Fusion designs, the 1120 rolling-ball sides store `nullbs` in the primary, secondary, and tertiary slots, the decoded variable blends store no post pcurve, and no record is a G2 blend.
+
+**Need.** A stream with one of these pcurves present, together with the surface whose chart reproduces a known point of the construction, gives the chart. A pcurve on an analytic support then converts with the rule of §6.2, and the F3D writer inverts it.
 
 ## 2. Topology
 

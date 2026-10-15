@@ -181,18 +181,16 @@ struct RequiredSupportPair {
 }
 
 fn required_support_pair(cur: &mut Cur<'_>) -> Option<RequiredSupportPair> {
-    let first_surface_start = cur.pos();
-    let first_surface = embedded_surface(cur)?;
-    let second_surface_start = cur.pos();
-    let second_surface = embedded_surface(cur)?;
+    let first = embedded_support(cur)?;
+    let second = embedded_support(cur)?;
     let (mut first_pcurve, first_end) = pcurve_block_with_end(cur.toks(), cur.pos())?;
     cur.set_pos(first_end);
     let (mut second_pcurve, second_end) = pcurve_block_with_end(cur.toks(), cur.pos())?;
     cur.set_pos(second_end);
-    SupportChart::embedded_at(cur.toks(), first_surface_start)?.normalize(&mut first_pcurve)?;
-    SupportChart::embedded_at(cur.toks(), second_surface_start)?.normalize(&mut second_pcurve)?;
+    first.chart.normalize(&mut first_pcurve)?;
+    second.chart.normalize(&mut second_pcurve)?;
     Some(RequiredSupportPair {
-        surfaces: [first_surface, second_surface],
+        surfaces: [first.surface, second.surface],
         pcurves: [first_pcurve, second_pcurve],
     })
 }
@@ -1039,13 +1037,13 @@ fn embedded_deformable(
 
 /// Decode one law support surface, mapping the `null_surface` sentinel to an
 /// absent side.
-fn nullable_law_surface(cur: &mut Cur<'_>) -> Option<Nullable<SurfaceGeometry>> {
+fn nullable_law_surface(cur: &mut Cur<'_>) -> Option<Nullable<EmbeddedSupport>> {
     let saved = cur.pos();
     if cur.take_ident() == Some("null_surface") {
         return Some(Nullable::Null);
     }
     cur.set_pos(saved);
-    Some(Nullable::Value(embedded_surface(cur)?))
+    Some(Nullable::Value(embedded_support(cur)?))
 }
 
 /// Consume one version-form interval bound: a bare `false` unbounded sentinel
@@ -1091,23 +1089,20 @@ fn embedded_law_curve(
     let (_, solved_end) = curve_block(toks, cur.pos())?;
     cur.set_pos(solved_end);
     cur.take_f64()?;
-    let first_surface_start = cur.pos();
-    let first_surface = nullable_law_surface(&mut cur)?.value();
-    let second_surface_start = cur.pos();
-    let second_surface = nullable_law_surface(&mut cur)?.value();
-    let surfaces = [first_surface, second_surface];
+    let supports = [
+        nullable_law_surface(&mut cur)?.value(),
+        nullable_law_surface(&mut cur)?.value(),
+    ];
     let mut pcurves = [
         nullable_embedded_pcurve(&mut cur)?.value(),
         nullable_embedded_pcurve(&mut cur)?.value(),
     ];
-    for (pcurve, chart) in pcurves.iter_mut().zip([
-        SupportChart::embedded_at(toks, first_surface_start)?,
-        SupportChart::embedded_at(toks, second_surface_start)?,
-    ]) {
-        if let Some(pcurve) = pcurve {
-            chart.normalize(pcurve)?;
+    for (pcurve, support) in pcurves.iter_mut().zip(&supports) {
+        if let (Some(pcurve), Some(support)) = (pcurve, support) {
+            support.chart.normalize(pcurve)?;
         }
     }
+    let surfaces = supports.map(|support| support.map(|support| support.surface));
     let layout = if let Some((stamp, post_enum)) = stamp {
         EmbeddedLawCurveLayout::Version {
             stamp,
@@ -1178,11 +1173,8 @@ fn embedded_spring(
             )))
         } else {
             cur.set_pos(saved);
-            let chart = SupportChart::embedded_at(toks, cur.pos())?;
-            Some(Ok((
-                EmbeddedSpringSupport::Surface(embedded_surface(&mut cur)?),
-                chart,
-            )))
+            let EmbeddedSupport { surface, chart, .. } = embedded_support(&mut cur)?;
+            Some(Ok((EmbeddedSpringSupport::Surface(surface), chart)))
         }
     };
     let [(first_support, first_chart), (second_support, second_chart)] = [
@@ -1974,14 +1966,14 @@ pub(super) fn par_int_cur_isoline(
             reference_context
         )?)
         .value()
-        .map(|support| support.surface),
+        .map(|(support, _)| support.surface),
         propagate_resource!(optional_rolling_ball_surface(
             ctx,
             &mut cur,
             reference_context
         )?)
         .value()
-        .map(|support| support.surface),
+        .map(|(support, _)| support.surface),
     ];
     let pcurves = [
         nullable_embedded_pcurve(&mut cur)?.value(),
@@ -2132,17 +2124,17 @@ fn cache_first_curve_context(
         ),
         _ => return None,
     };
-    let first_surface_start = cur.pos();
-    let crate::nurbs::proc_curve::EmbeddedSurfaceWithBounds {
+    let EmbeddedSurfaceWithBounds {
         surface: first_surface,
+        chart: first_chart,
         bounds: first_bounds,
     } = match optional_embedded_surface_with_bounds(ctx, cur, table)? {
         Ok(surface) => surface,
         Err(error) => return Some(Err(error)),
     };
-    let second_surface_start = cur.pos();
-    let crate::nurbs::proc_curve::EmbeddedSurfaceWithBounds {
+    let EmbeddedSurfaceWithBounds {
         surface: second_surface,
+        chart: second_chart,
         bounds: second_bounds,
     } = match optional_embedded_surface_with_bounds(ctx, cur, table)? {
         Ok(surface) => surface,
@@ -2152,11 +2144,10 @@ fn cache_first_curve_context(
         nullable_embedded_pcurve(cur)?.value(),
         nullable_embedded_pcurve(cur)?.value(),
     ];
-    if let Some(pcurve) = &mut pcurves[0] {
-        SupportChart::embedded_at(cur.toks(), first_surface_start)?.normalize(pcurve)?;
-    }
-    if let Some(pcurve) = &mut pcurves[1] {
-        SupportChart::embedded_at(cur.toks(), second_surface_start)?.normalize(pcurve)?;
+    for (pcurve, chart) in pcurves.iter_mut().zip([first_chart, second_chart]) {
+        if let Some(pcurve) = pcurve {
+            chart.normalize(pcurve)?;
+        }
     }
     let solved_range = [
         cur.take_optional_range_value()?.value(),
@@ -2308,12 +2299,11 @@ fn embedded_three_surface_intersection(toks: &[Token]) -> Option<EmbeddedThreeSu
         cur.take_float_array()?,
     ];
     let selector = cur.take_long()?;
-    let third_surface_start = cur.pos();
-    let third = embedded_surface(&mut cur)?;
+    let third = embedded_support(&mut cur)?;
     let (mut third_pcurve, _) = pcurve_block_with_end(toks, cur.pos())?;
-    SupportChart::embedded_at(toks, third_surface_start)?.normalize(&mut third_pcurve)?;
+    third.chart.normalize(&mut third_pcurve)?;
     Some(EmbeddedThreeSurfaceIntersection {
-        surfaces: [first, second, third],
+        surfaces: [first, second, third.surface],
         pcurves: [first_pcurve, second_pcurve, third_pcurve],
         parameter_range,
         discontinuities,
@@ -2553,27 +2543,24 @@ fn cache_first_intersection(
     let (_, cache_end) = curve_block(toks, cur.pos())?;
     cur.set_pos(cache_end);
     cur.take_f64()?;
-    let first_surface_start = cur.pos();
-    let first_surface = match optional_embedded_surface_with_bounds(ctx, &mut cur, table)? {
-        Ok(surface) => surface.surface,
+    let first = match optional_embedded_surface_with_bounds(ctx, &mut cur, table)? {
+        Ok(surface) => surface,
         Err(error) => return Some(Err(error)),
     };
-    let second_surface_start = cur.pos();
-    let second_surface = match optional_embedded_surface_with_bounds(ctx, &mut cur, table)? {
-        Ok(surface) => surface.surface,
+    let second = match optional_embedded_surface_with_bounds(ctx, &mut cur, table)? {
+        Ok(surface) => surface,
         Err(error) => return Some(Err(error)),
     };
-    let surfaces = [first_surface, second_surface];
     let mut pcurves = [
         nullable_embedded_pcurve(&mut cur)?.value(),
         nullable_embedded_pcurve(&mut cur)?.value(),
     ];
-    if let Some(pcurve) = &mut pcurves[0] {
-        SupportChart::embedded_at(toks, first_surface_start)?.normalize(pcurve)?;
+    for (pcurve, chart) in pcurves.iter_mut().zip([first.chart, second.chart]) {
+        if let Some(pcurve) = pcurve {
+            chart.normalize(pcurve)?;
+        }
     }
-    if let Some(pcurve) = &mut pcurves[1] {
-        SupportChart::embedded_at(toks, second_surface_start)?.normalize(pcurve)?;
-    }
+    let surfaces = [first.surface, second.surface];
     let domain = nurbs_curve_parameter_domain(solved)?;
     let parameter_range = [
         cur.take_optional_range_value()?
@@ -2643,22 +2630,19 @@ pub fn intersection_patch_layout(
 fn embedded_two_sided_offset(toks: &[Token]) -> Option<EmbeddedTwoSidedOffset> {
     let marker = crate::nurbs::toks::find_owned_intcurve_subtype(toks, "off_int_cur")?;
     let mut cur = Cur::at(toks, marker + 2);
-    let first_surface_start = cur.pos();
-    let first_surface = optional_embedded_surface(&mut cur)?.value();
-    let second_surface_start = cur.pos();
-    let second_surface = optional_embedded_surface(&mut cur)?.value();
-    let surfaces = [first_surface, second_surface];
+    let supports = [
+        optional_embedded_surface(&mut cur)?.value(),
+        optional_embedded_surface(&mut cur)?.value(),
+    ];
     let first_pcurve = optional_pcurve(&mut cur)?.value();
     let second_pcurve = optional_pcurve(&mut cur)?.value();
     let mut pcurves = [first_pcurve, second_pcurve];
-    for (pcurve, chart) in pcurves.iter_mut().zip([
-        SupportChart::embedded_at(toks, first_surface_start)?,
-        SupportChart::embedded_at(toks, second_surface_start)?,
-    ]) {
-        if let Some(pcurve) = pcurve {
-            chart.normalize(pcurve)?;
+    for (pcurve, support) in pcurves.iter_mut().zip(&supports) {
+        if let (Some(pcurve), Some(support)) = (pcurve, support) {
+            support.chart.normalize(pcurve)?;
         }
     }
+    let surfaces = supports.map(|support| support.map(|support| support.surface));
     let parameter_range = [cur.take_range_value()?, cur.take_range_value()?];
     let discontinuities = [
         cur.take_float_array()?,
@@ -2680,13 +2664,13 @@ fn embedded_two_sided_offset(toks: &[Token]) -> Option<EmbeddedTwoSidedOffset> {
     })
 }
 
-fn optional_embedded_surface(cur: &mut Cur<'_>) -> Option<Nullable<SurfaceGeometry>> {
+fn optional_embedded_surface(cur: &mut Cur<'_>) -> Option<Nullable<EmbeddedSupport>> {
     let start = cur.pos();
     if cur.take_ident()? == "null_surface" {
         return Some(Nullable::Null);
     }
     cur.set_pos(start);
-    embedded_surface(cur).map(Nullable::Value)
+    embedded_support(cur).map(Nullable::Value)
 }
 
 fn optional_pcurve(cur: &mut Cur<'_>) -> Option<Nullable<PcurveNurbs>> {
@@ -2787,14 +2771,23 @@ pub(super) fn embedded_surface(cur: &mut Cur<'_>) -> Option<SurfaceGeometry> {
     embedded_surface_fields(cur, false).map(|value| value.surface)
 }
 
-pub(super) struct EmbeddedSurfaceWithRanges {
+/// An embedded support surface, the native chart of the pcurves on it, and
+/// its four trailing U/V range fields.
+pub(super) struct EmbeddedSupport {
     pub(super) surface: SurfaceGeometry,
+    pub(super) chart: SupportChart,
     pub(super) ranges: [[Option<f64>; 2]; 2],
 }
 
-/// [`embedded_surface`], preserving the four trailing U/V range fields.
+/// [`embedded_surface`] with the native chart of its pcurves. The range
+/// fields are not preserved.
+pub(super) fn embedded_support(cur: &mut Cur<'_>) -> Option<EmbeddedSupport> {
+    embedded_surface_fields(cur, false)
+}
+
+/// [`embedded_support`], preserving the four trailing U/V range fields.
 /// Token-space counterpart of [`decode_embedded_surface_with_ranges`].
-pub(super) fn embedded_surface_with_ranges(cur: &mut Cur<'_>) -> Option<EmbeddedSurfaceWithRanges> {
+pub(super) fn embedded_surface_with_ranges(cur: &mut Cur<'_>) -> Option<EmbeddedSupport> {
     embedded_surface_fields(cur, true)
 }
 
@@ -2808,25 +2801,22 @@ fn admitted_placement(
     Some((point, frame))
 }
 
-fn embedded_surface_fields(
-    cur: &mut Cur<'_>,
-    preserve_ranges: bool,
-) -> Option<EmbeddedSurfaceWithRanges> {
-    let no_ranges = [[None, None], [None, None]];
-    let kind = cur.take_ident()?;
-    if kind == "spline" {
-        let (decoded, end) = surface_block(cur.toks(), cur.pos())?;
-        cur.set_pos(end);
-        let ranges = if preserve_ranges {
-            surface_ranges(cur)?
-        } else {
-            no_ranges
-        };
-        return Some(EmbeddedSurfaceWithRanges {
-            surface: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(decoded)),
-            ranges,
-        });
+/// Skip one cone interval bound: `TRUE` and a `DOUBLE`, or a bare `FALSE`.
+fn skip_cone_bound(cur: &mut Cur<'_>) -> Option<()> {
+    if cur.take_bool()? {
+        cur.take_f64()?;
     }
+    Some(())
+}
+
+/// Decode the fields of an analytic support `kind` from its origin through its
+/// sense logical into the neutral surface and the native chart of the pcurves
+/// on it ([spec §6.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/asm.md#62-analytic-surface-byte-layouts)).
+/// The four trailing parameter bounds are not read.
+pub(crate) fn analytic_support(
+    kind: &str,
+    cur: &mut Cur<'_>,
+) -> Option<(SurfaceGeometry, SupportChart)> {
     let point = cur.take_position()?;
     let point = Point3::new(
         point[0] * LEN_TO_MM,
@@ -2837,19 +2827,14 @@ fn embedded_surface_fields(
         "plane" => {
             let normal = normalized(cur.take_vector3()?)?;
             let u_axis = normalized(cur.take_vector3()?)?;
-            cur.take_bool()?;
-            let ranges = if preserve_ranges {
-                surface_ranges(cur)?
-            } else {
-                no_ranges
-            };
+            let chart = SupportChart::plane(cur.take_bool()?);
             let (origin, frame) = admitted_placement(point, normal, u_axis)?;
-            Some(EmbeddedSurfaceWithRanges {
-                surface: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(PlaneSurface::new(
+            Some((
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(PlaneSurface::new(
                     origin, frame,
                 ))),
-                ranges,
-            })
+                chart,
+            ))
         }
         "cone" => {
             let native_axis = normalized(cur.take_vector3()?)?;
@@ -2857,20 +2842,12 @@ fn embedded_surface_fields(
             let radius = major[0].hypot(major[1]).hypot(major[2]) * LEN_TO_MM;
             let ref_direction = normalized(major)?;
             let ratio = cur.take_f64()?;
-            cur.take_bool()?;
-            cur.take_bool()?;
+            skip_cone_bound(cur)?;
+            skip_cone_bound(cur)?;
             let sine = cur.take_f64()?;
             let cosine = cur.take_f64()?;
-            cur.take_f64()?;
-            cur.take_bool()?;
-            let ranges = if preserve_ranges {
-                surface_ranges(cur)?
-            } else {
-                for _ in 0..4 {
-                    cur.take_bool()?;
-                }
-                no_ranges
-            };
+            let u_scale = cur.take_f64()?;
+            let chart = SupportChart::cone(sine, cosine, ratio, u_scale, cur.take_bool()?)?;
             let surface = if cone_is_circular_cylinder(sine, ratio) {
                 let (origin, frame) = admitted_placement(point, native_axis, ref_direction)?;
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(CylinderSurface::new(
@@ -2893,56 +2870,79 @@ fn embedded_surface_fields(
                     Angle::new(sine.abs().atan2(cosine.abs()))?,
                 )))
             };
-            Some(EmbeddedSurfaceWithRanges { surface, ranges })
+            Some((surface, chart))
         }
         "sphere" => {
             let radius = cur.take_f64()? * LEN_TO_MM;
             let ref_direction = normalized(cur.take_vector3()?)?;
             let axis = normalized(cur.take_vector3()?)?;
-            cur.take_bool()?;
-            let ranges = if preserve_ranges {
-                surface_ranges(cur)?
-            } else {
-                for _ in 0..4 {
-                    cur.take_bool()?;
-                }
-                no_ranges
-            };
+            let chart = SupportChart::latitude_first(cur.take_bool()?);
             let (center, frame) = admitted_placement(point, axis, ref_direction)?;
-            Some(EmbeddedSurfaceWithRanges {
-                surface: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
-                    SphereSurface::new(center, frame, NonZeroLength::new(radius)?),
-                )),
-                ranges,
-            })
+            Some((
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(SphereSurface::new(
+                    center,
+                    frame,
+                    NonZeroLength::new(radius)?,
+                ))),
+                chart,
+            ))
         }
         "torus" => {
             let axis = normalized(cur.take_vector3()?)?;
             let major_radius = cur.take_f64()? * LEN_TO_MM;
             let minor_radius = cur.take_f64()? * LEN_TO_MM;
             let ref_direction = normalized(cur.take_vector3()?)?;
-            cur.take_bool()?;
-            let ranges = if preserve_ranges {
-                surface_ranges(cur)?
-            } else {
-                for _ in 0..4 {
-                    cur.take_bool()?;
-                }
-                no_ranges
-            };
+            let chart = SupportChart::latitude_first(cur.take_bool()?);
             let (center, frame) = admitted_placement(point, axis, ref_direction)?;
-            Some(EmbeddedSurfaceWithRanges {
-                surface: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(TorusSurface::new(
+            Some((
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(TorusSurface::new(
                     center,
                     frame,
                     PositiveLength::new(major_radius)?,
                     NonZeroLength::new(minor_radius)?,
                 ))),
-                ranges,
-            })
+                chart,
+            ))
         }
         _ => None,
     }
+}
+
+fn embedded_surface_fields(cur: &mut Cur<'_>, preserve_ranges: bool) -> Option<EmbeddedSupport> {
+    let no_ranges = [[None, None], [None, None]];
+    let kind = cur.take_ident()?;
+    if kind == "spline" {
+        let (decoded, end) = surface_block(cur.toks(), cur.pos())?;
+        cur.set_pos(end);
+        let ranges = if preserve_ranges {
+            surface_ranges(cur)?
+        } else {
+            no_ranges
+        };
+        return Some(EmbeddedSupport {
+            surface: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(decoded)),
+            chart: SupportChart::Canonical,
+            ranges,
+        });
+    }
+    let (surface, chart) = analytic_support(kind, cur)?;
+    let ranges = if preserve_ranges {
+        surface_ranges(cur)?
+    } else {
+        // A plane leaves its bounds to the caller; the other carriers
+        // consume four absent bounds.
+        if kind != "plane" {
+            for _ in 0..4 {
+                cur.take_bool()?;
+            }
+        }
+        no_ranges
+    };
+    Some(EmbeddedSupport {
+        surface,
+        chart,
+        ranges,
+    })
 }
 
 pub(super) fn decode_embedded_surface_with_ranges(
@@ -3094,9 +3094,11 @@ fn decode_embedded_surface_fields(
     }
 }
 
-/// Native support presence, standalone geometry and four optional U/V bounds.
+/// Native support presence, standalone geometry, the native chart of the
+/// pcurves on it, and four optional U/V bounds.
 pub(super) struct EmbeddedSurfaceWithBounds {
     pub(super) surface: SupportSlot,
+    pub(super) chart: SupportChart,
     pub(super) bounds: [Option<f64>; 4],
 }
 
@@ -3112,6 +3114,7 @@ pub(super) fn optional_embedded_surface_with_bounds(
     if kind == Some("null_surface") {
         return Some(Ok(EmbeddedSurfaceWithBounds {
             surface: SupportSlot::Absent,
+            chart: SupportChart::Canonical,
             bounds: [None; 4],
         }));
     }
@@ -3159,11 +3162,15 @@ pub(super) fn optional_embedded_surface_with_bounds(
             for bound in &mut bounds {
                 *bound = cur.take_optional_range_value()?.value();
             }
-            return Some(Ok(EmbeddedSurfaceWithBounds { surface, bounds }));
+            return Some(Ok(EmbeddedSurfaceWithBounds {
+                surface,
+                chart: SupportChart::Canonical,
+                bounds,
+            }));
         }
     }
     cur.set_pos(saved);
-    let surface = embedded_surface(cur)?;
+    let EmbeddedSupport { surface, chart, .. } = embedded_support(cur)?;
     let mut bounds = [None; 4];
     if kind == Some("plane") || kind == Some("spline") {
         for bound in &mut bounds {
@@ -3172,6 +3179,7 @@ pub(super) fn optional_embedded_surface_with_bounds(
     }
     Some(Ok(EmbeddedSurfaceWithBounds {
         surface: SupportSlot::Surface(surface),
+        chart,
         bounds,
     }))
 }

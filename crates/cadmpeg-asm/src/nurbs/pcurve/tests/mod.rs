@@ -343,3 +343,4 @@ mod blend_laws;
 mod cache_selection;
 mod procedural_curves;
 mod procedural_surfaces;
+mod side_charts;

@@ -179,7 +179,7 @@ Every old revision belongs to stable entity slot `new` for an update and slot `o
 
 - Model-space lengths are stored in centimetres in both widths.
 - Model-space points, radii, length-bearing vectors, 3D control points, and length tolerances convert to millimetres by ×10.
-- Unit vectors, ratios, angles, knot parameters, non-length enums, and homogeneous weights are dimensionless. Pcurve coordinates use the parameter units of their support carrier.
+- Unit vectors, ratios, angles, knot parameters, non-length enums, and homogeneous weights are dimensionless. Pcurve coordinates use the parameter units of their support carrier: on a `plane` they are lengths and convert by ×10.
 - The header `scale` field is metadata, not a coordinate multiplier (§1).
 
 An analytic surface is untrimmed; its extent is independent of the face's vertex hull.
@@ -384,6 +384,8 @@ An embedded or face-bound pcurve on an analytic support stores its control point
 - On a `cone`, `second` is the azimuth `θ` about the native axis, measured from the major-axis direction `x` toward `y = axis × x`. `first` is a normalized generator distance. The axial distance along the native axis is `d = first × |cosine| × u_scale`, negated when the u-sense logical is `TRUE` (`reversed`). The point is `origin + ρ(d)·(cos θ·x + ratio·sin θ·y) + d·axis` with `ρ(d) = r_base + d·sine/cosine`. The sign of `cosine` selects the normal side and does not change the parameterization.
 - On a `sphere`, `first` is the latitude `φ` and `second` is the longitude `λ` about the polar axis `z`, measured from the equator direction `x` toward `y = z × x`. `reverse_v` negates `λ`. The point is `center + radius·(cos φ·(cos λ·x + sin λ·y) + sin φ·z)` with the signed radius.
 - On a `torus`, `first` is the minor angle `α` and `second` is the major angle `β` about the axis `z`, measured from `x = ref_direction` toward `y = z × x`. `reverse_v` negates `β`. The point is `origin + (major_radius + minor_radius·cos α)·(cos β·x + sin β·y) + minor_radius·sin α·z` with the signed minor radius.
+
+The pcurves on an embedded analytic support use this parameterization: the pcurve of each support slot of an intcurve construction, the primary pcurve of a rolling-ball side and of a rolling-ball third side, the first pcurve of a G2 blend side, the pcurve of a vertex-blend `pcurve` boundary, the pcurve of a loft, skin, or net profile member that stores a support, and the pcurve of a taper surface.
 
 Neutral projection converts plane coordinates to document length units, cone coordinates to `(azimuth, axial distance)`, and sphere and torus coordinates to `(longitude, latitude)`. A neutral cone whose axis is the reverse of the native axis (`sine × cosine < 0` on a cone that is not a circular cylinder) negates both cone coordinates.
 
@@ -673,7 +675,7 @@ The second line holds exactly three UTF-8 product strings — product family, pr
 
 The third line holds exactly three kernel doubles in the binary order: `scale`, `resabs`, and `resnor`. The `resabs` and `resnor` tolerances are finite nonnegative error bounds.
 
-**Unit rule.** In the text encoding, a finite positive `scale` is the stream's length unit in millimetres per unit. The value `-1` declares the unit unset. A model-space length equals its stored value multiplied by `scale` millimetres. A stream with no units line or an unset unit declares no length unit. This differs from the binary encoding, whose lengths are centimetres and whose `scale` word is not a coordinate multiplier (§4). Dimensionless values — unit vectors, ratios, angles, knots, parameters, and pcurve coordinates — do not take the unit.
+**Unit rule.** In the text encoding, a finite positive `scale` is the stream's length unit in millimetres per unit. The value `-1` declares the unit unset. A model-space length equals its stored value multiplied by `scale` millimetres. A stream with no units line or an unset unit declares no length unit. This differs from the binary encoding, whose lengths are centimetres and whose `scale` word is not a coordinate multiplier (§4). The coordinates of a pcurve on a `plane` support, embedded or face-bound, are lengths along the plane's parameter directions (§6.2) and take the unit. Dimensionless values — unit vectors, ratios, angles, knots, parameters, and the coordinates of a pcurve on any other support — do not take the unit.
 
 ### 7.2 Record grammar
 
