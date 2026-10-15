@@ -1033,8 +1033,6 @@ mod carrier_and_attribute_resolution;
 
 mod delta_events;
 
-mod group_records;
-
 mod group_members;
 
 mod native_record_limits;

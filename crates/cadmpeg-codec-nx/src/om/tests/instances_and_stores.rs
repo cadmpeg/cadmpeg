@@ -1641,10 +1641,10 @@ mod numeric_expressions;
 
 mod registry;
 
-mod operation_body_limits;
+mod operation_body_lanes;
 
-mod boolean_limits;
+mod boolean_operations;
 
-mod surface_branch_limits;
+mod surface_branch_depth;
 
-mod thru_curve_branch_limits;
+mod thru_curve_branches;
