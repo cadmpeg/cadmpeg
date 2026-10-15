@@ -116,6 +116,8 @@ pub(crate) struct ProjectInputs<'a> {
     pub(crate) body_bindings: &'a [DesignBodyBinding],
     pub(crate) component_naming_spaces: &'a [crate::records::recipes::DesignComponentNamingSpace],
     pub(crate) histories: &'a [crate::history_records::AsmHistory],
+    pub(crate) face_boundaries:
+        &'a [crate::records::topology::historical_context::AsmFaceBoundary],
 }
 
 /// Authored construction ordinal of every parameter scope represented by a
@@ -594,7 +596,6 @@ pub(crate) fn project_parameter_design_with_edge_identities(
         curve_identities,
         face_operands,
         body_recipe_operands,
-        legacy_loft_body_carriers,
         placements,
         body_bindings,
         component_naming_spaces,
@@ -738,15 +739,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     kind: scope.kind_name().into(),
                     parameters: BTreeMap::new(),
                 })),
-                Some(DesignFeatureFamily::Loft) => project_fixed_loft(
-                    scope,
-                    construction_groups,
-                    legacy_loft_body_carriers,
-                    edge_operands,
-                    edge_identity_operands,
-                    face_operands,
-                    ctx,
-                )?
+                Some(DesignFeatureFamily::Loft) => project_fixed_loft(scope, inputs, ctx)?
                 .unwrap_or_else(|| FeatureDefinition::Operation(FeatureOperation::Native {
                     kind: scope.kind_name().into(),
                     parameters: BTreeMap::new(),
@@ -5521,17 +5514,22 @@ fn resolve_sketch_axis_selection(
 
 pub(super) fn project_fixed_loft(
     scope: &DesignParameterScope,
-    construction_groups: &[DesignConstructionOperandGroup],
-    legacy_body_carriers: &[DesignLoftLegacyBodyCarrier],
-    edge_operands: &[DesignEdgeOperand],
-    edge_identity_operands: &[DesignEdgeIdentityOperand],
-    face_operands: &[DesignFaceOperand],
+    inputs: &ProjectInputs<'_>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
     use cadmpeg_ir::features::{
         FeatureDefinition, FeatureOperation, LoftPointSection, LoftSection, PlanarProfileRef,
         ProfileRef,
     };
+    let &ProjectInputs {
+        construction_groups,
+        legacy_loft_body_carriers: legacy_body_carriers,
+        edge_operands,
+        edge_identity_operands,
+        face_operands,
+        face_boundaries,
+        ..
+    } = inputs;
 
     let crate::records::feature::scope::DesignScopePayload::Loft(Some(
         crate::records::feature::path_features::DesignLoftConstruction { operation, .. },
@@ -5614,7 +5612,13 @@ pub(super) fn project_fixed_loft(
         }
         let mut sections = Vec::new();
         for group in &profile_groups {
-            let edge_profile = resolved_loft_edge_profile_group(ctx, scope, group, edge_operands)?;
+            let edge_profile = resolved_loft_edge_profile_group(
+                ctx,
+                scope,
+                group,
+                edge_operands,
+                face_boundaries,
+            )?;
             let face_profile = if edge_profile.is_none() {
                 resolved_profile_face_group(ctx, scope, group, face_operands)?
             } else {
