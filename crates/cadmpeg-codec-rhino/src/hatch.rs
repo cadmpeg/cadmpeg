@@ -14,7 +14,6 @@ use crate::curves::{DecodedCurve, DecodedGeometry, GeometryError};
 use crate::objects::{parse_class_wrapper, ClassUserdata, UserdataDescriptor};
 use crate::settings::{CoordinateLane, MillimeterScale, Plane};
 use crate::wire::{scaled_coordinate, Uuid};
-use cadmpeg_core::decode::collect::ExactVec;
 use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
 use cadmpeg_ir::units::FiniteVector;
 
@@ -113,26 +112,63 @@ pub(crate) struct Hatch {
     pub(crate) warnings: Diagnostics,
 }
 
-fn refused(offset: usize, error: &CodecError) -> GeometryError {
-    match error {
-        CodecError::ResourceLimit(limit) => GeometryError::Codec(CodecError::ResourceLimit(*limit)),
-        _ => GeometryError::malformed(offset, format!("hatch allocation refused: {error}")),
-    }
+/// Scratch produced while applying native hatch userdata.
+///
+/// Keep this value alive until the caller consumes errors and serializes any
+/// selected gradient. The guards track the temporary source buffers that hold
+/// those values.
+pub(crate) struct HatchUserdataInstall<'ctx> {
+    pub(crate) errors: Vec<String>,
+    pub(crate) _error_storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+    pub(crate) _gradient_storage: Option<cadmpeg_core::decode::ScopedReservation<'ctx>>,
 }
 
-fn coordinate3(view: &mut View<'_>, label: &str) -> Result<FiniteVector<3>, GeometryError> {
-    let offset = view.position();
-    let values = [view.req_f64_le()?, view.req_f64_le()?, view.req_f64_le()?];
-    FiniteVector::new(values).ok_or_else(|| {
-        GeometryError::malformed(offset, format!("{label} contains a nonfinite value"))
+fn refused(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    offset: usize,
+    error: &CodecError,
+) -> Result<GeometryError, cadmpeg_core::CodecError> {
+    Ok(match error {
+        CodecError::ResourceLimit(limit) => GeometryError::Codec(CodecError::ResourceLimit(*limit)),
+        _ => GeometryError::malformed(
+            offset,
+            ctx.format_retained(
+                format_args!("hatch allocation refused: {error}"),
+                "Rhino refused text",
+            )?,
+        ),
     })
 }
 
-fn read_plane(view: &mut View<'_>) -> Result<Plane, GeometryError> {
-    let origin = coordinate3(view, "point")?;
-    let xaxis = coordinate3(view, "vector")?;
-    let yaxis = coordinate3(view, "vector")?;
-    let zaxis = coordinate3(view, "vector")?;
+fn coordinate3(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    view: &mut View<'_>,
+    label: &str,
+) -> Result<FiniteVector<3>, GeometryError> {
+    let offset = view.position();
+    let values = [view.req_f64_le()?, view.req_f64_le()?, view.req_f64_le()?];
+    FiniteVector::new(values).map_or_else(
+        || {
+            Err(GeometryError::malformed(
+                offset,
+                ctx.format_retained(
+                    format_args!("{label} contains a nonfinite value"),
+                    "Rhino coordinate3 text",
+                )?,
+            ))
+        },
+        Ok,
+    )
+}
+
+fn read_plane(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    view: &mut View<'_>,
+) -> Result<Plane, GeometryError> {
+    let origin = coordinate3(ctx, view, "point")?;
+    let xaxis = coordinate3(ctx, view, "vector")?;
+    let yaxis = coordinate3(ctx, view, "vector")?;
+    let zaxis = coordinate3(ctx, view, "vector")?;
     let equation_offset = view.position();
     let equation = [
         view.req_f64_le()?,
@@ -154,6 +190,7 @@ fn read_plane(view: &mut View<'_>) -> Result<Plane, GeometryError> {
 
 pub(crate) fn decode(
     expand: MeshExpand<'_>,
+    loops_storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     range: Range<usize>,
     scale: MillimeterScale,
     archive: ArchiveVersion,
@@ -173,7 +210,7 @@ pub(crate) fn decode(
             message: format!("unsupported hatch version {major}.{minor}"),
         });
     }
-    let plane = read_plane(&mut body)?;
+    let plane = read_plane(expand.ctx(), &mut body)?;
     let scale_offset = body.position();
     let pattern_scale = FiniteReal::new(body.req_f64_le()?).ok_or_else(|| {
         GeometryError::malformed(scale_offset, "hatch pattern scale is not finite")
@@ -209,13 +246,17 @@ pub(crate) fn decode(
         .ok_or_else(|| {
             GeometryError::malformed(count_offset, "hatch loop count exceeds remaining window")
         })?;
-    let mut loops = match ExactVec::<HatchLoop>::new(expand.ctx(), loop_bound, "Rhino hatch loops")
-    {
+    let mut loops = match loops_storage.with_storage(|| {
+        expand
+            .ctx()
+            .collection_vec(loop_bound.get(), "Rhino hatch loops")
+    }) {
         Ok(loops) => loops,
-        Err(error) => return Err(refused(body.position(), &error)),
+        Err(error) => return Err(refused(expand.ctx(), body.position(), &error)?),
     };
     let mut warnings = Diagnostics::new();
     for loop_index in 0..count {
+        expand.ctx().charge_work(1, "Rhino hatch loop traversal")?;
         let loop_offset = body.position();
         let loop_version = body.req_u8()?;
         if loop_version >> 4 != 1 {
@@ -263,10 +304,7 @@ pub(crate) fn decode(
                 "hatch loop object is not a curve",
             ));
         };
-        if let Err(error) = loops.push(expand.ctx(), HatchLoop { kind, curve }, "Rhino hatch loops")
-        {
-            return Err(refused(body.position(), &error));
-        }
+        loops.push(HatchLoop { kind, curve });
         warnings.append_admitted(expand.ctx(), &mut loop_warnings)?;
     }
     let basepoint = if minor >= 2 {
@@ -284,10 +322,6 @@ pub(crate) fn decode(
     };
     body.skip(body.remaining())
         .ok_or_else(|| GeometryError::malformed(body.position(), "hatch suffix is out of range"))?;
-    let loops = match loops.finish() {
-        Ok(loops) => loops,
-        Err(error) => return Err(refused(body.position(), &error)),
-    };
     Ok(Hatch {
         source_range: range,
         plane,
@@ -301,36 +335,79 @@ pub(crate) fn decode(
     })
 }
 
-pub(crate) fn apply_userdata(
+pub(crate) fn apply_userdata<'ctx>(
+    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     userdata: &[UserdataDescriptor],
     scale: MillimeterScale,
     archive: ArchiveVersion,
     hatch: &mut Hatch,
-) -> Result<(), Vec<GeometryError>> {
+) -> Result<HatchUserdataInstall<'ctx>, CodecError> {
     let mut last_basepoint = None;
+    let mut error_storage = ctx.reserve_scoped(0, "Rhino hatch userdata errors")?;
     let mut errors = Vec::new();
+    let mut gradient_storage = None;
     let mut first_gradient = None;
-    for extra in userdata
-        .iter()
-        .filter_map(UserdataDescriptor::known)
-        .filter(|value| value.class_uuid == V5_HATCH_EXTRA && value.item_uuid == V5_HATCH_EXTRA)
-    {
+    let mut descriptors = userdata.iter();
+    for _ in 0..userdata.len() {
+        let descriptor = ctx
+            .next_charged(&mut descriptors, "Rhino apply userdata traversal")?
+            .ok_or_else(|| CodecError::malformed("Rhino hatch userdata source ended early"))?;
+        let Some(extra) = UserdataDescriptor::known(descriptor) else {
+            continue;
+        };
+        if extra.class_uuid != V5_HATCH_EXTRA || extra.item_uuid != V5_HATCH_EXTRA {
+            continue;
+        }
         match parse_userdata(data, extra, archive, scale) {
             Ok(basepoint) => last_basepoint = Some(basepoint),
-            Err(error) => errors.push(error),
+            Err(GeometryError::Codec(error)) => return Err(error),
+            Err(error) => {
+                let message = error_storage.with_storage(|| {
+                    ctx.format_retained(format_args!("{error}"), "Rhino hatch userdata error")
+                })?;
+                ctx.push_scoped_vec(
+                    &mut error_storage,
+                    &mut errors,
+                    message,
+                    "Rhino hatch userdata errors",
+                )?;
+            }
         }
     }
-    for extra in userdata
-        .iter()
-        .filter_map(UserdataDescriptor::known)
-        .filter(|value| value.class_uuid == GRADIENT_COLOR_DATA)
-    {
-        match parse_gradient_userdata(data, extra, scale, archive) {
+    let mut descriptors = userdata.iter();
+    for _ in 0..userdata.len() {
+        let descriptor = ctx
+            .next_charged(&mut descriptors, "Rhino apply userdata traversal")?
+            .ok_or_else(|| CodecError::malformed("Rhino hatch userdata source ended early"))?;
+        let Some(extra) = UserdataDescriptor::known(descriptor) else {
+            continue;
+        };
+        if extra.class_uuid != GRADIENT_COLOR_DATA {
+            continue;
+        }
+        let mut storage = ctx.reserve_scoped(0, "Rhino gradient userdata")?;
+        let parsed =
+            storage.with_storage(|| parse_gradient_userdata(ctx, data, extra, scale, archive));
+        match parsed {
             Ok(gradient) => {
-                first_gradient.get_or_insert(gradient);
+                if first_gradient.is_none() {
+                    first_gradient = Some(gradient);
+                    gradient_storage = Some(storage);
+                }
             }
-            Err(error) => errors.push(error),
+            Err(GeometryError::Codec(error)) => return Err(error),
+            Err(error) => {
+                let message = error_storage.with_storage(|| {
+                    ctx.format_retained(format_args!("{error}"), "Rhino hatch userdata error")
+                })?;
+                ctx.push_scoped_vec(
+                    &mut error_storage,
+                    &mut errors,
+                    message,
+                    "Rhino hatch userdata errors",
+                )?;
+            }
         }
     }
     if let Some(basepoint) = last_basepoint {
@@ -339,14 +416,15 @@ pub(crate) fn apply_userdata(
     if let Some(gradient) = first_gradient {
         hatch.gradient = Some(gradient);
     }
-    if errors.is_empty() {
-        Ok(())
-    } else {
-        Err(errors)
-    }
+    Ok(HatchUserdataInstall {
+        errors,
+        _error_storage: error_storage,
+        _gradient_storage: gradient_storage,
+    })
 }
 
 fn parse_gradient_userdata(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     extra: &ClassUserdata,
     scale: MillimeterScale,
@@ -378,8 +456,8 @@ fn parse_gradient_userdata(
     let gradient_type_offset = reader.position();
     let gradient_type = GradientKind::from_value(reader.i32()?)
         .ok_or_else(|| GeometryError::malformed(gradient_type_offset, "invalid gradient type"))?;
-    let start = gradient_point(&mut reader, scale, "gradient start point")?;
-    let end = gradient_point(&mut reader, scale, "gradient end point")?;
+    let start = gradient_point(ctx, &mut reader, scale, "gradient start point")?;
+    let end = gradient_point(ctx, &mut reader, scale, "gradient end point")?;
     let repeat_offset = reader.position();
     let repeat = FiniteReal::new(reader.f64()?)
         .ok_or_else(|| GeometryError::malformed(repeat_offset, "gradient repeat is not finite"))?;
@@ -395,14 +473,9 @@ fn parse_gradient_userdata(
     let count = usize::try_from(count).map_err(|_| FramingError::Overflow {
         offset: count_offset,
     })?;
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        data,
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::default(),
-    )?;
     let mut colors = ctx.collection_vec(count, "Rhino gradient color stops")?;
     for index in 0..count {
+        ctx.charge_work(1, "Rhino gradient stop traversal")?;
         let stop_offset = reader.position();
         let stop = chunk_at(data, stop_offset, outer.body().end, archive, false)?;
         if stop.typecode != ANONYMOUS || stop.short() {
@@ -445,6 +518,7 @@ fn parse_gradient_userdata(
 }
 
 fn gradient_point(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     reader: &mut crate::chunks::BoundedReader<'_>,
     scale: MillimeterScale,
     label: &str,
@@ -456,7 +530,10 @@ fn gradient_point(
     else {
         return Err(GeometryError::malformed(
             offset,
-            format!("{label} is invalid"),
+            ctx.format_retained(
+                format_args!("{label} is invalid"),
+                "Rhino gradient_point text",
+            )?,
         ));
     };
     Ok([x, y, z])
@@ -556,6 +633,7 @@ pub(crate) mod tests {
         crate::decode::with_expand_bytes(&payload, |expand| {
             let hatch = decode(
                 expand,
+                &mut expand.ctx().reserve_scoped(0, "test hatch loops").unwrap(),
                 0..payload.len(),
                 MillimeterScale::IDENTITY,
                 ArchiveVersion::V8,
@@ -624,6 +702,7 @@ pub(crate) mod tests {
         let expand = crate::mesh::MeshExpand::new(&ctx, root);
         let error = decode(
             expand,
+            &mut expand.ctx().reserve_scoped(0, "test hatch loops").unwrap(),
             0..payload.len(),
             MillimeterScale::IDENTITY,
             ArchiveVersion::V8,
@@ -635,6 +714,47 @@ pub(crate) mod tests {
                 cadmpeg_core::CodecError::ResourceLimit(ref refusal)
             ) if refusal.operation == "Rhino hatch loops"
         ));
+    }
+
+    #[test]
+    fn hatch_loop_backing_releases_after_curves_move_out() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        const SCRATCH_BYTES: u64 = 1 << 20;
+        let payload = version_two_hatch_payload();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = SCRATCH_BYTES;
+        let (ctx, root) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
+        let expand = crate::mesh::MeshExpand::new(&ctx, root);
+        let mut loops_storage = ctx.reserve_scoped(0, "test hatch loops").unwrap();
+        let hatch = decode(
+            expand,
+            &mut loops_storage,
+            0..payload.len(),
+            MillimeterScale::IDENTITY,
+            ArchiveVersion::V8,
+        )
+        .unwrap();
+        assert_eq!(hatch.loops.len(), 1);
+        let loop_bytes = u64::try_from(std::mem::size_of::<super::HatchLoop>()).unwrap();
+        let remaining = ctx
+            .reserve_scoped(
+                SCRATCH_BYTES - loop_bytes,
+                "remaining scratch with live loops",
+            )
+            .expect("only staging backing is temporary");
+        drop(remaining);
+        let mut loops = hatch.loops.into_iter();
+        let curve = loops.next().unwrap().curve;
+        drop(loops);
+        drop(loops_storage);
+        let reusable = ctx
+            .reserve_scoped(SCRATCH_BYTES, "next hatch loops")
+            .expect("staging backing released while curve remains live");
+        assert!(matches!(curve, crate::curves::DecodedCurve::Leaf { .. }));
+        drop(reusable);
+        drop(curve);
+        ctx.finish_session().unwrap();
     }
 
     fn gradient_userdata_payload(gradient_type: i32, outer_suffix: &[u8]) -> Vec<u8> {
@@ -679,12 +799,17 @@ pub(crate) mod tests {
 
     #[test]
     fn v5_hatch_extra_supplies_scaled_base_point() {
+        let arena = cadmpeg_core::decode::DecodeArena::default();
+        let policy = cadmpeg_core::decode::DecodePolicy::default();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("context");
         let mut payload = version_two_hatch_payload();
         payload[0] = 0x11;
         payload.truncate(payload.len() - 16);
         crate::decode::with_expand_bytes(&payload, |expand| {
             let mut hatch = decode(
                 expand,
+                &mut expand.ctx().reserve_scoped(0, "test hatch loops").unwrap(),
                 0..payload.len(),
                 MillimeterScale::IDENTITY,
                 ArchiveVersion::V5,
@@ -707,14 +832,16 @@ pub(crate) mod tests {
                 save_context: None,
                 payload_range: 0..extra.len(),
             });
-            apply_userdata(
+            let install = apply_userdata(
+                &ctx,
                 &extra,
                 std::slice::from_ref(&descriptor),
                 crate::test_support::millimeter_scale(10.0),
                 ArchiveVersion::V5,
                 &mut hatch,
             )
-            .expect("hatch extra");
+            .expect("userdata resources admitted");
+            assert!(install.errors.is_empty());
             assert_eq!(hatch.basepoint.map(FiniteReal::get), [20.0, 30.0]);
 
             let mut wrong_item_descriptor = descriptor.clone();
@@ -726,19 +853,22 @@ pub(crate) mod tests {
             *item_uuid = Uuid::nil();
             let mut wrong_item_hatch = decode(
                 expand,
+                &mut expand.ctx().reserve_scoped(0, "test hatch loops").unwrap(),
                 0..payload.len(),
                 MillimeterScale::IDENTITY,
                 ArchiveVersion::V5,
             )
             .expect("hatch");
-            apply_userdata(
+            let install = apply_userdata(
+                &ctx,
                 &extra,
                 std::slice::from_ref(&wrong_item_descriptor),
                 crate::test_support::millimeter_scale(10.0),
                 ArchiveVersion::V5,
                 &mut wrong_item_hatch,
             )
-            .expect("wrong hatch-extra item UUID is ignored");
+            .expect("userdata resources admitted");
+            assert!(install.errors.is_empty());
             assert_eq!(wrong_item_hatch.basepoint.map(FiniteReal::get), [0.0, 0.0]);
 
             let mut second_body = Vec::new();
@@ -764,14 +894,16 @@ pub(crate) mod tests {
             };
             *range = second_start..combined.len();
             *payload_range = second_start..combined.len();
-            apply_userdata(
+            let install = apply_userdata(
+                &ctx,
                 &combined,
                 &[descriptor, second_descriptor],
                 crate::test_support::millimeter_scale(10.0),
                 ArchiveVersion::V5,
                 &mut hatch,
             )
-            .expect("duplicate hatch extensions");
+            .expect("userdata resources admitted");
+            assert!(install.errors.is_empty());
             assert_eq!(hatch.basepoint.map(FiniteReal::get), [40.0, 50.0]);
         });
     }
@@ -782,6 +914,7 @@ pub(crate) mod tests {
         let hatch = crate::decode::with_expand_bytes(&payload, |expand| {
             decode(
                 expand,
+                &mut expand.ctx().reserve_scoped(0, "test hatch loops").unwrap(),
                 0..payload.len(),
                 crate::test_support::millimeter_scale(10.0),
                 ArchiveVersion::V8,
@@ -802,24 +935,31 @@ pub(crate) mod tests {
 
     #[test]
     fn gradient_userdata_reads_source_fields_and_skips_bounded_suffixes() {
+        let arena = cadmpeg_core::decode::DecodeArena::default();
+        let policy = cadmpeg_core::decode::DecodePolicy::default();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("context");
         let payload = gradient_userdata_payload(1, &[0xaa, 0xbb]);
         let hatch_payload = version_two_hatch_payload();
         crate::decode::with_expand_bytes(&hatch_payload, |expand| {
             let mut hatch = decode(
                 expand,
+                &mut expand.ctx().reserve_scoped(0, "test hatch loops").unwrap(),
                 0..hatch_payload.len(),
                 MillimeterScale::IDENTITY,
                 ArchiveVersion::V8,
             )
             .expect("hatch");
-            apply_userdata(
+            let install = apply_userdata(
+                &ctx,
                 &payload,
                 &[gradient_descriptor(&payload)],
                 crate::test_support::millimeter_scale(2.0),
                 ArchiveVersion::V8,
                 &mut hatch,
             )
-            .expect("gradient userdata");
+            .expect("userdata resources admitted");
+            assert!(install.errors.is_empty());
             let gradient = hatch.gradient.expect("gradient");
             assert_eq!(gradient.kind, GradientKind::Linear);
             assert_eq!(gradient.start.map(FiniteReal::get), [2.0, 4.0, 6.0]);
@@ -875,24 +1015,31 @@ pub(crate) mod tests {
 
     #[test]
     fn gradient_userdata_rejects_an_unknown_gradient_type() {
+        let arena = cadmpeg_core::decode::DecodeArena::default();
+        let policy = cadmpeg_core::decode::DecodePolicy::default();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("context");
         let payload = gradient_userdata_payload(5, &[]);
         let hatch_payload = version_two_hatch_payload();
         crate::decode::with_expand_bytes(&hatch_payload, |expand| {
             let mut hatch = decode(
                 expand,
+                &mut expand.ctx().reserve_scoped(0, "test hatch loops").unwrap(),
                 0..hatch_payload.len(),
                 MillimeterScale::IDENTITY,
                 ArchiveVersion::V8,
             )
             .expect("hatch");
-            assert!(apply_userdata(
+            let install = apply_userdata(
+                &ctx,
                 &payload,
                 &[gradient_descriptor(&payload)],
                 MillimeterScale::IDENTITY,
                 ArchiveVersion::V8,
                 &mut hatch,
             )
-            .is_err());
+            .expect("userdata resources admitted");
+            assert!(!install.errors.is_empty());
             assert!(hatch.gradient.is_none());
         });
     }
@@ -905,10 +1052,60 @@ pub(crate) mod tests {
         payload.truncate(payload.len() - 24);
         assert!(crate::decode::with_expand_bytes(&payload, |expand| decode(
             expand,
+            &mut expand.ctx().reserve_scoped(0, "test hatch loops").unwrap(),
             0..payload.len(),
             crate::test_support::millimeter_scale(10.0),
             ArchiveVersion::V8
         ))
         .is_err());
+    }
+
+    #[test]
+    fn gradient_userdata_uses_the_callers_collection_and_work_limits() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        let payload = gradient_userdata_payload(1, &[]);
+        let hatch_payload = version_two_hatch_payload();
+        for (dimension, operation) in [
+            (
+                ResourceDimension::CollectionItems,
+                "Rhino gradient color stops",
+            ),
+            (
+                ResourceDimension::WorkUnits,
+                "Rhino gradient stop traversal",
+            ),
+        ] {
+            cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
+                let mut hatch = crate::decode::with_expand_bytes(&hatch_payload, |expand| {
+                    decode(
+                        expand,
+                        &mut expand.ctx().reserve_scoped(0, "test hatch loops").unwrap(),
+                        0..hatch_payload.len(),
+                        MillimeterScale::IDENTITY,
+                        ArchiveVersion::V8,
+                    )
+                    .expect("hatch fixture")
+                });
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                match dimension {
+                    ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
+                    ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
+                    _ => unreachable!("test dimensions"),
+                }
+                let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy)?;
+                apply_userdata(
+                    &ctx,
+                    &payload,
+                    &[gradient_descriptor(&payload)],
+                    MillimeterScale::IDENTITY,
+                    ArchiveVersion::V8,
+                    &mut hatch,
+                )
+                .map(|result| {
+                    assert!(result.errors.is_empty());
+                })
+            });
+        }
     }
 }

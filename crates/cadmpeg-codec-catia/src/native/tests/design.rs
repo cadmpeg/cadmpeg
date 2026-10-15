@@ -17,15 +17,19 @@ use crate::test_support::test_object_graph::{
 use crate::CatiaCodec;
 
 fn parallel_table() -> crate::native::CatiaDesignParallelReferenceTable {
-    crate::native::CatiaDesignParallelReferenceTable::new(
-        vec![crate::native::CatiaDesignReferenceColumn {
-            field: "catia:test:field#0".to_owned(),
-            field_class: None,
-            list_payload_offset: 0,
-        }],
-        Vec::new(),
-    )
-    .expect("empty rows satisfy cardinality")
+    crate::test_support::with_service_context(|ctx| {
+        crate::native::CatiaDesignParallelReferenceTable::new(
+            ctx,
+            vec![crate::native::CatiaDesignReferenceColumn {
+                field: "catia:test:field#0".to_owned(),
+                field_class: None,
+                list_payload_offset: 0,
+            }],
+            Vec::new(),
+        )
+        .expect("service limits cover the empty row source")
+        .expect("empty rows satisfy cardinality")
+    })
 }
 
 #[test]
@@ -146,63 +150,6 @@ fn native_design_objects_refuse_caller_collection_limit() {
     })
     .expect("service profile admits design objects");
     assert_eq!(admitted, native.design_objects);
-}
-
-#[test]
-fn parallel_reference_table_refuses_nested_collection_limit() {
-    use std::collections::HashMap;
-
-    let list_a = [0x3b, 0x82, 0x81, 0x83, 0x81, 0x84, 0x85, 0xfe];
-    let list_b = [0x3b, 0x82, 0x81, 0x84, 0x81, 0x83, 0x86, 0xfe];
-    let mut bytes = sequential_entity_backed_object_graph(&[
-        object_graph_record(&[0x04, 0x01, 0x81, 0x83], &list_a),
-        object_graph_record(&[0x04, 0x01, 0x81, 0x84], &list_b),
-        object_graph_record(&[0x04, 0x01, 0x83, 0x83], &[0xfe]),
-        object_graph_record(&[0x04, 0x01, 0x83, 0x84], &[0xfe]),
-    ]);
-    bytes.extend(catalog_stream(&[
-        "CATCatalogManager",
-        "catalogManager",
-        "catalogLinks",
-        "",
-        "Profile",
-        "Limit",
-        "Profile",
-        "Limit",
-    ]));
-    let native = crate::native::CatiaNative::decode(&bytes);
-    let graph = &native.object_graphs[0];
-    let owner = native.design_objects[0].owner_entity_id;
-    let fields = graph
-        .records
-        .iter()
-        .filter(|record| record.owner_entity_id() == Some(owner))
-        .collect::<Vec<_>>();
-    let indices = graph
-        .records
-        .iter()
-        .enumerate()
-        .filter_map(|(index, record)| Some((record.entity_id()?, index)))
-        .collect::<HashMap<_, _>>();
-    let refused = crate::test_support::with_collection_limit(2, |ctx| {
-        super::super::design_parallel_reference_table(ctx, &fields, graph, &indices)
-    });
-    assert!(
-        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_design_row_cells")
-    );
-    let retained = crate::test_support::with_retained_limit(0, |ctx| {
-        super::super::design_parallel_reference_table(ctx, &fields, graph, &indices)
-    });
-    assert!(
-        matches!(retained, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_design_column_field")
-    );
-    let admitted = crate::test_support::with_service_context(|ctx| {
-        super::super::design_parallel_reference_table(ctx, &fields, graph, &indices)
-    })
-    .expect("service profile admits parallel reference table");
-    assert_eq!(admitted, native.design_objects[0].parallel_reference_table);
 }
 
 #[test]
@@ -961,4 +908,68 @@ fn decode_links_design_objects_through_their_owner_record_group() {
         ),
         1
     );
+}
+
+#[test]
+fn parallel_reference_table_rows_propagate_caller_work_refusal() {
+    crate::test_support::with_work_limit(1, |ctx| {
+        let rows = (0..2)
+            .map(|_| crate::native::CatiaDesignReferenceRow {
+                cells: Vec::new(),
+                matching_design_object: None,
+            })
+            .collect();
+        let error = crate::native::CatiaDesignParallelReferenceTable::new(ctx, Vec::new(), rows)
+            .expect_err("two rows exceed the caller work limit");
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+            panic!("resource refusal required")
+        };
+        assert_eq!(limit.operation, "catia_design_reference_table_row_visits");
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+    });
+}
+
+#[test]
+fn parallel_reference_table_rejects_before_unread_rows() {
+    crate::test_support::with_work_limit(1, |ctx| {
+        let columns = vec![crate::native::CatiaDesignReferenceColumn {
+            field: "catia:test:field#0".to_owned(),
+            field_class: None,
+            list_payload_offset: 0,
+        }];
+        let rows = (0..4097)
+            .map(|_| crate::native::CatiaDesignReferenceRow {
+                cells: Vec::new(),
+                matching_design_object: None,
+            })
+            .collect();
+        assert!(
+            crate::native::CatiaDesignParallelReferenceTable::new(ctx, columns, rows)
+                .expect("only the first invalid row is visited")
+                .is_none()
+        );
+        assert_eq!(ctx.resource_refusal(), None);
+    });
+}
+
+#[test]
+fn parallel_reference_table_charges_only_present_rows() {
+    crate::test_support::with_work_limit(0, |ctx| {
+        assert!(
+            crate::native::CatiaDesignParallelReferenceTable::new(ctx, Vec::new(), Vec::new())
+                .expect("no rows require work")
+                .is_some()
+        );
+        let rows = vec![crate::native::CatiaDesignReferenceRow {
+            cells: Vec::new(),
+            matching_design_object: None,
+        }];
+        let error = crate::native::CatiaDesignParallelReferenceTable::new(ctx, Vec::new(), rows)
+            .expect_err("the first row requires work");
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+            panic!("resource refusal required")
+        };
+        assert_eq!(limit.operation, "catia_design_reference_table_row_visits");
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+    });
 }

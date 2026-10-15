@@ -25,26 +25,32 @@ impl<T> NumericArray<T> {
         dimensions: Vec<u32>,
         runs: Vec<NumericRun<T>>,
     ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(dimensions.len()),
-            "creo numeric array extent validation",
-        )?;
-        let expected = dimensions.iter().try_fold(1usize, |count, dimension| {
-            count.checked_mul(index_from_u32(*dimension))
-        });
-        let Some(expected) = expected else {
-            return Ok(None);
-        };
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(runs.len()),
-            "creo numeric array run validation",
-        )?;
-        let actual = runs.iter().try_fold(0usize, |count, run| {
-            count.checked_add(index_from_u32(run.count))
-        });
-        let Some(actual) = actual else {
-            return Ok(None);
-        };
+        let mut expected = 1usize;
+        let mut extents = dimensions.iter();
+        while extents.len() != 0 {
+            let Some(dimension) =
+                ctx.next_charged(&mut extents, "creo numeric array extent validation")?
+            else {
+                break;
+            };
+            let Some(product) = expected.checked_mul(index_from_u32(*dimension)) else {
+                return Ok(None);
+            };
+            expected = product;
+        }
+        let mut actual = 0usize;
+        let mut source_runs = runs.iter();
+        while source_runs.len() != 0 {
+            let Some(run) =
+                ctx.next_charged(&mut source_runs, "creo numeric array run validation")?
+            else {
+                break;
+            };
+            let Some(total) = actual.checked_add(index_from_u32(run.count)) else {
+                return Ok(None);
+            };
+            actual = total;
+        }
         Ok((expected == actual).then_some(Self {
             dimensions,
             runs,
@@ -71,6 +77,7 @@ impl<T> NumericArray<T> {
 #[cfg(test)]
 mod tests {
     use crate::legacy::{NumericPayload, NumericRun};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     fn array<T>(dimensions: Vec<u32>, runs: Vec<NumericRun<T>>) -> Option<NumericPayload<T>> {
         crate::decode::with_test_decode_ctx(|ctx| NumericPayload::array(ctx, dimensions, runs))
@@ -110,5 +117,103 @@ mod tests {
             |ctx| NumericPayload::array(ctx, vec![2, 2], vec![NumericRun { count: 4, value: 0 }]),
         );
         assert_eq!(payload.expect("array").element_count(), 4);
+    }
+
+    #[test]
+    fn numeric_array_admits_only_present_extents_and_runs() {
+        let payload = crate::test_support::assert_work_boundaries(
+            &[
+                "creo numeric array extent validation",
+                "creo numeric array run validation",
+            ],
+            |ctx| {
+                NumericPayload::array(
+                    ctx,
+                    vec![2, 2],
+                    vec![
+                        NumericRun { count: 2, value: 7 },
+                        NumericRun { count: 2, value: 9 },
+                    ],
+                )
+            },
+        )
+        .expect("complete array");
+        assert_eq!(payload.element_count(), 4);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 4;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        assert_eq!(
+            NumericPayload::array(
+                &ctx,
+                vec![2, 2],
+                vec![
+                    NumericRun { count: 2, value: 7 },
+                    NumericRun { count: 2, value: 9 }
+                ]
+            )
+            .expect("two extents and two runs")
+            .expect("complete array")
+            .element_count(),
+            4
+        );
+        let refusal = ctx
+            .charge_work_limit(1, "after exact owner work")
+            .expect_err("exact cap exhausted");
+        assert_eq!(
+            (refusal.dimension, refusal.used, refusal.additional),
+            (ResourceDimension::WorkUnits, 4, 1)
+        );
+        let NumericPayload::Array(array) = payload else {
+            panic!("expected numeric array");
+        };
+        assert_eq!(array.dimensions(), &[2, 2]);
+        assert_eq!(
+            array.runs(),
+            &[
+                NumericRun { count: 2, value: 7 },
+                NumericRun { count: 2, value: 9 }
+            ]
+        );
+    }
+
+    #[test]
+    fn empty_numeric_array_lanes_are_free_and_zero_extent_visits_once() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        assert!(NumericPayload::<u32>::array(&ctx, Vec::new(), Vec::new())
+            .expect("empty lanes do no input-sized work")
+            .is_none());
+        let payload = crate::test_support::assert_work_boundaries(
+            &["creo numeric array extent validation"],
+            |ctx| NumericPayload::<u32>::array(ctx, vec![0], Vec::new()),
+        )
+        .expect("complete zero extent");
+        assert_eq!(payload.element_count(), 0);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        assert_eq!(
+            NumericPayload::<u32>::array(&ctx, vec![0], Vec::new())
+                .expect("one extent")
+                .expect("complete zero extent")
+                .element_count(),
+            0
+        );
+        let refusal = ctx
+            .charge_work_limit(1, "after exact owner work")
+            .expect_err("exact cap exhausted");
+        assert_eq!(
+            (refusal.dimension, refusal.used, refusal.additional),
+            (ResourceDimension::WorkUnits, 1, 1)
+        );
     }
 }

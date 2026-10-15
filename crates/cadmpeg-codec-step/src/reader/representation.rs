@@ -4,24 +4,36 @@
 use super::ValueExt;
 use crate::parse::{RawRecord, Value};
 
-pub(super) fn parameters(record: &RawRecord) -> Option<&[Value]> {
-    record.partials.iter().find_map(|partial| {
-        (is_representation_name(&partial.name) && !partial.parameters.is_empty())
-            .then_some(partial.parameters.as_slice())
-    })
+pub(super) fn parameters<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    record: &'a RawRecord,
+) -> Result<Option<&'a [Value]>, cadmpeg_core::CodecError> {
+    ctx.find_map(
+        &record.partials[..],
+        |partial| {
+            Ok(
+                (is_representation_name(&partial.name) && !partial.parameters.is_empty())
+                    .then_some(partial.parameters.as_slice()),
+            )
+        },
+        "STEP representation parameter partial traversal",
+    )
 }
 
-pub(super) fn items(record: &RawRecord) -> Option<impl DoubleEndedIterator<Item = u64> + '_> {
-    item_values(record).map(|items| items.iter().filter_map(ValueExt::reference))
-}
-
-pub(super) fn item_values(record: &RawRecord) -> Option<&[Value]> {
-    record.partials.iter().find_map(|partial| {
-        if !is_representation_name(&partial.name) {
-            return None;
-        }
-        partial.parameters.get(1).and_then(ValueExt::list)
-    })
+pub(super) fn item_values<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    record: &'a RawRecord,
+) -> Result<Option<&'a [Value]>, cadmpeg_core::CodecError> {
+    ctx.find_map(
+        &record.partials[..],
+        |partial| {
+            if !is_representation_name(&partial.name) {
+                return Ok(None);
+            }
+            Ok(partial.parameters.get(1).and_then(ValueExt::list))
+        },
+        "STEP representation item partial traversal",
+    )
 }
 
 pub(super) fn is_representation_name(name: &str) -> bool {
@@ -33,7 +45,8 @@ pub(super) fn is_representation_name(name: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{items, parameters};
+    use super::{item_values, parameters};
+    use crate::reader::ValueExt;
     use crate::parse::{PartialRecord, RawRecord, Value};
 
     #[test]
@@ -50,20 +63,24 @@ mod tests {
             span: 0..1,
         };
 
-        assert_eq!(
-            parameters(&record),
-            Some(
-                [
-                    Value::String(b"datum target".to_vec()),
-                    Value::List(vec![Value::Reference(2), Value::Reference(3)]),
-                    Value::Reference(4),
-                ]
-                .as_slice()
-            )
-        );
-        assert_eq!(
-            items(&record).map(Iterator::collect::<Vec<_>>),
-            Some(vec![2, 3])
-        );
+        crate::test_support::with_service_context(&[], |_, ctx| {
+            assert_eq!(
+                parameters(ctx, &record).expect("representation parameters"),
+                Some(
+                    [
+                        Value::String(b"datum target".to_vec()),
+                        Value::List(vec![Value::Reference(2), Value::Reference(3)]),
+                        Value::Reference(4),
+                    ]
+                    .as_slice()
+                )
+            );
+            assert_eq!(
+                item_values(ctx, &record)
+                    .expect("representation items")
+                    .map(|values| values.iter().filter_map(ValueExt::reference).collect::<Vec<_>>()),
+                Some(vec![2, 3])
+            );
+        });
     }
 }

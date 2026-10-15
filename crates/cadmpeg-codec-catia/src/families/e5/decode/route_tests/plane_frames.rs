@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::families::e5::decode::{
-    fit_e5_plane_axes, fit_rank_one_e5_plane_axes, EPS_E5_DECODE_EXACT_GEOMETRY,
+    fit_e5_plane_axes, fit_rank_one_e5_plane_axes, plane_frame_residual,
+    EPS_E5_DECODE_EXACT_GEOMETRY,
 };
 use crate::families::e5::graph::{
     E5BoundEntry, E5Bounds, E5Edge, E5Face, E5Loop, E5Pcurve, E5Topology,
@@ -27,8 +28,11 @@ fn plane_axis_fit_is_uv_scale_independent() {
             (uv([0.0, scale]), point([0.0, scale, 0.0])),
             (uv([scale, scale]), point([scale, scale, 0.0])),
         ];
-        let (u_axis, v_axis, residual) =
-            fit_e5_plane_axes(point([0.0; 3]), &pairs).expect("full-rank frame");
+        let (u_axis, v_axis, residual) = crate::test_support::with_service_context(|ctx| {
+            fit_e5_plane_axes(ctx, point([0.0; 3]), &pairs)
+        })
+        .expect("service resource budget")
+        .expect("full-rank frame");
         assert!(residual <= scale * EPS_E5_DECODE_EXACT_GEOMETRY);
         assert!((u_axis.x - 1.0).abs() < EPS_E5_DECODE_EXACT_GEOMETRY);
         assert!(u_axis.y.abs() < EPS_E5_DECODE_EXACT_GEOMETRY);
@@ -40,15 +44,59 @@ fn plane_axis_fit_is_uv_scale_independent() {
 }
 
 #[test]
+fn plane_fit_helpers_propagate_exact_work_refusals() {
+    let pairs = [
+        (uv([1.0, 0.0]), point([1.0, 0.0, 0.0])),
+        (uv([0.0, 1.0]), point([0.0, 1.0, 0.0])),
+    ];
+    crate::test_support::with_work_limit(0, |ctx| {
+        let error = fit_e5_plane_axes(ctx, point([0.0; 3]), &pairs)
+            .expect_err("the UV scale scan must refuse before fitting");
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+            panic!("UV scale scan must return its resource refusal");
+        };
+        assert_eq!(limit.operation, "catia_e5_plane_uv_scale_scan");
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+    });
+    crate::test_support::with_work_limit(0, |ctx| {
+        let error =
+            fit_rank_one_e5_plane_axes(ctx, point([0.0; 3]), &pairs, Vector3::new(0.0, 0.0, 1.0))
+                .expect_err("the rank-one seed scan must refuse before fitting");
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+            panic!("rank-one seed scan must return its resource refusal");
+        };
+        assert_eq!(limit.operation, "catia_e5_rank_one_seed_scan");
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+    });
+    crate::test_support::with_work_limit(0, |ctx| {
+        let error = plane_frame_residual(
+            ctx,
+            [0.0; 3],
+            &pairs,
+            Vector3::new(1.0, 0.0, 0.0),
+            Vector3::new(0.0, 1.0, 0.0),
+        )
+        .expect_err("the residual scan must refuse before evaluating pairs");
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+            panic!("plane-frame residual scan must return its resource refusal");
+        };
+        assert_eq!(limit.operation, "catia_e5_plane_frame_residual_scan");
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+    });
+}
+
+#[test]
 fn rank_one_plane_endpoints_complete_with_known_normal() {
     for scale in [2.0, 1e-200] {
         let pairs = [
             (uv([0.0, -scale]), point([-scale, 0.0, 0.0])),
             (uv([0.0, scale]), point([scale, 0.0, 0.0])),
         ];
-        let (u_axis, v_axis, residual) =
-            fit_rank_one_e5_plane_axes(point([0.0; 3]), &pairs, Vector3::new(0.0, 1.0, 0.0))
-                .expect("rank-one frame");
+        let (u_axis, v_axis, residual) = crate::test_support::with_service_context(|ctx| {
+            fit_rank_one_e5_plane_axes(ctx, point([0.0; 3]), &pairs, Vector3::new(0.0, 1.0, 0.0))
+        })
+        .expect("service resource budget")
+        .expect("rank-one frame");
         assert!(residual <= scale * EPS_E5_DECODE_EXACT_GEOMETRY);
         assert!((v_axis.x - 1.0).abs() < EPS_E5_DECODE_EXACT_GEOMETRY);
         assert!((u_axis.z - 1.0).abs() < EPS_E5_DECODE_EXACT_GEOMETRY);
@@ -64,10 +112,16 @@ fn plane_axis_fit_rejects_numerically_rank_one_uv_data() {
         (uv([-tiny, -7.5]), point([-7.5, 0.0, 0.0])),
         (uv([tiny, 7.5]), point([7.5, 0.0, 0.0])),
     ];
-    assert!(fit_e5_plane_axes(point([0.0; 3]), &pairs).is_none());
-    let (_, _, residual) =
-        fit_rank_one_e5_plane_axes(point([0.0; 3]), &pairs, Vector3::new(0.0, 1.0, 0.0))
-            .expect("rank-one frame");
+    assert!(crate::test_support::with_service_context(|ctx| {
+        fit_e5_plane_axes(ctx, point([0.0; 3]), &pairs)
+    })
+    .expect("service resource budget")
+    .is_none());
+    let (_, _, residual) = crate::test_support::with_service_context(|ctx| {
+        fit_rank_one_e5_plane_axes(ctx, point([0.0; 3]), &pairs, Vector3::new(0.0, 1.0, 0.0))
+    })
+    .expect("service resource budget")
+    .expect("rank-one frame");
     assert!(residual < EPS_E5_DECODE_EXACT_GEOMETRY);
 }
 
@@ -145,7 +199,7 @@ fn e5_plane_solver_uses_known_normal_and_canonical_sign_for_rank_one_uv() {
         point([-7.5, 0.0, 0.0]),
     ];
     let (normal, u_axis, uv_scale) = crate::test_support::with_service_context(|ctx| {
-        super::super::solve_e5_plane_frame(
+        super::super::plane_frame_for_surface(
             ctx,
             100,
             point([0.0, 0.0, 0.0]),
@@ -217,7 +271,7 @@ fn e5_plane_solver_rechecks_the_returned_unit_frame() {
     for scale in [1.0, 2.0] {
         let points = sites.map(|[u, v]| point([u * scale, v * scale, 0.0]));
         let result = crate::test_support::with_service_context(|ctx| {
-            super::super::solve_e5_plane_frame(
+            super::super::plane_frame_for_surface(
                 ctx,
                 100,
                 point([0.0; 3]),
@@ -249,12 +303,16 @@ fn e5_plane_solver_rechecks_the_returned_unit_frame() {
 
 #[test]
 fn plane_frame_residual_rejects_nonfinite_predictions() {
-    let residual = super::super::plane_frame_residual(
-        [0.0; 3],
-        &[(uv([f64::MAX, f64::MAX]), point([0.0, 0.0, 0.0]))],
-        Vector3::new(f64::MAX, 0.0, 0.0),
-        Vector3::new(-f64::MAX, 0.0, 0.0),
-    );
+    let residual = crate::test_support::with_service_context(|ctx| {
+        super::super::plane_frame_residual(
+            ctx,
+            [0.0; 3],
+            &[(uv([f64::MAX, f64::MAX]), point([0.0, 0.0, 0.0]))],
+            Vector3::new(f64::MAX, 0.0, 0.0),
+            Vector3::new(-f64::MAX, 0.0, 0.0),
+        )
+    })
+    .expect("service resource budget");
     assert_eq!(residual, f64::INFINITY);
 }
 
@@ -381,7 +439,14 @@ fn e5_plane_frame_refuses_before_input_sized_collections() {
     let mut refused = std::collections::HashSet::new();
     for cap in 0..128 {
         match crate::test_support::with_collection_limit(cap, |ctx| {
-            super::super::solve_e5_plane_frame(ctx, 100, point([0.0; 3]), &topology, &points, None)
+            super::super::plane_frame_for_surface(
+                ctx,
+                100,
+                point([0.0; 3]),
+                &topology,
+                &points,
+                None,
+            )
         }) {
             Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => {
                 refused.insert(limit.operation);
@@ -392,7 +457,6 @@ fn e5_plane_frame_refuses_before_input_sized_collections() {
         }
     }
     for operation in [
-        "catia_e5_plane_point_refs",
         "catia_e5_plane_segments",
         "catia_e5_plane_orientations",
         "catia_e5_plane_seed_pairs",
@@ -403,18 +467,18 @@ fn e5_plane_frame_refuses_before_input_sized_collections() {
     ] {
         assert!(refused.contains(operation), "no refusal at {operation}");
     }
-    assert!(
-        crate::test_support::with_service_context(|ctx| super::super::solve_e5_plane_frame(
+    assert!(crate::test_support::with_service_context(
+        |ctx| super::super::plane_frame_for_surface(
             ctx,
             100,
             point([0.0; 3]),
             &topology,
             &points,
             None
-        ))
-        .expect("service resource budget")
-        .is_some()
-    );
+        )
+    )
+    .expect("service resource budget")
+    .is_some());
 }
 
 #[test]

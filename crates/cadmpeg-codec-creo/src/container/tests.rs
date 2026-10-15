@@ -219,9 +219,12 @@ fn topology_face_ids_refuse_before_distinct_node_insertion() {
 #[test]
 fn named_datum_plane_refuses_before_aggregate_growth() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    let payload = b"\xe0\x01geom_id\0\x02\xe0\x01feat_id\0\x01outline\0\xf9\x02\x03\x18\x46\x08\0\0\0\0\0\0\x46\x08\0\0\0\0\0\0\x18\x46\x08\0\0\0\0\0\0\x46\x08\0\0\0\0\0\0";
-    let section = super::Section::scan("ActDatums".to_string(), 0, payload.len(), None, payload)
-        .expect("bounded datum section");
+    let payload = b"\xe0\x01geom_id\0\x02\xe0\x01feat_id\0\x01outline\0\xf9\x02\x03\x18\
+        \x46\x08\0\0\0\0\0\0\x46\x08\0\0\0\0\0\0\x18\x46\x08\0\0\0\0\0\0\x46\
+        \x08\0\0\0\0\0\0";
+    let section =
+        super::Section::scan_for_test("ActDatums".to_string(), 0, payload.len(), None, payload)
+            .expect("bounded datum section");
     let run = |items| {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -396,8 +399,15 @@ fn feature_geometry_table_aggregation_refuses_before_vec_growth() {
         super::feature_geometry_tables(&ctx, &[], std::slice::from_ref(&row))
             .map(|tables| tables.len())
     };
-    assert_eq!(run(5).expect("one aggregate table admitted"), 1);
-    let error = run(4).expect_err("aggregate table needs another item");
+    let admitted =
+        crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, None, run);
+    assert_eq!(run(admitted).expect("one aggregate record admitted"), 1);
+    let boundary = crate::test_support::allocation_limit_at(
+        ResourceDimension::CollectionItems,
+        Some("creo feature geometry table aggregation"),
+        run,
+    );
+    let error = run(boundary).expect_err("aggregate record growth needs admission");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "creo feature geometry table aggregation"));
@@ -482,8 +492,15 @@ fn revolution_extent_aggregation_refuses_before_vec_growth() {
         )
         .map(|records| records.len())
     };
-    assert_eq!(run(2).expect("one aggregate extent admitted"), 1);
-    let error = run(1).expect_err("aggregate extent needs another item");
+    let admitted =
+        crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, None, run);
+    assert_eq!(run(admitted).expect("one aggregate record admitted"), 1);
+    let boundary = crate::test_support::allocation_limit_at(
+        ResourceDimension::CollectionItems,
+        Some("creo revolution extent aggregation"),
+        run,
+    );
+    let error = run(boundary).expect_err("aggregate record growth needs admission");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "creo revolution extent aggregation"));
@@ -495,8 +512,9 @@ fn feature_definition_aggregation_refuses_before_vec_growth() {
     use cadmpeg_core::CodecError;
 
     let payload = b"feat_defs_917\0template\xe3S2D0004\0replay";
-    let section = super::Section::scan("FeatDefs".to_string(), 0, payload.len(), None, payload)
-        .expect("bounded feature section");
+    let section =
+        super::Section::scan_for_test("FeatDefs".to_string(), 0, payload.len(), None, payload)
+            .expect("bounded feature section");
     let run = |items| {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -505,8 +523,15 @@ fn feature_definition_aggregation_refuses_before_vec_growth() {
             .expect("root feature input is admitted");
         super::feature_definitions(&ctx, std::slice::from_ref(&section)).map(|rows| rows.len())
     };
-    assert_eq!(run(7).expect("one definition admitted"), 1);
-    let error = run(6).expect_err("aggregate definition needs an item");
+    let admitted =
+        crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, None, run);
+    assert_eq!(run(admitted).expect("one aggregate record admitted"), 1);
+    let boundary = crate::test_support::allocation_limit_at(
+        ResourceDimension::CollectionItems,
+        Some("creo feature definitions"),
+        run,
+    );
+    let error = run(boundary).expect_err("aggregate record growth needs admission");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "creo feature definitions"));
@@ -519,8 +544,9 @@ fn depdb_recipe_rows_with_limits(
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
     let payload = b"\xe3\xf7\x50\x9f\x75\x83\x95\xf6\x9f\x73Profile 1\0\xf6\0protextrude\0";
-    let section = super::Section::scan("DEPDB_DATA".to_string(), 0, payload.len(), None, payload)
-        .expect("bounded recipe section");
+    let section =
+        super::Section::scan_for_test("DEPDB_DATA".to_string(), 0, payload.len(), None, payload)
+            .expect("bounded recipe section");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = items;
@@ -558,7 +584,13 @@ fn depdb_recipe_row_refuses_before_vec_growth() {
     use cadmpeg_core::decode::ResourceDimension;
     use cadmpeg_core::CodecError;
 
-    let error = depdb_recipe_rows_with_limits(5, u64::MAX).expect_err("row needs a vector item");
+    let boundary = crate::test_support::allocation_limit_at(
+        ResourceDimension::CollectionItems,
+        Some("creo DEPDB recipe rows"),
+        |items| depdb_recipe_rows_with_limits(items, u64::MAX),
+    );
+    let error =
+        depdb_recipe_rows_with_limits(boundary, u64::MAX).expect_err("row needs a vector item");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "creo DEPDB recipe rows"));
@@ -570,8 +602,9 @@ fn reference_scan_with_limit(
 ) -> Result<super::ReferenceScan, cadmpeg_core::CodecError> {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
-    let section = super::Section::scan("MdlRefInfo".to_string(), 0, payload.len(), None, payload)
-        .expect("bounded reference section");
+    let section =
+        super::Section::scan_for_test("MdlRefInfo".to_string(), 0, payload.len(), None, payload)
+            .expect("bounded reference section");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = items;
@@ -654,9 +687,14 @@ fn feature_row_aggregation_refuses_before_vec_growth() {
     use std::collections::BTreeSet;
 
     let payload = crate::test_support::allfeatur_row(4, [0xeb, 0x04], 917, &[0xaa]);
-    let section =
-        container::Section::scan("AllFeatur".to_string(), 0, payload.len(), None, &payload)
-            .expect("bounded AllFeatur section");
+    let section = container::Section::scan_for_test(
+        "AllFeatur".to_string(),
+        0,
+        payload.len(),
+        None,
+        &payload,
+    )
+    .expect("bounded AllFeatur section");
     let run = |limit| {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -678,8 +716,8 @@ fn section_result_collector_refuses_before_output_vec_growth() {
     use cadmpeg_core::CodecError;
 
     let bytes = [0u8];
-    let section =
-        super::Section::scan("body".to_string(), 0, 1, None, &bytes).expect("one bounded section");
+    let section = super::Section::scan_for_test("body".to_string(), 0, 1, None, &bytes)
+        .expect("one bounded section");
     let sections = [section];
     let run = |limit| {
         let arena = DecodeArena::new();
@@ -691,7 +729,7 @@ fn section_result_collector_refuses_before_output_vec_growth() {
             &ctx,
             sections.iter().map(Ok),
             |_| Ok(vec![42u32]),
-            |_, _| {},
+            |_, _| Ok(()),
             |_| 0,
         )
     };
@@ -889,8 +927,18 @@ fn feature_row_definition_refuses_before_vec_growth() {
             .expect("feature row is admitted");
         super::feature_row_definitions(&ctx, std::slice::from_ref(&row))
     };
-    assert_eq!(run(2).expect("one definition admitted").len(), 1);
-    let error = run(1).expect_err("one definition needs another item");
+    let admitted =
+        crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, None, run);
+    assert_eq!(
+        run(admitted).expect("one aggregate record admitted").len(),
+        1
+    );
+    let boundary = crate::test_support::allocation_limit_at(
+        ResourceDimension::CollectionItems,
+        Some("creo feature row definitions"),
+        run,
+    );
+    let error = run(boundary).expect_err("aggregate record growth needs admission");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "creo feature row definitions"));
@@ -920,12 +968,7 @@ fn append_definition_with_limit(
     let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
         .expect("definition input is admitted");
     let mut definitions = Vec::new();
-    super::append_feature_definitions(
-        &ctx,
-        &mut definitions,
-        vec![one_feature_definition()],
-        operation,
-    )?;
+    ctx.extend_vec(&mut definitions, vec![one_feature_definition()], operation)?;
     Ok(definitions.len())
 }
 
@@ -1038,8 +1081,9 @@ fn two_chart_pcurve_count_node_refuses_before_insertion() {
     payload.extend_from_slice(&[8, 0, 4, 0xf6, 1]);
     payload.extend_from_slice(&samples);
     payload.extend_from_slice(&[10, 11, 9, 7, 0, 0, 0xe3, 0xe1, 0xe3]);
-    let section = super::Section::scan("body".to_string(), 0, payload.len(), None, &payload)
-        .expect("one bounded section");
+    let section =
+        super::Section::scan_for_test("body".to_string(), 0, payload.len(), None, &payload)
+            .expect("one bounded section");
     let sections = [section];
     let face_ids = BTreeSet::from([10, 11]);
     let run = |limit| {
@@ -1069,8 +1113,9 @@ fn current_feature_operations_with_limit(limit: u64) -> Result<usize, cadmpeg_co
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
     let payload = b"Round id 4\0";
-    let section = super::Section::scan("MdlStatus".to_string(), 0, payload.len(), None, payload)
-        .expect("one bounded status section");
+    let section =
+        super::Section::scan_for_test("MdlStatus".to_string(), 0, payload.len(), None, payload)
+            .expect("one bounded status section");
     let sections = [section];
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -1120,8 +1165,9 @@ fn feature_reference_aggregation_refuses_before_vec_growth() {
     use cadmpeg_core::CodecError;
 
     let payload = b"\xf7\x71\x01\x05\x02N\xff\0\x01\x01";
-    let section = super::Section::scan("MdlRefInfo".to_string(), 0, payload.len(), None, payload)
-        .expect("one bounded reference section");
+    let section =
+        super::Section::scan_for_test("MdlRefInfo".to_string(), 0, payload.len(), None, payload)
+            .expect("one bounded reference section");
     let sections = [section];
     let run = |limit| {
         let arena = DecodeArena::new();
@@ -1162,7 +1208,7 @@ fn duplicate_primitive_section_namespace_is_refused() {
 #[test]
 fn expanded_section_local_ceiling_is_a_refusal() {
     let bytes = b"#Body\n\x1f\x9d\x10";
-    let section = super::Section::scan(
+    let section = super::Section::scan_for_test(
         "Body".to_owned(),
         0,
         bytes.len(),
@@ -1186,7 +1232,7 @@ fn container_framing_misses_and_text_copies_refuse_work() {
         &[
             "creo container model-name scan",
             "creo version line scan",
-            "creo version text work",
+            "creo version UTF-8 validation",
             "creo container header scans",
             "creo container TOC scans",
             "creo TOC discovery scan",
@@ -1198,4 +1244,236 @@ fn container_framing_misses_and_text_copies_refuse_work() {
 
 mod unit_selection;
 
+mod visit_boundaries;
 mod work_admission;
+
+#[test]
+fn toc_header_utf8_refuses_before_invalid_header() {
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "creo UTF-8 validation",
+        |ctx| {
+            super::toc_sections(
+                ctx,
+                &mut ctx
+                    .reserve_scoped(0, "test section roster storage")
+                    .expect("empty storage"),
+                b"#UGC_TOC\xff\n",
+                0,
+            )
+        },
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && resource.operation == "creo UTF-8 validation")
+    );
+}
+
+#[test]
+fn cmnm_name_utf8_refuses_before_invalid_name() {
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "creo UTF-8 validation",
+        |ctx| super::cmnm_model_name(ctx, b"#- CMNM 001\xff"),
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && resource.operation == "creo UTF-8 validation")
+    );
+}
+
+#[test]
+fn legacy_release_utf8_refuses_work() {
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "creo UTF-8 validation",
+        |ctx| super::legacy_product_release(ctx, b"Release 2020"),
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && resource.operation == "creo UTF-8 validation")
+    );
+}
+
+#[test]
+fn attached_legacy_release_utf8_refuses_work() {
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "creo UTF-8 validation",
+        |ctx| super::legacy_product_release(ctx, b"Release2020"),
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && resource.operation == "creo UTF-8 validation")
+    );
+}
+
+#[test]
+fn legacy_schema_utf8_refuses_before_incomplete_object() {
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "creo UTF-8 validation",
+        |ctx| super::legacy_ascii_framing(ctx, b"#-END_OF_UGC_HEADER\n#P_OBJECT 1\n"),
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && resource.operation == "creo UTF-8 validation")
+    );
+}
+
+#[test]
+fn section_name_utf8_refuses_work() {
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "creo UTF-8 validation",
+        |ctx| {
+            super::scan_sections(
+                ctx,
+                &mut ctx
+                    .reserve_scoped(0, "test section roster storage")
+                    .expect("empty storage"),
+                b"\n#Body\n",
+                0,
+            )
+        },
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && resource.operation == "creo UTF-8 validation")
+    );
+}
+
+#[test]
+fn legacy_toc_value_utf8_refuses_before_invalid_fields() {
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "creo UTF-8 validation",
+        |ctx| {
+            super::legacy_toc_sections(
+                ctx,
+                &mut ctx
+                    .reserve_scoped(0, "test section roster storage")
+                    .expect("empty storage"),
+                b"\n@Toc 1 0\n\xff\n",
+                0,
+            )
+        },
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && resource.operation == "creo UTF-8 validation")
+    );
+}
+
+#[test]
+fn legacy_toc_array_utf8_refuses_before_invalid_fields() {
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "creo UTF-8 validation",
+        |ctx| {
+            super::legacy_toc_sections(
+                ctx,
+                &mut ctx
+                    .reserve_scoped(0, "test section roster storage")
+                    .expect("empty storage"),
+                b"\n@Toc 1 0\n0 1 ->\n@entry 2 1\n\xff\n",
+                0,
+            )
+        },
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && resource.operation == "creo UTF-8 validation")
+    );
+}
+
+#[test]
+fn native_model_name_utf8_refuses_before_invalid_name() {
+    let payload = b"model_name\0\xff\0";
+    let section =
+        super::Section::scan_for_test("BasicData".to_string(), 0, payload.len(), None, payload)
+            .expect("complete synthetic model-name section");
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "creo UTF-8 validation",
+        |ctx| super::native_model_name(ctx, std::slice::from_ref(&section)),
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && resource.operation == "creo UTF-8 validation")
+    );
+}
+
+#[test]
+fn aggregate_pcurve_retain_refuses_work() {
+    let samples = [
+        0x0f, 0xe4, 0x0d, 0x18, 0xe4, 0x0f, 0x18, 0x0d, 0x0d, 0x18, 0xe4, 0x0f,
+    ];
+    let mut payload = b"topol_ref_data\0".to_vec();
+    payload.extend_from_slice(&[7, 0, 4, 1, 0xf6, 0xfc, 3]);
+    payload.extend_from_slice(&samples);
+    payload.extend_from_slice(&[10, 11, 8, 9, 0, 0, 0xe3, 0xe1, 0xe3]);
+    let section =
+        super::Section::scan_for_test("VisibGeom".to_string(), 0, payload.len(), None, &payload)
+            .expect("complete synthetic pcurve section");
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "creo aggregate pcurve retain",
+        |ctx| {
+            super::two_chart_pcurves(
+                ctx,
+                std::slice::from_ref(&section),
+                &std::collections::BTreeSet::from([10, 11]),
+            )
+        },
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && resource.operation == "creo aggregate pcurve retain")
+    );
+}
+
+#[test]
+fn version_line_trim_refuses_work() {
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "creo version line trim",
+        |ctx| super::line_at(ctx, b" x \n", 0),
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && resource.operation == "creo version line trim")
+    );
+}
+
+mod identity_index;
+
+mod family_pointer;
+
+mod thumbnail;
+
+mod definition_operation_lifetime;
+
+mod borrowed_recipe_states;

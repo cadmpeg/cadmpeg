@@ -41,6 +41,7 @@ fn type406_form27_complete_counted_span_keeps_boundary_with_invalid_value_type()
         parameter_end: tokens.len(),
         tokens,
         comment: Vec::new(),
+        double_precision_reals: Vec::new(),
     };
 
     let analysis = crate::test_support::with_service_context(&[], |ctx| {
@@ -138,6 +139,7 @@ fn type406_form27_malformed_np_or_value_count_does_not_enable_generic_recovery()
             parameter_end: tokens.len(),
             tokens,
             comment: Vec::new(),
+            double_precision_reals: Vec::new(),
         };
         let analysis = crate::test_support::with_service_context(&[], |ctx| {
             analyze_trailing_pointer_groups_for_global_table_with_context(
@@ -199,6 +201,7 @@ fn type402_form6_entity_table_boundary_follows_view_list() {
                 .collect(),
             parameter_end,
             comment: Vec::new(),
+            double_precision_reals: Vec::new(),
         };
 
         let analysis = crate::test_support::with_service_context(&[], |ctx| {
@@ -244,6 +247,7 @@ fn type402_form6_entity_table_boundary_precedes_valid_generic_alternative() {
             .collect(),
         parameter_end: values.len(),
         comment: Vec::new(),
+        double_precision_reals: Vec::new(),
     };
 
     let analysis = crate::test_support::with_service_context(&[], |ctx| {
@@ -297,6 +301,7 @@ fn type402_form6_malformed_fields_do_not_enable_generic_recovery() {
                 .collect(),
             parameter_end,
             comment: Vec::new(),
+            double_precision_reals: Vec::new(),
         };
 
         let analysis = crate::test_support::with_service_context(&[], |ctx| {
@@ -336,6 +341,7 @@ fn type402_form6_malformed_fields_do_not_enable_generic_recovery() {
         tokens: values,
         parameter_end: 8,
         comment: Vec::new(),
+        double_precision_reals: Vec::new(),
     };
     let analysis = crate::test_support::with_service_context(&[], |ctx| {
         analyze_trailing_pointer_groups_for_global_table_with_context(
@@ -395,6 +401,7 @@ fn type402_form16_entity_table_boundary_follows_entity_count() {
                 })
                 .collect(),
             comment: Vec::new(),
+            double_precision_reals: Vec::new(),
         };
 
         let analysis = crate::test_support::with_service_context(&[], |ctx| {
@@ -475,6 +482,7 @@ fn type402_form16_table_boundary_precedes_valid_generic_alternative() {
             })
             .collect(),
         comment: Vec::new(),
+        double_precision_reals: Vec::new(),
     };
     let generic = crate::test_support::with_service_context(&[], |ctx| {
         structural_pointer_group_candidates_with_context(&record, ctx)
@@ -692,7 +700,13 @@ fn type402_view_visibility_entity_count_requirement_follows_dialect() {
     );
 
     assert_eq!(
-        entity_primary_end_for_global_table(&omitted_count, &directory, GlobalTable::V4_0),
+        crate::test_support::with_service_context(&[], |ctx| entity_primary_end_for_global_table(
+            &omitted_count,
+            &directory,
+            GlobalTable::V4_0,
+            ctx
+        ))
+        .unwrap(),
         Some(omitted_count.tokens.len())
     );
     let v4_analysis = crate::test_support::with_service_context(&[], |ctx| {
@@ -708,7 +722,10 @@ fn type402_view_visibility_entity_count_requirement_follows_dialect() {
 
     for global_table in [GlobalTable::V5_0, GlobalTable::V5Later] {
         assert_eq!(
-            entity_primary_end_for_global_table(&omitted_count, &directory, global_table),
+            crate::test_support::with_service_context(&[], |ctx| {
+                entity_primary_end_for_global_table(&omitted_count, &directory, global_table, ctx)
+            })
+            .unwrap(),
             Some(4),
             "global_table={global_table:?}"
         );
@@ -745,7 +762,13 @@ fn type402_view_visibility_entity_count_requirement_follows_dialect() {
         ],
     );
     assert_eq!(
-        entity_primary_end_for_global_table(&explicit_zero, &directory, GlobalTable::V4_0),
+        crate::test_support::with_service_context(&[], |ctx| entity_primary_end_for_global_table(
+            &explicit_zero,
+            &directory,
+            GlobalTable::V4_0,
+            ctx
+        ))
+        .unwrap(),
         Some(4)
     );
     let analysis = crate::test_support::with_service_context(&[], |ctx| {
@@ -762,6 +785,46 @@ fn type402_view_visibility_entity_count_requirement_follows_dialect() {
         .expect("explicit V4 Type 402 entity count");
     assert_eq!(groups.token_start, 4);
     assert_eq!(groups.associations().copied().collect::<Vec<_>>(), vec![1]);
+}
+
+#[test]
+fn primary_layout_directory_lookup_is_admitted_and_keeps_missing_entry_fallback() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use std::collections::BTreeMap;
+
+    let source = directory_target(1, 116);
+    let directory = BTreeMap::from([(source.sequence, &source)]);
+    let record = token_parameter_record(9, vec![116.into(), 0.into()]);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "iges parameter primary layout directory lookup",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            entity_primary_end_for_global_table(
+                &record,
+                &directory,
+                GlobalTable::V5Later,
+                &ctx,
+            )
+            .map(|_| ())
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.additional > 0
+                && limit.operation == "iges parameter primary layout directory lookup"
+    ));
+
+    let result = crate::test_support::with_service_context(&[], |ctx| {
+        entity_primary_end_for_global_table(&record, &directory, GlobalTable::V5Later, ctx)
+    })
+    .unwrap();
+    assert_eq!(result, None);
 }
 
 #[test]
@@ -843,6 +906,7 @@ fn type402_external_reference_index_entity_table_boundary_follows_entry_pairs() 
                 tokens,
                 parameter_end,
                 comment: Vec::new(),
+                double_precision_reals: Vec::new(),
             };
 
             let analysis = crate::test_support::with_service_context(&[], |ctx| {
@@ -937,6 +1001,7 @@ fn type402_external_reference_index_malformed_counts_or_pairs_do_not_enable_gene
                 tokens,
                 parameter_end,
                 comment: Vec::new(),
+                double_precision_reals: Vec::new(),
             };
 
             let analysis = crate::test_support::with_service_context(&[], |ctx| {
@@ -999,6 +1064,7 @@ fn type402_form13_entity_table_boundary_follows_geometry_list() {
             tokens,
             parameter_end,
             comment: Vec::new(),
+            double_precision_reals: Vec::new(),
         };
 
         let analysis = crate::test_support::with_service_context(&[], |ctx| {
@@ -1106,6 +1172,7 @@ fn type402_form13_malformed_fields_do_not_enable_generic_recovery() {
             tokens,
             parameter_end,
             comment: Vec::new(),
+            double_precision_reals: Vec::new(),
         };
 
         let analysis = crate::test_support::with_service_context(&[], |ctx| {

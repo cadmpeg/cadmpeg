@@ -16,7 +16,21 @@ fn revolution_axis_error_refuses_retained_text_limit() {
             .expect("finite nonzero direction");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        Some("creo revolution axis error text"),
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = policy;
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+            match super::revolution_unit_axis(&ctx, 40, direction) {
+                Err(CodecError::Malformed(_)) => Ok(()),
+                value => value.map(|_| ()),
+            }
+        },
+    );
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     let error = super::revolution_unit_axis(&ctx, 40, direction)
         .expect_err("axis error text exceeds retained limit");
@@ -39,7 +53,21 @@ fn revolution_knot_error_refuses_retained_text_limit() {
     use cadmpeg_core::CodecError;
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        Some("creo revolution knot error text"),
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = policy;
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+            match super::directrix_parameter_range(&ctx, 17, &[]) {
+                Err(CodecError::Malformed(_)) => Ok(()),
+                value => value.map(|_| ()),
+            }
+        },
+    );
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     let error = super::directrix_parameter_range(&ctx, 17, &[])
         .expect_err("knot error text exceeds retained limit");
@@ -64,28 +92,19 @@ fn revolution_knot_error_refuses_retained_text_limit() {
 fn revolved_saved_spline_loss_refuses_text_and_row_below_limits() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
-    for (bytes, items, dimension, operation) in [
+    for (dimension, operation) in [
         (
-            0,
-            u64::MAX,
             ResourceDimension::RetainedBytes,
             "creo revolved saved spline loss text",
         ),
         (
-            u64::MAX,
-            0,
             ResourceDimension::CollectionItems,
             "creo revolved saved spline losses",
         ),
     ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = bytes;
-        policy.limits.max_collection_items = items;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let error =
-            super::push_revolution_surface_loss(&ctx, &mut Vec::new(), "saved spline refused")
-                .expect_err("below-need loss cap");
+        let error = crate::test_support::last_refusal_at(&[], dimension, operation, |ctx| {
+            super::push_revolution_surface_loss(ctx, &mut Vec::new(), "saved spline refused")
+        });
         assert!(matches!(error, CodecError::ResourceLimit(resource)
             if resource.dimension == dimension && resource.operation == operation));
     }
@@ -96,73 +115,6 @@ fn revolved_saved_spline_loss_refuses_text_and_row_below_limits() {
     super::push_revolution_surface_loss(&ctx, &mut losses, "saved spline refused")
         .expect("service loss");
     assert_eq!(losses[0].message, "saved spline refused");
-}
-
-#[test]
-fn revolution_generating_ids_refuse_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-    let mut ids = std::collections::BTreeSet::new();
-    let error = super::insert_generating_segment_id(&ctx, &mut ids, 9)
-        .expect_err("one generating ID exceeds the collection limit");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.operation == "creo revolution generating segment IDs"),
-        "{error:?}"
-    );
-    crate::decode::with_test_decode_ctx(|ctx| {
-        super::insert_generating_segment_id(ctx, &mut ids, 9)
-    })
-    .expect("service profile admits one generating ID");
-    assert_eq!(ids, std::collections::BTreeSet::from([9]));
-}
-
-#[test]
-fn revolution_profile_id_merge_refuses_second_node() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    let segment = crate::feature::definitions::FeatureSegment {
-        kind: crate::feature::definitions::FeatureSegmentKind::Line([1, 2]),
-        directions: [None; 3],
-        center_id: None,
-        arc_orientation: None,
-        vertical_horizontal: None,
-        radius_ref: None,
-        radius2_ref: None,
-        external_id: 9,
-        body: Vec::new(),
-        offset: 0,
-    };
-    let profiles = [vec![cadmpeg_ir::sketches::SketchEntityUse {
-        entity: cadmpeg_ir::sketches::SketchEntityId::mint(
-            "creo:featdefs:sketch_entity#2:9".to_string(),
-        )
-        .expect("profile entity identity"),
-        reversed: false,
-    }]];
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 1;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-    let profile_ids =
-        crate::decode::feature_history::link::profile_segment_ids(&ctx, 2, &[&segment], &profiles)
-            .expect("one profile ID is admitted");
-    let mut generating_ids = std::collections::BTreeSet::new();
-    let error = super::insert_generating_segment_id(
-        &ctx,
-        &mut generating_ids,
-        *profile_ids.first().expect("one profile ID"),
-    )
-    .expect_err("a second BTreeSet node exceeds the limit");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.operation == "creo revolution generating segment IDs"),
-        "{error:?}"
-    );
 }
 
 fn saved_spline_definition() -> crate::feature::definitions::FeatureDefinition {
@@ -226,7 +178,8 @@ fn saved_spline_definition() -> crate::feature::definitions::FeatureDefinition {
                 internal_id: 1,
                 bitmask: 0,
                 offset: 0,
-            }],
+            }]
+            .into(),
             offset: 0,
         }),
         section_3d: Some(crate::feature::definitions::FeatureSection3d {
@@ -436,4 +389,160 @@ fn saved_spline_revolution_refuses_construction_surface_identity_copy() {
         },
     );
     assert_eq!(count, 1);
+}
+
+#[test]
+fn duplicate_saved_spline_surface_releases_candidate_storage() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let scan = saved_spline_revolution_scan();
+    let mut ir = CadIr::empty();
+    ir.model.curves.push(saved_spline_curve());
+    ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
+        id: cadmpeg_ir::ids::SurfaceId::mint("creo:visibgeom:surface#20")
+            .expect("existing surface"),
+        geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(
+            cadmpeg_ir::geometry::SolvedSurfaceGeometry::Unknown { record: None },
+        ),
+        source_object: None,
+    });
+    let expected = ir.clone();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = 1024 * 1024;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    for _ in 0..3 {
+        let mut annotations = AnnotationBuilder::new();
+        let mut losses = Vec::new();
+        assert_eq!(
+            transfer_resolved_revolution_surfaces(
+                &ctx,
+                &scan,
+                &mut ir,
+                &mut annotations,
+                &mut losses,
+                &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+            )
+            .expect("duplicate candidate keeps no output storage"),
+            0
+        );
+        assert!(losses.is_empty());
+    }
+    assert_eq!(ir, expected);
+    let available = ctx
+        .reserve_scoped(
+            policy.limits.max_materialized_bytes,
+            "after duplicate surface candidate",
+        )
+        .expect("all candidate and lookup reservations ended");
+    drop(available);
+    let error = ctx
+        .charge_retained(1, "after duplicate surface retention")
+        .expect_err("zero retained cap");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::RetainedBytes && resource.used == 0));
+}
+
+#[test]
+fn duplicate_vertex_orbits_release_candidate_storage() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_ir::math::Point2;
+    use cadmpeg_ir::sketches::{
+        Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry,
+        SketchGeometryDefinition, SketchPlacement, SketchProfiles,
+    };
+    for extrusion in [false, true] {
+        let mut scan = saved_spline_revolution_scan();
+        if extrusion {
+            scan.features.operations[0].kind = crate::feature::operations::OperationKind::Extrude;
+            scan.features.operations[0].recipe =
+                crate::feature::operations::RecipeResolution::Resolved(
+                    crate::feature::operations::FeatureRecipe::ProtrudeExtrude,
+                );
+            scan.features.revolution_extents.clear();
+            scan.features.rows.push(crate::feature::rows::FeatureRow {
+                feature_id: 40,
+                root_schema_class: Some(crate::feature::schema::SchemaClass::Protrusion),
+                body: vec![0; 2].try_into().expect("complete fixture row header"),
+                stream_offset: 0,
+                body_offset: 0,
+                offset: 0,
+            });
+        }
+        let mut ir = CadIr::empty();
+        let sketch_id = crate::decode::with_test_decode_ctx(|ctx| {
+            super::model_sketch_id(ctx, &scan, &scan.features.definitions[0])
+        })
+        .expect("sketch identity admission")
+        .expect("fixture sketch");
+        let entity_id = SketchEntityId::mint("test:sketch:line#1").expect("fixture entity");
+        ir.model.sketches.push(Sketch {
+            id: sketch_id.clone(),
+            name: None,
+            configuration: None,
+            visible: None,
+            placement: SketchPlacement::Unresolved {},
+            profiles: SketchProfiles::try_from(vec![vec![SketchEntityUse {
+                entity: entity_id.clone(),
+                reversed: false,
+            }]])
+            .expect("fixture profile"),
+            native_ref: None,
+        });
+        ir.model.sketch_entities.push(SketchEntity::new(
+            entity_id,
+            sketch_id,
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
+                start: Point2::new(2.0, 0.0),
+                end: Point2::new(2.0, 1.0),
+            })
+            .expect("fixture line"),
+        ));
+        let transfer = |ctx: &DecodeContext<'_>, ir: &mut CadIr| {
+            let mut annotations = AnnotationBuilder::new();
+            let mut source_carriers = crate::decode::source_carriers::SourceUnitCarriers::default();
+            if extrusion {
+                super::transfer_resolved_extrusion_vertex_orbit_curves(
+                    ctx,
+                    &scan,
+                    ir,
+                    &mut annotations,
+                    &mut source_carriers,
+                )
+            } else {
+                super::transfer_resolved_revolution_vertex_orbit_curves(
+                    ctx,
+                    &scan,
+                    ir,
+                    &mut annotations,
+                    &mut source_carriers,
+                )
+            }
+        };
+        let count = crate::decode::with_test_decode_ctx(|ctx| transfer(ctx, &mut ir))
+            .expect("service orbit transfer");
+        assert_eq!(count, 2, "both profile endpoints generate orbits");
+        assert_eq!(ir.model.curves.len(), 2);
+        let expected = ir.clone();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_materialized_bytes = 1024 * 1024;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        for _ in 0..3 {
+            assert_eq!(
+                transfer(&ctx, &mut ir).expect("duplicate orbit keeps no output storage"),
+                0
+            );
+        }
+        assert_eq!(ir, expected);
+        let available = ctx
+            .reserve_scoped(
+                policy.limits.max_materialized_bytes,
+                "after duplicate orbit candidates",
+            )
+            .expect("all candidate reservations ended");
+        drop(available);
+    }
 }

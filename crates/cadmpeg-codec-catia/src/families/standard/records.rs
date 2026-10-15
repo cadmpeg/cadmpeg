@@ -247,89 +247,120 @@ fn standard_surface_record_table(
     ctx: &DecodeContext<'_>,
     brep: &[u8],
 ) -> Result<StandardSurfaceRecordTable, CodecError> {
-    let mut records = BTreeMap::<usize, StandardSurfaceRecord>::new();
-    for prefix in surface_prefixes(ctx, brep)? {
-        if face_sense(brep, &prefix).is_some() {
-            ctx.insert_btree_map(
-                &mut records,
-                prefix.pos - analytic_plane::MARKER,
-                StandardSurfaceRecord::Analytic(prefix),
-                "catia_surface_record_tree",
-            )?;
-        }
-    }
-    let mut analytic_ranges = Vec::new();
-    for record in records.values() {
-        if let StandardSurfaceRecord::Analytic(prefix) = record {
-            ctx.push_vec(
-                &mut analytic_ranges,
-                (prefix.pos - analytic_plane::MARKER, record.end()),
-                "catia_surface_analytic_ranges",
-            )?;
-        }
-    }
-    let mut next_analytic = analytic_ranges.iter().copied().peekable();
-    let candidate_positions = match brep.len().checked_sub(freeform_core::SIGN) {
-        Some(last) => 0..last,
-        None => 0..0,
-    };
-    for pos in candidate_positions {
-        if brep.get(pos + freeform_core::ZERO_RUN..pos + freeform_core::BOUNDS) != Some(&[0, 0, 0])
-        {
-            continue;
-        }
-        while next_analytic
-            .peek()
-            .is_some_and(|(_, analytic_end)| *analytic_end <= pos)
-        {
-            next_analytic.next();
-        }
-        if next_analytic
-            .peek()
-            .is_some_and(|(analytic_start, _)| *analytic_start < pos + freeform_core::LEN)
-        {
-            continue;
-        }
-        let tag = u24_le(brep, pos);
-        let forward = match brep[pos + freeform_core::SIGN] {
-            0x01 => true,
-            0xff => false,
-            _ => continue,
-        };
-        let Some(bounds) = face_bounds_at(brep, pos + freeform_core::BOUNDS) else {
-            continue;
-        };
-        if tag == 0 {
-            continue;
-        }
-        ctx.insert_btree_map(
-            &mut records,
-            pos,
-            StandardSurfaceRecord::Freeform {
-                pos,
-                tag,
-                bounds,
-                forward,
-            },
-            "catia_surface_record_tree",
-        )?;
-    }
+    let mut table_storage = ctx.reserve_scoped(0, "catia_surface_record_table_scratch")?;
+    let records = table_storage.with_storage(|| -> Result<_, CodecError> {
+        let mut records = BTreeMap::<usize, StandardSurfaceRecord>::new();
+        let prefixes = surface_prefixes(ctx, brep)?;
 
+        let mut charged_visits = (prefixes).iter();
+        while let Some(prefix) =
+            ctx.next_charged(&mut charged_visits, "catia_standard_iteration")?
+        {
+            if face_sense(brep, prefix).is_some() {
+                ctx.insert_btree_map(
+                    &mut records,
+                    prefix.pos - analytic_plane::MARKER,
+                    StandardSurfaceRecord::Analytic(*prefix),
+                    "catia_surface_record_tree",
+                )?;
+            }
+        }
+
+        let mut analytic_ranges = Vec::new();
+
+        let mut charged_visits = records.values();
+        while let Some(record) =
+            ctx.next_charged(&mut charged_visits, "catia_standard_iteration")?
+        {
+            if let StandardSurfaceRecord::Analytic(prefix) = record {
+                ctx.push_vec(
+                    &mut analytic_ranges,
+                    (prefix.pos - analytic_plane::MARKER, record.end()),
+                    "catia_surface_analytic_ranges",
+                )?;
+            }
+        }
+
+        let mut next_analytic = analytic_ranges.iter();
+        if let Some(last) = brep.len().checked_sub(freeform_core::SIGN) {
+            let candidate_bytes = brep.get(..last).ok_or_else(|| {
+                ctx.refuse_codec_limit("catia_standard_iteration", u64::MAX, u64::MAX)
+            })?;
+
+            let mut charged_visits = (candidate_bytes).iter().enumerate();
+            while let Some((pos, _)) =
+                ctx.next_charged(&mut charged_visits, "catia_standard_iteration")?
+            {
+                if brep.get(pos + freeform_core::ZERO_RUN..pos + freeform_core::BOUNDS)
+                    != Some(&[0, 0, 0])
+                {
+                    continue;
+                }
+                while next_analytic
+                    .as_slice()
+                    .first()
+                    .is_some_and(|(_, analytic_end)| *analytic_end <= pos)
+                {
+                    ctx.next_charged(&mut next_analytic, "catia_surface_analytic_ranges")?;
+                }
+                if next_analytic
+                    .as_slice()
+                    .first()
+                    .is_some_and(|(analytic_start, _)| *analytic_start < pos + freeform_core::LEN)
+                {
+                    continue;
+                }
+                let tag = u24_le(brep, pos);
+                let forward = match brep[pos + freeform_core::SIGN] {
+                    0x01 => true,
+                    0xff => false,
+                    _ => continue,
+                };
+                let Some(bounds) = face_bounds_at(brep, pos + freeform_core::BOUNDS) else {
+                    continue;
+                };
+                if tag == 0 {
+                    continue;
+                }
+                ctx.insert_btree_map(
+                    &mut records,
+                    pos,
+                    StandardSurfaceRecord::Freeform {
+                        pos,
+                        tag,
+                        bounds,
+                        forward,
+                    },
+                    "catia_surface_record_tree",
+                )?;
+            }
+        }
+
+        Ok(records)
+    })?;
     let mut ordered_records = Vec::new();
     ctx.reserve_vec(
         &mut ordered_records,
         records.len(),
         "catia_surface_ordered_records",
     )?;
-    ordered_records.extend(records.into_values());
+    let mut storage = ctx.reserve_scoped(0, "catia_surface_record_indices")?;
     let mut record_indices = HashMap::new();
-    for (index, record) in ordered_records.iter().enumerate() {
-        ctx.insert_hash_map(
-            &mut record_indices,
-            record.pos(),
-            index,
-            "catia_surface_record_indices",
-        )?;
+    {
+        let mut charged_visits = (records).into_iter().enumerate();
+        while let Some((index, (pos, record))) =
+            ctx.next_charged(&mut charged_visits, "catia_surface_ordered_records")?
+        {
+            storage.with_storage(|| {
+                ctx.insert_hash_map(
+                    &mut record_indices,
+                    pos,
+                    index,
+                    "catia_surface_record_indices",
+                )
+            })?;
+            ordered_records.push(record);
+        }
     }
     let mut successors = Vec::new();
     ctx.reserve_vec(
@@ -337,9 +368,19 @@ fn standard_surface_record_table(
         ordered_records.len(),
         "catia_surface_successors",
     )?;
-    for record in &ordered_records {
-        successors.push(record_indices.get(&record.end()).copied());
+
+    let mut charged_visits = (ordered_records).iter();
+    while let Some(record) = ctx.next_charged(&mut charged_visits, "catia_standard_iteration")? {
+        successors.push(
+            ctx.get_hash_map(
+                &record_indices,
+                &record.end(),
+                "catia_surface_record_indices",
+            )?
+            .copied(),
+        );
     }
+
     Ok(StandardSurfaceRecordTable {
         records: ordered_records,
         successors,
@@ -353,34 +394,50 @@ pub(super) fn standard_surface_record_groups(
     ctx: &DecodeContext<'_>,
     brep: &[u8],
 ) -> Result<Vec<Vec<StandardSurfaceRecord>>, CodecError> {
-    let table = standard_surface_record_table(ctx, brep)?;
-    let mut has_predecessor =
-        ctx.alloc_filled(table.records.len(), false, "catia_surface_has_predecessor")?;
-    for successor in table.successors.iter().flatten() {
-        has_predecessor[*successor] = true;
+    let mut storage = ctx.reserve_scoped(0, "catia_surface_group_scratch")?;
+    let table = storage.with_storage(|| standard_surface_record_table(ctx, brep))?;
+    let mut has_predecessor = storage.with_storage(|| {
+        ctx.alloc_filled(table.records.len(), false, "catia_surface_has_predecessor")
+    })?;
+    for successor in ctx
+        .admit_iter(&table.successors, "catia_standard_iteration")?
+        .filter_map(|successor| *successor)
+    {
+        has_predecessor[successor] = true;
     }
     let mut groups = Vec::new();
-    for (start, has_prior) in has_predecessor.iter().enumerate() {
+
+    let mut charged_visits = (has_predecessor).iter().enumerate();
+    while let Some((start, has_prior)) =
+        ctx.next_charged(&mut charged_visits, "catia_standard_iteration")?
+    {
         if *has_prior {
             continue;
         }
+        let mut group_storage = ctx.reserve_scoped(0, "catia_surface_group_candidate")?;
         let mut current = Some(start);
         let mut group = Vec::new();
+        let mut steps = std::iter::repeat(());
         while let Some(index) = current {
-            ctx.push_vec(
-                &mut group,
-                table.records[index],
-                "catia_surface_group_records",
-            )?;
+            ctx.next_charged(&mut steps, "catia_surface_group_records")?;
+            group_storage.with_storage(|| {
+                ctx.push_vec(
+                    &mut group,
+                    table.records[index],
+                    "catia_surface_group_records",
+                )
+            })?;
             current = table.successors[index];
         }
         if group
             .last()
             .is_some_and(|last| brep.get(last.end()) == Some(&0x60))
         {
+            group_storage.commit()?;
             ctx.push_vec(&mut groups, group, "catia_surface_record_groups")?;
         }
     }
+
     Ok(groups)
 }
 
@@ -409,8 +466,12 @@ pub(super) fn standard_surface_populations(
     ctx: &DecodeContext<'_>,
     brep: &[u8],
 ) -> Result<Vec<StandardSurfacePopulation>, CodecError> {
+    let mut group_storage = ctx.reserve_scoped(0, "catia_surface_population_groups")?;
+    let groups = group_storage.with_storage(|| standard_surface_record_groups(ctx, brep))?;
     let mut populations = Vec::new();
-    for records in standard_surface_record_groups(ctx, brep)? {
+
+    let mut charged_visits = (groups).iter();
+    while let Some(records) = ctx.next_charged(&mut charged_visits, "catia_surface_populations")? {
         let Some(support_start) = records.last().map(StandardSurfaceRecord::end) else {
             continue;
         };
@@ -418,12 +479,14 @@ pub(super) fn standard_surface_populations(
         else {
             continue;
         };
+        let records = ctx.copy_slice(records, "catia_surface_population_records")?;
         ctx.push_vec(
             &mut populations,
             StandardSurfacePopulation { records, supports },
             "catia_surface_populations",
         )?;
     }
+
     Ok(populations)
 }
 
@@ -435,42 +498,27 @@ pub(super) fn standard_surface_populations(
 pub(super) fn pair_standard_populations(
     ctx: &DecodeContext<'_>,
     layouts: &[FbbPopulationLayout],
-    populations: &[StandardSurfacePopulation],
+    populations: Vec<StandardSurfacePopulation>,
 ) -> Result<Option<StandardPopulationPairs>, CodecError> {
-    if layouts.len() != populations.len() {
+    if layouts.len() != populations.len()
+        || !ctx.all_by(
+            layouts.iter().zip(&populations),
+            |(layout, population)| {
+                Ok(layout.face_run.face_count() == population.records.len()
+                    && layout.edge_count == population.supports.len())
+            },
+            "catia_population_pairs",
+        )?
+    {
         return Ok(None);
     }
-    let Some((first_layout, layouts)) = layouts.split_first() else {
+    let mut pairs = layouts.iter().copied().zip(populations);
+    let Some(first) = ctx.next_charged(&mut pairs, "catia_population_pairs")? else {
         return Ok(None);
     };
-    let Some((first_population, populations)) = populations.split_first() else {
-        return Ok(None);
-    };
-    let pair = |layout: FbbPopulationLayout,
-                population: &StandardSurfacePopulation|
-     -> Result<Option<StandardPopulationPair>, CodecError> {
-        if layout.face_run.face_count() != population.records.len()
-            || layout.edge_count != population.supports.len()
-        {
-            return Ok(None);
-        }
-        Ok(Some((
-            layout,
-            StandardSurfacePopulation {
-                records: ctx.copy_slice(&population.records, "catia_population_pair_records")?,
-                supports: ctx.copy_slice(&population.supports, "catia_population_pair_supports")?,
-            },
-        )))
-    };
-    let Some(first) = pair(*first_layout, first_population)? else {
-        return Ok(None);
-    };
-    let mut rest = Vec::new();
-    for (layout, population) in layouts.iter().copied().zip(populations) {
-        let Some(next) = pair(layout, population)? else {
-            return Ok(None);
-        };
-        ctx.push_vec(&mut rest, next, "catia_population_pairs")?;
+    let mut rest = ctx.collection_vec(pairs.len(), "catia_population_pairs")?;
+    while let Some(pair) = ctx.next_charged(&mut pairs, "catia_population_pairs")? {
+        rest.push(pair);
     }
     Ok(Some(StandardPopulationPairs { first, rest }))
 }
@@ -484,7 +532,8 @@ pub(super) fn standard_surface_records(
     brep: &[u8],
     face_count: usize,
 ) -> Result<Option<Vec<StandardSurfaceRecord>>, CodecError> {
-    let table = standard_surface_record_table(ctx, brep)?;
+    let mut storage = ctx.reserve_scoped(0, "catia_surface_chain_working_state")?;
+    let table = storage.with_storage(|| standard_surface_record_table(ctx, brep))?;
     if face_count == 0 || face_count > table.records.len() {
         return Ok(None);
     }
@@ -492,41 +541,47 @@ pub(super) fn standard_surface_records(
     let successors = &table.successors;
     let remaining_steps = face_count - 1;
     let level_count = index_from_u32(usize::BITS) - index_from_u32(remaining_steps.leading_zeros());
-    let mut jumps = Vec::new();
-    ctx.reserve_vec(&mut jumps, level_count, "catia_surface_jump_levels")?;
-    if level_count > 0 {
-        let mut previous = ctx.copy_slice(successors, "catia_surface_jump_rows")?;
-        for _ in 1..level_count {
-            let mut next = Vec::new();
-            ctx.reserve_vec(&mut next, previous.len(), "catia_surface_jump_rows")?;
-            for successor in &previous {
-                next.push(successor.and_then(|middle| previous[middle]));
+    let jumps = storage.with_storage(|| -> Result<_, CodecError> {
+        let mut jumps = Vec::new();
+        ctx.reserve_vec(&mut jumps, level_count, "catia_surface_jump_levels")?;
+        if level_count > 0 {
+            let mut previous = ctx.copy_slice(successors, "catia_surface_jump_rows")?;
+            for _ in 1..level_count {
+                let mut next = Vec::new();
+                ctx.reserve_vec(&mut next, previous.len(), "catia_surface_jump_rows")?;
+                for successor in ctx.admit_iter(&previous, "catia_standard_iteration")? {
+                    next.push(successor.and_then(|middle| previous[middle]));
+                }
+                jumps.push(previous);
+                previous = next;
             }
             jumps.push(previous);
-            previous = next;
         }
-        jumps.push(previous);
-    }
 
+        Ok(jumps)
+    })?;
     let mut solution_start = None;
-    for start in 0..ordered_records.len() {
-        let mut current = Some(start);
-        let mut steps = remaining_steps;
-        let mut level = 0;
-        while steps != 0 {
-            if steps & 1 != 0 {
-                current = current.and_then(|index| jumps[level][index]);
+    {
+        let mut visits = ordered_records.iter().enumerate();
+        while let Some((start, _)) = ctx.next_charged(&mut visits, "catia_standard_iteration")? {
+            let mut current = Some(start);
+            let mut steps = remaining_steps;
+            let mut level = 0;
+            while steps != 0 {
+                if steps & 1 != 0 {
+                    current = current.and_then(|index| jumps[level][index]);
+                }
+                steps >>= 1;
+                level += 1;
             }
-            steps >>= 1;
-            level += 1;
-        }
-        let Some(last) = current else {
-            continue;
-        };
-        if brep.get(ordered_records[last].end()) == Some(&0x60)
-            && solution_start.replace(start).is_some()
-        {
-            return Ok(None);
+            let Some(last) = current else {
+                continue;
+            };
+            if brep.get(ordered_records[last].end()) == Some(&0x60)
+                && solution_start.replace(start).is_some()
+            {
+                return Ok(None);
+            }
         }
     }
 
@@ -535,13 +590,16 @@ pub(super) fn standard_surface_records(
     };
     let mut chain = Vec::new();
     ctx.reserve_vec(&mut chain, face_count, "catia_surface_record_chain")?;
-    for ordinal in 0..face_count {
-        chain.push(ordered_records[current]);
-        if ordinal + 1 < face_count {
-            let Some(next) = successors[current] else {
-                return Ok(None);
-            };
-            current = next;
+    {
+        let mut visits = 0..face_count;
+        while let Some(ordinal) = ctx.next_charged(&mut visits, "catia_surface_record_chain")? {
+            chain.push(ordered_records[current]);
+            if ordinal + 1 < face_count {
+                let Some(next) = successors[current] else {
+                    return Ok(None);
+                };
+                current = next;
+            }
         }
     }
     Ok(Some(chain))
@@ -574,9 +632,12 @@ pub(super) fn standard_vertex_roster(
     if vertex_count == 0 {
         return Ok(None);
     }
+    let mut solution_storage = ctx.reserve_scoped(0, "catia_vertex_roster_solutions")?;
     let mut solutions = Vec::new();
     let mut position = 0usize;
+    let mut steps = std::iter::repeat(());
     while position + vertex_roster::LEN <= source.len() {
+        ctx.next_charged(&mut steps, "catia_vertex_roster_scan")?;
         if source[position + vertex_roster::MARKER] != 0x54
             || source[position + vertex_roster::ZERO_RUN..position + vertex_roster::LEN]
                 != [0, 0, 0]
@@ -584,13 +645,9 @@ pub(super) fn standard_vertex_roster(
             position += 1;
             continue;
         }
-        let start = position;
+        let mut candidate_storage = ctx.reserve_scoped(0, "catia_vertex_roster_candidate")?;
         let mut identities = Vec::new();
-        while position + vertex_roster::LEN <= source.len()
-            && source[position + vertex_roster::MARKER] == 0x54
-            && source[position + vertex_roster::ZERO_RUN..position + vertex_roster::LEN]
-                == [0, 0, 0]
-        {
+        loop {
             let Some(identity) = View::u24_le_at(source, position + vertex_roster::TAG) else {
                 return Ok(None);
             };
@@ -600,19 +657,36 @@ pub(super) fn standard_vertex_roster(
             {
                 break;
             }
-            ctx.push_vec(&mut identities, identity, "catia_vertex_roster_identities")?;
+            candidate_storage.with_storage(|| {
+                ctx.push_vec(&mut identities, identity, "catia_vertex_roster_identities")
+            })?;
             position += vertex_roster::LEN;
+            if position + vertex_roster::LEN > source.len() {
+                break;
+            }
+            ctx.next_charged(&mut steps, "catia_vertex_roster_scan")?;
+            if source[position + vertex_roster::MARKER] != 0x54
+                || source[position + vertex_roster::ZERO_RUN..position + vertex_roster::LEN]
+                    != [0, 0, 0]
+            {
+                break;
+            }
         }
         if identities.len() == vertex_count {
-            ctx.push_vec(&mut solutions, identities, "catia_vertex_roster_solutions")?;
-        }
-        if position == start {
-            position += 1;
+            solution_storage.with_storage(|| {
+                ctx.push_vec(
+                    &mut solutions,
+                    (identities, candidate_storage),
+                    "catia_vertex_roster_solutions",
+                )
+            })?;
         }
     }
-    Ok(<[Vec<u32>; 1]>::try_from(solutions)
-        .ok()
-        .map(|[identities]| identities))
+    let Ok([(identities, storage)]) = <[_; 1]>::try_from(solutions) else {
+        return Ok(None);
+    };
+    storage.commit()?;
+    Ok(Some(identities))
 }
 
 /// Locate every per-face analytic surface record by the strict 5-byte template
@@ -626,7 +700,20 @@ pub(crate) fn surface_prefixes(
     if brep.len() < 8 {
         return Ok(out);
     }
-    for i in analytic_plane::MARKER..brep.len() - 3 {
+    let Some(end) = brep.len().checked_sub(3) else {
+        return Ok(out);
+    };
+    let Some(candidate_bytes) = brep.get(analytic_plane::MARKER..end) else {
+        return Ok(out);
+    };
+
+    let mut charged_visits = (candidate_bytes).iter().enumerate();
+    while let Some((relative, _)) =
+        ctx.next_charged(&mut charged_visits, "catia_standard_iteration")?
+    {
+        let Some(i) = analytic_plane::MARKER.checked_add(relative) else {
+            return Err(ctx.refuse_codec_limit("catia_standard_iteration", u64::MAX, u64::MAX));
+        };
         if brep[i] != 0x00 || brep[i + 1] != 0x33 {
             continue;
         }
@@ -647,6 +734,7 @@ pub(crate) fn surface_prefixes(
             "catia_surface_prefixes",
         )?;
     }
+
     Ok(out)
 }
 
@@ -661,15 +749,12 @@ pub(super) fn plane_params<S: std::hash::BuildHasher>(
     const MARKER: &[u8; 5] = b"\x00\x02\x00\x33\x32";
 
     let mut out = Vec::new();
+    let mut target_storage = ctx.reserve_scoped(0, "catia_plane_target_scratch")?;
     let mut duplicate_targets = HashSet::new();
     let mut seen_targets = HashSet::new();
-    let mut p = 0usize;
-    while p + MARKER.len() + 40 <= brep.len() {
-        let Some(relative) = brep[p..].windows(MARKER.len()).position(|w| w == MARKER) else {
-            break;
-        };
-        let pos = p + relative;
-        p = pos + 1;
+    // The marker has no proper prefix equal to a suffix, so the
+    // non-overlapping matches are all matches.
+    for pos in ctx.find_bytes_iter(brep, MARKER, "catia_plane_marker_scan")? {
         if pos < 4 || pos + MARKER.len() + 40 > brep.len() {
             continue;
         }
@@ -679,14 +764,18 @@ pub(super) fn plane_params<S: std::hash::BuildHasher>(
             continue;
         };
         let target = u24_le(brep, pos - 3);
-        if !ctx.insert_hash_set(&mut seen_targets, target, "catia_plane_seen_targets")? {
-            ctx.insert_hash_set(
-                &mut duplicate_targets,
-                target,
-                "catia_plane_duplicate_targets",
-            )?;
+        if !target_storage.with_storage(|| {
+            ctx.insert_hash_set(&mut seen_targets, target, "catia_plane_seen_targets")
+        })? {
+            target_storage.with_storage(|| {
+                ctx.insert_hash_set(
+                    &mut duplicate_targets,
+                    target,
+                    "catia_plane_duplicate_targets",
+                )
+            })?;
         }
-        let Some(normal) = normals.get(&target).copied() else {
+        let Some(&normal) = ctx.get_hash_map(normals, &target, "catia_plane_normal_lookup")? else {
             continue;
         };
         let [x, y, z] = bounds.sphere_center;
@@ -700,7 +789,17 @@ pub(super) fn plane_params<S: std::hash::BuildHasher>(
             "catia_plane_params",
         )?;
     }
-    out.retain(|plane| !duplicate_targets.contains(&plane.target));
+    ctx.retain_vec(
+        &mut out,
+        |plane| {
+            Ok(!ctx.contains_hash_set(
+                &duplicate_targets,
+                &plane.target,
+                "catia_plane_duplicate_filter",
+            )?)
+        },
+        "catia_plane_duplicate_filter",
+    )?;
     Ok(out)
 }
 
@@ -766,60 +865,91 @@ pub(super) fn standard_curve_supports(
     face_count: usize,
     edge_count: Option<usize>,
 ) -> Result<Vec<StandardCurveSupport>, CodecError> {
-    let populations = standard_surface_populations(ctx, brep)?;
-    let mut matching_populations = Vec::new();
-    for population in &populations {
-        if population.records.len() == face_count
-            && edge_count.is_none_or(|count| population.supports.len() == count)
-        {
-            ctx.push_vec(
-                &mut matching_populations,
-                population,
-                "catia_matching_surface_populations",
-            )?;
-        }
+    let mut population_storage = ctx.reserve_scoped(0, "catia_curve_support_population_scratch")?;
+    let (populations, matching_populations, has_face_population) = population_storage
+        .with_storage(|| {
+            let populations = standard_surface_populations(ctx, brep)?;
+            let mut matching_populations = Vec::new();
+            let mut has_face_population = false;
+
+            let mut charged_visits = (populations).iter().enumerate();
+            while let Some((index, population)) =
+                ctx.next_charged(&mut charged_visits, "catia_standard_iteration")?
+            {
+                if population.records.len() == face_count {
+                    has_face_population = true;
+                    if edge_count.is_none_or(|count| population.supports.len() == count) {
+                        ctx.push_vec(
+                            &mut matching_populations,
+                            index,
+                            "catia_matching_surface_populations",
+                        )?;
+                    }
+                }
+            }
+
+            Ok::<_, CodecError>((populations, matching_populations, has_face_population))
+        })?;
+    if has_face_population {
+        let [index] = matching_populations.as_slice() else {
+            return Ok(Vec::new());
+        };
+        return ctx.copy_slice(&populations[*index].supports, "catia_curve_support_copy");
     }
-    if populations
-        .iter()
-        .any(|population| population.records.len() == face_count)
-    {
-        let Ok([population]) = <[&StandardSurfacePopulation; 1]>::try_from(matching_populations)
+    drop(matching_populations);
+    drop(populations);
+    drop(population_storage);
+    let first = {
+        let mut record_storage = ctx.reserve_scoped(0, "catia_curve_support_record_scratch")?;
+        record_storage
+            .with_storage(|| standard_surface_records(ctx, brep, face_count))?
+            .and_then(|records| records.last().map(StandardSurfaceRecord::end))
+    };
+    if let Some(first) = first {
+        let mut row_storage = ctx.reserve_scoped(0, "catia_curve_support_selected_rows")?;
+        let Some(rows) = row_storage
+            .with_storage(|| standard_curve_supports_at(ctx, brep, face_count, first))?
         else {
             return Ok(Vec::new());
         };
-        return ctx.copy_slice(&population.supports, "catia_curve_support_copy");
-    }
-    if let Some(first) = standard_surface_records(ctx, brep, face_count)?
-        .and_then(|records| records.last().map(StandardSurfaceRecord::end))
-    {
-        let Some(rows) = standard_curve_supports_at(ctx, brep, face_count, first)? else {
-            return Ok(Vec::new());
-        };
-        return if edge_count.is_none_or(|count| rows.len() == count) {
-            Ok(rows)
-        } else {
-            Ok(Vec::new())
-        };
+        if edge_count.is_none_or(|count| rows.len() == count) {
+            row_storage.commit()?;
+            return Ok(rows);
+        }
+        return Ok(Vec::new());
     }
 
-    let mut candidates = Vec::new();
-    for start in 0..brep.len() {
-        if brep.get(start) != Some(&0x60)
-            || standard_curve_support_has_predecessor(brep, face_count, start)
+    let mut candidate_storage = ctx.reserve_scoped(0, "catia_curve_support_candidate_scratch")?;
+    let candidates = candidate_storage.with_storage(|| {
+        let mut candidates = Vec::new();
+
+        let mut charged_visits = (brep).iter().enumerate();
+        while let Some((start, _)) =
+            ctx.next_charged(&mut charged_visits, "catia_standard_iteration")?
         {
-            continue;
+            if brep.get(start) != Some(&0x60)
+                || standard_curve_support_has_predecessor(ctx, brep, face_count, start)?
+            {
+                continue;
+            }
+            let mut rows_storage = ctx.reserve_scoped(0, "catia_curve_support_candidate_rows")?;
+            let Some(rows) = rows_storage
+                .with_storage(|| standard_curve_supports_at(ctx, brep, face_count, start))?
+            else {
+                continue;
+            };
+            if edge_count.is_none_or(|count| rows.len() == count) {
+                rows_storage.commit()?;
+                ctx.push_vec(&mut candidates, rows, "catia_curve_support_candidates")?;
+            }
         }
-        let Some(rows) = standard_curve_supports_at(ctx, brep, face_count, start)? else {
-            continue;
-        };
-        if edge_count.is_none_or(|count| rows.len() == count) {
-            ctx.push_vec(&mut candidates, rows, "catia_curve_support_candidates")?;
-        }
-    }
-    Ok(<[Vec<StandardCurveSupport>; 1]>::try_from(candidates)
-        .ok()
-        .map(|[rows]| rows)
-        .unwrap_or_default())
+
+        Ok::<_, CodecError>(candidates)
+    })?;
+    let [rows] = candidates.as_slice() else {
+        return Ok(Vec::new());
+    };
+    ctx.copy_slice(rows, "catia_curve_support_copy")
 }
 
 fn standard_curve_supports_at(
@@ -828,15 +958,27 @@ fn standard_curve_supports_at(
     face_count: usize,
     mut position: usize,
 ) -> Result<Option<Vec<StandardCurveSupport>>, CodecError> {
-    let mut rows = Vec::new();
-    while brep.get(position) == Some(&0x60) {
-        let Some((row, end)) = standard_curve_support_row_at(brep, face_count, position) else {
-            return Ok(None);
-        };
-        ctx.push_vec(&mut rows, row, "catia_curve_support_rows")?;
-        position = end;
+    let mut storage = ctx.reserve_scoped(0, "catia_curve_support_row_candidate")?;
+    let rows = storage.with_storage(|| {
+        let mut rows = Vec::new();
+        let mut steps = std::iter::repeat(());
+        loop {
+            ctx.next_charged(&mut steps, "catia_curve_support_rows")?;
+            if brep.get(position) != Some(&0x60) {
+                break;
+            }
+            let Some((row, end)) = standard_curve_support_row_at(brep, face_count, position) else {
+                return Ok::<_, CodecError>(None);
+            };
+            ctx.push_vec(&mut rows, row, "catia_curve_support_rows")?;
+            position = end;
+        }
+        Ok((!rows.is_empty()).then_some(rows))
+    })?;
+    if rows.is_some() {
+        storage.commit()?;
     }
-    Ok((!rows.is_empty()).then_some(rows))
+    Ok(rows)
 }
 
 fn standard_curve_support_row_at(
@@ -880,17 +1022,30 @@ fn standard_curve_support_row_at(
     ))
 }
 
-fn standard_curve_support_has_predecessor(brep: &[u8], face_count: usize, start: usize) -> bool {
+fn standard_curve_support_has_predecessor(
+    ctx: &DecodeContext<'_>,
+    brep: &[u8],
+    face_count: usize,
+    start: usize,
+) -> Result<bool, CodecError> {
     const MAX_ROW_BYTES: usize = 35;
-    let mut candidates = match start.checked_sub(MAX_ROW_BYTES) {
-        Some(first) => first..start,
-        None => 0..start,
+    let window_len = start.min(MAX_ROW_BYTES);
+    let first = start - window_len;
+    let Some(candidates) = brep.get(first..start) else {
+        return Err(ctx.refuse_codec_limit("catia_standard_iteration", u64::MAX, u64::MAX));
     };
-    candidates.any(|candidate| {
-        brep[candidate] == 0x60
+    for (relative, &byte) in candidates.iter().enumerate() {
+        let Some(candidate) = first.checked_add(relative) else {
+            return Err(ctx.refuse_codec_limit("catia_standard_iteration", u64::MAX, u64::MAX));
+        };
+        if byte == 0x60
             && standard_curve_support_row_at(brep, face_count, candidate)
                 .is_some_and(|(_, end)| end == start)
-    })
+        {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 /// Decode the analytic parameters carried inline in a curved surface's kind
@@ -1076,6 +1231,18 @@ mod tests {
     use super::axis_from_xy;
 
     #[test]
+    fn curve_predecessor_fixed_window_needs_no_work_admission() {
+        let bytes = [0, 0x60];
+        crate::test_support::with_work_limit(0, |ctx| {
+            assert!(
+                !super::standard_curve_support_has_predecessor(ctx, &bytes, 1, 1)
+                    .expect("fixed window")
+            );
+            assert!(ctx.resource_refusal().is_none());
+        });
+    }
+
+    #[test]
     fn surface_prefix_and_vertex_roster_limits_refuse_before_growth() {
         let prefix = [0x12, 0x34, 0x56, 0, 0x1a, 0, 0x33, 0x33, 0];
         assert_eq!(
@@ -1242,5 +1409,95 @@ mod tests {
             .expect("complete stored NaN")
             .is_nan());
         assert_eq!(super::f32_le(&1.5_f32.to_le_bytes(), 0), Some(1.5));
+    }
+    #[test]
+    fn vertex_roster_retains_only_the_unique_result() {
+        let row = |identity: u32| {
+            let mut row = vec![0x54];
+            row.extend_from_slice(&identity.to_le_bytes()[..3]);
+            row.extend_from_slice(&[0; 3]);
+            row
+        };
+        let mut source = row(9);
+        source.push(0xff);
+        for identity in [11, 12, 13] {
+            source.extend(row(identity));
+        }
+        let bytes = 4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<u32>());
+        crate::test_support::with_retained_limit(bytes, |ctx| {
+            assert_eq!(
+                super::standard_vertex_roster(ctx, &source, 3).expect("only output retained"),
+                Some(vec![11, 12, 13])
+            );
+        });
+        source.push(0xff);
+        for identity in [21, 22, 23] {
+            source.extend(row(identity));
+        }
+        crate::test_support::with_retained_limit(0, |ctx| {
+            assert_eq!(
+                super::standard_vertex_roster(ctx, &source, 3)
+                    .expect("ambiguous candidates are scratch"),
+                None
+            );
+        });
+    }
+    #[test]
+    fn malformed_support_rows_release_retained_storage() {
+        let mut bytes = vec![0x60, 1, 0, 0, 0, 2, 0, 0x33, 0x36, 0, 1];
+        bytes.push(0x60);
+        crate::test_support::with_retained_limit(0, |ctx| {
+            assert!(super::standard_curve_supports_at(ctx, &bytes, 2, 0)
+                .expect("malformed row is scratch")
+                .is_none());
+        });
+    }
+
+    #[test]
+    fn rejected_and_ambiguous_support_candidates_release_retained_storage() {
+        let row = [0x60, 1, 0, 0, 0, 2, 0, 0x33, 0x36, 0, 1];
+        crate::test_support::with_retained_limit(0, |ctx| {
+            assert!(super::standard_curve_supports(ctx, &row, 2, Some(2))
+                .expect("rejected row is scratch")
+                .is_empty());
+        });
+        let mut bytes = row.to_vec();
+        bytes.push(0xff);
+        bytes.extend_from_slice(&row);
+        crate::test_support::with_retained_limit(0, |ctx| {
+            assert!(super::standard_curve_supports(ctx, &bytes, 2, Some(1))
+                .expect("ambiguous rows are scratch")
+                .is_empty());
+        });
+    }
+
+    #[test]
+    fn support_population_selection_retains_only_result_rows() {
+        let mut bytes = vec![0x34, 0x12, 0, 0, 0, 0];
+        for value in [0.0f32, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 2.0] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        bytes.push(0x01);
+        let analytic = bytes.len();
+        bytes.extend_from_slice(&[0x78, 0x56, 0, 0, 0x1a, 0, 0x33, 0x33]);
+        bytes.resize(analytic + 72, 0);
+        bytes.push(0xff);
+        bytes.extend_from_slice(&[0x60, 1, 0, 0, 0, 2, 0, 0x33, 0x36, 0, 1]);
+        let retained = cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            super::StandardCurveSupport,
+        >());
+        crate::test_support::with_retained_limit(retained, |ctx| {
+            let rows = super::standard_curve_supports(ctx, &bytes, 2, Some(1))
+                .expect("only selected result retained");
+            assert_eq!(rows.len(), 1);
+            assert_eq!(rows[0].tag, 1);
+            assert_eq!(rows[0].faces, [0, 1]);
+        });
+        bytes.push(0x60);
+        crate::test_support::with_retained_limit(0, |ctx| {
+            assert!(super::standard_surface_populations(ctx, &bytes)
+                .expect("invalid population is scratch")
+                .is_empty());
+        });
     }
 }

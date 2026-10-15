@@ -27,7 +27,10 @@ pub(super) fn transfer_vertex_tolerances(
     pcurves: &BTreeMap<u32, (PcurveGeometry, bool, [FiniteReal; 2])>,
 ) -> Result<BTreeMap<usize, PositiveReal>, cadmpeg_core::CodecError> {
     let mut tolerances = BTreeMap::new();
-    for (&vertex, &tolerance) in &graph.vertex_tolerances {
+    for (&vertex, &tolerance) in ctx.admit_iter(
+        &graph.vertex_tolerances,
+        "catia_b5_transfer_vertex_tolerances_scan",
+    )? {
         ctx.insert_btree_map(
             &mut tolerances,
             vertex,
@@ -35,14 +38,19 @@ pub(super) fn transfer_vertex_tolerances(
             "catia_b5_transfer_vertex_tolerances",
         )?;
     }
-    for (&edge, supports) in supports {
-        let Some(&vertices) = graph.vertices.edges().get(&edge) else {
+    for (&edge, supports) in ctx.admit_iter(supports, "catia_b5_transfer_edge_supports_scan")? {
+        let Some(&vertices) = ctx.get_btree_map(
+            graph.vertices.edges(),
+            &edge,
+            "catia_b5_transfer_edge_lookup",
+        )?
+        else {
             continue;
         };
-        let Some(coordinates) = graph.vertices.edge_points(edge) else {
+        let Some(coordinates) = graph.vertices.edge_points(ctx, edge)? else {
             continue;
         };
-        for support in supports {
+        for support in ctx.admit_iter(supports, "catia_b5_transfer_support_scan")? {
             let Some(lifted) = b5_support_endpoints(ctx, support, surfaces, pcurves)? else {
                 continue;
             };
@@ -68,15 +76,17 @@ pub(super) fn transfer_vertex_tolerances(
                     continue;
                 };
                 let index = vertex.combined_index(graph.vertices.raw_points().len());
-                ctx.admit_btree_entry(&tolerances, &index, "catia_b5_transfer_vertex_tolerances")?;
-                tolerances
-                    .entry(index)
-                    .and_modify(|tolerance| {
-                        if candidate > *tolerance {
-                            *tolerance = candidate;
-                        }
-                    })
-                    .or_insert(candidate);
+                ctx.entry_btree_map(
+                    &mut tolerances,
+                    index,
+                    "catia_b5_transfer_vertex_tolerances",
+                )?
+                .and_modify(|tolerance| {
+                    if candidate > *tolerance {
+                        *tolerance = candidate;
+                    }
+                })
+                .or_insert(candidate);
             }
         }
     }
@@ -93,8 +103,16 @@ pub(super) fn emit_vertices(
 ) -> Result<(), cadmpeg_core::CodecError> {
     let used_vertices = &plan.used_vertices;
     let vertex_tolerances = &plan.vertex_tolerances;
-    for (index, coordinates) in graph.vertices.raw_points().iter().enumerate() {
-        if !used_vertices.contains(&index) {
+    for (index, coordinates) in admission
+        .context()
+        .admit_iter(graph.vertices.raw_points(), "catia_b5_emit_raw_vertices")?
+        .enumerate()
+    {
+        if !admission.context().contains_hash_set(
+            used_vertices,
+            &index,
+            "catia_b5_used_vertex_lookup",
+        )? {
             continue;
         }
         let point_id = crate::resource::compose_index_id(
@@ -138,18 +156,35 @@ pub(super) fn emit_vertices(
             annotations,
             vertex_id.as_str(),
             "point",
-            "catia_b5_vertex_annotation",
         )?;
         admission.reserve_entity(&mut ir.model.vertices, "catia_b5_emit_vertices")?;
         ir.model.vertices.push(Vertex {
             id: vertex_id,
             point: point_id,
-            tolerance: vertex_tolerances.get(&index).copied(),
+            tolerance: admission
+                .context()
+                .get_btree_map(
+                    vertex_tolerances,
+                    &index,
+                    "catia_b5_vertex_tolerance_lookup",
+                )?
+                .copied(),
         });
     }
-    for (rank, vertex) in graph.vertices.logical_vertices().iter().enumerate() {
+    for (rank, vertex) in admission
+        .context()
+        .admit_iter(
+            graph.vertices.logical_vertices(),
+            "catia_b5_emit_logical_vertices",
+        )?
+        .enumerate()
+    {
         let index = graph.vertices.raw_points().len() + rank;
-        if !used_vertices.contains(&index) {
+        if !admission.context().contains_hash_set(
+            used_vertices,
+            &index,
+            "catia_b5_used_vertex_lookup",
+        )? {
             continue;
         }
         let point_id = crate::resource::compose_index_id(
@@ -193,13 +228,19 @@ pub(super) fn emit_vertices(
             annotations,
             vertex_id.as_str(),
             "point",
-            "catia_b5_vertex_annotation",
         )?;
         admission.reserve_entity(&mut ir.model.vertices, "catia_b5_emit_vertices")?;
         ir.model.vertices.push(Vertex {
             id: vertex_id,
             point: point_id,
-            tolerance: vertex_tolerances.get(&index).copied(),
+            tolerance: admission
+                .context()
+                .get_btree_map(
+                    vertex_tolerances,
+                    &index,
+                    "catia_b5_vertex_tolerance_lookup",
+                )?
+                .copied(),
         });
     }
     Ok(())

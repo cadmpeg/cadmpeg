@@ -267,7 +267,7 @@ pub(crate) fn synthetic_geometry_with_transform_smbh() -> Vec<u8> {
     let limit = cadmpeg_asm::asm_header::solved_record_limit(&service_decode_context(), &bytes)
         .expect("history scan")
         .expect("history boundary");
-    let start = cadmpeg_asm::asm_header::record_stream_start(&bytes).expect("record stream");
+    let start = asm_header::record_stream_start(&service_decode_context(), &bytes).unwrap().expect("record stream");
     let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
@@ -277,6 +277,7 @@ pub(crate) fn synthetic_geometry_with_transform_smbh() -> Vec<u8> {
     .expect("generated SAB");
     let body = &records[1];
     let transform_ref = cadmpeg_asm::test_support::sab::payload_token_offsets(
+        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         body,
         cadmpeg_asm::kernel_header::RefWidth::Eight,
@@ -307,7 +308,7 @@ pub(crate) fn synthetic_geometry_with_body_color_smbh() -> Vec<u8> {
     let limit = cadmpeg_asm::asm_header::solved_record_limit(&service_decode_context(), &bytes)
         .expect("history scan")
         .expect("history boundary");
-    let start = cadmpeg_asm::asm_header::record_stream_start(&bytes).expect("record stream");
+    let start = asm_header::record_stream_start(&service_decode_context(), &bytes).unwrap().expect("record stream");
     let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
@@ -317,6 +318,7 @@ pub(crate) fn synthetic_geometry_with_body_color_smbh() -> Vec<u8> {
     .expect("generated SAB");
     let body = &records[1];
     let attribute_ref = cadmpeg_asm::test_support::sab::payload_token_offsets(
+        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         body,
         cadmpeg_asm::kernel_header::RefWidth::Eight,
@@ -344,7 +346,7 @@ fn synthetic_geometry_with_body_attribute_chain_smbh(attribute_chain: Vec<u8>) -
     let limit = cadmpeg_asm::asm_header::solved_record_limit(&service_decode_context(), &bytes)
         .expect("history scan")
         .expect("history boundary");
-    let start = cadmpeg_asm::asm_header::record_stream_start(&bytes).expect("record stream");
+    let start = asm_header::record_stream_start(&service_decode_context(), &bytes).unwrap().expect("record stream");
     let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
@@ -354,6 +356,7 @@ fn synthetic_geometry_with_body_attribute_chain_smbh(attribute_chain: Vec<u8>) -
     .expect("generated SAB");
     let body = &records[1];
     let attribute_ref = cadmpeg_asm::test_support::sab::payload_token_offsets(
+        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         body,
         cadmpeg_asm::kernel_header::RefWidth::Eight,
@@ -411,7 +414,7 @@ pub(crate) fn synthetic_geometry_with_face_color_smbh() -> Vec<u8> {
     let limit = cadmpeg_asm::asm_header::solved_record_limit(&service_decode_context(), &bytes)
         .expect("history scan")
         .expect("history boundary");
-    let start = cadmpeg_asm::asm_header::record_stream_start(&bytes).expect("record stream");
+    let start = asm_header::record_stream_start(&service_decode_context(), &bytes).unwrap().expect("record stream");
     let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
@@ -421,6 +424,7 @@ pub(crate) fn synthetic_geometry_with_face_color_smbh() -> Vec<u8> {
     .expect("generated SAB");
     let face = &records[4];
     let attribute_ref = cadmpeg_asm::test_support::sab::payload_token_offsets(
+        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         face,
         cadmpeg_asm::kernel_header::RefWidth::Eight,
@@ -448,7 +452,7 @@ pub(crate) fn synthetic_geometry_with_mesh_surface_smbh() -> Vec<u8> {
     let limit = cadmpeg_asm::asm_header::solved_record_limit(&service_decode_context(), &bytes)
         .expect("history scan")
         .expect("history boundary");
-    let start = cadmpeg_asm::asm_header::record_stream_start(&bytes).expect("record stream");
+    let start = asm_header::record_stream_start(&service_decode_context(), &bytes).unwrap().expect("record stream");
     let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
@@ -477,7 +481,7 @@ pub(crate) fn synthetic_geometry_with_face_attribute_smbh() -> Vec<u8> {
 
 fn synthetic_geometry_with_attribute_at(owner_record_index: usize) -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
-    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let start = asm_header::record_stream_start(&service_decode_context(), &bytes).unwrap().unwrap();
     let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
         .expect("history scan")
         .unwrap();
@@ -558,7 +562,7 @@ pub(crate) enum SketchLinkForm<'a> {
 
 pub(crate) fn synthetic_geometry_with_sketch_link_smbh(form: SketchLinkForm<'_>) -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
-    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let start = asm_header::record_stream_start(&service_decode_context(), &bytes).unwrap().unwrap();
     let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
         .expect("history scan")
         .unwrap();
@@ -762,7 +766,7 @@ pub(crate) fn synthetic_free_vertex_body_smbh() -> Vec<u8> {
 
 pub(crate) fn synthetic_mixed_face_wire_body_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
-    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let start = asm_header::record_stream_start(&service_decode_context(), &bytes).unwrap().unwrap();
     let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
         .expect("history scan")
         .unwrap();
@@ -776,6 +780,7 @@ pub(crate) fn synthetic_mixed_face_wire_body_smbh() -> Vec<u8> {
     for (record_index, reference_ordinal) in [(1usize, 3usize), (3, 5)] {
         let record = &records[record_index];
         let offsets = cadmpeg_asm::test_support::sab::payload_token_offsets(
+            &cadmpeg_test_support::service_decode_context(),
             &bytes,
             record,
             cadmpeg_asm::kernel_header::RefWidth::Eight,
@@ -868,7 +873,7 @@ pub(crate) fn synthetic_mixed_face_wire_body_smbh() -> Vec<u8> {
 
 pub(crate) fn synthetic_geometry_with_degenerate_curve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
-    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let start = asm_header::record_stream_start(&service_decode_context(), &bytes).unwrap().unwrap();
     let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
         .expect("history scan")
         .unwrap();
@@ -881,6 +886,7 @@ pub(crate) fn synthetic_geometry_with_degenerate_curve_smbh() -> Vec<u8> {
     .unwrap();
     let edge = &records[10];
     let offsets = cadmpeg_asm::test_support::sab::payload_token_offsets(
+        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         edge,
         cadmpeg_asm::kernel_header::RefWidth::Eight,
@@ -891,6 +897,7 @@ pub(crate) fn synthetic_geometry_with_degenerate_curve_smbh() -> Vec<u8> {
     bytes[offsets[5] + 1..offsets[5] + 9].copy_from_slice(&19i64.to_le_bytes());
     let vertex = &records[14];
     let owner = cadmpeg_asm::test_support::sab::payload_token_offsets(
+        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         vertex,
         cadmpeg_asm::kernel_header::RefWidth::Eight,
@@ -899,6 +906,7 @@ pub(crate) fn synthetic_geometry_with_degenerate_curve_smbh() -> Vec<u8> {
     .expect("generated vertex reference offsets")[2];
     bytes[owner + 1..owner + 9].copy_from_slice(&11i64.to_le_bytes());
     let endpoint = cadmpeg_asm::test_support::sab::payload_token_offsets(
+        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         vertex,
         cadmpeg_asm::kernel_header::RefWidth::Eight,

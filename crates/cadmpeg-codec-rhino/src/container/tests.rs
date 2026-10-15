@@ -12,7 +12,7 @@ use crate::chunks::{parse_header, ArchiveVersion, FramingError, TCODE_ENDOFTABLE
 use crate::test_support::test_dump::{
     anonymous_chunk, crc_chunk, crc_chunk_excluding, crc_table, header, long_chunk,
     minimal_document, object_record, object_record_with_payload, point_payload, short_chunk, table,
-    POINT_CLASS,
+    utf16_bytes, POINT_CLASS,
 };
 use crate::RhinoCodec;
 
@@ -200,6 +200,42 @@ pub(crate) fn scans_metadata_tables_and_reports_offsets() {
     assert_eq!(
         summary.entries[2].attributes.get("object_typecode_0x20"),
         Some(&"1".to_string())
+    );
+}
+
+#[test]
+fn scanned_metadata_text_uses_materialized_storage() {
+    let archive = ArchiveVersion::V5;
+    let file_name = crc_chunk(archive, 0x2000_8027, &utf16_bytes("source-file"));
+    let bytes = minimal_document(
+        "50",
+        &[
+            table(archive, 0x1000_0014, &[file_name]),
+            table(archive, 0x1000_0015, &[]),
+            table(archive, 0x1000_0013, &[]),
+        ],
+    );
+
+    cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        "Rhino as-file name",
+        |cap| {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_materialized_bytes = cap;
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)?;
+            let header = parse_header(&ctx, &bytes)
+                .or_else(|error| Err(super::framing_error(&ctx, error)?))?;
+            super::scan_with_record_limit(&ctx, &bytes, super::TABLE_RECORD_CAP, header).map(
+                |scan| {
+                    assert_eq!(
+                        scan.metadata.properties.as_file_name.as_deref(),
+                        Some("source-file")
+                    );
+                },
+            )
+        },
     );
 }
 

@@ -333,7 +333,7 @@ pub(super) fn patch_body_native_keys(
     if edits.is_empty() {
         return Ok(());
     }
-    AsmEditSet::apply(bytes, |bytes, asm_edits| {
+    AsmEditSet::apply(bytes, |ctx, bytes, asm_edits| {
         for (record_index, key) in edits {
             let record = asm_edits.record(*record_index).ok_or_else(|| {
                 CodecError::malformed(format_args!(
@@ -345,7 +345,7 @@ pub(super) fn patch_body_native_keys(
                     "F3D body-key record {record_index} is not a body"
                 )));
             }
-            asm_edits.patch_integer_field(bytes, record, 1, 0x04, *key)?;
+            asm_edits.patch_integer_field(ctx, bytes, record, 1, 0x04, *key)?;
         }
         Ok(())
     })
@@ -358,7 +358,7 @@ pub(super) fn patch_transform_hints(
     if edits.is_empty() {
         return Ok(());
     }
-    AsmEditSet::apply(bytes, |bytes, asm_edits| {
+    AsmEditSet::apply(bytes, |ctx, bytes, asm_edits| {
         for (record_index, flags) in edits {
             let record = asm_edits.record(*record_index).ok_or_else(|| {
                 CodecError::malformed(format_args!(
@@ -372,7 +372,7 @@ pub(super) fn patch_transform_hints(
                 )));
             }
             for (index, flag) in (5usize..=7).zip(flags) {
-                asm_edits.patch_boolean_field(bytes, record, index, *flag)?;
+                asm_edits.patch_boolean_field(ctx, bytes, record, index, *flag)?;
             }
         }
         Ok(())
@@ -386,7 +386,7 @@ pub(super) fn patch_tolerant_coedge_parameters(
     if edits.is_empty() {
         return Ok(());
     }
-    AsmEditSet::apply(bytes, |bytes, asm_edits| {
+    AsmEditSet::apply(bytes, |ctx, bytes, asm_edits| {
         for (record_index, range) in edits {
             let record = asm_edits.record(*record_index).ok_or_else(|| {
                 CodecError::malformed(format_args!(
@@ -400,7 +400,7 @@ pub(super) fn patch_tolerant_coedge_parameters(
                 )));
             }
             for (index, value) in [(11usize, range[0]), (12, range[1])] {
-                let offset = asm_edits.required_payload_field(bytes, record, index, 0x06)?;
+                let offset = asm_edits.required_payload_field(ctx, bytes, record, index, 0x06)?;
                 AsmEditSet::patch_f64_payload(bytes, offset + 1, value)?;
             }
         }
@@ -415,7 +415,7 @@ pub(super) fn patch_wire_topologies(
     if edits.is_empty() {
         return Ok(());
     }
-    AsmEditSet::apply(bytes, |bytes, asm_edits| {
+    AsmEditSet::apply(bytes, |ctx, bytes, asm_edits| {
         for (record_index, side) in edits {
             let record = asm_edits.record(*record_index).ok_or_else(|| {
                 CodecError::malformed(format_args!("F3D wire record {record_index} is missing"))
@@ -427,7 +427,7 @@ pub(super) fn patch_wire_topologies(
                 )));
             }
             let is_in = matches!(side, cadmpeg_asm::brep::records::WireSide::In);
-            asm_edits.patch_boolean_field(bytes, record, 7, is_in)?;
+            asm_edits.patch_boolean_field(ctx, bytes, record, 7, is_in)?;
         }
         Ok(())
     })
@@ -440,7 +440,7 @@ pub(super) fn patch_edge_ownerships(
     if edits.is_empty() {
         return Ok(());
     }
-    AsmEditSet::apply(bytes, |bytes, asm_edits| {
+    AsmEditSet::apply(bytes, |ctx, bytes, asm_edits| {
         for (record_index, owner) in edits {
             let record = asm_edits.record(*record_index).ok_or_else(|| {
                 CodecError::malformed(format_args!(
@@ -453,7 +453,7 @@ pub(super) fn patch_edge_ownerships(
                     record.head()
                 )));
             }
-            asm_edits.patch_integer_field(bytes, record, 7, 0x0c, *owner)?;
+            asm_edits.patch_integer_field(ctx, bytes, record, 7, 0x0c, *owner)?;
         }
         Ok(())
     })

@@ -9,22 +9,22 @@ use crate::families::standard::decode::combine_propagated_endpoint_pairs;
 use crate::families::standard::decode::corroborate_successor_endpoint_points;
 use crate::families::standard::decode::edge_geometry::build_standard_edge_curve;
 use crate::families::standard::decode::edge_geometry::ensure_native_edge_support_surface;
+use crate::families::standard::decode::edge_geometry::intersection_line_direction;
 use crate::families::standard::decode::edge_geometry::plane_intersection_line;
+use crate::families::standard::decode::edge_geometry::point_on_standard_face;
+use crate::families::standard::decode::edge_geometry::same_cone_generator_pair;
 use crate::families::standard::decode::edge_geometry::standard_analytic_curve_parameter_range;
 use crate::families::standard::decode::edge_geometry::standard_oriented_analytic_curve_parameter_range;
 use crate::families::standard::decode::edge_geometry::standard_pcurve_geometry as charged_standard_pcurve_geometry;
 use crate::families::standard::decode::edge_geometry::witness_arc_end;
 use crate::families::standard::decode::emit_standard_topology;
 use crate::families::standard::decode::include_native_endpoint_pairs;
-use crate::families::standard::decode::intersection_line_direction;
 use crate::families::standard::decode::invariant_face_carrier_bindings;
 use crate::families::standard::decode::merge_derived_endpoint_pair;
 use crate::families::standard::decode::merge_native_endpoint_evidence;
 use crate::families::standard::decode::merge_standard_edge_vertex_references;
 use crate::families::standard::decode::owner_contains_face_bounds;
 use crate::families::standard::decode::owner_matches_a5_carrier;
-use crate::families::standard::decode::point_on_standard_face;
-use crate::families::standard::decode::same_cone_generator_pair;
 use crate::families::standard::decode::standard_circle_endpoint_candidates;
 use crate::families::standard::decode::standard_curve_edge_classes;
 use crate::families::standard::decode::standard_curve_geometry_gauge_keys;
@@ -33,7 +33,6 @@ use crate::families::standard::decode::standard_face_boundary_witnesses;
 use crate::families::standard::decode::standard_face_point_membership;
 use crate::families::standard::decode::standard_freeform_e5_carrier_ids;
 use crate::families::standard::decode::standard_id;
-use crate::families::standard::decode::standard_native_support_edge_ids;
 use crate::families::standard::decode::standard_serialized_endpoint_pairs;
 use crate::families::standard::decode::standard_successor_endpoint_points;
 use crate::families::standard::decode::unique_native_identity_points;
@@ -260,12 +259,12 @@ fn standard_e5_carrier_identity_maps_refuse_before_growth() {
     append_e5_record(&mut stream, 0xf1, 8, &wrapper);
     append_e5_record(&mut stream, 0x00, 7, &[0x82, 0x88, 0x89, 1, 0]);
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| standard_freeform_e5_carrier_ids(
-            ctx, &stream
-        ))
-        .expect("service resource budget")
-        .get(&7),
-        Some(&42)
+        crate::test_support::with_service_context(|ctx| {
+            standard_freeform_e5_carrier_ids(ctx, &stream)
+                .map(|(carriers, _storage)| carriers.get(&7).copied())
+        })
+        .expect("service resource budget"),
+        Some(42)
     );
     for (cap, operation) in [
         (0, "catia_e5_face_surfaces"),
@@ -274,7 +273,9 @@ fn standard_e5_carrier_identity_maps_refuse_before_growth() {
         (3, "catia_e5_face_carriers"),
     ] {
         assert!(matches!(
-            crate::test_support::with_collection_limit(cap, |ctx| standard_freeform_e5_carrier_ids(ctx, &stream)),
+            crate::test_support::with_collection_limit(cap, |ctx| {
+                standard_freeform_e5_carrier_ids(ctx, &stream).map(drop)
+            }),
             Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == operation
         ));
     }
@@ -487,11 +488,12 @@ fn a5_owner_binding_refuses_before_carrier_row_growth() {
         .expect("service decode")
     })
     .is_empty());
-    assert!(
-        !crate::families::b2::records::b2_owner_packets_from_records(&bytes, &records)
-            .collect::<Vec<_>>()
-            .is_empty()
-    );
+    let owner_packets = crate::test_support::with_service_context(|ctx| {
+        crate::families::b2::records::b2_owner_packets_from_records(ctx, &bytes, &records)
+            .map(std::iter::Iterator::collect::<Vec<_>>)
+    })
+    .expect("service context admits owner packet scan");
+    assert!(!owner_packets.is_empty());
     let mut ir = CadIr::empty();
     let surface_id = SurfaceId::mint("catia:standard:surface#a5-limit").expect("identity grammar");
     ir.model.surfaces.push(Surface {
@@ -637,92 +639,25 @@ fn standard_object_journal_binds_ordered_edge_endpoints_through_roster_position(
 }
 
 #[test]
-fn standard_native_binding_arrays_refuse_before_each_collection() {
-    use cadmpeg_core::CodecError;
-    use std::collections::HashSet;
-
-    let supports = [StandardCurveSupport {
-        pos: 0,
-        tag: 70,
-        faces: [0, 1],
-        geometry: StandardCurveGeometry::Line,
-    }];
-    let native_edges = BTreeMap::from([(70, [100, 300])]);
-    let native_support_ids = HashSet::from([70]);
-    let mut operations = HashSet::new();
-    for limit in 0..=10 {
-        match crate::test_support::with_collection_limit(limit, |ctx| {
-            standard_serialized_endpoint_pairs(ctx, &supports, &native_edges, &[100, 300])
-        }) {
-            Err(CodecError::ResourceLimit(error)) => {
-                operations.insert(error.operation);
-            }
-            Ok(Some(_)) => break,
-            outcome => panic!("unexpected roster binding: {outcome:?}"),
-        }
-    }
-    for operation in [
-        "catia_roster_point_identities",
-        "catia_roster_endpoint_pairs",
-    ] {
-        assert!(operations.contains(operation), "no refusal at {operation}");
-    }
-    operations.clear();
-    for limit in 0..=10 {
-        match crate::test_support::with_collection_limit(limit, |ctx| {
-            standard_native_support_edge_ids(ctx, &supports, &native_support_ids)
-        }) {
-            Err(CodecError::ResourceLimit(error)) => {
-                operations.insert(error.operation);
-            }
-            Ok(ids) if ids == [Some(70)] => break,
-            outcome => panic!("unexpected support binding: {outcome:?}"),
-        }
-    }
-    for operation in [
-        "catia_native_support_row_counts",
-        "catia_native_support_edge_ids",
-    ] {
-        assert!(operations.contains(operation), "no refusal at {operation}");
-    }
-    operations.clear();
-    for limit in 0..=10 {
-        match crate::test_support::with_collection_limit(limit, |ctx| {
-            standard_successor_endpoint_points(ctx, &supports, &[71, 72])
-        }) {
-            Err(CodecError::ResourceLimit(error)) => {
-                operations.insert(error.operation);
-            }
-            Ok(points) if points == [[Some(0), Some(1)]] => break,
-            outcome => panic!("unexpected successor binding: {outcome:?}"),
-        }
-    }
-    for operation in [
-        "catia_successor_point_identities",
-        "catia_successor_endpoint_points",
-    ] {
-        assert!(operations.contains(operation), "no refusal at {operation}");
-    }
-    let mut candidates = [Vec::new()];
-    assert!(matches!(
-        crate::test_support::with_collection_limit(0, |ctx| include_native_endpoint_pairs(ctx, &mut candidates, &[Some([0, 1])])),
-        Err(CodecError::ResourceLimit(error)) if error.operation == "catia_native_endpoint_domain_points"
-    ));
-    assert!(candidates[0].is_empty());
-}
-
-#[test]
 fn standard_object_journal_merges_matching_edge_dialects_and_rejects_conflicts() {
     let mut edges = BTreeMap::from([(70, [500, 300])]);
-    assert!(merge_standard_edge_vertex_references(
-        &mut edges,
-        [(70, [500, 300]), (90, [100, 500])],
-    ));
-    assert_eq!(edges, BTreeMap::from([(70, [500, 300]), (90, [100, 500])]));
-    assert!(!merge_standard_edge_vertex_references(
-        &mut edges,
-        [(70, [300, 500])],
-    ));
+    crate::test_support::with_service_context(|ctx| {
+        assert!(merge_standard_edge_vertex_references(
+            ctx,
+            &mut edges,
+            &BTreeMap::from([(70, [500, 300]), (90, [100, 500])]),
+            |vertices| *vertices,
+        )
+        .expect("edge sources fit service limits"));
+        assert_eq!(edges, BTreeMap::from([(70, [500, 300]), (90, [100, 500])]));
+        assert!(!merge_standard_edge_vertex_references(
+            ctx,
+            &mut edges,
+            &BTreeMap::from([(70, [300, 500])]),
+            |vertices| *vertices,
+        )
+        .expect("edge sources fit service limits"));
+    });
 }
 
 #[test]
@@ -788,10 +723,14 @@ fn successor_endpoint_points_filter_independently_and_jointly() {
         vec![[10, 11]],
     ];
 
-    corroborate_successor_endpoint_points(
-        &mut options,
-        &[[None, Some(5)], [Some(6), None], [None, None]],
-    );
+    crate::test_support::with_service_context(|ctx| {
+        corroborate_successor_endpoint_points(
+            ctx,
+            &mut options,
+            &[[None, Some(5)], [Some(6), None], [None, None]],
+        )
+    })
+    .expect("endpoint evidence fits service limits");
 
     assert_eq!(
         options,
@@ -799,7 +738,10 @@ fn successor_endpoint_points_filter_independently_and_jointly() {
     );
 
     let mut joint_options = vec![vec![[2, 4], [2, 5], [3, 5]]];
-    corroborate_successor_endpoint_points(&mut joint_options, &[[Some(2), Some(5)]]);
+    crate::test_support::with_service_context(|ctx| {
+        corroborate_successor_endpoint_points(ctx, &mut joint_options, &[[Some(2), Some(5)]])
+    })
+    .expect("endpoint evidence fits service limits");
     assert_eq!(joint_options, [vec![[2, 5]]]);
 }
 
@@ -1121,10 +1063,20 @@ fn native_identity_locus_binds_only_one_coordinate_row_within_tolerance() {
     })
     .expect("service budget");
     assert_eq!(exact.get(&7), Some(&0));
-    assert!(matches!(
-        crate::test_support::with_collection_limit(0, |ctx| unique_native_identity_points(ctx, &vertices, 2, &BTreeMap::new(), &points)),
-        Err(cadmpeg_core::CodecError::ResourceLimit(error)) if error.operation == "catia_native_identity_points"
-    ));
+    for operation in [
+        "catia_native_identity_point_order",
+        "catia_native_identity_points",
+    ] {
+        cadmpeg_test_support::refusal::resource_limit_at(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            operation,
+            |cap| {
+                crate::test_support::with_collection_limit(cap, |ctx| {
+                    unique_native_identity_points(ctx, &vertices, 2, &BTreeMap::new(), &points)
+                })
+            },
+        );
+    }
 }
 
 #[test]
@@ -1327,10 +1279,12 @@ fn standard_freeform_face_uses_exact_e5_surface_wrapper_identity() {
     }];
 
     let associated = crate::test_support::with_service_context(|ctx| {
+        let (carriers, _storage) = standard_freeform_e5_carrier_ids(ctx, &stream)?;
         associate_standard_freeform_e5_surfaces(
             ctx,
             &records,
             &stream,
+            &carriers,
             &mut crate::nurbs::LaneRefusals::new(),
         )
     })
@@ -1382,8 +1336,10 @@ fn standard_freeform_face_uses_exact_e5_d8_rolling_ball_identity() {
     .expect("synthetic E5 stream fits the service profile");
     let jets = crate::families::e5::records::e5_rolling_ball_jets(&ctx, &stream)
         .expect("two E5 stations fit the collection limit");
+    let (carriers, _carrier_storage) =
+        standard_freeform_e5_carrier_ids(&ctx, &stream).expect("service resource budget");
     let associated =
-        associate_standard_freeform_e5_rolling_ball_jets(&ctx, &records, &stream, &jets)
+        associate_standard_freeform_e5_rolling_ball_jets(&ctx, &records, &carriers, &jets)
             .expect("service resource budget");
     assert!(matches!(
         associated.get(&7),
@@ -1403,7 +1359,7 @@ fn standard_freeform_face_uses_exact_e5_d8_rolling_ball_identity() {
     assert!(associate_standard_freeform_e5_rolling_ball_jets(
         &ctx,
         &opposite_records,
-        &stream,
+        &carriers,
         &jets
     )
     .expect("service resource budget")
@@ -1426,10 +1382,12 @@ fn standard_freeform_face_uses_exact_e5_d8_rolling_ball_identity() {
         reverse_jets[0].sense,
         crate::families::e5::graph::Sign::Positive
     );
+    let (reverse_carriers, _reverse_carrier_storage) =
+        standard_freeform_e5_carrier_ids(&ctx, &reverse_stream).expect("service resource budget");
     assert!(associate_standard_freeform_e5_rolling_ball_jets(
         &ctx,
         &opposite_records,
-        &reverse_stream,
+        &reverse_carriers,
         &reverse_jets
     )
     .expect("service resource budget")
@@ -1702,6 +1660,7 @@ fn standard_emission_reverses_face_pcurve_range_and_refuses_edge_flag_limit() {
             emit_standard_topology(
                 ctx,
                 crate::families::standard::decode::EmitStandardTopologyInputs {
+                    storage: None,
                     ir: &mut limited_ir,
                     annotations: &mut AnnotationBuilder::new(),
                     bindings: &bindings,
@@ -1728,6 +1687,7 @@ fn standard_emission_reverses_face_pcurve_range_and_refuses_edge_flag_limit() {
             emit_standard_topology(
                 ctx,
                 crate::families::standard::decode::EmitStandardTopologyInputs {
+                    storage: None,
                     ir: &mut ir,
                     annotations: &mut annotations,
                     bindings: &bindings,
@@ -1965,3 +1925,19 @@ fn owner_carrier_helper_preserves_session_depth_refusal() {
         assert_eq!(owner_matches_a5_carrier(ctx, &tail, &surface), Err(limit));
     });
 }
+
+#[test]
+fn native_endpoint_evidence_stops_before_trailing_conflicts() {
+    let graph = vec![Some([0, 1]); 1025];
+    let mut roster = vec![None; 1025];
+    roster[0] = Some([1, 0]);
+    crate::test_support::with_work_limit(64, |ctx| {
+        assert_eq!(
+            merge_native_endpoint_evidence(ctx, Some(&graph), Some(&roster))
+                .expect("first conflicting pair"),
+            Err("conflicting native endpoint evidence")
+        );
+    });
+}
+
+mod native_binding;

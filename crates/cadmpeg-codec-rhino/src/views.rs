@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Saved and active Rhino view presentation records.
 
-use crate::loss::Diagnostics;
+use crate::loss::{AdmittedVec, Diagnostics, ScratchVec};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::loss::LossNote;
@@ -41,11 +41,16 @@ const VIEW_VIEWPORT_USERDATA: u32 = 0x2000_8d3b;
 const CLASS_USERDATA: u32 = 0x0002_7ffd;
 const VIEWPORT_USERDATA_CHILD_CAP: usize = 1 << 20;
 
-fn codec_error(error: FramingError) -> CodecError {
-    match error {
+fn codec_error(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    error: FramingError,
+) -> Result<CodecError, cadmpeg_core::CodecError> {
+    Ok(match error {
         FramingError::Resource(limit) => CodecError::ResourceLimit(limit),
-        other => CodecError::Malformed(other.to_string()),
-    }
+        other => CodecError::Malformed(
+            ctx.format_retained(format_args!("{other}"), "Rhino codec_error text")?,
+        ),
+    })
 }
 
 #[derive(Debug, Serialize)]
@@ -64,7 +69,9 @@ enum ViewListKind {
 }
 
 #[derive(Clone, Copy)]
-struct ViewListSlot {
+struct ViewRecordSource {
+    archive: ArchiveVersion,
+    scale: MillimeterScale,
     kind: ViewListKind,
     index: usize,
 }
@@ -85,12 +92,14 @@ impl Serialize for ViewListKind {
 }
 
 #[derive(Debug, Serialize)]
-struct ViewRecord {
+struct ViewRecord<'ctx> {
     id: String,
     source_offset: u64,
     list_kind: ViewListKind,
     list_index: usize,
     name: String,
+    #[serde(skip)]
+    _name_storage: Option<cadmpeg_core::decode::ScopedReservation<'ctx>>,
     target_millimeters: Option<[FiniteReal; 3]>,
     window_position: Option<WindowPosition>,
     show_construction_grid: bool,
@@ -99,12 +108,24 @@ struct ViewRecord {
     legacy_display_mode: Option<i64>,
     #[serde(flatten, serialize_with = "serialize_view_attributes_field")]
     attributes: Option<ViewAttributes>,
+    #[serde(skip)]
+    _attributes_storage: Option<cadmpeg_core::decode::ScopedReservation<'ctx>>,
     construction_plane: Option<ConstructionPlane>,
+    #[serde(skip)]
+    _construction_plane_storage: Option<cadmpeg_core::decode::ScopedReservation<'ctx>>,
     viewport: Option<Viewport>,
+    #[serde(skip)]
+    _viewport_storage: Option<cadmpeg_core::decode::ScopedReservation<'ctx>>,
     trace_image: Option<TraceImage>,
+    #[serde(skip)]
+    _trace_image_storage: Option<cadmpeg_core::decode::ScopedReservation<'ctx>>,
     wallpaper: Option<Wallpaper>,
+    #[serde(skip)]
+    _wallpaper_storage: Option<cadmpeg_core::decode::ScopedReservation<'ctx>>,
     children: Vec<ViewChild>,
     parse_warnings: Vec<String>,
+    #[serde(skip)]
+    _record_storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
 }
 
 fn serialize_view_attributes_field<'a, S: serde::Serializer>(
@@ -133,9 +154,10 @@ fn serialize_view_attributes<S: serde::Serializer>(
     map.end()
 }
 
-struct ViewportUserdataScan {
+struct ViewportUserdataScan<'ctx> {
     children: Vec<std::ops::Range<usize>>,
     has_untyped_content: bool,
+    _storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
 }
 
 #[derive(Debug, Serialize)]
@@ -154,11 +176,13 @@ struct ConstructionPlane {
 }
 
 #[derive(Debug, Serialize)]
-struct NamedConstructionPlane {
+struct NamedConstructionPlane<'ctx> {
     id: String,
     source_offset: u64,
     list_index: usize,
     value: ConstructionPlane,
+    #[serde(skip)]
+    _storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
 }
 
 #[derive(Debug, Serialize)]
@@ -335,7 +359,10 @@ fn image_reference<'a>(
     data: &'a [u8],
     reader: &mut BoundedReader<'a>,
     archive: ArchiveVersion,
-    warnings: &mut Diagnostics,
+    warnings: &mut impl FnMut(
+        Option<crate::loss::RhinoLossCode>,
+        std::fmt::Arguments<'_>,
+    ) -> Result<(), CodecError>,
 ) -> Result<(ImageReference, std::ops::Range<usize>), FramingError> {
     let value = crate::instances::file_reference(ctx, data, reader, archive, warnings)?;
     let source_range = value.source_range.clone();
@@ -365,7 +392,8 @@ fn parse_trace_image(
     body: std::ops::Range<usize>,
     archive: ArchiveVersion,
     scale: MillimeterScale,
-    losses: &mut Vec<LossNote>,
+    losses: &mut impl AdmittedVec<LossNote>,
+    staging: &mut cadmpeg_core::decode::ScopedReservation<'_>,
 ) -> Result<(TraceImage, Option<std::ops::Range<usize>>), FramingError> {
     let mut reader = BoundedReader::new(data, body.start, body.end)?;
     let packed = reader.u8()?;
@@ -382,18 +410,25 @@ fn parse_trace_image(
     let height_mm = scaled_coordinate(reader.f64()?, scale).ok_or_else(|| {
         FramingError::structural(reader.position() - 8, "trace height is invalid")
     })?;
-    let plane = scaled_plane(plane(&mut reader)?, scale, body.start)?;
+    let plane = scaled_plane(plane(ctx, &mut reader)?, scale, body.start)?;
     let grayscale = minor < 1 || reader.bool()?;
     let hidden = minor >= 2 && reader.bool()?;
     let filtered = minor >= 3 && reader.bool()?;
     let (file_reference, file_reference_range) = if minor >= 4 {
         let source_offset = reader.position();
+        let mut diagnostics_storage =
+            ctx.reserve_scoped(0, "Rhino image file-reference diagnostics")?;
         let mut warnings = Diagnostics::new();
-        let parsed = image_reference(ctx, data, &mut reader, archive, &mut warnings);
+        let parsed = staging.with_storage(|| {
+            image_reference(ctx, data, &mut reader, archive, &mut |code, message| {
+                diagnostics_storage
+                    .with_storage(|| warnings.push_coded_admitted(ctx, code, message))
+            })
+        });
         append_file_reference_diagnostics(
             ctx,
             losses,
-            warnings,
+            &warnings,
             source_offset,
             "VIEW/TRACE_IMAGE/FILE_REFERENCE",
         )?;
@@ -402,7 +437,8 @@ fn parse_trace_image(
     } else {
         (None, None)
     };
-    let legacy_file_path = legacy_file_path.admit(ctx, "Rhino trace image path")?;
+    let legacy_file_path =
+        staging.with_storage(|| legacy_file_path.admit(ctx, "Rhino trace image path"))?;
     reader.skip_remaining()?;
     Ok((
         TraceImage {
@@ -426,7 +462,8 @@ fn parse_wallpaper(
     data: &[u8],
     body: std::ops::Range<usize>,
     archive: ArchiveVersion,
-    losses: &mut Vec<LossNote>,
+    losses: &mut impl AdmittedVec<LossNote>,
+    staging: &mut cadmpeg_core::decode::ScopedReservation<'_>,
 ) -> Result<(Wallpaper, Option<std::ops::Range<usize>>), FramingError> {
     let mut reader = BoundedReader::new(data, body.start, body.end)?;
     let packed = reader.u8()?;
@@ -437,17 +474,25 @@ fn parse_wallpaper(
             "wallpaper version is unsupported",
         ));
     }
-    let legacy_file_path = utf16_retained(ctx, &mut reader, "Rhino wallpaper path")?;
+    let legacy_file_path =
+        staging.with_storage(|| utf16_retained(ctx, &mut reader, "Rhino wallpaper path"))?;
     let grayscale = reader.bool()?;
     let hidden = minor >= 1 && reader.bool()?;
     let (file_reference, file_reference_range) = if minor >= 2 {
         let source_offset = reader.position();
+        let mut diagnostics_storage =
+            ctx.reserve_scoped(0, "Rhino image file-reference diagnostics")?;
         let mut warnings = Diagnostics::new();
-        let parsed = image_reference(ctx, data, &mut reader, archive, &mut warnings);
+        let parsed = staging.with_storage(|| {
+            image_reference(ctx, data, &mut reader, archive, &mut |code, message| {
+                diagnostics_storage
+                    .with_storage(|| warnings.push_coded_admitted(ctx, code, message))
+            })
+        });
         append_file_reference_diagnostics(
             ctx,
             losses,
-            warnings,
+            &warnings,
             source_offset,
             "VIEW/WALLPAPER/FILE_REFERENCE",
         )?;
@@ -470,27 +515,33 @@ fn parse_wallpaper(
 
 fn append_file_reference_diagnostics(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    losses: &mut Vec<LossNote>,
-    diagnostics: Diagnostics,
+    losses: &mut impl AdmittedVec<LossNote>,
+    diagnostics: &Diagnostics,
     source_offset: usize,
     tag: &'static str,
 ) -> Result<(), FramingError> {
-    for diagnostic in diagnostics {
-        let code = diagnostic
-            .code
-            .unwrap_or(crate::loss::RhinoLossCode::IntegrityFailure);
-        push_view_loss(
-            ctx,
-            losses,
-            code,
-            source_offset,
-            tag,
-            format_args!(
-                "file reference at offset {}: {}",
-                source_offset, diagnostic.message
-            ),
-        )?;
-    }
+    ctx.fold(
+        &diagnostics[..],
+        (),
+        |(), diagnostic| {
+            let code = diagnostic
+                .code
+                .unwrap_or(crate::loss::RhinoLossCode::IntegrityFailure);
+            push_view_loss(
+                ctx,
+                losses,
+                code,
+                source_offset,
+                tag,
+                format_args!(
+                    "file reference at offset {}: {}",
+                    source_offset, diagnostic.message
+                ),
+            )?;
+            Ok(())
+        },
+        "Rhino view diagnostic traversal",
+    )?;
     Ok(())
 }
 
@@ -509,46 +560,44 @@ fn located_presentation_loss(
 
 fn push_list_loss(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    losses: &mut Vec<LossNote>,
+    losses: &mut impl AdmittedVec<LossNote>,
     offset: usize,
     tag: &'static str,
     message: std::fmt::Arguments<'_>,
 ) -> Result<(), CodecError> {
-    ctx.reserve_vec(losses, 1, "Rhino view list losses")?;
     let loss = crate::wire::admitted_loss(
         ctx,
         crate::loss::RhinoLossCode::PresentationRecordDropped,
         message,
         "Rhino view list loss message",
     )?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(tag.len()),
-        "Rhino view list loss tag",
-    )?;
-    losses.push(loss.with_provenance(
-        SourceProvenance::root("rhino", cadmpeg_core::decode::u64_from_index(offset)).with_tag(tag),
-    ));
-    Ok(())
+    losses.push_admitted(
+        ctx,
+        loss.with_provenance(
+            SourceProvenance::root("rhino", cadmpeg_core::decode::u64_from_index(offset))
+                .with_tag(tag),
+        ),
+        "Rhino view list losses",
+    )
 }
 
 fn push_view_loss(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    losses: &mut Vec<LossNote>,
+    losses: &mut impl AdmittedVec<LossNote>,
     code: crate::loss::RhinoLossCode,
     offset: usize,
     tag: &'static str,
     message: std::fmt::Arguments<'_>,
 ) -> Result<(), CodecError> {
-    ctx.reserve_vec(losses, 1, "Rhino view losses")?;
     let loss = crate::wire::admitted_loss(ctx, code, message, "Rhino view loss message")?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(tag.len()),
-        "Rhino view loss tag",
-    )?;
-    losses.push(loss.with_provenance(
-        SourceProvenance::root("rhino", cadmpeg_core::decode::u64_from_index(offset)).with_tag(tag),
-    ));
-    Ok(())
+    losses.push_admitted(
+        ctx,
+        loss.with_provenance(
+            SourceProvenance::root("rhino", cadmpeg_core::decode::u64_from_index(offset))
+                .with_tag(tag),
+        ),
+        "Rhino view losses",
+    )
 }
 
 fn view_checksum_tag(typecode: u32) -> &'static str {
@@ -581,7 +630,7 @@ fn parse_cplane(
             "construction-plane version is unsupported",
         ));
     }
-    let value = scaled_plane(plane(&mut reader)?, scale, body.start)?;
+    let value = scaled_plane(plane(ctx, &mut reader)?, scale, body.start)?;
     let grid_spacing_mm = scaled_coordinate(reader.f64()?, scale).ok_or_else(|| {
         FramingError::structural(reader.position() - 8, "grid spacing is invalid")
     })?;
@@ -812,14 +861,22 @@ fn parse_window_position(
     })
 }
 
-fn parse_attributes(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+fn parse_attributes<'ctx>(
+    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     body: std::ops::Range<usize>,
     archive: ArchiveVersion,
     scale: MillimeterScale,
-) -> Result<(ViewAttributes, Vec<std::ops::Range<usize>>), FramingError> {
+) -> Result<
+    (
+        ViewAttributes,
+        Vec<std::ops::Range<usize>>,
+        cadmpeg_core::decode::ScopedReservation<'ctx>,
+    ),
+    FramingError,
+> {
     let mut reader = BoundedReader::new(data, body.start, body.end)?;
+    let mut checksum_storage = ctx.reserve_scoped(0, "Rhino view attribute checksum ranges")?;
     let mut checksum_children = Vec::new();
     let packed = reader.u8()?;
     let version = [packed >> 4, packed & 0x0f];
@@ -908,12 +965,13 @@ fn parse_attributes(
         let margins_mm = [left, right, top, bottom];
         let printer_name = utf16_retained(ctx, &mut page, "Rhino view printer name")?;
         page.skip_remaining()?;
-        ctx.reserve_vec(
-            &mut checksum_children,
-            1,
-            "Rhino view attribute checksum children",
-        )
-        .map_err(crate::chunks::FramingError::from)?;
+        checksum_storage.with_storage(|| {
+            ctx.reserve_vec(
+                &mut checksum_children,
+                1,
+                "Rhino view attribute checksum children",
+            )
+        })?;
         checksum_children.push(chunk.range());
         reader.skip(chunk.next_offset() - reader.position())?;
         result.page_settings = Some(PageSettings {
@@ -936,6 +994,7 @@ fn parse_attributes(
                 FramingError::structural(count_offset, "clipping-plane count is invalid")
             })?;
         for _ in 0..count {
+            ctx.charge_work(1, "Rhino views cursor traversal")?;
             let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
             if chunk.typecode != 0x4000_8000 || chunk.short() {
                 return Err(FramingError::structural(
@@ -998,12 +1057,13 @@ fn parse_attributes(
                 depth_mm: depth,
                 depth_enabled,
             });
-            ctx.reserve_vec(
-                &mut checksum_children,
-                1,
-                "Rhino view attribute checksum children",
-            )
-            .map_err(crate::chunks::FramingError::from)?;
+            checksum_storage.with_storage(|| {
+                ctx.reserve_vec(
+                    &mut checksum_children,
+                    1,
+                    "Rhino view attribute checksum children",
+                )
+            })?;
             checksum_children.push(chunk.range());
             reader.skip(chunk.next_offset() - reader.position())?;
         }
@@ -1034,7 +1094,7 @@ fn parse_attributes(
         result.section_behavior = Some(reader.u8()?);
     }
     reader.skip_remaining()?;
-    Ok((result, checksum_children))
+    Ok((result, checksum_children, checksum_storage))
 }
 
 fn view_child_checksum_warning<I, R>(
@@ -1042,16 +1102,18 @@ fn view_child_checksum_warning<I, R>(
     data: &[u8],
     child: &crate::chunks::Chunk,
     direct_ranges: I,
-) -> Result<Option<String>, FramingError>
+) -> Result<Option<crate::chunks::ChecksumNote>, FramingError>
 where
     I: Clone + IntoIterator<Item = Result<R, FramingError>>,
     R: std::borrow::Borrow<std::ops::Range<usize>>,
 {
     match verify_checksum_ranges(ctx, data, child, direct_ranges)? {
-        ChecksumStatus::Mismatch { expected, actual } => Ok(Some(format!(
-            "CRC mismatch at offset {} for typecode {:#x}: expected {expected:#x}, got {actual:#x}",
-            child.header_start, child.typecode
-        ))),
+        ChecksumStatus::Mismatch { expected, actual } => Ok(Some(crate::chunks::ChecksumNote {
+            offset: child.header_start,
+            typecode: child.typecode,
+            expected,
+            actual,
+        })),
         _ => Ok(None),
     }
 }
@@ -1060,8 +1122,8 @@ fn direct_view_child_checksum_warning(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     child: &crate::chunks::Chunk,
-) -> Result<Option<String>, FramingError> {
-    view_child_checksum_warning(ctx, data, child, std::iter::once(Ok(child.body())))
+) -> Result<Option<crate::chunks::ChecksumNote>, FramingError> {
+    view_child_checksum_warning(ctx, data, child, std::iter::once(child.body()).map(Ok))
 }
 
 fn view_child_checksum_warning_excluding(
@@ -1069,19 +1131,20 @@ fn view_child_checksum_warning_excluding(
     data: &[u8],
     child: &crate::chunks::Chunk,
     nested_children: &[std::ops::Range<usize>],
-) -> Result<Option<String>, FramingError> {
+) -> Result<Option<crate::chunks::ChecksumNote>, FramingError> {
     let direct = direct_checksum_ranges(ctx, &child.body(), nested_children)?;
     view_child_checksum_warning(ctx, data, child, &direct)
 }
 
-fn scan_viewport_userdata(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+fn scan_viewport_userdata<'ctx>(
+    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     body: std::ops::Range<usize>,
     archive: ArchiveVersion,
-    losses: &mut Vec<LossNote>,
-) -> Result<ViewportUserdataScan, FramingError> {
+    losses: &mut impl AdmittedVec<LossNote>,
+) -> Result<ViewportUserdataScan<'ctx>, FramingError> {
     let mut reader = BoundedReader::new(data, body.start, body.end)?;
+    let mut children_storage = ctx.reserve_scoped(0, "Rhino viewport userdata child ranges")?;
     let mut children = Vec::new();
     let mut has_untyped_content = false;
     loop {
@@ -1091,6 +1154,7 @@ fn scan_viewport_userdata(
                 "view viewport userdata is missing its class end",
             ));
         }
+        ctx.charge_work(1, "Rhino views cursor traversal")?;
         let start = reader.position();
         let child = chunk_at(data, start, reader.end(), archive, false)?;
         if children.len() >= VIEWPORT_USERDATA_CHILD_CAP {
@@ -1102,7 +1166,8 @@ fn scan_viewport_userdata(
                 )
                 .into());
         }
-        ctx.reserve_vec(&mut children, 1, "Rhino viewport userdata children")
+        children_storage
+            .with_storage(|| ctx.reserve_vec(&mut children, 1, "Rhino viewport userdata children"))
             .map_err(crate::chunks::FramingError::from)?;
         children.push(child.range());
         reader.skip(child.next_offset() - start)?;
@@ -1114,24 +1179,42 @@ fn scan_viewport_userdata(
                         "view viewport userdata item must be a long chunk",
                     ));
                 }
+                let mut diagnostics_storage =
+                    ctx.reserve_scoped(0, "Rhino viewport userdata diagnostics")?;
                 let mut warnings = Diagnostics::new();
-                let parsed = parse_userdata(ctx, data, &child, archive, &mut warnings);
-                for warning in warnings {
-                    let code = warning
-                        .code
-                        .unwrap_or(crate::loss::RhinoLossCode::IntegrityFailure);
-                    push_view_loss(
-                        ctx,
-                        losses,
-                        code,
-                        child.header_start,
-                        "VIEW/VIEWPORT_USERDATA",
-                        format_args!(
-                            "viewport userdata at offset {}: {}",
-                            child.header_start, warning.message
-                        ),
-                    )?;
-                }
+                let parsed = diagnostics_storage
+                    .with_storage(|| {
+                        Ok::<_, CodecError>(parse_userdata(
+                            ctx,
+                            data,
+                            &child,
+                            archive,
+                            &mut |code, message| warnings.push_coded_admitted(ctx, code, message),
+                        ))
+                    })
+                    .map_err(crate::chunks::FramingError::from)?;
+                ctx.fold(
+                    &warnings[..],
+                    (),
+                    |(), warning| {
+                        let code = warning
+                            .code
+                            .unwrap_or(crate::loss::RhinoLossCode::IntegrityFailure);
+                        push_view_loss(
+                            ctx,
+                            losses,
+                            code,
+                            child.header_start,
+                            "VIEW/VIEWPORT_USERDATA",
+                            format_args!(
+                                "viewport userdata at offset {}: {}",
+                                child.header_start, warning.message
+                            ),
+                        )?;
+                        Ok(())
+                    },
+                    "Rhino viewport diagnostic traversal",
+                )?;
                 parsed?;
                 has_untyped_content = true;
             }
@@ -1145,6 +1228,7 @@ fn scan_viewport_userdata(
                 return Ok(ViewportUserdataScan {
                     children,
                     has_untyped_content,
+                    _storage: children_storage,
                 });
             }
             0 => {
@@ -1158,20 +1242,22 @@ fn scan_viewport_userdata(
     }
 }
 
-fn parse_view(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+fn parse_view<'ctx>(
+    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     record: &crate::chunks::Chunk,
-    archive: ArchiveVersion,
-    scale: MillimeterScale,
-    slot: ViewListSlot,
-    losses: &mut Vec<LossNote>,
-) -> Result<ViewRecord, FramingError> {
-    let ViewListSlot {
+    source: ViewRecordSource,
+    losses: &mut impl AdmittedVec<LossNote>,
+) -> Result<ViewRecord<'ctx>, FramingError> {
+    let mut staging = ctx.reserve_scoped(0, "Rhino view record staging")?;
+    let ViewRecordSource {
+        archive,
+        scale,
         kind: list_kind,
         index: list_index,
-    } = slot;
+    } = source;
     let mut offset = record.body().start;
+    let mut name_storage = None;
     let mut name = String::new();
     let mut target = None;
     let mut window_position = None;
@@ -1179,18 +1265,28 @@ fn parse_view(
     let mut show_axes = true;
     let mut show_world_axes = true;
     let mut legacy_display_mode = None;
+    let mut attributes_storage = None;
     let mut attributes_detail = None;
+    let mut construction_plane_storage = None;
     let mut construction_plane = None;
+    let mut viewport_storage = None;
     let mut viewport = None;
+    let mut trace_image_storage = None;
     let mut trace_image = None;
+    let mut wallpaper_storage = None;
     let mut wallpaper = None;
     let mut children = Vec::new();
+    let mut checksum_storage = ctx.reserve_scoped(0, "Rhino view checksum storage")?;
     let mut checksum_children = Vec::new();
     let mut parse_warnings = Vec::new();
     let mut terminated = false;
     while offset < record.body().end {
+        ctx.charge_work(1, "Rhino views cursor traversal")?;
         let child = chunk_at(data, offset, record.body().end, archive, false)?;
-        ctx.reserve_vec(&mut checksum_children, 1, "Rhino view checksum children")
+        checksum_storage
+            .with_storage(|| {
+                ctx.reserve_vec(&mut checksum_children, 1, "Rhino view checksum children")
+            })
             .map_err(crate::chunks::FramingError::from)?;
         checksum_children.push(child.range());
         if matches!(
@@ -1210,23 +1306,31 @@ fn parse_view(
         }
         match child.typecode {
             VIEW_CPLANE if !child.short() => {
-                construction_plane = Some(parse_cplane(ctx, data, child.body().clone(), scale)?);
+                let mut storage = ctx.reserve_scoped(0, "Rhino view construction plane")?;
+                let value = storage
+                    .with_storage(|| parse_cplane(ctx, data, child.body().clone(), scale))?;
+                construction_plane = Some(value);
+                construction_plane_storage = Some(storage);
             }
             VIEW_VIEWPORT if !child.short() => {
-                match parse_viewport(ctx, data, child.body().clone(), scale) {
-                    Ok(value) => viewport = Some(value),
+                let mut storage = ctx.reserve_scoped(0, "Rhino view viewport")?;
+                match storage
+                    .with_storage(|| parse_viewport(ctx, data, child.body().clone(), scale))
+                {
+                    Ok(value) => {
+                        viewport = Some(value);
+                        viewport_storage = Some(storage);
+                    }
                     Err(FramingError::Resource(limit)) => {
                         return Err(FramingError::Resource(limit));
                     }
                     Err(error) => {
-                        let message = ctx.format_retained(
-                            format_args!("viewport retained: {error}"),
-                            "Rhino view parse warning",
-                        )?;
-                        ctx.reserve_vec(&mut parse_warnings, 1, "Rhino view parse warnings")?;
-                        parse_warnings.push(
-                            ctx.copy_retained_text(&message, "Rhino view parse warning copy")?,
-                        );
+                        let message = staging.with_storage(|| {
+                            ctx.format_retained(
+                                format_args!("viewport retained: {error}"),
+                                "Rhino view parse warning",
+                            )
+                        })?;
                         push_view_loss(
                             ctx,
                             losses,
@@ -1235,12 +1339,23 @@ fn parse_view(
                             "VIEW/VIEWPORT",
                             format_args!("{message}"),
                         )?;
+                        staging.with_storage(|| {
+                            ctx.push_vec(&mut parse_warnings, message, "Rhino view parse warnings")
+                        })?;
                     }
                 }
             }
             VIEW_TRACE_IMAGE if !child.short() => {
-                let (value, file_reference_range) =
-                    parse_trace_image(ctx, data, child.body().clone(), archive, scale, losses)?;
+                let mut storage = ctx.reserve_scoped(0, "Rhino view trace image")?;
+                let (value, file_reference_range) = parse_trace_image(
+                    ctx,
+                    data,
+                    child.body().clone(),
+                    archive,
+                    scale,
+                    losses,
+                    &mut storage,
+                )?;
                 let nested_children = file_reference_range.as_slice();
                 if let Some(warning) =
                     view_child_checksum_warning_excluding(ctx, data, &child, nested_children)?
@@ -1255,10 +1370,13 @@ fn parse_view(
                     )?;
                 }
                 trace_image = Some(value);
+                trace_image_storage = Some(storage);
             }
             VIEW_WALLPAPER if !child.short() => {
+                let mut storage = ctx.reserve_scoped(0, "Rhino view wallpaper path")?;
                 let mut reader = BoundedReader::new(data, child.body().start, child.body().end)?;
-                let path = utf16_retained(ctx, &mut reader, "Rhino wallpaper path")?;
+                let path = storage
+                    .with_storage(|| utf16_retained(ctx, &mut reader, "Rhino wallpaper path"))?;
                 reader.skip_remaining()?;
                 wallpaper = Some(Wallpaper {
                     legacy_file_path: path,
@@ -1266,10 +1384,18 @@ fn parse_view(
                     hidden: false,
                     file_reference: None,
                 });
+                wallpaper_storage = Some(storage);
             }
             VIEW_WALLPAPER_V3 if !child.short() => {
-                let (value, file_reference_range) =
-                    parse_wallpaper(ctx, data, child.body().clone(), archive, losses)?;
+                let mut storage = ctx.reserve_scoped(0, "Rhino view wallpaper")?;
+                let (value, file_reference_range) = parse_wallpaper(
+                    ctx,
+                    data,
+                    child.body().clone(),
+                    archive,
+                    losses,
+                    &mut storage,
+                )?;
                 let nested_children = file_reference_range.as_slice();
                 if let Some(warning) =
                     view_child_checksum_warning_excluding(ctx, data, &child, nested_children)?
@@ -1284,11 +1410,20 @@ fn parse_view(
                     )?;
                 }
                 wallpaper = Some(value);
+                wallpaper_storage = Some(storage);
             }
             VIEW_NAME if !child.short() => {
-                let mut reader = BoundedReader::new(data, child.body().start, child.body().end)?;
-                name = utf16_retained(ctx, &mut reader, "Rhino view name")?;
-                reader.skip_remaining()?;
+                let (replacement_buffer, storage) =
+                    ctx.with_scoped_storage("Rhino view name", || {
+                        let mut reader =
+                            BoundedReader::new(data, child.body().start, child.body().end)?;
+                        let value = utf16_retained(ctx, &mut reader, "Rhino view name")?;
+                        reader.skip_remaining()?;
+                        Ok::<_, FramingError>(value)
+                    })?;
+                let replacement = replacement_buffer;
+                name = replacement;
+                name_storage = Some(storage);
             }
             VIEW_TARGET if !child.short() => {
                 let mut reader = BoundedReader::new(data, child.body().start, child.body().end)?;
@@ -1313,8 +1448,12 @@ fn parse_view(
             VIEW_SHOW_WORLD_AXES if child.short() => show_world_axes = child.value()? != 0,
             VIEW_V3_DISPLAY_MODE if child.short() => legacy_display_mode = Some(child.value()?),
             VIEW_ATTRIBUTES if !child.short() => {
-                let (attributes, nested_children) =
-                    parse_attributes(ctx, data, child.body().clone(), archive, scale)?;
+                let mut storage = ctx.reserve_scoped(0, "Rhino view attributes")?;
+                let (attributes, nested_children_buffer, _nested_children_storage) = storage
+                    .with_storage(|| {
+                        parse_attributes(ctx, data, child.body().clone(), archive, scale)
+                    })?;
+                let nested_children = nested_children_buffer;
                 if let Some(warning) =
                     view_child_checksum_warning_excluding(ctx, data, &child, &nested_children)?
                 {
@@ -1328,6 +1467,7 @@ fn parse_view(
                     )?;
                 }
                 attributes_detail = Some(attributes);
+                attributes_storage = Some(storage);
             }
             VIEW_VIEWPORT_USERDATA => {
                 if child.short() {
@@ -1402,22 +1542,25 @@ fn parse_view(
             }
             _ => {}
         }
-        ctx.reserve_vec(&mut children, 1, "Rhino view children")
-            .map_err(crate::chunks::FramingError::from)?;
-        children.push(ViewChild {
-            typecode: ctx.format_retained(
-                format_args!("{:#010x}", child.typecode),
-                "Rhino view child typecode",
-            )?,
-            kind: child_kind(child.typecode),
-            source_offset: cadmpeg_core::decode::u64_from_index(offset),
-            byte_len: cadmpeg_core::decode::u64_from_index(child.next_offset() - offset),
-            sha256: crate::instances::hex(
-                ctx,
-                &cadmpeg_ir::hash::sha256(&data[offset..child.next_offset()]),
-                "Rhino view child SHA-256",
-            )?,
-        });
+        staging.with_storage(|| -> Result<(), FramingError> {
+            ctx.reserve_vec(&mut children, 1, "Rhino view children")
+                .map_err(crate::chunks::FramingError::from)?;
+            children.push(ViewChild {
+                typecode: ctx.format_retained(
+                    format_args!("{:#010x}", child.typecode),
+                    "Rhino view child typecode",
+                )?,
+                kind: child_kind(child.typecode),
+                source_offset: cadmpeg_core::decode::u64_from_index(offset),
+                byte_len: cadmpeg_core::decode::u64_from_index(child.next_offset() - offset),
+                sha256: String::from(cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
+                    ctx,
+                    &data[offset..child.next_offset()],
+                    "Rhino view child SHA-256",
+                )?),
+            });
+            Ok(())
+        })?;
         if terminated {
             break;
         }
@@ -1431,10 +1574,12 @@ fn parse_view(
     }
     let direct = direct_checksum_ranges(ctx, &record.body(), &checksum_children)?;
     let checksum_warning = match verify_checksum_ranges(ctx, data, record, &direct)? {
-        ChecksumStatus::Mismatch { expected, actual } => Some(format!(
-            "CRC mismatch at offset {} for typecode {:#x}: expected {expected:#x}, got {actual:#x}",
-            record.header_start, record.typecode
-        )),
+        ChecksumStatus::Mismatch { expected, actual } => Some(crate::chunks::ChecksumNote {
+            offset: record.header_start,
+            typecode: record.typecode,
+            expected,
+            actual,
+        }),
         _ => None,
     };
     if let Some(warning) = checksum_warning {
@@ -1448,14 +1593,17 @@ fn parse_view(
         )?;
     }
     Ok(ViewRecord {
-        id: ctx.format_retained(
-            format_args!("rhino:document:view#{}-{list_index:04}", list_kind.as_str()),
-            "Rhino view ID",
-        )?,
+        id: staging.with_storage(|| {
+            ctx.format_retained(
+                format_args!("rhino:document:view#{}-{list_index:04}", list_kind.as_str()),
+                "Rhino view ID",
+            )
+        })?,
         source_offset: cadmpeg_core::decode::u64_from_index(record.header_start),
         list_kind,
         list_index,
         name,
+        _name_storage: name_storage,
         target_millimeters: target,
         window_position,
         show_construction_grid: show_grid,
@@ -1463,29 +1611,36 @@ fn parse_view(
         show_world_axes,
         legacy_display_mode,
         attributes: attributes_detail,
+        _attributes_storage: attributes_storage,
         construction_plane,
+        _construction_plane_storage: construction_plane_storage,
         viewport,
+        _viewport_storage: viewport_storage,
         trace_image,
+        _trace_image_storage: trace_image_storage,
         wallpaper,
+        _wallpaper_storage: wallpaper_storage,
         children,
         parse_warnings,
+        _record_storage: staging,
     })
 }
 
-fn parse_list(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+fn parse_list<'ctx>(
+    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     record: &Record,
     archive: ArchiveVersion,
     scale: MillimeterScale,
     list_kind: ViewListKind,
-) -> Result<(Vec<ViewRecord>, Vec<LossNote>), CodecError> {
+    staging: &mut cadmpeg_core::decode::ScopedReservation<'ctx>,
+) -> Result<(Vec<ViewRecord<'ctx>>, ScratchVec<'ctx, LossNote>), CodecError> {
     let kind = list_kind.as_str();
     let list_tag = match list_kind {
         ViewListKind::Named => "VIEW/NAMED_VIEWS",
         ViewListKind::Active => "VIEW/ACTIVE_VIEWS",
     };
-    let mut losses = Vec::new();
+    let mut losses = ScratchVec::new(ctx, "Rhino view list loss Vec")?;
     let mut reader = match BoundedReader::new(data, record.body().start, record.body().end) {
         Ok(reader) => reader,
         Err(error) => {
@@ -1546,6 +1701,7 @@ fn parse_list(
     }
     let mut views = Vec::new();
     for index in 0..count {
+        ctx.charge_work(1, "Rhino views cursor traversal")?;
         let child_offset = reader.position();
         let view = match chunk_at(data, reader.position(), reader.end(), archive, false) {
             Ok(view) => view,
@@ -1579,17 +1735,18 @@ fn parse_list(
             ctx,
             data,
             &view,
-            archive,
-            scale,
-            ViewListSlot {
+            ViewRecordSource {
+                archive,
+                scale,
                 kind: list_kind,
                 index,
             },
             &mut losses,
         ) {
             Ok(value) => {
-                ctx.reserve_vec(&mut views, 1, "Rhino view list records").map_err(crate::chunks::FramingError::from)
-                    .map_err(codec_error)?;
+                staging.with_storage(|| ctx.reserve_vec(&mut views, 1, "Rhino view list records"))
+                    .map_err(crate::chunks::FramingError::from)
+                    .or_else(|error| Err(codec_error(ctx, error)?))?;
                 views.push(value);
             }
             Err(FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
@@ -1621,13 +1778,19 @@ fn parse_list(
     Ok((views, losses))
 }
 
-fn parse_named_cplanes(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+fn parse_named_cplanes<'ctx>(
+    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     record: &Record,
     archive: ArchiveVersion,
     scale: MillimeterScale,
-) -> Result<Vec<NamedConstructionPlane>, FramingError> {
+) -> Result<
+    (
+        Vec<NamedConstructionPlane<'ctx>>,
+        cadmpeg_core::decode::ScopedReservation<'ctx>,
+    ),
+    FramingError,
+> {
     let mut reader = BoundedReader::new(data, record.body().start, record.body().end)?;
     let count_offset = reader.position();
     let count = usize::try_from(reader.i32()?)
@@ -1636,8 +1799,10 @@ fn parse_named_cplanes(
         .ok_or_else(|| {
             FramingError::structural(count_offset, "named construction-plane count is invalid")
         })?;
+    let mut staging = ctx.reserve_scoped(0, "Rhino named construction-plane list")?;
     let mut values = Vec::new();
     for index in 0..count {
+        ctx.charge_work(1, "Rhino views cursor traversal")?;
         let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
         if chunk.typecode != VIEW_CPLANE || chunk.short() {
             return Err(FramingError::structural(
@@ -1645,69 +1810,88 @@ fn parse_named_cplanes(
                 "named construction-plane record is invalid",
             ));
         }
-        ctx.reserve_vec(&mut values, 1, "Rhino named construction planes")
+        let mut record_storage = ctx.reserve_scoped(0, "Rhino named construction-plane record")?;
+        let (id, value) = record_storage.with_storage(|| {
+            Ok::<_, FramingError>((
+                ctx.format_retained(
+                    format_args!("rhino:document:construction_plane#{index:04}"),
+                    "Rhino named construction plane ID",
+                )?,
+                parse_cplane(ctx, data, chunk.body().clone(), scale)?,
+            ))
+        })?;
+        staging
+            .with_storage(|| ctx.reserve_vec(&mut values, 1, "Rhino named construction planes"))
             .map_err(crate::chunks::FramingError::from)?;
         values.push(NamedConstructionPlane {
-            id: ctx.format_retained(
-                format_args!("rhino:document:construction_plane#{index:04}"),
-                "Rhino named construction plane ID",
-            )?,
+            id,
             source_offset: cadmpeg_core::decode::u64_from_index(chunk.header_start),
             list_index: index,
-            value: parse_cplane(ctx, data, chunk.body().clone(), scale)?,
+            value,
+            _storage: record_storage,
         });
         reader.skip(chunk.next_offset() - reader.position())?;
     }
     reader.skip_remaining()?;
-    Ok(values)
+    Ok((values, staging))
 }
 
 fn retain_unbound_view_record(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    losses: &mut Vec<LossNote>,
-    opaque_records: &mut Vec<OpaqueRecord>,
+    losses: &mut impl AdmittedVec<LossNote>,
+    opaque_records: &mut impl AdmittedVec<OpaqueRecord>,
     table_typecode: u32,
     record: &Record,
     binding: UnitBinding,
     kind: &str,
 ) -> Result<(), CodecError> {
-    ctx.reserve_vec(losses, 1, "Rhino unbound view losses")?;
     let tag = ctx.format_retained(format_args!("VIEW/{kind}"), "Rhino unbound view loss tag")?;
     let message = ctx.format_retained(format_args!(
             "{kind} record at offset {} was retained as complete source because the document has no physical millimetre binding ({})",
             record.range.start,
             binding.label()
         ), "Rhino unbound view loss message")?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(message.len()),
-        "Rhino unbound view loss message",
+    losses.push_admitted(
+        ctx,
+        located_presentation_loss(record.range.start, tag, message),
+        "Rhino unbound view losses",
     )?;
-    losses.push(located_presentation_loss(record.range.start, tag, message));
-    ctx.reserve_vec(opaque_records, 1, "Rhino opaque view records")?;
-    opaque_records.push(OpaqueRecord {
-        table_typecode,
-        record: record.clone(),
-    });
-    Ok(())
+    opaque_records.push_admitted(
+        ctx,
+        OpaqueRecord {
+            table_typecode,
+            record: record.clone(),
+        },
+        "Rhino opaque view records",
+    )
 }
 
 /// Result of installing saved and active view records.
 /// Installs saved and active view records with complete child accounting.
-pub(crate) fn install(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+pub(crate) fn install<'ctx>(
+    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
     scan: &Scan<'_>,
     ir: &mut CadIr,
-) -> Result<NativeInstall, CodecError> {
+) -> Result<NativeInstall<'ctx>, CodecError> {
     let binding = UnitBinding::from_units(scan.metadata.settings.units.as_ref());
+    let mut staging = ctx.reserve_scoped(0, "Rhino view staging records")?;
     let mut views = Vec::new();
     let mut cplanes = Vec::new();
-    let mut losses = Vec::new();
-    let mut opaque_records = Vec::new();
-    for table in &scan.tables {
+    let mut losses = ScratchVec::new(ctx, "Rhino view loss Vec")?;
+    let mut opaque_records = ScratchVec::new(ctx, "Rhino view source Vec")?;
+    let mut table_source = scan.tables.iter();
+    for _ in 0..table_source.len() {
+        let table = ctx
+            .next_charged(&mut table_source, "Rhino install traversal")?
+            .ok_or_else(|| CodecError::malformed("Rhino view table source ended early"))?;
         if table.typecode & !0x0000_8000 != SETTINGS {
             continue;
         }
-        for record in &table.records {
+        let mut record_source = table.records.iter();
+        for _ in 0..record_source.len() {
+            let record = ctx
+                .next_charged(&mut record_source, "Rhino install traversal")?
+                .ok_or_else(|| CodecError::malformed("Rhino view record source ended early"))?;
             if record.typecode == NAMED_CPLANES {
                 let Some(scale) = binding.neutral_scale() else {
                     retain_unbound_view_record(
@@ -1722,30 +1906,26 @@ pub(crate) fn install(
                     continue;
                 };
                 match parse_named_cplanes(ctx, scan.data, record, scan.archive, scale) {
-                    Ok(values) => {
-                        ctx.reserve_vec(
-                            &mut cplanes,
-                            values.len(),
-                            "Rhino document construction planes",
-                        )
-                        .map_err(crate::chunks::FramingError::from)
-                        .map_err(codec_error)?;
-                        cplanes.extend(values);
+                    Ok((values, values_storage)) => {
+                        staging.with_storage(|| {
+                            ctx.extend_vec(
+                                &mut cplanes,
+                                values,
+                                "Rhino document construction planes",
+                            )
+                        })?;
+                        drop(values_storage);
                     }
                     Err(FramingError::Resource(limit)) => {
                         return Err(CodecError::ResourceLimit(limit));
                     }
                     Err(error) => {
-                        ctx.reserve_vec(&mut losses, 1, "Rhino view setting losses")?;
                         let loss = crate::wire::admitted_loss(ctx,
                             crate::loss::RhinoLossCode::PresentationRecordDropped,
                             format_args!("named construction-plane list at offset {} was omitted after parsing failed: {error}", record.range.start),
                             "Rhino view setting loss message")?;
-                        ctx.charge_retained(
-                            cadmpeg_core::decode::u64_from_index("VIEW/NAMED_CPLANES".len()),
-                            "Rhino view setting loss tag",
-                        )?;
-                        losses.push(
+                        losses.push_admitted(
+                            ctx,
                             loss.with_provenance(
                                 SourceProvenance::root(
                                     "rhino",
@@ -1753,12 +1933,16 @@ pub(crate) fn install(
                                 )
                                 .with_tag("VIEW/NAMED_CPLANES"),
                             ),
-                        );
-                        ctx.reserve_vec(&mut opaque_records, 1, "Rhino opaque view records")?;
-                        opaque_records.push(OpaqueRecord {
-                            table_typecode: table.typecode,
-                            record: record.clone(),
-                        });
+                            "Rhino view setting losses",
+                        )?;
+                        opaque_records.push_admitted(
+                            ctx,
+                            OpaqueRecord {
+                                table_typecode: table.typecode,
+                                record: record.clone(),
+                            },
+                            "Rhino opaque view records",
+                        )?;
                     }
                 }
             }
@@ -1775,27 +1959,30 @@ pub(crate) fn install(
                     )?;
                     continue;
                 };
-                let (parsed, mut parse_losses) = parse_list(
+                let mut parsed_storage = ctx.reserve_scoped(0, "Rhino view list source records")?;
+                let (parsed, parse_losses) = parse_list(
                     ctx,
                     scan.data,
                     record,
                     scan.archive,
                     scale,
                     ViewListKind::Named,
+                    &mut parsed_storage,
                 )?;
                 let has_parse_losses = !parse_losses.is_empty();
-                ctx.reserve_vec(&mut views, parsed.len(), "Rhino document views")
-                    .map_err(crate::chunks::FramingError::from)
-                    .map_err(codec_error)?;
-                views.extend(parsed);
-                ctx.reserve_vec(&mut losses, parse_losses.len(), "Rhino view setting losses")?;
-                losses.append(&mut parse_losses);
+                staging
+                    .with_storage(|| ctx.extend_vec(&mut views, parsed, "Rhino document views"))?;
+                drop(parsed_storage);
+                parse_losses.append_admitted(ctx, &mut losses, "Rhino view setting losses")?;
                 if has_parse_losses {
-                    ctx.reserve_vec(&mut opaque_records, 1, "Rhino opaque view records")?;
-                    opaque_records.push(OpaqueRecord {
-                        table_typecode: table.typecode,
-                        record: record.clone(),
-                    });
+                    opaque_records.push_admitted(
+                        ctx,
+                        OpaqueRecord {
+                            table_typecode: table.typecode,
+                            record: record.clone(),
+                        },
+                        "Rhino opaque view records",
+                    )?;
                 }
             }
             if record.typecode == ACTIVE_VIEWS {
@@ -1811,27 +1998,30 @@ pub(crate) fn install(
                     )?;
                     continue;
                 };
-                let (parsed, mut parse_losses) = parse_list(
+                let mut parsed_storage = ctx.reserve_scoped(0, "Rhino view list source records")?;
+                let (parsed, parse_losses) = parse_list(
                     ctx,
                     scan.data,
                     record,
                     scan.archive,
                     scale,
                     ViewListKind::Active,
+                    &mut parsed_storage,
                 )?;
                 let has_parse_losses = !parse_losses.is_empty();
-                ctx.reserve_vec(&mut views, parsed.len(), "Rhino document views")
-                    .map_err(crate::chunks::FramingError::from)
-                    .map_err(codec_error)?;
-                views.extend(parsed);
-                ctx.reserve_vec(&mut losses, parse_losses.len(), "Rhino view setting losses")?;
-                losses.append(&mut parse_losses);
+                staging
+                    .with_storage(|| ctx.extend_vec(&mut views, parsed, "Rhino document views"))?;
+                drop(parsed_storage);
+                parse_losses.append_admitted(ctx, &mut losses, "Rhino view setting losses")?;
                 if has_parse_losses {
-                    ctx.reserve_vec(&mut opaque_records, 1, "Rhino opaque view records")?;
-                    opaque_records.push(OpaqueRecord {
-                        table_typecode: table.typecode,
-                        record: record.clone(),
-                    });
+                    opaque_records.push_admitted(
+                        ctx,
+                        OpaqueRecord {
+                            table_typecode: table.typecode,
+                            record: record.clone(),
+                        },
+                        "Rhino opaque view records",
+                    )?;
                 }
             }
         }
@@ -1848,7 +2038,12 @@ pub(crate) fn install(
 #[cfg(test)]
 mod tests {
     mod attributes_projection;
+    mod budget_repairs;
+    mod fallible_prefix;
+    mod file_reference_storage;
     mod image_limits;
+    mod resource_limits;
+    mod terminal_work;
 
     use super::{
         legacy_clipping_depth, parse_attributes, parse_cplane, parse_list, parse_trace_image,
@@ -1874,6 +2069,34 @@ mod tests {
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy)
             .expect("root bytes admitted");
         test(&ctx)
+    }
+
+    fn with_materialized_limit<R>(
+        data: &[u8],
+        limit: u64,
+        apply: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> R,
+    ) -> R {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_materialized_bytes = limit;
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy).unwrap();
+        apply(&ctx)
+    }
+
+    fn materialized_limit_at(
+        operation: &str,
+        mut run: impl FnMut(u64) -> cadmpeg_core::decode::ResourceLimit,
+    ) -> u64 {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+            operation,
+            |cap| Err::<(), _>(cadmpeg_core::CodecError::ResourceLimit(run(cap))),
+        );
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+            panic!("materialized refusal");
+        };
+        limit.limit
     }
 
     fn with_retained_limit<T>(
@@ -1988,19 +2211,21 @@ mod tests {
             .expect_err("one construction plane exceeds the collection limit")
         });
         assert_resource(&error, "Rhino named construction planes");
-        let values = super::parse_named_cplanes(
-            &cadmpeg_test_support::service_decode_context(),
+        let service_context = cadmpeg_test_support::service_decode_context();
+        let (values_buffer, _values_storage) = super::parse_named_cplanes(
+            &service_context,
             &bytes,
             &record,
             archive,
             crate::settings::MillimeterScale::IDENTITY,
         )
         .expect("service profile admits the named construction plane");
+        let values = values_buffer;
         assert_eq!(values.len(), 1);
     }
 
     #[test]
-    fn named_construction_plane_id_refuses_retained_limit() {
+    fn named_construction_plane_id_refuses_materialized_limit() {
         let archive = ArchiveVersion::V5;
         let mut bytes = 1_i32.to_le_bytes().to_vec();
         bytes.extend(crc_chunk(
@@ -2009,10 +2234,11 @@ mod tests {
             &construction_plane(),
         ));
         let record = Record::long(NAMED_CPLANES, 0..bytes.len(), 0..bytes.len());
-        let error = with_retained_limit(
-            &bytes,
-            crate::test_support::retained_limit_at("Rhino named construction plane ID", 0, |cap| {
-                match with_retained_limit(&bytes, cap, |ctx| {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+            "Rhino named construction plane ID",
+            |cap| {
+                with_materialized_limit(&bytes, cap, |ctx| {
                     super::parse_named_cplanes(
                         ctx,
                         &bytes,
@@ -2020,32 +2246,31 @@ mod tests {
                         archive,
                         crate::settings::MillimeterScale::IDENTITY,
                     )
-                    .expect_err("construction plane ID exceeds retained limit")
-                }) {
-                    FramingError::Resource(limit) => limit,
-                    error => panic!("unexpected resource refusal: {error:?}"),
-                }
-            }),
-            |ctx| {
-                super::parse_named_cplanes(
-                    ctx,
-                    &bytes,
-                    &record,
-                    archive,
-                    crate::settings::MillimeterScale::IDENTITY,
-                )
-                .expect_err("construction plane ID exceeds retained limit")
+                    .map(drop)
+                    .map_err(|error| match error {
+                        FramingError::Resource(limit) => {
+                            cadmpeg_core::CodecError::ResourceLimit(limit)
+                        }
+                        error => panic!("unexpected construction plane failure: {error}"),
+                    })
+                })
             },
         );
-        assert_resource(&error, "Rhino named construction plane ID");
-        let values = super::parse_named_cplanes(
-            &cadmpeg_test_support::service_decode_context(),
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
+                && limit.operation == "Rhino named construction plane ID")
+        );
+        let service_context = cadmpeg_test_support::service_decode_context();
+        let (values_buffer, _values_storage) = super::parse_named_cplanes(
+            &service_context,
             &bytes,
             &record,
             archive,
             crate::settings::MillimeterScale::IDENTITY,
         )
         .expect("service profile admits the construction plane ID");
+        let values = values_buffer;
         assert_eq!(values.len(), 1);
     }
 
@@ -2222,8 +2447,9 @@ mod tests {
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
             if refusal.operation == "Rhino view setting losses")
         );
+        let service_context = cadmpeg_test_support::service_decode_context();
         let installed = super::install(
-            &cadmpeg_test_support::service_decode_context(),
+            &service_context,
             &scan,
             &mut cadmpeg_ir::document::CadIr::empty(),
         )
@@ -2237,14 +2463,21 @@ mod tests {
         let bytes = [0_u8];
         let record = Record::long(super::NAMED_VIEWS, 0..bytes.len(), 0..bytes.len());
         let error = with_collection_limit(&bytes, 0, |ctx| {
-            super::parse_list(
-                ctx,
-                &bytes,
-                &record,
-                ArchiveVersion::V5,
-                crate::settings::MillimeterScale::IDENTITY,
-                super::ViewListKind::Named,
-            )
+            {
+                let context = ctx;
+                let mut staging = context
+                    .reserve_scoped(0, "Rhino test view staging")
+                    .unwrap();
+                super::parse_list(
+                    context,
+                    &bytes,
+                    &record,
+                    ArchiveVersion::V5,
+                    crate::settings::MillimeterScale::IDENTITY,
+                    super::ViewListKind::Named,
+                    &mut staging,
+                )
+            }
             .expect_err("malformed list loss exceeds collection limit")
         });
         assert!(matches!(
@@ -2252,14 +2485,22 @@ mod tests {
             cadmpeg_core::CodecError::ResourceLimit(refusal)
                 if refusal.operation == "Rhino view list losses"
         ));
-        let (_, losses) = super::parse_list(
-            &cadmpeg_test_support::service_decode_context(),
-            &bytes,
-            &record,
-            ArchiveVersion::V5,
-            crate::settings::MillimeterScale::IDENTITY,
-            super::ViewListKind::Named,
-        )
+        let service_context = cadmpeg_test_support::service_decode_context();
+        let (_, losses) = {
+            let context = &service_context;
+            let mut staging = context
+                .reserve_scoped(0, "Rhino test view staging")
+                .unwrap();
+            super::parse_list(
+                context,
+                &bytes,
+                &record,
+                ArchiveVersion::V5,
+                crate::settings::MillimeterScale::IDENTITY,
+                super::ViewListKind::Named,
+                &mut staging,
+            )
+        }
         .expect("service profile admits loss");
         assert_eq!(losses.len(), 1);
     }
@@ -2272,14 +2513,21 @@ mod tests {
             &bytes,
             crate::test_support::retained_limit_at("Rhino view list loss message", 0, |cap| {
                 match with_retained_limit(&bytes, cap, |ctx| {
-                    super::parse_list(
-                        ctx,
-                        &bytes,
-                        &record,
-                        ArchiveVersion::V5,
-                        crate::settings::MillimeterScale::IDENTITY,
-                        super::ViewListKind::Named,
-                    )
+                    {
+                        let context = ctx;
+                        let mut staging = context
+                            .reserve_scoped(0, "Rhino test view staging")
+                            .unwrap();
+                        super::parse_list(
+                            context,
+                            &bytes,
+                            &record,
+                            ArchiveVersion::V5,
+                            crate::settings::MillimeterScale::IDENTITY,
+                            super::ViewListKind::Named,
+                            &mut staging,
+                        )
+                    }
                     .expect_err("malformed list loss text exceeds retained limit")
                 }) {
                     cadmpeg_core::CodecError::ResourceLimit(limit) => limit,
@@ -2287,14 +2535,21 @@ mod tests {
                 }
             }),
             |ctx| {
-                super::parse_list(
-                    ctx,
-                    &bytes,
-                    &record,
-                    ArchiveVersion::V5,
-                    crate::settings::MillimeterScale::IDENTITY,
-                    super::ViewListKind::Named,
-                )
+                {
+                    let context = ctx;
+                    let mut staging = context
+                        .reserve_scoped(0, "Rhino test view staging")
+                        .unwrap();
+                    super::parse_list(
+                        context,
+                        &bytes,
+                        &record,
+                        ArchiveVersion::V5,
+                        crate::settings::MillimeterScale::IDENTITY,
+                        super::ViewListKind::Named,
+                        &mut staging,
+                    )
+                }
                 .expect_err("malformed list loss text exceeds retained limit")
             },
         );
@@ -2316,8 +2571,9 @@ mod tests {
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
             if refusal.operation == "Rhino view setting losses")
         );
+        let service_context = cadmpeg_test_support::service_decode_context();
         let installed = super::install(
-            &cadmpeg_test_support::service_decode_context(),
+            &service_context,
             &scan,
             &mut cadmpeg_ir::document::CadIr::empty(),
         )
@@ -2362,8 +2618,9 @@ mod tests {
                     .expect_err("opaque active-view list exceeds the collection limit")
             })
         });
+        let service_context = cadmpeg_test_support::service_decode_context();
         let installed = super::install(
-            &cadmpeg_test_support::service_decode_context(),
+            &service_context,
             &scan,
             &mut cadmpeg_ir::document::CadIr::empty(),
         )
@@ -2384,95 +2641,46 @@ mod tests {
         let archive = ArchiveVersion::V5;
         let (bytes, record) = one_end_marker_view(archive);
         with_retained_limit(&bytes, limit, |ctx| {
-            parse_list(
-                ctx,
-                &bytes,
-                &record,
-                archive,
-                crate::settings::MillimeterScale::IDENTITY,
-                ViewListKind::Named,
-            )
-            .expect_err("view record retained text exceeds limit")
-        })
-    }
-
-    #[test]
-    fn view_child_typecode_refuses_retained_limit() {
-        assert!(
-            matches!(view_record_retained_refusal(crate::test_support::retained_limit_at("Rhino view child typecode", 0, |cap| { match view_record_retained_refusal(cap) { cadmpeg_core::CodecError::ResourceLimit(limit) => limit, error => panic!("unexpected fixture refusal: {error:?}") } })), cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "Rhino view child typecode")
-        );
-    }
-
-    #[test]
-    fn view_child_sha256_refuses_retained_limit() {
-        assert!(
-            matches!(view_record_retained_refusal(crate::test_support::retained_limit_at("Rhino view child SHA-256", 0, |cap| { match view_record_retained_refusal(cap) { cadmpeg_core::CodecError::ResourceLimit(limit) => limit, error => panic!("unexpected fixture refusal: {error:?}") } })), cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "Rhino view child SHA-256")
-        );
-    }
-
-    #[test]
-    fn view_id_refuses_retained_limit() {
-        assert!(
-            matches!(view_record_retained_refusal(crate::test_support::retained_limit_at("Rhino view loss message", 0, |cap| { match view_record_retained_refusal(cap) { cadmpeg_core::CodecError::ResourceLimit(limit) => limit, error => panic!("unexpected fixture refusal: {error:?}") } })), cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "Rhino view loss message")
-        );
-        reaches_resource_operation(74, "Rhino view ID", view_record_retained_refusal);
-        let archive = ArchiveVersion::V5;
-        let (bytes, record) = one_end_marker_view(archive);
-        let admitted = parse_list(
-            &cadmpeg_test_support::service_decode_context(),
-            &bytes,
-            &record,
-            archive,
-            crate::settings::MillimeterScale::IDENTITY,
-            ViewListKind::Named,
-        )
-        .expect("view record fits service profile");
-        assert_eq!(admitted.0.len(), 1);
-    }
-
-    #[test]
-    fn view_name_refuses_retained_limit() {
-        let archive = ArchiveVersion::V5;
-        let mut view_body = crc_chunk(archive, super::VIEW_NAME, &utf16_bytes("saved view"));
-        view_body.extend(short_chunk(archive, super::TCODE_ENDOFTABLE, 0));
-        let mut bytes = 1_i32.to_le_bytes().to_vec();
-        bytes.extend(crc_chunk(archive, super::VIEW_RECORD, &view_body));
-        let record = Record::long(super::NAMED_VIEWS, 0..bytes.len(), 0..bytes.len());
-        let error = with_retained_limit(
-            &bytes,
-            crate::test_support::retained_limit_at("Rhino view name", 0, |cap| {
-                match with_retained_limit(&bytes, cap, |ctx| {
-                    parse_list(
-                        ctx,
-                        &bytes,
-                        &record,
-                        archive,
-                        crate::settings::MillimeterScale::IDENTITY,
-                        ViewListKind::Named,
-                    )
-                    .expect_err("view name exceeds retained limit")
-                }) {
-                    cadmpeg_core::CodecError::ResourceLimit(limit) => limit,
-                    error => panic!("unexpected resource refusal: {error:?}"),
-                }
-            }),
-            |ctx| {
+            {
+                let context = ctx;
+                let mut staging = context
+                    .reserve_scoped(0, "Rhino test view staging")
+                    .unwrap();
                 parse_list(
-                    ctx,
+                    context,
                     &bytes,
                     &record,
                     archive,
                     crate::settings::MillimeterScale::IDENTITY,
                     ViewListKind::Named,
+                    &mut staging,
                 )
-                .expect_err("view name exceeds retained limit")
-            },
-        );
-        assert!(matches!(
-            error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.operation == "Rhino view name"
-        ));
+            }
+            .expect_err("view record retained text exceeds limit")
+        })
+    }
+
+    fn view_record_materialized_refusal(limit: u64) -> cadmpeg_core::CodecError {
+        let archive = ArchiveVersion::V5;
+        let (bytes, record) = one_end_marker_view(archive);
+        with_materialized_limit(&bytes, limit, |ctx| {
+            {
+                let context = ctx;
+                let mut staging = context
+                    .reserve_scoped(0, "Rhino test view staging")
+                    .unwrap();
+                parse_list(
+                    context,
+                    &bytes,
+                    &record,
+                    archive,
+                    crate::settings::MillimeterScale::IDENTITY,
+                    ViewListKind::Named,
+                    &mut staging,
+                )
+            }
+            .expect_err("view record staging text exceeds limit")
+        })
     }
 
     fn view_attributes_with_page(
@@ -2519,243 +2727,27 @@ mod tests {
         bytes
     }
 
-    #[test]
-    fn view_printer_name_refuses_retained_limit() {
-        let bytes = view_attributes_with_page(2, "printer", false, [0; 16], [0; 16], [0; 16]);
-        let error = with_retained_limit(&bytes, 0, |ctx| {
-            parse_attributes(
-                ctx,
-                &bytes,
-                0..bytes.len(),
-                ArchiveVersion::V5,
-                crate::settings::MillimeterScale::IDENTITY,
-            )
-            .expect_err("printer name exceeds retained limit")
-        });
-        assert_resource(&error, "Rhino view printer name");
-    }
-
-    #[test]
-    fn view_display_uuid_refuses_retained_limit() {
-        let bytes = view_attributes_with_page(2, "", false, [0x11; 16], [0; 16], [0; 16]);
-        let error = with_retained_limit(&bytes, 0, |ctx| {
-            parse_attributes(
-                ctx,
-                &bytes,
-                0..bytes.len(),
-                ArchiveVersion::V5,
-                crate::settings::MillimeterScale::IDENTITY,
-            )
-            .expect_err("display UUID exceeds retained limit")
-        });
-        assert_resource(&error, "Rhino view display UUID");
-        let (admitted, _) = parse_attributes(
-            &cadmpeg_test_support::service_decode_context(),
-            &bytes,
-            0..bytes.len(),
-            ArchiveVersion::V5,
-            crate::settings::MillimeterScale::IDENTITY,
-        )
-        .expect("display UUID fits service profile");
-        assert!(admitted.display.is_some());
-    }
-
-    #[test]
-    fn view_clipping_plane_uuid_refuses_retained_limit() {
-        let bytes = view_attributes_with_page(4, "", true, [0; 16], [0x11; 16], [0; 16]);
-        let error = with_retained_limit(
-            &bytes,
-            crate::test_support::retained_limit_at("Rhino view clipping plane UUID", 0, |cap| {
-                match with_retained_limit(&bytes, cap, |ctx| {
-                    parse_attributes(
-                        ctx,
-                        &bytes,
-                        0..bytes.len(),
-                        ArchiveVersion::V5,
-                        crate::settings::MillimeterScale::IDENTITY,
-                    )
-                    .expect_err("clipping plane UUID exceeds retained limit")
-                }) {
-                    FramingError::Resource(limit) => limit,
-                    error => panic!("unexpected resource refusal: {error:?}"),
-                }
-            }),
-            |ctx| {
-                parse_attributes(
-                    ctx,
-                    &bytes,
-                    0..bytes.len(),
-                    ArchiveVersion::V5,
-                    crate::settings::MillimeterScale::IDENTITY,
-                )
-                .expect_err("clipping plane UUID exceeds retained limit")
-            },
-        );
-        assert_resource(&error, "Rhino view clipping plane UUID");
-    }
-
-    #[test]
-    fn named_view_uuid_refuses_retained_limit() {
-        let bytes = view_attributes_with_page(5, "", true, [0; 16], [0; 16], [0x11; 16]);
-        let error = with_retained_limit(
-            &bytes,
-            crate::test_support::retained_limit_at("Rhino named view UUID", 0, |cap| {
-                match with_retained_limit(&bytes, cap, |ctx| {
-                    parse_attributes(
-                        ctx,
-                        &bytes,
-                        0..bytes.len(),
-                        ArchiveVersion::V5,
-                        crate::settings::MillimeterScale::IDENTITY,
-                    )
-                    .expect_err("named-view UUID exceeds retained limit")
-                }) {
-                    FramingError::Resource(limit) => limit,
-                    error => panic!("unexpected resource refusal: {error:?}"),
-                }
-            }),
-            |ctx| {
-                parse_attributes(
-                    ctx,
-                    &bytes,
-                    0..bytes.len(),
-                    ArchiveVersion::V5,
-                    crate::settings::MillimeterScale::IDENTITY,
-                )
-                .expect_err("named-view UUID exceeds retained limit")
-            },
-        );
-        assert_resource(&error, "Rhino named view UUID");
-    }
-
-    #[test]
-    fn view_attribute_checksum_children_refuse_collection_limit() {
-        let bytes = view_attributes_with_page(2, "", false, [0; 16], [0; 16], [0; 16]);
-        let error = with_collection_limit(&bytes, 0, |ctx| {
-            parse_attributes(
-                ctx,
-                &bytes,
-                0..bytes.len(),
-                ArchiveVersion::V5,
-                crate::settings::MillimeterScale::IDENTITY,
-            )
-            .expect_err("page checksum child exceeds collection limit")
-        });
-        assert_resource(&error, "Rhino view attribute checksum children");
-    }
-
-    #[test]
-    fn view_clipping_planes_refuse_collection_limit() {
-        let bytes = view_attributes_with_page(4, "", true, [0; 16], [0; 16], [0; 16]);
-        let error = with_collection_limit(&bytes, 1, |ctx| {
-            parse_attributes(
-                ctx,
-                &bytes,
-                0..bytes.len(),
-                ArchiveVersion::V5,
-                crate::settings::MillimeterScale::IDENTITY,
-            )
-            .expect_err("clipping plane exceeds collection limit")
-        });
-        assert_resource(&error, "Rhino view clipping planes");
-        let (attributes, _) = parse_attributes(
-            &cadmpeg_test_support::service_decode_context(),
-            &bytes,
-            0..bytes.len(),
-            ArchiveVersion::V5,
-            crate::settings::MillimeterScale::IDENTITY,
-        )
-        .expect("service profile admits the clipping plane");
-        assert_eq!(attributes.clipping_planes.len(), 1);
-    }
-
     fn view_collection_refusal(limit: u64) -> cadmpeg_core::CodecError {
         let archive = ArchiveVersion::V5;
         let (bytes, record) = one_end_marker_view(archive);
         with_collection_limit(&bytes, limit, |ctx| {
-            parse_list(
-                ctx,
-                &bytes,
-                &record,
-                archive,
-                crate::settings::MillimeterScale::IDENTITY,
-                ViewListKind::Named,
-            )
+            {
+                let context = ctx;
+                let mut staging = context
+                    .reserve_scoped(0, "Rhino test view staging")
+                    .unwrap();
+                parse_list(
+                    context,
+                    &bytes,
+                    &record,
+                    archive,
+                    crate::settings::MillimeterScale::IDENTITY,
+                    ViewListKind::Named,
+                    &mut staging,
+                )
+            }
             .expect_err("view collection exceeds the limit")
         })
-    }
-
-    #[test]
-    fn view_checksum_children_refuse_collection_limit() {
-        assert!(matches!(
-            view_collection_refusal(0),
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.operation == "Rhino view checksum children"
-        ));
-    }
-
-    #[test]
-    fn view_children_refuse_collection_limit() {
-        assert!(matches!(
-            view_collection_refusal(1),
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.operation == "Rhino view children"
-        ));
-    }
-
-    #[test]
-    fn view_list_records_refuse_collection_limit() {
-        assert!(matches!(
-            view_collection_refusal(2),
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.operation == "Rhino view losses"
-        ));
-        reaches_resource_operation(2, "Rhino view list records", view_collection_refusal);
-    }
-
-    #[test]
-    fn viewport_userdata_children_refuse_collection_limit() {
-        let archive = ArchiveVersion::V5;
-        let bytes = short_chunk(archive, super::TCODE_CLASS_END, 0);
-        let error = with_collection_limit(&bytes, 0, |ctx| {
-            super::scan_viewport_userdata(ctx, &bytes, 0..bytes.len(), archive, &mut Vec::new())
-                .err()
-                .expect("class end exceeds the collection limit")
-        });
-        assert_resource(&error, "Rhino viewport userdata children");
-    }
-
-    #[test]
-    fn viewport_userdata_children_ceiling_is_a_resource_refusal() {
-        let archive = ArchiveVersion::V8;
-        let cap = super::VIEWPORT_USERDATA_CHILD_CAP;
-        let child = short_chunk(archive, crate::chunks::TCODE_SHORT | 7, 0);
-        let mut bytes = child.repeat(cap);
-        bytes.extend(short_chunk(archive, super::TCODE_CLASS_END, 0));
-        with_collection_limit(
-            &bytes,
-            u64::try_from(cap + 1).expect("fixture count fits"),
-            |ctx| {
-                let mut losses = Vec::new();
-                let error = super::scan_viewport_userdata(
-                    ctx,
-                    &bytes,
-                    0..bytes.len(),
-                    archive,
-                    &mut losses,
-                )
-                .err()
-                .expect("child ceiling refuses the class-end slot");
-                assert!(
-                    matches!(super::codec_error(error), cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == cadmpeg_core::decode::ResourceDimension::Codec("Rhino viewport userdata children")
-                    && limit.limit == u64::try_from(cap).expect("fixture count fits")
-                    && limit.used == limit.limit && limit.additional == 1
-                    && Some(limit) == ctx.resource_refusal())
-                );
-                assert!(losses.is_empty());
-            },
-        );
     }
 
     #[test]
@@ -2878,34 +2870,48 @@ mod tests {
         let mut bytes = 1_i32.to_le_bytes().to_vec();
         bytes.extend(crc_chunk(archive, super::VIEW_RECORD, &body));
         let record = Record::long(super::NAMED_VIEWS, 0..bytes.len(), 0..bytes.len());
-        let error = with_retained_limit(
+        let error = with_materialized_limit(
             &bytes,
-            crate::test_support::retained_limit_at("Rhino viewport UUID", 0, |cap| {
-                match with_retained_limit(&bytes, cap, |ctx| {
-                    parse_list(
-                        ctx,
-                        &bytes,
-                        &record,
-                        archive,
-                        crate::settings::MillimeterScale::IDENTITY,
-                        ViewListKind::Named,
-                    )
-                    .expect_err("viewport UUID exceeds retained limit")
+            materialized_limit_at("Rhino viewport UUID", |cap| {
+                match with_materialized_limit(&bytes, cap, |ctx| {
+                    {
+                        let context = ctx;
+                        let mut staging = context
+                            .reserve_scoped(0, "Rhino test view staging")
+                            .unwrap();
+                        parse_list(
+                            context,
+                            &bytes,
+                            &record,
+                            archive,
+                            crate::settings::MillimeterScale::IDENTITY,
+                            ViewListKind::Named,
+                            &mut staging,
+                        )
+                    }
+                    .expect_err("viewport UUID exceeds materialized limit")
                 }) {
                     cadmpeg_core::CodecError::ResourceLimit(limit) => limit,
                     error => panic!("unexpected resource refusal: {error:?}"),
                 }
             }),
             |ctx| {
-                parse_list(
-                    ctx,
-                    &bytes,
-                    &record,
-                    archive,
-                    crate::settings::MillimeterScale::IDENTITY,
-                    ViewListKind::Named,
-                )
-                .expect_err("viewport UUID exceeds retained limit")
+                {
+                    let context = ctx;
+                    let mut staging = context
+                        .reserve_scoped(0, "Rhino test view staging")
+                        .unwrap();
+                    parse_list(
+                        context,
+                        &bytes,
+                        &record,
+                        archive,
+                        crate::settings::MillimeterScale::IDENTITY,
+                        ViewListKind::Named,
+                        &mut staging,
+                    )
+                }
+                .expect_err("viewport UUID exceeds materialized limit")
             },
         );
         assert!(
@@ -3006,14 +3012,22 @@ mod tests {
         trace.extend([0, 1, 1]);
         trace.extend([0xde, 0xad, 0xbe, 0xef]);
         let mut losses = Vec::new();
-        let (trace, _) = parse_trace_image(
-            &cadmpeg_test_support::service_decode_context(),
-            &trace,
-            0..trace.len(),
-            archive,
-            crate::settings::MillimeterScale::IDENTITY,
-            &mut losses,
-        )
+        let service_context = cadmpeg_test_support::service_decode_context();
+        let (trace, _) = {
+            let context = &service_context;
+            let mut staging = context
+                .reserve_scoped(0, "Rhino test view staging")
+                .unwrap();
+            parse_trace_image(
+                context,
+                &trace,
+                0..trace.len(),
+                archive,
+                crate::settings::MillimeterScale::IDENTITY,
+                &mut losses,
+                &mut staging,
+            )
+        }
         .expect("trace image");
         assert_eq!(trace.legacy_file_path, "trace-witness.png");
         assert_eq!(
@@ -3029,13 +3043,21 @@ mod tests {
         wallpaper.extend([0, 1]);
         wallpaper.extend([0xca, 0xfe]);
         let mut losses = Vec::new();
-        let (wallpaper, _) = parse_wallpaper(
-            &cadmpeg_test_support::service_decode_context(),
-            &wallpaper,
-            0..wallpaper.len(),
-            archive,
-            &mut losses,
-        )
+        let service_context = cadmpeg_test_support::service_decode_context();
+        let (wallpaper, _) = {
+            let context = &service_context;
+            let mut staging = context
+                .reserve_scoped(0, "Rhino test view staging")
+                .unwrap();
+            parse_wallpaper(
+                context,
+                &wallpaper,
+                0..wallpaper.len(),
+                archive,
+                &mut losses,
+                &mut staging,
+            )
+        }
         .expect("wallpaper");
         assert_eq!(wallpaper.legacy_file_path, "wallpaper-witness.png");
         assert!(!wallpaper.grayscale && wallpaper.hidden);
@@ -3050,14 +3072,22 @@ mod tests {
         body.extend(view);
         let record = Record::long(super::NAMED_VIEWS, 0..body.len(), 0..body.len());
 
-        let (views, losses) = parse_list(
-            &cadmpeg_test_support::service_decode_context(),
-            &body,
-            &record,
-            archive,
-            crate::settings::MillimeterScale::IDENTITY,
-            ViewListKind::Named,
-        )
+        let service_context = cadmpeg_test_support::service_decode_context();
+        let (views, losses) = {
+            let context = &service_context;
+            let mut staging = context
+                .reserve_scoped(0, "Rhino test view staging")
+                .unwrap();
+            parse_list(
+                context,
+                &body,
+                &record,
+                archive,
+                crate::settings::MillimeterScale::IDENTITY,
+                ViewListKind::Named,
+                &mut staging,
+            )
+        }
         .expect("view list");
         assert!(views.is_empty());
         assert_eq!(losses.len(), 1);
@@ -3075,14 +3105,22 @@ mod tests {
         body.extend(child);
         let record = Record::long(super::NAMED_VIEWS, 0..body.len(), 0..body.len());
 
-        let (views, losses) = parse_list(
-            &cadmpeg_test_support::service_decode_context(),
-            &body,
-            &record,
-            archive,
-            crate::settings::MillimeterScale::IDENTITY,
-            ViewListKind::Named,
-        )
+        let service_context = cadmpeg_test_support::service_decode_context();
+        let (views, losses) = {
+            let context = &service_context;
+            let mut staging = context
+                .reserve_scoped(0, "Rhino test view staging")
+                .unwrap();
+            parse_list(
+                context,
+                &body,
+                &record,
+                archive,
+                crate::settings::MillimeterScale::IDENTITY,
+                ViewListKind::Named,
+                &mut staging,
+            )
+        }
         .expect("view list");
         assert!(views.is_empty());
         assert_eq!(losses.len(), 1);
@@ -3106,14 +3144,22 @@ mod tests {
         body.extend(view);
         let record = Record::long(super::NAMED_VIEWS, 0..body.len(), 0..body.len());
 
-        let (views, losses) = parse_list(
-            &cadmpeg_test_support::service_decode_context(),
-            &body,
-            &record,
-            archive,
-            crate::settings::MillimeterScale::IDENTITY,
-            ViewListKind::Named,
-        )
+        let service_context = cadmpeg_test_support::service_decode_context();
+        let (views, losses) = {
+            let context = &service_context;
+            let mut staging = context
+                .reserve_scoped(0, "Rhino test view staging")
+                .unwrap();
+            parse_list(
+                context,
+                &body,
+                &record,
+                archive,
+                crate::settings::MillimeterScale::IDENTITY,
+                ViewListKind::Named,
+                &mut staging,
+            )
+        }
         .expect("view list");
         assert_eq!(views.len(), 1);
         assert_eq!(losses.len(), 1);
@@ -3148,14 +3194,21 @@ mod tests {
         body.extend(view);
         let record = Record::long(super::NAMED_VIEWS, 0..body.len(), 0..body.len());
         let error = with_collection_limit(&body, 2, |ctx| {
-            parse_list(
-                ctx,
-                &body,
-                &record,
-                archive,
-                crate::settings::MillimeterScale::IDENTITY,
-                ViewListKind::Named,
-            )
+            {
+                let context = ctx;
+                let mut staging = context
+                    .reserve_scoped(0, "Rhino test view staging")
+                    .unwrap();
+                parse_list(
+                    context,
+                    &body,
+                    &record,
+                    archive,
+                    crate::settings::MillimeterScale::IDENTITY,
+                    ViewListKind::Named,
+                    &mut staging,
+                )
+            }
             .expect_err("the view loss exceeds two child collection items")
         });
         assert!(matches!(
@@ -3185,14 +3238,22 @@ mod tests {
         body.extend(view);
         let record = Record::long(super::NAMED_VIEWS, 0..body.len(), 0..body.len());
 
-        let (views, losses) = parse_list(
-            &cadmpeg_test_support::service_decode_context(),
-            &body,
-            &record,
-            archive,
-            crate::settings::MillimeterScale::IDENTITY,
-            ViewListKind::Named,
-        )
+        let service_context = cadmpeg_test_support::service_decode_context();
+        let (views, losses) = {
+            let context = &service_context;
+            let mut staging = context
+                .reserve_scoped(0, "Rhino test view staging")
+                .unwrap();
+            parse_list(
+                context,
+                &body,
+                &record,
+                archive,
+                crate::settings::MillimeterScale::IDENTITY,
+                ViewListKind::Named,
+                &mut staging,
+            )
+        }
         .expect("view list");
         assert_eq!(views.len(), 1);
         assert_eq!(losses.len(), 1);
@@ -3227,14 +3288,22 @@ mod tests {
         body.extend(view);
         let record = Record::long(super::NAMED_VIEWS, 0..body.len(), 0..body.len());
 
-        let (views, losses) = parse_list(
-            &cadmpeg_test_support::service_decode_context(),
-            &body,
-            &record,
-            archive,
-            crate::settings::MillimeterScale::IDENTITY,
-            ViewListKind::Named,
-        )
+        let service_context = cadmpeg_test_support::service_decode_context();
+        let (views, losses) = {
+            let context = &service_context;
+            let mut staging = context
+                .reserve_scoped(0, "Rhino test view staging")
+                .unwrap();
+            parse_list(
+                context,
+                &body,
+                &record,
+                archive,
+                crate::settings::MillimeterScale::IDENTITY,
+                ViewListKind::Named,
+                &mut staging,
+            )
+        }
         .expect("view list");
         assert_eq!(views.len(), 1);
         assert!(losses.is_empty());
@@ -3277,7 +3346,7 @@ mod tests {
         body.extend(1_i32.to_le_bytes());
         body.extend(anonymous_chunk(archive, 4, &clipping_plane));
 
-        let (value, _) = parse_attributes(
+        let (value, _, _) = parse_attributes(
             &cadmpeg_test_support::service_decode_context(),
             &body,
             0..body.len(),
@@ -3361,7 +3430,7 @@ mod tests {
         body.push(1);
         body.extend([0xa1, 0xb2, 0xc3]);
 
-        let (value, _) = parse_attributes(
+        let (value, _, _) = parse_attributes(
             &cadmpeg_test_support::service_decode_context(),
             &body,
             0..body.len(),
@@ -3428,14 +3497,22 @@ mod tests {
         let mut body = 1_i32.to_le_bytes().to_vec();
         body.extend(make_view(&attributes));
         let record = Record::long(super::NAMED_VIEWS, 0..body.len(), 0..body.len());
-        let (views, losses) = parse_list(
-            &cadmpeg_test_support::service_decode_context(),
-            &body,
-            &record,
-            archive,
-            crate::settings::MillimeterScale::IDENTITY,
-            ViewListKind::Named,
-        )
+        let service_context = cadmpeg_test_support::service_decode_context();
+        let (views, losses) = {
+            let context = &service_context;
+            let mut staging = context
+                .reserve_scoped(0, "Rhino test view staging")
+                .unwrap();
+            parse_list(
+                context,
+                &body,
+                &record,
+                archive,
+                crate::settings::MillimeterScale::IDENTITY,
+                ViewListKind::Named,
+                &mut staging,
+            )
+        }
         .expect("view list");
         assert_eq!(views.len(), 1);
         assert!(losses.is_empty());
@@ -3450,14 +3527,22 @@ mod tests {
             0..corrupted_body.len(),
             0..corrupted_body.len(),
         );
-        let (views, losses) = parse_list(
-            &cadmpeg_test_support::service_decode_context(),
-            &corrupted_body,
-            &record,
-            archive,
-            crate::settings::MillimeterScale::IDENTITY,
-            ViewListKind::Named,
-        )
+        let service_context = cadmpeg_test_support::service_decode_context();
+        let (views, losses) = {
+            let context = &service_context;
+            let mut staging = context
+                .reserve_scoped(0, "Rhino test view staging")
+                .unwrap();
+            parse_list(
+                context,
+                &corrupted_body,
+                &record,
+                archive,
+                crate::settings::MillimeterScale::IDENTITY,
+                ViewListKind::Named,
+                &mut staging,
+            )
+        }
         .expect("view list");
         assert_eq!(views.len(), 1);
         assert_eq!(losses.len(), 1);
@@ -3526,19 +3611,28 @@ mod tests {
             let mut body = 1_i32.to_le_bytes().to_vec();
             body.extend(view);
             let record = Record::long(super::NAMED_VIEWS, 0..body.len(), 0..body.len());
-            parse_list(
-                &cadmpeg_test_support::service_decode_context(),
-                &body,
-                &record,
-                archive,
-                crate::settings::MillimeterScale::IDENTITY,
-                ViewListKind::Named,
-            )
+            let service_context = cadmpeg_test_support::service_decode_context();
+            {
+                let context = &service_context;
+                let mut staging = context
+                    .reserve_scoped(0, "Rhino test view staging")
+                    .unwrap();
+                parse_list(
+                    context,
+                    &body,
+                    &record,
+                    archive,
+                    crate::settings::MillimeterScale::IDENTITY,
+                    ViewListKind::Named,
+                    &mut staging,
+                )
+            }
+            .map(|(views, losses)| (views.len(), losses.into_test_values()))
             .expect("view list")
         };
 
-        let (views, losses) = parse(make_view(&trace, &wallpaper));
-        assert_eq!(views.len(), 1);
+        let (view_count, losses) = parse(make_view(&trace, &wallpaper));
+        assert_eq!(view_count, 1);
         assert!(losses.is_empty());
 
         let mut corrupted_trace_reference = trace.clone();
@@ -3550,8 +3644,8 @@ mod tests {
         let nested_crc_offset =
             trace_chunk_header_len + trace_reference_start + trace_reference_range.len() - 1;
         corrupted_trace_reference[nested_crc_offset] ^= 1;
-        let (views, losses) = parse(make_view(&corrupted_trace_reference, &wallpaper));
-        assert_eq!(views.len(), 1);
+        let (view_count, losses) = parse(make_view(&corrupted_trace_reference, &wallpaper));
+        assert_eq!(view_count, 1);
         assert_eq!(losses.len(), 1);
         assert_eq!(
             losses[0].code,
@@ -3575,8 +3669,8 @@ mod tests {
         let mut corrupted_trace = trace.clone();
         let trace_crc_offset = corrupted_trace.len() - 1;
         corrupted_trace[trace_crc_offset] ^= 1;
-        let (views, losses) = parse(make_view(&corrupted_trace, &wallpaper));
-        assert_eq!(views.len(), 1);
+        let (view_count, losses) = parse(make_view(&corrupted_trace, &wallpaper));
+        assert_eq!(view_count, 1);
         assert_eq!(losses.len(), 1);
         assert_eq!(
             losses[0].code,
@@ -3594,8 +3688,8 @@ mod tests {
         let mut corrupted_wallpaper = wallpaper.clone();
         let wallpaper_crc_offset = corrupted_wallpaper.len() - 1;
         corrupted_wallpaper[wallpaper_crc_offset] ^= 1;
-        let (views, losses) = parse(make_view(&trace, &corrupted_wallpaper));
-        assert_eq!(views.len(), 1);
+        let (view_count, losses) = parse(make_view(&trace, &corrupted_wallpaper));
+        assert_eq!(view_count, 1);
         assert_eq!(losses.len(), 1);
         assert!(losses[0].message.contains("0x2000874b"));
         assert_eq!(
@@ -3608,7 +3702,7 @@ mod tests {
     }
 
     #[test]
-    fn view_file_reference_refuses_retained_limit_instead_of_omitting_view() {
+    fn view_file_reference_refuses_materialized_limit_instead_of_omitting_view() {
         let archive = ArchiveVersion::V6;
         let mut trace_body = vec![0x14];
         trace_body.extend(utf16_bytes("trace-witness.png"));
@@ -3627,23 +3721,29 @@ mod tests {
         let run = |cap| {
             let arena = cadmpeg_core::decode::DecodeArena::new();
             let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-            policy.limits.max_retained_bytes = cap;
+            policy.limits.max_materialized_bytes = cap;
             let (ctx, _) =
                 cadmpeg_core::decode::DecodeContext::from_root_bytes(&data, &arena, &policy)
                     .expect("root bytes admitted");
-            parse_list(
-                &ctx,
-                &data,
-                &record,
-                archive,
-                crate::settings::MillimeterScale::IDENTITY,
-                ViewListKind::Named,
-            )
-            .expect_err("file-reference path exceeds retained limit")
+            {
+                let context = &ctx;
+                let mut staging = context
+                    .reserve_scoped(0, "Rhino test view staging")
+                    .unwrap();
+                parse_list(
+                    context,
+                    &data,
+                    &record,
+                    archive,
+                    crate::settings::MillimeterScale::IDENTITY,
+                    ViewListKind::Named,
+                    &mut staging,
+                )
+            }
+            .expect_err("file-reference path exceeds materialized limit")
         };
-        let error = run(crate::test_support::retained_limit_at(
+        let error = run(materialized_limit_at(
             "Rhino file reference full path",
-            0,
             |cap| match run(cap) {
                 cadmpeg_core::CodecError::ResourceLimit(limit) => limit,
                 error => panic!("unexpected resource refusal: {error:?}"),
@@ -3661,24 +3761,27 @@ mod tests {
         let archive = ArchiveVersion::V6;
         let bytes = file_reference(archive, "", "");
         let error = with_retained_limit(&bytes, 40, |ctx| {
+            let mut warnings = crate::loss::Diagnostics::new();
             super::image_reference(
                 ctx,
                 &bytes,
                 &mut crate::chunks::BoundedReader::new(&bytes, 0, bytes.len())
                     .expect("reference bounds"),
                 archive,
-                &mut crate::loss::Diagnostics::new(),
+                &mut |code, message| warnings.push_coded_admitted(ctx, code, message),
             )
             .expect_err("embedded-file UUID exceeds retained limit")
         });
         assert_resource(&error, "Rhino image embedded-file UUID");
+        let context = cadmpeg_test_support::service_decode_context();
+        let mut warnings = crate::loss::Diagnostics::new();
         let admitted = super::image_reference(
-            &cadmpeg_test_support::service_decode_context(),
+            &context,
             &bytes,
             &mut crate::chunks::BoundedReader::new(&bytes, 0, bytes.len())
                 .expect("reference bounds"),
             archive,
-            &mut crate::loss::Diagnostics::new(),
+            &mut |code, message| warnings.push_coded_admitted(&context, code, message),
         )
         .expect("embedded-file UUID fits service profile");
         assert!(admitted.0.embedded_file_uuid.is_some());
@@ -3730,14 +3833,22 @@ mod tests {
         let mut body = 1_i32.to_le_bytes().to_vec();
         body.extend(make_view(&viewport_userdata));
         let record = Record::long(super::NAMED_VIEWS, 0..body.len(), 0..body.len());
-        let (views, losses) = parse_list(
-            &cadmpeg_test_support::service_decode_context(),
-            &body,
-            &record,
-            archive,
-            crate::settings::MillimeterScale::IDENTITY,
-            ViewListKind::Named,
-        )
+        let service_context = cadmpeg_test_support::service_decode_context();
+        let (views, losses) = {
+            let context = &service_context;
+            let mut staging = context
+                .reserve_scoped(0, "Rhino test view staging")
+                .unwrap();
+            parse_list(
+                context,
+                &body,
+                &record,
+                archive,
+                crate::settings::MillimeterScale::IDENTITY,
+                ViewListKind::Named,
+                &mut staging,
+            )
+        }
         .expect("view list");
         assert_eq!(views.len(), 1);
         assert_eq!(losses.len(), 1);
@@ -3756,14 +3867,22 @@ mod tests {
             0..corrupted_body.len(),
             0..corrupted_body.len(),
         );
-        let (views, losses) = parse_list(
-            &cadmpeg_test_support::service_decode_context(),
-            &corrupted_body,
-            &record,
-            archive,
-            crate::settings::MillimeterScale::IDENTITY,
-            ViewListKind::Named,
-        )
+        let service_context = cadmpeg_test_support::service_decode_context();
+        let (views, losses) = {
+            let context = &service_context;
+            let mut staging = context
+                .reserve_scoped(0, "Rhino test view staging")
+                .unwrap();
+            parse_list(
+                context,
+                &corrupted_body,
+                &record,
+                archive,
+                crate::settings::MillimeterScale::IDENTITY,
+                ViewListKind::Named,
+                &mut staging,
+            )
+        }
         .expect("view list");
         assert_eq!(views.len(), 1);
         assert!(losses.iter().any(|loss| {
@@ -3781,4 +3900,5 @@ mod tests {
                     == Some("VIEW/VIEWPORT_USERDATA")
         }));
     }
+    mod digests;
 }

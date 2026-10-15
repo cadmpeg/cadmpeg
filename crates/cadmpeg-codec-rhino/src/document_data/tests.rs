@@ -49,19 +49,29 @@ fn assert_metadata_refusal(error: &cadmpeg_core::CodecError, operation: &str) {
     );
 }
 
-fn setting_retained_refusal<T: std::fmt::Debug>(
+fn setting_retained_refusal<T>(
     bytes: &[u8],
-    limit: usize,
-    parse: impl FnOnce(
-        &cadmpeg_core::decode::DecodeContext<'_>,
-    ) -> Result<T, crate::chunks::FramingError>,
+    operation: &str,
+    parse: impl Fn(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<T, crate::chunks::FramingError>,
 ) -> crate::chunks::FramingError {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = u64::try_from(limit).expect("bounded setting fixture");
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy)
-        .expect("root bytes admitted");
-    parse(&ctx).expect_err("setting exceeds retained-byte limit")
+    cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        operation,
+        |cap| {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy)?;
+            parse(&ctx).map_err(|error| match error {
+                crate::chunks::FramingError::Resource(limit) => {
+                    cadmpeg_core::CodecError::ResourceLimit(limit)
+                }
+                error => panic!("unexpected setting failure: {error:?}"),
+            })
+        },
+    )
+    .into()
 }
 
 fn assert_setting_retained_refusal(error: &crate::chunks::FramingError, operation: &str) {
@@ -120,76 +130,73 @@ fn scan_with_application() -> crate::container::Scan<'static> {
     scan
 }
 
-macro_rules! retained_metadata_test {
-    ($name:ident, $fixture:ident, $limit:expr, $operation:literal) => {
+macro_rules! materialized_metadata_test {
+    ($name:ident, $fixture:ident, $operation:literal) => {
         #[test]
         fn $name() {
             let scan = $fixture();
-            let limit = crate::test_support::retained_limit_at($operation, 0, |cap| {
-                let cadmpeg_core::CodecError::ResourceLimit(refusal) =
-                    metadata_refusal(&scan, 100, cap)
-                else {
-                    panic!("metadata resource refusal");
-                };
-                refusal
-            });
-            assert_metadata_refusal(&metadata_refusal(&scan, 100, limit), $operation);
+            let refusal = cadmpeg_test_support::refusal::resource_limit_at(
+                cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+                $operation,
+                |cap| {
+                    let arena = cadmpeg_core::decode::DecodeArena::new();
+                    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+                    policy.limits.max_collection_items = 100;
+                    policy.limits.max_materialized_bytes = cap;
+                    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                        scan.data, &arena, &policy,
+                    )?;
+                    install(&ctx, &scan, &mut cadmpeg_ir::document::CadIr::empty()).map(drop)
+                },
+            );
+            assert_metadata_refusal(&refusal, $operation);
         }
     };
 }
 
-retained_metadata_test!(
+materialized_metadata_test!(
     revision_id_refuses_retained_limit,
     scan_with_revision,
-    "rhino:document:revision#current".len() - 1,
     "Rhino revision ID"
 );
-retained_metadata_test!(
+materialized_metadata_test!(
     revision_creator_refuses_retained_limit,
     scan_with_revision,
-    "rhino:document:revision#current".len() + "creator".len() - 1,
     "Rhino revision creator"
 );
-retained_metadata_test!(
+materialized_metadata_test!(
     revision_editor_refuses_retained_limit,
     scan_with_revision,
-    "rhino:document:revision#current".len() + "creator".len() + "editor".len() - 1,
     "Rhino revision editor"
 );
-retained_metadata_test!(
+materialized_metadata_test!(
     notes_id_refuses_retained_limit,
     scan_with_notes,
-    "rhino:document:notes#current".len() - 1,
     "Rhino notes ID"
 );
-retained_metadata_test!(
+materialized_metadata_test!(
     notes_text_refuses_retained_limit,
     scan_with_notes,
-    "rhino:document:notes#current".len() + "note".len() - 1,
     "Rhino notes text"
 );
-retained_metadata_test!(
+materialized_metadata_test!(
     application_id_refuses_retained_limit,
     scan_with_application,
-    "rhino:document:application#writer".len() - 1,
     "Rhino application ID"
 );
-retained_metadata_test!(
+materialized_metadata_test!(
     application_name_refuses_retained_limit,
     scan_with_application,
-    "rhino:document:application#writer".len() + "app".len() - 1,
     "Rhino application name"
 );
-retained_metadata_test!(
+materialized_metadata_test!(
     application_url_refuses_retained_limit,
     scan_with_application,
-    "rhino:document:application#writer".len() + "app".len() + "url".len() - 1,
     "Rhino application URL"
 );
-retained_metadata_test!(
+materialized_metadata_test!(
     application_details_refuse_retained_limit,
     scan_with_application,
-    "rhino:document:application#writer".len() + "app".len() + "url".len() + "details".len() - 1,
     "Rhino application details"
 );
 
@@ -344,19 +351,37 @@ fn unit_binding_loss_copy_refuses_retained_limit() {
 #[test]
 fn opaque_setting_records_refuse_collection_limit() {
     let scan = retained_setting_scan();
-    assert_metadata_refusal(
-        &metadata_refusal(&scan, 1, u64::MAX),
+    let refusal = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
         "Rhino opaque setting records",
+        |cap| {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy)?;
+            install(&ctx, &scan, &mut cadmpeg_ir::document::CadIr::empty()).map(drop)
+        },
     );
+    assert_metadata_refusal(&refusal, "Rhino opaque setting records");
 }
 
 #[test]
 fn retained_setting_records_refuse_collection_limit() {
     let scan = retained_setting_scan();
-    assert_metadata_refusal(
-        &metadata_refusal(&scan, 2, u64::MAX),
+    let refusal = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
         "Rhino retained setting records",
+        |cap| {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy)?;
+            install(&ctx, &scan, &mut cadmpeg_ir::document::CadIr::empty()).map(drop)
+        },
     );
+    assert_metadata_refusal(&refusal, "Rhino retained setting records");
 }
 
 #[test]
@@ -519,7 +544,7 @@ fn grid_body() -> Vec<u8> {
 
 fn annotation_retained_refusal(
     minor: u8,
-    limit: usize,
+    operation: &str,
     dimension_id: bool,
 ) -> crate::chunks::FramingError {
     let mut bytes = annotation_body(minor);
@@ -527,7 +552,7 @@ fn annotation_retained_refusal(
         let uuid_start = bytes.len() - 18;
         bytes[uuid_start] = 1;
     }
-    setting_retained_refusal(&bytes, limit, |ctx| {
+    setting_retained_refusal(&bytes, operation, |ctx| {
         annotation_settings(
             ctx,
             &bytes,
@@ -538,7 +563,7 @@ fn annotation_retained_refusal(
     })
 }
 
-fn render_retained_refusal(modern: bool, limit: usize) -> crate::chunks::FramingError {
+fn render_retained_refusal(modern: bool, operation: &str) -> crate::chunks::FramingError {
     let (bytes, archive) = if modern {
         (
             crc_chunk(ArchiveVersion::V8, ANONYMOUS, &modern_body(2)),
@@ -547,7 +572,7 @@ fn render_retained_refusal(modern: bool, limit: usize) -> crate::chunks::Framing
     } else {
         (legacy_body(100), ArchiveVersion::V5)
     };
-    setting_retained_refusal(&bytes, limit, |ctx| {
+    setting_retained_refusal(&bytes, operation, |ctx| {
         render_settings(
             ctx,
             &bytes,
@@ -562,11 +587,7 @@ fn render_retained_refusal(modern: bool, limit: usize) -> crate::chunks::Framing
 #[test]
 fn annotation_settings_id_refuses_retained_limit() {
     assert_setting_retained_refusal(
-        &annotation_retained_refusal(
-            0,
-            "rhino:document:annotation_settings#current".len() - 1,
-            false,
-        ),
+        &annotation_retained_refusal(0, "Rhino annotation settings ID", false),
         "Rhino annotation settings ID",
     );
 }
@@ -574,11 +595,7 @@ fn annotation_settings_id_refuses_retained_limit() {
 #[test]
 fn annotation_font_face_refuses_retained_limit() {
     assert_setting_retained_refusal(
-        &annotation_retained_refusal(
-            0,
-            "rhino:document:annotation_settings#current".len() + "WitnessFace".len() - 1,
-            false,
-        ),
+        &annotation_retained_refusal(0, "Rhino annotation font face", false),
         "Rhino annotation font face",
     );
 }
@@ -586,11 +603,7 @@ fn annotation_font_face_refuses_retained_limit() {
 #[test]
 fn annotation_dimension_layer_uuid_refuses_retained_limit() {
     assert_setting_retained_refusal(
-        &annotation_retained_refusal(
-            4,
-            "rhino:document:annotation_settings#current".len() + "WitnessFace".len() + 36 - 1,
-            true,
-        ),
+        &annotation_retained_refusal(4, "Rhino annotation dimension layer UUID", true),
         "Rhino annotation dimension layer UUID",
     );
 }
@@ -598,26 +611,22 @@ fn annotation_dimension_layer_uuid_refuses_retained_limit() {
 #[test]
 fn grid_defaults_id_refuses_retained_limit() {
     let bytes = grid_body();
-    let error = setting_retained_refusal(
-        &bytes,
-        "rhino:document:grid_defaults#current".len() - 1,
-        |ctx| {
-            grid_defaults(
-                ctx,
-                &bytes,
-                0..bytes.len(),
-                0,
-                crate::settings::MillimeterScale::IDENTITY,
-            )
-        },
-    );
+    let error = setting_retained_refusal(&bytes, "Rhino grid defaults ID", |ctx| {
+        grid_defaults(
+            ctx,
+            &bytes,
+            0..bytes.len(),
+            0,
+            crate::settings::MillimeterScale::IDENTITY,
+        )
+    });
     assert_setting_retained_refusal(&error, "Rhino grid defaults ID");
 }
 
 #[test]
 fn render_background_bitmap_path_refuses_retained_limit() {
     assert_setting_retained_refusal(
-        &render_retained_refusal(false, "background.png".len() - 1),
+        &render_retained_refusal(false, "Rhino render background bitmap path"),
         "Rhino render background bitmap path",
     );
 }
@@ -625,10 +634,7 @@ fn render_background_bitmap_path_refuses_retained_limit() {
 #[test]
 fn render_settings_id_refuses_retained_limit() {
     assert_setting_retained_refusal(
-        &render_retained_refusal(
-            false,
-            "background.png".len() + "rhino:document:render_settings#current".len() - 1,
-        ),
+        &render_retained_refusal(false, "Rhino render settings ID"),
         "Rhino render settings ID",
     );
 }
@@ -636,7 +642,7 @@ fn render_settings_id_refuses_retained_limit() {
 #[test]
 fn render_specific_viewport_refuses_retained_limit() {
     assert_setting_retained_refusal(
-        &render_retained_refusal(true, "background.png".len() + "specific-viewport".len() - 1),
+        &render_retained_refusal(true, "Rhino render specific viewport"),
         "Rhino render specific viewport",
     );
 }
@@ -644,10 +650,7 @@ fn render_specific_viewport_refuses_retained_limit() {
 #[test]
 fn render_named_view_refuses_retained_limit() {
     assert_setting_retained_refusal(
-        &render_retained_refusal(
-            true,
-            "background.png".len() + "specific-viewport".len() + "named-view".len() - 1,
-        ),
+        &render_retained_refusal(true, "Rhino render named view"),
         "Rhino render named view",
     );
 }
@@ -655,14 +658,7 @@ fn render_named_view_refuses_retained_limit() {
 #[test]
 fn render_snapshot_refuses_retained_limit() {
     assert_setting_retained_refusal(
-        &render_retained_refusal(
-            true,
-            "background.png".len()
-                + "specific-viewport".len()
-                + "named-view".len()
-                + "snapshot".len()
-                - 1,
-        ),
+        &render_retained_refusal(true, "Rhino render snapshot"),
         "Rhino render snapshot",
     );
 }
@@ -1030,3 +1026,107 @@ fn render_userdata_unknown_chunks_refuse_collection_limit() {
             if refusal.operation == "Rhino render userdata unknown chunks"
     ));
 }
+
+#[test]
+fn document_digest_keeps_hex_and_retained_admission() {
+    const EXPECTED: &str = "f302957da5220938a7e3e51a8718c79b9e00dc13ab2119e8cfc978f041720382";
+    let bytes = [0x5a; 4096];
+    for retained in [0, 64] {
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_work_units = u64::try_from(bytes.len()).unwrap();
+        policy.limits.max_retained_bytes = retained;
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+        let result = super::retained_sha256(&ctx, &bytes, "document digest");
+        if retained == 0 {
+            assert!(
+                matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                    && limit.operation == "document digest")
+            );
+        } else {
+            assert_eq!(result.unwrap(), EXPECTED);
+            ctx.finish_session().unwrap();
+        }
+    }
+}
+
+#[test]
+fn document_digest_refuses_unadmitted_byte_work() {
+    let bytes = [0x5a; 4096];
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = u64::try_from(bytes.len() - 1).unwrap();
+    policy.limits.max_retained_bytes = 0;
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let error = super::retained_sha256(&ctx, &bytes, "document digest")
+        .expect_err("source hashing must admit every input byte before allocating text");
+    let cadmpeg_core::CodecError::ResourceLimit(refusal) = error else {
+        panic!("hashing must preserve the work refusal");
+    };
+    assert_eq!(
+        refusal.dimension,
+        cadmpeg_core::decode::ResourceDimension::WorkUnits
+    );
+    assert_eq!(refusal.operation, "document digest");
+    assert_eq!(refusal.used, 0);
+    assert_eq!(refusal.additional, u64::try_from(bytes.len()).unwrap());
+    assert!(matches!(ctx.finish_session(),
+        Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == refusal));
+}
+
+#[test]
+fn render_userdata_keeps_corrupt_header_without_discarded_diagnostics() {
+    const SCRATCH_BYTES: u64 = 64 * 1024;
+    let archive = ArchiveVersion::V8;
+    let mut header_body = vec![0; 16];
+    header_body.extend([1; 16]);
+    header_body.extend(7_i32.to_le_bytes());
+    header_body.extend([0; 16 * 8]);
+    let mut header = crc_chunk(archive, 0x0002_fff9, &header_body);
+    *header.last_mut().unwrap() ^= 1;
+    let mut item = vec![0x20];
+    item.extend(header);
+    item.extend(anonymous_chunk(archive, 0, &[0x55]));
+    let mut body = long_chunk(archive, CLASS_USERDATA, &item);
+    body.extend(short_chunk(archive, CLASS_END, 0));
+    let (data, record) = metadata_record(0x2000_8136, body);
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = SCRATCH_BYTES;
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&data, &arena, &policy).unwrap();
+    let mut storage = ctx.reserve_scoped(0, "render userdata descriptor").unwrap();
+    let descriptor = storage
+        .with_storage(|| render_userdata(&ctx, &data, &record, archive))
+        .expect("only the surviving userdata descriptor consumes a collection slot");
+    assert_eq!(descriptor.items.len(), 1);
+    assert!(descriptor.unknown_chunks.is_empty());
+    assert_eq!(descriptor.suffix, record.body().end..record.body().end);
+    let UserdataDescriptor::Known(item) = &descriptor.items[0] else {
+        panic!("known userdata header");
+    };
+    assert_eq!(item.version, (2, 0));
+    assert_eq!(item.class_uuid, Uuid::nil());
+    assert_eq!(item.item_uuid, Uuid::from_wire([1; 16]));
+    assert_eq!(item.copy_count, 7);
+    assert_eq!(item.application_uuid, None);
+    assert_eq!(item.save_context, None);
+    assert_eq!(
+        &data[item.payload_range.clone()],
+        &[1, 0, 0, 0, 0, 0, 0, 0, 0x55]
+    );
+    drop(descriptor);
+    drop(storage);
+    drop(
+        ctx.reserve_scoped(SCRATCH_BYTES, "released render userdata descriptor")
+            .unwrap(),
+    );
+    ctx.finish_session().unwrap();
+}
+
+mod prefix_admission;

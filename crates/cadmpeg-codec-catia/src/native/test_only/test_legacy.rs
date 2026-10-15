@@ -4,10 +4,10 @@ use crate::entity_table;
 use crate::legacy_entity;
 use crate::native::entity_record::CatiaEntityRecord;
 use crate::native::{
-    entity_suffix_value, legacy_evaluated_value_name, CatiaLegacyEntityRun,
-    CatiaLegacyIntegerEncoding, CatiaLegacyRelation, CatiaLegacyRoleSelector,
-    CatiaLegacyScalarEvaluation, CatiaLegacySchemaField, CatiaLegacySchemaIdentifier,
-    CatiaLegacySchemaProgram, CatiaLegacyTextEncoding, CatiaLegacyTextField, CatiaLegacyTypeValue,
+    entity_suffix_value, CatiaLegacyEntityRun, CatiaLegacyIntegerEncoding, CatiaLegacyRelation,
+    CatiaLegacyRoleSelector, CatiaLegacyScalarEvaluation, CatiaLegacySchemaField,
+    CatiaLegacySchemaIdentifier, CatiaLegacySchemaProgram, CatiaLegacyTextEncoding,
+    CatiaLegacyTextField, CatiaLegacyTypeValue,
 };
 
 pub(super) fn valid_entity_record_shape(record: &CatiaEntityRecord) -> bool {
@@ -75,7 +75,14 @@ fn legacy_value_name(
         return None;
     }
 
-    let name = legacy_evaluated_value_name(roles, fields, entity_id, value_offset)?;
+    let name = crate::test_support::with_service_context(|ctx| {
+        crate::native::LegacyEvaluatedValueNames::new(ctx, roles, fields)?.name(
+            ctx,
+            entity_id,
+            value_offset,
+        )
+    })
+    .expect("service legacy value name budget")?;
     Some((name.byte_offset, name.value.clone()))
 }
 

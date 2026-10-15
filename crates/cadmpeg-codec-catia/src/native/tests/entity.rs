@@ -842,14 +842,24 @@ fn native_value_productions_refuse_catalog_and_suffix_copies() {
     let fields = crate::test_support::with_service_context(|ctx| entity.value_fields_charged(ctx))
         .expect("service profile admits value fields");
     let refused = crate::test_support::with_retained_limit(0, |ctx| {
-        super::super::value_production(ctx, entity, &native.object_graphs[0].records, &fields)
+        super::super::value_production(
+            ctx,
+            entity,
+            &mut super::super::GraphIncidences::new(ctx, &native.object_graphs[0].records)?,
+            &fields,
+        )
     });
     assert!(
         matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.operation == "catia_native_value_schema_entry")
     );
     let service = crate::test_support::with_service_context(|ctx| {
-        super::super::value_production(ctx, entity, &native.object_graphs[0].records, &fields)
+        super::super::value_production(
+            ctx,
+            entity,
+            &mut super::super::GraphIncidences::new(ctx, &native.object_graphs[0].records)?,
+            &fields,
+        )
     })
     .expect("service profile admits parameter production");
     assert_eq!(service, entity.value_production);
@@ -974,7 +984,10 @@ fn native_definition_value_and_chain_refuse_retained_schema_copies() {
         super::super::value_production(
             ctx,
             definition_entity,
-            &definition_native.object_graphs[0].records,
+            &mut super::super::GraphIncidences::new(
+                ctx,
+                &definition_native.object_graphs[0].records,
+            )?,
             &definition_fields,
         )
     });
@@ -996,7 +1009,7 @@ fn native_definition_value_and_chain_refuse_retained_schema_copies() {
         super::super::value_production(
             ctx,
             chain_entity,
-            &chain_native.object_graphs[0].records,
+            &mut super::super::GraphIncidences::new(ctx, &chain_native.object_graphs[0].records)?,
             &chain_fields,
         )
     });
@@ -1008,7 +1021,7 @@ fn native_definition_value_and_chain_refuse_retained_schema_copies() {
         super::super::value_production(
             ctx,
             chain_entity,
-            &chain_native.object_graphs[0].records,
+            &mut super::super::GraphIncidences::new(ctx, &chain_native.object_graphs[0].records)?,
             &chain_fields,
         )
     })
@@ -1402,6 +1415,7 @@ fn typed_definition_chain_values_transfer_as_parameters() {
             &mut Annotations::default(),
             &crate::decode::ModelingGraphScope::Unscoped,
         )
+        .map(crate::formula::FormulaTransfer::detached)
     })
     .expect("valid exactness fields");
     assert_eq!(relation_transfer.definition_chain_parameter_count, 1);

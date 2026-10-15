@@ -97,8 +97,8 @@ pub(super) fn point_pair_alignments(
     };
     let scale = mapped
         .into_iter()
+        .chain(target)
         .flatten()
-        .chain(target.into_iter().flatten())
         .map(f64::abs)
         .fold(1.0, f64::max);
     let tolerance = EPS_AGREE * scale;
@@ -108,35 +108,50 @@ pub(super) fn point_pair_alignments(
     ]
 }
 
-pub(super) fn nurbs_control_extent(nurbs: &NurbsCurve) -> f64 {
-    let bounds = nurbs_points(nurbs).fold(
-        [[f64::INFINITY; 3], [f64::NEG_INFINITY; 3]],
-        |mut bounds, point| {
-            for (index, coordinate) in [point.x, point.y, point.z].into_iter().enumerate() {
-                bounds[0][index] = bounds[0][index].min(coordinate);
-                bounds[1][index] = bounds[1][index].max(coordinate);
-            }
-            bounds
-        },
-    );
-    (0..3)
-        .map(|index| bounds[1][index] - bounds[0][index])
-        .fold(1.0, f64::max)
-}
-
-pub(super) fn nurbs_points(
+pub(super) fn nurbs_control_extent(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     nurbs: &NurbsCurve,
-) -> impl Iterator<Item = cadmpeg_ir::features::FinitePoint3> + '_ {
-    (0..nurbs.pole_count()).filter_map(|index| nurbs.pole_rows().point_at(index))
+) -> Result<f64, cadmpeg_core::CodecError> {
+    let initial = [[f64::INFINITY; 3], [f64::NEG_INFINITY; 3]];
+    let extend = |mut bounds: [[f64; 3]; 2], point: FinitePoint3| {
+        let point = point.get();
+        for (index, coordinate) in [point.x, point.y, point.z].into_iter().enumerate() {
+            bounds[0][index] = bounds[0][index].min(coordinate);
+            bounds[1][index] = bounds[1][index].max(coordinate);
+        }
+        Ok(bounds)
+    };
+    let bounds = match nurbs.pole_rows() {
+        cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { points } => ctx.fold(
+            points,
+            initial,
+            |bounds, point| extend(bounds, *point),
+            "creo NURBS polynomial poles",
+        )?,
+        cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } => ctx.fold(
+            points,
+            initial,
+            |bounds, pole| extend(bounds, pole.point),
+            "creo NURBS rational poles",
+        )?,
+    };
+    Ok((0..3)
+        .map(|index| bounds[1][index] - bounds[0][index])
+        .fold(1.0, f64::max))
 }
 
-pub(super) fn nurbs_weights_positive(nurbs: &NurbsCurve) -> bool {
-    (0..nurbs.pole_count()).all(|index| {
-        nurbs
-            .pole_rows()
-            .weight_at(index)
-            .is_none_or(|weight| weight > 0.0)
-    })
+pub(super) fn nurbs_weights_positive(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    nurbs: &NurbsCurve,
+) -> Result<bool, cadmpeg_core::CodecError> {
+    match nurbs.pole_rows() {
+        cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { .. } => Ok(true),
+        cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } => Ok(ctx.all_by(
+            points,
+            |pole| Ok(pole.weight.get() > 0.0),
+            "creo NURBS pole weights",
+        )?),
+    }
 }
 
 pub(in crate::decode) fn nurbs_intrinsic_parameter_range(
@@ -158,7 +173,7 @@ pub(super) fn nonperiodic_nurbs_endpoint_points(
         return Ok(None);
     };
     require_some!((!nurbs.periodic()).then_some(()));
-    require_some!(valid_positive_nurbs_curve(nurbs));
+    require_some!(valid_positive_nurbs_curve(ctx, nurbs)?);
     let range = require_some!(nurbs_intrinsic_parameter_range(nurbs));
     let [first, second] =
         range.map(|parameter| {
@@ -194,8 +209,8 @@ fn nonperiodic_nurbs_edge_parameter_range(
     let range = FiniteReal::raw_array(require_some!(nurbs_intrinsic_parameter_range(nurbs)));
 
     if degree == 1 {
-        require_some!(nurbs_weights_positive(nurbs).then_some(()));
-        let scale = nurbs_control_extent(nurbs);
+        require_some!(nurbs_weights_positive(ctx, nurbs)?.then_some(()));
+        let scale = nurbs_control_extent(ctx, nurbs)?;
         let tolerance = EPS_AGREE * scale;
         let first = require_some!(degree_one_nurbs_point_parameter(
             ctx, geometry, nurbs, points[0], range, tolerance
@@ -264,7 +279,7 @@ pub(in crate::decode) fn orient_nonperiodic_nurbs_edge_carrier(
             let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) = &*geometry else {
                 return Ok(None);
             };
-            let tolerance = EPS_AGREE * nurbs_control_extent(nurbs);
+            let tolerance = EPS_AGREE * nurbs_control_extent(ctx, nurbs)?;
             let first = require_some!(degree_one_nurbs_point_parameter(
                 ctx,
                 &*geometry,
@@ -347,7 +362,7 @@ pub(in crate::decode) fn full_periodic_nurbs_edge_parameter_range(
         return Ok(None);
     };
     require_some!(nurbs.periodic().then_some(()));
-    require_some!(nurbs_weights_positive(nurbs).then_some(()));
+    require_some!(nurbs_weights_positive(ctx, nurbs)?.then_some(()));
     let range = FiniteReal::raw_array(require_some!(nurbs_intrinsic_parameter_range(nurbs)));
     let [first, second] =
         range.map(|parameter| {
@@ -363,7 +378,7 @@ pub(in crate::decode) fn full_periodic_nurbs_edge_parameter_range(
     let [Some(first), Some(second)] = mapped else {
         return Ok(None);
     };
-    let tolerance = EPS_AGREE * nurbs_control_extent(nurbs);
+    let tolerance = EPS_AGREE * nurbs_control_extent(ctx, nurbs)?;
     Ok([first, second]
         .into_iter()
         .all(|mapped| {
@@ -383,91 +398,199 @@ fn degree_one_nurbs_point_parameter(
 ) -> Result<Option<f64>, cadmpeg_core::CodecError> {
     let parameter_tolerance = (EPS_AGREE * range[1] - EPS_AGREE * range[0]).abs();
     let mut candidate: Option<f64> = None;
-    for span in 1..nurbs.pole_count() {
-        let lower = nurbs.knots()[span];
-        let upper = nurbs.knots()[span + 1];
-        if upper <= lower {
-            continue;
-        }
-        let first = require_some!(nurbs.pole_rows().point_at(span - 1));
-        let second = require_some!(nurbs.pole_rows().point_at(span));
-        let delta = [second.x - first.x, second.y - first.y, second.z - first.z];
-        let denominator = dot(delta, delta);
-        if !denominator.is_finite() {
-            continue;
-        }
-        let relative = [point[0] - first.x, point[1] - first.y, point[2] - first.z];
-        if denominator <= tolerance * tolerance {
-            if dot(relative, relative).sqrt() <= tolerance {
-                return Ok(None);
-            }
-            continue;
-        }
-        let fraction = dot(relative, delta) / denominator;
-        if !(-EPS_AGREE..=1.0 + EPS_AGREE).contains(&fraction) {
-            continue;
-        }
-        let fraction = match fraction.partial_cmp(&0.0) {
-            Some(std::cmp::Ordering::Less) => 0.0,
-            _ => match fraction.partial_cmp(&1.0) {
-                Some(std::cmp::Ordering::Greater) => 1.0,
-                _ => fraction,
-            },
-        };
-        let projected = [
-            first.x + fraction * delta[0],
-            first.y + fraction * delta[1],
-            first.z + fraction * delta[2],
-        ];
-        let mismatch: [f64; 3] = std::array::from_fn(|index| projected[index] - point[index]);
-        if dot(mismatch, mismatch).sqrt() > tolerance {
-            continue;
-        }
-        let first_weight = nurbs
-            .pole_rows()
-            .weight_at(span - 1)
-            .map_or(1.0, |weight| weight);
-        let second_weight = nurbs
-            .pole_rows()
-            .weight_at(span)
-            .map_or(1.0, |weight| weight);
-        let rational_denominator = second_weight * (1.0 - fraction) + fraction * first_weight;
-        if rational_denominator <= 0.0 || !rational_denominator.is_finite() {
-            continue;
-        }
-        let local = fraction * first_weight / rational_denominator;
-        let span = upper - lower;
-        let parameter = if span.is_finite() {
-            lower + local * span
-        } else {
-            require_some!(cadmpeg_ir::math::interpolate(lower, upper, local)).get()
-        };
-        let Some(mapped) =
-            cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
-                cadmpeg_ir::eval::decode::curve_point(ctx, geometry, parameter),
-            )?)?
-        else {
-            continue;
-        };
-        let mismatch = [
-            mapped.x - point[0],
-            mapped.y - point[1],
-            mapped.z - point[2],
-        ];
-        if dot(mismatch, mismatch).sqrt() <= tolerance {
-            if let Some(first) = candidate {
-                if !matches!(
-                    ((parameter - first).abs()).partial_cmp(&(parameter_tolerance)),
-                    Some(std::cmp::Ordering::Less | std::cmp::Ordering::Equal)
-                ) {
-                    return Ok(None);
+    match nurbs.pole_rows() {
+        cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { points } => {
+            let mut previous = None;
+            let mut traversal = (points).iter().enumerate();
+            while let Some((span, second)) =
+                ctx.next_charged(&mut traversal, "creo degree-one polynomial NURBS spans")?
+            {
+                let second = *second;
+                let Some(first) = previous.replace(second) else {
+                    continue;
+                };
+                match degree_one_nurbs_span_parameter(
+                    ctx,
+                    geometry,
+                    nurbs,
+                    DegreeOneSpan {
+                        point,
+                        tolerance,
+                        index: span,
+                        endpoints: [first, second],
+                        weights: [1.0, 1.0],
+                    },
+                )? {
+                    DegreeOneSpanParameter::Ambiguous => return Ok(None),
+                    DegreeOneSpanParameter::Skipped => {}
+                    DegreeOneSpanParameter::Parameter(parameter) => {
+                        if !retain_degree_one_parameter(
+                            &mut candidate,
+                            parameter,
+                            parameter_tolerance,
+                        ) {
+                            return Ok(None);
+                        }
+                    }
                 }
-            } else {
-                candidate = Some(parameter);
+            }
+        }
+        cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } => {
+            let mut previous = None;
+            let mut traversal = (points).iter().enumerate();
+            while let Some((span, second)) =
+                ctx.next_charged(&mut traversal, "creo degree-one rational NURBS spans")?
+            {
+                let Some((first, first_weight)) =
+                    previous.replace((second.point, second.weight.get()))
+                else {
+                    continue;
+                };
+                match degree_one_nurbs_span_parameter(
+                    ctx,
+                    geometry,
+                    nurbs,
+                    DegreeOneSpan {
+                        point,
+                        tolerance,
+                        index: span,
+                        endpoints: [first, second.point],
+                        weights: [first_weight, second.weight.get()],
+                    },
+                )? {
+                    DegreeOneSpanParameter::Ambiguous => return Ok(None),
+                    DegreeOneSpanParameter::Skipped => {}
+                    DegreeOneSpanParameter::Parameter(parameter) => {
+                        if !retain_degree_one_parameter(
+                            &mut candidate,
+                            parameter,
+                            parameter_tolerance,
+                        ) {
+                            return Ok(None);
+                        }
+                    }
+                }
             }
         }
     }
     Ok(candidate)
+}
+
+enum DegreeOneSpanParameter {
+    Ambiguous,
+    Skipped,
+    Parameter(f64),
+}
+
+fn retain_degree_one_parameter(
+    candidate: &mut Option<f64>,
+    parameter: f64,
+    tolerance: f64,
+) -> bool {
+    if let Some(first) = candidate {
+        matches!(
+            (parameter - *first).abs().partial_cmp(&tolerance),
+            Some(std::cmp::Ordering::Less | std::cmp::Ordering::Equal)
+        )
+    } else {
+        *candidate = Some(parameter);
+        true
+    }
+}
+
+#[derive(Clone, Copy)]
+struct DegreeOneSpan {
+    point: [f64; 3],
+    tolerance: f64,
+    index: usize,
+    endpoints: [FinitePoint3; 2],
+    weights: [f64; 2],
+}
+
+fn degree_one_nurbs_span_parameter(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    geometry: &CurveGeometry,
+    nurbs: &NurbsCurve,
+    span: DegreeOneSpan,
+) -> Result<DegreeOneSpanParameter, cadmpeg_core::CodecError> {
+    let DegreeOneSpan {
+        point,
+        tolerance,
+        index: span_index,
+        endpoints: [first, second],
+        weights: [first_weight, second_weight],
+    } = span;
+    let lower = nurbs.knots()[span_index];
+    let upper = nurbs.knots()[span_index + 1];
+    if upper <= lower {
+        return Ok(DegreeOneSpanParameter::Skipped);
+    }
+    let first = first.get();
+    let second = second.get();
+    let delta = [second.x - first.x, second.y - first.y, second.z - first.z];
+    let denominator = dot(delta, delta);
+    if !denominator.is_finite() {
+        return Ok(DegreeOneSpanParameter::Skipped);
+    }
+    let relative = [point[0] - first.x, point[1] - first.y, point[2] - first.z];
+    if denominator <= tolerance * tolerance {
+        return Ok(if dot(relative, relative).sqrt() <= tolerance {
+            DegreeOneSpanParameter::Ambiguous
+        } else {
+            DegreeOneSpanParameter::Skipped
+        });
+    }
+    let fraction = dot(relative, delta) / denominator;
+    if !(-EPS_AGREE..=1.0 + EPS_AGREE).contains(&fraction) {
+        return Ok(DegreeOneSpanParameter::Skipped);
+    }
+    let fraction = match fraction.partial_cmp(&0.0) {
+        Some(std::cmp::Ordering::Less) => 0.0,
+        _ => match fraction.partial_cmp(&1.0) {
+            Some(std::cmp::Ordering::Greater) => 1.0,
+            _ => fraction,
+        },
+    };
+    let projected = [
+        first.x + fraction * delta[0],
+        first.y + fraction * delta[1],
+        first.z + fraction * delta[2],
+    ];
+    let mismatch: [f64; 3] = std::array::from_fn(|index| projected[index] - point[index]);
+    if dot(mismatch, mismatch).sqrt() > tolerance {
+        return Ok(DegreeOneSpanParameter::Skipped);
+    }
+    let rational_denominator = second_weight * (1.0 - fraction) + fraction * first_weight;
+    if rational_denominator <= 0.0 || !rational_denominator.is_finite() {
+        return Ok(DegreeOneSpanParameter::Skipped);
+    }
+    let local = fraction * first_weight / rational_denominator;
+    let knot_span = upper - lower;
+    let parameter = if knot_span.is_finite() {
+        lower + local * knot_span
+    } else {
+        let Some(parameter) = cadmpeg_ir::math::interpolate(lower, upper, local) else {
+            return Ok(DegreeOneSpanParameter::Ambiguous);
+        };
+        parameter.get()
+    };
+    let Some(mapped) =
+        cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+            cadmpeg_ir::eval::decode::curve_point(ctx, geometry, parameter),
+        )?)?
+    else {
+        return Ok(DegreeOneSpanParameter::Skipped);
+    };
+    let mismatch = [
+        mapped.x - point[0],
+        mapped.y - point[1],
+        mapped.z - point[2],
+    ];
+    Ok(if dot(mismatch, mismatch).sqrt() <= tolerance {
+        DegreeOneSpanParameter::Parameter(parameter)
+    } else {
+        DegreeOneSpanParameter::Skipped
+    })
 }
 
 #[derive(Clone, Copy)]

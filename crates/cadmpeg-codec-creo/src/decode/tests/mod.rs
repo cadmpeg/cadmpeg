@@ -20,6 +20,7 @@ mod blind_circular;
 mod carrier_solver;
 mod circular_profile;
 mod coaxial_cones;
+mod datum_frames;
 mod equation_constraints;
 mod generated_nurbs;
 mod generated_nurbs_extent;
@@ -159,7 +160,10 @@ fn section_axis_line_carrier(
             .ok()
             .map(|points| points.0)
     })?;
-    section_axis_line_carrier_with_points(&variable_points, segment)
+    crate::decode::with_test_decode_ctx(|ctx| {
+        section_axis_line_carrier_with_points(ctx, &variable_points, segment)
+    })
+    .expect("admitted axis line carrier")
 }
 
 #[cfg(test)]
@@ -206,7 +210,10 @@ fn extruded_segment_surface(
     points: &BTreeMap<u32, [f64; 2]>,
     segment: &crate::feature::definitions::FeatureSegment,
 ) -> Option<SurfaceGeometry> {
-    extruded_geometry_surface(transform, &section_segment_geometry(points, segment)?)
+    let geometry =
+        crate::decode::with_test_decode_ctx(|ctx| section_segment_geometry(ctx, points, segment))
+            .expect("test section segment geometry");
+    extruded_geometry_surface(transform, &geometry?)
 }
 
 #[cfg(test)]
@@ -215,7 +222,10 @@ fn placed_section_curve_geometry(
     points: &BTreeMap<u32, [f64; 2]>,
     segment: &crate::feature::definitions::FeatureSegment,
 ) -> Option<CurveGeometry> {
-    placed_section_geometry_curve(transform, &section_segment_geometry(points, segment)?)
+    let geometry =
+        crate::decode::with_test_decode_ctx(|ctx| section_segment_geometry(ctx, points, segment))
+            .expect("test section segment geometry");
+    placed_section_geometry_curve(transform, &geometry?)
 }
 
 #[cfg(test)]

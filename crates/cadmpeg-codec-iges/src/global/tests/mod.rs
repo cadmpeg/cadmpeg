@@ -12,6 +12,7 @@ mod dialect;
 mod inspection;
 mod parsing;
 mod resolution;
+mod source_visits;
 mod text_admission;
 mod units;
 

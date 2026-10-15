@@ -18,7 +18,11 @@ use crate::legacy_entity::STRING_OPEN;
 use crate::legacy_entity::TEXT_OPEN;
 use crate::legacy_entity::TYPE_OPEN;
 
+mod admission;
 mod identity;
+mod roles;
+mod scans;
+mod storage;
 mod transfer;
 
 use crate::container;
@@ -38,32 +42,53 @@ fn parse_runs_with_directory_offset(
     .expect("legacy directory fixture fits service limits")
 }
 
-#[test]
-fn legacy_run_identities_refuse_collection_limit_before_growth() {
+/// Collection refusals of a one-identity run, in the order the limits reach them.
+fn one_identity_run_collection_refusals() -> Vec<&'static str> {
     let mut bytes = Vec::new();
     identity(&mut bytes, 1);
     bytes.extend_from_slice(CATALOG_OPEN);
-    let refused =
-        crate::test_support::with_collection_limit(0, |ctx| parse_runs_charged(ctx, &bytes));
+    let mut operations = Vec::new();
+    for limit in 0..64 {
+        match crate::test_support::with_collection_limit(limit, |ctx| {
+            parse_runs_charged(ctx, &bytes)
+        }) {
+            Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) => {
+                operations.push(refusal.operation);
+            }
+            Ok(runs) => {
+                assert_eq!(runs.len(), 1);
+                return operations;
+            }
+            Err(error) => panic!("unexpected legacy refusal: {error}"),
+        }
+    }
+    panic!("one-identity run needs fewer than 64 collection items");
+}
+
+#[test]
+fn legacy_run_identities_refuse_collection_limit_before_growth() {
+    let operations = one_identity_run_collection_refusals();
+    let catalogs = operations
+        .iter()
+        .position(|op| *op == "catia_legacy_catalog_offsets");
+    let identities = operations
+        .iter()
+        .position(|op| *op == "catia_legacy_candidate_identities");
     assert!(
-        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_legacy_candidate_identities")
+        catalogs.is_some() && catalogs < identities,
+        "{operations:?}"
     );
-    assert_eq!(parse_runs(&bytes).len(), 1);
 }
 
 #[test]
 fn legacy_run_list_refuses_after_identity_admission() {
-    let mut bytes = Vec::new();
-    identity(&mut bytes, 1);
-    bytes.extend_from_slice(CATALOG_OPEN);
-    let refused =
-        crate::test_support::with_collection_limit(1, |ctx| parse_runs_charged(ctx, &bytes));
-    assert!(
-        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_legacy_runs")
-    );
-    assert_eq!(parse_runs(&bytes).len(), 1);
+    let operations = one_identity_run_collection_refusals();
+    let identities = operations
+        .iter()
+        .position(|op| *op == "catia_legacy_candidate_identities");
+    let runs = operations.iter().position(|op| *op == "catia_legacy_runs");
+    assert!(identities.is_some() && identities < runs, "{operations:?}");
+    assert_eq!(operations.last(), Some(&"catia_legacy_runs"));
 }
 
 #[test]
@@ -184,12 +209,14 @@ fn legacy_relation_signature_refuses_nested_limits() {
         if limit.operation == "catia_legacy_relation_names")
     );
     let retained =
-        crate::test_support::with_retained_refusal(&[], "catia_legacy_relation_parameter", |ctx| {
+        crate::test_support::with_retained_refusal(&[], "catia_legacy_relation_candidate", |ctx| {
             super::parse_relation_signature(ctx, signature)
         });
     assert!(
         matches!(retained, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_legacy_relation_parameter")
+        if limit.operation == "catia_legacy_relation_candidate"
+            && limit.used == 0
+            && limit.additional == u64::try_from(4 * std::mem::size_of::<super::LegacyRelationParameter>() + 14).expect("accepted signature storage"))
     );
     let admitted = crate::test_support::with_service_context(|ctx| {
         super::parse_relation_signature(ctx, signature)
@@ -205,6 +232,7 @@ fn legacy_value_and_role_parsers_refuse_their_own_limits() {
     type_bytes.extend_from_slice(&[8, b'B', b'o', b'o', b'l', b'e', b'a', b'n', 0x83]);
     let type_refusal = crate::test_support::with_retained_limit(0, |ctx| {
         super::parse_type_descriptors(ctx, &type_bytes, 0, type_bytes.len(), 1)
+            .and_then(|(values, storage)| storage.commit_value(values))
     });
     assert!(
         matches!(type_refusal, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
@@ -214,6 +242,7 @@ fn legacy_value_and_role_parsers_refuse_their_own_limits() {
     string_bytes.extend_from_slice(&[2, b'A']);
     let string_refusal = crate::test_support::with_retained_limit(0, |ctx| {
         super::parse_string_values(ctx, &string_bytes, 0, string_bytes.len(), 1)
+            .and_then(|(values, storage)| storage.commit_value(values))
     });
     assert!(
         matches!(string_refusal, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
@@ -222,6 +251,7 @@ fn legacy_value_and_role_parsers_refuse_their_own_limits() {
     let role_bytes = [5, b'n', b'a', b'm', b'e', 0xd1, 8];
     let role_refusal = crate::test_support::with_retained_limit(0, |ctx| {
         super::parse_role_selectors(ctx, &role_bytes, 0, role_bytes.len(), 1)
+            .and_then(|(values, storage)| storage.commit_value(values))
     });
     assert!(
         matches!(role_refusal, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
@@ -231,6 +261,7 @@ fn legacy_value_and_role_parsers_refuse_their_own_limits() {
     text_bytes.extend_from_slice(&[2, b'A', 0xfe]);
     let text_refusal = crate::test_support::with_retained_limit(0, |ctx| {
         super::parse_text_fields(ctx, &text_bytes, 0, text_bytes.len(), 1, &[])
+            .and_then(|(values, storage)| storage.commit_value(values))
     });
     assert!(
         matches!(text_refusal, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
@@ -240,6 +271,7 @@ fn legacy_value_and_role_parsers_refuse_their_own_limits() {
     scalar_bytes.push(0xe7);
     let scalar_refusal = crate::test_support::with_collection_limit(0, |ctx| {
         super::parse_scalar_values(ctx, &scalar_bytes, 0, scalar_bytes.len(), 1)
+            .and_then(|(values, storage)| storage.commit_value(values))
     });
     assert!(
         matches!(scalar_refusal, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
@@ -249,6 +281,7 @@ fn legacy_value_and_role_parsers_refuse_their_own_limits() {
     integer_bytes.push(0x81);
     let integer_refusal = crate::test_support::with_collection_limit(0, |ctx| {
         super::parse_integer_values(ctx, &integer_bytes, 0, integer_bytes.len(), 1)
+            .and_then(|(values, storage)| storage.commit_value(values))
     });
     assert!(
         matches!(integer_refusal, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
@@ -477,15 +510,22 @@ fn parses_monotone_identity_suffix_before_legacy_catalog() {
     assert!(runs[0].string_values.is_empty());
     assert!(runs[0].integer_values.is_empty());
     assert_eq!(
-        runs[0]
-            .identities()
-            .map(|identity| identity.entity_id)
-            .collect::<Vec<_>>(),
+        crate::test_support::with_service_context(|ctx| {
+            let identities = runs[0].identities(ctx)?;
+            ctx.collect_vec(
+                identities.map(|identity| identity.entity_id),
+                "catia_legacy_test_identity_ids",
+            )
+        })
+        .expect("legacy identity fixture fits service limits"),
         [1, 4, 7]
     );
-    assert!(runs[0]
-        .identities()
-        .all(|identity| u8::from(identity.lead) == 0x81));
+    assert!(crate::test_support::with_service_context(|ctx| {
+        runs[0]
+            .identities(ctx)
+            .map(|mut identities| identities.all(|identity| u8::from(identity.lead) == 0x81))
+    })
+    .expect("legacy identity fixture fits service limits"));
 }
 
 #[test]
@@ -496,11 +536,16 @@ fn parses_each_admitted_identity_record_lead() {
     }
     bytes.extend_from_slice(CATALOG_OPEN);
 
+    let runs = parse_runs(&bytes);
     assert_eq!(
-        parse_runs(&bytes)[0]
-            .identities()
-            .map(|identity| (identity.entity_id, u8::from(identity.lead)))
-            .collect::<Vec<_>>(),
+        crate::test_support::with_service_context(|ctx| {
+            let identities = runs[0].identities(ctx)?;
+            ctx.collect_vec(
+                identities.map(|identity| (identity.entity_id, u8::from(identity.lead))),
+                "catia_legacy_test_identity_leads",
+            )
+        })
+        .expect("legacy identity fixture fits service limits"),
         [(1, 0x81), (2, 0x82), (3, 0xe5), (4, 0xfd)]
     );
 }
@@ -513,11 +558,16 @@ fn unsupported_record_leads_do_not_split_identity_intervals() {
     identity(&mut bytes, 3);
     bytes.extend_from_slice(CATALOG_OPEN);
 
+    let runs = parse_runs(&bytes);
     assert_eq!(
-        parse_runs(&bytes)[0]
-            .identities()
-            .map(|identity| identity.entity_id)
-            .collect::<Vec<_>>(),
+        crate::test_support::with_service_context(|ctx| {
+            let identities = runs[0].identities(ctx)?;
+            ctx.collect_vec(
+                identities.map(|identity| identity.entity_id),
+                "catia_legacy_test_identity_ids",
+            )
+        })
+        .expect("legacy identity fixture fits service limits"),
         [1, 3]
     );
 }
@@ -840,6 +890,7 @@ fn rejects_ambiguous_unresolved_role_selector_framing() {
     let bytes = [0x81, 0x80, 0x01, 0x82, 0xd1, 0x17, 0xe8, 0x00, 0x1c, 0x01];
     assert!(crate::test_support::with_service_context(|ctx| {
         super::parse_role_selectors(ctx, &bytes, 0, bytes.len(), 1)
+            .and_then(|(values, storage)| storage.commit_value(values))
     })
     .expect("role selector fixture fits service limits")
     .is_empty());
@@ -1049,4 +1100,24 @@ fn rejects_unclosed_and_nonidentifier_type_descriptors() {
     bytes.extend_from_slice(CATALOG_OPEN);
 
     assert!(parse_runs(&bytes)[0].type_descriptors.is_empty());
+}
+
+#[test]
+fn legacy_identity_reader_propagates_caller_work_refusal() {
+    let mut bytes = vec![0xea, 9, 0, 0, 0, 0x81];
+    for id in [1, 4, 7] {
+        identity(&mut bytes, id);
+    }
+    bytes.extend_from_slice(CATALOG_OPEN);
+    let runs = parse_runs(&bytes);
+    crate::test_support::with_work_limit(1, |ctx| {
+        let Err(error) = runs[0].identities(ctx) else {
+            panic!("two following identities exceed caller work")
+        };
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+            panic!("resource refusal required")
+        };
+        assert_eq!(limit.operation, "catia_legacy_identity_visits");
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+    });
 }

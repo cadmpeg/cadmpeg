@@ -34,8 +34,10 @@ fn representation_body_vector_refuses_before_two_item_copy() {
     ));
 }
 
-fn topology_with_body_at(root: u64) -> TopologyData {
+fn topology_with_body_at(root: u64) -> TopologyData<'static> {
     TopologyData {
+        storage: None,
+        claim_storage: None,
         body_by_root: BTreeMap::from([(root, vec![body_id()])]),
         shape_representation_relationships: BTreeMap::new(),
         body_by_shell: BTreeMap::new(),
@@ -223,4 +225,178 @@ fn representation_output_bodies_charge_before_collection() {
         "step_representation_body_output",
         1,
     );
+}
+
+#[test]
+fn representation_claims_match_body_resolution_through_mapping_and_cycles() {
+    let cases = [
+        "#2=DUMMY();#3=DUMMY();#20=SHAPE_REPRESENTATION('',(#2,#3),$);#21=REPRESENTATION_MAP($,#20);#22=MAPPED_ITEM('',#21,$);#23=SHAPE_REPRESENTATION('',(#22),$);",
+        "#2=DUMMY();#3=DUMMY();#20=SHAPE_REPRESENTATION('',(#22,#2),$);#21=REPRESENTATION_MAP($,#23);#22=MAPPED_ITEM('',#21,$);#23=SHAPE_REPRESENTATION('',(#25),$);#24=REPRESENTATION_MAP($,#20);#25=MAPPED_ITEM('',#24,$);",
+        "#2=DUMMY();#3=DUMMY();#20=SHAPE_REPRESENTATION('',(#22),$);#21=REPRESENTATION_MAP($,#23);#22=MAPPED_ITEM('',#21,$);#23=SHAPE_REPRESENTATION('',(#25),$);#24=REPRESENTATION_MAP($,#20);#25=MAPPED_ITEM('',#24,$);",
+        "#2=DUMMY();#3=DUMMY();#20=SHAPE_REPRESENTATION('',(#2),$);#23=SHAPE_REPRESENTATION('',(),$);",
+        "#2=DUMMY();#3=DUMMY();#20=SHAPE_REPRESENTATION('',(#2,1.),$);#23=SHAPE_REPRESENTATION('',(#3),$);",
+    ];
+    for records in cases {
+        let input = source(records);
+        let (exchange, _) =
+            crate::test_support::with_service_context(input.as_bytes(), crate::parse::parse_inner)
+                .expect("claim graph parses");
+        for related in [false, true] {
+            let mut topology = topology_with_body_at(2);
+            topology.body_by_root.insert(3, Vec::new());
+            if related {
+                topology.shape_representation_relationships =
+                    BTreeMap::from([(20, vec![23]), (23, vec![20])]);
+            }
+            let ctx = cadmpeg_test_support::service_decode_context();
+            let mut bodies = BTreeMap::new();
+            let mut claims = BTreeMap::new();
+            let mut storage = ctx.reserve_scoped(0, "test claim cache").unwrap();
+            for id in [20, 23, 20, 3, 2] {
+                let mut active = BTreeSet::new();
+                let expected = !representation_bodies(
+                    id,
+                    &exchange,
+                    &topology,
+                    &mut bodies,
+                    &mut active,
+                    &ctx,
+                )
+                .expect("body walk")
+                .is_empty();
+                assert!(active.is_empty());
+                let actual = super::super::representation_has_body(
+                    id,
+                    &exchange,
+                    &topology,
+                    &mut claims,
+                    &mut active,
+                    &mut storage,
+                    &ctx,
+                )
+                .expect("claim walk");
+                assert_eq!(
+                    actual, expected,
+                    "representation {id}: {records}, relationships={related}"
+                );
+                assert!(active.is_empty());
+            }
+            drop((bodies, claims, storage));
+            let CodecError::ResourceLimit(limit) = ctx
+                .reserve_scoped(u64::MAX, "claim storage probe")
+                .expect_err("probe materialized counter")
+            else {
+                panic!("materialized refusal");
+            };
+            assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
+            assert_eq!(limit.used, 0);
+        }
+    }
+}
+
+fn representation_claim_fanout_work(count: u64) -> u64 {
+    use std::fmt::Write as _;
+    let mut records = String::new();
+    let mut topology = topology_with_body_at(1);
+    let mut items = Vec::new();
+    for id in 1..=count {
+        write!(records, "#{id}=DUMMY();").unwrap();
+        items.push(format!("#{id}"));
+        topology.body_by_root.insert(
+            id,
+            vec![BodyId::from(crate::ids::data(
+                crate::ids::kind!("body"),
+                id,
+            ))],
+        );
+    }
+    write!(
+        records,
+        "#1000=SHAPE_REPRESENTATION('',({}),$);#1001=REPRESENTATION_MAP($,#1000);",
+        items.join(",")
+    )
+    .unwrap();
+    for id in 0..count {
+        write!(
+            records,
+            "#{}=MAPPED_ITEM('',#1001,$);#{}=SHAPE_REPRESENTATION('',(#{}),$);",
+            2000 + id,
+            3000 + id,
+            2000 + id
+        )
+        .unwrap();
+    }
+    let input = source(&records);
+    let (exchange, _) =
+        crate::test_support::with_service_context(input.as_bytes(), crate::parse::parse_inner)
+            .expect("fanout parses");
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let mut cache = BTreeMap::new();
+    let mut storage = ctx.reserve_scoped(0, "test claim cache").unwrap();
+    for id in 3000..3000 + count {
+        assert!(super::super::representation_has_body(
+            id,
+            &exchange,
+            &topology,
+            &mut cache,
+            &mut BTreeSet::new(),
+            &mut storage,
+            &ctx
+        )
+        .expect("claim resolution"));
+    }
+    assert_eq!(cache.len(), usize::try_from(count + 1).unwrap());
+    let CodecError::ResourceLimit(limit) = ctx
+        .charge_work(u64::MAX, "claim work probe")
+        .expect_err("probe work counter")
+    else {
+        panic!("work refusal");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+    limit.used
+}
+
+#[test]
+fn representation_claim_fanout_does_not_expand_cached_body_lists() {
+    let small = representation_claim_fanout_work(64);
+    let large = representation_claim_fanout_work(128);
+    // Body roots and mapping links double; ordered keyed queries grow with n log n.
+    assert!(large < 3 * small, "claim work grew from {small} to {large}");
+}
+
+#[test]
+fn representation_body_output_releases_consumed_set_nodes() {
+    let input = source("#2=DUMMY();#20=SHAPE_REPRESENTATION('',(#2),$);");
+    let (exchange, _) =
+        crate::test_support::with_service_context(input.as_bytes(), crate::parse::parse_inner)
+            .expect("representation parses");
+    let topology = topology_with_body_at(2);
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let mut cache = BTreeMap::new();
+    let output = representation_bodies(
+        20,
+        &exchange,
+        &topology,
+        &mut cache,
+        &mut BTreeSet::new(),
+        &ctx,
+    )
+    .expect("representation body output");
+    assert_eq!(&output[..], &[body_id()]);
+    drop(cache);
+    // Only the copied identity and the result vector still own storage.
+    let expected = output.values.capacity() * std::mem::size_of::<BodyId>()
+        + output.iter().map(|body| body.as_str().len()).sum::<usize>();
+    let CodecError::ResourceLimit(limit) = ctx
+        .reserve_scoped(u64::MAX, "representation live storage probe")
+        .expect_err("probe live materialized bytes")
+    else {
+        panic!("materialized refusal");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
+    assert_eq!(
+        limit.used,
+        u64::try_from(expected).expect("output bytes fit")
+    );
+    drop(output);
 }

@@ -10,10 +10,14 @@ use crate::test_support::visibgeom_payload;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::features::edge_treatments::{FilletGroup, RadiusForm, RadiusSpec};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
 use crate::container::{self};
 use crate::surface::TorusRadius2Encoding;
 use crate::CreoCodec;
+
+const EPS_ROUND_RADIUS_AGREEMENT: f64 = 1.0e-12;
 
 #[test]
 fn scan_discovers_typed_surface_rows() {
@@ -516,8 +520,9 @@ fn scan_decodes_standard_and_compact_plane_envelopes() {
 
 #[test]
 fn scan_derives_named_surface_plane_from_outline_corners() {
-    let mut payload = b"srf_array\0geom_id\0\x05geom_type\0\x22feat_id\0\x04orient\0\x01boundary_type\0\x01next_geom_ptr\0\0\
-        outline\0\xf9\x02\x03"
+    let mut payload = b"srf_array\0geom_id\0\x05geom_type\0\x22feat_id\0\x04orient\0\
+        \x01boundary_type\0\x01next_geom_ptr\0\0outline\0\xf9\x02\
+        \x03"
         .to_vec();
     payload.extend_from_slice(&[0xe4, 0x0f, 0x2f, 0, 0, 0x0d, 0x0f, 0x48, 0, 0]);
     let scan = container::scan_bytes_ok(build_prt("c", &[("DEPDB_DATA", payload)]));
@@ -533,7 +538,8 @@ fn scan_derives_named_surface_plane_from_outline_corners() {
 fn scan_discovers_labeled_surface_namespace_row() {
     let mut payload = visibgeom_payload(1, 0);
     payload.extend_from_slice(
-        b"srf_array\0geom_id\0\x07geom_type\0\x22feat_id\0\x04orient\0\x01boundary_type\0\0next_geom_ptr\0\0",
+        b"srf_array\0geom_id\0\x07geom_type\0\x22feat_id\0\x04orient\0\
+            \x01boundary_type\0\0next_geom_ptr\0\0",
     );
     let scan = container::scan_bytes_ok(build_prt("c", &[("VisibGeom", payload)]));
 
@@ -549,8 +555,10 @@ fn scan_withholds_named_surface_row_without_valid_discriminators() {
     for row in [
         b"srf_array\0geom_id\0\x07geom_type\0\x22feat_id\0\x04boundary_type\0\0next_geom_ptr\0\0"
             .as_slice(),
-        b"srf_array\0geom_id\0\x07geom_type\0\x22feat_id\0\x04orient\0\0boundary_type\0\0next_geom_ptr\0\0",
-        b"srf_array\0geom_id\0\x07geom_type\0\x22feat_id\0\x04orient\0\x01boundary_type\0\x02next_geom_ptr\0\0",
+        b"srf_array\0geom_id\0\x07geom_type\0\x22feat_id\0\x04orient\0\
+            \0boundary_type\0\0next_geom_ptr\0\0",
+        b"srf_array\0geom_id\0\x07geom_type\0\x22feat_id\0\x04orient\0\
+            \x01boundary_type\0\x02next_geom_ptr\0\0",
     ] {
         let scan = container::scan_bytes_ok(build_prt("c", &[("VisibGeom", row.to_vec())]));
         assert!(scan.surfaces.rows.is_empty());
@@ -559,8 +567,13 @@ fn scan_withholds_named_surface_row_without_valid_discriminators() {
 
 #[test]
 fn scan_keeps_depdb_cross_section_surfaces_out_of_model_namespace() {
-    let visible = b"srf_array\0\xf8\x01geom_id\0\x07geom_type\0\x22feat_id\0\x04orient\0\x01boundary_type\0\0next_geom_ptr\0\0".to_vec();
-    let cross_section = b"Sld_Xsections\0\xe3\xe0\0xsec_geom\0\xe2srf_array\0\xf8\x01geom_id\0\x09geom_type\0\x24feat_id\0\x08orient\0\x01boundary_type\0\x06next_geom_ptr\0\0".to_vec();
+    let visible = b"srf_array\0\xf8\x01geom_id\0\x07geom_type\0\x22feat_id\0\x04\
+        orient\0\x01boundary_type\0\0next_geom_ptr\0\0"
+        .to_vec();
+    let cross_section =
+        b"Sld_Xsections\0\xe3\xe0\0xsec_geom\0\xe2srf_array\0\xf8\x01geom_id\0\x09geom_type\0\x24f\
+        eat_id\0\x08orient\0\x01boundary_type\0\x06next_geom_ptr\0\0"
+            .to_vec();
     let scan = container::scan_bytes_ok(build_prt(
         "c",
         &[("VisibGeom", visible), ("Xsections", cross_section)],
@@ -859,13 +872,13 @@ fn direct_round_radii_cover_homogeneous_and_mixed_carrier_sets() {
 
     assert!(matches!(
         result.ir().model.features[0].evaluation.definition(),
-        cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Fillet {
+        FeatureDefinition::Operation(FeatureOperation::Fillet {
             ref groups,
-        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::edge_treatments::FilletGroup {
-            radius: cadmpeg_ir::features::edge_treatments::RadiusSpec::Constant {
+        }) if matches!(groups.as_slice(), [FilletGroup {
+            radius: RadiusSpec::Constant {
                 radius,
             }, ..
-        }] if (radius.get() - 0.249_999_999_951_747_04).abs() < 1.0e-12)
+        }] if (radius.get() - 0.249_999_999_951_747_04).abs() < EPS_ROUND_RADIUS_AGREEMENT)
     ));
 
     let cylinder_panel = [
@@ -896,10 +909,13 @@ fn direct_round_radii_cover_homogeneous_and_mixed_carrier_sets() {
         .expect("decode");
     assert!(matches!(
         result.ir().model.features[0].evaluation.definition(),
-        cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Fillet {
+        FeatureDefinition::Operation(FeatureOperation::Fillet {
             ref groups,
-        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::edge_treatments::FilletGroup {
-            radius: cadmpeg_ir::features::edge_treatments::RadiusSpec::Unresolved { form: Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Variable) }, ..
+        }) if matches!(groups.as_slice(), [FilletGroup {
+            radius: RadiusSpec::Unresolved {
+                form: Some(RadiusForm::Variable)
+            },
+            ..
         }])
     ));
 
@@ -927,10 +943,13 @@ fn direct_round_radii_cover_homogeneous_and_mixed_carrier_sets() {
         .expect("decode");
     assert!(matches!(
         result.ir().model.features[0].evaluation.definition(),
-        cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Fillet {
+        FeatureDefinition::Operation(FeatureOperation::Fillet {
             ref groups,
-        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::edge_treatments::FilletGroup {
-            radius: cadmpeg_ir::features::edge_treatments::RadiusSpec::Unresolved { form: Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Variable) }, ..
+        }) if matches!(groups.as_slice(), [FilletGroup {
+            radius: RadiusSpec::Unresolved {
+                form: Some(RadiusForm::Variable)
+            },
+            ..
         }])
     ));
     assert_eq!(
@@ -949,7 +968,7 @@ fn direct_round_radii_cover_homogeneous_and_mixed_carrier_sets() {
         .expect("decode");
     assert!(matches!(
         result.ir().model.features[0].evaluation.definition(),
-        cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Fillet {
+        FeatureDefinition::Operation(FeatureOperation::Fillet {
             ref groups,
         }) if matches!(groups.as_slice(), [group] if group.radius.is_unresolved())
     ));
@@ -998,10 +1017,10 @@ fn prototype_minor_radius_replays_define_a_constant_round_radius() {
     );
     assert!(matches!(
         result.ir().model.features[0].evaluation.definition(),
-        cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Fillet {
+        FeatureDefinition::Operation(FeatureOperation::Fillet {
             ref groups,
-        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::edge_treatments::FilletGroup {
-            radius: cadmpeg_ir::features::edge_treatments::RadiusSpec::Constant {
+        }) if matches!(groups.as_slice(), [FilletGroup {
+            radius: RadiusSpec::Constant {
                 radius,
             }, ..
         }] if radius.get().to_bits() == 0.199_999_999_999_999_98_f64.to_bits())

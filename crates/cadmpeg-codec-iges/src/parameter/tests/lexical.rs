@@ -12,6 +12,274 @@ use crate::test_support::test_curves_and_surfaces::point_file_with_global;
 use crate::test_support::test_owned::{owned_test_file_with_raw_parameters, OwnedTestEntity};
 use crate::IgesCodec;
 
+fn with_work_limit<T>(
+    source: &[u8],
+    max_work_units: u64,
+    run: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T,
+) -> T {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = max_work_units;
+    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy).unwrap();
+    run(&ctx)
+}
+
+fn assert_work_limit(error: &cadmpeg_core::CodecError, operation: &str, additional: u64) {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    assert!(matches!(error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.additional == additional
+                && limit.operation == operation
+    ));
+}
+
+fn assert_work_limit_at(
+    error: &cadmpeg_core::CodecError,
+    operation: &str,
+    used: u64,
+    additional: u64,
+) {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    assert!(matches!(error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.used == used
+                && limit.additional == additional
+                && limit.operation == operation
+    ));
+}
+
+fn assert_tokenize_work_refusal(error: &TokenizeFailure, operation: &str, additional: u64) {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    assert!(matches!(error,
+        TokenizeFailure::Refusal(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.additional == additional
+                && limit.operation == operation
+    ));
+}
+
+fn assert_tokenize_work_refusal_at(
+    error: &TokenizeFailure,
+    operation: &str,
+    used: u64,
+    additional: u64,
+) {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    assert!(matches!(error,
+        TokenizeFailure::Refusal(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.used == used
+                && limit.additional == additional
+                && limit.operation == operation
+    ));
+}
+
+#[test]
+fn parameter_layout_hollerith_digit_scan_refuses_work_before_probe() {
+    let error = with_work_limit(b"1H,a", 0, |ctx| {
+        super::super::layout_hollerith(b"1H,a", 0, ctx).unwrap_err()
+    });
+    assert_work_limit(&error, "iges parameter layout Hollerith digits", 1);
+}
+
+#[test]
+fn parameter_layout_hollerith_count_refuses_utf8_work() {
+    let error = with_work_limit(b"1H,a", 2, |ctx| {
+        super::super::layout_hollerith(b"1H,a", 0, ctx).unwrap_err()
+    });
+    assert_work_limit(&error, "iges parameter layout Hollerith count", 1);
+}
+
+#[test]
+fn parameter_layout_hollerith_parse_refuses_after_utf8_admission() {
+    // Two digit probes and one UTF-8 byte are admitted before the one-byte parse.
+    let error = with_work_limit(b"1H,a", 3, |ctx| {
+        super::super::layout_hollerith(b"1H,a", 0, ctx).unwrap_err()
+    });
+    assert_work_limit_at(&error, "iges parameter layout Hollerith number", 3, 1);
+}
+
+#[test]
+fn parameter_layout_field_scan_refuses_work_before_field() {
+    let error = with_work_limit(b"1;", 0, |ctx| {
+        super::super::layout_parameter_cards(b"1;", ctx).unwrap_err()
+    });
+    assert_work_limit(&error, "iges parameter layout fields", 1);
+}
+
+#[test]
+fn parameter_layout_field_bytes_refuse_work_before_byte() {
+    let error = with_work_limit(b"1;", 3, |ctx| {
+        super::super::layout_parameter_cards(b"1;", ctx).unwrap_err()
+    });
+    assert_work_limit(&error, "iges parameter layout field bytes", 1);
+}
+
+#[test]
+fn parameter_hollerith_digit_scan_refuses_work_before_probe() {
+    let error = with_work_limit(b"1Ha", 0, |ctx| {
+        super::super::hollerith(b"1Ha", &[], 0, GlobalTable::V5Later, ctx).unwrap_err()
+    });
+    assert_tokenize_work_refusal(&error, "iges parameter Hollerith digits", 1);
+}
+
+#[test]
+fn parameter_hollerith_count_refuses_utf8_work() {
+    let error = with_work_limit(b"1Ha", 2, |ctx| {
+        super::super::hollerith(b"1Ha", &[], 0, GlobalTable::V5Later, ctx).unwrap_err()
+    });
+    assert_tokenize_work_refusal(&error, "iges parameter Hollerith count", 1);
+}
+
+#[test]
+fn parameter_hollerith_parse_refuses_after_utf8_admission() {
+    // Two digit probes and one UTF-8 byte are admitted before the one-byte parse.
+    let error = with_work_limit(b"1Ha", 3, |ctx| {
+        super::super::hollerith(b"1Ha", &[], 0, GlobalTable::V5Later, ctx).unwrap_err()
+    });
+    assert_tokenize_work_refusal_at(&error, "iges parameter Hollerith count value", 3, 1);
+}
+
+#[test]
+fn parameter_numeric_real_shape_refuses_work_before_scan() {
+    let error = with_work_limit(b"1E2", 0, |ctx| {
+        super::super::decimal_shape(b"1E2", ctx).unwrap_err()
+    });
+    // Each visited byte is admitted before the read. The first byte needs one unit.
+    assert_work_limit_at(&error, "iges numeric real shape", 0, 1);
+}
+
+#[test]
+fn parameter_numeric_token_refuses_work_before_scan() {
+    let error = with_work_limit(b"12", 0, |ctx| {
+        super::super::numeric_with_limits(b"12", 0..2, declared_numeric_limits(), ctx).unwrap_err()
+    });
+    assert_tokenize_work_refusal(&error, "iges numeric token scan", 2);
+}
+
+fn numeric_parse_refusal(text: &'static [u8], operation: &str) -> cadmpeg_core::CodecError {
+    cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        operation,
+        |cap| {
+            with_work_limit(text, cap, |ctx| {
+                super::super::numeric_with_limits(
+                    text,
+                    0..text.len(),
+                    declared_numeric_limits(),
+                    ctx,
+                )
+                .map(|_| ())
+                .map_err(|failure| match failure {
+                    TokenizeFailure::Refusal(error) => error,
+                    TokenizeFailure::Defect(defect, _) => panic!("{defect:?}"),
+                })
+            })
+        },
+    )
+}
+
+#[test]
+fn parameter_numeric_real_parse_refuses_by_token_length() {
+    let error = numeric_parse_refusal(b"1.5", "iges numeric real token");
+    assert_work_limit(&error, "iges numeric real token", 3);
+}
+
+#[test]
+fn parameter_numeric_integer_parse_refuses_by_token_length() {
+    let error = numeric_parse_refusal(b"12", "iges numeric integer token");
+    assert_work_limit(&error, "iges numeric integer token", 2);
+}
+
+#[test]
+fn parameter_token_scan_refuses_work_before_token_probe() {
+    let error = with_work_limit(b"1;", 0, |ctx| {
+        tokenize(b"1;", &[], b',', b';', GlobalTable::V5Later, ctx).unwrap_err()
+    });
+    assert_tokenize_work_refusal(&error, "iges parameter token scan", 1);
+}
+
+#[test]
+fn double_precision_real_word_zero_fill_refuses_work_before_growth() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let bytes = double_precision_bitset_input();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "iges double-precision real words",
+        |cap| {
+            with_work_limit(&bytes, cap, |ctx| {
+                super::super::tokenize_with_limits(
+                    &bytes,
+                    &[],
+                    b',',
+                    b';',
+                    GlobalTable::V5_0,
+                    declared_numeric_limits(),
+                    ctx,
+                )
+                .map(|_| ())
+                .map_err(|failure| match failure {
+                    TokenizeFailure::Refusal(error) => error,
+                    TokenizeFailure::Defect(defect, _) => panic!("{defect:?}"),
+                })
+            })
+        },
+    );
+    assert_work_limit(&error, "iges double-precision real words", 1);
+}
+
+#[test]
+fn double_precision_real_bitset_grows_through_late_words() {
+    let bytes = double_precision_bitset_input();
+    crate::test_support::with_service_context(&bytes, |ctx| {
+        let result = super::super::tokenize_with_limits(
+            &bytes,
+            &[],
+            b',',
+            b';',
+            GlobalTable::V5_0,
+            declared_numeric_limits(),
+            ctx,
+        );
+        let (tokens, end, words) = match result {
+            Ok(tokenized) => tokenized,
+            Err(TokenizeFailure::Refusal(error)) => {
+                panic!("the late double-precision token was refused: {error:?}")
+            }
+            Err(TokenizeFailure::Defect(defect, offset)) => {
+                panic!("the late double-precision token failed at {offset}: {defect:?}")
+            }
+        };
+        assert_eq!(tokens.len(), 65);
+        assert_eq!(end, bytes.len());
+        assert_eq!(words, [0, 1]);
+    });
+}
+
+fn double_precision_bitset_input() -> Vec<u8> {
+    let mut values = vec!["116"];
+    values.extend(std::iter::repeat_n("0", 63));
+    values.push("1D0");
+    format!("{};", values.join(",")).into_bytes()
+}
+
+#[test]
+fn parameter_leading_space_scan_refuses_work_after_token_admission() {
+    let error = with_work_limit(b"1;", 1, |ctx| {
+        tokenize(b"1;", &[], b',', b';', GlobalTable::V5Later, ctx).unwrap_err()
+    });
+    assert_tokenize_work_refusal(&error, "iges parameter leading spaces", 1);
+}
+
 #[test]
 fn hollerith_token_refuses_retained_limit_before_copy() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
@@ -40,7 +308,8 @@ fn hollerith_token_refuses_retained_limit_before_copy() {
 fn numeric_token_text_refuses_materialization_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
-    let bytes = b"116,1.5;";
+    // A `D` exponent is respelled in a scoped copy of the token.
+    let bytes = b"116,1.5D0;";
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_materialized_bytes = 2;
@@ -50,7 +319,7 @@ fn numeric_token_text_refuses_materialization_limit() {
         result,
         Err(TokenizeFailure::Refusal(cadmpeg_core::CodecError::ResourceLimit(limit)))
             if limit.dimension == ResourceDimension::MaterializedBytes
-                && limit.additional == 3
+                && limit.additional == 5
     ));
 
     let arena = DecodeArena::new();
@@ -174,7 +443,7 @@ fn tokenize_with_declared_limits(value: &str) -> Result<Vec<Token>, TokenizeFail
             declared_numeric_limits(),
             decode_ctx,
         )
-        .map(|(tokens, _)| tokens)
+        .map(|(tokens, _, _)| tokens)
     })
 }
 
@@ -368,4 +637,339 @@ fn a_split_numeric_parameter_is_quarantined_in_the_decode() {
     assert!(result.report().losses[0]
         .message
         .contains("numeric field or its delimiter crosses a card boundary"));
+}
+
+fn manual_scan_policy(work: u64) -> cadmpeg_core::decode::DecodePolicy {
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = work;
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_entities = 0;
+    policy.limits.max_recursion_depth = 0;
+    policy
+}
+
+fn manual_digit_probe(
+    owner: usize,
+    bytes: &[u8],
+    start: usize,
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+) -> Result<(), cadmpeg_core::CodecError> {
+    match owner {
+        0 => {
+            assert!(super::super::layout_hollerith(bytes, start, ctx)?.is_none());
+        }
+        1 => match super::super::hollerith(bytes, &[], start, GlobalTable::V5Later, ctx) {
+            Ok(None) => {}
+            Err(TokenizeFailure::Refusal(error)) => return Err(error),
+            _ => panic!("digit-only ordinary probe must have no Hollerith payload"),
+        },
+        2 => match super::super::macro_hollerith_end(bytes, start, ctx) {
+            Ok(super::super::HollerithProbe::Plain(end)) => assert_eq!(end, bytes.len().max(start)),
+            Err(super::super::MacroDataError::Refusal(error)) => return Err(error),
+            _ => panic!("digit-only macro probe must be plain"),
+        },
+        _ => panic!("manual digit owner"),
+    }
+    Ok(())
+}
+
+fn manual_digit_controls(owner: usize, operation: &str) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    for count in [1_usize, 64] {
+        let bytes = vec![b'1'; count];
+        let required = u64::try_from(count).unwrap();
+        for cap in [0, required - 1, required] {
+            let arena = DecodeArena::new();
+            let policy = manual_scan_policy(cap);
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let result = manual_digit_probe(owner, &bytes, 0, &ctx);
+            if cap == required {
+                result.unwrap();
+                ctx.finish_session().unwrap();
+            } else {
+                let Err(CodecError::ResourceLimit(first)) = result else {
+                    panic!("actual digit refusal");
+                };
+                assert_eq!(first.dimension, ResourceDimension::WorkUnits);
+                assert_eq!(first.operation, operation);
+                assert_eq!((first.limit, first.used, first.additional), (cap, cap, 1));
+                assert!(matches!(manual_digit_probe(owner, &bytes, 0, &ctx),
+                    Err(CodecError::ResourceLimit(last)) if last == first));
+                assert!(
+                    matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first)
+                );
+            }
+        }
+    }
+    let arena = DecodeArena::new();
+    let policy = manual_scan_policy(0);
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    for _ in 0..64 {
+        for (input, start) in [
+            (b"".as_slice(), 0),
+            (b"1".as_slice(), 1),
+            (b"1".as_slice(), usize::MAX),
+        ] {
+            manual_digit_probe(owner, input, start, &ctx).unwrap();
+        }
+    }
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn manual_layout_hollerith_digits_have_exact_source_bounds() {
+    manual_digit_controls(0, "iges parameter layout Hollerith digits");
+}
+
+#[test]
+fn manual_parameter_hollerith_digits_have_exact_source_bounds() {
+    manual_digit_controls(1, "iges parameter Hollerith digits");
+}
+
+#[test]
+fn manual_macro_hollerith_digits_have_exact_source_bounds() {
+    manual_digit_controls(2, "iges macro Hollerith digits");
+}
+
+#[test]
+fn manual_macro_trim_stops_at_its_logical_span() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext};
+    use cadmpeg_core::CodecError;
+    for count in [1_usize, 64] {
+        let bytes = vec![b' '; count + 1];
+        let required = u64::try_from(count).unwrap();
+        for cap in [0, required - 1, required] {
+            let arena = DecodeArena::new();
+            let policy = manual_scan_policy(cap);
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let result = super::super::trim_macro_span(&bytes, 0..count, &ctx);
+            if cap == required {
+                assert_eq!(result.unwrap(), count..count);
+                ctx.finish_session().unwrap();
+            } else {
+                let Err(CodecError::ResourceLimit(first)) = result else {
+                    panic!("actual whitespace refusal");
+                };
+                assert_eq!(first.operation, "iges macro leading whitespace");
+                assert_eq!((first.limit, first.used, first.additional), (cap, cap, 1));
+                assert!(
+                    matches!(super::super::trim_macro_span(&bytes, 0..count, &ctx),
+                    Err(CodecError::ResourceLimit(last)) if last == first)
+                );
+                assert!(
+                    matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first)
+                );
+            }
+        }
+        // A nonblank leading byte is visited once. The trailing scan visits
+        // every blank and then that same nonblank byte once.
+        let mut trailing = vec![b' '; count + 1];
+        trailing[0] = b'x';
+        let arena = DecodeArena::new();
+        let policy = manual_scan_policy(required + 2);
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert_eq!(
+            super::super::trim_macro_span(&trailing, 0..trailing.len(), &ctx).unwrap(),
+            0..1
+        );
+        ctx.finish_session().unwrap();
+    }
+    let arena = DecodeArena::new();
+    let policy = manual_scan_policy(0);
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert_eq!(
+        super::super::trim_macro_span(b" ", 0..0, &ctx).unwrap(),
+        0..0
+    );
+    assert_eq!(
+        super::super::trim_macro_span(b"", 0..0, &ctx).unwrap(),
+        0..0
+    );
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn manual_layout_missing_delimiter_uses_only_actual_field_bytes() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext};
+    use cadmpeg_core::CodecError;
+    for count in [1_usize, 64] {
+        let bytes = vec![b'1'; count];
+        // One field step, n digit probes and n delimiter-byte probes.
+        let digits = u64::try_from(count).unwrap();
+        let required = 1 + 2 * digits;
+        for cap in [1 + digits, required - 1, required] {
+            let arena = DecodeArena::new();
+            let policy = manual_scan_policy(cap);
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let result = super::super::layout_parameter_cards(&bytes, &ctx);
+            if cap == required {
+                assert!(matches!(result, Err(CodecError::Malformed(message))
+                    if message == "IGES Parameter Data delimiter is missing"));
+                ctx.finish_session().unwrap();
+            } else {
+                let Err(CodecError::ResourceLimit(first)) = result else {
+                    panic!("actual field-byte refusal");
+                };
+                assert_eq!(first.operation, "iges parameter layout field bytes");
+                assert_eq!((first.limit, first.used, first.additional), (cap, cap, 1));
+                assert!(matches!(super::super::layout_parameter_cards(&[], &ctx),
+                    Err(CodecError::ResourceLimit(last)) if last == first));
+                assert!(
+                    matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first)
+                );
+            }
+        }
+    }
+    let arena = DecodeArena::new();
+    let policy = manual_scan_policy(0);
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        super::super::layout_parameter_cards(&[], &ctx),
+        Err(CodecError::Malformed(_))
+    ));
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn manual_macro_header_scans_only_existing_whitespace_and_field_bytes() {
+    use super::super::{macro_next_field, MacroDataError};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext};
+    use cadmpeg_core::CodecError;
+    for count in [1_usize, 64] {
+        for whitespace in [true, false] {
+            let bytes = vec![if whitespace { b' ' } else { b'x' }; count];
+            let required = u64::try_from(if whitespace { count } else { 1 + 2 * count }).unwrap();
+            for cap in [0, required - 1, required] {
+                let arena = DecodeArena::new();
+                let policy = manual_scan_policy(cap);
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let result = macro_next_field(&bytes, 0, b',', b';', &ctx);
+                if cap == required {
+                    assert!(
+                        matches!(result, Err(MacroDataError::Defect(ParameterDefect::MacroHeaderMalformed, at))
+                        if at == if whitespace { count } else { 0 })
+                    );
+                    ctx.finish_session().unwrap();
+                } else {
+                    let Err(MacroDataError::Refusal(CodecError::ResourceLimit(first))) = result
+                    else {
+                        panic!("actual header-byte refusal");
+                    };
+                    assert_eq!((first.limit, first.used, first.additional), (cap, cap, 1));
+                    assert!(matches!(macro_next_field(&bytes, 0, b',', b';', &ctx),
+                        Err(MacroDataError::Refusal(CodecError::ResourceLimit(last))) if last == first));
+                    assert!(
+                        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first)
+                    );
+                }
+            }
+        }
+    }
+    let arena = DecodeArena::new();
+    let policy = manual_scan_policy(0);
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        macro_next_field(&[], 0, b',', b';', &ctx),
+        Err(MacroDataError::Defect(
+            ParameterDefect::MacroHeaderMalformed,
+            0
+        ))
+    ));
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn manual_macro_statement_scan_preserves_missing_terminator_recovery() {
+    use super::super::{macro_parameter_data_with_context, MacroDataError};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext};
+    use cadmpeg_core::CodecError;
+    for count in [1_usize, 64] {
+        let bytes = vec![b'x'; count];
+        // One statement-byte visit and one nondigit Hollerith probe per byte.
+        let required = u64::try_from(2 * count).unwrap();
+        for cap in [0, required - 1, required] {
+            let arena = DecodeArena::new();
+            let policy = manual_scan_policy(cap);
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let result = macro_parameter_data_with_context(&bytes, b',', b';', &ctx);
+            if cap == required {
+                assert!(matches!(
+                    result,
+                    Err(MacroDataError::Defect(
+                        ParameterDefect::MacroTerminatorMissing,
+                        0
+                    ))
+                ));
+                ctx.finish_session().unwrap();
+            } else {
+                let Err(MacroDataError::Refusal(CodecError::ResourceLimit(first))) = result else {
+                    panic!("actual statement-byte refusal");
+                };
+                assert_eq!((first.limit, first.used, first.additional), (cap, cap, 1));
+                assert!(
+                    matches!(macro_parameter_data_with_context(&bytes, b',', b';', &ctx),
+                    Err(MacroDataError::Refusal(CodecError::ResourceLimit(last))) if last == first)
+                );
+                assert!(
+                    matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first)
+                );
+            }
+        }
+    }
+    let arena = DecodeArena::new();
+    let policy = manual_scan_policy(0);
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        macro_parameter_data_with_context(&[], b',', b';', &ctx),
+        Err(MacroDataError::Defect(
+            ParameterDefect::MacroTerminatorMissing,
+            0
+        ))
+    ));
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn manual_tokenizer_whitespace_eof_keeps_the_original_defect() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext};
+    use cadmpeg_core::CodecError;
+    for count in [0_usize, 1, 64] {
+        let bytes = vec![b' '; count];
+        // No iteration for empty input; otherwise one field-start iteration
+        // followed by n actual leading-space probes.
+        let required = u64::try_from(if count == 0 { 0 } else { count + 1 }).unwrap();
+        let arena = DecodeArena::new();
+        let policy = manual_scan_policy(required);
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(
+            matches!(tokenize(&bytes, &[], b',', b';', GlobalTable::V5Later, &ctx),
+            Err(TokenizeFailure::Defect(ParameterDefect::DelimiterMissing, at)) if at == count)
+        );
+        ctx.finish_session().unwrap();
+        if count != 0 {
+            let arena = DecodeArena::new();
+            let policy = manual_scan_policy(required - 1);
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let Err(TokenizeFailure::Refusal(CodecError::ResourceLimit(first))) =
+                tokenize(&bytes, &[], b',', b';', GlobalTable::V5Later, &ctx)
+            else {
+                panic!("last actual space refusal");
+            };
+            assert_eq!(first.operation, "iges parameter leading spaces");
+            assert_eq!(
+                (first.limit, first.used, first.additional),
+                (required - 1, required - 1, 1)
+            );
+            assert!(
+                matches!(tokenize(&bytes, &[], b',', b';', GlobalTable::V5Later, &ctx),
+                Err(TokenizeFailure::Refusal(CodecError::ResourceLimit(last))) if last == first)
+            );
+            assert!(
+                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first)
+            );
+        }
+    }
 }

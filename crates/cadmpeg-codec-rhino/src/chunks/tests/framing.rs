@@ -199,19 +199,28 @@ fn header_magic_scan_refuses_work_before_search() {
         if with_magic {
             bytes.extend(header("80"));
         }
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        let scan_work = u64::try_from(bytes.len()).expect("fixture length fits");
-        policy.limits.max_work_units = scan_work - 1;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root bytes admitted");
-        assert!(
-            matches!(parse_header(&ctx, &bytes), Err(FramingError::Resource(limit))
-            if limit.dimension == ResourceDimension::WorkUnits
-                && limit.operation == "Rhino header magic scan"
-                && limit.used == 0 && limit.additional == scan_work
-                && Some(limit) == ctx.resource_refusal())
+        let refusal = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            "Rhino header magic scan",
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+                let result = parse_header(&ctx, &bytes)
+                    .map(|_| ())
+                    .map_err(|error| match error {
+                        FramingError::Resource(limit) => CodecError::ResourceLimit(limit),
+                        error => panic!("unexpected framing error before refusal: {error:?}"),
+                    });
+                if let Err(CodecError::ResourceLimit(limit)) = &result {
+                    assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
+                }
+                result
+            },
         );
+        assert!(matches!(refusal, CodecError::ResourceLimit(limit)
+            if limit.used == 0 && limit.additional == 1));
     }
 }
 
@@ -221,8 +230,10 @@ fn header_magic_scan_charges_each_call_to_the_same_context() {
     bytes.extend(header("80"));
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    let scan_work = u64::try_from(bytes.len()).expect("fixture length fits");
-    policy.limits.max_work_units = scan_work;
+    // 4096 nonmatching windows and one matching window. The version field
+    // is a fixed eight-byte read and has no input-sized traversal.
+    let total_work = 4096 + 1;
+    policy.limits.max_work_units = total_work;
     let (ctx, _) =
         DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root bytes admitted");
     let parsed = parse_header(&ctx, &bytes).expect("one scan fits the allowance");
@@ -232,7 +243,7 @@ fn header_magic_scan_charges_each_call_to_the_same_context() {
         matches!(parse_header(&ctx, &bytes), Err(FramingError::Resource(limit))
         if limit.dimension == ResourceDimension::WorkUnits
             && limit.operation == "Rhino header magic scan"
-            && limit.used == scan_work && limit.additional == scan_work
+            && limit.used == total_work && limit.additional == 1
             && Some(limit) == ctx.resource_refusal())
     );
 }
@@ -306,10 +317,42 @@ fn parses_widths_short_long_and_bounds() {
 }
 
 #[test]
+fn crc16_work_refusal_reaches_checksum_result() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"x", &arena, &policy).expect("one input byte admitted");
+    let error = crc16(&ctx, 0, b"x").expect_err("CRC scan exceeds zero work");
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("CRC scan must preserve its resource refusal");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+    assert_eq!(limit.operation, "Rhino chunk checksum bytes");
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+    );
+}
+
+#[test]
 fn verifies_crc_vectors_and_recoverable_mismatch() {
-    assert_eq!(crc16(0, b""), 0);
-    assert_eq!(crc16(1, b""), 1);
-    assert_eq!(crc16(0, b"123456789"), 0xbeef);
+    assert_eq!(
+        crc16(&cadmpeg_test_support::service_decode_context(), 0, b"").expect("CRC bytes admitted"),
+        0
+    );
+    assert_eq!(
+        crc16(&cadmpeg_test_support::service_decode_context(), 1, b"").expect("CRC bytes admitted"),
+        1
+    );
+    assert_eq!(
+        crc16(
+            &cadmpeg_test_support::service_decode_context(),
+            0,
+            b"123456789"
+        )
+        .expect("CRC bytes admitted"),
+        0xbeef
+    );
     assert_eq!(crc32fast::hash(b""), 0);
     assert_eq!(crc32fast::hash(b"123456789"), 0xcbf4_3926);
 
@@ -511,12 +554,35 @@ fn checksum_direct_bytes_refuse_before_hashing() {
     let bytes =
         crate::test_support::test_dump::crc_chunk(ArchiveVersion::V5, 0x4000_8000, &[1, 2, 3, 4]);
     let chunk = chunk_at(&bytes, 0, bytes.len(), ArchiveVersion::V5, false).unwrap();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_work_units = 4;
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-    let result = verify_checksum(&ctx, &bytes, &chunk);
-    assert!(matches!(result, Err(FramingError::Resource(limit))
+    let refusal = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "Rhino chunk checksum bytes",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+            verify_checksum(&ctx, &bytes, &chunk).map_err(|error| match error {
+                FramingError::Resource(limit) => CodecError::ResourceLimit(limit),
+                error => panic!("unexpected checksum failure: {error:?}"),
+            })
+        },
+    );
+    // One range-validation step precedes the four checksum bytes.
+    assert!(matches!(refusal, CodecError::ResourceLimit(limit)
         if limit.operation == "Rhino chunk checksum bytes" && limit.used == 1 && limit.additional == 4));
+}
+
+#[test]
+fn header_magic_scan_does_not_charge_unvisited_suffix() {
+    let mut bytes = header("80");
+    bytes.resize(8192, 0x5a);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let parsed = parse_header(&ctx, &bytes).expect("the first window matches");
+    assert_eq!(parsed.start_offset, 0);
+    assert_eq!(parsed.archive_version, ArchiveVersion::V8);
+    ctx.finish_session().expect("the one visited window fits");
 }

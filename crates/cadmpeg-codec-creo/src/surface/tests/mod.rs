@@ -1,19 +1,54 @@
 // SPDX-License-Identifier: Apache-2.0
+
+use cadmpeg_core::decode::DecodeContext;
+
+mod close_scan;
 mod contours;
+mod cost;
 mod dump;
+mod early_search;
+mod envelope_admission;
 mod inline;
+mod inline_visits;
+mod named_value_visits;
+mod plane_corner_suffix;
+mod plane_envelope_close_bound;
 mod planes;
 mod positional;
+mod positional_mixed;
+mod prefix_visits;
 mod resource_cache;
 mod round_envelopes;
+mod row_scan;
 mod rows;
+mod scalar_dispatch;
+mod scalar_spans;
 mod scan;
+mod slot_visits;
+mod traversal_visits;
 
 const EPS_FRAME_COMPONENT: f64 = 1.0e-12;
 
+fn frames_with_checked_cache<'a>(
+    ctx: &DecodeContext<'_>,
+    payload: &'a [u8],
+) -> Result<Vec<super::NamedPrototypeFrame<'a>>, cadmpeg_core::CodecError> {
+    let cache = crate::scalar::ScalarCache::from_section_checked(ctx, payload)?;
+    super::named_prototype_frames(ctx, payload, &cache)
+}
+
+fn parameters_with_checked_cache(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    rows: &[super::SurfaceRow],
+) -> Result<Vec<super::SurfaceParameterRecord>, cadmpeg_core::CodecError> {
+    let cache = crate::scalar::ScalarCache::from_section_checked(ctx, payload)?;
+    super::parameter_records_for_rows(ctx, payload, rows, &cache)
+}
+
 fn with_decode_ctx<T>(
     bytes: &[u8],
-    run: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<T, cadmpeg_core::CodecError>,
+    run: impl FnOnce(&DecodeContext<'_>) -> Result<T, cadmpeg_core::CodecError>,
 ) -> T {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::desktop();
@@ -105,3 +140,30 @@ fn positional_spline_replay_body_end(
         )
     })
 }
+
+fn work_output<T>(run: impl Fn(&DecodeContext<'_>) -> Result<T, cadmpeg_core::CodecError>) -> T {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let capped = |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let result = run(&ctx);
+        if let Err(CodecError::ResourceLimit(original)) = &result {
+            assert_eq!(original.dimension, ResourceDimension::WorkUnits);
+            assert_eq!(ctx.resource_refusal().as_ref(), Some(original));
+        }
+        result
+    };
+    let work = crate::test_support::allocation_limit_at(ResourceDimension::WorkUnits, None, capped);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = work;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    run(&ctx).expect("walker admits the unchanged fixture")
+}
+
+mod tabulated_visits;
+
+mod storage_custody;

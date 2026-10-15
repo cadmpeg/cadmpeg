@@ -39,7 +39,7 @@ fn decode_asm_binary(
     header: &BinaryHeader,
 ) -> Result<Decoded, CodecError> {
     let width = header.width;
-    let stream = crate::dialect::record_stream_start(bytes, Family::Asm, header);
+    let stream = crate::dialect::record_stream_start(Family::Asm, header);
     let Some(stream) = stream else {
         return Err(unsupported_unframed(
             ctx,
@@ -77,7 +77,11 @@ fn decode_asm_binary(
         };
         let records = framed.map_err(|failure| {
             failure.into_codec_error(ctx, |error| {
-                CodecError::malformed(format_args!("SAB framing failed: {error}"))
+                ctx.format_retained(
+                    format_args!("SAB framing failed: {error}"),
+                    "SAT SAB framing error text",
+                )
+                .map(CodecError::Malformed)
             })
         })?;
         let brep = decode_with_header(
@@ -115,7 +119,7 @@ fn decode_acis_binary(
     bytes: &[u8],
     header: &BinaryHeader,
 ) -> Result<Decoded, CodecError> {
-    let stream = crate::dialect::record_stream_start(bytes, Family::Acis, header);
+    let stream = crate::dialect::record_stream_start(Family::Acis, header);
     let Some(stream) = stream else {
         return Err(unsupported_unframed(
             ctx,
@@ -151,7 +155,11 @@ fn decode_acis_binary(
         };
         let records = framed.map_err(|failure| {
             failure.into_codec_error(ctx, |error| {
-                CodecError::malformed(format_args!("ACIS SAB framing failed: {error}"))
+                ctx.format_retained(
+                    format_args!("ACIS SAB framing failed: {error}"),
+                    "SAT SAB framing error text",
+                )
+                .map(CodecError::Malformed)
             })
         })?;
         let brep = decode_with_header(
@@ -191,22 +199,22 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecEr
     let (text_header, branch, records) = if ctx.container_only() {
         let (header, branch) = sat::parse_container(ctx, bytes).map_err(|failure| {
             failure.into_codec_error(ctx, |error| {
-                unsupported_unframed(
+                Ok(unsupported_unframed(
                     ctx,
                     &StreamEvidence::Text(None),
                     format_args!("text container does not frame: {error}"),
-                )
+                ))
             })
         })?;
         (header, branch, None)
     } else {
         let stream = sat::parse(ctx, bytes).map_err(|failure| {
             failure.into_codec_error(ctx, |error| {
-                unsupported_unframed(
+                Ok(unsupported_unframed(
                     ctx,
                     &StreamEvidence::Text(None),
                     format_args!("text stream does not frame: {error}"),
-                )
+                ))
             })
         })?;
         (stream.header, stream.terminator, Some(stream.records))
@@ -361,11 +369,11 @@ fn build_result(
             "SAT loss notes",
         )?;
     }
-    if stats.unknown_surface_faces() > 0 {
+    if stats.unknown_surface_faces(ctx)? > 0 {
         let message = ctx.format_retained(
             format_args!(
                 "{} face(s) rest on procedural surface constructions without a decoded carrier",
-                stats.unknown_surface_faces()
+                stats.unknown_surface_faces(ctx)?
             ),
             "SAT procedural surface loss",
         )?;
@@ -380,7 +388,7 @@ fn build_result(
     coverage.record(
         ctx,
         crate::coverage::UNKNOWN_SURFACE_FACES,
-        stats.unknown_surface_faces(),
+        stats.unknown_surface_faces(ctx)?,
     )?;
     let body = DecodeBody {
         coverage,

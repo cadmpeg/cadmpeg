@@ -1111,7 +1111,11 @@ fn source_order_pairs_only_source_closed_populations_with_matching_cardinalities
     let populations = vec![population(2, 3, 100), population(2, 3, 200)];
 
     let pairs = crate::test_support::with_service_context(|ctx| {
-        crate::families::standard::records::pair_standard_populations(ctx, &layouts, &populations)
+        crate::families::standard::records::pair_standard_populations(
+            ctx,
+            &layouts,
+            populations.clone(),
+        )
     })
     .expect("service resource budget")
     .expect("source-ordered population relation");
@@ -1133,7 +1137,7 @@ fn source_order_pairs_only_source_closed_populations_with_matching_cardinalities
     let mut mismatched = populations.clone();
     mismatched[1] = population(2, 2, 200);
     assert!(crate::test_support::with_service_context(|ctx| {
-        crate::families::standard::records::pair_standard_populations(ctx, &layouts, &mismatched)
+        crate::families::standard::records::pair_standard_populations(ctx, &layouts, mismatched)
     })
     .expect("service resource budget")
     .is_none());
@@ -1141,13 +1145,13 @@ fn source_order_pairs_only_source_closed_populations_with_matching_cardinalities
         crate::families::standard::records::pair_standard_populations(
             ctx,
             &layouts[..1],
-            &populations,
+            populations.clone(),
         )
     })
     .expect("service resource budget")
     .is_none());
     assert!(crate::test_support::with_service_context(|ctx| {
-        crate::families::standard::records::pair_standard_populations(ctx, &[], &[])
+        crate::families::standard::records::pair_standard_populations(ctx, &[], Vec::new())
     })
     .expect("service resource budget")
     .is_none());
@@ -1155,65 +1159,13 @@ fn source_order_pairs_only_source_closed_populations_with_matching_cardinalities
         crate::families::standard::records::pair_standard_populations(
             ctx,
             &layouts[..1],
-            &populations[..1],
+            populations[..1].to_vec(),
         )
     })
     .expect("service resource budget")
     .expect("single source-closed population");
     assert!(one.rest.is_empty());
     assert_eq!(one.first.0.face_run.face_start(), 10);
-}
-
-#[test]
-fn source_order_population_pair_copies_refuse_at_each_collection_boundary() {
-    let layout = |start| FbbPopulationLayout {
-        face_run: crate::families::standard::fbb::FbbFaceRun::try_new(start, 1).expect("one face"),
-        edge_count: 1,
-        vertex_count: 1,
-        edge_table_form: crate::families::standard::fbb::EdgeTableForm::FbbOnly,
-    };
-    let population = || StandardSurfacePopulation {
-        records: vec![StandardSurfaceRecord::Analytic(SurfacePrefix {
-            pos: 10,
-            target: 1,
-            kind: AnalyticSurfaceKind::Cylinder,
-        })],
-        supports: vec![StandardCurveSupport {
-            pos: 20,
-            tag: 2,
-            faces: [0, 0],
-            geometry: StandardCurveGeometry::Line,
-        }],
-    };
-    let layouts = [layout(0), layout(100)];
-    let populations = [population(), population()];
-    let result = crate::test_support::with_service_context(|ctx| {
-        crate::families::standard::records::pair_standard_populations(ctx, &layouts, &populations)
-    })
-    .expect("service resource budget")
-    .expect("matched populations");
-    assert_eq!(result.rest.len(), 1);
-    let mut operations = std::collections::HashSet::new();
-    for limit in 0..5 {
-        let result = crate::test_support::with_collection_limit(limit, |ctx| {
-            crate::families::standard::records::pair_standard_populations(
-                ctx,
-                &layouts,
-                &populations,
-            )
-        });
-        let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = result else {
-            panic!("expected resource refusal");
-        };
-        operations.insert(refusal.operation);
-    }
-    for operation in [
-        "catia_population_pair_records",
-        "catia_population_pair_supports",
-        "catia_population_pairs",
-    ] {
-        assert!(operations.contains(operation), "no refusal at {operation}");
-    }
 }
 
 #[test]
@@ -1366,44 +1318,6 @@ fn plane_bounds_record(
         bytes.extend_from_slice(&le_f32(value));
     }
     bytes
-}
-
-#[test]
-fn plane_parameter_target_sets_and_rows_refuse_before_growth() {
-    let row = plane_bounds_record(
-        0x0001_0203,
-        [0.0, 0.0, 0.0],
-        [1.0, 1.0, 1.0],
-        [0.0, 0.0, 0.0],
-        2.0,
-    );
-    let mut bytes = row.clone();
-    bytes.extend(row);
-    let normals = HashMap::from([(
-        0x0001_0203,
-        crate::test_support::test_b5::finite_vector([0.0, 0.0, 1.0]),
-    )]);
-    assert!(crate::test_support::with_service_context(|ctx| {
-        crate::families::standard::records::plane_params(ctx, &bytes, &normals)
-    })
-    .expect("service resource budget")
-    .is_empty());
-    let mut operations = std::collections::HashSet::new();
-    for limit in 0..4 {
-        let result = crate::test_support::with_collection_limit(limit, |ctx| {
-            crate::families::standard::records::plane_params(ctx, &bytes, &normals)
-        });
-        if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = result {
-            operations.insert(refusal.operation);
-        }
-    }
-    for operation in [
-        "catia_plane_seen_targets",
-        "catia_plane_duplicate_targets",
-        "catia_plane_params",
-    ] {
-        assert!(operations.contains(operation), "no refusal at {operation}");
-    }
 }
 
 #[test]
@@ -1603,10 +1517,11 @@ fn standard_freeform_tag_resolves_direct_and_face_carriers() {
     let evidence = crate::test_support::with_service_context(|ctx| {
         crate::families::standard::decode::standard_object_evidence_from_streams(
             ctx,
-            [stream],
-            &HashSet::from([100, 501]),
+            &[stream],
+            &std::collections::BTreeSet::from([100, 501]),
             &HashSet::new(),
             &mut crate::nurbs::LaneRefusals::new(),
+            &mut crate::families::standard::decode::LimitCurveIndex::new(ctx).expect("empty index"),
         )
     })
     .expect("service resource budget");
@@ -1628,10 +1543,11 @@ fn standard_freeform_tag_resolves_standalone_a8_carrier() {
     let evidence = crate::test_support::with_service_context(|ctx| {
         crate::families::standard::decode::standard_object_evidence_from_streams(
             ctx,
-            [stream],
-            &HashSet::from([100, 501]),
+            &[stream],
+            &std::collections::BTreeSet::from([100, 501]),
             &HashSet::new(),
             &mut crate::nurbs::LaneRefusals::new(),
+            &mut crate::families::standard::decode::LimitCurveIndex::new(ctx).expect("empty index"),
         )
     })
     .expect("service resource budget");
@@ -1658,10 +1574,11 @@ fn standard_freeform_tag_rejects_conflicting_standalone_a8_carriers() {
     let evidence = crate::test_support::with_service_context(|ctx| {
         crate::families::standard::decode::standard_object_evidence_from_streams(
             ctx,
-            [first],
-            &HashSet::from([100]),
+            &[first],
+            &std::collections::BTreeSet::from([100]),
             &HashSet::new(),
             &mut crate::nurbs::LaneRefusals::new(),
+            &mut crate::families::standard::decode::LimitCurveIndex::new(ctx).expect("empty index"),
         )
     })
     .expect("service resource budget");
@@ -1677,10 +1594,11 @@ fn standard_freeform_tag_collapses_repeated_standalone_a8_carrier() {
     let evidence = crate::test_support::with_service_context(|ctx| {
         crate::families::standard::decode::standard_object_evidence_from_streams(
             ctx,
-            [stream],
-            &HashSet::from([100]),
+            &[stream],
+            &std::collections::BTreeSet::from([100]),
             &HashSet::new(),
             &mut crate::nurbs::LaneRefusals::new(),
+            &mut crate::families::standard::decode::LimitCurveIndex::new(ctx).expect("empty index"),
         )
     })
     .expect("service resource budget");
@@ -1695,10 +1613,11 @@ fn standard_freeform_tag_resolves_standalone_a8_rolling_ball() {
     let evidence = crate::test_support::with_service_context(|ctx| {
         crate::families::standard::decode::standard_object_evidence_from_streams(
             ctx,
-            [a8_freeform_curve_stream()],
-            &HashSet::from([0x1234_5678]),
+            &[a8_freeform_curve_stream()],
+            &std::collections::BTreeSet::from([0x1234_5678]),
             &HashSet::new(),
             &mut crate::nurbs::LaneRefusals::new(),
+            &mut crate::families::standard::decode::LimitCurveIndex::new(ctx).expect("empty index"),
         )
     })
     .expect("service resource budget");
@@ -1727,10 +1646,11 @@ fn standard_object_evidence_rejects_cross_stream_edge_owner_conflicts() {
     let evidence = crate::test_support::with_service_context(|ctx| {
         crate::families::standard::decode::standard_object_evidence_from_streams(
             ctx,
-            [first, second],
-            &HashSet::new(),
+            &[first, second],
+            &std::collections::BTreeSet::new(),
             &HashSet::new(),
             &mut crate::nurbs::LaneRefusals::new(),
+            &mut crate::families::standard::decode::LimitCurveIndex::new(ctx).expect("empty index"),
         )
     })
     .expect("service resource budget");
@@ -1740,28 +1660,32 @@ fn standard_object_evidence_rejects_cross_stream_edge_owner_conflicts() {
 #[test]
 fn standard_object_evidence_keeps_face_owner_from_unresolved_surface() {
     let mut stream = b5_closed_triangle_stream();
-    let face = crate::families::b5::graph::object_stream_frames(&stream)
-        .into_iter()
-        .find(|frame| frame.class == 0x5f)
-        .expect("face frame")
-        .start;
+    let face = crate::test_support::with_service_context(|ctx| {
+        crate::families::b5::graph::object_stream_frames(ctx, &stream)
+            .find(|frame| match frame {
+                Ok(frame) => frame.class == 0x5f,
+                Err(_) => true,
+            })
+            .transpose()
+    })
+    .expect("service frame scan budget")
+    .expect("face frame")
+    .start;
     stream[face + 10..face + 12].copy_from_slice(&999u16.to_le_bytes());
 
     let evidence = crate::test_support::with_service_context(|ctx| {
         crate::families::standard::decode::standard_object_evidence_from_streams(
             ctx,
-            [stream],
-            &HashSet::new(),
+            &[stream],
+            &std::collections::BTreeSet::new(),
             &HashSet::new(),
             &mut crate::nurbs::LaneRefusals::new(),
+            &mut crate::families::standard::decode::LimitCurveIndex::new(ctx).expect("empty index"),
         )
     })
     .expect("service resource budget");
 
-    assert_eq!(
-        evidence.edge_owner_faces.get(&300),
-        Some(&HashSet::from([500]))
-    );
+    assert_eq!(evidence.edge_owner_faces.get(&300), Some(&vec![500]));
 }
 
 #[test]
@@ -1770,10 +1694,11 @@ fn standard_object_evidence_rejects_repeated_topology_namespaces() {
     let evidence = crate::test_support::with_service_context(|ctx| {
         crate::families::standard::decode::standard_object_evidence_from_streams(
             ctx,
-            [stream.clone(), stream],
-            &HashSet::new(),
+            &[stream.clone(), stream],
+            &std::collections::BTreeSet::new(),
             &HashSet::new(),
             &mut crate::nurbs::LaneRefusals::new(),
+            &mut crate::families::standard::decode::LimitCurveIndex::new(ctx).expect("empty index"),
         )
     })
     .expect("service resource budget");
@@ -1785,20 +1710,27 @@ fn standard_object_evidence_rejects_repeated_topology_namespaces() {
 #[test]
 fn standard_object_evidence_does_not_join_topology_across_runs() {
     let mut stream = b5_closed_triangle_stream();
-    let loop_start = crate::families::b5::graph::object_stream_frames(&stream)
-        .into_iter()
-        .find(|frame| frame.class == 0x62)
-        .expect("loop frame")
-        .start;
+    let loop_start = crate::test_support::with_service_context(|ctx| {
+        crate::families::b5::graph::object_stream_frames(ctx, &stream)
+            .find(|frame| match frame {
+                Ok(frame) => frame.class == 0x62,
+                Err(_) => true,
+            })
+            .transpose()
+    })
+    .expect("service frame scan budget")
+    .expect("loop frame")
+    .start;
     stream.insert(loop_start, 0xff);
 
     let evidence = crate::test_support::with_service_context(|ctx| {
         crate::families::standard::decode::standard_object_evidence_from_streams(
             ctx,
-            [stream],
-            &HashSet::new(),
+            &[stream],
+            &std::collections::BTreeSet::new(),
             &HashSet::new(),
             &mut crate::nurbs::LaneRefusals::new(),
+            &mut crate::families::standard::decode::LimitCurveIndex::new(ctx).expect("empty index"),
         )
     })
     .expect("service resource budget");
@@ -1827,10 +1759,11 @@ fn standard_face_resolves_a_rolling_ball_result_carrier() {
     let evidence = crate::test_support::with_service_context(|ctx| {
         crate::families::standard::decode::standard_object_evidence_from_streams(
             ctx,
-            [stream],
-            &HashSet::from([501]),
+            &[stream],
+            &std::collections::BTreeSet::from([501]),
             &HashSet::new(),
             &mut crate::nurbs::LaneRefusals::new(),
+            &mut crate::families::standard::decode::LimitCurveIndex::new(ctx).expect("empty index"),
         )
     })
     .expect("service resource budget");
@@ -1877,7 +1810,7 @@ fn standard_duplicate_edge_face_uses_object_stream_owner_identity() {
             &mut edge_faces,
             &supports,
             &records,
-            &HashMap::from([(700, HashSet::from([20, 900]))]),
+            &HashMap::from([(700, vec![20, 900])]),
         )
     })
     .expect("service context admits native edge faces");
@@ -1898,7 +1831,7 @@ fn standard_duplicate_edge_face_uses_object_stream_owner_identity() {
             &mut ambiguous,
             &supports,
             &repeated_records,
-            &HashMap::from([(700, HashSet::from([20]))]),
+            &HashMap::from([(700, vec![20])]),
         )
     })
     .expect("service context admits ambiguous native edge faces");
@@ -1935,7 +1868,7 @@ fn standard_duplicate_edge_face_keeps_second_slot_open_for_one_owner_occurrence(
             &mut edge_faces,
             &supports,
             &records,
-            &HashMap::from([(700, HashSet::from([10]))]),
+            &HashMap::from([(700, vec![10])]),
         )
     })
     .expect("service context admits one owner occurrence");
@@ -1955,3 +1888,5 @@ fn standard_line_parser_reads_face_incidence() {
     assert_eq!(rows[0].faces, [0, 1]);
     assert!(matches!(rows[0].geometry, StandardCurveGeometry::Line));
 }
+
+mod work_admission;

@@ -27,19 +27,29 @@ impl<K: Eq + Hash + cadmpeg_core::decode::cost::DecodeCost, V> UniqueIndex<K, V>
         value: V,
         operation: &'static str,
     ) -> Result<(), CodecError> {
-        if let Some(entry) = self.entries.get_mut(&key) {
-            *entry = None;
-        } else {
-            ctx.insert_hash_map(&mut self.entries, key, Some(value), operation)?;
+        match ctx.entry_hash_map(&mut self.entries, key, operation)? {
+            std::collections::hash_map::Entry::Occupied(mut entry) => {
+                *entry.get_mut() = None;
+            }
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(Some(value));
+            }
         }
         Ok(())
     }
 
-    pub(super) fn get<Q: Eq + Hash + ?Sized>(&self, key: &Q) -> Option<&V>
+    pub(super) fn get<Q: Eq + Hash + cadmpeg_core::decode::cost::DecodeCost + ?Sized>(
+        &self,
+        ctx: &DecodeContext<'_>,
+        key: &Q,
+        operation: &'static str,
+    ) -> Result<Option<&V>, CodecError>
     where
         K: Borrow<Q>,
     {
-        self.entries.get(key)?.as_ref()
+        Ok(ctx
+            .get_hash_map(&self.entries, key, operation)?
+            .and_then(Option::as_ref))
     }
 
     pub(super) fn collect(
@@ -48,7 +58,8 @@ impl<K: Eq + Hash + cadmpeg_core::decode::cost::DecodeCost, V> UniqueIndex<K, V>
         operation: &'static str,
     ) -> Result<Self, CodecError> {
         let mut index = Self::new();
-        for (key, value) in iter {
+        let mut input = iter.into_iter();
+        while let Some((key, value)) = ctx.next_charged(&mut input, operation)? {
             index.insert(ctx, key, value, operation)?;
         }
         Ok(index)
@@ -69,19 +80,59 @@ mod tests {
             )
         })
         .expect("service profile admits index");
-        assert_eq!(index.get("one"), Some(&1));
+        assert_eq!(
+            crate::test_support::with_service_context(|ctx| index.get(
+                ctx,
+                "one",
+                "catia_unique_index_test_lookup"
+            ))
+            .expect("index lookup"),
+            Some(&1)
+        );
         crate::test_support::with_service_context(|ctx| {
             index.insert(ctx, "one".to_string(), 3, "catia_unique_index_test")
         })
         .expect("duplicate does not grow index");
-        assert_eq!(index.get("one"), None);
+        assert_eq!(
+            crate::test_support::with_service_context(|ctx| index.get(
+                ctx,
+                "one",
+                "catia_unique_index_test_lookup"
+            ))
+            .expect("index lookup"),
+            None
+        );
         crate::test_support::with_service_context(|ctx| {
             index.insert(ctx, "one".to_string(), 4, "catia_unique_index_test")
         })
         .expect("duplicate remains ambiguous");
-        assert_eq!(index.get("one"), None);
-        assert_eq!(index.get("two"), Some(&2));
-        assert_eq!(index.get("missing"), None);
+        assert_eq!(
+            crate::test_support::with_service_context(|ctx| index.get(
+                ctx,
+                "one",
+                "catia_unique_index_test_lookup"
+            ))
+            .expect("index lookup"),
+            None
+        );
+        assert_eq!(
+            crate::test_support::with_service_context(|ctx| index.get(
+                ctx,
+                "two",
+                "catia_unique_index_test_lookup"
+            ))
+            .expect("index lookup"),
+            Some(&2)
+        );
+        assert_eq!(
+            crate::test_support::with_service_context(|ctx| index.get(
+                ctx,
+                "missing",
+                "catia_unique_index_test_lookup"
+            ))
+            .expect("index lookup"),
+            None
+        );
     }
 
     #[test]
@@ -97,6 +148,38 @@ mod tests {
             UniqueIndex::collect(ctx, [("one", 1)], "catia_unique_index_test")
         })
         .expect("service profile admits index entry");
-        assert_eq!(admitted.get("one"), Some(&1));
+        assert_eq!(
+            crate::test_support::with_service_context(|ctx| admitted.get(
+                ctx,
+                "one",
+                "catia_unique_index_test_lookup"
+            ))
+            .expect("index lookup"),
+            Some(&1)
+        );
+    }
+    #[test]
+    fn uniqueness_lookup_refuses_before_reading_live_and_ambiguous_keys() {
+        let index = crate::test_support::with_service_context(|ctx| {
+            let mut index = UniqueIndex::new();
+            index.insert(ctx, "one", 1, "catia_unique_index_fixture")?;
+            index.insert(ctx, "one", 2, "catia_unique_index_fixture")?;
+            index.insert(ctx, "two", 3, "catia_unique_index_fixture")?;
+            Ok::<_, cadmpeg_core::CodecError>(index)
+        })
+        .expect("fixture index");
+        for key in ["one", "two", "missing"] {
+            let refusal =
+                crate::test_support::with_work_refusal("catia_unique_index_lookup", |ctx| {
+                    let result = index.get(ctx, key, "catia_unique_index_lookup");
+                    if let Err(cadmpeg_core::CodecError::ResourceLimit(ref limit)) = result {
+                        assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
+                    }
+                    result
+                });
+            assert!(
+                matches!(refusal, Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "catia_unique_index_lookup")
+            );
+        }
     }
 }

@@ -15,13 +15,14 @@ use super::super::sweep::surfaces::{placed_section_geometry_curve, placed_sketch
 use crate::container::ContainerScan;
 use crate::decode::sketch_transfer::identity::{
     opaque_section_segment_identity_suffix_admitted, saved_section_external_id,
-    section_segment_identity_suffix_admitted, semantic_saved_section_entities,
-    unresolved_saved_section_entity,
+    section_segment_identity_suffix_admitted, unresolved_saved_section_entity,
+    visit_semantic_saved_section_entities,
 };
 use crate::decode::sketch_transfer::loci::section_degenerate_axis_line;
 use crate::decode::sketch_transfer::profiles::{
     unique_section_incidence_curve_family, SectionEntityIncidenceFamily,
 };
+use crate::feature::segment_rows::SegmentRow;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::Curve;
 use cadmpeg_ir::ids::CurveId;
@@ -31,14 +32,33 @@ use cadmpeg_ir::sketches::{
 };
 use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
 use std::collections::{BTreeMap, BTreeSet};
+use std::ops::ControlFlow;
 
+// Callers pass one or two structural endpoint slots.
 fn admitted_endpoint_refs(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     sketch: &SketchId,
-    points: impl IntoIterator<Item = u32>,
+    points: &[u32],
+) -> Result<Vec<String>, cadmpeg_core::CodecError> {
+    let mut references = Vec::new();
+    for &point in points {
+        let reference = sketch_point_ref_admitted(ctx, sketch, point)?;
+        ctx.reserve_vec(&mut references, 1, "creo section endpoint references")?;
+        references.push(reference);
+    }
+    Ok(references)
+}
+
+fn admitted_optional_endpoint_refs(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    sketch: &SketchId,
+    points: &[Option<u32>; 2],
 ) -> Result<Vec<String>, cadmpeg_core::CodecError> {
     let mut references = Vec::new();
     for point in points {
+        let Some(point) = *point else {
+            continue;
+        };
         let reference = sketch_point_ref_admitted(ctx, sketch, point)?;
         ctx.reserve_vec(&mut references, 1, "creo section endpoint references")?;
         references.push(reference);
@@ -63,7 +83,7 @@ fn copied_or_native_geometry(
     offset: usize,
     kind: &str,
 ) -> Result<SketchGeometry, cadmpeg_core::CodecError> {
-    match geometries.get(&offset) {
+    match ctx.get_btree_map(geometries, &offset, "creo section entity geometry lookup")? {
         Some(geometry) => geometry.try_clone_for_decode(ctx, "creo section geometry copy"),
         None => native_section_geometry(ctx, kind),
     }
@@ -84,17 +104,6 @@ fn section_row_suffix(
             "creo section entity suffix",
         )
     }
-}
-
-fn push_section_entity(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    entities: &mut Vec<SketchEntity>,
-    entity: SketchEntity,
-) -> Result<(), cadmpeg_core::CodecError> {
-    ctx.charge_entities(1, "admit Creo model sketch_entities")?;
-    ctx.reserve_vec(entities, 1, "creo section entities")?;
-    entities.push(entity);
-    Ok(())
 }
 
 fn placed_source_object(
@@ -122,7 +131,7 @@ fn placed_source_object(
 }
 
 /// Source sketch, resolved geometry, profiles, and destinations for entity transfer.
-pub(super) struct SectionEntityTransfer<'a> {
+pub(super) struct SectionEntityTransfer<'a, 'ctx, 'input, 'stage> {
     pub scan: &'a ContainerScan<'a>,
     pub ir: &'a mut CadIr,
     pub annotations: &'a mut AnnotationBuilder,
@@ -145,12 +154,13 @@ pub(super) struct SectionEntityTransfer<'a> {
     pub profiles: Vec<Vec<SketchEntityUse>>,
     pub profile_entities: &'a BTreeSet<SketchEntityId>,
     pub losses: &'a mut Vec<cadmpeg_ir::report::loss::LossNote>,
-    pub source_carriers: &'a mut crate::decode::source_carriers::SourceUnitCarriers,
+    pub entity_slots: &'a mut cadmpeg_core::decode::ScopedReservation<'stage>,
+    pub source_carriers: &'a mut crate::decode::source_carriers::SourceUnitCarriers<'ctx, 'input>,
 }
 
 pub(super) fn transfer_section_entities(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    transfer: SectionEntityTransfer<'_>,
+    transfer: SectionEntityTransfer<'_, '_, '_, '_>,
 ) -> Result<(Vec<SketchEntity>, Vec<Vec<SketchEntityUse>>), cadmpeg_core::CodecError> {
     let SectionEntityTransfer {
         scan,
@@ -176,27 +186,102 @@ pub(super) fn transfer_section_entities(
         profile_entities,
         losses,
         source_carriers,
+        entity_slots,
     } = transfer;
-    let segment_geometry = |segment: &crate::feature::definitions::FeatureSegment| -> Result<Option<SketchGeometry>, cadmpeg_core::CodecError> {
-        if let Some(geometry) = segment_geometries.get(&segment.offset).and_then(Option::as_ref) {
-            return geometry.try_clone_for_decode(ctx, "creo section entity geometry copy").map(Some);
+    let mut family_storage = ctx.reserve_scoped(0, "creo section family row storage")?;
+    let mut circle_rows = Vec::new();
+    let mut point_rows = Vec::new();
+    let mut centered_line_rows = Vec::new();
+    let mut reference_line_rows = Vec::new();
+    let mut bounded_curve_rows = Vec::new();
+    let mut conic_rows = Vec::new();
+    let mut opaque_rows = Vec::new();
+    if let Some(table) = definition.segments.as_ref() {
+        for row in ctx.admit_iter(table.rows.as_slice(), "creo section family source rows")? {
+            match row {
+                SegmentRow::Ordinary(_) => {}
+                SegmentRow::Circle(row) => ctx.push_scoped_vec(
+                    &mut family_storage,
+                    &mut circle_rows,
+                    row,
+                    "creo section family row storage",
+                )?,
+                SegmentRow::Point(row) => ctx.push_scoped_vec(
+                    &mut family_storage,
+                    &mut point_rows,
+                    row,
+                    "creo section family row storage",
+                )?,
+                SegmentRow::CenteredLine(row) => ctx.push_scoped_vec(
+                    &mut family_storage,
+                    &mut centered_line_rows,
+                    row,
+                    "creo section family row storage",
+                )?,
+                SegmentRow::ReferenceLine(row) => ctx.push_scoped_vec(
+                    &mut family_storage,
+                    &mut reference_line_rows,
+                    row,
+                    "creo section family row storage",
+                )?,
+                SegmentRow::BoundedCurve(row) => ctx.push_scoped_vec(
+                    &mut family_storage,
+                    &mut bounded_curve_rows,
+                    row,
+                    "creo section family row storage",
+                )?,
+                SegmentRow::Conic(row) => ctx.push_scoped_vec(
+                    &mut family_storage,
+                    &mut conic_rows,
+                    row,
+                    "creo section family row storage",
+                )?,
+                SegmentRow::Opaque(row) => ctx.push_scoped_vec(
+                    &mut family_storage,
+                    &mut opaque_rows,
+                    row,
+                    "creo section family row storage",
+                )?,
+            }
         }
-        if section_degenerate_axis_line(definition, segment) {
+    }
+    let segment_geometry = |segment: &crate::feature::definitions::FeatureSegment| {
+        if let Some(geometry) = ctx
+            .get_btree_map(
+                segment_geometries,
+                &segment.offset,
+                "creo section entity geometry lookup",
+            )?
+            .and_then(Option::as_ref)
+        {
+            return geometry
+                .try_clone_for_decode(ctx, "creo section entity geometry copy")
+                .map(Some);
+        }
+        if section_degenerate_axis_line(ctx, definition, segment)? {
             let kind = ctx.copy_retained_text("line", "creo section entity native kind")?;
             return Ok(Some(SketchGeometry::native(
-                cadmpeg_core::text::NonBlankString::for_decode(ctx, kind, "validate nonblank text")?.ok_or_else(|| {
+                cadmpeg_core::text::NonBlankString::for_decode(
+                    ctx,
+                    kind,
+                    "validate nonblank text",
+                )?
+                .ok_or_else(|| {
                     cadmpeg_core::CodecError::malformed("native_kind must not be empty")
                 })?,
             )));
         }
-        Ok(None)
+        Ok::<_, cadmpeg_core::CodecError>(None)
     };
     let mut entities = Vec::new();
-    for segment in segments {
+    for segment in ctx.admit_iter(segments, "creo emitted section segment rows")? {
+        let mut suffix_storage = ctx.reserve_scoped(0, "creo section identity suffix storage")?;
         let Some(geometry) = segment_geometry(segment)? else {
             continue;
         };
-        let suffix = section_segment_identity_suffix_admitted(ctx, unique_segment_ids, segment)?;
+        let suffix = suffix_storage.with_storage(|| {
+            section_segment_identity_suffix_admitted(ctx, unique_segment_ids, segment)
+        })?;
         let Some(id) = sketch_entity_id_admitted(ctx, sketch_id, &suffix)? else {
             continue;
         };
@@ -237,8 +322,19 @@ pub(super) fn transfer_section_entities(
         let construction = matches!(
             geometry.definition(),
             SketchGeometryDefinition::ReferenceLine { .. }
-        ) || !unique_segment_ids.contains(&segment.external_id)
-            || (!solved.contains(&segment.external_id) && !profile_entities.contains(&id));
+        ) || !ctx.contains_btree_set(
+            unique_segment_ids,
+            &segment.external_id,
+            "creo section entity ID membership",
+        )? || (!ctx.contains_btree_set(
+            solved,
+            &segment.external_id,
+            "creo section entity ID membership",
+        )? && !ctx.contains_btree_set(
+            profile_entities,
+            &id,
+            "creo emitted profile entity membership",
+        )?);
         let point_ids = segment.point_ids();
         let reverse = [point_ids[1], point_ids[0]];
         let endpoints = match (geometry.definition(), segment.kind) {
@@ -248,7 +344,7 @@ pub(super) fn transfer_section_entities(
                 &point_ids[..1]
             }
             (SketchGeometryDefinition::ReferenceLine { .. }, _)
-                if section_degenerate_axis_line(definition, segment) =>
+                if section_degenerate_axis_line(ctx, definition, segment)? =>
             {
                 &point_ids[..1]
             }
@@ -256,29 +352,36 @@ pub(super) fn transfer_section_entities(
             (_, crate::feature::definitions::FeatureSegmentKind::Line(_)) => &point_ids[..],
             (_, crate::feature::definitions::FeatureSegmentKind::Point(_)) => &point_ids[..1],
         };
-        let endpoint_refs = admitted_endpoint_refs(ctx, sketch_id, endpoints.iter().copied())?;
+        let endpoint_refs = admitted_endpoint_refs(ctx, sketch_id, endpoints)?;
         let geometry_ref = placed_sketch_curve_ref(ctx, transform, sketch_id, &suffix, &geometry)?;
         let sketch_copy =
             sketch_id.try_clone_for_decode(ctx, "creo section entity sketch identity")?;
         let native_ref = sketch_native_ref_admitted(ctx, sketch_id)?;
-        push_section_entity(
-            ctx,
-            &mut entities,
-            SketchEntity::new(id, sketch_copy, geometry)
-                .with_construction(construction)
-                .with_native_ref(Some(native_ref))
-                .with_geometry_ref(geometry_ref)
-                .with_endpoint_refs(endpoint_refs),
-        )?;
+        let entity = SketchEntity::new(id, sketch_copy, geometry)
+            .with_construction(construction)
+            .with_native_ref(Some(native_ref))
+            .with_geometry_ref(geometry_ref)
+            .with_endpoint_refs(endpoint_refs);
+        ctx.charge_entities(1, "admit Creo model sketch_entities")?;
+        ctx.push_scoped_vec(entity_slots, &mut entities, entity, "creo section entities")?;
     }
-    for segment in segments.iter().filter(|segment| {
-        !section_degenerate_axis_line(definition, segment)
-            && segment_geometries
-                .get(&segment.offset)
+    for segment in ctx.admit_iter(segments, "creo unresolved section segment rows")? {
+        let mut suffix_storage = ctx.reserve_scoped(0, "creo section identity suffix storage")?;
+        if section_degenerate_axis_line(ctx, definition, segment)?
+            || ctx
+                .get_btree_map(
+                    segment_geometries,
+                    &segment.offset,
+                    "creo section entity geometry lookup",
+                )?
                 .and_then(Option::as_ref)
-                .is_none()
-    }) {
-        let suffix = section_segment_identity_suffix_admitted(ctx, unique_segment_ids, segment)?;
+                .is_some()
+        {
+            continue;
+        }
+        let suffix = suffix_storage.with_storage(|| {
+            section_segment_identity_suffix_admitted(ctx, unique_segment_ids, segment)
+        })?;
         let Some(id) = sketch_entity_id_admitted(ctx, sketch_id, &suffix)? else {
             continue;
         };
@@ -298,7 +401,7 @@ pub(super) fn transfer_section_entities(
             crate::feature::definitions::FeatureSegmentKind::Line(_) => &point_ids[..],
             crate::feature::definitions::FeatureSegmentKind::Point(_) => &point_ids[..1],
         };
-        let endpoint_refs = admitted_endpoint_refs(ctx, sketch_id, endpoints.iter().copied())?;
+        let endpoint_refs = admitted_endpoint_refs(ctx, sketch_id, endpoints)?;
         let geometry = native_section_geometry(
             ctx,
             match segment.kind {
@@ -310,33 +413,38 @@ pub(super) fn transfer_section_entities(
         let sketch_copy =
             sketch_id.try_clone_for_decode(ctx, "creo section entity sketch identity")?;
         let native_ref = sketch_native_ref_admitted(ctx, sketch_id)?;
-        push_section_entity(
-            ctx,
-            &mut entities,
-            SketchEntity::new(id, sketch_copy, geometry)
-                .with_construction(true)
-                .with_native_ref(Some(native_ref))
-                .with_endpoint_refs(endpoint_refs),
-        )?;
+        let entity = SketchEntity::new(id, sketch_copy, geometry)
+            .with_construction(true)
+            .with_native_ref(Some(native_ref))
+            .with_endpoint_refs(endpoint_refs);
+        ctx.charge_entities(1, "admit Creo model sketch_entities")?;
+        ctx.push_scoped_vec(entity_slots, &mut entities, entity, "creo section entities")?;
     }
-    for segment in definition
-        .segments
-        .iter()
-        .flat_map(|table| table.rows.circles())
-    {
-        let unique_external_id = unique_segment_ids.contains(&segment.external_id);
+    for segment in ctx.admit_iter(&circle_rows, "creo entities circles segment rows")? {
+        let mut suffix_storage = ctx.reserve_scoped(0, "creo section identity suffix storage")?;
+        let unique_external_id = ctx.contains_btree_set(
+            unique_segment_ids,
+            &segment.external_id,
+            "creo section entity ID membership",
+        )?;
         if unique_external_id
-            && materialized_saved_section_external_ids.contains(&segment.external_id)
+            && ctx.contains_btree_set(
+                materialized_saved_section_external_ids,
+                &segment.external_id,
+                "creo section entity ID membership",
+            )?
         {
             continue;
         }
-        let suffix = section_row_suffix(
-            ctx,
-            unique_external_id,
-            segment.external_id,
-            "circle",
-            segment.offset,
-        )?;
+        let suffix = suffix_storage.with_storage(|| {
+            section_row_suffix(
+                ctx,
+                unique_external_id,
+                segment.external_id,
+                "circle",
+                segment.offset,
+            )
+        })?;
         let Some(id) = sketch_entity_id_admitted(ctx, sketch_id, &suffix)? else {
             continue;
         };
@@ -362,38 +470,49 @@ pub(super) fn transfer_section_entities(
                 Exactness::ByteExact
             },
         )?;
-        let construction = !unique_external_id || !profile_entities.contains(&id);
+        let construction = !unique_external_id
+            || !ctx.contains_btree_set(
+                profile_entities,
+                &id,
+                "creo emitted profile entity membership",
+            )?;
         let geometry_ref = placed_sketch_curve_ref(ctx, transform, sketch_id, &suffix, &geometry)?;
         let sketch_copy =
             sketch_id.try_clone_for_decode(ctx, "creo section entity sketch identity")?;
         let native_ref = sketch_native_ref_admitted(ctx, sketch_id)?;
-        push_section_entity(
-            ctx,
-            &mut entities,
-            SketchEntity::new(id, sketch_copy, geometry)
-                .with_construction(construction)
-                .with_native_ref(Some(native_ref))
-                .with_geometry_ref(geometry_ref),
-        )?;
+        let entity = SketchEntity::new(id, sketch_copy, geometry)
+            .with_construction(construction)
+            .with_native_ref(Some(native_ref))
+            .with_geometry_ref(geometry_ref);
+        ctx.charge_entities(1, "admit Creo model sketch_entities")?;
+        ctx.push_scoped_vec(entity_slots, &mut entities, entity, "creo section entities")?;
     }
-    for segment in definition
-        .segments
-        .iter()
-        .flat_map(|table| table.rows.points())
-    {
-        let unique_external_id = unique_segment_ids.contains(&segment.external_id);
+
+    for segment in ctx.admit_iter(&point_rows, "creo entities points segment rows")? {
+        let mut suffix_storage = ctx.reserve_scoped(0, "creo section identity suffix storage")?;
+        let unique_external_id = ctx.contains_btree_set(
+            unique_segment_ids,
+            &segment.external_id,
+            "creo section entity ID membership",
+        )?;
         if unique_external_id
-            && materialized_saved_section_external_ids.contains(&segment.external_id)
+            && ctx.contains_btree_set(
+                materialized_saved_section_external_ids,
+                &segment.external_id,
+                "creo section entity ID membership",
+            )?
         {
             continue;
         }
-        let suffix = section_row_suffix(
-            ctx,
-            unique_external_id,
-            segment.external_id,
-            "point",
-            segment.offset,
-        )?;
+        let suffix = suffix_storage.with_storage(|| {
+            section_row_suffix(
+                ctx,
+                unique_external_id,
+                segment.external_id,
+                "point",
+                segment.offset,
+            )
+        })?;
         let Some(id) = sketch_entity_id_admitted(ctx, sketch_id, &suffix)? else {
             continue;
         };
@@ -419,38 +538,52 @@ pub(super) fn transfer_section_entities(
                 Exactness::ByteExact
             },
         )?;
-        let construction = !unique_external_id || !profile_entities.contains(&id);
+        let construction = !unique_external_id
+            || !ctx.contains_btree_set(
+                profile_entities,
+                &id,
+                "creo emitted profile entity membership",
+            )?;
         let sketch_copy =
             sketch_id.try_clone_for_decode(ctx, "creo section entity sketch identity")?;
         let native_ref = sketch_native_ref_admitted(ctx, sketch_id)?;
-        let endpoint_refs = admitted_endpoint_refs(ctx, sketch_id, [segment.point_id])?;
-        push_section_entity(
-            ctx,
-            &mut entities,
-            SketchEntity::new(id, sketch_copy, geometry)
-                .with_construction(construction)
-                .with_native_ref(Some(native_ref))
-                .with_endpoint_refs(endpoint_refs),
-        )?;
+        let endpoint_refs = admitted_endpoint_refs(ctx, sketch_id, &[segment.point_id])?;
+        let entity = SketchEntity::new(id, sketch_copy, geometry)
+            .with_construction(construction)
+            .with_native_ref(Some(native_ref))
+            .with_endpoint_refs(endpoint_refs);
+        ctx.charge_entities(1, "admit Creo model sketch_entities")?;
+        ctx.push_scoped_vec(entity_slots, &mut entities, entity, "creo section entities")?;
     }
-    for segment in definition
-        .segments
-        .iter()
-        .flat_map(|table| table.rows.centered_lines())
-    {
-        let unique_external_id = unique_segment_ids.contains(&segment.external_id);
+
+    for segment in ctx.admit_iter(
+        &centered_line_rows,
+        "creo entities centered_lines segment rows",
+    )? {
+        let mut suffix_storage = ctx.reserve_scoped(0, "creo section identity suffix storage")?;
+        let unique_external_id = ctx.contains_btree_set(
+            unique_segment_ids,
+            &segment.external_id,
+            "creo section entity ID membership",
+        )?;
         if unique_external_id
-            && materialized_saved_section_external_ids.contains(&segment.external_id)
+            && ctx.contains_btree_set(
+                materialized_saved_section_external_ids,
+                &segment.external_id,
+                "creo section entity ID membership",
+            )?
         {
             continue;
         }
-        let suffix = section_row_suffix(
-            ctx,
-            unique_external_id,
-            segment.external_id,
-            "centered_line",
-            segment.offset,
-        )?;
+        let suffix = suffix_storage.with_storage(|| {
+            section_row_suffix(
+                ctx,
+                unique_external_id,
+                segment.external_id,
+                "centered_line",
+                segment.offset,
+            )
+        })?;
         let Some(id) = sketch_entity_id_admitted(ctx, sketch_id, &suffix)? else {
             continue;
         };
@@ -476,38 +609,47 @@ pub(super) fn transfer_section_entities(
             },
         )?;
         let geometry_ref = placed_sketch_curve_ref(ctx, transform, sketch_id, &suffix, &geometry)?;
-        let endpoint_refs = admitted_endpoint_refs(ctx, sketch_id, [0, 1])?;
+        let endpoint_refs = admitted_endpoint_refs(ctx, sketch_id, &[0, 1])?;
         let sketch_copy =
             sketch_id.try_clone_for_decode(ctx, "creo section entity sketch identity")?;
         let native_ref = sketch_native_ref_admitted(ctx, sketch_id)?;
-        push_section_entity(
-            ctx,
-            &mut entities,
-            SketchEntity::new(id, sketch_copy, geometry)
-                .with_construction(true)
-                .with_native_ref(Some(native_ref))
-                .with_geometry_ref(geometry_ref)
-                .with_endpoint_refs(endpoint_refs),
-        )?;
+        let entity = SketchEntity::new(id, sketch_copy, geometry)
+            .with_construction(true)
+            .with_native_ref(Some(native_ref))
+            .with_geometry_ref(geometry_ref)
+            .with_endpoint_refs(endpoint_refs);
+        ctx.charge_entities(1, "admit Creo model sketch_entities")?;
+        ctx.push_scoped_vec(entity_slots, &mut entities, entity, "creo section entities")?;
     }
-    for segment in definition
-        .segments
-        .iter()
-        .flat_map(|table| table.rows.reference_lines())
-    {
-        let unique_external_id = unique_segment_ids.contains(&segment.external_id);
+
+    for segment in ctx.admit_iter(
+        &reference_line_rows,
+        "creo entities reference_lines segment rows",
+    )? {
+        let mut suffix_storage = ctx.reserve_scoped(0, "creo section identity suffix storage")?;
+        let unique_external_id = ctx.contains_btree_set(
+            unique_segment_ids,
+            &segment.external_id,
+            "creo section entity ID membership",
+        )?;
         if unique_external_id
-            && materialized_saved_section_external_ids.contains(&segment.external_id)
+            && ctx.contains_btree_set(
+                materialized_saved_section_external_ids,
+                &segment.external_id,
+                "creo section entity ID membership",
+            )?
         {
             continue;
         }
-        let suffix = section_row_suffix(
-            ctx,
-            unique_external_id,
-            segment.external_id,
-            "reference_line",
-            segment.offset,
-        )?;
+        let suffix = suffix_storage.with_storage(|| {
+            section_row_suffix(
+                ctx,
+                unique_external_id,
+                segment.external_id,
+                "reference_line",
+                segment.offset,
+            )
+        })?;
         let Some(id) = sketch_entity_id_admitted(ctx, sketch_id, &suffix)? else {
             continue;
         };
@@ -539,43 +681,56 @@ pub(super) fn transfer_section_entities(
             },
         )?;
         let geometry_ref = placed_sketch_curve_ref(ctx, transform, sketch_id, &suffix, &geometry)?;
-        let endpoint_refs =
-            admitted_endpoint_refs(ctx, sketch_id, segment.point_ids.into_iter().flatten())?;
+        let endpoint_refs = admitted_optional_endpoint_refs(ctx, sketch_id, &segment.point_ids)?;
         let sketch_copy =
             sketch_id.try_clone_for_decode(ctx, "creo section entity sketch identity")?;
         let native_ref = sketch_native_ref_admitted(ctx, sketch_id)?;
-        push_section_entity(
-            ctx,
-            &mut entities,
-            SketchEntity::new(id, sketch_copy, geometry)
-                .with_construction(true)
-                .with_native_ref(Some(native_ref))
-                .with_geometry_ref(geometry_ref)
-                .with_endpoint_refs(endpoint_refs),
-        )?;
+        let entity = SketchEntity::new(id, sketch_copy, geometry)
+            .with_construction(true)
+            .with_native_ref(Some(native_ref))
+            .with_geometry_ref(geometry_ref)
+            .with_endpoint_refs(endpoint_refs);
+        ctx.charge_entities(1, "admit Creo model sketch_entities")?;
+        ctx.push_scoped_vec(entity_slots, &mut entities, entity, "creo section entities")?;
     }
-    for segment in definition
-        .segments
-        .iter()
-        .flat_map(|table| table.rows.bounded_curves())
-    {
-        let unique_external_id = unique_segment_ids.contains(&segment.external_id);
+
+    for segment in ctx.admit_iter(
+        &bounded_curve_rows,
+        "creo entities bounded_curves segment rows",
+    )? {
+        let mut suffix_storage = ctx.reserve_scoped(0, "creo section identity suffix storage")?;
+        let unique_external_id = ctx.contains_btree_set(
+            unique_segment_ids,
+            &segment.external_id,
+            "creo section entity ID membership",
+        )?;
         if unique_external_id
-            && materialized_saved_section_external_ids.contains(&segment.external_id)
+            && ctx.contains_btree_set(
+                materialized_saved_section_external_ids,
+                &segment.external_id,
+                "creo section entity ID membership",
+            )?
         {
             continue;
         }
-        let suffix = section_row_suffix(
-            ctx,
-            unique_external_id,
-            segment.external_id,
-            "bounded_curve",
-            segment.offset,
-        )?;
+        let suffix = suffix_storage.with_storage(|| {
+            section_row_suffix(
+                ctx,
+                unique_external_id,
+                segment.external_id,
+                "bounded_curve",
+                segment.offset,
+            )
+        })?;
         let Some(id) = sketch_entity_id_admitted(ctx, sketch_id, &suffix)? else {
             continue;
         };
-        let construction = !unique_external_id || !profile_entities.contains(&id);
+        let construction = !unique_external_id
+            || !ctx.contains_btree_set(
+                profile_entities,
+                &id,
+                "creo emitted profile entity membership",
+            )?;
         annotate(
             ctx,
             annotations,
@@ -585,38 +740,44 @@ pub(super) fn transfer_section_entities(
             "unresolved_section_bounded_curve",
             Exactness::ByteExact,
         )?;
-        let endpoint_refs = admitted_endpoint_refs(ctx, sketch_id, segment.point_ids)?;
+        let endpoint_refs = admitted_endpoint_refs(ctx, sketch_id, &segment.point_ids)?;
         let sketch_copy =
             sketch_id.try_clone_for_decode(ctx, "creo section entity sketch identity")?;
         let native_ref = sketch_native_ref_admitted(ctx, sketch_id)?;
         let geometry = native_section_geometry(ctx, "bounded_curve")?;
-        push_section_entity(
-            ctx,
-            &mut entities,
-            SketchEntity::new(id, sketch_copy, geometry)
-                .with_construction(construction)
-                .with_native_ref(Some(native_ref))
-                .with_endpoint_refs(endpoint_refs),
-        )?;
+        let entity = SketchEntity::new(id, sketch_copy, geometry)
+            .with_construction(construction)
+            .with_native_ref(Some(native_ref))
+            .with_endpoint_refs(endpoint_refs);
+        ctx.charge_entities(1, "admit Creo model sketch_entities")?;
+        ctx.push_scoped_vec(entity_slots, &mut entities, entity, "creo section entities")?;
     }
-    for segment in definition
-        .segments
-        .iter()
-        .flat_map(|table| table.rows.conics())
-    {
-        let unique_external_id = unique_segment_ids.contains(&segment.external_id);
+
+    for segment in ctx.admit_iter(&conic_rows, "creo entities conics segment rows")? {
+        let mut suffix_storage = ctx.reserve_scoped(0, "creo section identity suffix storage")?;
+        let unique_external_id = ctx.contains_btree_set(
+            unique_segment_ids,
+            &segment.external_id,
+            "creo section entity ID membership",
+        )?;
         if unique_external_id
-            && materialized_saved_section_external_ids.contains(&segment.external_id)
+            && ctx.contains_btree_set(
+                materialized_saved_section_external_ids,
+                &segment.external_id,
+                "creo section entity ID membership",
+            )?
         {
             continue;
         }
-        let suffix = section_row_suffix(
-            ctx,
-            unique_external_id,
-            segment.external_id,
-            "conic",
-            segment.offset,
-        )?;
+        let suffix = suffix_storage.with_storage(|| {
+            section_row_suffix(
+                ctx,
+                unique_external_id,
+                segment.external_id,
+                "conic",
+                segment.offset,
+            )
+        })?;
         let Some(id) = sketch_entity_id_admitted(ctx, sketch_id, suffix)? else {
             continue;
         };
@@ -633,33 +794,40 @@ pub(super) fn transfer_section_entities(
             sketch_id.try_clone_for_decode(ctx, "creo section entity sketch identity")?;
         let native_ref = sketch_native_ref_admitted(ctx, sketch_id)?;
         let geometry = native_section_geometry(ctx, "conic")?;
-        push_section_entity(
-            ctx,
-            &mut entities,
-            SketchEntity::new(id, sketch_copy, geometry)
-                .with_construction(true)
-                .with_native_ref(Some(native_ref)),
-        )?;
+        let entity = SketchEntity::new(id, sketch_copy, geometry)
+            .with_construction(true)
+            .with_native_ref(Some(native_ref));
+        ctx.charge_entities(1, "admit Creo model sketch_entities")?;
+        ctx.push_scoped_vec(entity_slots, &mut entities, entity, "creo section entities")?;
     }
-    for segment in definition
-        .segments
-        .iter()
-        .flat_map(|table| table.rows.opaque())
-    {
-        let unique_external_id = unique_segment_ids.contains(&segment.external_id);
+
+    for segment in ctx.admit_iter(&opaque_rows, "creo entities opaque segment rows")? {
+        let mut suffix_storage = ctx.reserve_scoped(0, "creo section identity suffix storage")?;
+        let unique_external_id = ctx.contains_btree_set(
+            unique_segment_ids,
+            &segment.external_id,
+            "creo section entity ID membership",
+        )?;
         if unique_external_id
-            && materialized_saved_section_external_ids.contains(&segment.external_id)
+            && ctx.contains_btree_set(
+                materialized_saved_section_external_ids,
+                &segment.external_id,
+                "creo section entity ID membership",
+            )?
         {
             continue;
         }
-        let suffix =
-            opaque_section_segment_identity_suffix_admitted(ctx, unique_segment_ids, segment)?;
+        let suffix = suffix_storage.with_storage(|| {
+            opaque_section_segment_identity_suffix_admitted(ctx, unique_segment_ids, segment)
+        })?;
         let Some(id) = sketch_entity_id_admitted(ctx, sketch_id, &suffix)? else {
             continue;
         };
-        let kind = unique_external_id
-            .then(|| unique_section_incidence_curve_family(definition, segment.external_id))
-            .flatten();
+        let kind = if unique_external_id {
+            unique_section_incidence_curve_family(ctx, definition, segment.external_id)?
+        } else {
+            None
+        };
         let static_kind = match kind {
             Some(SectionEntityIncidenceFamily::Point) => Some("point"),
             Some(SectionEntityIncidenceFamily::BoundedCurve) => Some("bounded_curve"),
@@ -687,7 +855,12 @@ pub(super) fn transfer_section_entities(
                 })?,
             )
         };
-        let construction = !unique_external_id || !profile_entities.contains(&id);
+        let construction = !unique_external_id
+            || !ctx.contains_btree_set(
+                profile_entities,
+                &id,
+                "creo emitted profile entity membership",
+            )?;
         annotate(
             ctx,
             annotations,
@@ -701,70 +874,100 @@ pub(super) fn transfer_section_entities(
         let sketch_copy =
             sketch_id.try_clone_for_decode(ctx, "creo section entity sketch identity")?;
         let native_ref = sketch_native_ref_admitted(ctx, sketch_id)?;
-        push_section_entity(
-            ctx,
-            &mut entities,
-            SketchEntity::new(id, sketch_copy, geometry)
-                .with_construction(construction)
-                .with_native_ref(Some(native_ref))
-                .with_geometry_ref(geometry_ref),
-        )?;
+        let entity = SketchEntity::new(id, sketch_copy, geometry)
+            .with_construction(construction)
+            .with_native_ref(Some(native_ref))
+            .with_geometry_ref(geometry_ref);
+        ctx.charge_entities(1, "admit Creo model sketch_entities")?;
+        ctx.push_scoped_vec(entity_slots, &mut entities, entity, "creo section entities")?;
     }
+
+    let mut identity_storage = ctx.reserve_scoped(0, "creo saved entity identity index")?;
+    let mut entity_ids = std::collections::HashSet::<String>::new();
+    for entity in ctx.admit_iter(&entities, "creo saved entity identity sources")? {
+        identity_storage.with_storage(|| {
+            ctx.insert_hash_set(
+                &mut entity_ids,
+                ctx.copy_retained_text(entity.id().as_str(), "creo saved identity index keys")?,
+                "creo saved identity index nodes",
+            )
+        })?;
+    }
+    let mut geometry_storage = ctx.reserve_scoped(0, "creo saved geometry scratch storage")?;
     let mut saved_section_geometries = Vec::new();
     let mut generated_saved_geometries = Vec::new();
-    for (internal_id, geometry, offset) in
-        semantic_saved_section_entities(definition).filter_map(saved_section_entity_geometry)
-    {
-        let unique_internal_id = unique_saved_ids.contains(&internal_id);
-        let external_id = if unique_internal_id {
-            definition.order_table.as_ref().and_then(|order| {
-                saved_section_external_id(
-                    order,
-                    unique_saved_ids,
-                    ambiguous_segment_ids,
-                    internal_id,
-                )
-            })
-        } else {
-            None
+    let ControlFlow::Continue(()) = visit_semantic_saved_section_entities::<
+        std::convert::Infallible,
+    >(ctx, definition, |saved| {
+        let mut suffix_storage = ctx.reserve_scoped(0, "creo section identity suffix storage")?;
+        let Some((internal_id, geometry, offset)) = saved_section_entity_geometry(saved) else {
+            return Ok(ControlFlow::Continue(()));
+        };
+        let unique_internal_id = ctx.contains_btree_set(
+            unique_saved_ids,
+            &internal_id,
+            "creo saved entity identity lookup",
+        )?;
+        let external_id = match definition.order_table.as_ref() {
+            Some(order) if unique_internal_id => saved_section_external_id(
+                ctx,
+                order,
+                unique_saved_ids,
+                ambiguous_segment_ids,
+                internal_id,
+            )?,
+            _ => None,
         };
         let suffix = if unique_internal_id {
             match external_id {
-                Some(external_id) => {
-                    ctx.format_retained(format_args!("{external_id}"), "creo saved entity suffix")?
-                }
-                None => ctx.format_retained(
-                    format_args!("saved{internal_id}"),
-                    "creo saved entity suffix",
-                )?,
+                Some(external_id) => suffix_storage.with_storage(|| {
+                    ctx.format_retained(format_args!("{external_id}"), "creo saved entity suffix")
+                })?,
+                None => suffix_storage.with_storage(|| {
+                    ctx.format_retained(
+                        format_args!("saved{internal_id}"),
+                        "creo saved entity suffix",
+                    )
+                })?,
             }
         } else {
-            ctx.format_retained(
-                format_args!("saved:offset:{offset}"),
-                "creo saved entity suffix",
-            )?
+            suffix_storage.with_storage(|| {
+                ctx.format_retained(
+                    format_args!("saved:offset:{offset}"),
+                    "creo saved entity suffix",
+                )
+            })?
         };
-        let Some(entity_id) = sketch_entity_id_admitted(ctx, sketch_id, &suffix)? else {
-            continue;
+        let mut entity_storage = ctx.reserve_scoped(0, "creo saved entity candidate identity")?;
+        let Some(entity_id) =
+            entity_storage.with_storage(|| sketch_entity_id_admitted(ctx, sketch_id, &suffix))?
+        else {
+            return Ok(ControlFlow::Continue(()));
         };
-        if entities.iter().any(|entity| entity.id() == &entity_id) {
-            continue;
+        let already_present = ctx.contains_hash_set(
+            &entity_ids,
+            entity_id.as_str(),
+            "creo saved identity index membership",
+        )?;
+        if already_present {
+            return Ok(ControlFlow::Continue(()));
         }
-        let generated = external_id.is_some_and(|external_id| {
-            section_generated_profile_surface_kinds(&geometry).is_some_and(|expected_kinds| {
+        let generated = if let Some(external_id) = external_id {
+            if let Some(expected_kinds) = section_generated_profile_surface_kinds(&geometry) {
                 section_entity_is_generated_profile(
+                    ctx,
                     complete_segment_table,
                     definition.identity.owner_feature_id(),
                     external_id,
                     expected_kinds,
                     &scan.features.entity_tables,
                     &scan.surfaces.rows,
-                )
-            })
-        });
-        let Some(curve_id) = typed_sketch_section_curve_id_admitted(ctx, sketch_id, &suffix)?
-        else {
-            continue;
+                )?
+            } else {
+                false
+            }
+        } else {
+            false
         };
         annotate(
             ctx,
@@ -776,24 +979,30 @@ pub(super) fn transfer_section_entities(
             Exactness::Derived,
         )?;
         if let Some(external_id) = external_id.filter(|_| generated) {
-            let copied =
-                geometry.try_clone_for_decode(ctx, "creo generated saved geometry copy")?;
-            ctx.reserve_vec(
-                &mut generated_saved_geometries,
-                1,
-                "creo generated saved geometry rows",
-            )?;
+            let copied = geometry_storage.with_storage(|| {
+                geometry.try_clone_for_decode(ctx, "creo generated saved geometry copy")
+            })?;
+            geometry_storage.with_storage(|| {
+                ctx.reserve_vec(
+                    &mut generated_saved_geometries,
+                    1,
+                    "creo generated saved geometry rows",
+                )
+            })?;
             generated_saved_geometries.push((external_id, copied));
         }
-        let native_ref = ctx.format_retained(
-            format_args!(
-                "{}:saved_entity#{internal_id}",
-                sketch_native_ref_admitted(ctx, sketch_id)?
-            ),
-            "creo saved entity native reference",
-        )?;
+        let native_ref = {
+            let mut reference_storage =
+                ctx.reserve_scoped(0, "creo saved base reference storage")?;
+            let reference =
+                reference_storage.with_storage(|| sketch_native_ref_admitted(ctx, sketch_id))?;
+            ctx.format_retained(
+                format_args!("{reference}:saved_entity#{internal_id}"),
+                "creo saved entity native reference",
+            )?
+        };
         let entity = SketchEntity::new(
-            entity_id,
+            entity_storage.commit_value(entity_id)?,
             sketch_id.try_clone_for_decode(ctx, "creo saved entity sketch identity")?,
             geometry.try_clone_for_decode(ctx, "creo saved entity geometry copy")?,
         )
@@ -802,23 +1011,45 @@ pub(super) fn transfer_section_entities(
         .with_geometry_ref(placed_sketch_curve_ref(
             ctx, transform, sketch_id, &suffix, &geometry,
         )?);
-        push_section_entity(ctx, &mut entities, entity)?;
-        ctx.reserve_vec(
-            &mut saved_section_geometries,
-            1,
-            "creo saved section geometry rows",
-        )?;
-        saved_section_geometries.push((internal_id, external_id, geometry, offset, curve_id));
-    }
-    for spline in semantic_saved_section_entities(definition).filter_map(|entity| match entity {
-        crate::feature::definitions::FeatureSavedEntity::Spline(spline) => Some(spline),
-        _ => None,
-    }) {
+        identity_storage.with_storage(|| {
+            ctx.insert_hash_set(
+                &mut entity_ids,
+                ctx.copy_retained_text(entity.id().as_str(), "creo saved identity index keys")?,
+                "creo saved identity index nodes",
+            )
+        })?;
+        ctx.charge_entities(1, "admit Creo model sketch_entities")?;
+        ctx.push_scoped_vec(entity_slots, &mut entities, entity, "creo section entities")?;
+        geometry_storage.with_storage(|| {
+            ctx.reserve_vec(
+                &mut saved_section_geometries,
+                1,
+                "creo saved section geometry rows",
+            )
+        })?;
+        saved_section_geometries.push((
+            internal_id,
+            external_id,
+            geometry,
+            offset,
+            suffix,
+            suffix_storage,
+        ));
+        Ok(ControlFlow::Continue(()))
+    })?;
+    let ControlFlow::Continue(()) = visit_semantic_saved_section_entities::<
+        std::convert::Infallible,
+    >(ctx, definition, |saved| {
+        let crate::feature::definitions::FeatureSavedEntity::Spline(spline) = saved else {
+            return Ok(ControlFlow::Continue(()));
+        };
         let mut refusal = crate::lane_refusal::LaneRefusals::new();
-        let geometry = saved_spline_sketch_geometry(ctx, spline, &mut refusal)?;
+        let mut spline_storage = ctx.reserve_scoped(0, "creo saved spline candidate geometry")?;
+        let geometry = spline_storage
+            .with_storage(|| saved_spline_sketch_geometry(ctx, spline, &mut refusal))?;
         let refused = refusal.take_records_checked()?;
         let Some(geometry) = geometry.filter(|_| refused.is_empty()) else {
-            for record in &refused {
+            for record in ctx.admit_iter(&refused, "creo refused saved spline records")? {
                 let message = ctx.format_retained(
                     format_args!(
                         "Feature {} states a saved section spline at offset {} that forms no \
@@ -831,74 +1062,88 @@ pub(super) fn transfer_section_entities(
                 ctx.reserve_vec(losses, 1, "creo unresolved saved spline losses")?;
                 losses.push(crate::loss::CreoLossCode::SectionSplineUnresolved.note(message));
             }
-            continue;
+            return Ok(ControlFlow::Continue(()));
         };
-        let unique_internal_id = spline.entity_id.filter(|id| unique_saved_ids.contains(id));
-        let suffix = match unique_internal_id {
-            Some(id) => ctx.format_retained(format_args!("{id}"), "creo saved spline suffix")?,
-            None => ctx.format_retained(
-                format_args!("offset{}", spline.offset),
-                "creo saved spline suffix",
-            )?,
-        };
-        let external_id = unique_internal_id.and_then(|internal_id| {
-            definition.order_table.as_ref().and_then(|order| {
-                saved_section_external_id(
-                    order,
+        let mut suffix_storage = ctx.reserve_scoped(0, "creo section identity suffix storage")?;
+        let unique_internal_id = match spline.entity_id {
+            Some(id)
+                if ctx.contains_btree_set(
                     unique_saved_ids,
-                    ambiguous_segment_ids,
-                    internal_id,
+                    &id,
+                    "creo saved spline identity lookup",
+                )? =>
+            {
+                Some(id)
+            }
+            _ => None,
+        };
+        let suffix = match unique_internal_id {
+            Some(id) => suffix_storage.with_storage(|| {
+                ctx.format_retained(format_args!("{id}"), "creo saved spline suffix")
+            })?,
+            None => suffix_storage.with_storage(|| {
+                ctx.format_retained(
+                    format_args!("offset{}", spline.offset),
+                    "creo saved spline suffix",
                 )
-            })
-        });
-        let generated = external_id.is_some_and(|external_id| {
-            let Some(expected_kinds) = section_generated_profile_surface_kinds(&geometry) else {
-                return false;
-            };
-            section_entity_is_generated_profile(
-                complete_segment_table,
-                definition.identity.owner_feature_id(),
-                external_id,
-                expected_kinds,
-                &scan.features.entity_tables,
-                &scan.surfaces.rows,
-            )
-        });
-        let entity_id = if let Some(external_id) = external_id {
-            sketch_entity_id_admitted(ctx, sketch_id, external_id)?
+            })?,
+        };
+        let external_id = match (unique_internal_id, definition.order_table.as_ref()) {
+            (Some(internal_id), Some(order)) => saved_section_external_id(
+                ctx,
+                order,
+                unique_saved_ids,
+                ambiguous_segment_ids,
+                internal_id,
+            )?,
+            _ => None,
+        };
+        let generated = if let Some(external_id) = external_id {
+            if let Some(expected_kinds) = section_generated_profile_surface_kinds(&geometry) {
+                section_entity_is_generated_profile(
+                    ctx,
+                    complete_segment_table,
+                    definition.identity.owner_feature_id(),
+                    external_id,
+                    expected_kinds,
+                    &scan.features.entity_tables,
+                    &scan.surfaces.rows,
+                )?
+            } else {
+                false
+            }
         } else {
-            let namespace = &crate::identity::FEATDEFS_SAVED_SPLINE;
-            let text = ctx.format_retained(
-                format_args!(
-                    "{}:{}:{}#{}:{suffix}",
-                    namespace.format(),
-                    namespace.scope(),
-                    namespace.kind(),
-                    sketch_identity_scope(sketch_id)
-                ),
-                "creo saved spline entity identity",
-            )?;
-            SketchEntityId::try_from(text).ok()
+            false
         };
-        let Some(entity_id) = entity_id else {
-            continue;
-        };
-        let namespace = &crate::identity::FEATDEFS_SAVED_SPLINE_CURVE;
-        let curve_text = ctx.format_retained(
-            format_args!(
-                "{}:{}:{}#{}:{suffix}",
-                namespace.format(),
-                namespace.scope(),
-                namespace.kind(),
-                sketch_identity_scope(sketch_id)
-            ),
-            "creo saved spline curve identity",
-        )?;
-        let curve_id = CurveId::try_from(curve_text).map_err(|_| {
-            cadmpeg_core::CodecError::malformed("saved spline curve identity is invalid")
+        let mut entity_storage = ctx.reserve_scoped(0, "creo saved spline candidate identity")?;
+        let entity_id = entity_storage.with_storage(|| {
+            Ok::<_, cadmpeg_core::CodecError>(if let Some(external_id) = external_id {
+                sketch_entity_id_admitted(ctx, sketch_id, external_id)?
+            } else {
+                let namespace = &crate::identity::FEATDEFS_SAVED_SPLINE;
+                let text = ctx.format_retained(
+                    format_args!(
+                        "{}:{}:{}#{}:{suffix}",
+                        namespace.format(),
+                        namespace.scope(),
+                        namespace.kind(),
+                        sketch_identity_scope(sketch_id)
+                    ),
+                    "creo saved spline entity identity",
+                )?;
+                SketchEntityId::try_from(text).ok()
+            })
         })?;
-        if entities.iter().any(|entity| entity.id() == &entity_id) {
-            continue;
+        let Some(entity_id) = entity_id else {
+            return Ok(ControlFlow::Continue(()));
+        };
+        let already_present = ctx.contains_hash_set(
+            &entity_ids,
+            entity_id.as_str(),
+            "creo saved identity index membership",
+        )?;
+        if already_present {
+            return Ok(ControlFlow::Continue(()));
         }
         annotate(
             ctx,
@@ -912,47 +1157,84 @@ pub(super) fn transfer_section_entities(
         let native_ref = ctx.format_retained(
             format_args!(
                 "{}:saved_spline#{suffix}",
-                sketch_native_ref_admitted(ctx, sketch_id)?
+                suffix_storage.with_storage(|| sketch_native_ref_admitted(ctx, sketch_id))?
             ),
             "creo saved spline native reference",
         )?;
-        let geometry_ref = transform
-            .map(|_| {
-                ctx.copy_retained_text(curve_id.as_str(), "creo saved spline geometry reference")
-            })
-            .transpose()?;
+        let geometry_ref = if transform.is_some() {
+            let namespace = &crate::identity::FEATDEFS_SAVED_SPLINE_CURVE;
+            let curve_text = ctx.format_retained(
+                format_args!(
+                    "{}:{}:{}#{}:{suffix}",
+                    namespace.format(),
+                    namespace.scope(),
+                    namespace.kind(),
+                    sketch_identity_scope(sketch_id)
+                ),
+                "creo saved spline curve identity",
+            )?;
+            let curve_id = CurveId::try_from(curve_text).map_err(|_| {
+                cadmpeg_core::CodecError::malformed("saved spline curve identity is invalid")
+            })?;
+            Some(cadmpeg_ir::ids::Identity::from(curve_id).into_string())
+        } else {
+            None
+        };
         let entity = SketchEntity::new(
-            entity_id,
+            entity_storage.commit_value(entity_id)?,
             sketch_id.try_clone_for_decode(ctx, "creo saved spline sketch identity")?,
             geometry.try_clone_for_decode(ctx, "creo saved spline geometry copy")?,
         )
         .with_construction(!generated)
         .with_native_ref(Some(native_ref))
         .with_geometry_ref(geometry_ref);
-        push_section_entity(ctx, &mut entities, entity)?;
+        identity_storage.with_storage(|| {
+            ctx.insert_hash_set(
+                &mut entity_ids,
+                ctx.copy_retained_text(entity.id().as_str(), "creo saved identity index keys")?,
+                "creo saved identity index nodes",
+            )
+        })?;
+        ctx.charge_entities(1, "admit Creo model sketch_entities")?;
+        ctx.push_scoped_vec(entity_slots, &mut entities, entity, "creo section entities")?;
         if let Some(external_id) = external_id.filter(|_| generated) {
-            ctx.reserve_vec(
-                &mut generated_saved_geometries,
-                1,
-                "creo generated saved geometry rows",
-            )?;
+            geometry_storage.with_storage(|| {
+                ctx.reserve_vec(
+                    &mut generated_saved_geometries,
+                    1,
+                    "creo generated saved geometry rows",
+                )
+            })?;
+            geometry_storage.absorb(&mut spline_storage)?;
             generated_saved_geometries.push((external_id, geometry));
         }
-    }
-    for saved in semantic_saved_section_entities(definition) {
-        let Some((entity, offset)) = unresolved_saved_section_entity(
-            ctx,
-            definition,
-            sketch_id,
-            saved,
-            unique_saved_ids,
-            ambiguous_segment_ids,
-        )?
+        Ok(ControlFlow::Continue(()))
+    })?;
+    let ControlFlow::Continue(()) = visit_semantic_saved_section_entities::<
+        std::convert::Infallible,
+    >(ctx, definition, |saved| {
+        let mut candidate_storage =
+            ctx.reserve_scoped(0, "creo unresolved saved candidate storage")?;
+        let Some((entity, offset)) = candidate_storage.with_storage(|| {
+            unresolved_saved_section_entity(
+                ctx,
+                definition,
+                sketch_id,
+                saved,
+                unique_saved_ids,
+                ambiguous_segment_ids,
+            )
+        })?
         else {
-            continue;
+            return Ok(ControlFlow::Continue(()));
         };
-        if entities.iter().any(|existing| existing.id() == entity.id()) {
-            continue;
+        let already_present = ctx.contains_hash_set(
+            &entity_ids,
+            entity.id().as_str(),
+            "creo saved identity index membership",
+        )?;
+        if already_present {
+            return Ok(ControlFlow::Continue(()));
         }
         annotate(
             ctx,
@@ -963,43 +1245,85 @@ pub(super) fn transfer_section_entities(
             "unresolved_saved_section_entity",
             Exactness::ByteExact,
         )?;
-        push_section_entity(ctx, &mut entities, entity)?;
-    }
+        identity_storage.with_storage(|| {
+            ctx.insert_hash_set(
+                &mut entity_ids,
+                ctx.copy_retained_text(entity.id().as_str(), "creo saved identity index keys")?,
+                "creo saved identity index nodes",
+            )
+        })?;
+        let entity = candidate_storage.commit_value(entity)?;
+        ctx.charge_entities(1, "admit Creo model sketch_entities")?;
+        ctx.push_scoped_vec(entity_slots, &mut entities, entity, "creo section entities")?;
+        Ok(ControlFlow::Continue(()))
+    })?;
     let saved_profiles = saved_profile_chains(ctx, sketch_id, &generated_saved_geometries)?;
-    ctx.reserve_vec(
+    ctx.extend_vec(
         &mut profiles,
-        saved_profiles.len(),
+        saved_profiles,
         "creo saved section profile rows",
     )?;
-    profiles.extend(saved_profiles);
     if let Some(transform) = transform {
-        for segment in segments {
-            let Some(section_geometry) = resolved_segment_geometries
-                .get(&segment.offset)
+        let mut curve_identity_storage =
+            ctx.reserve_scoped(0, "creo placed curve identity index")?;
+        let mut curve_ids = std::collections::HashSet::<String>::new();
+        for curve in ctx.admit_iter(&ir.model.curves, "creo placed curve identity sources")? {
+            curve_identity_storage.with_storage(|| {
+                ctx.insert_hash_set(
+                    &mut curve_ids,
+                    ctx.copy_retained_text(curve.id.as_str(), "creo placed curve index keys")?,
+                    "creo placed curve index nodes",
+                )
+            })?;
+        }
+        for segment in ctx.admit_iter(segments, "creo placed section segment rows")? {
+            let mut suffix_storage =
+                ctx.reserve_scoped(0, "creo section identity suffix storage")?;
+            let section_geometry = match ctx
+                .get_btree_map(
+                    resolved_segment_geometries,
+                    &segment.offset,
+                    "creo placed resolved geometry lookup",
+                )?
                 .and_then(Option::as_ref)
-                .or_else(|| {
-                    segment_geometries
-                        .get(&segment.offset)
-                        .and_then(Option::as_ref)
-                        .filter(|geometry| {
-                            matches!(
-                                geometry.definition(),
-                                SketchGeometryDefinition::ReferenceLine { .. }
-                            )
-                        })
-                })
-            else {
+            {
+                Some(geometry) => Some(geometry),
+                None => ctx
+                    .get_btree_map(
+                        segment_geometries,
+                        &segment.offset,
+                        "creo placed fallback geometry lookup",
+                    )?
+                    .and_then(Option::as_ref)
+                    .filter(|geometry| {
+                        matches!(
+                            geometry.definition(),
+                            SketchGeometryDefinition::ReferenceLine { .. }
+                        )
+                    }),
+            };
+            let Some(section_geometry) = section_geometry else {
                 continue;
             };
             let Some(geometry) = placed_section_geometry_curve(transform, section_geometry) else {
                 continue;
             };
-            let suffix =
-                section_segment_identity_suffix_admitted(ctx, unique_segment_ids, segment)?;
-            let Some(id) = typed_sketch_section_curve_id_admitted(ctx, sketch_id, &suffix)? else {
+            let suffix = suffix_storage.with_storage(|| {
+                section_segment_identity_suffix_admitted(ctx, unique_segment_ids, segment)
+            })?;
+            let mut curve_storage =
+                ctx.reserve_scoped(0, "creo placed curve candidate identity")?;
+            let Some(id) = curve_storage
+                .with_storage(|| typed_sketch_section_curve_id_admitted(ctx, sketch_id, &suffix))?
+            else {
                 continue;
             };
-            if ir.model.curves.iter().any(|existing| existing.id == id) {
+            let already_present = ctx.contains_hash_set(
+                &curve_ids,
+                id.as_str(),
+                "creo placed curve index membership",
+            )?;
+            if already_present {
                 continue;
             }
             annotate(
@@ -1012,11 +1336,18 @@ pub(super) fn transfer_section_entities(
                 Exactness::Derived,
             )?;
             ctx.charge_entities(1, "admit Creo model curves")?;
+            curve_identity_storage.with_storage(|| {
+                ctx.insert_hash_set(
+                    &mut curve_ids,
+                    ctx.copy_retained_text(id.as_str(), "creo placed curve index keys")?,
+                    "creo placed curve index nodes",
+                )
+            })?;
             source_carriers.admit_curve(
                 ctx,
                 ir,
                 Curve {
-                    id,
+                    id: curve_storage.commit_value(id)?,
                     geometry,
                     source_object: Some(placed_source_object(
                         ctx,
@@ -1028,28 +1359,46 @@ pub(super) fn transfer_section_entities(
                 },
             )?;
         }
-        for segment in definition
-            .segments
-            .iter()
-            .flat_map(|segments| segments.rows.circles())
-        {
-            let Some(section_geometry) = circle_geometries.get(&segment.offset) else {
+        for segment in ctx.admit_iter(&circle_rows, "creo placed section circles rows")? {
+            let mut suffix_storage =
+                ctx.reserve_scoped(0, "creo section identity suffix storage")?;
+            let Some(section_geometry) = ctx.get_btree_map(
+                circle_geometries,
+                &segment.offset,
+                "creo section entity geometry lookup",
+            )?
+            else {
                 continue;
             };
             let Some(geometry) = placed_section_geometry_curve(transform, section_geometry) else {
                 continue;
             };
-            let suffix = section_row_suffix(
-                ctx,
-                unique_segment_ids.contains(&segment.external_id),
-                segment.external_id,
-                "circle",
-                segment.offset,
-            )?;
-            let Some(id) = typed_sketch_section_curve_id_admitted(ctx, sketch_id, &suffix)? else {
+            let suffix = suffix_storage.with_storage(|| {
+                section_row_suffix(
+                    ctx,
+                    ctx.contains_btree_set(
+                        unique_segment_ids,
+                        &segment.external_id,
+                        "creo section entity ID membership",
+                    )?,
+                    segment.external_id,
+                    "circle",
+                    segment.offset,
+                )
+            })?;
+            let mut curve_storage =
+                ctx.reserve_scoped(0, "creo placed curve candidate identity")?;
+            let Some(id) = curve_storage
+                .with_storage(|| typed_sketch_section_curve_id_admitted(ctx, sketch_id, &suffix))?
+            else {
                 continue;
             };
-            if ir.model.curves.iter().any(|existing| existing.id == id) {
+            let already_present = ctx.contains_hash_set(
+                &curve_ids,
+                id.as_str(),
+                "creo placed curve index membership",
+            )?;
+            if already_present {
                 continue;
             }
             annotate(
@@ -1062,11 +1411,18 @@ pub(super) fn transfer_section_entities(
                 Exactness::Derived,
             )?;
             ctx.charge_entities(1, "admit Creo model curves")?;
+            curve_identity_storage.with_storage(|| {
+                ctx.insert_hash_set(
+                    &mut curve_ids,
+                    ctx.copy_retained_text(id.as_str(), "creo placed curve index keys")?,
+                    "creo placed curve index nodes",
+                )
+            })?;
             source_carriers.admit_curve(
                 ctx,
                 ir,
                 Curve {
-                    id,
+                    id: curve_storage.commit_value(id)?,
                     geometry,
                     source_object: Some(placed_source_object(
                         ctx,
@@ -1078,28 +1434,50 @@ pub(super) fn transfer_section_entities(
                 },
             )?;
         }
-        for segment in definition
-            .segments
-            .iter()
-            .flat_map(|segments| segments.rows.centered_lines())
-        {
-            let Some(section_geometry) = centered_line_geometries.get(&segment.offset) else {
+
+        for segment in ctx.admit_iter(
+            &centered_line_rows,
+            "creo placed section centered-lines rows",
+        )? {
+            let mut suffix_storage =
+                ctx.reserve_scoped(0, "creo section identity suffix storage")?;
+            let Some(section_geometry) = ctx.get_btree_map(
+                centered_line_geometries,
+                &segment.offset,
+                "creo section entity geometry lookup",
+            )?
+            else {
                 continue;
             };
             let Some(geometry) = placed_section_geometry_curve(transform, section_geometry) else {
                 continue;
             };
-            let suffix = section_row_suffix(
-                ctx,
-                unique_segment_ids.contains(&segment.external_id),
-                segment.external_id,
-                "centered_line",
-                segment.offset,
-            )?;
-            let Some(id) = typed_sketch_section_curve_id_admitted(ctx, sketch_id, &suffix)? else {
+            let suffix = suffix_storage.with_storage(|| {
+                section_row_suffix(
+                    ctx,
+                    ctx.contains_btree_set(
+                        unique_segment_ids,
+                        &segment.external_id,
+                        "creo section entity ID membership",
+                    )?,
+                    segment.external_id,
+                    "centered_line",
+                    segment.offset,
+                )
+            })?;
+            let mut curve_storage =
+                ctx.reserve_scoped(0, "creo placed curve candidate identity")?;
+            let Some(id) = curve_storage
+                .with_storage(|| typed_sketch_section_curve_id_admitted(ctx, sketch_id, &suffix))?
+            else {
                 continue;
             };
-            if ir.model.curves.iter().any(|existing| existing.id == id) {
+            let already_present = ctx.contains_hash_set(
+                &curve_ids,
+                id.as_str(),
+                "creo placed curve index membership",
+            )?;
+            if already_present {
                 continue;
             }
             annotate(
@@ -1112,11 +1490,18 @@ pub(super) fn transfer_section_entities(
                 Exactness::Derived,
             )?;
             ctx.charge_entities(1, "admit Creo model curves")?;
+            curve_identity_storage.with_storage(|| {
+                ctx.insert_hash_set(
+                    &mut curve_ids,
+                    ctx.copy_retained_text(id.as_str(), "creo placed curve index keys")?,
+                    "creo placed curve index nodes",
+                )
+            })?;
             source_carriers.admit_curve(
                 ctx,
                 ir,
                 Curve {
-                    id,
+                    id: curve_storage.commit_value(id)?,
                     geometry,
                     source_object: Some(placed_source_object(
                         ctx,
@@ -1128,13 +1513,27 @@ pub(super) fn transfer_section_entities(
                 },
             )?;
         }
-        for (internal_id, external_id, section_geometry, offset, id) in saved_section_geometries {
-            if ir.model.curves.iter().any(|existing| existing.id == id) {
-                continue;
-            }
+
+        for (internal_id, external_id, section_geometry, offset, suffix, _suffix_storage) in
+            ctx.admit_iter(saved_section_geometries, "creo placed saved geometry rows")?
+        {
             let Some(geometry) = placed_section_geometry_curve(transform, &section_geometry) else {
                 continue;
             };
+            let mut curve_storage = ctx.reserve_scoped(0, "creo saved curve candidate identity")?;
+            let Some(id) = curve_storage
+                .with_storage(|| typed_sketch_section_curve_id_admitted(ctx, sketch_id, &suffix))?
+            else {
+                continue;
+            };
+            let already_present = ctx.contains_hash_set(
+                &curve_ids,
+                id.as_str(),
+                "creo placed curve index membership",
+            )?;
+            if already_present {
+                continue;
+            }
             annotate(
                 ctx,
                 annotations,
@@ -1145,11 +1544,18 @@ pub(super) fn transfer_section_entities(
                 Exactness::Derived,
             )?;
             ctx.charge_entities(1, "admit Creo model curves")?;
+            curve_identity_storage.with_storage(|| {
+                ctx.insert_hash_set(
+                    &mut curve_ids,
+                    ctx.copy_retained_text(id.as_str(), "creo placed curve index keys")?,
+                    "creo placed curve index nodes",
+                )
+            })?;
             source_carriers.admit_curve(
                 ctx,
                 ir,
                 Curve {
-                    id,
+                    id: curve_storage.commit_value(id)?,
                     geometry,
                     source_object: Some(match external_id {
                         Some(external_id) => placed_source_object(
@@ -1173,12 +1579,15 @@ pub(super) fn transfer_section_entities(
 
 #[cfg(test)]
 mod tests {
+    mod placed_storage;
+    mod saved_storage;
+    mod set_owner_tests;
     use super::{
         admitted_endpoint_refs, copied_or_native_geometry, native_section_geometry,
-        placed_source_object, push_section_entity, section_row_suffix,
+        placed_source_object, section_row_suffix,
     };
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_ir::sketches::{SketchEntity, SketchEntityId, SketchGeometry, SketchId};
+    use cadmpeg_ir::sketches::{SketchGeometry, SketchId};
 
     fn with_policy<T>(policy: &DecodePolicy, run: impl FnOnce(&DecodeContext<'_>) -> T) -> T {
         let arena = DecodeArena::new();
@@ -1189,14 +1598,44 @@ mod tests {
     #[test]
     fn native_section_geometry_kind_refuses_before_retained_copy() {
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 3;
+        policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            Some("creo section native geometry kind"),
+            |cap| {
+                let trial_arena = cadmpeg_core::decode::DecodeArena::new();
+                let mut trial_policy = cadmpeg_core::decode::DecodePolicy::service();
+                trial_policy.limits.max_retained_bytes = cap;
+                let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                    &[],
+                    &trial_arena,
+                    &trial_policy,
+                )
+                .expect("root");
+                native_section_geometry(&ctx, "line")
+            },
+        );
         assert!(
             matches!(with_policy(&policy, |ctx| native_section_geometry(ctx, "line")),
             Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
                 if refusal.dimension == ResourceDimension::RetainedBytes
                     && refusal.operation == "creo section native geometry kind")
         );
-        policy.limits.max_retained_bytes = 4;
+        policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            None,
+            |cap| {
+                let trial_arena = cadmpeg_core::decode::DecodeArena::new();
+                let mut trial_policy = cadmpeg_core::decode::DecodePolicy::service();
+                trial_policy.limits.max_retained_bytes = cap;
+                let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                    &[],
+                    &trial_arena,
+                    &trial_policy,
+                )
+                .expect("root");
+                native_section_geometry(&ctx, "line")
+            },
+        );
         assert_eq!(
             with_policy(&policy, |ctx| native_section_geometry(ctx, "line"))
                 .expect("exact cap admits kind"),
@@ -1215,14 +1654,44 @@ mod tests {
             ),
         )]);
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 5;
+        policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            Some("creo section geometry copy"),
+            |cap| {
+                let trial_arena = cadmpeg_core::decode::DecodeArena::new();
+                let mut trial_policy = cadmpeg_core::decode::DecodePolicy::service();
+                trial_policy.limits.max_retained_bytes = cap;
+                let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                    &[],
+                    &trial_arena,
+                    &trial_policy,
+                )
+                .expect("root");
+                copied_or_native_geometry(&ctx, &geometries, 7, "line")
+            },
+        );
         assert!(
             matches!(with_policy(&policy, |ctx| copied_or_native_geometry(ctx, &geometries, 7, "line")),
             Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
                 if refusal.dimension == ResourceDimension::RetainedBytes
                     && refusal.operation == "creo section geometry copy")
         );
-        policy.limits.max_retained_bytes = 6;
+        policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            None,
+            |cap| {
+                let trial_arena = cadmpeg_core::decode::DecodeArena::new();
+                let mut trial_policy = cadmpeg_core::decode::DecodePolicy::service();
+                trial_policy.limits.max_retained_bytes = cap;
+                let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                    &[],
+                    &trial_arena,
+                    &trial_policy,
+                )
+                .expect("root");
+                copied_or_native_geometry(&ctx, &geometries, 7, "line")
+            },
+        );
         assert_eq!(
             with_policy(&policy, |ctx| copied_or_native_geometry(
                 ctx,
@@ -1239,15 +1708,44 @@ mod tests {
     fn section_row_suffix_refuses_each_retained_choice() {
         for (unique, expected) in [(true, "42"), (false, "circle:offset:9")] {
             let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes =
-                cadmpeg_core::decode::u64_from_index(expected.len()) - 1;
+            policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                Some("creo section entity suffix"),
+                |cap| {
+                    let trial_arena = cadmpeg_core::decode::DecodeArena::new();
+                    let mut trial_policy = cadmpeg_core::decode::DecodePolicy::service();
+                    trial_policy.limits.max_retained_bytes = cap;
+                    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                        &[],
+                        &trial_arena,
+                        &trial_policy,
+                    )
+                    .expect("root");
+                    section_row_suffix(&ctx, unique, 42, "circle", 9)
+                },
+            );
             assert!(
                 matches!(with_policy(&policy, |ctx| section_row_suffix(ctx, unique, 42, "circle", 9)),
                 Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
                     if refusal.dimension == ResourceDimension::RetainedBytes
                         && refusal.operation == "creo section entity suffix")
             );
-            policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(expected.len());
+            policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                None,
+                |cap| {
+                    let trial_arena = cadmpeg_core::decode::DecodeArena::new();
+                    let mut trial_policy = cadmpeg_core::decode::DecodePolicy::service();
+                    trial_policy.limits.max_retained_bytes = cap;
+                    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                        &[],
+                        &trial_arena,
+                        &trial_policy,
+                    )
+                    .expect("root");
+                    section_row_suffix(&ctx, unique, 42, "circle", 9)
+                },
+            );
             assert_eq!(
                 with_policy(&policy, |ctx| section_row_suffix(
                     ctx, unique, 42, "circle", 9
@@ -1262,43 +1760,47 @@ mod tests {
     fn placed_section_source_refuses_before_object_id_formatting() {
         let expected = "FeatDefs:section#5:42";
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(expected.len()) - 1;
+        policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            Some("creo placed section source object"),
+            |cap| {
+                let trial_arena = cadmpeg_core::decode::DecodeArena::new();
+                let mut trial_policy = cadmpeg_core::decode::DecodePolicy::service();
+                trial_policy.limits.max_retained_bytes = cap;
+                let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                    &[],
+                    &trial_arena,
+                    &trial_policy,
+                )
+                .expect("root");
+                placed_source_object(&ctx, expected)
+            },
+        );
         assert!(
             matches!(with_policy(&policy, |ctx| placed_source_object(ctx, expected)),
             Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
                 if refusal.dimension == ResourceDimension::RetainedBytes
                     && refusal.operation == "creo placed section source object")
         );
-        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(expected.len());
+        policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            None,
+            |cap| {
+                let trial_arena = cadmpeg_core::decode::DecodeArena::new();
+                let mut trial_policy = cadmpeg_core::decode::DecodePolicy::service();
+                trial_policy.limits.max_retained_bytes = cap;
+                let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                    &[],
+                    &trial_arena,
+                    &trial_policy,
+                )
+                .expect("root");
+                placed_source_object(&ctx, expected)
+            },
+        );
         let admitted = with_policy(&policy, |ctx| placed_source_object(ctx, expected))
             .expect("exact cap admits placed source");
         assert_eq!(admitted.object_id.as_str(), expected);
-    }
-
-    #[test]
-    fn section_entity_row_refuses_before_vector_growth() {
-        let sketch = SketchId::mint("creo:model:sketch#5").expect("valid sketch ID");
-        let id = SketchEntityId::mint("creo:featdefs:sketch_entity#5:7").expect("valid entity ID");
-        let geometry = SketchGeometry::native(
-            cadmpeg_core::text::NonBlankString::try_from("line").expect("valid kind"),
-        );
-        let entity = || SketchEntity::new(id.clone(), sketch.clone(), geometry.clone());
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        assert!(
-            matches!(with_policy(&policy, |ctx| push_section_entity(ctx, &mut Vec::new(), entity())),
-            Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
-                if refusal.dimension == ResourceDimension::CollectionItems
-                    && refusal.operation == "creo section entities")
-        );
-        policy.limits.max_collection_items = 1;
-        let mut entities = Vec::new();
-        with_policy(&policy, |ctx| {
-            push_section_entity(ctx, &mut entities, entity())
-        })
-        .expect("exact cap admits row");
-        assert_eq!(entities.len(), 1);
-        assert_eq!(entities[0].id(), &id);
     }
 
     #[test]
@@ -1307,23 +1809,38 @@ mod tests {
         let expected = "creo:featdefs:sketch#5:point#7";
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(expected.len()) - 1;
+        policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            Some("creo sketch point reference"),
+            |cap| {
+                let trial_arena = cadmpeg_core::decode::DecodeArena::new();
+                let mut trial_policy = cadmpeg_core::decode::DecodePolicy::service();
+                trial_policy.limits.max_retained_bytes = cap;
+                let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                    &[],
+                    &trial_arena,
+                    &trial_policy,
+                )
+                .expect("root");
+                admitted_endpoint_refs(&ctx, &sketch, &[7])
+            },
+        );
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-        assert!(matches!(admitted_endpoint_refs(&ctx, &sketch, [7]),
+        assert!(matches!(admitted_endpoint_refs(&ctx, &sketch, &[7]),
             Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
                 if refusal.dimension == ResourceDimension::RetainedBytes
                     && refusal.operation == "creo sketch point reference"));
         policy.limits.max_retained_bytes = DecodePolicy::service().limits.max_retained_bytes;
         policy.limits.max_collection_items = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-        assert!(matches!(admitted_endpoint_refs(&ctx, &sketch, [7]),
+        assert!(matches!(admitted_endpoint_refs(&ctx, &sketch, &[7]),
             Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
                 if refusal.dimension == ResourceDimension::CollectionItems
                     && refusal.operation == "creo section endpoint references"));
         let service = DecodePolicy::service();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &service).expect("empty root");
         assert_eq!(
-            admitted_endpoint_refs(&ctx, &sketch, [7]).expect("service endpoint"),
+            admitted_endpoint_refs(&ctx, &sketch, &[7]).expect("service endpoint"),
             [expected]
         );
     }

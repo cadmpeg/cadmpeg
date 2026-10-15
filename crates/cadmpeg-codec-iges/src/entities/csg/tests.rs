@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
@@ -21,11 +21,99 @@ use crate::test_support::test_solids_and_structure::{
 };
 use crate::IgesCodec;
 
+struct CsgProjectionInput {
+    directory: Vec<crate::directory::DirectoryEntry>,
+    records: Vec<crate::parameter::ParameterRecord>,
+    global: crate::global::ProjectedGlobal,
+}
+
+fn parse_csg_projection_input(bytes: &[u8]) -> CsgProjectionInput {
+    crate::test_support::with_service_context(bytes, |ctx| {
+        let scan = crate::card::scan_with_context(bytes, ctx).unwrap();
+        let (global, _, _) = crate::global::parse(&scan, ctx).unwrap();
+        let (directory, quarantined) =
+            crate::directory::parse(&scan, global.global_table(), ctx).unwrap();
+        let parameters = crate::parameter::assemble_with_context(
+            &scan,
+            &directory,
+            &quarantined,
+            &global,
+            ctx,
+        )
+        .unwrap();
+        CsgProjectionInput {
+            directory,
+            records: parameters.records,
+            global: global.length_context().unwrap(),
+        }
+    })
+}
+
+fn project_csg(
+    input: &CsgProjectionInput,
+    policy: &DecodePolicy,
+) -> Result<(BTreeSet<u32>, Vec<String>), CodecError> {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;
+    let entries = input
+        .directory
+        .iter()
+        .map(|entry| (entry.sequence, entry))
+        .collect::<BTreeMap<_, _>>();
+    let records = input
+        .records
+        .iter()
+        .map(|record| (record.directory_sequence, record))
+        .collect::<BTreeMap<_, _>>();
+    let mut ir = CadIr::empty();
+    let outcome = super::project(
+        &mut ir,
+        &input.directory,
+        &entries,
+        &records,
+        &input.global,
+        &ctx,
+    )?;
+    let decoded = outcome.decoded.iter().copied().collect();
+    let losses = outcome
+        .losses
+        .iter()
+        .map(|loss| loss.message.clone())
+        .collect();
+    drop(outcome);
+    drop(ir);
+    ctx.finish_session()?;
+    Ok((decoded, losses))
+}
+
+fn set_directory_transform(bytes: &mut [u8], sequence: u32, transform: u32) {
+    let card_sequence = format!("{sequence:>7}");
+    let transform = format!("{transform:>8}");
+    for card in bytes.chunks_exact_mut(crate::test_support::test_cards::CARD_LINE_BYTES) {
+        if card[72] == b'D' && &card[73..80] == card_sequence.as_bytes() {
+            card[48..56].copy_from_slice(transform.as_bytes());
+            return;
+        }
+    }
+    panic!("missing Directory Entry card D{sequence}");
+}
+
+fn btree_storage_bytes<K, V>(nodes: usize) -> u64 {
+    // Match the core node bound: eleven key/value slots, links, and alignment.
+    let alignment = std::mem::align_of::<K>()
+        .max(std::mem::align_of::<V>())
+        .max(std::mem::align_of::<usize>());
+    let bytes_per_node = 11
+        * (std::mem::size_of::<K>() + std::mem::size_of::<V>())
+        + 16 * std::mem::size_of::<usize>()
+        + 2 * alignment;
+    u64::try_from(bytes_per_node).unwrap() * u64::try_from(nodes).unwrap()
+}
+
 const EPS_PROFILE_CLOSURE: f64 = 1.0e-9;
 
 fn assert_csg_refusal(bytes: &[u8], operation: &str, dimension: ResourceDimension) {
-    let mut cap = 0_u64;
-    for _ in 0..4096 {
+    cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
         let mut policy = DecodePolicy::service();
         match dimension {
             ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
@@ -33,26 +121,19 @@ fn assert_csg_refusal(bytes: &[u8], operation: &str, dimension: ResourceDimensio
             ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
             _ => panic!("unsupported test dimension"),
         }
-        match IgesCodec.decode(
-            &mut Cursor::new(bytes),
-            &DecodeOptions {
-                policy,
-                ..DecodeOptions::default()
-            },
-        ) {
-            Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
-                assert_eq!(limit.dimension, dimension);
-                if limit.operation == operation {
-                    return;
-                }
-                let next = limit.used.checked_add(limit.additional).unwrap();
-                assert!(next > cap, "limit did not advance from {cap}: {limit:?}");
-                cap = next;
-            }
-            other => panic!("did not reach {operation} at cap {cap}: {other:?}"),
-        }
-    }
-    panic!("did not reach {operation} within 4096 admission boundaries");
+        IgesCodec
+            .decode(
+                &mut Cursor::new(bytes),
+                &DecodeOptions {
+                    policy,
+                    ..DecodeOptions::default()
+                },
+            )
+            .map_err(|error| match error {
+                DecodeFailure::Codec(error) => error,
+                other => panic!("{other:?}"),
+            })
+    });
 }
 
 #[test]
@@ -82,6 +163,136 @@ fn csg_boolean_terms_and_validation_nodes_refuse_collection_limits() {
         "iges boolean term validation",
         ResourceDimension::WorkUnits,
     );
+}
+
+#[test]
+fn rejected_boolean_definitions_release_each_postfix_vector_before_the_next() {
+    const TERM_COUNT: usize = 1024;
+
+    let invalid_term = (0..TERM_COUNT)
+        .map(|index| if index == 0 { "0" } else { "-1" })
+        .collect::<Vec<_>>()
+        .join(",");
+    let unbalanced_stack = (0..TERM_COUNT)
+        .map(|_| "-1")
+        .collect::<Vec<_>>()
+        .join(",");
+    let bytes = owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 180,
+            form: 0,
+            label: "BADTERM".into(),
+            status: "00000000",
+            parameters: format!("180,{TERM_COUNT},{invalid_term};"),
+        },
+        OwnedTestEntity {
+            entity_type: 180,
+            form: 0,
+            label: "BADSTACK".into(),
+            status: "00000000",
+            parameters: format!("180,{TERM_COUNT},{unbalanced_stack};"),
+        },
+    ]);
+    let input = parse_csg_projection_input(&bytes);
+
+    let loss_note_bytes = u64::try_from(std::mem::size_of::<cadmpeg_ir::report::loss::LossNote>())
+        .unwrap();
+    assert!(std::mem::size_of::<cadmpeg_ir::report::loss::LossNote>() <= 1024);
+    let term_vector_bytes = u64::try_from(TERM_COUNT).unwrap()
+        * u64::try_from(std::mem::size_of::<super::BooleanTerm>()).unwrap();
+    let loss_slot_bytes = loss_note_bytes * 4;
+    let mut policy = DecodePolicy::service();
+    // Each rejected record reserves one exact postfix vector. LossNote's
+    // amortized slot reservation starts at four entries. The second vector
+    // must reuse the first vector's released bytes while those loss slots live.
+    policy.limits.max_materialized_bytes = term_vector_bytes + loss_slot_bytes;
+
+    let (decoded, losses) = project_csg(&input, &policy).unwrap();
+    assert!(decoded.is_empty());
+    assert_eq!(
+        losses,
+        [
+            "IGES entity type 180 form 0 was not projected: Boolean postfix term is invalid",
+            "IGES entity type 180 form 0 was not projected: Boolean postfix stack is unbalanced",
+        ]
+        .map(str::to_owned)
+    );
+}
+
+#[test]
+fn selected_component_transform_runs_after_boolean_validation_storage_drops() {
+    const BOOLEAN_TERM_COUNT: usize = 31;
+    const TRANSFORM_CHAIN_LENGTH: usize = 36;
+
+    let terms = (0..BOOLEAN_TERM_COUNT)
+        .map(|index| if index < 2 || index % 2 == 1 { "-1" } else { "1" })
+        .collect::<Vec<_>>()
+        .join(",");
+    let mut entities = vec![
+        OwnedTestEntity {
+            entity_type: 158,
+            form: 0,
+            label: "SPHERE".into(),
+            status: "00000000",
+            parameters: "158,1,0,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 180,
+            form: 0,
+            label: "TREE".into(),
+            status: "00000000",
+            parameters: format!("180,{BOOLEAN_TERM_COUNT},{terms};"),
+        },
+        OwnedTestEntity {
+            entity_type: 182,
+            form: 0,
+            label: "SELECTED".into(),
+            status: "00000300",
+            parameters: "182,3,0,0,0;".into(),
+        },
+    ];
+    for _ in 0..TRANSFORM_CHAIN_LENGTH {
+        entities.push(OwnedTestEntity {
+            entity_type: 124,
+            form: 0,
+            label: "IDENTITY".into(),
+            status: "00000000",
+            parameters: "124,1,0,0,0,0,1,0,0,0,0,1,0;".into(),
+        });
+    }
+    let mut bytes = owned_test_file(&entities);
+    set_directory_transform(&mut bytes, 5, 7);
+    for index in 0..TRANSFORM_CHAIN_LENGTH {
+        let sequence = 7 + u32::try_from(index * 2).unwrap();
+        let parent = if index + 1 == TRANSFORM_CHAIN_LENGTH {
+            0
+        } else {
+            sequence + 2
+        };
+        set_directory_transform(&mut bytes, sequence, parent);
+    }
+    let input = parse_csg_projection_input(&bytes);
+
+    let decoded_storage = btree_storage_bytes::<u32, ()>(1);
+    // The core bound adds one tree node at entry 1 and then every fifth key.
+    let transform_nodes = TRANSFORM_CHAIN_LENGTH.div_ceil(5);
+    let selected_phase_peak = decoded_storage + btree_storage_bytes::<u32, ()>(transform_nodes);
+    let boolean_phase_bound = decoded_storage
+        + u64::try_from(BOOLEAN_TERM_COUNT).unwrap()
+            * u64::try_from(std::mem::size_of::<super::BooleanTerm>()).unwrap()
+        + btree_storage_bytes::<u32, Vec<super::BooleanTerm>>(1)
+        + btree_storage_bytes::<u32, ()>(1)
+        + btree_storage_bytes::<u32, bool>(1);
+    assert!(
+        selected_phase_peak > boolean_phase_bound,
+        "selected phase bound {selected_phase_peak} must exceed the conservative Boolean-phase bound {boolean_phase_bound}"
+    );
+
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = selected_phase_peak;
+    let (decoded, losses) = project_csg(&input, &policy).unwrap();
+    assert_eq!(decoded, BTreeSet::from([1, 3, 5]));
+    assert!(losses.is_empty());
 }
 
 #[test]
@@ -157,7 +368,20 @@ fn profile_closure_rejects_conflicting_edge_occurrences() {
         },
     ]);
 
-    assert_eq!(super::profile_closed(&ir, 1, EPS_PROFILE_CLOSURE), None);
+    assert_eq!(
+        crate::test_support::with_service_context(&[], |ctx| {
+            let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir, ctx)
+                .map_err(CodecError::from)?;
+            super::profile_closed(
+                &index,
+                &ir.model.edges.iter().collect::<Vec<_>>(),
+                EPS_PROFILE_CLOSURE,
+                ctx,
+            )
+        })
+        .unwrap(),
+        None
+    );
 }
 
 #[test]
@@ -613,3 +837,160 @@ fn decode_rejects_cyclic_boolean_tree_references() {
         2
     );
 }
+
+#[test]
+fn csg_profile_indexes_and_boolean_scans_preserve_work_refusals() {
+    let bytes = procedural_and_boolean_solids_file();
+    for operation in [
+        "iges solid profile edge indexing",
+        "iges solid profile edges",
+        "iges Boolean postfix parsing",
+        "iges Boolean postfix stack",
+    ] {
+        assert_csg_refusal(&bytes, operation, ResourceDimension::WorkUnits);
+    }
+}
+
+#[test]
+fn csg_ordered_queries_preserve_work_refusals() {
+    let nested = nested_brep_boolean_file();
+    for operation in [
+        "iges csg parameter record lookup",
+        "iges boolean directory lookup",
+        "iges boolean definition lookup",
+        "iges boolean operand directory lookup",
+        "iges boolean validity memo lookup",
+        "iges boolean path removal",
+    ] {
+        assert_csg_refusal(&nested, operation, ResourceDimension::WorkUnits);
+    }
+    let selected = procedural_and_boolean_solids_file();
+    for operation in [
+        "iges selected component decoded lookup",
+        "iges selected component directory lookup",
+    ] {
+        assert_csg_refusal(&selected, operation, ResourceDimension::WorkUnits);
+    }
+}
+
+fn profile_proof_model() -> CadIr {
+    let mut ir = CadIr::empty();
+    for sequence in [1, 3, 5, 7] {
+        ir.model.curves.push(Curve {
+            id: CurveId::mint(format!("iges:model:curve#D{sequence}")).unwrap(),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+                cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    1.0,
+                ).unwrap(),
+            )),
+            source_object: None,
+        });
+    }
+    for (slot, position) in [Point3::new(1.0, 0.0, 0.0), Point3::new(-1.0, 0.0, 0.0)]
+        .into_iter().enumerate()
+    {
+        let point = PointId::mint(format!("test:model:point#{slot}")).unwrap();
+        ir.model.points.push(Point::new(
+            point.clone(), cadmpeg_ir::features::FinitePoint3::new(position).unwrap(), None,
+        ));
+        ir.model.vertices.push(Vertex {
+            id: VertexId::mint(format!("test:model:vertex#{slot}")).unwrap(),
+            point,
+            tolerance: None,
+        });
+    }
+    for (slot, sequence, end) in [(0, 1, 0), (1, 3, 1), (2, 5, 0), (3, 5, 1)] {
+        let range = if end == 0 { std::f64::consts::TAU } else { std::f64::consts::PI };
+        ir.model.edges.push(Edge {
+            id: EdgeId::mint(format!("test:model:edge#{slot}")).unwrap(),
+            carrier: cadmpeg_ir::topology::EdgeCarrier::new(
+                Some(CurveId::mint(format!("iges:model:curve#D{sequence}")).unwrap()),
+                Some([0.0, range]),
+            ).unwrap(),
+            start: VertexId::mint("test:model:vertex#0").unwrap(),
+            end: VertexId::mint(format!("test:model:vertex#{end}")).unwrap(),
+            tolerance: None,
+        });
+    }
+    ir
+}
+
+#[test]
+fn repeated_profile_closure_reuses_the_complete_source_proof() {
+    const REPEATS: u64 = 20_000;
+    let ir = profile_proof_model();
+    let index = cadmpeg_ir::index::ModelIndex::build(&ir, cadmpeg_ir::index::StandardIndex);
+    let mut policy = DecodePolicy::service();
+    // One single-key cache comparison reads u32+u64 (12 bytes). The 4,096
+    // unit allowance covers one proof over two point/vertex searches and
+    // one B-tree node insertion for this four-curve, two-point fixture.
+    policy.limits.max_work_units = REPEATS * 12 + 4_096;
+    crate::test_support::with_policy_context(&[], &policy, |ctx| {
+        let mut proofs = super::ProfileClosureProofs {
+            proven: std::collections::BTreeMap::new(),
+            storage: ctx.reserve_scoped(0, "iges solid profile closure proofs").unwrap(),
+        };
+        for _ in 0..REPEATS {
+            assert_eq!(proofs.closed(1, &index, &[&ir.model.edges[0]], EPS_PROFILE_CLOSURE, ctx)
+                .unwrap(), Some(true));
+        }
+    });
+    crate::test_support::with_service_context(&[], |ctx| {
+        let mut proofs = super::ProfileClosureProofs {
+            proven: std::collections::BTreeMap::new(),
+            storage: ctx.reserve_scoped(0, "iges solid profile closure proofs").unwrap(),
+        };
+        assert_eq!(proofs.closed(3, &index, &[&ir.model.edges[1]], EPS_PROFILE_CLOSURE, ctx)
+            .unwrap(), Some(false));
+        assert_eq!(proofs.closed(3, &index, &[&ir.model.edges[1]], 3.0, ctx)
+            .unwrap(), Some(true));
+        for _ in 0..2 {
+            assert_eq!(proofs.closed(5, &index, &[&ir.model.edges[2], &ir.model.edges[3]],
+                EPS_PROFILE_CLOSURE, ctx).unwrap(), None);
+            assert_eq!(proofs.closed(7, &index, &[], EPS_PROFILE_CLOSURE, ctx).unwrap(), None);
+        }
+        assert_eq!(proofs.proven.len(), 4);
+    });
+}
+
+#[test]
+fn profile_closure_proof_cache_preserves_refusal_boundaries() {
+    let ir = profile_proof_model();
+    let index = cadmpeg_ir::index::ModelIndex::build(&ir, cadmpeg_ir::index::StandardIndex);
+    for (dimension, operation) in [
+        (ResourceDimension::WorkUnits, "iges solid profile closure lookup"),
+        (ResourceDimension::CollectionItems, "iges solid profile closure proofs"),
+        (ResourceDimension::MaterializedBytes, "iges solid profile closure proofs"),
+    ] {
+        cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            match dimension {
+                ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
+                ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
+                ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = cap,
+                _ => unreachable!(),
+            }
+            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            let mut proofs = super::ProfileClosureProofs {
+                proven: std::collections::BTreeMap::new(),
+                storage: ctx.reserve_scoped(0, "iges solid profile closure proofs")?,
+            };
+            let result = proofs.closed(1, &index, &[&ir.model.edges[0]], EPS_PROFILE_CLOSURE, &ctx)
+                .and_then(|_| proofs.closed(1, &index, &[&ir.model.edges[0]], EPS_PROFILE_CLOSURE, &ctx));
+            drop(proofs);
+            if let Err(CodecError::ResourceLimit(ref limit)) = result {
+                assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual))
+                    if actual == *limit));
+            } else {
+                ctx.finish_session()?;
+            }
+            result
+        });
+    }
+}
+
+mod recursive_storage;

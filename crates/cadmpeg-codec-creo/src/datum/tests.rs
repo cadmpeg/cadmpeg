@@ -53,7 +53,7 @@ fn named_datum_outline_slots_refuse_before_exact_growth() {
     let data = [0x0f; 6];
     let cache = crate::scalar::ScalarCache::default();
     assert_eq!(
-        with_collection_limit(&data, 6, |ctx| {
+        with_collection_limit(&data, u64::MAX, |ctx| {
             super::named_outline_slots(ctx, &data, 0, &cache)
         })
         .expect("six slots admitted")
@@ -61,9 +61,19 @@ fn named_datum_outline_slots_refuse_before_exact_growth() {
         .len(),
         6
     );
-    let error = with_collection_limit(&data, 5, |ctx| {
-        super::named_outline_slots(ctx, &data, 0, &cache)
-    })
+    let error = with_collection_limit(
+        &data,
+        crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            Some("creo named datum outline slots"),
+            |cap| {
+                with_collection_limit(&data, cap, |ctx| {
+                    super::named_outline_slots(ctx, &data, 0, &cache)
+                })
+            },
+        ),
+        |ctx| super::named_outline_slots(ctx, &data, 0, &cache),
+    )
     .expect_err("six slots need admission");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -78,7 +88,7 @@ fn positional_datum_slots_refuse_before_exact_growth() {
     let data = [0x0f; 10];
     let cache = crate::scalar::ScalarCache::default();
     assert_eq!(
-        with_collection_limit(&data, 10, |ctx| {
+        with_collection_limit(&data, u64::MAX, |ctx| {
             super::datum_slots(ctx, &data, 0, 10, data.len(), &cache)
         })
         .expect("ten slots admitted")
@@ -86,9 +96,19 @@ fn positional_datum_slots_refuse_before_exact_growth() {
         .len(),
         10
     );
-    let error = with_collection_limit(&data, 9, |ctx| {
-        super::datum_slots(ctx, &data, 0, 10, data.len(), &cache)
-    })
+    let error = with_collection_limit(
+        &data,
+        crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            Some("creo positional datum slots"),
+            |cap| {
+                with_collection_limit(&data, cap, |ctx| {
+                    super::datum_slots(ctx, &data, 0, 10, data.len(), &cache)
+                })
+            },
+        ),
+        |ctx| super::datum_slots(ctx, &data, 0, 10, data.len(), &cache),
+    )
     .expect_err("ten slots need admission");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -110,13 +130,21 @@ fn datum_plane_records_refuse_before_result_growth() {
     data.push(0x0f);
     data.extend(ieee8(-3.0));
     assert_eq!(
-        with_collection_limit(&data, 25, |ctx| planes(ctx, &data))
+        with_collection_limit(&data, u64::MAX, |ctx| planes(ctx, &data))
             .expect("datum plane admitted")
             .len(),
         1
     );
-    let error = with_collection_limit(&data, 24, |ctx| planes(ctx, &data))
-        .expect_err("datum result needs admission");
+    let error = with_collection_limit(
+        &data,
+        crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            Some("creo datum plane records"),
+            |cap| with_collection_limit(&data, cap, |ctx| planes(ctx, &data)),
+        ),
+        |ctx| planes(ctx, &data),
+    )
+    .expect_err("datum result needs admission");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
@@ -139,18 +167,13 @@ fn datum_cylinders_refuse_before_result_growth() {
             cylinders(ctx, &data).map(|records| records.len())
         })
     };
-    assert_eq!(run(512).expect("one active cylinder admitted"), 1);
-    let mut refused = 0;
-    let mut admitted = 512;
-    while refused + 1 < admitted {
-        let middle = refused + (admitted - refused) / 2;
-        if run(middle).is_ok() {
-            admitted = middle;
-        } else {
-            refused = middle;
-        }
-    }
-    let error = run(admitted - 1).expect_err("the result slot needs admission");
+    assert_eq!(run(u64::MAX).expect("one active cylinder admitted"), 1);
+    let limit = crate::test_support::allocation_limit_at(
+        ResourceDimension::CollectionItems,
+        Some("creo datum cylinders"),
+        run,
+    );
+    let error = run(limit).expect_err("the result slot needs admission");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
@@ -207,7 +230,9 @@ fn withholds_positional_outline_with_multiple_held_coordinates() {
 
 #[test]
 fn decodes_named_standard_plane_from_zero_slots() {
-    let data = b"\xe0\x01geom_id\0\x02\xe0\x01feat_id\0\x01outline\0\xf9\x02\x03\x18\x46\x08\0\0\0\0\0\0\x46\x08\0\0\0\0\0\0\x18\x46\x08\0\0\0\0\0\0\x46\x08\0\0\0\0\0\0";
+    let data = b"\xe0\x01geom_id\0\x02\xe0\x01feat_id\0\x01outline\0\xf9\x02\
+        \x03\x18\x46\x08\0\0\0\0\0\0\x46\x08\0\0\0\0\0\0\x18\x46\x08\
+        \0\0\0\0\0\0\x46\x08\0\0\0\0\0\0";
     let plane = named_plane_ok(data).expect("required invariant");
     assert_eq!(plane.id, 2);
     assert_eq!(plane.feature_id, 1);
@@ -224,14 +249,18 @@ fn decodes_named_standard_plane_from_zero_slots() {
 
 #[test]
 fn withholds_named_plane_with_competing_standalone_zero_axes() {
-    let data = b"\xe0\x01geom_id\0\x02\xe0\x01feat_id\0\x01outline\0\xf9\x02\x03\x18\x46\x08\0\0\0\0\0\0\x18\x18\x46\x08\0\0\0\0\0\0\x18";
+    let data = b"\xe0\x01geom_id\0\x02\xe0\x01feat_id\0\x01outline\0\xf9\x02\
+        \x03\x18\x46\x08\0\0\0\0\0\0\x18\x18\x46\x08\0\0\0\0\0\0\x18";
 
     assert!(named_plane_ok(data).is_none());
 }
 
 #[test]
 fn named_outline_41_form_occupies_eight_bytes() {
-    let data = b"\xe0\x01geom_id\0\x02\xe0\x01feat_id\0\x01outline\0\xf9\x02\x03\x18\x41\xba\x13\x99\xa9\xb3\xd8\x74\x41\x94\xad\x7e\x6a\xb0\x34\x5e\x18\x93\x29\x5a\xfc\xd5\x60\x69\x8c\x40\x79\xe9\x12\xa5\x83";
+    let data =
+        b"\xe0\x01geom_id\0\x02\xe0\x01feat_id\0\x01outline\0\xf9\x02\x03\x18\x41\xba\x13\x99\xa9\
+        \xb3\xd8\x74\x41\x94\xad\x7e\x6a\xb0\x34\x5e\x18\x93\x29\x5a\xfc\xd5\x60\x69\x8c\x40\x79\
+        \xe9\x12\xa5\x83";
     let plane = named_plane_ok(data).expect("named plane");
     assert_eq!(plane.plane().normal(), [1.0, 0.0, 0.0]);
     assert_eq!(plane.corners()[0][0], Some(0.0));
@@ -364,7 +393,9 @@ fn decodes_compact_width_datum_row_identifiers() {
 
 #[test]
 fn decodes_compact_width_named_datum_identifiers() {
-    let data = b"\xe0\x01geom_id\0\x80\x80\xe0\x01feat_id\0\x81\x01outline\0\xf9\x02\x03\x18\x46\x08\0\0\0\0\0\0\x46\x08\0\0\0\0\0\0\x18\x46\x08\0\0\0\0\0\0\x46\x08\0\0\0\0\0\0";
+    let data = b"\xe0\x01geom_id\0\x80\x80\xe0\x01feat_id\0\x81\x01outline\0\
+        \xf9\x02\x03\x18\x46\x08\0\0\0\0\0\0\x46\x08\0\0\0\0\0\0\x18\
+        \x46\x08\0\0\0\0\0\0\x46\x08\0\0\0\0\0\0";
     let plane = named_plane_ok(data).expect("compact-width named plane");
 
     assert_eq!(plane.id, 128);
@@ -663,13 +694,13 @@ fn decode_transfers_active_datum_cylinder_with_source_namespace() {
         .iter()
         .find(|surface| surface.id.as_str() == "creo:actdatums:surface#8")
         .expect("active datum cylinder surface");
-    assert!(
-        matches!(surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))
-        if {
-            let radius = cylinder_surface.radius().get();
-            (radius - 0.75).abs() < EPS_DATUM_RADIUS
-        })
-    );
+    assert!(matches!(
+        surface.geometry,
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))
+    if {
+        let radius = cylinder_surface.radius().get();
+        (radius - 0.75).abs() < EPS_DATUM_RADIUS
+    }));
     assert_eq!(
         surface
             .source_object
@@ -906,3 +937,7 @@ fn datum_outline_constructor_requires_one_plane() {
         ]
     );
 }
+
+mod visit_boundaries;
+
+mod admission_storage;

@@ -1,0 +1,149 @@
+// SPDX-License-Identifier: Apache-2.0
+
+use super::super::{frame, frame_history, scan_history_boundary};
+use crate::kernel_header::RefWidth;
+use crate::sab::{payload_subtype_range, payload_token, Record};
+use crate::stream_error::StreamFailure;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::CodecError;
+
+#[test]
+fn manual_sab_history_scan_charges_only_actual_tokens() {
+    for count in [1_usize, 64] {
+        let mut bytes = vec![0x0d, 1, b'x'];
+        bytes.extend(vec![0x0b; count]);
+        // One record, one name token, one UTF-8 byte, and n value tokens.
+        let required = u64::try_from(3 + count).unwrap();
+        for cap in [3, required - 1, required] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            policy.limits.max_collection_items = 0;
+            policy.limits.max_materialized_bytes = 0;
+            policy.limits.max_retained_bytes = 0;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let result = scan_history_boundary(&ctx, &bytes, 0, RefWidth::Four, None);
+            if cap == required {
+                assert!(result.unwrap().is_none());
+                ctx.finish_session().unwrap();
+            } else {
+                let Err(CodecError::ResourceLimit(first)) = result else {
+                    panic!("actual history token refusal");
+                };
+                assert_eq!(first.operation, "scan SAB history token");
+                assert_eq!((first.limit, first.used, first.additional), (cap, cap, 1));
+                assert!(
+                    matches!(scan_history_boundary(&ctx, bytes.as_slice(), 0, RefWidth::Four, None),
+                        Err(CodecError::ResourceLimit(last)) if last == first)
+                );
+                assert!(
+                    matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first)
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn manual_sab_framing_keeps_strict_and_history_eof_semantics() {
+    for count in [1_usize, 64] {
+        let mut bytes = vec![0x0d, u8::try_from(count).unwrap()];
+        bytes.extend(vec![b'x'; count]);
+        let name = "x".repeat(count);
+        let n = u64::try_from(count).unwrap();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // Record and name-token visits, then n UTF-8 bytes. EOF is fixed
+        // grammar rejection, with no further token visit.
+        policy.limits.max_work_units = 2 + n;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(
+            matches!(frame(&ctx, &bytes, 0, bytes.len(), RefWidth::Four, None),
+            Err(StreamFailure::Parse(error)) if error.offset == bytes.len() && error.reason == "end of stream")
+        );
+        ctx.finish_session().unwrap();
+        let arena = DecodeArena::new();
+        // The retained name join adds two one-part traversals and n copied
+        // bytes. Name indexing adds n byte visits and one end probe. Initial
+        // vector reserves move no live slots.
+        policy.limits.max_work_units = 5 + 3 * n;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let records = frame_history(&ctx, &bytes, 0, bytes.len(), RefWidth::Four, None).unwrap();
+        assert_eq!(records.len(), 1);
+        assert_eq!(
+            (records[0].index, records[0].offset, records[0].len),
+            (0, 0, bytes.len())
+        );
+        assert_eq!(records[0].name, name);
+        assert!(records[0].tokens.is_empty());
+        drop(records);
+        ctx.finish_session().unwrap();
+    }
+}
+
+#[test]
+fn sab_empty_framing_and_overflow_payload_ranges_are_free() {
+    let empty = crate::test_support::sab::record(0, String::new(), Vec::new().into(), 0, 0)
+        .expect("indexed record fixture");
+    let invalid = Record {
+        offset: usize::MAX,
+        len: 1,
+        ..empty.clone()
+    };
+    {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        policy.limits.max_collection_items = 0;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_entities = 0;
+        policy.limits.max_recursion_depth = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+
+        for record in [&empty, &invalid] {
+            assert!(payload_token(&ctx, &[], record, RefWidth::Four, 0)
+                .unwrap()
+                .is_none());
+            assert!(
+                payload_subtype_range(&ctx, &[], record, 0, RefWidth::Four, "x")
+                    .unwrap()
+                    .is_none()
+            );
+        }
+        assert!(scan_history_boundary(&ctx, &[], 0, RefWidth::Four, None)
+            .unwrap()
+            .is_none());
+        assert!(frame(&ctx, &[], 0, 0, RefWidth::Four, None)
+            .unwrap()
+            .is_empty());
+        assert!(frame_history(&ctx, &[], 0, 0, RefWidth::Four, None)
+            .unwrap()
+            .is_empty());
+        ctx.finish_session().unwrap();
+    }
+}
+
+#[test]
+fn sab_fixed_primitives_and_eof_keep_values_positions_and_diagnostic() {
+    crate::test_support::with_zero_context(|ctx| {
+        for bytes in [&[][..], &[0x0b][..], &[0x04, 7, 0, 0, 0][..]] {
+            let result = super::super::lex(ctx, bytes, 0, RefWidth::Four);
+            if bytes.is_empty() {
+                let Err(error) = result.unwrap() else {
+                    panic!("strict EOF defect");
+                };
+                assert_eq!(error.offset, 0);
+                assert_eq!(error.reason, "end of stream");
+            } else {
+                let (token, next) = result.unwrap().unwrap();
+                assert_eq!(next, bytes.len());
+                match token {
+                    super::super::Lexed::Value(crate::sab::Token::False) if bytes.len() == 1 => {}
+                    super::super::Lexed::Value(crate::sab::Token::Long(7)) if bytes.len() == 5 => {}
+                    _ => panic!("unchanged fixed primitive"),
+                }
+            }
+        }
+    });
+}

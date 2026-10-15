@@ -71,6 +71,47 @@ fn explicit_knot_expansion_refuses_caller_collection_limit() {
 }
 
 #[test]
+fn unknown_periodicity_preserves_diagnostics_and_nonperiodic_carriers() {
+    let result = decode_inline(
+        "#1=QUASI_UNIFORM_CURVE('',1,(#2,#3),.UNSPECIFIED.,.U.,.F.);
+#2=CARTESIAN_POINT('',(0.,0.,0.));
+#3=CARTESIAN_POINT('',(1.,0.,0.));
+#4=CARTESIAN_POINT('',(0.,1.,0.));
+#5=CARTESIAN_POINT('',(1.,1.,0.));
+#10=QUASI_UNIFORM_SURFACE('',1,1,((#2,#3),(#4,#5)),.UNSPECIFIED.,.U.,.U.,.F.);
+#20=GEOMETRIC_SET('',(#1,#10));
+#21=GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION('',(#20),#22);
+#22=(GEOMETRIC_REPRESENTATION_CONTEXT(3)REPRESENTATION_CONTEXT('',''));",
+    );
+    assert_eq!(result.ir().model.curves.len(), 1);
+    assert_eq!(result.ir().model.surfaces.len(), 1);
+    let Some(SolvedCurveGeometry::Nurbs(curve)) = result.ir().model.curves[0].geometry.solved()
+    else {
+        panic!("decoded NURBS curve");
+    };
+    assert!(!curve.periodic());
+    let Some(SolvedSurfaceGeometry::Nurbs(surface)) =
+        result.ir().model.surfaces[0].geometry.solved()
+    else {
+        panic!("decoded NURBS surface");
+    };
+    assert!(!surface.u_periodic());
+    assert!(!surface.v_periodic());
+    let warnings: Vec<_> = result
+        .report()
+        .losses
+        .iter()
+        .map(|loss| loss.message.as_str())
+        .filter(|message| message.contains("UNKNOWN periodicity"))
+        .collect();
+    assert_eq!(warnings, [
+        "B_SPLINE_CURVE #1 has UNKNOWN periodicity; decoded as non-periodic",
+        "QUASI_UNIFORM_SURFACE U direction #10 has UNKNOWN periodicity; decoded as non-periodic",
+        "QUASI_UNIFORM_SURFACE V direction #10 has UNKNOWN periodicity; decoded as non-periodic",
+    ]);
+}
+
+#[test]
 fn defaulted_spline_curve_subtypes_derive_knot_vectors() {
     let result = decode_inline(
         "#1=CARTESIAN_POINT('',(0.,0.,0.));
@@ -353,5 +394,173 @@ fn a_weight_lane_shorter_than_its_pole_lane_is_stated_as_a_loss() {
                 && loss.message.contains("pole(s) against")),
         "the refusal names the record and both lane counts: {:#?}",
         result.report().losses
+    );
+}
+
+#[test]
+fn knot_construction_retains_only_the_surviving_backing() {
+    use crate::parse::Value;
+    use cadmpeg_core::decode::DecodePolicy;
+    for defaulted in [false, true] {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 1024;
+        policy.limits.max_materialized_bytes = 1024;
+        crate::test_support::with_policy_context(b"finite knots", &policy, |_, ctx| {
+            let knots = if defaulted {
+                super::super::default_nurbs_knots(
+                    3,
+                    2,
+                    super::super::DefaultNurbsKnotKind::Bezier,
+                    ctx,
+                )
+            } else {
+                super::super::expand_knots(
+                    &Value::List(vec![Value::Integer(3), Value::Integer(3)]),
+                    &Value::List(vec![Value::Integer(0), Value::Integer(1)]),
+                    6,
+                    ctx,
+                )
+            }
+            .expect("admitted knots")
+            .expect("ordered knots")
+            .into_values();
+            assert_eq!(knots, [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
+            // The admitted knot vector owns the only surviving scalar backing.
+            let retained =
+                u64::try_from(knots.capacity() * std::mem::size_of::<f64>()).expect("small knots");
+            ctx.charge_retained(1024 - retained, "remaining retained allowance")
+                .expect("no retained staging");
+            let _released = ctx
+                .reserve_scoped(1024, "released finite knot staging")
+                .expect("staging released");
+        });
+    }
+}
+
+#[test]
+fn rational_nurbs_curve_separate_lanes_have_materialized_boundaries() {
+    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use cadmpeg_ir::features::FinitePoint3;
+    use std::collections::BTreeMap;
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=CARTESIAN_POINT('',(0.,0.,0.));#2=CARTESIAN_POINT('',(1.,1.,0.));#3=CARTESIAN_POINT('',(2.,0.,0.));#4=(BOUNDED_CURVE() B_SPLINE_CURVE(2,(#1,#2,#3),.UNSPECIFIED.,.F.,.F.) BEZIER_CURVE() RATIONAL_B_SPLINE_CURVE((1.,.5,1.)) CURVE() GEOMETRIC_REPRESENTATION_ITEM() REPRESENTATION_ITEM('rational'));ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner)
+            .expect("exchange");
+    let points = BTreeMap::from([
+        (1, FinitePoint3::ZERO),
+        (
+            2,
+            FinitePoint3::new(cadmpeg_ir::math::Point3::new(1.0, 1.0, 0.0)).expect("point"),
+        ),
+        (
+            3,
+            FinitePoint3::new(cadmpeg_ir::math::Point3::new(2.0, 0.0, 0.0)).expect("point"),
+        ),
+    ]);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::MaterializedBytes,
+        "step_nurbs_curve_control_points",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_materialized_bytes = cap;
+            crate::test_support::with_policy_context(source, &policy, |_, ctx| {
+                let mut loss_storage = ctx
+                    .reserve_scoped(0, "test geometry report backing")
+                    .expect("report owner");
+
+                super::super::nurbs_curve(
+                    4,
+                    &exchange.records()[&4],
+                    &points,
+                    (&mut Vec::new(), &mut loss_storage),
+                    ctx,
+                )
+            })
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::MaterializedBytes
+            && limit.operation == "step_nurbs_curve_control_points"));
+    crate::test_support::with_service_context(source, |_, ctx| {
+        let mut loss_storage = ctx
+            .reserve_scoped(0, "test geometry report backing")
+            .expect("report owner");
+
+        let curve = super::super::nurbs_curve(
+            4,
+            &exchange.records()[&4],
+            &points,
+            (&mut Vec::new(), &mut loss_storage),
+            ctx,
+        )
+        .expect("curve admission")
+        .expect("curve");
+        assert_eq!(
+            curve.pole_rows().points(),
+            vec![points[&1], points[&2], points[&3]]
+        );
+        assert_eq!(curve.pole_rows().weights(), Some(vec![1.0, 0.5, 1.0]));
+    });
+}
+
+#[test]
+fn rational_nurbs_surface_separate_lanes_have_materialized_boundaries() {
+    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use cadmpeg_ir::features::FinitePoint3;
+    use std::collections::BTreeMap;
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=CARTESIAN_POINT('',(0.,0.,0.));#2=CARTESIAN_POINT('',(1.,0.,0.));#3=CARTESIAN_POINT('',(0.,1.,0.));#4=CARTESIAN_POINT('',(1.,1.,0.));#5=(BOUNDED_SURFACE() B_SPLINE_SURFACE(1,1,((#1,#2),(#3,#4)),.UNSPECIFIED.,.F.,.F.,.F.) BEZIER_SURFACE() RATIONAL_B_SPLINE_SURFACE(((1.,1.),(1.,1.))) SURFACE() GEOMETRIC_REPRESENTATION_ITEM() REPRESENTATION_ITEM('rational'));ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner)
+            .expect("exchange");
+    let points = BTreeMap::from([
+        (1, FinitePoint3::ZERO),
+        (
+            2,
+            FinitePoint3::new(cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0)).expect("point"),
+        ),
+        (
+            3,
+            FinitePoint3::new(cadmpeg_ir::math::Point3::new(0.0, 1.0, 0.0)).expect("point"),
+        ),
+        (
+            4,
+            FinitePoint3::new(cadmpeg_ir::math::Point3::new(1.0, 1.0, 0.0)).expect("point"),
+        ),
+    ]);
+    let run = |cap| {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = cap;
+        crate::test_support::with_policy_context(source, &policy, |_, ctx| {
+            let mut loss_storage = ctx
+                .reserve_scoped(0, "test geometry report backing")
+                .expect("report owner");
+
+            super::super::nurbs_surface(
+                5,
+                &exchange.records()[&5],
+                &points,
+                (&mut Vec::new(), &mut loss_storage),
+                ctx,
+            )
+        })
+    };
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::MaterializedBytes,
+        "step_nurbs_surface_control_points",
+        run,
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::MaterializedBytes
+            && limit.operation == "step_nurbs_surface_control_points"));
+    let surface = run(u64::MAX).expect("surface admission").expect("surface");
+    assert_eq!(
+        surface.control_grid(),
+        vec![vec![points[&1], points[&2]], vec![points[&3], points[&4]]]
+    );
+    assert_eq!(
+        surface.pole_grid().weights(),
+        Some(vec![vec![1.0, 1.0], vec![1.0, 1.0]])
     );
 }

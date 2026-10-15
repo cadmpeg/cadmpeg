@@ -29,7 +29,6 @@ use super::super::holes::counterbore::{
 use super::super::holes::placement::cylinder_from_complementary_outline_bounds;
 use super::super::holes::sweep::{circular_sweep_geometry, simple_hole_geometry};
 use super::super::native::annotate;
-use super::super::uniqueness::exactly_one;
 use crate::decode::analytic::equations::{plane_intersection_line, PlaneEquation};
 use crate::decode::analytic::planes::{is_axis_aligned, placed_planes, reconciled_model_plane};
 use crate::decode::sketch_transfer::recipe::{
@@ -73,31 +72,36 @@ pub(in super::super) fn rowless_round_cylinder_pairs(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     round_feature_ids: &BTreeSet<u32>,
     tables: &[crate::feature::entity::FeatureEntityTable],
-    rows: &[crate::surface::SurfaceRow],
+    rows: &crate::surface::SurfaceRows,
 ) -> Result<Vec<(u32, u32, usize)>, cadmpeg_core::CodecError> {
     let mut pairs = Vec::new();
-    for pair in tables.iter().filter_map(|table| {
+    for table in ctx.admit_iter(tables, "creo rowless round feature tables")? {
         let feature_id = table.feature_id;
-        round_feature_ids.contains(&feature_id).then_some(())?;
+        if !ctx.contains_btree_set(
+            round_feature_ids,
+            &feature_id,
+            "creo round feature ids lookup",
+        )? {
+            continue;
+        }
         let [first, second, rowless, cylinder] = table.entries.as_slice() else {
-            return None;
+            continue;
         };
-        crate::surface::unique_surface_row(rows, first.entity_id)
-            .is_some()
-            .then_some(())?;
-        crate::surface::unique_surface_row(rows, second.entity_id)
-            .is_some()
-            .then_some(())?;
-        (!rows.iter().any(|row| row.id == rowless.entity_id)).then_some(())?;
-        crate::surface::unique_surface_row(rows, cylinder.entity_id)
-            .is_some_and(|row| {
-                row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Cylinder
-            })
-            .then_some(())?;
-        Some((rowless.entity_id, cylinder.entity_id, table.offset))
-    }) {
+        if crate::surface::unique_surface_row(rows, first.entity_id).is_none()
+            || crate::surface::unique_surface_row(rows, second.entity_id).is_none()
+        {
+            continue;
+        }
+        if rows.contains_id(rowless.entity_id) {
+            continue;
+        }
+        if !crate::surface::unique_surface_row(rows, cylinder.entity_id).is_some_and(|row| {
+            row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Cylinder
+        }) {
+            continue;
+        }
         ctx.reserve_vec(&mut pairs, 1, "creo rowless round cylinder pairs")?;
-        pairs.push(pair);
+        pairs.push((rowless.entity_id, cylinder.entity_id, table.offset));
     }
     Ok(pairs)
 }
@@ -109,10 +113,23 @@ pub(in super::super) fn transfer_active_datum_cylinders(
     annotations: &mut AnnotationBuilder,
     source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
+    let mut surfaces_index = super::model_ids::ModelIdentityIndex::new(ctx)?;
     let mut transferred = 0;
-    for datum in &scan.planes.datum_cylinders {
-        let id = super::native_surface_id(ctx, scan, datum.id)?;
-        if ir.model.surfaces.iter().any(|surface| surface.id == id) {
+    for datum in ctx.admit_iter(
+        &scan.planes.datum_cylinders,
+        "creo transfer active datum cylinders datum cylinders traversal",
+    )? {
+        let mut id_storage = ctx.reserve_scoped(0, "creo native surface identity")?;
+        let id = id_storage.with_storage(|| super::native_surface_id(ctx, scan, datum.id))?;
+        let surface_exists = surfaces_index
+            .lookup(
+                ctx,
+                &ir.model.surfaces,
+                |record| record.id.as_str(),
+                id.as_str(),
+            )?
+            .exists();
+        if surface_exists {
             continue;
         }
         let frame = datum.frame;
@@ -122,6 +139,7 @@ pub(in super::super) fn transfer_active_datum_cylinders(
             frame.frame().orthonormal_frame(),
             radius,
         );
+        let id = id_storage.commit_value(id)?;
         annotate(
             ctx,
             annotations,
@@ -173,12 +191,14 @@ pub(in super::super) fn transfer_constrained_slot_fillet_cylinders(
     annotations: &mut AnnotationBuilder,
     source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
+    let mut surfaces_index = super::model_ids::ModelIdentityIndex::new(ctx)?;
     let mut local_storage = ctx.reserve_scoped(0, "Creo feature selection workspace")?;
     let mut round_feature_ids = BTreeSet::new();
-    for row in scan
-        .features
-        .rows
-        .iter()
+    for row in ctx
+        .admit_iter(
+            &scan.features.rows,
+            "creo constrained slot round feature rows",
+        )?
         .filter(|row| row.root_schema_class == Some(SchemaClass::Round))
     {
         local_storage.with_storage(|| {
@@ -189,20 +209,29 @@ pub(in super::super) fn transfer_constrained_slot_fillet_cylinders(
             )
         })?;
     }
+    let mut local_planes = None;
     let mut transferred = 0;
-    for feature_id in round_feature_ids {
+    for feature_id in ctx.admit_iter(
+        &round_feature_ids,
+        "creo constrained slot round feature IDs",
+    )? {
         let named = agreed_feature_affected_ids(
+            ctx,
             &scan.features.affected_ids,
-            feature_id,
+            *feature_id,
             crate::feature::rows::AffectedIdKind::Geometry,
-        );
+        )?;
         let named_present = has_feature_affected_ids(
+            ctx,
             &scan.features.affected_ids,
-            feature_id,
+            *feature_id,
             crate::feature::rows::AffectedIdKind::Geometry,
-        );
-        let replay =
-            agreed_feature_replay_geometry_ids(&scan.features.replay_affected_ids, feature_id);
+        )?;
+        let replay = agreed_feature_replay_geometry_ids(
+            ctx,
+            &scan.features.replay_affected_ids,
+            *feature_id,
+        )?;
         let affected = match (named, replay) {
             (Some(ids), _) => ids,
             (None, Some(ids)) if !named_present => ids,
@@ -214,14 +243,30 @@ pub(in super::super) fn transfer_constrained_slot_fillet_cylinders(
         if support_ids.len() < 4 {
             continue;
         }
-        let local_planes = placed_planes(ctx, scan)?;
+        let mut plane_storage = ctx.reserve_scoped(0, "creo constrained slot plane workspace")?;
+        if local_planes.is_none() {
+            local_planes = Some(local_storage.with_storage(|| placed_planes(ctx, scan))?);
+        }
+        let Some(local_planes) = local_planes.as_ref() else {
+            continue;
+        };
         let mut planes = Vec::new();
-        for id in affected {
-            let Some(plane) = reconciled_model_plane(&local_planes, ir, source_carriers, *id)
+        let mut visits = affected.iter();
+        while visits.len() != 0 {
+            let Some(id) = ctx.next_charged(&mut visits, "creo constrained slot affected IDs")?
             else {
                 break;
             };
-            ctx.reserve_vec(&mut planes, 1, "creo constrained slot plane rows")?;
+            let Some(plane) = reconciled_model_plane(ctx, local_planes, ir, source_carriers, *id)?
+            else {
+                break;
+            };
+            ctx.reserve_scoped_vec(
+                &mut plane_storage,
+                &mut planes,
+                1,
+                "creo constrained slot plane rows",
+            )?;
             planes.push(plane);
         }
         if planes.len() != affected.len() {
@@ -232,27 +277,53 @@ pub(in super::super) fn transfer_constrained_slot_fillet_cylinders(
         else {
             continue;
         };
-        let Some(row) =
-            crate::decode::uniqueness::exactly_one(scan.surfaces.rows.iter().filter(|row| {
-                row.feature_id == feature_id
-                    && row.kind == crate::surface::SurfaceKind::Cylinder
-                    && !ir.model.surfaces.iter().any(|surface| {
-                        crate::identity::matches_numbered_identity(
-                            surface.id.as_str(),
-                            "creo:visibgeom:surface#",
-                            row.id,
-                        )
-                    })
-            }))
-        else {
+        let mut selected_row = None;
+        let mut ambiguous_row = false;
+        let mut visits = scan.surfaces.rows.iter();
+        while visits.len() != 0 {
+            let Some(row) = ctx.next_charged(&mut visits, "creo constrained slot cylinder rows")?
+            else {
+                break;
+            };
+            if row.feature_id != *feature_id || row.kind != crate::surface::SurfaceKind::Cylinder {
+                continue;
+            }
+            let key_parts = crate::identity::compose_scoped::<SurfaceId>(
+                ctx,
+                &crate::identity::VISIBGEOM_SURFACE,
+                row.id,
+                "creo constrained slot query identity",
+            )?;
+            let _key_storage = key_parts.1;
+            let key = key_parts.0;
+            let already_present = surfaces_index
+                .lookup(
+                    ctx,
+                    &ir.model.surfaces,
+                    |surface| surface.id.as_str(),
+                    key.as_str(),
+                )?
+                .exists();
+            if already_present {
+                continue;
+            }
+            if selected_row.is_some() {
+                ambiguous_row = true;
+                break;
+            }
+            selected_row = Some(row);
+        }
+        let Some(row) = selected_row.filter(|_| !ambiguous_row) else {
             continue;
         };
-        let id = crate::identity::compose_checked::<SurfaceId>(
+        let id_parts = crate::identity::compose_scoped::<SurfaceId>(
             ctx,
             &crate::identity::VISIBGEOM_SURFACE,
             row.id,
             "creo constrained slot cylinder identity",
         )?;
+        let id_storage = id_parts.1;
+        let id = id_parts.0;
         let Ok(cylinder_surface) = cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
             Point3::from(cylinder.origin),
             Vector3::from(cylinder.axis),
@@ -261,6 +332,7 @@ pub(in super::super) fn transfer_constrained_slot_fillet_cylinders(
         ) else {
             continue;
         };
+        let id = id_storage.commit_value(id)?;
         annotate(
             ctx,
             annotations,
@@ -305,9 +377,6 @@ pub(in super::super) fn transfer_constrained_slot_fillet_cylinders(
     Ok(transferred)
 }
 
-#[cfg(test)]
-mod tests;
-
 pub(in super::super) fn transfer_rowless_round_cylinders(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
@@ -315,54 +384,88 @@ pub(in super::super) fn transfer_rowless_round_cylinders(
     annotations: &mut AnnotationBuilder,
     source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
+    let mut candidate_storage = ctx.reserve_scoped(0, "creo cylinder candidate workspace")?;
+    let mut surfaces_index = super::model_ids::ModelIdentityIndex::new(ctx)?;
     let mut round_feature_ids = BTreeSet::new();
-    for row in scan
-        .features
-        .rows
-        .iter()
+    for row in ctx
+        .admit_iter(&scan.features.rows, "creo rowless round feature rows")?
         .filter(|row| row.root_schema_class == Some(SchemaClass::Round))
     {
-        ctx.insert_btree_set(
-            &mut round_feature_ids,
-            row.feature_id,
-            "creo rowless round feature ID nodes",
-        )?;
+        candidate_storage.with_storage(|| {
+            ctx.insert_btree_set(
+                &mut round_feature_ids,
+                row.feature_id,
+                "creo rowless round feature ID nodes",
+            )
+        })?;
     }
     let mut transferred = 0;
-    for (rowless_id, sibling_id, offset) in rowless_round_cylinder_pairs(
-        ctx,
-        &round_feature_ids,
-        &scan.features.entity_tables,
-        &scan.surfaces.rows,
-    )? {
-        let Some(cylinder_surface) = exactly_one(ir.model.surfaces.iter().filter(|surface| {
-            crate::identity::matches_numbered_identity(
-                surface.id.as_str(),
-                "creo:visibgeom:surface#",
-                sibling_id,
-            )
-        }))
-        .and_then(|surface| match source_carriers.surface_geometry(surface) {
-            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder)) => Some(*cylinder),
-            _ => None,
-        }) else {
-            continue;
-        };
-        let id = crate::identity::compose_checked::<SurfaceId>(
+    let pairs = candidate_storage.with_storage(|| {
+        rowless_round_cylinder_pairs(
+            ctx,
+            &round_feature_ids,
+            &scan.features.entity_tables,
+            &scan.surfaces.rows,
+        )
+    })?;
+    for (rowless_id, sibling_id, offset) in
+        ctx.admit_iter(&pairs, "creo rowless round cylinder candidates")?
+    {
+        let sibling_parts = crate::identity::compose_scoped::<SurfaceId>(
             ctx,
             &crate::identity::VISIBGEOM_SURFACE,
-            rowless_id,
+            *sibling_id,
+            "creo rowless sibling query identity",
+        )?;
+        let _sibling_storage = sibling_parts.1;
+        let sibling = sibling_parts.0;
+        let selected_surface = surfaces_index
+            .lookup(
+                ctx,
+                &ir.model.surfaces,
+                |record| record.id.as_str(),
+                sibling.as_str(),
+            )?
+            .unique_position()
+            .map(|index| &ir.model.surfaces[index]);
+        let Some(cylinder_surface) = selected_surface
+            .map(|surface| source_carriers.surface_geometry(surface))
+            .transpose()?
+            .and_then(|geometry| match geometry {
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder)) => {
+                    Some(*cylinder)
+                }
+                _ => None,
+            })
+        else {
+            continue;
+        };
+        let id_parts = crate::identity::compose_scoped::<SurfaceId>(
+            ctx,
+            &crate::identity::VISIBGEOM_SURFACE,
+            *rowless_id,
             "creo rowless round cylinder identity",
         )?;
-        if ir.model.surfaces.iter().any(|surface| surface.id == id) {
+        let id_storage = id_parts.1;
+        let id = id_parts.0;
+        let surface_exists = surfaces_index
+            .lookup(
+                ctx,
+                &ir.model.surfaces,
+                |record| record.id.as_str(),
+                id.as_str(),
+            )?
+            .exists();
+        if surface_exists {
             continue;
         }
+        let id = id_storage.commit_value(id)?;
         annotate(
             ctx,
             annotations,
             &id,
             "AllFeatur",
-            cadmpeg_core::decode::u64_from_index(offset),
+            cadmpeg_core::decode::u64_from_index(*offset),
             "round_rowless_sibling_cylinder",
             Exactness::Derived,
         )?;
@@ -408,12 +511,11 @@ pub(in super::super) fn transfer_hole_cylinders(
     annotations: &mut AnnotationBuilder,
     source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
+    let mut surfaces_index = super::model_ids::ModelIdentityIndex::new(ctx)?;
     let mut local_storage = ctx.reserve_scoped(0, "Creo feature selection workspace")?;
     let mut hole_feature_ids = BTreeSet::new();
-    for feature_id in scan
-        .features
-        .rows
-        .iter()
+    for feature_id in ctx
+        .admit_iter(&scan.features.rows, "creo hole feature rows")?
         .filter(|row| row.root_schema_class == Some(SchemaClass::Hole))
         .map(|row| row.feature_id)
     {
@@ -426,69 +528,98 @@ pub(in super::super) fn transfer_hole_cylinders(
         })?;
     }
     let mut transferred = 0;
-    for feature_id in hole_feature_ids {
-        let simple = simple_hole_geometry(ctx, scan, feature_id)?;
+    for feature_id in ctx.admit_iter(&hole_feature_ids, "creo hole cylinder feature IDs")? {
+        let mut hole_storage = ctx.reserve_scoped(0, "creo hole candidate workspace")?;
+        let simple = hole_storage.with_storage(|| simple_hole_geometry(ctx, scan, *feature_id))?;
         let counterbore = if simple.is_some() {
             None
         } else {
-            counterbore_patch_geometries(ctx, scan, ir, feature_id)?
+            hole_storage
+                .with_storage(|| counterbore_patch_geometries(ctx, scan, ir, *feature_id))?
         };
-        let simple_rows = simple.into_iter().flat_map(|hole| {
-            hole.cylinder_rows
-                .into_iter()
-                .map(move |row| (row, hole.geometry))
-        });
-        for (row, geometry) in simple_rows.chain(counterbore.into_iter().flatten()) {
-            let cylinder_id = row.id;
-            let id = crate::identity::compose_checked::<SurfaceId>(
-                ctx,
-                &crate::identity::VISIBGEOM_SURFACE,
-                cylinder_id,
-                "creo hole cylinder identity",
-            )?;
-            if ir.model.surfaces.iter().any(|surface| surface.id == id) {
-                continue;
+        let mut transfer_hole_cylinder =
+            |row: &crate::surface::SurfaceRow,
+             geometry: cadmpeg_ir::geometry::analytic::CylinderSurface|
+             -> Result<(), cadmpeg_core::CodecError> {
+                let cylinder_id = row.id;
+                let id_parts = crate::identity::compose_scoped::<SurfaceId>(
+                    ctx,
+                    &crate::identity::VISIBGEOM_SURFACE,
+                    cylinder_id,
+                    "creo hole cylinder identity",
+                )?;
+                let id_storage = id_parts.1;
+                let id = id_parts.0;
+                let surface_exists = surfaces_index
+                    .lookup(
+                        ctx,
+                        &ir.model.surfaces,
+                        |record| record.id.as_str(),
+                        id.as_str(),
+                    )?
+                    .exists();
+                if surface_exists {
+                    return Ok(());
+                }
+                let id = id_storage.commit_value(id)?;
+                annotate(
+                    ctx,
+                    annotations,
+                    &id,
+                    "AllFeatur",
+                    cadmpeg_core::decode::u64_from_index(row.offset),
+                    "hole_cap_outline_cylinder",
+                    Exactness::Derived,
+                )?;
+                ctx.charge_entities(1, "admit Creo model surfaces")?;
+                source_carriers.admit_surface(
+                    ctx,
+                    ir,
+                    Surface {
+                        id,
+                        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+                            geometry,
+                        )),
+                        source_object: Some(SourceObjectAssociation {
+                            format: cadmpeg_ir::CodecFormat::Creo,
+                            object_id: cadmpeg_core::text::NonBlankString::for_decode(
+                                ctx,
+                                ctx.format_retained(
+                                    format_args!("VisibGeom:{cylinder_id}"),
+                                    "creo hole cylinder source IDs",
+                                )?,
+                                "validate nonblank text",
+                            )?
+                            .ok_or_else(|| {
+                                cadmpeg_core::CodecError::malformed(
+                                    "source object_id must not be empty",
+                                )
+                            })?,
+                            name: None,
+                            color: None,
+                            visible: None,
+                            layer: None,
+                            instance_path: Vec::new(),
+                        }),
+                    },
+                )?;
+                transferred += 1;
+                Ok(())
+            };
+        if let Some(hole) = &simple {
+            for row in ctx.admit_iter(
+                hole.cylinder_rows.as_slice(),
+                "creo simple hole cylinder rows traversal",
+            )? {
+                transfer_hole_cylinder(row, hole.geometry)?;
             }
-            annotate(
-                ctx,
-                annotations,
-                &id,
-                "AllFeatur",
-                cadmpeg_core::decode::u64_from_index(row.offset),
-                "hole_cap_outline_cylinder",
-                Exactness::Derived,
-            )?;
-            ctx.charge_entities(1, "admit Creo model surfaces")?;
-            source_carriers.admit_surface(
-                ctx,
-                ir,
-                Surface {
-                    id,
-                    geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(geometry)),
-                    source_object: Some(SourceObjectAssociation {
-                        format: cadmpeg_ir::CodecFormat::Creo,
-                        object_id: cadmpeg_core::text::NonBlankString::for_decode(
-                            ctx,
-                            ctx.format_retained(
-                                format_args!("VisibGeom:{cylinder_id}"),
-                                "creo hole cylinder source IDs",
-                            )?,
-                            "validate nonblank text",
-                        )?
-                        .ok_or_else(|| {
-                            cadmpeg_core::CodecError::malformed(
-                                "source object_id must not be empty",
-                            )
-                        })?,
-                        name: None,
-                        color: None,
-                        visible: None,
-                        layer: None,
-                        instance_path: Vec::new(),
-                    }),
-                },
-            )?;
-            transferred += 1;
+        }
+        if let Some(rows) = &counterbore {
+            for (row, geometry) in
+                ctx.admit_iter(rows, "creo counterbore patch cylinder rows traversal")?
+            {
+                transfer_hole_cylinder(row, *geometry)?;
+            }
         }
     }
     Ok(transferred)
@@ -501,19 +632,18 @@ pub(in super::super) fn transfer_split_outline_cylinders(
     annotations: &mut AnnotationBuilder,
     source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
-    let mut rows = BTreeMap::new();
-    for row in
-        crate::identity::uniquely_identified_rows_checked(ctx, &scan.surfaces.rows, |row| row.id)?
-    {
-        ctx.insert_btree_map(&mut rows, row.id, row, "creo split cylinder row nodes")?;
-    }
-    let local_planes = placed_planes(ctx, scan)?;
+    let mut workspace = ctx.reserve_scoped(0, "creo split cylinder workspace")?;
+    let mut surfaces_index = super::model_ids::ModelIdentityIndex::new(ctx)?;
+    let local_planes = workspace.with_storage(|| placed_planes(ctx, scan))?;
     let mut cylinders_by_plane = BTreeMap::<(u32, u32), BTreeSet<u32>>::new();
-    for edge in
-        crate::identity::uniquely_identified_rows_checked(ctx, &scan.curves.topology_rows, |row| {
-            row.id
-        })?
-    {
+    let unique_topologies_parts = crate::identity::uniquely_identified_rows_checked(
+        ctx,
+        &scan.curves.topology_rows,
+        |row| row.id,
+    )?;
+    let _unique_topologies_storage = unique_topologies_parts.1;
+    let unique_topologies = unique_topologies_parts.0;
+    for edge in ctx.admit_iter(&unique_topologies, "creo split outline unique topologies")? {
         if edge.type_byte != 0 {
             continue;
         }
@@ -521,7 +651,10 @@ pub(in super::super) fn transfer_split_outline_cylinders(
             continue;
         };
         let (left, right) = (left.get(), right.get());
-        let pair = match (rows.get(&left), rows.get(&right)) {
+        let pair = match (
+            scan.surfaces.rows.unique(left),
+            scan.surfaces.rows.unique(right),
+        ) {
             (Some(plane), Some(cylinder))
                 if plane.kind == crate::surface::SurfaceKind::Plane
                     && cylinder.kind == crate::surface::SurfaceKind::Cylinder =>
@@ -537,27 +670,29 @@ pub(in super::super) fn transfer_split_outline_cylinders(
             _ => None,
         };
         if let Some((plane_and_feature, cylinder)) = pair {
-            ctx.admit_btree_entry(
-                &cylinders_by_plane,
-                &plane_and_feature,
-                "creo split cylinder plane nodes",
-            )?;
-            let cylinder_ids = match cylinders_by_plane.entry(plane_and_feature) {
-                std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
-                std::collections::btree_map::Entry::Vacant(entry) => entry.insert(BTreeSet::new()),
-            };
-            ctx.insert_btree_set(cylinder_ids, cylinder, "creo split cylinder ID nodes")?;
+            workspace.with_storage(|| {
+                let cylinder_ids = ctx
+                    .entry_btree_map(
+                        &mut cylinders_by_plane,
+                        plane_and_feature,
+                        "creo split cylinder plane nodes",
+                    )?
+                    .or_default();
+                ctx.insert_btree_set(cylinder_ids, cylinder, "creo split cylinder ID nodes")?;
+                Ok::<_, cadmpeg_core::CodecError>(())
+            })?;
         }
     }
 
     let mut transferred = 0;
-    for ((plane_id, _), cylinder_ids) in cylinders_by_plane {
-        let mut cylinder_ids = cylinder_ids.into_iter();
-        let (Some(first_id), Some(second_id), None) = (
-            cylinder_ids.next(),
-            cylinder_ids.next(),
-            cylinder_ids.next(),
-        ) else {
+    for ((plane_id, _), cylinder_ids) in
+        ctx.admit_iter(&cylinders_by_plane, "creo split cylinder plane groups")?
+    {
+        if cylinder_ids.len() != 2 {
+            continue;
+        }
+        let mut cylinder_ids = cylinder_ids.iter().copied();
+        let (Some(first_id), Some(second_id)) = (cylinder_ids.next(), cylinder_ids.next()) else {
             continue;
         };
         let Some(first) =
@@ -577,7 +712,8 @@ pub(in super::super) fn transfer_split_outline_cylinders(
         else {
             continue;
         };
-        let Some(plane) = reconciled_model_plane(&local_planes, ir, source_carriers, plane_id)
+        let Some(plane) =
+            reconciled_model_plane(ctx, &local_planes, ir, source_carriers, *plane_id)?
         else {
             continue;
         };
@@ -597,16 +733,29 @@ pub(in super::super) fn transfer_split_outline_cylinders(
             continue;
         };
         for cylinder_id in [first_id, second_id] {
-            let id = crate::identity::compose_checked::<SurfaceId>(
+            let id_parts = crate::identity::compose_scoped::<SurfaceId>(
                 ctx,
                 &crate::identity::VISIBGEOM_SURFACE,
                 cylinder_id,
                 "creo split cylinder identities",
             )?;
-            if ir.model.surfaces.iter().any(|surface| surface.id == id) {
+            let id_storage = id_parts.1;
+            let id = id_parts.0;
+            let surface_exists = surfaces_index
+                .lookup(
+                    ctx,
+                    &ir.model.surfaces,
+                    |record| record.id.as_str(),
+                    id.as_str(),
+                )?
+                .exists();
+            if surface_exists {
                 continue;
             }
-            let row = rows[&cylinder_id];
+            let Some(row) = scan.surfaces.rows.unique(cylinder_id) else {
+                continue;
+            };
+            let id = id_storage.commit_value(id)?;
             annotate(
                 ctx,
                 annotations,
@@ -653,16 +802,17 @@ pub(in super::super) fn transfer_split_outline_cylinders(
 }
 
 fn round_edge_cylinder_frame(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     envelope: crate::surface::Type24RoundEdgeEnvelope,
     radius: f64,
     support_planes: &[PlaneEquation],
-) -> Option<crate::surface::PositionalCylinderFrame> {
+) -> Result<Option<crate::surface::PositionalCylinderFrame>, cadmpeg_core::CodecError> {
     if !radius.is_finite() || radius <= 0.0 {
-        return None;
+        return Ok(None);
     }
     let [first, second] = envelope.vertices;
     if !first.into_iter().chain(second).all(f64::is_finite) {
-        return None;
+        return Ok(None);
     }
     let close_to_radius =
         |value: f64| (value - radius).abs() <= EPS_CYLINDER_GEOMETRY * radius.max(1.0);
@@ -682,7 +832,13 @@ fn round_edge_cylinder_frame(
         dot(radial, radial).sqrt()
     };
     let mut candidate: Option<crate::surface::PositionalCylinderFrame> = None;
-    for (first_index, first_support) in support_planes.iter().copied().enumerate() {
+    let mut first_planes = support_planes.iter().copied().enumerate();
+    while first_planes.len() != 0 {
+        let Some((first_index, first_support)) =
+            ctx.next_charged(&mut first_planes, "creo round-edge first support planes")?
+        else {
+            break;
+        };
         let Some(first_normal) = normalize(first_support.normal) else {
             continue;
         };
@@ -690,7 +846,13 @@ fn round_edge_cylinder_frame(
             origin: first_support.origin,
             normal: first_normal,
         };
-        for second_support in support_planes.iter().copied().skip(first_index + 1) {
+        let mut second_planes = support_planes[first_index + 1..].iter().copied();
+        while second_planes.len() != 0 {
+            let Some(second_support) =
+                ctx.next_charged(&mut second_planes, "creo round-edge second support planes")?
+            else {
+                break;
+            };
             let Some(second_normal) = normalize(second_support.normal) else {
                 continue;
             };
@@ -770,7 +932,7 @@ fn round_edge_cylinder_frame(
                     });
                     if !same_line {
                         if candidate.is_some() {
-                            return None;
+                            return Ok(None);
                         }
                         candidate = Some(frame);
                     }
@@ -778,20 +940,24 @@ fn round_edge_cylinder_frame(
             }
         }
     }
-    candidate
+    Ok(candidate)
 }
 
 fn unique_tangent_axial_interval_corner_frame(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     candidates: &[crate::surface::PositionalCylinderFrame],
     support_planes: &[PlaneEquation],
-) -> Option<crate::surface::PositionalCylinderFrame> {
+) -> Result<Option<crate::surface::PositionalCylinderFrame>, cadmpeg_core::CodecError> {
     let mut best = None;
     let mut maximum = 0;
     let mut tied = false;
-    for candidate in candidates.iter().copied() {
+    for candidate in ctx
+        .admit_iter(candidates, "creo axial interval corner cylinder candidates")?
+        .copied()
+    {
         let axis = unit_length(*candidate.frame().orthonormal_frame().axis());
-        let score = support_planes
-            .iter()
+        let score = ctx
+            .admit_iter(support_planes, "creo axial interval support planes")?
             .filter(|plane| {
                 let Some(normal) = normalize(plane.normal) else {
                     return false;
@@ -813,7 +979,10 @@ fn unique_tangent_axial_interval_corner_frame(
             tied = true;
         }
     }
-    (!tied).then_some(best?)
+    if tied {
+        return Ok(None);
+    }
+    Ok(best)
 }
 
 fn unique_support_tangent_cylinder_frame(
@@ -822,12 +991,24 @@ fn unique_support_tangent_cylinder_frame(
     support_planes: &[PlaneEquation],
 ) -> Result<Option<crate::surface::PositionalCylinderFrame>, cadmpeg_core::CodecError> {
     let axis = unit_length(*stored.frame().orthonormal_frame().axis());
+    let mut origins_storage = ctx.reserve_scoped(0, "creo support tangent origin workspace")?;
+    let mut witness_storage = ctx.reserve_scoped(0, "creo support tangent witness workspace")?;
     let mut origins = Vec::new();
-    ctx.reserve_vec(&mut origins, 1, "creo support tangent initial origins")?;
+    ctx.reserve_scoped_vec(
+        &mut origins_storage,
+        &mut origins,
+        1,
+        "creo support tangent initial origins",
+    )?;
     origins.push(stored.frame().origin());
     let mut witnessed_axis = [false; 3];
     let mut witnessed_planes = Vec::new();
-    for plane in support_planes {
+    let mut visits = support_planes.iter();
+    while visits.len() != 0 {
+        let Some(plane) = ctx.next_charged(&mut visits, "creo support tangent support planes")?
+        else {
+            break;
+        };
         let Some(normal) = normalize(plane.normal) else {
             return Ok(None);
         };
@@ -868,7 +1049,8 @@ fn unique_support_tangent_cylinder_frame(
             continue;
         }
         witnessed_axis[axis_index] = true;
-        ctx.reserve_vec(
+        ctx.reserve_scoped_vec(
+            &mut witness_storage,
             &mut witnessed_planes,
             1,
             "creo support tangent witness planes",
@@ -877,40 +1059,66 @@ fn unique_support_tangent_cylinder_frame(
             origin: plane.origin,
             normal,
         });
+        let mut next_storage = ctx.reserve_scoped(0, "creo support tangent origin workspace")?;
         let mut next = Vec::new();
-        for origin in &origins {
+        for origin in ctx.admit_iter(
+            &origins,
+            "creo unique support tangent cylinder frame origins traversal",
+        )? {
             for coordinate in candidates() {
                 let mut candidate = *origin;
                 candidate[axis_index] = coordinate;
-                if !next.iter().any(|known: &[f64; 3]| {
-                    known.iter().zip(candidate).all(|(left, right)| {
-                        (left - right).abs()
-                            <= EPS_CYLINDER_POSITION * left.abs().max(right.abs()).max(1.0)
-                    })
-                }) {
-                    ctx.reserve_vec(&mut next, 1, "creo support tangent next origins")?;
+                if !ctx.any_by(
+                    &next,
+                    |known: &[f64; 3]| {
+                        Ok(known.iter().zip(candidate).all(|(left, right)| {
+                            (left - right).abs()
+                                <= EPS_CYLINDER_POSITION * left.abs().max(right.abs()).max(1.0)
+                        }))
+                    },
+                    "creo support tangent next origin search",
+                )? {
+                    ctx.reserve_scoped_vec(
+                        &mut next_storage,
+                        &mut next,
+                        1,
+                        "creo support tangent next origins",
+                    )?;
                     next.push(candidate);
                 }
             }
         }
         origins = next;
+        origins_storage = next_storage;
     }
     if !witnessed_axis.into_iter().any(|witnessed| witnessed) {
         return Ok(None);
     }
     let mut frame = None;
-    for origin in origins {
-        let tangent_to_all = witnessed_planes.iter().all(|plane| {
-            let normal = plane.normal;
-            let distance = (dot(normal, origin) - dot(normal, plane.origin)).abs();
-            let scale = distance.max(stored.radius().get()).max(1.0);
-            (distance - stored.radius().get()).abs() <= EPS_CYLINDER_POSITION * scale
-        });
+    let mut visits = origins.iter();
+    while visits.len() != 0 {
+        let Some(origin) =
+            ctx.next_charged(&mut visits, "creo support tangent resolved origins")?
+        else {
+            break;
+        };
+        let tangent_to_all = ctx.all_by(
+            &witnessed_planes,
+            |plane| {
+                Ok({
+                    let normal = plane.normal;
+                    let distance = (dot(normal, *origin) - dot(normal, plane.origin)).abs();
+                    let scale = distance.max(stored.radius().get()).max(1.0);
+                    (distance - stored.radius().get()).abs() <= EPS_CYLINDER_POSITION * scale
+                })
+            },
+            "creo support tangent witnessed planes",
+        )?;
         if !tangent_to_all {
             continue;
         }
         let Some(candidate) = crate::surface::PositionalCylinderFrame::with_admitted_dimensions(
-            origin,
+            *origin,
             stored.frame().axis(),
             stored.frame().ref_direction(),
             stored.radius(),
@@ -928,13 +1136,19 @@ fn unique_support_tangent_cylinder_frame(
             frame = Some(candidate);
         }
     }
+    drop(origins);
+    drop(origins_storage);
     Ok(frame)
 }
 
 fn perpendicular_round_edge_cylinder_frame(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     envelope: crate::surface::Type24RoundEdgeEnvelope,
     support_planes: &[PlaneEquation],
-) -> Result<crate::surface::PositionalCylinderFrame, PerpendicularRoundEdgeFailure> {
+) -> Result<
+    Result<crate::surface::PositionalCylinderFrame, PerpendicularRoundEdgeFailure>,
+    cadmpeg_core::CodecError,
+> {
     let [first, second] = envelope.vertices;
     let delta = std::array::from_fn::<_, 3, _>(|index| second[index] - first[index]);
     let plane_contains = |point: [f64; 3], plane: PlaneEquation| {
@@ -950,7 +1164,15 @@ fn perpendicular_round_edge_cylinder_frame(
     let mut has_perpendicular_support_pair = false;
     let mut has_endpoint_incidence = false;
     let mut has_equal_radius_projections = false;
-    for (first_index, first_support) in support_planes.iter().copied().enumerate() {
+    let mut first_planes = support_planes.iter().copied().enumerate();
+    while first_planes.len() != 0 {
+        let Some((first_index, first_support)) = ctx.next_charged(
+            &mut first_planes,
+            "creo perpendicular round-edge first support planes",
+        )?
+        else {
+            break;
+        };
         let Some(first_normal) = normalize(first_support.normal) else {
             continue;
         };
@@ -958,7 +1180,15 @@ fn perpendicular_round_edge_cylinder_frame(
             origin: first_support.origin,
             normal: first_normal,
         };
-        for second_support in support_planes.iter().copied().skip(first_index + 1) {
+        let mut second_planes = support_planes[first_index + 1..].iter().copied();
+        while second_planes.len() != 0 {
+            let Some(second_support) = ctx.next_charged(
+                &mut second_planes,
+                "creo perpendicular round-edge second support planes",
+            )?
+            else {
+                break;
+            };
             let Some(second_normal) = normalize(second_support.normal) else {
                 continue;
             };
@@ -989,7 +1219,7 @@ fn perpendicular_round_edge_cylinder_frame(
                 has_equal_radius_projections = true;
                 if let Some(known) = radius {
                     if (known - first_radius).abs() > EPS_CYLINDER_GEOMETRY * scale {
-                        return Err(PerpendicularRoundEdgeFailure::NonuniqueRadius);
+                        return Ok(Err(PerpendicularRoundEdgeFailure::NonuniqueRadius));
                     }
                 } else {
                     radius = Some(first_radius);
@@ -998,7 +1228,7 @@ fn perpendicular_round_edge_cylinder_frame(
         }
     }
     let Some(radius) = radius else {
-        return Err(if !has_perpendicular_support_pair {
+        return Ok(Err(if !has_perpendicular_support_pair {
             PerpendicularRoundEdgeFailure::NoPerpendicularSupportPair
         } else if !has_endpoint_incidence {
             PerpendicularRoundEdgeFailure::EndpointIncidenceMismatch
@@ -1006,10 +1236,12 @@ fn perpendicular_round_edge_cylinder_frame(
             PerpendicularRoundEdgeFailure::RadiusProjectionMismatch
         } else {
             PerpendicularRoundEdgeFailure::NonuniqueRadius
-        });
+        }));
     };
-    round_edge_cylinder_frame(envelope, radius, support_planes)
-        .ok_or(PerpendicularRoundEdgeFailure::CarrierValidationFailure)
+    Ok(
+        round_edge_cylinder_frame(ctx, envelope, radius, support_planes)?
+            .ok_or(PerpendicularRoundEdgeFailure::CarrierValidationFailure),
+    )
 }
 
 pub(in super::super) fn transfer_positional_cylinders(
@@ -1019,100 +1251,118 @@ pub(in super::super) fn transfer_positional_cylinders(
     annotations: &mut AnnotationBuilder,
     source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<PositionalCylinderTransferSummary, cadmpeg_core::CodecError> {
+    let mut workspace = ctx.reserve_scoped(0, "creo positional cylinder workspace")?;
+    let mut surfaces_index = super::model_ids::ModelIdentityIndex::new(ctx)?;
+    let mut generated_cylinder_counts = None;
     let mut round_feature_ids = BTreeSet::new();
-    for row in scan.surfaces.rows.iter().filter(|row| {
-        row.kind == crate::surface::SurfaceKind::Cylinder
-            && feature_schema_class(scan, row.feature_id) == Some(SchemaClass::Round)
-    }) {
-        ctx.insert_btree_set(
-            &mut round_feature_ids,
-            row.feature_id,
-            "creo positional round feature ID nodes",
-        )?;
-    }
-    let mut constant_round_radii = BTreeMap::new();
-    for feature_id in round_feature_ids {
-        if let Some(radius) = round_constant_radius(ctx, scan, ir, source_carriers, feature_id)? {
-            ctx.insert_btree_map(
-                &mut constant_round_radii,
-                feature_id,
-                radius,
-                "creo constant round radius nodes",
-            )?;
+    for row in ctx.admit_iter(
+        &*scan.surfaces.rows,
+        "creo positional cylinder surface rows",
+    )? {
+        if row.kind == crate::surface::SurfaceKind::Cylinder
+            && feature_schema_class(ctx, scan, row.feature_id)? == Some(SchemaClass::Round)
+        {
+            workspace.with_storage(|| {
+                ctx.insert_btree_set(
+                    &mut round_feature_ids,
+                    row.feature_id,
+                    "creo positional round feature ID nodes",
+                )
+            })?;
         }
     }
-    let local_planes = placed_planes(ctx, scan)?;
-    let mut unique_rows = BTreeMap::new();
-    for row in
-        crate::identity::uniquely_identified_rows_checked(ctx, &scan.surfaces.rows, |row| row.id)?
-    {
-        ctx.insert_btree_map(
-            &mut unique_rows,
-            row.id,
-            row,
-            "creo positional cylinder row nodes",
-        )?;
+    let mut constant_round_radii = BTreeMap::new();
+    for feature_id in ctx.admit_iter(&round_feature_ids, "creo positional round feature IDs")? {
+        if let Some(radius) = round_constant_radius(ctx, scan, ir, source_carriers, *feature_id)? {
+            workspace.with_storage(|| {
+                ctx.insert_btree_map(
+                    &mut constant_round_radii,
+                    *feature_id,
+                    radius,
+                    "creo constant round radius nodes",
+                )
+            })?;
+        }
     }
+    let local_planes = workspace.with_storage(|| placed_planes(ctx, scan))?;
     let mut adjacent_plane_ids = BTreeMap::<u32, BTreeSet<u32>>::new();
-    for edge in
-        crate::identity::uniquely_identified_rows_checked(ctx, &scan.curves.topology_rows, |row| {
-            row.id
-        })?
-    {
+    let unique_topologies_parts = crate::identity::uniquely_identified_rows_checked(
+        ctx,
+        &scan.curves.topology_rows,
+        |row| row.id,
+    )?;
+    let _unique_topologies_storage = unique_topologies_parts.1;
+    let unique_topologies = unique_topologies_parts.0;
+    for edge in ctx.admit_iter(&unique_topologies, "creo positional unique topologies")? {
         let [Some(left), Some(right)] = edge.faces else {
             continue;
         };
         let (left, right) = (left.get(), right.get());
         for (surface_id, other_id) in [(left, right), (right, left)] {
-            if unique_rows
-                .get(&surface_id)
+            if scan
+                .surfaces
+                .rows
+                .unique(surface_id)
                 .is_some_and(|row| row.kind == crate::surface::SurfaceKind::Cylinder)
-                && unique_rows
-                    .get(&other_id)
+                && scan
+                    .surfaces
+                    .rows
+                    .unique(other_id)
                     .is_some_and(|row| row.kind == crate::surface::SurfaceKind::Plane)
             {
-                ctx.admit_btree_entry(
-                    &adjacent_plane_ids,
-                    &surface_id,
-                    "creo positional adjacent cylinder nodes",
-                )?;
-                let plane_ids = match adjacent_plane_ids.entry(surface_id) {
-                    std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
-                    std::collections::btree_map::Entry::Vacant(entry) => {
-                        entry.insert(BTreeSet::new())
-                    }
-                };
-                ctx.insert_btree_set(
-                    plane_ids,
-                    other_id,
-                    "creo positional adjacent plane ID nodes",
-                )?;
+                workspace.with_storage(|| {
+                    let plane_ids = match ctx.entry_btree_map(
+                        &mut adjacent_plane_ids,
+                        surface_id,
+                        "creo positional adjacent cylinder nodes",
+                    )? {
+                        std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+                        std::collections::btree_map::Entry::Vacant(entry) => {
+                            entry.insert(BTreeSet::new())
+                        }
+                    };
+                    ctx.insert_btree_set(
+                        plane_ids,
+                        other_id,
+                        "creo positional adjacent plane ID nodes",
+                    )?;
+                    Ok::<_, cadmpeg_core::CodecError>(())
+                })?;
             }
         }
     }
     let mut round_edge_support_planes = BTreeMap::new();
-    for (surface_id, plane_ids) in adjacent_plane_ids {
+    for (surface_id, plane_ids) in
+        ctx.admit_iter(&adjacent_plane_ids, "creo adjacent plane groups")?
+    {
         let mut planes = Vec::new();
-        for plane_id in plane_ids {
+        for plane_id in ctx.admit_iter(plane_ids, "creo adjacent plane IDs")? {
             if let Some(plane) =
-                reconciled_model_plane(&local_planes, ir, source_carriers, plane_id)
+                reconciled_model_plane(ctx, &local_planes, ir, source_carriers, *plane_id)?
             {
-                ctx.reserve_vec(&mut planes, 1, "creo positional support planes")?;
+                workspace.with_storage(|| {
+                    ctx.reserve_vec(&mut planes, 1, "creo positional support planes")
+                })?;
                 planes.push(plane);
             }
         }
-        ctx.insert_btree_map(
-            &mut round_edge_support_planes,
-            surface_id,
-            planes,
-            "creo positional support plane nodes",
-        )?;
+        workspace.with_storage(|| {
+            ctx.insert_btree_map(
+                &mut round_edge_support_planes,
+                *surface_id,
+                planes,
+                "creo positional support plane nodes",
+            )
+        })?;
     }
     let mut summary = PositionalCylinderTransferSummary::default();
-    for record in &scan.surfaces.parameters {
-        if crate::surface::unique_surface_parameter(&scan.surfaces.parameters, record.surface_id)
-            != Some(record)
-        {
+    for record in ctx.admit_iter(
+        &*scan.surfaces.parameters,
+        "creo transfer positional cylinders parameters traversal",
+    )? {
+        let unique_parameter =
+            crate::surface::unique_surface_parameter(&scan.surfaces.parameters, record.surface_id);
+        if unique_parameter.is_none_or(|unique| !std::ptr::eq(unique, record)) {
             continue;
         }
         let Some(row) = crate::surface::unique_surface_row(&scan.surfaces.rows, record.surface_id)
@@ -1120,8 +1370,8 @@ pub(in super::super) fn transfer_positional_cylinders(
         else {
             continue;
         };
-        let feature_class = feature_schema_class(scan, row.feature_id);
-        let inline_non_plane = record.has_inline_non_plane_envelope()
+        let feature_class = feature_schema_class(ctx, scan, row.feature_id)?;
+        let inline_non_plane = record.has_inline_non_plane_envelope_checked(ctx)?
             || record.has_inline_non_plane_local_system_suffix(ctx)?;
         let selector_corner_interval = record.selector_corner_interval_cylinder_frame().is_some();
         let axial_interval_corner_candidates = if feature_class == Some(SchemaClass::Round)
@@ -1154,7 +1404,11 @@ pub(in super::super) fn transfer_positional_cylinders(
         } else {
             None
         };
-        let support_planes = round_edge_support_planes.get(&row.id);
+        let support_planes = ctx.get_btree_map(
+            &round_edge_support_planes,
+            &row.id,
+            "creo round edge support planes lookup",
+        )?;
         let support_tangent_frame = if selector_corner_interval {
             None
         } else {
@@ -1168,43 +1422,55 @@ pub(in super::super) fn transfer_positional_cylinders(
         if axial_interval_corner_candidates.is_some() {
             summary.axial_interval_corner_envelopes += 1;
         }
-        let axial_interval_corner_frame = support_planes.and_then(|planes| {
-            axial_interval_corner_candidates
-                .as_ref()
-                .and_then(|candidates| {
-                    unique_tangent_axial_interval_corner_frame(candidates, planes)
-                })
-        });
+        let axial_interval_corner_frame =
+            match (support_planes, axial_interval_corner_candidates.as_ref()) {
+                (Some(planes), Some(candidates)) => {
+                    unique_tangent_axial_interval_corner_frame(ctx, candidates, planes)?
+                }
+                _ => None,
+            };
         if axial_interval_corner_frame.is_some() {
             summary.axial_interval_corner_solved_carriers += 1;
         }
-        let perpendicular_result =
-            support_planes
-                .zip(round_edge_envelope)
-                .map(|(support_planes, envelope)| {
-                    perpendicular_round_edge_cylinder_frame(envelope, support_planes)
-                });
-        let round_edge_frame = support_planes.and_then(|support_planes| {
-            round_edge_envelope.and_then(|envelope| {
-                let replay = constant_round_radii
-                    .get(&row.feature_id)
+        let perpendicular_result = match support_planes.zip(round_edge_envelope) {
+            Some((support_planes, envelope)) => Some(perpendicular_round_edge_cylinder_frame(
+                ctx,
+                envelope,
+                support_planes,
+            )?),
+            None => None,
+        };
+        let round_edge_frame = match support_planes.zip(round_edge_envelope) {
+            Some((support_planes, envelope)) => {
+                let replay = match ctx
+                    .get_btree_map(
+                        &constant_round_radii,
+                        &row.feature_id,
+                        "creo constant round radii lookup",
+                    )?
                     .copied()
-                    .and_then(|radius| round_edge_cylinder_frame(envelope, radius, support_planes));
-                let perpendicular = perpendicular_result.as_ref()?.as_ref().ok().copied();
+                {
+                    Some(radius) => {
+                        round_edge_cylinder_frame(ctx, envelope, radius, support_planes)?
+                    }
+                    None => None,
+                };
+                let perpendicular = perpendicular_result
+                    .as_ref()
+                    .and_then(|result| result.as_ref().ok())
+                    .copied();
                 match (replay, perpendicular) {
                     (Some(replay), Some(perpendicular))
-    if crate::surface::cylinder_frame_readers::positional_cylinder_frames_agree(
+                        if crate::surface::cylinder_frame_readers::positional_cylinder_frames_agree(
                             replay,
                             perpendicular,
-                        ) =>
-                    {
-                        Some(replay)
-                    }
+                        ) => Some(replay),
                     (Some(frame), None) | (None, Some(frame)) => Some(frame),
                     _ => None,
                 }
-            })
-        });
+            }
+            None => None,
+        };
         if round_edge_envelope.is_some() {
             if support_planes.is_none_or(|planes| planes.len() < 2) {
                 summary.round_edge_missing_support_planes += 1;
@@ -1247,7 +1513,11 @@ pub(in super::super) fn transfer_positional_cylinders(
             && !selector_corner_interval
             && (matches!(feature_class, Some(SchemaClass::Cut))
                 || matches!(feature_class, Some(SchemaClass::Round))
-                    && !constant_round_radii.contains_key(&row.feature_id)
+                    && !ctx.contains_key_btree_map(
+                        &constant_round_radii,
+                        &row.feature_id,
+                        "creo constant round radii lookup",
+                    )?
                     && round_support_frame.is_none()
                     && round_edge_frame.is_none()
                     && support_tangent_frame.is_none()
@@ -1255,54 +1525,6 @@ pub(in super::super) fn transfer_positional_cylinders(
         {
             continue;
         }
-        let reference_bound_frame = || -> Result<
-            Option<(crate::surface::PositionalCylinderFrame, CylinderFrameMechanism)>,
-            cadmpeg_core::CodecError,
-        > {
-            let mut entity_ids = BTreeSet::new();
-            for entity_id in scan
-                .features
-                .entity_tables
-                .iter()
-                .filter(|table| table.feature_id == row.feature_id)
-                .flat_map(|table| table.entries.iter().map(|entry| entry.entity_id))
-            {
-                ctx.insert_btree_set(
-                    &mut entity_ids,
-                    entity_id,
-                    "creo reference cylinder entity ID nodes",
-                )?;
-            }
-            let mut circles = Vec::new();
-            for circle in scan
-                .references
-                .circles
-                .iter()
-                .filter(|circle| entity_ids.contains(&circle.entity_id))
-            {
-                ctx.reserve_vec(&mut circles, 1, "creo reference cylinder circles")?;
-                circles.push(circle);
-            }
-            let generated_cylinder_count = scan
-                .surfaces
-                .rows
-                .iter()
-                .filter(|candidate| {
-                    candidate.feature_id == row.feature_id
-                        && candidate.kind == crate::surface::SurfaceKind::Cylinder
-                })
-                .count();
-            if generated_cylinder_count == 1 {
-                if let Some(frame) = reference_circle_pair_cylinder_frame(&circles) {
-                    return Ok(Some((frame, CylinderFrameMechanism::ReferenceCirclePair)));
-                }
-            }
-            let Some(envelope) = record.type24_scalar_frame_round_envelope() else {
-                return Ok(None);
-            };
-            Ok(reference_cap_bound_round_frame(envelope, &circles)
-                .map(|frame| (frame, CylinderFrameMechanism::RoundReferenceCap)))
-        };
         let (frame, mechanism) = if selector_corner_interval {
             let Some(frame) = record.positional_cylinder_frame() else {
                 continue;
@@ -1324,7 +1546,34 @@ pub(in super::super) fn transfer_positional_cylinders(
         } else if let Some(frame) = record.positional_cylinder_frame() {
             (frame, CylinderFrameMechanism::PositionalCylinderFrame)
         } else {
-            let Some(frame) = reference_bound_frame()? else {
+            if generated_cylinder_counts.is_none() {
+                let mut counts = std::collections::HashMap::<u32, usize>::new();
+                for candidate in ctx.admit_iter(
+                    &*scan.surfaces.rows,
+                    "creo generated cylinder row traversal",
+                )? {
+                    if candidate.kind == crate::surface::SurfaceKind::Cylinder {
+                        workspace.with_storage(|| {
+                            *ctx.entry_hash_map(
+                                &mut counts,
+                                candidate.feature_id,
+                                "creo generated cylinder counts",
+                            )?
+                            .or_default() += 1;
+                            Ok::<_, cadmpeg_core::CodecError>(())
+                        })?;
+                    }
+                }
+                generated_cylinder_counts = Some(counts);
+            }
+            let count = generated_cylinder_counts
+                .as_ref()
+                .and_then(|counts| counts.get(&row.feature_id))
+                .copied()
+                .unwrap_or(0);
+            let Some(frame) =
+                reference_bound_cylinder_frame(ctx, scan, record, row.feature_id, count)?
+            else {
                 continue;
             };
             frame
@@ -1349,46 +1598,44 @@ pub(in super::super) fn transfer_positional_cylinders(
             frame.frame().orthonormal_frame(),
             frame.radius(),
         );
-        let id = crate::identity::compose_checked::<SurfaceId>(
+        let id_parts = crate::identity::compose_scoped::<SurfaceId>(
             ctx,
             &crate::identity::VISIBGEOM_SURFACE,
             record.surface_id,
             "creo positional cylinder identity",
         )?;
-        if ir.model.surfaces.iter().any(|surface| surface.id == id) {
-            if row_local_frame_selected
-                && ir
-                    .model
-                    .surfaces
-                    .iter()
-                    .filter(|surface| surface.id == id)
-                    .count()
-                    == 1
+        let id_storage = id_parts.1;
+        let id = id_parts.0;
+        let existing = surfaces_index.lookup(
+            ctx,
+            &ir.model.surfaces,
+            |record| record.id.as_str(),
+            id.as_str(),
+        )?;
+        if existing.exists() {
+            if let Some(surface) = existing
+                .unique_position()
+                .filter(|_| row_local_frame_selected)
+                .and_then(|index| ir.model.surfaces.get_mut(index))
             {
-                if let Some(surface) = ir
-                    .model
-                    .surfaces
-                    .iter_mut()
-                    .find(|surface| surface.id == id)
-                {
-                    source_carriers.replace_surface_geometry(
-                        ctx,
-                        surface,
-                        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)),
-                    )?;
-                    annotate(
-                        ctx,
-                        annotations,
-                        &id,
-                        "VisibGeom",
-                        cadmpeg_core::decode::u64_from_index(row.offset),
-                        "positional_cylinder_frame_reconciled",
-                        Exactness::Derived,
-                    )?;
-                }
+                source_carriers.replace_surface_geometry(
+                    ctx,
+                    surface,
+                    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)),
+                )?;
+                annotate(
+                    ctx,
+                    annotations,
+                    &id,
+                    "VisibGeom",
+                    cadmpeg_core::decode::u64_from_index(row.offset),
+                    "positional_cylinder_frame_reconciled",
+                    Exactness::Derived,
+                )?;
             }
             continue;
         }
+        let id = id_storage.commit_value(id)?;
         annotate(
             ctx,
             annotations,
@@ -1433,6 +1680,62 @@ pub(in super::super) fn transfer_positional_cylinders(
             usize::from(mechanism == CylinderFrameMechanism::RoundEdgeEndpoint);
     }
     Ok(summary)
+}
+
+fn reference_bound_cylinder_frame(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    scan: &ContainerScan,
+    record: &crate::surface::SurfaceParameterRecord,
+    feature_id: u32,
+    generated_cylinder_count: usize,
+) -> Result<
+    Option<(
+        crate::surface::PositionalCylinderFrame,
+        CylinderFrameMechanism,
+    )>,
+    cadmpeg_core::CodecError,
+> {
+    let mut reference_storage = ctx.reserve_scoped(0, "creo reference cylinder workspace")?;
+    let mut entity_ids = BTreeSet::new();
+    for table in ctx
+        .admit_iter(
+            &scan.features.entity_tables,
+            "creo reference cylinder entity tables",
+        )?
+        .filter(|table| table.feature_id == feature_id)
+    {
+        for entry in ctx.admit_iter(
+            table.entries.as_slice(),
+            "creo reference cylinder entity entries",
+        )? {
+            reference_storage.with_storage(|| {
+                ctx.insert_btree_set(
+                    &mut entity_ids,
+                    entry.entity_id,
+                    "creo reference cylinder entity ID nodes",
+                )
+            })?;
+        }
+    }
+    let mut circles = Vec::new();
+    for circle in ctx.admit_iter(&scan.references.circles, "creo reference cylinder circles")? {
+        if !ctx.contains_btree_set(&entity_ids, &circle.entity_id, "creo entity ids lookup")? {
+            continue;
+        }
+        reference_storage
+            .with_storage(|| ctx.reserve_vec(&mut circles, 1, "creo reference cylinder circles"))?;
+        circles.push(circle);
+    }
+    if generated_cylinder_count == 1 {
+        if let Some(frame) = reference_circle_pair_cylinder_frame(&circles) {
+            return Ok(Some((frame, CylinderFrameMechanism::ReferenceCirclePair)));
+        }
+    }
+    let Some(envelope) = record.type24_scalar_frame_round_envelope() else {
+        return Ok(None);
+    };
+    Ok(reference_cap_bound_round_frame(envelope, &circles)
+        .map(|frame| (frame, CylinderFrameMechanism::RoundReferenceCap)))
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -1549,14 +1852,17 @@ pub(in super::super) fn reference_cap_bound_round_frame(
     let mut candidate = None;
     for axis_index in 0..3 {
         let mut radial = (0..3).filter(|index| *index != axis_index);
-        let radial_indices = [radial.next()?, radial.next()?];
+        let (Some(first_radial), Some(second_radial)) = (radial.next(), radial.next()) else {
+            return None;
+        };
+        let radial_indices = [first_radial, second_radial];
         if radial_indices.iter().any(|index| {
             ((second[*index] - first[*index]).abs() - envelope.diameter).abs() > tolerance
         }) || (second[axis_index] - first[axis_index]).abs() <= tolerance
         {
             continue;
         }
-        let cap_pair = |coordinate: f64, crossed: bool| {
+        let cap_pair = |coordinate: f64, crossed: bool| -> bool {
             let mut first_corner = first;
             let mut second_corner = second;
             first_corner[axis_index] = coordinate;
@@ -1565,8 +1871,8 @@ pub(in super::super) fn reference_cap_bound_round_frame(
                 first_corner[radial_indices[1]] = second[radial_indices[1]];
                 second_corner[radial_indices[1]] = first[radial_indices[1]];
             }
-            circles.iter().any(|circle| {
-                <[f64; 3]>::from(*circle.axis().as_raw())
+            for circle in circles {
+                if <[f64; 3]>::from(*circle.axis().as_raw())
                     .iter()
                     .enumerate()
                     .all(|(index, component)| {
@@ -1580,11 +1886,20 @@ pub(in super::super) fn reference_cap_bound_round_frame(
                         && point_matches(circle.end().get().into(), second_corner))
                         || (point_matches(circle.end().get().into(), first_corner)
                             && point_matches(circle.start().get().into(), second_corner)))
-            })
+                {
+                    return true;
+                }
+            }
+            false
         };
-        if ![false, true].into_iter().any(|crossed| {
-            cap_pair(first[axis_index], crossed) && cap_pair(second[axis_index], crossed)
-        }) {
+        let mut matching_cap_pair = false;
+        for crossed in [false, true] {
+            if cap_pair(first[axis_index], crossed) && cap_pair(second[axis_index], crossed) {
+                matching_cap_pair = true;
+                break;
+            }
+        }
+        if !matching_cap_pair {
             continue;
         }
         let mut origin = first;
@@ -1619,14 +1934,18 @@ pub(in super::super) fn transfer_positional_cones(
     annotations: &mut AnnotationBuilder,
     source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
+    let mut surfaces_index = super::model_ids::ModelIdentityIndex::new(ctx)?;
     let mut transferred = 0;
-    for record in &scan.surfaces.parameters {
+    for record in ctx.admit_iter(
+        &*scan.surfaces.parameters,
+        "creo transfer positional cones parameters traversal",
+    )? {
         let Some(frame) = record.positional_cone_frame() else {
             continue;
         };
-        if crate::surface::unique_surface_parameter(&scan.surfaces.parameters, record.surface_id)
-            != Some(record)
-        {
+        let unique_parameter =
+            crate::surface::unique_surface_parameter(&scan.surfaces.parameters, record.surface_id);
+        if unique_parameter.is_none_or(|unique| !std::ptr::eq(unique, record)) {
             continue;
         }
         let Some(row) = crate::surface::unique_surface_row(&scan.surfaces.rows, record.surface_id)
@@ -1634,16 +1953,27 @@ pub(in super::super) fn transfer_positional_cones(
         else {
             continue;
         };
-        let id = crate::identity::compose_checked::<SurfaceId>(
+        let id_parts = crate::identity::compose_scoped::<SurfaceId>(
             ctx,
             &crate::identity::VISIBGEOM_SURFACE,
             record.surface_id,
             "creo positional cone identity",
         )?;
-        if ir.model.surfaces.iter().any(|surface| surface.id == id) {
+        let id_storage = id_parts.1;
+        let id = id_parts.0;
+        let surface_exists = surfaces_index
+            .lookup(
+                ctx,
+                &ir.model.surfaces,
+                |record| record.id.as_str(),
+                id.as_str(),
+            )?
+            .exists();
+        if surface_exists {
             continue;
         }
         let cone_surface = super::apex_cone(frame.frame(), frame.half_angle());
+        let id = id_storage.commit_value(id)?;
         annotate(
             ctx,
             annotations,
@@ -1693,46 +2023,59 @@ pub(in super::super) fn transfer_circular_sweep_cylinders(
     annotations: &mut AnnotationBuilder,
     source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
+    let mut surfaces_index = super::model_ids::ModelIdentityIndex::new(ctx)?;
     let mut local_storage = ctx.reserve_scoped(0, "Creo feature selection workspace")?;
     let mut sweep_feature_ids = BTreeSet::new();
-    for feature_id in scan
-        .features
-        .rows
-        .iter()
-        .filter(|row| {
-            row.root_schema_class == Some(SchemaClass::Protrusion)
-                && !feature_section_sweep_semantics_conflict(scan, row.feature_id)
-                && section_sweep_allows_linear_extrusion(
-                    Some(SchemaClass::Protrusion),
-                    feature_recipe(scan, row.feature_id),
-                )
-        })
-        .map(|row| row.feature_id)
-    {
-        local_storage.with_storage(|| {
-            ctx.insert_btree_set(
-                &mut sweep_feature_ids,
-                feature_id,
-                "creo circular sweep feature ID nodes",
+    for row in ctx.admit_iter(&scan.features.rows, "creo circular sweep feature rows")? {
+        if row.root_schema_class == Some(SchemaClass::Protrusion)
+            && !feature_section_sweep_semantics_conflict(ctx, scan, row.feature_id)?
+            && section_sweep_allows_linear_extrusion(
+                Some(SchemaClass::Protrusion),
+                feature_recipe(ctx, scan, row.feature_id)?,
             )
-        })?;
+        {
+            local_storage.with_storage(|| {
+                ctx.insert_btree_set(
+                    &mut sweep_feature_ids,
+                    row.feature_id,
+                    "creo circular sweep feature ID nodes",
+                )
+            })?;
+        }
     }
     let mut transferred = 0;
-    for feature_id in sweep_feature_ids {
-        let Some(sweep) = circular_sweep_geometry(ctx, scan, feature_id)? else {
+    for feature_id in ctx.admit_iter(&sweep_feature_ids, "creo circular sweep feature IDs")? {
+        let mut sweep_storage = ctx.reserve_scoped(0, "creo circular sweep workspace")?;
+        let Some(sweep) =
+            sweep_storage.with_storage(|| circular_sweep_geometry(ctx, scan, *feature_id))?
+        else {
             continue;
         };
-        for row in &sweep.cylinder_rows {
+        for row in ctx.admit_iter(
+            sweep.cylinder_rows.as_slice(),
+            "creo transfer circular sweep cylinders cylinder rows traversal",
+        )? {
             let cylinder_id = row.id;
-            let id = crate::identity::compose_checked::<SurfaceId>(
+            let id_parts = crate::identity::compose_scoped::<SurfaceId>(
                 ctx,
                 &crate::identity::VISIBGEOM_SURFACE,
                 cylinder_id,
                 "creo circular sweep cylinder identity",
             )?;
-            if ir.model.surfaces.iter().any(|surface| surface.id == id) {
+            let id_storage = id_parts.1;
+            let id = id_parts.0;
+            let surface_exists = surfaces_index
+                .lookup(
+                    ctx,
+                    &ir.model.surfaces,
+                    |record| record.id.as_str(),
+                    id.as_str(),
+                )?
+                .exists();
+            if surface_exists {
                 continue;
             }
+            let id = id_storage.commit_value(id)?;
             annotate(
                 ctx,
                 annotations,
@@ -1787,8 +2130,12 @@ pub(in super::super) fn transfer_cross_section_planes(
     annotations: &mut AnnotationBuilder,
     source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
+    let mut surfaces_index = super::model_ids::ModelIdentityIndex::new(ctx)?;
     let mut transferred = 0;
-    for frame in &scan.planes.cross_section_local_systems {
+    for frame in ctx.admit_iter(
+        &scan.planes.cross_section_local_systems,
+        "creo transfer cross section planes cross section local systems traversal",
+    )? {
         let decoded_frame = frame.frame();
         let (Some(origin), Some(normal), Some(u_axis)) = (
             decoded_frame.origin,
@@ -1800,13 +2147,23 @@ pub(in super::super) fn transfer_cross_section_planes(
         if is_axis_aligned(normal) {
             continue;
         }
-        let id = crate::identity::compose_checked::<SurfaceId>(
+        let id_parts = crate::identity::compose_scoped::<SurfaceId>(
             ctx,
             &crate::identity::CROSS_SECTION_GEOMETRY_SURFACE,
             frame.surface_id,
             "creo cross-section local-system plane identity",
         )?;
-        if ir.model.surfaces.iter().any(|surface| surface.id == id) {
+        let id_storage = id_parts.1;
+        let id = id_parts.0;
+        let surface_exists = surfaces_index
+            .lookup(
+                ctx,
+                &ir.model.surfaces,
+                |record| record.id.as_str(),
+                id.as_str(),
+            )?
+            .exists();
+        if surface_exists {
             continue;
         }
         let Ok(plane_surface) = cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -1816,6 +2173,7 @@ pub(in super::super) fn transfer_cross_section_planes(
         ) else {
             continue;
         };
+        let id = id_storage.commit_value(id)?;
         annotate(
             ctx,
             annotations,
@@ -1855,14 +2213,27 @@ pub(in super::super) fn transfer_cross_section_planes(
         )?;
         transferred += 1;
     }
-    for plane in &scan.planes.cross_section_outlines {
-        let id = crate::identity::compose_checked::<SurfaceId>(
+    for plane in ctx.admit_iter(
+        &scan.planes.cross_section_outlines,
+        "creo transfer cross section planes cross section outlines traversal",
+    )? {
+        let id_parts = crate::identity::compose_scoped::<SurfaceId>(
             ctx,
             &crate::identity::CROSS_SECTION_GEOMETRY_SURFACE,
             plane.surface_id,
             "creo cross-section outline plane identity",
         )?;
-        if ir.model.surfaces.iter().any(|surface| surface.id == id) {
+        let id_storage = id_parts.1;
+        let id = id_parts.0;
+        let surface_exists = surfaces_index
+            .lookup(
+                ctx,
+                &ir.model.surfaces,
+                |record| record.id.as_str(),
+                id.as_str(),
+            )?
+            .exists();
+        if surface_exists {
             continue;
         }
         let Ok(plane_surface) = cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -1872,6 +2243,7 @@ pub(in super::super) fn transfer_cross_section_planes(
         ) else {
             continue;
         };
+        let id = id_storage.commit_value(id)?;
         annotate(
             ctx,
             annotations,
@@ -1913,3 +2285,6 @@ pub(in super::super) fn transfer_cross_section_planes(
     }
     Ok(transferred)
 }
+
+#[cfg(test)]
+mod tests;

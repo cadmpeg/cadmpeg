@@ -11,14 +11,69 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::io::Cursor;
 
 #[test]
+fn property_text_index_refusals_precede_comparison_and_storage() {
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "iges property text equality",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let mut texts = super::PropertyTextIndex::new(&ctx)?;
+            let first = texts.id(1, b"property", &ctx, "iges property text setup")?;
+            let second = texts.id(3, b"property", &ctx, "iges property text equality")?;
+            assert_eq!(first, second);
+            drop(texts);
+            ctx.finish_session()
+        },
+    );
+    for operation in [
+        "iges property text comparison",
+        "iges property text record identities",
+    ] {
+        for dimension in [
+            ResourceDimension::WorkUnits,
+            ResourceDimension::MaterializedBytes,
+            ResourceDimension::CollectionItems,
+        ] {
+            cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
+                let mut policy = DecodePolicy::service();
+                match dimension {
+                    ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
+                    ResourceDimension::MaterializedBytes => {
+                        policy.limits.max_materialized_bytes = cap;
+                    }
+                    ResourceDimension::CollectionItems => {
+                        policy.limits.max_collection_items = cap;
+                    }
+                    other => panic!("unexpected property text dimension: {other:?}"),
+                }
+                let arena = DecodeArena::new();
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let mut texts = super::PropertyTextIndex::new(&ctx)?;
+                let first = texts.id(1, b"property", &ctx, "iges property text comparison")?;
+                let second = texts.id(3, b"property", &ctx, "iges property text comparison")?;
+                assert_eq!(first, second);
+                drop(texts);
+                ctx.finish_session()
+            });
+        }
+    }
+}
+
+#[test]
 fn diagnostic_error_text_refuses_before_retained_copy() {
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let result = super::non_resource_error(CodecError::Malformed("invalid source".into()), &ctx);
-    assert!(
-        matches!(result, Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "iges diagnostic error text")
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes,
+        "iges diagnostic error text",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            super::non_resource_error(CodecError::Malformed("invalid source".into()), &ctx)
+        },
     );
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
@@ -30,41 +85,31 @@ fn diagnostic_error_text_refuses_before_retained_copy() {
 }
 
 fn assert_entity_loss_limit(bytes: &[u8], operation: &str, retained: bool) {
-    let mut cap = 0_u64;
-    for _ in 0..4096 {
+    let dimension = if retained {
+        ResourceDimension::RetainedBytes
+    } else {
+        ResourceDimension::CollectionItems
+    };
+    cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
         let mut policy = DecodePolicy::service();
         if retained {
             policy.limits.max_retained_bytes = cap;
         } else {
             policy.limits.max_collection_items = cap;
         }
-        match IgesCodec.decode(
-            &mut Cursor::new(bytes),
-            &DecodeOptions {
-                policy,
-                ..DecodeOptions::default()
-            },
-        ) {
-            Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
-                assert_eq!(
-                    limit.dimension,
-                    if retained {
-                        ResourceDimension::RetainedBytes
-                    } else {
-                        ResourceDimension::CollectionItems
-                    }
-                );
-                if limit.operation == operation {
-                    return;
-                }
-                let next = limit.used.checked_add(limit.additional).unwrap();
-                assert!(next > cap, "limit did not advance from {cap}: {limit:?}");
-                cap = next;
-            }
-            other => panic!("did not reach {operation} at cap {cap}: {other:?}"),
-        }
-    }
-    panic!("did not reach {operation} within 4096 admission boundaries");
+        IgesCodec
+            .decode(
+                &mut Cursor::new(bytes),
+                &DecodeOptions {
+                    policy,
+                    ..DecodeOptions::default()
+                },
+            )
+            .map_err(|failure| match failure {
+                DecodeFailure::Codec(error) => error,
+                other => panic!("unexpected decode failure: {other:?}"),
+            })
+    });
 }
 
 #[test]
@@ -116,17 +161,9 @@ fn entity_projector_indexes_refuse_collection_limits() {
         status: "00000000",
         parameters: "110,0;".into(),
     }]);
-    for name in [
-        "csg",
-        "brep",
-        "structure",
-        "offsets",
-        "surfaces",
-        "trimming",
-        "splines",
-        "composite",
-        "annotation",
-    ] {
+    // CSG, structure, and composite borrow the geometry indexes. Offsets build
+    // transform tables on demand; trimming queries the source slices directly.
+    for name in ["geometry", "surfaces", "splines"] {
         for index in ["parameter index", "directory index"] {
             let operation = format!("iges {name} {index}");
             assert_entity_loss_limit(&bytes, &operation, false);
@@ -169,11 +206,13 @@ fn directed_cycle_detection_handles_long_branching_graphs_iteratively() {
         let mut visited = std::collections::BTreeSet::new();
 
         assert!(
-            !crate::entities::directed_cycle(1, &mut visited, decode_ctx, |sequence| graph
-                .get(&sequence)
-                .into_iter()
-                .flatten()
-                .copied())
+            !crate::entities::directed_cycle(1, &mut visited, decode_ctx, |sequence| {
+                Ok(decode_ctx
+                    .get_btree_map(&graph, &sequence, "iges cycle successor lookup")?
+                    .map_or(&[][..], Vec::as_slice)
+                    .iter()
+                    .copied())
+            })
             .unwrap()
         );
         assert_eq!(visited.len(), 100_001);
@@ -183,7 +222,13 @@ fn directed_cycle_detection_handles_long_branching_graphs_iteratively() {
             1,
             &mut std::collections::BTreeSet::new(),
             decode_ctx,
-            |sequence| graph.get(&sequence).into_iter().flatten().copied()
+            |sequence| {
+                Ok(decode_ctx
+                    .get_btree_map(&graph, &sequence, "iges cycle successor lookup")?
+                    .map_or(&[][..], Vec::as_slice)
+                    .iter()
+                    .copied())
+            }
         )
         .unwrap());
     }
@@ -192,38 +237,126 @@ fn directed_cycle_detection_handles_long_branching_graphs_iteratively() {
 #[test]
 fn directed_cycle_refuses_stack_and_tree_nodes_before_allocation() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
 
     let graph = [(1_u32, vec![2_u32]), (2, Vec::new())]
         .into_iter()
         .collect::<BTreeMap<_, _>>();
-    for (cap, operation) in [
-        (0, "iges cycle stack"),
-        (1, "iges cycle active"),
-        (6, "iges cycle visited"),
+    for operation in [
+        "iges cycle stack",
+        "iges cycle active",
+        "iges cycle visited",
     ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = crate::entities::directed_cycle(1, &mut BTreeSet::new(), &ctx, |sequence| {
-            graph.get(&sequence).into_iter().flatten().copied()
-        })
-        .unwrap_err();
-        assert!(
-            matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == operation)
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::CollectionItems,
+            operation,
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                crate::entities::directed_cycle(1, &mut BTreeSet::new(), &ctx, |sequence| {
+                    Ok(ctx
+                        .get_btree_map(&graph, &sequence, "iges cycle successor lookup")?
+                        .map_or(&[][..], Vec::as_slice)
+                        .iter()
+                        .copied())
+                })
+            },
         );
     }
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let mut visited = BTreeSet::new();
     assert!(
-        !crate::entities::directed_cycle(1, &mut visited, &ctx, |sequence| graph
-            .get(&sequence)
-            .into_iter()
-            .flatten()
-            .copied(),)
+        !crate::entities::directed_cycle(1, &mut visited, &ctx, |sequence| {
+            Ok(ctx
+                .get_btree_map(&graph, &sequence, "iges cycle successor lookup")?
+                .map_or(&[][..], Vec::as_slice)
+                .iter()
+                .copied())
+        },)
         .unwrap()
     );
     assert_eq!(visited, [1, 2].into());
 }
+
+#[test]
+fn directed_cycle_work_refusal_reaches_caller() {
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "iges cycle work",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            super::directed_cycle(1, &mut BTreeSet::new(), &ctx, |sequence| {
+                Ok((sequence == 1).then_some(2).into_iter())
+            })
+        },
+    );
+}
+
+#[test]
+fn directed_cycle_lookup_refusals_preserve_the_session() {
+    let graph = [(1_u32, vec![2_u32, 3_u32]), (2, Vec::new()), (3, vec![2])]
+        .into_iter()
+        .collect::<BTreeMap<_, _>>();
+    for operation in [
+        "iges cycle successor lookup",
+        "iges cycle active lookup",
+        "iges cycle active removal",
+        "iges cycle visited lookup",
+    ] {
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            operation,
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let result = super::directed_cycle(1, &mut BTreeSet::new(), &ctx, |sequence| {
+                    Ok(ctx
+                        .get_btree_map(&graph, &sequence, "iges cycle successor lookup")?
+                        .map_or(&[][..], Vec::as_slice)
+                        .iter()
+                        .copied())
+                });
+                if let Err(CodecError::ResourceLimit(ref limit)) = result {
+                    assert!(
+                        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual))
+                        if actual == *limit)
+                    );
+                } else {
+                    ctx.finish_session().unwrap();
+                }
+                result
+            },
+        );
+    }
+}
+
+#[test]
+fn cached_property_text_identity_refuses_lookup_work() {
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "iges property text record lookup",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            policy.limits.max_retained_bytes = 0;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let mut index = super::PropertyTextIndex::new(&ctx)?;
+            let first = index.id(1, b"shared", &ctx, "test property text values")?;
+            assert_eq!(
+                index.id(1, b"shared", &ctx, "test property text values")?,
+                first
+            );
+            Ok(())
+        },
+    );
+}
+
+mod fixed_routes;

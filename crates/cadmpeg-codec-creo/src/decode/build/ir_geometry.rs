@@ -58,13 +58,17 @@ use crate::decode::analytic::pcurves::{
 use crate::decode::sketch_transfer::transfer::transfer_sketches;
 use crate::decode::source_carriers::SourceUnitCarriers;
 
-fn append_borrowed_curve_ids<'a>(
+fn append_borrowed_curve_ids<'a, S>(
     ctx: &DecodeContext<'_>,
     target: &mut BTreeSet<CurveId>,
-    source: impl IntoIterator<Item = &'a CurveId>,
-) -> Result<(), CodecError> {
-    for id in source {
-        if target.contains(id) {
+    source: S,
+) -> Result<(), CodecError>
+where
+    S: cadmpeg_core::decode::iter_source::IterSource,
+    S::Iter: Iterator<Item = &'a CurveId>,
+{
+    for id in ctx.admit_iter(source, "creo borrowed derived curve ID traversal")? {
+        if ctx.contains_btree_set(target, id, "creo derived curve identity lookup")? {
             continue;
         }
         ctx.insert_btree_set(
@@ -81,21 +85,27 @@ fn append_owned_curve_ids(
     target: &mut BTreeSet<CurveId>,
     source: BTreeSet<CurveId>,
 ) -> Result<(), CodecError> {
-    for id in source {
+    for id in ctx.admit_iter(source, "creo owned derived curve ID traversal")? {
         ctx.insert_btree_set(target, id, "creo derived topology carrier IDs")?;
     }
     Ok(())
 }
 
-pub(super) fn transfer_and_record_scanned_geometry(
-    ctx: &DecodeContext<'_>,
+pub(super) fn transfer_and_record_scanned_geometry<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     coverage: &mut cadmpeg_ir::report::decode::Coverage,
     transfer_losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     source_carriers: &mut SourceUnitCarriers,
-) -> Result<BrepTransferDiagnostics, CodecError> {
+) -> Result<
+    (
+        BrepTransferDiagnostics,
+        cadmpeg_core::decode::ScopedReservation<'ctx>,
+    ),
+    CodecError,
+> {
     let cross_section_plane_count =
         transfer_cross_section_planes(ctx, scan, ir, annotations, source_carriers)?;
     let first_instance_prototype_surface_count = transfer_first_instance_prototype_surfaces(
@@ -122,10 +132,11 @@ pub(super) fn transfer_and_record_scanned_geometry(
         transfer_losses,
         source_carriers,
     )?;
-    let legacy_torus_sphere_carrier_count = scan
-        .surfaces
-        .legacy_carriers
-        .iter()
+    let legacy_torus_sphere_carrier_count = ctx
+        .admit_iter(
+            &scan.surfaces.legacy_carriers,
+            "creo legacy_carriers transfer coverage traversal",
+        )?
         .filter(|carrier| {
             matches!(
                 carrier.geometry,
@@ -211,6 +222,7 @@ pub(super) fn transfer_and_record_scanned_geometry(
     let analytic_pcurve_carriers =
         transfer_analytic_pcurve_carriers(ctx, scan, ir, annotations, source_carriers)?;
     let analytic_pcurve_carrier_count = analytic_pcurve_carriers.len();
+    let mut curve_evidence_storage = ctx.reserve_scoped(0, "creo curve evidence workspace")?;
     let nurbs_boundary_curves = transfer_nurbs_boundary_curves(
         ctx,
         scan,
@@ -218,12 +230,14 @@ pub(super) fn transfer_and_record_scanned_geometry(
         annotations,
         transfer_losses,
         source_carriers,
+        &mut curve_evidence_storage,
     )?;
     let extrusion_plane_boundary_curve_count = nurbs_boundary_curves.extrusion_plane_count;
     let extrusion_plane_section_generator_curve_count =
         nurbs_boundary_curves.extrusion_plane_section_generator_count;
     let shared_extrusion_generator_curve_count =
         nurbs_boundary_curves.shared_extrusion_generator_count;
+    let mut curve_id_storage = ctx.reserve_scoped(0, "creo derived curve ID merge storage")?;
     let mut derived_intersection_curves = transfer_carrier_intersection_curves(
         ctx,
         scan,
@@ -231,12 +245,15 @@ pub(super) fn transfer_and_record_scanned_geometry(
         annotations,
         &nurbs_boundary_curves.endpoint_witnesses,
         source_carriers,
+        &mut curve_evidence_storage,
     )?;
-    append_borrowed_curve_ids(
-        ctx,
-        &mut derived_intersection_curves,
-        &nurbs_boundary_curves.ids,
-    )?;
+    curve_id_storage.with_storage(|| {
+        append_borrowed_curve_ids(
+            ctx,
+            &mut derived_intersection_curves,
+            &nurbs_boundary_curves.ids,
+        )
+    })?;
     let topology_bound_plane_count = transfer_topology_bound_planes(
         ctx,
         scan,
@@ -252,18 +269,19 @@ pub(super) fn transfer_and_record_scanned_geometry(
         annotations,
         &nurbs_boundary_curves.endpoint_witnesses,
         source_carriers,
+        &mut curve_evidence_storage,
     )?;
-    append_owned_curve_ids(ctx, &mut derived_intersection_curves, topology_carriers)?;
-    append_borrowed_curve_ids(
-        ctx,
-        &mut derived_intersection_curves,
-        &analytic_pcurve_carriers,
-    )?;
-    let NativeBrepTransferSummary {
-        topological_point_count,
-        native_topological_edge_count,
-        diagnostics,
-    } = transfer_native_brep(
+    curve_id_storage.with_storage(|| {
+        append_owned_curve_ids(ctx, &mut derived_intersection_curves, topology_carriers)
+    })?;
+    curve_id_storage.with_storage(|| {
+        append_borrowed_curve_ids(
+            ctx,
+            &mut derived_intersection_curves,
+            &analytic_pcurve_carriers,
+        )
+    })?;
+    let native_brep = transfer_native_brep(
         ctx,
         scan,
         ir,
@@ -275,6 +293,16 @@ pub(super) fn transfer_and_record_scanned_geometry(
         transfer_losses,
         source_carriers,
     )?;
+    let diagnostic_storage = native_brep.1;
+    let NativeBrepTransferSummary {
+        topological_point_count,
+        native_topological_edge_count,
+        diagnostics,
+    } = native_brep.0;
+    drop(derived_intersection_curves);
+    drop(nurbs_boundary_curves);
+    drop(curve_id_storage);
+    drop(curve_evidence_storage);
     diagnostics.record_coverage(ctx, coverage)?;
     let mut brep_diagnostics = diagnostics;
     let feature_revolution_brep_count = transfer_resolved_revolution_breps(
@@ -304,109 +332,86 @@ pub(super) fn transfer_and_record_scanned_geometry(
     retain_unresolved_surface_carriers(ctx, scan, ir, annotations, source_carriers)?;
     let transferred_part_product =
         transfer_part_product(ctx, scan, ir, annotations, source_carriers)?;
-    let decoded_feature_skamp_count = scan
-        .features
-        .definitions
-        .iter()
-        .filter_map(|definition| definition.relations.as_ref())
-        .map(|relations| relations.skamps().len())
-        .sum::<usize>();
-    let missing_feature_skamp_row_count = scan
-        .features
-        .definitions
-        .iter()
-        .filter_map(|definition| definition.relations.as_ref())
-        .map(|relations| {
-            relations
-                .skamps
-                .as_ref()
-                .map_or(0, SolverSubtable::missing_rows)
-        })
-        .sum::<usize>();
-    let skamp_constraint_coverage = design_constraint_transfer_coverage(
-        ctx,
-        &ir.model.sketch_constraints,
-        ":skamp:",
-        "creo:skamp:",
-    )?;
-    let decoded_feature_relation_count = scan
-        .features
-        .definitions
-        .iter()
-        .filter_map(|definition| definition.relations.as_ref())
-        .map(|relations| relations.rows.len())
-        .sum::<usize>();
-    let missing_feature_relation_row_count = scan
-        .features
-        .definitions
-        .iter()
-        .filter_map(|definition| definition.relations.as_ref())
-        .try_fold(0usize, |missing, relations| {
-            missing
-                .checked_add(feature_relation_table_missing_rows(relations)?)
-                .ok_or_else(|| CodecError::malformed("missing relation row count exceeds usize"))
+    let mut decoded_feature_skamp_count = 0usize;
+    let mut missing_feature_skamp_row_count = 0usize;
+    let mut decoded_feature_relation_count = 0usize;
+    let mut missing_feature_relation_row_count = 0usize;
+    let mut malformed_feature_relation_table_count = 0usize;
+    let mut decoded_feature_relation_triple_count = 0usize;
+    let mut missing_feature_relation_triple_row_count = 0usize;
+    for definition in ctx.admit_iter(
+        &scan.features.definitions,
+        "creo definitions transfer coverage traversal",
+    )? {
+        let Some(relations) = &definition.relations else {
+            continue;
+        };
+        decoded_feature_skamp_count += relations.skamps().len();
+        missing_feature_skamp_row_count += relations
+            .skamps
+            .as_ref()
+            .map_or(0, SolverSubtable::missing_rows);
+        decoded_feature_relation_count += relations.rows.len();
+        missing_feature_relation_row_count = missing_feature_relation_row_count
+            .checked_add(feature_relation_table_missing_rows(relations)?)
+            .ok_or_else(|| CodecError::malformed("missing relation row count exceeds usize"))?;
+        malformed_feature_relation_table_count +=
+            usize::from(feature_relation_table_expected_rows(relations).is_none());
+        decoded_feature_relation_triple_count += relations.triples().len();
+        missing_feature_relation_triple_row_count += relations
+            .triples
+            .as_ref()
+            .map_or(0, SolverSubtable::missing_rows);
+    }
+    let mut coverage_storage = ctx.reserve_scoped(0, "creo transfer coverage lookup storage")?;
+    let [skamp_constraint_coverage, relation_constraint_coverage, equation_constraint_coverage] =
+        coverage_storage.with_storage(|| {
+            design_constraint_transfer_coverage(
+                ctx,
+                &ir.model.sketch_constraints,
+                [
+                    (":skamp:", "creo:skamp:"),
+                    (":relation:", "creo:relation:"),
+                    (":equation:", "creo:equation:"),
+                ],
+            )
         })?;
-    let malformed_feature_relation_table_count = scan
-        .features
-        .definitions
-        .iter()
-        .filter_map(|definition| definition.relations.as_ref())
-        .filter(|relations| feature_relation_table_expected_rows(relations).is_none())
-        .count();
-    let decoded_feature_relation_triple_count = scan
-        .features
-        .definitions
-        .iter()
-        .filter_map(|definition| definition.relations.as_ref())
-        .map(|relations| relations.triples().len())
-        .sum::<usize>();
-    let missing_feature_relation_triple_row_count = scan
-        .features
-        .definitions
-        .iter()
-        .filter_map(|definition| definition.relations.as_ref())
-        .map(|relations| {
-            relations
-                .triples
-                .as_ref()
-                .map_or(0, SolverSubtable::missing_rows)
-        })
-        .sum::<usize>();
-    let relation_constraint_coverage = design_constraint_transfer_coverage(
-        ctx,
-        &ir.model.sketch_constraints,
-        ":relation:",
-        "creo:relation:",
-    )?;
-    let equation_constraint_coverage = design_constraint_transfer_coverage(
-        ctx,
-        &ir.model.sketch_constraints,
-        ":equation:",
-        "creo:equation:",
-    )?;
-    let surface_coverage = surface_transfer_coverage(
-        ctx,
-        &scan.surfaces.rows,
-        &ir.model.surfaces,
-        &ir.model.procedural_surfaces,
-    )?;
-    let decoded_type24_round_edge_envelope_count = scan
-        .surfaces
-        .parameters
-        .iter()
-        .filter_map(|record| {
-            crate::surface::unique_surface_row(&scan.surfaces.rows, record.surface_id)
-                .filter(|row| row.kind == crate::surface::SurfaceKind::Cylinder)?;
-            (crate::surface::unique_surface_parameter(
-                &scan.surfaces.parameters,
-                record.surface_id,
-            ) == Some(record))
-            .then_some(())?;
-            record.type24_round_edge_envelope()
-        })
-        .count();
-    let curve_coverage =
-        curve_transfer_coverage(ctx, &scan.curves.topology_rows, &ir.model.curves)?;
+    let surface_coverage = coverage_storage.with_storage(|| {
+        surface_transfer_coverage(
+            ctx,
+            &scan.surfaces.rows,
+            &ir.model.surfaces,
+            &ir.model.procedural_surfaces,
+        )
+    })?;
+    let mut decoded_type24_round_edge_envelope_count = 0usize;
+    for record in ctx.admit_iter(
+        &*scan.surfaces.parameters,
+        "creo parameters transfer coverage traversal",
+    )? {
+        let Some(row) = crate::surface::unique_surface_row(&scan.surfaces.rows, record.surface_id)
+        else {
+            continue;
+        };
+        if row.kind != crate::surface::SurfaceKind::Cylinder {
+            continue;
+        }
+        if crate::surface::unique_surface_parameter(&scan.surfaces.parameters, record.surface_id)
+            .is_none_or(|unique| !std::ptr::eq(unique, record))
+        {
+            continue;
+        }
+        if record.type24_round_edge_envelope().is_some() {
+            decoded_type24_round_edge_envelope_count = decoded_type24_round_edge_envelope_count
+                .checked_add(1)
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit("creo round edge envelope count", u64::MAX, u64::MAX)
+                })?;
+        }
+    }
+    let curve_coverage = coverage_storage.with_storage(|| {
+        curve_transfer_coverage(ctx, &scan.curves.topology_rows, &ir.model.curves)
+    })?;
     {
         coverage.record(
             ctx,
@@ -486,7 +491,10 @@ pub(super) fn transfer_and_record_scanned_geometry(
             crate::coverage::AMBIGUOUS_VISIBLE_CURVE_ROW_COUNT,
             curve_coverage.ambiguous_rows(),
         )?;
-        for (type_byte, (rows, transferred)) in curve_coverage.by_type() {
+        for (type_byte, (rows, transferred)) in ctx.admit_iter(
+            curve_coverage.by_type(),
+            "creo curve family coverage traversal",
+        )? {
             coverage.record_hex_byte(
                 ctx,
                 crate::coverage::VISIBLE_CURVE_TYPE_ROW_COUNT,
@@ -503,11 +511,13 @@ pub(super) fn transfer_and_record_scanned_geometry(
                 ctx,
                 crate::coverage::RETAINED_UNKNOWN_VISIBLE_CURVE_TYPE_ROW_COUNT,
                 *type_byte,
-                curve_coverage
-                    .unknown_by_type()
-                    .get(type_byte)
-                    .copied()
-                    .unwrap_or_default(),
+                ctx.get_btree_map(
+                    curve_coverage.unknown_by_type(),
+                    type_byte,
+                    "creo unknown curve family coverage lookup",
+                )?
+                .copied()
+                .unwrap_or_default(),
             )?;
         }
         coverage.record(
@@ -835,7 +845,10 @@ pub(super) fn transfer_and_record_scanned_geometry(
             crate::coverage::ACTIVE_TYPED_FEATURE_SKAMP_CONSTRAINT_COUNT,
             skamp_constraint_coverage.active_typed()?,
         )?;
-        for (kind, count) in &skamp_constraint_coverage.native_by_kind {
+        for (kind, count) in ctx.admit_iter(
+            &skamp_constraint_coverage.native_by_kind,
+            "creo constraint family coverage traversal",
+        )? {
             coverage.record_indexed(
                 ctx,
                 crate::coverage::TRANSFERRED_NATIVE_FEATURE_SKAMP_TYPE_CONSTRAINT_COUNT,
@@ -843,7 +856,10 @@ pub(super) fn transfer_and_record_scanned_geometry(
                 *count,
             )?;
         }
-        for (kind, count) in &skamp_constraint_coverage.active_native_by_kind {
+        for (kind, count) in ctx.admit_iter(
+            &skamp_constraint_coverage.active_native_by_kind,
+            "creo constraint family coverage traversal",
+        )? {
             coverage.record_indexed(
                 ctx,
                 crate::coverage::ACTIVE_NATIVE_FEATURE_SKAMP_TYPE_CONSTRAINT_COUNT,
@@ -906,7 +922,10 @@ pub(super) fn transfer_and_record_scanned_geometry(
             crate::coverage::ACTIVE_TYPED_FEATURE_RELATION_CONSTRAINT_COUNT,
             relation_constraint_coverage.active_typed()?,
         )?;
-        for (kind, count) in &relation_constraint_coverage.native_by_kind {
+        for (kind, count) in ctx.admit_iter(
+            &relation_constraint_coverage.native_by_kind,
+            "creo constraint family coverage traversal",
+        )? {
             coverage.record_indexed(
                 ctx,
                 crate::coverage::TRANSFERRED_NATIVE_FEATURE_RELATION_TYPE_CONSTRAINT_COUNT,
@@ -914,7 +933,10 @@ pub(super) fn transfer_and_record_scanned_geometry(
                 *count,
             )?;
         }
-        for (kind, count) in &relation_constraint_coverage.active_native_by_kind {
+        for (kind, count) in ctx.admit_iter(
+            &relation_constraint_coverage.active_native_by_kind,
+            "creo constraint family coverage traversal",
+        )? {
             coverage.record_indexed(
                 ctx,
                 crate::coverage::ACTIVE_NATIVE_FEATURE_RELATION_TYPE_CONSTRAINT_COUNT,
@@ -955,7 +977,7 @@ pub(super) fn transfer_and_record_scanned_geometry(
             )?;
         }
     }
-    Ok(brep_diagnostics)
+    Ok((brep_diagnostics, diagnostic_storage))
 }
 
 #[cfg(test)]
@@ -976,30 +998,37 @@ mod tests {
     };
 
     #[test]
+    fn derived_curve_id_traversal_refuses_before_duplicate_lookup() {
+        let id = CurveId::mint("creo:visibgeom:curve#12").expect("identity grammar");
+        let mut target = BTreeSet::from([id.clone()]);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let error = append_borrowed_curve_ids(&ctx, &mut target, std::slice::from_ref(&id))
+            .expect_err("traversal exceeds work limit");
+        assert!(matches!(error, CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::WorkUnits
+                && resource.operation == "creo borrowed derived curve ID traversal"));
+        assert_eq!(target, BTreeSet::from([id]));
+    }
+
+    #[test]
     fn derived_curve_id_copy_refuses_each_resource_limit() {
         let id = CurveId::mint("creo:visibgeom:curve#12").expect("identity grammar");
-        for (item_limit, byte_limit, dimension, operation) in [
+        for (dimension, operation) in [
             (
-                0,
-                u64::MAX,
                 ResourceDimension::CollectionItems,
                 "creo derived intersection curve IDs",
             ),
             (
-                1,
-                0,
                 ResourceDimension::RetainedBytes,
                 "creo derived intersection curve ID copies",
             ),
         ] {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = item_limit;
-            policy.limits.max_retained_bytes = byte_limit;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-            let error =
-                append_borrowed_curve_ids(&ctx, &mut BTreeSet::new(), std::slice::from_ref(&id))
-                    .expect_err("below-need limit");
+            let error = crate::test_support::last_refusal_at(&[], dimension, operation, |ctx| {
+                append_borrowed_curve_ids(ctx, &mut BTreeSet::new(), std::slice::from_ref(&id))
+            });
             assert!(matches!(error, CodecError::ResourceLimit(resource)
                 if resource.dimension == dimension && resource.operation == operation));
         }
@@ -1038,7 +1067,7 @@ mod tests {
     #[test]
     fn intersections_revisit_carriers_proven_by_topology_bound_planes() {
         let mut scan = crate::test_support::empty_container_scan();
-        scan.surfaces.rows = vec![
+        scan.surfaces.rows = crate::surface::unique_rows::UniqueIdRows::from_rows(vec![
             crate::surface::SurfaceRow {
                 id: 5,
                 kind: crate::surface::SurfaceKind::Plane,
@@ -1057,7 +1086,7 @@ mod tests {
                 next_surface: 0,
                 offset: 11,
             },
-        ];
+        ]);
         scan.curves.topology_rows = vec![
             crate::curve::CurveTopologyRow {
                 id: 10,
@@ -1154,5 +1183,32 @@ mod tests {
             coverage.get("transferred_topology_bound_plane_surface_count"),
             Some(&1)
         );
+    }
+
+    #[test]
+    fn derived_curve_identity_lookup_refuses_before_duplicate_skip() {
+        let id = CurveId::mint("creo:visibgeom:curve#12").expect("identity grammar");
+        let mut target = BTreeSet::from([id.clone()]);
+        let error = crate::test_support::last_refusal_at(
+            &[],
+            ResourceDimension::WorkUnits,
+            "creo derived curve identity lookup",
+            |ctx| {
+                let mut trial = target.clone();
+                let result = append_borrowed_curve_ids(ctx, &mut trial, std::slice::from_ref(&id));
+                assert_eq!(trial, target);
+                result
+            },
+        );
+        assert!(matches!(error, CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::WorkUnits
+                && resource.operation == "creo derived curve identity lookup"));
+        assert_eq!(target, BTreeSet::from([id.clone()]));
+
+        crate::decode::with_test_decode_ctx(|ctx| {
+            append_borrowed_curve_ids(ctx, &mut target, std::slice::from_ref(&id))
+        })
+        .expect("service duplicate lookup");
+        assert_eq!(target, BTreeSet::from([id]));
     }
 }

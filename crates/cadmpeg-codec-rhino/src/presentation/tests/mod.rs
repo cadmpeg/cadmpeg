@@ -1297,13 +1297,9 @@ fn group_preserves_component_identity() {
     bytes.extend(utf16_bytes("fixtures"));
     bytes.extend([0x44; 16]);
     bytes.extend([0xaa, 0xbb]);
-    let group = parse_group(
-        &cadmpeg_test_support::service_decode_context(),
-        &bytes,
-        0..bytes.len(),
-        120,
-    )
-    .expect("required invariant");
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let (group, _group_storage) =
+        parse_group(&ctx, &bytes, 0..bytes.len(), 120).expect("required invariant");
     assert_eq!(group.archive_index, 7);
     assert_eq!(group.name, "fixtures");
     assert_eq!(
@@ -1319,23 +1315,16 @@ fn duplicate_group_source_ids_are_disambiguated_without_rewriting_source_fields(
     bytes.extend(7_i32.to_le_bytes());
     bytes.extend(utf16_bytes("fixtures"));
     bytes.extend([0x44; 16]);
-    let first = parse_group(
-        &cadmpeg_test_support::service_decode_context(),
-        &bytes,
-        0..bytes.len(),
-        120,
-    )
-    .expect("first group");
-    let second = parse_group(
-        &cadmpeg_test_support::service_decode_context(),
-        &bytes,
-        0..bytes.len(),
-        240,
-    )
-    .expect("second group");
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let (first, first_storage) =
+        parse_group(&ctx, &bytes, 0..bytes.len(), 120).expect("first group");
+    let (second, second_storage) =
+        parse_group(&ctx, &bytes, 0..bytes.len(), 240).expect("second group");
+    let mut staging = ctx.reserve_scoped(0, "group test IDs").unwrap();
+    let _group_storages = [first_storage, second_storage];
     let mut groups = vec![first, second];
     assert_eq!(
-        disambiguate_group_ids(&cadmpeg_test_support::service_decode_context(), &mut groups)
+        disambiguate_group_ids(&ctx, &mut groups, &mut staging)
             .expect("duplicate group IDs fit the service profile"),
         2
     );
@@ -1850,6 +1839,16 @@ fn mapping_crc_cache_reads_version_one_and_bounded_suffix() {
 
 mod patterns;
 
+mod mapping_scratch;
+
+mod class_scratch;
+
+mod error_lifetimes;
+
+mod userdata_scratch;
+
+mod pattern_scratch;
+
 mod resource_limits;
 
 mod materials;
@@ -1881,3 +1880,24 @@ fn legacy_rdk_material_optional_readers_propagate_tree_refusal() {
 }
 
 mod utf16;
+
+mod case_equality;
+
+mod searches;
+
+mod userdata_search;
+mod uuid_prefix;
+
+mod known_searches;
+
+mod xml_children;
+
+mod wide_utf8;
+
+mod hierarchy_wire;
+
+mod record_handoff;
+
+mod bounded_diagnostics;
+
+mod recovery_storage;
