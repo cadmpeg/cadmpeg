@@ -257,7 +257,6 @@ pub(crate) fn neutral_component_insert_occurrence_id(
 }
 
 /// Neutral assembly-joint key projected from one Design parameter scope.
-#[cfg(test)]
 pub(crate) fn neutral_assembly_joint_id(
     scope: &crate::records::feature::scope::DesignParameterScope,
 ) -> cadmpeg_ir::products::JointId {
@@ -274,13 +273,12 @@ pub(crate) fn neutral_assembly_joint_id(
     )
 }
 
-#[cfg(test)]
+/// The history-input state of `feature_id` relative to `previous_state_id`.
 pub(crate) fn feature_input_topology_id(
     feature_id: &cadmpeg_ir::features::FeatureId,
     previous_state_id: i64,
 ) -> cadmpeg_ir::ids::FeatureInputTopologyId {
-    let feature_key = feature_id.key();
-    history_input_state_id(&history_input_prefix(&feature_key, previous_state_id))
+    history_input_state_id(&feature_input_prefix(feature_id, previous_state_id))
 }
 
 /// The Design configuration record key for the archive entry `entry_name`.
@@ -731,6 +729,15 @@ pub(crate) fn history_input_prefix(
         .then(cadmpeg_ir::identity_key!(":"))
         .then(feature_key)
         .colon(previous_state_id)
+}
+
+/// The [`history_input_prefix`] of `feature`'s key relative to
+/// `previous_state_id`.
+pub(crate) fn feature_input_prefix(
+    feature: &cadmpeg_ir::features::FeatureId,
+    previous_state_id: i64,
+) -> cadmpeg_ir::ids::IdentityKey {
+    history_input_prefix(&feature.key(), previous_state_id)
 }
 
 /// The history-input state key for a `prefix` from [`history_input_prefix`].

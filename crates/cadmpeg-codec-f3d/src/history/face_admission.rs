@@ -181,7 +181,7 @@ impl<'a> FaceInputs<'a> {
                         .as_str()
                         .rsplit_once(':')
                         .and_then(|(_, state)| state.parse::<i64>().ok())?;
-                    let prefix = crate::ids::history_input_prefix(&feature.key(), state);
+                    let prefix = crate::ids::feature_input_prefix(feature, state);
                     if crate::ids::history_input_state_id(&prefix) != topology.id {
                         return None;
                     }

@@ -1542,6 +1542,32 @@ fn sketch_arrangement_faces_skips_the_arrangement_when_local_work_runs_out() {
 }
 
 #[test]
+fn arrangement_cycle_scan_skips_when_its_work_count_overflows() {
+    let entity = SketchEntityId::mint("synthetic:test:id#ring").unwrap();
+    let boundary = cadmpeg_ir::features::SketchProfileBoundaryUse {
+        entity,
+        parameter_range: cadmpeg_ir::geometry::DirectedParameterRange::new([0.0, 1.0]).unwrap(),
+        reversed: false,
+    };
+    let mut edges: Vec<_> = (0..3)
+        .map(|index| super::SketchArrangementEdge {
+            nodes: [index, (index + 1) % 3],
+            boundary: boundary.clone(),
+            polyline: Vec::new(),
+        })
+        .collect();
+    assert_eq!(super::arrangement_cycle_work(edges.len(), usize::MAX), None);
+    // An unlimited counter shows the overflow, not the limit, ends the scan.
+    let budget = WorkBudget::new(usize::MAX);
+    crate::test_support::with_decode_context(|ctx| {
+        super::arrangement_retain_cycle_edges(&mut edges, usize::MAX, &budget, ctx).unwrap();
+        assert!(ctx.resource_refusal().is_none());
+    });
+    assert!(budget.exhausted());
+    assert_eq!(edges.len(), 3);
+}
+
+#[test]
 fn arrangement_ring_cycle_scan_skips_past_local_budget() {
     let entity = SketchEntityId::mint("synthetic:test:id#ring").unwrap();
     let boundary = cadmpeg_ir::features::SketchProfileBoundaryUse {

@@ -727,3 +727,139 @@ fn geometric_membership_rejects_large_residuals_and_short_line_false_positives()
             .expect("resource allocation did not fail")
     );
 }
+
+#[test]
+fn unique_spatial_parallel_line_pair_projects_their_distance() {
+    use cadmpeg_ir::sketches::{
+        SpatialSketchConstraintDefinitionInput, SpatialSketchEntity, SpatialSketchEntityId,
+        SpatialSketchGeometry, SpatialSketchGeometryDefinition, SpatialSketchId,
+    };
+
+    let sketch = SpatialSketchId::mint("synthetic:test:spatial-sketch#parallel").unwrap();
+    // 0.2 cm is the 2 mm distance between the two parallel lines.
+    let parameter = parse_design_parameter_record(&parameter_record(
+        Some(1),
+        "2 mm",
+        "Linear Dimension-2",
+        Some("mm"),
+        "d1",
+        0.2,
+    ))
+    .unwrap();
+    let parameter_id = ParameterId::mint("synthetic:test:parameter#spatial-parallel").unwrap();
+    let line = |index: u32, x0: f64, x1: f64, y: f64| {
+        SpatialSketchEntity::new(
+            SpatialSketchEntityId::mint(format!("synthetic:test:spatial-line#{index}")).unwrap(),
+            sketch.clone(),
+            SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Line {
+                start: Point3::new(x0, y, 0.0),
+                end: Point3::new(x1, y, 0.0),
+            })
+            .unwrap(),
+        )
+    };
+    let entities = [line(1, 0.0, 4.0, 0.0), line(2, 0.0, 4.0, 2.0)];
+    assert_eq!(
+        crate::design::dimensions::unique_spatial_parallel_line_dimension_definition(
+            &entities,
+            &sketch,
+            &parameter,
+            &parameter_id,
+        )
+        .unwrap()
+        .unwrap(),
+        SpatialSketchConstraintDefinitionInput::ParallelLineDistance {
+            first: entities[0].id().clone(),
+            second: entities[1].id().clone(),
+            parameter: parameter_id.clone(),
+        }
+    );
+}
+
+#[test]
+fn repeated_spatial_profile_sides_project_a_repeated_distance() {
+    use cadmpeg_ir::sketches::{
+        SpatialSketch, SpatialSketchConstraintDefinitionInput, SpatialSketchEntity,
+        SpatialSketchEntityId, SpatialSketchEntityPair, SpatialSketchEntityUse,
+        SpatialSketchGeometry, SpatialSketchGeometryDefinition, SpatialSketchId,
+        SpatialSketchProfile,
+    };
+
+    let sketch = SpatialSketchId::mint("synthetic:test:spatial-sketch#repeated").unwrap();
+    // 0.2 cm is the 2 mm distance between opposite long sides of each profile.
+    let parameter = parse_design_parameter_record(&parameter_record(
+        Some(1),
+        "2 mm",
+        "Linear Dimension-2",
+        Some("mm"),
+        "d1",
+        0.2,
+    ))
+    .unwrap();
+    let parameter_id = ParameterId::mint("synthetic:test:parameter#spatial-repeated").unwrap();
+    let mut entities = Vec::new();
+    let mut profiles = Vec::new();
+    // Two 4 mm by 2 mm rectangles; edges 0 and 2 of each are 2 mm apart and
+    // edges 1 and 3 are 4 mm apart.
+    for (first_edge, x) in [(0_u32, 0.0), (4, 10.0)] {
+        let corners = [
+            Point3::new(x, 0.0, 0.0),
+            Point3::new(x + 4.0, 0.0, 0.0),
+            Point3::new(x + 4.0, 2.0, 0.0),
+            Point3::new(x, 2.0, 0.0),
+        ];
+        let mut boundary = Vec::new();
+        for (edge, ordinal) in (first_edge..).zip(0..4) {
+            let entity = SpatialSketchEntity::new(
+                SpatialSketchEntityId::mint(format!("synthetic:test:spatial-edge#{edge}")).unwrap(),
+                sketch.clone(),
+                SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Line {
+                    start: corners[ordinal],
+                    end: corners[(ordinal + 1) % 4],
+                })
+                .unwrap(),
+            );
+            boundary.push(SpatialSketchEntityUse {
+                entity: entity.id().clone(),
+                reversed: false,
+            });
+            entities.push(entity);
+        }
+        profiles.push(
+            SpatialSketchProfile::try_new(
+                corners[0],
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                boundary,
+            )
+            .unwrap(),
+        );
+    }
+    let sketches = [SpatialSketch {
+        id: sketch.clone(),
+        name: None,
+        configuration: None,
+        visible: None,
+        profiles,
+        native_ref: None,
+    }];
+    let pair = |first: usize, second: usize| SpatialSketchEntityPair {
+        first: entities[first].id().clone(),
+        second: entities[second].id().clone(),
+    };
+    assert_eq!(
+        crate::design::dimensions::owner_scoped_spatial_repeated_profile_line_distance_definition(
+            &entities,
+            &sketches,
+            &sketch,
+            &parameter,
+            &parameter_id,
+        )
+        .unwrap()
+        .unwrap(),
+        SpatialSketchConstraintDefinitionInput::RepeatedParallelLineDistance {
+            pairs: vec![pair(0, 2), pair(4, 6)],
+            parameter: parameter_id.clone(),
+        }
+    );
+}

@@ -613,7 +613,7 @@ fn bind_occurrences(
                 placement_failures.push(reference.ordinal);
             }
 
-            expanded.push(copy_reference(reference, None));
+            expanded.push(reference.clone());
             continue;
         }
         for (occurrence_ordinal, transform) in occurrences.into_iter().enumerate() {
@@ -621,35 +621,21 @@ fn bind_occurrences(
                 "f3d:xref:reference#{}-occurrence-{occurrence_ordinal}",
                 reference.ordinal
             );
-            let mut occurrence = copy_reference(reference, Some(occurrence_id));
-            occurrence.occurrence_ordinal = ordinal_at(occurrence_ordinal)?;
-            occurrence.transform = transform
-                .map(crate::records::xref::XrefPlacementTransform::try_from)
-                .transpose()
-                .map_err(CodecError::NotImplemented)?;
-            expanded.push(occurrence);
+            expanded.push(XrefReference {
+                id: occurrence_id,
+                occurrence_ordinal: ordinal_at(occurrence_ordinal)?,
+                transform: transform
+                    .map(crate::records::xref::XrefPlacementTransform::try_from)
+                    .transpose()
+                    .map_err(CodecError::NotImplemented)?,
+                ..reference.clone()
+            });
         }
     }
     table.references = expanded;
     table.placement_failures = placement_failures;
     table.placement_overrides = placement_overrides;
     Ok(())
-}
-
-fn copy_reference(source: &XrefReference, occurrence_id: Option<String>) -> XrefReference {
-    XrefReference {
-        id: match occurrence_id {
-            Some(id) => id,
-            None => source.id.clone(),
-        },
-        ordinal: source.ordinal,
-        occurrence_ordinal: source.occurrence_ordinal,
-        from: source.from.clone(),
-        relative_path: source.relative_path.clone(),
-        neutron_role: source.neutron_role.clone(),
-        neutron_data: source.neutron_data.clone(),
-        transform: source.transform,
-    }
 }
 
 /// Select the exact `Component Insert` constructions for one Design stream

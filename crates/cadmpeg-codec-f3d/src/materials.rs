@@ -53,24 +53,14 @@ fn library_id(asset_lib_id: &str) -> Option<String> {
     Some(asset_lib_id.to_owned())
 }
 
-fn copy_act_channels(channels: Option<&BTreeMap<String, String>>) -> BTreeMap<String, String> {
-    let mut copied = BTreeMap::new();
-    if let Some(channels) = channels {
-        for (name, guid) in channels {
-            let name = name.to_owned();
-            let guid = guid.to_owned();
-            copied.insert(name, guid);
-        }
-    }
-    copied
-}
-
 fn named_act_channels(
     owner: std::fmt::Arguments<'_>,
     channels: Option<&BTreeMap<String, String>>,
 ) -> Result<BTreeMap<cadmpeg_core::text::NonBlankString, String>, CodecError> {
-    let copied = copy_act_channels(channels);
-    Ok(cadmpeg_core::text::named_entries(owner, copied)?)
+    Ok(cadmpeg_core::text::named_entries(
+        owner,
+        channels.cloned().unwrap_or_default(),
+    )?)
 }
 
 fn lp_ascii_printable(bytes: &[u8], at: usize) -> Result<Option<(String, usize)>, CodecError> {

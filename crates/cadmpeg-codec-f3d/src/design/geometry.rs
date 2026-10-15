@@ -31,9 +31,8 @@ macro_rules! geometric {
     };
 }
 
-/// Format-side work cap for arrangement edge retention walks.
-///
-/// The local walk slice and the caller's session work allowance are charged separately.
+/// Local work cap for arrangement edge retention walks. An exhausted cap
+/// skips the arrangement.
 pub(crate) const MAX_ARRANGEMENT_WALK_WORK: usize = 1_000_000;
 
 #[derive(Clone)]
@@ -46,27 +45,6 @@ struct SketchArrangementEdge {
 struct SketchArrangementFace {
     boundary: Vec<cadmpeg_ir::features::SketchProfileBoundaryUse>,
     polyline: Vec<Point2>,
-}
-
-fn copy_arrangement_boundary(
-    boundary: &cadmpeg_ir::features::SketchProfileBoundaryUse,
-) -> cadmpeg_ir::features::SketchProfileBoundaryUse {
-    cadmpeg_ir::features::SketchProfileBoundaryUse {
-        entity: (boundary.entity).clone(),
-        parameter_range: boundary.parameter_range,
-        reversed: boundary.reversed,
-    }
-}
-
-fn copy_arrangement_boundary_run(
-    boundaries: &[cadmpeg_ir::features::SketchProfileBoundaryUse],
-) -> Vec<cadmpeg_ir::features::SketchProfileBoundaryUse> {
-    let mut copy = Vec::new();
-    for boundary in boundaries {
-        let boundary = copy_arrangement_boundary(boundary);
-        copy.push(boundary);
-    }
-    copy
 }
 
 pub(super) fn arrangement_region_containing_points(
@@ -109,8 +87,7 @@ pub(super) fn arrangement_region_containing_points(
     }
     if boundary_count == 1 {
         let face = geometric!(boundary);
-        let boundary = copy_arrangement_boundary_run(&face.boundary);
-        return Ok(SketchProfileRegion::trimmed(boundary, Vec::new()).ok());
+        return Ok(SketchProfileRegion::trimmed(face.boundary.clone(), Vec::new()).ok());
     }
     let mut interior = None;
     let mut interior_count = 0;
@@ -141,8 +118,7 @@ pub(super) fn arrangement_region_containing_points(
         return Ok(None);
     }
     let face = geometric!(interior);
-    let boundary = copy_arrangement_boundary_run(&face.boundary);
-    Ok(SketchProfileRegion::trimmed(boundary, Vec::new()).ok())
+    Ok(SketchProfileRegion::trimmed(face.boundary.clone(), Vec::new()).ok())
 }
 
 fn sketch_arrangement_faces(
@@ -170,7 +146,7 @@ fn sketch_arrangement_faces(
                 ) || sketch_geometry_parameter_range(&entity.geometry).is_some()
             })
         {
-            let entity = (entity.id()).clone();
+            let entity = entity.id().clone();
             candidate_uses.push(SketchEntityUse {
                 entity,
                 reversed: false,
@@ -178,7 +154,7 @@ fn sketch_arrangement_faces(
         }
     } else {
         for use_ in sketch.profiles.iter().flat_map(|profile| profile.iter()) {
-            let entity = (use_.entity).clone();
+            let entity = use_.entity.clone();
             candidate_uses.push(SketchEntityUse {
                 entity,
                 reversed: use_.reversed,
@@ -198,7 +174,7 @@ fn sketch_arrangement_faces(
         ] {
             arrangement_node(&mut nodes, point, tolerance);
         }
-        let id = (entity.id()).clone();
+        let id = entity.id().clone();
         pending.push(SketchProfileBoundaryUse {
             entity: id,
             parameter_range: geometric!(
@@ -240,7 +216,7 @@ fn sketch_arrangement_faces(
                 end += std::f64::consts::TAU;
             }
             let range = [start, end];
-            let id = (use_.entity).clone();
+            let id = use_.entity.clone();
             pending.push(SketchProfileBoundaryUse {
                 entity: id,
                 parameter_range: geometric!(cadmpeg_ir::geometry::DirectedParameterRange::new(
@@ -264,7 +240,7 @@ fn sketch_arrangement_faces(
         )?);
         for parameters in parameters.windows(2) {
             let range = [parameters[0], parameters[1]];
-            let id = (boundary.entity).clone();
+            let id = boundary.entity.clone();
             let parameter_range =
                 geometric!(cadmpeg_ir::geometry::DirectedParameterRange::new(range).ok());
             let polyline = geometric!(profile_use_polyline(
@@ -426,7 +402,7 @@ fn sketch_arrangement_faces(
                 }
                 visited[index][usize::from(reverse)] = true;
                 let edge = &edges[index];
-                let mut use_ = copy_arrangement_boundary(&edge.boundary);
+                let mut use_ = edge.boundary.clone();
                 if reverse {
                     use_.reversed = !use_.reversed;
                 }
@@ -2052,7 +2028,6 @@ fn certified_nurbs_tubes(
 
 fn subdivision_count(travel_bound: f64, target_error: f64) -> Option<usize> {
     // Format invariant: densification above this count is outside the reader.
-    // Session work for arrangement walks is charged separately via work_budget.
     const MAX_SUBDIVISIONS: f64 = 100_000.0;
     if !travel_bound.is_finite()
         || travel_bound < 0.0
@@ -2892,7 +2867,7 @@ pub(super) fn closed_sketch_profiles(
             SketchGeometryDefinition::Circle { .. }
                 | SketchGeometryDefinition::Ellipse { bounds: None, .. }
         ) {
-            let id = (entity.id()).clone();
+            let id = entity.id().clone();
             let profile = vec![SketchEntityUse {
                 entity: id,
                 reversed: false,
@@ -3026,7 +3001,7 @@ pub(super) fn closed_sketch_profiles(
         let start_node = edge_nodes[first_edge][0];
         let mut current_node = edge_nodes[first_edge][1];
         let mut profile = Vec::new();
-        let first_id = (edges[first_edge].0.id()).clone();
+        let first_id = edges[first_edge].0.id().clone();
         profile.push(SketchEntityUse {
             entity: first_id,
             reversed: false,
@@ -3045,7 +3020,7 @@ pub(super) fn closed_sketch_profiles(
             let reversed = stored_end == current_node;
             current_node = if reversed { stored_start } else { stored_end };
             visited[next_edge] = true;
-            let id = (edges[next_edge].0.id()).clone();
+            let id = edges[next_edge].0.id().clone();
             profile.push(SketchEntityUse {
                 entity: id,
                 reversed,
@@ -3142,7 +3117,7 @@ fn branched_line_profiles(
                 (stored_start, stored_end)
             };
             twice_area += from.u * to.v - from.v * to.u;
-            let id = (edges[edge].0.id()).clone();
+            let id = edges[edge].0.id().clone();
             profile.push(SketchEntityUse {
                 entity: id,
                 reversed,
@@ -3336,7 +3311,7 @@ fn tangent_nested_line_profile(
                 position
             };
             let edge = cycles[index][offset];
-            let entity = (edges[edge].0.id()).clone();
+            let entity = edges[edge].0.id().clone();
             profile.push(SketchEntityUse {
                 entity,
                 reversed: reverse,

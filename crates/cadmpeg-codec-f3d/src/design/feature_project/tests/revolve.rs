@@ -77,7 +77,9 @@ fn revolve_projects_with_native_profile() {
         "next_byte_offset": 160
     }))
     .unwrap();
-    assert!(super::super::project_fixed_revolve_with_entities(
+    let Some(cadmpeg_ir::features::FeatureDefinition::Operation(
+        cadmpeg_ir::features::FeatureOperation::Revolve { construction, .. },
+    )) = super::super::project_fixed_revolve_with_entities(
         &scope,
         &groups,
         std::slice::from_ref(&axis),
@@ -85,5 +87,13 @@ fn revolve_projects_with_native_profile() {
         &[],
         (&[], &[]),
     )
-    .is_some());
+    else {
+        panic!("expected a revolve");
+    };
+    assert_eq!(
+        construction.profile(),
+        Some(&cadmpeg_ir::features::PlanarProfileRef::Native(
+            groups[0].id.clone()
+        ))
+    );
 }

@@ -140,3 +140,66 @@ fn parameter_cycle_ordering_resumes_before_breaking_another_cycle() {
         ["A", "D", "B", "C"]
     );
 }
+
+/// A chain where `P{i}` names `P{i - 1}` and has the reverse source ordinal,
+/// so ordering needs one round per link.
+fn reversed_chain(length: u32) -> Vec<(u32, String, String)> {
+    (0..length)
+        .map(|index| {
+            let expression = match index {
+                0 => "1".to_owned(),
+                _ => format!("P{}", index - 1),
+            };
+            (length - 1 - index, format!("P{index}"), expression)
+        })
+        .collect()
+}
+
+fn decode_chain(chain: &[(u32, String, String)]) -> DecodeResult {
+    let records = chain
+        .iter()
+        .map(|(ordinal, name, expression)| (*ordinal, name.as_str(), expression.as_str()))
+        .collect::<Vec<_>>();
+    decode_parameters(&records)
+}
+
+#[test]
+fn parameter_ordering_within_its_cap_orders_a_reversed_chain() {
+    let decoded = decode_chain(&reversed_chain(10));
+    let parameters = &decoded.ir().model.parameters;
+    let by_name = |name: String| parameters.iter().find(|p| p.name == name).unwrap();
+    for index in 1..10 {
+        let parameter = by_name(format!("P{index}"));
+        let dependency = by_name(format!("P{}", index - 1));
+        assert_eq!(parameter.dependencies.as_slice(), [dependency.id.clone()]);
+        assert!(dependency.ordinal < parameter.ordinal);
+    }
+}
+
+#[test]
+fn parameter_ordering_past_its_cap_keeps_source_ordinals_and_reports_dropped_edges() {
+    // Round `k` scans the `3000 - k` unresolved parameters and one dependency
+    // each: about 3000^2 work units, past the per-scope cap.
+    let chain = reversed_chain(3000);
+    let decoded = decode_chain(&chain);
+    let parameters = &decoded.ir().model.parameters;
+    assert!(parameters
+        .iter()
+        .all(|parameter| parameter.dependencies.is_empty()));
+    for (ordinal, name, _) in &chain {
+        let parameter = parameters
+            .iter()
+            .find(|parameter| parameter.name == *name)
+            .unwrap();
+        assert_eq!(parameter.ordinal, *ordinal);
+    }
+    let loss = decoded
+        .report()
+        .losses
+        .iter()
+        .find(|loss| loss.code == F3dLossCode::ParameterExpressionUnbound.kind())
+        .unwrap();
+    assert!(loss
+        .message
+        .starts_with("2999 decoded parameter expression symbol(s)"));
+}

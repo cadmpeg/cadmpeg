@@ -15,8 +15,8 @@ use cadmpeg_test_support::wire;
 
 use super::super::{
     bind_mesh_feature_definitions, face_selection_is_resolved, feature_definition_is_incomplete,
-    incomplete_feature_families, mesh_attribute_channels, mesh_texture_assignments,
-    report_design_projection_gaps, MeshProjection,
+    incomplete_feature_families, mesh_attribute_channels, mesh_texture_asset,
+    mesh_texture_assignments, report_design_projection_gaps, MeshProjection,
 };
 use crate::loss::F3dLossCode;
 use crate::native::F3dNative;
@@ -1273,4 +1273,52 @@ fn split_body_requires_resolved_target_and_tool_selections() {
             },
         })
     ));
+}
+
+#[test]
+fn mesh_texture_bytes_refuse_one_byte_below_their_retained_ceiling() {
+    use std::io::{Cursor, Write};
+
+    const ENTRY: &str = "FusionAssetName[Active]/Textures/a.png";
+    const DATA: &[u8] = b"PNG texture";
+    let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
+    zip.start_file(ENTRY, stored).unwrap();
+    zip.write_all(DATA).unwrap();
+    let archive = zip.finish().unwrap().into_inner();
+    // The filename record holds the fixed prefix and the UTF-16 filename.
+    let record = crate::records::mesh::DesignMeshRecordIdentity::new(
+        crate::records::references::DesignClassTag::try_from("256".to_owned()).unwrap(),
+        8,
+        300,
+        u64::try_from(crate::layout::paramesh_texture_filename_prefix::LEN + 2 * "a.png".len())
+            .unwrap(),
+    )
+    .unwrap();
+    let file = crate::records::mesh::DesignMeshTextureFile::new(record, "a.png", ENTRY.to_owned())
+        .unwrap();
+    let asset = cadmpeg_ir::assets::AssetId::mint("synthetic:test:id#asset:texture").unwrap();
+    let ceiling = u64::try_from(DATA.len()).unwrap();
+    crate::test_support::zip_test::with_scan(&archive, |scan| {
+        for (limit, admitted) in [(ceiling, true), (ceiling - 1, false)] {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_retained_bytes = limit;
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let result = mesh_texture_asset(&ctx, scan, &file, &asset);
+            if admitted {
+                assert_eq!(result.unwrap().id, asset);
+            } else {
+                assert!(matches!(
+                    result,
+                    Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                        if limit.dimension
+                            == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                            && limit.operation == "retain F3D mesh texture bytes"
+                ));
+            }
+        }
+    });
 }

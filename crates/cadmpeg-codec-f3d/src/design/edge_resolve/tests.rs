@@ -1232,6 +1232,8 @@ fn partial_historical_edge_selection_retains_proofs_and_unresolved_operands() {
 
     let state =
         FeatureInputTopologyId::mint("f3d:history-input:state#feature").expect("identity grammar");
+    let feature = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#feature")
+        .expect("identity grammar");
     let selection = partial_historical_edge_selection(
         [
             ("operand-a", Some(17)),
@@ -1239,11 +1241,10 @@ fn partial_historical_edge_selection_retains_proofs_and_unresolved_operands() {
             ("operand-c", Some(17)),
         ],
         41,
-        cadmpeg_ir::identity_key!("feature").as_str(),
+        &feature,
         state.clone(),
         "group",
     )
-    .unwrap()
     .expect("mixed proof state");
     assert_eq!(
         selection,
@@ -1262,24 +1263,22 @@ fn partial_historical_edge_selection_retains_proofs_and_unresolved_operands() {
         partial_historical_edge_selection(
             [("operand-a", Some(17)), ("operand-b", Some(18))],
             41,
-            cadmpeg_ir::identity_key!("feature").as_str(),
+            &feature,
             FeatureInputTopologyId::mint("test:model:feature-input#state")
                 .expect("identity grammar"),
             "group",
         )
     }
-    .unwrap()
     .is_none());
     assert_eq!(
         partial_historical_edge_selection(
             [("operand-a", None), ("operand-b", None)],
             41,
-            cadmpeg_ir::identity_key!("feature").as_str(),
+            &feature,
             FeatureInputTopologyId::mint("test:model:feature-input#state")
                 .expect("identity grammar"),
             "group"
-        )
-        .unwrap(),
+        ),
         None
     );
 }
@@ -1716,6 +1715,7 @@ fn edge_assignment_pairs_single_candidates() {
 }
 
 mod assignment_recursion;
+mod group_candidates;
 
 #[test]
 fn sweep_recipe_edge_requires_incidence_and_two_reference_faces() {

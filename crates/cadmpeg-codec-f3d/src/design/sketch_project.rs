@@ -3,7 +3,7 @@
 
 use crate::design::dimensions::{planar_point, sketch_normal_sign};
 use crate::design::face_resolve::{placement_origin_scale, sketch_curve_is_spatial};
-use crate::design::feature_project::closed_spatial_sketch_profiles;
+use crate::design::feature_project::{closed_spatial_sketch_profiles, SPATIAL_PROFILE_SEARCH_WORK};
 use crate::design::geometry::closed_sketch_profiles;
 use crate::ids::native_stream;
 use crate::records::{
@@ -502,6 +502,14 @@ pub(crate) fn project_sketch_design(
     Ok((sketches, entities))
 }
 
+/// Model-space spatial sketches projected from one Design.
+pub(crate) struct SpatialSketchDesign {
+    pub(crate) sketches: Vec<cadmpeg_ir::sketches::SpatialSketch>,
+    pub(crate) entities: Vec<cadmpeg_ir::sketches::SpatialSketchEntity>,
+    /// Losses of the projection, such as a capped profile search.
+    pub(crate) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+}
+
 /// Project non-planar Design sketch curves into model-space spatial sketches.
 pub(crate) fn project_spatial_sketch_design(
     ctx: &DecodeContext<'_>,
@@ -511,13 +519,7 @@ pub(crate) fn project_spatial_sketch_design(
     surfaces: &[SketchSurface],
     relations: &[SketchRelation],
     linear_tolerance: f64,
-) -> Result<
-    (
-        Vec<cadmpeg_ir::sketches::SpatialSketch>,
-        Vec<cadmpeg_ir::sketches::SpatialSketchEntity>,
-    ),
-    cadmpeg_core::CodecError,
-> {
+) -> Result<SpatialSketchDesign, cadmpeg_core::CodecError> {
     use cadmpeg_ir::scalar::Length;
     use cadmpeg_ir::sketches::{
         SpatialSketch, SpatialSketchEntity, SpatialSketchGeometry, SpatialSketchGeometryDefinition,
@@ -894,16 +896,25 @@ pub(crate) fn project_spatial_sketch_design(
     let mut spatial_ids = HashSet::<cadmpeg_ir::sketches::SpatialSketchId>::new();
     for entity in &entities {
         if !spatial_ids.contains(&entity.sketch) {
-            spatial_ids.insert((entity.sketch).clone());
+            spatial_ids.insert(entity.sketch.clone());
         }
     }
     let mut sketches = Vec::new();
+    let mut capped_profile_searches = 0usize;
     for placement in placements {
         let id = crate::design::identity::neutral_spatial_sketch_id(placement)?;
         if !spatial_ids.contains(&id) {
             continue;
         }
-        let profiles = closed_spatial_sketch_profiles(ctx, &id, &entities, linear_tolerance)?;
+        let budget = cadmpeg_core::decode::WorkBudget::new(SPATIAL_PROFILE_SEARCH_WORK);
+        let profiles = if let Some(profiles) =
+            closed_spatial_sketch_profiles(ctx, &id, &entities, linear_tolerance, &budget)?
+        {
+            profiles
+        } else {
+            capped_profile_searches += 1;
+            Vec::new()
+        };
         let name = placement.entity_id.as_str().to_owned();
         let native_ref = placement.id.clone();
         sketches.push(SpatialSketch {
@@ -919,7 +930,17 @@ pub(crate) fn project_spatial_sketch_design(
         });
     }
     sketches.sort_by(|a, b| a.id.cmp(&b.id));
-    Ok((sketches, entities))
+    let mut losses = Vec::new();
+    if capped_profile_searches != 0 {
+        losses.push(crate::loss::F3dLossCode::SketchProfileSearchCapped.note(format!(
+            "{capped_profile_searches} spatial sketch(es) have no closed profiles because their profile search exceeded a local cap."
+        )));
+    }
+    Ok(SpatialSketchDesign {
+        sketches,
+        entities,
+        losses,
+    })
 }
 
 /// Project exact aggregate relations owned by model-space spatial sketches.
@@ -1014,8 +1035,7 @@ pub(crate) fn project_spatial_sketch_constraints(
             }
             let mut members = Vec::new();
             for entity in &semantic_entities {
-                let id = (entity.id()).clone();
-                members.push(id);
+                members.push(entity.id().clone());
             }
             let mut distinct = HashSet::new();
             for member in &members {
@@ -1043,8 +1063,8 @@ pub(crate) fn project_spatial_sketch_constraints(
                         };
                     if let Some((point, surface)) = point_on_surface {
                         Definition::PointOnSurface {
-                            point: (point.id()).clone(),
-                            surface: (surface.id()).clone(),
+                            point: point.id().clone(),
+                            surface: surface.id().clone(),
                         }
                     } else {
                         let (
@@ -1077,8 +1097,8 @@ pub(crate) fn project_spatial_sketch_constraints(
                             return Ok(None);
                         }
                         Definition::Coincident {
-                            first: (first.id()).clone(),
-                            second: (second.id()).clone(),
+                            first: first.id().clone(),
+                            second: second.id().clone(),
                         }
                     }
                 }
@@ -1102,8 +1122,8 @@ pub(crate) fn project_spatial_sketch_constraints(
                         return Ok(None);
                     }
                     Definition::Tangent {
-                        first: (first.id()).clone(),
-                        second: (second.id()).clone(),
+                        first: first.id().clone(),
+                        second: second.id().clone(),
                     }
                 }
                 SketchConstraintKind::Midpoint => {
@@ -1138,8 +1158,8 @@ pub(crate) fn project_spatial_sketch_constraints(
                         return Ok(None);
                     }
                     Definition::Midpoint {
-                        point: (point.id()).clone(),
-                        entity: (line.id()).clone(),
+                        point: point.id().clone(),
+                        entity: line.id().clone(),
                     }
                 }
                 kind @ (SketchConstraintKind::Horizontal | SketchConstraintKind::Vertical) => {
@@ -1166,7 +1186,7 @@ pub(crate) fn project_spatial_sketch_constraints(
                         return Ok(None);
                     }
                     Definition::ParallelToDirection {
-                        entity: (entity.id()).clone(),
+                        entity: entity.id().clone(),
                         direction,
                     }
                 }
@@ -1177,7 +1197,7 @@ pub(crate) fn project_spatial_sketch_constraints(
             else {
                 return Ok(None);
             };
-            let sketch = (sketch).clone();
+            let sketch = sketch.clone();
             let native_ref = relation.id.clone();
             Ok(Some(SpatialSketchConstraint {
                 id: crate::design::identity::neutral_sketch_constraint_id(

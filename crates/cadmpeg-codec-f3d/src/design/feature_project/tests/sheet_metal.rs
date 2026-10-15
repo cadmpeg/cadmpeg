@@ -836,12 +836,37 @@ fn edge_flange_unresolved_to_object_keeps_native_target() {
 
 #[test]
 fn edge_flange_two_sided_projects() {
-    assert!(
-        crate::test_support::with_decode_context(|decode_ctx| edge_flange_to_object_fixture(
-            decode_ctx, true, true
-        ))
-        .unwrap()
-        .is_some()
+    use cadmpeg_ir::features::{
+        FeatureDefinition, FeatureOperation, SheetMetalFlangeEdgeWidths, SheetMetalFlangeHeight,
+        SheetMetalFlangeTwoSidedWidth, SheetMetalFlangeWidth,
+    };
+    use cadmpeg_ir::scalar::PositiveLength;
+
+    let (definition, _) = crate::test_support::with_decode_context(|decode_ctx| {
+        edge_flange_to_object_fixture(decode_ctx, true, true)
+    })
+    .unwrap()
+    .expect("two-sided EdgeFlange definition");
+    let FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange {
+        height, width, ..
+    }) = definition
+    else {
+        panic!("expected a sheet-metal edge flange");
+    };
+    // Design lengths are centimetres; the fixture widths are 3.0 and 1.5.
+    assert_eq!(
+        width,
+        SheetMetalFlangeWidth::TwoSidesPerEdge {
+            widths: SheetMetalFlangeEdgeWidths::new(vec![SheetMetalFlangeTwoSidedWidth {
+                first: PositiveLength::new(30.0).unwrap(),
+                second: PositiveLength::new(15.0).unwrap(),
+            }])
+            .unwrap(),
+        }
+    );
+    assert_eq!(
+        height,
+        SheetMetalFlangeHeight::Distance(PositiveLength::new(25.0).unwrap())
     );
 }
 
