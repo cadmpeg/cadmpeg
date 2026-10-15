@@ -950,14 +950,6 @@ mod consolidated_analytic_refinement_tests {
     use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
     use cadmpeg_ir::math::{Point3, Vector3};
 
-    fn refined_analytic_surfaces(
-        bytes: &[u8],
-        records: &[crate::wire::records::ConsolidatedRecord],
-        surfaces: &mut [Option<SurfaceGeometry>],
-    ) -> std::collections::HashMap<usize, usize> {
-        refine_consolidated_analytic_surfaces(bytes, records, surfaces)
-    }
-
     #[test]
     fn unique_quantized_torus_refines_every_matching_face_to_binary64() {
         let mut bytes = crate::test_support::test_b2::b2_torus_stream();
@@ -981,7 +973,7 @@ mod consolidated_analytic_refinement_tests {
             .expect("valid TorusSurface fixture"),
         ));
         let mut surfaces = vec![Some(coarse.clone()), Some(coarse)];
-        let refined = refined_analytic_surfaces(
+        let refined = refine_consolidated_analytic_surfaces(
             &bytes,
             &crate::wire::records::consolidated_records(&bytes),
             &mut surfaces,
@@ -1012,7 +1004,7 @@ mod consolidated_analytic_refinement_tests {
         ));
         let records = crate::wire::records::consolidated_records(&bytes);
         let mut surfaces = [Some(coarse.clone())];
-        assert!(refined_analytic_surfaces(&bytes, &records, &mut surfaces).is_empty());
+        assert!(refine_consolidated_analytic_surfaces(&bytes, &records, &mut surfaces).is_empty());
         assert_eq!(surfaces, [Some(coarse)]);
     }
 
@@ -1051,7 +1043,7 @@ mod consolidated_analytic_refinement_tests {
         ));
         let mut unique = vec![Some(coarse.clone())];
         assert_eq!(
-            refined_analytic_surfaces(
+            refine_consolidated_analytic_surfaces(
                 &bytes,
                 &crate::wire::records::consolidated_records(&bytes),
                 &mut unique,
@@ -1068,7 +1060,7 @@ mod consolidated_analytic_refinement_tests {
 
         bytes.extend_from_slice(&bytes.clone());
         let mut ambiguous = vec![Some(coarse)];
-        assert!(refined_analytic_surfaces(
+        assert!(refine_consolidated_analytic_surfaces(
             &bytes,
             &crate::wire::records::consolidated_records(&bytes),
             &mut ambiguous,
@@ -1103,7 +1095,7 @@ mod consolidated_analytic_refinement_tests {
             ))),
         ];
         assert_eq!(
-            refined_analytic_surfaces(
+            refine_consolidated_analytic_surfaces(
                 &bytes,
                 &crate::wire::records::consolidated_records(&bytes),
                 &mut surfaces,

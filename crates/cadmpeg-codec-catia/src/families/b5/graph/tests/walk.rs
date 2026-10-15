@@ -1,5 +1,6 @@
 use crate::families::b5::graph::collect_object_stream_frames;
 use crate::families::b5::graph::controls::{B5EdgeTerminalControl, B5VertexIncidenceControl};
+use crate::families::b5::graph::propagate_vertex_points;
 use crate::families::b5::graph::tests::object_stream_pcurve;
 use crate::families::b5::graph::topology_surface_references;
 use crate::families::b5::graph::ObjectFrame;
@@ -52,14 +53,6 @@ fn parse_extrusion_surface_with_context(
         )
     })
     .expect("service budget")
-}
-
-fn propagate_vertex_points(
-    constraints: &[([u32; 2], [usize; 2])],
-    adjacency: &HashMap<u32, Vec<usize>>,
-    points: &[cadmpeg_ir::features::FinitePoint3],
-) -> HashMap<u32, usize> {
-    super::super::propagate_vertex_points(constraints, adjacency, points)
 }
 
 #[test]
