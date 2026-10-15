@@ -72,7 +72,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What is the semantic role of each of the two consecutive XMT identities in a deltas transmit header?
 
-**Known.** `siemens_nx.md` §4.2 "A deltas transmit header is" defines the header grammar and requires two non-null consecutive identities.
+**Known.** `siemens_nx.md` §4.2 "A deltas stream uses the counted transmit header in section 3.1." separates the counted metadata from the following PARTITION node. The leading identity pair occurs in that node sequence, not in the counted header.
 
 **Need.** We must know the roles to relate the header identities to the deltas schema and body history.
 
@@ -238,16 +238,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must define the enclosing grammar or discriminator that distinguishes a six-byte tombstone from the same byte pattern inside another bounded payload. The following record family must not participate in tombstone identity.
 
-### PS-40. Fixed-node frame ownership
-
-**Question.** Which stream invariant owns a fixed-node frame when the node does not participate in a complete body-topology graph?
-
-**Known.** `siemens_nx.md` §4.1 defines `node_id` as a big-endian u32 field with no smaller numerical bound. A full-domain interpretation is admitted when it preserves every baseline record and uniquely changes an incomplete body-topology graph into a complete graph. A typed XMT slot also admits the unique full-domain node of its required family, recursively through procedural carrier dependencies. These proofs admit mixed low and high node identities in topology, ownership, and carrier families. They do not prove a fixed frame with no complete-topology or typed-reference owner. Exact adjacency to complete fixed records on both sides is not an owner: opaque payloads can contain a complete fixed-record-shaped run whose end and start coincide with adjacent candidate boundaries.
-
-**Need.** We must identify the sequential or enclosing owner of a fixed frame that has no complete-topology or typed-reference owner. The proof must exclude complete-looking fixed records inside opaque payloads.
-
-**Conflict.** The ambiguity baseline still rejects several fixed-node families when `node_id` is greater than `1,000,000`. The cutoff cannot reject a topology node that completes the body graph or a uniquely referenced ownership or carrier node. It can still reject a valid unowned fixed frame.
-
 ### PS-29. Interleaved body revision sequences
 
 **Question.** How does a deltas stream that holds more than one body sequence select the current revision of each body?
@@ -294,17 +284,13 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Note.** Preserve the payload without assigning a Hvec layout from a broad plain-stream classification.
 
-### PS-35. Escaped and direct fixed-record disambiguation
+### PS-35. Sequential Deltas record ownership
 
-**Question.** Which test separates a direct large-index fixed record from an escaped record when the byte after the type is `ff`?
+**Question.** Which complete Deltas grammar advances the node cursor through revision controls, changed fields, and shared status bytes while preserving first-use schema state?
 
-**Known.** `siemens_nx.md` §5.1 "Any topology or geometry fixed node may place an envelope escape byte `ff`" states that the complete family field grammar disambiguates the two readings. `siemens_nx.md` §4.2 "Status-framed fixed records use a status byte in `0..=1` after each encoded reference." requires that exactly one reading ends before a recognized node type.
+**Known.** Section 3.2 defines the stream-local embedded-schema ledger and the node-sequence owner. An unchanged type consumes its schema-match byte only at first use. A later `ff` can begin a direct extended index. Partition and plain streams use the complete declared field sequence; nested type-shaped bytes have no independent ownership. Local field completeness, graph completion, reference joins, and a following boundary do not select either reading of `ff`.
 
-**Need.** We must decide which test separates the two readings so that a direct record whose remainder byte is `ff` keeps its identity, and so that BODY and REGION records are not selected by candidate order.
-
-**Conflict.** The decoder applies neither test. `Graph::parse` in `crates/cadmpeg-codec-nx/src/topology.rs` builds both readings, filters each by family framing, and then prefers the escaped reading on a quality tie. The quality function scores only SHELL records and returns zero for every other kind, so the escaped reading always wins for FACE, LOOP, EDGE, FIN, VERTEX, and POINT. A direct record whose remainder byte is `ff` is then indexed under a different identity, and every reference that names it fails to resolve. The same comparison decides which of two records with equal type and identity keeps the graph slot, and it discards the other without reporting a loss. The family-framing filter that the specification names as the disambiguator tests only SHELL, FACE, LOOP, EDGE, FIN, VERTEX, and POINT records, and admits every other kind unconditionally. For BODY and REGION the stated rule therefore selects nothing, and the reading comes from candidate order.
-
-**Note.** The original closure removed the old shell-only preference, but the current graph still ranks candidates in `topology.rs:718-856` with body-shape, boundary, reference-count, and node-quality heuristics. The ambiguity debt was not removed; it was generalized and is tracked again by PS-38.
+**Need.** Define the complete enclosing Deltas sequence, including transitions between control records and status-framed instance fields. The sequence must establish first-use state before admitting either local interpretation and must retain independent state for each transmit stream.
 
 ### PS-36. Standalone `0x5a` record anchor
 
@@ -345,17 +331,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Need.** We must know whether the two forms share one identity namespace or are mutually exclusive before joining charts and emitting native construction records.
 
 **Note.** `crates/cadmpeg-codec-nx/src/intersection.rs:367-376` chains both forms, `crates/cadmpeg-codec-nx/src/native/parasolid.rs:1391-1414` emits both under one intersection-record identity stem, and `crates/cadmpeg-codec-nx/src/decode.rs:1317-1331` and `1468-1476` use last-write-wins maps keyed only by XMT. **Evidence:** the construction forms share the stream-local XMT key and no cross-form collision check exists. **Counter-evidence:** the format may guarantee that the forms are mutually exclusive or that their XMT namespaces cannot collide; no raw record establishes either rule. **Failure:** if both forms occur with one XMT, iteration order selects one chart and one carrier relation without rejecting the ambiguity. This issue was found in the hostile sweep.
-
-
-### PS-41. LIMIT and INTERSECTION field-presence selection
-
-**Question.** Which schema declaration and field edits select the classic or extended LIMIT and INTERSECTION layouts?
-
-**Known.** `siemens_nx.md` §6.3 "**LIMIT (`0x29`, inserted field `term_use`)** records contain a leading count," defines the complete extended layout. The classic LIMIT layout has one type byte (`L`, `H`, or `T`) before its count-selected Hvec rows. A classic INTERSECTION has five construction references: two surfaces, chart, start, and end. Its final end reference does not imply a following support-UV reference. Complete one-character LIMIT rows can meet the next CHART at their exact byte boundary.
-
-**Need.** We must bind field presence to the owning schema and its edits before admitting classic records or assigning a following type tag to an optional field. The counted TRANSMIT description selects the Hvec width independently of those field edits; MESH FILE layout remains open in PS-33.
-
-**Conflict.** Reading a classic LIMIT as type plus `term_use` shifts every scalar by one byte. Reading a classic INTERSECTION with a sixth construction reference consumes the next record's tag. Finite shifted values do not establish either extended layout.
 
 
 ## 2. Object model and body composition

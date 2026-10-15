@@ -649,7 +649,13 @@ member and supplies the same compressed extent boundary.
 
 ### 3.1 Neutral-binary encoding
 
-Inflated streams begin `PS 00 00`; the prologue contains a schema token `SCH_<version>` (for example, `SCH_3501171_35102_13006`). The third component (`13006`) is an NX-embedding constant.
+The binary transmit header begins with `PS`, a big-endian u32 description
+length and its ASCII bytes, then a big-endian u32 schema-token length and its
+ASCII bytes. `SCH_<modeller>_<schema>` selects that schema directly.
+`SCH_<modeller>_<schema>_<base>` selects embedded schema edits relative to
+`<base>`; `13006` is a base-schema number. An embedded-schema header adds the
+maximum node type as a big-endian u16. The following big-endian u32 is the
+user-field size.
 
 XMT index encoding:
 
@@ -658,17 +664,66 @@ XMT index encoding:
 | Small index | `uint16` BE, 2 bytes                                                                             |
 | Large index | negative `int16` remainder + `uint16` quotient, 4 bytes; `raw = quotient*32767 + abs(remainder)` |
 
-**Record shift rules.** At logical offset `+2`, `0xff` can encode an envelope escape or begin a large-index xmt with a remainder beginning `ff`. Any xmt pointer slot can consume four bytes instead of two and shifts later fixed fields in the record. Effective record length is `fixed_length + escape_shift + record_start_large_index_shift`. Pointer-field large-index shifts change field positions without changing the record start length, except in families with a compact tail.
+An encoded index is one greater than the logical node index; encoded `0001`
+denotes the null reference. An extended pointer occupies four bytes instead of
+two and shifts every later field by two bytes. Embedded schema information
+precedes the ordinary variable count and index only at the first use of a node
+type. A later `ff` at the index position is part of the index encoding.
 
 ### 3.2 Schema self-description
 
-The neutral-binary streams are partially self-describing. After `SCH_` the head carries a field dictionary for the stream-root wrapper class (the `00 ce` record). Node types absent from the base schema carry an inline class definition at first use:
+An embedded-schema stream maintains one field list for each node type. Its
+first occurrence inserts schema information between the type and the ordinary
+variable count and index. Later occurrences use that established field list
+without another schema marker. A direct-schema stream uses its named schema
+without embedded first-use information.
 
-```text
-<type:u16 BE> <sig_len:u8> <signature> <name_len:u8> <name>
-```
+An effective base field has transmit flag one or variable extent. For a node
+type present in the base schema, first-use byte `ff` declares an identical
+effective field list. Any other first-use byte is the current effective-field
+count, followed by an edit program:
 
-Signature alphabet: `C` = component/pointer (xmt ref), `I` = int, `D` = double, `A` = array ref, `Z` = terminator/compound. Inline definitions include type 38 `intersection_data` (`CCCCCCCCCCCA`), type 80 `legal_owners` (`CCCCCDI`), and type 100 `precision` (`CCCCCCCCCA`).
+| Operation | Effect |
+| --- | --- |
+| `C` | Copy the current base field and advance the base cursor. |
+| `D` | Delete the current base field and advance the base cursor. |
+| `I` | Read an inserted field without advancing the base cursor. |
+| `A` | Read an appended field after the base fields are exhausted. |
+| `Z` | End the edit program. |
+
+The result contains exactly the declared number of effective fields. When the
+current field list ends before the base list, the remaining base fields need
+no explicit `D` operations. The letters name edits, not instance field types.
+
+A type absent from the base schema declares its field count as a byte, then
+its name and description as short strings, followed by its fields. A short
+string is a byte count and that many bytes. Each field declares its name as a
+short string, pointer class as a big-endian u16, and extent as a positive
+integer using the biased index encoding. Extent zero is scalar, one is
+variable, and a greater extent is a fixed array. A zero pointer class adds the
+field type as a short string; a nonzero class identifies a pointer. Variable
+fields add their transmit flag as a byte. Fixed fields imply transmit flag
+one.
+
+Field presence follows the established list. LIMIT's base fields are `type`
+and `hvec`; inserting `term_use` adds the second character before the Hvec
+array. INTERSECTION's base construction fields are two `surface` references,
+`chart`, `start`, and `end`. Appending `intersection_data` adds a sixth
+construction reference. Neither the counted transmit description nor a
+following type tag selects these field edits.
+
+The node-sequence cursor begins after the transmit header. Each declared node
+consumes its type, first-use information when required, variable count when
+required, index, and transmitted fields. Its endpoint is the next cursor. The
+terminator is type `0001` followed by encoded null index `0001`. Bytes retained
+after that terminator are outside the node sequence.
+
+A type-looking run inside an already consumed field is payload. Graph
+completion, typed-reference joins, type-map membership, a following boundary,
+and node-ID magnitude do not establish a record start. The complete u32
+`node_id` domain participates in framing. A BODY's `highest_node_id` can check
+an already framed node's semantic consistency; it does not select its frame.
+An unavailable preceding cursor or schema state leaves ownership unknown.
 
 The wrapper `00 ce` instance owns the stream BODY (`child`), attribute-definition list (`attdef_list`), preview-mesh references (`mesh`/`polyline`/`lattice`), and index-map arrays (`index_map`, `node_id_index_map`, `schema_embedding_map`).
 
@@ -822,19 +877,17 @@ record.
 
 A deltas stream is a schema-framed incremental edit log paired with a partition. Both declare the same schema token. Records are not length-prefixed; they self-delimit by typed decode. Records use the following forms:
 
-A deltas transmit header is `5053, description_len:u32 BE,
-description[description_len], schema_len:u32 BE, schema[schema_len], 00e7,
-zero:u32 BE, 0003, ff, first_xmt, second_xmt, 0000`. The description is
-printable ASCII and contains `(deltas)`. The schema is a complete `SCH_` token.
-Both XMT identities are non-null and `second_xmt == first_xmt + 1`. Each XMT
-uses compact or extended encoding. The header ends after the terminal `0000`.
+A deltas stream uses the counted transmit header in section 3.1. Its printable
+ASCII description contains `(deltas)`. The maximum node type and user-field
+size belong to the header. A following PARTITION node, its first-use schema
+marker, and its instance fields belong to the node sequence, not the header.
 
 A deltas stream may end with the exact trailer `ref(1)[2|4]`. Each null XMT
 reference uses the compact encoding `0001`; the final reference ends at the
 inflated-stream boundary. When both suffix lengths match, the four-reference
 form applies.
 
-Status-framed fixed records use a status byte in `0..=1` after each encoded reference. A unique complete family field grammar delimits the record; the following bytes need not begin with a recognized node type. In a topology or geometry fixed node, an `ff` byte at the XMT slot belongs to the direct extended XMT form when both the direct and one-byte-shifted field grammars are complete. Fixed records are normalized by removing each reference status byte before graph decoding. An unpaired deltas stream uses the same normalization as a deltas stream that contributes a complete replacement to a partition. Current-revision records needed by semantic scanners remain in a separate semantic lane.
+Status-framed fixed records use a status byte in `0..=1` after each encoded reference. The established schema state selects the position of the count and index; completing two local field grammars does not select either reading of `ff`. The following bytes need not begin with a recognized node type. Fixed records are normalized by removing each reference status byte before graph decoding. An unpaired deltas stream uses the same normalization as a deltas stream that contributes a complete replacement to a partition. Current-revision records needed by semantic scanners remain in a separate semantic lane.
 
 A terminal zero reference status may also serve as the high zero byte of the
 following record type. The following record begins at that shared byte and must
@@ -1098,19 +1151,18 @@ body → shell → [region] → face → loop → fin → edge → vertex → po
 **Common header** for analytic curve/surface types 30–32, 50–54: `attributes +8`, `owner +10`, `next +12`, `previous +14`, `group +16`, `sense +18`.
 
 Fixed-record lengths are logical lengths before framing bytes. A frame begins at
-the type tag, resolves an optional envelope escape byte `ff`, reads the compact
+the owned type tag, consumes its first-use schema information, reads the compact
 or extended xmt, and then parses the complete family field grammar. Each
 extended xmt in a field that the family grammar admits inserts two bytes before
 the remaining logical fields and extends the frame by two bytes. The complete
 frame therefore establishes every shifted field offset and the first byte after
 the record.
 
-Any topology or geometry fixed node may place an envelope escape byte `ff`
-between its type and XMT fields. The XMT begins one byte later and all logical
-payload offsets shift by one. When the direct extended XMT also begins with
-`ff`, both shifted field grammars can be complete. The direct XMT owns the byte
-in that case. The escaped reading applies only when the direct family grammar
-is incomplete. Bytes after the selected family frame do not select its form.
+At the first use of an unchanged base-schema type, `ff` is the schema-match
+marker and the ordinary fields begin one byte later. At subsequent uses,
+`ff` can begin an extended XMT. The stream-local schema ledger selects these
+forms before the instance fields are decoded. Neither reading has priority
+merely because both local field grammars are complete.
 
 Topology node layouts (logical offsets, pre-shift):
 
