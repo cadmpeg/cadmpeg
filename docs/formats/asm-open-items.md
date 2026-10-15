@@ -144,13 +144,13 @@ Optional side ranges, locations, and other doubles can occur after the actual of
 
 **Question.** What gives the sign and scale of the axial coordinate of a pcurve on a native `cone` support?
 
-**Known.** `asm.md` §6.2 states that the first cone-chart coordinate is multiplied by `direction * cosine * u_scale`, with `direction` selected by `sine * cosine`. `native_support_chart` and `normalize_pcurve_for_surface_record` in `nurbs/proc_curve.rs` implement that formula.
+**Known.** `asm.md` §6.2 states that the first cone-chart coordinate is multiplied by `direction * cosine * u_scale`, with `direction` selected by `sine * cosine`. `SupportChart::from_fields` in `nurbs/support_chart.rs` implements that formula.
 
-**Conflict.** The current rule was written from the implementation change and synthetic token tests; no SAT/SAB witness in the corpus has yet separated this formula from the preceding `direction * u_scale` interpretation. The parse-failure branch also substitutes the canonical chart with no loss.
+**Conflict.** The current rule was written from the implementation change and synthetic token tests; no SAT/SAB witness in the corpus has yet separated this formula from the preceding `direction * u_scale` interpretation.
 
 **Need.** A cone pcurve with a negative cosine, an offset-derived `u_scale`, and a known surface position would distinguish the chart direction and scale. Without that evidence, the current text is a promotion of the implementation's choice, not proof that the file format uses it.
 
-**Note.** QA sweep locations: `crates/cadmpeg-asm/src/nurbs/proc_curve.rs:79-164`; the synthetic tests are at `:3111-3145`. A test that supplies tokens constructed by the same rule is counter-evidence only for arithmetic consistency, not for the native rule.
+**Note.** A test that supplies tokens constructed by the same rule is counter-evidence only for arithmetic consistency, not for the native rule.
 
 ### GC-34. Pcurve interval eligibility tolerance
 
@@ -210,6 +210,14 @@ identity that does not own the admitted carrier.
 
 **Note.** Do not use first-definition order as construction identity. Reject an ambiguous owner when
 the record grammar does not identify one construction.
+
+### GC-38. Reversed-sense pcurve charts
+
+**Question.** Does a `TRUE` v-sense logical (`reverse_v`) negate the second pcurve chart coordinate of a plane?
+
+**Known.** `asm.md` §6.2 states the negation. The `forward_v` plane chart reaches its edge vertices. No stream contains a pcurve on a `reverse_v` plane. `SupportChart::from_fields` in `nurbs/support_chart.rs` implements the stated rule.
+
+**Need.** A pcurve with known edge vertices on a `reverse_v` plane confirms the rule. A wrong sign mirrors the pcurve in the support chart, and `cadmpeg check` reports the miss at the edge vertices.
 
 ## 2. Topology
 
