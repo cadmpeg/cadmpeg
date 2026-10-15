@@ -2073,7 +2073,6 @@ fn a8_surface_from_parsed(
     else {
         return Ok(None);
     };
-    let knots = header.expanded_knots();
     let A8SurfaceHeader {
         pos,
         object_id,
@@ -2137,7 +2136,9 @@ fn a8_surface_from_parsed(
     if a8_surface_suffix_start(data, pole_start, end).is_none() {
         return Ok(None);
     }
-    let (u_knots, v_knots) = match knots {
+    // The pole count is bounded by the record bytes only after the pole and
+    // weight lanes are read, so the knot vectors are expanded here.
+    let (u_knots, v_knots) = match header.expanded_knots() {
         Ok(knots) => knots,
         Err(error) => {
             return Ok(crate::nurbs::note_refusal(

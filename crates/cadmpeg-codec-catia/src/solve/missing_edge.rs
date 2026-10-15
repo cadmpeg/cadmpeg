@@ -1040,7 +1040,7 @@ pub(crate) fn repeated_face_endpoint_closures(
         if faces[0] != faces[1] || allowed_faces[edge].is_empty() {
             continue;
         }
-        let mut choices = ctx.alloc_filled(1, faces[0], "catia missing-edge branch choices")?;
+        let mut choices = vec![faces[0]];
 
         choices.extend(
             allowed_faces[edge]
@@ -1337,7 +1337,7 @@ where
             }
             continue;
         }
-        let mut choices = ctx.alloc_filled(1, faces[0], "catia_duplicate_visit_choices")?;
+        let mut choices = vec![faces[0]];
         for face in allowed.iter().copied().filter(|face| *face != faces[0]) {
             choices.push(face);
         }
@@ -2190,7 +2190,7 @@ fn standard_mesh_missing_edge_assignment_domains(
                                 ports.push(Some(edge_ports[edge][1]));
                                 ports
                             }
-                            (None, _) => self.ctx.alloc_filled(1, None, "catia_gap_next_ports")?,
+                            (None, _) => vec![None],
                         };
                         next_ports.sort_unstable_by(Ord::cmp);
                         next_ports.dedup();
@@ -3233,8 +3233,17 @@ pub(crate) fn standard_mesh_prune_endpoint_candidates(
     };
     let point_count = vertex_points.len();
     let mut complete_domain = Vec::new();
-
     if edge_candidates.iter().any(Vec::is_empty) {
+        // An empty domain stands for every unordered point pair. The pair
+        // count is quadratic in the file's vertex count, so a table whose
+        // pairs exceed one mesh-constraint phase is not pruned.
+        let pair_count = match point_count.checked_sub(1) {
+            Some(rest) => point_count.checked_mul(rest).map(|pairs| pairs / 2),
+            None => Some(0),
+        };
+        if pair_count.is_none_or(|pairs| pairs > MAX_MESH_CONSTRAINT_OPERATIONS) {
+            return Ok(None);
+        }
         for left in 0..point_count {
             for right in (left + 1)..point_count {
                 complete_domain.push([left, right]);
@@ -3848,12 +3857,7 @@ pub(crate) fn propagate_edge_port_points_with_ordered_seeds(
         for (ports, pair) in edge_ports.iter().copied().zip(resolved.iter().copied()) {
             if let Some(pair) = pair {
                 resolved_ports.push(ports);
-                let candidate =
-                    match ctx.alloc_filled(1, pair, "catia_port_resolved_candidate_pair") {
-                        Ok(candidate) => candidate,
-                        Err(error) => return Some(Err(error)),
-                    };
-                resolved_candidates.push(candidate);
+                resolved_candidates.push(vec![pair]);
             }
         }
         match edge_port_candidate_assignment(

@@ -946,8 +946,8 @@ pub(crate) fn zero_entity_support_runs_in_range(
         }
         index = next.max(index + 1);
     }
-    let mut faces = zero_entity_faces_from_records(data, &records)?;
-    let loops = zero_entity_loops_from_records(data, &records)?;
+    let mut faces = zero_entity_faces_from_records(data, &records);
+    let loops = zero_entity_loops_from_records(data, &records);
     let mut flattened_terminals = Vec::new();
     let mut face_terminals = Vec::new();
 
@@ -1132,97 +1132,82 @@ pub(crate) fn oriented_closed_model_endpoints(
 fn zero_entity_faces_from_records(
     data: &[u8],
     records: &[ZeroEntityRecord],
-) -> Result<Vec<ZeroEntityFace>, CodecError> {
+) -> Vec<ZeroEntityFace> {
     let mut faces = Vec::new();
     for record in records {
-        let face = (|| -> Result<Option<ZeroEntityFace>, CodecError> {
+        let face = (|| -> Option<ZeroEntityFace> {
             if record.tag[0] != 0x5f || tagged_u32(data, record.pos + 7) != Some(1) {
-                return Ok(None);
+                return None;
             }
-            let Some(count) = data
+            let count = data
                 .get(record.pos + 12)
-                .and_then(|value| value.checked_sub(0x80))
-            else {
-                return Ok(None);
-            };
+                .and_then(|value| value.checked_sub(0x80))?;
             let count = usize::from(count);
             if count < 2 || record.pos.checked_add(14 + count * 5) != Some(record.end) {
-                return Ok(None);
+                return None;
             }
             let mut allocations = Vec::new();
 
             for index in 0..count {
-                let Some(value) = tagged_u32(data, record.pos + 13 + index * 5) else {
-                    return Ok(None);
-                };
+                let value = tagged_u32(data, record.pos + 13 + index * 5)?;
                 allocations.push(value);
             }
             if allocations.contains(&0) {
-                return Ok(None);
+                return None;
             }
             let first = allocations[0];
             let mut loop_terminals = Vec::new();
 
             for allocation in &allocations[1..] {
-                let Some(terminal) = first.checked_sub(*allocation) else {
-                    return Ok(None);
-                };
+                let terminal = first.checked_sub(*allocation)?;
                 loop_terminals.push(terminal);
             }
             if loop_terminals.contains(&0)
                 || !loop_terminals[1..].windows(2).all(|pair| pair[0] < pair[1])
             {
-                return Ok(None);
+                return None;
             }
-            let Some(terminal_control) = data
+            let terminal_control = data
                 .get(record.end - 1)
-                .and_then(|value| ZeroEntityFaceControl::from_byte(*value))
-            else {
-                return Ok(None);
-            };
-            Ok(Some(ZeroEntityFace {
+                .and_then(|value| ZeroEntityFaceControl::from_byte(*value))?;
+            Some(ZeroEntityFace {
                 pos: record.pos,
                 record_ordinal: record.ordinal,
                 tag: record.tag,
                 allocations,
                 loops: None,
                 terminal_control,
-            }))
-        })()?;
+            })
+        })();
         if let Some(face) = face {
             faces.push(face);
         }
     }
-    Ok(faces)
+    faces
 }
 
 fn zero_entity_loops_from_records(
     data: &[u8],
     records: &[ZeroEntityRecord],
-) -> Result<Vec<ZeroEntityLoop>, CodecError> {
+) -> Vec<ZeroEntityLoop> {
     let mut loops = Vec::new();
     for record in records {
-        let loop_record = (|| -> Result<Option<ZeroEntityLoop>, CodecError> {
+        let loop_record = (|| -> Option<ZeroEntityLoop> {
             if record.tag[0] != 0x62 {
-                return Ok(None);
+                return None;
             }
-            let Some(reference_count) = data
+            let reference_count = data
                 .get(record.pos + 12)
-                .and_then(|value| value.checked_sub(0x80))
-            else {
-                return Ok(None);
-            };
+                .and_then(|value| value.checked_sub(0x80))?;
             let reference_count = usize::from(reference_count);
             if reference_count < 3 || reference_count % 2 == 0 {
-                return Ok(None);
+                return None;
             }
             let edge_count = (reference_count - 1) / 2;
             let mut references = Vec::new();
 
             for index in 0..reference_count {
-                let Some(value) = tagged_u32(data, record.pos + 13 + index * 5) else {
-                    return Ok(None);
-                };
+                let value = tagged_u32(data, record.pos + 13 + index * 5)?;
                 references.push(value);
             }
             let mut typed_references = Vec::new();
@@ -1234,49 +1219,35 @@ fn zero_entity_loops_from_records(
                     .copied(),
             );
             if typed_references.contains(&0) {
-                return Ok(None);
+                return None;
             }
             let terminal_id = references[reference_count - 1];
-            let Some(gap) = terminal_id.checked_sub(references[0]) else {
-                return Ok(None);
-            };
-            let Some(member_count) = NonZeroUsize::new(edge_count) else {
-                return Ok(None);
-            };
-            let Some(members) = ZeroEntityLoopMembers::try_new(terminal_id, gap, member_count)
-            else {
-                return Ok(None);
-            };
+            let gap = terminal_id.checked_sub(references[0])?;
+            let member_count = NonZeroUsize::new(edge_count)?;
+            let members = ZeroEntityLoopMembers::try_new(terminal_id, gap, member_count)?;
             if !members
                 .member_ids()
                 .eq(references[..reference_count - 1].iter().step_by(2).copied())
             {
-                return Ok(None);
+                return None;
             }
-            let Some(trailer) = record.pos.checked_add(13 + reference_count * 5) else {
-                return Ok(None);
-            };
-            let Some(loop_class) = data
+            let trailer = record.pos.checked_add(13 + reference_count * 5)?;
+            let loop_class = data
                 .get(trailer + 1)
-                .and_then(|value| ZeroEntityLoopClass::from_byte(*value))
-            else {
-                return Ok(None);
-            };
+                .and_then(|value| ZeroEntityLoopClass::from_byte(*value))?;
             let Ok(edge_count_byte) = u8::try_from(edge_count) else {
-                return Ok(None);
+                return None;
             };
             if data.get(trailer) != Some(&(0x80 + edge_count_byte)) {
-                return Ok(None);
+                return None;
             }
             let packed_length = (edge_count * 3).div_ceil(8);
             if trailer.checked_add(3 + packed_length) != Some(record.end)
                 || data.get(trailer + 2 + packed_length) != Some(&0x01)
             {
-                return Ok(None);
+                return None;
             }
-            let Some(packed) = data.get(trailer + 2..trailer + 2 + packed_length) else {
-                return Ok(None);
-            };
+            let packed = data.get(trailer + 2..trailer + 2 + packed_length)?;
             let mut forward_senses = Vec::new();
 
             for index in 0..edge_count {
@@ -1287,10 +1258,10 @@ fn zero_entity_loops_from_records(
                 match code {
                     2 => forward_senses.push(false),
                     7 => forward_senses.push(true),
-                    _ => return Ok(None),
+                    _ => return None,
                 }
             }
-            Ok(Some(ZeroEntityLoop {
+            Some(ZeroEntityLoop {
                 pos: record.pos,
                 record_ordinal: record.ordinal,
                 tag: record.tag,
@@ -1300,13 +1271,13 @@ fn zero_entity_loops_from_records(
                 loop_class,
                 forward_senses,
                 oriented_model_endpoints: Vec::new(),
-            }))
-        })()?;
+            })
+        })();
         if let Some(loop_record) = loop_record {
             loops.push(loop_record);
         }
     }
-    Ok(loops)
+    loops
 }
 
 fn zero_entity_support_occurrence(
@@ -2581,7 +2552,7 @@ mod tests {
         data: &[u8],
         records: &[super::ZeroEntityRecord],
     ) -> Vec<super::ZeroEntityLoop> {
-        loops_with_context(data, records).expect("test loops fit the service profile")
+        loops_with_context(data, records)
     }
 
     fn oriented_closed_model_endpoints(

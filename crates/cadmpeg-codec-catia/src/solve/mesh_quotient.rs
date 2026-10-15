@@ -5355,16 +5355,15 @@ enum MeshDirectionEnumerationError {
 }
 
 fn endpoint_configuration_boundary_directions(
-    ctx: &DecodeContext<'_>,
     boundary: &[MeshBoundaryEdgeCandidate],
     pairs: &HashMap<usize, [usize; 2]>,
-) -> Result<Result<Vec<Vec<bool>>, MeshDirectionEnumerationError>, CodecError> {
+) -> Result<Vec<Vec<bool>>, MeshDirectionEnumerationError> {
     if boundary.is_empty() {
-        return Ok(Err(MeshDirectionEnumerationError::Invalid));
+        return Err(MeshDirectionEnumerationError::Invalid);
     }
     let first = &boundary[0];
     let Some(&first_pair) = pairs.get(&first.edge) else {
-        return Ok(Err(MeshDirectionEnumerationError::Invalid));
+        return Err(MeshDirectionEnumerationError::Invalid);
     };
     let mut states = Vec::new();
     for direction in [false, true] {
@@ -5381,12 +5380,12 @@ fn endpoint_configuration_boundary_directions(
         } else {
             first_pair[1]
         };
-        let directions = ctx.alloc_filled(1, direction, "catia_endpoint_initial_direction")?;
+        let directions = vec![direction];
         states.push((start, current, directions));
     }
     for use_ in &boundary[1..] {
         let Some(&pair) = pairs.get(&use_.edge) else {
-            return Ok(Err(MeshDirectionEnumerationError::Invalid));
+            return Err(MeshDirectionEnumerationError::Invalid);
         };
         let mut next = Vec::new();
         for (start, current, directions) in states {
@@ -5403,13 +5402,13 @@ fn endpoint_configuration_boundary_directions(
                 directions.push(direction);
                 next.push((start, edge_end, directions));
                 if next.len() > MAX_FACE_ENDPOINT_CONFIGURATION_WORK {
-                    return Ok(Err(MeshDirectionEnumerationError::Overflow));
+                    return Err(MeshDirectionEnumerationError::Overflow);
                 }
             }
         }
         states = next;
         if states.is_empty() {
-            return Ok(Ok(Vec::new()));
+            return Ok(Vec::new());
         }
     }
     let mut solutions = Vec::new();
@@ -5426,29 +5425,23 @@ fn endpoint_configuration_boundary_directions(
         // before combining independent boundaries.
         solutions.truncate(1);
     }
-    Ok(Ok(solutions))
+    Ok(solutions)
 }
 
 fn endpoint_configuration_directions(
-    ctx: &DecodeContext<'_>,
     assignment: &MeshFaceBoundaryAssignment,
     configuration: &MeshFaceEndpointConfiguration,
-) -> Result<Result<MeshFaceDirectionOptions, MeshDirectionEnumerationError>, CodecError> {
+) -> Result<MeshFaceDirectionOptions, MeshDirectionEnumerationError> {
     let mut pairs = HashMap::new();
     for &(edge, pair) in configuration {
         pairs.insert(edge, pair);
     }
     if pairs.len() != configuration.len() {
-        return Ok(Err(MeshDirectionEnumerationError::Invalid));
+        return Err(MeshDirectionEnumerationError::Invalid);
     }
-    let mut alternatives =
-        ctx.alloc_filled(1, Vec::new(), "catia_endpoint_initial_alternatives")?;
+    let mut alternatives = vec![Vec::new()];
     for boundary in &assignment.boundaries {
-        let boundary_options =
-            match endpoint_configuration_boundary_directions(ctx, boundary, &pairs)? {
-                Ok(options) => options,
-                Err(error) => return Ok(Err(error)),
-            };
+        let boundary_options = endpoint_configuration_boundary_directions(boundary, &pairs)?;
         let mut next = Vec::new();
         for prefix in &alternatives {
             for boundary_directions in &boundary_options {
@@ -5456,7 +5449,7 @@ fn endpoint_configuration_directions(
                 alternative.push(boundary_directions.clone());
                 next.push(alternative);
                 if next.len() > MAX_FACE_ENDPOINT_CONFIGURATION_WORK {
-                    return Ok(Err(MeshDirectionEnumerationError::Overflow));
+                    return Err(MeshDirectionEnumerationError::Overflow);
                 }
             }
         }
@@ -5465,7 +5458,7 @@ fn endpoint_configuration_directions(
             break;
         }
     }
-    Ok(Ok(alternatives))
+    Ok(alternatives)
 }
 
 #[derive(Clone)]
@@ -7063,7 +7056,7 @@ fn resolve_fixed_mesh_endpoint_pairs(
         else {
             return Ok(MeshSolve::Failed(MeshCandidateFailure::Rejected(())));
         };
-        let directions = match endpoint_configuration_directions(ctx, assignment, &configuration)? {
+        let directions = match endpoint_configuration_directions(assignment, &configuration) {
             Ok(directions) => directions,
             Err(MeshDirectionEnumerationError::Overflow) => {
                 direction_overflow = true;
@@ -9113,9 +9106,7 @@ fn endpoint_configuration_unresolved_boundary_reversal_is_a_gauge() {
     };
     let configuration = vec![(0, [0, 1]), (1, [0, 1]), (2, [2, 3]), (3, [2, 3])];
 
-    catia_test_context!(ctx);
-    let directions = endpoint_configuration_directions(&ctx, &assignment, &configuration)
-        .expect("service resource budget")
+    let directions = endpoint_configuration_directions(&assignment, &configuration)
         .expect("unresolved boundary directions should enumerate");
 
     assert_eq!(directions.len(), 1);

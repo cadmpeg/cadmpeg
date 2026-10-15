@@ -834,38 +834,34 @@ impl ContainerScan<'_> {
 /// source. The nested directory itself and all directory headers stay outside
 /// the inventory. Records can establish ordered relationships across extents
 /// of one descriptor, but never across descriptors.
-pub(crate) fn consolidated_record_sources(
-    scan: &ContainerScan<'_>,
-) -> Result<Vec<Vec<SourceExtent>>, CodecError> {
+pub(crate) fn consolidated_record_sources(scan: &ContainerScan<'_>) -> Vec<Vec<SourceExtent>> {
     let mut sources = Vec::new();
-    let add_directory =
-        |sources: &mut Vec<Vec<SourceExtent>>, directory: &InnerDir| -> Result<(), CodecError> {
-            for descriptor in &directory.descriptors {
-                let mut source = Vec::new();
-                for extent in &descriptor.extents {
-                    let Some(start) = directory.inner.checked_add(index_from_u32(extent.phys_off))
-                    else {
-                        continue;
-                    };
-                    let Some(end) = start.checked_add(index_from_u32(extent.phys_len)) else {
-                        continue;
-                    };
-                    // A descriptor extent the image does not hold states no record
-                    // source. The scanner reads every byte of an extent it accepts,
-                    // so it never receives a shortened one.
-                    if let Some(extent) = SourceExtent::within(&scan.data, start, end) {
-                        source.push(extent);
-                    }
-                }
-                if !source.is_empty() && !sources.contains(&source) {
-                    sources.push(source);
+    let add_directory = |sources: &mut Vec<Vec<SourceExtent>>, directory: &InnerDir| {
+        for descriptor in &directory.descriptors {
+            let mut source = Vec::new();
+            for extent in &descriptor.extents {
+                let Some(start) = directory.inner.checked_add(index_from_u32(extent.phys_off))
+                else {
+                    continue;
+                };
+                let Some(end) = start.checked_add(index_from_u32(extent.phys_len)) else {
+                    continue;
+                };
+                // A descriptor extent the image does not hold states no record
+                // source. The scanner reads every byte of an extent it accepts,
+                // so it never receives a shortened one.
+                if let Some(extent) = SourceExtent::within(&scan.data, start, end) {
+                    source.push(extent);
                 }
             }
-            Ok(())
-        };
+            if !source.is_empty() && !sources.contains(&source) {
+                sources.push(source);
+            }
+        }
+    };
 
     if let Some(outer) = scan.outer.as_ref() {
-        add_directory(&mut sources, outer)?;
+        add_directory(&mut sources, outer);
     } else {
         let outer_end = match scan.inner.as_ref() {
             Some(directory) => directory.inner,
@@ -881,7 +877,7 @@ pub(crate) fn consolidated_record_sources(
         }
     }
     if let Some(inner) = scan.inner.as_ref() {
-        add_directory(&mut sources, inner)?;
+        add_directory(&mut sources, inner);
     }
 
     let whole = (sources.is_empty() && scan.data.len() > outer_hdr::FILL_FF)
@@ -891,20 +887,18 @@ pub(crate) fn consolidated_record_sources(
         let source = vec![whole];
         sources.push(source);
     }
-    Ok(sources)
+    sources
 }
 
 /// Flatten the descriptor-scoped source inventory without changing logical
 /// source or extent order.
 #[cfg(test)]
-pub(crate) fn consolidated_record_ranges(
-    scan: &ContainerScan<'_>,
-) -> Result<Vec<Range<usize>>, CodecError> {
-    Ok(consolidated_record_sources(scan)?
+pub(crate) fn consolidated_record_ranges(scan: &ContainerScan<'_>) -> Vec<Range<usize>> {
+    consolidated_record_sources(scan)
         .into_iter()
         .flatten()
         .map(|extent| extent.range())
-        .collect())
+        .collect()
 }
 
 /// Reconstruct each catalogued logical stream as an independent record source.

@@ -160,8 +160,7 @@ fn offset_support_binds_by_native_domain_knot_limits() {
     };
 
     assert_eq!(
-        crate::families::b2::records::offset_support_carriers(&[offset], &carriers)
-            .expect("service decode"),
+        crate::families::b2::records::offset_support_carriers(&[offset], &carriers),
         [Some(0)]
     );
 }
@@ -251,23 +250,20 @@ fn offset_support_binding_scales_each_nurbs_parameter_domain() {
         crate::families::b2::records::offset_support_carriers(
             std::slice::from_ref(&exact),
             &carriers,
-        )
-        .expect("service decode"),
+        ),
         [Some(0)]
     );
 
     let mut outside_u = exact.clone();
     outside_u.u_range = interval([0.0, 2.0 * tiny]);
     assert_eq!(
-        crate::families::b2::records::offset_support_carriers(&[outside_u], &carriers)
-            .expect("service decode"),
+        crate::families::b2::records::offset_support_carriers(&[outside_u], &carriers),
         [None]
     );
     let mut outside_v = exact;
     outside_v.v_range = interval([0.0, 2.0 * tiny]);
     assert_eq!(
-        crate::families::b2::records::offset_support_carriers(&[outside_v], &carriers)
-            .expect("service decode"),
+        crate::families::b2::records::offset_support_carriers(&[outside_v], &carriers),
         [None]
     );
 }
