@@ -989,6 +989,8 @@ pub(super) fn fixed_kind_tail_operations(
                 record_index: 76,
                 value_offset: u64_from_index(bytes.len() - 115 + 40),
             }),
+            against_distance: None,
+            side_two_taper_angle: None,
         })
     );
     extrude_scope
@@ -1018,6 +1020,8 @@ pub(super) fn fixed_kind_tail_operations(
                 },
             )),
             taper_angle: None,
+            against_distance: None,
+            side_two_taper_angle: None,
         })
     );
     extrude_scope
@@ -1412,6 +1416,8 @@ pub(super) fn fixed_kind_tail_operations(
                 record_index: 274,
                 value_offset: u64_from_index(embedded_default_at + 115 + 40),
             }),
+            against_distance: None,
+            side_two_taper_angle: None,
         })
     );
     extrude_scope

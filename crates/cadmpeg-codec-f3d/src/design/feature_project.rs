@@ -7809,9 +7809,27 @@ fn project_extrude(
         (None, None) => None,
         _ => return Ok(None),
     };
-    let against = match or_none!(unique("AgainstDistance")) {
+    let parameter_against = match or_none!(unique("AgainstDistance")) {
         Some(parameter) => Some(or_none!(design_length(parameter))),
         None => None,
+    };
+    let fixed_against = scope
+        .fixed_extrude_parameters()
+        .as_ref()
+        .and_then(|fixed| fixed.against_distance.as_ref())
+        .map(|fixed| Length::new(fixed.value.get() * 10.0).ok_or(()))
+        .transpose()
+        .ok();
+    let fixed_against = or_none!(fixed_against);
+    let against = match (parameter_against, fixed_against) {
+        (Some(parameter), Some(fixed))
+            if (parameter.get() - fixed.get()).abs() <= EPS_FEATURE_PROJECT_PROJECT_EXTRUDE_E9 =>
+        {
+            Some(parameter)
+        }
+        (Some(distance), None) | (None, Some(distance)) => Some(distance),
+        (None, None) => None,
+        _ => return Ok(None),
     };
     let profile_offset = match or_none!(unique("ProfileOffset")) {
         Some(parameter) => Some(or_none!(design_length(parameter))),
@@ -7847,9 +7865,24 @@ fn project_extrude(
     {
         return Ok(None);
     }
-    let side_two_draft = match or_none!(unique("Side2TaperAngle")) {
+    let parameter_side_two_draft = match or_none!(unique("Side2TaperAngle")) {
         Some(parameter) => Some(or_none!(design_angle(parameter))),
         None => None,
+    };
+    let fixed_side_two_draft = scope
+        .fixed_extrude_parameters()
+        .as_ref()
+        .and_then(|fixed| fixed.side_two_taper_angle.as_ref())
+        .map(|fixed| Angle::from_assigned_real(fixed.value));
+    let side_two_draft = match (parameter_side_two_draft, fixed_side_two_draft) {
+        (Some(parameter), Some(fixed))
+            if (parameter.get() - fixed.get()).abs() <= EPS_FEATURE_PROJECT_PROJECT_EXTRUDE_E12 =>
+        {
+            Some(parameter)
+        }
+        (Some(angle), None) | (None, Some(angle)) => Some(angle),
+        (None, None) => None,
+        _ => return Ok(None),
     };
     let mut start_groups = Vec::new();
     for group in face_groups
