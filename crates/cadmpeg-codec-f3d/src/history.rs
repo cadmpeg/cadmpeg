@@ -5757,18 +5757,6 @@ fn collect_reference_edge_sets<'a>(
     sets
 }
 
-fn face_boundary_contexts<'a>(
-    faces: &[cadmpeg_ir::ids::FaceId],
-    topology: &'a AsmHistoricalTopology,
-    topology_queries: &mut TopologyQueryCache<'a>,
-) -> Vec<crate::records::topology::historical_context::DesignHistoricalFaceBoundaryContext> {
-    let face_slots = faces
-        .iter()
-        .filter_map(|face| stable_ref(face.as_str()))
-        .collect::<Vec<_>>();
-    face_boundary_contexts_for_slots(&face_slots, topology, topology_queries)
-}
-
 fn face_boundary_contexts_for_slots<'a>(
     face_slots: &[i64],
     topology: &'a AsmHistoricalTopology,
@@ -5928,8 +5916,73 @@ fn preceding_support_face_slots(
 
 #[derive(Clone, Copy)]
 struct EdgeBoundaryContext<'a, 'b> {
+    state: &'a AsmDeltaState,
     topology: &'a AsmHistoricalTopology,
     boundary_edges: &'b [i64],
+}
+
+/// Face boundaries named by edge-recipe reference contexts, stored once per
+/// historical state and face slot.
+#[derive(Default)]
+pub(crate) struct FaceBoundaryArena {
+    records: BTreeMap<String, crate::records::topology::historical_context::AsmFaceBoundary>,
+    /// Identities of faces whose loop topology is incomplete in their state.
+    incomplete: HashSet<String>,
+}
+
+impl FaceBoundaryArena {
+    /// Return the boundary identities of the complete `face_slots` in the
+    /// state, in slot order, and store each boundary not yet present.
+    fn intern<'a>(
+        &mut self,
+        state: &AsmDeltaState,
+        topology: &'a AsmHistoricalTopology,
+        face_slots: &[i64],
+        topology_queries: &mut TopologyQueryCache<'a>,
+    ) -> Vec<String> {
+        let mut ids = Vec::new();
+        for face_slot in face_slots {
+            let Some(id) = crate::records::topology::historical_context::AsmFaceBoundary::identity(
+                &state.id,
+                state.byte_offset,
+                *face_slot,
+            ) else {
+                continue;
+            };
+            if self.incomplete.contains(&id) {
+                continue;
+            }
+            if !self.records.contains_key(&id) {
+                let Some(boundary) = face_boundary_contexts_for_slots(
+                    std::slice::from_ref(face_slot),
+                    topology,
+                    topology_queries,
+                )
+                .pop() else {
+                    self.incomplete.insert(id);
+                    continue;
+                };
+                self.records.insert(
+                    id.clone(),
+                    crate::records::topology::historical_context::AsmFaceBoundary {
+                        id: id.clone(),
+                        parent: state.id.clone(),
+                        face_slot: boundary.face_slot,
+                        loops: boundary.loops,
+                    },
+                );
+            }
+            ids.push(id);
+        }
+        ids
+    }
+
+    /// The stored boundaries in identity order.
+    pub(crate) fn into_records(
+        self,
+    ) -> Vec<crate::records::topology::historical_context::AsmFaceBoundary> {
+        self.records.into_values().collect()
+    }
 }
 
 fn edge_recipe_reference_context<'a>(
@@ -5939,15 +5992,26 @@ fn edge_recipe_reference_context<'a>(
     preceding: EdgeBoundaryContext<'a, '_>,
     changed_edges: &HashSet<i64>,
     topology_queries: &mut TopologyQueryCache<'a>,
+    face_boundaries: &mut FaceBoundaryArena,
 ) -> crate::records::topology::historical_context::DesignEdgeRecipeReferenceContext {
     let candidate_faces = if reference.candidate_faces.is_empty() {
         reference.alternate_selector_faces.as_slice()
     } else {
         reference.candidate_faces.as_slice()
     };
+    let face_slots = |faces: &[cadmpeg_ir::ids::FaceId]| {
+        faces
+            .iter()
+            .filter_map(|face| stable_ref(face.as_str()))
+            .collect::<Vec<_>>()
+    };
     let result_faces = selection::faces_in_topology(candidate_faces, result.topology);
-    let result_face_boundaries =
-        face_boundary_contexts(&result_faces, result.topology, topology_queries);
+    let result_face_boundary_ids = face_boundaries.intern(
+        result.state,
+        result.topology,
+        &face_slots(&result_faces),
+        topology_queries,
+    );
     let result_edges = face_boundary_edges(&result_faces, result.topology, topology_queries);
     let result_shared_edge_slots = result
         .boundary_edges
@@ -5956,13 +6020,18 @@ fn edge_recipe_reference_context<'a>(
         .filter(|edge| result_edges.contains(edge))
         .collect::<Vec<_>>();
     let preceding_faces = selection::faces_in_topology(candidate_faces, preceding.topology);
-    let preceding_face_boundaries =
-        face_boundary_contexts(&preceding_faces, preceding.topology, topology_queries);
+    let preceding_face_boundary_ids = face_boundaries.intern(
+        preceding.state,
+        preceding.topology,
+        &face_slots(&preceding_faces),
+        topology_queries,
+    );
     let preceding_support_face_slots =
         preceding_support_face_slots(&result_faces, result.topology, preceding.topology);
-    let preceding_support_face_boundaries = face_boundary_contexts_for_slots(
-        &preceding_support_face_slots,
+    let preceding_support_face_boundary_ids = face_boundaries.intern(
+        preceding.state,
         preceding.topology,
+        &preceding_support_face_slots,
         topology_queries,
     );
     let preceding_edges =
@@ -5979,8 +6048,9 @@ fn edge_recipe_reference_context<'a>(
         .filter(|edge| changed_edges.contains(edge))
         .collect::<Vec<_>>();
     let mut support_edges = HashSet::new();
-    for edge in preceding_support_face_boundaries
+    for edge in preceding_support_face_boundary_ids
         .iter()
+        .filter_map(|id| face_boundaries.records.get(id))
         .flat_map(|face| &face.loops)
         .flat_map(|face_loop| face_loop.boundary.coedges().map(|row| row.edge_slot))
     {
@@ -5997,12 +6067,12 @@ fn edge_recipe_reference_context<'a>(
     crate::records::topology::historical_context::DesignEdgeRecipeReferenceContext {
         reference_ordinal,
         result_faces,
-        result_face_boundaries,
+        result_face_boundary_ids,
         result_shared_edge_slots,
         preceding_faces,
-        preceding_face_boundaries,
+        preceding_face_boundary_ids,
         preceding_support_face_slots,
-        preceding_support_face_boundaries,
+        preceding_support_face_boundary_ids,
         shared_edge_slots,
         changed_shared_edge_slots,
         changed_reference_edge_slots,
@@ -6065,13 +6135,17 @@ pub(crate) fn bind_edge_operand_history_candidates(
     recipes: &[crate::records::recipes::ConstructionRecipe],
     histories: &[AsmHistory],
     scope_histories: &HashMap<String, String>,
-) -> Result<(), cadmpeg_core::CodecError> {
+) -> Result<
+    Vec<crate::records::topology::historical_context::AsmFaceBoundary>,
+    cadmpeg_core::CodecError,
+> {
     let mut treatment_cache = TreatmentCache::default();
     let mut topology_queries = TopologyQueryCache::default();
     let mut state_indexes = SnapshotCache::default();
     let mut recipe_topologies = RecipeTopologyCache::default();
+    let mut face_boundaries = FaceBoundaryArena::default();
     if projection_was_finalized(histories) {
-        return Ok(());
+        return Ok(Vec::new());
     }
     let mut recipe_record_indices = HashMap::new();
     for recipe in recipes {
@@ -6280,15 +6354,18 @@ pub(crate) fn bind_edge_operand_history_candidates(
                 reference_ordinal,
                 reference,
                 EdgeBoundaryContext {
+                    state,
                     topology: result_topology,
                     boundary_edges: &operand.result_boundary_edge_slots,
                 },
                 EdgeBoundaryContext {
+                    state: previous,
                     topology,
                     boundary_edges: &operand.preceding_boundary_edge_slots,
                 },
                 &changed_edges,
                 &mut topology_queries,
+                &mut face_boundaries,
             );
 
             reference_contexts.push(context);
@@ -6384,7 +6461,7 @@ pub(crate) fn bind_edge_operand_history_candidates(
             &operand.preceding_boundary_edge_slots,
         );
     }
-    Ok(())
+    Ok(face_boundaries.into_records())
 }
 
 /// A resolved axis with finite origin and unit direction.
@@ -6886,7 +6963,7 @@ fn unique_carrier_faces(
     out
 }
 
-fn stable_ref(id: &str) -> Option<i64> {
+pub(crate) fn stable_ref(id: &str) -> Option<i64> {
     id.rsplit_once('#')?
         .1
         .split(':')

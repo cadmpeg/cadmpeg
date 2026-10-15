@@ -87,7 +87,7 @@ pub(super) fn fixed_kind_path_operations(
         loft_group(1, DesignOperandRole::PROFILE),
     ];
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_fixed_loft(&loft_scope, &role_41, &[], &[], &[], &[], decode_ctx)).unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_fixed_loft(&loft_scope, &crate::design::feature_project::ProjectInputs { construction_groups: &role_41, ..Default::default() }, decode_ctx)).unwrap(),
         Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Loft {
             sections,
             guidance: cadmpeg_ir::features::LoftGuidance::Guides(guides),
@@ -101,7 +101,7 @@ pub(super) fn fixed_kind_path_operations(
         loft_group(3, DesignOperandRole::ROLE_0X5),
     ];
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_fixed_loft(&loft_scope, &guided_role_41, &[], &[], &[], &[], decode_ctx)).unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_fixed_loft(&loft_scope, &crate::design::feature_project::ProjectInputs { construction_groups: &guided_role_41, ..Default::default() }, decode_ctx)).unwrap(),
         Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Loft {
             sections,
             guidance: cadmpeg_ir::features::LoftGuidance::Guides(guides),
@@ -138,7 +138,7 @@ pub(super) fn fixed_kind_path_operations(
         loft_group(2, DesignOperandRole::ROLE_0X43),
     ];
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_fixed_loft(&loft_scope, &cut, &[], &[], &[], &[], decode_ctx)).unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_fixed_loft(&loft_scope, &crate::design::feature_project::ProjectInputs { construction_groups: &cut, ..Default::default() }, decode_ctx)).unwrap(),
         Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Loft {
             sections,
             op: cadmpeg_ir::features::BooleanOp::Cut,
@@ -180,7 +180,7 @@ pub(super) fn fixed_kind_path_operations(
         loft_group(3, DesignOperandRole::ROLE_0X43),
     ];
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_fixed_loft(&loft_scope, &legacy_cut, std::slice::from_ref(&legacy_carrier), &[], &[], &[], decode_ctx)).unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_fixed_loft(&loft_scope, &crate::design::feature_project::ProjectInputs { construction_groups: &legacy_cut, legacy_loft_body_carriers: std::slice::from_ref(&legacy_carrier), ..Default::default() }, decode_ctx)).unwrap(),
         Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Loft {
             sections,
             op: cadmpeg_ir::features::BooleanOp::Cut,
@@ -191,11 +191,10 @@ pub(super) fn fixed_kind_path_operations(
         crate::test_support::with_decode_context(|decode_ctx| {
             crate::design::feature_project::project_fixed_loft(
                 &loft_scope,
-                &legacy_cut,
-                &[],
-                &[],
-                &[],
-                &[],
+                &crate::design::feature_project::ProjectInputs {
+                    construction_groups: &legacy_cut,
+                    ..Default::default()
+                },
                 decode_ctx,
             )
         })
@@ -222,7 +221,7 @@ pub(super) fn fixed_kind_path_operations(
         loft_group(2, DesignOperandRole::ROLE_0X5),
     ];
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_fixed_loft(&loft_scope, &role_5, &[], &[], &[], &[], decode_ctx)).unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_fixed_loft(&loft_scope, &crate::design::feature_project::ProjectInputs { construction_groups: &role_5, ..Default::default() }, decode_ctx)).unwrap(),
         Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Loft {
             sections,
             guidance: cadmpeg_ir::features::LoftGuidance::Guides(guides),
@@ -235,7 +234,7 @@ pub(super) fn fixed_kind_path_operations(
         loft_group(2, DesignOperandRole::ROLE_0X7),
     ];
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_fixed_loft(&loft_scope, &centered, &[], &[], &[], &[], decode_ctx)).unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_fixed_loft(&loft_scope, &crate::design::feature_project::ProjectInputs { construction_groups: &centered, ..Default::default() }, decode_ctx)).unwrap(),
         Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Loft {
             sections,
             guidance: cadmpeg_ir::features::LoftGuidance::Centerline(
@@ -254,11 +253,10 @@ pub(super) fn fixed_kind_path_operations(
         crate::test_support::with_decode_context(|decode_ctx| {
             crate::design::feature_project::project_fixed_loft(
                 &loft_scope,
-                &mixed,
-                &[],
-                &[],
-                &[],
-                &[],
+                &crate::design::feature_project::ProjectInputs {
+                    construction_groups: &mixed,
+                    ..Default::default()
+                },
                 decode_ctx,
             )
         })
@@ -297,7 +295,7 @@ pub(super) fn fixed_kind_path_operations(
         )
         .unwrap();
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_fixed_loft(&loft_scope, &[point.clone(), profile.clone(), boundary.clone()], &[], &[], &[], &[], decode_ctx)).unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_fixed_loft(&loft_scope, &crate::design::feature_project::ProjectInputs { construction_groups: &[point.clone(), profile.clone(), boundary.clone()], ..Default::default() }, decode_ctx)).unwrap(),
         Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Loft {
             sections,
             guidance: cadmpeg_ir::features::LoftGuidance::Guides(guides),

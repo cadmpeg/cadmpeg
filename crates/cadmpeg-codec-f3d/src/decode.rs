@@ -2542,6 +2542,7 @@ impl<'a> F3dDecodeSession<'a> {
                     body_bindings: &self.native.design_body_bindings,
                     component_naming_spaces: &self.native.design_component_naming_spaces,
                     histories: &self.native.asm_histories,
+                    face_boundaries: &self.native.asm_face_boundaries,
                 },
             )?;
         crate::design::feature_project::bind_surface_trim_cell_selections(
@@ -4871,7 +4872,7 @@ fn extend_related_design_records(
         &native.construction_recipes,
         &native.persistent_subentity_tags,
     );
-    crate::history::bind_edge_operand_history_candidates(
+    native.asm_face_boundaries = crate::history::bind_edge_operand_history_candidates(
         &mut native.design_edge_operands,
         &native.design_parameter_scopes,
         &native.construction_recipes,
