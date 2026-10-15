@@ -752,7 +752,7 @@ name = "plane_surface"
 kind = "slot"
 section = "6.2"
 anchor = "**`plane`**: origin (`0x13`) + unit normal (`0x14`) + unit UV-reference direction (`0x14`)"
-note = "Total record size is not stated. Evaluation `S(u,v) = origin + u·u_dir + v·v_dir`, `v_dir = normal × u_dir`."
+note = "Total record size is not stated. Evaluation `S(u,v) = origin + u·u_dir + v·v_dir`; `v_dir = normal × u_dir` for `forward_v` and its negation for `reverse_v`."
 
 [[record.field]]
 name = "origin"
@@ -771,6 +771,12 @@ name = "u_dir"
 type = "sab_vector3d"
 source = "spec"
 anchor = "unit UV-reference direction (`0x14`)"
+
+[[record.field]]
+name = "v_sense"
+type = "sab_logical"
+source = "spec"
+anchor = "v-sense logical (`FALSE` = `forward_v`, `TRUE` = `reverse_v`)"
 
 [[record]]
 name = "cone_surface"
@@ -830,10 +836,17 @@ source = "spec"
 anchor = "`u_scale` u-parameter scale (f64)"
 
 [[record.field]]
-name = "trailing_flags"
-type = "bytes[5]"
+name = "u_sense"
+type = "sab_logical"
 source = "spec"
-anchor = "5×`0x0b`"
+anchor = "u-sense logical (`FALSE` = `forward`, `TRUE` = `reversed`)"
+
+[[record.field]]
+name = "bounds"
+type = "bytes[4]"
+source = "spec"
+anchor = "u-sense logical (`FALSE` = `forward`, `TRUE` = `reversed`), four optional parameter bounds"
+note = "Four absent bounds, each `0x0b`, in the 161-byte form."
 
 [[record]]
 name = "sphere_surface"
@@ -869,13 +882,19 @@ source = "spec"
 anchor = "dir2 (polar axis)"
 note = "Token tag not stated."
 
+[[record.field]]
+name = "v_sense"
+type = "sab_logical"
+source = "spec"
+anchor = "dir2 (polar axis), v-sense logical"
+
 [[record]]
 name = "torus_surface"
 kind = "slot"
 section = "6.2"
 anchor = "**`torus` (142 B basic / 160 B ranged)**"
 size = 142
-note = "The 142-byte form ends at the range flag `0x0b`. A `0x0a` range flag selects the 160-byte variant, which appends start and end angles. `minor < 0` with `|minor| ≤ |major|` describes an apple/lemon torus."
+note = "The 142-byte form stores four absent parameter bounds. The 160-byte form stores two present bounds. `minor < 0` with `|minor| ≤ |major|` describes an apple/lemon torus."
 
 [[record.field]]
 name = "origin"
@@ -909,10 +928,10 @@ anchor = "`ref_direction`"
 note = "Token tag not stated; typed here as the vector token used by the other frame directions."
 
 [[record.field]]
-name = "range_flag"
+name = "v_sense"
 type = "sab_logical"
 source = "spec"
-anchor = "then a range flag (`0x0b` = full 142-B variant; `0x0a` = 160-B variant with start/end angles)"
+anchor = "then the v-sense logical and four optional parameter bounds"
 
 [[record]]
 name = "straight_curve"

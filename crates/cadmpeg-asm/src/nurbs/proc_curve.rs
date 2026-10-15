@@ -23,6 +23,7 @@ use crate::nurbs::reader::{
 use crate::nurbs::subtypes::{
     find_owned_intcurve_subtype, find_owned_subtype_marker, subtype_span,
 };
+use crate::nurbs::support_chart::{cone_axis_reversed, cone_is_circular_cylinder, SupportChart};
 use crate::nurbs::toks::{Cur, SubtypeTable};
 use crate::sab::Token;
 use cadmpeg_ir::features::FinitePoint3;
@@ -174,105 +175,6 @@ impl EmbeddedSurfaceCurve {
     }
 }
 
-#[derive(Clone, Copy)]
-enum NativeSupportChart {
-    Canonical,
-    PlaneLengths,
-    Cone { axial_scale: f64 },
-}
-
-fn cone_axial_scale(sine: f64, cosine: f64, u_scale: f64) -> f64 {
-    let direction = if sine * cosine < 0.0 { -1.0 } else { 1.0 };
-    direction * cosine * u_scale * LEN_TO_MM
-}
-
-/// The native parameter chart of the support serialized at token `position`.
-fn native_support_chart(toks: &[Token], position: usize) -> NativeSupportChart {
-    let mut cur = Cur::at(toks, position);
-    let Some(kind) = cur.take_ident() else {
-        return NativeSupportChart::Canonical;
-    };
-    match kind {
-        "plane" => NativeSupportChart::PlaneLengths,
-        "cone" => {
-            let parsed = (|| {
-                cur.take_position()?;
-                cur.take_vector3()?;
-                cur.take_vector3()?;
-                cur.take_f64()?;
-                cur.take_bool()?;
-                cur.take_bool()?;
-                let sine = cur.take_f64()?;
-                let cosine = cur.take_f64()?;
-                let u_scale = cur.take_f64()?;
-                Some(NativeSupportChart::Cone {
-                    axial_scale: cone_axial_scale(sine, cosine, u_scale),
-                })
-            })();
-            parsed.unwrap_or(NativeSupportChart::Canonical)
-        }
-        _ => NativeSupportChart::Canonical,
-    }
-}
-
-fn normalize_support_pcurve(chart: NativeSupportChart, pcurve: &mut PcurveNurbs) -> Option<()> {
-    match chart {
-        NativeSupportChart::Canonical => {}
-        NativeSupportChart::PlaneLengths => {
-            pcurve
-                .try_map_control_points(|_, point| {
-                    let point = point.get();
-                    cadmpeg_ir::units::FinitePoint2::new(cadmpeg_ir::math::Point2::new(
-                        point.u * LEN_TO_MM,
-                        point.v * -LEN_TO_MM,
-                    ))
-                    .ok_or(())
-                })
-                .ok()?;
-        }
-        NativeSupportChart::Cone { axial_scale } => {
-            pcurve
-                .try_map_control_points(|_, point| {
-                    let native = point.get();
-                    cadmpeg_ir::units::FinitePoint2::new(cadmpeg_ir::math::Point2::new(
-                        native.v,
-                        native.u * axial_scale,
-                    ))
-                    .ok_or(())
-                })
-                .ok()?;
-        }
-    }
-    Some(())
-}
-
-/// Convert a pcurve stored in a standalone analytic surface's native chart to
-/// the neutral chart used by [`SurfaceGeometry`].
-pub(crate) fn normalize_pcurve_for_surface_record(
-    surface_head: &str,
-    surface_tokens: &[Token],
-    pcurve: &mut PcurveNurbs,
-) -> Option<()> {
-    let chart = match surface_head {
-        "plane" => NativeSupportChart::PlaneLengths,
-        "cone" => {
-            let mut values = surface_tokens.iter().filter_map(|token| match token {
-                Token::Double(value) => Some(*value),
-                _ => None,
-            });
-            values.next()?;
-            let sine = values.next()?;
-            let cosine = values.next()?;
-            let u_scale = values.next()?;
-            NativeSupportChart::Cone {
-                axial_scale: cone_axial_scale(sine, cosine, u_scale),
-            }
-        }
-        _ => return Some(()),
-    };
-    normalize_support_pcurve(chart, pcurve)
-}
-
 struct RequiredSupportPair {
     surfaces: [SurfaceGeometry; 2],
     pcurves: [PcurveNurbs; 2],
@@ -287,14 +189,8 @@ fn required_support_pair(cur: &mut Cur<'_>) -> Option<RequiredSupportPair> {
     cur.set_pos(first_end);
     let (mut second_pcurve, second_end) = pcurve_block_with_end(cur.toks(), cur.pos())?;
     cur.set_pos(second_end);
-    normalize_support_pcurve(
-        native_support_chart(cur.toks(), first_surface_start),
-        &mut first_pcurve,
-    )?;
-    normalize_support_pcurve(
-        native_support_chart(cur.toks(), second_surface_start),
-        &mut second_pcurve,
-    )?;
+    SupportChart::embedded_at(cur.toks(), first_surface_start)?.normalize(&mut first_pcurve)?;
+    SupportChart::embedded_at(cur.toks(), second_surface_start)?.normalize(&mut second_pcurve)?;
     Some(RequiredSupportPair {
         surfaces: [first_surface, second_surface],
         pcurves: [first_pcurve, second_pcurve],
@@ -1205,11 +1101,11 @@ fn embedded_law_curve(
         nullable_embedded_pcurve(&mut cur)?.value(),
     ];
     for (pcurve, chart) in pcurves.iter_mut().zip([
-        native_support_chart(toks, first_surface_start),
-        native_support_chart(toks, second_surface_start),
+        SupportChart::embedded_at(toks, first_surface_start)?,
+        SupportChart::embedded_at(toks, second_surface_start)?,
     ]) {
         if let Some(pcurve) = pcurve {
-            normalize_support_pcurve(chart, pcurve)?;
+            chart.normalize(pcurve)?;
         }
     }
     let layout = if let Some((stamp, post_enum)) = stamp {
@@ -1278,11 +1174,11 @@ fn embedded_spring(
                     [cur.take_range_value()?, cur.take_range_value()?],
                     [cur.take_range_value()?, cur.take_range_value()?],
                 ]),
-                NativeSupportChart::Canonical,
+                SupportChart::Canonical,
             )))
         } else {
             cur.set_pos(saved);
-            let chart = native_support_chart(toks, cur.pos());
+            let chart = SupportChart::embedded_at(toks, cur.pos())?;
             Some(Ok((
                 EmbeddedSpringSupport::Surface(embedded_surface(&mut cur)?),
                 chart,
@@ -1312,11 +1208,11 @@ fn embedded_spring(
         Some(pcurve)
     };
     if let EmbeddedSpringPcurve::Pcurve(pcurve) = &mut first_pcurve {
-        normalize_support_pcurve(first_chart, pcurve)?;
+        first_chart.normalize(pcurve)?;
     }
     let mut second_pcurve = second_pcurve;
     if let Some(pcurve) = &mut second_pcurve {
-        normalize_support_pcurve(second_chart, pcurve)?;
+        second_chart.normalize(pcurve)?;
     }
     let parameter_range = [cur.take_range_value()?, cur.take_range_value()?];
     let discontinuities = [
@@ -2257,16 +2153,10 @@ fn cache_first_curve_context(
         nullable_embedded_pcurve(cur)?.value(),
     ];
     if let Some(pcurve) = &mut pcurves[0] {
-        normalize_support_pcurve(
-            native_support_chart(cur.toks(), first_surface_start),
-            pcurve,
-        )?;
+        SupportChart::embedded_at(cur.toks(), first_surface_start)?.normalize(pcurve)?;
     }
     if let Some(pcurve) = &mut pcurves[1] {
-        normalize_support_pcurve(
-            native_support_chart(cur.toks(), second_surface_start),
-            pcurve,
-        )?;
+        SupportChart::embedded_at(cur.toks(), second_surface_start)?.normalize(pcurve)?;
     }
     let solved_range = [
         cur.take_optional_range_value()?.value(),
@@ -2421,10 +2311,7 @@ fn embedded_three_surface_intersection(toks: &[Token]) -> Option<EmbeddedThreeSu
     let third_surface_start = cur.pos();
     let third = embedded_surface(&mut cur)?;
     let (mut third_pcurve, _) = pcurve_block_with_end(toks, cur.pos())?;
-    normalize_support_pcurve(
-        native_support_chart(toks, third_surface_start),
-        &mut third_pcurve,
-    )?;
+    SupportChart::embedded_at(toks, third_surface_start)?.normalize(&mut third_pcurve)?;
     Some(EmbeddedThreeSurfaceIntersection {
         surfaces: [first, second, third],
         pcurves: [first_pcurve, second_pcurve, third_pcurve],
@@ -2682,10 +2569,10 @@ fn cache_first_intersection(
         nullable_embedded_pcurve(&mut cur)?.value(),
     ];
     if let Some(pcurve) = &mut pcurves[0] {
-        normalize_support_pcurve(native_support_chart(toks, first_surface_start), pcurve)?;
+        SupportChart::embedded_at(toks, first_surface_start)?.normalize(pcurve)?;
     }
     if let Some(pcurve) = &mut pcurves[1] {
-        normalize_support_pcurve(native_support_chart(toks, second_surface_start), pcurve)?;
+        SupportChart::embedded_at(toks, second_surface_start)?.normalize(pcurve)?;
     }
     let domain = nurbs_curve_parameter_domain(solved)?;
     let parameter_range = [
@@ -2765,11 +2652,11 @@ fn embedded_two_sided_offset(toks: &[Token]) -> Option<EmbeddedTwoSidedOffset> {
     let second_pcurve = optional_pcurve(&mut cur)?.value();
     let mut pcurves = [first_pcurve, second_pcurve];
     for (pcurve, chart) in pcurves.iter_mut().zip([
-        native_support_chart(toks, first_surface_start),
-        native_support_chart(toks, second_surface_start),
+        SupportChart::embedded_at(toks, first_surface_start)?,
+        SupportChart::embedded_at(toks, second_surface_start)?,
     ]) {
         if let Some(pcurve) = pcurve {
-            normalize_support_pcurve(chart, pcurve)?;
+            chart.normalize(pcurve)?;
         }
     }
     let parameter_range = [cur.take_range_value()?, cur.take_range_value()?];
@@ -2984,7 +2871,7 @@ fn embedded_surface_fields(
                 }
                 no_ranges
             };
-            let surface = if sine.abs() <= f64::EPSILON && ratio == 1.0 {
+            let surface = if cone_is_circular_cylinder(sine, ratio) {
                 let (origin, frame) = admitted_placement(point, native_axis, ref_direction)?;
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(CylinderSurface::new(
                     origin,
@@ -2992,7 +2879,7 @@ fn embedded_surface_fields(
                     PositiveLength::new(radius)?,
                 )))
             } else {
-                let axis = if sine * cosine < 0.0 {
+                let axis = if cone_axis_reversed(sine, cosine, ratio) {
                     native_axis.negated()
                 } else {
                     native_axis
@@ -3131,7 +3018,7 @@ fn decode_embedded_surface_fields(
                 }
                 no_ranges
             };
-            let surface = if sine.abs() <= f64::EPSILON && ratio == 1.0 {
+            let surface = if cone_is_circular_cylinder(sine, ratio) {
                 let (origin, frame) = admitted_placement(point, native_axis, ref_direction)?;
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(CylinderSurface::new(
                     origin,
@@ -3139,7 +3026,7 @@ fn decode_embedded_surface_fields(
                     PositiveLength::new(radius)?,
                 )))
             } else {
-                let axis = if sine * cosine < 0.0 {
+                let axis = if cone_axis_reversed(sine, cosine, ratio) {
                     native_axis.negated()
                 } else {
                     native_axis
@@ -3490,16 +3377,11 @@ pub(crate) fn nurbs_curve_parameter_domain(curve: &NurbsCurve) -> Option<[f64; 2
 
 #[cfg(test)]
 mod cache_form_tests {
-    use super::{
-        cache_first_curve_context, native_support_chart, normalize_pcurve_for_surface_record,
-        normalize_support_pcurve, nurbs_curve_parameter_domain, NativeSupportChart,
-        ProjectionRoleSlot,
-    };
+    use super::{cache_first_curve_context, nurbs_curve_parameter_domain, ProjectionRoleSlot};
     use crate::kernel_header::RefWidth;
     use crate::nurbs::toks::Cur;
     use crate::sab::Token;
-    use cadmpeg_ir::geometry::{nurbs::NurbsCurve, pcurve::PcurveNurbs};
-    use cadmpeg_ir::math::Point2;
+    use cadmpeg_ir::geometry::nurbs::NurbsCurve;
     use cadmpeg_ir::math::Point3;
 
     #[test]
@@ -3615,10 +3497,6 @@ mod cache_form_tests {
         }
     }
 
-    fn linear_pcurve(points: [Point2; 2]) -> PcurveNurbs {
-        PcurveNurbs::from_lanes(1, vec![0.0, 0.0, 1.0, 1.0], points.into(), None, false).unwrap()
-    }
-
     #[test]
     fn projection_role_slot_rejects_a_truncated_payload() {
         let original = b"\x07\x05surf1";
@@ -3630,73 +3508,6 @@ mod cache_form_tests {
             .unwrap_err();
         assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
         assert_eq!(bytes, before);
-    }
-
-    #[test]
-    fn analytic_support_charts_map_to_neutral_surface_parameters() {
-        let mut plane = linear_pcurve([Point2::new(1.0, 2.0), Point2::new(3.0, 4.0)]);
-        normalize_support_pcurve(NativeSupportChart::PlaneLengths, &mut plane).unwrap();
-        assert_eq!(
-            plane.control_points(),
-            [Point2::new(10.0, -20.0), Point2::new(30.0, -40.0)]
-        );
-
-        let mut cone = linear_pcurve([Point2::new(2.0, 0.5), Point2::new(-3.0, -0.25)]);
-        normalize_support_pcurve(NativeSupportChart::Cone { axial_scale: 15.0 }, &mut cone)
-            .unwrap();
-        assert_eq!(
-            cone.control_points(),
-            [Point2::new(0.5, 30.0), Point2::new(-0.25, -45.0)]
-        );
-    }
-
-    #[test]
-    fn support_chart_overflow_refuses_projection_without_changing_the_pcurve() {
-        for chart in [
-            NativeSupportChart::PlaneLengths,
-            NativeSupportChart::Cone { axial_scale: 2.0 },
-        ] {
-            let mut pcurve = linear_pcurve([Point2::new(f64::MAX, 0.0), Point2::new(1.0, 1.0)]);
-            let original = pcurve.clone();
-            assert!(normalize_support_pcurve(chart, &mut pcurve).is_none());
-            assert_eq!(pcurve, original);
-        }
-    }
-
-    #[test]
-    fn native_cone_chart_projects_generator_distance_onto_its_axis() {
-        let tokens = [
-            Token::Ident("cone".into()),
-            Token::Position([0.0; 3]),
-            Token::Vector3([0.0, 0.0, 1.0]),
-            Token::Vector3([1.0, 0.0, 0.0]),
-            Token::Double(1.0),
-            Token::True,
-            Token::False,
-            Token::Double(3.0_f64.sqrt() / 2.0),
-            Token::Double(0.5),
-            Token::Double(1.5),
-        ];
-        let NativeSupportChart::Cone { axial_scale } = native_support_chart(&tokens, 0) else {
-            panic!("cone tokens select a cone parameter chart");
-        };
-        assert_eq!(axial_scale, 7.5);
-    }
-
-    #[test]
-    fn standalone_cylinder_pcurve_uses_azimuth_and_axial_distance() {
-        let surface = [
-            Token::Double(1.0),
-            Token::Double(0.0),
-            Token::Double(1.0),
-            Token::Double(2.0),
-        ];
-        let mut pcurve = linear_pcurve([Point2::new(-0.5, 1.25), Point2::new(0.75, -2.0)]);
-        normalize_pcurve_for_surface_record("cone", &surface, &mut pcurve).unwrap();
-        assert_eq!(
-            pcurve.control_points(),
-            [Point2::new(1.25, -10.0), Point2::new(-2.0, 15.0)]
-        );
     }
 
     /// A tagged integer field.

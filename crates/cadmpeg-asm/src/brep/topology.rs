@@ -407,7 +407,7 @@ pub(super) fn walk_reachable_topology(
                                             .ref_at(7)
                                             .and_then(|surface| by_index.get(&surface))
                                         {
-                                            let Some(()) = nurbs::proc_curve::normalize_pcurve_for_surface_record(surface.head(), &surface.tokens, &mut decoded) else { return Ok(None); };
+                                            let Some(()) = nurbs::support_chart::SupportChart::of_surface_record(surface.head(), &surface.tokens).and_then(|chart| chart.normalize(&mut decoded)) else { return Ok(None); };
                                         }
                                     }
                                     Ok(pcurve_ranges_on_domain(&decoded, edge)

@@ -192,7 +192,8 @@ fn synthetic_geometry_with_pcurve_block_smbh(block: Vec<u8>) -> Vec<u8> {
     record[pcurve_ref_tag + 1..pcurve_ref_tag + 9].copy_from_slice(&19i64.to_le_bytes());
 
     // Move the coedge's edge endpoints onto the pcurve's neutral surface image.
-    // The native plane chart stores neutral `(u, v)` as `(u / 10, v / -10)`.
+    // The native chart of a `forward_v` plane stores neutral `(u, v)` as
+    // `(u / 10, v / 10)`.
     for (index, position_cm) in [(16usize, [0.025, 0.05, 0.0]), (17, [0.075, 0.15, 0.0])] {
         let point = &records[index];
         let record = &mut bytes[point.offset..point.offset + point.len];
