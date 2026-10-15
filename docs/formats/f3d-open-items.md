@@ -267,6 +267,54 @@ it can bind a shorter run. The decoder binds only a run whose cardinality
 equals the operand count. The records of any other run stay unrepaired lost
 edge references.
 
+### DR-75. Local occurrence carrier GUID
+
+**Question.** What does the LP-UTF16 carrier GUID at offset 44 of a local
+component-occurrence carrier identify?
+
+**Known.** `f3d.md` §3.1 "The component-record reference names the component
+definition record." gives the component-definition join through the
+component-record reference and the naming-space binding. Two carriers that
+name one component definition record can store different carrier GUIDs. The
+`CopyPaste` and `R-Pattern` joins select carriers by equal carrier GUID.
+
+**Need.** A writer must emit this GUID for each new occurrence.
+
+**Conflict.** When a component definition record stores no naming-space
+binding, the decoder keys the neutral component definition by the carrier GUID.
+Two carriers of one definition then project as two definitions.
+
+### DR-76. Nested local occurrence placement
+
+**Question.** How does a local occurrence whose owner entity is the root entity
+of a non-root component compose into the document frame?
+
+**Known.** `f3d.md` §3.1 "The component-record reference names the component
+definition record." gives the owner entity and the root-instance record. An
+occurrence that the root component contains is a child of the root occurrence,
+and its transform maps the component definition into the root component frame.
+
+**Need.** A reader must place every occurrence of a nested component in each
+occurrence of its containing component. The decoder does not place a nested
+occurrence and reports `assembly.local-occurrence-unplaced`.
+
+### DR-77. Operation placements of identity-frame carriers
+
+**Question.** Does the `CopyPaste` source placement or the `R-Pattern` first
+instance transform equal the placement of the carrier it names?
+
+**Known.** `f3d.md` §3.1 "A local component occurrence is an
+occurrence-placement record" gives the identity frame and its identity
+placement. `f3d.md` §3.1 "Legacy `CopyPaste` is a local component-occurrence
+operation." and `f3d.md` §3.1 "When a one-direction `R-Pattern` repeats a local
+component occurrence" give the scope transforms for the source and the seed.
+
+**Need.** A reader must select one placement for each occurrence.
+
+**Conflict.** When the source or seed carrier is an identity frame and the scope
+transform is not the identity, the two placements disagree. The decoder uses
+the scope transform.
+
 ## 2. External references
 
 ### XR-01. `neutronData` with a different GUID

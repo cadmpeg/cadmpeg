@@ -36,6 +36,8 @@ pub(crate) enum F3dLossCode {
     ConfigurationFeatureSuppressionUnbound,
     /// Non-root `ACT` component links stay source-only; product role is unresolved.
     ActComponentLinkUnresolved,
+    /// Local component occurrences whose container or definition the source does not settle.
+    LocalOccurrenceUnplaced,
     /// An F3Z drawing root was omitted while its derived 3D model transferred.
     DrawingDocumentOmitted,
     /// ASM history binding work exceeded the decoder safety budget.
@@ -206,6 +208,7 @@ impl F3dLossCode {
         Self::ConfigurationParameterOverrideUnbound,
         Self::ConfigurationFeatureSuppressionUnbound,
         Self::ActComponentLinkUnresolved,
+        Self::LocalOccurrenceUnplaced,
         Self::DrawingDocumentOmitted,
         Self::HistoryBindingBudgetExceeded,
         Self::RecipeSideSearchBudgetExceeded,
@@ -301,6 +304,7 @@ impl F3dLossCode {
                 "configuration.feature-suppression-unbound"
             }
             Self::ActComponentLinkUnresolved => "assembly.act-component-link-unresolved",
+            Self::LocalOccurrenceUnplaced => "assembly.local-occurrence-unplaced",
             Self::DrawingDocumentOmitted => "drawing.document-omitted",
             Self::HistoryBindingBudgetExceeded => "history.binding-budget-exceeded",
             Self::RecipeSideSearchBudgetExceeded => "feature.recipe-search-budget-exceeded",
@@ -413,6 +417,7 @@ impl F3dLossCode {
             | Self::ConfigurationParameterOverrideUnbound
             | Self::ConfigurationFeatureSuppressionUnbound
             | Self::ActComponentLinkUnresolved
+            | Self::LocalOccurrenceUnplaced
             | Self::DrawingDocumentOmitted
             | Self::DesignBodyBindingUnresolved
             | Self::ReferenceImageNativeRetained
@@ -531,6 +536,7 @@ impl F3dLossCode {
             | Self::FeatureEdgeSelectionLost
             | Self::FeaturePatternInstanceSearchCapped => LossTaxonomy::FeatureHistoryRetained,
             Self::MaterialDistanceUnitUntyped => LossTaxonomy::MaterialNotTransferred,
+            Self::LocalOccurrenceUnplaced => LossTaxonomy::AssemblyPlacementsNotTransferred,
             Self::DesignBodyBindingUnresolved
             | Self::FaceSurfaceReferenceDangling
             | Self::PcurveUndecoded => LossTaxonomy::ReferenceGraphNotClosed,
@@ -610,6 +616,7 @@ mod tests {
                 "configuration.parameter-override-unbound",
                 "configuration.feature-suppression-unbound",
                 "assembly.act-component-link-unresolved",
+                "assembly.local-occurrence-unplaced",
                 "drawing.document-omitted",
                 "history.binding-budget-exceeded",
                 "feature.recipe-search-budget-exceeded",
