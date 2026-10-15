@@ -323,11 +323,13 @@ fn intersection_auxiliaries_reject_duplicate_identities() {
     append_record(&mut term, &[0, 41, 0, 0, 0, 1, 0, 21], 34);
     assert_eq!(
         crate::test_support::with_decode_context(|ctx| crate::intersection::term_use_records(
-            ctx, &term
+            ctx,
+            &term,
+            super::ChartPointLayout::Xyz3
         ))
         .unwrap()
         .len(),
-        1
+        3
     );
     let scan = crate::test_support::with_decode_context(|ctx| {
         crate::intersection::scan(ctx, &term, crate::intersection::ChartPointLayout::Xyz3)
@@ -937,7 +939,7 @@ fn auxiliary_source_parsers_reject_reserved_record_identities() {
         put_f64(&mut chart, 44, super::MISSING_PARAMETER);
         put_f64(&mut chart, 52, super::MISSING_PARAMETER);
         put_vec3(&mut chart, 84, [1.0, 0.0, 0.0]);
-        let mut term = record(41, 34);
+        let mut term = record(41, 58);
         term[2..6].copy_from_slice(&2_u32.to_be_bytes());
         put_ref(&mut term, 6, identity);
         term[8..10].copy_from_slice(b"TF");
@@ -953,7 +955,9 @@ fn auxiliary_source_parsers_reject_reserved_record_identities() {
                 usize::from(identity > 1)
             );
             assert_eq!(
-                super::term_use_records(ctx, &term).unwrap().len(),
+                super::term_use_records(ctx, &term, super::ChartPointLayout::Xyz3)
+                    .unwrap()
+                    .len(),
                 usize::from(identity > 1)
             );
             assert_eq!(
@@ -961,7 +965,14 @@ fn auxiliary_source_parsers_reject_reserved_record_identities() {
                 usize::from(identity > 1)
             );
             assert_eq!(
-                super::term_at(&term, 2, super::TermUseFraming::DescriptorInline, 0).is_some(),
+                super::term_at(
+                    &term,
+                    2,
+                    super::TermUseFraming::DescriptorInline,
+                    0,
+                    super::ChartPointLayout::Xyz3
+                )
+                .is_some(),
                 identity > 1
             );
             assert_eq!(

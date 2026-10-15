@@ -1,7 +1,7 @@
 {
   "decode": {
     "ir": {
-      "ir_version": "28",
+      "ir_version": "29",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -337,29 +337,39 @@
           "parasolid_term_use_records": [
             {
               "count": 1,
+              "data": {
+                "hvecs": [
+                  [
+                    0.0,
+                    0.0,
+                    0.0
+                  ]
+                ],
+                "layout": "xyz3"
+              },
               "form": "L?",
               "framing": "direct",
-              "id": "nx:s0:term-use-record#21",
+              "id": "nx:s0:term-use-record#21-609",
               "inflated_offset": 609,
-              "point": [
-                0.0,
-                0.0,
-                0.0
-              ],
               "stream_ordinal": 0,
               "xmt": 21
             },
             {
               "count": 1,
+              "data": {
+                "hvecs": [
+                  [
+                    10.005,
+                    0.0,
+                    0.0
+                  ]
+                ],
+                "layout": "xyz3"
+              },
               "form": "L?",
               "framing": "direct",
-              "id": "nx:s0:term-use-record#22",
+              "id": "nx:s0:term-use-record#22-643",
               "inflated_offset": 643,
-              "point": [
-                10.005,
-                0.0,
-                0.0
-              ],
               "stream_ordinal": 0,
               "xmt": 22
             }

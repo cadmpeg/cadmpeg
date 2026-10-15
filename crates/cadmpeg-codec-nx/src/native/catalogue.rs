@@ -60,14 +60,14 @@ use super::parasolid::{
     ParasolidDeltasReferenceMarkerPacket, ParasolidDeltasReferenceStatePacket,
     ParasolidDeltasReferenceTypeMap, ParasolidDeltasResidualSpan,
     ParasolidDeltasSchemaReferencePreamble, ParasolidDeltasTaggedReferenceLane,
-    ParasolidDeltasTermUseNumericTail, ParasolidDeltasTerminalNullReferences,
-    ParasolidDeltasTombstone, ParasolidDeltasTransmitHeader, ParasolidDeltasType150StatePacket,
-    ParasolidEntity51NumericUse, ParasolidEntity51Record, ParasolidEntity51StringUse,
-    ParasolidEntity51StructuredUse, ParasolidEntity52IntegerRecord, ParasolidEntity53DoubleRecord,
-    ParasolidEntity54StringRecord, ParasolidEntity57AxisRecord, ParasolidEntity58TagRecord,
-    ParasolidEntity62UnicodeRecord, ParasolidEntityVectorRecord, ParasolidGroupRecord,
-    ParasolidOffsetSurfaceRecord, ParasolidSupportUvRecord, ParasolidSurfaceCurveRecord,
-    ParasolidTermUseRecord, ParasolidTopologyAttributeListReference, ParasolidTrimmedCurveRecord,
+    ParasolidDeltasTerminalNullReferences, ParasolidDeltasTombstone, ParasolidDeltasTransmitHeader,
+    ParasolidDeltasType150StatePacket, ParasolidEntity51NumericUse, ParasolidEntity51Record,
+    ParasolidEntity51StringUse, ParasolidEntity51StructuredUse, ParasolidEntity52IntegerRecord,
+    ParasolidEntity53DoubleRecord, ParasolidEntity54StringRecord, ParasolidEntity57AxisRecord,
+    ParasolidEntity58TagRecord, ParasolidEntity62UnicodeRecord, ParasolidEntityVectorRecord,
+    ParasolidGroupRecord, ParasolidOffsetSurfaceRecord, ParasolidSupportUvRecord,
+    ParasolidSurfaceCurveRecord, ParasolidTermUseRecord, ParasolidTopologyAttributeListReference,
+    ParasolidTrimmedCurveRecord,
 };
 use super::segments::{
     SegmentBodyBinding, SegmentBodyLineageStatus, SegmentIndexRow, SegmentOmLink, SegmentStreamLink,
@@ -643,11 +643,6 @@ impl StreamNoted for ParasolidDeltasTombstone {
     }
 }
 impl StreamNoted for ParasolidDeltasBodyRevision {
-    fn stream_note(&self) -> (&str, u32, u64) {
-        (&self.id, self.stream_ordinal, self.inflated_offset)
-    }
-}
-impl StreamNoted for ParasolidDeltasTermUseNumericTail {
     fn stream_note(&self) -> (&str, u32, u64) {
         (&self.id, self.stream_ordinal, self.inflated_offset)
     }
@@ -1467,19 +1462,6 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.deltas_body_revisions, r, ns),
         len: |m| m.parasolid.deltas_body_revisions.len(),
-        counts_toward_emptiness: true,
-    },
-    CatalogueRow {
-        arena: "parasolid_deltas_term_use_numeric_tails",
-        exactness: Exactness::ByteExact,
-        phase: Phase::GroupA {
-            tag: Some("TERM_USE_TAIL"),
-            note: |ctx, m, r, tag, a| {
-                note_per_stream(ctx, &m.parasolid.deltas_term_use_numeric_tails, r, tag, a)
-            },
-        },
-        emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.deltas_term_use_numeric_tails, r, ns),
-        len: |m| m.parasolid.deltas_term_use_numeric_tails.len(),
         counts_toward_emptiness: true,
     },
     CatalogueRow {

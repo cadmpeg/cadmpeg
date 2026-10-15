@@ -16,6 +16,7 @@ use serde::{Deserialize, Serialize};
 pub(crate) mod blend_bound_state;
 use blend_bound_state::BlendBoundState;
 pub(crate) mod chart_samples;
+pub(crate) mod limit_state;
 pub(crate) mod support_uv_values;
 use support_uv_values::{SupportUvPacking, SupportUvValues};
 
@@ -204,8 +205,8 @@ pub(crate) struct TermUse {
     pub(crate) xmt: NonNullXmt,
     /// Endpoint form, including its required leading count.
     pub(crate) form: TermUseForm,
-    /// Endpoint position in millimetres.
-    pub(crate) point: FiniteVector<3>,
+    /// Complete count-selected point or extended hvec storage.
+    pub(crate) data: limit_state::LimitState,
     /// Serialized record framing.
     pub(crate) framing: TermUseFraming,
     /// Tag or inline-payload offset in the inflated stream.
@@ -477,7 +478,7 @@ pub(crate) fn scan_with_graph(
         ctx,
         AuxiliaryMaps {
             charts: &chart_records(ctx, stream, point_layout)?,
-            terms: &term_records(ctx, stream)?,
+            terms: &term_records(ctx, stream, point_layout)?,
             uv: &uv,
             bridges: &blend_bound_records(ctx, stream)?,
         },
@@ -524,7 +525,7 @@ pub(crate) fn scan_with_auxiliary_replacements_and_graph(
     graph: &topology::Graph,
 ) -> Result<CurveScan, CodecError> {
     let mut charts = chart_records(ctx, base_stream, ChartPointLayout::Xyz3)?;
-    let mut terms = term_records(ctx, base_stream)?;
+    let mut terms = term_records(ctx, base_stream, ChartPointLayout::Xyz3)?;
     let mut uv = uv_records(ctx, base_stream)?;
     let mut bridges = blend_bound_records(ctx, base_stream)?;
     for replacement_stream in replacement_streams {
@@ -537,7 +538,7 @@ pub(crate) fn scan_with_auxiliary_replacements_and_graph(
         extend_replacement_map(
             ctx,
             &mut terms,
-            term_records(ctx, replacement_stream)?,
+            term_records(ctx, replacement_stream, ChartPointLayout::Ext11)?,
             "NX replacement term keys",
         )?;
         extend_replacement_map(
@@ -1296,63 +1297,65 @@ fn chart_ext_point_at(stream: &[u8], at: usize) -> Option<(Point3, f64, [[f64; 2
 fn term_records(
     ctx: &DecodeContext<'_>,
     stream: &[u8],
+    layout: ChartPointLayout,
 ) -> Result<BTreeMap<u32, Point3>, CodecError> {
     let mut records = BTreeMap::new();
-    for term in term_use_records(ctx, stream)? {
-        ctx.insert_btree_map(
+    let mut duplicates = BTreeSet::new();
+    let mut reservation = ctx.reserve_scoped(0, "NX term-use map index")?;
+    for term in term_use_records(ctx, stream, layout)? {
+        insert_unique_charged(
+            ctx,
+            &mut reservation,
             &mut records,
+            &mut duplicates,
             u32::from(term.xmt),
-            Point3::from(term.point.get()),
-            "NX term-use map keys",
+            Point3::from(term.data.point().get()),
         )?;
     }
     Ok(records)
 }
 
-/// Decode complete direct, escaped, and descriptor-inline `term_use` records.
+/// Retain complete physical LIMIT frames, including duplicate XMT identities.
 pub(crate) fn term_use_records(
     ctx: &DecodeContext<'_>,
     stream: &[u8],
+    layout: ChartPointLayout,
 ) -> Result<Vec<TermUse>, CodecError> {
-    let mut out = BTreeMap::new();
-    let mut duplicates = BTreeSet::new();
-    let mut reservation = ctx.reserve_scoped(0, "NX term-use record index")?;
+    let mut out = Vec::new();
     ctx.charge_work(
         cadmpeg_core::decode::u64_from_index(stream.len()),
         "scan NX term-use records",
     )?;
     for tag in find_tags(stream, [0, 41]) {
-        if let Some((term, _)) = term_use_at(stream, tag) {
-            insert_unique_charged(
-                ctx,
-                &mut reservation,
-                &mut out,
-                &mut duplicates,
-                u32::from(term.xmt),
-                term,
-            )?;
+        if let Some((term, _)) = term_use_at(stream, tag, layout) {
+            ctx.push_vec(&mut out, term, "NX term-use records")?;
         }
     }
     for label in find_iter(stream, b"term_use") {
         let tail = label + b"term_use".len();
         if stream.get(tail..tail + INLINE_TERM_TAIL.len()) == Some(INLINE_TERM_TAIL) {
             let pos = tail + INLINE_TERM_TAIL.len();
-            if let Some((term, _)) = term_at(stream, pos, TermUseFraming::DescriptorInline, pos) {
-                insert_unique_charged(
-                    ctx,
-                    &mut reservation,
-                    &mut out,
-                    &mut duplicates,
-                    u32::from(term.xmt),
-                    term,
-                )?;
+            if let Some((term, _)) =
+                term_at(stream, pos, TermUseFraming::DescriptorInline, pos, layout)
+            {
+                ctx.push_vec(&mut out, term, "NX term-use records")?;
             }
         }
     }
-    ctx.collect_retained_vec(out.into_values(), "NX term-use records")
+    ctx.stable_sort_by(
+        &mut out,
+        |a, b| a.pos.cmp(&b.pos),
+        |_| 0,
+        "sort NX physical LIMIT records",
+    )?;
+    Ok(out)
 }
 
-pub(crate) fn term_use_at(stream: &[u8], tag: usize) -> Option<(TermUse, usize)> {
+pub(crate) fn term_use_at(
+    stream: &[u8],
+    tag: usize,
+    layout: ChartPointLayout,
+) -> Option<(TermUse, usize)> {
     (stream.get(tag..tag + 2) == Some(&[0, 41])).then_some(())?;
     for escape in [0usize, 1] {
         if escape == 1 && stream.get(tag + 2) != Some(&0xff) {
@@ -1364,7 +1367,7 @@ pub(crate) fn term_use_at(stream: &[u8], tag: usize) -> Option<(TermUse, usize)>
         } else {
             TermUseFraming::Escaped
         };
-        if let Some(term) = term_at(stream, base, framing, tag) {
+        if let Some(term) = term_at(stream, base, framing, tag, layout) {
             return Some(term);
         }
     }
@@ -1376,6 +1379,7 @@ fn term_at(
     base: usize,
     framing: TermUseFraming,
     pos: usize,
+    layout: ChartPointLayout,
 ) -> Option<(TermUse, usize)> {
     let count = View::over_retained(stream)
         .child(base, stream.len())?
@@ -1389,15 +1393,16 @@ fn term_at(
         (2, b"TS") => TermUseForm::Ts,
         _ => return None,
     };
+    let (data, end) = limit_state::LimitState::read(stream, payload.checked_add(2)?, form, layout)?;
     Some((
         TermUse {
             xmt,
             form,
-            point: point_m(stream, payload + 2)?,
+            data,
             framing,
             pos,
         },
-        payload.checked_add(26)?,
+        end,
     ))
 }
 

@@ -2107,14 +2107,6 @@ pub(super) fn source_meta(
                 census.body_revisions.len(),
             )?;
         }
-        if !census.term_use_numeric_tails.is_empty() {
-            insert_source_attribute(
-                ctx,
-                &mut attributes,
-                format_args!("deltas.{index}.term_use_numeric_tails"),
-                census.term_use_numeric_tails.len(),
-            )?;
-        }
         if !census.tagged_reference_lanes.is_empty() {
             insert_source_attribute(
                 ctx,

@@ -451,8 +451,8 @@ fn decode_emits_charted_surface_intersection_construction() {
     assert_eq!(terms.len(), 2);
     assert_eq!(terms[0].form.count(), 1);
     assert_eq!(serde_json::to_value(terms[0].form).unwrap(), "L?");
-    assert_eq!(terms[0].point.get(), [0.0, 0.0, 0.0]);
-    assert_eq!(terms[1].point.get(), [10.0, 0.0, 0.0]);
+    assert_eq!(terms[0].data.point().get(), [0.0, 0.0, 0.0]);
+    assert_eq!(terms[1].data.point().get(), [10.0, 0.0, 0.0]);
     assert!(terms
         .iter()
         .all(|term| matches!(term.framing, crate::intersection::TermUseFraming::Direct)));

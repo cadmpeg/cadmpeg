@@ -177,18 +177,6 @@ pub(super) fn summarize(
                         )),
                     )?;
                 }
-                if !census.term_use_numeric_tails.is_empty() {
-                    insert_summary_attribute(
-                        ctx,
-                        &mut attributes,
-                        "records.delta.term_use_numeric_tails",
-                        "",
-                        false,
-                        SummaryValue::Number(cadmpeg_core::decode::u64_from_index(
-                            census.term_use_numeric_tails.len(),
-                        )),
-                    )?;
-                }
                 if !census.tagged_reference_lanes.is_empty() {
                     insert_summary_attribute(
                         ctx,

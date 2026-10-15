@@ -16,7 +16,6 @@ use crate::deltas::census::Census;
 use crate::deltas::record_family::RecordFamily;
 use crate::parasolid::attribute_action::AttributeAction;
 use crate::parasolid::attribute_field::AttributeField;
-use cadmpeg_ir::units::FiniteVector;
 use std::fmt::Write;
 use std::num::NonZeroU32;
 
@@ -48,7 +47,7 @@ use crate::deltas::packet_marker::ReferenceMarker;
 use crate::deltas::preamble_state::PreambleState;
 use crate::deltas::reference_lanes::{MapEntries, TaggedReferences};
 use crate::deltas::state_frame::StateFrames;
-use crate::deltas::tails::{NullTailForm, NumericTailValues};
+use crate::deltas::tails::NullTailForm;
 use crate::deltas::transmit_state::TransmitState;
 use crate::deltas::type150_state::Type150State;
 use crate::framing::xmt_reference::NonNullXmt;
@@ -1023,22 +1022,6 @@ pub(super) struct ParasolidDeltasTerminalNullReferences {
     pub(super) inflated_offset: u64,
 }
 
-/// Count-selected numeric lane following one deltas `term_use` endpoint.
-#[derive(Debug, Clone, PartialEq, Deserialize)]
-#[serde(try_from = "tail_wire::NumericTailWire")]
-pub(super) struct ParasolidDeltasTermUseNumericTail {
-    /// Globally unique numeric-tail identity.
-    pub(super) id: String,
-    /// Zero-based source stream ordinal.
-    pub(super) stream_ordinal: u32,
-    /// XMT identity of the owning `term_use` record.
-    term_use_xmt: u32,
-    /// Complete finite numeric tail for its endpoint count.
-    values: NumericTailValues,
-    /// First numeric byte following the complete `term_use` record.
-    pub(super) inflated_offset: u64,
-}
-
 /// Maximal deltas gap composed entirely of typed stream-local references.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(super) struct ParasolidDeltasTaggedReferenceLane {
@@ -1220,7 +1203,6 @@ pub(in crate::native) struct ParasolidDeltasEvents {
     pub(super) records: Vec<ParasolidDeltasRecord>,
     pub(super) tombstones: Vec<ParasolidDeltasTombstone>,
     pub(super) body_revisions: Vec<ParasolidDeltasBodyRevision>,
-    pub(super) term_use_numeric_tails: Vec<ParasolidDeltasTermUseNumericTail>,
     pub(super) tagged_reference_lanes: Vec<ParasolidDeltasTaggedReferenceLane>,
     pub(super) reference_type_maps: Vec<ParasolidDeltasReferenceTypeMap>,
     pub(super) reference_state_packets: Vec<ParasolidDeltasReferenceStatePacket>,
@@ -1315,7 +1297,6 @@ pub(super) fn parasolid_deltas_events_with_censuses(
         records: Vec::new(),
         tombstones: Vec::new(),
         body_revisions: Vec::new(),
-        term_use_numeric_tails: Vec::new(),
         tagged_reference_lanes: Vec::new(),
         reference_type_maps: Vec::new(),
         reference_state_packets: Vec::new(),
@@ -1465,25 +1446,6 @@ pub(super) fn parasolid_deltas_events_with_censuses(
                         "NX retained record digest",
                     )?,
                     inflated_offset: cadmpeg_core::decode::u64_from_index(revision.offset),
-                },
-                "NX deltas events",
-            )?;
-        }
-        for tail in census.term_use_numeric_tails {
-            ctx.push_vec(
-                &mut events.term_use_numeric_tails,
-                ParasolidDeltasTermUseNumericTail {
-                    id: deltas_event_id(
-                        ctx,
-                        stream_ordinal,
-                        "deltas-term-use-tail",
-                        tail.offset(),
-                        Some(tail.term_use_xmt),
-                    )?,
-                    stream_ordinal: stream_ordinal_u32,
-                    term_use_xmt: tail.term_use_xmt,
-                    inflated_offset: cadmpeg_core::decode::u64_from_index(tail.offset()),
-                    values: tail.into_values(),
                 },
                 "NX deltas events",
             )?;
@@ -1699,9 +1661,6 @@ pub(super) fn parasolid_deltas_events_with_censuses(
     sort_deltas_events(ctx, &mut events.records, |value| value.id.as_str())?;
     sort_deltas_events(ctx, &mut events.tombstones, |value| value.id.as_str())?;
     sort_deltas_events(ctx, &mut events.body_revisions, |value| value.id.as_str())?;
-    sort_deltas_events(ctx, &mut events.term_use_numeric_tails, |value| {
-        value.id.as_str()
-    })?;
     sort_deltas_events(ctx, &mut events.tagged_reference_lanes, |value| {
         value.id.as_str()
     })?;
@@ -2123,8 +2082,8 @@ pub(super) struct ParasolidTermUseRecord {
     xmt: NonNullXmt,
     /// Two-byte endpoint-form discriminator as printable ASCII.
     form: crate::intersection::TermUseForm,
-    /// Endpoint position in millimetres.
-    point: FiniteVector<3>,
+    /// Complete count-selected physical hvec storage.
+    data: crate::intersection::limit_state::LimitState,
     /// Serialized record framing.
     framing: crate::intersection::TermUseFraming,
     /// Tag or inline-payload offset in the inflated stream.
@@ -2138,7 +2097,7 @@ struct ParasolidTermUseRecordRef<'a> {
     xmt: NonNullXmt,
     count: u32,
     form: crate::intersection::TermUseForm,
-    point: FiniteVector<3>,
+    data: crate::intersection::limit_state::LimitState,
     framing: crate::intersection::TermUseFraming,
     inflated_offset: u64,
 }
@@ -2151,7 +2110,7 @@ impl Serialize for ParasolidTermUseRecord {
             xmt: self.xmt,
             count: self.form.count(),
             form: self.form,
-            point: self.point,
+            data: self.data,
             framing: self.framing,
             inflated_offset: self.inflated_offset,
         }
@@ -2171,8 +2130,8 @@ struct ParasolidTermUseRecordWire {
     count: u32,
     /// Two-byte endpoint-form discriminator as printable ASCII.
     form: crate::intersection::TermUseForm,
-    /// Endpoint position in millimetres.
-    point: FiniteVector<3>,
+    /// Complete count-selected physical hvec storage.
+    data: crate::intersection::limit_state::LimitState,
     /// Serialized record framing.
     framing: crate::intersection::TermUseFraming,
     /// Tag or inline-payload offset in the inflated stream.
@@ -2188,7 +2147,7 @@ impl From<ParasolidTermUseRecord> for ParasolidTermUseRecordWire {
             stream_ordinal: value.stream_ordinal,
             xmt: value.xmt,
             form: value.form,
-            point: value.point,
+            data: value.data,
             framing: value.framing,
             inflated_offset: value.inflated_offset,
         }
@@ -2198,7 +2157,7 @@ impl From<ParasolidTermUseRecord> for ParasolidTermUseRecordWire {
 impl TryFrom<ParasolidTermUseRecordWire> for ParasolidTermUseRecord {
     type Error = &'static str;
     fn try_from(wire: ParasolidTermUseRecordWire) -> Result<Self, Self::Error> {
-        if wire.count != wire.form.count() {
+        if wire.count != wire.form.count() || wire.count != wire.data.count() {
             return Err("term_use count disagrees with endpoint form");
         }
         Ok(Self {
@@ -2206,7 +2165,7 @@ impl TryFrom<ParasolidTermUseRecordWire> for ParasolidTermUseRecord {
             stream_ordinal: wire.stream_ordinal,
             xmt: wire.xmt,
             form: wire.form,
-            point: wire.point,
+            data: wire.data,
             framing: wire.framing,
             inflated_offset: wire.inflated_offset,
         })
@@ -2218,8 +2177,8 @@ mod term_use_wire_tests {
     use super::ParasolidTermUseRecord;
 
     #[test]
-    fn finite_endpoint_retains_the_native_point_array_and_checked_identity() {
-        let json = r#"{"id":"term","stream_ordinal":0,"xmt":2,"count":2,"form":"TF","point":[0.0,-0.0,1.0],"framing":"direct","inflated_offset":10}"#;
+    fn complete_limit_retains_both_native_points_and_signed_zero() {
+        let json = r#"{"id":"term","stream_ordinal":0,"xmt":2,"count":2,"form":"TF","data":{"layout":"xyz3","hvecs":[[0.0,-0.0,1.0],[0.0,-0.0,1.0]]},"framing":"direct","inflated_offset":10}"#;
         let record: ParasolidTermUseRecord = serde_json::from_str(json).unwrap();
         assert_eq!(serde_json::to_string(&record).unwrap(), json);
         assert_eq!(
@@ -2229,8 +2188,35 @@ mod term_use_wire_tests {
     }
 
     #[test]
+    fn term_use_wire_rejects_count_form_and_storage_disagreement() {
+        let valid = serde_json::json!({"id":"term", "stream_ordinal":0, "xmt":2,
+            "count":2,"form":"TF", "data":{"layout":"xyz3","hvecs":[[0.0,0.0,0.0],[1.0,0.0,0.0]]},
+            "framing":"direct","inflated_offset":0});
+        for (field, value) in [
+            ("count", serde_json::json!(1)),
+            ("form", serde_json::json!("L?")),
+            (
+                "data",
+                serde_json::json!({"layout":"xyz3","hvecs":[[0.0,0.0,0.0]]}),
+            ),
+            ("data", serde_json::json!({"layout":"xyz3","hvecs":[]})),
+            (
+                "data",
+                serde_json::json!({"layout":"ext11","hvecs":[{"point":[0.0,0.0,0.0]}]}),
+            ),
+        ] {
+            let mut malformed = valid.clone();
+            malformed[field] = value;
+            assert!(
+                serde_json::from_value::<ParasolidTermUseRecord>(malformed).is_err(),
+                "{field}"
+            );
+        }
+    }
+
+    #[test]
     fn term_use_native_limit_refuses_before_id_copy() {
-        let json = r#"{"id":"nx:parasolid:term-use#0","stream_ordinal":0,"xmt":2,"count":2,"form":"TF","point":[0.0,-0.0,1.0],"framing":"direct","inflated_offset":10}"#;
+        let json = r#"{"id":"nx:parasolid:term-use#0","stream_ordinal":0,"xmt":2,"count":2,"form":"TF","data":{"layout":"xyz3","hvecs":[[0.0,-0.0,1.0],[0.0,-0.0,1.0]]},"framing":"direct","inflated_offset":10}"#;
         let record: ParasolidTermUseRecord = serde_json::from_str(json).unwrap();
         cadmpeg_test_support::native_serialization::assert_native_limit(
             &record,
@@ -2245,7 +2231,7 @@ mod term_use_identity_tests {
     fn term_use_wire_rejects_reserved_record_identities() {
         for identity in [0, 1] {
             let json = format!(
-                r#"{{"id":"term","stream_ordinal":0,"xmt":{identity},"count":2,"form":"TF","point":[0.0,0.0,1.0],"framing":"direct","inflated_offset":10}}"#
+                r#"{{"id":"term","stream_ordinal":0,"xmt":{identity},"count":2,"form":"TF","data":{{"layout":"xyz3","hvecs":[[0.0,0.0,1.0],[0.0,0.0,1.0]]}},"framing":"direct","inflated_offset":10}}"#
             );
             assert!(serde_json::from_str::<super::ParasolidTermUseRecord>(&json)
                 .unwrap_err()
@@ -2259,34 +2245,79 @@ mod term_use_identity_tests {
 pub(super) fn parasolid_term_use_records(
     ctx: &DecodeContext<'_>,
     streams: &[Stream],
+    deltas_records: &[ParasolidDeltasRecord],
 ) -> Result<Vec<ParasolidTermUseRecord>, CodecError> {
-    per_parasolid_scan::<ParasolidTermUseRecord>(ctx, streams)
-}
-
-impl ParasolidScanRecords for ParasolidTermUseRecord {
-    type Row = crate::intersection::TermUse;
-    type Record = ParasolidTermUseRecord;
-    const ID_STEM: &'static str = "term-use-record";
-    fn scan(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Vec<Self::Row>, CodecError> {
-        crate::intersection::term_use_records(ctx, bytes)
-    }
-    fn xmt(row: &Self::Row) -> u32 {
-        u32::from(row.xmt)
-    }
-    fn record(id: String, stream_ordinal: u32, row: Self::Row) -> Self::Record {
-        ParasolidTermUseRecord {
-            id,
-            stream_ordinal,
-            xmt: row.xmt,
-            form: row.form,
-            point: row.point,
-            framing: row.framing,
-            inflated_offset: cadmpeg_core::decode::u64_from_index(row.pos),
+    let mut records = Vec::new();
+    for (ordinal, stream) in streams.iter().enumerate() {
+        let crate::parasolid::StreamBody::Parasolid { subtype, .. } = &stream.body else {
+            continue;
+        };
+        let rows = crate::intersection::term_use_records(
+            ctx,
+            &stream.inflated,
+            subtype.chart_point_layout(),
+        )?;
+        if rows.is_empty() {
+            continue;
+        }
+        let ordinal_u32 = u32::try_from(ordinal)
+            .map_err(|_| ctx.refuse_codec_limit("NX LIMIT stream ordinal", 0, 1))?;
+        // Only nested candidates need an index. Do not copy the unrelated
+        // census into another per-stream ownership map.
+        let mut nested = BTreeSet::new();
+        for record in deltas_records
+            .iter()
+            .filter(|r| r.stream_ordinal == ordinal_u32)
+        {
+            ctx.charge_work(
+                u64::from(rows.len().ilog2()) + 1,
+                "NX LIMIT owner interval search",
+            )?;
+            let start = record.inflated_offset;
+            let end = start + record.byte_len;
+            let first =
+                rows.partition_point(|r| cadmpeg_core::decode::u64_from_index(r.pos) < start);
+            for row in rows[first..]
+                .iter()
+                .take_while(|r| cadmpeg_core::decode::u64_from_index(r.pos) < end)
+            {
+                ctx.charge_work(1, "NX LIMIT owner candidate")?;
+                if record.family.kind() != 41
+                    || cadmpeg_core::decode::u64_from_index(row.pos) != start
+                {
+                    ctx.insert_btree_set(&mut nested, row.pos, "NX nested LIMIT candidates")?;
+                }
+            }
+        }
+        for row in rows {
+            if nested.contains(&row.pos) {
+                continue;
+            }
+            ctx.reserve_vec(&mut records, 1, "NX Parasolid LIMIT records")?;
+            records.push(ParasolidTermUseRecord {
+                id: parasolid_offset_record_id(
+                    ctx,
+                    ordinal,
+                    "term-use-record",
+                    u32::from(row.xmt),
+                    row.pos,
+                )?,
+                stream_ordinal: ordinal_u32,
+                xmt: row.xmt,
+                form: row.form,
+                data: row.data,
+                framing: row.framing,
+                inflated_offset: cadmpeg_core::decode::u64_from_index(row.pos),
+            });
         }
     }
-    fn id(record: &Self::Record) -> &str {
-        &record.id
-    }
+    ctx.stable_sort_by(
+        &mut records,
+        |a, b| a.id.cmp(&b.id),
+        |row| row.id.len(),
+        "sort NX LIMIT records",
+    )?;
+    Ok(records)
 }
 
 /// Complete typed source record for one Parasolid support-UV values array.

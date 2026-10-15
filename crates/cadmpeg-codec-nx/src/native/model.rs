@@ -185,15 +185,14 @@ use super::parasolid::{
     ParasolidDeltasReferenceMarkerPacket, ParasolidDeltasReferenceStatePacket,
     ParasolidDeltasReferenceTypeMap, ParasolidDeltasResidualSpan,
     ParasolidDeltasSchemaReferencePreamble, ParasolidDeltasTaggedReferenceLane,
-    ParasolidDeltasTermUseNumericTail, ParasolidDeltasTerminalNullReferences,
-    ParasolidDeltasTombstone, ParasolidDeltasTransmitHeader, ParasolidDeltasType150StatePacket,
-    ParasolidEntity51NumericUse, ParasolidEntity51Record, ParasolidEntity51StringUse,
-    ParasolidEntity51StructuredUse, ParasolidEntity52IntegerRecord, ParasolidEntity53DoubleRecord,
-    ParasolidEntity54StringRecord, ParasolidEntity57AxisRecord, ParasolidEntity58TagRecord,
-    ParasolidEntity62UnicodeRecord, ParasolidEntityVectorRecord, ParasolidFieldNamesRecord,
-    ParasolidGroupMember, ParasolidGroupRecord, ParasolidIntersectionRecord,
-    ParasolidOffsetSurfaceRecord, ParasolidSupportUvRecord, ParasolidSurfaceCurveRecord,
-    ParasolidTermUseRecord, ParasolidTopologyAttributeClassUse,
+    ParasolidDeltasTerminalNullReferences, ParasolidDeltasTombstone, ParasolidDeltasTransmitHeader,
+    ParasolidDeltasType150StatePacket, ParasolidEntity51NumericUse, ParasolidEntity51Record,
+    ParasolidEntity51StringUse, ParasolidEntity51StructuredUse, ParasolidEntity52IntegerRecord,
+    ParasolidEntity53DoubleRecord, ParasolidEntity54StringRecord, ParasolidEntity57AxisRecord,
+    ParasolidEntity58TagRecord, ParasolidEntity62UnicodeRecord, ParasolidEntityVectorRecord,
+    ParasolidFieldNamesRecord, ParasolidGroupMember, ParasolidGroupRecord,
+    ParasolidIntersectionRecord, ParasolidOffsetSurfaceRecord, ParasolidSupportUvRecord,
+    ParasolidSurfaceCurveRecord, ParasolidTermUseRecord, ParasolidTopologyAttributeClassUse,
     ParasolidTopologyAttributeListReference, ParasolidTrimmedCurveRecord,
 };
 use super::rmfastload_storage::RmFastLoadStorage;
@@ -312,7 +311,6 @@ pub(in crate::native) struct ParasolidRecords {
     pub(super) deltas_records: Vec<ParasolidDeltasRecord>,
     pub(super) deltas_tombstones: Vec<ParasolidDeltasTombstone>,
     pub(super) deltas_body_revisions: Vec<ParasolidDeltasBodyRevision>,
-    pub(super) deltas_term_use_numeric_tails: Vec<ParasolidDeltasTermUseNumericTail>,
     pub(super) deltas_tagged_reference_lanes: Vec<ParasolidDeltasTaggedReferenceLane>,
     pub(super) deltas_reference_type_maps: Vec<ParasolidDeltasReferenceTypeMap>,
     pub(super) deltas_reference_state_packets: Vec<ParasolidDeltasReferenceStatePacket>,
@@ -798,7 +796,8 @@ impl NativeModel {
         let parasolid_trimmed_curve_records = parasolid_trimmed_curve_records(ctx, parsed)?;
         let parasolid_surface_curve_records = parasolid_surface_curve_records(ctx, parsed)?;
         let parasolid_intersection_records = parasolid_intersection_records(ctx, parsed)?;
-        let parasolid_term_use_records = parasolid_term_use_records(ctx, streams)?;
+        let parasolid_term_use_records =
+            parasolid_term_use_records(ctx, streams, &deltas_events.records)?;
         let parasolid_support_uv_records = parasolid_support_uv_records(ctx, streams)?;
         let parasolid_chart_records = parasolid_chart_records(ctx, streams)?;
         let parasolid_attribute_definitions = parasolid_attribute_definitions(ctx, streams)?;
@@ -1543,7 +1542,6 @@ impl NativeModel {
                 deltas_records: deltas_events.records,
                 deltas_tombstones: deltas_events.tombstones,
                 deltas_body_revisions: deltas_events.body_revisions,
-                deltas_term_use_numeric_tails: deltas_events.term_use_numeric_tails,
                 deltas_tagged_reference_lanes: deltas_events.tagged_reference_lanes,
                 deltas_reference_type_maps: deltas_events.reference_type_maps,
                 deltas_reference_state_packets: deltas_events.reference_state_packets,

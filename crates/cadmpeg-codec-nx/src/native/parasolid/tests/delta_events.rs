@@ -174,7 +174,7 @@ fn deltas_events_retain_bounded_records_tombstones_and_revisions() {
 }
 
 #[test]
-fn deltas_events_subtract_typed_term_use_numeric_tails_from_residuals() {
+fn deltas_events_subtract_complete_limit_storage_from_residuals() {
     let mut bytes = [0xaa, 0xbb].to_vec();
     bytes.extend_from_slice(&41u16.to_be_bytes());
     bytes.extend_from_slice(&1u32.to_be_bytes());
@@ -184,8 +184,8 @@ fn deltas_events_subtract_typed_term_use_numeric_tails_from_residuals() {
         bytes.extend_from_slice(&coordinate.to_be_bytes());
     }
     let tail_offset = bytes.len();
-    for ordinal in 0..8 {
-        bytes.extend_from_slice(&(f64::from(ordinal) + 0.5).to_be_bytes());
+    for value in [0.5_f64, 1.5, 2.5, 3.5, 1.0, 0.0, 0.0, 7.5] {
+        bytes.extend_from_slice(&value.to_be_bytes());
     }
     bytes.extend_from_slice(&[0xcc, 0xdd, 0xee]);
     let streams = [Stream {
@@ -200,16 +200,15 @@ fn deltas_events_subtract_typed_term_use_numeric_tails_from_residuals() {
 
     let events = crate::native::parasolid::parasolid_deltas_events(&streams);
 
-    assert_eq!(events.term_use_numeric_tails.len(), 1);
-    let tail = &events.term_use_numeric_tails[0];
-    assert_eq!(tail.term_use_xmt, 20);
-    assert_eq!(tail.values.term_use_count(), 1);
-    assert_eq!(tail.values.values().len(), 8);
-    assert_eq!(tail.values.byte_len(), 64);
-    assert_eq!(
-        tail.inflated_offset,
-        cadmpeg_core::decode::u64_from_index(tail_offset)
-    );
+    let limits: Vec<_> = events
+        .records
+        .iter()
+        .filter(|r| r.family.kind() == 41)
+        .collect();
+    assert_eq!(limits.len(), 1);
+    assert_eq!(limits[0].xmt, 20);
+    assert_eq!(limits[0].inflated_offset, 2);
+    assert_eq!(limits[0].byte_len, 34 + 64);
     assert_eq!(events.residual_spans.len(), 2);
     assert_eq!(events.residual_spans[0].byte_len, 2);
     assert_eq!(

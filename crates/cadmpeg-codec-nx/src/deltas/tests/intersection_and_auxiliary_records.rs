@@ -332,11 +332,20 @@ fn deltas_walks_complete_intersection_auxiliary_records() {
     .unwrap()
     .expect("chart");
     let term_pos = crate::test_support::with_decode_context(|ctx| {
-        crate::intersection::term_use_records(ctx, &source)
+        crate::intersection::term_use_records(
+            ctx,
+            &source,
+            crate::intersection::ChartPointLayout::Ext11,
+        )
     })
     .unwrap()[0]
         .pos;
-    let (_, term_end) = crate::intersection::term_use_at(&source, term_pos).expect("term use");
+    let (_, term_end) = crate::intersection::term_use_at(
+        &source,
+        term_pos,
+        crate::intersection::ChartPointLayout::Ext11,
+    )
+    .expect("term use");
     let support_uv_pos = crate::test_support::with_decode_context(|ctx| {
         crate::intersection::support_uv_records(ctx, &source)
     })

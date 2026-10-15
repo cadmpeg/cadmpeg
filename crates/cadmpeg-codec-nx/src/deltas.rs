@@ -43,7 +43,6 @@ pub(crate) mod group;
 pub(crate) mod tails;
 use group::{GroupReferenceStatus, GroupSelector};
 use record_kind::RecordKind;
-use tails::TermUseNumericTail;
 
 use crate::framing::read_xmt_width as read_xmt;
 use crate::vec3_at::vec3_be_at;
@@ -499,72 +498,6 @@ fn transmit_header(
             end,
         })
     }))
-}
-
-fn term_use_numeric_tails(
-    ctx: &DecodeContext<'_>,
-    stream: &[u8],
-    census: &Census,
-) -> Result<Vec<TermUseNumericTail>, CodecError> {
-    let count = census
-        .records
-        .len()
-        .checked_add(census.tombstones.len())
-        .and_then(|n| n.checked_add(census.body_revisions.len()))
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "NX deltas event starts",
-                0,
-                u64_from_index(census.records.len()),
-            )
-        })?;
-    let bytes = count
-        .checked_mul(std::mem::size_of::<usize>())
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit("NX deltas event start bytes", 0, u64_from_index(count))
-        })?;
-    let _reservation = ctx.reserve_scoped(u64_from_index(bytes), "NX deltas event starts")?;
-    let mut event_starts = ctx.collection_vec(count, "NX deltas event starts")?;
-    event_starts.extend(
-        census
-            .records
-            .iter()
-            .map(|record| record.offset)
-            .chain(census.tombstones.iter().map(|tombstone| tombstone.offset))
-            .chain(census.body_revisions.iter().map(|revision| revision.offset)),
-    );
-    ctx.sort_unstable_by(
-        &mut event_starts,
-        Ord::cmp,
-        |_| 0,
-        "sort NX deltas event starts",
-    )?;
-    event_starts.dedup();
-
-    let mut tails = Vec::new();
-    for record in &census.records {
-        if !matches!(record.family, RecordFamily::TermUse) {
-            continue;
-        }
-        let Some((term_use, parsed_end)) = crate::intersection::term_use_at(stream, record.offset)
-        else {
-            continue;
-        };
-        if parsed_end != record.end || u32::from(term_use.xmt) != record.xmt {
-            continue;
-        }
-        let Some(tail) =
-            TermUseNumericTail::read(stream, record.end, u32::from(term_use.xmt), term_use.form)
-        else {
-            continue;
-        };
-        let next_event =
-            event_starts.get(event_starts.partition_point(|start| *start <= record.end));
-        if next_event.is_none_or(|start| *start >= tail.end()) {
-            ctx.push_vec(&mut tails, tail, "NX deltas term use numeric tails")?;
-        }
-    }
-    Ok(tails)
 }
 
 fn tagged_reference_lanes(
@@ -1659,7 +1592,6 @@ fn merged_event_spans(
         census.records.len(),
         census.tombstones.len(),
         census.body_revisions.len(),
-        census.term_use_numeric_tails.len(),
     ];
     let derived_count = [
         census.tagged_reference_lanes.len(),
@@ -1718,12 +1650,6 @@ fn merged_event_spans(
                     .body_revisions
                     .iter()
                     .map(|revision| (revision.offset, revision.end)),
-            )
-            .chain(
-                census
-                    .term_use_numeric_tails
-                    .iter()
-                    .map(|tail| (tail.offset(), tail.end())),
             ),
     );
     if include_derived_events {
@@ -3453,7 +3379,11 @@ fn consume_intersection_auxiliary(
             crate::intersection::ChartPointLayout::Ext11,
         )? {
         (RecordFamily::Chart, u32::from(chart.xmt), end)
-    } else if let Some((term, end)) = crate::intersection::term_use_at(stream, offset) {
+    } else if let Some((term, end)) = crate::intersection::term_use_at(
+        stream,
+        offset,
+        crate::intersection::ChartPointLayout::Ext11,
+    ) {
         (RecordFamily::TermUse, u32::from(term.xmt), end)
     } else if let Some((bound, end)) = crate::intersection::blend_bound_at(stream, offset) {
         let headers = bound.state.header_references();

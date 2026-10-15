@@ -2,17 +2,17 @@
 //! Admitted deltas events and their source-byte census.
 
 use super::record_kind::RecordKind;
-use super::tails::{TermUseNumericTail, TerminalNullReferences};
+use super::tails::TerminalNullReferences;
 use super::{
     body_revision_prefix, compact_tombstone, consume_fixed, consume_intersection_auxiliary,
     consume_shared_record, consume_variable, first_complete_record, fixed_signature,
     inline_body_states, inline_schema_declaration, inline_schema_declarations, is_value_family,
     merged_event_spans, reference_marker_packets, reference_state_packets, reference_type_map,
     reference_type_maps, schema_reference_preamble, schema_reference_preambles,
-    tagged_reference_lanes, term_use_numeric_tails, transmit_header, type_150_state_packets,
-    uncovered_spans, BodyRevision, InlineBodyState, InlineSchemaDeclaration, Record,
-    ReferenceMarkerPacket, ReferenceStatePacket, ReferenceTypeMap, ReferenceTypeMapLimit,
-    SchemaReferencePreamble, TaggedReferenceLane, Tombstone, TransmitHeader, Type150StatePacket,
+    tagged_reference_lanes, transmit_header, type_150_state_packets, uncovered_spans, BodyRevision,
+    InlineBodyState, InlineSchemaDeclaration, Record, ReferenceMarkerPacket, ReferenceStatePacket,
+    ReferenceTypeMap, ReferenceTypeMapLimit, SchemaReferencePreamble, TaggedReferenceLane,
+    Tombstone, TransmitHeader, Type150StatePacket,
 };
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
@@ -38,8 +38,6 @@ pub(crate) struct CensusEvents {
     pub(crate) tombstones: Vec<Tombstone>,
     /// BODY revision envelopes in source order.
     pub(crate) body_revisions: Vec<BodyRevision>,
-    /// Complete count-selected numeric tails following `term_use` records.
-    pub(crate) term_use_numeric_tails: Vec<TermUseNumericTail>,
     /// Maximal event gaps composed entirely of typed stream-local references.
     pub(crate) tagged_reference_lanes: Vec<TaggedReferenceLane>,
     /// Complete framed reference/type maps in source order.
@@ -112,7 +110,7 @@ impl Census {
     }
 }
 
-/// Walk all accepted records, revisions, tombstones, and numeric tails in an
+/// Walk all accepted records, revisions, tombstones, and null trailers in an
 /// inflated deltas stream.
 pub(crate) fn walk(ctx: &DecodeContext<'_>, stream: &[u8]) -> Result<Census, CodecError> {
     let transmit_header = transmit_header(ctx, stream)?;
@@ -295,12 +293,6 @@ pub(crate) fn walk(ctx: &DecodeContext<'_>, stream: &[u8]) -> Result<Census, Cod
         offset += 1;
         value_boundary = false;
     }
-    census.events.term_use_numeric_tails = term_use_numeric_tails(ctx, stream, &census)?;
-    census.bytes_decoded += census
-        .term_use_numeric_tails
-        .iter()
-        .map(|tail| tail.values().byte_len())
-        .sum::<usize>();
     census.bytes_decoded += populate_gap_events(ctx, stream, &mut census)?;
     let body_revision_state_bytes = populate_body_revision_state_tails(ctx, stream, &mut census)?;
     census.bytes_decoded += body_revision_state_bytes;

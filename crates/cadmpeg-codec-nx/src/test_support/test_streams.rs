@@ -1009,6 +1009,22 @@ pub(crate) fn charted_intersection_with_approximated_term_stream() -> Vec<u8> {
     stream
 }
 
+/// Replace the chart and both count1 LIMIT rows with the same complete ext11 states.
+fn replace_intersection_hvec_storage(stream: &mut Vec<u8>, chart: usize, entries: Vec<u8>) {
+    assert_eq!(entries.len(), 2 * 88);
+    for (xmt, index) in [(22_u8, 1_usize), (21, 0)] {
+        let term = stream
+            .windows(8)
+            .position(|w| w == [0, 41, 0, 0, 0, 1, 0, xmt])
+            .expect("LIMIT row");
+        stream.splice(
+            term + 10..term + 34,
+            entries[index * 88..(index + 1) * 88].iter().copied(),
+        );
+    }
+    stream.splice(chart + 60..chart + 108, entries);
+}
+
 pub(crate) fn ext11_charted_intersection_curve_stream() -> Vec<u8> {
     let mut stream = charted_intersection_curve_topology_partition_stream();
     let chart = stream
@@ -1022,7 +1038,7 @@ pub(crate) fn ext11_charted_intersection_curve_stream() -> Vec<u8> {
         put_vec3(&mut entries, at + 56, [1.0, 0.0, 0.0]);
         put_f64(&mut entries, at + 80, [2.0, 5.0][index]);
     }
-    stream.splice(chart + 60..chart + 108, entries);
+    replace_intersection_hvec_storage(&mut stream, chart, entries);
     stream
 }
 
@@ -1058,7 +1074,7 @@ pub(crate) fn two_support_ext11_charted_intersection_curve_stream(ambiguous: boo
         put_vec3(&mut entries, at + 56, [1.0, 0.0, 0.0]);
         put_f64(&mut entries, at + 80, x);
     }
-    stream.splice(chart + 60..chart + 108, entries);
+    replace_intersection_hvec_storage(&mut stream, chart, entries);
     if !ambiguous {
         let uv = stream
             .windows(8)
@@ -1117,11 +1133,20 @@ pub(crate) fn ext11_intersection_deltas(ext11: &[u8]) -> Vec<u8> {
     let mut deltas = DELTAS_PREAMBLE.to_vec();
     deltas.extend_from_slice(&ext11[chart.pos..chart_end]);
     for term in crate::test_support::with_decode_context(|ctx| {
-        crate::intersection::term_use_records(ctx, ext11)
+        crate::intersection::term_use_records(
+            ctx,
+            ext11,
+            crate::intersection::ChartPointLayout::Ext11,
+        )
     })
     .unwrap()
     {
-        let (_, end) = crate::intersection::term_use_at(ext11, term.pos).expect("term bounds");
+        let (_, end) = crate::intersection::term_use_at(
+            ext11,
+            term.pos,
+            crate::intersection::ChartPointLayout::Ext11,
+        )
+        .expect("term bounds");
         deltas.extend_from_slice(&ext11[term.pos..end]);
     }
     let support_uv = crate::test_support::with_decode_context(|ctx| {

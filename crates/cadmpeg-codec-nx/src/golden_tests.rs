@@ -346,7 +346,6 @@ const KNOWN_ARENAS: &[&str] = &[
     "parasolid_deltas_type_150_state_packets",
     "parasolid_deltas_inline_schema_declarations",
     "parasolid_deltas_inline_body_states",
-    "parasolid_deltas_term_use_numeric_tails",
     "parasolid_deltas_tombstones",
     "parasolid_entity_51_numeric_uses",
     "parasolid_entity_51_records",
@@ -1096,13 +1095,14 @@ fn catalogue_arenas_match_known_arenas() {
 
     use crate::native::catalogue::CATALOGUE;
 
-    assert_eq!(CATALOGUE.len(), 261, "one catalogue row per model field");
+    // Complete LIMIT hvecs replace the separate numeric-tail model field.
+    assert_eq!(CATALOGUE.len(), 260, "one catalogue row per model field");
     assert_eq!(
         CATALOGUE
             .iter()
             .filter(|row| matches!(&row.phase, Phase::GroupA { .. }))
             .count(),
-        117,
+        116,
         "group A family count"
     );
     assert_eq!(

@@ -913,7 +913,7 @@ fn deltas_walks_auxiliary_family_tombstones() {
 }
 
 #[test]
-fn deltas_term_use_numeric_tails_follow_the_declared_endpoint_count() {
+fn deltas_complete_limit_records_follow_the_declared_endpoint_count() {
     fn term_use(count: u32, xmt: u16, form: [u8; 2], value_count: usize) -> Vec<u8> {
         let mut bytes = 41u16.to_be_bytes().to_vec();
         bytes.extend_from_slice(&count.to_be_bytes());
@@ -922,13 +922,12 @@ fn deltas_term_use_numeric_tails_follow_the_declared_endpoint_count() {
         for coordinate in [1.0f64, 2.0, 3.0] {
             bytes.extend_from_slice(&coordinate.to_be_bytes());
         }
-        for ordinal in 0..value_count {
-            bytes.extend_from_slice(
-                &(cadmpeg_core::convert::f64_from_index(ordinal)
-                    .expect("fixture integer is exactly representable")
-                    + 0.25)
-                    .to_be_bytes(),
-            );
+        let rows = [
+            4.0_f64, 5.0, 6.0, 7.0, 1.0, 0.0, 0.0, 8.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 0.0,
+            1.0, 0.0, 11.0,
+        ];
+        for value in rows.into_iter().take(value_count) {
+            bytes.extend_from_slice(&value.to_be_bytes());
         }
         bytes
     }
@@ -942,19 +941,23 @@ fn deltas_term_use_numeric_tails_follow_the_declared_endpoint_count() {
             .unwrap();
 
     assert_eq!(census.records.len(), 2);
-    assert_eq!(census.term_use_numeric_tails.len(), 2);
-    assert_eq!(census.term_use_numeric_tails[0].term_use_xmt, 20);
+    assert_eq!(census.records[0].xmt, 20);
+    assert_eq!((census.records[0].offset, census.records[0].end), (0, 98));
+    assert_eq!(census.records[1].xmt, 21);
     assert_eq!(
-        census.term_use_numeric_tails[0].values().term_use_count(),
-        1
+        (census.records[1].offset, census.records[1].end),
+        (98, 98 + 186)
     );
-    assert_eq!(census.term_use_numeric_tails[0].values().values().len(), 8);
-    assert_eq!(census.term_use_numeric_tails[1].term_use_xmt, 21);
-    assert_eq!(
-        census.term_use_numeric_tails[1].values().term_use_count(),
-        2
-    );
-    assert_eq!(census.term_use_numeric_tails[1].values().values().len(), 19);
+    let limits = crate::test_support::with_decode_context(|ctx| {
+        crate::intersection::term_use_records(
+            ctx,
+            &stream,
+            crate::intersection::ChartPointLayout::Ext11,
+        )
+    })
+    .unwrap();
+    assert_eq!(limits[0].data.count(), 1);
+    assert_eq!(limits[1].data.count(), 2);
     assert_eq!(census.bytes_decoded(), stream.len());
 
     let mut nonfinite = term_use(1, 22, *b"L?", 8);
@@ -963,9 +966,7 @@ fn deltas_term_use_numeric_tails_follow_the_declared_endpoint_count() {
         crate::deltas::census::walk(ctx, &nonfinite)
     })
     .unwrap();
-    assert_eq!(census.records.len(), 1);
-    assert!(census.term_use_numeric_tails.is_empty());
-    assert_eq!(census.bytes_decoded(), 34);
+    assert!(census.records.iter().all(|r| r.kind() != 41));
 }
 
 #[test]
@@ -1940,19 +1941,16 @@ fn census_accumulator_differs_from_coverage_on_overlapping_events() {
             crate::deltas::census::walk(ctx, &deltas)
         })
         .unwrap();
-        let record = census
-            .records
-            .iter()
-            .find(|record| record.offset == 371)
-            .unwrap();
-        let tail = &census.term_use_numeric_tails[0];
-        assert_eq!(record.end, 444);
-        assert_eq!((tail.offset(), tail.end()), (371, 435));
+        // Prologue67 + CHART236 + two complete LIMIT98 + values73.
+        let terms: Vec<_> = census.records.iter().filter(|r| r.kind() == 41).collect();
+        assert_eq!(terms.len(), 2);
+        assert_eq!((terms[0].offset, terms[0].end), (303, 401));
+        assert_eq!((terms[1].offset, terms[1].end), (401, 499));
         assert_eq!(
             crate::test_support::with_decode_context(|ctx| census.covered_spans(ctx)).unwrap(),
-            vec![(67, 444)]
+            vec![(67, 572)]
         );
-        assert_eq!(census.bytes_decoded(), 236 + 34 + 34 + 73 + 64);
-        assert_ne!(census.bytes_decoded(), 444 - 67);
+        assert_eq!(census.bytes_decoded(), 236 + 98 + 98 + 73);
+        assert_eq!(census.bytes_decoded(), 572 - 67);
     }
 }

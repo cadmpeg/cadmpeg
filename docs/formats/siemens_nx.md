@@ -869,7 +869,7 @@ A complete type-101 record whose start lies inside a fixed-record candidate and
 whose end extends beyond that candidate takes precedence over the fixed
 candidate.
 
-Direct and escaped type-40 `CHART_s`, type-41 `term_use`, type-59 blend-bound, and type-204 support-UV records use the layouts in section 6.3. A `CHART_s` record ends after its declared `xyz3` or `ext11` point lane. The tagged `term_use` record ends after its model-space point. A deltas `term_use` numeric tail begins at that boundary: count `1` selects eight consecutive finite big-endian binary64 values and count `2` selects nineteen. The tail has its own byte identity and no assigned field roles. A partition-style blend-bound record ends after its blend-surface reference. Its deltas form inserts a binary status byte after each of the five header references and status `01` after the blend-surface reference; it ends after that terminal status. A support-UV record ends after its declared finite-scalar lane. These records participate in the deltas byte ledger and remain in the semantic lane.
+Direct and escaped type-40 `CHART_s`, type-41 `term_use`, type-59 blend-bound, and type-204 support-UV records use the layouts in section 6.3. A `CHART_s` record ends after its declared `xyz3` or `ext11` point lane. A type-41 LIMIT record ends after its complete count-selected Hvec lane: one or two `xyz3` rows in a partition and one or two `ext11` rows in deltas. Its fields and complete byte span belong to that record. A partition-style blend-bound record ends after its blend-surface reference. Its deltas form inserts a binary status byte after each of the five header references and status `01` after the blend-surface reference; it ends after that terminal status. A support-UV record ends after its declared finite-scalar lane. These records participate in the deltas byte ledger and remain in the semantic lane.
 
 Direct and escaped type-125 through type-128 and type-135 through type-136 NURBS records use the layouts in section 9.3. Counted payload, multiplicity, and knot records end after their declared value lanes. A type-125 surface-data header ends after its four trailing status-framed references. A type-135 curve-data header ends after its single status-framed reference. Surface descriptors end after the control-payload reference following the type-125 payload-family marker in their selected short or extended-reference layout. Curve descriptors end after their knot reference. These records participate in the deltas byte ledger and remain in the semantic lane.
 
@@ -909,7 +909,7 @@ of the inflated stream. The tail belongs to the revision envelope and retains
 its exact byte sequence independently of assigned field roles.
 
 After complete record frames, compact tombstones, complete BODY revision
-envelopes, and count-selected `term_use` numeric tails are bounded, each maximal
+envelopes, and complete LIMIT records are bounded, each maximal
 complement interval that consists entirely of one or more `kind:u16 BE, xmt`
 pairs is a tagged-reference lane. Each `kind` is a defined Parasolid record
 kind, including type 79 and type 80, and each XMT is a non-null compact or
@@ -1389,15 +1389,47 @@ parameter_error[2]:f64   (sentinel pair -31415800000000.0)
 count × Hvec              (Hvec block always starts at pre+52, pre = end of count+xmt)
 ```
 
-Hvec form depends on the stream: partition streams use **`xyz3`** (`x,y,z` meters); deltas streams use **`ext11`** (`x,y,z, p3,p4,p5,p6, tx,ty,tz, t`), with a unit tangent and strictly increasing native `t`. The two ext11 surface-parameter lanes are `(p3,p5)` and `(p4,p6)`. A non-sentinel lane belongs to a support when evaluating every lane pair on that support reproduces the corresponding chart point within `chordal_error` and no other support satisfies the same lane. Two assigned lanes address distinct supports. When exactly one of two complete lanes has a unique support assignment, the other lane belongs to the other distinct support. A sentinel-bearing, multiply matching, non-evaluating, or conflicting lane otherwise supplies no support chart. The chart parameter is meter-scale: `t_{k+1} = t_k + chord_k · f_k`, with `t_0 = base_parameter` and chords in meters. `chordal_error` defines the verification tolerance for chart-hosted carriers. Intersection charts use `(base_parameter, base_scale) = (0.0, 1.0)`. Procedural-spine charts have `chart_count == count`, sentinel `parameter_error`, and finite non-zero `base_scale`. When `xyz3` and `ext11` records have the same xmt, count, and point sequence within the larger chordal error, the `ext11` native `t` sequence and surface-parameter lanes govern the shared chart carrier.
+Hvec form depends on the stream: partition streams use **`xyz3`** (`x,y,z` meters); deltas streams use **`ext11`** (`x,y,z, p3,p4,p5,p6, tx,ty,tz, t`), with a unit tangent and strictly increasing native `t`. The two ext11 surface-parameter lanes are `(p3,p5)` and `(p4,p6)`. A non-sentinel lane belongs to a support when evaluating every lane pair on that support reproduces the corresponding chart point within `chordal_error` and no other support satisfies the same lane. Two assigned lanes address distinct supports. When exactly one of two complete lanes has a unique support assignment, the other lane belongs to the other distinct support. A sentinel-bearing, multiply matching, non-evaluating, or conflicting lane otherwise supplies no support chart. For an `xyz3` chart, `t_0 = base_parameter` and `t_{k+1} = t_k + chord_k · base_scale`, with chords in metres. An `ext11` chart retains its serialized native `t` values; accumulated chords do not replace them. `chordal_error` defines the verification tolerance for chart-hosted carriers. `base_parameter` is finite, and `base_scale` is finite and nonzero. Procedural-spine charts have `chart_count == count`, sentinel `parameter_error`, and finite non-zero `base_scale`. When `xyz3` and `ext11` records have the same xmt, count, and point sequence within the larger chordal error, the `ext11` native `t` sequence and surface-parameter lanes govern the shared chart carrier.
 
 The leading count is positive and the complete Hvec lane is the record boundary. A chart carrier requires at least two distinct model-space points. No additional numeric ceiling applies.
 
 Each physical direct or escaped CHART_s record remains a distinct typed source record, including duplicate XMT records. It retains both counts, all preamble scalars, the sentinel pair, ordered points, ext11 parameter and UV lanes, Hvec layout, framing, and inflated-stream offset. Carrier construction merges compatible duplicate XMT records only after retaining them separately.
 
-**term_use (`0x29`)** records are hard trim endpoints (`ref[3]` = start vertex point, `ref[4]` = end vertex point, meters). Each record contains a leading count, XMT, two-byte endpoint-form discriminator, and one model-space point. Count `1` uses form `L?`; count `2` uses `TF` or `TS`. The typed source record retains these fields, the point in millimetres, framing form, and inflated-stream offset. Each endpoint lies within the CHART_s `chordal_error` of the corresponding first or last chart point. When either term reference does not resolve, exactly one EDGE must carry the intersection curve, both edge vertices must resolve through VERTEX and POINT records, and exactly one ordering of the two edge points must match the two chart endpoints within `chordal_error`. The matching topology point replaces only the missing term witness. Three record forms occur for `0x28`/`0x29`/`0x00cc`: direct tagged, `0xff`-escaped, and descriptor-inline (payload follows the ASCII schema keyword + a fixed field-schema tail).
+**LIMIT (`0x29`, inserted field `term_use`)** records contain a leading count,
+XMT, the one-byte limit type and inserted one-byte `term_use` field, and exactly
+that many Hvec rows. Their two bytes form the endpoint discriminator.
+Count `1` uses form `L?`; count `2` uses `TF` or `TS`. Partition `xyz3` rows
+contain three model-space coordinates in metres. Deltas `ext11` rows contain
+`x, y, z, u0, u1, v0, v1, tx, ty, tz, t`, all big-endian binary64. The support
+parameter pairs are `(u0,v0)` and `(u1,v1)`. Only `x,y,z` are model lengths and
+convert to millimetres. UV values, tangent components, and native `t` remain
+unscaled. A missing UV component retains the sentinel `-31415800000000.0`.
+Each row must be complete and finite; an `ext11` tangent has unit length
+within `1e-9`, without normalizing the stored components. The record ends after its last row,
+including the second point in a count-2 partition record.
 
-Within one physical stream a duplicate term-use XMT invalidates that endpoint identity. When deltas history is merged into its paired partition, later complete term-use records replace earlier records with the same XMT before endpoint validation.
+The first Hvec identifies the exact hard limit or singularity. A terminator's
+second Hvec selects a nearby branch point; it is distinct from the singularity
+and can coincide with a chart endpoint while the singularity lies outside the
+chart. Its native parameter is distinct from the singularity parameter. A
+chart's accumulated chord length does not replace either serialized parameter.
+The typed source record retains all rows, their layout, count, form, framing,
+and inflated-stream offset. Its identity includes the source offset; duplicate
+XMT records remain distinct source records. A deltas tag inside another complete
+census record's payload does not identify a separate LIMIT.
+
+The chart-backed carrier's hard-point admission requires each resolved hard
+limit (`ref[3]` start, `ref[4]` end) to lie within CHART_s `chordal_error` of the
+corresponding chart endpoint. A branch selector alone does not satisfy this
+hard-point admission. When a term reference does not resolve, exactly one EDGE
+must carry the intersection curve, both edge vertices must resolve through
+VERTEX and POINT, and exactly one ordering must match the chart endpoints
+within `chordal_error`. The matching topology point replaces only the missing
+term witness. Direct tagged, `0xff`-escaped, and descriptor-inline record framing
+is retained. Within one physical stream a duplicate term-use XMT invalidates
+that endpoint identity for carrier construction. When deltas history is merged
+into its paired partition, later complete records replace earlier records with
+the same XMT before endpoint validation.
 
 **`0x00cc` values-array** packs support UV samples by marker byte:
 

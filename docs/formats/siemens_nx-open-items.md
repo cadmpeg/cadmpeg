@@ -40,7 +40,9 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Known.** `siemens_nx.md` §6.3 "The chart/start-term/end-term witness slots" and `siemens_nx.md` §6.3 "A FIN-carried SP_CURVE is a serialized terminal-branch witness" define endpoint witnesses and ordered procedural-curve branches. They do not define this folded terminal case.
 
-**Need.** We must know the branch to preserve both endpoints and the curve orientation.
+**Need.** We must know the branch to preserve both endpoints and the curve orientation. The count-2 `T?` form also needs an ownership and branch-admission rule; a complete finite Hvec lane alone does not establish either relation.
+
+**Note.** A terminal singularity and its nearby branch selector have distinct serialized native parameters. Accumulated chart chords can fall on either side of the selector parameter and do not establish the singularity parameter. Complete physical LIMIT field roles are defined in `siemens_nx.md` §6.3 "**LIMIT (`0x29`, inserted field `term_use`)** records contain a leading count,".
 
 ### PS-04. Degenerate procedural-support correction
 
@@ -139,14 +141,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Known.** `siemens_nx.md` §4.2 "Type 141 has the complete deltas record" defines the four-reference status-framed grammar and boundary.
 
 **Need.** We must know the name and reference roles to relate the record to its owner and operands.
-
-### PS-17. `term_use` numeric tail
-
-**Question.** What does each binary64 value in the count-selected deltas `term_use` tail mean?
-
-**Known.** `siemens_nx.md` §4.2 "Direct and escaped type-40 `CHART_s`, type-41 `term_use`, type-59 blend-bound, and type-204 support-UV records use the layouts in section 6.3." defines the tail start, count-to-cardinality rule, finite values, and independent byte identity.
-
-**Need.** We must know the value roles to transfer the complete terminal-use state.
 
 ### PS-18. Deltas tagged-reference lanes
 
@@ -373,6 +367,17 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Need.** We must know whether the two forms share one identity namespace or are mutually exclusive before joining charts and emitting native construction records.
 
 **Note.** `crates/cadmpeg-codec-nx/src/intersection.rs:367-376` chains both forms, `crates/cadmpeg-codec-nx/src/native/parasolid.rs:1391-1414` emits both under one intersection-record identity stem, and `crates/cadmpeg-codec-nx/src/decode.rs:1317-1331` and `1468-1476` use last-write-wins maps keyed only by XMT. **Evidence:** the construction forms share the stream-local XMT key and no cross-form collision check exists. **Counter-evidence:** the format may guarantee that the forms are mutually exclusive or that their XMT namespaces cannot collide; no raw record establishes either rule. **Failure:** if both forms occur with one XMT, iteration order selects one chart and one carrier relation without rejecting the ambiguity. This issue was found in the hostile sweep.
+
+
+### PS-40. LIMIT and INTERSECTION field-presence selection
+
+**Question.** Which schema declaration and field edits select the classic or extended LIMIT and INTERSECTION layouts?
+
+**Known.** `siemens_nx.md` §6.3 "**LIMIT (`0x29`, inserted field `term_use`)** records contain a leading count," defines the complete extended layout. The classic LIMIT layout has one type byte (`L`, `H`, or `T`) before its count-selected Hvec rows. A classic INTERSECTION has five construction references: two surfaces, chart, start, and end. Its final end reference does not imply a following support-UV reference. Complete one-character LIMIT rows can meet the next CHART at their exact byte boundary.
+
+**Need.** We must bind field presence to the owning schema and its edits before admitting classic records or assigning a following type tag to an optional field. The Hvec width also needs the selector in PS-33.
+
+**Conflict.** Reading a classic LIMIT as type plus `term_use` shifts every scalar by one byte. Reading a classic INTERSECTION with a sixth construction reference consumes the next record's tag. Finite shifted values do not establish either extended layout.
 
 
 ## 2. Object model and body composition
