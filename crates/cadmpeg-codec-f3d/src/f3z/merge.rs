@@ -89,7 +89,7 @@ fn xref_table_from_ir(
             Ok(records) => Ok(records),
             Err(error) => match CodecError::from(error) {
                 error @ CodecError::ResourceLimit(_) => Err(error),
-                CodecError::Malformed(message) => Err(CodecError::Malformed(format!(
+                CodecError::Malformed(message) => Err(CodecError::malformed(format_args!(
                     "invalid F3D native data: {message}"
                 ))),
                 error => Err(error),

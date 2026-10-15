@@ -76,7 +76,13 @@ fn active_face_substitutions_have_a_distinct_loss_note() {
         transfer_ledger: Default::default(),
     };
 
-    report_design_projection_gaps(&mut report, &ir, &native).unwrap();
+    report_design_projection_gaps(
+        &mut report,
+        &cadmpeg_test_support::service_decode_context(),
+        &ir,
+        &native,
+    )
+    .unwrap();
 
     let loss = report
         .losses
@@ -84,6 +90,126 @@ fn active_face_substitutions_have_a_distinct_loss_note() {
         .find(|loss| loss.code == F3dLossCode::FeatureFaceSelectionActiveSubstituted.kind())
         .expect("active-face substitution loss");
     assert_eq!(loss.message, "1 legacy face operand(s) use a current active-BREP face because no unique preceding-state face slot resolved.");
+}
+
+#[test]
+fn recipe_side_search_past_its_work_cap_reports_a_loss() {
+    let ir = cadmpeg_ir::document::CadIr::empty();
+    let mut native = F3dNative::default();
+    let mut operand: crate::records::topology::face::DesignFaceOperand =
+        serde_json::from_value(serde_json::json!({
+            "id": "f3d:test:face-operand#200",
+            "scope_record_index": 100,
+            "scope_reference_ordinal": 0,
+            "record_index": 200,
+            "byte_offset": 0,
+            "class_tag": "346",
+            "paired_byte_offset": 325,
+            "paired_class_tag": "262",
+            "recipe_record_index": 203,
+            "recipe_record_byte_offset": 341,
+            "recipe_id": "f3d:test:recipe#201",
+            "recipe_prefix_offset": 352,
+            "recipe_prefix_bytes": "",
+            "recipe_references": [],
+            "recipe_kind": "bounded_face",
+            "recipe_program_offset": 0,
+            "recipe_program": [],
+            "recipe_node_offsets": [],
+            "recipe_nodes": [],
+            "next_record_index": 202,
+            "next_byte_offset": 469
+        }))
+        .expect("face operand");
+    // One counted side with 3,000 payload-prefix splits needs more search
+    // work than the cap allows.
+    let mut program = vec![-1, -1, 2, 1, -1, 0, -1, 0, -1, 2, 5, -1, 7, -1];
+    program.extend_from_slice(&[0; 3000]);
+    operand
+        .recipe_nodes
+        .push(crate::records::topology::face::DesignFaceRecipeNode {
+            byte_offset: 0,
+            end_byte_offset: 4 * u64::try_from(program.len()).unwrap(),
+            program,
+            recipe_structure: None,
+        });
+    native.design_face_operands.push(operand);
+    let mut report = cadmpeg_ir::codec::DecodeBody {
+        transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(true),
+        coverage: cadmpeg_ir::report::decode::Coverage::default(),
+        losses: Vec::new(),
+        notes: Vec::new(),
+        transfer_ledger: Default::default(),
+    };
+
+    report_design_projection_gaps(
+        &mut report,
+        &cadmpeg_test_support::service_decode_context(),
+        &ir,
+        &native,
+    )
+    .unwrap();
+
+    let loss = report
+        .losses
+        .iter()
+        .find(|loss| loss.code == F3dLossCode::RecipeSideSearchBudgetExceeded.kind())
+        .expect("recipe search loss");
+    assert_eq!(loss.message, "1 Design recipe program(s) retain no recipe structure because their side-sequence search exceeded its work cap.");
+}
+
+#[test]
+fn capped_rectangular_pattern_instance_search_reports_a_loss() {
+    let ir = cadmpeg_ir::document::CadIr::empty();
+    let mut native = F3dNative::default();
+    let mut scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:parameter-scope#10",
+        crate::records::feature::scope::DesignFeatureKind::RPattern,
+        10,
+    );
+    if let crate::records::feature::scope::DesignScopePayloadMut::RPattern(slot)
+    | crate::records::feature::scope::DesignScopePayloadMut::RectangularPattern(slot) =
+        scope.payload_mut()
+    {
+        *slot = Some(
+            crate::records::feature::patterns::DesignRectangularPatternConstruction::try_from(
+                crate::records::feature::patterns::DesignRectangularPatternConstructionWire {
+                    u_count: 3,
+                    v_count: 1,
+                    u_extent: 10.0,
+                    v_extent: 0.0,
+                    owner_record_indices: [11, 12, 13, 14],
+                    value_offsets: [101, 102, 103, 104],
+                    instances: None,
+                    instance_search_capped: true,
+                },
+            )
+            .unwrap(),
+        );
+    }
+    native.design_parameter_scopes.push(scope);
+    let mut report = cadmpeg_ir::codec::DecodeBody {
+        transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(true),
+        coverage: cadmpeg_ir::report::decode::Coverage::default(),
+        losses: Vec::new(),
+        notes: Vec::new(),
+        transfer_ledger: Default::default(),
+    };
+
+    report_design_projection_gaps(
+        &mut report,
+        &cadmpeg_test_support::service_decode_context(),
+        &ir,
+        &native,
+    )
+    .unwrap();
+
+    let loss = report
+        .losses
+        .iter()
+        .find(|loss| loss.code == F3dLossCode::FeaturePatternInstanceSearchCapped.kind())
+        .expect("pattern instance search loss");
+    assert_eq!(loss.message, "1 rectangular pattern(s) have no instance transforms or direction because their instance search exceeded a local cap.");
 }
 
 #[test]

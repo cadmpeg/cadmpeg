@@ -73,6 +73,7 @@ fn component_pattern_generated_instances_refuse_collection_limit() {
                     },
                 },
             ])),
+            instance_search_capped: false,
         })
         .unwrap();
     let mut scope = DesignParameterScope::empty(

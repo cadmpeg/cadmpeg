@@ -1606,7 +1606,7 @@ fn mesh_image_asset(
     };
     Ok((
         asset.name.clone(),
-        super::image::neutral_asset_id(&asset.name)?,
+        crate::ids::neutral_asset_id(&asset.name),
     ))
 }
 
