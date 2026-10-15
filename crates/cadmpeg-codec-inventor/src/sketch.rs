@@ -2060,26 +2060,13 @@ fn project_constraint(
         ),
         "retain projected Inventor sketch constraint id",
     ));
-    let Some(key_len) = id
-        .len()
-        .checked_sub("inventor:design:sketch-constraint#".len())
-    else {
-        return Some(Err(CodecError::malformed(
-            "formatted Inventor constraint id is shorter than its prefix",
-        )));
-    };
-    let Some(validation_work) = cadmpeg_core::decode::u64_from_index(id.len())
-        .checked_add(cadmpeg_core::decode::u64_from_index(key_len))
-    else {
-        return Some(Err(ctx.refuse_codec_limit(
-            "validate projected Inventor identity",
-            u64::MAX,
-            u64::MAX,
-        )));
-    };
-    admit!(ctx.charge_work(validation_work, "validate projected Inventor identity"));
     Some(Ok(SketchConstraint {
-        id: SketchConstraintId::mint(id).ok()?,
+        id: admitted_value!(SketchConstraintId::mint_for_decode(
+            ctx,
+            id,
+            "validate projected Inventor identity",
+        ))
+        .ok()?,
         sketch: admitted_value!(members[0]
             .sketch
             .try_clone_for_decode(ctx, "retain Inventor sketch constraint owner id")),
@@ -2792,19 +2779,7 @@ fn sketch_id(ctx: &DecodeContext<'_>, sketch: &PmDcSketch) -> Result<Option<Sket
         ),
         "retain projected Inventor sketch_id identity",
     )?;
-    let key_len = id
-        .len()
-        .checked_sub("inventor:design:sketch#".len())
-        .ok_or_else(|| {
-            CodecError::malformed("formatted Inventor sketch id is shorter than its prefix")
-        })?;
-    let validation_work = cadmpeg_core::decode::u64_from_index(id.len())
-        .checked_add(cadmpeg_core::decode::u64_from_index(key_len))
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit("validate projected Inventor identity", u64::MAX, u64::MAX)
-        })?;
-    ctx.charge_work(validation_work, "validate projected Inventor identity")?;
-    Ok(SketchId::mint(id).ok())
+    Ok(SketchId::mint_for_decode(ctx, id, "validate projected Inventor identity")?.ok())
 }
 
 fn entity_id(
@@ -2818,19 +2793,7 @@ fn entity_id(
         ),
         "retain projected Inventor entity_id identity",
     )?;
-    let key_len = id
-        .len()
-        .checked_sub("inventor:design:sketch-entity#".len())
-        .ok_or_else(|| {
-            CodecError::malformed("formatted Inventor sketch entity id is shorter than its prefix")
-        })?;
-    let validation_work = cadmpeg_core::decode::u64_from_index(id.len())
-        .checked_add(cadmpeg_core::decode::u64_from_index(key_len))
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit("validate projected Inventor identity", u64::MAX, u64::MAX)
-        })?;
-    ctx.charge_work(validation_work, "validate projected Inventor identity")?;
-    Ok(SketchEntityId::mint(id).ok())
+    Ok(SketchEntityId::mint_for_decode(ctx, id, "validate projected Inventor identity")?.ok())
 }
 
 pub(crate) type PmDcSketch = Located<PmDcSketchPayload>;

@@ -70,7 +70,7 @@ fn assert_refusal(
     dimension: ResourceDimension,
 ) {
     let references = entities.iter().collect::<Vec<_>>();
-    for limit in 0..256 {
+    let error = cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |limit| {
         let mut policy = DecodePolicy::default();
         match dimension {
             ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = limit,
@@ -79,18 +79,11 @@ fn assert_refusal(
         }
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match exact_atomic_constraint(kind, &references, &ctx) {
-            Err(CodecError::ResourceLimit(failure))
-                if failure.operation == operation && failure.dimension == dimension =>
-            {
-                return
-            }
-            Err(CodecError::ResourceLimit(_)) => {}
-            Ok(_) => panic!("expected {operation} refusal"),
-            Err(error) => panic!("expected {operation} refusal: {error}"),
-        }
-    }
-    panic!("no {operation} refusal");
+
+        (exact_atomic_constraint(kind, &references, &ctx)).map(|_| ())
+    });
+    assert!(matches!(error, CodecError::ResourceLimit(failure)
+        if failure.operation == operation && failure.dimension == dimension));
 }
 
 #[test]

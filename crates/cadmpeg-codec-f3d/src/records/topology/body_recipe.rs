@@ -56,6 +56,40 @@ pub(crate) struct DesignBodyRecipeOperand {
     next_byte_offset: u64,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for DesignBodyRecipeOperand {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        (
+            (
+                &self.frame,
+                &self.id,
+                &self.scope_record_index,
+                &self.owner,
+                &self.class_tag,
+                &self.asset_id,
+            ),
+            (
+                &self.context_id,
+                &self.context_id_offset,
+                &self.selector_tail,
+                &self.references,
+                &self.recipe_id,
+                &self.resolved_face_slot,
+            ),
+            (
+                &self.resolved_body_state_id,
+                &self.resolved_body_slot,
+                &self.resolved_body_face_slots,
+                &self.next_byte_offset,
+            ),
+        )
+            .decode_cost(ctx, operation)
+    }
+}
+
 #[cfg(test)]
 thread_local! {
     static BODY_RECIPE_OPERAND_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
@@ -501,18 +535,16 @@ pub(crate) enum DesignOperandOwner {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for DesignOperandOwner {
-    const FIXED_BYTES: Option<u64> =
-        Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-            Self,
-        >()));
     fn decode_cost(
         &self,
         _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         _operation: &'static str,
     ) -> Result<u64, cadmpeg_core::CodecError> {
-        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-            Self,
-        >()))
+        // One variant tag and the active u32 fields.
+        Ok(match self {
+            Self::Group { .. } => 9,
+            Self::ScopeReference { .. } => 5,
+        })
     }
 }
 
@@ -549,6 +581,27 @@ pub(crate) struct DesignBodyRecipeReference {
     /// Input-state bodies containing at least one candidate face.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) preceding_body_slots: Vec<i64>,
+}
+
+impl cadmpeg_core::decode::cost::DecodeCost for DesignBodyRecipeReference {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        (
+            (
+                &self.design_reference,
+                &self.design_reference_offset,
+                &self.form,
+                &self.form_offset,
+                &self.candidate_faces,
+                &self.preceding_candidate_faces,
+            ),
+            (&self.preceding_body_slots,),
+        )
+            .decode_cost(ctx, operation)
+    }
 }
 
 /// Stable ASM entity family named by a Design persistent identity.

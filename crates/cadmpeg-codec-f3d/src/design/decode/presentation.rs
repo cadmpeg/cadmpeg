@@ -12,7 +12,7 @@ use cadmpeg_core::CodecError;
 use crate::design::decode::byte_fields::{bytes_at, zeros_at};
 use crate::design::decode::reference_runs::admit_reference_values;
 
-use crate::bytes::{is_guid_prefix, lp_utf16_bytes, take_reference};
+use crate::bytes::{is_guid_prefix, take_reference};
 use crate::design::decode::meta::{guid_matches, has_base_type, TypedFrameSource};
 use crate::design::decode::sketch::{
     parse_genesis_entity_header, parse_settled_entity_header, NamedEntityHeader,
@@ -29,6 +29,23 @@ use crate::design::presentation::{
 use crate::records::entity_header::{DESIGN_MODULE_BODY, DESIGN_MODULE_FUSION};
 
 const MAX_ENVELOPE_GAP: usize = 8;
+
+const LP_GUID_MARKER_BYTES: usize = 4 + GUID_LEN * 2;
+
+/// The counted UTF-16LE wire marker for a fixed ASCII GUID literal.
+const fn guid_marker(guid: &str) -> [u8; LP_GUID_MARKER_BYTES] {
+    let ascii = guid.as_bytes();
+    assert!(GUID_LEN == 36 && ascii.len() == GUID_LEN);
+    let mut marker = [0; LP_GUID_MARKER_BYTES];
+    marker[0] = 36;
+    let mut index = 0;
+    while index < GUID_LEN {
+        assert!(ascii[index].is_ascii());
+        marker[4 + index * 2] = ascii[index];
+        index += 1;
+    }
+    marker
+}
 
 /// The registered type GUID and record version of one Design entity.
 type EntityType<'a> = (&'a crate::records::mesh::DesignRelaxedGuidText, u32);
@@ -397,8 +414,8 @@ fn presentation_material(
     let Some(bytes) = bytes.get(..end) else {
         return Ok(None);
     };
-    let markers = MaterialMarkers::new()?;
-    let legacy_marker = lp_utf16_bytes(APPEARANCE_LIBRARY_ID)?;
+    let markers = MaterialMarkers::new();
+    let legacy_marker = guid_marker(APPEARANCE_LIBRARY_ID).to_vec();
     let envelope = PresentationEnvelope {
         bytes,
         start,
@@ -444,12 +461,12 @@ struct MaterialMarkers {
 }
 
 impl MaterialMarkers {
-    fn new() -> Result<Self, CodecError> {
-        Ok(Self {
-            physical: lp_utf16_bytes(PHYSICAL_MATERIAL_LIBRARY_ID)?,
-            modern: lp_utf16_bytes(MODERN_APPEARANCE_LIBRARY_IDS[0])?,
-            modern_trailer: lp_utf16_bytes(MODERN_APPEARANCE_LIBRARY_IDS[1])?,
-        })
+    fn new() -> Self {
+        Self {
+            physical: guid_marker(PHYSICAL_MATERIAL_LIBRARY_ID).to_vec(),
+            modern: guid_marker(MODERN_APPEARANCE_LIBRARY_IDS[0]).to_vec(),
+            modern_trailer: guid_marker(MODERN_APPEARANCE_LIBRARY_IDS[1]).to_vec(),
+        }
     }
 }
 
@@ -515,13 +532,13 @@ impl PresentationEnvelope<'_> {
             return Ok(None);
         }
         let mut reference_at = after_token;
-        let Some(brep_container_entity) = local_reference(bytes, &mut reference_at) else {
+        let Some(brep_container_entity) = local_reference(ctx, bytes, &mut reference_at)? else {
             return Ok(None);
         };
-        if local_reference_value(bytes, &mut reference_at) != Some(LocalReference::Null) {
+        if local_reference_value(ctx, bytes, &mut reference_at)? != Some(LocalReference::Null) {
             return Ok(None);
         }
-        let Some(scene_node_entity) = local_reference(bytes, &mut reference_at) else {
+        let Some(scene_node_entity) = local_reference(ctx, bytes, &mut reference_at)? else {
             return Ok(None);
         };
         if entity_suffix.checked_add(1) != Some(scene_node_entity)
@@ -628,7 +645,7 @@ impl PresentationEnvelope<'_> {
         }
 
         let mut physical_reference_at = after_token;
-        if local_reference(bytes, &mut physical_reference_at).is_none() {
+        if local_reference(ctx, bytes, &mut physical_reference_at)?.is_none() {
             return Ok(None);
         }
         let Some(node_guid_at) = skip_zeros(bytes, physical_reference_at, end) else {
@@ -648,7 +665,7 @@ impl PresentationEnvelope<'_> {
             return Ok(None);
         }
         let mut node_reference_at = after_node_guid;
-        let Some(node_entity) = local_reference(bytes, &mut node_reference_at) else {
+        let Some(node_entity) = local_reference(ctx, bytes, &mut node_reference_at)? else {
             return Ok(None);
         };
         if entity_suffix.checked_add(1) != Some(node_entity) {
@@ -719,8 +736,8 @@ fn bare_presentation_material(
     let Some(bytes) = bytes.get(..end) else {
         return Ok(None);
     };
-    let envelope_marker = lp_utf16_bytes(BODY_PRESENTATION_MATERIAL_ENVELOPE_ID)?;
-    let markers = MaterialMarkers::new()?;
+    let envelope_marker = guid_marker(BODY_PRESENTATION_MATERIAL_ENVELOPE_ID).to_vec();
+    let markers = MaterialMarkers::new();
     let marker: [&[u8]; 2] = [&envelope_marker, &markers.physical];
     let marker_len = envelope_marker.len() + markers.physical.len();
     let envelope = PresentationEnvelope {
@@ -765,20 +782,30 @@ enum LocalReference {
     Target(u64),
 }
 
-fn local_reference_value(bytes: &[u8], at: &mut usize) -> Option<LocalReference> {
-    let reference = take_reference(bytes, at)?;
-    match reference {
+fn local_reference_value(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    at: &mut usize,
+) -> Result<Option<LocalReference>, CodecError> {
+    let Some(reference) = take_reference(ctx, bytes, at)? else {
+        return Ok(None);
+    };
+    Ok(match reference {
         crate::bytes::Reference::Null => Some(LocalReference::Null),
         crate::bytes::Reference::Local { target, .. } => Some(LocalReference::Target(target)),
         _ => None,
-    }
+    })
 }
 
-fn local_reference(bytes: &[u8], at: &mut usize) -> Option<u64> {
-    match local_reference_value(bytes, at)? {
-        LocalReference::Target(target) if target != 0 => Some(target),
-        LocalReference::Null | LocalReference::Target(_) => None,
-    }
+fn local_reference(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    at: &mut usize,
+) -> Result<Option<u64>, CodecError> {
+    Ok(match local_reference_value(ctx, bytes, at)? {
+        Some(LocalReference::Target(target)) if target != 0 => Some(target),
+        Some(LocalReference::Null | LocalReference::Target(_)) | None => None,
+    })
 }
 
 /// The offset of the visual GUID after a record tail that starts at

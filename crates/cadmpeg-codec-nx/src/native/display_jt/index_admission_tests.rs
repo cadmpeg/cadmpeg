@@ -6,7 +6,7 @@ use cadmpeg_core::CodecError;
 
 use crate::container::{Container, DirEntry, DirEntryBody, Region};
 
-fn one_row_index() -> Container<'static> {
+fn one_row_index_bytes() -> Vec<u8> {
     let mut data = Vec::new();
     data.extend_from_slice(&9u32.to_le_bytes());
     data.extend_from_slice(&1u32.to_le_bytes());
@@ -15,6 +15,10 @@ fn one_row_index() -> Container<'static> {
     data.extend_from_slice(&0u32.to_le_bytes());
     data.extend_from_slice(&24u32.to_le_bytes());
     data.extend_from_slice(b"Version ");
+    data
+}
+
+fn one_row_index(data: &[u8]) -> Container<'_> {
     Container {
         data: data.into(),
         physical_size: 32,
@@ -37,7 +41,8 @@ fn refused_at(
     collection_limit: Option<u64>,
     retained_limit: Option<u64>,
 ) -> (ResourceDimension, String) {
-    let container = one_row_index();
+    let container_bytes_1 = one_row_index_bytes();
+    let container = one_row_index(&container_bytes_1);
 
     crate::test_support::with_decode_context_over(
         &[],
@@ -157,7 +162,8 @@ fn display_jt_index_result_storage_refuses_before_vector_reservation() {
 
 #[test]
 fn display_jt_index_service_profile_keeps_one_row() {
-    let container = one_row_index();
+    let container_bytes_2 = one_row_index_bytes();
+    let container = one_row_index(&container_bytes_2);
 
     crate::test_support::with_decode_context(|ctx| {
         let indices = super::display_jt_indices(ctx, &container).unwrap();

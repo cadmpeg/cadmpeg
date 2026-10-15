@@ -3,7 +3,7 @@
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
-pub(super) fn child_tokens<'value, 'ctx, 'arena>(
+pub(crate) fn child_tokens<'value, 'ctx, 'arena>(
     ctx: &'ctx DecodeContext<'arena>,
     value: &'value str,
     operation: &'static str,

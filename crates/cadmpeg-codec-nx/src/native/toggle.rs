@@ -428,7 +428,11 @@ fn walk_saved_toggle_stream<'a>(
     if count > (bytes.len() - 9) / 37 {
         return Ok(None);
     }
-    for ordinal in ctx.admit_iter(&(0..count), "walk NX saved toggle members")? {
+    let mut ordinals = 0..count;
+    while !ordinals.is_empty() {
+        let Some(ordinal) = ctx.next_charged(&mut ordinals, "walk NX saved toggle members")? else {
+            break;
+        };
         let member_offset = view.position();
         let Some(raw_byte_len) = view.array::<2>() else {
             return Ok(None);
@@ -999,6 +1003,32 @@ mod tests {
                 );
                 assert!(parse_service(&bytes, 0).is_some());
             },
+        );
+    }
+    #[test]
+    fn malformed_first_saved_toggle_stops_before_unvisited_members() {
+        let bytes = stream(&["0123456789abcdef0123456789abcdef;On"; 64], [0; 4]);
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| policy.limits.max_work_units = 1,
+            |ctx| {
+                assert!(super::walk_saved_toggle_stream(ctx, &bytes, |_, _| panic!(
+                    "malformed member cannot be visited"
+                ))
+                .unwrap()
+                .is_none());
+                assert_eq!(ctx.resource_refusal(), None);
+            },
+        );
+        let error = crate::test_support::resource_refusal_at(
+            &[],
+            ResourceDimension::WorkUnits,
+            "walk NX saved toggle members",
+            |ctx| super::walk_saved_toggle_stream(ctx, &bytes, |_, _| Ok(Some(()))),
+        );
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "walk NX saved toggle members" && limit.additional == 1)
         );
     }
 }

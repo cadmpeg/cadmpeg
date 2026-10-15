@@ -56,7 +56,7 @@ fn extracted_parasolid_schema_emits_a_kernel_layer() {
     let bytes = single_part_prt();
     let scan = crate::decode::Scan {
         container: crate::test_support::with_decode_context(|ctx| {
-            crate::container::scan_bytes(ctx, bytes.clone())
+            crate::container::scan_bytes(ctx, &bytes)
         })
         .unwrap(),
         streams: extract_streams(&bytes),
@@ -101,7 +101,7 @@ fn a_named_sldprt_parasolid_schema_remains_unverified_under_nx() {
     );
     let scan = crate::decode::Scan {
         container: crate::test_support::with_decode_context(|ctx| {
-            crate::container::scan_bytes(ctx, bytes)
+            crate::container::scan_bytes(ctx, &bytes)
         })
         .unwrap(),
         streams,
@@ -129,7 +129,7 @@ fn duplicate_kernel_identity_is_omitted_with_a_typed_loss() {
     streams.push(streams[0].clone());
     let scan = crate::decode::Scan {
         container: crate::test_support::with_decode_context(|ctx| {
-            crate::container::scan_bytes(ctx, bytes)
+            crate::container::scan_bytes(ctx, &bytes)
         })
         .unwrap(),
         streams,
@@ -224,10 +224,9 @@ fn the_legacy_arm_declares_the_ugii_payload_version_as_canonical_decimal() {
 #[test]
 fn splmsstr_version_byte_is_checked_before_container_construction() {
     let valid = single_part_prt();
-    let container = crate::test_support::with_decode_context(|ctx| {
-        crate::container::scan_bytes(ctx, valid.clone())
-    })
-    .expect("version 0x06 scans");
+    let container =
+        crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, &valid))
+            .expect("version 0x06 scans");
     let matched = classify(&container);
     assert_eq!(matched.dialect().as_str(), "nx:splmsstr");
     assert_eq!(matched.declared()[DECLARED_SPLMSSTR_VERSION], "6");
@@ -237,7 +236,7 @@ fn splmsstr_version_byte_is_checked_before_container_construction() {
         let mut invalid = valid.clone();
         invalid[crate::layout::splmsstr_header::VERSION_TAG] = version;
         assert!(matches!(
-            crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, invalid)),
+            crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, &invalid)),
             Err(CodecError::Malformed(message)) if message.contains("version byte must be 0x06")
         ));
     }
@@ -265,7 +264,7 @@ fn a_header_too_short_to_declare_a_version_never_scans() {
             "an image of {truncated_len} bytes must not scan"
         );
     }
-    crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, file))
+    crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, &file))
         .expect("the whole image scans");
 }
 
@@ -274,7 +273,7 @@ fn dialect_classification_refuses_collection_limit() {
     let bytes = single_part_prt();
     let scan = crate::decode::Scan {
         container: crate::test_support::with_decode_context(|ctx| {
-            crate::container::scan_bytes(ctx, bytes.clone())
+            crate::container::scan_bytes(ctx, &bytes)
         })
         .unwrap(),
         streams: extract_streams(&bytes),
@@ -298,7 +297,7 @@ fn dialect_classification_refuses_retained_limit() {
     let bytes = single_part_prt();
     let scan = crate::decode::Scan {
         container: crate::test_support::with_decode_context(|ctx| {
-            crate::container::scan_bytes(ctx, bytes.clone())
+            crate::container::scan_bytes(ctx, &bytes)
         })
         .unwrap(),
         streams: extract_streams(&bytes),
@@ -322,7 +321,7 @@ fn dialect_classification_refuses_work_limit() {
     let bytes = single_part_prt();
     let scan = crate::decode::Scan {
         container: crate::test_support::with_decode_context(|ctx| {
-            crate::container::scan_bytes(ctx, bytes.clone())
+            crate::container::scan_bytes(ctx, &bytes)
         })
         .unwrap(),
         streams: extract_streams(&bytes),

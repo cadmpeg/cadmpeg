@@ -406,3 +406,152 @@ fn cylindrical_shape_rejection_precedes_radial_and_weight_allocation() {
     drop(supports);
     ctx.finish_session().unwrap();
 }
+
+fn nurbs_support_fixture() -> Brep {
+    let mut out = support_fixture();
+    out.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
+        crate::brep::graph::test_support::test_nurbs_surface(
+            1,
+            1,
+            vec![0., 0., 1., 1.],
+            vec![0., 0., 1., 1.],
+            2,
+            2,
+            &[
+                Point3::new(0., 0., 0.),
+                Point3::new(0., 1., 0.),
+                Point3::new(1., 0., 0.),
+                Point3::new(1., 1., 0.),
+            ],
+            None,
+        ),
+    ));
+    out
+}
+
+fn assert_nurbs_pass_skips_endpoints(mut out: Brep, expected: usize) {
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut coedges = std::mem::take(&mut out.coedges);
+    let mut supports = PcurveSupports::new(&ctx, arenas(&out), &coedges).unwrap();
+    let mut pcurves = Vec::new();
+    let mut losses = Vec::new();
+    let mut stats = crate::brep::graph::Stats::default();
+    let mut sink = super::super::PcurveSink {
+        coedges: &mut coedges,
+        pcurves: &mut pcurves,
+        losses: &mut losses,
+        stats: &mut stats,
+    };
+    let stream = cadmpeg_ir::annotations::StreamHandle::new(
+        &cadmpeg_test_support::service_decode_context(),
+        cadmpeg_ir::stream_name!("test"),
+        "fixture stream",
+    )
+    .unwrap();
+    let probe = RefusalProbe::arm(
+        ResourceDimension::WorkUnits,
+        "index Parasolid pcurve points",
+        None,
+    );
+    super::super::derive_nurbs_isoparametric_pcurves(
+        &ctx,
+        &mut supports,
+        &mut sink,
+        &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+        &stream,
+    )
+    .unwrap();
+    drop(probe);
+    assert!(supports.vertex_positions.values.is_none());
+    assert_eq!(pcurves.len(), expected);
+    assert_eq!(coedges[0].pcurves.len(), expected);
+    assert!(losses.is_empty());
+    drop(supports);
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn nurbs_surface_line_pass_skips_endpoint_indexes() {
+    assert_nurbs_pass_skips_endpoints(nurbs_support_fixture(), 1);
+}
+
+#[test]
+fn nurbs_surface_unsupported_curve_skips_endpoint_indexes() {
+    let mut out = nurbs_support_fixture();
+    out.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None });
+    assert_nurbs_pass_skips_endpoints(out, 0);
+}
+
+#[test]
+fn nurbs_surface_explicit_curve_range_skips_endpoint_indexes() {
+    let mut out = nurbs_support_fixture();
+    out.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+        crate::brep::graph::test_support::test_nurbs_curve(
+            1,
+            vec![0., 0., 1., 1.],
+            vec![Point3::new(0., 0., 0.), Point3::new(1., 0., 0.)],
+            None,
+        ),
+    ));
+    assert_nurbs_pass_skips_endpoints(out, 1);
+}
+
+fn assert_pcurve_pass_skips_empty_arena(clear: impl FnOnce(&mut Brep)) {
+    let mut out = support_fixture();
+    clear(&mut out);
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let stream = cadmpeg_ir::annotations::StreamHandle::new(
+        &cadmpeg_test_support::service_decode_context(),
+        cadmpeg_ir::stream_name!("test"),
+        "fixture stream",
+    )
+    .unwrap();
+    let mut annotations = cadmpeg_ir::annotations::AnnotationBuilder::new();
+    let (result, allocations) = crate::test_support::allocation::count_allocations(|| {
+        super::super::derive_pcurves(&ctx, &mut out, &mut annotations, &stream)
+    });
+    result.unwrap();
+    assert_eq!(allocations, 0);
+    assert!(out.pcurves.is_empty());
+    assert!(out.losses.is_empty());
+    assert!(out.coedges.iter().all(|coedge| coedge.pcurves.is_empty()));
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn pcurve_pass_without_coedges_skips_support_indexes() {
+    assert_pcurve_pass_skips_empty_arena(|out| out.coedges.clear());
+}
+
+#[test]
+fn pcurve_pass_without_loops_skips_support_indexes() {
+    assert_pcurve_pass_skips_empty_arena(|out| out.loops.clear());
+}
+
+#[test]
+fn pcurve_pass_without_faces_skips_support_indexes() {
+    assert_pcurve_pass_skips_empty_arena(|out| out.faces.clear());
+}
+
+#[test]
+fn pcurve_pass_without_surfaces_skips_support_indexes() {
+    assert_pcurve_pass_skips_empty_arena(|out| out.surfaces.clear());
+}
+
+#[test]
+fn pcurve_pass_without_edges_skips_support_indexes() {
+    assert_pcurve_pass_skips_empty_arena(|out| out.edges.clear());
+}
+
+#[test]
+fn pcurve_pass_without_curves_skips_support_indexes() {
+    assert_pcurve_pass_skips_empty_arena(|out| out.curves.clear());
+}

@@ -139,8 +139,12 @@ impl F3dDialect {
         const OPERATION: &str = "classify F3D manifest dialect";
         let mut declared = BTreeMap::new();
         let key = cadmpeg_core::nonblank_const!(DECLARED_TOP_LEVEL_MANIFEST_VERSION);
-        ctx.admit_btree_entry(&declared, &key, OPERATION)?;
-        declared.insert(key, ctx.copy_retained_text(version, OPERATION)?);
+        ctx.insert_btree_map(
+            &mut declared,
+            key,
+            ctx.copy_retained_text(version, OPERATION)?,
+            OPERATION,
+        )?;
         let dialect = if version == TOP_LEVEL_MANIFEST_VERSION {
             Self::Manifest3200
         } else {
@@ -162,11 +166,12 @@ impl F3dDialect {
         const OPERATION: &str = "classify F3Z root document members";
         let mut declared = BTreeMap::new();
         let key = cadmpeg_core::nonblank_const!(DECLARED_ROOT_DOCUMENT_MEMBERS);
-        ctx.admit_btree_entry(&declared, &key, OPERATION)?;
-        declared.insert(
+        ctx.insert_btree_map(
+            &mut declared,
             key,
             ctx.join_retained(root_document_members, MEMBER_SEPARATOR, OPERATION)?,
-        );
+            OPERATION,
+        )?;
         Self::F3zMultiDocument.matched(ctx, declared)
     }
 
@@ -206,7 +211,7 @@ pub(crate) fn classify_layers(
                 Ok(()) => Ok(()),
                 Err(cadmpeg_core::dialect::DialectLayerError::Duplicate(layer)) => Err(layer),
                 Err(cadmpeg_core::dialect::DialectLayerError::ResourceLimit(limit)) => {
-                    return Err(limit.into())
+                    return Err(CodecError::ResourceLimit(limit))
                 }
             }
         {
@@ -221,12 +226,19 @@ pub(crate) fn classify_layers(
         }
         Ok(())
     };
-    let instance = if scan.breps.len() + crate::container::text_brep_names(scan).count() > 1 {
+    let text_brep_count =
+        crate::container::text_brep_names(ctx, scan)?.try_fold(0usize, |count, name| {
+            name?;
+            count
+                .checked_add(1)
+                .ok_or_else(|| ctx.refuse_codec_limit("count F3D text BREP carriers", 0, u64::MAX))
+        })?;
+    let instance = if scan.breps.len() + text_brep_count > 1 {
         LayerInstance::Tagged
     } else {
         LayerInstance::Sole
     };
-    for brep in &scan.breps {
+    for brep in ctx.admit_iter(&scan.breps, "classify F3D BREP dialect layers")? {
         let header = brep.kernel.as_ref().map_or(
             cadmpeg_asm::dialect::KernelHeaderRef::Unknown,
             crate::container::KernelFraming::as_header_ref,
@@ -235,27 +247,29 @@ pub(crate) fn classify_layers(
             ctx, header, &brep.name, instance,
         )?)?;
     }
-    for name in crate::container::text_brep_names(scan) {
-        let matched = match scan.text_breps.get(name) {
-            Some(crate::container::TextBrepFraming::Parsed(stream)) => {
-                let header = stream.header.as_kernel_header(ctx)?;
-                let reference = match stream.terminator {
-                    cadmpeg_asm::sat::Terminator::Asm => {
-                        cadmpeg_asm::dialect::KernelHeaderRef::TextAsm(&header)
-                    }
-                    cadmpeg_asm::sat::Terminator::Acis => {
-                        cadmpeg_asm::dialect::KernelHeaderRef::TextAcis(&header)
-                    }
-                };
-                cadmpeg_asm::dialect::classify_layer(ctx, reference, name, instance)?
-            }
-            _ => cadmpeg_asm::dialect::classify_layer(
-                ctx,
-                cadmpeg_asm::dialect::KernelHeaderRef::Unknown,
-                name,
-                instance,
-            )?,
-        };
+    for name in crate::container::text_brep_names(ctx, scan)? {
+        let name = name?;
+        let matched =
+            match ctx.get_hash_map(&scan.text_breps, name, "look up F3D text-BREP framing")? {
+                Some(crate::container::TextBrepFraming::Parsed(stream)) => {
+                    let header = stream.header.as_kernel_header(ctx)?;
+                    let reference = match stream.terminator {
+                        cadmpeg_asm::sat::Terminator::Asm => {
+                            cadmpeg_asm::dialect::KernelHeaderRef::TextAsm(&header)
+                        }
+                        cadmpeg_asm::sat::Terminator::Acis => {
+                            cadmpeg_asm::dialect::KernelHeaderRef::TextAcis(&header)
+                        }
+                    };
+                    cadmpeg_asm::dialect::classify_layer(ctx, reference, name, instance)?
+                }
+                _ => cadmpeg_asm::dialect::classify_layer(
+                    ctx,
+                    cadmpeg_asm::dialect::KernelHeaderRef::Unknown,
+                    name,
+                    instance,
+                )?,
+            };
         add_layer(matched)?;
     }
     Ok((layers, losses))
@@ -267,15 +281,18 @@ pub(crate) fn dialect_losses(
     layers: &DialectLayers,
 ) -> Result<Vec<LossNote>, CodecError> {
     let mut losses = Vec::new();
-    for matched in layers.iter().filter(|matched| matched.format() == FORMAT) {
+    for matched in ctx.admit_iter(layers, "collect F3D primary dialect losses")? {
+        if matched.format() != FORMAT {
+            continue;
+        }
         if let Some(loss) = dialect_loss(ctx, matched)? {
             ctx.push_vec(&mut losses, loss, "collect F3D dialect recovery losses")?;
         }
     }
-    for matched in layers
-        .iter()
-        .filter(|matched| matched.format() == cadmpeg_asm::dialect::FORMAT)
-    {
+    for matched in ctx.admit_iter(layers, "collect F3D kernel dialect losses")? {
+        if matched.format() != cadmpeg_asm::dialect::FORMAT {
+            continue;
+        }
         if let Some(loss) = kernel_dialect_loss(ctx, matched)? {
             ctx.push_vec(&mut losses, loss, "collect F3D dialect recovery losses")?;
         }
@@ -289,7 +306,11 @@ fn archive_loss_text(
     body: impl fmt::Display,
 ) -> Result<String, CodecError> {
     let operation = "retain F3D dialect recovery loss";
-    match matched.declared().get(DECLARED_ARCHIVE_MEMBER) {
+    match ctx.get_btree_map(
+        matched.declared(),
+        DECLARED_ARCHIVE_MEMBER,
+        "find F3D dialect archive member",
+    )? {
         Some(member) => {
             ctx.format_retained(format_args!("archive member {member}: {body}"), operation)
         }
@@ -297,15 +318,15 @@ fn archive_loss_text(
     }
 }
 
-struct ManifestRecovery<'a>(&'a DialectMatch);
+struct ManifestRecovery<'a> {
+    matched: &'a DialectMatch,
+    version: &'a str,
+}
 
 impl fmt::Display for ManifestRecovery<'_> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let matched = self.0;
-        let version = matched
-            .declared()
-            .get(DECLARED_TOP_LEVEL_MANIFEST_VERSION)
-            .map_or("(none)", String::as_str);
+        let matched = self.matched;
+        let version = self.version;
         write!(
             formatter,
             "the top-level manifest declares version {version:?}, which no dialect row of \
@@ -342,27 +363,29 @@ fn dialect_loss(
     ) {
         return Ok(None);
     }
-    let message = archive_loss_text(ctx, matched, ManifestRecovery(matched))?;
+    let version = ctx
+        .get_btree_map(
+            matched.declared(),
+            DECLARED_TOP_LEVEL_MANIFEST_VERSION,
+            "find F3D manifest recovery version",
+        )?
+        .map_or("(none)", String::as_str);
+    let message = archive_loss_text(ctx, matched, ManifestRecovery { matched, version })?;
     Ok(Some(F3dLossCode::SourceDialectUnverified.note(message)))
 }
 
 struct KernelRecovery<'a> {
     matched: &'a DialectMatch,
     carrier: &'a str,
+    major: Option<&'a String>,
+    minor: Option<&'a String>,
 }
 
 impl fmt::Display for KernelRecovery<'_> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         let matched = self.matched;
         write!(formatter, "the kernel carrier {} declares ", self.carrier)?;
-        match (
-            matched
-                .declared()
-                .get(cadmpeg_asm::dialect::DECLARED_SAVE_FORMAT_MAJOR),
-            matched
-                .declared()
-                .get(cadmpeg_asm::dialect::DECLARED_SAVE_FORMAT_MINOR),
-        ) {
+        match (self.major, self.minor) {
             (Some(major), Some(minor)) => write!(formatter, "save format {major}.{minor}")?,
             (Some(major), None) => write!(formatter, "save format major {major}")?,
             (None, _) => formatter.write_str("no save format")?,
@@ -389,9 +412,12 @@ fn kernel_dialect_loss(
 ) -> Result<Option<LossNote>, CodecError> {
     match matched.admission() {
         Admission::Refused => {
-            let carrier = matched
-                .declared()
-                .get(cadmpeg_asm::dialect::DECLARED_CARRIER)
+            let carrier = ctx
+                .get_btree_map(
+                    matched.declared(),
+                    cadmpeg_asm::dialect::DECLARED_CARRIER,
+                    "find F3D kernel recovery carrier",
+                )?
                 .map_or("an unnamed carrier", String::as_str);
             let message = archive_loss_text(
                 ctx,
@@ -410,11 +436,33 @@ fn kernel_dialect_loss(
     {
         return Ok(None);
     }
-    let carrier = matched
-        .declared()
-        .get(cadmpeg_asm::dialect::DECLARED_CARRIER)
+    let carrier = ctx
+        .get_btree_map(
+            matched.declared(),
+            cadmpeg_asm::dialect::DECLARED_CARRIER,
+            "find F3D kernel recovery carrier",
+        )?
         .map_or("an unnamed carrier", String::as_str);
-    let message = archive_loss_text(ctx, matched, KernelRecovery { matched, carrier })?;
+    let major = ctx.get_btree_map(
+        matched.declared(),
+        cadmpeg_asm::dialect::DECLARED_SAVE_FORMAT_MAJOR,
+        "find F3D kernel recovery major",
+    )?;
+    let minor = ctx.get_btree_map(
+        matched.declared(),
+        cadmpeg_asm::dialect::DECLARED_SAVE_FORMAT_MINOR,
+        "find F3D kernel recovery minor",
+    )?;
+    let message = archive_loss_text(
+        ctx,
+        matched,
+        KernelRecovery {
+            matched,
+            carrier,
+            major,
+            minor,
+        },
+    )?;
     Ok(Some(F3dLossCode::KernelDialectUnverified.note(message)))
 }
 

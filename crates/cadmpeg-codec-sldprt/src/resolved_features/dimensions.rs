@@ -621,7 +621,7 @@ fn unique_linked_declared_entity_handle_arc_carrier<'a>(
     if !expected_radius.is_finite() || expected_radius <= 0.0 {
         return Ok(None);
     }
-    let DeclaredEntityHandleOwner::Unique(lane) =
+    let DeclaredEntityHandleOwner::Unique { lane, .. } =
         declared_entity_handle_owner(ctx, index.lanes, operand)?
     else {
         return Ok(None);
@@ -701,7 +701,7 @@ fn unique_declared_entity_handle_circular_carrier<'a>(
     if declared_entity_handle_has_resolved_pair(ctx, index.lanes, feature, operand)? {
         return Ok(None);
     }
-    let DeclaredEntityHandleOwner::Unique(lane) =
+    let DeclaredEntityHandleOwner::Unique { lane, .. } =
         declared_entity_handle_owner(ctx, index.lanes, operand)?
     else {
         return Ok(None);

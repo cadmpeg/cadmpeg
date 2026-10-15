@@ -137,15 +137,20 @@ fn invalidation_preserves_lanes_with_a_prior_validation_proof() {
             ),
         );
 
-        crate::test_support::with_decode_context(|ctx| crate::decode::support_uv::invalidate_inconsistent_support_uv_with_validated_lanes_and_status(
-        ctx,
-        &mut result.ir_mut(),
-        &pending,
-        &validated_lanes,
-        &support_budget,
-        &geometry_budget,
-        false,
-    ))
+        crate::test_support::with_decode_context(|ctx| {
+            let mut witness_storage = ctx.reserve_scoped(0, "nx test endpoint witnesses")?;
+            let mut witnesses = std::collections::BTreeMap::new();
+let exhausted = crate::decode::support_uv::invalidate_inconsistent_support_uv_with_validated_lanes_and_status(
+ctx,
+&mut result.ir_mut(),
+&pending,
+&validated_lanes,
+(&support_budget, &geometry_budget),
+false,
+&mut crate::decode::emit::EndpointWitnessSink::new(&mut witnesses, &mut witness_storage)
+)?;
+Ok::<_, cadmpeg_core::CodecError>(exhausted)
+})
     .expect("evaluator allocation succeeds");
 
         let pcurve_present = |procedural_id: &ProceduralCurveId| {
@@ -208,12 +213,19 @@ fn validated_support_uv_exposes_ordered_endpoint_witnesses() {
         .clone();
 
     let witnesses = crate::test_support::with_decode_context(|ctx| {
+        let mut witness_storage = ctx.reserve_scoped(0, "nx test endpoint witnesses")?;
+        let mut witnesses = std::collections::BTreeMap::new();
         crate::decode::support_uv::validated_support_uv_endpoint_witnesses(
             ctx,
             result.ir(),
             &pending,
             &validated_lanes,
-        )
+            &mut crate::decode::emit::EndpointWitnessSink::new(
+                &mut witnesses,
+                &mut witness_storage,
+            ),
+        )?;
+        witness_storage.commit_value(witnesses)
     })
     .expect("validated witnesses fit the service profile");
 
@@ -324,17 +336,22 @@ fn full_support_uv_validation_publishes_endpoint_witnesses() {
         );
 
         let witnesses =
-        crate::test_support::with_decode_context(|ctx| crate::decode::support_uv::invalidate_inconsistent_support_uv_with_validated_lanes_and_status(
-            ctx,
-            &mut result.ir_mut(),
-            &pending,
-            &BTreeSet::new(),
-            &support_budget,
-            &geometry_budget,
-            false,
-        ))
+        crate::test_support::with_decode_context(|ctx| {
+            let mut witness_storage = ctx.reserve_scoped(0, "nx test endpoint witnesses")?;
+            let mut witnesses = std::collections::BTreeMap::new();
+crate::decode::support_uv::invalidate_inconsistent_support_uv_with_validated_lanes_and_status(
+ctx,
+&mut result.ir_mut(),
+&pending,
+&BTreeSet::new(),
+(&support_budget, &geometry_budget),
+false,
+&mut crate::decode::emit::EndpointWitnessSink::new(&mut witnesses, &mut witness_storage)
+)?;
+witness_storage.commit_value(witnesses)
+})
         .expect("evaluator allocation succeeds")
-        .endpoint_witnesses;
+        ;
 
         let witness = crate::decode::pcurves::endpoint_witness_for_candidate(
             geometry_ctx,

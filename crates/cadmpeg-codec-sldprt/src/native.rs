@@ -1448,7 +1448,6 @@ impl SldprtNative {
                         ctx,
                         lane,
                         record,
-                        &lane_features,
                         &features_by_source,
                     )?
                 {
@@ -2225,13 +2224,7 @@ fn validate_lane_selections(
     )?;
     let mut surface_selections = lane.surface_selections.iter();
     while let Some(record) = ctx.next_charged(&mut surface_selections, OPERATION)? {
-        if surface_selection_disagrees_with_payload(
-            ctx,
-            lane,
-            record,
-            &lane_features,
-            &features_by_source,
-        )? {
+        if surface_selection_disagrees_with_payload(ctx, lane, record, &features_by_source)? {
             return Err(disagrees(&record.id, "surface")?);
         }
     }
@@ -2392,12 +2385,11 @@ fn edge_selection_disagrees_with_payload(
 
 /// `true` when a surface selection disagrees with the compact reference in its lane payload.
 ///
-/// `surface_features` are the history features enriched with this lane's object sources.
+/// `features_by_source` indexes the history features enriched with this lane's object sources.
 fn surface_selection_disagrees_with_payload(
     ctx: &DecodeContext<'_>,
     lane: &FeatureInputLane,
     record: &FeatureInputSurfaceSelection,
-    surface_features: &[crate::records::Feature],
     features_by_source: &crate::resolved_features::component_paths::FeaturesBySource<'_, '_>,
 ) -> Result<bool, cadmpeg_ir::NativeConvertError> {
     let (disagrees, _workspace) = ctx.with_scoped_storage(
@@ -2421,7 +2413,7 @@ fn surface_selection_disagrees_with_payload(
                     ctx,
                     &record.components,
                     record.terminal_feature_ref.as_deref(),
-                    surface_features,
+                    features_by_source,
                 )?,
                 &record.producer_feature_refs,
                 PAYLOAD_AGREEMENT,

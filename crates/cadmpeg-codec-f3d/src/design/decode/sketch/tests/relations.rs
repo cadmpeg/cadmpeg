@@ -632,7 +632,10 @@ fn relation_class_is_the_type_at_its_tag_position_in_its_own_segment() {
             crate::design::test_support::design_type(type_guid, None, 0, "MSketch", Vec::new());
         design_type.byte_offset = byte_offset;
         crate::records::entity_header::SegmentType::try_new(
-            crate::ids::native_design_type_id(meta, byte_offset),
+            crate::test_support::with_decode_context(|ctx| {
+                crate::ids::native_design_type_id(ctx, meta, byte_offset)
+                    .expect("test F3D native identity")
+            }),
             design_type,
         )
         .unwrap()
@@ -644,7 +647,10 @@ fn relation_class_is_the_type_at_its_tag_position_in_its_own_segment() {
         type_at(META, 0, OTHER_TYPE_GUID),
         type_at(META, 1, relation_guid),
     ];
-    let scope = crate::ids::native_scope(STREAM);
+    let scope = crate::test_support::with_decode_context(|ctx| {
+        crate::ids::native_scope(ctx, STREAM, "retain F3D native scope")
+            .expect("test F3D native identity")
+    });
     assert!(scope.contains("%20"));
     let header = crate::records::decal::DesignRecordHeader {
         id: format!("{scope}:design-record-header#0"),

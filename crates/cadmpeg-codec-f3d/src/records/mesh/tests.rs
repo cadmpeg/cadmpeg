@@ -852,6 +852,71 @@ fn mesh_texture_table_indexes_and_order_refuse_collection_limit() {
         if refusal.operation == "order F3D mesh texture resources")
     );
 
+    // Source admission charges once per resource before stable sorting charges
+    // its comparisons, so select the sort boundary from the actual requests.
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "order F3D mesh texture resources",
+        0,
+        |ctx| table.resources_in_flags_order(ctx).map(|_| ()),
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref refusal)
+        if refusal.operation == "order F3D mesh texture resources")
+    );
+}
+
+#[test]
+fn mesh_texture_resource_order_refuses_source_scan_work() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let record = crate::records::mesh::DesignMeshRecordIdentity::new(
+        crate::records::references::DesignClassTag::try_from("256".to_owned()).unwrap(),
+        4,
+        0,
+        219,
+    )
+    .unwrap();
+    let row = |ordinal, filename_ordinal, guid, flags_guid, filename_guid| {
+        serde_json::json!({
+            "ordinal": ordinal, "resource_guid": guid, "flags_guid_offset": flags_guid,
+            "flags": 7, "flags_offset": flags_guid + 36,
+            "filename_ordinal": filename_ordinal, "filename_guid_offset": filename_guid,
+            "filename_record": {"class_tag": "256", "record_index": 8, "byte_offset": 300, "frame_length": 35},
+            "filename_record_reference_offset": filename_guid + 36,
+            "filename": "a.png", "filename_offset": 325,
+            "archive_entry_name": "Textures/a.png", "asset": "test:model:asset#texture"
+        })
+    };
+    let rows = serde_json::json!([
+        row(1, 0, "BBBBBBBB-BBBB-4CCC-8DDD-EEEEEEEEEEEE", 73, 121),
+        row(0, 1, "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE", 29, 172),
+    ]);
+    let table = crate::records::mesh::DesignMeshTextureTable::from_wire(
+        record,
+        21,
+        113,
+        serde_json::from_value(rows).unwrap(),
+    )
+    .unwrap();
+
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let ctx = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .unwrap()
+        .0;
+    let normal = table.resources_in_flags_order(&ctx).unwrap();
+    assert_eq!(
+        normal
+            .iter()
+            .map(|resource| resource.resource_guid.as_str())
+            .collect::<Vec<_>>(),
+        [
+            "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE",
+            "BBBBBBBB-BBBB-4CCC-8DDD-EEEEEEEEEEEE"
+        ]
+    );
+
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 1;
@@ -859,10 +924,11 @@ fn mesh_texture_table_indexes_and_order_refuse_collection_limit() {
         .unwrap()
         .0;
     let error = table.resources_in_flags_order(&ctx).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref refusal)
-        if refusal.operation == "order F3D mesh texture resources")
-    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(ref refusal)
+            if refusal.operation == "scan F3D mesh texture resources for flag order"
+    ));
 }
 
 #[test]

@@ -95,11 +95,12 @@ fn display_jt_owned_inflate_omits_payload_copy_work() {
 
 #[test]
 fn display_jt_segment_entity_refuses_before_identity_and_record_allocation() {
-    let mut container = super::document_admission_tests::one_document();
-    let data = container.data.to_mut();
+    let mut container_bytes_1 = super::document_admission_tests::one_document_bytes();
+    let data = &mut container_bytes_1;
     data[165..181].copy_from_slice(&[2; 16]);
     data[181..185].copy_from_slice(&1_u32.to_le_bytes());
     data[185..189].copy_from_slice(&24_u32.to_le_bytes());
+    let container = super::document_admission_tests::one_document(&container_bytes_1);
 
     crate::test_support::with_decode_context(|index_ctx| {
         let indices = super::display_jt_indices(index_ctx, &container).unwrap();
@@ -141,7 +142,7 @@ fn display_jt_shape_element_entity_refuses_before_identity_and_record_allocation
     data.extend_from_slice(&[1, 0, 0, 0, 0, 0]);
     let data_len = cadmpeg_core::decode::u64_from_index(data.len());
     let container = Container {
-        data: data.into(),
+        data: (&data[..]).into(),
         physical_size: data_len,
         layout: crate::container::test_modern_layout(6),
         entries: vec![DirEntry {

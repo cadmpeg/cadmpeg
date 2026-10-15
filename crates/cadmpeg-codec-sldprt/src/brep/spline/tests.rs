@@ -789,10 +789,6 @@ plain_surface_boundary!(
     "copy Parasolid knot multiplicities"
 );
 plain_surface_boundary!(
-    parasolid_knot_header_counts_refuse_before_insertion,
-    "index Parasolid eligible array counts"
-);
-plain_surface_boundary!(
     parasolid_surface_pole_rows_refuse_before_partition,
     "partition Parasolid surface pole rows"
 );
