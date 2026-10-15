@@ -31,7 +31,7 @@ pub(crate) fn test_ctx() -> DecodeContext<'static> {
 ///
 /// Every descent of a stored field recurses: a typed or value read of the
 /// stored text lifts the parser's limit, [`replay::emit`] starts one parse
-/// per container, and `canon::CanonValue` enters one frame per container.
+/// per container, and `canon::CanonText` enters one frame per container.
 /// The bound is therefore stated where a field enters the record, so every
 /// reader of a constructed record is already inside it.
 /// It is twice the 128 containers a `serde_json` text parse admits, so every
@@ -331,19 +331,14 @@ impl NativeRecord {
         ctx: &DecodeContext<'_>,
         record: &T,
     ) -> Result<Self, NativeConvertError> {
-        // The canonical value tree is temporary: the record keeps only the
-        // text rendered from it.
+        let mut out = Vec::new();
         let serialized = record
-            .serialize(canon::CanonValue::for_record(ctx))
+            .serialize(canon::CanonText::for_record(ctx, &mut out))
             .map_err(|error| error.into_native(ctx))?;
-        let canon::Node::Object(mut fields) = serialized else {
+        let canon::Written::Object(members) = serialized else {
             return Err(NativeConvertError::NonObject);
         };
-        let Some(Value::String(id)) = fields.remove("id") else {
-            return Err(NativeConvertError::MissingId);
-        };
-        let id = crate::ids::Identity::new(id)?;
-        let json = render(&id, &fields);
+        let (id, json) = members.into_record(out)?;
         Ok(Self { id, json })
     }
 

@@ -2,9 +2,9 @@
 //! Compare a typed serialization against a stored record's text without
 //! parsing its payload into a value tree.
 //!
-//! The stored text is canonical: `serde_json` wrote it from a value tree, and the
-//! expected side renders each scalar the same way, so equal scalars have equal
-//! text.
+//! The stored text is canonical: the canonical writer wrote it, and the
+//! expected side writes each scalar through the same writer, so equal scalars
+//! have equal text.
 
 use super::{canon, replay, NativeConvertError, NativeRecord, MAX_NATIVE_NESTING_DEPTH};
 use cadmpeg_core::decode::{DecodeContext, DepthGuard};
@@ -22,6 +22,10 @@ enum Borrowed<'a> {
     Missing,
 }
 impl<'a> Borrowed<'a> {
+    /// States whether this value is the text `expected`.
+    fn is(self, expected: &str) -> bool {
+        matches!(self, Self::Text(actual) if actual == expected)
+    }
     /// States whether this value is the text `expected` renders to.
     fn renders<T: Serialize + ?Sized>(self, expected: &T) -> bool {
         let Self::Text(actual) = self else {
@@ -32,12 +36,14 @@ impl<'a> Borrowed<'a> {
         };
         serde_json::to_writer(&mut rest, expected).is_ok() && rest.rest.is_empty()
     }
-    /// States whether this value is `expected` once parsed.
-    fn parses_to(self, expected: &serde_json::Value) -> bool {
+    /// States whether this value and the text `expected` parse to equal
+    /// values.
+    fn parses_to(self, expected: &str) -> bool {
         let Self::Text(actual) = self else {
             return false;
         };
-        replay::value(actual).is_ok_and(|actual| actual == *expected)
+        replay::value(actual)
+            .is_ok_and(|actual| replay::value(expected).is_ok_and(|expected| actual == expected))
     }
     /// The members of this object, read in one scan, or `None` when this is
     /// not an object.
@@ -115,10 +121,8 @@ impl<'a, 'arena> Matcher<'a, 'arena> {
         })
     }
     fn scalar(self, value: impl Serialize) -> Result<bool, Error> {
-        let expected = value
-            .serialize(canon::CanonValue::for_record(self.ctx))?
-            .into_value();
-        Ok(self.actual.renders(&expected))
+        let expected = canon::to_text(self.ctx, MAX_NATIVE_NESTING_DEPTH + 1, &value)?;
+        Ok(self.actual.is(&expected))
     }
     fn sequence(
         self,
@@ -295,10 +299,7 @@ impl<'a, 'arena> ser::Serializer for Matcher<'a, 'arena> {
         inner.map(Some(outer), matched)
     }
     fn collect_str<T: std::fmt::Display + ?Sized>(self, value: &T) -> Result<bool, Error> {
-        let expected = canon::CanonValue::for_record(self.ctx)
-            .collect_str(value)?
-            .into_value();
-        Ok(expected.is_string() && self.actual.renders(&expected))
+        self.serialize_str(&canon::collect_display_text(value)?)
     }
 }
 
@@ -366,12 +367,8 @@ impl Object<'_, '_> {
                     "invalid raw native comparison field",
                 ));
             }
-            let expected = RawField(value)
-                .serialize(canon::CanonValue::within(
-                    self.matcher.ctx,
-                    self.matcher.remaining,
-                ))?
-                .into_value();
+            let expected =
+                canon::to_text(self.matcher.ctx, self.matcher.remaining, &RawField(value))?;
 
             self.matched &= self.matcher.actual.parses_to(&expected);
             self.seen.insert(key);

@@ -64,8 +64,8 @@ fn native_record_text_refuses_the_retained_limit() {
     assert_eq!(serde_json::to_vec(&records[0]).unwrap(), json);
 }
 
-/// Two equal identities, one that sorts first, and enough later records that
-/// the sort permutation outweighs one record's temporary value tree.
+/// Two equal identities, one identity that sorts before them, and later
+/// records that sort after them.
 fn sort_fixture() -> Vec<serde_json::Value> {
     let mut records = vec![
         serde_json::json!({"id":"test:native:record#same","ordinal":1}),
