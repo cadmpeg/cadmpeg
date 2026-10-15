@@ -15,7 +15,6 @@ use cadmpeg_ir::{
 };
 use std::collections::HashMap;
 
-use super::copy_projected_feature_text;
 use crate::history::classify::extrude_feature_op;
 use crate::history::literals::{
     parse_angle_rad, parse_boolean_op, parse_bounded_angle_rad, parse_dimension_display_length,
@@ -29,10 +28,6 @@ pub(super) fn project_extrude(
     native_by_source: &HashMap<String, &str>,
     features_by_source: &HashMap<crate::records::FeatureSource, &Feature>,
 ) -> Result<Option<FeatureDefinition>, CodecError> {
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(feature.content.len()),
-        "scan SLDPRT extrusion dimensions",
-    )?;
     let mut source_dimensions = feature.content.iter().filter_map(|content| match content {
         FeatureContent::Dimension(name) => Some(name.as_str()),
         FeatureContent::Feature(_) | FeatureContent::Text(_) => None,
@@ -59,12 +54,6 @@ pub(super) fn project_extrude(
     let history_profile_extrusion = legacy_history_extrusion || root_history_extrusion;
     let implicit_modern_blind =
         feature.input_class.as_deref() == Some("moExtrusion_c") && source_depth.is_some();
-    if history_profile_extrusion {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(features_by_source.len()),
-            "scan SLDPRT extrusion source profiles",
-        )?;
-    }
     let history_profile = history_profile_extrusion
         .then(|| {
             let source = feature.source_id?.value().map_or(-1i64, i64::from);
@@ -193,7 +182,7 @@ pub(super) fn project_extrude(
                 return Ok(None);
             };
             one_sided(LinearTermination::ToFace {
-                face: FaceSelection::Native(copy_projected_feature_text(ctx, face)?),
+                face: FaceSelection::Native(face.to_owned()),
                 offset: None,
             })
         }
@@ -202,7 +191,7 @@ pub(super) fn project_extrude(
                 return Ok(None);
             };
             one_sided(LinearTermination::ToVertex {
-                vertex: VertexSelection::native(copy_projected_feature_text(ctx, vertex)?, ctx)?
+                vertex: VertexSelection::native(vertex.to_owned(), ctx)?
                     .unwrap_or(VertexSelection::Unresolved),
             })
         }
@@ -212,7 +201,7 @@ pub(super) fn project_extrude(
                     return Ok(None);
                 };
                 one_sided(LinearTermination::OffsetFromFace {
-                    face: FaceSelection::Native(copy_projected_feature_text(ctx, face)?),
+                    face: FaceSelection::Native(face.to_owned()),
                     offset,
                 })
             }
@@ -239,44 +228,29 @@ pub(super) fn project_extrude(
         return Ok(None);
     }
     let profile = if let Some(source) = feature.properties.get("Profile") {
-        ProfileRef::Planar(PlanarProfileRef::Native(copy_projected_feature_text(
-            ctx,
-            native_by_source
+        ProfileRef::Planar(PlanarProfileRef::Native(
+            (native_by_source
                 .get(source.as_str())
                 .copied()
-                .unwrap_or(source.as_str()),
-        )?))
+                .unwrap_or(source.as_str()))
+            .to_owned(),
+        ))
     } else if let Some(children) = feature.properties.get("DissectableChildren") {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(children.len()),
-            "scan SLDPRT extrusion child profiles",
-        )?;
         let mut profiles = children
             .split(',')
             .map(str::trim)
             .filter(|source| !source.is_empty());
         let sole = profiles.next().filter(|_| profiles.next().is_none());
         match sole {
-            Some(profile) => {
-                ProfileRef::Planar(PlanarProfileRef::Native(copy_projected_feature_text(
-                    ctx,
-                    native_by_source.get(profile).copied().unwrap_or(profile),
-                )?))
-            }
-            None => ProfileRef::Planar(PlanarProfileRef::Unresolved(copy_projected_feature_text(
-                ctx,
-                &feature.id,
-            )?)),
+            Some(profile) => ProfileRef::Planar(PlanarProfileRef::Native(
+                (native_by_source.get(profile).copied().unwrap_or(profile)).to_owned(),
+            )),
+            None => ProfileRef::Planar(PlanarProfileRef::Unresolved(feature.id.clone())),
         }
     } else if let Some(profile) = history_profile {
-        ProfileRef::Planar(PlanarProfileRef::Native(copy_projected_feature_text(
-            ctx, profile,
-        )?))
+        ProfileRef::Planar(PlanarProfileRef::Native(profile.to_owned()))
     } else {
-        ProfileRef::Planar(PlanarProfileRef::Unresolved(copy_projected_feature_text(
-            ctx,
-            &feature.id,
-        )?))
+        ProfileRef::Planar(PlanarProfileRef::Unresolved(feature.id.clone()))
     };
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::Extrude {
@@ -333,10 +307,7 @@ pub(super) fn project_hole(
         face: feature
             .properties
             .get("Face")
-            .map(|face| {
-                ctx.format_retained(format_args!("{face}"), "retain SLDPRT hole face reference")
-            })
-            .transpose()?
+            .cloned()
             .map(FaceSelection::Native),
         direction: None,
         placements: feature
@@ -376,7 +347,7 @@ fn hole_shape_and_profile(
     )>,
     CodecError,
 > {
-    let profile = hole_profile_construction(ctx, feature, features_by_source, history_features)?;
+    let profile = hole_profile_construction(feature, features_by_source, history_features)?;
     let diameter = feature
         .parameters
         .get("Diameter")
@@ -523,7 +494,6 @@ fn hole_form(kind: HoleKind) -> HoleConstruction {
 }
 
 fn hole_profile_construction(
-    ctx: &DecodeContext<'_>,
     feature: &Feature,
     features_by_source: &HashMap<crate::records::FeatureSource, &Feature>,
     history_features: &[Feature],
@@ -552,7 +522,7 @@ fn hole_profile_construction(
     let mut multiple = false;
     let mut complete = None;
     for profile in constructions {
-        let Some(construction) = hole_sketch_construction(ctx, profile)? else {
+        let Some(construction) = hole_sketch_construction(profile)? else {
             continue;
         };
         if construction.depth.is_some() {
@@ -572,7 +542,6 @@ fn hole_profile_construction(
 }
 
 pub(super) fn hole_sketch_construction(
-    ctx: &DecodeContext<'_>,
     profile: &Feature,
 ) -> Result<Option<HoleProfileConstruction>, CodecError> {
     #[derive(Clone, Copy)]
@@ -658,24 +627,9 @@ pub(super) fn hole_sketch_construction(
     let diameters = &mut diameters[..diameter_count];
     let lengths = &mut lengths[..length_count];
     let angles = &mut angles[..angle_count];
-    ctx.sort_unstable_by(
-        diameters,
-        |left, right| left.get().total_cmp(&right.get()),
-        |_| 0,
-        "sldprt hole profile diameters sort",
-    )?;
-    ctx.sort_unstable_by(
-        lengths,
-        |left, right| left.get().total_cmp(&right.get()),
-        |_| 0,
-        "sldprt hole profile lengths sort",
-    )?;
-    ctx.sort_unstable_by(
-        angles,
-        |left, right| left.get().total_cmp(&right.get()),
-        |_| 0,
-        "sldprt hole profile angles sort",
-    )?;
+    diameters.sort_unstable_by(|left, right| left.get().total_cmp(&right.get()));
+    lengths.sort_unstable_by(|left, right| left.get().total_cmp(&right.get()));
+    angles.sort_unstable_by(|left, right| left.get().total_cmp(&right.get()));
     Ok(match (&*diameters, &*lengths, &*angles) {
         ([diameter], [depth], []) => Some(HoleProfileConstruction {
             diameter: *diameter,
@@ -842,9 +796,6 @@ pub(super) fn hole_sketch_construction(
     })
 }
 
-pub(crate) fn is_hole_profile_construction(
-    ctx: &DecodeContext<'_>,
-    feature: &Feature,
-) -> Result<bool, CodecError> {
-    Ok(hole_sketch_construction(ctx, feature)?.is_some())
+pub(crate) fn is_hole_profile_construction(feature: &Feature) -> Result<bool, CodecError> {
+    Ok(hole_sketch_construction(feature)?.is_some())
 }

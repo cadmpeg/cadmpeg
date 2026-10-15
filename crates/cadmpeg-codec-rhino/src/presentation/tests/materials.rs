@@ -1,11 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{anonymous, physically_based_payload, texture_payload};
-use crate::chunks::{chunk_at, ArchiveVersion, BoundedReader, FramingError};
+use super::{anonymous, physically_based_payload};
+use crate::chunks::{chunk_at, ArchiveVersion};
 use crate::loss::RhinoLossCode;
-use crate::presentation::{
-    parse_material, parse_physically_based_material, texture_array, MaterialParseInput, TEXTURE,
-};
+use crate::presentation::{parse_material, parse_physically_based_material, MaterialParseInput};
 use crate::test_support::test_dump::utf16_bytes;
 use crate::wire::Uuid;
 use cadmpeg_ir::scalar::FiniteBinary32;
@@ -44,99 +42,6 @@ fn legacy_material_bytes(diffuse: [u8; 4]) -> Vec<u8> {
     let mut bytes = vec![0x20];
     bytes.extend(inner);
     bytes
-}
-
-fn legacy_material_refusal(limit: u64, writer_version: Option<i64>) -> FramingError {
-    let bytes = legacy_material_bytes([5, 6, 7, 8]);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = limit;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-        .expect("legacy material root admitted");
-    parse_material(
-        &ctx,
-        &bytes,
-        MaterialParseInput {
-            range: 0..bytes.len(),
-            archive: ArchiveVersion::V5,
-            writer_version,
-            source_offset: 0,
-            physically_based: None,
-        },
-        &mut Vec::new(),
-    )
-    .expect_err("legacy material retained value exceeds limit")
-}
-
-#[test]
-fn legacy_material_name_refuses_retained_limit() {
-    assert!(
-        matches!(legacy_material_refusal(0, Some(200_912_009)), FramingError::Resource(refusal) if refusal.operation == "Rhino material name")
-    );
-}
-
-#[test]
-fn legacy_material_id_refuses_retained_limit() {
-    assert!(
-        matches!(legacy_material_refusal(5, Some(200_912_009)), FramingError::Resource(refusal) if refusal.operation == "Rhino material ID")
-    );
-}
-
-#[test]
-fn legacy_material_source_uuid_refuses_retained_limit() {
-    let id_len = "rhino:presentation:material#11111111-1111-1111-1111-111111111111".len();
-    assert!(
-        matches!(legacy_material_refusal(u64::try_from(5 + id_len).expect("budget fits"), Some(200_912_009)), FramingError::Resource(refusal) if refusal.operation == "Rhino material source UUID")
-    );
-}
-
-#[test]
-fn legacy_material_plugin_uuid_refuses_retained_limit() {
-    let id_len = "rhino:presentation:material#11111111-1111-1111-1111-111111111111".len();
-    assert!(
-        matches!(legacy_material_refusal(u64::try_from(5 + id_len + 36).expect("budget fits"), Some(200_912_009)), FramingError::Resource(refusal) if refusal.operation == "Rhino material plugin UUID")
-    );
-}
-
-#[test]
-fn legacy_material_rdk_uuid_refuses_retained_limit() {
-    let id_len = "rhino:presentation:material#11111111-1111-1111-1111-111111111111".len();
-    assert!(
-        matches!(legacy_material_refusal(u64::try_from(5 + id_len + 72).expect("budget fits"), Some(200_912_009)), FramingError::Resource(refusal) if refusal.operation == "Rhino material RDK UUID")
-    );
-}
-
-#[test]
-fn unstamped_material_loss_refuses_collection_limit() {
-    let bytes = legacy_material_bytes([5, 6, 7, 8]);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-        .expect("legacy material root admitted");
-    let error = parse_material(
-        &ctx,
-        &bytes,
-        MaterialParseInput {
-            range: 0..bytes.len(),
-            archive: ArchiveVersion::V5,
-            writer_version: None,
-            source_offset: 0,
-            physically_based: None,
-        },
-        &mut Vec::new(),
-    )
-    .expect_err("writer-stamp loss exceeds collection limit");
-    assert!(
-        matches!(error, FramingError::Resource(refusal) if refusal.operation == "Rhino material writer-stamp losses")
-    );
-}
-
-#[test]
-fn unstamped_material_loss_text_refuses_retained_limit() {
-    assert!(
-        matches!(legacy_material_refusal(crate::test_support::retained_limit_at("Rhino material writer-stamp loss text", 0, |cap| { match legacy_material_refusal(cap, None) { FramingError::Resource(refusal) => refusal, error => panic!("unexpected fixture refusal: {error:?}") } }), None), FramingError::Resource(refusal) if refusal.operation == "Rhino material writer-stamp loss text")
-    );
 }
 
 #[test]
@@ -276,84 +181,6 @@ fn v2_v3_material_payload(minor: u8) -> Vec<u8> {
     }
     bytes.extend([0xaa, 0xbb]);
     bytes
-}
-
-fn v2_v3_material_refusal(limit: u64) -> FramingError {
-    let bytes = v2_v3_material_payload(1);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = limit;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-        .expect("V2 material root admitted");
-    parse_material(
-        &ctx,
-        &bytes,
-        MaterialParseInput {
-            range: 0..bytes.len(),
-            archive: ArchiveVersion::V2,
-            writer_version: None,
-            source_offset: 77,
-            physically_based: None,
-        },
-        &mut Vec::new(),
-    )
-    .expect_err("V2 material retained value exceeds limit")
-}
-
-macro_rules! v2_material_text_limit {
-    ($name:ident, $limit:expr, $operation:literal) => {
-        #[test]
-        fn $name() {
-            assert!(matches!(
-                v2_v3_material_refusal(crate::test_support::retained_limit_at($operation,
-                    if $operation == "Rhino V2/V3 texture path" { match $limit { 0 => 0, 10 => 1, 18 => 2, _ => panic!("path occurrence") } } else { 0 },
-                    |cap| { let FramingError::Resource(refusal) = v2_v3_material_refusal(cap) else { panic!("material resource refusal"); }; refusal })),
-                FramingError::Resource(refusal) if refusal.operation == $operation
-            ));
-        }
-    };
-}
-
-v2_material_text_limit!(
-    v2_bitmap_path_refuses_retained_limit,
-    0,
-    "Rhino V2/V3 texture path"
-);
-v2_material_text_limit!(
-    v2_bump_path_refuses_retained_limit,
-    10,
-    "Rhino V2/V3 texture path"
-);
-v2_material_text_limit!(
-    v2_environment_path_refuses_retained_limit,
-    18,
-    "Rhino V2/V3 texture path"
-);
-v2_material_text_limit!(
-    v2_material_name_refuses_retained_limit,
-    33,
-    "Rhino V2/V3 material name"
-);
-v2_material_text_limit!(
-    v2_material_id_refuses_retained_limit,
-    42,
-    "Rhino material ID"
-);
-
-#[test]
-fn v2_material_source_uuid_refuses_retained_limit() {
-    assert!(matches!(
-        v2_v3_material_refusal(crate::test_support::retained_limit_at("Rhino material source UUID", 0, |cap| { match v2_v3_material_refusal(cap) { FramingError::Resource(refusal) => refusal, error => panic!("unexpected fixture refusal: {error:?}") } })),
-        FramingError::Resource(refusal) if refusal.operation == "Rhino material source UUID"
-    ));
-}
-
-#[test]
-fn v2_material_plugin_uuid_refuses_retained_limit() {
-    assert!(matches!(
-        v2_v3_material_refusal(crate::test_support::retained_limit_at("Rhino material plugin UUID", 0, |cap| { match v2_v3_material_refusal(cap) { FramingError::Resource(refusal) => refusal, error => panic!("unexpected fixture refusal: {error:?}") } })),
-        FramingError::Resource(refusal) if refusal.operation == "Rhino material plugin UUID"
-    ));
 }
 
 #[test]
@@ -504,57 +331,4 @@ fn physically_based_material_version_one_defaults_alpha() {
         .expect("version one physically based material");
     assert_eq!(material.revision.version(), 1);
     assert_eq!(material.revision.alpha(), crate::test_support::finite(1.0));
-}
-
-#[test]
-fn material_texture_array_refuses_collection_limit() {
-    let archive = ArchiveVersion::V8;
-    let texture = crate::test_support::test_dump::class_wrapper(
-        archive,
-        TEXTURE.to_wire(),
-        &texture_payload(0, &[]),
-    );
-    let mut body = 1_i32.to_le_bytes().to_vec();
-    body.extend(texture);
-    let bytes = anonymous(0, &body);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-        .expect("root bytes admitted");
-    let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("texture array bounds");
-    let error = texture_array(&ctx, &bytes, &mut reader, archive, &mut Vec::new())
-        .expect_err("texture exceeds collection limit");
-    assert!(matches!(
-        error,
-        FramingError::Resource(refusal) if refusal.operation == "Rhino material textures"
-    ));
-}
-
-#[test]
-fn v2_v3_material_textures_refuse_collection_limit() {
-    let bytes = v2_v3_material_payload(1);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-        .expect("root bytes admitted");
-    let error = parse_material(
-        &ctx,
-        &bytes,
-        MaterialParseInput {
-            range: 0..bytes.len(),
-            archive: ArchiveVersion::V2,
-            writer_version: None,
-            source_offset: 0,
-            physically_based: None,
-        },
-        &mut Vec::new(),
-    )
-    .expect_err("legacy texture exceeds collection limit");
-    assert!(matches!(
-        error,
-        FramingError::Resource(refusal)
-            if refusal.operation == "Rhino V2/V3 material textures"
-    ));
 }

@@ -121,6 +121,9 @@ loss_codes! {
     TopologyFaceLoopUnresolved => ("topology.face-loop-unresolved", Warning, TopologyNotTransferred),
     /// A semantic annotation order is past the stated annotation order width.
     SemanticAnnotationOrderUnstatable => ("annotation.semantic-order-unstatable", Warning, MetadataNotTransferred),
+    /// A record search reached its local work bound and skipped the records
+    /// it was locating.
+    SourceScanBounded => ("source.scan-bounded", Warning, ObjectRecordsUntransferred),
 }
 
 impl NxLossCode {
@@ -147,20 +150,6 @@ impl NxLossCode {
     pub(crate) fn note(self, message: impl Into<String>) -> LossNote {
         LossNote::new(self.kind(), message).with_severity(self.severity())
     }
-}
-
-pub(crate) fn charge_loss_code(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    code: NxLossCode,
-) -> Result<(), cadmpeg_core::CodecError> {
-    let bytes = "nx"
-        .len()
-        .checked_add(code.code().len())
-        .ok_or_else(|| ctx.refuse_codec_limit("nx loss code text", 0, u64::MAX))?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(bytes),
-        "nx loss code text",
-    )
 }
 
 #[cfg(test)]
@@ -207,6 +196,7 @@ mod tests {
                 "topology.loop-ring-unresolved",
                 "topology.face-loop-unresolved",
                 "annotation.semantic-order-unstatable",
+                "source.scan-bounded",
             ]
         );
     }

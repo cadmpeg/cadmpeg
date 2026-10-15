@@ -1,56 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::feature::definitions::test_support::with_points;
-use cadmpeg_ir::sketches::SketchGeometry;
-use std::collections::BTreeMap;
-
-pub(super) fn resolved_section_reference_line_geometry(
-    definition: &crate::feature::definitions::FeatureDefinition,
-    variable_points: &BTreeMap<u32, [Option<f64>; 2]>,
-    points: &BTreeMap<u32, [f64; 2]>,
-    segment: &crate::feature::definitions::FeatureReferenceLineSegment,
-) -> Option<SketchGeometry> {
-    crate::decode::with_test_decode_ctx(|ctx| {
-        crate::decode::sketch::geometry::resolved_section_reference_line_geometry(
-            ctx,
-            definition,
-            variable_points,
-            points,
-            segment,
-        )
-    })
-    .expect("test reference line geometry")
-}
-
-pub(super) fn section_line_fixed_coordinate(
-    definition: &crate::feature::definitions::FeatureDefinition,
-    segment: &crate::feature::definitions::FeatureSegment,
-) -> Option<crate::decode::sketch::axis::SectionAxis> {
-    crate::decode::with_test_decode_ctx(|ctx| {
-        crate::decode::sketch::skamp::section_line_fixed_coordinate(ctx, definition, segment)
-    })
-    .expect("test fixed-coordinate graph")
-}
-
-pub(super) fn section_skamp_point_on_line(
-    definition: &crate::feature::definitions::FeatureDefinition,
-    skamp: &crate::feature::definitions::FeatureSkamp,
-) -> Option<(u32, u32, crate::decode::sketch::axis::SectionAxis)> {
-    crate::decode::with_test_decode_ctx(|ctx| {
-        crate::decode::sketch::skamp::section_skamp_point_on_line(ctx, definition, skamp)
-    })
-    .expect("test point-on-line")
-}
-
-pub(super) fn section_skamp_saved_point_on_line(
-    definition: &crate::feature::definitions::FeatureDefinition,
-    skamp: &crate::feature::definitions::FeatureSkamp,
-) -> Option<(u32, crate::decode::sketch::axis::SectionAxis, f64)> {
-    crate::decode::with_test_decode_ctx(|ctx| {
-        crate::decode::sketch::skamp::section_skamp_saved_point_on_line(ctx, definition, skamp)
-    })
-    .expect("test saved point-on-line")
-}
 
 pub(super) fn base_definition() -> crate::feature::definitions::FeatureDefinition {
     let segment = crate::feature::definitions::FeatureSegment {

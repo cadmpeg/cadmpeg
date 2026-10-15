@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::SldprtNative;
-use crate::records::charged_clone::CloneCharged;
 use crate::records::FeatureInputLane;
 use crate::resolved_features::assembly::is_supplemental_config_lane;
 use crate::resolved_features::bindings::finalize_lane_bindings;
@@ -39,21 +38,13 @@ pub(super) fn admit(
                 &lane.names,
             )
         {
-            let characters = || {
-                std::char::decode_utf16(crate::resolved_features::names::utf16_units(
-                    expected_units,
-                ))
-            };
-            let length = characters().fold(0usize, |length, character| {
-                length + character.map_or(0, char::len_utf8)
-            });
-            let (mut expected, _reservation) =
-                ctx.scoped_string(length, "decode SLDPRT native validation name")?;
-            expected.extend(characters().filter_map(Result::ok));
-            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(ctx.format_retained(format_args!(
-                    "SolidWorks feature-input name value does not match its native payload: lane {} name {index} states {:?}, its payload states {:?}",
-                    lane.id, actual.value, expected
-                ), "format SLDPRT native validation error")?));
+            let expected: String = std::char::decode_utf16(
+                crate::resolved_features::names::utf16_units(expected_units),
+            )
+            .filter_map(Result::ok)
+            .collect();
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!("SolidWorks feature-input name value does not match its native payload: lane {} name {index} states {:?}, its payload states {:?}",
+            lane.id, actual.value, expected)));
         }
         let mut entities = lane.sketch_entities.iter();
         for (index, position) in (0..lane.native_payload.len())
@@ -63,31 +54,19 @@ pub(super) fn admit(
             .enumerate()
         {
             let Some(entity) = entities.next() else {
-                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
-                    ctx.format_retained(
-                        format_args!(
-                            "SolidWorks feature-input lane {} omits marker at offset {position}",
-                            lane.id
-                        ),
-                        "format SLDPRT native validation error",
-                    )?,
-                ));
+                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                    "SolidWorks feature-input lane {} omits marker at offset {position}",
+                    lane.id
+                )));
             };
             if usize::try_from(entity.ordinal()).ok() != Some(index) {
-                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
-                    ctx.format_retained(
-                        format_args!(
-                        "SolidWorks feature-input lane expects entity ordinal {index}, found {}",
-                        entity.ordinal()
-                    ),
-                        "format SLDPRT native validation error",
-                    )?,
-                ));
+                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                    "SolidWorks feature-input lane expects entity ordinal {index}, found {}",
+                    entity.ordinal()
+                )));
             }
             if entity.offset() != u64_from_index(position) {
-                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(ctx.format_retained(format_args!(
-                        "SolidWorks feature-input lane {} omits marker at offset {position} or has an extra or unordered entity", lane.id
-                    ), "format SLDPRT native validation error")?));
+                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!("SolidWorks feature-input lane {} omits marker at offset {position} or has an extra or unordered entity", lane.id)));
             }
         }
         if entities.next().is_some() {
@@ -96,10 +75,7 @@ pub(super) fn admit(
             ));
         }
     }
-    let ExpectedLanes {
-        pairs: expected,
-        storage: _expected_reservation,
-    } = expected_lanes_charged(ctx, native)?;
+    let expected = expected_lanes(ctx, native)?;
     for (lane, expected_lane) in expected {
         if !crate::resolved_features::scalars::scalar_indices_match(
             &lane.scalars,
@@ -116,13 +92,9 @@ pub(super) fn admit(
                         )
                     });
             return match mismatch {
-                Some((actual, expected)) => Err(cadmpeg_ir::NativeConvertError::InvalidOwner(ctx.format_retained(format_args!(
-                        "SolidWorks feature-input scalar index does not match its native payload: {actual:?} != {expected:?}"
-                    ), "format SLDPRT native validation error")?)),
-                None => Err(cadmpeg_ir::NativeConvertError::InvalidOwner(ctx.format_retained(format_args!(
-                        "SolidWorks feature-input scalar index does not match its native payload: count {} != {}",
-                        lane.scalars.len(), expected_lane.scalars.len()
-                    ), "format SLDPRT native validation error")?)),
+                Some((actual, expected)) => Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!("SolidWorks feature-input scalar index does not match its native payload: {actual:?} != {expected:?}"))),
+                None => Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!("SolidWorks feature-input scalar index does not match its native payload: count {} != {}",
+                lane.scalars.len(), expected_lane.scalars.len()))),
             };
         }
         if lane.relation_bindings != expected_lane.relation_bindings {
@@ -145,97 +117,40 @@ pub(super) fn admit(
     Ok(())
 }
 
-pub(crate) struct ExpectedLanes<'a, 'ctx> {
-    pub(crate) pairs: Vec<(&'a FeatureInputLane, FeatureInputLane)>,
-    pub(crate) storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
-}
-
-pub(crate) fn expected_lanes_charged<'a, 'ctx>(
-    ctx: &'ctx DecodeContext<'_>,
-    native: &'a SldprtNative,
-) -> Result<ExpectedLanes<'a, 'ctx>, cadmpeg_ir::NativeConvertError> {
-    let (pairs, storage) =
-        ctx.with_scoped_storage("validate SLDPRT expected lane copies", || {
-            let primary_count = native
-                .feature_input_lanes
-                .iter()
-                .filter(|lane| !is_supplemental_config_lane(lane))
-                .count();
-            let mut expected_primary_lanes = Vec::new();
-            ctx.reserve_vec(
-                &mut expected_primary_lanes,
-                primary_count,
-                "validate SLDPRT expected primary lanes",
-            )?;
-            for lane in native
-                .feature_input_lanes
-                .iter()
-                .filter(|lane| !is_supplemental_config_lane(lane))
-            {
-                expected_primary_lanes
-                    .push(lane.clone_charged(ctx, "validate SLDPRT expected primary lane copies")?);
-            }
-            let supplemental_count = native.feature_input_lanes.len() - primary_count;
-            let mut expected_supplemental_lanes = Vec::new();
-            ctx.reserve_vec(
-                &mut expected_supplemental_lanes,
-                supplemental_count,
-                "validate SLDPRT expected supplemental lanes",
-            )?;
-            for lane in native
-                .feature_input_lanes
-                .iter()
-                .filter(|lane| is_supplemental_config_lane(lane))
-            {
-                expected_supplemental_lanes.push(
-                    lane.clone_charged(ctx, "validate SLDPRT expected supplemental lane copies")?,
-                );
-            }
-            for lane in expected_primary_lanes
-                .iter_mut()
-                .chain(&mut expected_supplemental_lanes)
-            {
-                let scalars = crate::resolved_features::scalars::named_scalars_charged(
-                    ctx,
-                    &lane.native_payload,
-                    &lane.id,
-                    &lane.names,
-                )?;
-                rebuild_scalar_relations_charged(ctx, lane, scalars)?;
-            }
-            let mut expected = Vec::new();
-            ctx.reserve_vec(
-                &mut expected,
-                native.feature_input_lanes.len(),
-                "validate SLDPRT expected lane pairs",
-            )?;
-            expected.extend(expected_lane_pairs_impl(
-                native,
-                expected_primary_lanes,
-                expected_supplemental_lanes,
-                ctx,
-            )?);
-            Ok::<_, cadmpeg_ir::NativeConvertError>(expected)
-        })?;
-    Ok(ExpectedLanes { pairs, storage })
-}
-
-fn copy_feature_ref(
+pub(crate) fn expected_lanes<'a>(
     ctx: &DecodeContext<'_>,
-    feature: Option<&str>,
-) -> Result<Option<String>, cadmpeg_core::CodecError> {
-    feature
-        .map(|feature| {
-            let mut copy = String::new();
-            ctx.try_reserve_retained_text(
-                &mut copy,
-                feature.len(),
-                "retain SLDPRT native lane owner",
-            )?;
-            copy.push_str(feature);
-            Ok(copy)
-        })
-        .transpose()
+    native: &'a SldprtNative,
+) -> Result<Vec<(&'a FeatureInputLane, FeatureInputLane)>, cadmpeg_ir::NativeConvertError> {
+    let mut expected_primary_lanes: Vec<FeatureInputLane> = native
+        .feature_input_lanes
+        .iter()
+        .filter(|lane| !is_supplemental_config_lane(lane))
+        .cloned()
+        .collect();
+    let mut expected_supplemental_lanes: Vec<FeatureInputLane> = native
+        .feature_input_lanes
+        .iter()
+        .filter(|lane| is_supplemental_config_lane(lane))
+        .cloned()
+        .collect();
+    for lane in expected_primary_lanes
+        .iter_mut()
+        .chain(&mut expected_supplemental_lanes)
+    {
+        let scalars = crate::resolved_features::scalars::named_scalars(
+            &lane.native_payload,
+            &lane.id,
+            &lane.names,
+        )?;
+        rebuild_scalar_relations(lane, scalars)?;
+    }
+    Ok(expected_lane_pairs_impl(
+        native,
+        expected_primary_lanes,
+        expected_supplemental_lanes,
+        ctx,
+    )?
+    .collect())
 }
 
 fn expected_lane_pairs_impl<'a>(
@@ -272,7 +187,7 @@ fn expected_lane_pairs_impl<'a>(
             .iter_mut()
             .zip(&actual_lane.sketch_entities)
         {
-            expected.feature_ref = copy_feature_ref(ctx, actual.feature_ref.as_deref())?;
+            expected.feature_ref.clone_from(&actual.feature_ref);
             expected.links = None;
         }
         for (expected, actual) in expected_lane
@@ -280,10 +195,10 @@ fn expected_lane_pairs_impl<'a>(
             .iter_mut()
             .zip(&actual_lane.references)
         {
-            expected.feature_ref = copy_feature_ref(ctx, actual.feature_ref.as_deref())?;
+            expected.feature_ref.clone_from(&actual.feature_ref);
         }
         for (expected, actual) in expected_lane.scalars.iter_mut().zip(&actual_lane.scalars) {
-            expected.feature_ref = copy_feature_ref(ctx, actual.feature_ref.as_deref())?;
+            expected.feature_ref.clone_from(&actual.feature_ref);
         }
         finalize_lane_bindings(ctx, &native.feature_histories, expected_lane)?;
     }
@@ -301,22 +216,17 @@ fn expected_lane_pairs_impl<'a>(
         ))
 }
 
-fn rebuild_scalar_relations_charged(
-    ctx: &DecodeContext<'_>,
+fn rebuild_scalar_relations(
     lane: &mut FeatureInputLane,
     scalars: Vec<crate::records::FeatureInputScalar>,
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
     lane.scalars = scalars;
-    lane.relation_bindings = crate::resolved_features::markers::relation_bindings_charged(
-        ctx,
+    lane.relation_bindings = crate::resolved_features::markers::relation_bindings(
         &lane.id,
         &lane.classes,
         &lane.scalars,
     )?;
-    lane.references = crate::resolved_features::markers::reference_cells_charged(
-        ctx,
-        &lane.scalars,
-        &lane.classes,
-    )?;
+    lane.references =
+        crate::resolved_features::markers::reference_cells(&lane.scalars, &lane.classes)?;
     Ok(())
 }

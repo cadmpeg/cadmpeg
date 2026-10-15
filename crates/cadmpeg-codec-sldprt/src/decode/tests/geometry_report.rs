@@ -29,9 +29,7 @@ use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
 
 #[test]
-fn appearance_assignment_loss_retains_exact_text_and_refuses_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
+fn appearance_assignment_loss_retains_exact_text() {
     let assigned = [
         crate::brep::feature_source::FeatureSourceId::try_from(300).unwrap(),
         crate::brep::feature_source::FeatureSourceId::try_from(2).unwrap(),
@@ -41,34 +39,12 @@ fn appearance_assignment_loss_retains_exact_text_and_refuses_limit() {
     let matched = BTreeSet::new();
     let conflicts = vec!["first".to_string(), "second".to_string()];
     let expected = "VisualStates feature appearance assignment unresolved: feature source ID(s) 2, 300 have no agreeing DisplayFace persistent reference; conflicting references rejected for first; second.";
-    let message = super::super::appearance_assignment_loss_message(
-        &cadmpeg_test_support::service_decode_context(),
-        &assigned,
-        &matched,
-        &conflicts,
-    )
-    .unwrap();
+    let message = super::super::appearance_assignment_loss_message(&assigned, &matched, &conflicts);
     assert_eq!(message.as_deref(), Some(expected));
-
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(expected.len() - 1);
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error =
-        super::super::appearance_assignment_loss_message(&ctx, &assigned, &matched, &conflicts)
-            .expect_err("one byte below the exact message length must refuse");
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "retain SLDPRT appearance assignment loss"
-    ));
 }
 
 #[test]
-fn conflicting_display_reference_retains_exact_text_and_refuses_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
+fn conflicting_display_reference_retains_exact_text() {
     let candidates = [
         crate::brep::feature_source::FeatureSourceId::try_from(300).unwrap(),
         crate::brep::feature_source::FeatureSourceId::try_from(2).unwrap(),
@@ -76,28 +52,9 @@ fn conflicting_display_reference_retains_exact_text_and_refuses_limit() {
     .into_iter()
     .collect::<BTreeSet<_>>();
     let expected = "SyntheticDisplayStream::DisplayFace[7] (2, 300)";
-    let text = super::super::conflicting_display_reference(
-        &cadmpeg_test_support::service_decode_context(),
-        "SyntheticDisplayStream",
-        7,
-        &candidates,
-    )
-    .unwrap();
+    let text =
+        super::super::conflicting_display_reference("SyntheticDisplayStream", 7, &candidates);
     assert_eq!(text, expected);
-
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(expected.len() - 1);
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error =
-        super::super::conflicting_display_reference(&ctx, "SyntheticDisplayStream", 7, &candidates)
-            .expect_err("one byte below the exact message length must refuse");
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "retain SLDPRT conflicting display reference"
-    ));
 }
 
 #[test]
@@ -266,15 +223,7 @@ fn only_sketch_owned_relation_records_without_constraints_are_counted() {
         ..SldprtNative::default()
     };
 
-    assert_eq!(
-        unprojected_sketch_relation_records(
-            &cadmpeg_test_support::service_decode_context(),
-            &ir,
-            &native
-        )
-        .unwrap(),
-        3
-    );
+    assert_eq!(unprojected_sketch_relation_records(&ir, &native), 3);
 
     ir.model.features[0]
         .evaluation
@@ -282,15 +231,7 @@ fn only_sketch_owned_relation_records_without_constraints_are_counted() {
             role: FeatureTreeNodeRole::History,
             children: cadmpeg_ir::features::TreeChildren::default(),
         }));
-    assert_eq!(
-        unprojected_sketch_relation_records(
-            &cadmpeg_test_support::service_decode_context(),
-            &ir,
-            &native
-        )
-        .unwrap(),
-        0
-    );
+    assert_eq!(unprojected_sketch_relation_records(&ir, &native), 0);
 }
 
 #[test]
@@ -372,15 +313,7 @@ fn native_relation_records_have_at_most_one_neutral_owner() {
         ..SldprtNative::default()
     };
 
-    assert_eq!(
-        multiply_projected_sketch_relation_records(
-            &cadmpeg_test_support::service_decode_context(),
-            &ir,
-            &native
-        )
-        .unwrap(),
-        1
-    );
+    assert_eq!(multiply_projected_sketch_relation_records(&ir, &native), 1);
 }
 
 #[test]
@@ -419,14 +352,7 @@ fn direct_feature_input_operations_require_unique_history_bindings() {
         feature_input_lanes: vec![lane.clone()],
         ..SldprtNative::default()
     };
-    assert_eq!(
-        unbound_feature_input_operation_objects(
-            &cadmpeg_test_support::service_decode_context(),
-            &native
-        )
-        .unwrap(),
-        1
-    );
+    assert_eq!(unbound_feature_input_operation_objects(&native), 1);
 
     native.feature_histories.push(FeatureHistory {
         id: "history".into(),
@@ -452,23 +378,9 @@ fn direct_feature_input_operations_require_unique_history_bindings() {
             content: Vec::new(),
         }],
     });
-    assert_eq!(
-        unbound_feature_input_operation_objects(
-            &cadmpeg_test_support::service_decode_context(),
-            &native
-        )
-        .unwrap(),
-        0
-    );
+    assert_eq!(unbound_feature_input_operation_objects(&native), 0);
     native.feature_histories[0].features[0].input_class = None;
-    assert_eq!(
-        unbound_feature_input_operation_objects(
-            &cadmpeg_test_support::service_decode_context(),
-            &native
-        )
-        .unwrap(),
-        0
-    );
+    assert_eq!(unbound_feature_input_operation_objects(&native), 0);
     native.feature_histories[0].features[0].xml_tag = "Sketch".into();
     native.feature_histories[0].features[0].kind = "Sketch".into();
     native.feature_histories[0].features[0].name = "Profile".into();
@@ -477,14 +389,7 @@ fn direct_feature_input_operations_require_unique_history_bindings() {
         10 + 6 + cadmpeg_core::decode::u64_from_index("moProfileFeature_c".len());
     lane.names[0].value = "Profile".into();
     native.feature_input_lanes = vec![lane.clone()];
-    assert_eq!(
-        unbound_feature_input_operation_objects(
-            &cadmpeg_test_support::service_decode_context(),
-            &native
-        )
-        .unwrap(),
-        0
-    );
+    assert_eq!(unbound_feature_input_operation_objects(&native), 0);
     native.feature_histories[0].features[0].xml_tag = "Extrusion".into();
     native.feature_histories[0].features[0].kind = "Extrusion".into();
     native.feature_histories[0].features[0].name = "Boss".into();
@@ -494,46 +399,18 @@ fn direct_feature_input_operations_require_unique_history_bindings() {
     lane.names[0].value = "Boss".into();
     native.feature_input_lanes = vec![lane.clone()];
     native.feature_histories[0].features[0].input_class = Some("moSweep_c".into());
-    assert_eq!(
-        unbound_feature_input_operation_objects(
-            &cadmpeg_test_support::service_decode_context(),
-            &native
-        )
-        .unwrap(),
-        1
-    );
+    assert_eq!(unbound_feature_input_operation_objects(&native), 1);
     native.feature_histories[0].features[0].input_class = Some(class_name.into());
     native.feature_histories[0].features[0].source_id = None;
-    assert_eq!(
-        unbound_feature_input_operation_objects(
-            &cadmpeg_test_support::service_decode_context(),
-            &native
-        )
-        .unwrap(),
-        0
-    );
+    assert_eq!(unbound_feature_input_operation_objects(&native), 0);
     let mut duplicate = native.feature_histories[0].features[0].clone();
     duplicate.id = "duplicate-feature".into();
     native.feature_histories[0].features.push(duplicate);
-    assert_eq!(
-        unbound_feature_input_operation_objects(
-            &cadmpeg_test_support::service_decode_context(),
-            &native
-        )
-        .unwrap(),
-        1
-    );
+    assert_eq!(unbound_feature_input_operation_objects(&native), 1);
 
     lane.names[0].offset += 1;
     native.feature_input_lanes = vec![lane];
-    assert_eq!(
-        unbound_feature_input_operation_objects(
-            &cadmpeg_test_support::service_decode_context(),
-            &native
-        )
-        .unwrap(),
-        0
-    );
+    assert_eq!(unbound_feature_input_operation_objects(&native), 0);
 }
 
 #[test]
@@ -619,8 +496,7 @@ fn geometry_report_surfaces_ambiguous_pcurve_loss() {
         &scan,
         &mut decoded,
         &classification,
-        crate::container::notes_charged(&cadmpeg_test_support::service_decode_context(), &scan)
-            .unwrap(),
+        crate::container::notes(&scan),
     )
     .unwrap();
     assert!(report.losses.iter().any(|loss| {
@@ -650,57 +526,5 @@ fn unsupported_swift_loss_retains_exact_text() {
     assert_eq!(
         losses[0].message,
         "1 SWIFT semantic annotation(s) have no neutral PMI definition: GdtAnalysisGraphUnresolved (1)."
-    );
-}
-
-#[test]
-fn unsupported_swift_loss_refuses_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    let source = unresolved_swift_source();
-    let scan = crate::test_support::container::scan(&source);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
-    let error = super::super::append_swift_pmi_losses(&ctx, &scan, &mut Vec::new()).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "collect SLDPRT unsupported SWIFT classes")
-    );
-}
-
-#[test]
-fn unsupported_swift_loss_refuses_retained_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    let source = unresolved_swift_source();
-    let scan = crate::test_support::container::scan(&source);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
-    let error = super::super::append_swift_pmi_losses(&ctx, &scan, &mut Vec::new()).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "retain SLDPRT unsupported SWIFT class")
-    );
-}
-
-#[test]
-fn unsupported_swift_loss_refuses_scoped_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    let source = unresolved_swift_source();
-    let scan = crate::test_support::container::scan(&source);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_materialized_bytes =
-        cadmpeg_core::decode::u64_from_index("GdtAnalysisGraphUnresolved (1)".len() - 1);
-    let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
-    let error = super::super::append_swift_pmi_losses(&ctx, &scan, &mut Vec::new()).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::MaterializedBytes
-            && limit.operation == "format SLDPRT unsupported SWIFT classes")
     );
 }

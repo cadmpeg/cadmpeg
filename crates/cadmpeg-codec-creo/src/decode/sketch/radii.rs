@@ -39,31 +39,16 @@ use crate::decode::sketch_transfer::loci::{
 const EPS_RADIUS_NONZERO: f64 = 1.0e-12;
 const EPS_RADIUS_AGREEMENT: f64 = 1.0e-9;
 
-fn append_radius_candidate(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    candidates: &mut BTreeMap<u32, Vec<f64>>,
-    radius_id: u32,
-    value: f64,
-) -> Result<(), cadmpeg_core::CodecError> {
-    ctx.admit_btree_entry(candidates, &radius_id, "creo radius candidate nodes")?;
+fn append_radius_candidate(candidates: &mut BTreeMap<u32, Vec<f64>>, radius_id: u32, value: f64) {
     let values = candidates.entry(radius_id).or_default();
-    ctx.reserve_vec(values, 1, "creo radius candidate values")?;
     values.push(value);
-    Ok(())
 }
 
-fn link_radii(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    adjacency: &mut BTreeMap<u32, BTreeSet<u32>>,
-    first: u32,
-    second: u32,
-) -> Result<(), cadmpeg_core::CodecError> {
+fn link_radii(adjacency: &mut BTreeMap<u32, BTreeSet<u32>>, first: u32, second: u32) {
     for (radius_id, neighbor) in [(first, second), (second, first)] {
-        ctx.admit_btree_entry(adjacency, &radius_id, "creo radius adjacency nodes")?;
         let neighbors = adjacency.entry(radius_id).or_default();
-        ctx.insert_btree_set(neighbors, neighbor, "creo radius adjacency links")?;
+        neighbors.insert(neighbor);
     }
-    Ok(())
 }
 
 pub(in crate::decode) fn resolved_section_radii(
@@ -77,7 +62,7 @@ pub(in crate::decode) fn resolved_section_radii(
         .flat_map(|table| table.rows.circles())
     {
         if let Some((_, radius)) = saved_section_circle_values(definition, segment) {
-            append_radius_candidate(ctx, &mut candidates, segment.radius_ref, radius)?;
+            append_radius_candidate(&mut candidates, segment.radius_ref, radius);
         }
     }
     for row in definition
@@ -92,7 +77,7 @@ pub(in crate::decode) fn resolved_section_radii(
                 .value()
                 .filter(|value| value.is_finite() && *value > 0.0)
             {
-                append_radius_candidate(ctx, &mut candidates, row.key, value)?;
+                append_radius_candidate(&mut candidates, row.key, value);
             }
         }
     }
@@ -100,45 +85,31 @@ pub(in crate::decode) fn resolved_section_radii(
     let ambiguous_point_ids = definition
         .variables
         .as_ref()
-        .map(|variables| {
-            variables
-                .reconciled_points(ctx)
-                .map(|points| points.ambiguous)
-        })
-        .transpose()?
+        .map(|variables| variables.reconciled_points().ambiguous)
         .unwrap_or_default();
-    for constraint in section_equation_radial_constraints(
-        ctx,
-        definition,
-        &radial_coordinates,
-        &ambiguous_point_ids,
-    )? {
+    for constraint in
+        section_equation_radial_constraints(definition, &radial_coordinates, &ambiguous_point_ids)
+    {
         if constraint.radius.0 == VariableType::Radius {
             if let Some(value) = constraint.radius_value.filter(|value| value.get() > 0.0) {
-                append_radius_candidate(ctx, &mut candidates, constraint.radius.1, value.get())?;
+                append_radius_candidate(&mut candidates, constraint.radius.1, value.get());
             }
         }
     }
     for (variable, value) in section_equation_function_six_distance_values(
-        ctx,
         definition,
         &radial_coordinates,
         &ambiguous_point_ids,
-    )? {
+    ) {
         if variable.0 == VariableType::Radius && value.is_finite() && value > 0.0 {
-            append_radius_candidate(ctx, &mut candidates, variable.1, value)?;
+            append_radius_candidate(&mut candidates, variable.1, value);
         }
     }
-    for constraint in section_equation_radius_dimensions(ctx, definition)?
+    for constraint in section_equation_radius_dimensions(definition)
         .into_iter()
         .filter(|constraint| constraint.active)
     {
-        append_radius_candidate(
-            ctx,
-            &mut candidates,
-            constraint.radius,
-            constraint.value.get(),
-        )?;
+        append_radius_candidate(&mut candidates, constraint.radius, constraint.value.get());
     }
     for relation in definition
         .relations
@@ -170,11 +141,11 @@ pub(in crate::decode) fn resolved_section_radii(
             let Some(radius) = PositiveLength::new(radius) else {
                 continue;
             };
-            append_radius_candidate(ctx, &mut candidates, relation.dimension_id, radius.get())?;
+            append_radius_candidate(&mut candidates, relation.dimension_id, radius.get());
         }
     }
-    for ((_, radius_id), value) in section_relation_radius_scalar_values(ctx, definition)? {
-        append_radius_candidate(ctx, &mut candidates, radius_id, value)?;
+    for ((_, radius_id), value) in section_relation_radius_scalar_values(definition) {
+        append_radius_candidate(&mut candidates, radius_id, value);
     }
     if let Some(dimensions) = definition
         .dimensions
@@ -207,7 +178,7 @@ pub(in crate::decode) fn resolved_section_radii(
                 _ => continue,
             };
             if let Some(radius) = PositiveLength::new(radius) {
-                append_radius_candidate(ctx, &mut candidates, radius_id, radius.get())?;
+                append_radius_candidate(&mut candidates, radius_id, radius.get());
             }
         }
     }
@@ -247,7 +218,7 @@ pub(in crate::decode) fn resolved_section_radii(
         if endpoint_radii()
             .all(|candidate| (candidate - radius).abs() <= EPS_RADIUS_AGREEMENT * scale)
         {
-            append_radius_candidate(ctx, &mut candidates, radius_id, radius)?;
+            append_radius_candidate(&mut candidates, radius_id, radius);
         }
     }
     let mut adjacency = BTreeMap::<u32, BTreeSet<u32>>::new();
@@ -257,7 +228,7 @@ pub(in crate::decode) fn resolved_section_radii(
         .as_ref()
         .filter(|table| table.is_complete())
     {
-        for component in section_equation_scalar_equality_components(ctx, definition)? {
+        for component in section_equation_scalar_equality_components(definition) {
             if component
                 .iter()
                 .any(|&(variable_type, _)| variable_type != VariableType::Radius)
@@ -276,18 +247,14 @@ pub(in crate::decode) fn resolved_section_radii(
             });
             if invalid {
                 for &(_, radius_id) in &component {
-                    ctx.insert_btree_set(
-                        &mut invalid_scalar_radius_ids,
-                        radius_id,
-                        "creo invalid radius nodes",
-                    )?;
+                    invalid_scalar_radius_ids.insert(radius_id);
                 }
                 continue;
             }
             let mut previous = None;
             for &(_, radius_id) in &component {
                 if let Some(first) = previous {
-                    link_radii(ctx, &mut adjacency, first, radius_id)?;
+                    link_radii(&mut adjacency, first, radius_id);
                 }
                 previous = Some(radius_id);
             }
@@ -308,29 +275,29 @@ pub(in crate::decode) fn resolved_section_radii(
         };
         match (first_radius, second_radius) {
             (SectionRadiusSource::Reference(first), SectionRadiusSource::Reference(second)) => {
-                link_radii(ctx, &mut adjacency, first, second)?;
+                link_radii(&mut adjacency, first, second);
             }
             (SectionRadiusSource::Reference(reference), SectionRadiusSource::Value(value))
             | (SectionRadiusSource::Value(value), SectionRadiusSource::Reference(reference)) => {
-                append_radius_candidate(ctx, &mut candidates, reference, value.get())?;
+                append_radius_candidate(&mut candidates, reference, value.get());
             }
             (SectionRadiusSource::Value(_), SectionRadiusSource::Value(_)) => {}
         }
     }
     let mut remaining = BTreeSet::new();
     for radius_id in candidates.keys().chain(adjacency.keys()) {
-        ctx.insert_btree_set(&mut remaining, *radius_id, "creo remaining radius nodes")?;
+        remaining.insert(*radius_id);
     }
     let mut radii = BTreeMap::new();
     while let Some(seed) = remaining.first().copied() {
         let mut component = BTreeSet::new();
-        ctx.insert_btree_set(&mut component, seed, "creo radius component nodes")?;
+        component.insert(seed);
         let mut pending = std::collections::VecDeque::new();
-        ctx.push_back(&mut pending, seed, "creo pending radius nodes")?;
+        pending.push_back(seed);
         while let Some(radius_id) = pending.pop_front() {
             for neighbor in adjacency.get(&radius_id).into_iter().flatten() {
-                if ctx.insert_btree_set(&mut component, *neighbor, "creo radius component nodes")? {
-                    ctx.push_back(&mut pending, *neighbor, "creo pending radius nodes")?;
+                if component.insert(*neighbor) {
+                    pending.push_back(*neighbor);
                 }
             }
         }
@@ -355,7 +322,7 @@ pub(in crate::decode) fn resolved_section_radii(
                 continue;
             }
             for radius_id in &component {
-                ctx.insert_btree_map(&mut radii, *radius_id, value, "creo resolved radius nodes")?;
+                radii.insert(*radius_id, value);
             }
         }
         remaining.retain(|radius_id| !component.contains(radius_id));
@@ -566,40 +533,28 @@ fn section_fixed_coordinate_line_carrier(
 }
 
 fn section_proven_axis_line_carrier(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     variable_points: &BTreeMap<u32, [Option<f64>; 2]>,
     segment: &crate::feature::definitions::FeatureSegment,
-) -> Result<Option<SketchGeometry>, cadmpeg_core::CodecError> {
+) -> Option<SketchGeometry> {
     if let Some(geometry) = section_axis_line_carrier_with_points(variable_points, segment) {
-        Ok(Some(geometry))
+        Some(geometry)
     } else {
-        let Some(coordinate) = section_line_entity_fixed_coordinate_with_unique_rows(
-            ctx,
-            definition,
-            segment.external_id,
-        )?
-        else {
-            return Ok(None);
-        };
-        Ok(section_fixed_coordinate_line_carrier(
-            variable_points,
-            segment,
-            coordinate,
-        ))
+        let coordinate =
+            section_line_entity_fixed_coordinate_with_unique_rows(definition, segment.external_id)?;
+        section_fixed_coordinate_line_carrier(variable_points, segment, coordinate)
     }
 }
 
 pub(in crate::decode) fn section_axis_reference_line_geometry(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     variable_points: &BTreeMap<u32, [Option<f64>; 2]>,
     segment: &crate::feature::definitions::FeatureSegment,
-) -> Result<Option<SketchGeometry>, cadmpeg_core::CodecError> {
+) -> Option<SketchGeometry> {
     if !section_degenerate_axis_line(definition, segment) {
-        return section_proven_axis_line_carrier(ctx, definition, variable_points, segment);
+        return section_proven_axis_line_carrier(definition, variable_points, segment);
     }
-    Ok((|| {
+    (|| {
         let fixed_coordinate = SectionAxis::from_selector(segment.vertical_horizontal?)?;
         let values = || {
             segment.point_ids().into_iter().filter_map(|point| {
@@ -627,32 +582,29 @@ pub(in crate::decode) fn section_axis_reference_line_geometry(
             (Point2::new(0.0, value), Point2::new(1.0, 0.0))
         };
         SketchGeometry::try_from(SketchGeometryDefinition::ReferenceLine { origin, direction }).ok()
-    })())
+    })()
 }
 
 pub(in crate::decode) fn section_segment_intersection_carrier_with_missing_line(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     radii: &BTreeMap<u32, f64>,
     points: &BTreeMap<u32, [f64; 2]>,
     segment: &crate::feature::definitions::FeatureSegment,
     missing_line: Option<&(usize, SketchGeometry)>,
     variable_points: &BTreeMap<u32, [Option<f64>; 2]>,
-) -> Result<Option<SketchGeometry>, cadmpeg_core::CodecError> {
+) -> Option<SketchGeometry> {
     if let Some(geometry) = resolved_section_segment_geometry_with_missing_line(
         definition,
         points,
         segment,
         missing_line,
     ) {
-        return Ok(Some(geometry));
+        return Some(geometry);
     }
-    if let Some(geometry) =
-        section_proven_axis_line_carrier(ctx, definition, variable_points, segment)?
-    {
-        return Ok(Some(geometry));
+    if let Some(geometry) = section_proven_axis_line_carrier(definition, variable_points, segment) {
+        return Some(geometry);
     }
-    Ok((|| {
+    (|| {
         let carrier = section_arc_carrier(radii, points, segment)
             .or_else(|| saved_section_arc_carrier(definition, segment))?;
         SketchGeometry::from_parts(SketchGeometryDefinition::Arc {
@@ -662,7 +614,7 @@ pub(in crate::decode) fn section_segment_intersection_carrier_with_missing_line(
             end_angle: Angle::FULL_TURN,
         })
         .ok()
-    })())
+    })()
 }
 
 pub(in crate::decode) fn trim_segment_id(
@@ -733,75 +685,23 @@ mod tests {
 
     use super::{
         append_radius_candidate, link_radii, resolved_section_radii, section_arc_carrier,
-        section_proven_axis_line_carrier as section_proven_axis_line_carrier_admitted,
-        section_skamp_radius_source, trim_segment_id, SectionRadiusSource,
+        section_proven_axis_line_carrier, section_skamp_radius_source, trim_segment_id,
+        SectionRadiusSource,
     };
 
-    fn section_proven_axis_line_carrier(
-        definition: &crate::feature::definitions::FeatureDefinition,
-        variable_points: &std::collections::BTreeMap<u32, [Option<f64>; 2]>,
-        segment: &crate::feature::definitions::FeatureSegment,
-    ) -> Option<cadmpeg_ir::sketches::SketchGeometry> {
-        crate::decode::with_test_decode_ctx(|ctx| {
-            section_proven_axis_line_carrier_admitted(ctx, definition, variable_points, segment)
-        })
-        .expect("test axis line carrier")
-    }
-
-    fn with_collection_limit<T>(
-        limit: u64,
-        run: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T,
-    ) -> T {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
-            .expect("test input admitted");
-        run(&ctx)
+    #[test]
+    fn radius_candidate_is_stored_under_its_radius_id() {
+        let mut candidates = std::collections::BTreeMap::new();
+        append_radius_candidate(&mut candidates, 42, 3.0);
+        assert_eq!(candidates.get(&42), Some(&vec![3.0]));
     }
 
     #[test]
-    fn radius_candidate_refuses_before_node_and_nested_value() {
-        let run = |limit| {
-            with_collection_limit(limit, |ctx| {
-                let mut candidates = std::collections::BTreeMap::new();
-                append_radius_candidate(ctx, &mut candidates, 42, 3.0)?;
-                Ok::<_, cadmpeg_core::CodecError>(candidates)
-            })
-        };
-        assert!(
-            matches!(run(0), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "creo radius candidate nodes")
-        );
-        assert!(
-            matches!(run(1), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "creo radius candidate values")
-        );
+    fn radius_adjacency_links_the_first_radius_to_the_second() {
+        let mut adjacency = std::collections::BTreeMap::new();
+        link_radii(&mut adjacency, 41, 42);
         assert_eq!(
-            run(2).expect("candidate admitted").get(&42),
-            Some(&vec![3.0])
-        );
-    }
-
-    #[test]
-    fn radius_adjacency_refuses_before_node_and_link() {
-        let run = |limit| {
-            with_collection_limit(limit, |ctx| {
-                let mut adjacency = std::collections::BTreeMap::new();
-                link_radii(ctx, &mut adjacency, 41, 42)?;
-                Ok::<_, cadmpeg_core::CodecError>(adjacency)
-            })
-        };
-        assert!(
-            matches!(run(0), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "creo radius adjacency nodes")
-        );
-        assert!(
-            matches!(run(1), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "creo radius adjacency links")
-        );
-        assert_eq!(
-            run(4).expect("adjacency admitted").get(&41),
+            adjacency.get(&41),
             Some(&std::collections::BTreeSet::from([42]))
         );
     }

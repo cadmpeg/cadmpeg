@@ -6,8 +6,6 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::curve::CurveTopologyRow;
 use crate::legacy::{self, NumericPayload, ObjectPayload, ObjectRecord, Persistence};
-use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::PositiveReal;
 
 const ROUND_SCHEMA_CLASS: i32 = 913;
@@ -59,10 +57,7 @@ struct Index<'a> {
 }
 
 impl<'a> Index<'a> {
-    fn build(
-        ctx: &DecodeContext<'_>,
-        persistence: &'a Persistence,
-    ) -> Result<Option<Self>, CodecError> {
+    fn build(persistence: &'a Persistence) -> Option<Self> {
         let mut objects = BTreeMap::new();
         let mut children = BTreeMap::new();
         for object in persistence.objects.iter().filter(|object| {
@@ -77,31 +72,22 @@ impl<'a> Index<'a> {
                     | "dim_dat_ptr"
             )
         }) {
-            let id = legacy::checked_object_node_id(
-                ctx,
-                object.offset,
-                "creo legacy feature object index IDs",
-            )?;
-            ctx.admit_btree_entry(&objects, &id, "creo legacy feature object index nodes")?;
+            let id = legacy::checked_object_node_id(object.offset);
             match objects.entry(id) {
                 std::collections::btree_map::Entry::Vacant(entry) => {
                     entry.insert(object);
                 }
-                std::collections::btree_map::Entry::Occupied(_) => return Ok(None),
+                std::collections::btree_map::Entry::Occupied(_) => return None,
             }
             if let Some(parent) = object.parent {
                 let key = (parent, object.name.as_str());
-                ctx.admit_btree_entry(&children, &key, "creo legacy feature child index nodes")?;
                 match children.entry(key) {
                     std::collections::btree_map::Entry::Vacant(entry) => {
-                        let mut rows = Vec::new();
-                        ctx.reserve_vec(&mut rows, 1, "creo legacy feature child index rows")?;
-                        rows.push(object);
+                        let rows = vec![object];
                         entry.insert(rows);
                     }
                     std::collections::btree_map::Entry::Occupied(mut entry) => {
                         let rows = entry.get_mut();
-                        ctx.reserve_vec(rows, 1, "creo legacy feature child index rows")?;
                         rows.push(object);
                     }
                 }
@@ -109,28 +95,26 @@ impl<'a> Index<'a> {
         }
         let mut integers = BTreeMap::new();
         value_index(
-            ctx,
             persistence.integer_values.rows.iter().filter(|record| {
                 matches!(record.name.as_str(), "id" | "type" | "dim_type" | "feat_id")
             }),
             &mut integers,
-        )?;
+        );
         let mut reals = BTreeMap::new();
         value_index(
-            ctx,
             persistence
                 .real_values
                 .rows
                 .iter()
                 .filter(|record| record.name == "value"),
             &mut reals,
-        )?;
-        Ok(Some(Self {
+        );
+        Some(Self {
             objects,
             children,
             integers,
             reals,
-        }))
+        })
     }
 
     fn children(&self, parent: usize, name: &'static str) -> &[&'a ObjectRecord] {
@@ -166,24 +150,23 @@ impl<'a> Index<'a> {
 
 /// Decode feature-owned round records from one legacy persistence graph.
 pub(crate) fn scan(
-    ctx: &DecodeContext<'_>,
     persistence: &Persistence,
     topology_rows: &[CurveTopologyRow],
-) -> Result<LegacyFeatureScan, CodecError> {
+) -> LegacyFeatureScan {
     if !persistence
         .objects
         .iter()
         .any(|object| object.name == "Sld_Features" && object.parent.is_none())
     {
-        return Ok(LegacyFeatureScan::default());
+        return LegacyFeatureScan::default();
     }
-    let Some(index) = Index::build(ctx, persistence)? else {
-        return Ok(LegacyFeatureScan::default());
+    let Some(index) = Index::build(persistence) else {
+        return LegacyFeatureScan::default();
     };
     let Some(features_root) = unique_root(&index, "Sld_Features") else {
-        return Ok(LegacyFeatureScan::default());
+        return LegacyFeatureScan::default();
     };
-    let radius_rows = full_data_dimension_rows(ctx, &index)?;
+    let radius_rows = full_data_dimension_rows(&index);
     let mut rounds = BTreeMap::new();
     let mut ambiguous_feature_ids = BTreeSet::new();
     let feature_nodes = index
@@ -214,36 +197,26 @@ pub(crate) fn scan(
                 .map_or(LegacyRoundRadius::NotPresent, |rows| {
                     round_radius(rows, &index, feature_id)
                 }),
-            edge_ids: unique_feature_edge_ids(ctx, topology_rows, feature_id)?,
+            edge_ids: unique_feature_edge_ids(topology_rows, feature_id),
             offset: feature.offset,
         };
-        ctx.admit_btree_entry(&rounds, &feature_id, "creo legacy round index nodes")?;
         match rounds.entry(feature_id) {
             std::collections::btree_map::Entry::Vacant(entry) => {
                 entry.insert(round);
             }
             std::collections::btree_map::Entry::Occupied(mut entry) => {
                 entry.insert(round);
-                ctx.insert_btree_set(
-                    &mut ambiguous_feature_ids,
-                    feature_id,
-                    "creo legacy ambiguous round IDs",
-                )?;
+                ambiguous_feature_ids.insert(feature_id);
             }
         }
     }
     let mut visible_rounds = Vec::new();
-    ctx.reserve_vec(
-        &mut visible_rounds,
-        rounds.len() - ambiguous_feature_ids.len(),
-        "creo legacy round results",
-    )?;
     visible_rounds.extend(rounds.into_iter().filter_map(|(feature_id, round)| {
         (!ambiguous_feature_ids.contains(&feature_id)).then_some(round)
     }));
-    Ok(LegacyFeatureScan {
+    LegacyFeatureScan {
         rounds: visible_rounds,
-    })
+    }
 }
 
 fn unique_root<'a>(index: &'a Index<'a>, name: &str) -> Option<&'a ObjectRecord> {
@@ -256,45 +229,33 @@ fn unique_root<'a>(index: &'a Index<'a>, name: &str) -> Option<&'a ObjectRecord>
     roots.next().is_none().then_some(root)
 }
 
-fn full_data_dimension_rows<'a>(
-    ctx: &DecodeContext<'_>,
-    index: &'a Index<'a>,
-) -> Result<Option<Vec<&'a ObjectRecord>>, CodecError> {
-    let Some(root) = unique_root(index, "Sld_FullData") else {
-        return Ok(None);
-    };
+fn full_data_dimension_rows<'a>(index: &'a Index<'a>) -> Option<Vec<&'a ObjectRecord>> {
+    let root = unique_root(index, "Sld_FullData")?;
     let arrays = index.children(root.offset, "dim_array");
     let [array] = arrays else {
-        return Ok(None);
+        return None;
     };
     let array = *array;
     if !array.payload.is_complete() {
-        return Ok(None);
+        return None;
     }
     let ObjectPayload::Array { elements, .. } = &array.payload else {
-        return Ok(None);
+        return None;
     };
     let mut seen = BTreeSet::new();
     let mut rows = Vec::new();
-    ctx.reserve_vec(&mut rows, elements.len(), "creo legacy dimension rows")?;
     for element_id in elements {
         if seen.contains(element_id.as_str()) {
-            return Ok(None);
+            return None;
         }
-        ctx.insert_btree_set(
-            &mut seen,
-            element_id.as_str(),
-            "creo legacy dimension identities",
-        )?;
-        let Some(element) = index.objects.get(element_id.as_str()).copied() else {
-            return Ok(None);
-        };
+        seen.insert(element_id.as_str());
+        let element = index.objects.get(element_id.as_str()).copied()?;
         if element.parent != Some(array.offset) || element.name != "dim_array" {
-            return Ok(None);
+            return None;
         }
         rows.push(element);
     }
-    Ok(Some(rows))
+    Some(rows)
 }
 
 fn round_radius(rows: &[&ObjectRecord], index: &Index<'_>, feature_id: u32) -> LegacyRoundRadius {
@@ -345,92 +306,27 @@ fn round_radius(rows: &[&ObjectRecord], index: &Index<'_>, feature_id: u32) -> L
     LegacyRoundRadius::Constant(first)
 }
 
-fn unique_feature_edge_ids(
-    ctx: &DecodeContext<'_>,
-    rows: &[CurveTopologyRow],
-    feature_id: u32,
-) -> Result<Option<Vec<u32>>, CodecError> {
+fn unique_feature_edge_ids(rows: &[CurveTopologyRow], feature_id: u32) -> Option<Vec<u32>> {
     let mut ids = Vec::new();
     let mut seen = BTreeSet::new();
     for row in rows.iter().filter(|row| row.feature_id == feature_id) {
         if seen.contains(&row.id) {
-            return Ok(None);
+            return None;
         }
-        ctx.insert_btree_set(&mut seen, row.id, "creo legacy round edge identities")?;
-        ctx.reserve_vec(&mut ids, 1, "creo legacy round edge IDs")?;
+        seen.insert(row.id);
         ids.push(row.id);
     }
-    Ok((!ids.is_empty()).then_some(ids))
+    (!ids.is_empty()).then_some(ids)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{scan as scan_checked, LegacyRoundRadius};
+    use super::{scan, LegacyRoundRadius};
     use crate::curve::CurveTopologyRow;
     use crate::legacy::{
         IntegerPayload, ObjectPayload, Persistence, Real, RealPayload, ValueRecord,
     };
     use crate::test_support::{fixture_offset, object};
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    fn scan(
-        persistence: &Persistence,
-        topology_rows: &[crate::curve::CurveTopologyRow],
-    ) -> super::LegacyFeatureScan {
-        let arena = DecodeArena::new();
-        let policy = DecodePolicy::service();
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
-        scan_checked(&ctx, persistence, topology_rows).expect("service admits legacy features")
-    }
-
-    fn scan_with_collection_limit(
-        persistence: &Persistence,
-        topology_rows: &[CurveTopologyRow],
-        limit: u64,
-    ) -> Result<super::LegacyFeatureScan, CodecError> {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
-        scan_checked(&ctx, persistence, topology_rows)
-    }
-
-    fn scan_with_retained_limit(
-        persistence: &Persistence,
-        limit: u64,
-    ) -> Result<super::LegacyFeatureScan, CodecError> {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = limit;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
-        scan_checked(&ctx, persistence, &[])
-    }
-
-    fn assert_collection_refusal(
-        persistence: &Persistence,
-        topology_rows: &[CurveTopologyRow],
-        operation: &'static str,
-    ) {
-        let refusal = (0..512).find_map(|limit| {
-            let Err(CodecError::ResourceLimit(refusal)) =
-                scan_with_collection_limit(persistence, topology_rows, limit)
-            else {
-                return None;
-            };
-            (refusal.operation == operation).then_some(refusal)
-        });
-        assert!(
-            matches!(
-                refusal,
-                Some(limit) if limit.dimension == ResourceDimension::CollectionItems
-            ),
-            "missing collection refusal for {operation}"
-        );
-    }
 
     fn integer(
         parent: &str,
@@ -583,139 +479,5 @@ mod tests {
     #[test]
     fn ignores_persistence_without_feature_root() {
         assert!(scan(&Persistence::default(), &[]).rounds.is_empty());
-    }
-
-    #[test]
-    fn legacy_feature_object_index_nodes_refuse_before_insertion() {
-        let fixture = persistence(&[2.0]);
-        assert_eq!(scan(&fixture, &[]).rounds.len(), 1);
-        assert_collection_refusal(&fixture, &[], "creo legacy feature object index nodes");
-    }
-
-    #[test]
-    fn legacy_feature_object_index_ids_refuse_before_string_growth() {
-        let fixture = persistence(&[2.0]);
-        assert_eq!(scan(&fixture, &[]).rounds.len(), 1);
-        assert!(matches!(
-            scan_with_retained_limit(&fixture, 0),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "creo legacy feature object index IDs"
-        ));
-    }
-
-    #[test]
-    fn legacy_feature_child_index_nodes_refuse_before_insertion() {
-        let fixture = persistence(&[2.0]);
-        assert_eq!(scan(&fixture, &[]).rounds.len(), 1);
-        assert_collection_refusal(&fixture, &[], "creo legacy feature child index nodes");
-    }
-
-    #[test]
-    fn legacy_feature_child_index_rows_refuse_before_vec_growth() {
-        let fixture = persistence(&[2.0]);
-        assert_eq!(scan(&fixture, &[]).rounds.len(), 1);
-        assert_collection_refusal(&fixture, &[], "creo legacy feature child index rows");
-    }
-
-    #[test]
-    fn legacy_dimension_rows_refuse_before_vec_growth() {
-        let fixture = persistence(&[2.0]);
-        assert_eq!(scan(&fixture, &[]).rounds.len(), 1);
-        assert_collection_refusal(&fixture, &[], "creo legacy dimension rows");
-    }
-
-    #[test]
-    fn legacy_dimension_identities_refuse_before_insertion() {
-        let fixture = persistence(&[2.0]);
-        assert_eq!(scan(&fixture, &[]).rounds.len(), 1);
-        assert_collection_refusal(&fixture, &[], "creo legacy dimension identities");
-    }
-
-    #[test]
-    fn legacy_round_edge_identities_refuse_before_insertion() {
-        let fixture = persistence(&[2.0]);
-        let edges = [topology(7), topology(8)];
-        assert_eq!(scan(&fixture, &edges).rounds[0].edge_ids, Some(vec![7, 8]));
-        assert_collection_refusal(&fixture, &edges, "creo legacy round edge identities");
-    }
-
-    #[test]
-    fn legacy_round_edge_ids_refuse_before_vec_growth() {
-        let fixture = persistence(&[2.0]);
-        let edges = [topology(7), topology(8)];
-        assert_eq!(scan(&fixture, &edges).rounds[0].edge_ids, Some(vec![7, 8]));
-        assert_collection_refusal(&fixture, &edges, "creo legacy round edge IDs");
-    }
-
-    #[test]
-    fn legacy_round_index_nodes_refuse_before_insertion() {
-        let fixture = persistence(&[2.0]);
-        assert_eq!(scan(&fixture, &[]).rounds.len(), 1);
-        assert_collection_refusal(&fixture, &[], "creo legacy round index nodes");
-    }
-
-    #[test]
-    fn legacy_ambiguous_round_ids_refuse_before_insertion() {
-        let mut fixture = persistence(&[2.0]);
-        fixture.objects.extend([
-            object(
-                "duplicate_feature",
-                "next_feat_ptr",
-                Some("features"),
-                ObjectPayload::Arrow,
-            ),
-            object(
-                "duplicate_type",
-                "feat_type_ptr",
-                Some("duplicate_feature"),
-                ObjectPayload::Arrow,
-            ),
-        ]);
-        fixture.integer_values.rows.extend([
-            integer("duplicate_feature", "id", 139, 90),
-            integer("duplicate_type", "type", 913, 91),
-        ]);
-        assert!(scan(&fixture, &[]).rounds.is_empty());
-        assert_collection_refusal(&fixture, &[], "creo legacy ambiguous round IDs");
-    }
-
-    #[test]
-    fn legacy_round_results_refuse_before_vec_growth() {
-        let fixture = persistence(&[2.0]);
-        assert_eq!(scan(&fixture, &[]).rounds.len(), 1);
-        assert_collection_refusal(&fixture, &[], "creo legacy round results");
-    }
-    #[test]
-    fn feature_indexes_only_fields_read_by_its_joins() {
-        let mut persistence = persistence(&[2.0]);
-        let rows = [topology(7)];
-        let expected = scan(&persistence, &rows);
-        let mut unrelated = persistence.integer_values.rows[0].clone();
-        unrelated.name = "unrelated_field".into();
-        persistence
-            .integer_values
-            .rows
-            .extend(std::iter::repeat_n(unrelated, 1000));
-        let actual = scan_with_collection_limit(&persistence, &rows, 1000)
-            .expect("irrelevant fields need no feature index entries");
-        assert_eq!(actual, expected);
-    }
-
-    #[test]
-    fn feature_does_not_index_unrelated_object_graphs() {
-        let mut persistence = persistence(&[2.0]);
-        let rows = [topology(7)];
-        let expected = scan(&persistence, &rows);
-        let mut unrelated = persistence.objects[0].clone();
-        unrelated.name = "View".into();
-        unrelated.parent = Some(9000);
-        for offset in 10_000..11_000 {
-            unrelated.offset = offset;
-            persistence.objects.push(unrelated.clone());
-        }
-        let actual = scan_with_collection_limit(&persistence, &rows, 1000)
-            .expect("unrelated object graphs need no feature indices");
-        assert_eq!(actual, expected);
     }
 }

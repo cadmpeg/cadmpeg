@@ -137,9 +137,7 @@ fn assert_same_pcurves(actual: &[Pcurve], expected: &[Pcurve]) {
 }
 
 fn assert_shared_parse_matches_standalone(stream: &[u8]) {
-    let graph =
-        crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, stream))
-            .unwrap();
+    let graph = crate::topology::Graph::parse(stream);
     let shared = crate::test_support::with_decode_context(|ctx| {
         crate::nurbs::parse_with_graph(ctx, stream, &graph)
     })
@@ -435,10 +433,8 @@ fn nurbs_scanners_defer_unreferenced_lane_materialization() {
         );
         arrays[pos + 6..pos + 8].copy_from_slice(&reference.to_be_bytes());
     }
-    crate::test_support::with_decode_context(|ctx| {
-        let parsed_arrays = crate::nurbs::arrays(ctx, &arrays).unwrap();
-        assert_eq!(parsed_arrays.u16s.len(), ARRAY_CANDIDATES);
-    });
+    let parsed_arrays = crate::nurbs::arrays(&arrays);
+    assert_eq!(parsed_arrays.u16s.len(), ARRAY_CANDIDATES);
     assert!(
         crate::test_support::with_decode_context(|ctx| crate::nurbs::curves(ctx, &arrays))
             .unwrap()
@@ -457,10 +453,8 @@ fn nurbs_scanners_defer_unreferenced_lane_materialization() {
         );
         payloads[pos + 13..pos + 15].copy_from_slice(&1u16.to_be_bytes());
     }
-    crate::test_support::with_decode_context(|ctx| {
-        let parsed_payloads = crate::nurbs::curve_payloads(ctx, &payloads).unwrap();
-        assert_eq!(parsed_payloads.len(), PAYLOAD_CANDIDATES);
-    });
+    let parsed_payloads = crate::nurbs::curve_payloads(&payloads);
+    assert_eq!(parsed_payloads.len(), PAYLOAD_CANDIDATES);
     assert!(
         crate::test_support::with_decode_context(|ctx| crate::nurbs::curves(ctx, &payloads))
             .unwrap()
@@ -1124,107 +1118,6 @@ fn nurbs_surface_reads_sense_after_extended_common_header_reference() {
 }
 
 #[test]
-fn nurbs_shared_scan_refuses_exhausted_work() {
-    let bytes = bspline_partition_stream();
-    let graph =
-        crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &bytes))
-            .unwrap();
-    crate::test_support::with_decode_context_over(
-        &bytes,
-        |policy| policy.limits.max_work_units = 0,
-        |ctx| {
-            assert!(
-                matches!(super::parse_with_graph(ctx, &bytes, &graph), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "scan NX NURBS arrays")
-            );
-        },
-    );
-}
-
-#[test]
-fn nurbs_array_index_refuses_scoped_storage_before_insertion() {
-    let bytes = [0, 127, 0, 0, 0, 1, 0, 12, 0, 2];
-    crate::test_support::with_decode_context_over(
-        &bytes,
-        |policy| policy.limits.max_materialized_bytes = 0,
-        |ctx| {
-            assert!(
-                matches!(super::arrays(ctx, &bytes), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "NX NURBS array index")
-            );
-        },
-    );
-}
-
-#[test]
-fn nurbs_auxiliary_lane_preserves_work_refusal() {
-    let bytes = [0, 128, 0, 0, 0, 1, 0, 12, 0, 0, 0, 0, 0, 0, 0, 0];
-    crate::test_support::with_decode_context_over(
-        &bytes,
-        |policy| policy.limits.max_work_units = 0,
-        |ctx| {
-            assert!(
-                matches!(super::auxiliary_record_at(ctx, &bytes, 0), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "validate NX NURBS floating-point lane")
-            );
-        },
-    );
-}
-
-#[test]
-fn nurbs_prefix_refuses_scoped_storage_before_materializing() {
-    let bytes = [0, 2];
-    crate::test_support::with_decode_context_over(
-        &bytes,
-        |policy| policy.limits.max_materialized_bytes = 0,
-        |ctx| {
-            assert!(
-                matches!(super::ArrayValues::U16(&bytes).u16_prefix(ctx, 1), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "NX NURBS multiplicity prefix")
-            );
-        },
-    );
-}
-
-#[test]
-fn nurbs_expanded_knots_refuse_retained_storage() {
-    crate::test_support::with_decode_context_over(
-        &[],
-        |policy| policy.limits.max_retained_bytes = 0,
-        |ctx| {
-            assert!(
-                matches!(super::expand_knots(ctx, &[0.0, 1.0], &[2, 2], 4), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "NX NURBS expanded knots")
-            );
-        },
-    );
-}
-
-#[test]
-fn nurbs_duplicate_payload_index_refuses_lookup_work() {
-    crate::test_support::with_decode_context_over(
-        &[],
-        |policy| policy.limits.max_work_units = 1,
-        |ctx| {
-            let records = [Ok(Some((12, 7_u8))), Ok(Some((12, 7_u8)))];
-            assert!(
-                matches!(super::unique_records(ctx, records), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "resolve duplicate NX NURBS payload")
-            );
-        },
-    );
-}
-
-#[test]
-fn nurbs_duplicate_array_index_refuses_lookup_work() {
-    let record = [0, 127, 0, 0, 0, 1, 0, 12, 0, 2];
-    let bytes = record.repeat(2);
-    crate::test_support::with_decode_context_over(
-        &bytes,
-        |policy| policy.limits.max_work_units = 21,
-        |ctx| {
-            assert!(
-                matches!(super::arrays(ctx, &bytes), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "resolve duplicate NX NURBS array")
-            );
-        },
-    );
-}
-
-#[test]
 fn nurbs_low_nonnull_identities_resolve_owned_carriers() {
     let mut bytes = bspline_partition_stream();
     let find = |bytes: &[u8], tag: u8, identity: u16| {
@@ -1264,13 +1157,9 @@ fn nurbs_low_nonnull_identities_resolve_owned_carriers() {
     put_ref(&mut bytes, curve_desc + 23, 6);
     put_ref(&mut bytes, curve_desc + 25, 7);
     crate::test_support::with_decode_context(|ctx| {
-        assert!(super::surface_payload_at(ctx, &bytes, surface_data)
-            .unwrap()
-            .is_some());
+        assert!(super::surface_payload_at(&bytes, surface_data).is_some());
         assert!(super::surface_descriptor_at(&bytes, surface_desc).is_some());
-        assert!(super::curve_payload_at(ctx, &bytes, curve_data)
-            .unwrap()
-            .is_some());
+        assert!(super::curve_payload_at(&bytes, curve_data).is_some());
         assert!(super::curve_descriptor_at(&bytes, curve_desc, true).is_some());
         assert_eq!(super::surfaces(ctx, &bytes).unwrap().0.len(), 1);
         assert_eq!(super::curves(ctx, &bytes).unwrap().0.len(), 1);
@@ -1306,11 +1195,9 @@ fn nurbs_singleton_arrays_admit_low_nonnull_identities() {
         } else {
             bytes.extend_from_slice(&0.0_f64.to_be_bytes());
         }
-        crate::test_support::with_decode_context(|ctx| {
-            let array = super::array_record_at(ctx, &bytes, 0).unwrap().unwrap();
-            assert_eq!(array.reference, u32::from(identity));
-            assert_eq!(array.end, bytes.len());
-        });
+        let array = super::array_record_at(&bytes, 0).unwrap();
+        assert_eq!(array.reference, u32::from(identity));
+        assert_eq!(array.end, bytes.len());
     }
 }
 

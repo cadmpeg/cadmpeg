@@ -2,8 +2,6 @@
 
 use super::{admit_with_annotations, admit_with_native_unknowns, RHINO_DRAFT_CHECKS};
 use crate::unknown::{NativeUnknownRecord, UnknownRecord};
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-use cadmpeg_core::CodecError;
 
 #[test]
 fn native_unknown_admission_matches_product_projection_without_mutation() {
@@ -145,7 +143,9 @@ fn native_unknown_admission_keeps_unresolved_outgoing_link_findings() {
 }
 
 #[test]
-fn native_unknown_admission_preserves_outer_resource_refusals() {
+fn native_unknown_admission_preserves_outer_depth_refusal() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
     let ir = crate::CadIr::empty();
     let raw = [UnknownRecord::retained(
         "test:source:unknown#0".try_into().unwrap(),
@@ -153,41 +153,26 @@ fn native_unknown_admission_preserves_outer_resource_refusals() {
         vec![42; 8192],
         Vec::new(),
     )];
-    for dimension in [
-        ResourceDimension::WorkUnits,
-        ResourceDimension::RecursionDepth,
-        ResourceDimension::MaterializedBytes,
-        ResourceDimension::CollectionItems,
-        ResourceDimension::RetainedBytes,
-    ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        match dimension {
-            ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
-            ResourceDimension::RecursionDepth => policy.limits.max_recursion_depth = 0,
-            ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
-            ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
-            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = 0,
-            _ => panic!("test dimension"),
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let Err(CodecError::ResourceLimit(limit)) = admit_with_native_unknowns(
-            &ctx,
-            &ir,
-            ("rhino", &raw),
-            None,
-            RHINO_DRAFT_CHECKS,
-            Vec::new(),
-        ) else {
-            panic!("resource refusal remains outside semantic result");
-        };
-        assert_eq!(limit.dimension, dimension);
-        assert!(
-            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
-        );
-        assert!(ir.native.0.is_empty());
-        assert_eq!(raw[0].data().unwrap(), &[42; 8192]);
-    }
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_recursion_depth = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let Err(CodecError::ResourceLimit(limit)) = admit_with_native_unknowns(
+        &ctx,
+        &ir,
+        ("rhino", &raw),
+        None,
+        RHINO_DRAFT_CHECKS,
+        Vec::new(),
+    ) else {
+        panic!("resource refusal remains outside semantic result");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::RecursionDepth);
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+    );
+    assert!(ir.native.0.is_empty());
+    assert_eq!(raw[0].data().unwrap(), &[42; 8192]);
 }
 
 #[test]
@@ -381,89 +366,4 @@ fn native_unknown_admission_preserves_duplicate_source_product_failure() {
     assert_eq!(actual.to_string(), expected.to_string());
     assert_eq!(actual.to_string(), "native collection is invalid: duplicate native unknown record test:source:unknown#duplicate");
     assert!(ir.native.0.is_empty());
-}
-
-#[test]
-fn source_product_validation_borrows_large_images_and_releases_order_storage() {
-    let records = [UnknownRecord::retained(
-        format!("test:source:unknown#{}", "x".repeat(16384))
-            .as_str()
-            .try_into()
-            .unwrap(),
-        23,
-        vec![31; 65536],
-        vec!["test:model:point#target".into()],
-    )];
-    let pointer = records[0].data().unwrap().as_ptr();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    policy.limits.max_materialized_bytes = 1024;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    super::validate_native_unknowns(&ctx, &records)
-        .unwrap()
-        .unwrap();
-    assert_eq!(records[0].data().unwrap().as_ptr(), pointer);
-    let released = ctx.reserve_scoped(1024, "source order released").unwrap();
-    drop(released);
-    ctx.finish_session().unwrap();
-}
-
-#[test]
-fn source_product_validation_preserves_link_duplicate_and_resource_failures() {
-    let invalid = [UnknownRecord::retained(
-        "test:source:unknown#one".try_into().unwrap(),
-        0,
-        vec![7],
-        vec!["invalid".into()],
-    )];
-    let ctx = cadmpeg_test_support::service_decode_context();
-    let actual = super::validate_native_unknowns(&ctx, &invalid)
-        .unwrap()
-        .unwrap_err();
-    assert_eq!(
-        actual.to_string(),
-        NativeUnknownRecord::try_from(&invalid[0])
-            .unwrap_err()
-            .to_string()
-    );
-    let duplicates = [0, 1].map(|offset| {
-        UnknownRecord::retained(
-            "test:source:unknown#same".try_into().unwrap(),
-            offset,
-            vec![7],
-            Vec::new(),
-        )
-    });
-    assert_eq!(
-        super::validate_native_unknowns(&ctx, &duplicates)
-            .unwrap()
-            .unwrap_err()
-            .to_string(),
-        "native collection is invalid: duplicate native unknown record test:source:unknown#same"
-    );
-    for dimension in [
-        ResourceDimension::CollectionItems,
-        ResourceDimension::MaterializedBytes,
-        ResourceDimension::WorkUnits,
-    ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        match dimension {
-            ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
-            ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
-            ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
-            _ => panic!("test dimension"),
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let Err(CodecError::ResourceLimit(limit)) =
-            super::validate_native_unknowns(&ctx, &duplicates)
-        else {
-            panic!("source validation resource refusal stays outer");
-        };
-        assert_eq!(limit.dimension, dimension);
-        assert!(
-            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
-        );
-    }
 }

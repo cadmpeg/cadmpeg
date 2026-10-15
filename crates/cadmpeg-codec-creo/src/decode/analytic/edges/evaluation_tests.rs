@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::nurbs::NurbsCurve;
 use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::math::Point3;
 
 /// Highest degree whose basis is evaluated in inline storage is 15; this
-/// degree needs a heap basis of admitted collection items.
+/// degree needs a heap basis.
 const DEGREE: usize = 16;
 
 fn line(periodic: bool) -> CurveGeometry {
@@ -37,73 +37,24 @@ fn line(periodic: bool) -> CurveGeometry {
     ))
 }
 
-fn context_test(test: impl FnOnce(&DecodeContext<'_>), cap: u64) {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = cap;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    test(&ctx);
-}
-
-fn basis_refusal<T>(result: &Result<T, CodecError>) {
-    assert!(matches!(result, Err(CodecError::ResourceLimit(resource))
-        if resource.dimension == ResourceDimension::CollectionItems && resource.operation == "IR B-spline basis"));
-}
-
 #[test]
-fn nonperiodic_endpoint_recovery_propagates_evaluator_refusal() {
-    crate::test_support::collection_refusal_at(&[], "IR B-spline basis", |ctx| {
-        super::nonperiodic_nurbs_endpoint_points(ctx, &line(false))
-    });
-    // Each later evaluation releases its basis before the next one, so its
-    // charge stays at the first peak and no ceiling refuses it first.
+fn nonperiodic_endpoint_recovery_reads_both_endpoints() {
     assert_eq!(
-        crate::test_support::assert_collection_charged(&[], "IR B-spline basis", |ctx| {
+        crate::decode::with_test_decode_ctx(|ctx| {
             super::nonperiodic_nurbs_endpoint_points(ctx, &line(false))
-        }),
+        })
+        .expect("endpoint recovery"),
         Some([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]])
     );
 }
 
 #[test]
-fn nonperiodic_range_recovery_propagates_evaluator_refusal() {
-    context_test(
-        |ctx| {
-            basis_refusal(&super::nonperiodic_nurbs_edge_parameter_range(
-                ctx,
-                &line(false),
-                [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
-            ));
-        },
-        2,
-    );
-}
-
-#[test]
-fn nonperiodic_orientation_propagates_evaluator_refusal() {
-    context_test(
-        |ctx| {
-            basis_refusal(&super::orient_nonperiodic_nurbs_edge_carrier(
-                ctx,
-                &mut line(false),
-                [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
-            ));
-        },
-        2,
-    );
-}
-
-#[test]
-fn periodic_range_recovery_propagates_evaluator_refusal() {
-    crate::test_support::collection_refusal_at(&[], "IR B-spline basis", |ctx| {
-        super::full_periodic_nurbs_edge_parameter_range(ctx, &line(true), [0.0, 0.0, 0.0])
-    });
-    // Each later evaluation releases its basis before the next one, so its
-    // charge stays at the first peak and no ceiling refuses it first.
+fn periodic_range_recovery_spans_the_unit_interval() {
     assert_eq!(
-        crate::test_support::assert_collection_charged(&[], "IR B-spline basis", |ctx| {
+        crate::decode::with_test_decode_ctx(|ctx| {
             super::full_periodic_nurbs_edge_parameter_range(ctx, &line(true), [0.0, 0.0, 0.0])
-        }),
+        })
+        .expect("periodic range recovery"),
         Some([0.0, 1.0])
     );
 }
@@ -132,21 +83,16 @@ fn degree_one_parameter_search_propagates_evaluator_refusal() {
     assert!(
         matches!(super::degree_one_nurbs_point_parameter(&ctx, &geometry, nurbs, [0.5, 0.0, 0.0], [0.0, 1.0], super::EPS_AGREE), Err(CodecError::ResourceLimit(resource)) if resource.operation == "geometry evaluation nesting")
     );
-    context_test(
-        |ctx| {
-            assert_eq!(
-                super::degree_one_nurbs_point_parameter(
-                    ctx,
-                    &geometry,
-                    nurbs,
-                    [0.5, 0.0, 0.0],
-                    [0.0, 1.0],
-                    super::EPS_AGREE
-                )
-                .expect("service"),
-                Some(0.5)
-            );
-        },
-        u64::MAX,
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| super::degree_one_nurbs_point_parameter(
+            ctx,
+            &geometry,
+            nurbs,
+            [0.5, 0.0, 0.0],
+            [0.0, 1.0],
+            super::EPS_AGREE
+        ))
+        .expect("service"),
+        Some(0.5)
     );
 }

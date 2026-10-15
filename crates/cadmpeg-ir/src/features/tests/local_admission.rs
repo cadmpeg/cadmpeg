@@ -9,459 +9,12 @@ use crate::features::{
 };
 use crate::ids::{BodyId, FeatureInputTopologyId, HistoricalVertexId};
 
-#[test]
-fn invalid_membership_constructors_preserve_an_existing_refusal() {
-    use crate::features::{
-        BodySelectionError, EdgeSelection, FaceSelection, FeatureCollectionError, NativeSelections,
-    };
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceLimit};
-
-    fn refusal<T>(result: Result<Result<T, BodySelectionError>, ResourceLimit>) -> ResourceLimit {
-        result.err().expect("original resource refusal")
-    }
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let original = ctx
-        .charge_work_limit(1, "original membership refusal")
-        .unwrap_err();
-    assert_eq!(
-        refusal(SelectionMembers::<BodyId>::new(
-            Vec::new(),
-            &ctx,
-            "empty selection"
-        )),
-        original
-    );
-    assert_eq!(
-        refusal(NativeSelections::new(
-            Vec::new(),
-            &ctx,
-            "empty native selection"
-        )),
-        original
-    );
-    assert_eq!(
-        refusal(BodyMembers::<BodyId>::try_from_rows(Vec::new(), &ctx)),
-        original
-    );
-    assert_eq!(
-        refusal(EdgeSelection::generated(Vec::new(), String::new(), &ctx)),
-        original
-    );
-    assert_eq!(
-        refusal(FaceSelection::generated(Vec::new(), String::new(), &ctx)),
-        original
-    );
-    assert_eq!(
-        refusal(PlanarProfileRef::generated(Vec::new(), String::new(), &ctx)),
-        original
-    );
-    assert_eq!(
-        TreeChildren::new(Vec::new(), Some(feature_id("missing")), &ctx).unwrap_err(),
-        FeatureCollectionError::Resource(original)
-    );
-    assert!(
-        matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit == original)
-    );
-}
-
-#[test]
-fn membership_constructors_preserve_refusals_and_release_scoped_indexes() {
-    use crate::features::{
-        DistinctMembers, FeatureContent, FeatureSourceContent, NativeSelections,
-    };
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    fn retain_output<T>(ctx: &DecodeContext<'_>, output: T) -> Result<(), CodecError> {
-        let storage = ctx.reserve_scoped_limit(200, "membership index released")?;
-        drop(storage);
-        drop(output);
-        Ok(())
-    }
-
-    for owner in 0..5 {
-        for dimension in [
-            Some(ResourceDimension::MaterializedBytes),
-            Some(ResourceDimension::CollectionItems),
-            Some(ResourceDimension::WorkUnits),
-            None,
-        ] {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_materialized_bytes = 200;
-            policy.limits.max_retained_bytes = 0;
-            policy.limits.max_recursion_depth = 0;
-            policy.limits.max_collection_items = 8;
-            match dimension {
-                Some(ResourceDimension::MaterializedBytes) => {
-                    policy.limits.max_materialized_bytes = 0;
-                }
-                Some(ResourceDimension::CollectionItems) => policy.limits.max_collection_items = 0,
-                Some(ResourceDimension::WorkUnits) => policy.limits.max_work_units = 0,
-                None => {}
-                Some(_) => unreachable!(),
-            }
-            let arena = DecodeArena::new();
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let result = (|| -> Result<(), CodecError> {
-                match owner {
-                    0 => retain_output(
-                        &ctx,
-                        DistinctMembers::try_from(vec![body_id("first"), body_id("second")], &ctx)?,
-                    ),
-                    1 => retain_output(
-                        &ctx,
-                        SelectionMembers::new(
-                            vec![body_id("first"), body_id("second")],
-                            &ctx,
-                            "selection members",
-                        )??,
-                    ),
-                    2 => retain_output(
-                        &ctx,
-                        NativeSelections::new(
-                            vec!["first".into(), "second".into()],
-                            &ctx,
-                            "native members",
-                        )??,
-                    ),
-                    3 => retain_output(
-                        &ctx,
-                        FeatureContent::new(
-                            vec![
-                                FeatureSourceContent::Feature(feature_id("first")),
-                                FeatureSourceContent::Text("same".into()),
-                                FeatureSourceContent::Text("same".into()),
-                                FeatureSourceContent::Feature(feature_id("second")),
-                            ],
-                            &ctx,
-                            "source content",
-                        )?,
-                    ),
-                    4 => retain_output(
-                        &ctx,
-                        BodyMembers::try_from_rows(
-                            vec![
-                                crate::features::BodyMember::new(
-                                    body_id("first"),
-                                    cadmpeg_core::text::NonBlankString::new(
-                                        "native-first".to_owned(),
-                                    )
-                                    .unwrap(),
-                                ),
-                                crate::features::BodyMember::new(
-                                    body_id("second"),
-                                    cadmpeg_core::text::NonBlankString::new(
-                                        "native-second".to_owned(),
-                                    )
-                                    .unwrap(),
-                                ),
-                            ],
-                            &ctx,
-                        )??,
-                    ),
-                    _ => unreachable!(),
-                }
-            })();
-            if let Some(dimension) = dimension {
-                let Err(CodecError::ResourceLimit(limit)) = result else {
-                    panic!("owner {owner}: resource refusal required");
-                };
-                assert_eq!(limit.dimension, dimension);
-                assert_ne!(limit.operation, "membership index released");
-                assert!(
-                    matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
-                );
-            } else {
-                result.unwrap();
-                ctx.finish_session().unwrap();
-            }
-        }
-    }
-}
-
-#[test]
-fn charged_native_selections_refuse_uniqueness_index_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 1;
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let result = crate::features::NativeSelections::new(
-        vec!["first".into(), "second".into()],
-        &ctx,
-        "test native selection uniqueness",
-    );
-    assert!(matches!(result, Err(failure)
-        if failure.dimension == ResourceDimension::CollectionItems
-            && failure.operation == "test native selection uniqueness"));
-}
-
 fn feature_id(suffix: &str) -> FeatureId {
     FeatureId::mint(format!("test:model:feature#{suffix}")).unwrap()
 }
 
-#[test]
-fn local_and_generated_body_constructors_use_the_caller_session() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    for generated in [false, true] {
-        for dimension in [
-            ResourceDimension::MaterializedBytes,
-            ResourceDimension::CollectionItems,
-            ResourceDimension::WorkUnits,
-        ] {
-            let mut policy = DecodePolicy::service();
-            match dimension {
-                ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
-                ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
-                ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
-                _ => unreachable!(),
-            }
-            let arena = DecodeArena::new();
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let result = if generated {
-                let member = crate::features::GeneratedBodyRef::new(
-                    feature_id("producer"),
-                    "body".into(),
-                    &cadmpeg_test_support::service_decode_context(),
-                )
-                .expect("selection reference admission")
-                .unwrap();
-                BodySelection::generated(vec![member], "native".into(), &ctx)
-            } else {
-                BodySelection::local(vec!["body".into()], "native".into(), &ctx)
-            };
-            let limit = result.unwrap_err();
-            assert_eq!(limit.dimension, dimension);
-            assert!(
-                matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(original)) if original == limit)
-            );
-        }
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 0;
-        policy.limits.max_recursion_depth = 0;
-        let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let selection = if generated {
-            let member = crate::features::GeneratedBodyRef::new(
-                feature_id("producer"),
-                "body".into(),
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .expect("selection reference admission")
-            .unwrap();
-            BodySelection::generated(vec![member], "native".into(), &ctx)
-        } else {
-            BodySelection::local(vec!["body".into()], "native".into(), &ctx)
-        }
-        .unwrap()
-        .unwrap();
-        assert!(matches!(
-            selection,
-            BodySelection::Local { .. } | BodySelection::Generated { .. }
-        ));
-        ctx.finish_session().unwrap();
-    }
-}
-
 fn body_id(suffix: &str) -> BodyId {
     BodyId::mint(format!("test:model:body#{suffix}")).unwrap()
-}
-
-#[test]
-fn selection_reference_constructors_admit_text_before_validation() {
-    use crate::features::{
-        BodySelectionError, EdgeSelection, FaceSelection, GeneratedBodyRef, GeneratedCurveRef,
-        GeneratedEdgeRef, GeneratedFaceRef, GeneratedVertexRef, SelectionReference,
-    };
-    use cadmpeg_core::decode::{
-        DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, ResourceLimit,
-    };
-
-    fn finish<T>(
-        result: Result<Result<T, BodySelectionError>, ResourceLimit>,
-    ) -> Result<Result<(), BodySelectionError>, ResourceLimit> {
-        result.map(|result| result.map(|_| ()))
-    }
-    for owner in 0..12 {
-        for allowance in 0..=8 {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = allowance;
-            policy.limits.max_materialized_bytes = 0;
-            policy.limits.max_retained_bytes = 0;
-            policy.limits.max_collection_items = 0;
-            policy.limits.max_recursion_depth = 0;
-            let arena = DecodeArena::new();
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let text = "  face  ".to_owned();
-            let reference = || "local".to_owned().try_into().unwrap();
-            let result = match owner {
-                0 => finish(SelectionReference::new(text, &ctx)),
-                1 => finish(GeneratedBodyRef::new(feature_id("producer"), text, &ctx)),
-                2 => finish(GeneratedFaceRef::new(feature_id("producer"), text, &ctx)),
-                3 => finish(GeneratedEdgeRef::new(feature_id("producer"), text, &ctx)),
-                4 => finish(GeneratedVertexRef::new(feature_id("producer"), text, &ctx)),
-                5 => finish(GeneratedCurveRef::new(feature_id("producer"), text, &ctx)),
-                6 => finish(FaceSelection::generated(
-                    vec![GeneratedFaceRef {
-                        feature: feature_id("producer"),
-                        local_id: reference(),
-                    }],
-                    text,
-                    &ctx,
-                )),
-                7 => finish(EdgeSelection::generated(
-                    vec![GeneratedEdgeRef {
-                        feature: feature_id("producer"),
-                        local_id: reference(),
-                    }],
-                    text,
-                    &ctx,
-                )),
-                8 => finish(PlanarProfileRef::generated(
-                    vec![GeneratedCurveRef {
-                        feature: feature_id("producer"),
-                        local_id: reference(),
-                    }],
-                    text,
-                    &ctx,
-                )),
-                9 => finish(VertexSelection::generated(
-                    GeneratedVertexRef {
-                        feature: feature_id("producer"),
-                        local_id: reference(),
-                    },
-                    text,
-                    &ctx,
-                )),
-                10 => finish(VertexSelection::historical(
-                    FeatureInputTopologyId::mint("test:model:feature-input#state").unwrap(),
-                    HistoricalVertexId::mint("test:model:historical-vertex#one").unwrap(),
-                    text,
-                    &ctx,
-                )),
-                11 => finish(VertexSelection::native(text, &ctx)),
-                _ => unreachable!(),
-            };
-            if allowance < 8 {
-                let limit = result.unwrap_err();
-                assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-                assert!(
-                    matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(original)) if original == limit)
-                );
-            } else {
-                result.unwrap().unwrap();
-                ctx.finish_session().unwrap();
-            }
-        }
-    }
-}
-
-#[test]
-fn feature_result_members_admit_each_arena_and_release_the_index() {
-    use crate::features::{FeatureResultMemberError, FeatureResultMembers, FeatureResultTopology};
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    for lane in 0..4 {
-        for dimension in [
-            Some(ResourceDimension::MaterializedBytes),
-            Some(ResourceDimension::CollectionItems),
-            Some(ResourceDimension::WorkUnits),
-            None,
-        ] {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_materialized_bytes = 200;
-            policy.limits.max_collection_items = 2;
-            policy.limits.max_retained_bytes = 0;
-            policy.limits.max_recursion_depth = 0;
-            match dimension {
-                Some(ResourceDimension::MaterializedBytes) => {
-                    policy.limits.max_materialized_bytes = 0;
-                }
-                Some(ResourceDimension::CollectionItems) => policy.limits.max_collection_items = 0,
-                Some(ResourceDimension::WorkUnits) => policy.limits.max_work_units = 0,
-                None => {}
-                Some(_) => unreachable!(),
-            }
-            let arena = DecodeArena::new();
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let mut lanes = [Vec::new(), Vec::new(), Vec::new(), Vec::new()];
-            lanes[lane] = vec![
-                cadmpeg_core::nonblank_literal!("second"),
-                cadmpeg_core::nonblank_literal!("first"),
-            ];
-            let [bodies, faces, edges, vertices] = lanes;
-            let result = FeatureResultMembers::new(
-                bodies,
-                faces,
-                edges,
-                vertices,
-                &ctx,
-                "result membership",
-            );
-            if let Some(dimension) = dimension {
-                let limit = result.unwrap_err();
-                assert_eq!(limit.dimension, dimension);
-                assert_eq!(limit.operation, "result membership");
-                assert!(
-                    matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(original)) if original == limit)
-                );
-            } else {
-                let members = result.unwrap().unwrap();
-                let result = FeatureResultTopology::new(
-                    crate::ids::FeatureResultTopologyId::mint("test:model:feature-result#one")
-                        .unwrap(),
-                    feature_id("producer"),
-                    members,
-                    None,
-                );
-                assert_eq!(
-                    [
-                        result.bodies(),
-                        result.faces(),
-                        result.edges(),
-                        result.vertices()
-                    ][lane]
-                        .iter()
-                        .map(cadmpeg_core::text::NonBlankString::as_str)
-                        .collect::<Vec<_>>(),
-                    vec!["second", "first"]
-                );
-                let storage = ctx
-                    .reserve_scoped_limit(200, "result membership index released")
-                    .unwrap();
-                drop(storage);
-                ctx.finish_session().unwrap();
-            }
-        }
-        let mut lanes = [Vec::new(), Vec::new(), Vec::new(), Vec::new()];
-        lanes[lane] = vec![
-            cadmpeg_core::nonblank_literal!("same"),
-            cadmpeg_core::nonblank_literal!("same"),
-        ];
-        let [bodies, faces, edges, vertices] = lanes;
-        let error = FeatureResultMembers::new(
-            bodies,
-            faces,
-            edges,
-            vertices,
-            &cadmpeg_test_support::service_decode_context(),
-            "result membership",
-        )
-        .unwrap()
-        .unwrap_err();
-        assert_eq!(
-            error,
-            [
-                FeatureResultMemberError::RepeatedBody,
-                FeatureResultMemberError::RepeatedFace,
-                FeatureResultMemberError::RepeatedEdge,
-                FeatureResultMemberError::RepeatedVertex
-            ][lane]
-        );
-    }
 }
 
 #[test]
@@ -566,39 +119,6 @@ fn local_collection_admission_preserves_order_and_rejects_invalid_membership() {
         })
     }
     .unwrap();
-}
-
-#[test]
-fn tree_children_charged_insert_refuses_collection_limit() {
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(b"children", &arena, &policy).unwrap();
-    let mut children = TreeChildren::default();
-    let error = children
-        .insert(&ctx, feature_id("child"), "collect tree children")
-        .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
-    assert!(children.is_empty());
-}
-
-#[test]
-fn charged_selection_members_refuse_uniqueness_index_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 1;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(matches!(
-        SelectionMembers::new(
-            vec!["first", "second"], &ctx, "selection uniqueness",
-        ),
-        Err(failure)
-            if failure.operation == "selection uniqueness"
-                && failure.dimension == ResourceDimension::CollectionItems
-    ));
 }
 
 #[test]
@@ -833,128 +353,6 @@ fn historical_body_overlap_spans_direct_and_paired_member_selections() {
     )
     .expect("operand admission")
     .is_ok());
-}
-
-#[test]
-fn three_point_constructor_admits_each_target_and_state_comparison() {
-    use crate::features::GeneratedVertexRef;
-    use cadmpeg_core::decode::{
-        u64_from_index, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension,
-    };
-    let producer = feature_id("producer");
-    let state = FeatureInputTopologyId::mint("test:model:feature-input#state").unwrap();
-    let historical = HistoricalVertexId::mint("test:model:historical-vertex#a").unwrap();
-    for kind in 0..3 {
-        let work = match kind {
-            0 => 9,
-            1 => 3 + 3 * (u64_from_index(producer.as_str().len()) + 3),
-            2 => {
-                3 + 5 * (u64_from_index(state.as_str().len()) + 1)
-                    + 3 * (u64_from_index(historical.as_str().len()) + 1)
-            }
-            _ => unreachable!(),
-        };
-        for allowance in 0..=work {
-            let points = Box::new(["a", "b", "c"].map(|local| {
-                match kind {
-                    0 => VertexSelection::native(
-                        local.to_owned(),
-                        &cadmpeg_test_support::service_decode_context(),
-                    )
-                    .unwrap()
-                    .unwrap(),
-                    1 => VertexSelection::generated(
-                        GeneratedVertexRef {
-                            feature: producer.clone(),
-                            local_id: local.to_owned().try_into().unwrap(),
-                        },
-                        "native".into(),
-                        &cadmpeg_test_support::service_decode_context(),
-                    )
-                    .unwrap()
-                    .unwrap(),
-                    2 => VertexSelection::historical(
-                        state.clone(),
-                        HistoricalVertexId::mint(format!("test:model:historical-vertex#{local}"))
-                            .unwrap(),
-                        "native".into(),
-                        &cadmpeg_test_support::service_decode_context(),
-                    )
-                    .unwrap()
-                    .unwrap(),
-                    _ => unreachable!(),
-                }
-            }));
-            let pointer = points.as_ptr();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = allowance;
-            policy.limits.max_materialized_bytes = 0;
-            policy.limits.max_retained_bytes = 0;
-            policy.limits.max_collection_items = 0;
-            policy.limits.max_recursion_depth = 0;
-            let arena = DecodeArena::new();
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let result = ThreePointSelection::new(points, &ctx);
-            if allowance < work {
-                let limit = result.unwrap_err();
-                assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-                assert!(
-                    matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(original)) if original == limit)
-                );
-            } else {
-                let points = result.unwrap().unwrap();
-                assert_eq!(points.as_ptr(), pointer);
-                ctx.finish_session().unwrap();
-            }
-        }
-    }
-}
-
-#[test]
-fn three_point_constructor_stops_at_a_duplicate_and_preserves_fused_refusals() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 5;
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let selection = |text: String| {
-        VertexSelection::native(text, &cadmpeg_test_support::service_decode_context())
-            .unwrap()
-            .unwrap()
-    };
-    let result = ThreePointSelection::new(
-        Box::new([
-            selection("same".into()),
-            selection("same".into()),
-            selection("long".repeat(1000)),
-        ]),
-        &ctx,
-    )
-    .unwrap();
-    assert_eq!(
-        result.unwrap_err(),
-        "points must select three distinct vertex targets"
-    );
-    ctx.finish_session().unwrap();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let original = ctx
-        .charge_work_limit(1, "original three point refusal")
-        .unwrap_err();
-    let points = Box::new([
-        VertexSelection::Unresolved,
-        VertexSelection::Unresolved,
-        VertexSelection::Unresolved,
-    ]);
-    assert_eq!(
-        ThreePointSelection::new(points, &ctx).unwrap_err(),
-        original
-    );
-    assert!(
-        matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit == original)
-    );
 }
 
 #[test]
@@ -1275,36 +673,118 @@ fn tree_children_wire_and_decode_share_membership_validation() {
 }
 
 #[test]
-fn tree_child_admission_preserves_first_and_later_active_comparison_refusals() {
-    use crate::features::FeatureCollectionError;
-    use cadmpeg_core::decode::{
-        u64_from_index, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension,
-    };
-    let first = feature_id("left");
-    let second = feature_id("next");
-    for cap in [
-        0,
-        1,
-        u64_from_index(first.as_str().len()) + 1,
-        u64_from_index(first.as_str().len()) + 2,
-    ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let Err(FeatureCollectionError::Resource(limit)) = TreeChildren::new(
-            vec![first.clone(), second.clone()],
-            Some(second.clone()),
-            &ctx,
-        ) else {
-            panic!("active child lookup must refuse");
-        };
-        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-        assert_eq!(limit.operation, "validate active tree child");
-        assert!(
-            matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(original)) if original == limit)
+fn feature_result_members_keep_lane_order_and_name_the_repeated_lane() {
+    use crate::features::{FeatureResultMemberError, FeatureResultMembers, FeatureResultTopology};
+    let ctx = cadmpeg_test_support::service_decode_context();
+    for lane in 0..4 {
+        let mut lanes = [Vec::new(), Vec::new(), Vec::new(), Vec::new()];
+        lanes[lane] = vec![
+            cadmpeg_core::nonblank_literal!("second"),
+            cadmpeg_core::nonblank_literal!("first"),
+        ];
+        let [bodies, faces, edges, vertices] = lanes;
+        let members =
+            FeatureResultMembers::new(bodies, faces, edges, vertices, &ctx, "result membership")
+                .unwrap()
+                .unwrap();
+        let result = FeatureResultTopology::new(
+            crate::ids::FeatureResultTopologyId::mint("test:model:feature-result#one").unwrap(),
+            feature_id("producer"),
+            members,
+            None,
+        );
+        assert_eq!(
+            [
+                result.bodies(),
+                result.faces(),
+                result.edges(),
+                result.vertices()
+            ][lane]
+                .iter()
+                .map(cadmpeg_core::text::NonBlankString::as_str)
+                .collect::<Vec<_>>(),
+            vec!["second", "first"]
+        );
+        let mut lanes = [Vec::new(), Vec::new(), Vec::new(), Vec::new()];
+        lanes[lane] = vec![
+            cadmpeg_core::nonblank_literal!("same"),
+            cadmpeg_core::nonblank_literal!("same"),
+        ];
+        let [bodies, faces, edges, vertices] = lanes;
+        let error =
+            FeatureResultMembers::new(bodies, faces, edges, vertices, &ctx, "result membership")
+                .unwrap()
+                .unwrap_err();
+        assert_eq!(
+            error,
+            [
+                FeatureResultMemberError::RepeatedBody,
+                FeatureResultMemberError::RepeatedFace,
+                FeatureResultMemberError::RepeatedEdge,
+                FeatureResultMemberError::RepeatedVertex
+            ][lane]
         );
     }
+}
+
+#[test]
+fn three_point_selection_moves_its_points_and_names_a_repeated_target() {
+    use crate::features::GeneratedVertexRef;
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let producer = feature_id("producer");
+    let state = FeatureInputTopologyId::mint("test:model:feature-input#state").unwrap();
+    for kind in 0..3 {
+        let points = Box::new(["a", "b", "c"].map(|local| {
+            match kind {
+                0 => VertexSelection::native(local.to_owned(), &ctx)
+                    .unwrap()
+                    .unwrap(),
+                1 => VertexSelection::generated(
+                    GeneratedVertexRef {
+                        feature: producer.clone(),
+                        local_id: local.to_owned().try_into().unwrap(),
+                    },
+                    "native".into(),
+                    &ctx,
+                )
+                .unwrap()
+                .unwrap(),
+                _ => VertexSelection::historical(
+                    state.clone(),
+                    HistoricalVertexId::mint(format!("test:model:historical-vertex#{local}"))
+                        .unwrap(),
+                    "native".into(),
+                    &ctx,
+                )
+                .unwrap()
+                .unwrap(),
+            }
+        }));
+        let pointer = points.as_ptr();
+        let points = ThreePointSelection::new(points, &ctx).unwrap().unwrap();
+        assert_eq!(points.as_ptr(), pointer);
+    }
+    let selection = |text: String| VertexSelection::native(text, &ctx).unwrap().unwrap();
+    assert_eq!(
+        ThreePointSelection::new(
+            Box::new([
+                selection("same".into()),
+                selection("same".into()),
+                selection("long".repeat(1000)),
+            ]),
+            &ctx,
+        )
+        .unwrap()
+        .unwrap_err(),
+        "points must select three distinct vertex targets"
+    );
+}
+
+#[test]
+fn tree_children_keep_source_order_and_the_active_child() {
+    use crate::features::FeatureCollectionError;
+    let first = feature_id("left");
+    let second = feature_id("next");
     let ctx = cadmpeg_test_support::service_decode_context();
     let children = TreeChildren::new(
         vec![second.clone(), first.clone()],
@@ -1318,99 +798,79 @@ fn tree_child_admission_preserves_first_and_later_active_comparison_refusals() {
         TreeChildren::new(vec![first], Some(second), &ctx).unwrap_err(),
         FeatureCollectionError::Invalid("active_child must belong to children")
     );
-    ctx.finish_session().unwrap();
 }
 
 #[test]
-fn operand_constructors_preserve_each_overlap_refusal_in_the_caller_session() {
-    use crate::features::edge_treatments::{FullRoundFilletGroup, FullRoundSideSelection};
-    use crate::features::{FaceBlendOperands, FaceSelection, ReplaceFaceOperands};
-    use cadmpeg_core::decode::{
-        u64_from_index, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension,
+fn selection_reference_constructors_keep_padded_text() {
+    use crate::features::{
+        BodySelectionError, EdgeSelection, FaceSelection, GeneratedBodyRef, GeneratedCurveRef,
+        GeneratedEdgeRef, GeneratedFaceRef, GeneratedVertexRef, SelectionReference,
     };
+    use cadmpeg_core::decode::ResourceLimit;
 
-    let face = |name: &str| {
-        FaceSelection::Faces(vec![crate::ids::FaceId::mint(format!(
-            "test:model:face#{name}"
-        ))
-        .unwrap()])
-    };
-    let body = |name: &str| {
-        BodySelection::Bodies(
-            crate::features::DistinctMembers::try_from(
-                vec![BodyId::mint(format!("test:model:body#{name}")).unwrap()],
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .unwrap(),
-        )
-    };
-    let first_face = face("first");
-    let other_face = face("other");
-    let third_face = face("third");
-    let first_body = body("first");
-    let other_body = body("other");
-    let comparison_work = 3 + u64_from_index("test:model:face#first".len());
-    for kind in 0..6 {
-        let required = if kind == 5 {
-            3 * comparison_work
-        } else {
-            comparison_work
-        };
-        for cap in 0..=required {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = cap;
-            policy.limits.max_materialized_bytes = 0;
-            policy.limits.max_retained_bytes = 0;
-            policy.limits.max_collection_items = 0;
-            policy.limits.max_recursion_depth = 0;
-            let arena = DecodeArena::new();
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let result = match kind {
-                0 => FaceBlendOperands::new(first_face.clone(), other_face.clone(), &ctx)
-                    .map(|result| result.map(|_| ())),
-                1 => ReplaceFaceOperands::new(first_face.clone(), other_face.clone(), &ctx)
-                    .map(|result| result.map(|_| ())),
-                2 => SectionOperands::new(first_body.clone(), other_body.clone(), &ctx)
-                    .map(|result| result.map(|_| ())),
-                3 => CombineOperands::new(first_body.clone(), other_body.clone(), &ctx)
-                    .map(|result| result.map(|_| ())),
-                4 => TrimBodyOperands::new(first_body.clone(), other_body.clone(), &ctx)
-                    .map(|result| result.map(|_| ())),
-                _ => FullRoundFilletGroup::new(
-                    first_face.clone(),
-                    FullRoundSideSelection::Explicit(other_face.clone()),
-                    FullRoundSideSelection::Explicit(third_face.clone()),
-                    &ctx,
-                )
-                .map(|result| result.map(|_| ())),
-            };
-            if cap == required {
-                result
-                    .expect("exact comparison admission")
-                    .expect("disjoint operands");
-                ctx.finish_session().expect("no storage or depth needed");
-            } else {
-                let limit = result.expect_err("every visit and comparison must be admitted");
-                assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-                assert_eq!(limit.operation, "IR selection membership overlap");
-                assert!(
-                    matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(original)) if original == limit)
-                );
-            }
-        }
+    fn finish<T>(
+        result: Result<Result<T, BodySelectionError>, ResourceLimit>,
+    ) -> Result<Result<(), BodySelectionError>, ResourceLimit> {
+        result.map(|result| result.map(|_| ()))
     }
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    FullRoundFilletGroup::new(
-        first_face,
-        FullRoundSideSelection::Automatic,
-        FullRoundSideSelection::Automatic,
-        &ctx,
-    )
-    .unwrap()
-    .unwrap();
-    ctx.finish_session()
-        .expect("automatic sides have no membership comparisons");
+    let ctx = cadmpeg_test_support::service_decode_context();
+    assert_eq!(
+        SelectionReference::new("  face  ".to_owned(), &ctx)
+            .unwrap()
+            .unwrap()
+            .as_str(),
+        "  face  "
+    );
+    for owner in 0..12 {
+        let text = "  face  ".to_owned();
+        let reference = || "local".to_owned().try_into().unwrap();
+        let result = match owner {
+            0 => finish(SelectionReference::new(text, &ctx)),
+            1 => finish(GeneratedBodyRef::new(feature_id("producer"), text, &ctx)),
+            2 => finish(GeneratedFaceRef::new(feature_id("producer"), text, &ctx)),
+            3 => finish(GeneratedEdgeRef::new(feature_id("producer"), text, &ctx)),
+            4 => finish(GeneratedVertexRef::new(feature_id("producer"), text, &ctx)),
+            5 => finish(GeneratedCurveRef::new(feature_id("producer"), text, &ctx)),
+            6 => finish(FaceSelection::generated(
+                vec![GeneratedFaceRef {
+                    feature: feature_id("producer"),
+                    local_id: reference(),
+                }],
+                text,
+                &ctx,
+            )),
+            7 => finish(EdgeSelection::generated(
+                vec![GeneratedEdgeRef {
+                    feature: feature_id("producer"),
+                    local_id: reference(),
+                }],
+                text,
+                &ctx,
+            )),
+            8 => finish(PlanarProfileRef::generated(
+                vec![GeneratedCurveRef {
+                    feature: feature_id("producer"),
+                    local_id: reference(),
+                }],
+                text,
+                &ctx,
+            )),
+            9 => finish(VertexSelection::generated(
+                GeneratedVertexRef {
+                    feature: feature_id("producer"),
+                    local_id: reference(),
+                },
+                text,
+                &ctx,
+            )),
+            10 => finish(VertexSelection::historical(
+                FeatureInputTopologyId::mint("test:model:feature-input#state").unwrap(),
+                HistoricalVertexId::mint("test:model:historical-vertex#one").unwrap(),
+                text,
+                &ctx,
+            )),
+            _ => finish(VertexSelection::native(text, &ctx)),
+        };
+        result.unwrap().unwrap();
+    }
 }

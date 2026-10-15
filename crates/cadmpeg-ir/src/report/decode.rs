@@ -338,99 +338,56 @@ pub struct Coverage {
 }
 
 impl Coverage {
-    /// Records a static key after admitting its new map node and retained name.
+    /// Records a static key.
     pub fn record(
         &mut self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         key: CoverageKey,
         count: usize,
     ) -> Result<(), cadmpeg_core::CodecError> {
-        ctx.charge_work(1, "decode coverage lookup")?;
-        if let Some(value) = self.entries.get_mut(key.0) {
-            *value = count;
-            return Ok(());
-        }
-        let name = ctx.copy_retained_text(key.0, "decode coverage names")?;
-        self.insert_name(ctx, name, count)
+        self.entries.insert(key.0.to_owned(), count);
+        Ok(())
     }
 
-    /// Records a decimal-indexed key after admitting its temporary and retained name.
+    /// Records a decimal-indexed key.
     pub fn record_indexed(
         &mut self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         key: IndexedCoverageKey,
         index: u32,
         count: usize,
     ) -> Result<(), cadmpeg_core::CodecError> {
-        let (name, bytes) = ctx.format_scoped(
-            format_args!("{}{index}{}", key.prefix, key.suffix),
-            "decode indexed coverage name",
-        )?;
-        ctx.charge_work(1, "decode coverage lookup")?;
-        if let Some(value) = self.entries.get_mut(&name) {
-            *value = count;
-            return Ok(());
-        }
-        bytes.commit()?;
-        self.insert_name(ctx, name, count)
+        self.entries
+            .insert(format!("{}{index}{}", key.prefix, key.suffix), count);
+        Ok(())
     }
 
-    /// Records a hexadecimal-byte key after admitting its temporary and retained name.
+    /// Records a hexadecimal-byte key.
     pub fn record_hex_byte(
         &mut self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         key: HexByteCoverageKey,
         value: u8,
         count: usize,
     ) -> Result<(), cadmpeg_core::CodecError> {
-        let (name, bytes) = ctx.format_scoped(
-            format_args!("{}{:02x}{}", key.prefix, value, key.suffix),
-            "decode hexadecimal coverage name",
-        )?;
-        ctx.charge_work(1, "decode coverage lookup")?;
-        if let Some(existing) = self.entries.get_mut(&name) {
-            *existing = count;
-            return Ok(());
-        }
-        bytes.commit()?;
-        self.insert_name(ctx, name, count)
+        self.entries
+            .insert(format!("{}{:02x}{}", key.prefix, value, key.suffix), count);
+        Ok(())
     }
 
     /// Records an already-copied declared key without allocating another key.
-    ///
-    /// The caller can reserve and charge the copy before calling this method.
     pub fn record_owned(
         &mut self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         key: CoverageKey,
         name: String,
         count: usize,
     ) -> Result<(), cadmpeg_core::CodecError> {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(name.len()),
-            "decode coverage name admission",
-        )?;
         if name != key.0 {
             return Err(cadmpeg_core::CodecError::malformed(
                 "coverage name does not match its declared key",
             ));
         }
-        self.insert_name(ctx, name, count)
-    }
-
-    fn insert_name(
-        &mut self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        name: String,
-        count: usize,
-    ) -> Result<(), cadmpeg_core::CodecError> {
-        ctx.charge_work(1, "decode coverage lookup")?;
-        if let Some(value) = self.entries.get_mut(&name) {
-            *value = count;
-            return Ok(());
-        }
-        ctx.charge_work(1, "decode coverage nodes")?;
-        ctx.insert_btree_map(&mut self.entries, name, count, "decode coverage nodes")?;
+        self.entries.insert(name, count);
         Ok(())
     }
 

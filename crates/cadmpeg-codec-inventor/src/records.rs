@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact Inventor `RSe` metadata tables and bulk-record framing.
 
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 
 use crate::layout::meta_body_prefix as meta_prefix;
@@ -171,10 +171,7 @@ pub(crate) struct RseRecordTable<'a> {
     pub(crate) stream_trailer: View<'a>,
 }
 
-pub(crate) fn parse_meta_tables<'a>(
-    ctx: &DecodeContext<'a>,
-    body: View<'a>,
-) -> Result<MetaTables<'a>, CodecError> {
+pub(crate) fn parse_meta_tables(body: View<'_>) -> Result<MetaTables<'_>, CodecError> {
     let mut view = body;
     let prefix =
         crate::reader::u16_array::<{ meta_prefix::LEN / 2 }>(&mut view, "metadata prefix")?;
@@ -193,11 +190,7 @@ pub(crate) fn parse_meta_tables<'a>(
 
     let (block_count, section_1_payload, section_1_footer) =
         counted_section(&mut view, 4, "block-size table")?;
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(block_count),
-        "admit Inventor RSe block descriptors",
-    )?;
-    let mut blocks = ctx.vector_storage(block_count, "admit Inventor RSe block descriptors")?;
+    let mut blocks = Vec::new();
     let mut sizes = section_1_payload;
     for ordinal in 0..block_count {
         let encoded = crate::reader::u32(&mut sizes, "block-size entry")?;
@@ -240,14 +233,7 @@ pub(crate) fn parse_meta_tables<'a>(
             "RSe type table has more than 256 entries".into(),
         ));
     }
-    // The test above bounds `type_count` at 256 and `SECTION_COUNT` is 11, so
-    // the charge is at most 267 and `u64` holds it exactly.
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(type_count)
-            + cadmpeg_core::decode::u64_from_index(SECTION_COUNT),
-        "admit Inventor RSe metadata tables",
-    )?;
-    let mut types = ctx.vector_storage(type_count, "admit Inventor RSe metadata tables")?;
+    let mut types = Vec::new();
     for index in 0..type_count {
         let entry = child(
             section_4_payload,
@@ -317,18 +303,12 @@ pub(crate) fn parse_meta_tables<'a>(
 }
 
 pub(crate) fn frame_bulk_records<'a>(
-    ctx: &DecodeContext<'a>,
     bulk: View<'a>,
     tables: &MetaTables<'_>,
     segment_version_major: u8,
 ) -> Result<RseRecordTable<'a>, CodecError> {
-    let stored_count = tables.blocks.iter().filter(|block| block.stored).count();
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(stored_count),
-        "admit Inventor RSe record frames",
-    )?;
     let mut cursor = Cursor::new(bulk);
-    let mut records = ctx.vector_storage(stored_count, "admit Inventor RSe record frames")?;
+    let mut records = Vec::new();
     for block in tables.blocks.iter().filter(|block| block.stored) {
         let selector = cursor.u32("record type selector")?;
         let type_index = u8::try_from(selector & 0xff).map_err(|_| {
@@ -356,7 +336,7 @@ pub(crate) fn frame_bulk_records<'a>(
         }
         let trailer_start = cursor.position();
         if uses_extended_record_trailer(segment_version_major) {
-            parse_extended_record_trailer(ctx, &mut cursor)?;
+            parse_extended_record_trailer(&mut cursor)?;
         }
         let trailer = child(bulk, trailer_start, cursor.position(), "record trailer")?;
         records.push(RseRecordFrame {
@@ -504,10 +484,7 @@ fn uses_extended_record_trailer(segment_version_major: u8) -> bool {
     segment_version_major > 18
 }
 
-fn parse_extended_record_trailer(
-    ctx: &DecodeContext<'_>,
-    cursor: &mut Cursor<'_>,
-) -> Result<(), CodecError> {
+fn parse_extended_record_trailer(cursor: &mut Cursor<'_>) -> Result<(), CodecError> {
     if !cursor.record_trailer_presence()? {
         return Ok(());
     }
@@ -520,10 +497,6 @@ fn parse_extended_record_trailer(
             "RSe record trailer property count exceeds 65536".into(),
         ));
     }
-    ctx.charge_collection_items(
-        u64::from(property_count),
-        "admit Inventor RSe record trailer properties",
-    )?;
     for _ in 0..property_count {
         cursor.sized_bytes(65_536, "record trailer property name")?;
         match cursor.u32("record trailer property type")? {
@@ -540,10 +513,6 @@ fn parse_extended_record_trailer(
                 cursor.skip(len, "record trailer byte array")?;
             }
             value => {
-                ctx.charge_formatted_retained(
-                    format_args!("RSe record trailer property type {value} is not implemented"),
-                    "retain RSe record trailer property diagnostic",
-                )?;
                 return Err(CodecError::NotImplemented(format!(
                     "RSe record trailer property type {value} is not implemented"
                 )));
@@ -563,10 +532,6 @@ fn parse_extended_record_trailer(
             "RSe record trailer reference count exceeds 65536".into(),
         ));
     }
-    ctx.charge_collection_items(
-        u64::from(reference_count),
-        "admit Inventor RSe record trailer references",
-    )?;
     if reference_count != 0 {
         cursor.skip(8, "record trailer reference header")?;
         for _ in 0..reference_count {
@@ -715,7 +680,7 @@ impl<'a> Cursor<'a> {
 
 #[cfg(test)]
 mod tests {
-    use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
 
     use super::{
         frame_bulk_records, parse_extended_record_trailer, parse_meta_tables,
@@ -727,23 +692,13 @@ mod tests {
     use cadmpeg_core::decode::{DecodeContext, View};
 
     #[test]
-    fn record_trailer_type_diagnostic_refuses_retained_limit_before_format() {
+    fn record_trailer_type_diagnostic_names_the_type() {
         let mut bytes = vec![1_u8];
         push_u32(&mut bytes, 1);
         push_u32(&mut bytes, 0);
         push_u32(&mut bytes, 99);
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 0;
-        let (limited, view) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-            .expect("synthetic trailer fits policy");
-        assert!(matches!(
-            parse_extended_record_trailer(&limited, &mut Cursor::new(view)),
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-        ));
-        with_view(&bytes, |ctx, view| {
-            let error = parse_extended_record_trailer(ctx, &mut Cursor::new(view))
+        with_view(&bytes, |view| {
+            let error = parse_extended_record_trailer(&mut Cursor::new(view))
                 .expect_err("unsupported trailer type");
             assert!(error.to_string().contains("property type 99"));
         });
@@ -752,13 +707,13 @@ mod tests {
     #[test]
     fn metadata_tables_frame_forward_and_backward_sections() {
         let body = meta_fixture();
-        with_view(&body, |ctx, view| {
+        with_view(&body, |view| {
             let planted_prefix = [3_u16, 0, 2, 1, 0, 4, 0]
                 .into_iter()
                 .flat_map(u16::to_le_bytes)
                 .collect::<Vec<_>>();
             assert_eq!(&body[..14], planted_prefix.as_slice());
-            let tables = parse_meta_tables(ctx, view).expect("synthetic metadata tables parse");
+            let tables = parse_meta_tables(view).expect("synthetic metadata tables parse");
             assert_eq!(tables.prefix, [3, 0, 2, 1, 0, 4, 0]);
             assert_eq!(tables.blocks.len(), 2);
             assert_eq!(tables.types.len(), 1);
@@ -772,9 +727,8 @@ mod tests {
     #[test]
     fn bulk_records_require_lengths_types_and_stream_exhaustion() {
         let meta = meta_fixture();
-        with_view(&meta, |ctx, meta_view| {
-            let tables =
-                parse_meta_tables(ctx, meta_view).expect("synthetic metadata tables parse");
+        with_view(&meta, |meta_view| {
+            let tables = parse_meta_tables(meta_view).expect("synthetic metadata tables parse");
             let mut bulk = Vec::new();
             push_u32(&mut bulk, 0x100);
             bulk.extend_from_slice(&[0x41; 3]);
@@ -784,8 +738,8 @@ mod tests {
             push_u32(&mut bulk, 5);
             push_u32(&mut bulk, u32::MAX);
             bulk.extend_from_slice(&[7, 8]);
-            with_view(&bulk, |ctx, bulk_view| {
-                let records = frame_bulk_records(ctx, bulk_view, &tables, 18)
+            with_view(&bulk, |bulk_view| {
+                let records = frame_bulk_records(bulk_view, &tables, 18)
                     .expect("synthetic bulk records parse");
                 assert_eq!(records.records.len(), 2);
                 assert_eq!(records.records[1].payload.window(), &[0x42; 5]);
@@ -795,8 +749,8 @@ mod tests {
                 );
             });
             bulk[24] = 0;
-            with_view(&bulk, |ctx, bulk_view| {
-                assert!(frame_bulk_records(ctx, bulk_view, &tables, 18).is_err());
+            with_view(&bulk, |bulk_view| {
+                assert!(frame_bulk_records(bulk_view, &tables, 18).is_err());
             });
         });
     }
@@ -805,7 +759,7 @@ mod tests {
     fn only_zero_and_one_state_extended_record_trailer_presence() {
         for byte in 0..=u8::MAX {
             let bytes = [byte];
-            with_view(&bytes, |ctx, view| {
+            with_view(&bytes, |view| {
                 let mut cursor = Cursor::new(view);
                 let observed = match cursor.record_trailer_presence() {
                     Ok(true) => "present".to_owned(),
@@ -820,7 +774,7 @@ mod tests {
                 assert_eq!(observed, expected);
 
                 let mut record = Cursor::new(view);
-                let through_record = match parse_extended_record_trailer(ctx, &mut record) {
+                let through_record = match parse_extended_record_trailer(&mut record) {
                     Ok(()) => "accepted".to_owned(),
                     Err(error) => error.to_string(),
                 };
@@ -835,7 +789,7 @@ mod tests {
 
     #[test]
     fn an_absent_record_trailer_presence_byte_is_truncation() {
-        with_view(&[], |_ctx, view| {
+        with_view(&[], |view| {
             let mut cursor = Cursor::new(view);
             let observed = match cursor.record_trailer_presence() {
                 Ok(present) => format!("read {present}"),
@@ -886,8 +840,8 @@ mod tests {
             (vec![0; 14], "Truncated metadata terminal id at offset 0"),
             (vec![0; 16], "Truncated block-size table at offset 14"),
         ] {
-            with_view(&bytes, |ctx, view| {
-                assert_eq!(located_truncation(parse_meta_tables(ctx, view)), expected);
+            with_view(&bytes, |view| {
+                assert_eq!(located_truncation(parse_meta_tables(view)), expected);
             });
         }
     }
@@ -895,10 +849,10 @@ mod tests {
     #[test]
     fn a_metadata_terminal_id_under_the_window_start_is_located() {
         let bytes = [0_u8; 30];
-        with_view(&bytes, |ctx, view| {
+        with_view(&bytes, |view| {
             let body = view.child(10, 24).expect("a 14-byte child of 30 bytes");
             assert_eq!(
-                located_truncation(parse_meta_tables(ctx, body)),
+                located_truncation(parse_meta_tables(body)),
                 "Truncated metadata terminal id at offset 8"
             );
         });
@@ -915,8 +869,8 @@ mod tests {
             push_u32(&mut body, 4);
         }
         body.extend_from_slice(&[0_u8; TERMINAL_ID_LEN]);
-        with_view(&body, |ctx, view| {
-            let observed = match parse_meta_tables(ctx, view) {
+        with_view(&body, |view| {
+            let observed = match parse_meta_tables(view) {
                 Ok(tables) => format!("the body parsed with {} sections", tables.sections.len()),
                 Err(error) => error.to_string(),
             };
@@ -940,9 +894,9 @@ mod tests {
         trailer.extend_from_slice(&[0, 0]);
         push_u32(&mut trailer, u32::MAX);
         assert_eq!(trailer.len(), 19);
-        with_view(&trailer, |ctx, view| {
+        with_view(&trailer, |view| {
             let mut cursor = Cursor::new(view);
-            let observed = match parse_extended_record_trailer(ctx, &mut cursor) {
+            let observed = match parse_extended_record_trailer(&mut cursor) {
                 Ok(()) => "the record trailer parsed".to_owned(),
                 Err(error) => error.to_string(),
             };
@@ -957,11 +911,11 @@ mod tests {
         synthetic_meta_table_body()
     }
 
-    fn with_view(bytes: &[u8], test: impl FnOnce(&DecodeContext<'_>, View<'_>)) {
+    fn with_view(bytes: &[u8], test: impl FnOnce(View<'_>)) {
         let arena = DecodeArena::new();
-        let (ctx, view) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::default())
+        let (_, view) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::default())
             .expect("synthetic RSe data fits policy");
-        test(&ctx, view);
+        test(view);
     }
     #[test]
     fn metadata_section_numbers_have_a_closed_numeric_wire_form() {

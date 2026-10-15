@@ -734,50 +734,17 @@ fn numerical_audit_rational_linear_nurbs_keeps_subnormal_pole_derivatives() {
 }
 
 #[test]
-fn raw_pcurve_evaluation_uses_the_callers_storage_and_work_limits() {
-    use crate::eval::{nurbs_pcurve_uv, EvaluationFailure};
+fn raw_pcurve_evaluation_reads_a_curved_quadratic_without_nesting() {
+    use crate::eval::nurbs_pcurve_uv;
     use crate::math::Point2;
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let knots = [0.0, 0.0, 0.0, 1.0, 1.0, 1.0];
     let points = [
         Point2::new(0.0, 0.0),
         Point2::new(1.0, 2.0),
         Point2::new(2.0, 0.0),
     ];
-    let mut heap_knots = vec![0.0; 17];
-    heap_knots.extend([1.0; 17]);
-    let heap_points = [Point2::new(0.0, 0.0); 17];
-    for dimension in [
-        ResourceDimension::MaterializedBytes,
-        ResourceDimension::CollectionItems,
-        ResourceDimension::WorkUnits,
-    ] {
-        let mut policy = DecodePolicy::service();
-        match dimension {
-            ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
-            ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
-            ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
-            _ => unreachable!(),
-        }
-        let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let EvaluationFailure::ResourceLimit(original) =
-            nurbs_pcurve_uv(&ctx, 16, &heap_knots, &heap_points, None, 0.5).unwrap_err()
-        else {
-            panic!("raw pcurve must refuse");
-        };
-        assert_eq!(original.dimension, dimension);
-        assert!(
-            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original)
-        );
-    }
     let mut policy = DecodePolicy::service();
-    policy.limits.max_materialized_bytes = 4096;
-    policy.limits.max_retained_bytes = 0;
-    policy.limits.max_collection_items = 128;
-    policy.limits.max_work_units = 4096;
     policy.limits.max_recursion_depth = 0;
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
@@ -795,30 +762,5 @@ fn raw_pcurve_evaluation_uses_the_callers_storage_and_work_limits() {
         differential.acceleration.unwrap().get(),
         Point2::new(0.0, -8.0)
     );
-    drop(
-        ctx.reserve_scoped_limit(4096, "raw pcurve scratch released")
-            .unwrap(),
-    );
     ctx.finish_session().unwrap();
-}
-
-#[test]
-fn raw_pcurve_evaluation_preserves_a_fused_refusal_before_invalid_input() {
-    use crate::eval::{nurbs_pcurve_uv, EvaluationFailure};
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    use cadmpeg_core::CodecError;
-
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let original = ctx
-        .charge_work_limit(1, "original raw pcurve refusal")
-        .unwrap_err();
-    assert!(
-        matches!(nurbs_pcurve_uv(&ctx, 0, &[], &[], None, f64::NAN), Err(EvaluationFailure::ResourceLimit(limit)) if limit == original)
-    );
-    assert!(
-        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original)
-    );
 }

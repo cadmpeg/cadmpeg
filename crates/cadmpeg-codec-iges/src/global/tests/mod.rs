@@ -8,11 +8,11 @@ use crate::loss::IgesLossCode;
 use crate::test_support::test_cards::fixed_ascii_with_global;
 use crate::test_support::test_curves_and_surfaces::point_file_with_global;
 
+mod declaration_text;
 mod dialect;
 mod inspection;
 mod parsing;
 mod resolution;
-mod text_admission;
 mod units;
 
 fn valid_global_fields() -> Vec<String> {
@@ -58,7 +58,7 @@ fn resolve_global_fields(fields: &[String]) -> ParsedGlobal {
     let mut global = fields.join(",");
     global.push(';');
     let bytes = fixed_ascii_with_global(global.as_bytes());
-    crate::test_support::parse_global(&crate::test_support::scan(&bytes).unwrap()).unwrap()
+    crate::test_support::parse_global(&crate::card::scan(&bytes).unwrap()).unwrap()
 }
 
 fn code_count(losses: &[cadmpeg_ir::report::loss::LossNote], code: IgesLossCode) -> usize {

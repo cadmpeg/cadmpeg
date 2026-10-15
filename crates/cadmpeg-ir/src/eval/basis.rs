@@ -17,7 +17,7 @@ pub(super) fn bspline_span<'ctx, 'arena: 'ctx>(
     t: f64,
 ) -> Result<Option<usize>, EvaluationRefusal> {
     let admission = admission.into();
-    admission.work(0, "IR B-spline span search")?;
+    admission.work(0)?;
     let Some(required) = count
         .checked_add(degree)
         .and_then(|size| size.checked_add(1))
@@ -39,7 +39,7 @@ pub(super) fn bspline_span<'ctx, 'arena: 'ctx>(
     let mut lo = degree;
     let mut hi = count;
     while lo < hi {
-        admission.work(1, "IR B-spline span search")?;
+        admission.work(1)?;
         let mid = usize::midpoint(lo, hi);
         if t < knots[mid] {
             hi = mid;
@@ -65,19 +65,14 @@ pub(super) fn bspline_basis(
     let mut values = if support <= decode::INLINE_SUPPORT {
         // Preserve initialization work for support that required filled backing.
         if support > 4 {
-            scratch.work(support, "IR B-spline basis work")?;
+            scratch.work(support)?;
         }
         decode::SupportValues::Inline {
             values: [0.0; decode::INLINE_SUPPORT],
             len: support,
         }
     } else {
-        decode::SupportValues::Heap(scratch.filled(
-            support,
-            0.0,
-            "IR B-spline basis",
-            "IR B-spline basis work",
-        )?)
+        decode::SupportValues::Heap(scratch.filled(support, 0.0)?)
     };
     scratch.admit(fill_bspline_basis(
         scratch.admission,
@@ -102,20 +97,20 @@ pub(super) fn fill_bspline_basis<'ctx, 'arena: 'ctx>(
     values: &mut [f64],
 ) -> Result<Option<()>, EvaluationRefusal> {
     let admission = admission.into();
-    admission.work(0, "IR B-spline basis work")?;
+    admission.work(0)?;
     if Some(values.len()) != degree.checked_add(1) {
         return Ok(None);
     }
     let finite_t = FiniteReal::new(t);
     if degree > 1 {
-        admission.work(1, "IR B-spline basis work")?;
+        admission.work(1)?;
     }
     values[0] = 1.0;
     for j in 1..=degree {
         let mut saved = 0.0;
         for r in 0..j {
             if degree > 1 {
-                admission.work(1, "IR B-spline basis work")?;
+                admission.work(1)?;
             }
             let value = values[r];
             // Each knot distance is admitted where it is formed.
@@ -160,7 +155,7 @@ pub(super) fn fill_bspline_basis<'ctx, 'arena: 'ctx>(
             saved = left_term;
         }
         if degree > 1 {
-            admission.work(1, "IR B-spline basis work")?;
+            admission.work(1)?;
         }
         values[j] = saved;
     }
@@ -169,10 +164,10 @@ pub(super) fn fill_bspline_basis<'ctx, 'arena: 'ctx>(
 
 /// Inspect the finite range of a basis, admitting input-sized visits first.
 pub(super) fn all_finite(scratch: &decode::Scratch<'_, '_>, values: &[f64]) -> Option<bool> {
-    scratch.work(0, "IR B-spline finite basis inspection")?;
+    scratch.work(0)?;
     for value in values {
         if values.len() > 2 {
-            scratch.work(1, "IR B-spline finite basis inspection")?;
+            scratch.work(1)?;
         }
         if !value.is_finite() {
             return Some(false);
@@ -205,60 +200,52 @@ pub(super) fn bspline_basis_derivative(
     t: f64,
 ) -> Option<decode::SupportValues<f64>> {
     if degree == 0 {
-        return scratch.support_values(
-            std::iter::once(Some(0.0)),
-            "IR B-spline derivative basis",
-            "IR B-spline derivative work",
-        );
+        return scratch.support_values(std::iter::once(Some(0.0)));
     }
     let degree_real = f64_from_index(degree)?;
     let lower = bspline_basis(scratch, knots, degree - 1, span, t)?;
     let lower_start = span - (degree - 1);
-    scratch.support_values(
-        (0..degree.checked_add(1)?).map(|local| {
-            let index = span - degree + local;
-            let lower_at = |global: usize| {
-                global
-                    .checked_sub(lower_start)
-                    .and_then(|at| lower.get(at))
-                    .copied()
-                    .unwrap_or(0.0)
-            };
-            let left_denominator = knots[index + degree] - knots[index];
-            let right_denominator = knots[index + degree + 1] - knots[index + 1];
-            let left = if left_denominator == 0.0 {
-                0.0
-            } else if left_denominator.is_finite() {
-                degree_real * lower_at(index) / left_denominator
-            } else {
-                nan_quotient(
-                    scratch,
-                    FiniteReal::array([
-                        degree_real * lower_at(index),
-                        knots[index + degree],
-                        knots[index],
-                    ]),
-                )?
-            };
-            let right = if right_denominator == 0.0 {
-                0.0
-            } else if right_denominator.is_finite() {
-                degree_real * lower_at(index + 1) / right_denominator
-            } else {
-                nan_quotient(
-                    scratch,
-                    FiniteReal::array([
-                        degree_real * lower_at(index + 1),
-                        knots[index + degree + 1],
-                        knots[index + 1],
-                    ]),
-                )?
-            };
-            Some(left - right)
-        }),
-        "IR B-spline derivative basis",
-        "IR B-spline derivative work",
-    )
+    scratch.support_values((0..degree.checked_add(1)?).map(|local| {
+        let index = span - degree + local;
+        let lower_at = |global: usize| {
+            global
+                .checked_sub(lower_start)
+                .and_then(|at| lower.get(at))
+                .copied()
+                .unwrap_or(0.0)
+        };
+        let left_denominator = knots[index + degree] - knots[index];
+        let right_denominator = knots[index + degree + 1] - knots[index + 1];
+        let left = if left_denominator == 0.0 {
+            0.0
+        } else if left_denominator.is_finite() {
+            degree_real * lower_at(index) / left_denominator
+        } else {
+            nan_quotient(
+                scratch,
+                FiniteReal::array([
+                    degree_real * lower_at(index),
+                    knots[index + degree],
+                    knots[index],
+                ]),
+            )?
+        };
+        let right = if right_denominator == 0.0 {
+            0.0
+        } else if right_denominator.is_finite() {
+            degree_real * lower_at(index + 1) / right_denominator
+        } else {
+            nan_quotient(
+                scratch,
+                FiniteReal::array([
+                    degree_real * lower_at(index + 1),
+                    knots[index + degree + 1],
+                    knots[index + 1],
+                ]),
+            )?
+        };
+        Some(left - right)
+    }))
 }
 
 /// The basis has `degree + 1` values, at most the admitted control count.
@@ -278,51 +265,47 @@ pub(super) fn bspline_basis_second_derivative(
     let degree_real = f64_from_index(degree)?;
     let lower = bspline_basis_derivative(scratch, knots, degree - 1, span, t)?;
     let lower_start = span - (degree - 1);
-    scratch.support_values(
-        (0..degree.checked_add(1)?).map(|local| {
-            let index = span - degree + local;
-            let lower_at = |global: usize| {
-                global
-                    .checked_sub(lower_start)
-                    .and_then(|at| lower.get(at))
-                    .copied()
-                    .unwrap_or(0.0)
-            };
-            let left_denominator = knots[index + degree] - knots[index];
-            let right_denominator = knots[index + degree + 1] - knots[index + 1];
-            let left = if left_denominator == 0.0 {
-                0.0
-            } else if left_denominator.is_finite() {
-                degree_real * lower_at(index) / left_denominator
-            } else {
-                nan_quotient(
-                    scratch,
-                    FiniteReal::array([
-                        degree_real * lower_at(index),
-                        knots[index + degree],
-                        knots[index],
-                    ]),
-                )?
-            };
-            let right = if right_denominator == 0.0 {
-                0.0
-            } else if right_denominator.is_finite() {
-                degree_real * lower_at(index + 1) / right_denominator
-            } else {
-                nan_quotient(
-                    scratch,
-                    FiniteReal::array([
-                        degree_real * lower_at(index + 1),
-                        knots[index + degree + 1],
-                        knots[index + 1],
-                    ]),
-                )?
-            };
-            Some(left - right)
-        }),
-        "IR B-spline second derivative basis",
-        "IR B-spline second derivative work",
-    )
+    scratch.support_values((0..degree.checked_add(1)?).map(|local| {
+        let index = span - degree + local;
+        let lower_at = |global: usize| {
+            global
+                .checked_sub(lower_start)
+                .and_then(|at| lower.get(at))
+                .copied()
+                .unwrap_or(0.0)
+        };
+        let left_denominator = knots[index + degree] - knots[index];
+        let right_denominator = knots[index + degree + 1] - knots[index + 1];
+        let left = if left_denominator == 0.0 {
+            0.0
+        } else if left_denominator.is_finite() {
+            degree_real * lower_at(index) / left_denominator
+        } else {
+            nan_quotient(
+                scratch,
+                FiniteReal::array([
+                    degree_real * lower_at(index),
+                    knots[index + degree],
+                    knots[index],
+                ]),
+            )?
+        };
+        let right = if right_denominator == 0.0 {
+            0.0
+        } else if right_denominator.is_finite() {
+            degree_real * lower_at(index + 1) / right_denominator
+        } else {
+            nan_quotient(
+                scratch,
+                FiniteReal::array([
+                    degree_real * lower_at(index + 1),
+                    knots[index + degree + 1],
+                    knots[index + 1],
+                ]),
+            )?
+        };
+        Some(left - right)
+    }))
 }
 
 /// Basis derivatives with respect to a local coordinate whose unit is the
@@ -344,26 +327,14 @@ pub(super) fn bspline_basis_scaled_derivatives(
 ) -> Option<ScaledBasisDerivatives> {
     if degree == 0 {
         return Some(ScaledBasisDerivatives {
-            first: scratch.support_values(
-                std::iter::once(Some(0.0)),
-                "IR scaled B-spline first basis",
-                "IR scaled B-spline derivative work",
-            )?,
-            second: scratch.support_values(
-                std::iter::once(Some(0.0)),
-                "IR scaled B-spline second basis",
-                "IR scaled B-spline derivative work",
-            )?,
+            first: scratch.support_values(std::iter::once(Some(0.0)))?,
+            second: scratch.support_values(std::iter::once(Some(0.0)))?,
         });
     }
     let lower = bspline_basis(scratch, knots, degree - 1, span, t)?;
     let first = bspline_basis_scaled_derivative_level(scratch, knots, degree, span, scale, &lower)?;
     let second = if degree == 1 {
-        scratch.support_values(
-            std::iter::repeat_n(Some(0.0), 2),
-            "IR scaled B-spline second basis",
-            "IR scaled B-spline derivative work",
-        )?
+        scratch.support_values(std::iter::repeat_n(Some(0.0), 2))?
     } else {
         let lower_lower = bspline_basis(scratch, knots, degree - 2, span, t)?;
         let lower_first = bspline_basis_scaled_derivative_level(
@@ -389,40 +360,36 @@ fn bspline_basis_scaled_derivative_level(
 ) -> Option<decode::SupportValues<f64>> {
     let degree_real = f64_from_index(degree)?;
     let lower_start = span - (degree - 1);
-    scratch.support_values(
-        (0..degree.checked_add(1)?).map(|local| {
-            let index = span - degree + local;
-            let lower_at = |values: &[f64], global: usize| {
-                global
-                    .checked_sub(lower_start)
-                    .and_then(|at| values.get(at))
-                    .copied()
-                    .unwrap_or(0.0)
-            };
-            let ratio = |hi: usize, lo: usize| {
-                if knots[hi] == knots[lo] {
-                    Some(0.0)
-                } else {
-                    let [hi_knot, lo_knot] = FiniteReal::array([knots[hi], knots[lo]])?;
-                    scratch
-                        .admit(finite_or_refusal(difference_quotient(
-                            scale.into(),
-                            FiniteReal::ZERO,
-                            hi_knot,
-                            lo_knot,
-                        )))?
-                        .map(FiniteReal::get)
-                }
-            };
-            let left = ratio(index + degree, index)?;
-            let right = ratio(index + degree + 1, index + 1)?;
-            let derivative =
-                degree_real * (left * lower_at(lower, index) - right * lower_at(lower, index + 1));
-            derivative.is_finite().then_some(derivative)
-        }),
-        "IR scaled B-spline derivative basis",
-        "IR scaled B-spline derivative work",
-    )
+    scratch.support_values((0..degree.checked_add(1)?).map(|local| {
+        let index = span - degree + local;
+        let lower_at = |values: &[f64], global: usize| {
+            global
+                .checked_sub(lower_start)
+                .and_then(|at| values.get(at))
+                .copied()
+                .unwrap_or(0.0)
+        };
+        let ratio = |hi: usize, lo: usize| {
+            if knots[hi] == knots[lo] {
+                Some(0.0)
+            } else {
+                let [hi_knot, lo_knot] = FiniteReal::array([knots[hi], knots[lo]])?;
+                scratch
+                    .admit(finite_or_refusal(difference_quotient(
+                        scale.into(),
+                        FiniteReal::ZERO,
+                        hi_knot,
+                        lo_knot,
+                    )))?
+                    .map(FiniteReal::get)
+            }
+        };
+        let left = ratio(index + degree, index)?;
+        let right = ratio(index + degree + 1, index + 1)?;
+        let derivative =
+            degree_real * (left * lower_at(lower, index) - right * lower_at(lower, index + 1));
+        derivative.is_finite().then_some(derivative)
+    }))
 }
 
 #[cfg(test)]

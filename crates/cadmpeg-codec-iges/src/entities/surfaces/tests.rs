@@ -6,11 +6,7 @@ use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
 use std::io::Cursor;
 
-use cadmpeg_core::decode::DecodePolicy;
-use cadmpeg_core::decode::ResourceDimension;
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::Codec;
-use cadmpeg_ir::codec::DecodeFailure;
 use cadmpeg_ir::codec::DecodeOptions;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::nurbs::NurbsCurve;
@@ -31,685 +27,23 @@ use crate::test_support::test_surface_fixtures::hyperbola_surface_of_revolution_
 use crate::test_support::test_surface_fixtures::hyperbola_surface_of_revolution_file_with_global;
 use crate::test_support::test_surface_fixtures::line_surface_of_revolution_file;
 use crate::test_support::test_surface_fixtures::line_surface_of_revolution_file_with_global;
-use crate::test_support::test_surface_fixtures::nurbs_surface_file;
 use crate::test_support::test_surface_fixtures::offset_nurbs_surface_file;
-use crate::test_support::test_surface_fixtures::offset_plane_file;
-use crate::test_support::test_surface_fixtures::placed_hyperbola_surface_of_revolution_file;
-use crate::test_support::test_surface_fixtures::placed_overflow_surface_of_revolution_file;
 use crate::test_support::test_surface_fixtures::placed_surface_of_revolution_file;
-use crate::test_support::test_surface_fixtures::plane_file;
 use crate::test_support::test_surface_fixtures::rational_ruled_surface_file;
 use crate::test_support::test_surface_fixtures::ruled_surface_file;
 use crate::test_support::test_surface_fixtures::ruled_surface_file_with_developable_flag;
 use crate::test_support::test_surface_fixtures::surface_of_revolution_file;
-use crate::test_support::test_surface_fixtures::tabulated_hyperbola_file;
 use crate::test_support::test_surface_fixtures::trimmed_surface_of_revolution_file;
 
-use crate::test_support::test_tabulated_surfaces::placed_tabulated_hyperbola_file;
-use crate::test_support::test_tabulated_surfaces::placed_tabulated_line_file;
-use crate::test_support::test_tabulated_surfaces::placed_tabulated_nurbs_overflow_file;
 use crate::IgesCodec;
 
 use crate::global::GlobalTable;
-
-#[test]
-fn surface_grid_error_fields_refuse_retained_limit_before_copy() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext};
-
-    let point = FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap();
-    let cases = [
-        (vec![Vec::new()], Vec::<Vec<f64>>::new(), 8_u64),
-        (
-            vec![Vec::new()],
-            vec![vec![1.0]],
-            12_u64
-                + cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                    Vec<cadmpeg_ir::geometry::nurbs::WeightedPole3<FinitePoint3>>,
-                >()),
-        ),
-        (
-            vec![vec![point]],
-            vec![vec![0.0]],
-            12_u64
-                + cadmpeg_core::decode::u64_from_index(
-                    std::mem::size_of::<
-                        Vec<cadmpeg_ir::geometry::nurbs::WeightedPole3<FinitePoint3>>,
-                    >() + std::mem::size_of::<
-                        cadmpeg_ir::geometry::nurbs::WeightedPole3<FinitePoint3>,
-                    >(),
-                ),
-        ),
-    ];
-    for (rows, weights, cap) in cases {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result =
-            super::pair_admitted_surface_poles(&ctx, rows, Some(weights), "outer", "inner");
-        assert!(
-            matches!(result, Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "iges surface grid error field")
-        );
-    }
-}
 
 const EPS_RATIONAL_RULED: f64 = 1.0e-10;
 const EPS_LINEAR_BEZIER_RULED: f64 = 1.0e-5;
 
 use super::{angular_basis, offset_indicator_parameters, tabulated_directrix_type_allowed};
 
-fn assert_surface_collection_refusal(bytes: &[u8], operation: &str) {
-    cadmpeg_test_support::decode::resource_refusal_at(
-        &crate::IgesCodec,
-        bytes,
-        &mut DecodeOptions {
-            policy: DecodePolicy::service(),
-            ..DecodeOptions::default()
-        },
-        ResourceDimension::CollectionItems,
-        operation,
-        0,
-    );
-}
-
-#[test]
-fn surface_identity_copies_refuse_at_retained_byte_limit() {
-    for bytes in [placed_tabulated_line_file()] {
-        IgesCodec
-            .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
-            .unwrap();
-        let mut cap = 0_u64;
-        let mut refused = false;
-        for _ in 0..4096 {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = cap;
-            match IgesCodec.decode(
-                &mut Cursor::new(&bytes),
-                &DecodeOptions {
-                    policy,
-                    ..DecodeOptions::default()
-                },
-            ) {
-                Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
-                    assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
-                    if limit.operation == "iges surface identity copy" {
-                        refused = true;
-                        break;
-                    }
-                    cap = limit.used.checked_add(limit.additional).unwrap();
-                }
-                Ok(_) => {
-                    panic!("expected surface identity refusal at cap {cap}, but decode succeeded")
-                }
-                Err(error) => panic!("expected surface identity refusal at cap {cap}: {error:?}"),
-            }
-        }
-        assert!(refused, "surface identity refusal was not reached");
-    }
-}
-
-#[test]
-fn exact_placed_surface_carriers_refuse_nested_curve_box() {
-    for bytes in [
-        placed_tabulated_hyperbola_file(),
-        placed_hyperbola_surface_of_revolution_file(),
-    ] {
-        IgesCodec
-            .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
-            .unwrap();
-        assert_surface_collection_refusal(&bytes, "iges exact placed curve box");
-    }
-}
-
-#[test]
-fn type122_projection_refuses_tabulated_carrier_rows_knots_and_slots() {
-    let bytes = placed_tabulated_line_file();
-    for operation in [
-        "iges tabulated pole rows",
-        "iges tabulated pole row controls",
-        "iges tabulated u knots",
-        "iges tabulated v knots",
-        "iges tabulated placed directrix slots",
-        "iges tabulated neutral surface slots",
-    ] {
-        assert_surface_collection_refusal(&bytes, operation);
-    }
-}
-
-#[test]
-fn type122_projection_refuses_rational_tabulated_weight_rows() {
-    let bytes = owned_test_file(&[
-        OwnedTestEntity {
-            entity_type: 126,
-            form: 0,
-            label: "RATIONAL".into(),
-            status: "00000000",
-            parameters: "126,2,2,1,0,0,0,0,0,0,1,1,1,1,0.5,1,0,0,0,1,1,0,2,0,0,0,1,0,0,1;".into(),
-        },
-        OwnedTestEntity {
-            entity_type: 122,
-            form: 0,
-            label: "TABULATE".into(),
-            status: "00000000",
-            parameters: "122,1,0,0,2;".into(),
-        },
-    ]);
-    let result = IgesCodec
-        .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
-        .unwrap();
-    assert!(result.ir().model.surfaces.iter().any(|surface| matches!(
-        &surface.geometry,
-        cadmpeg_ir::geometry::SurfaceGeometry::Procedural {
-            cache: Some(SolvedSurfaceGeometry::Nurbs(nurbs)),
-            ..
-        } if nurbs.weights().is_some()
-    )));
-    for operation in [
-        "iges tabulated weight rows",
-        "iges tabulated weight row controls",
-        "iges tabulated weighted rows",
-        "iges tabulated weighted row controls",
-    ] {
-        assert_surface_collection_refusal(&bytes, operation);
-    }
-}
-
-#[test]
-fn surface_projectors_refuse_neutral_and_placed_curve_slots() {
-    for (bytes, operation) in [
-        (plane_file(), "iges plane neutral surface slots"),
-        (ruled_surface_file(), "iges ruled neutral surface slots"),
-        (
-            placed_tabulated_hyperbola_file(),
-            "iges tabulated exact placed directrix slots",
-        ),
-        (
-            tabulated_hyperbola_file(),
-            "iges tabulated exact neutral surface slots",
-        ),
-        (
-            hyperbola_surface_of_revolution_file(),
-            "iges revolution exact neutral surface slots",
-        ),
-        (
-            placed_hyperbola_surface_of_revolution_file(),
-            "iges revolution exact placed generatrix slots",
-        ),
-        (
-            placed_surface_of_revolution_file(),
-            "iges revolution placed generatrix slots",
-        ),
-        (
-            offset_plane_file(1.0, 2.0),
-            "iges offset neutral surface slots",
-        ),
-    ] {
-        assert_surface_collection_refusal(&bytes, operation);
-    }
-}
-
-#[test]
-fn surface_projectors_refuse_procedural_attachment_slots() {
-    for bytes in [
-        ruled_surface_file(),
-        tabulated_hyperbola_file(),
-        placed_tabulated_line_file(),
-        hyperbola_surface_of_revolution_file(),
-        ellipse_surface_of_revolution_file(),
-        offset_plane_file(1.0, 2.0),
-    ] {
-        assert_surface_collection_refusal(&bytes, "store procedural surface constructions");
-    }
-    // Released NURBS projection scratch peaks above this charge.
-    crate::test_support::decode_charges_collection(
-        &nurbs_surface_file(),
-        "store procedural surface constructions",
-    );
-}
-
-#[test]
-fn ruled_developability_loss_refuses_unadmitted_slot() {
-    let bytes = ruled_surface_file();
-    assert_surface_collection_refusal(&bytes, "iges entity loss slots");
-    let result = IgesCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .unwrap();
-    assert!(result
-        .report()
-        .losses
-        .iter()
-        .any(|loss| { loss.code == IgesLossCode::RuledDevelopabilityNotTransferred.kind() }));
-}
-
-#[test]
-fn tabulated_nonfinite_placement_loss_refuses_unadmitted_slot() {
-    let bytes = placed_tabulated_nurbs_overflow_file();
-    let result = IgesCodec
-        .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
-        .unwrap();
-    assert!(
-        result
-            .report()
-            .losses
-            .iter()
-            .any(|loss| { loss.code == IgesLossCode::NurbsTransformNonFinite.kind() }),
-        "{:#?}",
-        result.report().losses
-    );
-    assert_surface_collection_refusal(&bytes, "iges entity loss slots");
-}
-
-#[test]
-fn revolution_nonfinite_generatrix_loss_refuses_unadmitted_slot() {
-    let bytes = placed_overflow_surface_of_revolution_file();
-    let result = IgesCodec
-        .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
-        .unwrap();
-    assert!(
-        result
-            .report()
-            .losses
-            .iter()
-            .any(|loss| { loss.code == IgesLossCode::NurbsTransformNonFinite.kind() }),
-        "{:#?}",
-        result.report().losses
-    );
-    assert_surface_collection_refusal(&bytes, "iges entity loss slots");
-}
-
-#[test]
-fn reversed_ruled_knots_loss_charges_its_slot() {
-    let bytes = owned_test_file(&[
-        OwnedTestEntity {
-            entity_type: 110,
-            form: 0,
-            label: "RAIL1".into(),
-            status: "00010000",
-            parameters: "110,0,0,0,1,0,0;".into(),
-        },
-        OwnedTestEntity {
-            entity_type: 126,
-            form: 0,
-            label: "RAIL2".into(),
-            status: "00010000",
-            parameters:
-                "126,1,1,1,0,1,0,8D307,8D307,1D308,1D308,1,1,0,1,0,1,1,0,8D307,1D308,0,0,1;".into(),
-        },
-        OwnedTestEntity {
-            entity_type: 118,
-            form: 1,
-            label: "RULED".into(),
-            status: "00000000",
-            parameters: "118,1,3,1,1;".into(),
-        },
-    ]);
-    let result = IgesCodec
-        .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
-        .unwrap();
-    assert!(
-        result.report().losses.iter().any(|loss| {
-            loss.code == IgesLossCode::NurbsTransformNonFinite.kind()
-                && loss.message == "IGES reversed second rail knots are non-finite"
-        }),
-        "{:#?}",
-        result.report().losses
-    );
-    // Released decode scratch peaks above the loss slot charge.
-    crate::test_support::decode_charges_collection(&bytes, "iges entity loss slots");
-}
-
-#[test]
-fn type128_projection_refuses_source_lanes_and_nested_rows_and_charges_surface_slot() {
-    let polynomial = nurbs_surface_file();
-    for operation in [
-        "iges NURBS surface source u knots",
-        "iges NURBS surface source v knots",
-        "iges NURBS surface admitted u knots",
-        "iges NURBS surface admitted v knots",
-        "iges NURBS surface source weights",
-        "iges NURBS surface positive weights",
-        "iges NURBS surface source poles",
-        "iges NURBS surface source ranges",
-        "iges NURBS surface placed controls",
-        "iges NURBS surface pole rows",
-        "iges NURBS surface pole row controls",
-    ] {
-        assert_surface_collection_refusal(&polynomial, operation);
-    }
-    // Released decode scratch peaks above the surface slot charge.
-    crate::test_support::decode_charges_collection(&polynomial, "iges NURBS surface neutral slots");
-    let rational = owned_test_file_with_global_and_line_fonts(&[OwnedTestEntity {
-        entity_type: 128,
-        form: 0,
-        label: "SURFACE".into(),
-        status: "00000000",
-        parameters: "128,1,1,1,1,0,0,0,0,0,0,0,1,1,0,0,1,1,1,0.99,1,1,0,0,0,1,0,0,1,0,1,1,0,1,0,1,0,1;".into(),
-    }], b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H900101.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;", &[(1, 1)]);
-    let service = crate::IgesCodec
-        .decode(&mut Cursor::new(&rational), &DecodeOptions::default())
-        .unwrap();
-    assert_eq!(service.ir().model.surfaces.len(), 1);
-    for operation in [
-        "iges NURBS surface neutral weights",
-        "iges NURBS surface weight rows",
-        "iges NURBS surface weight row controls",
-        "iges NURBS surface weighted rows",
-        "iges NURBS surface weighted row controls",
-    ] {
-        assert_surface_collection_refusal(&rational, operation);
-    }
-}
-
-#[test]
-fn interval_certified_ruled_rails_refuse_coordinate_arrays() {
-    let bytes = interval_certified_linear_bezier_ruled_surface_file();
-    for operation in [
-        "iges ruled linear x values",
-        "iges ruled linear y values",
-        "iges ruled linear z values",
-        "iges ruled linear x uncertainties",
-        "iges ruled linear y uncertainties",
-        "iges ruled linear z uncertainties",
-    ] {
-        assert_surface_collection_refusal(&bytes, operation);
-    }
-    let service = crate::IgesCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .unwrap();
-    assert!(!service.ir().model.surfaces.is_empty());
-}
-
-#[test]
-fn homogeneous_ruled_surface_refuses_control_and_knot_lanes() {
-    let bytes = rational_ruled_surface_file();
-    // Released decode scratch peaks above the homogeneous control charge.
-    crate::test_support::decode_charges_collection(&bytes, "iges ruled homogeneous controls");
-    for operation in [
-        "iges ruled homogeneous knots",
-        "iges ruled surface controls",
-        "iges ruled surface weights",
-        "iges ruled span pole rows",
-        "iges ruled span pole row controls",
-        "iges ruled span weight rows",
-        "iges ruled span weight row controls",
-        "iges ruled span v knots",
-        "iges ruled span weighted rows",
-        "iges ruled span weighted row controls",
-    ] {
-        assert_surface_collection_refusal(&bytes, operation);
-    }
-    let service = crate::IgesCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .unwrap();
-    assert!(!service.ir().model.surfaces.is_empty());
-}
-
-#[test]
-fn same_basis_ruled_surface_refuses_nested_poles_and_knots() {
-    let bytes = ruled_surface_file();
-    for operation in [
-        "iges ruled same-basis pole rows",
-        "iges ruled same-basis pole row controls",
-        "iges ruled same-basis u knots",
-        "iges ruled same-basis v knots",
-    ] {
-        assert_surface_collection_refusal(&bytes, operation);
-    }
-    let service = crate::IgesCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .unwrap();
-    assert!(!service.ir().model.surfaces.is_empty());
-}
-
-#[test]
-fn ruled_shared_weight_admission_refuses_before_copy() {
-    let bytes = ruled_surface_file();
-    assert_surface_collection_refusal(&bytes, "iges ruled shared weights");
-    let service = IgesCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .unwrap();
-    assert_eq!(service.ir().model.surfaces.len(), 1);
-}
-
-#[test]
-fn ruled_homogeneous_carriers_refuse_copied_poles_weights_and_controls() {
-    let bytes = rational_ruled_surface_file();
-    for operation in [
-        "iges_surface_closure_weights",
-        "iges_surface_closure_points",
-        "iges_surface_closure_controls",
-    ] {
-        assert_surface_collection_refusal(&bytes, operation);
-    }
-    let service = IgesCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .unwrap();
-    assert_eq!(service.ir().model.surfaces.len(), 1);
-}
-
-#[test]
-fn aligned_ruled_spans_refuse_nested_split_and_partition_storage() {
-    crate::test_support::with_service_context(&[], |decode_ctx| {
-        let first = NurbsCurve::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
-            1,
-            vec![0.0, 0.0, 1.0, 1.0],
-            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
-            None,
-            false,
-        )
-        .expect("fixture constructor admission")
-        .unwrap();
-        let second = NurbsCurve::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
-            1,
-            vec![0.0, 0.0, 0.5, 1.0, 1.0],
-            vec![
-                Point3::new(0.0, 1.0, 0.0),
-                Point3::new(0.5, 1.0, 0.0),
-                Point3::new(1.0, 1.0, 0.0),
-            ],
-            None,
-            false,
-        )
-        .expect("fixture constructor admission")
-        .unwrap();
-        let spans = super::aligned_homogeneous_spans(decode_ctx, &first, &second)
-            .unwrap()
-            .unwrap();
-        assert_eq!(spans.len(), 2);
-        // Released alignment scratch peaks above these charges.
-        for operation in [
-            "iges span normalized boundaries",
-            "iges span combined boundaries",
-            "iges span split levels",
-            "iges span split first controls",
-            "iges span split level controls",
-        ] {
-            cadmpeg_test_support::refusal::assert_charged(
-                ResourceDimension::CollectionItems,
-                operation,
-                || super::aligned_homogeneous_spans(decode_ctx, &first, &second),
-            );
-        }
-        for operation in [
-            "Bezier knot copy",
-            "Bezier internal knots",
-            "Bezier spans",
-            "Bezier span controls",
-            "iges span partition controls",
-            "iges span split left controls",
-            "iges span split right controls",
-            "iges span partition slots",
-            "iges span aligned pairs",
-        ] {
-            cadmpeg_test_support::refusal::resource_limit_at(
-                ResourceDimension::CollectionItems,
-                operation,
-                |cap| {
-                    let mut policy = DecodePolicy::service();
-                    policy.limits.max_collection_items = cap;
-                    let arena = cadmpeg_core::decode::DecodeArena::new();
-                    let (ctx, _) =
-                        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-                            .unwrap();
-                    super::aligned_homogeneous_spans(&ctx, &first, &second).map(|_| ())
-                },
-            );
-        }
-    });
-}
-
-#[test]
-fn unclamped_ruled_span_extraction_refuses_knot_insertion_storage() {
-    crate::test_support::with_service_context(&[], |decode_ctx| {
-        let curve = NurbsCurve::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
-            1,
-            vec![-1.0, 0.0, 1.0, 2.0],
-            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
-            None,
-            false,
-        )
-        .expect("fixture constructor admission")
-        .unwrap();
-        let expected = super::homogeneous_bezier_spans(decode_ctx, &curve)
-            .unwrap()
-            .unwrap();
-        for operation in ["Bezier knot insertion", "Bezier inserted knot"] {
-            let mut cap = 0_u64;
-            let mut found = false;
-            for _ in 0..128 {
-                let mut policy = DecodePolicy::service();
-                policy.limits.max_collection_items = cap;
-                let arena = cadmpeg_core::decode::DecodeArena::new();
-                let (ctx, _) =
-                    cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-                        .unwrap();
-                match super::homogeneous_bezier_spans(&ctx, &curve) {
-                    Err(CodecError::ResourceLimit(limit)) => {
-                        assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-                        if limit.operation == operation {
-                            found = true;
-                            break;
-                        }
-                        cap = limit.used.checked_add(limit.additional).unwrap();
-                    }
-                    Ok(_) => panic!("span extraction succeeded before {operation}"),
-                    Err(error) => panic!("unexpected span refusal at {operation}: {error}"),
-                };
-            }
-            assert!(
-                found,
-                "span insertion boundary was not reached: {operation}"
-            );
-        }
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[],
-            &arena,
-            &DecodePolicy::service(),
-        )
-        .unwrap();
-        let actual = super::homogeneous_bezier_spans(&ctx, &curve)
-            .unwrap()
-            .unwrap();
-        assert_eq!(actual.len(), expected.len());
-        for (actual, expected) in actual.iter().zip(expected.iter()) {
-            assert_eq!(actual.domain, expected.domain);
-            assert_eq!(actual.controls, expected.controls);
-        }
-    });
-}
-
-#[test]
-fn same_basis_ruled_surface_refuses_nested_weight_rows() {
-    crate::test_support::with_service_context(&[], |decode_ctx| {
-        let rail = NurbsCurve::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
-            1,
-            vec![0.0, 0.0, 1.0, 1.0],
-            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
-            None,
-            false,
-        )
-        .expect("fixture constructor admission")
-        .unwrap();
-        let weight = cadmpeg_ir::scalar::NonZeroReal::try_from(0.5).unwrap();
-        let weights = [weight, weight];
-        super::same_basis_ruled_surface(&rail, &rail, &weights, decode_ctx).unwrap();
-        for operation in [
-            "iges ruled same-basis weight rows",
-            "iges ruled same-basis weight row controls",
-            "iges ruled same-basis weighted rows",
-            "iges ruled same-basis weighted row controls",
-        ] {
-            let mut cap = 0_u64;
-            let mut found = false;
-            for _ in 0..4096 {
-                let mut policy = DecodePolicy::service();
-                policy.limits.max_collection_items = cap;
-                let arena = cadmpeg_core::decode::DecodeArena::new();
-                let (ctx, _) =
-                    cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-                        .unwrap();
-                match super::same_basis_ruled_surface(&rail, &rail, &weights, &ctx) {
-                    Err(CodecError::ResourceLimit(limit)) => {
-                        assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-                        if limit.operation == operation {
-                            found = true;
-                            break;
-                        }
-                        cap = limit.used.checked_add(limit.additional).unwrap();
-                    }
-                    Ok(_) => {
-                        panic!("expected same-basis refusal at {operation}, but construction succeeded")
-                    }
-                    Err(error) => panic!("expected same-basis refusal at {operation}: {error:?}"),
-                }
-            }
-            assert!(found, "same-basis refusal was not reached: {operation}");
-        }
-    });
-}
-
-#[test]
-fn revolution_angular_basis_refuses_knot_and_control_lanes() {
-    let bytes = surface_of_revolution_file();
-    for operation in [
-        "iges revolution angular knots",
-        "iges revolution angular controls",
-    ] {
-        assert_surface_collection_refusal(&bytes, operation);
-    }
-    let service = crate::IgesCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .unwrap();
-    assert!(!service.ir().model.surfaces.is_empty());
-}
-
-#[test]
-fn revolution_nurbs_carrier_refuses_nested_pole_and_weight_rows() {
-    let bytes = ellipse_surface_of_revolution_file();
-    for operation in [
-        "iges revolution surface controls",
-        "iges revolution surface weights",
-        "iges revolution surface u knots",
-        "iges revolution pole rows",
-        "iges revolution pole row controls",
-        "iges revolution weight rows",
-        "iges revolution weight row controls",
-        "iges revolution weighted rows",
-        "iges revolution weighted row controls",
-        "iges revolution neutral surface slots",
-    ] {
-        assert_surface_collection_refusal(&bytes, operation);
-    }
-    let service = crate::IgesCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .unwrap();
-    assert!(!service.ir().model.surfaces.is_empty());
-}
 fn type128_surface_with_closure(
     global: &[u8],
     closed_u: i64,
@@ -791,8 +125,8 @@ fn decode_type_140_uses_the_bounded_support_midpoint_normal() {
 }
 
 #[test]
-fn decode_refuses_a_nurbs_surface_over_its_pole_limit() {
-    let error = IgesCodec
+fn decode_skips_a_nurbs_surface_over_its_pole_limit() {
+    let decoded = IgesCodec
         .decode(
             &mut Cursor::new(owned_test_file(&[OwnedTestEntity {
                 entity_type: 128,
@@ -803,32 +137,22 @@ fn decode_refuses_a_nurbs_surface_over_its_pole_limit() {
             }])),
             &DecodeOptions::default(),
         )
-        .unwrap_err();
+        .unwrap();
 
-    assert!(matches!(
-        error,
-        cadmpeg_ir::DecodeFailure::Codec(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::Codec("iges_surface_poles")
-                && limit.limit == 1_000_000
-                && limit.used == 1_000_000
-                && limit.additional == 2_001
-    ));
+    assert!(decoded.ir().model.surfaces.is_empty());
+    assert!(decoded.report().losses.iter().any(|loss| {
+        loss.code == IgesLossCode::GeometryNotProjected.kind()
+            && loss.message.contains("surface pole count exceeds 1000000")
+    }));
 }
 
 #[test]
 fn angular_basis_canonicalizes_a_full_sweep_with_decimal_roundoff() {
-    crate::test_support::with_service_context(&[], |decode_ctx| {
-        let basis = angular_basis(
-            0.0,
-            std::f64::consts::TAU + std::f64::consts::TAU * 5.0e-13,
-            decode_ctx,
-        )
-        .unwrap()
+    let basis = angular_basis(0.0, std::f64::consts::TAU + std::f64::consts::TAU * 5.0e-13)
         .expect("a near-full finite sweep has an exact rational basis");
 
-        assert_eq!(basis.controls.len(), 9);
-        assert_eq!(basis.knots.last(), Some(&std::f64::consts::TAU));
-    });
+    assert_eq!(basis.controls.len(), 9);
+    assert_eq!(basis.knots.last(), Some(&std::f64::consts::TAU));
 }
 
 #[test]
@@ -964,79 +288,6 @@ fn decode_reconciles_rational_ruled_rail_denominators_exactly() {
     assert!(cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
         .expect("resource allocation did not fail")
         .is_ok());
-}
-
-#[test]
-fn homogeneous_ruled_carrier_aligns_relative_parameter_partitions_and_refuses_weight_limit() {
-    crate::test_support::with_service_context(&[], |decode_ctx| {
-        let first = NurbsCurve::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
-            1,
-            vec![0.0, 0.0, 1.0, 1.0],
-            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
-            None,
-            false,
-        )
-        .expect("fixture constructor admission")
-        .expect("valid first rail");
-        let second = NurbsCurve::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
-            2,
-            vec![0.0, 0.0, 0.0, 2.0, 2.0, 2.0],
-            vec![
-                Point3::new(0.0, 1.0, 0.0),
-                Point3::new(1.0, 2.0, 0.0),
-                Point3::new(2.0, 1.0, 0.0),
-            ],
-            Some(vec![1.0, 0.5, 1.0]),
-            false,
-        )
-        .expect("fixture constructor admission")
-        .expect("valid second rail");
-        let surface = super::ruled_surface_carrier(&first, &second, decode_ctx)
-            .expect("ruled lanes pair")
-            .expect("relative-parameter rational ruled carrier");
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-        policy.limits.max_collection_items = 1;
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = super::ruled_surface_carrier(&first, &second, &ctx)
-            .expect_err("two unit weights exceed one admitted collection item");
-        assert!(matches!(
-            error,
-            CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems
-        ));
-        assert_eq!((surface.u_degree(), surface.v_degree()), (3, 1));
-        assert_eq!((surface.u_count(), surface.v_count()), (4, 2));
-        for (u, v) in [(0.2, 0.25), (0.6, 0.75), (0.9, 0.5)] {
-            let first_point = cadmpeg_ir::eval::decode::nurbs_curve_point_at(
-                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
-                &first,
-                u,
-            )
-            .expect("first rail point");
-            let second_point = cadmpeg_ir::eval::decode::nurbs_curve_point_at(
-                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
-                &second,
-                2.0 * u,
-            )
-            .expect("second rail point");
-            let expected = Point3::new(
-                (1.0 - v) * first_point.x + v * second_point.x,
-                (1.0 - v) * first_point.y + v * second_point.y,
-                (1.0 - v) * first_point.z + v * second_point.z,
-            );
-            let actual = cadmpeg_ir::eval::decode::nurbs_surface_point(
-                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
-                &surface,
-                u,
-                v,
-            )
-            .expect("ruled surface point");
-            assert!(actual.distance(expected) <= EPS_RATIONAL_RULED);
-        }
-    });
 }
 
 #[test]
@@ -1623,4 +874,169 @@ fn ruled_developability_claim_does_not_hide_readable_rails() {
             .iter()
             .any(|loss| loss.code == IgesLossCode::RuledDevelopabilityRecovered.kind()));
     }
+}
+
+#[test]
+fn type122_projection_keeps_rational_directrix_weights() {
+    let bytes = owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 126,
+            form: 0,
+            label: "RATIONAL".into(),
+            status: "00000000",
+            parameters: "126,2,2,1,0,0,0,0,0,0,1,1,1,1,0.5,1,0,0,0,1,1,0,2,0,0,0,1,0,0,1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 122,
+            form: 0,
+            label: "TABULATE".into(),
+            status: "00000000",
+            parameters: "122,1,0,0,2;".into(),
+        },
+    ]);
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(result.ir().model.surfaces.iter().any(|surface| matches!(
+        &surface.geometry,
+        cadmpeg_ir::geometry::SurfaceGeometry::Procedural {
+            cache: Some(SolvedSurfaceGeometry::Nurbs(nurbs)),
+            ..
+        } if nurbs.weights().is_some()
+    )));
+}
+
+#[test]
+fn decode_projects_an_exact_placed_hyperbola_revolution() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(
+                crate::test_support::test_surface_fixtures::placed_hyperbola_surface_of_revolution_file(),
+            ),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert!(!result.ir().model.surfaces.is_empty());
+}
+
+#[test]
+fn nonfinite_placed_carriers_report_a_transform_loss() {
+    for bytes in [
+        crate::test_support::test_tabulated_surfaces::placed_tabulated_nurbs_overflow_file(),
+        crate::test_support::test_surface_fixtures::placed_overflow_surface_of_revolution_file(),
+    ] {
+        let result = IgesCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+        assert!(
+            result
+                .report()
+                .losses
+                .iter()
+                .any(|loss| { loss.code == IgesLossCode::NurbsTransformNonFinite.kind() }),
+            "{:#?}",
+            result.report().losses
+        );
+    }
+}
+
+#[test]
+fn reversed_ruled_rail_with_nonfinite_knots_reports_a_transform_loss() {
+    let bytes = owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 110,
+            form: 0,
+            label: "RAIL1".into(),
+            status: "00010000",
+            parameters: "110,0,0,0,1,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 126,
+            form: 0,
+            label: "RAIL2".into(),
+            status: "00010000",
+            parameters:
+                "126,1,1,1,0,1,0,8D307,8D307,1D308,1D308,1,1,0,1,0,1,1,0,8D307,1D308,0,0,1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 118,
+            form: 1,
+            label: "RULED".into(),
+            status: "00000000",
+            parameters: "118,1,3,1,1;".into(),
+        },
+    ]);
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(
+        result.report().losses.iter().any(|loss| {
+            loss.code == IgesLossCode::NurbsTransformNonFinite.kind()
+                && loss.message == "IGES reversed second rail knots are non-finite"
+        }),
+        "{:#?}",
+        result.report().losses
+    );
+}
+
+#[test]
+fn homogeneous_ruled_carrier_aligns_relative_parameter_partitions() {
+    crate::test_support::with_service_context(&[], |decode_ctx| {
+        let first = NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+            None,
+            false,
+        )
+        .expect("fixture constructor admission")
+        .expect("valid first rail");
+        let second = NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
+            2,
+            vec![0.0, 0.0, 0.0, 2.0, 2.0, 2.0],
+            vec![
+                Point3::new(0.0, 1.0, 0.0),
+                Point3::new(1.0, 2.0, 0.0),
+                Point3::new(2.0, 1.0, 0.0),
+            ],
+            Some(vec![1.0, 0.5, 1.0]),
+            false,
+        )
+        .expect("fixture constructor admission")
+        .expect("valid second rail");
+        let surface = super::ruled_surface_carrier(&first, &second, decode_ctx)
+            .expect("ruled lanes pair")
+            .expect("relative-parameter rational ruled carrier");
+        assert_eq!((surface.u_degree(), surface.v_degree()), (3, 1));
+        assert_eq!((surface.u_count(), surface.v_count()), (4, 2));
+        for (u, v) in [(0.2, 0.25), (0.6, 0.75), (0.9, 0.5)] {
+            let first_point = cadmpeg_ir::eval::decode::nurbs_curve_point_at(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &first,
+                u,
+            )
+            .expect("first rail point");
+            let second_point = cadmpeg_ir::eval::decode::nurbs_curve_point_at(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &second,
+                2.0 * u,
+            )
+            .expect("second rail point");
+            let expected = Point3::new(
+                (1.0 - v) * first_point.x + v * second_point.x,
+                (1.0 - v) * first_point.y + v * second_point.y,
+                (1.0 - v) * first_point.z + v * second_point.z,
+            );
+            let actual = cadmpeg_ir::eval::decode::nurbs_surface_point(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &surface,
+                u,
+                v,
+            )
+            .expect("ruled surface point");
+            assert!(actual.distance(expected) <= EPS_RATIONAL_RULED);
+        }
+    });
 }

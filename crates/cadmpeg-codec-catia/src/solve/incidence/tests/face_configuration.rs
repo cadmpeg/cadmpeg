@@ -2,81 +2,12 @@
 //! face configuration tests.
 
 use super::{
-    prepare_face_configuration_domains, prune_face_configuration_singleton_support,
-    prune_face_configuration_support, prune_ordered_face_endpoint_support, sparse_degrees,
-    BTreeMap, HashMap, HashSet, IncidenceSearchState, MeshBoundaryEdgeCandidate,
-    MeshFaceBoundaryAssignment, MeshFaceBoundaryDomain, RefCell, WorkBudget,
-    MAX_MESH_CONSTRAINT_OPERATIONS,
+    prune_face_configuration_singleton_support, prune_face_configuration_support,
+    prune_ordered_face_endpoint_support, sparse_degrees, BTreeMap, HashMap, HashSet,
+    IncidenceSearchState, MeshBoundaryEdgeCandidate, MeshFaceBoundaryAssignment,
+    MeshFaceBoundaryDomain, RefCell, WorkBudget, MAX_MESH_CONSTRAINT_OPERATIONS,
 };
-
-#[test]
-fn incidence_face_factor_allocations_refuse_collection_limits() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    let edge = MeshBoundaryEdgeCandidate {
-        edge: 0,
-        start: 0,
-        end: 0,
-        reversed: Some(false),
-    };
-    let assignments = vec![
-        MeshFaceBoundaryDomain::Ordered(vec![MeshFaceBoundaryAssignment {
-            boundaries: vec![vec![edge]],
-        }]),
-        MeshFaceBoundaryDomain::Ordered(vec![MeshFaceBoundaryAssignment {
-            boundaries: vec![vec![edge]],
-        }]),
-    ];
-    let choices = vec![vec![[0, 0], [1, 1]]];
-    catia_test_context!(service_ctx);
-    assert!(prepare_face_configuration_domains(
-        &service_ctx,
-        Some(&assignments),
-        &choices,
-        &[None],
-        &[true],
-    )
-    .expect("service resource budget")
-    .is_some());
-
-    let mut refused = HashSet::new();
-    for limit in 0..512 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-            .expect("fixture fits the input limit");
-        match prepare_face_configuration_domains(
-            &ctx,
-            Some(&assignments),
-            &choices,
-            &[None],
-            &[true],
-        ) {
-            Err(CodecError::ResourceLimit(error)) => {
-                assert_eq!(error.dimension, ResourceDimension::CollectionItems);
-                refused.insert(error.operation.to_owned());
-            }
-            Ok(Some(_)) => break,
-            Ok(None) => panic!("ordered face factors must be available"),
-            Err(error) => panic!("unexpected refusal: {error}"),
-        }
-    }
-    for operation in [
-        "catia_face_factor_domains",
-        "catia_face_config_neighbors",
-        "catia_face_config_present",
-        "catia_face_config_matching",
-        "catia_face_config_viable",
-        "catia_face_factor_incoming",
-        "catia_face_config_full_mask",
-        "catia_face_factor_by_face",
-        "catia_face_factors_by_edge",
-    ] {
-        assert!(refused.contains(operation), "no refusal at {operation}");
-    }
-}
+use crate::solve::incidence::prepare_face_configuration_domains;
 
 #[test]
 fn incidence_face_configuration_support_retains_shared_edge_correlations() {
@@ -248,51 +179,6 @@ fn ordered_face_support_prunes_edge_pairs_to_complete_configurations() {
 }
 
 #[test]
-fn ordered_face_support_refuses_selection_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    let use_ = |edge| MeshBoundaryEdgeCandidate {
-        edge,
-        start: 0,
-        end: 0,
-        reversed: None,
-    };
-    let domains = [MeshFaceBoundaryDomain::Ordered(vec![
-        MeshFaceBoundaryAssignment {
-            boundaries: vec![vec![use_(0), use_(1)]],
-        },
-    ])];
-    let choices = vec![vec![[0, 1]], vec![[0, 1]]];
-    catia_test_context!(service_ctx);
-    let mut service_choices = choices.clone();
-    assert!(prune_ordered_face_endpoint_support(
-        &service_ctx,
-        &domains,
-        &mut service_choices,
-        &WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS),
-    )
-    .expect("service budget"));
-
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 2;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("fixture fits the input limit");
-    let mut limited_choices = choices;
-    let error = prune_ordered_face_endpoint_support(
-        &ctx,
-        &domains,
-        &mut limited_choices,
-        &WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS),
-    )
-    .expect_err("selection collection exceeds the limit");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "catia_ordered_face_selection"));
-}
-
-#[test]
 fn incidence_forced_face_chain_does_not_consume_branch_budget() {
     catia_test_context!(ctx);
     let use_ = |edge| MeshBoundaryEdgeCandidate {
@@ -316,10 +202,6 @@ fn incidence_forced_face_chain_does_not_consume_branch_budget() {
     let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let mut search = crate::solve::incidence::IncidenceComponentSearch {
         ctx: &ctx,
-        search_storage: RefCell::new(
-            ctx.reserve_scoped(0, "search test storage")
-                .expect("storage"),
-        ),
         choices: &choices,
         explicit_point_supports: Vec::new(),
         point_support_edges: Vec::new(),
@@ -373,10 +255,6 @@ fn incidence_forced_face_configuration_closes_its_frontier_atomically() {
     let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let mut search = crate::solve::incidence::IncidenceComponentSearch {
         ctx: &ctx,
-        search_storage: RefCell::new(
-            ctx.reserve_scoped(0, "search test storage")
-                .expect("storage"),
-        ),
         choices: &choices,
         explicit_point_supports: Vec::new(),
         point_support_edges: Vec::new(),
@@ -436,10 +314,6 @@ fn incidence_candidate_uses_a_separate_global_quotient_validation_budget() {
     let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let mut search = crate::solve::incidence::IncidenceComponentSearch {
         ctx: &ctx,
-        search_storage: RefCell::new(
-            ctx.reserve_scoped(0, "search test storage")
-                .expect("storage"),
-        ),
         choices: &choices,
         explicit_point_supports: Vec::new(),
         point_support_edges: Vec::new(),
@@ -470,7 +344,7 @@ fn incidence_candidate_uses_a_separate_global_quotient_validation_budget() {
         .candidate_fits(0, [0, 0])
         .expect("service resource budget"));
     assert!(!budget.exhausted());
-    search.adjust(0, [0, 0]).expect("service resource budget");
+    search.adjust(0, [0, 0]);
     search.assignment[0] = Some([0, 0]);
     assert!(search
         .ordered_faces_feasible([0])
@@ -492,10 +366,6 @@ fn incidence_selection_validates_only_its_affected_faces() {
     let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let mut search = crate::solve::incidence::IncidenceComponentSearch {
         ctx: &ctx,
-        search_storage: RefCell::new(
-            ctx.reserve_scoped(0, "search test storage")
-                .expect("storage"),
-        ),
         choices: &choices,
         explicit_point_supports: Vec::new(),
         point_support_edges: Vec::new(),
@@ -528,4 +398,58 @@ fn incidence_selection_validates_only_its_affected_faces() {
     assert!(!search
         .ordered_faces_feasible([1])
         .expect("service resource budget"));
+}
+
+#[test]
+fn incidence_face_factor_allocations_result() {
+    let edge = MeshBoundaryEdgeCandidate {
+        edge: 0,
+        start: 0,
+        end: 0,
+        reversed: Some(false),
+    };
+    let assignments = vec![
+        MeshFaceBoundaryDomain::Ordered(vec![MeshFaceBoundaryAssignment {
+            boundaries: vec![vec![edge]],
+        }]),
+        MeshFaceBoundaryDomain::Ordered(vec![MeshFaceBoundaryAssignment {
+            boundaries: vec![vec![edge]],
+        }]),
+    ];
+    let choices = vec![vec![[0, 0], [1, 1]]];
+    catia_test_context!(service_ctx);
+    assert!(prepare_face_configuration_domains(
+        &service_ctx,
+        Some(&assignments),
+        &choices,
+        &[None],
+        &[true],
+    )
+    .expect("service resource budget")
+    .is_some());
+}
+
+#[test]
+fn ordered_face_support_result() {
+    let use_ = |edge| MeshBoundaryEdgeCandidate {
+        edge,
+        start: 0,
+        end: 0,
+        reversed: None,
+    };
+    let domains = [MeshFaceBoundaryDomain::Ordered(vec![
+        MeshFaceBoundaryAssignment {
+            boundaries: vec![vec![use_(0), use_(1)]],
+        },
+    ])];
+    let choices = vec![vec![[0, 1]], vec![[0, 1]]];
+    catia_test_context!(service_ctx);
+    let mut service_choices = choices.clone();
+    assert!(prune_ordered_face_endpoint_support(
+        &service_ctx,
+        &domains,
+        &mut service_choices,
+        &WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS),
+    )
+    .expect("service budget"));
 }

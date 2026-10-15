@@ -13,7 +13,7 @@ use std::io::Cursor;
 use zip::write::SimpleFileOptions;
 
 #[test]
-fn unreadable_entry_payload_uses_checked_hex_with_metadata_item_storage() {
+fn unreadable_entry_payload_uses_checked_hex() {
     let data: Vec<u8> = (0..=255).cycle().take(256 * 1024).collect();
     let record = super::UnreadableEntry {
         id: "fcstd:native:unreadable_entry#Payload.bin".into(),
@@ -23,7 +23,7 @@ fn unreadable_entry_payload_uses_checked_hex_with_metadata_item_storage() {
         stored_data: data.clone().into(),
         error: "unsupported compression".into(),
     };
-    collection_context(256, |ctx| {
+    crate::test_support::with_service_context(&[], |ctx| {
         let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
         namespace
             .set_arena(ctx, "unreadable_entries", &[record])
@@ -51,87 +51,6 @@ fn unreadable_entry_payload_uses_checked_hex_with_metadata_item_storage() {
     });
 }
 
-#[test]
-fn unsafe_entry_name_diagnostic_refuses_at_matching_retained_limit() {
-    let xml = b"<Document SchemaVersion=\"4\" FileVersion=\"1\"/>";
-    let bytes = archive_entries(&[("../Document.xml", xml), ("Document.xml", xml)]);
-    crate::test_support::assert_retained_refusal_at(
-        &bytes,
-        "FCStd unsafe entry name diagnostic",
-        |ctx| super::scan(ctx, cadmpeg_core::decode::View::over_retained(&bytes)).map(|_| ()),
-    );
-}
-
-#[test]
-fn document_root_error_refuses_at_retained_limit() {
-    let bytes = b"<UnexpectedRoot SchemaVersion=\"4\"/>";
-    crate::test_support::assert_retained_refusal_at(&[], "FCStd document root error", |ctx| {
-        parse_document(ctx, bytes)
-    });
-}
-
-#[test]
-fn document_parse_error_refuses_at_retained_limit() {
-    let bytes = b"<Document>";
-    crate::test_support::assert_retained_refusal_at(&[], "FCStd document parse error", |ctx| {
-        parse_document(ctx, bytes)
-    });
-}
-
-#[test]
-fn missing_entry_error_refuses_at_retained_limit() {
-    with_scanned_document(|scan| {
-        scan.data.clear();
-        crate::test_support::assert_retained_refusal_at(&[], "FCStd missing entry error", |ctx| {
-            super::entry_records(ctx, scan, &[])
-        });
-    });
-}
-
-#[test]
-fn overlapping_logical_span_error_refuses_at_retained_limit() {
-    let entry = crate::test_support::entry_record(
-        "fcstd:native:entry#Document.xml".into(),
-        "Document.xml".into(),
-        cadmpeg_core::container::ContainerRole::Auxiliary,
-        Vec::new(),
-        vec![0; 11],
-    );
-    let property = crate::native::PropertyRecord {
-        id: "fcstd:native:property#One".into(),
-        owner: "fcstd:native:object#Owner".into(),
-        name: "One".into(),
-        type_name: "App::PropertyString".into(),
-        family: crate::native::PropertyFamily::Unknown,
-        status: None,
-        body: crate::native::PropertyBody::Transient,
-        order: 0,
-        xml: crate::native::RetainedXml::from_text("<Property/>".into(), 0)
-            .expect("valid XML span"),
-    };
-    let properties = [property.clone(), property];
-    crate::test_support::assert_retained_refusal_at(&[], "FCStd logical span error", |ctx| {
-        super::logical_ledger(
-            ctx,
-            std::slice::from_ref(&entry),
-            &properties,
-            &crate::gui::Graph::default(),
-            &[],
-            &[],
-            &[],
-        )
-    });
-}
-
-fn collection_context<T>(limit: u64, f: impl FnOnce(&DecodeContext<'_>) -> T) -> T {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is within input limits");
-    f(&ctx)
-}
-
 fn with_scanned_document<T>(f: impl FnOnce(&mut super::Scan<'_, '_>) -> T) -> T {
     let document = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="0"/><ObjectData Count="0"/></Document>"#;
     let bytes = archive(document);
@@ -141,106 +60,6 @@ fn with_scanned_document<T>(f: impl FnOnce(&mut super::Scan<'_, '_>) -> T) -> T 
         .expect("archive is within input limits");
     let mut scan = super::scan(&ctx, root).expect("valid scanned document");
     f(&mut scan)
-}
-
-#[test]
-fn archive_span_identity_refuses_at_retained_limit() {
-    let document = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="0"/><ObjectData Count="0"/></Document>"#;
-    let bytes = archive(document);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_retained_bytes = 0;
-    for _ in 0..256 {
-        let (ctx, root) =
-            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("archive root");
-        let error = super::scan(&ctx, root)
-            .err()
-            .expect("retained limit must refuse");
-        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
-            panic!("expected retained refusal: {error:?}");
-        };
-        assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
-        let threshold = limit
-            .used
-            .checked_add(limit.additional)
-            .expect("finite test budget");
-        if limit.operation == "FreeCAD native identity" {
-            policy.limits.max_retained_bytes = threshold - 1;
-            let (ctx, root) =
-                DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("archive root");
-            assert!(matches!(super::scan(&ctx, root),
-                Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
-                    if refusal.operation == "FreeCAD native identity"));
-            return;
-        }
-        policy.limits.max_retained_bytes = threshold;
-    }
-    panic!("archive span identity was not reached");
-}
-
-#[test]
-fn source_domain_list_refuses_at_retained_limit() {
-    with_scanned_document(|scan| {
-        scan.document.domains.push("Part".into());
-        crate::test_support::assert_retained_refusal_at(&[], "FCStd source domain list", |ctx| {
-            super::source_attributes(ctx, scan)
-        });
-    });
-}
-
-#[test]
-fn source_program_version_refuses_at_retained_limit() {
-    with_scanned_document(|scan| {
-        scan.document.program_version = Some("1.2.3".into());
-        crate::test_support::assert_retained_refusal_at(
-            &[],
-            "FCStd source program version",
-            |ctx| super::source_attributes(ctx, scan),
-        );
-    });
-}
-
-#[test]
-fn entry_record_vector_refuses_at_collection_limit() {
-    with_scanned_document(|scan| {
-        collection_context(0, |ctx| {
-            assert!(matches!(super::entry_records(ctx, scan, &[]),
-                Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                    if limit.operation == "FCStd entry records"));
-        });
-    });
-}
-
-#[test]
-fn entry_referencing_property_refuses_at_collection_limit() {
-    with_scanned_document(|scan| {
-        let entry_name = &scan.entries[0].name;
-        let property = crate::native::PropertyRecord {
-            id: "fcstd:native:property#Entry".into(),
-            owner: "fcstd:native:object#Owner".into(),
-            name: "Entry".into(),
-            type_name: "App::PropertyFileIncluded".into(),
-            family: crate::native::PropertyFamily::Unknown,
-            status: None,
-            body: crate::native::PropertyBody::Persisted {
-                values: Vec::new(),
-                links: Vec::new(),
-                side_entries: vec![entry_name.clone()],
-                dynamic: None,
-            },
-            order: 0,
-            xml: crate::native::RetainedXml::from_text("<Property/>".into(), 0)
-                .expect("valid XML span"),
-        };
-        collection_context(
-            cadmpeg_core::decode::u64_from_index(scan.entries.len()),
-            |ctx| {
-                assert!(matches!(super::entry_records(ctx, scan, &[property]),
-                Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                    if limit.operation == "FCStd entry reference index"));
-            },
-        );
-    });
 }
 
 #[test]
@@ -282,69 +101,6 @@ fn entry_reference_index_preserves_order_and_deduplicates_property_markers() {
                 "fcstd:native:property#Second"
             ]
         );
-
-        for (properties, limit, operation) in [
-            (
-                properties.as_slice(),
-                1,
-                "FCStd entry reference index construction",
-            ),
-            (&[][..], 0, "FCStd entry reference index lookup"),
-        ] {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::default();
-            policy.limits.max_work_units = limit;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            assert!(matches!(super::entry_records(&ctx, scan, properties),
-                Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
-                    if refusal.dimension == ResourceDimension::WorkUnits && refusal.operation == operation));
-        }
-    });
-}
-
-#[test]
-fn entry_referencing_identity_refuses_at_retained_limit() {
-    with_scanned_document(|scan| {
-        let property = crate::native::PropertyRecord {
-            id: "fcstd:native:property#Entry".into(),
-            owner: "fcstd:native:object#Owner".into(),
-            name: "Entry".into(),
-            type_name: "App::PropertyFileIncluded".into(),
-            family: crate::native::PropertyFamily::Unknown,
-            status: None,
-            body: crate::native::PropertyBody::Persisted {
-                values: Vec::new(),
-                links: Vec::new(),
-                side_entries: vec![scan.entries[0].name.clone()],
-                dynamic: None,
-            },
-            order: 0,
-            xml: crate::native::RetainedXml::from_text("<Property/>".into(), 0)
-                .expect("valid XML span"),
-        };
-        crate::test_support::assert_retained_refusal_at(
-            &[],
-            "FCStd entry referencing identity",
-            |ctx| super::entry_records(ctx, scan, std::slice::from_ref(&property)),
-        );
-    });
-}
-
-#[test]
-fn entry_identity_refuses_at_retained_limit() {
-    with_scanned_document(|scan| {
-        crate::test_support::assert_retained_refusal_at(&[], "FreeCAD native identity", |ctx| {
-            super::entry_records(ctx, scan, &[])
-        });
-    });
-}
-
-#[test]
-fn entry_name_copy_refuses_at_retained_limit() {
-    with_scanned_document(|scan| {
-        crate::test_support::assert_retained_refusal_at(&[], "FCStd entry record name", |ctx| {
-            super::entry_records(ctx, scan, &[])
-        });
     });
 }
 
@@ -356,144 +112,6 @@ fn entry_data_copy_refuses_at_retained_limit() {
         crate::test_support::assert_retained_refusal_at(&[], "retain FCStd entry", |ctx| {
             super::entry_records(ctx, scan, &[])
         });
-    });
-}
-
-fn resource_entry_record() -> crate::native::EntryRecord {
-    crate::test_support::entry_record(
-        "fcstd:native:entry#GuiDocument.xml".into(),
-        "GuiDocument.xml".into(),
-        cadmpeg_core::container::ContainerRole::GuiDocument,
-        Vec::new(),
-        Vec::new(),
-    )
-}
-
-#[test]
-fn gui_entry_reference_refuses_at_collection_limit() {
-    collection_context(0, |ctx| {
-        let mut entry = resource_entry_record();
-        assert!(matches!(entry.add_reference(ctx, "fcstd:native:gui#owner"),
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == "FCStd GUI entry references"));
-    });
-}
-
-#[test]
-fn gui_entry_reference_identity_refuses_at_retained_limit() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
-        4 * std::mem::size_of::<String>() + "fcstd:native:gui#owner".len(),
-    ) - 1;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
-    let mut entry = resource_entry_record();
-    assert!(
-        matches!(entry.add_reference(&ctx, "fcstd:native:gui#owner"),
-        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "FCStd GUI entry reference identity")
-    );
-}
-
-#[test]
-fn document_domain_set_refuses_on_collection_limit() {
-    let document = b"<Document SchemaVersion=\"4\"><Objects><Object type=\"Part::Feature\"/></Objects></Document>";
-    crate::test_support::assert_collection_refusal_at(&[], "FCStd document domains", |ctx| {
-        parse_document(ctx, document)
-    });
-}
-
-#[test]
-fn logical_span_vector_refuses_on_collection_limit() {
-    let entry = crate::test_support::entry_record(
-        "fcstd:native:entry#extra".to_owned(),
-        "extra".to_owned(),
-        cadmpeg_core::container::ContainerRole::Auxiliary,
-        Vec::new(),
-        vec![0],
-    );
-    let result = collection_context(0, |ctx| {
-        super::logical_ledger(
-            ctx,
-            &[entry],
-            &[],
-            &crate::gui::Graph::default(),
-            &[],
-            &[],
-            &[],
-        )
-    });
-    assert!(
-        matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "FCStd logical ledger spans")
-    );
-}
-
-#[test]
-fn typed_entry_set_refuses_on_collection_limit() {
-    let payload = crate::brep::ShapePayloadRecord {
-        id: "payload".to_owned(),
-        property: "property".to_owned(),
-        entry: "entry".to_owned(),
-        payload: crate::brep::ShapePayload::Empty,
-    };
-    let result = collection_context(0, |ctx| {
-        super::logical_ledger(
-            ctx,
-            &[],
-            &[],
-            &crate::gui::Graph::default(),
-            &[payload],
-            &[],
-            &[],
-        )
-    });
-    assert!(
-        matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "FCStd typed entry identities")
-    );
-}
-
-#[test]
-fn ordered_physical_span_vector_refuses_on_collection_limit() {
-    let physical = [crate::native::ArchiveSpan {
-        id: "span".to_owned(),
-        span: crate::native::ByteSpan::try_new(0, 1).expect("nonempty span"),
-        role: crate::native::ArchiveSpanRole::Zip64EndRecord,
-    }];
-    let result = collection_context(0, |ctx| super::byte_coverage(ctx, &physical, &[], &[], 1));
-    assert!(
-        matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "FCStd ordered physical spans")
-    );
-}
-
-#[test]
-fn coverage_classification_map_refuses_on_collection_limit() {
-    let logical = [crate::native::LogicalSpan {
-        id: "logical".to_owned(),
-        entry: "extra".to_owned(),
-        span: crate::native::ByteSpan::try_new(0, 1).expect("nonempty span"),
-        classification: crate::native::LogicalClassification::Structural,
-    }];
-    let result = collection_context(0, |ctx| super::byte_coverage(ctx, &[], &[], &logical, 0));
-    assert!(
-        matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "FCStd coverage classifications")
-    );
-}
-
-#[test]
-fn summary_schema_note_refuses_on_retained_limit() {
-    let bytes = archive("<Document SchemaVersion=\"4\" FileVersion=\"1\"/>");
-    let scan_arena = DecodeArena::new();
-    let scan_policy = DecodePolicy::default();
-    let (scan_ctx, root) = DecodeContext::from_root_bytes(&bytes, &scan_arena, &scan_policy)
-        .expect("archive fits input policy");
-    let scan = super::scan(&scan_ctx, root).expect("valid archive scan");
-    crate::test_support::assert_retained_refusal_at(&[], "FCStd schema note", |ctx| {
-        super::summary_notes(ctx, &scan)
     });
 }
 
@@ -517,37 +135,6 @@ fn x62_object_envelope_is_admitted_before_the_xml_tree() {
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::Entities
                 && limit.operation == "admit FCStd document objects"
-    ));
-}
-
-#[test]
-fn x62_xml_tree_items_are_admitted_before_allocation() {
-    let document = r#"<Document SchemaVersion="4"><Objects Count="1"><Object type="Part::Feature" name="A"/></Objects><ObjectData Count="0"/></Document>"#;
-    let bytes = archive(document);
-    let options = cadmpeg_core::decode::InspectOptions {
-        limits: cadmpeg_core::decode::ResourceLimits::service(),
-    };
-    FcstdCodec
-        .inspect(&mut Cursor::new(&bytes), &options)
-        .expect("service profile admits the XML tree");
-
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::CollectionItems,
-        "FCStd Document.xml node tree",
-        |cap| {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = cap;
-            let (ctx, root) =
-                DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("borrowed input");
-            cadmpeg_ir::codec::CodecBackend::inspect_impl(&FcstdCodec, &ctx, root)
-        },
-    );
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "FCStd Document.xml node tree"
     ));
 }
 
@@ -876,65 +463,6 @@ fn detects_marker_but_not_arbitrary_zip() {
 }
 
 #[test]
-fn summary_notes_admit_slots_and_retained_storage_before_text() {
-    with_scanned_document(|scan| {
-        crate::test_support::assert_collection_refusal_at(&[], "FCStd summary notes", |ctx| {
-            super::summary_notes(ctx, scan)
-        });
-        crate::test_support::assert_retained_refusal_at(&[], "FCStd summary notes", |ctx| {
-            super::summary_notes(ctx, scan)
-        });
-        crate::test_support::assert_retained_refusal_at(&[], "FCStd object count note", |ctx| {
-            super::summary_notes(ctx, scan)
-        });
-        crate::test_support::assert_retained_refusal_at(&[], "FCStd physical ledger note", |ctx| {
-            super::summary_notes(ctx, scan)
-        });
-    });
-}
-
-#[test]
-fn source_attributes_admit_keys_values_and_map_records() {
-    with_scanned_document(|scan| {
-        crate::test_support::assert_collection_refusal_at(
-            &[],
-            "FCStd source attribute records",
-            |ctx| super::source_attributes(ctx, scan),
-        );
-        for operation in [
-            "FCStd source root",
-            "FCStd source object count",
-            "FCStd source kind",
-            "FCStd source entry count",
-            "FCStd source ledger spans",
-            "FCStd source archive bytes",
-            "FCStd source attribute records",
-        ] {
-            crate::test_support::assert_retained_refusal_at(&[], operation, |ctx| {
-                super::source_attributes(ctx, scan)
-            });
-        }
-    });
-}
-
-#[test]
-fn source_attribute_copies_and_summary_formatting_refuse_work() {
-    with_scanned_document(|scan| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-        assert!(
-            matches!(super::source_attributes(&ctx, scan), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "FCStd source root")
-        );
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-        assert!(
-            matches!(super::summary_notes(&ctx, scan), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "FCStd schema note")
-        );
-    });
-}
-
-#[test]
 fn producer_version_metadata_does_not_refuse_the_document() {
     for (attributes, expected) in [
         ("programVersion=\"1.0\"", Some("1.0")),
@@ -951,7 +479,7 @@ fn producer_version_metadata_does_not_refuse_the_document() {
         let scan = crate::container::scan(&ctx, root)
             .expect("metadata does not select persistence grammar");
         assert_eq!(scan.document.program_version.as_deref(), expected);
-        let summary = crate::container::summarize(&ctx, &scan).unwrap();
+        let summary = crate::container::summarize(&scan);
         assert!(summary.losses.iter().any(|loss| loss.code
             == crate::loss::FreecadLossCode::ProgramVersionNoncanonical
                 .note("")
@@ -1067,12 +595,4 @@ fn equivalent_numeric_schema_declarations_select_the_same_persistence_grammar() 
         assert_valid_document(recovered.ir());
         assert!(crate::test_support::validate_native(recovered.ir()).is_empty());
     }
-}
-
-fn parse_document(
-    ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-) -> Result<(crate::native::DocumentFacts, String), cadmpeg_core::CodecError> {
-    let xml = super::admit_document(ctx, bytes)?;
-    super::parse_document(ctx, xml.document(), &mut Vec::new())
 }

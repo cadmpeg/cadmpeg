@@ -80,22 +80,3 @@ fn reserved_parameter_dependencies_preserve_order_and_reject_repeats() {
     })
     .is_err());
 }
-
-#[test]
-fn distinct_constructor_preserves_collection_refusal_in_the_caller_session() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let member = ParameterId::mint("test:model:parameter#member").unwrap();
-    let Err(crate::features::FeatureCollectionError::Resource(limit)) =
-        DistinctMembers::try_from(vec![member], &ctx)
-    else {
-        panic!("member slot must be refused");
-    };
-    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-    assert!(
-        matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == limit)
-    );
-}

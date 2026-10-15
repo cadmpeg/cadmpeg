@@ -4,7 +4,6 @@ use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use cadmpeg_test_support::wire;
 use std::io::Cursor;
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
@@ -12,46 +11,10 @@ use crate::test_support::build_prt;
 use crate::CreoCodec;
 
 #[test]
-fn tabulated_cylinder_refusals_charge_text_and_loss_rows() {
+fn tabulated_cylinder_refusals_record_one_loss() {
     let records = ["missing chart".to_string()];
-    for (retained_limit, item_limit, dimension, operation) in [
-        (
-            0,
-            u64::MAX,
-            ResourceDimension::RetainedBytes,
-            "creo tabulated cylinder refusal text",
-        ),
-        (
-            u64::MAX,
-            0,
-            ResourceDimension::CollectionItems,
-            "creo tabulated cylinder losses",
-        ),
-    ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = retained_limit;
-        policy.limits.max_collection_items = item_limit;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-        let error = super::note_tabulated_cylinder_refusals(
-            &ctx,
-            7,
-            42,
-            "directrix",
-            &records,
-            &mut Vec::new(),
-        )
-        .expect_err("one refusal exceeds the limit");
-        assert!(matches!(error, CodecError::ResourceLimit(resource)
-            if resource.dimension == dimension && resource.operation == operation));
-    }
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-        .expect("service root admitted");
     let mut losses = Vec::new();
-    super::note_tabulated_cylinder_refusals(&ctx, 7, 42, "directrix", &records, &mut losses)
-        .expect("service refusal admitted");
+    super::note_tabulated_cylinder_refusals(7, 42, "directrix", &records, &mut losses);
     assert_eq!(losses.len(), 1);
     assert_eq!(losses[0].message,
         "VisibGeom surface row 7 states a tabulated-cylinder replay at offset 42 whose directrix lane forms no carrier: missing chart");
@@ -82,59 +45,39 @@ fn scan_with_tabulated_replay() -> crate::container::ContainerScan<'static> {
 }
 
 #[test]
-fn line_extrusion_replay_set_refuses_before_node_insertion() {
+fn line_extrusion_replay_without_surface_row_transfers_nothing() {
     let scan = scan_with_tabulated_replay();
-    let run = |limit| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("test decode context");
+    let count = crate::decode::with_test_decode_ctx(|ctx| {
         super::transfer_positional_line_extrusion_planes(
-            &ctx,
+            ctx,
             &scan,
             &mut cadmpeg_ir::document::CadIr::empty(),
             &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
             &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
         )
-    };
-    assert_eq!(run(1).expect("service admits replay set"), 0);
-    assert!(matches!(
-        run(0),
-        Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "creo line-extrusion replay surface ids"
-    ));
+    })
+    .expect("service admits replay set");
+    assert_eq!(count, 0);
 }
 
 #[test]
-fn tabulated_replay_counts_refuse_before_node_insertion() {
+fn tabulated_replay_without_surface_row_transfers_nothing() {
     let scan = scan_with_tabulated_replay();
-    let run = |limit| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("test decode context");
+    let count = crate::decode::with_test_decode_ctx(|ctx| {
         super::transfer_tabulated_cylinder_spline_extrusions(
-            &ctx,
+            ctx,
             &scan,
             &mut cadmpeg_ir::document::CadIr::empty(),
             &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
             &mut Vec::new(),
             &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
         )
-    };
-    assert_eq!(run(1).expect("service admits replay count"), 0);
-    assert!(matches!(
-        run(0),
-        Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "creo tabulated-cylinder replay counts"
-    ));
+    })
+    .expect("service admits replay count");
+    assert_eq!(count, 0);
 }
 
-fn positional_round_result(limit: u64) -> Result<usize, CodecError> {
+fn positional_round_result() -> Result<usize, CodecError> {
     let mut scan = crate::test_support::empty_container_scan();
     scan.features.rows.push(crate::feature::rows::FeatureRow {
         feature_id: 913,
@@ -163,83 +106,19 @@ fn positional_round_result(limit: u64) -> Result<usize, CodecError> {
             edge_ids: None,
             offset: 0,
         });
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("root input is admitted");
-    super::transfer_positional_tori(
-        &ctx,
-        &scan,
-        &mut cadmpeg_ir::document::CadIr::empty(),
-        &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
-        &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
-    )
-}
-
-#[test]
-fn positional_torus_round_feature_node_refuses_before_insertion() {
-    assert_eq!(positional_round_result(2).expect("service admits round"), 0);
-    let error = positional_round_result(0).expect_err("round feature needs a set node");
-    assert!(matches!(
-        error,
-        CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "creo positional torus round feature ids"
-    ));
-}
-
-#[test]
-fn positional_torus_constant_round_node_refuses_before_insertion() {
-    let error = positional_round_result(1).expect_err("constant round follows feature node");
-    assert!(matches!(
-        error,
-        CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "creo positional torus constant round ids"
-    ));
-}
-
-#[test]
-fn paired_sphere_association_copy_refuses_before_vec_growth() {
-    let mut payload = b"srf_array\0\xf8\x01".to_vec();
-    payload.extend_from_slice(&[7, 0x26, 4, 0x01, 0, 0]);
-    payload.extend_from_slice(&[
-        0x18, 0x0d, 0x41, 0xcf, 0xff, 0xff, 0xff, 0xe5, 0x79, 0x7b, 0x0e, 0x29, 0xdf, 0xff,
-    ]);
-    payload.push(0xe3);
-    crate::test_support::push_named_analytic_prototype(
-        &mut payload,
-        "torus",
-        &[("radius1", 1.0), ("radius2", 2.0)],
-    );
-    payload.extend_from_slice(b"crv_array\0\xf3\xf8\0");
-    let scan = crate::container::scan_bytes_ok(build_prt(
-        "paired-sphere-association-limit",
-        &[("ND:0:VisibGeom:0", payload)],
-    ));
-    let run = |limit| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("root input is admitted");
-        super::transfer_paired_envelope_spheres(
-            &ctx,
+    crate::decode::with_test_decode_ctx(|ctx| {
+        super::transfer_positional_tori(
+            ctx,
             &scan,
             &mut cadmpeg_ir::document::CadIr::empty(),
             &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
             &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
         )
-    };
-    assert_eq!(run(37).expect("service limit admits the association"), 0);
-    let error = run(36).expect_err("the copied association follows two discovery charges");
-    assert!(matches!(
-        error,
-        CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "creo paired sphere associations"
-    ));
+    })
+}
+#[test]
+fn positional_torus_round_without_frame_transfers_nothing() {
+    assert_eq!(positional_round_result().expect("service admits round"), 0);
 }
 
 #[test]
@@ -484,11 +363,9 @@ fn paired_envelope_spheres_do_not_join_rows_from_two_prototypes_in_one_frame() {
     assert_eq!(scan.surfaces.parameters.len(), 2);
     assert_eq!(scan.surfaces.prototype_records.len(), 2);
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| {
-            super::super::prototypes::unique_surface_prototype_associations(ctx, &scan)
-        })
-        .expect("prototype associations")
-        .len(),
+        super::super::prototypes::unique_surface_prototype_associations(&scan)
+            .expect("prototype associations")
+            .len(),
         2
     );
 
@@ -567,44 +444,34 @@ fn construction_copy_scan(tabulated: bool) -> crate::container::ContainerScan<'s
 }
 
 #[test]
-fn positional_line_extrusion_refuses_construction_identity_copies() {
+fn positional_line_extrusion_transfers_one_construction_surface() {
     let scan = construction_copy_scan(false);
-    let count = crate::test_support::assert_retained_boundaries(
-        &[
-            "creo construction curve identity copy",
-            "creo construction surface identity copy",
-        ],
-        |ctx| {
-            super::transfer_positional_line_extrusion_planes(
-                ctx,
-                &scan,
-                &mut cadmpeg_ir::document::CadIr::empty(),
-                &mut cadmpeg_ir::AnnotationBuilder::new(),
-                &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
-            )
-        },
-    );
+    let count = crate::decode::with_test_decode_ctx(|ctx| {
+        super::transfer_positional_line_extrusion_planes(
+            ctx,
+            &scan,
+            &mut cadmpeg_ir::document::CadIr::empty(),
+            &mut cadmpeg_ir::AnnotationBuilder::new(),
+            &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+        )
+    })
+    .expect("service resources");
     assert_eq!(count, 1);
 }
 
 #[test]
-fn tabulated_extrusion_refuses_construction_identity_copies() {
+fn tabulated_extrusion_transfers_one_construction_surface() {
     let scan = construction_copy_scan(true);
-    let count = crate::test_support::assert_retained_boundaries(
-        &[
-            "creo construction curve identity copy",
-            "creo construction surface identity copy",
-        ],
-        |ctx| {
-            super::transfer_tabulated_cylinder_spline_extrusions(
-                ctx,
-                &scan,
-                &mut cadmpeg_ir::document::CadIr::empty(),
-                &mut cadmpeg_ir::AnnotationBuilder::new(),
-                &mut Vec::new(),
-                &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
-            )
-        },
-    );
+    let count = crate::decode::with_test_decode_ctx(|ctx| {
+        super::transfer_tabulated_cylinder_spline_extrusions(
+            ctx,
+            &scan,
+            &mut cadmpeg_ir::document::CadIr::empty(),
+            &mut cadmpeg_ir::AnnotationBuilder::new(),
+            &mut Vec::new(),
+            &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+        )
+    })
+    .expect("service resources");
     assert_eq!(count, 1);
 }

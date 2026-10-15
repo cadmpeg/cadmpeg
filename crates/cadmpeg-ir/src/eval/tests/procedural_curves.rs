@@ -161,18 +161,18 @@ fn subset_curve_over_wide_interval_maps_finite_local_parameter() {
 }
 
 #[test]
-fn model_differential_resource_refusal_stops_later_derivatives() {
+fn model_differential_refusal_stops_later_derivatives() {
     use crate::eval::EvaluationFailure;
     use crate::features::{FinitePoint3, FiniteVector3};
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     for tangent_refuses in [false, true] {
         let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 0;
+        policy.limits.max_recursion_depth = 0;
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let first = ctx
-            .charge_work_limit(1, "test model derivative")
-            .unwrap_err();
+            .enter_nested_limit("test model derivative")
+            .expect_err("zero depth refuses");
         let acceleration_called = std::cell::Cell::new(false);
         let result = crate::eval::differential_at(
             Ok(FinitePoint3::ZERO),
@@ -189,7 +189,7 @@ fn model_differential_resource_refusal_stops_later_derivatives() {
             },
         );
         let Err(failure) = result else {
-            panic!("a derivative resource refusal must leave the model evaluation");
+            panic!("a derivative refusal must leave the model evaluation");
         };
         assert_eq!(failure, EvaluationFailure::ResourceLimit(first));
         assert_eq!(acceleration_called.get(), !tangent_refuses);

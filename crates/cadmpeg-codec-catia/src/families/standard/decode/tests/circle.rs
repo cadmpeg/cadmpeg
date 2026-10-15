@@ -16,141 +16,6 @@ use cadmpeg_ir::topology::Point;
 use cadmpeg_ir::AnnotationBuilder;
 use std::collections::HashMap;
 
-#[test]
-fn standard_attached_circle_axes_refuse_before_vector_growth() {
-    let mut ir = CadIr::empty();
-    let surface_id = SurfaceId::mint("catia:test:surface#sphere-0").expect("identity grammar");
-    ir.model.surfaces.push(Surface {
-        id: surface_id.clone(),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
-            cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
-                Point3::new(0.0, 0.0, 0.0),
-                Vector3::new(0.0, 0.0, 1.0),
-                Vector3::new(1.0, 0.0, 0.0),
-                1.0,
-            )
-            .expect("valid sphere"),
-        )),
-        source_object: None,
-    });
-    let support = StandardCurveSupport {
-        pos: 12,
-        tag: 7,
-        faces: [0, 0],
-        geometry: super::checked_circle(Point3::new(0.0, 0.0, 0.6), 0.8),
-    };
-    let bindings = [(surface_id, false, 0)];
-    crate::test_support::with_service_context(|ctx| {
-        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
-        crate::families::standard::decode::edge_geometry::attach_standard_circles(
-            &mut ir,
-            &mut AnnotationBuilder::new(),
-            &bindings,
-            std::slice::from_ref(&support),
-            &mut admission,
-        )
-    })
-    .expect("service circle budget");
-    assert_eq!(ir.model.curves.len(), 1);
-    let mut limited_ir = ir;
-    let limited = crate::test_support::with_collection_limit(0, |ctx| {
-        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
-        crate::families::standard::decode::edge_geometry::attach_standard_circles(
-            &mut limited_ir,
-            &mut AnnotationBuilder::new(),
-            &bindings,
-            &[support],
-            &mut admission,
-        )
-    });
-    assert!(
-        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_standard_attached_circle_axes")
-    );
-}
-
-#[test]
-fn standard_edge_circle_axes_refuse_before_vector_growth() {
-    let mut ir = CadIr::empty();
-    let surface_id = SurfaceId::mint("catia:test:surface#sphere-0").expect("identity grammar");
-    ir.model.surfaces.push(Surface {
-        id: surface_id.clone(),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
-            cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
-                Point3::new(0.0, 0.0, 0.0),
-                Vector3::new(0.0, 0.0, 1.0),
-                Vector3::new(1.0, 0.0, 0.0),
-                1.0,
-            )
-            .expect("valid sphere"),
-        )),
-        source_object: None,
-    });
-    for (index, position) in [Point3::new(0.8, 0.0, 0.6), Point3::new(0.0, 0.8, 0.6)]
-        .into_iter()
-        .enumerate()
-    {
-        ir.model.points.push(Point::new(
-            PointId::mint(format!("catia:test:point#{index}")).expect("identity grammar"),
-            cadmpeg_ir::features::FinitePoint3::new(position).expect("finite point"),
-            None,
-        ));
-    }
-    let support = StandardCurveSupport {
-        pos: 12,
-        tag: 7,
-        faces: [0, 0],
-        geometry: super::checked_circle(Point3::new(0.0, 0.0, 0.6), 0.8),
-    };
-    let bindings = [(surface_id.clone(), false, 0)];
-    let indices = HashMap::from([(surface_id, 0)]);
-    let mut service_ir = ir.clone();
-    let (curve, _) = crate::test_support::with_service_context(|ctx| {
-        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
-        build_standard_edge_curve(
-            ctx,
-            crate::families::standard::decode::edge_geometry::BuildStandardEdgeCurveInputs {
-                ir: &mut service_ir,
-                annotations: &mut AnnotationBuilder::new(),
-                bindings: &bindings,
-                surface_indices: &indices,
-                brep: &[],
-                support: &support,
-                points: [0, 1],
-                native_support: None,
-                limit_curve: None,
-                refusal: &mut crate::nurbs::LaneRefusals::new(),
-                admission: &mut admission,
-            },
-        )
-    })
-    .expect("service edge circle budget");
-    assert!(curve.is_some());
-    let limited = crate::test_support::with_collection_limit(0, |ctx| {
-        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
-        build_standard_edge_curve(
-            ctx,
-            crate::families::standard::decode::edge_geometry::BuildStandardEdgeCurveInputs {
-                ir: &mut ir,
-                annotations: &mut AnnotationBuilder::new(),
-                bindings: &bindings,
-                surface_indices: &indices,
-                brep: &[],
-                support: &support,
-                points: [0, 1],
-                native_support: None,
-                limit_curve: None,
-                refusal: &mut crate::nurbs::LaneRefusals::new(),
-                admission: &mut admission,
-            },
-        )
-    });
-    assert!(
-        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_standard_edge_circle_axes")
-    );
-}
-
 fn standard_pcurve_geometry(
     surface: &SurfaceGeometry,
     support: &StandardCurveSupport,
@@ -409,4 +274,100 @@ fn numerical_seventh_short_witnessed_arc_retains_its_sweep() {
         range(&geometry, point(0.0), point(0.0), Some(point(1.0))),
         Some([0.0, std::f64::consts::TAU])
     );
+}
+
+#[test]
+fn standard_attached_circle_axes_result() {
+    let mut ir = CadIr::empty();
+    let surface_id = SurfaceId::mint("catia:test:surface#sphere-0").expect("identity grammar");
+    ir.model.surfaces.push(Surface {
+        id: surface_id.clone(),
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
+            cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                1.0,
+            )
+            .expect("valid sphere"),
+        )),
+        source_object: None,
+    });
+    let support = StandardCurveSupport {
+        pos: 12,
+        tag: 7,
+        faces: [0, 0],
+        geometry: super::checked_circle(Point3::new(0.0, 0.0, 0.6), 0.8),
+    };
+    let bindings = [(surface_id, false, 0)];
+    crate::test_support::with_service_context(|ctx| {
+        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+        crate::families::standard::decode::edge_geometry::attach_standard_circles(
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            &bindings,
+            std::slice::from_ref(&support),
+            &mut admission,
+        )
+    })
+    .expect("service circle budget");
+    assert_eq!(ir.model.curves.len(), 1);
+}
+
+#[test]
+fn standard_edge_circle_axes_result() {
+    let mut ir = CadIr::empty();
+    let surface_id = SurfaceId::mint("catia:test:surface#sphere-0").expect("identity grammar");
+    ir.model.surfaces.push(Surface {
+        id: surface_id.clone(),
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
+            cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                1.0,
+            )
+            .expect("valid sphere"),
+        )),
+        source_object: None,
+    });
+    for (index, position) in [Point3::new(0.8, 0.0, 0.6), Point3::new(0.0, 0.8, 0.6)]
+        .into_iter()
+        .enumerate()
+    {
+        ir.model.points.push(Point::new(
+            PointId::mint(format!("catia:test:point#{index}")).expect("identity grammar"),
+            cadmpeg_ir::features::FinitePoint3::new(position).expect("finite point"),
+            None,
+        ));
+    }
+    let support = StandardCurveSupport {
+        pos: 12,
+        tag: 7,
+        faces: [0, 0],
+        geometry: super::checked_circle(Point3::new(0.0, 0.0, 0.6), 0.8),
+    };
+    let bindings = [(surface_id.clone(), false, 0)];
+    let indices = HashMap::from([(surface_id, 0)]);
+    let (curve, _) = crate::test_support::with_service_context(|ctx| {
+        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+        build_standard_edge_curve(
+            ctx,
+            crate::families::standard::decode::edge_geometry::BuildStandardEdgeCurveInputs {
+                ir: &mut ir,
+                annotations: &mut AnnotationBuilder::new(),
+                bindings: &bindings,
+                surface_indices: &indices,
+                brep: &[],
+                support: &support,
+                points: [0, 1],
+                native_support: None,
+                limit_curve: None,
+                refusal: &mut crate::nurbs::LaneRefusals::new(),
+                admission: &mut admission,
+            },
+        )
+    })
+    .expect("service edge circle budget");
+    assert!(curve.is_some());
 }

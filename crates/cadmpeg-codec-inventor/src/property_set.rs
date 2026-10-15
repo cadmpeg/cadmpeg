@@ -104,46 +104,24 @@ pub(crate) enum PropertyValue<'a> {
 }
 
 impl PropertyValue<'_> {
-    pub(crate) fn scalar_text(
-        &self,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<Option<String>, CodecError> {
+    pub(crate) fn scalar_text(&self) -> Option<String> {
         let text = match self {
-            Self::Signed { value, .. } => {
-                ctx.format_retained(format_args!("{value}"), "retain OLE scalar text")?
-            }
-            Self::Unsigned { value, .. } => {
-                ctx.format_retained(format_args!("{value}"), "retain OLE scalar text")?
-            }
-            Self::Float { value, .. } if value.is_finite() => {
-                ctx.format_retained(format_args!("{value}"), "retain OLE scalar text")?
-            }
-            Self::Bool { value, .. } => {
-                ctx.format_retained(format_args!("{value}"), "retain OLE scalar text")?
-            }
-            Self::Filetime { value, .. } => {
-                ctx.format_retained(format_args!("{value}"), "retain OLE scalar text")?
-            }
-            Self::String { value, .. } => {
-                ctx.charge_retained(
-                    cadmpeg_core::decode::u64_from_index(value.len()),
-                    "retain OLE scalar text",
-                )?;
-                value.clone()
-            }
-            Self::Guid { value, .. } => {
-                ctx.charge_retained(32, "retain OLE scalar text")?;
-                hex(value)
-            }
+            Self::Signed { value, .. } => value.to_string(),
+            Self::Unsigned { value, .. } => value.to_string(),
+            Self::Float { value, .. } if value.is_finite() => value.to_string(),
+            Self::Bool { value, .. } => value.to_string(),
+            Self::Filetime { value, .. } => value.to_string(),
+            Self::String { value, .. } => value.clone(),
+            Self::Guid { value, .. } => hex(value),
             Self::Empty { .. }
             | Self::Float { .. }
             | Self::Binary { .. }
             | Self::Clipboard { .. }
             | Self::Vector { .. }
             | Self::Dictionary
-            | Self::Unknown { .. } => return Ok(None),
+            | Self::Unknown { .. } => return None,
         };
-        Ok(Some(text))
+        Some(text)
     }
 }
 
@@ -175,21 +153,8 @@ pub(crate) fn inventory<'a>(
         }
         let state = match parse_property_set_stream(ctx, view) {
             Ok(property_set) => PropertySetState::Parsed(property_set),
-            Err(error) => {
-                if !matches!(error, CodecError::ResourceLimit(_)) {
-                    ctx.charge_formatted_retained(
-                        format_args!("{error}"),
-                        "retain Inventor malformed property-set detail",
-                    )?;
-                }
-                PropertySetState::Malformed(crate::issue_detail(error)?)
-            }
+            Err(error) => PropertySetState::Malformed(crate::issue_detail(error)?),
         };
-        ctx.charge_collection_items(1, "admit Inventor property-set streams")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(stream.path().len()),
-            "retain Inventor property-set path",
-        )?;
         property_sets.push(PropertySetDescriptor {
             stream: stream.id(),
             path: stream.path().into(),
@@ -229,15 +194,7 @@ pub(crate) fn parse_property_set_stream<'a>(
             "OLE property-set stream has no sections".into(),
         ));
     }
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(section_count),
-        "admit OLE section directories",
-    )?;
-    let mut directories = ctx.vector_storage(section_count, "admit OLE section directories")?;
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(section_count),
-        "admit OLE section FMTIDs",
-    )?;
+    let mut directories = Vec::new();
     let mut fmtids = BTreeSet::new();
     for _ in 0..section_count {
         let fmtid = cursor.array("section FMTID")?;
@@ -249,18 +206,9 @@ pub(crate) fn parse_property_set_stream<'a>(
         directories.push((fmtid, cursor.offset("section offset")?));
     }
     let header_end = cursor.position();
-    ctx.stable_sort_by(
-        &mut directories,
-        |left, right| left.1.cmp(&right.1),
-        |_| 0,
-        "OLE section directories sort",
-    )?;
+    directories.sort_by_key(|left| left.1);
     let mut previous_end = header_end;
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(section_count),
-        "admit OLE property-set sections",
-    )?;
-    let mut sections = ctx.vector_storage(section_count, "admit OLE property-set sections")?;
+    let mut sections = Vec::new();
     for (fmtid, offset) in directories {
         if offset < previous_end || offset % 4 != 0 {
             return Err(CodecError::Malformed(
@@ -320,16 +268,8 @@ fn parse_section<'a>(
     // The directory is read entry by entry below, so the window states its own
     // bound: a directory the section cannot hold stops at the entry that runs
     // out of bytes.
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(property_count),
-        "admit OLE property IDs",
-    )?;
     let mut ids = BTreeSet::new();
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(property_count),
-        "admit OLE property directory",
-    )?;
-    let mut directory = ctx.vector_storage(property_count, "admit OLE property directory")?;
+    let mut directory = Vec::new();
     for _ in 0..property_count {
         let id = cursor.u32("property id")?;
         if !ids.insert(id) {
@@ -346,12 +286,7 @@ fn parse_section<'a>(
         directory.push((offset, id));
     }
     let offsets_ordered = directory.windows(2).all(|pair| pair[0].0 < pair[1].0);
-    ctx.sort_unstable_by(
-        &mut directory,
-        Ord::cmp,
-        |_| 0,
-        "OLE property directory sort",
-    )?;
+    directory.sort_unstable_by(Ord::cmp);
     for pair in directory.windows(2) {
         if pair[0].0 == pair[1].0 {
             return Err(CodecError::Malformed(
@@ -362,10 +297,6 @@ fn parse_section<'a>(
     if let Some((offset, _)) = directory.first() {
         require_zero_range(bytes, directory_end, *offset, "property-directory gap")?;
     }
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(property_count),
-        "admit OLE property ranges",
-    )?;
     let ranges = directory
         .iter()
         .enumerate()
@@ -398,11 +329,7 @@ fn parse_section<'a>(
         })
         .transpose()?
         .unwrap_or_default();
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(property_count),
-        "admit OLE properties",
-    )?;
-    let mut properties = ctx.vector_storage(property_count, "admit OLE properties")?;
+    let mut properties = Vec::new();
     for (id, start, end) in ranges {
         let raw = source
             .child(source.start() + start, source.start() + end)
@@ -412,15 +339,7 @@ fn parse_section<'a>(
         } else {
             parse_typed_value(ctx, raw, code_page)?
         };
-        let name = if let Some(name) = names.get(&id) {
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(name.len()),
-                "retain OLE property name",
-            )?;
-            Some(name.clone())
-        } else {
-            None
-        };
+        let name = names.get(&id).cloned();
         properties.push(Property {
             id,
             name,
@@ -428,12 +347,7 @@ fn parse_section<'a>(
             raw,
         });
     }
-    ctx.stable_sort_by(
-        &mut properties,
-        |left, right| left.id.cmp(&right.id),
-        |_| 0,
-        "OLE properties sort",
-    )?;
+    properties.sort_by_key(|left| left.id);
     Ok(PropertySection {
         fmtid,
         code_page,
@@ -467,38 +381,17 @@ fn parse_dictionary(
 ) -> Result<BTreeMap<u32, String>, CodecError> {
     let mut cursor = Cursor::new(source, "OLE property dictionary");
     let count = cursor.count("entry count", MAX_PROPERTIES)?;
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(count),
-        "admit OLE property dictionary entries",
-    )?;
     let mut names = BTreeMap::new();
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(count),
-        "admit OLE folded dictionary names",
-    )?;
     let mut folded_names = BTreeSet::new();
     for _ in 0..count {
         let id = cursor.u32("entry id")?;
         let size = cursor.count("entry string size", MAX_STREAM_SIZE)?;
         let name = cursor.code_page_string(ctx, size, code_page, "entry name")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(name.len()),
-            "retain OLE dictionary name copy",
-        )?;
         if id == 0 || names.insert(id, name.clone()).is_some() {
             return Err(CodecError::Malformed(
                 "OLE property dictionary duplicates or names a reserved id".into(),
             ));
         }
-        let uppercase_len = name
-            .chars()
-            .flat_map(char::to_uppercase)
-            .map(char::len_utf8)
-            .sum::<usize>();
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(uppercase_len),
-            "retain OLE dictionary uppercase name",
-        )?;
         if !folded_names.insert(name.to_uppercase()) {
             return Err(CodecError::Malformed(
                 "OLE property dictionary duplicates a name".into(),
@@ -539,11 +432,7 @@ fn parse_vector<'a>(
     code_page: Option<u16>,
 ) -> Result<PropertyValue<'a>, CodecError> {
     let count = cursor.count("vector element count", MAX_PROPERTIES)?;
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(count),
-        "admit OLE property vector elements",
-    )?;
-    let mut values = ctx.vector_storage(count, "admit OLE property vector elements")?;
+    let mut values = Vec::new();
     for _ in 0..count {
         if element_type == VT_VARIANT {
             let nested_type = cursor.u16("variant type")?;
@@ -820,47 +709,14 @@ fn decode_code_page(
     }
     let page = code_page.unwrap_or(1252);
     let Some(encoding) = encoding_for_code_page(page) else {
-        return Err(CodecError::NotImplemented(ctx.format_retained(
-            format_args!("OLE code page {page} is not implemented"),
-            "retain OLE unsupported code-page detail",
-        )?));
+        return Err(CodecError::NotImplemented(format!(
+            "OLE code page {page} is not implemented"
+        )));
     };
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(content.len()),
-        "decode OLE code-page string",
-    )?;
-    let (selected_encoding, source) = encoding_rs::Encoding::for_bom(content)
-        .map_or((encoding, content), |(selected, bom_len)| {
-            (selected, &content[bom_len..])
-        });
-    let mut decoder = selected_encoding.new_decoder_without_bom_handling();
-    let mut buffer = [0_u8; 4096];
-    let mut read = 0;
-    let mut decoded_len = 0_usize;
-    loop {
-        let (result, consumed, written) =
-            decoder.decode_to_utf8_without_replacement(&source[read..], &mut buffer, true);
-        read += consumed;
-        decoded_len += written;
-        match result {
-            encoding_rs::DecoderResult::InputEmpty => break,
-            encoding_rs::DecoderResult::OutputFull => {}
-            encoding_rs::DecoderResult::Malformed(..) => {
-                return Err(CodecError::malformed(format_args!(
-                    "OLE code-page {page} string is malformed"
-                )));
-            }
-        }
-    }
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(decoded_len),
-        "retain OLE property string",
-    )?;
     let (decoded, _, malformed) = encoding.decode(content);
     if malformed {
         return Err(CodecError::malformed(format_args!(
-            "OLE code-page {} string is malformed",
-            code_page.unwrap_or(1252)
+            "OLE code-page {page} string is malformed"
         )));
     }
     Ok(decoded.into_owned())
@@ -1043,7 +899,7 @@ impl<'a> Cursor<'a> {
 #[cfg(test)]
 mod tests {
     use cadmpeg_container::compound::CompoundSnapshot;
-    use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
 
     use crate::test_support::truncation::located_truncation;
 
@@ -1055,7 +911,7 @@ mod tests {
     use cadmpeg_core::CodecError;
 
     #[test]
-    fn malformed_property_set_detail_refuses_retained_limit_before_copy() {
+    fn malformed_property_set_remains_an_inventory_entry() {
         let mut bytes = crate::test_support::test_fixtures::fixture_with_ufrx(&[0xfe, 0xff]);
         let entry_start = 512 + 3 * 128;
         let name = "ZProperty";
@@ -1072,16 +928,6 @@ mod tests {
             DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
                 .expect("compound input fits service policy");
         let snapshot = CompoundSnapshot::new(&setup, root).expect("synthetic compound parses");
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 0;
-        let (limited, _) =
-            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
-        assert!(matches!(
-            super::inventory(&limited, &snapshot),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "retain Inventor malformed property-set detail"
-        ));
         let inventory = super::inventory(&setup, &snapshot)
             .expect("malformed property set remains an inventory entry");
         assert!(matches!(
@@ -1091,7 +937,7 @@ mod tests {
     }
 
     #[test]
-    fn dictionary_name_copies_refuse_retained_limit_before_allocation() {
+    fn dictionary_names_decode() {
         let mut bytes = Vec::new();
         bytes.extend_from_slice(&1_u32.to_le_bytes());
         bytes.extend_from_slice(&2_u32.to_le_bytes());
@@ -1110,56 +956,25 @@ mod tests {
                 .map(String::as_str),
             Some("abc")
         );
-        for (cap, operation) in [
-            (4, "retain OLE dictionary name copy"),
-            (7, "retain OLE dictionary uppercase name"),
-        ] {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = cap;
-            let (limited, root) =
-                DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
-            assert!(matches!(
-                parse_dictionary(&limited, root, Some(1200)),
-                Err(CodecError::ResourceLimit(limit))
-                    if limit.dimension == ResourceDimension::RetainedBytes
-                        && limit.operation == operation
-            ));
-        }
     }
 
     #[test]
-    fn unsupported_code_page_detail_requires_exact_retained_budget() {
+    fn unsupported_code_page_is_not_implemented() {
         let bytes = [0];
         let arena = DecodeArena::new();
-        let message = "OLE code page 65000 is not implemented";
-        let operation = "retain OLE unsupported code-page detail";
-        let required = u64::try_from(message.len()).expect("diagnostic length fits u64");
-        for cap in [0, required - 1, required] {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = cap;
-            let (ctx, root) =
-                DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
-            let error = Cursor::new(root, "OLE code-page string")
-                .code_page_string(&ctx, 1, Some(65000), "value")
-                .expect_err("unsupported code page");
-            if cap < required {
-                assert!(matches!(
-                    error,
-                    CodecError::ResourceLimit(limit)
-                        if limit.dimension == ResourceDimension::RetainedBytes
-                            && limit.operation == operation
-                ));
-            } else {
-                assert!(matches!(
-                    error,
-                    CodecError::NotImplemented(detail) if detail == message
-                ));
-            }
-        }
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+            .expect("service context");
+        let error = Cursor::new(root, "OLE code-page string")
+            .code_page_string(&ctx, 1, Some(65000), "value")
+            .expect_err("unsupported code page");
+        assert!(matches!(
+            error,
+            CodecError::NotImplemented(detail) if detail == "OLE code page 65000 is not implemented"
+        ));
     }
 
     #[test]
-    fn code_page_string_refuses_exact_utf8_copy_before_decode() {
+    fn code_page_string_decodes() {
         let bytes = [0x80, 0];
         let arena = DecodeArena::new();
         let (service, root) =
@@ -1171,21 +986,10 @@ mod tests {
                 .expect("code-page string admitted"),
             "€"
         );
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 2;
-        let (limited, root) =
-            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
-        assert!(matches!(
-            Cursor::new(root, "OLE code-page string")
-                .code_page_string(&limited, 2, Some(1252), "value"),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "retain OLE property string"
-        ));
     }
 
     #[test]
-    fn unicode_property_string_uses_exact_utf8_budget_before_decode() {
+    fn unicode_property_string_decodes() {
         let bytes = [b'A', 0, 0, 0];
         let arena = DecodeArena::new();
         let (service, root) =
@@ -1197,47 +1001,12 @@ mod tests {
                 .expect("Unicode string admitted"),
             "A"
         );
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 1;
-        let (limited, root) =
-            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
-        assert!(matches!(
-            Cursor::new(root, "OLE Unicode property").unicode_string(&limited, 2, "value"),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "retain OLE Unicode property string"
-        ));
-        policy.limits.max_retained_bytes = 2;
-        let (admitted, root) =
-            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("exact context");
-        assert_eq!(
-            Cursor::new(root, "OLE Unicode property")
-                .unicode_string(&admitted, 2, "value")
-                .expect("exact UTF-8 bytes admitted"),
-            "A"
-        );
     }
 
     #[test]
-    fn section_collections_refuse_each_limit_before_materialization() {
+    fn property_set_stream_reads_its_section() {
         let bytes = fixture();
         let arena = DecodeArena::new();
-        for (cap, operation) in [
-            (0, "admit OLE section directories"),
-            (1, "admit OLE section FMTIDs"),
-            (2, "admit OLE property-set sections"),
-        ] {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = cap;
-            let (limited, root) =
-                DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
-            assert!(matches!(
-                parse_property_set_stream(&limited, root),
-                Err(CodecError::ResourceLimit(limit))
-                    if limit.dimension == ResourceDimension::CollectionItems
-                        && limit.operation == operation
-            ));
-        }
         let (service, root) =
             DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
                 .expect("service context");
@@ -1251,7 +1020,7 @@ mod tests {
     }
 
     #[test]
-    fn scalar_text_refuses_retained_limit_before_copy_or_format() {
+    fn scalar_text_copies_text_and_formats_numbers() {
         let text = PropertyValue::String {
             type_code: 30,
             value: "scalar".into(),
@@ -1260,30 +1029,8 @@ mod tests {
             type_code: 3,
             value: -42,
         };
-        let arena = DecodeArena::new();
-        let bytes = b"fixture";
-        let (service, _) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service())
-            .expect("service context");
-        assert_eq!(
-            text.scalar_text(&service).expect("text admitted"),
-            Some("scalar".into())
-        );
-        assert_eq!(
-            number.scalar_text(&service).expect("number admitted"),
-            Some("-42".into())
-        );
-        for (value, cap) in [(&text, 5), (&number, 2)] {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = cap;
-            let (limited, _) =
-                DecodeContext::from_root_bytes(bytes, &arena, &policy).expect("limited context");
-            assert!(matches!(
-                value.scalar_text(&limited),
-                Err(CodecError::ResourceLimit(limit))
-                    if limit.dimension == ResourceDimension::RetainedBytes
-                        && limit.operation == "retain OLE scalar text"
-            ));
-        }
+        assert_eq!(text.scalar_text(), Some("scalar".into()));
+        assert_eq!(number.scalar_text(), Some("-42".into()));
     }
 
     #[test]

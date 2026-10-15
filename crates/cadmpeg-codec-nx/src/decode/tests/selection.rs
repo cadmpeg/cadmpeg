@@ -746,9 +746,7 @@ fn decode_tracks_all_extended_topology_reference_shifts() {
 #[test]
 fn decode_tracks_fully_extended_geometry_header_shift() {
     let stream = topology_with_fully_extended_geometry_headers();
-    let graph =
-        crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream))
-            .unwrap();
+    let graph = crate::topology::Graph::parse(&stream);
     assert!(matches!(
         graph
             .get(NodeKind::Plane, 6)
@@ -811,78 +809,34 @@ fn decode_assembly_reports_external_dependency() {
         .any(|l| l.message.contains("assembly")));
 }
 
-fn directory_retained_bytes(name: &str) -> u64 {
-    cadmpeg_core::decode::u64_from_index(
-        4 * std::mem::size_of::<crate::container::DirEntry>() + name.len(),
-    )
-}
-
 #[test]
 fn metadata_fallback_does_not_retain_discarded_geometry_unknown_copies() {
-    let mut stream = b"PS\0\0 (partition) SCH_TEST_1_9999".to_vec();
-    stream.resize(8192, b'.');
-    let file = prt_with_partition(&stream);
-    let mut options = DecodeOptions::default();
-    // Ten source attributes use conservative B-tree insertion bounds of
-    // 1, 2, 3, 3, 4, 4, 4, 4, 5 and 5 nodes. Each node holds eleven
-    // String pairs, sixteen pointer slots and two alignment paddings.
-    let source_attribute_nodes = 2
-        * 35
-        * cadmpeg_core::decode::u64_from_index(
-            11 * std::mem::size_of::<(String, String)>()
-                + 16 * std::mem::size_of::<usize>()
-                + 2 * std::mem::align_of::<(String, String)>(),
-        );
-    // Geometry and metadata construction each clone three declarations. The
-    // aggregate admission bound follows the service collection ceiling.
-    let declaration_node = cadmpeg_core::decode::u64_from_index(
-        11 * std::mem::size_of::<(cadmpeg_core::text::NonBlankString, String)>()
-            + 16 * std::mem::size_of::<usize>()
-            + 2 * std::mem::align_of::<(cadmpeg_core::text::NonBlankString, String)>(),
-    );
-    let declaration_path = u64::from(options.policy.limits.max_collection_items.ilog2()) + 2;
-    let dialect_declarations = (2 * 3 * declaration_path + 3) * declaration_node
-        + 6 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-            cadmpeg_core::dialect::DialectMatch,
-        >());
-    // Moving ten named attributes through each source constructor allocates
-    // a second map with the aggregate declaration-path bound.
-    let named_attribute_nodes = 2 * 10 * declaration_path * declaration_node;
-    options.policy.limits.max_retained_bytes = source_attribute_nodes
-        + dialect_declarations
-        + named_attribute_nodes
-        + directory_retained_bytes("/Root/UG_PART/UG_PART")
-        + cadmpeg_core::decode::u64_from_index(stream.len() * 3)
-        - 1;
-
-    // Shared dialect and annotation nodes fit below the budget for a third payload copy.
-    let result = NxCodec
-        .decode(&mut Cursor::new(file), &options)
-        .expect("live stream and final metadata copy fit the retained budget");
-
-    assert!(!result.report().geometry_transferred());
-    assert_eq!(result.ir().native_unknowns("nx").unwrap().len(), 1);
-}
-
-#[test]
-fn metadata_fallback_old_retained_limit_refuses_inflated_stream_after_directory() {
     use cadmpeg_core::decode::ResourceDimension;
 
     let mut stream = b"PS\0\0 (partition) SCH_TEST_1_9999".to_vec();
-    stream.resize(64, b'.');
+    stream.resize(8192, b'.');
     let file = prt_with_partition(&stream);
+    let one_copy = cadmpeg_core::decode::u64_from_index(stream.len());
     let mut options = DecodeOptions::default();
-    options.policy.limits.max_retained_bytes = directory_retained_bytes("/Root/UG_PART/UG_PART")
-        + cadmpeg_core::decode::u64_from_index(stream.len())
-        + cadmpeg_test_support::decode::arena_registry_bytes()
-        - 1;
+    // The retained allowance holds the final metadata copy, with less than
+    // one further payload copy of slack.
+    options.policy.limits.max_retained_bytes = 2 * one_copy - 1;
+
+    let result = NxCodec
+        .decode(&mut Cursor::new(file.as_slice()), &options)
+        .expect("final metadata copy fits the retained budget");
+
+    assert!(!result.report().geometry_transferred());
+    assert_eq!(result.ir().native_unknowns("nx").unwrap().len(), 1);
+
+    options.policy.limits.max_retained_bytes = one_copy - 1;
     let error = cadmpeg_test_support::decode::full(&NxCodec, &file, &options.policy)
-        .expect_err("directory bytes use part of the retained allowance");
+        .expect_err("the metadata copy is retained");
     assert!(matches!(
         error,
         cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "retain NX inflated stream"
+                && limit.operation == "retain NX unknown stream"
     ));
 }
 
@@ -914,19 +868,60 @@ fn decode_refuses_opaque_container_copy_when_retained_budget_is_exhausted() {
 }
 
 #[test]
-fn opaque_container_with_one_retained_byte_refuses_directory_entry() {
+fn decode_refuses_jpeg_preview_asset_copy_when_retained_budget_is_exhausted() {
     use cadmpeg_core::decode::ResourceDimension;
 
-    let file = prt_with_named_payloads(&[("/Root/FastLoad/Structure", vec![0x5a; 64])]);
-    let mut options = DecodeOptions::default();
-    options.policy.limits.max_retained_bytes = 1;
-    let error = cadmpeg_test_support::decode::full(&NxCodec, &file, &options.policy)
-        .expect_err("directory entry exceeds one byte");
+    let preview = [
+        0xff, 0xd8, 0xff, 0xe0, 0x00, 0x04, 0x00, 0x00, 0xff, 0xc0, 0x00, 0x11, 0x08, 0x00, 0xb9,
+        0x00, 0xf7, 0x03, 0x01, 0x11, 0x00, 0x02, 0x11, 0x00, 0x03, 0x11, 0x00, 0xff, 0xd9,
+    ];
+    let file = prt_with_named_payloads(&[("/Root/images/preview", preview.to_vec())]);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes,
+        "retain NX JPEG preview asset",
+        |cap| {
+            let mut options = DecodeOptions::default();
+            options.policy.limits.max_retained_bytes = cap;
+            NxCodec
+                .decode(&mut Cursor::new(&file), &options)
+                .map_err(|error| match error {
+                    cadmpeg_ir::DecodeFailure::Codec(error) => error,
+                    error => panic!("unexpected decode refusal: {error}"),
+                })
+        },
+    );
     assert!(matches!(
         error,
-        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+        cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "retain NX directory entries"
+                && limit.operation == "retain NX JPEG preview asset"
+    ));
+}
+
+#[test]
+fn decode_refuses_indexed_object_model_record_copy_when_retained_budget_is_exhausted() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let file = crate::test_support::test_prt::prt_with_indexed_om_section();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes,
+        "retain NX indexed object-model record",
+        |cap| {
+            let mut options = DecodeOptions::default();
+            options.policy.limits.max_retained_bytes = cap;
+            NxCodec
+                .decode(&mut Cursor::new(&file), &options)
+                .map_err(|error| match error {
+                    cadmpeg_ir::DecodeFailure::Codec(error) => error,
+                    error => panic!("unexpected decode refusal: {error}"),
+                })
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "retain NX indexed object-model record"
     ));
 }
 
@@ -954,23 +949,6 @@ fn decode_refuses_invalid_preview_copy_when_retained_budget_is_exhausted() {
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::RetainedBytes
                 && limit.operation == "retain NX invalid JPEG preview"
-    ));
-}
-
-#[test]
-fn invalid_preview_with_one_retained_byte_refuses_directory_entry() {
-    use cadmpeg_core::decode::ResourceDimension;
-
-    let file = prt_with_named_payloads(&[("/Root/images/preview", vec![0x5a; 64])]);
-    let mut options = DecodeOptions::default();
-    options.policy.limits.max_retained_bytes = 1;
-    let error = cadmpeg_test_support::decode::full(&NxCodec, &file, &options.policy)
-        .expect_err("directory entry exceeds one byte");
-    assert!(matches!(
-        error,
-        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "retain NX directory entries"
     ));
 }
 
@@ -1025,10 +1003,8 @@ fn rmfastload_membership_declines_when_a_referenced_topology_entity_is_missing()
         .expect("fin record");
     put_ref(&mut stream, fin + 16, 99);
 
-    crate::test_support::with_decode_context(|ctx| {
-        let graph = crate::topology::Graph::parse(ctx, &stream).unwrap();
-        assert!(topology_body_node_ids(ctx, 0, &graph).unwrap().is_empty());
-    });
+    let graph = crate::topology::Graph::parse(&stream);
+    assert!(topology_body_node_ids(0, &graph).unwrap().is_empty());
 }
 
 #[test]

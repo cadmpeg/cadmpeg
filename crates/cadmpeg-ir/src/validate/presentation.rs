@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Presentation state and layer validation.
 
-use super::{orders::Orders, record_finding};
+use super::record_finding;
 use crate::document::CadIr;
 use crate::index::identities::BorrowedIdentities;
 use crate::presentation::PresentationItem;
@@ -18,25 +18,21 @@ pub(super) fn check_presentation(
 ) -> Result<(), cadmpeg_core::CodecError> {
     if ir.model.presentation_documents.len() > 1 {
         record_finding(
-            ctx,
             findings,
             Check::ReferentialIntegrity,
             Severity::Error,
             None,
             format_args!("{}", "multiple document presentation records"),
-        )?;
+        );
     }
     for document in &ir.model.presentation_documents {
-        ctx.charge_work(1, "presentation document scan")?;
         let native_valid = match &document.native_ref {
             Some(native) => all_ids.contains(ctx, native)?,
             None => true,
         };
         let mut assets_valid = true;
         'states: for state in document.states() {
-            ctx.charge_work(1, "presentation state scan")?;
             for asset in &state.assets {
-                ctx.charge_work(1, "presentation asset scan")?;
                 if !all_ids.contains(ctx, asset)? {
                     assets_valid = false;
                     break 'states;
@@ -45,19 +41,17 @@ pub(super) fn check_presentation(
         }
         if !native_valid || !assets_valid {
             record_finding(
-                ctx,
                 findings,
                 Check::ReferentialIntegrity,
                 Severity::Error,
                 Some(document.id.as_str()),
                 format_args!("{}", "invalid document presentation state"),
-            )?;
+            );
         }
     }
 
-    let mut orders = Orders::new(ctx)?;
+    let mut orders = std::collections::BTreeSet::new();
     for view in &ir.model.view_presentations {
-        ctx.charge_work(1, "view presentation scan")?;
         let mut references_valid = match &view.object {
             Some(object) => all_ids.contains(ctx, object)?,
             None => true,
@@ -67,15 +61,14 @@ pub(super) fn check_presentation(
                 references_valid = all_ids.contains(ctx, native)?;
             }
         }
-        if !references_valid || !orders.insert(view.order)? {
+        if !references_valid || !orders.insert(view.order) {
             record_finding(
-                ctx,
                 findings,
                 Check::ReferentialIntegrity,
                 Severity::Error,
                 Some(view.id.as_str()),
                 format_args!("{}", "invalid view presentation reference, order, or size"),
-            )?;
+            );
         }
     }
 
@@ -146,9 +139,7 @@ pub(super) fn check_presentation(
         Ok(())
     })?;
     for layer in &ir.model.presentation_layers {
-        ctx.charge_work(1, "presentation layer scan")?;
         for item in &layer.items {
-            ctx.charge_work(1, "presentation layer item scan")?;
             let resolved = match item {
                 PresentationItem::Body { body } => bodies.contains(ctx, body.as_str())?,
                 PresentationItem::Face { face } => faces.contains(ctx, face.as_str())?,
@@ -173,71 +164,14 @@ pub(super) fn check_presentation(
             };
             if !resolved {
                 record_finding(
-                    ctx,
                     findings,
                     Check::Presentation,
                     crate::report::Severity::Error,
                     Some(layer.id.as_str()),
                     format_args!("{}", "unresolved presentation-layer item"),
-                )?;
+                );
             }
         }
     }
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn presentation_typed_indexes_preserve_resource_refusals_and_release_storage() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-        use cadmpeg_core::CodecError;
-        let mut ir = crate::CadIr::empty();
-        ir.model.points.push(crate::topology::Point::new(
-            "test:model:point#source".try_into().unwrap(),
-            crate::features::FinitePoint3::ZERO,
-            None,
-        ));
-        let source = cadmpeg_test_support::service_decode_context();
-        let ids = super::BorrowedIdentities::build(&source, |_| Ok(())).unwrap();
-        for dimension in [
-            ResourceDimension::MaterializedBytes,
-            ResourceDimension::CollectionItems,
-            ResourceDimension::WorkUnits,
-        ] {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            match dimension {
-                ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
-                ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
-                ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
-                _ => unreachable!(),
-            }
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let mut findings = Vec::new();
-            let Err(CodecError::ResourceLimit(limit)) =
-                super::check_presentation(&ctx, &ir, &ids, &mut findings)
-            else {
-                panic!("presentation index must refuse");
-            };
-            assert_eq!(limit.dimension, dimension);
-            assert!(findings.is_empty());
-            assert!(
-                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
-            );
-        }
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 0;
-        policy.limits.max_materialized_bytes = 8192;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let mut findings = Vec::new();
-        super::check_presentation(&ctx, &ir, &ids, &mut findings).unwrap();
-        assert!(findings.is_empty());
-        drop(
-            ctx.reserve_scoped(8192, "presentation indexes released")
-                .unwrap(),
-        );
-        ctx.finish_session().unwrap();
-    }
 }

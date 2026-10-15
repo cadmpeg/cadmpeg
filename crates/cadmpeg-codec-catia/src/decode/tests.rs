@@ -16,41 +16,6 @@ use crate::test_support::test_formula::standard_catpart_with_two_selector_value;
 use crate::test_support::test_object_graph::outer_container_object_graph_catpart;
 use crate::CatiaCodec;
 
-#[test]
-fn standard_alias_route_propagates_entity_candidate_limit() {
-    let bytes = standard_catpart_with_two_selector_value("Range", "CstAttr_Dimension", &[0xfe]);
-    let mut cap = 0;
-    let mut reached = false;
-    for _ in 0..512 {
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_collection_items = cap;
-        let options = DecodeOptions {
-            policy,
-            ..DecodeOptions::default()
-        };
-        match CatiaCodec.decode(&mut Cursor::new(bytes.clone()), &options) {
-            Err(cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(
-                limit,
-            ))) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-                && limit.operation == "admit CATIA 7C05 identity candidate" =>
-            {
-                reached = true;
-                break;
-            }
-            Err(cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(
-                limit,
-            ))) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-                cap = limit
-                    .used
-                    .checked_add(limit.additional)
-                    .expect("bounded fixture");
-            }
-            other => panic!("7C05 identity candidate limit not reached: {other:?}"),
-        }
-    }
-    assert!(reached, "7C05 identity candidate limit was not reached");
-}
-
 fn graph(id: &str, stream_name: &str, class_name: &str) -> CatiaObjectGraph {
     CatiaObjectGraph {
         id: id.to_string(),
@@ -70,16 +35,6 @@ fn graph(id: &str, stream_name: &str, class_name: &str) -> CatiaObjectGraph {
     }
 }
 
-fn service_modeling_scope(
-    has_outer_declarations: bool,
-    graphs: &[CatiaObjectGraph],
-) -> super::ModelingGraphScope {
-    crate::test_support::with_service_context(|ctx| {
-        modeling_graph_scope(ctx, has_outer_declarations, graphs)
-    })
-    .expect("service budget admits modeling scope")
-}
-
 #[test]
 fn modeling_scope_includes_only_the_declared_part_graph() {
     let graphs = vec![
@@ -90,25 +45,8 @@ fn modeling_scope_includes_only_the_declared_part_graph() {
     ];
 
     assert_eq!(
-        service_modeling_scope(true, &graphs),
+        modeling_graph_scope(true, &graphs),
         super::ModelingGraphScope::Scoped("part-graph".to_string())
-    );
-}
-
-#[test]
-fn modeling_scope_refuses_retained_graph_identity_limit() {
-    let graphs = vec![graph("part-graph", "part", "CATPrtCont")];
-    let limited =
-        crate::test_support::with_retained_limit(0, |ctx| modeling_graph_scope(ctx, true, &graphs));
-    assert!(matches!(
-        limited,
-        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_modeling_scope_graph"
-                && limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-    ));
-    assert_eq!(
-        service_modeling_scope(true, &graphs),
-        super::ModelingGraphScope::Scoped("part-graph".to_owned())
     );
 }
 
@@ -120,7 +58,7 @@ fn modeling_scope_does_not_promote_application_extension_graphs() {
     ];
 
     assert_eq!(
-        service_modeling_scope(true, &graphs),
+        modeling_graph_scope(true, &graphs),
         super::ModelingGraphScope::Unresolved
     );
 }
@@ -133,7 +71,7 @@ fn modeling_scope_rejects_multiple_graphs_in_one_part_stream() {
     ];
 
     assert_eq!(
-        service_modeling_scope(true, &graphs),
+        modeling_graph_scope(true, &graphs),
         super::ModelingGraphScope::Unresolved
     );
 }
@@ -146,7 +84,7 @@ fn modeling_scope_rejects_multiple_declared_part_graphs() {
     ];
 
     assert_eq!(
-        service_modeling_scope(true, &graphs),
+        modeling_graph_scope(true, &graphs),
         super::ModelingGraphScope::Unresolved
     );
 }
@@ -156,7 +94,7 @@ fn modeling_scope_without_outer_declarations_remains_unbounded() {
     let graphs = vec![graph("fragment-graph", "part", "CATPrtCont")];
 
     assert_eq!(
-        service_modeling_scope(false, &graphs),
+        modeling_graph_scope(false, &graphs),
         super::ModelingGraphScope::Unscoped
     );
 }
@@ -303,18 +241,16 @@ fn a_route_that_exits_after_a_refusal_still_delivers_both_notes() {
             )
         };
         crate::nurbs::note_refusal(
-            ctx,
             short_weight_lane()?,
             refusal,
             "e5 NURBS surface record at byte 16",
-        )?;
+        );
         // The second refusal ends the route after both notes have been retained.
         let second = crate::nurbs::note_refusal(
-            ctx,
             short_weight_lane()?,
             refusal,
             "e5 NURBS pcurve record at byte 96",
-        )?;
+        );
         Ok(second.map(|_| ()))
     }
 
@@ -349,42 +285,30 @@ fn a_route_that_refuses_and_falls_through_states_both_notes_in_the_report() {
         _scan: &crate::container::ContainerScan,
         refusal: &mut crate::nurbs::LaneRefusals,
     ) -> Result<Option<crate::families::FamilyOutput>, cadmpeg_core::CodecError> {
-        ctx.charge_collection_items(7, "build test NURBS lanes")?;
-        let output = (|| {
-            match crate::nurbs::note_refusal(
-                ctx,
-                match cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
-                    ctx,
-                    1,
-                    vec![0.0, 0.0, 1.0, 1.0],
-                    vec![
-                        cadmpeg_ir::math::Point2::new(0.0, 0.0),
-                        cadmpeg_ir::math::Point2::new(1.0, 0.0),
-                    ],
-                    Some(vec![1.0]),
-                    false,
-                ) {
-                    Ok(result) => result,
-                    Err(error) => return Some(Err(error)),
-                },
-                refusal,
-                "e5 NURBS pcurve record at byte 96",
-            ) {
-                Ok(Some(_)) => {}
-                Ok(None) => return None,
-                Err(error) => return Some(Err(error)),
-            }
-            Some(Ok(crate::families::FamilyOutput {
-                ir: cadmpeg_ir::CadIr::empty(),
-                report: cadmpeg_ir::codec::DecodeBody::new(
-                    cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {},
-                ),
-                annotations: cadmpeg_ir::Annotations::default(),
-                unknowns: Vec::new(),
-                admitted_model_entities: 0,
-            }))
-        })();
-        output.transpose()
+        let lanes = cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+            ctx,
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![
+                cadmpeg_ir::math::Point2::new(0.0, 0.0),
+                cadmpeg_ir::math::Point2::new(1.0, 0.0),
+            ],
+            Some(vec![1.0]),
+            false,
+        )?;
+        if crate::nurbs::note_refusal(lanes, refusal, "e5 NURBS pcurve record at byte 96").is_none()
+        {
+            return Ok(None);
+        }
+        Ok(Some(crate::families::FamilyOutput {
+            ir: cadmpeg_ir::CadIr::empty(),
+            report: cadmpeg_ir::codec::DecodeBody::new(
+                cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {},
+            ),
+            annotations: cadmpeg_ir::Annotations::default(),
+            unknowns: Vec::new(),
+            admitted_model_entities: 0,
+        }))
     }
 
     const ROUTES: &[crate::families::Route] = &[crate::families::Route {

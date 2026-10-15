@@ -9,13 +9,10 @@ use crate::geometry::pcurve::{
 };
 use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
 
-fn with_limits<T>(work: u64, depth: u64, run: impl FnOnce(&DecodeContext<'_>) -> T) -> T {
+fn with_depth<T>(depth: u64, run: impl FnOnce(&DecodeContext<'_>) -> T) -> T {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = work;
     policy.limits.max_recursion_depth = depth;
-    policy.limits.max_collection_items = 0;
-    policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     run(&ctx)
 }
@@ -36,26 +33,20 @@ fn nurbs(x: f64, rational: bool) -> PcurveGeometry {
 }
 
 #[test]
-fn owned_pcurve_scaling_refuses_pole_work_and_reuses_both_pole_forms() {
+fn owned_pcurve_scaling_scales_both_pole_forms() {
     for rational in [false, true] {
-        for cap in [1, 2] {
-            assert!(
-                matches!(with_limits(cap, u64::MAX, |ctx| nurbs(1.0, rational).scaled_coordinates_owned(ctx, [2.0, 3.0])),
-                Err(CodecError::ResourceLimit(resource)) if resource.operation == "IR pcurve pole coordinate scaling work")
-            );
-        }
         let mut expected = nurbs(1.0, rational);
         expected
             .try_scale_coordinates([2.0, 3.0])
             .expect("reference");
         assert_eq!(
-            with_limits(3, 0, |ctx| nurbs(1.0, rational)
+            with_depth(0, |ctx| nurbs(1.0, rational)
                 .scaled_coordinates_owned(ctx, [2.0, 3.0]))
             .expect("no copies"),
             Ok(expected)
         );
         assert_eq!(
-            with_limits(2, 0, |ctx| nurbs(f64::MAX, rational)
+            with_depth(0, |ctx| nurbs(f64::MAX, rational)
                 .scaled_coordinates_owned(ctx, [2.0, 3.0]))
             .expect("borrowed refusal"),
             Err("control_points contains a non-finite point")
@@ -79,21 +70,16 @@ fn owned_pcurve_scaling_refuses_each_wrapper_depth_and_keeps_service_geometry() 
     ];
     for geometry in wrapped {
         assert!(
-            matches!(with_limits(u64::MAX, 0, |ctx| geometry.clone().scaled_coordinates_owned(ctx, [2.0, 2.0])),
+            matches!(with_depth(0, |ctx| geometry.clone().scaled_coordinates_owned(ctx, [2.0, 2.0])),
             Err(CodecError::ResourceLimit(resource)) if resource.operation == "IR pcurve coordinate scaling nesting")
-        );
-        assert!(
-            matches!(with_limits(0, 1, |ctx| geometry.clone().scaled_coordinates_owned(ctx, [2.0, 2.0])),
-            Err(CodecError::ResourceLimit(resource)) if resource.operation == "IR pcurve coordinate scaling work")
         );
         let mut expected = geometry.clone();
         expected
             .try_scale_coordinates([2.0, 2.0])
             .expect("reference");
         assert_eq!(
-            with_limits(4, 1, |ctx| geometry
-                .scaled_coordinates_owned(ctx, [2.0, 2.0]))
-            .expect("no copies"),
+            with_depth(1, |ctx| geometry.scaled_coordinates_owned(ctx, [2.0, 2.0]))
+                .expect("no copies"),
             Ok(expected)
         );
     }
@@ -132,7 +118,7 @@ fn owned_pcurve_scaling_preserves_analytic_conversion_and_refusal_order() {
                 .try_scale_coordinates(scales)
                 .map(|()| expected)
                 .map_err(|error| error.to_string());
-            let actual = with_limits(u64::MAX, u64::MAX, |ctx| {
+            let actual = with_depth(u64::MAX, |ctx| {
                 geometry.clone().scaled_coordinates_owned(ctx, scales)
             })
             .expect("admitted");
@@ -158,7 +144,7 @@ fn owned_pcurve_scaling_preserves_analytic_conversion_and_refusal_order() {
                 .try_scale_coordinates(scales)
                 .map(|()| expected)
                 .map_err(|error| error.to_string());
-            let actual = with_limits(u64::MAX, u64::MAX, |ctx| {
+            let actual = with_depth(u64::MAX, |ctx| {
                 geometry.clone().scaled_coordinates_owned(ctx, scales)
             })
             .expect("admitted");

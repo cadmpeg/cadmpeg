@@ -5,7 +5,7 @@ use super::super::{
     pcurve_parameter_map, procedural_source_parameter_map, PcurveSupport,
     ProceduralSourceParameterMap,
 };
-use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+use cadmpeg_core::decode::DecodePolicy;
 use cadmpeg_ir::geometry::{
     analytic::{LineCurve, PlaneSurface},
     surface_payloads::ExtrusionSurfaceConstruction,
@@ -71,9 +71,7 @@ fn plane() -> SurfaceGeometry {
 fn repeated_parameter_charts_preserve_normalized_line_and_length_coordinates() {
     let ir = extrusions(1024);
     let geometry = plane();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 2_000_000;
-    crate::test_support::with_policy_context(&[], &policy, |ctx| {
+    crate::test_support::with_policy_context(&[], &DecodePolicy::service(), |ctx| {
         let index = ModelIndex::new_model_only(&ir, ctx).unwrap();
         for surface in &ir.model.surfaces {
             let support = PcurveSupport {
@@ -92,29 +90,6 @@ fn repeated_parameter_charts_preserve_normalized_line_and_length_coordinates() {
                 Some((1.5, 2.0, 0.5, 0.0))
             );
         }
-    });
-}
-
-#[test]
-fn parameter_chart_queries_propagate_work_refusal() {
-    let ir = extrusions(1);
-    let geometry = plane();
-    crate::test_support::with_service_context(&[], |build_ctx| {
-        let index = ModelIndex::new_model_only(&ir, build_ctx).unwrap();
-        let support = PcurveSupport {
-            surface_id: &ir.model.surfaces[0].id,
-            geometry: &geometry,
-            factor: 1.0,
-        };
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 0;
-        crate::test_support::with_policy_context(&[], &policy, |ctx| {
-            assert!(
-                matches!(procedural_source_parameter_map(&index, &support, ctx),
-                Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::WorkUnits)
-            );
-        });
     });
 }
 

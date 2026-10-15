@@ -216,7 +216,7 @@ fn offset_surface_parameter_solver_accepts_a_seed_within_fit_tolerance() {
                 cadmpeg_ir::index::ModelIndex::build(result.ir(), cadmpeg_ir::index::StandardIndex);
             let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::from_context(
                 geometry_ctx,
-                cadmpeg_core::decode::u64_from_index(work_limit),
+                work_limit,
             );
             let local =
                 crate::decode::offset::refine_offset_surface_parameters_with_index_and_budget(
@@ -401,14 +401,7 @@ fn offset_surface_parameter_solver_retries_a_bad_continuation_seed() {
 #[test]
 fn decode_tracks_fully_extended_offset_common_header() {
     let stream = offset_surface_with_fully_extended_common_header();
-    assert_eq!(
-        crate::test_support::with_decode_context(|ctx| crate::topology::offset_surfaces(
-            ctx, &stream
-        ))
-        .unwrap()
-        .len(),
-        1
-    );
+    assert_eq!(crate::topology::offset_surfaces(&stream).len(), 1);
     let mut cur = Cursor::new(prt_with_partition(&stream));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
@@ -437,43 +430,22 @@ fn decode_tracks_fully_extended_offset_common_header() {
 fn decode_tracks_fully_extended_compact_geometry_headers() {
     let mut blend = blend_surface_topology_partition_stream();
     fully_extend_common_header(&mut blend, [0, 56, 0, 12]);
-    assert_eq!(
-        crate::test_support::with_decode_context(|ctx| crate::topology::blend_surfaces(
-            ctx, &blend
-        ))
-        .unwrap()
-        .len(),
-        1
-    );
+    assert_eq!(crate::topology::blend_surfaces(&blend).len(), 1);
 
     let mut intersection = intersection_curve_topology_partition_stream();
     fully_extend_common_header(&mut intersection, [0, 38, 0, 12]);
-    assert_eq!(
-        crate::test_support::with_decode_context(|ctx| crate::topology::composite_curves(
-            ctx,
-            &intersection
-        ))
-        .unwrap()
-        .len(),
-        1
-    );
+    assert_eq!(crate::topology::composite_curves(&intersection).len(), 1);
 
     let mut surface_curve = surface_curve_topology_partition_stream();
     fully_extend_common_header(&mut surface_curve, [0, 137, 0, 12]);
-    let surface_curves = crate::test_support::with_decode_context(|ctx| {
-        crate::topology::surface_curves(ctx, &surface_curve)
-    })
-    .unwrap();
+    let surface_curves = crate::topology::surface_curves(&surface_curve);
     assert_eq!(surface_curves.len(), 1);
     assert_eq!(surface_curves[0].xmt, 12);
     assert_eq!(surface_curves[0].state.pcurve(), 9);
 
     let mut trimmed = trimmed_topology_partition_stream();
     fully_extend_common_header(&mut trimmed, [0, 133, 0, 12]);
-    let trims = crate::test_support::with_decode_context(|ctx| {
-        crate::topology::trimmed_curves(ctx, &trimmed)
-    })
-    .unwrap();
+    let trims = crate::topology::trimmed_curves(&trimmed);
     assert_eq!(trims.len(), 1);
     assert_eq!(trims[0].state.parameters(), [0.000_25, 0.000_75]);
 
@@ -885,12 +857,10 @@ fn completed_intersection_support_lane_attaches_after_topology_emission() {
             "fixture stream handle",
         )
         .unwrap();
-        let graph =
-            crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &[]))
-                .unwrap();
+        let graph = crate::topology::Graph::parse(&[]);
         let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::from_context(
             geometry_ctx,
-            cadmpeg_core::decode::u64_from_index(usize::MAX),
+            usize::MAX,
         );
 
         crate::test_support::with_decode_context(|ctx| {
@@ -1289,7 +1259,7 @@ fn support_uv_completion_uses_a_finite_serialized_lane_as_a_nurbs_seed() {
             let support_budget = cadmpeg_core::decode::WorkBudget::new(2);
             let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::from_context(
                 geometry_ctx,
-                cadmpeg_core::decode::u64_from_index(work_limit),
+                work_limit,
             );
             let coupled_support_budget = cadmpeg_core::decode::WorkBudget::new(2);
 
@@ -1822,9 +1792,7 @@ fn support_uv_completion_does_not_retry_unchanged_failed_lanes() {
         let support_budget = cadmpeg_core::decode::WorkBudget::new(10);
         let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::from_context(
             geometry_ctx,
-            cadmpeg_core::decode::u64_from_index(
-                crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK,
-            ),
+            crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK,
         );
         let coupled_support_budget = cadmpeg_core::decode::WorkBudget::new(10);
         crate::decode::support_uv::complete_support_uv_with_budget(

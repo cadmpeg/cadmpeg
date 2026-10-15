@@ -1,12 +1,23 @@
-use super::{e5_loop_members, BTreeMap, E5Edge, E5Face, E5Loop, E5OrientedMember, E5Topology};
+use crate::families::e5::tests::e5_loop_members;
+
 use crate::families::e5::decode::resolve_e5_ownership;
 
-#[test]
-fn e5_ownership_refuses_each_counted_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-    use std::collections::HashSet;
+use crate::families::e5::graph::E5Loop;
 
+use crate::families::e5::graph::E5Face;
+
+use crate::families::e5::graph::E5OrientedMember;
+
+use crate::families::e5::graph::E5Edge;
+
+use crate::families::e5::graph::E5Topology;
+
+#[test]
+fn e5_ownership_result() {
+    use cadmpeg_core::decode::DecodeArena;
+    use cadmpeg_core::decode::DecodeContext;
+    use cadmpeg_core::decode::DecodePolicy;
+    use std::collections::BTreeMap;
     let face = |record_id| E5Face {
         record_id,
         surface: 100 + record_id,
@@ -51,46 +62,4 @@ fn e5_ownership_refuses_each_counted_collection_limit() {
         .expect("service resource budget")
         .expect("connected body plan");
     assert_eq!(ownership.bodies[0].components, vec![vec![1, 2]]);
-
-    let mut operations = HashSet::new();
-    for cap in 0..=128 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-            .expect("fixture fits input limit");
-        match resolve_e5_ownership(&ctx, &topology) {
-            Err(CodecError::ResourceLimit(limit)) => {
-                assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-                operations.insert(limit.operation);
-            }
-            Ok(Some(ownership)) => {
-                assert_eq!(ownership.bodies[0].components, vec![vec![1, 2]]);
-            }
-            Ok(None) => panic!("connected body must have an ownership plan"),
-            Err(error) => panic!("unexpected ownership refusal: {error}"),
-        }
-    }
-    for operation in [
-        "catia_e5_ownership_faces",
-        "catia_e5_ownership_bodies",
-        "catia_e5_body_faces",
-        "catia_e5_body_uses",
-        "catia_e5_edge_bodies",
-        "catia_e5_edge_body_members",
-        "catia_e5_body_edge_uses",
-        "catia_e5_face_indices",
-        "catia_e5_face_union",
-        "catia_e5_first_edge_face",
-        "catia_e5_component_labels",
-        "catia_e5_face_components",
-        "catia_e5_components",
-        "catia_e5_component_faces",
-        "catia_e5_closed_components",
-        "catia_e5_component_edges",
-        "catia_e5_body_plans",
-        "catia_e5_face_shells",
-    ] {
-        assert!(operations.contains(operation), "no refusal at {operation}");
-    }
 }

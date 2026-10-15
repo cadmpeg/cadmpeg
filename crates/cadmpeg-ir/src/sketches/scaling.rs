@@ -168,13 +168,11 @@ impl SketchGeometry {
     /// Scale owned geometry without copying retained lanes or text.
     pub fn scaled_lengths_owned_for_decode(
         self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         scale: PositiveReal,
     ) -> Result<Result<Self, SketchLengthScaleError>, cadmpeg_core::CodecError> {
         let result = (|| -> Result<Self, SketchLengthScaleError> {
             use SketchGeometryDefinition as Definition;
-            ctx.charge_work(1, "IR sketch unit scaling work")
-                .map_err(SketchLengthScaleError::from)?;
 
             let mut definition = self.0;
             match &mut definition {
@@ -262,8 +260,7 @@ impl SketchGeometry {
                 }
                 Definition::Nurbs { curve } => {
                     curve
-                        .scale_points(ctx, scale)
-                        .map_err(SketchLengthScaleError::from)?
+                        .scale_points(scale)
                         .map_err(SketchLengthScaleError::CurveControlPoints)?;
                 }
                 Definition::Text {
@@ -320,8 +317,6 @@ impl SpatialSketchGeometry {
         scale: PositiveReal,
     ) -> Result<Self, SketchLengthScaleError> {
         use SpatialSketchGeometryDefinition as Definition;
-        ctx.charge_work(1, "IR spatial sketch unit scaling work")
-            .map_err(SketchLengthScaleError::from)?;
 
         let mut definition = self
             .try_clone_for_decode(ctx, "IR spatial sketch scaling copy")
@@ -366,14 +361,12 @@ impl SpatialSketchGeometry {
             Definition::Nurbs { curve } => {
                 curve
                     .0
-                    .scale_points(ctx, scale)
-                    .map_err(SketchLengthScaleError::from)?
+                    .scale_points(scale)
                     .map_err(SketchLengthScaleError::CurveControlPoints)?;
             }
             Definition::NurbsSurface { surface } => {
                 surface
-                    .scale_points(ctx, scale)
-                    .map_err(SketchLengthScaleError::from)?
+                    .scale_points(scale)
                     .map_err(SketchLengthScaleError::SurfaceControlPoints)?;
             }
             Definition::Native { .. } => {}
@@ -605,7 +598,7 @@ mod tests {
         assert_eq!(definition, before_failure);
     }
     #[test]
-    fn admitted_owned_sketch_nurbs_scaling_refuses_work_and_retained_text() {
+    fn admitted_owned_sketch_nurbs_scaling_matches_borrowed_scaling() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
         let make = |x: f64, rational: bool| {
             SketchGeometry::nurbs(
@@ -622,25 +615,9 @@ mod tests {
             )
         };
         for rational in [false, true] {
-            for cap in [1, 2] {
-                let arena = DecodeArena::new();
-                let mut policy = DecodePolicy::service();
-                policy.limits.max_work_units = cap;
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-                assert!(
-                    matches!(make(1.0, rational).scaled_lengths_owned_for_decode(&ctx, PositiveReal::new(2.0).expect("scale")),
-                    Err(cadmpeg_core::CodecError::ResourceLimit(resource)) if resource.operation == "IR sketch NURBS unit scaling work")
-                );
-            }
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_retained_bytes = 0;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-            assert!(
-                matches!(make(f64::MAX, rational).scaled_lengths_owned_for_decode(&ctx, PositiveReal::new(2.0).expect("scale")),
-                Err(cadmpeg_core::CodecError::ResourceLimit(resource)) if resource.operation == "IR NURBS refusal text")
-            );
-            policy.limits.max_collection_items = 0;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
             let actual = make(1.0, rational)
                 .scaled_lengths_owned_for_decode(&ctx, PositiveReal::new(2.0).expect("scale"))

@@ -138,15 +138,13 @@ impl CodecBackend for NxCodec {
         let Some(namespace) = ir.native.namespace("nx") else {
             return Ok(Vec::new());
         };
-        let admitted = ctx.with_scoped_storage("load NX validation records", || {
-            native::display_jt::admission::DisplayJtGraph::from_namespace_with_context(
+        let admitted = native::display_jt::admission::DisplayJtGraph::from_namespace_with_context(
+            ctx, namespace,
+        )
+        .and_then(|_| {
+            native::structure::occurrences::FastLoadOccurrences::from_namespace_with_context(
                 ctx, namespace,
             )
-            .and_then(|_| {
-                native::structure::occurrences::FastLoadOccurrences::from_namespace_with_context(
-                    ctx, namespace,
-                )
-            })
         });
         Ok(match admitted {
             Ok(_) => Vec::new(),
@@ -172,10 +170,7 @@ impl CodecBackend for NxCodec {
         prefix: cadmpeg_core::decode::View<'_>,
     ) -> Result<Confidence, cadmpeg_core::CodecError> {
         let prefix = prefix.window();
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(prefix.len()),
-            "detect input",
-        )?;
+
         if container::looks_like_nx(prefix) || container::looks_like_legacy_nx(ctx, prefix)? {
             Ok(Confidence::High)
         } else {

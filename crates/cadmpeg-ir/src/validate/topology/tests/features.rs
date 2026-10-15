@@ -543,7 +543,6 @@ fn offset_plane_references_form_an_acyclic_graph_independent_of_list_order() {
         source_tag: None,
         source_text: None,
         source_content: crate::features::FeatureContent::default(),
-
         evaluation: crate::features::FeatureEvaluation::from_definition(definition),
         native_ref: None,
     };
@@ -594,32 +593,19 @@ fn offset_plane_references_form_an_acyclic_graph_independent_of_list_order() {
         .any(|finding| finding.message.contains("datum-plane reference cycle")));
 
     let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
-    for dimension in [
-        ResourceDimension::RetainedBytes,
-        ResourceDimension::MaterializedBytes,
-        ResourceDimension::CollectionItems,
-        ResourceDimension::WorkUnits,
-        ResourceDimension::RecursionDepth,
-    ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        match dimension {
-            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = 0,
-            ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
-            ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
-            ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
-            ResourceDimension::RecursionDepth => policy.limits.max_recursion_depth = 0,
-            _ => unreachable!(),
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error =
-            super::super::check_feature_references(&ctx, &ir, &index, &mut Vec::new()).unwrap_err();
-        assert!(matches!(&error, CodecError::ResourceLimit(limit) if limit.dimension == dimension));
-        assert_eq!(
-            ctx.finish_session().unwrap_err().to_string(),
-            error.to_string()
-        );
-    }
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_recursion_depth = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error =
+        super::super::check_feature_references(&ctx, &ir, &index, &mut Vec::new()).unwrap_err();
+    assert!(
+        matches!(&error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RecursionDepth)
+    );
+    assert_eq!(
+        ctx.finish_session().unwrap_err().to_string(),
+        error.to_string()
+    );
 }
 
 #[test]

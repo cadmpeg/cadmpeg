@@ -36,37 +36,28 @@ pub(in super::super) fn resolved_profile_chains(
     let mut rows = Vec::new();
     for row in &table.rows {
         if let Some(id) = trim_segment_id(definition, row) {
-            ctx.reserve_vec(&mut rows, 1, "creo trim profile rows")?;
             rows.push((row, id));
         }
     }
     let mut incident = BTreeMap::<u32, Vec<usize>>::new();
     for (index, row) in rows.iter().enumerate() {
         for vertex in row.0.vertices {
-            ctx.admit_btree_entry(&incident, &vertex, "creo trim profile incidence nodes")?;
             let indices = incident.entry(vertex).or_default();
-            ctx.reserve_vec(indices, 1, "creo trim profile incidence rows")?;
             indices.push(index);
         }
     }
     let mut remaining = BTreeSet::new();
     for index in 0..rows.len() {
-        ctx.insert_btree_set(&mut remaining, index, "creo trim profile remaining nodes")?;
+        remaining.insert(index);
     }
     let mut profiles = Vec::new();
     while let Some(seed) = remaining.first().copied() {
-        ctx.charge_collection_items(1, "creo trim profile component nodes")?;
         let mut component = BTreeSet::from([seed]);
         let mut frontier = ctx.alloc_filled(1, seed, "creo trim profile frontier")?;
         while let Some(index) = frontier.pop() {
             for vertex in rows[index].0.vertices {
                 for adjacent in &incident[&vertex] {
-                    if ctx.insert_btree_set(
-                        &mut component,
-                        *adjacent,
-                        "creo trim profile component nodes",
-                    )? {
-                        ctx.reserve_vec(&mut frontier, 1, "creo trim profile frontier")?;
+                    if component.insert(*adjacent) {
                         frontier.push(*adjacent);
                     }
                 }
@@ -149,10 +140,9 @@ pub(in super::super) fn resolved_profile_chains(
                         crate::feature::definitions::FeatureSegmentKind::Arc(_)
                     ) && segment.arc_orientation == Some(0)
                 });
-            let Some(entity) = sketch_entity_id_admitted(ctx, sketch, external_id)? else {
+            let Some(entity) = sketch_entity_id_admitted(sketch, external_id) else {
                 continue;
             };
-            ctx.reserve_vec(&mut profile, 1, "creo trim profile entity uses")?;
             profile.push(SketchEntityUse {
                 entity,
                 reversed: row_reversed ^ arc_orientation_reversed,
@@ -170,7 +160,6 @@ pub(in super::super) fn resolved_profile_chains(
             endpoints.contains(&vertex) && vertex != start_vertex
         };
         if unused.is_empty() && terminal_ok {
-            ctx.reserve_vec(&mut profiles, 1, "creo resolved trim profiles")?;
             profiles.push(profile);
         }
     }
@@ -199,40 +188,27 @@ fn resolved_segment_profile_chains(
                     | crate::feature::definitions::FeatureSegmentKind::Arc(_)
             )
     }) {
-        ctx.reserve_vec(&mut rows, 1, "creo segment profile rows")?;
         rows.push(segment);
     }
     let mut incident = BTreeMap::<u32, Vec<usize>>::new();
     for (index, segment) in rows.iter().enumerate() {
         for point in segment.point_ids() {
-            ctx.admit_btree_entry(&incident, &point, "creo segment profile incidence nodes")?;
             let indices = incident.entry(point).or_default();
-            ctx.reserve_vec(indices, 1, "creo segment profile incidence rows")?;
             indices.push(index);
         }
     }
     let mut remaining = BTreeSet::new();
     for index in 0..rows.len() {
-        ctx.insert_btree_set(
-            &mut remaining,
-            index,
-            "creo segment profile remaining nodes",
-        )?;
+        remaining.insert(index);
     }
     let mut profiles = Vec::new();
     while let Some(seed) = remaining.first().copied() {
-        ctx.charge_collection_items(1, "creo segment profile component nodes")?;
         let mut component = BTreeSet::from([seed]);
         let mut frontier = ctx.alloc_filled(1, seed, "creo segment profile frontier")?;
         while let Some(index) = frontier.pop() {
             for point in rows[index].point_ids() {
                 for adjacent in &incident[&point] {
-                    if ctx.insert_btree_set(
-                        &mut component,
-                        *adjacent,
-                        "creo segment profile component nodes",
-                    )? {
-                        ctx.reserve_vec(&mut frontier, 1, "creo segment profile frontier")?;
+                    if component.insert(*adjacent) {
                         frontier.push(*adjacent);
                     }
                 }
@@ -288,10 +264,9 @@ fn resolved_segment_profile_chains(
                 segment.kind,
                 crate::feature::definitions::FeatureSegmentKind::Arc(_)
             ) && segment.arc_orientation == Some(0);
-            let Some(entity) = sketch_entity_id_admitted(ctx, sketch, segment.external_id)? else {
+            let Some(entity) = sketch_entity_id_admitted(sketch, segment.external_id) else {
                 continue;
             };
-            ctx.reserve_vec(&mut profile, 1, "creo segment profile entity uses")?;
             profile.push(SketchEntityUse {
                 entity,
                 reversed: traversal_reversed ^ analytic_reversed,
@@ -304,7 +279,6 @@ fn resolved_segment_profile_chains(
             unused.remove(&index);
         }
         if unused.is_empty() && point == start {
-            ctx.reserve_vec(&mut profiles, 1, "creo resolved segment profiles")?;
             profiles.push(profile);
         }
     }
@@ -312,9 +286,8 @@ fn resolved_segment_profile_chains(
 }
 
 pub(in super::super) fn solver_only_section_entities(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
-) -> Result<BTreeMap<u32, usize>, cadmpeg_core::CodecError> {
+) -> BTreeMap<u32, usize> {
     let mut entities = BTreeMap::<u32, usize>::new();
     for (id, offset) in definition
         .relations
@@ -338,10 +311,10 @@ pub(in super::super) fn solver_only_section_entities(
         if let Some(first_offset) = entities.get_mut(&id) {
             *first_offset = (*first_offset).min(offset);
         } else {
-            ctx.insert_btree_map(&mut entities, id, offset, "creo solver-only entity nodes")?;
+            entities.insert(id, offset);
         }
     }
-    Ok(entities)
+    entities
 }
 
 pub(in super::super) fn solver_only_section_entity_offset(
@@ -778,7 +751,6 @@ mod tests {
         unique_section_incidence_curve_family, SectionEntityIncidenceFamily,
     };
     use crate::decode::tests::opaque;
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     fn single_trim_profile() -> crate::feature::definitions::FeatureDefinition {
         let mut definition = definition(201, false);
@@ -802,67 +774,15 @@ mod tests {
     }
 
     #[test]
-    fn trim_profile_rows_refuse_before_growth() {
+    fn single_trim_profile_resolves_one_entity_use() {
         let definition = single_trim_profile();
         let sketch =
             cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#917").expect("sketch ID");
         let emitted = std::collections::BTreeSet::from([42]);
-        let arena = DecodeArena::new();
-        let operations = [
-            "creo trim profile rows",
-            "creo trim profile incidence nodes",
-            "creo trim profile incidence rows",
-            "creo trim profile incidence nodes",
-            "creo trim profile incidence rows",
-            "creo trim profile remaining nodes",
-            "creo trim profile component nodes",
-            "creo trim profile frontier",
-            "creo trim profile entity uses",
-            "creo resolved trim profiles",
-        ];
-        for (cap, operation) in operations.into_iter().enumerate() {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = cadmpeg_core::decode::u64_from_index(cap);
-            let (ctx, _) =
-                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-            let error = resolved_profile_chains(&ctx, &definition, &sketch, &emitted)
-                .expect_err("profile needs the next collection item");
-            assert!(
-                matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-                if resource.dimension == ResourceDimension::CollectionItems
-                    && resource.operation == operation),
-                "cap {cap}: {error}"
-            );
-        }
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
-            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-            Some("creo sketch entity identity"),
-            |cap| {
-                let trial_arena = cadmpeg_core::decode::DecodeArena::new();
-                let mut trial_policy = policy;
-                trial_policy.limits.max_retained_bytes = cap;
-                let (trial_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-                    &[],
-                    &trial_arena,
-                    &trial_policy,
-                )
-                .expect("root");
-                resolved_profile_chains(&trial_ctx, &definition, &sketch, &emitted)
-            },
-        );
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-        let error = resolved_profile_chains(&ctx, &definition, &sketch, &emitted)
-            .expect_err("profile entity ID exceeds retained cap");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-            if resource.dimension == ResourceDimension::RetainedBytes
-                && resource.operation == "creo sketch entity identity")
-        );
-        let service = DecodePolicy::service();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &service).expect("empty root");
-        let profiles = resolved_profile_chains(&ctx, &definition, &sketch, &emitted)
-            .expect("service trim profile");
+        let profiles = crate::decode::with_test_decode_ctx(|ctx| {
+            resolved_profile_chains(ctx, &definition, &sketch, &emitted)
+        })
+        .expect("service trim profile");
         assert_eq!(profiles.len(), 1);
         assert_eq!(profiles[0].len(), 1);
         assert_eq!(
@@ -872,7 +792,7 @@ mod tests {
     }
 
     #[test]
-    fn segment_profile_rows_refuse_before_growth() {
+    fn two_segments_resolve_one_profile_chain() {
         let mut definition = definition(201, false);
         let segment = |external_id| crate::feature::definitions::FeatureSegment {
             kind: crate::feature::definitions::FeatureSegmentKind::Line([1, 2]),
@@ -899,44 +819,10 @@ mod tests {
         let sketch =
             cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#917").expect("sketch ID");
         let emitted = std::collections::BTreeSet::from([10, 11]);
-        let arena = DecodeArena::new();
-        let operations = [
-            "creo segment profile rows",
-            "creo segment profile rows",
-            "creo segment profile incidence nodes",
-            "creo segment profile incidence rows",
-            "creo segment profile incidence nodes",
-            "creo segment profile incidence rows",
-            "creo segment profile incidence rows",
-            "creo segment profile incidence rows",
-            "creo segment profile remaining nodes",
-            "creo segment profile remaining nodes",
-            "creo segment profile component nodes",
-            "creo segment profile frontier",
-            "creo segment profile component nodes",
-            "creo segment profile frontier",
-            "creo segment profile entity uses",
-            "creo segment profile entity uses",
-            "creo resolved segment profiles",
-        ];
-        for (cap, operation) in operations.into_iter().enumerate() {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = cadmpeg_core::decode::u64_from_index(cap);
-            let (ctx, _) =
-                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-            let error = resolved_profile_chains(&ctx, &definition, &sketch, &emitted)
-                .expect_err("segment profile needs the next collection item");
-            assert!(
-                matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-                if resource.dimension == ResourceDimension::CollectionItems
-                    && resource.operation == operation),
-                "cap {cap}: {error}"
-            );
-        }
-        let service = DecodePolicy::service();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &service).expect("empty root");
-        let profiles = resolved_profile_chains(&ctx, &definition, &sketch, &emitted)
-            .expect("service segment profile");
+        let profiles = crate::decode::with_test_decode_ctx(|ctx| {
+            resolved_profile_chains(ctx, &definition, &sketch, &emitted)
+        })
+        .expect("service segment profile");
         assert_eq!(profiles.len(), 1);
         assert_eq!(profiles[0].len(), 2);
         assert_eq!(
@@ -946,25 +832,10 @@ mod tests {
     }
 
     #[test]
-    fn solver_only_entity_nodes_refuse_before_insertion() {
+    fn solver_only_section_entities_map_target_to_itself() {
         let definition = definition(201, false);
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-        let error = solver_only_section_entities(&ctx, &definition)
-            .expect_err("one solver-only node exceeds zero items");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-            if resource.dimension == ResourceDimension::CollectionItems
-                && resource.operation == "creo solver-only entity nodes")
-        );
-        let service = DecodePolicy::service();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &service).expect("empty root");
         assert_eq!(
-            solver_only_section_entities(&ctx, &definition)
-                .expect("service entities")
-                .get(&201),
+            solver_only_section_entities(&definition).get(&201),
             Some(&201)
         );
     }
@@ -1154,16 +1025,10 @@ mod tests {
                 &definition,
                 &item
             ));
-            assert!(super::super::loci::with_test_locus(|ctx, refusal| {
-                super::super::loci::section_skamp_curve_entity(
-                    ctx,
-                    refusal,
-                    &definition,
-                    &sketch,
-                    &item,
-                )
-            })
-            .is_some());
+            assert!(
+                super::super::loci::section_skamp_curve_entity(&definition, &sketch, &item)
+                    .is_some()
+            );
         }
     }
 

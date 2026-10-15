@@ -73,18 +73,11 @@ macro_rules! assign_unique_surface_owners {
 
 macro_rules! planar_contains_mesh {
     ($trim:expr, $mesh:expr, $tolerance:expr) => {{
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let policy = cadmpeg_core::decode::DecodePolicy::service();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("test context");
-        $trim
-            .contains_mesh(
-                &ctx,
-                $mesh,
-                cadmpeg_ir::transform::Transform::identity(),
-                $tolerance,
-            )
-            .expect("service profile admits planar trim")
+        $trim.contains_mesh(
+            $mesh,
+            cadmpeg_ir::transform::Transform::identity(),
+            $tolerance,
+        )
     }};
 }
 
@@ -703,10 +696,6 @@ fn persistent_surface_identity_requires_agreeing_duplicates() {
 
 #[test]
 fn persistent_surface_identity_binds_one_face_and_body() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("test context");
     let mut model = model_with_body();
     let face = add_square_face(&mut model, "persistent", 0.0);
     set_shell_faces(&mut model, vec![face.clone()]);
@@ -721,7 +710,7 @@ fn persistent_surface_identity_binds_one_face_and_body() {
     }];
 
     assert_eq!(
-        assign_persistent_owners(&ctx, &mut model, &face_identities, &bindings).unwrap(),
+        assign_persistent_owners(&mut model, &face_identities, &bindings),
         vec!["synthetic:test:tessellation#mesh"]
     );
     assert_eq!(model.tessellations[0].faces, vec![face]);
@@ -733,10 +722,6 @@ fn persistent_surface_identity_binds_one_face_and_body() {
 
 #[test]
 fn persistent_surface_identity_rejects_ambiguous_face_or_mesh_keys() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("test context");
     let mut model = model_with_body();
     let first = add_square_face(&mut model, "first-persistent", 0.0);
     let second = add_square_face(&mut model, "second-persistent", 3.0);
@@ -752,11 +737,7 @@ fn persistent_surface_identity_rejects_ambiguous_face_or_mesh_keys() {
         tessellation: "synthetic:test:tessellation#mesh".into(),
         identity: persistent_identity(7, 3, &[]),
     };
-    assert!(
-        assign_persistent_owners(&ctx, &mut model, &face_identities, &[binding])
-            .unwrap()
-            .is_empty()
-    );
+    assert!(assign_persistent_owners(&mut model, &face_identities, &[binding]).is_empty());
     assert!(model.tessellations[0].faces.is_empty());
 
     let mut model = model_with_body();
@@ -780,20 +761,12 @@ fn persistent_surface_identity_rejects_ambiguous_face_or_mesh_keys() {
             identity: persistent_identity(8, 4, &[]),
         },
     ];
-    assert!(
-        assign_persistent_owners(&ctx, &mut model, &face_identities, &bindings)
-            .unwrap()
-            .is_empty()
-    );
+    assert!(assign_persistent_owners(&mut model, &face_identities, &bindings).is_empty());
     assert!(model.tessellations[0].faces.is_empty());
 }
 
 #[test]
 fn persistent_surface_identity_distinguishes_trailing_path_fields() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("test context");
     let mut model = model_with_body();
     let first = add_square_face(&mut model, "first-tail", 0.0);
     let second = add_square_face(&mut model, "second-tail", 3.0);
@@ -811,266 +784,10 @@ fn persistent_surface_identity_distinguishes_trailing_path_fields() {
     };
 
     assert_eq!(
-        assign_persistent_owners(&ctx, &mut model, &face_identities, &[binding]).unwrap(),
+        assign_persistent_owners(&mut model, &face_identities, &[binding]),
         vec!["synthetic:test:tessellation#mesh"]
     );
     assert_eq!(model.tessellations[0].faces, vec![second]);
-}
-
-fn persistent_assignment_limit_error(
-    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
-) -> cadmpeg_core::CodecError {
-    let mut model = model_with_body();
-    let face = add_square_face(&mut model, "limited-persistent", 0.0);
-    set_shell_faces(&mut model, vec![face.clone()]);
-    model
-        .tessellations
-        .push(persistent_mesh("synthetic:test:tessellation#mesh"));
-    let face_identities = vec![(face, persistent_identity(7, 3, &[]))];
-    let bindings = vec![PersistentFaceBinding {
-        tessellation: "synthetic:test:tessellation#mesh".into(),
-        identity: persistent_identity(7, 3, &[]),
-    }];
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("test context");
-    assign_persistent_owners(&ctx, &mut model, &face_identities, &bindings)
-        .expect_err("selected limit refuses the persistent assignment")
-}
-
-#[test]
-fn persistent_tessellation_assignment_refuses_collection_limit() {
-    let error = persistent_assignment_limit_error(|policy| policy.limits.max_collection_items = 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index SLDPRT persistent face identities")
-    );
-}
-
-#[test]
-fn persistent_tessellation_assignment_refuses_retained_limit() {
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-        "retain SLDPRT tessellation face ID",
-        |cap| {
-            Err::<(), cadmpeg_core::CodecError>(persistent_assignment_limit_error(|policy| {
-                policy.limits.max_retained_bytes = cap;
-            }))
-        },
-    );
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "retain SLDPRT tessellation face ID")
-    );
-}
-
-#[test]
-fn persistent_tessellation_assignment_refuses_work_limit() {
-    let error = persistent_assignment_limit_error(|policy| policy.limits.max_work_units = 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index SLDPRT persistent face identities")
-    );
-}
-
-fn geometric_assignment_limit_error(
-    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
-) -> cadmpeg_core::CodecError {
-    let mut model = model_with_body();
-    let face = add_square_face(&mut model, "limited-geometric", 0.0);
-    set_shell_faces(&mut model, vec![face]);
-    model
-        .tessellations
-        .push(persistent_mesh("synthetic:test:tessellation#mesh"));
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("test context");
-    super::assign_unique_surface_owners(&ctx, &mut model)
-        .expect_err("selected limit refuses the geometric assignment")
-}
-
-#[test]
-fn geometric_tessellation_assignment_refuses_collection_limit() {
-    let error = geometric_assignment_limit_error(|policy| policy.limits.max_collection_items = 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index SLDPRT tessellation surfaces")
-    );
-}
-
-#[test]
-fn geometric_tessellation_assignment_refuses_retained_limit() {
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-        "retain SLDPRT tessellation face ID",
-        |cap| {
-            Err::<(), cadmpeg_core::CodecError>(geometric_assignment_limit_error(|policy| {
-                policy.limits.max_retained_bytes = cap;
-            }))
-        },
-    );
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "retain SLDPRT tessellation face ID")
-    );
-}
-
-#[test]
-fn geometric_tessellation_assignment_refuses_work_limit() {
-    let error = geometric_assignment_limit_error(|policy| policy.limits.max_work_units = 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index SLDPRT tessellation surfaces")
-    );
-}
-
-#[test]
-fn cylindrical_trim_angle_collection_refuses_caller_limit() {
-    let mut model = model_with_body();
-    let face_id = add_cylindrical_patch_face(&mut model, "limited-cylinder", 0.0, 2.0);
-    let face = model
-        .faces
-        .iter()
-        .find(|face| face.id == face_id)
-        .expect("face");
-    let surface = model
-        .surfaces
-        .iter()
-        .find(|surface| surface.id == face.surface)
-        .expect("surface");
-    let loops = model.loops.iter().map(|loop_| (&loop_.id, loop_)).collect();
-    let coedges = model
-        .coedges
-        .iter()
-        .map(|coedge| (&coedge.id, coedge))
-        .collect();
-    let edges = model.edges.iter().map(|edge| (&edge.id, edge)).collect();
-    let vertices = model
-        .vertices
-        .iter()
-        .map(|vertex| (&vertex.id, vertex))
-        .collect();
-    let points = model
-        .points
-        .iter()
-        .map(|point| (&point.id, point.position().get()))
-        .collect();
-    let curves = model
-        .curves
-        .iter()
-        .map(|curve| (&curve.id, &curve.geometry))
-        .collect();
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("test context");
-    let error = super::cylindrical_trim(
-        &ctx,
-        face,
-        &surface.geometry,
-        &super::TrimTopology {
-            loops: &loops,
-            coedges: &coedges,
-            edges: &edges,
-            vertices: &vertices,
-            points: &points,
-            curves: &curves,
-        },
-    )
-    .expect_err("angle collection exceeds the caller limit");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect SLDPRT cylindrical trim angles")
-    );
-}
-
-#[test]
-fn conical_trim_angle_collection_refuses_caller_limit() {
-    let mut model = model_with_body();
-    let face_id = add_cylindrical_patch_face(&mut model, "limited-cone", 0.0, 2.0);
-    let surface_id = model
-        .faces
-        .iter()
-        .find(|face| face.id == face_id)
-        .expect("face")
-        .surface
-        .clone();
-    let surface = model
-        .surfaces
-        .iter_mut()
-        .find(|surface| surface.id == surface_id)
-        .expect("surface");
-    surface.geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
-        cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
-            Point3::new(0.0, 0.0, 0.0),
-            Vector3::new(0.0, 0.0, 1.0),
-            Vector3::new(1.0, 0.0, 0.0),
-            5.0,
-            1.0,
-            0.0,
-        )
-        .unwrap(),
-    ));
-    let face = model
-        .faces
-        .iter()
-        .find(|face| face.id == face_id)
-        .expect("face");
-    let surface = model
-        .surfaces
-        .iter()
-        .find(|surface| surface.id == face.surface)
-        .expect("surface");
-    let loops = model.loops.iter().map(|loop_| (&loop_.id, loop_)).collect();
-    let coedges = model
-        .coedges
-        .iter()
-        .map(|coedge| (&coedge.id, coedge))
-        .collect();
-    let edges = model.edges.iter().map(|edge| (&edge.id, edge)).collect();
-    let vertices = model
-        .vertices
-        .iter()
-        .map(|vertex| (&vertex.id, vertex))
-        .collect();
-    let points = model
-        .points
-        .iter()
-        .map(|point| (&point.id, point.position().get()))
-        .collect();
-    let curves = model
-        .curves
-        .iter()
-        .map(|curve| (&curve.id, &curve.geometry))
-        .collect();
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("test context");
-    let error = super::conical_trim(
-        &ctx,
-        face,
-        &surface.geometry,
-        &super::TrimTopology {
-            loops: &loops,
-            coedges: &coedges,
-            edges: &edges,
-            vertices: &vertices,
-            points: &points,
-            curves: &curves,
-        },
-    )
-    .expect_err("angle collection exceeds the caller limit");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect SLDPRT conical trim angles")
-    );
 }
 
 #[test]
@@ -1277,15 +994,8 @@ fn off_surface_planar_mesh_does_not_become_a_chordal_cache() {
 
 #[test]
 fn cylindrical_trim_uses_the_short_boundary_arc() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )
-    .unwrap();
     let mut angles = vec![0.0, std::f64::consts::FRAC_PI_2];
-    let (start, span) = circular_interval(&ctx, &mut angles).unwrap().unwrap();
+    let (start, span) = circular_interval(&mut angles).unwrap();
     assert_eq!(start, 0.0);
     assert_eq!(span, std::f64::consts::FRAC_PI_2);
     assert!(circular_interval_contains(
@@ -1577,10 +1287,6 @@ fn circular_hole_excludes_crossing_triangles_but_allows_boundary_chords() {
 
 #[test]
 fn polygonal_planar_hole_excludes_inner_face_mesh() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("test context");
     let trim = PlanarTrim {
         frame: PlaneFrame::new(
             cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
@@ -1595,7 +1301,6 @@ fn polygonal_planar_hole_excludes_inner_face_mesh() {
             Point2::new(-4.0, 4.0),
         ])),
         holes: vec![PlanarHole::polygon(
-            &ctx,
             vec![
                 Point2::new(-2.0, -2.0),
                 Point2::new(2.0, -2.0),
@@ -1604,7 +1309,6 @@ fn polygonal_planar_hole_excludes_inner_face_mesh() {
             ],
             EPS_DISPLAY_QUANTIZATION,
         )
-        .unwrap()
         .unwrap()],
         boundary_tolerance: 0.0,
     };
@@ -1854,10 +1558,6 @@ fn decode_rejects_nonfinite_display_list_values() {
 #[test]
 fn planar_boundary_accepts_bounded_ellipse_arcs() {
     const SAMPLE_TOLERANCE: f64 = 1.0e-4;
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("test context");
     let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
         cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
@@ -1878,7 +1578,6 @@ fn planar_boundary_accepts_bounded_ellipse_arcs() {
         .unwrap(),
     ));
     let (samples, boundary_tolerance) = planar_boundary_samples(
-        &ctx,
         &curve,
         Point3::new(2.0, 0.0, 0.0),
         Point3::new(0.0, 1.0, 0.0),
@@ -1889,7 +1588,6 @@ fn planar_boundary_accepts_bounded_ellipse_arcs() {
             sampling_tolerance: SAMPLE_TOLERANCE,
         },
     )
-    .unwrap()
     .unwrap();
 
     assert!(samples.len() > 1);
@@ -1901,10 +1599,6 @@ fn planar_boundary_accepts_bounded_ellipse_arcs() {
 #[test]
 fn planar_boundary_accepts_bounded_circle_arcs() {
     const SAMPLE_TOLERANCE: f64 = 1.0e-4;
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("test context");
     let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
         cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
@@ -1924,7 +1618,6 @@ fn planar_boundary_accepts_bounded_circle_arcs() {
         .unwrap(),
     ));
     let (samples, boundary_tolerance) = planar_boundary_samples(
-        &ctx,
         &curve,
         Point3::new(2.0, 0.0, 0.0),
         Point3::new(0.0, 2.0, 0.0),
@@ -1935,7 +1628,6 @@ fn planar_boundary_accepts_bounded_circle_arcs() {
             sampling_tolerance: SAMPLE_TOLERANCE,
         },
     )
-    .unwrap()
     .unwrap();
 
     assert!(samples.len() > 1);
@@ -1947,6 +1639,6 @@ mod geometry_predicates;
 
 mod cone_supports;
 
-mod resource_admission;
+mod planar_trim;
 
 mod arc_trims;

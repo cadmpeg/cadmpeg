@@ -14,35 +14,23 @@ pub(crate) fn homogeneous_point_is_valid(point: &[f64; 4]) -> bool {
     point.iter().all(|value| value.is_finite()) && point[0] > 0.0
 }
 
-pub(crate) fn homogeneous_control_points(
-    ctx: &DecodeContext<'_>,
-    curve: &NurbsCurve,
-) -> Result<Option<Vec<[f64; 4]>>, CodecError> {
-    let control_count = curve.pole_count();
-    let mut homogeneous = ctx.alloc_filled(
-        control_count,
-        [0.0; 4],
-        "iges composite homogeneous control points",
-    )?;
-    for (index, slot) in homogeneous.iter_mut().enumerate().take(control_count) {
-        let Some(point) = curve.pole_rows().point_at(index) else {
-            return Ok(None);
-        };
+pub(crate) fn homogeneous_control_points(curve: &NurbsCurve) -> Option<Vec<[f64; 4]>> {
+    let mut homogeneous = Vec::new();
+    for index in 0..curve.pole_count() {
+        let point = curve.pole_rows().point_at(index)?;
         let weight = if matches!(curve.pole_rows(), NurbsPoles3::Rational { .. }) {
-            let Some(weight) = curve.pole_rows().weight_at(index) else {
-                return Ok(None);
-            };
+            let weight = curve.pole_rows().weight_at(index)?;
             weight
         } else {
             1.0
         };
         let homogeneous_point = [weight, weight * point.x, weight * point.y, weight * point.z];
         if !homogeneous_point_is_valid(&homogeneous_point) {
-            return Ok(None);
+            return None;
         }
-        *slot = homogeneous_point;
+        homogeneous.push(homogeneous_point);
     }
-    Ok(Some(homogeneous))
+    Some(homogeneous)
 }
 
 pub(crate) struct EuclideanControlNet {
@@ -51,44 +39,24 @@ pub(crate) struct EuclideanControlNet {
 }
 
 pub(crate) fn euclidean_control_points(
-    ctx: &DecodeContext<'_>,
     homogeneous: Vec<[f64; 4]>,
     rational: bool,
-) -> Result<Option<EuclideanControlNet>, CodecError> {
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(homogeneous.len()),
-        "iges composite Euclidean control points",
-    )?;
-    if rational {
-        ctx.charge_collection_items(
-            cadmpeg_core::decode::u64_from_index(homogeneous.len()),
-            "iges composite Euclidean weights",
-        )?;
-    }
-    let mut control_points =
-        ctx.vector_storage(homogeneous.len(), "iges composite Euclidean control points")?;
-    let mut weights = if rational {
-        Some(ctx.vector_storage(homogeneous.len(), "iges composite Euclidean weights")?)
-    } else {
-        None
-    };
+) -> Option<EuclideanControlNet> {
+    let mut control_points = Vec::new();
+    let mut weights = rational.then(Vec::new);
     for [weight, x, y, z] in homogeneous {
-        let Some(weight) = PositiveReal::new(weight) else {
-            return Ok(None);
-        };
+        let weight = PositiveReal::new(weight)?;
         let point = Point3::new(x / weight.get(), y / weight.get(), z / weight.get());
-        let Some(point) = FinitePoint3::new(point) else {
-            return Ok(None);
-        };
+        let point = FinitePoint3::new(point)?;
         control_points.push(point);
         if let Some(weights) = &mut weights {
             weights.push(weight);
         }
     }
-    Ok(Some(EuclideanControlNet {
+    Some(EuclideanControlNet {
         control_points,
         weights,
-    }))
+    })
 }
 
 #[derive(Debug)]
@@ -231,11 +199,10 @@ pub(crate) fn trim_nurbs_lanes(
     {
         return Ok(None);
     }
-    let Some(mut homogeneous) = homogeneous_control_points(ctx, curve)? else {
+    let Some(mut homogeneous) = homogeneous_control_points(curve) else {
         return Ok(None);
     };
-    let mut knots = ctx.collection_vec(curve.knots().len(), "iges composite trim knot copy")?;
-    knots.extend_from_slice(curve.knots());
+    let mut knots = curve.knots().to_vec();
     for value in [start, end] {
         let Some(target_multiplicity) = degree.checked_add(1) else {
             return Ok(None);
@@ -270,11 +237,8 @@ pub(crate) fn trim_nurbs_lanes(
     ) else {
         return Ok(None);
     };
-    let mut trimmed_homogeneous =
-        ctx.collection_vec(homogeneous_slice.len(), "iges composite trimmed controls")?;
-    trimmed_homogeneous.extend_from_slice(homogeneous_slice);
-    let mut trimmed_knots = ctx.collection_vec(knot_slice.len(), "iges composite trimmed knots")?;
-    trimmed_knots.extend_from_slice(knot_slice);
+    let trimmed_homogeneous = homogeneous_slice.to_vec();
+    let trimmed_knots = knot_slice.to_vec();
     let Some(expected_knots) = trimmed_homogeneous
         .len()
         .checked_add(degree)
@@ -289,10 +253,9 @@ pub(crate) fn trim_nurbs_lanes(
         control_points,
         weights,
     }) = euclidean_control_points(
-        ctx,
         trimmed_homogeneous,
         matches!(curve.pole_rows(), NurbsPoles3::Rational { .. }),
-    )?
+    )
     else {
         return Ok(None);
     };
@@ -315,7 +278,7 @@ pub(crate) fn trim_surface(
         surface.v_knots()[surface.v_count()],
     ];
     let mut result = if ranges[0] == u_domain {
-        surface.try_clone_for_decode(ctx, "IGES active surface basis")?
+        surface.clone()
     } else {
         let Some(trimmed) = trim_surface_u(ctx, surface, ranges[0])? else {
             return Ok(None);
@@ -366,31 +329,29 @@ fn trim_surface_u(
             return Ok(None);
         }
     }
-    let mut columns = ctx.collection_vec(surface.v_count(), "IGES cropped surface columns")?;
+    let mut columns = Vec::new();
     for v in 0..surface.v_count() {
-        let points = ctx
-            .collect_options(
-                (0..surface.u_count()).map(|u| surface.pole(u, v)),
-                "IGES surface column poles",
-            )?
+        let points = (0..surface.u_count())
+            .map(|u| surface.pole(u, v))
+            .collect::<Option<Vec<_>>>()
             .ok_or_else(|| {
                 CodecError::malformed("admitted NURBS surface has an incomplete pole grid")
             })?;
         let weights = if surface.weight(0, v).is_some() {
             Some(
-                ctx.collect_options(
-                    (0..surface.u_count()).map(|u| surface.weight(u, v)),
-                    "IGES surface column weights",
-                )?
-                .ok_or_else(|| {
-                    CodecError::malformed("admitted NURBS surface has an incomplete weight grid")
-                })?,
+                (0..surface.u_count())
+                    .map(|u| surface.weight(u, v))
+                    .collect::<Option<Vec<_>>>()
+                    .ok_or_else(|| {
+                        CodecError::malformed(
+                            "admitted NURBS surface has an incomplete weight grid",
+                        )
+                    })?,
             )
         } else {
             None
         };
-        let mut knots = ctx.collection_vec(surface.u_knots().len(), "IGES surface column knots")?;
-        knots.extend_from_slice(surface.u_knots());
+        let knots = surface.u_knots().to_vec();
         let curve = NurbsCurve::from_checked_lanes(
             ctx,
             surface.u_degree(),
@@ -420,16 +381,16 @@ fn trim_surface_u(
     }) {
         return Ok(None);
     }
-    let mut points = ctx.collection_vec(count, "IGES cropped surface rows")?;
+    let mut points = Vec::new();
     let mut weights = if first.1.is_some() {
-        Some(ctx.collection_vec(count, "IGES cropped surface weight rows")?)
+        Some(Vec::new())
     } else {
         None
     };
     for u in 0..count {
-        let mut row = ctx.collection_vec(columns.len(), "IGES cropped surface row poles")?;
+        let mut row = Vec::new();
         let mut weight_row = if weights.is_some() {
-            Some(ctx.collection_vec(columns.len(), "IGES cropped surface row weights")?)
+            Some(Vec::new())
         } else {
             None
         };
@@ -444,11 +405,8 @@ fn trim_surface_u(
             rows.push(row);
         }
     }
-    let mut u_knots = ctx.collection_vec(first.2.len(), "IGES cropped surface u knots")?;
-    u_knots.extend_from_slice(&first.2);
-    let mut v_knots =
-        ctx.collection_vec(surface.v_knots().len(), "IGES cropped surface v knots")?;
-    v_knots.extend_from_slice(surface.v_knots());
+    let u_knots = first.2.clone();
+    let v_knots = surface.v_knots().to_vec();
     NurbsSurface::from_checked_lanes(
         ctx,
         NurbsSurfaceAxis::new(surface.u_degree(), u_knots, false),

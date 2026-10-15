@@ -3,57 +3,8 @@
 
 use crate::container::Container;
 use crate::om::nonempty::NonEmpty;
-use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use std::fmt::Write;
-
-fn decimal_digits(mut value: usize) -> usize {
-    let mut digits = 1;
-    while value >= 10 {
-        value /= 10;
-        digits += 1;
-    }
-    digits
-}
-
-fn uuid_value_id(
-    ctx: &DecodeContext<'_>,
-    section_ordinal: usize,
-    offset: usize,
-) -> Result<String, CodecError> {
-    let length = "nx:om-object-uuid-values-:value#"
-        .len()
-        .checked_add(decimal_digits(section_ordinal))
-        .and_then(|length| length.checked_add(decimal_digits(offset)))
-        .ok_or_else(|| ctx.refuse_codec_limit("NX OM UUID identity length", 0, 1))?;
-    let mut id = ctx.retained_string(length, "retain NX OM UUID identity")?;
-    write!(
-        id,
-        "nx:om-object-uuid-values-{section_ordinal}:value#{offset}"
-    )
-    .map_err(|_| ctx.refuse_codec_limit("write NX OM UUID identity", 0, 1))?;
-    Ok(id)
-}
-
-fn uuid_record_id(
-    ctx: &DecodeContext<'_>,
-    section_ordinal: usize,
-    record_ordinal: usize,
-) -> Result<String, CodecError> {
-    let length = "nx:om-record-directory-:entry#"
-        .len()
-        .checked_add(decimal_digits(section_ordinal))
-        .and_then(|length| length.checked_add(decimal_digits(record_ordinal)))
-        .ok_or_else(|| ctx.refuse_codec_limit("NX OM UUID record identity length", 0, 1))?;
-    let mut id = ctx.retained_string(length, "retain NX OM UUID record identity")?;
-    write!(
-        id,
-        "nx:om-record-directory-{section_ordinal}:entry#{record_ordinal}"
-    )
-    .map_err(|_| ctx.refuse_codec_limit("write NX OM UUID record identity", 0, 1))?;
-    Ok(id)
-}
 
 /// Canonical UUID text spanning one or more contiguous bounded OM records.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -94,13 +45,12 @@ fn deserialize_records<'de, D: Deserializer<'de>>(
 /// Decode canonical UUID frames across the contiguous storage of ID-bounded
 /// OM records. A value retains every physical record intersected by its frame.
 pub(in crate::native) fn object_uuid_values(
-    ctx: &DecodeContext<'_>,
     container: &Container,
 ) -> Result<Vec<ObjectUuidValue>, CodecError> {
     const FRAME_LEN: usize = 2 + 36 + 1;
     let mut values = Vec::new();
     for (section_ordinal, (entry, section)) in
-        container.indexed_om_sections(ctx)?.into_iter().enumerate()
+        container.indexed_om_sections()?.into_iter().enumerate()
     {
         let Some(records) = section.as_fixed() else {
             continue;
@@ -135,15 +85,12 @@ pub(in crate::native) fn object_uuid_values(
             continue;
         };
         let section_ordinal_u32 = u32::try_from(section_ordinal)
-            .map_err(|_| ctx.refuse_codec_limit("nx OM UUID section ordinal", 0, u64::MAX))?;
-        for value in crate::om::uuid_string_values(ctx, storage, first.offset)? {
+            .map_err(|_| CodecError::malformed("NX OM UUID section ordinal overflows u32"))?;
+        for value in crate::om::uuid_string_values(storage, first.offset) {
             let Some(frame_end) = value.offset.checked_add(FRAME_LEN) else {
                 continue;
             };
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(records.len()),
-                "scan NX OM UUID record overlap",
-            )?;
+
             let mut record_ids = Vec::new();
             for (record_ordinal, record) in records.iter().enumerate() {
                 if record.offset >= frame_end
@@ -154,8 +101,10 @@ pub(in crate::native) fn object_uuid_values(
                 {
                     continue;
                 }
-                ctx.reserve_vec(&mut record_ids, 1, "NX OM UUID records")?;
-                record_ids.push(uuid_record_id(ctx, section_ordinal, record_ordinal)?);
+
+                record_ids.push(format!(
+                    "nx:om-record-directory-{section_ordinal}:entry#{record_ordinal}"
+                ));
             }
             let Some(records) = NonEmpty::from_admitted_vec(record_ids) else {
                 continue;
@@ -165,14 +114,14 @@ pub(in crate::native) fn object_uuid_values(
             else {
                 continue;
             };
-            ctx.reserve_vec(&mut values, 1, "NX OM UUID values")?;
-            let id = uuid_value_id(ctx, section_ordinal, value.offset)?;
-            let uuid = crate::canonical_uuid::CanonicalUuid::new(
-                ctx.copy_retained_text(value.value.as_str(), "retain NX OM UUID text")?,
-            )
-            .map_err(|error| CodecError::InvalidInput(error.to_owned()))?;
-            let source_entry =
-                ctx.copy_retained_text(&entry.name, "retain NX OM UUID source entry")?;
+
+            let id = format!(
+                "nx:om-object-uuid-values-{section_ordinal}:value#{}",
+                value.offset
+            );
+            let uuid = crate::canonical_uuid::CanonicalUuid::new(value.value.as_str().to_owned())
+                .map_err(|error| CodecError::InvalidInput(error.to_owned()))?;
+            let source_entry = entry.name.clone();
             values.push(ObjectUuidValue {
                 id,
                 section_ordinal: section_ordinal_u32,
@@ -191,8 +140,6 @@ mod tests {
     use super::{object_uuid_values, ObjectUuidValue};
     use crate::container::{Container, DirEntry, DirEntryBody, IndexedSectionCache, Region};
     use crate::om::{FixedEntityRecord, IndexedSection, IndexedStore};
-    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
     use std::collections::BTreeMap;
     use std::sync::{Arc, OnceLock};
 
@@ -218,6 +165,7 @@ mod tests {
             .set(IndexedSectionCache::Borrowed {
                 sections: vec![(0, section)],
                 blocks: BTreeMap::new(),
+                bounded_entries: Vec::new(),
             })
             .expect("test cache is empty");
         Container {
@@ -238,66 +186,21 @@ mod tests {
         }
     }
 
-    fn assert_limit(configure: impl FnOnce(&mut DecodePolicy), dimension: ResourceDimension) {
-        crate::test_support::with_decode_context_over(
-            UUID_FRAME,
-            |policy| {
-                configure(policy);
-            },
-            |ctx| {
-                let error = object_uuid_values(ctx, &container()).unwrap_err();
-                assert!(
-                    matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == dimension)
-                );
-            },
-        );
-    }
-
-    #[test]
-    fn object_uuid_values_refuse_collection_limit() {
-        assert_limit(
-            |policy| policy.limits.max_collection_items = 0,
-            ResourceDimension::CollectionItems,
-        );
-    }
-
-    #[test]
-    fn object_uuid_values_refuse_retained_limit() {
-        assert_limit(
-            |policy| policy.limits.max_retained_bytes = 0,
-            ResourceDimension::RetainedBytes,
-        );
-    }
-
-    #[test]
-    fn object_uuid_values_refuse_work_limit() {
-        assert_limit(
-            |policy| policy.limits.max_work_units = 0,
-            ResourceDimension::WorkUnits,
-        );
-    }
-
     #[test]
     fn object_uuid_values_preserve_wire_after_admission() {
-        crate::test_support::with_decode_context_over(
-            UUID_FRAME,
-            |_| {},
-            |ctx| {
-                let values = object_uuid_values(ctx, &container()).unwrap();
-                assert_eq!(values.len(), 1);
-                assert_eq!(
-                    values[0].uuid.as_str(),
-                    "01234567-89ab-cdef-0123-456789abcdef"
-                );
-                assert_eq!(
-                    values[0]
-                        .records
-                        .iter()
-                        .map(String::as_str)
-                        .collect::<Vec<_>>(),
-                    ["nx:om-record-directory-0:entry#0"]
-                );
-            },
+        let values = object_uuid_values(&container()).unwrap();
+        assert_eq!(values.len(), 1);
+        assert_eq!(
+            values[0].uuid.as_str(),
+            "01234567-89ab-cdef-0123-456789abcdef"
+        );
+        assert_eq!(
+            values[0]
+                .records
+                .iter()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+            ["nx:om-record-directory-0:entry#0"]
         );
     }
 

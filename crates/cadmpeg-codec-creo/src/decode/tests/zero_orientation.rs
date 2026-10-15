@@ -3,7 +3,7 @@
 
 use crate::decode::sweep::pcurves::RevolutionBoundary;
 
-use crate::decode::analytic::carriers::{ordered_face_loops, ordered_planar_face_loops};
+use crate::decode::analytic::carriers::ordered_face_loops;
 use crate::decode::analytic::equations::{
     CarrierEquation, ConeEquation, PlaneEquation, SphereEquation, TorusEquation,
 };
@@ -67,32 +67,8 @@ fn resolved_profile_chains(
     .expect("service profile chains")
 }
 
-fn ordered_face_loops_service<'a>(
-    loops: &[&'a crate::topology::Loop],
-    plane: Option<PlaneEquation>,
-    incidence: &BTreeMap<HalfEdgeId, &crate::topology::HalfEdgeVertexIncidence>,
-    solved_vertices: &BTreeMap<u32, [f64; 3]>,
-) -> Option<Vec<&'a crate::topology::Loop>> {
-    crate::decode::with_test_decode_ctx(|ctx| {
-        ordered_face_loops(ctx, loops, plane, incidence, solved_vertices)
-    })
-    .expect("service face loop ordering")
-}
-
-fn ordered_planar_face_loops_service<'a>(
-    loops: Vec<&'a crate::topology::Loop>,
-    plane: PlaneEquation,
-    incidence: &BTreeMap<HalfEdgeId, &crate::topology::HalfEdgeVertexIncidence>,
-    solved_vertices: &BTreeMap<u32, [f64; 3]>,
-) -> Option<Vec<&'a crate::topology::Loop>> {
-    crate::decode::with_test_decode_ctx(|ctx| {
-        ordered_planar_face_loops(ctx, loops, plane, incidence, solved_vertices)
-    })
-    .expect("service planar loop ordering")
-}
-
 #[test]
-fn ordered_face_loops_refuse_boundary_point_vector() {
+fn ordered_face_loops_keep_a_single_loop_with_one_boundary_point() {
     let half_edge = HalfEdgeId {
         curve_id: 1,
         side: crate::topology::Side::Zero,
@@ -105,27 +81,14 @@ fn ordered_face_loops_refuse_boundary_point_vector() {
     };
     let incidence = BTreeMap::from([(half_edge, &binding)]);
     let points = BTreeMap::from([(1, [0.0, 0.0, 0.0])]);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 1;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root");
-    let Err(error) = ordered_face_loops(&ctx, &[&lp], None, &incidence, &points) else {
-        panic!("one boundary point exceeds collection limit")
-    };
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-            && resource.operation == "creo topology plane candidate points")
-    );
     assert_eq!(
-        ordered_face_loops_service(&[&lp], None, &incidence, &points),
+        ordered_face_loops(&[&lp], None, &incidence, &points),
         Some(vec![&lp])
     );
 }
 
 #[test]
-fn ordered_face_loops_refuse_input_references() {
+fn ordered_face_loops_keep_a_single_unbound_loop() {
     let lp = crate::test_support::closed_loop(
         std::num::NonZeroU32::new(9),
         vec![crate::topology::HalfEdgeId {
@@ -133,20 +96,8 @@ fn ordered_face_loops_refuse_input_references() {
             side: crate::topology::Side::Zero,
         }],
     );
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root");
-    let error = ordered_face_loops(&ctx, &[&lp], None, &BTreeMap::new(), &BTreeMap::new())
-        .expect_err("loop reference refused");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-            && resource.operation == "creo native face ordering loop references")
-    );
     assert_eq!(
-        ordered_face_loops_service(&[&lp], None, &BTreeMap::new(), &BTreeMap::new()),
+        ordered_face_loops(&[&lp], None, &BTreeMap::new(), &BTreeMap::new()),
         Some(vec![&lp])
     );
 }
@@ -563,11 +514,9 @@ fn full_turn_axis_reads_source_carrier_after_millimeter_admission() {
                 .expect("full turn"),
         },
     };
-    let axis = crate::decode::with_test_decode_ctx(|ctx| {
-        full_turn_revolution_carrier_axis(ctx, &scan, &ir, &source_carriers, 7, Some(&full_turn))
-    })
-    .expect("axis lookup is admitted")
-    .expect("source carrier axis");
+    let axis =
+        { full_turn_revolution_carrier_axis(&scan, &ir, &source_carriers, 7, Some(&full_turn)) }
+            .expect("axis lookup is admitted");
     assert_eq!(axis.origin.get().x, 2.0);
 }
 
@@ -641,15 +590,13 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
     };
 
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| full_turn_revolution_carrier_axis(
-            ctx,
+        full_turn_revolution_carrier_axis(
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             7,
             Some(&full_turn)
-        ))
-        .expect("axis lookup is admitted"),
+        ),
         Some(RevolutionAxis {
             origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(2.0, 0.0, 0.0))
                 .expect("finite point fixture"),
@@ -710,18 +657,14 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
             angle: cadmpeg_ir::scalar::PositiveAngle::new(1.0).expect("valid test fixture"),
         },
     };
-    assert!(
-        crate::decode::with_test_decode_ctx(|ctx| full_turn_revolution_carrier_axis(
-            ctx,
-            &scan,
-            &ir,
-            &crate::decode::source_carriers::SourceUnitCarriers::default(),
-            7,
-            Some(&partial)
-        ))
-        .expect("partial-turn lookup is admitted")
-        .is_none()
-    );
+    assert!(full_turn_revolution_carrier_axis(
+        &scan,
+        &ir,
+        &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        7,
+        Some(&partial)
+    )
+    .is_none());
     if let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) =
         &mut ir.model.surfaces[1].geometry
     {
@@ -743,18 +686,14 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
         )
         .expect("valid ConeSurface fixture");
     }
-    assert!(
-        crate::decode::with_test_decode_ctx(|ctx| full_turn_revolution_carrier_axis(
-            ctx,
-            &scan,
-            &ir,
-            &crate::decode::source_carriers::SourceUnitCarriers::default(),
-            7,
-            Some(&full_turn)
-        ))
-        .expect("conflicting-axis lookup is admitted")
-        .is_none()
-    );
+    assert!(full_turn_revolution_carrier_axis(
+        &scan,
+        &ir,
+        &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        7,
+        Some(&full_turn)
+    )
+    .is_none());
     if let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) =
         &mut ir.model.surfaces[1].geometry
     {
@@ -794,18 +733,14 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
         radius,
     )
     .expect("valid SphereSurface fixture");
-    assert!(
-        crate::decode::with_test_decode_ctx(|ctx| full_turn_revolution_carrier_axis(
-            ctx,
-            &scan,
-            &ir,
-            &crate::decode::source_carriers::SourceUnitCarriers::default(),
-            7,
-            Some(&full_turn)
-        ))
-        .expect("conflicting-center lookup is admitted")
-        .is_none()
-    );
+    assert!(full_turn_revolution_carrier_axis(
+        &scan,
+        &ir,
+        &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        7,
+        Some(&full_turn)
+    )
+    .is_none());
 }
 
 #[test]
@@ -1355,9 +1290,8 @@ fn tensor_product_collocation_preserves_position_and_derivative_order() {
     let du = [1.0, 0.0, 1.0];
     let dv = [0.0, 1.0, 2.0];
     let zero = [0.0; 3];
-    let grid = crate::decode::with_test_decode_ctx(|ctx| {
+    let grid = {
         crate::interpolation_grid::InterpolationGrid::try_new(
-            ctx,
             points.to_vec(),
             vec![0.0, 1.0],
             vec![0.0, 1.0],
@@ -1365,7 +1299,7 @@ fn tensor_product_collocation_preserves_position_and_derivative_order() {
             vec![dv, dv, dv, dv],
             [zero, zero, zero, zero],
         )
-    })
+    }
     .expect("grid work admission")
     .expect("complete interpolation grid");
     let nurbs = crate::decode::with_test_decode_ctx(|ctx| {

@@ -4,16 +4,14 @@
 use cadmpeg_ir::native::bytes::NativeBytes;
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::fmt::Write;
 
 use serde::{Deserialize, Serialize};
 
 use crate::container::Container;
-use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
 pub(super) mod construction_records;
-use construction_records::{charged_unique_offset_data_block, replace_operation_text};
+use construction_records::unique_offset_data_block_id;
 
 pub(super) mod delete;
 pub(super) mod draft;
@@ -123,38 +121,27 @@ pub(super) struct FeatureOperationLabel {
 /// Each feature-history section stores its operation records newest first. The
 /// native label arena retains that source order, but neutral dependencies and
 /// feature ordinals use oldest-first construction order within each section.
-pub(super) fn feature_operation_chronological_labels<'a>(
-    ctx: &DecodeContext<'_>,
-    labels: &'a [FeatureOperationLabel],
-) -> Result<Vec<&'a FeatureOperationLabel>, CodecError> {
+pub(super) fn feature_operation_chronological_labels(
+    labels: &[FeatureOperationLabel],
+) -> Vec<&FeatureOperationLabel> {
     let mut sections = BTreeMap::<&str, u64>::new();
-    let mut section_reservation = ctx.reserve_scoped(0, "NX feature label sections")?;
     for label in labels {
         let section_key = label.section_link.as_str();
-        section_reservation.with_storage(|| {
-            ctx.admit_btree_entry(&sections, &section_key, "NX feature label sections")
-        })?;
-
         sections
             .entry(section_key)
             .and_modify(|first| *first = (*first).min(label.source_offset))
             .or_insert(label.source_offset);
     }
-    let mut ordered = ctx.collection_vec(labels.len(), "NX chronological feature labels")?;
+    let mut ordered = Vec::new();
     ordered.extend(labels);
-    ctx.stable_sort_by(
-        &mut ordered,
-        |left, right| {
-            sections
-                .get(left.section_link.as_str())
-                .cmp(&sections.get(right.section_link.as_str()))
-                .then_with(|| left.section_link.cmp(&right.section_link))
-                .then_with(|| right.source_offset.cmp(&left.source_offset))
-        },
-        |label| label.section_link.len(),
-        "sort NX chronological feature labels",
-    )?;
-    Ok(ordered)
+    ordered.sort_by(|left, right| {
+        sections
+            .get(left.section_link.as_str())
+            .cmp(&sections.get(right.section_link.as_str()))
+            .then_with(|| left.section_link.cmp(&right.section_link))
+            .then_with(|| right.source_offset.cmp(&left.source_offset))
+    });
+    ordered
 }
 
 /// Exact body-write frame retained from one feature operation.
@@ -3565,15 +3552,13 @@ impl TryFrom<FeatureBooleanOperationWire> for FeatureBooleanOperation {
     }
 }
 
-fn feature_history_sections(
-    ctx: &DecodeContext<'_>,
-    container: &Container,
-) -> Result<Vec<SegmentOmLink>, CodecError> {
-    canonical_feature_history_links(ctx, segment_om_links(ctx, container)?)
+fn feature_history_sections(container: &Container) -> Result<Vec<SegmentOmLink>, CodecError> {
+    Ok(canonical_feature_history_links(segment_om_links(
+        container,
+    )?))
 }
 
 fn visit_feature_history_operation_records(
-    ctx: &DecodeContext<'_>,
     container: &Container,
     mut visit: impl FnMut(
         &crate::om::Section<'_>,
@@ -3583,8 +3568,8 @@ fn visit_feature_history_operation_records(
         crate::om::operation_record::OperationRecord<'_>,
     ),
 ) -> Result<(), CodecError> {
-    visit_feature_history_sections(ctx, container, |section, key, entry_offset| {
-        for (ordinal, record) in section.operation_records_with_label_ordinals(ctx)? {
+    visit_feature_history_sections(container, |section, key, entry_offset| {
+        for (ordinal, record) in section.operation_records_with_label_ordinals() {
             visit(section, key, entry_offset, ordinal, record);
         }
         Ok(())
@@ -3592,7 +3577,6 @@ fn visit_feature_history_operation_records(
 }
 
 fn visit_feature_history_unlabeled_operation_records(
-    ctx: &DecodeContext<'_>,
     container: &Container,
     mut visit: impl FnMut(
         &crate::om::Section<'_>,
@@ -3602,39 +3586,31 @@ fn visit_feature_history_unlabeled_operation_records(
         crate::om::UnlabeledOperationRecord<'_>,
     ) -> Result<(), CodecError>,
 ) -> Result<(), CodecError> {
-    visit_feature_history_sections(ctx, container, |section, key, entry_offset| {
-        for (ordinal, record) in section.unlabeled_operation_records_with_ordinals(ctx)? {
+    visit_feature_history_sections(container, |section, key, entry_offset| {
+        for (ordinal, record) in section.unlabeled_operation_records_with_ordinals() {
             visit(section, key, entry_offset, ordinal, record)?;
         }
         Ok(())
     })
 }
 
-pub(super) fn canonical_feature_history_links(
-    ctx: &DecodeContext<'_>,
-    mut links: Vec<SegmentOmLink>,
-) -> Result<Vec<SegmentOmLink>, CodecError> {
+pub(super) fn canonical_feature_history_links(mut links: Vec<SegmentOmLink>) -> Vec<SegmentOmLink> {
     links.retain(|link| link.schema_role == OmSchemaRole::FeatureHistory);
-    ctx.stable_sort_by(
-        &mut links,
-        |first, second| {
-            first
-                .location
-                .section_offset()
-                .cmp(&second.location.section_offset())
-                .then_with(|| {
-                    first
-                        .location
-                        .source_offset()
-                        .cmp(&second.location.source_offset())
-                })
-                .then_with(|| first.id.cmp(&second.id))
-        },
-        |link| link.id.len(),
-        "sort NX feature history links",
-    )?;
+    links.sort_by(|first, second| {
+        first
+            .location
+            .section_offset()
+            .cmp(&second.location.section_offset())
+            .then_with(|| {
+                first
+                    .location
+                    .source_offset()
+                    .cmp(&second.location.source_offset())
+            })
+            .then_with(|| first.id.cmp(&second.id))
+    });
     links.dedup_by_key(|link| link.location.section_offset());
-    Ok(links)
+    links
 }
 
 /// Return unique content-backed identities for the offset-store ordinals used
@@ -3645,25 +3621,13 @@ pub(super) fn canonical_feature_history_links(
 /// column block across all offset stores and that block has a unique
 /// content-backed identity. An ambiguous or duplicate block remains absent.
 fn operation_header_block_identities(
-    ctx: &DecodeContext<'_>,
     container: &Container,
 ) -> Result<BTreeMap<u32, Option<String>>, CodecError> {
     let mut identities = BTreeMap::<u32, Option<String>>::new();
-    for block in data_blocks(ctx, container)? {
+    for block in data_blocks(container)? {
         if block.role == DataBlockRole::Column {
-            ctx.admit_btree_entry(
-                &identities,
-                &block.block_ordinal,
-                "NX operation block identity ordinals",
-            )?;
             match identities.entry(block.block_ordinal) {
                 std::collections::btree_map::Entry::Vacant(entry) => {
-                    ctx.charge_retained(
-                        cadmpeg_core::decode::u64_from_index(
-                            std::mem::size_of::<(u32, Option<String>)>() * 4,
-                        ),
-                        "retain NX operation block identity ordinals",
-                    )?;
                     entry.insert(block.stable_identity);
                 }
                 std::collections::btree_map::Entry::Occupied(mut entry) => {
@@ -3682,169 +3646,73 @@ fn operation_header_block_identities(
 /// An all-null tuple, an unresolved slot, or a duplicated content identity has
 /// no operation identity witness.
 fn operation_header_identity_key(
-    ctx: &DecodeContext<'_>,
     object_indices: [Option<u32>; 4],
     block_identities: &BTreeMap<u32, Option<String>>,
-) -> Result<Option<String>, CodecError> {
+) -> Option<String> {
     if !object_indices.iter().any(Option::is_some) {
-        return Ok(None);
+        return None;
     }
     let mut slots = ["null"; 4];
     for (slot, index) in slots.iter_mut().zip(object_indices) {
         if let Some(index) = index {
             let Some(Some(identity)) = block_identities.get(&index) else {
-                return Ok(None);
+                return None;
             };
             *slot = identity;
         }
     }
-    let prefix = "nx:feature-history:operation-header-identity#content:";
-    let length = slots
-        .iter()
-        .try_fold(prefix.len() + 3, |length, slot| {
-            length.checked_add(slot.len())
-        })
-        .ok_or_else(|| ctx.refuse_codec_limit("retain NX operation header identity", 0, 1))?;
-    let mut identity = ctx.retained_string(length, "retain NX operation header identity")?;
-    identity.push_str(prefix);
-    identity.push_str(slots[0]);
-    for slot in slots.iter().skip(1) {
-        identity.push('-');
-        identity.push_str(slot);
-    }
-    Ok(Some(identity))
+    Some(format!(
+        "nx:feature-history:operation-header-identity#content:{}",
+        slots.join("-")
+    ))
 }
 
 fn assign_operation_header_identities(
-    ctx: &DecodeContext<'_>,
     labels: &mut [FeatureOperationLabel],
     block_identities: &BTreeMap<u32, Option<String>>,
-) -> Result<(), CodecError> {
-    let mut keys_guard = ctx.reserve_scoped(0, "reserve NX operation header keys")?;
-    let mut keys =
-        keys_guard.with_storage(|| ctx.collection_vec(labels.len(), "NX operation header keys"))?;
-    for label in labels.iter() {
-        keys.push(operation_header_identity_key(
-            ctx,
-            label.objects.values(),
-            block_identities,
-        )?);
-    }
-
-    let mut counts_guard = ctx.reserve_scoped(0, "reserve NX operation header counts")?;
-    let mut counts = BTreeMap::<String, usize>::new();
+) {
+    let keys = labels
+        .iter()
+        .map(|label| operation_header_identity_key(label.objects.values(), block_identities))
+        .collect::<Vec<_>>();
+    let mut counts = BTreeMap::<&str, usize>::new();
     for key in keys.iter().flatten() {
-        if !counts.contains_key(key.as_str()) {
-            let mut copy = String::new();
-            counts_guard.with_storage(|| {
-                ctx.try_reserve_retained_text(
-                    &mut copy,
-                    key.len(),
-                    "allocate NX operation header count key",
-                )
-            })?;
-            copy.push_str(key);
-            counts_guard.with_storage(|| {
-                ctx.insert_btree_map(&mut counts, copy, 0, "NX operation header counts")
-            })?;
-        }
-        let count = counts
-            .get_mut(key.as_str())
-            .ok_or_else(|| ctx.refuse_codec_limit("NX operation header count key", 0, 1))?;
-        *count = count
-            .checked_add(1)
-            .ok_or_else(|| ctx.refuse_codec_limit("count NX operation headers", 0, 1))?;
+        *counts.entry(key.as_str()).or_default() += 1;
     }
-    for (label, key) in labels.iter_mut().zip(keys) {
-        label.stable_identity = key.filter(|key| counts.get(key.as_str()) == Some(&1));
+    for (label, key) in labels.iter_mut().zip(&keys) {
+        label.stable_identity = key
+            .as_ref()
+            .filter(|key| counts.get(key.as_str()) == Some(&1))
+            .cloned();
     }
-    Ok(())
 }
 
 fn format_feature_history_id(
-    ctx: &DecodeContext<'_>,
     kind: &'static str,
     section_key: &str,
     operation_ordinal: usize,
     subordinal: Option<usize>,
-) -> Result<String, CodecError> {
-    fn decimal_width(mut value: usize) -> usize {
-        let mut digits = 1;
-        while value >= 10 {
-            value /= 10;
-            digits += 1;
-        }
-        digits.max(10)
+) -> String {
+    match subordinal {
+        Some(subordinal) => format!(
+            "nx:feature-history:{kind}#{section_key}-{operation_ordinal:010}-{subordinal:010}"
+        ),
+        None => format!("nx:feature-history:{kind}#{section_key}-{operation_ordinal:010}"),
     }
-    let prefix = "nx:feature-history:";
-    let mut length = prefix
-        .len()
-        .checked_add(kind.len())
-        .and_then(|length| length.checked_add(1))
-        .and_then(|length| length.checked_add(section_key.len()))
-        .and_then(|length| length.checked_add(1))
-        .and_then(|length| length.checked_add(decimal_width(operation_ordinal)))
-        .ok_or_else(|| ctx.refuse_codec_limit("retain NX feature history identity", 0, 1))?;
-    if let Some(subordinal) = subordinal {
-        length = length
-            .checked_add(1)
-            .and_then(|length| length.checked_add(decimal_width(subordinal)))
-            .ok_or_else(|| ctx.refuse_codec_limit("retain NX feature history identity", 0, 1))?;
-    }
-    let mut id = ctx.retained_string(length, "retain NX feature history identity")?;
-    write!(
-        &mut id,
-        "{prefix}{kind}#{section_key}-{operation_ordinal:010}"
-    )
-    .map_err(|_| ctx.refuse_codec_limit("format NX feature history identity", 0, 1))?;
-    if let Some(subordinal) = subordinal {
-        write!(&mut id, "-{subordinal:010}")
-            .map_err(|_| ctx.refuse_codec_limit("format NX feature history identity", 0, 1))?;
-    }
-    Ok(id)
 }
 
-fn format_feature_child_id(
-    ctx: &DecodeContext<'_>,
-    parent: &str,
-    suffix: &'static str,
-    ordinal: usize,
-) -> Result<String, CodecError> {
-    let digits = match ordinal.checked_ilog10() {
-        Some(digits) => usize::try_from(digits)
-            .map_err(|_| ctx.refuse_codec_limit("NX feature child identity width", 0, 1))?
-            .checked_add(1)
-            .ok_or_else(|| ctx.refuse_codec_limit("NX feature child identity width", 0, 1))?,
-        None => 1,
-    }
-    .max(10);
-    let length = parent
-        .len()
-        .checked_add(suffix.len())
-        .and_then(|length| length.checked_add(digits))
-        .ok_or_else(|| ctx.refuse_codec_limit("NX feature child identity", 0, 1))?;
-    let mut id = ctx.retained_string(length, "NX feature child identity")?;
-    write!(&mut id, "{parent}{suffix}{ordinal:010}")
-        .map_err(|_| ctx.refuse_codec_limit("write NX feature child identity", 0, 1))?;
-    Ok(id)
+fn format_feature_child_id(parent: &str, suffix: &'static str, ordinal: usize) -> String {
+    format!("{parent}{suffix}{ordinal:010}")
 }
 
 /// Decode ordered operation labels from feature-history record areas.
 pub(super) fn feature_operation_labels(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
 ) -> Result<Vec<FeatureOperationLabel>, cadmpeg_core::CodecError> {
-    let sections = container.om_sections(ctx)?;
-    let block_identities = operation_header_block_identities(ctx, container)?;
+    let sections = container.om_sections()?;
+    let block_identities = operation_header_block_identities(container)?;
     let mut labels = Vec::new();
-    for (section_ordinal, link) in feature_history_sections(ctx, container)?
-        .into_iter()
-        .enumerate()
-    {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(sections.len()),
-            "match NX feature label section",
-        )?;
+    for (section_ordinal, link) in feature_history_sections(container)?.into_iter().enumerate() {
         let Some((entry, section)) = sections.iter().find(|(entry, section)| {
             entry.file_span().map_or(
                 Some(cadmpeg_core::decode::u64_from_index(section.offset)),
@@ -3855,73 +3723,46 @@ pub(super) fn feature_operation_labels(
         }) else {
             continue;
         };
-        let section_key_len = section_ordinal
-            .checked_ilog10()
-            .map_or(1, |digits| cadmpeg_core::decode::index_from_u32(digits) + 1)
-            .max(10);
-        let mut section_key_guard = ctx.reserve_scoped(0, "NX feature label section key")?;
-        let mut section_key = String::new();
-        section_key_guard.with_storage(|| {
-            ctx.try_reserve_retained_text(
-                &mut section_key,
-                section_key_len,
-                "allocate NX feature label section key",
-            )
-        })?;
-        write!(&mut section_key, "{section_ordinal:010}")
-            .map_err(|_| ctx.refuse_codec_limit("write NX feature label section key", 0, 1))?;
+        let section_key = format!("{section_ordinal:010}");
         let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
-        let records = section.operation_records_with_label_ordinals(ctx)?;
-        ctx.reserve_vec(&mut labels, records.len(), "NX feature operation labels")?;
+        let records = section.operation_records_with_label_ordinals();
+
         for (ordinal, record) in records {
             let label = record.label();
             let ordinal_u32 = u32::try_from(ordinal)
-                .map_err(|_| ctx.refuse_codec_limit("NX feature operation ordinal", 0, 1))?;
-            let id =
-                format_feature_history_id(ctx, "operation-label", &section_key, ordinal, None)?;
+                .map_err(|_| CodecError::malformed("NX feature operation ordinal exceeds u32"))?;
+            let id = format_feature_history_id("operation-label", &section_key, ordinal, None);
             let source_offset = entry_offset
                 .checked_add(cadmpeg_core::decode::u64_from_index(
                     label.header.end_offset(),
                 ))
-                .ok_or_else(|| ctx.refuse_codec_limit("NX feature operation label offset", 0, 1))?;
+                .ok_or_else(|| {
+                    CodecError::malformed("NX feature operation label offset overflows")
+                })?;
             labels.push(FeatureOperationLabel {
                 id,
-                section_link: ctx
-                    .copy_retained_text(&link.id, "retain NX feature operation section link")?,
+                section_link: link.id.clone(),
                 ordinal: ordinal_u32,
-                value: ctx
-                    .copy_retained_text(label.value, "retain NX feature operation label text")?,
+                value: label.value.to_owned(),
                 objects: label.header.objects(),
                 stable_identity: None,
                 source_offset,
             });
         }
     }
-    assign_operation_header_identities(ctx, &mut labels, &block_identities)?;
+    assign_operation_header_identities(&mut labels, &block_identities);
     Ok(labels)
 }
 
 /// Decode ordered Boolean target/tool bindings from feature-history sections.
 pub(super) fn feature_boolean_operations(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
 ) -> Result<Vec<FeatureBooleanOperation>, cadmpeg_core::CodecError> {
     let mut operations = Vec::new();
-    let mut failure = None;
     visit_feature_history_operation_records(
-        ctx,
         container,
         |section, section_key, entry_offset, operation_ordinal, record| {
-            if failure.is_some() {
-                return;
-            }
-            let candidates = match section.boolean_operations(ctx) {
-                Ok(candidates) => candidates,
-                Err(error) => {
-                    failure = Some(error);
-                    return;
-                }
-            };
+            let candidates = section.boolean_operations();
             let Some(operation) = candidates
                 .into_iter()
                 .find(|operation| operation.offset == record.label().header.end_offset())
@@ -3933,63 +3774,33 @@ pub(super) fn feature_boolean_operations(
                 crate::om::BooleanOperationKind::Subtract => FeatureBooleanKind::Subtract,
                 crate::om::BooleanOperationKind::Intersect => FeatureBooleanKind::Intersect,
             };
-            let item = (|| -> Result<FeatureBooleanOperation, CodecError> {
-                let mut tools = Vec::new();
-                for tool in operation.tools {
-                    ctx.reserve_vec(&mut tools, 1, "NX Boolean tool references")?;
-                    tools.push(crate::om::PayloadObjectReference {
-                        token: tool.token,
-                        offset: entry_offset + cadmpeg_core::decode::u64_from_index(tool.offset),
-                    });
-                }
-                Ok(FeatureBooleanOperation {
-                    id: format_feature_history_id(
-                        ctx,
-                        "boolean",
-                        section_key,
-                        operation_ordinal,
-                        None,
-                    )?,
-                    operation_label: format_feature_history_id(
-                        ctx,
-                        "operation-label",
-                        section_key,
-                        operation_ordinal,
-                        None,
-                    )?,
-                    kind,
-                    target: crate::om::PayloadObjectReference {
-                        token: operation.target.token,
-                        offset: entry_offset
-                            + cadmpeg_core::decode::u64_from_index(operation.target.offset),
-                    },
-                    tools,
-                    source_offset: entry_offset
-                        + cadmpeg_core::decode::u64_from_index(operation.offset),
-                })
-            })();
-            let item = match item {
-                Ok(item) => item,
-                Err(error) => {
-                    failure = Some(error);
-                    return;
-                }
-            };
-            if let Err(error) = ctx
-                .charge_collection_items(1, "NX Boolean operations")
-                .and_then(|()| {
-                    ctx.reserve_capacity(&mut operations, 1, "allocate NX Boolean operations")
-                })
-            {
-                failure = Some(error);
-                return;
+            let mut tools = Vec::new();
+            for tool in operation.tools {
+                tools.push(crate::om::PayloadObjectReference {
+                    token: tool.token,
+                    offset: entry_offset + cadmpeg_core::decode::u64_from_index(tool.offset),
+                });
             }
-            operations.push(item);
+            operations.push(FeatureBooleanOperation {
+                id: format_feature_history_id("boolean", section_key, operation_ordinal, None),
+                operation_label: format_feature_history_id(
+                    "operation-label",
+                    section_key,
+                    operation_ordinal,
+                    None,
+                ),
+                kind,
+                target: crate::om::PayloadObjectReference {
+                    token: operation.target.token,
+                    offset: entry_offset
+                        + cadmpeg_core::decode::u64_from_index(operation.target.offset),
+                },
+                tools,
+                source_offset: entry_offset
+                    + cadmpeg_core::decode::u64_from_index(operation.offset),
+            });
         },
     )?;
-    if let Some(error) = failure {
-        return Err(error);
-    }
     Ok(operations)
 }
 
@@ -3998,29 +3809,20 @@ pub(super) fn feature_operation_records(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
 ) -> Result<Vec<FeatureOperationRecord>, cadmpeg_core::CodecError> {
-    let block_identities = operation_header_block_identities(ctx, container)?;
+    let block_identities = operation_header_block_identities(container)?;
     let mut identity_counts = BTreeMap::<String, usize>::new();
-    let mut counts_reservation = ctx.reserve_scoped(0, "NX operation record identity counts")?;
     let mut records = Vec::new();
     let mut failure = None;
     visit_feature_history_operation_records(
-        ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
             if failure.is_some() {
                 return;
             }
-            let stable_identity = match operation_header_identity_key(
-                ctx,
+            let stable_identity = operation_header_identity_key(
                 record.label().header.objects().values(),
                 &block_identities,
-            ) {
-                Ok(identity) => identity,
-                Err(error) => {
-                    failure = Some(error);
-                    return;
-                }
-            };
+            );
             let Some(span) = entry_offset
                 .checked_add(cadmpeg_core::decode::u64_from_index(record.offset()))
                 .zip(
@@ -4040,47 +3842,24 @@ pub(super) fn feature_operation_records(
             };
             let item = (|| -> Result<FeatureOperationRecord, CodecError> {
                 if let Some(key) = &stable_identity {
-                    if let Some(count) = identity_counts.get_mut(key.as_str()) {
-                        *count = count.checked_add(1).ok_or_else(|| {
-                            ctx.refuse_codec_limit("count NX operation record identities", 0, 1)
-                        })?;
-                    } else {
-                        let mut copy = String::new();
-                        counts_reservation.with_storage(|| {
-                            ctx.try_reserve_retained_text(
-                                &mut copy,
-                                key.len(),
-                                "allocate NX operation record identity key",
-                            )
-                        })?;
-                        copy.push_str(key);
-                        counts_reservation.with_storage(|| {
-                            ctx.insert_btree_map(
-                                &mut identity_counts,
-                                copy,
-                                1,
-                                "NX operation record identity counts",
-                            )
-                        })?;
-                    }
+                    *identity_counts.entry(key.clone()).or_default() += 1;
                 }
-                let ordinal = u32::try_from(operation_ordinal)
-                    .map_err(|_| ctx.refuse_codec_limit("NX operation record ordinal", 0, 1))?;
+                let ordinal = u32::try_from(operation_ordinal).map_err(|_| {
+                    CodecError::malformed("NX operation record ordinal exceeds u32")
+                })?;
                 Ok(FeatureOperationRecord {
                     id: format_feature_history_id(
-                        ctx,
                         "operation-record",
                         section_key,
                         operation_ordinal,
                         None,
-                    )?,
+                    ),
                     operation_label: format_feature_history_id(
-                        ctx,
                         "operation-label",
                         section_key,
                         operation_ordinal,
                         None,
-                    )?,
+                    ),
                     ordinal,
                     sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
                         ctx,
@@ -4096,23 +3875,10 @@ pub(super) fn feature_operation_records(
                     span,
                 })
             })();
-            let item = match item {
-                Ok(item) => item,
-                Err(error) => {
-                    failure = Some(error);
-                    return;
-                }
-            };
-            if let Err(error) = ctx
-                .charge_collection_items(1, "NX feature operation records")
-                .and_then(|()| {
-                    ctx.reserve_capacity(&mut records, 1, "allocate NX feature operation records")
-                })
-            {
-                failure = Some(error);
-                return;
+            match item {
+                Ok(item) => records.push(item),
+                Err(error) => failure = Some(error),
             }
-            records.push(item);
         },
     )?;
     if let Some(error) = failure {
@@ -4137,18 +3903,16 @@ pub(super) fn feature_unlabeled_operation_records(
 ) -> Result<Vec<FeatureUnlabeledOperationRecord>, cadmpeg_core::CodecError> {
     let mut records = Vec::new();
     visit_feature_history_unlabeled_operation_records(
-        ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
             let id = format_feature_history_id(
-                ctx,
                 "unlabeled-operation-record",
                 section_key,
                 operation_ordinal,
                 None,
-            )?;
+            );
             let ordinal = u32::try_from(operation_ordinal)
-                .map_err(|_| ctx.refuse_codec_limit("NX unlabeled operation ordinal", 0, 1))?;
+                .map_err(|_| CodecError::malformed("NX unlabeled operation ordinal exceeds u32"))?;
             if let Some(record) = FeatureUnlabeledOperationRecord::from_source(
                 ctx,
                 id,
@@ -4157,7 +3921,7 @@ pub(super) fn feature_unlabeled_operation_records(
                 record,
             )? {
                 ctx.charge_entities(1, "NX unlabeled operation record")?;
-                ctx.reserve_vec(&mut records, 1, "NX unlabeled operation records")?;
+
                 records.push(record);
             }
             Ok(())
@@ -4171,13 +3935,12 @@ pub(super) fn feature_unlabeled_operation_body_writes(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
 ) -> Result<Vec<FeatureOperationBodyWrite>, cadmpeg_core::CodecError> {
-    let indexed = container.indexed_om_sections(ctx)?;
+    let indexed = container.indexed_om_sections()?;
     let mut writes = Vec::new();
     visit_feature_history_unlabeled_operation_records(
-        ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            let decoded = crate::om::unlabeled_operation_body_write_frames(ctx, record)?;
+            let decoded = crate::om::unlabeled_operation_body_write_frames(record);
             for (ordinal, write) in decoded.into_iter().enumerate() {
                 let Some(offset) =
                     entry_offset.checked_add(cadmpeg_core::decode::u64_from_index(write.offset()))
@@ -4194,33 +3957,31 @@ pub(super) fn feature_unlabeled_operation_body_writes(
                     continue;
                 };
                 let id = format_feature_history_id(
-                    ctx,
                     "unlabeled-operation-body-write",
                     section_key,
                     operation_ordinal,
                     Some(ordinal),
-                )?;
+                );
                 let operation_record = format_feature_history_id(
-                    ctx,
                     "unlabeled-operation-record",
                     section_key,
                     operation_ordinal,
                     None,
-                )?;
-                let ordinal = u32::try_from(ordinal)
-                    .map_err(|_| ctx.refuse_codec_limit("NX unlabeled body write ordinal", 0, 1))?;
+                );
+                let ordinal = u32::try_from(ordinal).map_err(|_| {
+                    CodecError::malformed("NX unlabeled body write ordinal exceeds u32")
+                })?;
                 ctx.charge_entities(1, "NX unlabeled operation body write")?;
-                ctx.reserve_vec(&mut writes, 1, "NX unlabeled operation body writes")?;
+
                 writes.push(FeatureOperationBodyWrite {
                     operation_label: None,
                     id,
                     operation_record,
                     ordinal,
-                    body_image_data_block: charged_unique_offset_data_block(
-                        ctx,
+                    body_image_data_block: unique_offset_data_block_id(
                         &indexed,
                         frame.body_image().value(),
-                    )?,
+                    ),
                     frame,
                 });
             }
@@ -4232,26 +3993,18 @@ pub(super) fn feature_unlabeled_operation_body_writes(
 
 /// Decode exact body-write frames from bounded feature operations.
 pub(super) fn feature_operation_body_writes(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
 ) -> Result<Vec<FeatureOperationBodyWrite>, cadmpeg_core::CodecError> {
-    let indexed = container.indexed_om_sections(ctx)?;
+    let indexed = container.indexed_om_sections()?;
     let mut writes = Vec::new();
     let mut failure = None;
     visit_feature_history_operation_records(
-        ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
             if failure.is_some() {
                 return;
             }
-            let decoded = match crate::om::operation_body_write_frames(ctx, record.payload_view()) {
-                Ok(decoded) => decoded,
-                Err(error) => {
-                    failure = Some(error);
-                    return;
-                }
-            };
+            let decoded = crate::om::operation_body_write_frames(record.payload_view());
             for (ordinal, write) in decoded.into_iter().enumerate() {
                 let Some(offset) =
                     entry_offset.checked_add(cadmpeg_core::decode::u64_from_index(write.offset()))
@@ -4269,56 +4022,42 @@ pub(super) fn feature_operation_body_writes(
                 };
                 let item = (|| -> Result<FeatureOperationBodyWrite, CodecError> {
                     let ordinal_u32 = u32::try_from(ordinal).map_err(|_| {
-                        ctx.refuse_codec_limit("NX operation body write ordinal", 0, 1)
+                        CodecError::malformed("NX operation body write ordinal exceeds u32")
                     })?;
                     Ok(FeatureOperationBodyWrite {
                         id: format_feature_history_id(
-                            ctx,
                             "operation-body-write",
                             section_key,
                             operation_ordinal,
                             Some(ordinal),
-                        )?,
+                        ),
                         operation_label: Some(format_feature_history_id(
-                            ctx,
                             "operation-label",
                             section_key,
                             operation_ordinal,
                             None,
-                        )?),
+                        )),
                         operation_record: format_feature_history_id(
-                            ctx,
                             "operation-record",
                             section_key,
                             operation_ordinal,
                             None,
-                        )?,
+                        ),
                         ordinal: ordinal_u32,
-                        body_image_data_block: charged_unique_offset_data_block(
-                            ctx,
+                        body_image_data_block: unique_offset_data_block_id(
                             &indexed,
                             frame.body_image().value(),
-                        )?,
+                        ),
                         frame,
                     })
                 })();
-                let item = match item {
-                    Ok(item) => item,
+                match item {
+                    Ok(item) => writes.push(item),
                     Err(error) => {
                         failure = Some(error);
                         return;
                     }
-                };
-                if let Err(error) = ctx
-                    .charge_collection_items(1, "NX operation body writes")
-                    .and_then(|()| {
-                        ctx.reserve_capacity(&mut writes, 1, "allocate NX operation body writes")
-                    })
-                {
-                    failure = Some(error);
-                    return;
                 }
-                writes.push(item);
             }
         },
     )?;
@@ -4334,19 +4073,9 @@ pub(super) fn feature_operation_body_writes(
 /// A missing image block, no plain alias, or duplicate plain alias leaves the
 /// write unresolved.
 pub(super) fn feature_operation_body_image_segment_uses(
-    ctx: &DecodeContext<'_>,
     writes: &[FeatureOperationBodyWrite],
     bindings: &[SegmentBodyBinding],
-) -> Result<Vec<FeatureOperationBodyImageSegmentUse>, CodecError> {
-    let work = writes
-        .len()
-        .checked_mul(bindings.len())
-        .and_then(|count| count.checked_mul(2))
-        .ok_or_else(|| ctx.refuse_codec_limit("join NX body-image segment uses", 0, 1))?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(work),
-        "join NX body-image segment uses",
-    )?;
+) -> Vec<FeatureOperationBodyImageSegmentUse> {
     let mut output = Vec::new();
     for write in writes {
         let Some(body_image_data_block) = write.body_image_data_block.as_ref() else {
@@ -4363,24 +4092,19 @@ pub(super) fn feature_operation_body_image_segment_uses(
             continue;
         }
         let item = FeatureOperationBodyImageSegmentUse {
-            id: replace_operation_text(
-                ctx,
-                &write.id,
+            id: write.id.replacen(
                 "operation-body-write",
                 "operation-body-image-segment-use",
-                "NX body-image segment use identity",
-            )?,
-            operation_body_write: ctx
-                .copy_retained_text(&write.id, "NX body-image write identity")?,
-            body_image_data_block: ctx
-                .copy_retained_text(body_image_data_block, "NX body-image data block identity")?,
-            segment_body_binding: ctx
-                .copy_retained_text(&binding.id, "NX body-image segment binding identity")?,
+                1,
+            ),
+            operation_body_write: write.id.clone(),
+            body_image_data_block: body_image_data_block.to_owned(),
+            segment_body_binding: binding.id.clone(),
         };
-        ctx.reserve_vec(&mut output, 1, "NX body-image segment uses")?;
+
         output.push(item);
     }
-    Ok(output)
+    output
 }
 
 /// Join persistent body identities to unique plain cached-body aliases.
@@ -4388,19 +4112,9 @@ pub(super) fn feature_operation_body_image_segment_uses(
 /// This cross-store relation is independent of body-image block resolution.
 /// Partition-stream aliases use another identity namespace and do not match.
 pub(super) fn feature_operation_body_identity_segment_uses(
-    ctx: &DecodeContext<'_>,
     writes: &[FeatureOperationBodyWrite],
     bindings: &[SegmentBodyBinding],
-) -> Result<Vec<FeatureOperationBodyIdentitySegmentUse>, CodecError> {
-    let work = writes
-        .len()
-        .checked_mul(bindings.len())
-        .and_then(|count| count.checked_mul(2))
-        .ok_or_else(|| ctx.refuse_codec_limit("join NX body-identity segment uses", 0, 1))?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(work),
-        "join NX body-identity segment uses",
-    )?;
+) -> Vec<FeatureOperationBodyIdentitySegmentUse> {
     let mut output = Vec::new();
     for write in writes {
         let mut matches = bindings.iter().filter(|binding| {
@@ -4414,102 +4128,75 @@ pub(super) fn feature_operation_body_identity_segment_uses(
             continue;
         }
         let item = FeatureOperationBodyIdentitySegmentUse {
-            id: replace_operation_text(
-                ctx,
-                &write.id,
+            id: write.id.replacen(
                 "operation-body-write",
                 "operation-body-identity-segment-use",
-                "NX body-identity segment use identity",
-            )?,
-            operation_body_write: ctx
-                .copy_retained_text(&write.id, "NX body-identity write identity")?,
+                1,
+            ),
+            operation_body_write: write.id.clone(),
             body_identity: write.frame.body_identity(),
-            segment_body_binding: ctx
-                .copy_retained_text(&binding.id, "NX body-identity segment binding identity")?,
+            segment_body_binding: binding.id.clone(),
         };
-        ctx.reserve_vec(&mut output, 1, "NX body-identity segment uses")?;
+
         output.push(item);
     }
-    Ok(output)
+    output
 }
 
 const BODY_HISTORY_TERMINAL_STREAM_ROLE: u32 = 16;
 
 fn body_history_partition_stream(
-    ctx: &DecodeContext<'_>,
     binding: &SegmentBodyBinding,
     bindings: &[SegmentBodyBinding],
     streams: &[crate::parasolid::Stream],
-) -> Result<Option<u32>, CodecError> {
-    let stream_work = streams
-        .len()
-        .checked_mul(2)
-        .ok_or_else(|| ctx.refuse_codec_limit("scan NX body-history partition", 0, 1))?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(stream_work),
-        "scan NX body-history partition",
-    )?;
+) -> Option<u32> {
     if binding.stream_kind != crate::parasolid::StreamKind::Plain {
-        return Ok(None);
+        return None;
     }
     let Ok(stream_ordinal) = usize::try_from(binding.stream_ordinal) else {
-        return Ok(None);
+        return None;
     };
     if streams
         .get(stream_ordinal)
         .is_none_or(|stream| stream.kind() != crate::parasolid::StreamKind::Plain)
     {
-        return Ok(None);
+        return None;
     }
-    let Some(partition_ordinal) = streams
+    let partition_ordinal = streams
         .iter()
         .enumerate()
         .skip(stream_ordinal + 1)
         .find_map(|(ordinal, stream)| {
             (stream.kind() == crate::parasolid::StreamKind::Partition).then_some(ordinal)
-        })
-    else {
-        return Ok(None);
-    };
+        })?;
     let run_start = streams[..stream_ordinal]
         .iter()
         .rposition(|stream| stream.kind() != crate::parasolid::StreamKind::Plain)
         .map_or(0, |ordinal| ordinal + 1);
-    let Some(run_streams) = streams.get(run_start..partition_ordinal) else {
-        return Ok(None);
-    };
+    let run_streams = streams.get(run_start..partition_ordinal)?;
     if !run_streams
         .iter()
         .all(|stream| stream.kind() == crate::parasolid::StreamKind::Plain)
     {
-        return Ok(None);
+        return None;
     }
-    let work = run_streams
-        .len()
-        .checked_mul(bindings.len())
-        .ok_or_else(|| ctx.refuse_codec_limit("scan NX body-history partition", 0, 1))?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(work),
-        "scan NX body-history partition",
-    )?;
+
     let mut terminal_role = None;
     for ordinal in run_start..partition_ordinal {
         let mut matches = bindings.iter().filter(|candidate| {
             candidate.stream_kind == crate::parasolid::StreamKind::Plain
                 && usize::try_from(candidate.stream_ordinal).ok() == Some(ordinal)
         });
-        let Some(candidate) = matches.next() else {
-            return Ok(None);
-        };
+        let candidate = matches.next()?;
         if matches.next().is_some() || terminal_role == Some(BODY_HISTORY_TERMINAL_STREAM_ROLE) {
-            return Ok(None);
+            return None;
         }
         terminal_role = Some(candidate.stream_role);
     }
     if terminal_role != Some(BODY_HISTORY_TERMINAL_STREAM_ROLE) {
-        return Ok(None);
+        return None;
     }
-    Ok(u32::try_from(partition_ordinal).ok())
+    u32::try_from(partition_ordinal).ok()
 }
 
 /// Resolve body-write GROUP nodes only inside their complete body-history unit.
@@ -4520,28 +4207,13 @@ fn body_history_partition_stream(
 /// partition-local namespaces never participate, even when their node IDs are
 /// equal.
 pub(super) fn feature_operation_body_partition_uses(
-    ctx: &DecodeContext<'_>,
     writes: &[FeatureOperationBodyWrite],
     image_uses: &[FeatureOperationBodyImageSegmentUse],
     bindings: &[SegmentBodyBinding],
     streams: &[crate::parasolid::Stream],
     groups: &[crate::native::parasolid::ParasolidGroupRecord],
     group_members: &[crate::native::parasolid::ParasolidGroupMember],
-) -> Result<Vec<FeatureOperationBodyPartitionUse>, CodecError> {
-    let scan_width = writes
-        .len()
-        .checked_add(bindings.len())
-        .and_then(|count| count.checked_add(groups.len()))
-        .and_then(|count| count.checked_add(group_members.len()))
-        .ok_or_else(|| ctx.refuse_codec_limit("join NX body partition uses", 0, 1))?;
-    let work = image_uses
-        .len()
-        .checked_mul(scan_width)
-        .ok_or_else(|| ctx.refuse_codec_limit("join NX body partition uses", 0, 1))?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(work),
-        "join NX body partition uses",
-    )?;
+) -> Vec<FeatureOperationBodyPartitionUse> {
     let mut output = Vec::new();
     for image_use in image_uses {
         let mut matching_writes = writes
@@ -4563,7 +4235,7 @@ pub(super) fn feature_operation_body_partition_uses(
             continue;
         }
         let Some(partition_stream_ordinal) =
-            body_history_partition_stream(ctx, binding, bindings, streams)?
+            body_history_partition_stream(binding, bindings, streams)
         else {
             continue;
         };
@@ -4572,52 +4244,31 @@ pub(super) fn feature_operation_body_partition_uses(
             group.origin.partition_stream_ordinal() == Some(partition_stream_ordinal)
                 && group.node_id == write.frame.group_node().value()
         }) {
-            ctx.reserve_vec(
-                &mut parasolid_group_records,
-                1,
-                "NX body partition group records",
-            )?;
-            parasolid_group_records.push(
-                ctx.copy_retained_text(&group.id, "NX body partition group record identity")?,
-            );
+            parasolid_group_records.push(group.id.clone());
         }
         let mut parasolid_group_members = Vec::new();
         for member in group_members.iter().filter(|member| {
             member.partition_stream_ordinal == partition_stream_ordinal
                 && member.group_node_id == write.frame.group_node().value()
         }) {
-            ctx.reserve_vec(
-                &mut parasolid_group_members,
-                1,
-                "NX body partition group members",
-            )?;
-            parasolid_group_members.push(
-                ctx.copy_retained_text(&member.id, "NX body partition group member identity")?,
-            );
+            parasolid_group_members.push(member.id.clone());
         }
         let item = FeatureOperationBodyPartitionUse {
-            id: replace_operation_text(
-                ctx,
-                &write.id,
-                "operation-body-write",
-                "operation-body-partition-use",
-                "NX body partition use identity",
-            )?,
-            operation_body_write: ctx
-                .copy_retained_text(&write.id, "NX body partition write identity")?,
-            body_image_segment_use: ctx
-                .copy_retained_text(&image_use.id, "NX body partition image use identity")?,
-            segment_body_binding: ctx
-                .copy_retained_text(&binding.id, "NX body partition binding identity")?,
+            id: write
+                .id
+                .replacen("operation-body-write", "operation-body-partition-use", 1),
+            operation_body_write: write.id.clone(),
+            body_image_segment_use: image_use.id.clone(),
+            segment_body_binding: binding.id.clone(),
             partition_stream_ordinal,
             group_node: write.frame.group_node().value(),
             parasolid_group_records,
             parasolid_group_members,
         };
-        ctx.reserve_vec(&mut output, 1, "NX body partition uses")?;
+
         output.push(item);
     }
-    Ok(output)
+    output
 }
 
 /// Resolve body-write GROUP nodes directly through their partition ownership.
@@ -4626,28 +4277,11 @@ pub(super) fn feature_operation_body_partition_uses(
 /// partition namespace for that node. Labeled and independently bounded
 /// unlabeled writes participate in the same persistent body-identity domain.
 pub(super) fn feature_body_write_group_partition_uses(
-    ctx: &DecodeContext<'_>,
     writes: &[FeatureOperationBodyWrite],
     unlabeled_writes: &[FeatureOperationBodyWrite],
     groups: &[crate::native::parasolid::ParasolidGroupRecord],
     group_members: &[crate::native::parasolid::ParasolidGroupMember],
-) -> Result<Vec<FeatureBodyWriteGroupPartitionUse>, CodecError> {
-    let candidates = writes
-        .len()
-        .checked_add(unlabeled_writes.len())
-        .ok_or_else(|| ctx.refuse_codec_limit("join NX body-write group partitions", 0, 1))?;
-    let scan_width = groups
-        .len()
-        .checked_mul(2)
-        .and_then(|count| count.checked_add(group_members.len()))
-        .ok_or_else(|| ctx.refuse_codec_limit("join NX body-write group partitions", 0, 1))?;
-    let work = candidates
-        .checked_mul(scan_width)
-        .ok_or_else(|| ctx.refuse_codec_limit("join NX body-write group partitions", 0, 1))?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(work),
-        "join NX body-write group partitions",
-    )?;
+) -> Vec<FeatureBodyWriteGroupPartitionUse> {
     let mut output = Vec::new();
     for write in writes.iter().chain(unlabeled_writes) {
         let id = write.id.as_str();
@@ -4672,51 +4306,32 @@ pub(super) fn feature_body_write_group_partition_uses(
         }
         let mut parasolid_group_records = Vec::new();
         for group in groups.iter().filter(|group| group.node_id == group_node) {
-            ctx.reserve_vec(
-                &mut parasolid_group_records,
-                1,
-                "NX body-write group records",
-            )?;
-            parasolid_group_records
-                .push(ctx.copy_retained_text(&group.id, "NX body-write group record identity")?);
+            parasolid_group_records.push(group.id.clone());
         }
         let mut parasolid_group_members = Vec::new();
         for member in group_members.iter().filter(|member| {
             member.partition_stream_ordinal == partition_stream_ordinal
                 && member.group_node_id == group_node
         }) {
-            ctx.reserve_vec(
-                &mut parasolid_group_members,
-                1,
-                "NX body-write group members",
-            )?;
-            parasolid_group_members
-                .push(ctx.copy_retained_text(&member.id, "NX body-write group member identity")?);
+            parasolid_group_members.push(member.id.clone());
         }
         let use_record = FeatureBodyWriteGroupPartitionUse {
-            id: replace_operation_text(
-                ctx,
-                id,
-                "body-write",
-                "body-write-group-partition-use",
-                "NX body-write group use identity",
-            )?,
-            body_write: ctx.copy_retained_text(id, "NX body-write group write identity")?,
+            id: id.replacen("body-write", "body-write-group-partition-use", 1),
+            body_write: id.to_owned(),
             body_identity: write.frame.body_identity(),
             group_node,
             partition_stream_ordinal,
             parasolid_group_records,
             parasolid_group_members,
         };
-        ctx.reserve_vec(&mut output, 1, "NX body-write group partition uses")?;
+
         output.push(use_record);
     }
-    Ok(output)
+    output
 }
 
 /// Decode one direct-reference field family from bounded feature operations.
 pub(super) fn feature_operation_object_references(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
     kind: crate::om::direct_reference::ReferenceFieldKind,
 ) -> Result<Vec<FeatureOperationObjectReference>, cadmpeg_core::CodecError> {
@@ -4726,193 +4341,144 @@ pub(super) fn feature_operation_object_references(
             "operation-data-block-reference"
         }
     };
-    let indexed = container.indexed_om_sections(ctx)?;
+    let indexed = container.indexed_om_sections()?;
     let mut references = Vec::new();
-    let mut failure = None;
     visit_feature_history_operation_records(
-        ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            if failure.is_some() {
-                return;
-            }
-            let result = (|| -> Result<(), CodecError> {
-                let fields = crate::om::direct_reference::operation_reference_fields(
-                    ctx,
-                    record.payload_view(),
-                    kind,
-                )?;
-                for (ordinal, reference) in fields.into_iter().enumerate() {
-                    let Some(offset) = u64::try_from(reference.offset())
-                        .ok()
-                        .and_then(|offset| entry_offset.checked_add(offset))
-                    else {
-                        continue;
-                    };
-                    let Some(frame) = crate::om::direct_reference::DirectReferenceFrame::<u64>::new(
-                        reference.kind(),
-                        reference.object(),
-                        offset,
-                    ) else {
-                        continue;
-                    };
-                    let Some(ordinal_u32) = u32::try_from(ordinal).ok() else {
-                        continue;
-                    };
-                    ctx.charge_work(1, "resolve NX operation object reference")?;
-                    ctx.reserve_vec(&mut references, 1, "NX operation object references")?;
-                    references.push(FeatureOperationObjectReference {
-                        id: format_feature_history_id(
-                            ctx,
-                            stem,
-                            section_key,
-                            operation_ordinal,
-                            Some(ordinal),
-                        )?,
-                        operation_label: format_feature_history_id(
-                            ctx,
-                            "operation-label",
-                            section_key,
-                            operation_ordinal,
-                            None,
-                        )?,
-                        operation_record: format_feature_history_id(
-                            ctx,
-                            "operation-record",
-                            section_key,
-                            operation_ordinal,
-                            None,
-                        )?,
-                        ordinal: ordinal_u32,
-                        data_block: charged_unique_offset_data_block(
-                            ctx,
-                            &indexed,
-                            frame.object().value(),
-                        )?,
-                        frame,
-                    });
-                }
-                Ok(())
-            })();
-            if let Err(error) = result {
-                failure = Some(error);
+            let fields = crate::om::direct_reference::operation_reference_fields(
+                record.payload_view(),
+                kind,
+            );
+            for (ordinal, reference) in fields.into_iter().enumerate() {
+                let Some(offset) = u64::try_from(reference.offset())
+                    .ok()
+                    .and_then(|offset| entry_offset.checked_add(offset))
+                else {
+                    continue;
+                };
+                let Some(frame) = crate::om::direct_reference::DirectReferenceFrame::<u64>::new(
+                    reference.kind(),
+                    reference.object(),
+                    offset,
+                ) else {
+                    continue;
+                };
+                let Some(ordinal_u32) = u32::try_from(ordinal).ok() else {
+                    continue;
+                };
+
+                references.push(FeatureOperationObjectReference {
+                    id: format_feature_history_id(
+                        stem,
+                        section_key,
+                        operation_ordinal,
+                        Some(ordinal),
+                    ),
+                    operation_label: format_feature_history_id(
+                        "operation-label",
+                        section_key,
+                        operation_ordinal,
+                        None,
+                    ),
+                    operation_record: format_feature_history_id(
+                        "operation-record",
+                        section_key,
+                        operation_ordinal,
+                        None,
+                    ),
+                    ordinal: ordinal_u32,
+                    data_block: unique_offset_data_block_id(&indexed, frame.object().value()),
+                    frame,
+                });
             }
         },
     )?;
-    if let Some(error) = failure {
-        return Err(error);
-    }
     Ok(references)
 }
 
 /// Decode every exact common frame from bounded feature operations.
 pub(super) fn feature_operation_common_frames(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
 ) -> Result<Vec<FeatureOperationCommonFrame>, cadmpeg_core::CodecError> {
-    let indexed = container.indexed_om_sections(ctx)?;
+    let indexed = container.indexed_om_sections()?;
     let mut frames = Vec::new();
-    let mut failure = None;
     visit_feature_history_operation_records(
-        ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            if failure.is_some() {
-                return;
-            }
-            let result = (|| -> Result<(), CodecError> {
-                let decoded = crate::om::operation_common_frames(ctx, record.payload_view())?;
-                for (ordinal, frame) in decoded.into_iter().enumerate() {
-                    let Some(offset) = u64::try_from(frame.offset())
-                        .ok()
-                        .and_then(|offset| entry_offset.checked_add(offset))
-                    else {
-                        continue;
-                    };
-                    let Some(ordinal_u32) = u32::try_from(ordinal).ok() else {
-                        continue;
-                    };
-                    ctx.charge_work(1, "resolve NX operation common frame")?;
-                    let target = match frame.suffix().object_index() {
-                        Some(index) => charged_unique_offset_data_block(ctx, &indexed, index)?,
-                        None => None,
-                    };
-                    let Some(frame) =
-                        crate::om::common_frame::CommonFrame::<u64, Option<String>>::new(
-                            frame.prefix(),
-                            frame.state(),
-                            (*frame.suffix()).map_target(|_, ()| target),
-                            offset,
-                        )
-                    else {
-                        continue;
-                    };
-                    ctx.reserve_vec(&mut frames, 1, "NX operation common frames")?;
-                    frames.push(FeatureOperationCommonFrame {
-                        id: format_feature_history_id(
-                            ctx,
-                            "operation-common-frame",
-                            section_key,
-                            operation_ordinal,
-                            Some(ordinal),
-                        )?,
-                        operation_record: format_feature_history_id(
-                            ctx,
-                            "operation-record",
-                            section_key,
-                            operation_ordinal,
-                            None,
-                        )?,
-                        ordinal: ordinal_u32,
-                        frame,
-                    });
-                }
-                Ok(())
-            })();
-            if let Err(error) = result {
-                failure = Some(error);
+            let decoded = crate::om::operation_common_frames(record.payload_view());
+            for (ordinal, frame) in decoded.into_iter().enumerate() {
+                let Some(offset) = u64::try_from(frame.offset())
+                    .ok()
+                    .and_then(|offset| entry_offset.checked_add(offset))
+                else {
+                    continue;
+                };
+                let Some(ordinal_u32) = u32::try_from(ordinal).ok() else {
+                    continue;
+                };
+
+                let target = frame
+                    .suffix()
+                    .object_index()
+                    .and_then(|index| unique_offset_data_block_id(&indexed, index));
+                let Some(frame) = crate::om::common_frame::CommonFrame::<u64, Option<String>>::new(
+                    frame.prefix(),
+                    frame.state(),
+                    (*frame.suffix()).map_target(|_, ()| target),
+                    offset,
+                ) else {
+                    continue;
+                };
+
+                frames.push(FeatureOperationCommonFrame {
+                    id: format_feature_history_id(
+                        "operation-common-frame",
+                        section_key,
+                        operation_ordinal,
+                        Some(ordinal),
+                    ),
+                    operation_record: format_feature_history_id(
+                        "operation-record",
+                        section_key,
+                        operation_ordinal,
+                        None,
+                    ),
+                    ordinal: ordinal_u32,
+                    frame,
+                });
             }
         },
     )?;
-    if let Some(error) = failure {
-        return Err(error);
-    }
     Ok(frames)
 }
 
 /// Decode canonical terminal common-frame suffixes from bounded operations.
 pub(super) fn feature_operation_terminal_frames(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
     common_frames: &[FeatureOperationCommonFrame],
 ) -> Result<Vec<FeatureOperationTerminalFrame>, cadmpeg_core::CodecError> {
-    let indexed = container.indexed_om_sections(ctx)?;
+    let indexed = container.indexed_om_sections()?;
     let mut frames = Vec::new();
     let mut failure = None;
     visit_feature_history_operation_records(
-        ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
             if failure.is_some() {
                 return;
             }
             let result = (|| -> Result<(), CodecError> {
-                let Some(decoded) =
-                    crate::om::operation_terminal_frame(ctx, record.payload_view())?
+                let Some(decoded) = crate::om::operation_terminal_frame(record.payload_view())
                 else {
                     return Ok(());
                 };
                 let operation_record = format_feature_history_id(
-                    ctx,
                     "operation-record",
                     section_key,
                     operation_ordinal,
                     None,
-                )?;
-                ctx.charge_work(
-                    cadmpeg_core::decode::u64_from_index(common_frames.len()),
-                    "resolve NX operation terminal common frame",
-                )?;
+                );
+
                 let immediate_common_frame = decoded
                     .immediate_common_frame_offset
                     .and_then(|offset| u64::try_from(offset).ok())
@@ -4931,10 +4497,11 @@ pub(super) fn feature_operation_terminal_frames(
                 else {
                     return Ok(());
                 };
-                let target = match decoded.frame.suffix().object_index() {
-                    Some(index) => charged_unique_offset_data_block(ctx, &indexed, index)?,
-                    None => None,
-                };
+                let target = decoded
+                    .frame
+                    .suffix()
+                    .object_index()
+                    .and_then(|index| unique_offset_data_block_id(&indexed, index));
                 let Some(frame) =
                     crate::om::common_frame::TerminalFrame::<u64, Option<String>>::new(
                         (*decoded.frame.suffix()).map_target(|_, ()| target),
@@ -4943,24 +4510,16 @@ pub(super) fn feature_operation_terminal_frames(
                 else {
                     return Ok(());
                 };
-                ctx.reserve_vec(&mut frames, 1, "NX operation terminal frames")?;
+
                 frames.push(FeatureOperationTerminalFrame {
                     id: format_feature_history_id(
-                        ctx,
                         "operation-terminal-frame",
                         section_key,
                         operation_ordinal,
                         None,
-                    )?,
+                    ),
                     operation_record,
-                    immediate_common_frame: immediate_common_frame
-                        .map(|id| {
-                            ctx.copy_retained_text(
-                                id,
-                                "NX operation immediate common frame identity",
-                            )
-                        })
-                        .transpose()?,
+                    immediate_common_frame: immediate_common_frame.map(ToOwned::to_owned),
                     frame,
                 });
                 Ok(())
@@ -4978,32 +4537,11 @@ pub(super) fn feature_operation_terminal_frames(
 
 /// Join operation terminal ordinals to exact rows in the owning state journal.
 pub(super) fn feature_operation_state_journal_uses(
-    ctx: &DecodeContext<'_>,
     labels: &[FeatureOperationLabel],
     records: &[FeatureOperationRecord],
     terminal_frames: &[FeatureOperationTerminalFrame],
     journal_groups: &[OmOperationStateJournalGroup],
-) -> Result<Vec<FeatureOperationStateJournalUse>, CodecError> {
-    let row_count = journal_groups.iter().try_fold(0usize, |count, group| {
-        count
-            .checked_add(group.frame.rows().len())
-            .ok_or_else(|| ctx.refuse_codec_limit("scan NX operation journal rows", 0, 1))
-    })?;
-    let scan_width = labels
-        .len()
-        .checked_mul(records.len())
-        .and_then(|count| count.checked_add(row_count))
-        .and_then(|count| count.checked_add(journal_groups.len()))
-        .ok_or_else(|| ctx.refuse_codec_limit("join NX operation journal rows", 0, 1))?;
-    let work = terminal_frames
-        .len()
-        .checked_mul(scan_width)
-        .and_then(|count| count.checked_add(row_count))
-        .ok_or_else(|| ctx.refuse_codec_limit("join NX operation journal rows", 0, 1))?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(work),
-        "join NX operation journal rows",
-    )?;
+) -> Vec<FeatureOperationStateJournalUse> {
     let mut uses = Vec::new();
     for frame in terminal_frames {
         let Some(label) = records
@@ -5056,61 +4594,40 @@ pub(super) fn feature_operation_state_journal_uses(
             .id
             .strip_prefix("nx:feature-history:operation-state-journal-group#")
             .unwrap_or(group.id.as_str());
-        let prefix = "nx:feature-history:operation-state-journal-use#";
-        let id_len = prefix
-            .len()
-            .checked_add(operation_key.len())
-            .and_then(|length| length.checked_add(journal_key.len()))
-            .and_then(|length| length.checked_add(12))
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit("format NX operation journal use identity", 0, 1)
-            })?;
-        let mut id = ctx.retained_string(id_len, "NX operation journal use identity")?;
-        write!(
-            &mut id,
-            "{prefix}{operation_key}-{journal_key}-{journal_row_ordinal:010}"
-        )
-        .map_err(|_| ctx.refuse_codec_limit("format NX operation journal use identity", 0, 1))?;
-        ctx.reserve_vec(&mut uses, 1, "NX operation journal uses")?;
+        let id = format!(
+            "nx:feature-history:operation-state-journal-use#{operation_key}-{journal_key}-{journal_row_ordinal:010}"
+        );
+
         uses.push(FeatureOperationStateJournalUse {
             id,
-            section_link: ctx
-                .copy_retained_text(&label.section_link, "NX operation journal section link")?,
-            operation_label: ctx
-                .copy_retained_text(&label.id, "NX operation journal label identity")?,
-            operation_record: ctx.copy_retained_text(
-                &frame.operation_record,
-                "NX operation journal record identity",
-            )?,
-            operation_terminal_frame: ctx
-                .copy_retained_text(&frame.id, "NX operation journal terminal identity")?,
-            journal_group: ctx
-                .copy_retained_text(&group.id, "NX operation journal group identity")?,
+            section_link: label.section_link.clone(),
+            operation_label: label.id.clone(),
+            operation_record: frame.operation_record.clone(),
+            operation_terminal_frame: frame.id.clone(),
+            journal_group: group.id.clone(),
             journal_row_ordinal,
             state_ordinal: row.ordinal().value(),
             operation_source_offset: frame.frame.offset(),
             journal_source_offset: row.offset(),
         });
     }
-    Ok(uses)
+    uses
 }
 
 /// Decode ordered self-framed strings from feature-operation payloads.
 pub(super) fn feature_payload_strings(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
 ) -> Result<Vec<FeaturePayloadString>, cadmpeg_core::CodecError> {
     let mut strings = Vec::new();
     let mut failure = None;
     visit_feature_history_operation_records(
-        ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
             if failure.is_some() {
                 return;
             }
             let result = (|| -> Result<(), CodecError> {
-                let values = crate::om::operation_payload_strings(ctx, record.payload_view())?;
+                let values = crate::om::operation_payload_strings(record.payload_view());
                 for (ordinal, value) in values.into_iter().enumerate() {
                     let Some(ordinal_u32) = u32::try_from(ordinal).ok() else {
                         continue;
@@ -5121,26 +4638,21 @@ pub(super) fn feature_payload_strings(
                     else {
                         continue;
                     };
-                    ctx.reserve_vec(&mut strings, 1, "NX feature payload strings")?;
-                    let text = ctx.copy_retained_text(
-                        value.value.as_str(),
-                        "NX feature payload string text",
-                    )?;
+
+                    let text = value.value.as_str().to_owned();
                     strings.push(FeaturePayloadString {
                         id: format_feature_history_id(
-                            ctx,
                             "payload-string",
                             section_key,
                             operation_ordinal,
                             Some(ordinal),
-                        )?,
+                        ),
                         operation_record: format_feature_history_id(
-                            ctx,
                             "operation-record",
                             section_key,
                             operation_ordinal,
                             None,
-                        )?,
+                        ),
                         ordinal: ordinal_u32,
                         value: crate::payload_text::PayloadText::new(text)
                             .map_err(|error| CodecError::InvalidInput(error.to_string()))?,
@@ -5162,154 +4674,105 @@ pub(super) fn feature_payload_strings(
 
 /// Decode complete body-reference fields from feature-history operations.
 pub(super) fn feature_body_references(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
 ) -> Result<Vec<FeatureBodyReference>, cadmpeg_core::CodecError> {
     let mut references = Vec::new();
-    let mut failure = None;
     visit_feature_history_operation_records(
-        ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            if failure.is_some() {
-                return;
-            }
             let Some(reference) = crate::om::operation_body_reference(record.body_view()) else {
                 return;
             };
-            let result = (|| -> Result<(), CodecError> {
-                let Some(source_offset) = u64::try_from(reference.offset)
-                    .ok()
-                    .and_then(|offset| entry_offset.checked_add(offset))
-                else {
-                    return Ok(());
-                };
-                ctx.charge_work(1, "resolve NX feature body reference")?;
-                ctx.reserve_vec(&mut references, 1, "NX feature body references")?;
-                references.push(FeatureBodyReference {
-                    ordinal: None,
-                    id: format_feature_history_id(
-                        ctx,
-                        "body-reference",
-                        section_key,
-                        operation_ordinal,
-                        None,
-                    )?,
-                    operation_label: format_feature_history_id(
-                        ctx,
-                        "operation-label",
-                        section_key,
-                        operation_ordinal,
-                        None,
-                    )?,
-                    body: reference.object_index,
-                    source_offset,
-                });
-                Ok(())
-            })();
-            if let Err(error) = result {
-                failure = Some(error);
-            }
+            let Some(source_offset) = u64::try_from(reference.offset)
+                .ok()
+                .and_then(|offset| entry_offset.checked_add(offset))
+            else {
+                return;
+            };
+            references.push(FeatureBodyReference {
+                ordinal: None,
+                id: format_feature_history_id(
+                    "body-reference",
+                    section_key,
+                    operation_ordinal,
+                    None,
+                ),
+                operation_label: format_feature_history_id(
+                    "operation-label",
+                    section_key,
+                    operation_ordinal,
+                    None,
+                ),
+                body: reference.object_index,
+                source_offset,
+            });
         },
     )?;
-    if let Some(error) = failure {
-        return Err(error);
-    }
     Ok(references)
 }
 
 /// Return the one body-reference field owned by each operation that has
 /// exactly one such field.
-pub(super) fn unique_feature_body_references<'a>(
-    ctx: &DecodeContext<'_>,
-    references: &'a [FeatureBodyReference],
-) -> Result<BTreeMap<&'a str, &'a FeatureBodyReference>, CodecError> {
-    let work = references
-        .len()
-        .checked_mul(references.len())
-        .ok_or_else(|| ctx.refuse_codec_limit("index NX body references", 0, 1))?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(work),
-        "index NX body references",
-    )?;
+pub(super) fn unique_feature_body_references(
+    references: &[FeatureBodyReference],
+) -> BTreeMap<&str, &FeatureBodyReference> {
     let mut unique = BTreeMap::<&str, &FeatureBodyReference>::new();
     let mut ambiguous = BTreeSet::<&str>::new();
-    let mut ambiguous_reservation = ctx.reserve_scoped(0, "NX ambiguous body references")?;
     for reference in references {
         let key = reference.operation_label.as_str();
         if ambiguous.contains(key) {
             continue;
         }
         if unique.remove(key).is_some() {
-            ambiguous_reservation.with_storage(|| {
-                ctx.insert_btree_set(&mut ambiguous, key, "NX ambiguous body references")
-            })?;
+            ambiguous.insert(key);
             continue;
         }
 
-        ctx.insert_btree_map(&mut unique, key, reference, "NX unique body references")?;
+        unique.insert(key, reference);
     }
-    Ok(unique)
+    unique
 }
 
 /// Decode every ordered body-reference field from bounded feature operations.
 pub(super) fn feature_body_reference_occurrences(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
 ) -> Result<Vec<FeatureBodyReference>, cadmpeg_core::CodecError> {
     let mut references = Vec::new();
-    let mut failure = None;
     visit_feature_history_operation_records(
-        ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            if failure.is_some() {
-                return;
-            }
-            let result = (|| -> Result<(), CodecError> {
-                let rows = crate::om::operation_body_references(ctx, record.body_view())?;
-                for (ordinal, reference) in rows.into_iter().enumerate() {
-                    let Some(ordinal_u32) = u32::try_from(ordinal).ok() else {
-                        continue;
-                    };
-                    let Some(source_offset) = u64::try_from(reference.offset)
-                        .ok()
-                        .and_then(|offset| entry_offset.checked_add(offset))
-                    else {
-                        continue;
-                    };
-                    ctx.charge_work(1, "resolve NX body reference occurrence")?;
-                    ctx.reserve_vec(&mut references, 1, "NX body reference occurrences")?;
-                    references.push(FeatureBodyReference {
-                        id: format_feature_history_id(
-                            ctx,
-                            "body-reference-occurrence",
-                            section_key,
-                            operation_ordinal,
-                            Some(ordinal),
-                        )?,
-                        operation_label: format_feature_history_id(
-                            ctx,
-                            "operation-label",
-                            section_key,
-                            operation_ordinal,
-                            None,
-                        )?,
-                        ordinal: Some(ordinal_u32),
-                        body: reference.object_index,
-                        source_offset,
-                    });
-                }
-                Ok(())
-            })();
-            if let Err(error) = result {
-                failure = Some(error);
+            let rows = crate::om::operation_body_references(record.body_view());
+            for (ordinal, reference) in rows.into_iter().enumerate() {
+                let Some(ordinal_u32) = u32::try_from(ordinal).ok() else {
+                    continue;
+                };
+                let Some(source_offset) = u64::try_from(reference.offset)
+                    .ok()
+                    .and_then(|offset| entry_offset.checked_add(offset))
+                else {
+                    continue;
+                };
+
+                references.push(FeatureBodyReference {
+                    id: format_feature_history_id(
+                        "body-reference-occurrence",
+                        section_key,
+                        operation_ordinal,
+                        Some(ordinal),
+                    ),
+                    operation_label: format_feature_history_id(
+                        "operation-label",
+                        section_key,
+                        operation_ordinal,
+                        None,
+                    ),
+                    ordinal: Some(ordinal_u32),
+                    body: reference.object_index,
+                    source_offset,
+                });
             }
         },
     )?;
-    if let Some(error) = failure {
-        return Err(error);
-    }
     Ok(references)
 }
 
@@ -5335,55 +4798,23 @@ fn unique_offset_store_body_frame<'a>(
 }
 
 pub(super) fn feature_body_segment_uses(
-    ctx: &DecodeContext<'_>,
     references: &[FeatureBodyReference],
     data_block_uses: &[FeatureBodyDataBlockUse],
     inputs: &[FeatureInputBlock],
     blocks: &[crate::native::om::DataBlock],
     bindings: &[SegmentBodyBinding],
     object_frames: &[DataBlockObjectFrame],
-) -> Result<Vec<FeatureBodySegmentUse>, CodecError> {
-    let (unique_references, _unique_references_storage) = ctx
-        .with_scoped_storage("NX local unique_references storage", || {
-            unique_feature_body_references(ctx, references)
-        })?;
-    let mut counts_reservation = ctx.reserve_scoped(0, "NX body offset-store reference counts")?;
+) -> Vec<FeatureBodySegmentUse> {
+    let unique_references = unique_feature_body_references(references);
     let mut offset_store_reference_counts = BTreeMap::<&str, usize>::new();
     for use_ in data_block_uses {
-        let reference_key = use_.feature_body_reference.as_str();
-        counts_reservation.with_storage(|| {
-            ctx.admit_btree_entry(
-                &offset_store_reference_counts,
-                &reference_key,
-                "NX body offset-store reference counts",
-            )
-        })?;
-
-        let count = offset_store_reference_counts
-            .entry(reference_key)
-            .or_default();
-        *count = count
-            .checked_add(1)
-            .ok_or_else(|| ctx.refuse_codec_limit("count NX body offset-store references", 0, 1))?;
+        *offset_store_reference_counts
+            .entry(use_.feature_body_reference.as_str())
+            .or_default() += 1;
     }
-    let (offset_store_operations, _offset_store_operations_storage) = ctx
-        .with_scoped_storage("NX local offset_store_operations storage", || {
-            feature_input_store_operations(ctx, inputs, blocks)
-        })?;
-    let (store_sections, _store_sections_storage) = ctx
-        .with_scoped_storage("NX local store_sections storage", || {
-            feature_input_store_sections(ctx, inputs, blocks)
-        })?;
-    let scan_work = references
-        .len()
-        .checked_mul(data_block_uses.len())
-        .and_then(|count| count.checked_add(references.len().checked_mul(bindings.len())?))
-        .and_then(|count| count.checked_add(references.len().checked_mul(object_frames.len())?))
-        .ok_or_else(|| ctx.refuse_codec_limit("join NX body segment uses", 0, 1))?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(scan_work),
-        "join NX body segment uses",
-    )?;
+    let offset_store_operations = feature_input_store_operations(inputs, blocks);
+    let store_sections = feature_input_store_sections(inputs, blocks);
+
     let mut output = Vec::new();
     for reference in references {
         if unique_references
@@ -5435,35 +4866,15 @@ pub(super) fn feature_body_segment_uses(
             };
             binding
         };
-        let replace = reference.id.split_once("body-reference");
-        let (prefix, suffix, replacement) = replace
-            .map_or((reference.id.as_str(), "", ""), |(prefix, suffix)| {
-                (prefix, suffix, "body-segment-use")
-            });
-        let id_len = prefix
-            .len()
-            .checked_add(suffix.len())
-            .and_then(|count| count.checked_add(replacement.len()))
-            .ok_or_else(|| ctx.refuse_codec_limit("NX body segment use identity", 0, 1))?;
-        let mut id = ctx.retained_string(id_len, "NX body segment use identity")?;
-        id.push_str(prefix);
-        id.push_str(replacement);
-        id.push_str(suffix);
-        let copy = |source: &str, operation: &'static str| -> Result<String, CodecError> {
-            let mut value = ctx.retained_string(source.len(), operation)?;
-            value.push_str(source);
-            Ok(value)
-        };
-        let feature_body_reference = copy(&reference.id, "NX body segment reference identity")?;
-        let segment_body_binding = copy(&binding.id, "NX body segment binding identity")?;
-        ctx.reserve_vec(&mut output, 1, "NX body segment uses")?;
         output.push(FeatureBodySegmentUse {
-            id,
-            feature_body_reference,
-            segment_body_binding,
+            id: reference
+                .id
+                .replacen("body-reference", "body-segment-use", 1),
+            feature_body_reference: reference.id.clone(),
+            segment_body_binding: binding.id.clone(),
         });
     }
-    Ok(output)
+    output
 }
 
 /// Return operations with at least one resolved input field in an offset store.
@@ -5472,114 +4883,44 @@ pub(super) fn feature_body_segment_uses(
 /// offset-store namespace. The one-store requirement for a segment bridge is
 /// checked separately from this broader namespace classification.
 pub(super) fn feature_input_store_operations(
-    ctx: &DecodeContext<'_>,
     inputs: &[FeatureInputBlock],
     blocks: &[crate::native::om::DataBlock],
-) -> Result<BTreeSet<String>, CodecError> {
-    let (sections, _sections_storage) = ctx
-        .with_scoped_storage("NX local sections storage", || {
-            feature_input_store_sections(ctx, inputs, blocks)
-        })?;
-    let mut operations = BTreeSet::new();
-    for (label, sections) in sections {
-        if sections.is_empty() {
-            continue;
-        }
-
-        let label = ctx.copy_retained_text(&label, "NX offset-store operation label")?;
-        ctx.insert_btree_set(&mut operations, label, "NX offset-store operations")?;
-    }
-    Ok(operations)
+) -> BTreeSet<String> {
+    feature_input_store_sections(inputs, blocks)
+        .into_iter()
+        .filter(|(_, sections)| !sections.is_empty())
+        .map(|(label, _)| label)
+        .collect()
 }
 
 /// Group resolved operation-header inputs by their indexed offset-store section.
 fn feature_input_store_sections(
-    ctx: &DecodeContext<'_>,
     inputs: &[FeatureInputBlock],
     blocks: &[crate::native::om::DataBlock],
-) -> Result<BTreeMap<String, BTreeSet<u32>>, CodecError> {
-    let mut block_reservation = ctx.reserve_scoped(0, "NX input-store block index")?;
-    let mut blocks_by_id = BTreeMap::new();
-    for block in blocks {
-        block_reservation.with_storage(|| {
-            ctx.insert_btree_map(
-                &mut blocks_by_id,
-                block.id.as_str(),
-                block,
-                "NX input-store block index",
-            )
-        })?;
-    }
-    let work = inputs
-        .len()
-        .checked_mul(blocks.len())
-        .and_then(|count| count.checked_add(inputs.len()))
-        .ok_or_else(|| ctx.refuse_codec_limit("join NX input-store sections", 0, 1))?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(work),
-        "join NX input-store sections",
-    )?;
+) -> BTreeMap<String, BTreeSet<u32>> {
+    let blocks_by_id = blocks
+        .iter()
+        .map(|block| (block.id.as_str(), block))
+        .collect::<BTreeMap<_, _>>();
     let mut sections_by_operation = BTreeMap::<String, BTreeSet<u32>>::new();
     for input in inputs {
         let Some(block) = blocks_by_id.get(input.data_block.as_str()) else {
             continue;
         };
-        ctx.charge_collection_items(1, "NX input-store section identities")?;
-
-        if let Some(sections) = sections_by_operation.get_mut(input.operation_label.as_str()) {
-            if !sections.contains(&block.section_ordinal) {
-                ctx.admit_btree_node_storage::<u32, ()>(
-                    sections.len(),
-                    "NX input-store section identities",
-                )?;
-            }
-            sections.insert(block.section_ordinal);
-            continue;
-        }
-        let key_len = input.operation_label.len();
-
-        let mut label = String::new();
-        ctx.try_reserve_retained_text(
-            &mut label,
-            key_len,
-            "allocate NX input-store operation label",
-        )?;
-        label.push_str(&input.operation_label);
-        let mut sections = BTreeSet::new();
-        ctx.admit_btree_node_storage::<u32, ()>(0, "NX input-store section identities")?;
-        sections.insert(block.section_ordinal);
-        ctx.insert_btree_map(
-            &mut sections_by_operation,
-            label,
-            sections,
-            "NX input-store operation groups",
-        )?;
+        sections_by_operation
+            .entry(input.operation_label.clone())
+            .or_default()
+            .insert(block.section_ordinal);
     }
-    Ok(sections_by_operation)
+    sections_by_operation
 }
 
 /// Resolve primary feature body fields in an unambiguous operation input store.
 pub(super) fn feature_body_data_block_uses(
-    ctx: &DecodeContext<'_>,
     references: &[FeatureBodyReference],
     inputs: &[FeatureInputBlock],
     blocks: &[crate::native::om::DataBlock],
-) -> Result<Vec<FeatureBodyDataBlockUse>, CodecError> {
-    let work = references
-        .len()
-        .checked_mul(references.len())
-        .and_then(|work| {
-            references
-                .len()
-                .checked_mul(inputs.len())?
-                .checked_mul(blocks.len())?
-                .checked_add(work)
-        })
-        .ok_or_else(|| ctx.refuse_codec_limit("scan NX feature body block uses", 0, 1))?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(work),
-        "scan NX feature body block uses",
-    )?;
+) -> Vec<FeatureBodyDataBlockUse> {
     let mut uses = Vec::new();
     for reference in references {
         if references
@@ -5623,150 +4964,77 @@ pub(super) fn feature_body_data_block_uses(
         if matches.next().is_some() {
             continue;
         }
-        let old = "body-reference";
-        let new = "body-data-block-use";
-        let (prefix, suffix) = if let Some(position) = reference.id.find(old) {
-            (
-                &reference.id[..position],
-                &reference.id[position + old.len()..],
-            )
-        } else {
-            (reference.id.as_str(), "")
-        };
-        let id_len = prefix
-            .len()
-            .checked_add(suffix.len())
-            .and_then(|length| {
-                length.checked_add(if prefix.len() == reference.id.len() {
-                    0
-                } else {
-                    new.len()
-                })
-            })
-            .ok_or_else(|| ctx.refuse_codec_limit("retain NX feature body block use id", 0, 1))?;
-        let mut id = ctx.retained_string(id_len, "retain NX feature body block use id")?;
-        id.push_str(prefix);
-        if prefix.len() != reference.id.len() {
-            id.push_str(new);
-        }
-        id.push_str(suffix);
-        ctx.reserve_vec(&mut uses, 1, "NX feature body block uses")?;
         uses.push(FeatureBodyDataBlockUse {
-            id,
-            feature_body_reference: ctx
-                .copy_retained_text(&reference.id, "retain NX feature body reference id")?,
-            data_block: ctx.copy_retained_text(&block.id, "retain NX feature body block id")?,
+            id: reference
+                .id
+                .replacen("body-reference", "body-data-block-use", 1),
+            feature_body_reference: reference.id.clone(),
+            data_block: block.id.clone(),
         });
     }
-    Ok(uses)
+    uses
 }
 
 /// Resolve operation-header object indices to unique offset-only data blocks.
 pub(super) fn feature_input_blocks(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
 ) -> Result<Vec<FeatureInputBlock>, cadmpeg_core::CodecError> {
-    let indexed = container.indexed_om_sections(ctx)?;
+    let indexed = container.indexed_om_sections()?;
     let mut inputs = Vec::new();
-    let mut failure = None;
     visit_feature_history_operation_records(
-        ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            if failure.is_some() {
-                return;
-            }
             let label = record.label();
             for (input_slot, object) in HeaderSlot::ALL.into_iter().zip(label.header.objects().0) {
                 let Some(object) = object else {
                     continue;
                 };
-                let result = (|| -> Result<(), CodecError> {
-                    let Some(data_block) =
-                        charged_unique_offset_data_block(ctx, &indexed, object.value())?
-                    else {
-                        return Ok(());
-                    };
-                    let Some(source_offset) =
-                        u64::try_from(label.header.object_offsets()[input_slot.index()])
-                            .ok()
-                            .and_then(|offset| entry_offset.checked_add(offset))
-                    else {
-                        return Ok(());
-                    };
-                    ctx.reserve_vec(&mut inputs, 1, "NX feature input blocks")?;
-                    inputs.push(FeatureInputBlock {
-                        id: format_feature_history_id(
-                            ctx,
-                            "input-block",
-                            section_key,
-                            operation_ordinal,
-                            Some(input_slot.index()),
-                        )?,
-                        operation_label: format_feature_history_id(
-                            ctx,
-                            "operation-label",
-                            section_key,
-                            operation_ordinal,
-                            None,
-                        )?,
-                        input_slot,
-                        object,
-                        data_block,
-                        source_offset,
-                    });
-                    Ok(())
-                })();
-                if let Err(error) = result {
-                    failure = Some(error);
-                    return;
-                }
+                let Some(data_block) = unique_offset_data_block_id(&indexed, object.value()) else {
+                    continue;
+                };
+                let Some(source_offset) =
+                    u64::try_from(label.header.object_offsets()[input_slot.index()])
+                        .ok()
+                        .and_then(|offset| entry_offset.checked_add(offset))
+                else {
+                    continue;
+                };
+
+                inputs.push(FeatureInputBlock {
+                    id: format_feature_history_id(
+                        "input-block",
+                        section_key,
+                        operation_ordinal,
+                        Some(input_slot.index()),
+                    ),
+                    operation_label: format_feature_history_id(
+                        "operation-label",
+                        section_key,
+                        operation_ordinal,
+                        None,
+                    ),
+                    input_slot,
+                    object,
+                    data_block,
+                    source_offset,
+                });
             }
         },
     )?;
-    if let Some(error) = failure {
-        return Err(error);
-    }
     Ok(inputs)
 }
 
 /// Group bindings from distinct operations by exact resolved data-block identity.
 pub(super) fn feature_input_block_identity_groups(
-    ctx: &DecodeContext<'_>,
     inputs: &[FeatureInputBlock],
-) -> Result<Vec<FeatureInputBlockIdentityGroup>, CodecError> {
-    let work = inputs
-        .len()
-        .checked_mul(inputs.len())
-        .and_then(|count| count.checked_mul(3))
-        .ok_or_else(|| ctx.refuse_codec_limit("group NX feature input blocks", 0, 1))?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(work),
-        "group NX feature input blocks",
-    )?;
-    let mut map_reservation = ctx.reserve_scoped(0, "NX input block group index")?;
-    let mut member_reservation = ctx.reserve_scoped(0, "NX input block group members")?;
+) -> Vec<FeatureInputBlockIdentityGroup> {
     let mut by_block = BTreeMap::<&str, Vec<&FeatureInputBlock>>::new();
     for input in inputs {
-        if !by_block.contains_key(input.data_block.as_str()) {
-            map_reservation.with_storage(|| {
-                ctx.admit_btree_entry(
-                    &by_block,
-                    &input.data_block.as_str(),
-                    "NX input block group index",
-                )
-            })?;
-        }
-        let members = by_block.entry(input.data_block.as_str()).or_default();
-        ctx.reserve_scoped_vec(
-            &mut member_reservation,
-            members,
-            1,
-            "NX input block group members",
-        )?;
-        members.push(input);
+        by_block
+            .entry(input.data_block.as_str())
+            .or_default()
+            .push(input);
     }
-    let mut group_reservation = ctx.reserve_scoped(0, "NX input block group order")?;
     let mut groups = Vec::new();
     for (data_block, mut members) in by_block {
         let Some(first) = members.first() else {
@@ -5778,90 +5046,45 @@ pub(super) fn feature_input_block_identity_groups(
         {
             continue;
         }
-        ctx.stable_sort_by(
-            &mut members,
-            |left, right| left.source_offset.cmp(&right.source_offset),
-            |_| 0,
-            "sort NX input block group members",
-        )?;
-        ctx.reserve_scoped_vec(
-            &mut group_reservation,
-            &mut groups,
-            1,
-            "NX input block group order",
-        )?;
+        members.sort_by_key(|left| left.source_offset);
         groups.push((data_block, members));
     }
-    drop(map_reservation);
-    ctx.stable_sort_by(
-        &mut groups,
-        |(_, left), (_, right)| left[0].source_offset.cmp(&right[0].source_offset),
-        |_| 0,
-        "sort NX input block groups",
-    )?;
+    groups.sort_by(|(_, left), (_, right)| left[0].source_offset.cmp(&right[0].source_offset));
     let mut output = Vec::new();
     for (ordinal, (data_block, members)) in groups.into_iter().enumerate() {
         let mut retained_members = Vec::new();
         for member in members {
-            ctx.reserve_vec(&mut retained_members, 1, "NX input block identity members")?;
             retained_members.push(FeatureInputBlockIdentityMember {
-                input_block: ctx
-                    .copy_retained_text(&member.id, "NX input block identity member")?,
-                operation_label: ctx.copy_retained_text(
-                    &member.operation_label,
-                    "NX input block member operation label",
-                )?,
+                input_block: member.id.clone(),
+                operation_label: member.operation_label.clone(),
                 input_slot: member.input_slot,
                 source_offset: member.source_offset,
             });
         }
-        let prefix = "nx:feature-history:input-block-identity-group#";
-        let mut value = ordinal;
-        let mut digits = 1usize;
-        while value >= 10 {
-            value /= 10;
-            digits += 1;
-        }
-        let id_len = prefix
-            .len()
-            .checked_add(digits.max(10))
-            .ok_or_else(|| ctx.refuse_codec_limit("NX input block identity group id", 0, 1))?;
-        let mut id = ctx.retained_string(id_len, "NX input block identity group id")?;
-        write!(&mut id, "{prefix}{ordinal:010}")
-            .map_err(|_| ctx.refuse_codec_limit("format NX input block identity group id", 0, 1))?;
-        ctx.reserve_vec(&mut output, 1, "NX input block identity groups")?;
         output.push(FeatureInputBlockIdentityGroup {
-            id,
-            data_block: ctx.copy_retained_text(data_block, "NX grouped input data block")?,
+            id: format!("nx:feature-history:input-block-identity-group#{ordinal:010}"),
+            data_block: data_block.to_owned(),
             members: retained_members,
         });
     }
-    Ok(output)
+    output
 }
 
 fn visit_column_slots<'a>(
-    ctx: &DecodeContext<'_>,
     index_rows: &'a [DataBlockIndexRow],
     linked_rows: &'a [DataBlockLinkedIndexRow],
     target_rows: &'a [DataBlockTargetIndexRow],
-    mut visit: impl FnMut(
-        &'a str,
-        &'a str,
-        ColumnIndexRowKind,
-        ColumnRowSlot,
-        u64,
-    ) -> Result<(), CodecError>,
-) -> Result<(), CodecError> {
+    mut visit: impl FnMut(&'a str, &'a str, ColumnIndexRowKind, ColumnRowSlot, u64),
+) {
     for row in index_rows {
         for (slot, token) in ColumnRowSlot::ALL.into_iter().zip(row.frame.indices()) {
-            ctx.charge_work(1, "scan NX column row slots")?;
             visit(
                 token.target,
                 &row.id,
                 ColumnIndexRowKind::Index,
                 slot,
                 token.offset,
-            )?;
+            );
         }
     }
     for row in linked_rows {
@@ -5869,14 +5092,13 @@ fn visit_column_slots<'a>(
             .into_iter()
             .zip(std::iter::once(row.frame.target_index()).chain(row.frame.indices()))
         {
-            ctx.charge_work(1, "scan NX column row slots")?;
             visit(
                 token.target,
                 &row.id,
                 ColumnIndexRowKind::LinkedIndex,
                 slot,
                 token.offset,
-            )?;
+            );
         }
     }
     for row in target_rows {
@@ -5884,145 +5106,105 @@ fn visit_column_slots<'a>(
             .into_iter()
             .zip(std::iter::once(row.frame.target_index()).chain(row.frame.indices()))
         {
-            ctx.charge_work(1, "scan NX column row slots")?;
             visit(
                 token.target,
                 &row.id,
                 ColumnIndexRowKind::TargetIndex,
                 slot,
                 token.offset,
-            )?;
+            );
         }
     }
-    Ok(())
 }
 
-fn unique_column_table<'a>(
-    ctx: &DecodeContext<'_>,
-    row: &str,
-    tables: &'a [DataBlockColumnIndexTable],
-) -> Result<Option<&'a str>, CodecError> {
+fn unique_column_table<'a>(row: &str, tables: &'a [DataBlockColumnIndexTable]) -> Option<&'a str> {
     let mut unique = None;
     for table in tables {
         for candidate in std::iter::once(table.opening_linked_row.as_str())
             .chain(table.rows.target_rows().iter().map(String::as_str))
             .chain(table.rows.linked_rows().iter().map(String::as_str))
         {
-            ctx.charge_work(1, "resolve NX column row table")?;
             if candidate != row {
                 continue;
             }
             if unique.is_some() {
-                return Ok(None);
+                return None;
             }
             unique = Some(table.id.as_str());
         }
     }
-    Ok(unique)
+    unique
 }
 
 fn format_column_relation_id(
-    ctx: &DecodeContext<'_>,
     prefix: &'static str,
     key: &str,
     construction_slot: Option<DatumCsysSlot>,
     row_kind: ColumnIndexRowKind,
     ordinal: usize,
-) -> Result<String, CodecError> {
-    let mut value = ordinal;
-    let mut digits = 1usize;
-    while value >= 10 {
-        value /= 10;
-        digits += 1;
-    }
+) -> String {
     let kind = row_kind.id_component();
-    let length = prefix
-        .len()
-        .checked_add(key.len())
-        .and_then(|length| length.checked_add(kind.len()))
-        .and_then(|length| length.checked_add(digits.max(10)))
-        .and_then(|length| length.checked_add(if construction_slot.is_some() { 13 } else { 2 }))
-        .ok_or_else(|| ctx.refuse_codec_limit("format NX column relation identity", 0, 1))?;
-    let mut id = ctx.retained_string(length, "NX column relation identity")?;
-    if let Some(slot) = construction_slot {
-        write!(&mut id, "{prefix}{key}-{slot:010}-{kind}-{ordinal:010}")
-            .map_err(|_| ctx.refuse_codec_limit("format NX column relation identity", 0, 1))?;
-    } else {
-        write!(&mut id, "{prefix}{key}-{kind}-{ordinal:010}")
-            .map_err(|_| ctx.refuse_codec_limit("format NX column relation identity", 0, 1))?;
+    match construction_slot {
+        Some(slot) => format!("{prefix}{key}-{slot:010}-{kind}-{ordinal:010}"),
+        None => format!("{prefix}{key}-{kind}-{ordinal:010}"),
     }
-    Ok(id)
 }
 
 /// Join feature inputs to every column-row slot addressing the same block.
 pub(super) fn feature_input_column_row_uses(
-    ctx: &DecodeContext<'_>,
     inputs: &[FeatureInputBlock],
     index_rows: &[DataBlockIndexRow],
     linked_rows: &[DataBlockLinkedIndexRow],
     target_rows: &[DataBlockTargetIndexRow],
     tables: &[DataBlockColumnIndexTable],
-) -> Result<Vec<FeatureInputColumnRowUse>, CodecError> {
+) -> Vec<FeatureInputColumnRowUse> {
     let mut output = Vec::new();
     for input in inputs {
         let mut ordinal = 0usize;
         visit_column_slots(
-            ctx,
             index_rows,
             linked_rows,
             target_rows,
             |data_block, row, row_kind, slot, source_offset| {
                 if data_block != input.data_block {
-                    return Ok(());
+                    return;
                 }
-                let table = unique_column_table(ctx, row, tables)?;
-                ctx.reserve_vec(&mut output, 1, "NX input column row uses")?;
+                let table = unique_column_table(row, tables);
+
                 output.push(FeatureInputColumnRowUse {
                     id: format_column_relation_id(
-                        ctx,
                         "nx:feature-history:input-column-row-use#",
                         input.id.rsplit_once('#').map_or("unknown", |(_, key)| key),
                         None,
                         row_kind,
                         ordinal,
-                    )?,
-                    input_block: ctx
-                        .copy_retained_text(&input.id, "NX input column row input identity")?,
-                    operation_label: ctx.copy_retained_text(
-                        &input.operation_label,
-                        "NX input column row operation label",
-                    )?,
+                    ),
+                    input_block: input.id.clone(),
+                    operation_label: input.operation_label.clone(),
                     input_slot: input.input_slot,
                     row_kind,
-                    column_row: ctx.copy_retained_text(row, "NX input column row identity")?,
-                    column_table: table
-                        .map(|id| ctx.copy_retained_text(id, "NX input column table identity"))
-                        .transpose()?,
+                    column_row: row.to_owned(),
+                    column_table: table.map(ToOwned::to_owned),
                     row_slot: slot,
-                    data_block: ctx
-                        .copy_retained_text(&input.data_block, "NX input column data block")?,
+                    data_block: input.data_block.clone(),
                     source_offset,
                 });
-                ordinal = ordinal.checked_add(1).ok_or_else(|| {
-                    ctx.refuse_codec_limit("count NX input column row uses", 0, 1)
-                })?;
-                Ok(())
+                ordinal += 1;
             },
-        )?;
+        );
     }
-    Ok(output)
+    output
 }
 
 /// Join every datum-CSYS construction lane to column-row slots addressing the
 /// same block. The relation assigns no geometric role to either lane.
 pub(super) fn feature_datum_csys_column_row_uses(
-    ctx: &DecodeContext<'_>,
     constructions: &[FeatureDatumCsysConstruction],
     index_rows: &[DataBlockIndexRow],
     linked_rows: &[DataBlockLinkedIndexRow],
     target_rows: &[DataBlockTargetIndexRow],
     tables: &[DataBlockColumnIndexTable],
-) -> Result<Vec<FeatureDatumCsysColumnRowUse>, CodecError> {
+) -> Vec<FeatureDatumCsysColumnRowUse> {
     let mut output = Vec::new();
     for construction in constructions {
         for (construction_slot, (_, data_block, source_offset)) in DatumCsysSlot::ALL
@@ -6031,19 +5213,17 @@ pub(super) fn feature_datum_csys_column_row_uses(
         {
             let mut ordinal = 0usize;
             visit_column_slots(
-                ctx,
                 index_rows,
                 linked_rows,
                 target_rows,
                 |target, row, row_kind, row_slot, row_source_offset| {
                     if target != data_block {
-                        return Ok(());
+                        return;
                     }
-                    let table = unique_column_table(ctx, row, tables)?;
-                    ctx.reserve_vec(&mut output, 1, "NX datum CSYS column row uses")?;
+                    let table = unique_column_table(row, tables);
+
                     output.push(FeatureDatumCsysColumnRowUse {
                         id: format_column_relation_id(
-                            ctx,
                             "nx:feature-history:datum-csys-column-row-use#",
                             construction
                                 .id
@@ -6052,62 +5232,33 @@ pub(super) fn feature_datum_csys_column_row_uses(
                             Some(construction_slot),
                             row_kind,
                             ordinal,
-                        )?,
-                        construction: ctx.copy_retained_text(
-                            &construction.id,
-                            "NX datum CSYS column construction identity",
-                        )?,
-                        operation_label: ctx.copy_retained_text(
-                            &construction.operation_label,
-                            "NX datum CSYS column operation label",
-                        )?,
+                        ),
+                        construction: construction.id.clone(),
+                        operation_label: construction.operation_label.clone(),
                         construction_slot,
                         row_kind,
-                        column_row: ctx
-                            .copy_retained_text(row, "NX datum CSYS column row identity")?,
-                        column_table: table
-                            .map(|id| {
-                                ctx.copy_retained_text(id, "NX datum CSYS column table identity")
-                            })
-                            .transpose()?,
+                        column_row: row.to_owned(),
+                        column_table: table.map(ToOwned::to_owned),
                         row_slot,
-                        data_block: ctx
-                            .copy_retained_text(data_block, "NX datum CSYS column data block")?,
+                        data_block: data_block.to_owned(),
                         construction_source_offset: source_offset,
                         row_source_offset,
                     });
-                    ordinal = ordinal.checked_add(1).ok_or_else(|| {
-                        ctx.refuse_codec_limit("count NX datum CSYS column row uses", 0, 1)
-                    })?;
-                    Ok(())
+                    ordinal += 1;
                 },
-            )?;
+            );
         }
     }
-    Ok(output)
+    output
 }
 
 /// Retain inputs having exactly one slot-zero use in one complete column table.
 pub(super) fn feature_input_column_targets(
-    ctx: &DecodeContext<'_>,
     inputs: &[FeatureInputBlock],
     uses: &[FeatureInputColumnRowUse],
     linked_rows: &[DataBlockLinkedIndexRow],
     target_rows: &[DataBlockTargetIndexRow],
-) -> Result<Vec<FeatureInputColumnTarget>, CodecError> {
-    let scan_width = uses
-        .len()
-        .checked_add(linked_rows.len())
-        .and_then(|count| count.checked_add(target_rows.len()))
-        .ok_or_else(|| ctx.refuse_codec_limit("resolve NX input column targets", 0, 1))?;
-    let work = inputs
-        .len()
-        .checked_mul(scan_width)
-        .ok_or_else(|| ctx.refuse_codec_limit("resolve NX input column targets", 0, 1))?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(work),
-        "resolve NX input column targets",
-    )?;
+) -> Vec<FeatureInputColumnTarget> {
     let mut output = Vec::new();
     for input in inputs {
         let mut targets = uses.iter().filter(|use_| {
@@ -6136,9 +5287,7 @@ pub(super) fn feature_input_column_targets(
                 if rows.next().is_some() {
                     continue;
                 }
-                let [first, second, third] = row.frame.indices().map(|token| {
-                    ctx.copy_retained_text(token.target, "NX input column target field data block")
-                });
+                let field_data_blocks = row.frame.indices().map(|token| token.target.to_owned());
                 (
                     FeatureInputColumnTargetRow::Linked {
                         leading_index: row.frame.first_index().atom.value(),
@@ -6147,7 +5296,7 @@ pub(super) fn feature_input_column_targets(
                         flag: row.frame.flag(),
                     },
                     row.frame.indices().map(|token| token.atom.value()),
-                    [first?, second?, third?],
+                    field_data_blocks,
                     row.frame.indices().map(|token| token.offset),
                     row.frame.mode(),
                 )
@@ -6160,13 +5309,11 @@ pub(super) fn feature_input_column_targets(
                 if rows.next().is_some() {
                     continue;
                 }
-                let [first, second, third] = row.frame.indices().map(|token| {
-                    ctx.copy_retained_text(token.target, "NX input column target field data block")
-                });
+                let field_data_blocks = row.frame.indices().map(|token| token.target.to_owned());
                 (
                     FeatureInputColumnTargetRow::Target,
                     row.frame.indices().map(|token| token.atom.value()),
-                    [first?, second?, third?],
+                    field_data_blocks,
                     row.frame.indices().map(|token| token.offset),
                     row.frame.mode(),
                 )
@@ -6174,53 +5321,37 @@ pub(super) fn feature_input_column_targets(
             ColumnIndexRowKind::Index => continue,
         };
         let key = input.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
-        let prefix = "nx:feature-history:input-column-target#";
-        let id_len = prefix
-            .len()
-            .checked_add(key.len())
-            .ok_or_else(|| ctx.refuse_codec_limit("NX input column target identity", 0, 1))?;
-        let mut id = ctx.retained_string(id_len, "NX input column target identity")?;
-        id.push_str(prefix);
-        id.push_str(key);
-        ctx.reserve_vec(&mut output, 1, "NX input column targets")?;
+        let id = format!("nx:feature-history:input-column-target#{key}");
+
         output.push(FeatureInputColumnTarget {
             id,
-            input_block: ctx
-                .copy_retained_text(&input.id, "NX input column target input identity")?,
-            operation_label: ctx.copy_retained_text(
-                &input.operation_label,
-                "NX input column target operation label",
-            )?,
+            input_block: input.id.clone(),
+            operation_label: input.operation_label.clone(),
             input_slot: input.input_slot,
-            column_row: ctx
-                .copy_retained_text(&target.column_row, "NX input column target row identity")?,
+            column_row: target.column_row.clone(),
             row,
             field_indices,
             field_data_blocks,
             field_source_offsets,
             mode,
-            column_table: ctx
-                .copy_retained_text(column_table, "NX input column target table identity")?,
-            data_block: ctx
-                .copy_retained_text(&input.data_block, "NX input column target data block")?,
+            column_table: column_table.to_owned(),
+            data_block: input.data_block.clone(),
             source_offset: target.source_offset,
         });
     }
-    Ok(output)
+    output
 }
 
 /// Decode and atomically resolve datum coordinate-system construction lanes
 /// through the offset store selected by each operation header.
 pub(super) fn feature_datum_csys_constructions(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
 ) -> Result<Vec<FeatureDatumCsysConstruction>, cadmpeg_core::CodecError> {
-    let indexed = container.indexed_om_sections(ctx)?;
-    let inputs = feature_input_blocks(ctx, container)?;
+    let indexed = container.indexed_om_sections()?;
+    let inputs = feature_input_blocks(container)?;
     let mut constructions = Vec::new();
     let mut failure = None;
     visit_feature_history_operation_records(
-        ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
             if failure.is_some() {
@@ -6232,16 +5363,12 @@ pub(super) fn feature_datum_csys_constructions(
             };
             let result = (|| -> Result<(), CodecError> {
                 let operation_label = format_feature_history_id(
-                    ctx,
                     "operation-label",
                     section_key,
                     operation_ordinal,
                     None,
-                )?;
-                ctx.charge_work(
-                    cadmpeg_core::decode::u64_from_index(inputs.len()),
-                    "resolve NX datum CSYS input prefix",
-                )?;
+                );
+
                 let mut input_prefix = None;
                 for input in &inputs {
                     if input.operation_label != operation_label {
@@ -6263,25 +5390,20 @@ pub(super) fn feature_datum_csys_constructions(
                     return Ok(());
                 };
                 let Some(frame) = field.resolve(|index| {
-                    let Some(data_block) = charged_unique_offset_data_block(ctx, &indexed, index)?
-                    else {
-                        return Ok(None);
-                    };
-                    Ok((data_block.rsplit_once(":block#").map(|(prefix, _)| prefix)
+                    let data_block = unique_offset_data_block_id(&indexed, index)?;
+                    (data_block.rsplit_once(":block#").map(|(prefix, _)| prefix)
                         == Some(input_prefix))
-                    .then_some(data_block))
-                })?
-                else {
+                    .then_some(data_block)
+                }) else {
                     return Ok(());
                 };
                 let id = format_feature_history_id(
-                    ctx,
                     "datum-csys-construction",
                     section_key,
                     operation_ordinal,
                     None,
-                )?;
-                ctx.reserve_vec(&mut constructions, 1, "NX datum CSYS constructions")?;
+                );
+
                 constructions.push(FeatureDatumCsysConstruction {
                     id,
                     operation_label,
@@ -6306,7 +5428,7 @@ pub(super) fn feature_datum_plane_payloads(
     container: &Container,
     headers: &[FeatureDatumPlaneHeader],
 ) -> Result<Vec<FeatureDatumPlanePayload>, cadmpeg_core::CodecError> {
-    let blocks = offset_data_block_bytes(ctx, container)?;
+    let blocks = offset_data_block_bytes(container)?;
     let mut output = Vec::new();
     for header in headers {
         if header
@@ -6316,43 +5438,23 @@ pub(super) fn feature_datum_plane_payloads(
         {
             continue;
         }
-        let mut reservation = ctx.reserve_scoped(0, "copy NX datum plane source blocks")?;
-        let mut data_blocks = Vec::new();
-        for source in header
+        let data_blocks = header
             .resolved_data_blocks(DatumPlaneBlockLane::Object)
-            .map(String::as_str)
-        {
-            ctx.charge_work(1, "copy NX datum plane source blocks")?;
-            let owned = ctx.copy_retained_text(source, "copy NX datum plane source blocks")?;
-            reservation.with_storage(|| {
-                ctx.push_vec(&mut data_blocks, owned, "copy NX datum plane source blocks")
-            })?;
-        }
+            .cloned()
+            .collect::<Vec<_>>();
         let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, &blocks)? else {
             continue;
         };
-        drop(reservation);
-        let Some(joined) = JoinedPayload::from_source(ctx, content.block_ids(), &blocks)? else {
+        let Some(joined) = JoinedPayload::from_source(content.block_ids(), &blocks) else {
             continue;
         };
-        let lanes = crate::om::datum_index::scan(ctx, joined.bytes())?;
+        let lanes = crate::om::datum_index::scan(joined.bytes());
         let lane = <[_; 1]>::try_from(lanes).ok().map(|[lane]| lane);
         let key = header.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
-        let prefix = "nx:feature-history:datum-plane-payload#";
-        let id_len = prefix
-            .len()
-            .checked_add(key.len())
-            .ok_or_else(|| ctx.refuse_codec_limit("NX datum plane payload identity", 0, 1))?;
-        let mut id = ctx.retained_string(id_len, "NX datum plane payload identity")?;
-        id.push_str(prefix);
-        id.push_str(key);
-        let operation_label = ctx.copy_retained_text(
-            &header.operation_label,
-            "NX datum plane payload operation label",
-        )?;
-        let datum_plane_header =
-            ctx.copy_retained_text(&header.id, "NX datum plane payload header identity")?;
-        ctx.reserve_vec(&mut output, 1, "NX datum plane payloads")?;
+        let id = format!("nx:feature-history:datum-plane-payload#{key}");
+        let operation_label = header.operation_label.clone();
+        let datum_plane_header = header.id.clone();
+
         output.push(FeatureDatumPlanePayload {
             id,
             operation_label,
@@ -6370,43 +5472,23 @@ pub(super) fn feature_datum_csys_payloads(
     container: &Container,
     constructions: &[FeatureDatumCsysConstruction],
 ) -> Result<Vec<FeatureDatumCsysPayload>, cadmpeg_core::CodecError> {
-    let blocks = offset_data_block_bytes(ctx, container)?;
+    let blocks = offset_data_block_bytes(container)?;
     let mut output = Vec::new();
     for construction in constructions {
-        let first = &construction.frame.members()[0].1;
-        let second = &construction.frame.members()[1].1;
-
-        let copy = |value: &str| -> Result<String, CodecError> {
-            let mut id = String::new();
-            ctx.try_reserve_retained_text(
-                &mut id,
-                value.len(),
-                "allocate NX datum CSYS source block identity",
-            )?;
-            id.push_str(value);
-            Ok(id)
-        };
-        let data_blocks = [copy(first)?, copy(second)?];
+        let data_blocks = [
+            construction.frame.members()[0].1.clone(),
+            construction.frame.members()[1].1.clone(),
+        ];
         let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, &blocks)? else {
             continue;
         };
 
-        let id = replace_operation_text(
-            ctx,
-            &construction.id,
-            "datum-csys-construction",
-            "datum-csys-payload",
-            "NX datum CSYS payload identity",
-        )?;
-        let operation_label = ctx.copy_retained_text(
-            &construction.operation_label,
-            "NX datum CSYS payload operation label",
-        )?;
-        let construction_id = ctx.copy_retained_text(
-            &construction.id,
-            "NX datum CSYS payload construction identity",
-        )?;
-        ctx.reserve_vec(&mut output, 1, "NX datum CSYS payloads")?;
+        let id = construction
+            .id
+            .replacen("datum-csys-construction", "datum-csys-payload", 1);
+        let operation_label = construction.operation_label.clone();
+        let construction_id = construction.id.clone();
+
         output.push(FeatureDatumCsysPayload {
             id,
             operation_label,
@@ -6423,31 +5505,27 @@ pub(super) fn feature_datum_csys_payloads(
 /// frames whose offsets fall outside a source block. Extractors differ only in
 /// their payload block lane, scanner, and output record.
 fn construction_payload_frames<P, S, R>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
     payloads: &[P],
     data_blocks: impl Fn(&P) -> &[FeaturePayloadBlock],
-    scan: impl Fn(&[u8]) -> Result<Vec<S>, CodecError>,
+    scan: impl Fn(&[u8]) -> Vec<S>,
     mut build: impl FnMut(&P, usize, S, &dyn Fn(usize) -> Option<u64>) -> Result<Option<R>, CodecError>,
 ) -> Result<Vec<R>, cadmpeg_core::CodecError> {
-    let blocks = offset_data_block_bytes(ctx, container)?;
+    let blocks = offset_data_block_bytes(container)?;
     let mut output = Vec::new();
     for payload in payloads {
-        let Some(joined) = JoinedPayload::from_source(
-            ctx,
-            data_blocks(payload).iter().map(|block| &block.id),
-            &blocks,
-        )?
+        let Some(joined) =
+            JoinedPayload::from_source(data_blocks(payload).iter().map(|block| &block.id), &blocks)
         else {
             continue;
         };
         let source_offset =
             |relative: usize| joined.source_offset(cadmpeg_core::decode::u64_from_index(relative));
-        for (ordinal, row) in scan(joined.bytes())?.into_iter().enumerate() {
+        for (ordinal, row) in scan(joined.bytes()).into_iter().enumerate() {
             let Some(record) = build(payload, ordinal, row, &source_offset)? else {
                 continue;
             };
-            ctx.reserve_vec(&mut output, 1, "NX construction payload frames")?;
+
             output.push(record);
         }
     }
@@ -6456,16 +5534,14 @@ fn construction_payload_frames<P, S, R>(
 
 /// Decode exact scalar-pair frames from reconstructed datum-CSYS payloads.
 pub(super) fn feature_datum_csys_payload_scalar_pairs(
-    ctx: &DecodeContext<'_>,
     container: &Container,
     payloads: &[FeatureDatumCsysPayload],
 ) -> Result<Vec<FeaturePayloadScalarPair>, CodecError> {
     construction_payload_frames(
-        ctx,
         container,
         payloads,
         |payload| payload.content.blocks(),
-        |bytes| crate::om::binary64_pair::object_pairs(ctx, bytes),
+        crate::om::binary64_pair::object_pairs,
         |payload, ordinal, pair, source_offset| {
             let Some((frame, first, second, source)) = (|| {
                 Some((
@@ -6477,18 +5553,15 @@ pub(super) fn feature_datum_csys_payload_scalar_pairs(
             })() else {
                 return Ok(None);
             };
-            let id = format_feature_child_id(ctx, &payload.id, "-scalar-pair-", ordinal)?;
-            let ordinal = u32::try_from(ordinal)
-                .map_err(|_| ctx.refuse_codec_limit("NX datum CSYS scalar pair ordinal", 0, 1))?;
+            let id = format_feature_child_id(&payload.id, "-scalar-pair-", ordinal);
+            let ordinal = u32::try_from(ordinal).map_err(|_| {
+                CodecError::malformed("NX datum CSYS scalar pair ordinal exceeds u32")
+            })?;
             Ok(Some(FeaturePayloadScalarPair {
                 id,
-                operation_label: ctx.copy_retained_text(
-                    &payload.operation_label,
-                    "NX datum CSYS scalar pair label",
-                )?,
+                operation_label: payload.operation_label.clone(),
                 payload: FeatureScalarPairPayload::DatumCsys {
-                    datum_csys_payload: ctx
-                        .copy_retained_text(&payload.id, "NX datum CSYS scalar pair payload")?,
+                    datum_csys_payload: payload.id.clone(),
                     frame,
                 },
                 ordinal,
@@ -6501,16 +5574,14 @@ pub(super) fn feature_datum_csys_payload_scalar_pairs(
 
 /// Decode complete signed Q1.55 pair frames from reconstructed datum-CSYS payloads.
 pub(super) fn feature_datum_csys_payload_fixed_pairs(
-    ctx: &DecodeContext<'_>,
     container: &Container,
     payloads: &[FeatureDatumCsysPayload],
 ) -> Result<Vec<FeatureDatumCsysPayloadFixedPair>, CodecError> {
     construction_payload_frames(
-        ctx,
         container,
         payloads,
         |payload| payload.content.blocks(),
-        |bytes| crate::om::datum_csys_payload_fixed_pairs(ctx, bytes),
+        crate::om::datum_csys_payload_fixed_pairs,
         |payload, ordinal, pair, source_offset| {
             let Some((position, source, first, second)) = (|| {
                 Some((
@@ -6525,17 +5596,14 @@ pub(super) fn feature_datum_csys_payload_fixed_pairs(
             })() else {
                 return Ok(None);
             };
-            let id = format_feature_child_id(ctx, &payload.id, "-fixed-pair-", ordinal)?;
-            let ordinal = u32::try_from(ordinal)
-                .map_err(|_| ctx.refuse_codec_limit("NX datum CSYS fixed pair ordinal", 0, 1))?;
+            let id = format_feature_child_id(&payload.id, "-fixed-pair-", ordinal);
+            let ordinal = u32::try_from(ordinal).map_err(|_| {
+                CodecError::malformed("NX datum CSYS fixed pair ordinal exceeds u32")
+            })?;
             Ok(Some(FeatureDatumCsysPayloadFixedPair {
                 id,
-                operation_label: ctx.copy_retained_text(
-                    &payload.operation_label,
-                    "NX datum CSYS fixed pair label",
-                )?,
-                datum_csys_payload: ctx
-                    .copy_retained_text(&payload.id, "NX datum CSYS fixed pair payload")?,
+                operation_label: payload.operation_label.clone(),
+                datum_csys_payload: payload.id.clone(),
                 ordinal,
                 values: pair.values,
                 position,
@@ -6548,30 +5616,26 @@ pub(super) fn feature_datum_csys_payload_fixed_pairs(
 
 /// Decode complete shifted-binary64 fields from reconstructed datum-CSYS payloads.
 pub(super) fn feature_datum_csys_payload_scalars(
-    ctx: &DecodeContext<'_>,
     container: &Container,
     payloads: &[FeatureDatumCsysPayload],
 ) -> Result<Vec<FeaturePayloadScalar>, CodecError> {
     construction_payload_frames(
-        ctx,
         container,
         payloads,
         |payload| payload.content.blocks(),
-        |bytes| crate::om::construction_payload_scalar_fields(ctx, bytes),
+        crate::om::construction_payload_scalar_fields,
         |payload, ordinal, scalar, source_offset| {
             let Some(source) = source_offset(scalar.offset) else {
                 return Ok(None);
             };
-            let id = format_feature_child_id(ctx, &payload.id, "-scalar-", ordinal)?;
+            let id = format_feature_child_id(&payload.id, "-scalar-", ordinal);
             let ordinal = u32::try_from(ordinal)
-                .map_err(|_| ctx.refuse_codec_limit("NX datum CSYS scalar ordinal", 0, 1))?;
+                .map_err(|_| CodecError::malformed("NX datum CSYS scalar ordinal exceeds u32"))?;
             Ok(Some(FeaturePayloadScalar {
                 id,
-                operation_label: ctx
-                    .copy_retained_text(&payload.operation_label, "NX datum CSYS scalar label")?,
+                operation_label: payload.operation_label.clone(),
                 payload: FeatureScalarPayload::DatumCsys {
-                    datum_csys_payload: ctx
-                        .copy_retained_text(&payload.id, "NX datum CSYS scalar payload")?,
+                    datum_csys_payload: payload.id.clone(),
                 },
                 ordinal,
                 field_code: scalar.field_code,
@@ -6585,11 +5649,10 @@ pub(super) fn feature_datum_csys_payload_scalars(
 
 /// Decode the final three descriptor lanes of datum coordinate systems.
 pub(super) fn feature_datum_csys_descriptors(
-    ctx: &DecodeContext<'_>,
     container: &Container,
     constructions: &[FeatureDatumCsysConstruction],
 ) -> Result<Vec<FeatureDatumCsysDescriptor>, CodecError> {
-    let blocks = offset_data_block_bytes(ctx, container)?;
+    let blocks = offset_data_block_bytes(container)?;
     let mut descriptors = Vec::new();
     for construction in constructions {
         for slot in [
@@ -6602,28 +5665,18 @@ pub(super) fn feature_datum_csys_descriptors(
             let Some(&(bytes, source_offset)) = blocks.get(data_block) else {
                 continue;
             };
-            let Some(descriptor) = crate::om::datum_csys_descriptor_block(ctx, bytes)? else {
+            let Some(descriptor) = crate::om::datum_csys_descriptor_block(bytes) else {
                 continue;
             };
             let Some(descriptor) = LocatedCsysDescriptor::new(descriptor, source_offset).ok()
             else {
                 continue;
             };
-            let id = ctx.format_retained(
-                format_args!("{}-descriptor-{reference_ordinal}", construction.id),
-                "NX datum CSYS descriptor identity",
-            )?;
-            let operation_label = ctx.copy_retained_text(
-                &construction.operation_label,
-                "NX datum CSYS descriptor operation label",
-            )?;
-            let construction_id = ctx.copy_retained_text(
-                &construction.id,
-                "NX datum CSYS descriptor construction identity",
-            )?;
-            let data_block =
-                ctx.copy_retained_text(data_block, "NX datum CSYS descriptor data block")?;
-            ctx.reserve_vec(&mut descriptors, 1, "NX datum CSYS descriptors")?;
+            let id = format!("{}-descriptor-{reference_ordinal}", construction.id);
+            let operation_label = construction.operation_label.clone();
+            let construction_id = construction.id.clone();
+            let data_block = data_block.to_owned();
+
             descriptors.push(FeatureDatumCsysDescriptor {
                 id,
                 operation_label,
@@ -6639,18 +5692,9 @@ pub(super) fn feature_datum_csys_descriptors(
 
 /// Join equal typed descriptor identities across datum-plane and datum-CSYS history.
 pub(super) fn feature_datum_plane_csys_identity_uses(
-    ctx: &DecodeContext<'_>,
     plane_descriptors: &[FeatureDatumPlaneDescriptor],
     csys_descriptors: &[FeatureDatumCsysDescriptor],
 ) -> Result<Vec<FeatureDatumPlaneCsysIdentityUse>, CodecError> {
-    let work = plane_descriptors
-        .len()
-        .checked_mul(csys_descriptors.len())
-        .ok_or_else(|| ctx.refuse_codec_limit("join NX datum descriptor identities", 0, 1))?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(work),
-        "join NX datum descriptor identities",
-    )?;
     let mut uses = Vec::new();
     for plane in plane_descriptors {
         for csys in csys_descriptors {
@@ -6659,27 +5703,16 @@ pub(super) fn feature_datum_plane_csys_identity_uses(
             }
             let plane_key = plane.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
             let csys_key = csys.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
-            let id = ctx.format_retained(
-                format_args!(
-                    "nx:feature-history:datum-plane-csys-identity-use#{plane_key}-{csys_key}"
-                ),
-                "NX datum descriptor identity use",
-            )?;
-            let identity_text = ctx.copy_retained_text(
-                csys.descriptor.descriptor().identity().as_str(),
-                "NX datum descriptor shared identity",
-            )?;
+            let id =
+                format!("nx:feature-history:datum-plane-csys-identity-use#{plane_key}-{csys_key}");
+            let identity_text = csys.descriptor.descriptor().identity().as_str().to_owned();
             let identity = CsysIdentity::try_from(identity_text)
                 .map_err(|error| CodecError::Malformed(error.to_owned()))?;
-            let datum_plane_descriptor =
-                ctx.copy_retained_text(&plane.id, "NX datum identity plane descriptor")?;
-            let datum_plane_operation_label =
-                ctx.copy_retained_text(&plane.operation_label, "NX datum identity plane label")?;
-            let datum_csys_descriptor =
-                ctx.copy_retained_text(&csys.id, "NX datum identity CSYS descriptor")?;
-            let datum_csys_operation_label =
-                ctx.copy_retained_text(&csys.operation_label, "NX datum identity CSYS label")?;
-            ctx.reserve_vec(&mut uses, 1, "NX datum descriptor identity uses")?;
+            let datum_plane_descriptor = plane.id.clone();
+            let datum_plane_operation_label = plane.operation_label.clone();
+            let datum_csys_descriptor = csys.id.clone();
+            let datum_csys_operation_label = csys.operation_label.clone();
+
             uses.push(FeatureDatumPlaneCsysIdentityUse {
                 id,
                 identity,
@@ -6696,16 +5729,14 @@ pub(super) fn feature_datum_plane_csys_identity_uses(
 
 /// Decode exact scalar-pair frames from reconstructed datum-plane payloads.
 pub(super) fn feature_datum_plane_payload_scalar_pairs(
-    ctx: &DecodeContext<'_>,
     container: &Container,
     payloads: &[FeatureDatumPlanePayload],
 ) -> Result<Vec<FeaturePayloadScalarPair>, CodecError> {
     construction_payload_frames(
-        ctx,
         container,
         payloads,
         |payload| payload.content.blocks(),
-        |bytes| crate::om::binary64_pair::datum_plane_pairs(ctx, bytes),
+        crate::om::binary64_pair::datum_plane_pairs,
         |payload, ordinal, pair, source_offset| {
             let Some((frame, first, second, source)) = (|| {
                 Some((
@@ -6717,18 +5748,15 @@ pub(super) fn feature_datum_plane_payload_scalar_pairs(
             })() else {
                 return Ok(None);
             };
-            let id = format_feature_child_id(ctx, &payload.id, "-scalar-pair-", ordinal)?;
-            let ordinal = u32::try_from(ordinal)
-                .map_err(|_| ctx.refuse_codec_limit("NX datum plane scalar pair ordinal", 0, 1))?;
+            let id = format_feature_child_id(&payload.id, "-scalar-pair-", ordinal);
+            let ordinal = u32::try_from(ordinal).map_err(|_| {
+                CodecError::malformed("NX datum plane scalar pair ordinal exceeds u32")
+            })?;
             Ok(Some(FeaturePayloadScalarPair {
                 id,
-                operation_label: ctx.copy_retained_text(
-                    &payload.operation_label,
-                    "NX datum plane scalar pair label",
-                )?,
+                operation_label: payload.operation_label.clone(),
                 payload: FeatureScalarPairPayload::DatumPlane {
-                    datum_plane_payload: ctx
-                        .copy_retained_text(&payload.id, "NX datum plane scalar pair payload")?,
+                    datum_plane_payload: payload.id.clone(),
                     frame,
                 },
                 ordinal,
@@ -6741,11 +5769,10 @@ pub(super) fn feature_datum_plane_payload_scalar_pairs(
 
 /// Decode atomically resolved datum-plane descriptor blocks.
 pub(super) fn feature_datum_plane_descriptors(
-    ctx: &DecodeContext<'_>,
     container: &Container,
     headers: &[FeatureDatumPlaneHeader],
 ) -> Result<Vec<FeatureDatumPlaneDescriptor>, CodecError> {
-    let blocks = offset_data_block_bytes(ctx, container)?;
+    let blocks = offset_data_block_bytes(container)?;
     let mut descriptors = Vec::new();
     for header in headers {
         for (ordinal, data_block) in header
@@ -6755,24 +5782,17 @@ pub(super) fn feature_datum_plane_descriptors(
             let Some(&(bytes, source_offset)) = blocks.get(data_block) else {
                 continue;
             };
-            let Some(descriptor) = crate::om::datum_plane_descriptor_block(ctx, bytes)? else {
+            let Some(descriptor) = crate::om::datum_plane_descriptor_block(bytes) else {
                 continue;
             };
-            let id = ctx.format_retained(
-                format_args!("{}-descriptor-{ordinal:010}", header.id),
-                "NX datum plane descriptor identity",
-            )?;
-            let operation_label = ctx.copy_retained_text(
-                &header.operation_label,
-                "NX datum plane descriptor operation label",
-            )?;
-            let datum_plane_header =
-                ctx.copy_retained_text(&header.id, "NX datum plane descriptor header identity")?;
-            let ordinal = u32::try_from(ordinal)
-                .map_err(|_| ctx.refuse_codec_limit("NX datum plane descriptor ordinal", 0, 1))?;
-            let data_block =
-                ctx.copy_retained_text(data_block, "NX datum plane descriptor data block")?;
-            ctx.reserve_vec(&mut descriptors, 1, "NX datum plane descriptors")?;
+            let id = format!("{}-descriptor-{ordinal:010}", header.id);
+            let operation_label = header.operation_label.clone();
+            let datum_plane_header = header.id.clone();
+            let ordinal = u32::try_from(ordinal).map_err(|_| {
+                CodecError::malformed("NX datum plane descriptor ordinal exceeds u32")
+            })?;
+            let data_block = data_block.to_owned();
+
             descriptors.push(FeatureDatumPlaneDescriptor {
                 id,
                 operation_label,
@@ -6789,7 +5809,6 @@ pub(super) fn feature_datum_plane_descriptors(
 
 /// Join resolved datum-plane blocks to operation inputs addressing the same block.
 pub(super) fn feature_datum_plane_block_uses(
-    ctx: &DecodeContext<'_>,
     headers: &[FeatureDatumPlaneHeader],
     inputs: &[FeatureInputBlock],
 ) -> Result<Vec<FeatureDatumPlaneBlockUse>, CodecError> {
@@ -6801,10 +5820,6 @@ pub(super) fn feature_datum_plane_block_uses(
             .map_or(header.operation_label.as_str(), |(_, key)| key);
         for lane in [DatumPlaneBlockLane::Descriptor, DatumPlaneBlockLane::Object] {
             for (reference_ordinal, data_block) in header.resolved_data_blocks(lane).enumerate() {
-                ctx.charge_work(
-                    cadmpeg_core::decode::u64_from_index(inputs.len()),
-                    "join NX datum plane input blocks",
-                )?;
                 for input in inputs
                     .iter()
                     .filter(|input| input.data_block == *data_block)
@@ -6817,27 +5832,17 @@ pub(super) fn feature_datum_plane_block_uses(
                         DatumPlaneBlockLane::Descriptor => "descriptor",
                         DatumPlaneBlockLane::Object => "object",
                     };
-                    let id = ctx.format_retained(format_args!(
-                        "nx:feature-history:datum-plane-block-use#{construction_key}-{lane_key}-{reference_ordinal}-{input_key}-{}",
-                        input.input_slot), "NX datum plane block use identity")?;
-                    let datum_plane_header =
-                        ctx.copy_retained_text(&header.id, "NX datum plane block use header")?;
-                    let construction_operation_label = ctx.copy_retained_text(
-                        &header.operation_label,
-                        "NX datum plane block use construction label",
-                    )?;
+                    let id = format!("nx:feature-history:datum-plane-block-use#{construction_key}-{lane_key}-{reference_ordinal}-{input_key}-{}",
+                    input.input_slot);
+                    let datum_plane_header = header.id.clone();
+                    let construction_operation_label = header.operation_label.clone();
                     let reference_ordinal = u32::try_from(reference_ordinal).map_err(|_| {
-                        ctx.refuse_codec_limit("NX datum plane block use ordinal", 0, 1)
+                        CodecError::malformed("NX datum plane block use ordinal exceeds u32")
                     })?;
-                    let data_block =
-                        ctx.copy_retained_text(data_block, "NX datum plane block use data block")?;
-                    let input_binding =
-                        ctx.copy_retained_text(&input.id, "NX datum plane block use input")?;
-                    let input_operation_label = ctx.copy_retained_text(
-                        &input.operation_label,
-                        "NX datum plane block use input label",
-                    )?;
-                    ctx.reserve_vec(&mut uses, 1, "NX datum plane block uses")?;
+                    let data_block = data_block.to_owned();
+                    let input_binding = input.id.clone();
+                    let input_operation_label = input.operation_label.clone();
+
                     uses.push(FeatureDatumPlaneBlockUse {
                         id,
                         datum_plane_header,
@@ -6859,10 +5864,9 @@ pub(super) fn feature_datum_plane_block_uses(
 /// Join resolved datum-coordinate-system blocks to every exact operation input
 /// addressing the same native block.
 pub(super) fn feature_datum_csys_block_uses(
-    ctx: &DecodeContext<'_>,
     constructions: &[FeatureDatumCsysConstruction],
     inputs: &[FeatureInputBlock],
-) -> Result<Vec<FeatureDatumCsysBlockUse>, CodecError> {
+) -> Vec<FeatureDatumCsysBlockUse> {
     let mut uses = Vec::new();
     for construction in constructions {
         for (reference_ordinal, reference) in DatumCsysSlot::ALL
@@ -6870,10 +5874,7 @@ pub(super) fn feature_datum_csys_block_uses(
             .zip(construction.frame.members())
         {
             let data_block = &reference.1;
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(inputs.len()),
-                "join NX datum CSYS input blocks",
-            )?;
+
             for input in inputs
                 .iter()
                 .filter(|input| input.data_block == *data_block)
@@ -6886,24 +5887,14 @@ pub(super) fn feature_datum_csys_block_uses(
                     .operation_label
                     .rsplit_once('#')
                     .map_or(input.operation_label.as_str(), |(_, key)| key);
-                let id = ctx.format_retained(format_args!(
-                    "nx:feature-history:datum-csys-block-use#{construction_key}-{reference_ordinal}-{input_key}-{}",
-                    input.input_slot), "NX datum CSYS block use identity")?;
-                let construction_id = ctx
-                    .copy_retained_text(&construction.id, "NX datum CSYS block use construction")?;
-                let construction_operation_label = ctx.copy_retained_text(
-                    &construction.operation_label,
-                    "NX datum CSYS block use construction label",
-                )?;
-                let data_block =
-                    ctx.copy_retained_text(data_block, "NX datum CSYS block use data block")?;
-                let input_binding =
-                    ctx.copy_retained_text(&input.id, "NX datum CSYS block use input")?;
-                let input_operation_label = ctx.copy_retained_text(
-                    &input.operation_label,
-                    "NX datum CSYS block use input label",
-                )?;
-                ctx.reserve_vec(&mut uses, 1, "NX datum CSYS block uses")?;
+                let id = format!("nx:feature-history:datum-csys-block-use#{construction_key}-{reference_ordinal}-{input_key}-{}",
+                input.input_slot);
+                let construction_id = construction.id.clone();
+                let construction_operation_label = construction.operation_label.clone();
+                let data_block = data_block.to_owned();
+                let input_binding = input.id.clone();
+                let input_operation_label = input.operation_label.clone();
+
                 uses.push(FeatureDatumCsysBlockUse {
                     id,
                     construction: construction_id,
@@ -6917,23 +5908,18 @@ pub(super) fn feature_datum_csys_block_uses(
             }
         }
     }
-    Ok(uses)
+    uses
 }
 
 /// Join each sketch operation to its bounded record and ordered input blocks.
 pub(super) fn feature_sketch_records(
-    ctx: &DecodeContext<'_>,
     labels: &[FeatureOperationLabel],
     records: &[FeatureOperationRecord],
     inputs: &[FeatureInputBlock],
     references: &[FeatureSketchReference],
-) -> Result<Vec<FeatureSketchRecord>, CodecError> {
+) -> Vec<FeatureSketchRecord> {
     let mut sketches = Vec::new();
     for label in labels.iter().filter(|label| label.value == "SKETCH") {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(records.len()),
-            "resolve NX sketch operation record",
-        )?;
         let mut operation_records = records
             .iter()
             .filter(|record| record.operation_label == label.id);
@@ -6944,76 +5930,30 @@ pub(super) fn feature_sketch_records(
             continue;
         }
 
-        let mut input_blocks = Vec::new();
-        let mut input_reservation = ctx.reserve_scoped(0, "sort NX sketch input blocks")?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(inputs.len()),
-            "resolve NX sketch input blocks",
-        )?;
-        for input in inputs
+        let mut input_blocks = inputs
             .iter()
             .filter(|input| input.operation_label == label.id)
-        {
-            input_reservation.with_storage(|| {
-                ctx.reserve_vec(&mut input_blocks, 1, "NX sketch input block order")
-            })?;
-            input_blocks.push(input);
-        }
-        ctx.stable_sort_by(
-            &mut input_blocks,
-            |left, right| left.input_slot.cmp(&right.input_slot),
-            |_| 0,
-            "sort NX sketch input blocks",
-        )?;
+            .collect::<Vec<_>>();
+        input_blocks.sort_by_key(|left| left.input_slot);
 
-        let mut payload_references = Vec::new();
-        let mut reference_reservation = ctx.reserve_scoped(0, "sort NX sketch references")?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(references.len()),
-            "resolve NX sketch references",
-        )?;
-        for reference in references
+        let mut payload_references = references
             .iter()
             .filter(|reference| reference.operation_label == label.id)
-        {
-            reference_reservation.with_storage(|| {
-                ctx.reserve_vec(&mut payload_references, 1, "NX sketch reference order")
-            })?;
-            payload_references.push(reference);
-        }
-        ctx.stable_sort_by(
-            &mut payload_references,
-            |left, right| left.position.ordinal().cmp(&right.position.ordinal()),
-            |_| 0,
-            "sort NX sketch references",
-        )?;
+            .collect::<Vec<_>>();
+        payload_references.sort_by_key(|left| left.position.ordinal());
 
-        let mut input_ids = Vec::new();
-        for input in input_blocks {
-            let id = ctx.copy_retained_text(&input.id, "NX sketch input identity")?;
-            ctx.reserve_vec(&mut input_ids, 1, "NX sketch input identities")?;
-            input_ids.push(id);
-        }
-        drop(input_reservation);
-        let mut reference_ids = Vec::new();
-        for reference in payload_references {
-            let id = ctx.copy_retained_text(&reference.id, "NX sketch reference identity")?;
-            ctx.reserve_vec(&mut reference_ids, 1, "NX sketch reference identities")?;
-            reference_ids.push(id);
-        }
-        drop(reference_reservation);
-        let id = replace_operation_text(
-            ctx,
-            &label.id,
-            "operation-label",
-            "sketch-record",
-            "NX sketch record identity",
-        )?;
-        let operation_label =
-            ctx.copy_retained_text(&label.id, "NX sketch record operation label")?;
-        let operation_record =
-            ctx.copy_retained_text(&record.id, "NX sketch operation record identity")?;
-        ctx.reserve_vec(&mut sketches, 1, "NX sketch records")?;
+        let input_ids = input_blocks
+            .into_iter()
+            .map(|input| input.id.clone())
+            .collect();
+        let reference_ids = payload_references
+            .into_iter()
+            .map(|reference| reference.id.clone())
+            .collect();
+        let id = label.id.replacen("operation-label", "sketch-record", 1);
+        let operation_label = label.id.clone();
+        let operation_record = record.id.clone();
+
         sketches.push(FeatureSketchRecord {
             id,
             operation_label,
@@ -7024,39 +5964,21 @@ pub(super) fn feature_sketch_records(
             source_offset: label.source_offset,
         });
     }
-    Ok(sketches)
+    sketches
 }
 
 /// Join complete, uniquely resolved sketch construction-reference fields.
 pub(super) fn feature_sketch_construction_inputs(
-    ctx: &DecodeContext<'_>,
     sketches: &[FeatureSketchRecord],
     references: &[FeatureSketchReference],
 ) -> Result<Vec<FeatureSketchConstructionInputs>, CodecError> {
     let mut inputs = Vec::new();
     for sketch in sketches {
-        let mut field = Vec::new();
-        let mut field_reservation =
-            ctx.reserve_scoped(0, "sort NX sketch construction references")?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(references.len()),
-            "resolve NX sketch construction references",
-        )?;
-        for reference in references
+        let mut field = references
             .iter()
             .filter(|reference| reference.operation_label == sketch.operation_label)
-        {
-            field_reservation.with_storage(|| {
-                ctx.reserve_vec(&mut field, 1, "NX sketch construction reference order")
-            })?;
-            field.push(reference);
-        }
-        ctx.stable_sort_by(
-            &mut field,
-            |left, right| left.position.ordinal().cmp(&right.position.ordinal()),
-            |_| 0,
-            "sort NX sketch construction references",
-        )?;
+            .collect::<Vec<_>>();
+        field.sort_by_key(|left| left.position.ordinal());
         let Some((terminal, members)) = field.split_last() else {
             continue;
         };
@@ -7067,7 +5989,7 @@ pub(super) fn feature_sketch_construction_inputs(
         let mut valid = true;
         for (ordinal, reference) in field.iter().enumerate() {
             let ordinal = u32::try_from(ordinal).map_err(|_| {
-                ctx.refuse_codec_limit("NX sketch construction reference ordinal", 0, 1)
+                CodecError::malformed("NX sketch construction reference ordinal exceeds u32")
             })?;
             if reference.position.declared_count() != terminal.position.declared_count()
                 || reference.position.ordinal() != ordinal
@@ -7088,39 +6010,25 @@ pub(super) fn feature_sketch_construction_inputs(
         };
         let mut member_rows = Vec::new();
         for reference in members {
-            let reference_id =
-                ctx.copy_retained_text(&reference.id, "NX sketch construction member reference")?;
+            let reference_id = reference.id.clone();
             let Some(data_block) = reference.data_block.as_ref() else {
                 continue;
             };
-            let data_block =
-                ctx.copy_retained_text(data_block, "NX sketch construction member block")?;
-            ctx.reserve_vec(&mut member_rows, 1, "NX sketch construction members")?;
+            let data_block = data_block.to_owned();
+
             member_rows.push(FeatureConstructionMember {
                 reference: reference_id,
                 data_block,
             });
         }
-        let id = replace_operation_text(
-            ctx,
-            &sketch.id,
-            "sketch-record",
-            "sketch-construction-inputs",
-            "NX sketch construction input identity",
-        )?;
-        let operation_label = ctx.copy_retained_text(
-            &sketch.operation_label,
-            "NX sketch construction input label",
-        )?;
-        let sketch_record =
-            ctx.copy_retained_text(&sketch.id, "NX sketch construction sketch record")?;
-        let terminal_reference =
-            ctx.copy_retained_text(&terminal.id, "NX sketch construction terminal reference")?;
-        let terminal_data_block =
-            ctx.copy_retained_text(terminal_data_block, "NX sketch construction terminal block")?;
-        drop(field);
-        drop(field_reservation);
-        ctx.reserve_vec(&mut inputs, 1, "NX sketch construction inputs")?;
+        let id = sketch
+            .id
+            .replacen("sketch-record", "sketch-construction-inputs", 1);
+        let operation_label = sketch.operation_label.clone();
+        let sketch_record = sketch.id.clone();
+        let terminal_reference = terminal.id.clone();
+        let terminal_data_block = terminal_data_block.to_owned();
+
         inputs.push(FeatureSketchConstructionInputs {
             id,
             operation_label,
@@ -7139,49 +6047,27 @@ pub(super) fn feature_sketch_construction_payloads(
     container: &Container,
     constructions: &[FeatureSketchConstructionInputs],
 ) -> Result<Vec<FeatureConstructionPayload>, cadmpeg_core::CodecError> {
-    let blocks = offset_data_block_bytes(ctx, container)?;
+    let blocks = offset_data_block_bytes(container)?;
 
     let mut output = Vec::new();
     for construction in constructions {
-        let source_ids = construction
+        let data_blocks = construction
             .members
             .iter()
-            .map(|member| member.data_block.as_str())
-            .chain(std::iter::once(construction.terminal_data_block.as_str()));
-        let mut reservation = ctx.reserve_scoped(0, "copy NX sketch construction source blocks")?;
-        let mut data_blocks = Vec::new();
-        for source in source_ids {
-            ctx.charge_work(1, "copy NX sketch construction source blocks")?;
-            let owned =
-                ctx.copy_retained_text(source, "copy NX sketch construction source blocks")?;
-            reservation.with_storage(|| {
-                ctx.push_vec(
-                    &mut data_blocks,
-                    owned,
-                    "copy NX sketch construction source blocks",
-                )
-            })?;
-        }
+            .map(|member| member.data_block.clone())
+            .chain(std::iter::once(construction.terminal_data_block.clone()))
+            .collect::<Vec<_>>();
         let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, &blocks)? else {
             continue;
         };
-        drop(reservation);
-        let id = replace_operation_text(
-            ctx,
-            &construction.id,
+        let id = construction.id.replacen(
             "sketch-construction-inputs",
             "sketch-construction-payload",
-            "NX sketch construction payload identity",
-        )?;
-        let operation_label = ctx.copy_retained_text(
-            &construction.operation_label,
-            "NX sketch construction payload label",
-        )?;
-        let construction_inputs = ctx.copy_retained_text(
-            &construction.id,
-            "NX sketch construction payload input identity",
-        )?;
-        ctx.reserve_vec(&mut output, 1, "NX sketch construction payloads")?;
+            1,
+        );
+        let operation_label = construction.operation_label.clone();
+        let construction_inputs = construction.id.clone();
+
         output.push(FeatureConstructionPayload {
             id,
             operation_label,
@@ -7196,16 +6082,14 @@ pub(super) fn feature_sketch_construction_payloads(
 
 /// Decode exact coordinate-pair frames from reconstructed sketch payloads.
 pub(super) fn feature_sketch_payload_coordinate_pairs(
-    ctx: &DecodeContext<'_>,
     container: &Container,
     payloads: &[FeatureConstructionPayload],
 ) -> Result<Vec<FeaturePayloadScalarPair>, CodecError> {
     construction_payload_frames(
-        ctx,
         container,
         payloads,
         |payload| payload.content.blocks(),
-        |bytes| crate::om::binary64_pair::sketch_pairs(ctx, bytes),
+        crate::om::binary64_pair::sketch_pairs,
         |payload, ordinal, pair, source_offset| {
             let Some((frame, first, second, source)) = (|| {
                 Some((
@@ -7217,18 +6101,15 @@ pub(super) fn feature_sketch_payload_coordinate_pairs(
             })() else {
                 return Ok(None);
             };
-            let id = format_feature_child_id(ctx, &payload.id, "-coordinate-pair-", ordinal)?;
-            let ordinal = u32::try_from(ordinal)
-                .map_err(|_| ctx.refuse_codec_limit("NX sketch coordinate pair ordinal", 0, 1))?;
+            let id = format_feature_child_id(&payload.id, "-coordinate-pair-", ordinal);
+            let ordinal = u32::try_from(ordinal).map_err(|_| {
+                CodecError::malformed("NX sketch coordinate pair ordinal exceeds u32")
+            })?;
             Ok(Some(FeaturePayloadScalarPair {
                 id,
-                operation_label: ctx.copy_retained_text(
-                    &payload.operation_label,
-                    "NX sketch coordinate pair label",
-                )?,
+                operation_label: payload.operation_label.clone(),
                 payload: FeatureScalarPairPayload::Construction {
-                    construction_payload: ctx
-                        .copy_retained_text(&payload.id, "NX sketch coordinate pair payload")?,
+                    construction_payload: payload.id.clone(),
                     frame,
                 },
                 ordinal,
@@ -7241,16 +6122,14 @@ pub(super) fn feature_sketch_payload_coordinate_pairs(
 
 /// Decode exact scaled shifted-binary64 pair frames from reconstructed sketch payloads.
 pub(super) fn feature_sketch_payload_fixed_pairs(
-    ctx: &DecodeContext<'_>,
     container: &Container,
     payloads: &[FeatureConstructionPayload],
 ) -> Result<Vec<FeatureSketchPayloadFixedPair>, CodecError> {
     construction_payload_frames(
-        ctx,
         container,
         payloads,
         |payload| payload.content.blocks(),
-        |bytes| crate::om::sketch_payload_fixed_pairs(ctx, bytes),
+        crate::om::sketch_payload_fixed_pairs,
         |payload, ordinal, pair, source_offset| {
             let Some((position, source, first, second)) = (|| {
                 Some((
@@ -7265,15 +6144,13 @@ pub(super) fn feature_sketch_payload_fixed_pairs(
             })() else {
                 return Ok(None);
             };
-            let id = format_feature_child_id(ctx, &payload.id, "-fixed-pair-", ordinal)?;
+            let id = format_feature_child_id(&payload.id, "-fixed-pair-", ordinal);
             let ordinal = u32::try_from(ordinal)
-                .map_err(|_| ctx.refuse_codec_limit("NX sketch fixed pair ordinal", 0, 1))?;
+                .map_err(|_| CodecError::malformed("NX sketch fixed pair ordinal exceeds u32"))?;
             Ok(Some(FeatureSketchPayloadFixedPair {
                 id,
-                operation_label: ctx
-                    .copy_retained_text(&payload.operation_label, "NX sketch fixed pair label")?,
-                construction_payload: ctx
-                    .copy_retained_text(&payload.id, "NX sketch fixed pair payload")?,
+                operation_label: payload.operation_label.clone(),
+                construction_payload: payload.id.clone(),
                 ordinal,
                 values: pair.values,
                 position,
@@ -7286,16 +6163,14 @@ pub(super) fn feature_sketch_payload_fixed_pairs(
 
 /// Decode exact mixed scaled shifted-binary64/binary32 pair frames from reconstructed sketch payloads.
 pub(super) fn feature_sketch_payload_mixed_pairs(
-    ctx: &DecodeContext<'_>,
     container: &Container,
     payloads: &[FeatureConstructionPayload],
 ) -> Result<Vec<FeatureSketchPayloadMixedPair>, CodecError> {
     construction_payload_frames(
-        ctx,
         container,
         payloads,
         |payload| payload.content.blocks(),
-        |bytes| crate::om::sketch_payload_mixed_pairs(ctx, bytes),
+        crate::om::sketch_payload_mixed_pairs,
         |payload, ordinal, pair, source_offset| {
             let Some((position, source, first, second)) = (|| {
                 Some((
@@ -7310,15 +6185,13 @@ pub(super) fn feature_sketch_payload_mixed_pairs(
             })() else {
                 return Ok(None);
             };
-            let id = format_feature_child_id(ctx, &payload.id, "-mixed-pair-", ordinal)?;
+            let id = format_feature_child_id(&payload.id, "-mixed-pair-", ordinal);
             let ordinal = u32::try_from(ordinal)
-                .map_err(|_| ctx.refuse_codec_limit("NX sketch mixed pair ordinal", 0, 1))?;
+                .map_err(|_| CodecError::malformed("NX sketch mixed pair ordinal exceeds u32"))?;
             Ok(Some(FeatureSketchPayloadMixedPair {
                 id,
-                operation_label: ctx
-                    .copy_retained_text(&payload.operation_label, "NX sketch mixed pair label")?,
-                construction_payload: ctx
-                    .copy_retained_text(&payload.id, "NX sketch mixed pair payload")?,
+                operation_label: payload.operation_label.clone(),
+                construction_payload: payload.id.clone(),
                 ordinal,
                 scalars: pair.scalars,
                 position,
@@ -7331,94 +6204,35 @@ pub(super) fn feature_sketch_payload_mixed_pairs(
 
 type OffsetDataBlocks<'a> = BTreeMap<String, (&'a [u8], u64)>;
 
-struct OffsetDataBlockView<'blocks, 'ctx> {
-    blocks: Cow<'blocks, OffsetDataBlocks<'blocks>>,
-    _reservation: Option<cadmpeg_core::decode::ScopedReservation<'ctx>>,
-}
-
-impl<'blocks> std::ops::Deref for OffsetDataBlockView<'blocks, '_> {
-    type Target = OffsetDataBlocks<'blocks>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.blocks
-    }
-}
-
 fn offset_data_block_bytes_for_section<'a>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    reservation: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     blocks: &mut OffsetDataBlocks<'a>,
     section_ordinal: usize,
     entry_offset: u64,
     control: &crate::om::EntityRecord<'a>,
     records: &[crate::om::EntityRecord<'a>],
 ) -> Result<(), cadmpeg_core::CodecError> {
-    use std::fmt::Write;
-
     for (block_ordinal, block) in std::iter::once(control).chain(records.iter()).enumerate() {
-        let prefix = "nx:om-data-blocks-";
-        let infix = ":block#";
-        let length = prefix
-            .len()
-            .checked_add(
-                section_ordinal
-                    .checked_ilog10()
-                    .map_or(1, |digits| cadmpeg_core::decode::index_from_u32(digits) + 1),
-            )
-            .and_then(|length| length.checked_add(infix.len()))
-            .and_then(|length| {
-                length.checked_add(
-                    block_ordinal
-                        .checked_ilog10()
-                        .map_or(1, |digits| cadmpeg_core::decode::index_from_u32(digits) + 1),
-                )
-            })
-            .ok_or_else(|| ctx.refuse_codec_limit("NX offset block view key length", 0, 1))?;
-
-        ctx.charge_work(
-            u64::from(usize::BITS - blocks.len().leading_zeros()),
-            "index NX offset block view",
-        )?;
-
-        let mut key = String::new();
-        reservation.with_storage(|| {
-            ctx.try_reserve_retained_text(&mut key, length, "NX offset block view storage")
-        })?;
-        write!(&mut key, "{prefix}{section_ordinal}{infix}{block_ordinal}")
-            .map_err(|_| ctx.refuse_codec_limit("format NX offset block view key", 0, 1))?;
         let offset = entry_offset
             .checked_add(cadmpeg_core::decode::u64_from_index(block.offset))
-            .ok_or_else(|| ctx.refuse_codec_limit("NX offset block view source offset", 0, 1))?;
-        reservation.with_storage(|| {
-            ctx.insert_btree_map(
-                blocks,
-                key,
-                (block.bytes, offset),
-                "NX offset block view entries",
-            )
-        })?;
+            .ok_or_else(|| CodecError::malformed("NX offset block view source offset overflows"))?;
+        blocks.insert(
+            format!("nx:om-data-blocks-{section_ordinal}:block#{block_ordinal}"),
+            (block.bytes, offset),
+        );
     }
     Ok(())
 }
 
-fn offset_data_block_bytes<'a, 'ctx>(
-    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
+fn offset_data_block_bytes<'a>(
     container: &'a Container<'_>,
-) -> Result<OffsetDataBlockView<'a, 'ctx>, cadmpeg_core::CodecError> {
+) -> Result<Cow<'a, OffsetDataBlocks<'a>>, cadmpeg_core::CodecError> {
     if let Some(blocks) = container.cached_offset_data_block_bytes() {
-        return Ok(OffsetDataBlockView {
-            blocks: Cow::Borrowed(blocks),
-            _reservation: None,
-        });
+        return Ok(Cow::Borrowed(blocks));
     }
-    let indexed = container.indexed_om_sections(ctx)?;
+    let indexed = container.indexed_om_sections()?;
     if let Some(blocks) = container.cached_offset_data_block_bytes() {
-        return Ok(OffsetDataBlockView {
-            blocks: Cow::Borrowed(blocks),
-            _reservation: None,
-        });
+        return Ok(Cow::Borrowed(blocks));
     }
-    let mut reservation = ctx.reserve_scoped(0, "NX offset block view storage")?;
     let mut blocks = BTreeMap::new();
     for (section_ordinal, (entry, section)) in indexed.into_iter().enumerate() {
         let Some((control, _, records)) = section.as_offset_only() else {
@@ -7426,8 +6240,6 @@ fn offset_data_block_bytes<'a, 'ctx>(
         };
         let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
         offset_data_block_bytes_for_section(
-            ctx,
-            &mut reservation,
             &mut blocks,
             section_ordinal,
             entry_offset,
@@ -7435,19 +6247,15 @@ fn offset_data_block_bytes<'a, 'ctx>(
             records,
         )?;
     }
-    Ok(OffsetDataBlockView {
-        blocks: Cow::Owned(blocks),
-        _reservation: Some(reservation),
-    })
+    Ok(Cow::Owned(blocks))
 }
 
 /// Decode exact framed scalar fields across reconstructed sketch payloads.
 pub(super) fn feature_sketch_payload_scalars(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
     constructions: &[FeatureSketchConstructionInputs],
 ) -> Result<Vec<FeaturePayloadScalar>, cadmpeg_core::CodecError> {
-    let blocks = offset_data_block_bytes(ctx, container)?;
+    let blocks = offset_data_block_bytes(container)?;
     let mut output = Vec::new();
     for construction in constructions {
         let ids = construction
@@ -7455,10 +6263,10 @@ pub(super) fn feature_sketch_payload_scalars(
             .iter()
             .map(|member| &member.data_block)
             .chain(std::iter::once(&construction.terminal_data_block));
-        let Some(joined) = JoinedPayload::from_source(ctx, ids, &blocks)? else {
+        let Some(joined) = JoinedPayload::from_source(ids, &blocks) else {
             continue;
         };
-        for (ordinal, field) in crate::om::construction_payload_scalar_fields(ctx, joined.bytes())?
+        for (ordinal, field) in crate::om::construction_payload_scalar_fields(joined.bytes())
             .into_iter()
             .enumerate()
         {
@@ -7466,27 +6274,20 @@ pub(super) fn feature_sketch_payload_scalars(
             let Some(source_offset) = joined.source_offset(payload_offset) else {
                 continue;
             };
-            let ordinal = u32::try_from(ordinal)
-                .map_err(|_| ctx.refuse_codec_limit("NX sketch payload scalar ordinal", 0, 1))?;
-            let construction_payload = replace_operation_text(
-                ctx,
-                &construction.id,
+            let ordinal = u32::try_from(ordinal).map_err(|_| {
+                CodecError::malformed("NX sketch payload scalar ordinal exceeds u32")
+            })?;
+            let construction_payload = construction.id.replacen(
                 "sketch-construction-inputs",
                 "sketch-construction-payload",
-                "NX sketch scalar construction payload",
-            )?;
+                1,
+            );
             let key = construction_payload
                 .rsplit_once('#')
                 .map_or("unknown", |(_, key)| key);
-            let id = ctx.format_retained(
-                format_args!("nx:feature-history:sketch-payload-scalar#{key}-{ordinal:010}"),
-                "NX sketch payload scalar identity",
-            )?;
-            let operation_label = ctx.copy_retained_text(
-                &construction.operation_label,
-                "NX sketch payload scalar operation label",
-            )?;
-            ctx.reserve_vec(&mut output, 1, "NX sketch payload scalars")?;
+            let id = format!("nx:feature-history:sketch-payload-scalar#{key}-{ordinal:010}");
+            let operation_label = construction.operation_label.clone();
+
             output.push(FeaturePayloadScalar {
                 id,
                 operation_label,
@@ -7506,16 +6307,14 @@ pub(super) fn feature_sketch_payload_scalars(
 
 /// Decode exact scalar-vector frames across reconstructed sketch payloads.
 pub(super) fn feature_sketch_payload_scalar_lanes(
-    ctx: &DecodeContext<'_>,
     container: &Container,
     payloads: &[FeatureConstructionPayload],
 ) -> Result<Vec<FeatureSketchPayloadScalarLane>, CodecError> {
     construction_payload_frames(
-        ctx,
         container,
         payloads,
         |payload| payload.content.blocks(),
-        |bytes| crate::om::sketch_payload_scalar_lanes(ctx, bytes),
+        crate::om::sketch_payload_scalar_lanes,
         |payload, ordinal, lane, source_offset| {
             let Some(header_source) = usize::try_from(lane.offset()).ok().and_then(source_offset)
             else {
@@ -7525,21 +6324,18 @@ pub(super) fn feature_sketch_payload_scalar_lanes(
             else {
                 return Ok(None);
             };
-            let Some(lane) = lane.try_map_locations(ctx, |offset, ()| {
-                usize::try_from(offset).ok().and_then(source_offset)
-            })?
+            let Some(lane) = lane
+                .map_locations(|offset, ()| usize::try_from(offset).ok().and_then(source_offset))
             else {
                 return Ok(None);
             };
-            let id = format_feature_child_id(ctx, &payload.id, "-scalar-lane-", ordinal)?;
+            let id = format_feature_child_id(&payload.id, "-scalar-lane-", ordinal);
             let ordinal = u32::try_from(ordinal)
-                .map_err(|_| ctx.refuse_codec_limit("NX sketch scalar lane ordinal", 0, 1))?;
+                .map_err(|_| CodecError::malformed("NX sketch scalar lane ordinal exceeds u32"))?;
             Ok(Some(FeatureSketchPayloadScalarLane {
                 id,
-                operation_label: ctx
-                    .copy_retained_text(&payload.operation_label, "NX sketch scalar lane label")?,
-                construction_payload: ctx
-                    .copy_retained_text(&payload.id, "NX sketch scalar lane payload")?,
+                operation_label: payload.operation_label.clone(),
+                construction_payload: payload.id.clone(),
                 ordinal,
                 lane,
                 source_offset: header_source,
@@ -7551,50 +6347,29 @@ pub(super) fn feature_sketch_payload_scalar_lanes(
 
 /// Decode exact compact-code name fields across reconstructed sketch payloads.
 pub(super) fn feature_sketch_payload_names(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
     constructions: &[FeatureSketchConstructionInputs],
 ) -> Result<Vec<FeaturePayloadName>, cadmpeg_core::CodecError> {
-    let blocks = offset_data_block_bytes(ctx, container)?;
+    let blocks = offset_data_block_bytes(container)?;
     let mut names = Vec::new();
     for construction in constructions {
-        let count = construction
+        let ids = construction
             .members
-            .len()
-            .checked_add(1)
-            .ok_or_else(|| ctx.refuse_codec_limit("NX sketch name source blocks", 0, 1))?;
-
-        let (mut ids, _ids_reservation) =
-            ctx.temporary_vec(count, "NX sketch name source blocks")?;
-        ids.extend(construction.members.iter().map(|member| &member.data_block));
-        ids.push(&construction.terminal_data_block);
-        let Some(joined) = JoinedPayload::from_source(ctx, ids.iter().copied(), &blocks)? else {
+            .iter()
+            .map(|member| &member.data_block)
+            .chain(std::iter::once(&construction.terminal_data_block));
+        let Some(joined) = JoinedPayload::from_source(ids, &blocks) else {
             continue;
         };
-        let old = "sketch-construction-inputs";
-        let new = "sketch-construction-payload";
-        let construction_payload = if let Some(start) = construction.id.find(old) {
-            let end = start
-                .checked_add(old.len())
-                .ok_or_else(|| ctx.refuse_codec_limit("NX sketch payload identity", 0, 1))?;
-            let length = construction
-                .id
-                .len()
-                .checked_sub(old.len())
-                .and_then(|length| length.checked_add(new.len()))
-                .ok_or_else(|| ctx.refuse_codec_limit("NX sketch payload identity", 0, 1))?;
-            let mut id = ctx.retained_string(length, "NX sketch payload identity")?;
-            id.push_str(&construction.id[..start]);
-            id.push_str(new);
-            id.push_str(&construction.id[end..]);
-            id
-        } else {
-            ctx.copy_retained_text(&construction.id, "NX sketch payload identity")?
-        };
+        let construction_payload = construction.id.replacen(
+            "sketch-construction-inputs",
+            "sketch-construction-payload",
+            1,
+        );
         let key = construction_payload
             .rsplit_once('#')
             .map_or("unknown", |(_, key)| key);
-        for (ordinal, field) in crate::om::name_field::scan(ctx, joined.bytes())?
+        for (ordinal, field) in crate::om::name_field::scan(joined.bytes())
             .into_iter()
             .enumerate()
         {
@@ -7602,21 +6377,17 @@ pub(super) fn feature_sketch_payload_names(
             let Some(source_offset) = joined.source_offset(relative) else {
                 continue;
             };
-            let Some(frame) = field.into_native(ctx, |offset| joined.source_offset(offset))? else {
+            let Some(frame) = field.into_native(|offset| joined.source_offset(offset)) else {
                 continue;
             };
             let ordinal_u32 = u32::try_from(ordinal)
-                .map_err(|_| ctx.refuse_codec_limit("NX sketch payload name ordinal", 0, 1))?;
-            let id = format_feature_history_id(ctx, "sketch-payload-name", key, ordinal, None)?;
-            ctx.reserve_vec(&mut names, 1, "NX sketch payload names")?;
+                .map_err(|_| CodecError::malformed("NX sketch payload name ordinal exceeds u32"))?;
+            let id = format_feature_history_id("sketch-payload-name", key, ordinal, None);
+
             names.push(FeaturePayloadName {
                 id,
-                operation_label: ctx.copy_retained_text(
-                    &construction.operation_label,
-                    "NX sketch payload name label",
-                )?,
-                construction_payload: ctx
-                    .copy_retained_text(&construction_payload, "NX sketch payload name owner")?,
+                operation_label: construction.operation_label.clone(),
+                construction_payload: construction_payload.clone(),
                 ordinal: ordinal_u32,
                 frame,
                 source_offset,
@@ -7627,52 +6398,38 @@ pub(super) fn feature_sketch_payload_names(
 }
 
 /// Join complete name-delimited intervals to their framed scalar fields.
-fn sorted_payload_refs<'ctx, 'a, T>(
-    ctx: &'ctx DecodeContext<'_>,
-    source: &'a [T],
+fn sorted_payload_refs<T>(
+    source: &[T],
     include: impl Fn(&T) -> bool,
     key: impl Fn(&T) -> u64,
-) -> Result<(Vec<&'a T>, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
-    let scan_work = cadmpeg_core::decode::u64_from_index(source.len())
-        .checked_mul(2)
-        .ok_or_else(|| ctx.refuse_codec_limit("scan NX sketch payload records", 0, 1))?;
-    ctx.charge_work(scan_work, "scan NX sketch payload records")?;
-    let count = source.iter().filter(|record| include(record)).count();
-
-    let (mut references, reservation) =
-        ctx.temporary_vec(count, "NX sketch payload record references")?;
-    references.extend(source.iter().filter(|record| include(record)));
-    ctx.stable_sort_by(
-        &mut references,
-        |left, right| key(left).cmp(&key(right)),
-        |_| 0,
-        "sort NX sketch payload record references",
-    )?;
-    Ok((references, reservation))
+) -> Vec<&T> {
+    let mut references = source
+        .iter()
+        .filter(|record| include(record))
+        .collect::<Vec<_>>();
+    references.sort_by_key(|left| key(left));
+    references
 }
 
 pub(super) fn feature_sketch_payload_named_records(
-    ctx: &DecodeContext<'_>,
     payloads: &[FeatureConstructionPayload],
     names: &[FeaturePayloadName],
     scalars: &[FeaturePayloadScalar],
     fixed_pairs: &[FeatureSketchPayloadFixedPair],
     mixed_pairs: &[FeatureSketchPayloadMixedPair],
-) -> Result<Vec<FeatureSketchPayloadNamedRecord>, CodecError> {
+) -> Vec<FeatureSketchPayloadNamedRecord> {
     let mut records = Vec::new();
     for payload in payloads {
-        let (payload_names, _names_reservation) = sorted_payload_refs(
-            ctx,
+        let payload_names = sorted_payload_refs(
             names,
             |name| name.construction_payload == payload.id,
             |name| name.frame.offset(),
-        )?;
+        );
         for (ordinal, name) in payload_names.iter().enumerate() {
             let end = payload_names
                 .get(ordinal + 1)
                 .map_or(payload.content.byte_len(), |next| next.frame.offset());
-            let (scalar_fields, _scalars_reservation) = sorted_payload_refs(
-                ctx,
+            let scalar_fields = sorted_payload_refs(
                 scalars,
                 |scalar| {
                     scalar.payload.id() == payload.id
@@ -7680,9 +6437,8 @@ pub(super) fn feature_sketch_payload_named_records(
                         && scalar.payload_offset < end
                 },
                 |scalar| scalar.payload_offset,
-            )?;
-            let (record_fixed_pairs, _fixed_reservation) = sorted_payload_refs(
-                ctx,
+            );
+            let record_fixed_pairs = sorted_payload_refs(
                 fixed_pairs,
                 |pair| {
                     pair.construction_payload == payload.id
@@ -7690,9 +6446,8 @@ pub(super) fn feature_sketch_payload_named_records(
                         && pair.position.offset() < end
                 },
                 |pair| pair.position.offset(),
-            )?;
-            let (record_mixed_pairs, _mixed_reservation) = sorted_payload_refs(
-                ctx,
+            );
+            let record_mixed_pairs = sorted_payload_refs(
                 mixed_pairs,
                 |pair| {
                     pair.construction_payload == payload.id
@@ -7700,34 +6455,30 @@ pub(super) fn feature_sketch_payload_named_records(
                         && pair.position.offset() < end
                 },
                 |pair| pair.position.offset(),
-            )?;
+            );
             let key = payload
                 .id
                 .rsplit_once('#')
                 .map_or("unknown", |(_, key)| key);
-            let id = format_feature_history_id(ctx, "sketch-payload-record", key, ordinal, None)?;
-            let scalar_fields = ctx.collect_retained_texts(
-                scalar_fields.iter().map(|scalar| scalar.id.as_str()),
-                "NX sketch payload record IDs",
-            )?;
-            let fixed_pairs = ctx.collect_retained_texts(
-                record_fixed_pairs.iter().map(|pair| pair.id.as_str()),
-                "NX sketch payload record IDs",
-            )?;
-            let mixed_pairs = ctx.collect_retained_texts(
-                record_mixed_pairs.iter().map(|pair| pair.id.as_str()),
-                "NX sketch payload record IDs",
-            )?;
-            ctx.reserve_vec(&mut records, 1, "NX sketch payload named records")?;
+            let id = format_feature_history_id("sketch-payload-record", key, ordinal, None);
+            let scalar_fields = scalar_fields
+                .iter()
+                .map(|scalar| scalar.id.clone())
+                .collect();
+            let fixed_pairs = record_fixed_pairs
+                .iter()
+                .map(|pair| pair.id.clone())
+                .collect();
+            let mixed_pairs = record_mixed_pairs
+                .iter()
+                .map(|pair| pair.id.clone())
+                .collect();
+
             records.push(FeatureSketchPayloadNamedRecord {
                 id,
-                operation_label: ctx.copy_retained_text(
-                    &payload.operation_label,
-                    "NX sketch payload record label",
-                )?,
-                construction_payload: ctx
-                    .copy_retained_text(&payload.id, "NX sketch payload record owner")?,
-                name_field: ctx.copy_retained_text(&name.id, "NX sketch payload record name")?,
+                operation_label: payload.operation_label.clone(),
+                construction_payload: payload.id.clone(),
+                name_field: name.id.clone(),
                 scalar_fields,
                 fixed_pairs,
                 mixed_pairs,
@@ -7736,22 +6487,17 @@ pub(super) fn feature_sketch_payload_named_records(
             });
         }
     }
-    Ok(records)
+    records
 }
 
 /// Decode complete `Point<decimal>` records with exactly two scalar fields.
 pub(super) fn feature_sketch_points(
-    ctx: &DecodeContext<'_>,
     records: &[FeatureSketchPayloadNamedRecord],
     names: &[FeaturePayloadName],
     scalars: &[FeaturePayloadScalar],
-) -> Result<Vec<FeatureSketchPoint>, CodecError> {
+) -> Vec<FeatureSketchPoint> {
     let mut points = Vec::new();
     for record in records {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(names.len()),
-            "resolve NX sketch point name",
-        )?;
         let Some(name) = names.iter().rev().find(|name| name.id == record.name_field) else {
             continue;
         };
@@ -7766,12 +6512,7 @@ pub(super) fn feature_sketch_points(
         let [first_id, second_id] = record.scalar_fields.as_slice() else {
             continue;
         };
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(scalars.len())
-                .checked_mul(2)
-                .ok_or_else(|| ctx.refuse_codec_limit("resolve NX sketch point scalars", 0, 1))?,
-            "resolve NX sketch point scalars",
-        )?;
+
         let Some(first) = scalars.iter().rev().find(|scalar| scalar.id == *first_id) else {
             continue;
         };
@@ -7785,17 +6526,13 @@ pub(super) fn feature_sketch_points(
             continue;
         }
         let key = record.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
-        let id = ctx.format_retained(
-            format_args!("nx:feature-history:sketch-point#{key}"),
-            "NX sketch point identity",
-        )?;
-        let operation_label =
-            ctx.copy_retained_text(&record.operation_label, "NX sketch point operation label")?;
-        let named_record = ctx.copy_retained_text(&record.id, "NX sketch point named record")?;
-        let name = ctx.copy_retained_text(name.frame.value(), "NX sketch point name")?;
-        let first_id = ctx.copy_retained_text(&first.id, "NX sketch point first scalar")?;
-        let second_id = ctx.copy_retained_text(&second.id, "NX sketch point second scalar")?;
-        ctx.reserve_vec(&mut points, 1, "NX sketch points")?;
+        let id = format!("nx:feature-history:sketch-point#{key}");
+        let operation_label = record.operation_label.clone();
+        let named_record = record.id.clone();
+        let name = name.frame.value().to_owned();
+        let first_id = first.id.clone();
+        let second_id = second.id.clone();
+
         points.push(FeatureSketchPoint {
             id,
             operation_label,
@@ -7805,16 +6542,15 @@ pub(super) fn feature_sketch_points(
             coordinates: [first.scalar.value(), second.scalar.value()].into(),
         });
     }
-    Ok(points)
+    points
 }
 
 /// Decode `Point<positive decimal>` records containing exactly one fixed pair.
 pub(super) fn feature_sketch_fixed_points(
-    ctx: &DecodeContext<'_>,
     records: &[FeatureSketchPayloadNamedRecord],
     names: &[FeaturePayloadName],
     fixed_pairs: &[FeatureSketchPayloadFixedPair],
-) -> Result<Vec<FeatureSketchFixedPoint>, CodecError> {
+) -> Vec<FeatureSketchFixedPoint> {
     let mut points = Vec::new();
     for record in records {
         if !record.scalar_fields.is_empty() || !record.mixed_pairs.is_empty() {
@@ -7822,10 +6558,6 @@ pub(super) fn feature_sketch_fixed_points(
         }
         let mut point_pair = None;
         for fixed_pair_id in &record.fixed_pairs {
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(fixed_pairs.len()),
-                "resolve NX sketch fixed pair",
-            )?;
             let Some(pair) = fixed_pairs
                 .iter()
                 .rev()
@@ -7847,10 +6579,7 @@ pub(super) fn feature_sketch_fixed_points(
         let Some(pair) = point_pair else {
             continue;
         };
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(names.len()),
-            "resolve NX sketch fixed point name",
-        )?;
+
         let Some(name) = names.iter().rev().find(|name| name.id == record.name_field) else {
             continue;
         };
@@ -7874,22 +6603,14 @@ pub(super) fn feature_sketch_fixed_points(
         else {
             continue;
         };
-        let id = replace_operation_text(
-            ctx,
-            &record.id,
-            "sketch-payload-record",
-            "sketch-fixed-point",
-            "NX sketch fixed point identity",
-        )?;
-        let operation_label = ctx.copy_retained_text(
-            &record.operation_label,
-            "NX sketch fixed point operation label",
-        )?;
-        let named_record =
-            ctx.copy_retained_text(&record.id, "NX sketch fixed point named record")?;
-        let name = ctx.copy_retained_text(name.frame.value(), "NX sketch fixed point name")?;
-        let fixed_pair = ctx.copy_retained_text(&pair.id, "NX sketch fixed point pair")?;
-        ctx.reserve_vec(&mut points, 1, "NX sketch fixed points")?;
+        let id = record
+            .id
+            .replacen("sketch-payload-record", "sketch-fixed-point", 1);
+        let operation_label = record.operation_label.clone();
+        let named_record = record.id.clone();
+        let name = name.frame.value().to_owned();
+        let fixed_pair = pair.id.clone();
+
         points.push(FeatureSketchFixedPoint {
             id,
             operation_label,
@@ -7900,35 +6621,23 @@ pub(super) fn feature_sketch_fixed_points(
             source_offset: pair.source_offset,
         });
     }
-    Ok(points)
+    points
 }
 
 /// Group every bit-identical same-name sketch-point witness.
 pub(super) fn feature_sketch_point_groups(
-    ctx: &DecodeContext<'_>,
     points: &[FeatureSketchPoint],
-) -> Result<Vec<FeatureSketchPointGroup>, CodecError> {
-    let work = cadmpeg_core::decode::u64_from_index(points.len())
-        .checked_mul(cadmpeg_core::decode::u64_from_index(points.len()))
-        .and_then(|work| work.checked_mul(4))
-        .ok_or_else(|| ctx.refuse_codec_limit("group NX sketch points", 0, 1))?;
-    ctx.charge_work(work, "group NX sketch points")?;
+) -> Vec<FeatureSketchPointGroup> {
     let mut grouped = BTreeSet::new();
-    let mut grouped_reservation = ctx.reserve_scoped(0, "index NX sketch point groups")?;
     let mut groups = Vec::new();
     for point in points {
         let key = (point.operation_label.as_str(), point.name.as_str());
-        if grouped.contains(&key) {
+        if !grouped.insert(key) {
             continue;
         }
-
-        grouped_reservation.with_storage(|| {
-            ctx.insert_btree_set(&mut grouped, key, "NX sketch point group keys")
-        })?;
         let matches = |candidate: &&FeatureSketchPoint| {
             candidate.operation_label == point.operation_label && candidate.name == point.name
         };
-        let count = points.iter().filter(&matches).count();
         if points.iter().filter(&matches).any(|candidate| {
             candidate
                 .coordinates
@@ -7939,40 +6648,32 @@ pub(super) fn feature_sketch_point_groups(
             continue;
         }
 
-        let mut members = ctx.collection_vec(count, "NX sketch point group members")?;
-        for witness in points.iter().filter(&matches) {
-            members.push(ctx.copy_retained_text(&witness.id, "NX sketch point group member")?);
-        }
-        let prefix = "nx:feature-history:sketch-point-group#";
+        let members = points
+            .iter()
+            .filter(&matches)
+            .map(|witness| witness.id.clone())
+            .collect();
         let key = point.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
-        let length = prefix
-            .len()
-            .checked_add(key.len())
-            .ok_or_else(|| ctx.refuse_codec_limit("NX sketch point group identity", 0, 1))?;
-        let mut id = ctx.retained_string(length, "NX sketch point group identity")?;
-        id.push_str(prefix);
-        id.push_str(key);
-        ctx.reserve_vec(&mut groups, 1, "NX sketch point groups")?;
+        let id = format!("nx:feature-history:sketch-point-group#{key}");
+
         groups.push(FeatureSketchPointGroup {
             id,
-            operation_label: ctx
-                .copy_retained_text(&point.operation_label, "NX sketch point group label")?,
-            name: ctx.copy_retained_text(&point.name, "NX sketch point group name")?,
+            operation_label: point.operation_label.clone(),
+            name: point.name.clone(),
             points: members,
             coordinates: point.coordinates,
         });
     }
-    Ok(groups)
+    groups
 }
 
 /// Decode exact named point objects across consecutive offset-store blocks.
 pub(super) fn offset_store_named_points(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
 ) -> Result<Vec<OffsetStoreNamedPoint>, cadmpeg_core::CodecError> {
     let mut points = Vec::new();
     for (section_ordinal, (entry, section)) in
-        container.indexed_om_sections(ctx)?.into_iter().enumerate()
+        container.indexed_om_sections()?.into_iter().enumerate()
     {
         let Some((_, _, records)) = section.as_offset_only() else {
             continue;
@@ -7980,10 +6681,8 @@ pub(super) fn offset_store_named_points(
         let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
         for ordinal in 0..records.len() {
             let Some(point) = crate::om::offset_store_named_point(
-                ctx,
                 records[ordinal..].iter().map(|record| record.bytes),
-            )?
-            else {
+            ) else {
                 continue;
             };
             let records = &records[ordinal..ordinal + point.block_count];
@@ -8013,25 +6712,21 @@ pub(super) fn offset_store_named_points(
             };
             let point_ordinal = ordinal
                 .checked_add(1)
-                .ok_or_else(|| ctx.refuse_codec_limit("NX named point ordinal", 0, 1))?;
-            let id = ctx.format_retained(
-                format_args!("nx:offset-store:named-point#{section_ordinal}-{point_ordinal}"),
-                "NX named point identity",
-            )?;
+                .ok_or_else(|| CodecError::malformed("NX named point ordinal overflows"))?;
+            let id = format!("nx:offset-store:named-point#{section_ordinal}-{point_ordinal}");
             let mut data_blocks = Vec::new();
             for relative in 0..point.block_count {
                 let block_ordinal = ordinal
                     .checked_add(relative)
                     .and_then(|ordinal| ordinal.checked_add(1))
-                    .ok_or_else(|| ctx.refuse_codec_limit("NX named point block ordinal", 0, 1))?;
-                let block_id = ctx.format_retained(
-                    format_args!("nx:om-data-blocks-{section_ordinal}:block#{block_ordinal}"),
-                    "NX named point data block identity",
-                )?;
-                ctx.reserve_vec(&mut data_blocks, 1, "NX named point data blocks")?;
+                    .ok_or_else(|| {
+                        CodecError::malformed("NX named point block ordinal overflows")
+                    })?;
+                let block_id = format!("nx:om-data-blocks-{section_ordinal}:block#{block_ordinal}");
+
                 data_blocks.push(block_id);
             }
-            ctx.reserve_vec(&mut points, 1, "NX named points")?;
+
             points.push(OffsetStoreNamedPoint {
                 id,
                 name: point.name,
@@ -8046,7 +6741,6 @@ pub(super) fn offset_store_named_points(
 
 /// Join sketch references to named points through exact shared block identity.
 pub(super) fn feature_sketch_named_point_block_uses(
-    ctx: &DecodeContext<'_>,
     references: &[FeatureSketchReference],
     points: &[OffsetStoreNamedPoint],
 ) -> Result<Vec<FeatureSketchNamedPointBlockUse>, CodecError> {
@@ -8055,15 +6749,8 @@ pub(super) fn feature_sketch_named_point_block_uses(
         let Some(data_block) = reference.data_block.as_deref() else {
             continue;
         };
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(points.len()),
-            "join NX sketch named points",
-        )?;
+
         for point in points {
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(point.data_blocks.len()),
-                "match NX named point block",
-            )?;
             let Some(point_block_ordinal) = point
                 .data_blocks
                 .iter()
@@ -8079,22 +6766,15 @@ pub(super) fn feature_sketch_named_point_block_uses(
                 .id
                 .rsplit_once('#')
                 .map_or(point.id.as_str(), |(_, key)| key);
-            let id = ctx.format_retained(format_args!(
-                "nx:feature-history:sketch-named-point-block-use#{operation_key}-{}-{point_key}-{point_block_ordinal}",
-                reference.position.ordinal()), "NX sketch named point block use identity")?;
-            let operation_label = ctx.copy_retained_text(
-                &reference.operation_label,
-                "NX sketch named point block use label",
-            )?;
-            let sketch_reference =
-                ctx.copy_retained_text(&reference.id, "NX sketch named point block use reference")?;
-            let named_point =
-                ctx.copy_retained_text(&point.id, "NX sketch named point block use point")?;
-            let data_block =
-                ctx.copy_retained_text(data_block, "NX sketch named point block use data block")?;
+            let id = format!("nx:feature-history:sketch-named-point-block-use#{operation_key}-{}-{point_key}-{point_block_ordinal}",
+            reference.position.ordinal());
+            let operation_label = reference.operation_label.clone();
+            let sketch_reference = reference.id.clone();
+            let named_point = point.id.clone();
+            let data_block = data_block.to_owned();
             let point_block_ordinal = u32::try_from(point_block_ordinal)
-                .map_err(|_| ctx.refuse_codec_limit("NX named point block ordinal", 0, 1))?;
-            ctx.reserve_vec(&mut uses, 1, "NX sketch named point block uses")?;
+                .map_err(|_| CodecError::malformed("NX named point block ordinal exceeds u32"))?;
+
             uses.push(FeatureSketchNamedPointBlockUse {
                 id,
                 operation_label,
@@ -8118,45 +6798,19 @@ fn block_key(block: &str) -> Option<(&str, u32)> {
 
 /// Join one named point to a complete sketch lane through unique consecutive block adjacency.
 pub(super) fn feature_sketch_preceding_named_point_uses(
-    ctx: &DecodeContext<'_>,
     references: &[FeatureSketchReference],
     points: &[OffsetStoreNamedPoint],
 ) -> Result<Vec<FeatureSketchPrecedingNamedPointUse>, CodecError> {
-    use std::collections::btree_map::Entry;
-
     let mut references_by_operation = BTreeMap::<&str, Vec<&FeatureSketchReference>>::new();
-    let mut index_reservation =
-        ctx.reserve_scoped(0, "index NX preceding named-point references")?;
     for reference in references {
-        ctx.charge_work(
-            u64::from(usize::BITS - references_by_operation.len().leading_zeros()),
-            "index NX preceding named-point references",
-        )?;
-        let operation_key = reference.operation_label.as_str();
-        index_reservation.with_storage(|| {
-            ctx.admit_btree_entry(
-                &references_by_operation,
-                &operation_key,
-                "NX preceding named-point operation index",
-            )
-        })?;
-        let group = match references_by_operation.entry(operation_key) {
-            Entry::Vacant(entry) => entry.insert(Vec::new()),
-            Entry::Occupied(entry) => entry.into_mut(),
-        };
-
-        index_reservation
-            .with_storage(|| ctx.reserve_vec(group, 1, "NX preceding named-point references"))?;
-        group.push(reference);
+        references_by_operation
+            .entry(reference.operation_label.as_str())
+            .or_default()
+            .push(reference);
     }
     let mut uses = Vec::new();
     for (operation_label, operation_references) in &mut references_by_operation {
-        ctx.stable_sort_by(
-            operation_references,
-            |left, right| left.position.ordinal().cmp(&right.position.ordinal()),
-            |_| 0,
-            "sort NX preceding named-point references",
-        )?;
+        operation_references.sort_by_key(|left| left.position.ordinal());
         let Some((first_reference, first_block)) = operation_references
             .first()
             .and_then(|reference| Some((*reference, reference.data_block.as_deref()?)))
@@ -8166,7 +6820,7 @@ pub(super) fn feature_sketch_preceding_named_point_uses(
         let mut complete_lane = true;
         for (ordinal, reference) in operation_references.iter().enumerate() {
             let ordinal = u32::try_from(ordinal).map_err(|_| {
-                ctx.refuse_codec_limit("NX preceding named-point reference ordinal", 0, 1)
+                CodecError::malformed("NX preceding named-point reference ordinal exceeds u32")
             })?;
             if reference.position.ordinal() != ordinal
                 || !matches!(reference.position.declared_count(),
@@ -8185,10 +6839,7 @@ pub(super) fn feature_sketch_preceding_named_point_uses(
             continue;
         };
         let mut candidate = None;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(points.len()),
-            "match NX preceding named point",
-        )?;
+
         for point in points {
             let Some(last_block) = point.data_blocks.last() else {
                 continue;
@@ -8214,32 +6865,15 @@ pub(super) fn feature_sketch_preceding_named_point_uses(
             .id
             .rsplit_once('#')
             .map_or(point.id.as_str(), |(_, key)| key);
-        let id = ctx.format_retained(
-            format_args!(
-                "nx:feature-history:sketch-preceding-named-point-use#{operation_key}-{point_key}"
-            ),
-            "NX preceding named-point use identity",
-        )?;
-        let operation_label =
-            ctx.copy_retained_text(operation_label, "NX preceding named-point operation label")?;
-        let first_sketch_reference = ctx.copy_retained_text(
-            &first_reference.id,
-            "NX preceding named-point first reference",
-        )?;
-        let named_point = ctx.copy_retained_text(&point.id, "NX preceding named-point identity")?;
-        let following_data_block =
-            ctx.copy_retained_text(first_block, "NX preceding named-point following block")?;
-        let mut point_data_blocks = Vec::new();
-        for block in &point.data_blocks {
-            let block = ctx.copy_retained_text(block, "NX preceding named-point source block")?;
-            ctx.reserve_vec(
-                &mut point_data_blocks,
-                1,
-                "NX preceding named-point source blocks",
-            )?;
-            point_data_blocks.push(block);
-        }
-        ctx.reserve_vec(&mut uses, 1, "NX preceding named-point uses")?;
+        let id = format!(
+            "nx:feature-history:sketch-preceding-named-point-use#{operation_key}-{point_key}"
+        );
+        let operation_label = (*operation_label).to_owned();
+        let first_sketch_reference = first_reference.id.clone();
+        let named_point = point.id.clone();
+        let following_data_block = first_block.to_owned();
+        let point_data_blocks = point.data_blocks.clone();
+
         uses.push(FeatureSketchPrecedingNamedPointUse {
             id,
             operation_label,
@@ -8250,34 +6884,24 @@ pub(super) fn feature_sketch_preceding_named_point_uses(
             source_offset: first_reference.source_offset,
         });
     }
-    drop(references_by_operation);
-    drop(index_reservation);
     Ok(uses)
 }
 
 /// Join the two exact encodings of a solved sketch point.
 pub(super) fn feature_sketch_point_uses(
-    ctx: &DecodeContext<'_>,
     point_groups: &[FeatureSketchPointGroup],
     named_points: &[OffsetStoreNamedPoint],
     block_uses: &[FeatureSketchNamedPointBlockUse],
-) -> Result<Vec<FeatureSketchPointUse>, CodecError> {
+) -> Vec<FeatureSketchPointUse> {
     let mut uses = Vec::new();
     for (block_use_index, block_use) in block_uses.iter().enumerate() {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(block_use_index),
-            "deduplicate NX sketch point uses",
-        )?;
         if block_uses[..block_use_index].iter().any(|earlier| {
             earlier.operation_label == block_use.operation_label
                 && earlier.named_point == block_use.named_point
         }) {
             continue;
         }
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(named_points.len()),
-            "resolve NX sketch named point",
-        )?;
+
         let Some(named_point) = named_points
             .iter()
             .rev()
@@ -8285,38 +6909,22 @@ pub(super) fn feature_sketch_point_uses(
         else {
             continue;
         };
-        let mut point_block_uses = Vec::new();
-        let mut order_reservation = ctx.reserve_scoped(0, "sort NX sketch point block uses")?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(block_uses.len()),
-            "collect NX sketch point block uses",
-        )?;
-        for candidate in block_uses.iter().filter(|candidate| {
-            candidate.operation_label == block_use.operation_label
-                && candidate.named_point == block_use.named_point
-        }) {
-            order_reservation.with_storage(|| {
-                ctx.reserve_vec(&mut point_block_uses, 1, "NX sketch point block use order")
-            })?;
-            point_block_uses.push(candidate);
-        }
-        ctx.stable_sort_by(
-            &mut point_block_uses,
-            |left, right| {
-                (left.reference_ordinal, left.source_offset, left.id.as_str()).cmp(&(
-                    right.reference_ordinal,
-                    right.source_offset,
-                    right.id.as_str(),
-                ))
-            },
-            |block_use| block_use.id.len(),
-            "sort NX sketch point block uses",
-        )?;
+        let mut point_block_uses = block_uses
+            .iter()
+            .filter(|candidate| {
+                candidate.operation_label == block_use.operation_label
+                    && candidate.named_point == block_use.named_point
+            })
+            .collect::<Vec<_>>();
+        point_block_uses.sort_by(|left, right| {
+            (left.reference_ordinal, left.source_offset, left.id.as_str()).cmp(&(
+                right.reference_ordinal,
+                right.source_offset,
+                right.id.as_str(),
+            ))
+        });
         let mut point_group = None;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(point_groups.len()),
-            "resolve NX sketch point group",
-        )?;
+
         for group in point_groups.iter().filter(|group| {
             group.operation_label == block_use.operation_label && group.name == named_point.name
         }) {
@@ -8339,37 +6947,21 @@ pub(super) fn feature_sketch_point_uses(
         let Some(first) = point_block_uses.first() else {
             continue;
         };
-        let id = replace_operation_text(
-            ctx,
-            &first.id,
-            "sketch-named-point-block-use",
-            "sketch-point-use",
-            "NX sketch point use identity",
-        )?;
-        let operation_label = ctx.copy_retained_text(
-            &block_use.operation_label,
-            "NX sketch point use operation label",
-        )?;
-        let mut references = Vec::new();
-        for block_use in &point_block_uses {
-            let sketch_reference = ctx
-                .copy_retained_text(&block_use.sketch_reference, "NX sketch point use reference")?;
-            let block_use_id =
-                ctx.copy_retained_text(&block_use.id, "NX sketch point use block identity")?;
-            ctx.reserve_vec(&mut references, 1, "NX sketch point use references")?;
-            references.push(FeatureSketchPointUseReference {
-                sketch_reference,
-                block_use: block_use_id,
+        let id = first
+            .id
+            .replacen("sketch-named-point-block-use", "sketch-point-use", 1);
+        let operation_label = block_use.operation_label.clone();
+        let references = point_block_uses
+            .iter()
+            .map(|block_use| FeatureSketchPointUseReference {
+                sketch_reference: block_use.sketch_reference.clone(),
+                block_use: block_use.id.clone(),
                 source_offset: block_use.source_offset,
-            });
-        }
-        drop(point_block_uses);
-        drop(order_reservation);
-        let sketch_point_group =
-            ctx.copy_retained_text(&point_group.id, "NX sketch point use group identity")?;
-        let named_point =
-            ctx.copy_retained_text(&named_point.id, "NX sketch point use named point")?;
-        ctx.reserve_vec(&mut uses, 1, "NX sketch point uses")?;
+            })
+            .collect();
+        let sketch_point_group = point_group.id.clone();
+        let named_point = named_point.id.clone();
+
         uses.push(FeatureSketchPointUse {
             id,
             operation_label,
@@ -8378,12 +6970,11 @@ pub(super) fn feature_sketch_point_uses(
             named_point,
         });
     }
-    Ok(uses)
+    uses
 }
 
 /// Join one uniquely sketch-owned named-point block to a later datum-CSYS construction.
 pub(super) fn feature_sketch_datum_csys_dependencies(
-    ctx: &DecodeContext<'_>,
     labels: &[FeatureOperationLabel],
     named_points: &[OffsetStoreNamedPoint],
     point_uses: &[FeatureSketchPointUse],
@@ -8395,40 +6986,18 @@ pub(super) fn feature_sketch_datum_csys_dependencies(
         Shared(&'a str),
         Consecutive(&'a str, &'a str),
     }
-    let (ordered_labels, _ordered_labels_storage) = ctx
-        .with_scoped_storage("NX local ordered_labels storage", || {
-            feature_operation_chronological_labels(ctx, labels)
-        })?;
-    let mut positions = BTreeMap::new();
-    let mut position_reservation = ctx.reserve_scoped(0, "NX sketch datum label positions")?;
-    for (position, label) in ordered_labels.iter().enumerate() {
-        position_reservation.with_storage(|| {
-            ctx.insert_btree_map(
-                &mut positions,
-                label.id.as_str(),
-                position,
-                "NX sketch datum label positions",
-            )
-        })?;
-    }
-    let mut points = BTreeMap::new();
-    let mut point_reservation = ctx.reserve_scoped(0, "NX sketch datum named points")?;
-    for point in named_points {
-        point_reservation.with_storage(|| {
-            ctx.insert_btree_map(
-                &mut points,
-                point.id.as_str(),
-                point,
-                "NX sketch datum named points",
-            )
-        })?;
-    }
+    let ordered_labels = feature_operation_chronological_labels(labels);
+    let positions = ordered_labels
+        .iter()
+        .enumerate()
+        .map(|(position, label)| (label.id.as_str(), position))
+        .collect::<BTreeMap<_, _>>();
+    let points = named_points
+        .iter()
+        .map(|point| (point.id.as_str(), point))
+        .collect::<BTreeMap<_, _>>();
     let mut dependencies = Vec::new();
     for construction in constructions {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(point_uses.len()),
-            "match NX sketch datum dependencies",
-        )?;
         let Some(consumer_position) = positions.get(construction.operation_label.as_str()) else {
             continue;
         };
@@ -8444,15 +7013,7 @@ pub(super) fn feature_sketch_datum_csys_dependencies(
             let Some(point) = points.get(point_use.named_point.as_str()) else {
                 continue;
             };
-            let comparisons = point
-                .data_blocks
-                .len()
-                .checked_mul(construction.frame.members().len())
-                .ok_or_else(|| ctx.refuse_codec_limit("match NX sketch datum blocks", 0, 1))?;
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(comparisons),
-                "match NX sketch datum blocks",
-            )?;
+
             for shared_block in construction
                 .frame
                 .members()
@@ -8520,23 +7081,17 @@ pub(super) fn feature_sketch_datum_csys_dependencies(
         };
         let point = points[point_use.named_point.as_str()];
         let mut scalar_aliases = Vec::new();
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(scalars.len())
-                .checked_mul(cadmpeg_core::decode::u64_from_index(point.values.len()))
-                .ok_or_else(|| ctx.refuse_codec_limit("match NX sketch datum scalars", 0, 1))?,
-            "match NX sketch datum scalars",
-        )?;
+
         for (coordinate_ordinal, value) in point.values.iter().enumerate() {
             for scalar in scalars.iter().filter(|scalar| {
                 scalar.operation_label == construction.operation_label
                     && scalar.source_offset == value.source_offset
             }) {
-                let datum_csys_scalar =
-                    ctx.copy_retained_text(&scalar.id, "NX sketch datum scalar identity")?;
-                ctx.reserve_vec(&mut scalar_aliases, 1, "NX sketch datum scalar aliases")?;
+                let datum_csys_scalar = scalar.id.clone();
+
                 scalar_aliases.push(FeatureSketchDatumCsysScalarAlias {
                     sketch_coordinate_ordinal: u8::try_from(coordinate_ordinal).map_err(|_| {
-                        ctx.refuse_codec_limit("NX sketch datum coordinate ordinal", 0, 1)
+                        CodecError::malformed("NX sketch datum coordinate ordinal exceeds u8")
                     })?,
                     datum_csys_scalar,
                     value_source_offset: value.source_offset,
@@ -8545,37 +7100,24 @@ pub(super) fn feature_sketch_datum_csys_dependencies(
         }
         let block_relation = match block_relation {
             BorrowedRelation::Shared(data_block) => FeatureSketchDatumCsysBlockRelation::Shared {
-                data_block: ctx.copy_retained_text(data_block, "NX sketch datum shared block")?,
+                data_block: data_block.to_owned(),
             },
             BorrowedRelation::Consecutive(point_data_block, construction_data_block) => {
                 FeatureSketchDatumCsysBlockRelation::Consecutive {
-                    point_data_block: ctx
-                        .copy_retained_text(point_data_block, "NX sketch datum point block")?,
-                    construction_data_block: ctx.copy_retained_text(
-                        construction_data_block,
-                        "NX sketch datum construction block",
-                    )?,
+                    point_data_block: point_data_block.to_owned(),
+                    construction_data_block: construction_data_block.to_owned(),
                 }
             }
         };
-        let id = replace_operation_text(
-            ctx,
-            &construction.id,
-            "datum-csys-construction",
-            "sketch-datum-csys-dependency",
-            "NX sketch datum dependency identity",
-        )?;
-        let sketch_operation_label =
-            ctx.copy_retained_text(&point_use.operation_label, "NX sketch datum producer label")?;
-        let datum_csys_operation_label = ctx.copy_retained_text(
-            &construction.operation_label,
-            "NX sketch datum consumer label",
-        )?;
-        let sketch_point_use =
-            ctx.copy_retained_text(&point_use.id, "NX sketch datum point use")?;
-        let datum_csys_construction =
-            ctx.copy_retained_text(&construction.id, "NX sketch datum construction")?;
-        ctx.reserve_vec(&mut dependencies, 1, "NX sketch datum dependencies")?;
+        let id =
+            construction
+                .id
+                .replacen("datum-csys-construction", "sketch-datum-csys-dependency", 1);
+        let sketch_operation_label = point_use.operation_label.clone();
+        let datum_csys_operation_label = construction.operation_label.clone();
+        let sketch_point_use = point_use.id.clone();
+        let datum_csys_construction = construction.id.clone();
+
         dependencies.push(FeatureSketchDatumCsysDependency {
             id,
             sketch_operation_label,
@@ -8587,12 +7129,7 @@ pub(super) fn feature_sketch_datum_csys_dependencies(
             source_offset: reference.source_offset,
         });
     }
-    ctx.stable_sort_by(
-        &mut dependencies,
-        |left, right| left.id.cmp(&right.id),
-        |dependency| dependency.id.len(),
-        "sort NX sketch datum dependencies",
-    )?;
+    dependencies.sort_by(|left, right| left.id.cmp(&right.id));
     Ok(dependencies)
 }
 
@@ -8607,53 +7144,44 @@ fn parse_sketch_point_name(value: &str) -> Option<u32> {
 
 /// Decode and resolve the ordered counted-reference field in sketch payloads.
 pub(super) fn feature_sketch_references(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
 ) -> Result<Vec<FeatureSketchReference>, cadmpeg_core::CodecError> {
-    let indexed = container.indexed_om_sections(ctx)?;
+    let indexed = container.indexed_om_sections()?;
     let mut references = Vec::new();
     let mut failure = None;
     visit_feature_history_operation_records(
-        ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
             if failure.is_some() {
                 return;
             }
-            let decoded = match crate::om::sketch_payload_references(ctx, record.payload_view()) {
-                Ok(Some(decoded)) => decoded,
-                Ok(None) => return,
-                Err(error) => {
-                    failure = Some(error);
-                    return;
-                }
+            let Some(decoded) = crate::om::sketch_payload_references(record.payload_view()) else {
+                return;
             };
             let projected = (|| -> Result<(), CodecError> {
                 for (position, reference) in decoded.into_positioned() {
-                    let data_block =
-                        charged_unique_offset_data_block(ctx, &indexed, reference.token.value())?;
-                    let ordinal = usize::try_from(position.ordinal())
-                        .map_err(|_| ctx.refuse_codec_limit("NX sketch reference ordinal", 0, 1))?;
+                    let data_block = unique_offset_data_block_id(&indexed, reference.token.value());
+                    let ordinal = usize::try_from(position.ordinal()).map_err(|_| {
+                        CodecError::malformed("NX sketch reference ordinal exceeds usize")
+                    })?;
                     let id = format_feature_history_id(
-                        ctx,
                         "sketch-reference",
                         section_key,
                         operation_ordinal,
                         Some(ordinal),
-                    )?;
+                    );
                     let operation_label = format_feature_history_id(
-                        ctx,
                         "operation-label",
                         section_key,
                         operation_ordinal,
                         None,
-                    )?;
+                    );
                     let source_offset = entry_offset
                         .checked_add(cadmpeg_core::decode::u64_from_index(reference.offset))
                         .ok_or_else(|| {
-                            ctx.refuse_codec_limit("NX sketch reference source offset", 0, 1)
+                            CodecError::malformed("NX sketch reference source offset overflows")
                         })?;
-                    ctx.reserve_vec(&mut references, 1, "NX sketch references")?;
+
                     references.push(FeatureSketchReference {
                         id,
                         operation_label,
@@ -8678,17 +7206,12 @@ pub(super) fn feature_sketch_references(
 
 /// Join operation input lanes to uniquely resolved parameter declarations.
 pub(super) fn feature_parameter_bindings(
-    ctx: &DecodeContext<'_>,
     inputs: &[FeatureInputBlock],
     references: &[DataBlockReference],
     expressions: &[ParameterFormula],
-) -> Result<Vec<FeatureParameterBinding>, CodecError> {
+) -> Vec<FeatureParameterBinding> {
     let mut bindings = Vec::new();
     for input in inputs {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(references.len()),
-            "scan NX parameter binding references",
-        )?;
         for reference in references
             .iter()
             .filter(|reference| reference.data_block == input.data_block)
@@ -8700,33 +7223,22 @@ pub(super) fn feature_parameter_bindings(
                 .operation_label
                 .rsplit_once('#')
                 .map_or(input.operation_label.as_str(), |(_, key)| key);
-            let id = ctx.format_retained(
-                format_args!(
-                    "nx:feature-history:parameter-binding#{operation_key}-{}-{}",
-                    input.input_slot, reference.ordinal
-                ),
-                "NX parameter binding identity",
-            )?;
-            let operation_label =
-                ctx.copy_retained_text(&input.operation_label, "NX parameter binding operation")?;
-            let input_block =
-                ctx.copy_retained_text(&input.data_block, "NX parameter binding input block")?;
-            let declaration =
-                ctx.copy_retained_text(expression_declaration, "NX parameter binding declaration")?;
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(expressions.len()),
-                "scan NX parameter binding expressions",
-            )?;
+            let id = format!(
+                "nx:feature-history:parameter-binding#{operation_key}-{}-{}",
+                input.input_slot, reference.ordinal
+            );
+            let operation_label = input.operation_label.clone();
+            let input_block = input.data_block.clone();
+            let declaration = expression_declaration.to_owned();
+
             let mut matches = expressions.iter().filter(|expression| {
                 expression.declaration.as_deref() == Some(expression_declaration.as_str())
             });
             let expression = match (matches.next(), matches.next()) {
-                (Some(expression), None) => {
-                    Some(ctx.copy_retained_text(&expression.id, "NX parameter binding expression")?)
-                }
+                (Some(expression), None) => Some(expression.id.clone()),
                 _ => None,
             };
-            ctx.reserve_vec(&mut bindings, 1, "NX parameter bindings")?;
+
             bindings.push(FeatureParameterBinding {
                 id,
                 operation_label,
@@ -8740,24 +7252,15 @@ pub(super) fn feature_parameter_bindings(
             });
         }
     }
-    Ok(bindings)
+    bindings
 }
 
 /// Group exact expression bindings by consuming operation and expression.
 pub(super) fn feature_parameter_uses(
-    ctx: &DecodeContext<'_>,
     bindings: &[FeatureParameterBinding],
-) -> Result<Vec<FeatureParameterUse>, CodecError> {
+) -> Vec<FeatureParameterUse> {
     let mut uses = Vec::new();
-    let scan_work = bindings
-        .len()
-        .checked_mul(bindings.len())
-        .and_then(|count| count.checked_mul(4))
-        .ok_or_else(|| ctx.refuse_codec_limit("group NX parameter uses", 0, 1))?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(scan_work),
-        "group NX parameter uses",
-    )?;
+
     for (ordinal, binding) in bindings.iter().enumerate() {
         let Some(expression) = binding.expression.as_deref() else {
             continue;
@@ -8775,32 +7278,23 @@ pub(super) fn feature_parameter_uses(
         let expression_key = expression
             .rsplit_once('#')
             .map_or(expression, |(_, key)| key);
-        let id = ctx.format_retained(
-            format_args!("nx:feature-history:parameter-use#{operation_key}-{expression_key}"),
-            "NX parameter use identity",
-        )?;
-        let operation_label =
-            ctx.copy_retained_text(&binding.operation_label, "NX parameter use operation")?;
-        let expression_id = ctx.copy_retained_text(expression, "NX parameter use expression")?;
+        let id = format!("nx:feature-history:parameter-use#{operation_key}-{expression_key}");
+        let operation_label = binding.operation_label.clone();
+        let expression_id = expression.to_owned();
         let mut occurrences = Vec::new();
         for candidate in bindings.iter().filter(|candidate| {
             candidate.operation_label == binding.operation_label
                 && candidate.expression.as_deref() == Some(expression)
         }) {
-            let binding_id = ctx.copy_retained_text(&candidate.id, "NX parameter use binding")?;
-            ctx.reserve_vec(&mut occurrences, 1, "NX parameter use bindings")?;
+            let binding_id = candidate.id.clone();
+
             occurrences.push(FeatureParameterUseBinding {
                 binding: binding_id,
                 source_offset: candidate.source_offset,
             });
         }
-        ctx.stable_sort_by(
-            &mut occurrences,
-            |left, right| left.source_offset.cmp(&right.source_offset),
-            |_| 0,
-            "sort NX parameter use bindings",
-        )?;
-        ctx.reserve_vec(&mut uses, 1, "NX parameter uses")?;
+        occurrences.sort_by_key(|left| left.source_offset);
+
         uses.push(FeatureParameterUse {
             id,
             operation_label,
@@ -8808,31 +7302,22 @@ pub(super) fn feature_parameter_uses(
             bindings: occurrences,
         });
     }
-    ctx.stable_sort_by(
-        &mut uses,
-        |left, right| {
-            left.bindings[0]
-                .source_offset
-                .cmp(&right.bindings[0].source_offset)
-                .then_with(|| left.operation_label.cmp(&right.operation_label))
-                .then_with(|| left.expression.cmp(&right.expression))
-        },
-        |item| item.operation_label.len() + item.expression.len(),
-        "sort NX parameter uses",
-    )?;
-    Ok(uses)
+    uses.sort_by(|left, right| {
+        left.bindings[0]
+            .source_offset
+            .cmp(&right.bindings[0].source_offset)
+            .then_with(|| left.operation_label.cmp(&right.operation_label))
+            .then_with(|| left.expression.cmp(&right.expression))
+    });
+    uses
 }
 
 fn visit_feature_history_sections(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
     mut visit: impl FnMut(&crate::om::Section<'_>, &str, u64) -> Result<(), cadmpeg_core::CodecError>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let sections = container.om_sections(ctx)?;
-    for (section_ordinal, link) in feature_history_sections(ctx, container)?
-        .into_iter()
-        .enumerate()
-    {
+    let sections = container.om_sections()?;
+    for (section_ordinal, link) in feature_history_sections(container)?.into_iter().enumerate() {
         let Some((entry, section)) = sections.iter().find(|(entry, section)| {
             entry.file_span().map_or(
                 cadmpeg_core::decode::u64_from_index(section.offset),

@@ -14,42 +14,25 @@ fn check_wire<T: Serialize + DeserializeOwned>(wire: &serde_json::Value) {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
-    // Structural projection admits backing B-tree nodes for the fixture.
-    policy.limits.max_materialized_bytes = 65536;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let projected =
         crate::schema::structural::project(&ctx, &value, "project borrowed owner").unwrap();
     assert_eq!(*projected, expected);
     drop(projected);
-    let storage = ctx
-        .reserve_scoped(65536, "borrowed owner storage released")
-        .unwrap();
-    drop(storage);
     ctx.finish_session().unwrap();
-    for dimension in [
-        ResourceDimension::MaterializedBytes,
-        ResourceDimension::WorkUnits,
-        ResourceDimension::RecursionDepth,
-    ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        match dimension {
-            ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
-            ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
-            ResourceDimension::RecursionDepth => policy.limits.max_recursion_depth = 0,
-            _ => panic!("owner serialization dimensions"),
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let CodecError::ResourceLimit(limit) =
-            crate::schema::structural::project(&ctx, &value, "project borrowed owner").unwrap_err()
-        else {
-            panic!("borrowed owner must preserve resource refusal");
-        };
-        assert_eq!(limit.dimension, dimension);
-        assert!(
-            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(first)) if first == limit)
-        );
-    }
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_recursion_depth = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let CodecError::ResourceLimit(limit) =
+        crate::schema::structural::project(&ctx, &value, "project borrowed owner").unwrap_err()
+    else {
+        panic!("borrowed owner must preserve resource refusal");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::RecursionDepth);
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(first)) if first == limit)
+    );
 }
 
 macro_rules! wire_case {

@@ -11,7 +11,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::num::NonZeroU32;
 
-pub(crate) mod charged_clone;
 pub(crate) mod operand_tag;
 pub(crate) mod relation_scalars;
 mod sketch_code;
@@ -225,18 +224,11 @@ impl TryFrom<String> for FeatureSource {
 
 impl From<FeatureSource> for String {
     fn from(value: FeatureSource) -> Self {
-        #[cfg(test)]
-        FEATURE_SOURCE_OWNED_WIRE_CALLS.with(|calls| calls.set(calls.get() + 1));
         match value {
             FeatureSource::Reserved => RESERVED_FEATURE_SOURCE.to_string(),
             FeatureSource::Id(id) => id.value().to_string(),
         }
     }
-}
-
-#[cfg(test)]
-thread_local! {
-    static FEATURE_SOURCE_OWNED_WIRE_CALLS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 /// The wire spelling of the reserved feature-source marker.
@@ -420,8 +412,7 @@ pub(crate) enum HistoryContent {
 }
 
 /// The full parametric construction-history timeline for a part.
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(not(test), derive(Clone))]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct FeatureHistory {
     /// Globally unique deterministic identifier for this native record.
     pub(crate) id: String,
@@ -446,29 +437,8 @@ pub(crate) struct FeatureHistory {
     pub(crate) features: Vec<Feature>,
 }
 
-#[cfg(test)]
-thread_local! {
-    pub(crate) static FEATURE_HISTORY_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
-}
-
-#[cfg(test)]
-impl Clone for FeatureHistory {
-    fn clone(&self) -> Self {
-        FEATURE_HISTORY_CLONE_COUNT.with(|count| count.set(count.get() + 1));
-        Self {
-            id: self.id.clone(),
-            part_name: self.part_name.clone(),
-            properties: self.properties.clone(),
-            content: self.content.clone(),
-            configurations: self.configurations.clone(),
-            features: self.features.clone(),
-        }
-    }
-}
-
 /// Native feature-input stream retained for parametric replay and rewrite.
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(not(test), derive(Clone))]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "FeatureInputLaneWire")]
 pub(crate) struct FeatureInputLane {
     /// Stable source-derived identifier for this feature-input record.
@@ -513,34 +483,6 @@ pub(crate) struct FeatureInputLane {
     /// Typed sketch-entity markers located within `native_payload`.
     #[serde(default)]
     pub(crate) sketch_entities: Vec<SketchInputEntity>,
-}
-
-#[cfg(test)]
-thread_local! {
-    pub(crate) static FEATURE_INPUT_LANE_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
-}
-
-#[cfg(test)]
-impl Clone for FeatureInputLane {
-    fn clone(&self) -> Self {
-        FEATURE_INPUT_LANE_CLONE_COUNT.with(|count| count.set(count.get() + 1));
-        Self {
-            id: self.id.clone(),
-            configuration: self.configuration.clone(),
-            native_payload: (self.native_payload.clone()),
-            classes: self.classes.clone(),
-            names: self.names.clone(),
-            scalars: self.scalars.clone(),
-            relation_bindings: self.relation_bindings.clone(),
-            relation_instances: self.relation_instances.clone(),
-            body_selections: self.body_selections.clone(),
-            edge_selections: self.edge_selections.clone(),
-            surface_selections: self.surface_selections.clone(),
-            generated_surface_identities: self.generated_surface_identities.clone(),
-            references: self.references.clone(),
-            sketch_entities: self.sketch_entities.clone(),
-        }
-    }
 }
 
 /// Partial lane wire record; relation membership and sketch markers require admission.
@@ -595,24 +537,20 @@ pub(crate) struct FeatureInputLaneWire {
 }
 
 impl FeatureInputLaneWire {
-    pub(crate) fn admit(
-        self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ) -> Result<FeatureInputLane, cadmpeg_core::CodecError> {
-        let relations = ctx.try_collect_vec(
-            self.relation_instances
-                .into_iter()
-                .map(|relation| relation.admit(ctx)),
-            "admit SLDPRT inline relations",
-        )?;
-        let entities = ctx.try_collect_vec(
-            self.sketch_entities.into_iter().map(|entity| {
-                ctx.charge_work(1, "admit SLDPRT inline sketch marker")?;
+    pub(crate) fn admit(self) -> Result<FeatureInputLane, cadmpeg_core::CodecError> {
+        let relations = self
+            .relation_instances
+            .into_iter()
+            .map(FeatureInputRelationInstanceWire::admit)
+            .collect::<Result<Vec<_>, _>>()?;
+        let entities = self
+            .sketch_entities
+            .into_iter()
+            .map(|entity| {
                 SketchInputEntity::try_from_wire(entity, &self.native_payload)
                     .map_err(cadmpeg_core::CodecError::malformed)
-            }),
-            "admit SLDPRT inline sketch entities",
-        )?;
+            })
+            .collect::<Result<Vec<_>, _>>()?;
         Ok(FeatureInputLane {
             id: self.id,
             configuration: self.configuration,
@@ -932,10 +870,7 @@ pub(crate) struct FeatureInputRelationInstanceWire {
 }
 
 impl FeatureInputRelationInstanceWire {
-    pub(crate) fn admit(
-        self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ) -> Result<FeatureInputRelationInstance, cadmpeg_core::CodecError> {
+    pub(crate) fn admit(self) -> Result<FeatureInputRelationInstance, cadmpeg_core::CodecError> {
         Ok(FeatureInputRelationInstance {
             id: self.id,
             parent: self.parent,
@@ -944,7 +879,7 @@ impl FeatureInputRelationInstanceWire {
             family: self.family,
             class_ref: self.class_ref,
             feature_ref: self.feature_ref,
-            scalars: self.scalars.admit(ctx)?,
+            scalars: self.scalars.admit()?,
             operands: self.operands,
         })
     }
@@ -2198,8 +2133,8 @@ mod tests {
     }
 
     #[test]
-    fn feature_source_native_retained_limit_refuses_before_owned_wire_conversion() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    fn feature_source_native_arena_record_keeps_wire_spelling() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
         #[derive(serde::Serialize)]
         struct SourceRecord {
@@ -2212,25 +2147,8 @@ mod tests {
             source_id: super::FeatureSource::Id(super::FeatureSourceId::try_from(41).unwrap()),
         };
         let arena_name = "features";
-        let needed =
-            arena_name.len() + 4 * std::mem::size_of::<cadmpeg_ir::NativeRecord>() + "id".len();
         let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = u64::try_from(needed).unwrap() - 1;
-        let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut namespace = cadmpeg_ir::NativeNamespace::default();
-        super::FEATURE_SOURCE_OWNED_WIRE_CALLS.with(|calls| calls.set(0));
-        let error = namespace
-            .set_arena(&limited, arena_name, std::slice::from_ref(&record))
-            .unwrap_err();
-        super::FEATURE_SOURCE_OWNED_WIRE_CALLS.with(|calls| assert_eq!(calls.get(), 0));
-        assert!(matches!(
-            cadmpeg_core::CodecError::from(error),
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "serialize native record"
-        ));
-
         let (service, _) =
             DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
         namespace

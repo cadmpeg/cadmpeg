@@ -92,9 +92,7 @@ fn declared_counts_cannot_make_support_scanning_escape_the_primary_span() {
     let mut targets = Vec::new();
     super::visit_support_fields(&owner, &record, &mut |index| {
         targets.push(record.integer(index).unwrap());
-        Ok(())
-    })
-    .unwrap();
+    });
     assert_eq!(targets, [1, 3]);
 }
 

@@ -139,12 +139,9 @@ pub(crate) struct DatumCylinder {
 /// Decode datum rows whose outline corners share one coordinate.
 ///
 /// This promotion applies only to model-space `ActDatums` outlines.
-pub(crate) fn planes(
-    ctx: &DecodeContext<'_>,
-    payload: &[u8],
-) -> Result<Vec<DatumPlaneRecord>, CodecError> {
-    let rows = crate::surface::counted_row_bounds(ctx, payload)?;
-    let cache = scalar::ScalarCache::from_section_checked(ctx, payload)?;
+pub(crate) fn planes(payload: &[u8]) -> Vec<DatumPlaneRecord> {
+    let rows = crate::surface::counted_row_bounds(payload);
+    let cache = scalar::ScalarCache::from_section_checked(payload);
     let mut planes = Vec::new();
     for (index, (row, frame_end)) in rows.iter().enumerate().filter(|(_, (row, _))| {
         row.id != 0
@@ -155,12 +152,11 @@ pub(crate) fn planes(
         let row_end = rows
             .get(index + 1)
             .map_or(*frame_end, |(next, _)| (*frame_end).min(next.offset));
-        if let Some(plane) = positional_plane(ctx, payload, row, row_end, &cache)? {
-            ctx.reserve_vec(&mut planes, 1, "creo datum plane records")?;
+        if let Some(plane) = positional_plane(payload, row, row_end, &cache) {
             planes.push(plane);
         }
     }
-    Ok(planes)
+    planes
 }
 
 /// Decode complete cylinder carriers from active-datum surface rows.
@@ -173,7 +169,7 @@ pub(crate) fn cylinders(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
 ) -> Result<Vec<DatumCylinder>, CodecError> {
-    let rows = crate::surface::rows(ctx, payload)?;
+    let rows = crate::surface::rows(payload);
     let parameters = crate::surface::parameter_records(ctx, payload)?;
     let mut cylinders = Vec::new();
     for row in rows
@@ -190,7 +186,6 @@ pub(crate) fn cylinders(
             .positional_cylinder_frame()
             .or_else(|| active_cylinder_frame(row, parameter))
         {
-            ctx.reserve_vec(&mut cylinders, 1, "creo datum cylinders")?;
             cylinders.push(DatumCylinder {
                 id: row.id,
                 feature_id: row.feature_id,
@@ -322,14 +317,13 @@ fn active_cylinder_frame(
 }
 
 fn positional_plane(
-    ctx: &DecodeContext<'_>,
     payload: &[u8],
     row: &SurfaceRow,
     row_end: usize,
     cache: &scalar::ScalarCache,
-) -> Result<Option<DatumPlaneRecord>, CodecError> {
+) -> Option<DatumPlaneRecord> {
     let id_start = row.offset;
-    let Some(body_start) = (|| {
+    let body_start = (|| {
         if payload.get(id_start).copied()? > 0xbf {
             return None;
         }
@@ -337,12 +331,8 @@ fn positional_plane(
         (payload.get(after_id) == Some(&0x22)).then_some(())?;
         let (_, after_feature) = crate::psb::compact_int(payload, after_id + 1);
         Some(crate::psb::compact_int(payload, after_feature + 2).1)
-    })() else {
-        return Ok(None);
-    };
-    let Some(values) = datum_slots(ctx, payload, body_start, 10, row_end, cache)? else {
-        return Ok(None);
-    };
+    })()?;
+    let values = datum_slots(payload, body_start, 10, row_end, cache)?;
     let outline = &values[4..];
     let equal = [
         slot_equal(&outline[0], &outline[3]),
@@ -353,10 +343,8 @@ fn positional_plane(
         .into_iter()
         .zip(equal)
         .filter_map(|(axis, equal)| (equal == Some(true)).then_some(axis));
-    let Some(axis) = held.next().filter(|_| held.next().is_none()) else {
-        return Ok(None);
-    };
-    let candidate = (|| {
+    let axis = held.next().filter(|_| held.next().is_none())?;
+    (|| {
         let plane_offset = outline[axis.index()].value?;
         let [u, v] = axis.complement().map(Axis::index);
         DatumPlaneRecord::new(
@@ -370,17 +358,13 @@ fn positional_plane(
             ],
             id_start,
         )
-    })();
-    Ok(candidate)
+    })()
 }
 
 /// Decode a named datum from its matching outline coordinates.
-pub(crate) fn named_plane(
-    ctx: &DecodeContext<'_>,
-    payload: &[u8],
-) -> Result<Option<DatumPlaneRecord>, CodecError> {
+pub(crate) fn named_plane(payload: &[u8]) -> Option<DatumPlaneRecord> {
     let marker = b"outline\0\xf9\x02\x03";
-    let Some((outline, id, feature_id)) = (|| {
+    let (outline, id, feature_id) = (|| {
         let outline = find(payload, marker, 0)?;
         let id_marker = b"\xe0\x01geom_id\0";
         let id_at = payload[..outline]
@@ -404,13 +388,9 @@ pub(crate) fn named_plane(
         let (feature_id, feature_end) = crate::psb::reference_id(payload, feature_start).ok()?;
         (feature_end <= outline_field_start).then_some(())?;
         Some((outline, id, feature_id))
-    })() else {
-        return Ok(None);
-    };
-    let cache = scalar::ScalarCache::from_section_checked(ctx, payload)?;
-    let Some(slots) = named_outline_slots(ctx, payload, outline + marker.len(), &cache)? else {
-        return Ok(None);
-    };
+    })()?;
+    let cache = scalar::ScalarCache::from_section_checked(payload);
+    let slots = named_outline_slots(payload, outline + marker.len(), &cache)?;
     let standalone_zero = |slot: &DatumSlot<'_>| matches!(slot.token, [0x18 | 0x0f]);
     let mut zero_axes = [Axis::X, Axis::Y, Axis::Z].into_iter().filter(|axis| {
         standalone_zero(&slots[axis.index()]) && standalone_zero(&slots[axis.index() + 3])
@@ -422,15 +402,10 @@ pub(crate) fn named_plane(
         .filter(|axis| slot_equal(&slots[axis.index()], &slots[axis.index() + 3]) == Some(true));
     let axis = match (zero_first, zero_second) {
         (Some(axis), None) => axis,
-        (None, None) => {
-            let Some(axis) = held.next().filter(|_| held.next().is_none()) else {
-                return Ok(None);
-            };
-            axis
-        }
-        _ => return Ok(None),
+        (None, None) => held.next().filter(|_| held.next().is_none())?,
+        _ => return None,
     };
-    let candidate = (|| {
+    (|| {
         let offset = slots[axis.index()].value?;
         let [u, v] = axis.complement().map(Axis::index);
         DatumPlaneRecord::new(
@@ -444,8 +419,7 @@ pub(crate) fn named_plane(
             ],
             outline,
         )
-    })();
-    Ok(candidate)
+    })()
 }
 
 /// Decode one named-outline slot token at `offset`, given the number of slots
@@ -508,28 +482,22 @@ fn decode_outline_slot(
 }
 
 fn named_outline_slots<'a>(
-    ctx: &DecodeContext<'_>,
     data: &'a [u8],
     offset: usize,
     cache: &scalar::ScalarCache,
-) -> Result<Option<Vec<DatumSlot<'a>>>, CodecError> {
+) -> Option<Vec<DatumSlot<'a>>> {
     let mut slots = Vec::new();
-    ctx.reserve_vec(&mut slots, 6, "creo named datum outline slots")?;
     let mut cursor = crate::psb::Cursor::at(data, offset);
     while slots.len() < 6 {
         let start = cursor.pos();
         let filled = slots.len();
-        let Some(value) =
-            cursor.take_with(|data, pos| decode_outline_slot(data, pos, cache, filled))
-        else {
-            return Ok(None);
-        };
+        let value = cursor.take_with(|data, pos| decode_outline_slot(data, pos, cache, filled))?;
         slots.push(DatumSlot {
             value,
             token: &data[start..cursor.pos()],
         });
     }
-    Ok(Some(slots))
+    Some(slots)
 }
 
 #[derive(Debug)]
@@ -564,31 +532,25 @@ fn decode_datum_slot(
 }
 
 fn datum_slots<'a>(
-    ctx: &DecodeContext<'_>,
     data: &'a [u8],
     offset: usize,
     count: usize,
     end: usize,
     cache: &scalar::ScalarCache,
-) -> Result<Option<Vec<DatumSlot<'a>>>, CodecError> {
+) -> Option<Vec<DatumSlot<'a>>> {
     let mut slots = Vec::new();
-    ctx.reserve_vec(&mut slots, count, "creo positional datum slots")?;
     let mut cursor = offset;
     while slots.len() < count {
         let start = cursor;
-        let Some((value, next)) = decode_datum_slot(data, cursor, cache) else {
-            return Ok(None);
-        };
+        let (value, next) = decode_datum_slot(data, cursor, cache)?;
         if next > end {
-            return Ok(None);
+            return None;
         }
-        let Some(token) = data.get(start..next) else {
-            return Ok(None);
-        };
+        let token = data.get(start..next)?;
         slots.push(DatumSlot { value, token });
         cursor = next;
     }
-    Ok(Some(slots))
+    Some(slots)
 }
 
 fn slot_equal(first: &DatumSlot<'_>, second: &DatumSlot<'_>) -> Option<bool> {

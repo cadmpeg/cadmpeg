@@ -42,13 +42,11 @@ pub(in super::super) fn transfer_paired_envelope_spheres(
     }
     let mut transferred = 0;
     let mut associations = Vec::new();
-    for (prototype, associated_row, section) in unique_surface_prototype_associations(ctx, scan)? {
+    for (prototype, associated_row, section) in unique_surface_prototype_associations(scan)? {
         let prototype = prototype.record();
-        let Some(frame) = surface_prototype_frame_bounds(ctx, scan, section, prototype.offset)?
-        else {
+        let Some(frame) = surface_prototype_frame_bounds(scan, section, prototype.offset)? else {
             continue;
         };
-        ctx.reserve_vec(&mut associations, 1, "creo paired sphere associations")?;
         associations.push((prototype, associated_row, section, frame));
     }
     for (prototype, associated_row, section, (frame_start, frame_end)) in &associations {
@@ -100,10 +98,8 @@ pub(in super::super) fn transfer_paired_envelope_spheres(
         };
         for row in [first_row, second_row] {
             let id = crate::identity::compose_checked::<SurfaceId>(
-                ctx,
                 &crate::identity::VISIBGEOM_SURFACE,
                 row.id,
-                "creo decoded model identity",
             )?;
             if ir.model.surfaces.iter().any(|surface| surface.id == id) {
                 continue;
@@ -137,11 +133,11 @@ pub(in super::super) fn transfer_paired_envelope_spheres(
                     source_object: Some(SourceObjectAssociation {
                         geometry_role: None,
                         format: cadmpeg_ir::CodecFormat::Creo,
-                        object_id: crate::identity::source_object_id_checked(
-                            ctx,
-                            format_args!("{}:{}", section.name(), row.id),
-                            "creo source object identity",
-                        )?,
+                        object_id: crate::identity::source_object_id_checked(format_args!(
+                            "{}:{}",
+                            section.name(),
+                            row.id
+                        ))?,
                         name: None,
                         color: None,
                         visible: None,
@@ -171,21 +167,13 @@ pub(in super::super) fn transfer_positional_tori(
         if row.kind == crate::surface::SurfaceKind::TorusOrSphere
             && feature_schema_class(scan, row.feature_id) == Some(SchemaClass::Round)
         {
-            ctx.insert_btree_set(
-                &mut round_feature_ids,
-                row.feature_id,
-                "creo positional torus round feature ids",
-            )?;
+            round_feature_ids.insert(row.feature_id);
         }
     }
     let mut constant_round_feature_ids = BTreeSet::new();
     for feature_id in round_feature_ids {
         if round_constant_radius(ctx, scan, ir, source_carriers, feature_id)?.is_some() {
-            ctx.insert_btree_set(
-                &mut constant_round_feature_ids,
-                feature_id,
-                "creo positional torus constant round ids",
-            )?;
+            constant_round_feature_ids.insert(feature_id);
         }
     }
     let mut transferred = 0;
@@ -219,10 +207,8 @@ pub(in super::super) fn transfer_positional_tori(
             continue;
         };
         let id = crate::identity::compose_checked::<SurfaceId>(
-            ctx,
             &crate::identity::VISIBGEOM_SURFACE,
             row.id,
-            "creo decoded model identity",
         )?;
         if ir.model.surfaces.iter().any(|surface| surface.id == id) {
             continue;
@@ -273,11 +259,11 @@ pub(in super::super) fn transfer_positional_tori(
                 source_object: Some(SourceObjectAssociation {
                     geometry_role: None,
                     format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: crate::identity::source_object_id_checked(
-                        ctx,
-                        format_args!("{}:{}", section.name(), row.id),
-                        "creo source object identity",
-                    )?,
+                    object_id: crate::identity::source_object_id_checked(format_args!(
+                        "{}:{}",
+                        section.name(),
+                        row.id
+                    ))?,
                     name: None,
                     color: None,
                     visible: None,
@@ -300,11 +286,7 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
 ) -> Result<usize, cadmpeg_core::CodecError> {
     let mut replay_bound_surfaces = BTreeSet::new();
     for replay in &scan.curves.tabulated_cylinder_replays {
-        ctx.insert_btree_set(
-            &mut replay_bound_surfaces,
-            replay.surface_id,
-            "creo line-extrusion replay surface ids",
-        )?;
+        replay_bound_surfaces.insert(replay.surface_id);
     }
     let mut transferred = 0;
     for record in &scan.surfaces.parameters {
@@ -332,10 +314,8 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
             continue;
         };
         let surface_id = crate::identity::compose_checked::<SurfaceId>(
-            ctx,
             &crate::identity::VISIBGEOM_SURFACE,
             record.surface_id,
-            "creo decoded model identity",
         )?;
         if ir
             .model
@@ -346,16 +326,12 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
             continue;
         }
         let curve_id = crate::identity::compose_checked::<CurveId>(
-            ctx,
             &crate::identity::VISIBGEOM_SURFACE_DIRECTRIX,
             record.surface_id,
-            "creo positional directrix identity",
         )?;
         let procedural_id = crate::identity::compose_checked::<ProceduralSurfaceId>(
-            ctx,
             &crate::identity::VISIBGEOM_SURFACE_EXTRUSION,
             record.surface_id,
-            "creo positional extrusion identity",
         )?;
         let Ok(line_curve) = cadmpeg_ir::geometry::analytic::LineCurve::try_new(
             Point3::from(frame.directrix[0]),
@@ -408,11 +384,10 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
                 source_object: Some(SourceObjectAssociation {
                     geometry_role: None,
                     format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: crate::identity::source_object_id_checked(
-                        ctx,
-                        format_args!("VisibGeom:surface_directrix#{}", record.surface_id),
-                        "creo source object identity",
-                    )?,
+                    object_id: crate::identity::source_object_id_checked(format_args!(
+                        "VisibGeom:surface_directrix#{}",
+                        record.surface_id
+                    ))?,
                     name: None,
                     color: None,
                     visible: None,
@@ -432,11 +407,10 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
                 source_object: Some(SourceObjectAssociation {
                     geometry_role: None,
                     format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: crate::identity::source_object_id_checked(
-                        ctx,
-                        format_args!("VisibGeom:{}", record.surface_id),
-                        "creo source object identity",
-                    )?,
+                    object_id: crate::identity::source_object_id_checked(format_args!(
+                        "VisibGeom:{}",
+                        record.surface_id
+                    ))?,
                     name: None,
                     color: None,
                     visible: None,
@@ -476,25 +450,19 @@ fn section_contains_offset(section: &crate::container::Section, offset: usize) -
 
 /// Report every refused tabulated-cylinder lane against the row that stated it.
 fn note_tabulated_cylinder_refusals(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     surface_id: u32,
     replay_offset: usize,
     lane: &str,
     refused: &[String],
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     for record in refused {
-        let message = ctx.format_retained(
-            format_args!(
-                "VisibGeom surface row {surface_id} states a tabulated-cylinder replay at offset \
-                 {replay_offset} whose {lane} lane forms no carrier: {record}"
-            ),
-            "creo tabulated cylinder refusal text",
-        )?;
-        ctx.reserve_vec(losses, 1, "creo tabulated cylinder losses")?;
+        let message = format!(
+            "VisibGeom surface row {surface_id} states a tabulated-cylinder replay at offset \
+         {replay_offset} whose {lane} lane forms no carrier: {record}"
+        );
         losses.push(crate::loss::CreoLossCode::VisibGeomSurfaceUntransferred.note(message));
     }
-    Ok(())
 }
 
 fn unique_tabulated_cylinder_prototype<'a>(
@@ -528,11 +496,6 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
 ) -> Result<usize, cadmpeg_core::CodecError> {
     let mut replay_counts = BTreeMap::<u32, usize>::new();
     for replay in &scan.curves.tabulated_cylinder_replays {
-        ctx.admit_btree_entry(
-            &replay_counts,
-            &replay.surface_id,
-            "creo tabulated-cylinder replay counts",
-        )?;
         *replay_counts.entry(replay.surface_id).or_default() += 1;
     }
     let mut transferred = 0;
@@ -567,16 +530,15 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
             chart_origin,
             &mut refusal,
         )?;
-        let refused = refusal.take_records_checked()?;
+        let refused = refusal.take_records();
         let Some((directrix, sweep)) = directrix.filter(|_| refused.is_empty()) else {
             note_tabulated_cylinder_refusals(
-                ctx,
                 replay.surface_id,
                 replay.offset,
                 "directrix",
                 &refused,
                 losses,
-            )?;
+            );
             continue;
         };
         let mut refusal = crate::lane_refusal::LaneRefusals::new();
@@ -590,29 +552,24 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
             ),
             &mut refusal,
         )?;
-        let refused = refusal.take_records_checked()?;
+        let refused = refusal.take_records();
         let Some(surface) = surface.filter(|_| refused.is_empty()) else {
             note_tabulated_cylinder_refusals(
-                ctx,
                 replay.surface_id,
                 replay.offset,
                 "extrusion",
                 &refused,
                 losses,
-            )?;
+            );
             continue;
         };
         let curve_id = crate::identity::compose_checked::<CurveId>(
-            ctx,
             &crate::identity::VISIBGEOM_TABULATED_DIRECTRIX,
             replay.surface_id,
-            "creo tabulated directrix identity",
         )?;
         let surface_id = crate::identity::compose_checked::<SurfaceId>(
-            ctx,
             &crate::identity::VISIBGEOM_SURFACE,
             replay.surface_id,
-            "creo decoded model identity",
         )?;
         if ir
             .model
@@ -623,10 +580,8 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
             continue;
         }
         let procedural_id = crate::identity::compose_checked::<ProceduralSurfaceId>(
-            ctx,
             &crate::identity::VISIBGEOM_TABULATED_EXTRUSION,
             replay.surface_id,
-            "creo tabulated extrusion identity",
         )?;
         annotate(
             ctx,
@@ -666,11 +621,10 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
                 source_object: Some(SourceObjectAssociation {
                     geometry_role: None,
                     format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: crate::identity::source_object_id_checked(
-                        ctx,
-                        format_args!("VisibGeom:curve#{}", replay.curve_id),
-                        "creo source object identity",
-                    )?,
+                    object_id: crate::identity::source_object_id_checked(format_args!(
+                        "VisibGeom:curve#{}",
+                        replay.curve_id
+                    ))?,
                     name: None,
                     color: None,
                     visible: None,
@@ -690,11 +644,10 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
                 source_object: Some(SourceObjectAssociation {
                     geometry_role: None,
                     format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: crate::identity::source_object_id_checked(
-                        ctx,
-                        format_args!("VisibGeom:{}", replay.surface_id),
-                        "creo source object identity",
-                    )?,
+                    object_id: crate::identity::source_object_id_checked(format_args!(
+                        "VisibGeom:{}",
+                        replay.surface_id
+                    ))?,
                     name: None,
                     color: None,
                     visible: None,

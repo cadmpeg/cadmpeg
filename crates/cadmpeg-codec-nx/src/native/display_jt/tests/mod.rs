@@ -724,81 +724,6 @@ fn display_jt_string_property_body_requires_exact_utf16_frame() {
     .is_none());
 }
 
-fn assert_jt_string_resource_limit(
-    adjust: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
-    dimension: cadmpeg_core::decode::ResourceDimension,
-    operation: &'static str,
-) {
-    let mut body = vec![1, 0, 0, 0, 0, 0x40, 1, 0];
-    body.extend_from_slice(&3_u32.to_le_bytes());
-    body.extend_from_slice(&[b'N', 0, b'X', 0, 0xa9, 0x03]);
-
-    crate::test_support::with_decode_context_over(&[], adjust, |ctx| {
-        let error = super::parse_jt_string_property_atom_body(ctx, &body).unwrap_err();
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == dimension && limit.operation == operation)
-        );
-
-        crate::test_support::with_decode_context(|service| {
-            assert_eq!(
-                super::parse_jt_string_property_atom_body(service, &body)
-                    .unwrap()
-                    .as_deref(),
-                Some("NXΩ")
-            );
-        });
-    });
-}
-
-#[test]
-fn jt_string_code_units_need_no_scratch_allocation() {
-    let mut body = vec![1, 0, 0, 0, 0, 0x40, 1, 0];
-    body.extend_from_slice(&3_u32.to_le_bytes());
-    body.extend_from_slice(&[b'N', 0, b'X', 0, 0xa9, 0x03]);
-    crate::test_support::with_decode_context_over(
-        &[],
-        |policy| {
-            policy.limits.max_collection_items = 0;
-            policy.limits.max_materialized_bytes = 0;
-        },
-        |ctx| {
-            assert_eq!(
-                super::parse_jt_string_property_atom_body(ctx, &body)
-                    .expect("no unit buffer")
-                    .as_deref(),
-                Some("NXΩ")
-            );
-        },
-    );
-}
-
-#[test]
-fn jt_string_value_refuses_before_retained_allocation() {
-    use cadmpeg_core::decode::ResourceDimension;
-    let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
-        policy.limits.max_retained_bytes = 3;
-    };
-    assert_jt_string_resource_limit(
-        adjust_policy,
-        ResourceDimension::RetainedBytes,
-        "retain DisplayJT string property",
-    );
-}
-
-#[test]
-fn jt_string_scan_refuses_before_utf16_work() {
-    use cadmpeg_core::decode::ResourceDimension;
-    let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
-        policy.limits.max_work_units = 2;
-    };
-    assert_jt_string_resource_limit(
-        adjust_policy,
-        ResourceDimension::WorkUnits,
-        "retain DisplayJT string property",
-    );
-}
-
 #[test]
 fn display_jt9_tri_strip_header_requires_supported_versions() {
     let mut body = Vec::new();
@@ -1229,42 +1154,40 @@ fn jt_scene_binding_transfers_visible_triangles_in_document_units() {
         source_offset: 106,
     };
 
+    let inputs = super::DisplayJtTessellationInputs {
+        meshes: &[mesh],
+        coordinates: &[coordinates],
+        normals: &[normals],
+        colors: &[colors],
+        texture_coordinates: &[texture_coordinates],
+        vertex_flags: &[vertex_flags],
+        vertex_headers: &[vertex_header],
+        coordinate_headers: &[header],
+        shape_elements: &[shape_element],
+        bindings: &[binding],
+        shape_nodes: &[node],
+        base_nodes: &[
+            base,
+            instance_base,
+            second_instance_base,
+            group_base,
+            ignored_group_base,
+        ],
+        group_nodes: &[group, ignored_group],
+        instance_nodes: &[instance, second_instance],
+        transforms: &[transform],
+        materials: &[material],
+        compressed_elements: &[
+            compressed,
+            instance_element,
+            second_instance_element,
+            group_element,
+            ignored_group_element,
+            material_element,
+        ],
+    };
     let tessellations = crate::test_support::with_decode_context(|ctx| {
-        super::display_jt_tessellations(
-            ctx,
-            &super::DisplayJtTessellationInputs {
-                meshes: &[mesh],
-                coordinates: &[coordinates],
-                normals: &[normals],
-                colors: &[colors],
-                texture_coordinates: &[texture_coordinates],
-                vertex_flags: &[vertex_flags],
-                vertex_headers: &[vertex_header],
-                coordinate_headers: &[header],
-                shape_elements: &[shape_element],
-                bindings: &[binding],
-                shape_nodes: &[node],
-                base_nodes: &[
-                    base,
-                    instance_base,
-                    second_instance_base,
-                    group_base,
-                    ignored_group_base,
-                ],
-                group_nodes: &[group, ignored_group],
-                instance_nodes: &[instance, second_instance],
-                transforms: &[transform],
-                materials: &[material],
-                compressed_elements: &[
-                    compressed,
-                    instance_element,
-                    second_instance_element,
-                    group_element,
-                    ignored_group_element,
-                    material_element,
-                ],
-            },
-        )
+        super::display_jt_tessellations(ctx, &inputs)
     })
     .expect("complete scene binding");
     assert_eq!(tessellations.len(), 2);
@@ -1347,6 +1270,38 @@ fn jt_scene_binding_transfers_visible_triangles_in_document_units() {
         .concat()
     );
     assert_eq!(tessellations[0].1, 120);
+
+    // Each node path retains its own copy of the mesh lanes.
+    let mesh = &tessellations[0].0;
+    let copy = mesh.vertex_count() * std::mem::size_of::<cadmpeg_ir::features::FinitePoint3>()
+        + mesh.triangle_count() * std::mem::size_of::<[u32; 3]>()
+        + mesh.vertex_normals().len() * std::mem::size_of::<cadmpeg_ir::features::FiniteVector3>()
+        + mesh
+            .channels()
+            .iter()
+            .map(|channel| channel.data().len())
+            .sum::<usize>();
+    let both_copies = cadmpeg_core::decode::u64_from_index(2 * copy);
+    for (limit, admitted) in [(both_copies, true), (both_copies - 1, false)] {
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| policy.limits.max_retained_bytes = limit,
+            |ctx| match super::display_jt_tessellations(ctx, &inputs) {
+                Ok(tessellations) => {
+                    assert!(admitted);
+                    assert_eq!(tessellations.len(), 2);
+                }
+                Err(error) => {
+                    assert!(!admitted);
+                    assert!(
+                        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                            && limit.operation == "retain NX JT tessellation")
+                    );
+                }
+            },
+        );
+    }
 }
 
 #[test]
@@ -1396,7 +1351,6 @@ fn jt9_topology_lookahead_returns_packet_nesting_refusal() {
 
 #[test]
 fn display_jt_base_node_body_bounds_ordered_attribute_ids() {
-    let ctx = cadmpeg_test_support::service_decode_context();
     let mut body = Vec::new();
     body.extend_from_slice(&1_u16.to_le_bytes());
     body.extend_from_slice(&0x20_u32.to_le_bytes());
@@ -1408,9 +1362,7 @@ fn display_jt_base_node_body_bounds_ordered_attribute_ids() {
         super::parse_jt_base_node_body(&body, 9).expect("required invariant");
     assert_eq!(version, 1);
     assert_eq!(flags, 0x20);
-    let attributes =
-        super::read_jt_object_ids(&ctx, attributes, "decode DisplayJT base node attributes")
-            .expect("admitted attributes");
+    let attributes = super::read_jt_object_ids(attributes);
     assert_eq!(attributes, [7, 9]);
     assert_eq!(family, [4, 3, 2, 1]);
 
@@ -1425,9 +1377,7 @@ fn display_jt_base_node_body_bounds_ordered_attribute_ids() {
     let (version, flags, attributes, family) =
         super::parse_jt_base_node_body(&modern, 10).expect("required invariant");
     assert_eq!((version, flags), (2, 0x40));
-    let attributes =
-        super::read_jt_object_ids(&ctx, attributes, "decode DisplayJT base node attributes")
-            .expect("admitted attributes");
+    let attributes = super::read_jt_object_ids(attributes);
     assert_eq!(attributes, [11]);
     assert_eq!(family, [0xaa]);
 }
@@ -1452,7 +1402,6 @@ fn display_jt9_instance_node_requires_one_exact_child_reference() {
 
 #[test]
 fn display_jt9_group_node_bounds_ordered_children_and_family_tail() {
-    let ctx = cadmpeg_test_support::service_decode_context();
     let mut body = Vec::new();
     body.extend_from_slice(&1_u16.to_le_bytes());
     body.extend_from_slice(&0_u32.to_le_bytes());
@@ -1466,8 +1415,7 @@ fn display_jt9_group_node_bounds_ordered_children_and_family_tail() {
     let (version, children, family) =
         super::parse_jt9_group_node_body(&body).expect("required invariant");
     assert_eq!(version, 1);
-    let children = super::read_jt_object_ids(&ctx, children, "decode DisplayJT group children")
-        .expect("admitted children");
+    let children = super::read_jt_object_ids(children);
     assert_eq!(children, [7, 9]);
     assert_eq!(family, [4, 3, 2, 1]);
     body.truncate(body.len() - 5);
@@ -1711,21 +1659,6 @@ fn display_jt9_partition_node_requires_complete_bounds_and_ranges() {
         )
     );
 
-    crate::test_support::with_decode_context_over(
-        &[],
-        |policy| {
-            // One retained child ID precedes the filename's zero-byte allowance.
-            policy.limits.max_retained_bytes =
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<u32>());
-        },
-        |limited| {
-            assert!(
-                matches!(super::parse_jt9_partition_node_body(limited, &body), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes && limit.additional == 1 && limit.operation == "retain DisplayJT partition name")
-            );
-        },
-    );
-
     body.pop();
     assert!(super::parse_jt9_partition_node_body(&ctx, &body)
         .expect("admitted partition")
@@ -1734,7 +1667,6 @@ fn display_jt9_partition_node_requires_complete_bounds_and_ranges() {
 
 #[test]
 fn display_jt9_range_lod_requires_ordered_finite_limits() {
-    let ctx = cadmpeg_test_support::service_decode_context();
     let mut body = Vec::new();
     body.extend_from_slice(&1_u16.to_le_bytes());
     body.extend_from_slice(&0_u32.to_le_bytes());
@@ -1754,9 +1686,7 @@ fn display_jt9_range_lod_requires_ordered_finite_limits() {
     for value in [1.0_f32, 2.0, 3.0] {
         body.extend_from_slice(&value.to_le_bytes());
     }
-    let node = super::parse_jt9_range_lod_node_body(&ctx, &body)
-        .expect("admitted range parser")
-        .expect("required invariant");
+    let node = super::parse_jt9_range_lod_node_body(&body).expect("required invariant");
     assert_eq!(node.group_version, 1);
     assert_eq!(node.child_object_ids, [7, 9]);
     assert_eq!(node.lod_version, 1);
@@ -1784,9 +1714,7 @@ fn display_jt9_range_lod_requires_ordered_finite_limits() {
     let range_offset = body.len() - 20;
     body[range_offset..range_offset + 4].copy_from_slice(&5.0_f32.to_le_bytes());
     body[range_offset + 4..range_offset + 8].copy_from_slice(&4.0_f32.to_le_bytes());
-    assert!(super::parse_jt9_range_lod_node_body(&ctx, &body)
-        .expect("admitted range parser")
-        .is_none());
+    assert!(super::parse_jt9_range_lod_node_body(&body).is_none());
 }
 
 #[test]

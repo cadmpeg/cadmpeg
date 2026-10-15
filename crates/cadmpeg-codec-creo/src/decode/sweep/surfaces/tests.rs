@@ -5,58 +5,20 @@ use super::{
     JoinedLaneRecords,
 };
 use crate::decode::tests::surface_row;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::AnnotationBuilder;
 
 #[test]
-fn saved_spline_loss_refuses_text_and_slot_below_limits() {
+fn saved_spline_loss_joins_lane_records() {
     let records = ["first".to_owned(), "second".to_owned()];
-    for (retained_limit, item_limit, dimension, operation) in [
-        (
-            0,
-            u64::MAX,
-            ResourceDimension::RetainedBytes,
-            "creo saved spline loss text",
-        ),
-        (
-            u64::MAX,
-            0,
-            ResourceDimension::CollectionItems,
-            "creo saved spline losses",
-        ),
-    ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = retained_limit;
-        policy.limits.max_collection_items = item_limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let error = push_saved_spline_loss(
-            &ctx,
-            &mut Vec::new(),
-            format_args!(
-                "Saved section spline at offset 7 cannot form a NURBS curve: {}",
-                JoinedLaneRecords(&records)
-            ),
-        )
-        .expect_err("below-need limit");
-        assert!(matches!(error, CodecError::ResourceLimit(resource)
-            if resource.dimension == dimension && resource.operation == operation));
-    }
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::service();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     let mut losses = Vec::new();
     push_saved_spline_loss(
-        &ctx,
         &mut losses,
         format_args!(
             "Saved section spline at offset 7 cannot form a NURBS curve: {}",
             JoinedLaneRecords(&records)
         ),
-    )
-    .expect("service loss");
+    );
     assert_eq!(losses.len(), 1);
     assert_eq!(
         losses[0].message,
@@ -65,8 +27,7 @@ fn saved_spline_loss_refuses_text_and_slot_below_limits() {
 }
 
 #[test]
-fn revolved_nurbs_surface_refuses_each_collection_boundary() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+fn revolved_nurbs_surface_sweeps_the_directrix_through_nine_columns() {
     use cadmpeg_ir::features::{FeatureDirection3, FinitePoint3, RevolutionAxis};
     use cadmpeg_ir::geometry::nurbs::NurbsCurve;
     use cadmpeg_ir::math::{Point3, Vector3};
@@ -86,37 +47,6 @@ fn revolved_nurbs_surface_refuses_each_collection_boundary() {
         direction: FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0)).expect("axis direction"),
         reference: None,
     };
-    let arena = DecodeArena::new();
-    for (limit, operation) in [
-        (0, "creo revolved NURBS pole rows"),
-        (1, "creo revolved NURBS weight rows"),
-        (2, "creo revolved NURBS poles"),
-        (11, "creo revolved NURBS weights"),
-        (40, "creo revolved NURBS u knots"),
-        (44, "creo revolved NURBS v knots"),
-        (56, "IR NURBS paired grid rows"),
-        (65, "IR NURBS paired poles"),
-        (76, "IR NURBS admitted grid rows"),
-        (85, "IR NURBS admitted poles"),
-    ] {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-        let error = super::revolved_nurbs_surface(
-            &ctx,
-            &directrix,
-            &axis,
-            &"revolved NURBS fixture",
-            &mut crate::lane_refusal::LaneRefusals::new(),
-        )
-        .expect_err("one collection boundary exceeds its named limit");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-            if resource.operation == operation),
-            "{error:?}"
-        );
-    }
     let surface = crate::decode::with_test_decode_ctx(|ctx| {
         super::revolved_nurbs_surface(
             ctx,
@@ -211,9 +141,7 @@ fn saved_spline_definition() -> crate::feature::definitions::FeatureDefinition {
 }
 
 #[test]
-fn extrusion_solved_segment_ids_refuse_before_tree_node() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-
+fn extrusion_solved_segment_ids_collect_the_solved_ids() {
     let mut definition = saved_spline_definition();
     definition.trim_entities = Some(crate::feature::definitions::FeatureTrimEntityTable {
         declared_count: None,
@@ -230,22 +158,7 @@ fn extrusion_solved_segment_ids_refuse_before_tree_node() {
         solved_external_ids: vec![7],
         offset: 0,
     });
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-    let error = super::extrusion_solved_segment_ids(&ctx, &definition)
-        .expect_err("one solved ID exceeds zero nodes");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.operation == "creo extrusion solved segment ID nodes"),
-        "{error:?}"
-    );
-    let ids = crate::decode::with_test_decode_ctx(|ctx| {
-        super::extrusion_solved_segment_ids(ctx, &definition)
-    })
-    .expect("service solved segment ID");
+    let ids = super::extrusion_solved_segment_ids(&definition);
     assert_eq!(ids, std::collections::BTreeSet::from([7]));
 }
 
@@ -324,7 +237,7 @@ fn numerical_followup_revolution_refuses_skew_line_specialization() {
 }
 
 #[test]
-fn saved_spline_extrusion_refuses_construction_identity_copies() {
+fn saved_spline_extrusion_transfers_one_surface() {
     let mut scan = crate::test_support::empty_container_scan();
     let mut definition = saved_spline_definition();
     let Some(crate::feature::definitions::FeatureSavedEntity::Spline(spline)) = definition
@@ -408,21 +321,16 @@ fn saved_spline_extrusion_refuses_construction_identity_copies() {
             offset: 0,
         });
     }
-    let count = crate::test_support::assert_retained_boundaries(
-        &[
-            "creo construction curve identity copy",
-            "creo construction surface identity copy",
-        ],
-        |ctx| {
-            super::transfer_feature_extrusion_surfaces(
-                ctx,
-                &scan,
-                &mut CadIr::empty(),
-                &mut AnnotationBuilder::new(),
-                &mut Vec::new(),
-                &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
-            )
-        },
-    );
+    let count = crate::decode::with_test_decode_ctx(|ctx| {
+        super::transfer_feature_extrusion_surfaces(
+            ctx,
+            &scan,
+            &mut CadIr::empty(),
+            &mut AnnotationBuilder::new(),
+            &mut Vec::new(),
+            &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+        )
+    })
+    .expect("extrusion surface transfer");
     assert_eq!(count, 1);
 }

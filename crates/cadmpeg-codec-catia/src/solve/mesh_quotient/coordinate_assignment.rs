@@ -36,7 +36,6 @@ fn partial_compact_assignment_viable(
     ) -> Result<bool, CodecError> {
         let _depth = ctx.enter_nested("catia deferred boundary augmentation")?;
         for cycle in 0..matched.len() {
-            ctx.charge_work(1, "catia deferred boundary augmentation")?;
             if !compatible[component][cycle] || seen[cycle] {
                 continue;
             }
@@ -65,25 +64,17 @@ fn partial_compact_assignment_viable(
 
     let relevant = match domain {
         MeshFaceBoundaryDomain::Ordered(_) => return Ok(true),
-        MeshFaceBoundaryDomain::UnorderedFullCycle(edges) => {
-            ctx.copy_slice(edges, "catia coordinate relevant edges")?
-        }
+        MeshFaceBoundaryDomain::UnorderedFullCycle(edges) => edges.clone(),
         MeshFaceBoundaryDomain::DeferredValidation(domain) => {
-            let mut edges =
-                ctx.copy_slice(&domain.missing_edges, "catia coordinate relevant edges")?;
+            let mut edges = domain.missing_edges.clone();
             for edge in domain
                 .cycles
                 .iter()
                 .flat_map(|cycle| cycle.exact_uses.iter().map(|(use_, _)| use_.edge))
             {
-                ctx.push_vec(&mut edges, edge, "catia coordinate relevant edges")?;
+                edges.push(edge);
             }
-            ctx.sort_unstable_by(
-                &mut edges,
-                Ord::cmp,
-                |_| 0,
-                "catia coordinate relevant edges sort",
-            )?;
+            edges.sort_unstable_by(Ord::cmp);
             edges.dedup();
             edges
         }
@@ -109,29 +100,12 @@ fn partial_compact_assignment_viable(
         let [Some(left), Some(right)] = [value(left), value(right)] else {
             continue;
         };
-        ctx.insert_hash_map(
-            &mut selected,
-            edge,
-            [left, right],
-            "catia coordinate selected edges",
-        )?;
-        ctx.push_vec(
-            &mut selected_edges,
-            edge,
-            "catia coordinate selected edge list",
-        )?;
-        ctx.admit_hash_map_entry(&mut adjacency, &left, "catia coordinate adjacency points")?;
-        ctx.push_vec(
-            adjacency.entry(left).or_default(),
-            edge,
-            "catia coordinate adjacent edges",
-        )?;
-        ctx.admit_hash_map_entry(&mut adjacency, &right, "catia coordinate adjacency points")?;
-        ctx.push_vec(
-            adjacency.entry(right).or_default(),
-            edge,
-            "catia coordinate adjacent edges",
-        )?;
+        selected.insert(edge, [left, right]);
+        selected_edges.push(edge);
+
+        adjacency.entry(left).or_default().push(edge);
+
+        adjacency.entry(right).or_default().push(edge);
     }
     let mut closed_components = Vec::new();
     let mut seen_edges = HashSet::new();
@@ -140,32 +114,23 @@ fn partial_compact_assignment_viable(
             continue;
         }
         let mut stack = Vec::new();
-        ctx.push_vec(&mut stack, first, "catia coordinate component stack")?;
+        stack.push(first);
         let mut component = Vec::new();
         let mut vertices = HashSet::new();
         while let Some(edge) = stack.pop() {
-            ctx.charge_work(1, "catia coordinate component walk")?;
             if seen_edges.contains(&edge) {
                 continue;
             }
-            ctx.insert_hash_set(&mut seen_edges, edge, "catia coordinate seen edges")?;
-            ctx.push_vec(&mut component, edge, "catia coordinate component edges")?;
+            seen_edges.insert(edge);
+            component.push(edge);
             for point in selected[&edge] {
-                ctx.insert_hash_set(&mut vertices, point, "catia coordinate component points")?;
-                ctx.reserve_vec(
-                    &mut stack,
-                    adjacency[&point].len(),
-                    "catia coordinate component stack",
-                )?;
+                vertices.insert(point);
+
                 stack.extend(adjacency[&point].iter().copied());
             }
         }
         if vertices.iter().all(|point| adjacency[point].len() == 2) {
-            ctx.push_vec(
-                &mut closed_components,
-                component,
-                "catia coordinate closed components",
-            )?;
+            closed_components.push(component);
         }
     }
     match domain {
@@ -178,7 +143,7 @@ fn partial_compact_assignment_viable(
             }
             let mut missing = HashSet::new();
             for &edge in &domain.missing_edges {
-                ctx.insert_hash_set(&mut missing, edge, "catia deferred missing edges")?;
+                missing.insert(edge);
             }
             let mut edge_points = ctx.alloc_filled(
                 global_edge_count,
@@ -194,7 +159,7 @@ fn partial_compact_assignment_viable(
                 "catia_deferred_compatible_rows",
             )?;
             for (row, component) in compatible.iter_mut().zip(&closed_components) {
-                let incidence = incidence_cycles(ctx, component, &edge_points)?;
+                let incidence = incidence_cycles(component, &edge_points)?;
                 let Some([incidence]) = incidence.as_deref() else {
                     return Ok(false);
                 };
@@ -204,12 +169,7 @@ fn partial_compact_assignment_viable(
                     "catia_deferred_compatible_cycles",
                 )?;
                 for (slot, cycle) in row.iter_mut().zip(&domain.cycles) {
-                    *slot = deferred_boundary_cycle_matches(
-                        ctx,
-                        cycle,
-                        incidence.as_slice(),
-                        &missing,
-                    )?;
+                    *slot = deferred_boundary_cycle_matches(cycle, incidence.as_slice(), &missing);
                 }
             }
             let mut matched =
@@ -227,7 +187,6 @@ fn partial_compact_assignment_viable(
 }
 
 pub(super) struct CloseCoordinateRootsWithIncidenceInputs<
-    'storage,
     'input0,
     'input1,
     'input2,
@@ -237,7 +196,7 @@ pub(super) struct CloseCoordinateRootsWithIncidenceInputs<
     'input6,
     'input7,
 > {
-    pub(super) quotient: &'input0 mut MeshQuotient<'storage>,
+    pub(super) quotient: &'input0 mut MeshQuotient,
     pub(super) point_count: usize,
     pub(super) edge_candidates: &'input1 [Vec<[usize; 2]>],
     pub(super) incidence: Option<(&'input2 [[usize; 2]], &'input3 [MeshFaceBoundaryDomain])>,
@@ -247,9 +206,9 @@ pub(super) struct CloseCoordinateRootsWithIncidenceInputs<
     pub(super) exhausted: &'input7 Cell<bool>,
 }
 
-pub(super) fn close_coordinate_roots_with_incidence<'storage>(
-    ctx: &'storage DecodeContext<'_>,
-    inputs: CloseCoordinateRootsWithIncidenceInputs<'storage, '_, '_, '_, '_, '_, '_, '_, '_>,
+pub(super) fn close_coordinate_roots_with_incidence(
+    ctx: &DecodeContext<'_>,
+    inputs: CloseCoordinateRootsWithIncidenceInputs<'_, '_, '_, '_, '_, '_, '_, '_>,
 ) -> Result<Option<HashMap<usize, usize>>, CodecError> {
     const MAX_COORDINATE_CLOSURE_STATES: usize = 256;
     struct LocalIncidence<'a> {
@@ -473,7 +432,6 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
             entries: Vec<((usize, usize), Option<usize>)>,
         }
         fn adjust_assignment_degrees(
-            ctx: &DecodeContext<'_>,
             root: usize,
             assigned: &[Option<usize>],
             edges: &[[usize; 2]],
@@ -501,20 +459,12 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
                     for point in [left, right] {
                         let key = (face, point);
                         let previous = degrees.get(&key).copied();
-                        ctx.admit_hash_map_entry(
-                            degrees,
-                            &key,
-                            "catia_coordinate_closure_degree_entries",
-                        )?;
+
                         let degree = degrees.entry(key).or_default();
                         *degree = degree.checked_add(1).ok_or_else(|| {
                             CodecError::malformed("CATIA coordinate closure degree exceeds usize")
                         })?;
-                        ctx.push_vec(
-                            &mut undo.entries,
-                            (key, previous),
-                            "catia_coordinate_closure_degree_undo",
-                        )?;
+                        undo.entries.push((key, previous));
                     }
                 }
             }
@@ -555,7 +505,6 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
             budget: Option<&'input7 WorkBudget<'input6>>,
         }
         fn assign(
-            ctx: &DecodeContext<'_>,
             inputs: CoordinateAssignment<'_, '_, '_, '_, '_, '_, '_, '_>,
         ) -> Result<Option<DegreeUndo>, CodecError> {
             let CoordinateAssignment {
@@ -574,7 +523,7 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
             }
             assigned[root] = Some(point);
             Ok(Some(adjust_assignment_degrees(
-                ctx, root, assigned, edges, root_edges, incidence, degrees,
+                root, assigned, edges, root_edges, incidence, degrees,
             )?))
         }
         fn unassign(
@@ -598,20 +547,15 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
             }
         }
         fn affected_roots(
-            ctx: &DecodeContext<'_>,
             root: usize,
             root_edges: &[Vec<usize>],
             edges: &[[usize; 2]],
             incidence: Option<&LocalIncidence<'_>>,
-        ) -> Result<HashSet<usize>, CodecError> {
+        ) -> HashSet<usize> {
             let mut affected = HashSet::new();
             for &edge in &root_edges[root] {
                 for point in edges[edge] {
-                    ctx.insert_hash_set(
-                        &mut affected,
-                        point,
-                        "catia_coordinate_closure_affected_roots",
-                    )?;
+                    affected.insert(point);
                 }
                 let Some(incidence) = incidence else {
                     continue;
@@ -623,17 +567,13 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
                     }
                     for &face_edge in &incidence.face_edges[face] {
                         for point in edges[face_edge] {
-                            ctx.insert_hash_set(
-                                &mut affected,
-                                point,
-                                "catia_coordinate_closure_affected_roots",
-                            )?;
+                            affected.insert(point);
                         }
                     }
                 }
             }
             affected.remove(&root);
-            Ok(affected)
+            affected
         }
 
         let CoordinateClosureSearch {
@@ -704,12 +644,7 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
                         };
                         let mut degrees = HashMap::new();
                         for (&key, &degree) in base_degrees {
-                            ctx.insert_hash_map(
-                                &mut degrees,
-                                key,
-                                degree,
-                                "catia_coordinate_closure_probe_degrees",
-                            )?;
+                            degrees.insert(key, degree);
                         }
                         let mut affected_faces = HashSet::new();
                         for &edge in &root_edges[root] {
@@ -722,17 +657,9 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
                                 if rank > 0 && face == faces[0] {
                                     continue;
                                 }
-                                ctx.insert_hash_set(
-                                    &mut affected_faces,
-                                    face,
-                                    "catia_coordinate_closure_affected_faces",
-                                )?;
+                                affected_faces.insert(face);
                                 for endpoint in [left, right] {
-                                    ctx.admit_hash_map_entry(
-                                        &mut degrees,
-                                        &(face, endpoint),
-                                        "catia_coordinate_closure_probe_degrees",
-                                    )?;
+
                                     let degree = degrees.entry((face, endpoint)).or_default();
                                     let Some(next_degree) = degree.checked_add(1) else {
                                         return Ok(false);
@@ -797,7 +724,7 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
                         Ok(true)
                     })()?;
                     if viable {
-                        ctx.push_vec(&mut values, *point, "catia_coordinate_viable_values")?;
+                        values.push(*point);
                     }
                     Ok(values)
                 })
@@ -809,27 +736,16 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
             let mut scanned_roots = Vec::new();
             if let Some(roots) = pending_roots.take() {
                 for root in roots {
-                    ctx.push_vec(
-                        &mut scanned_roots,
-                        root,
-                        "catia_coordinate_closure_scanned_roots",
-                    )?;
+                    scanned_roots.push(root);
                 }
             } else {
                 for root in 0..domains.len() {
-                    ctx.push_vec(
-                        &mut scanned_roots,
-                        root,
-                        "catia_coordinate_closure_scanned_roots",
-                    )?;
+                    scanned_roots.push(root);
                 }
             }
-            ctx.sort_unstable_by(
-                &mut scanned_roots,
-                |left, right| (domains[*left].len(), *left).cmp(&(domains[*right].len(), *right)),
-                |_| 0,
-                "catia_coordinate_closure_scanned_roots_sort",
-            )?;
+            scanned_roots.sort_unstable_by(|left, right| {
+                (domains[*left].len(), *left).cmp(&(domains[*right].len(), *right))
+            });
             let partial_scan = scanned_roots.len() < domains.len();
             let bounded_scan = !partial_scan
                 && budget.is_some_and(|budget| {
@@ -890,60 +806,35 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
                     break;
                 }
                 for &point in values.iter().filter(|point| point_uses[**point] == 0) {
-                    ctx.insert_hash_set(
-                        &mut supported_unused,
-                        point,
-                        "catia_coordinate_closure_supported_unused",
-                    )?;
+                    supported_unused.insert(point);
                 }
                 for &point in values.iter().filter(|point| point_uses[**point] == 0) {
-                    ctx.admit_hash_map_entry(
-                        &mut unused_point_roots,
-                        &point,
-                        "catia_coordinate_closure_unused_point_keys",
-                    )?;
-                    ctx.push_vec(
-                        unused_point_roots.entry(point).or_default(),
-                        root,
-                        "catia_coordinate_closure_unused_point_roots",
-                    )?;
+                    unused_point_roots.entry(point).or_default().push(root);
                 }
                 if let [point] = values.as_slice() {
-                    let Some(undo) = assign(
-                        ctx,
-                        CoordinateAssignment {
-                            root,
-                            point: *point,
-                            assigned,
-                            edges,
-                            root_edges,
-                            incidence,
-                            degrees: base_degrees,
-                            budget,
-                        },
-                    )?
+                    let Some(undo) = assign(CoordinateAssignment {
+                        root,
+                        point: *point,
+                        assigned,
+                        edges,
+                        root_edges,
+                        incidence,
+                        degrees: base_degrees,
+                        budget,
+                    })?
                     else {
                         *exhausted = true;
                         break;
                     };
                     point_uses[*point] += 1;
-                    ctx.push_vec(
-                        &mut propagated,
-                        (root, *point, undo),
-                        "catia_coordinate_closure_propagated",
-                    )?;
+                    propagated.push((root, *point, undo));
                     progress = true;
                     if incidence.is_some() || bounded_scan {
-                        pending_roots =
-                            Some(affected_roots(ctx, root, root_edges, edges, incidence)?);
+                        pending_roots = Some(affected_roots(root, root_edges, edges, incidence));
                         break;
                     }
                 } else {
-                    ctx.push_vec(
-                        &mut viable_domains,
-                        (root, values),
-                        "catia_coordinate_closure_viable_domains",
-                    )?;
+                    viable_domains.push((root, values));
                     if bounded_scan {
                         scan_truncated = true;
                         break;
@@ -988,26 +879,13 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
             }
             let mut point_supports = Vec::new();
             for support in unused_point_roots {
-                ctx.push_vec(
-                    &mut point_supports,
-                    support,
-                    "catia_coordinate_closure_point_supports",
-                )?;
+                point_supports.push(support);
             }
-            ctx.sort_unstable_by(
-                &mut point_supports,
-                |left, right| left.0.cmp(&right.0),
-                |_| 0,
-                "catia_coordinate_closure_point_supports_sort",
-            )?;
+            point_supports.sort_unstable_by_key(|left| left.0);
             let mut uniquely_required = Vec::new();
             for (point, roots) in &point_supports {
                 if let Ok(&[root]) = <&[usize; 1]>::try_from(roots.as_slice()) {
-                    ctx.push_vec(
-                        &mut uniquely_required,
-                        (*point, root),
-                        "catia_coordinate_closure_unique_supports",
-                    )?;
+                    uniquely_required.push((*point, root));
                 }
             }
             if let Some(&(point, root)) = uniquely_required.first() {
@@ -1017,40 +895,29 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
                 {
                     break None;
                 }
-                let Some(undo) = assign(
-                    ctx,
-                    CoordinateAssignment {
-                        root,
-                        point,
-                        assigned,
-                        edges,
-                        root_edges,
-                        incidence,
-                        degrees: base_degrees,
-                        budget,
-                    },
-                )?
+                let Some(undo) = assign(CoordinateAssignment {
+                    root,
+                    point,
+                    assigned,
+                    edges,
+                    root_edges,
+                    incidence,
+                    degrees: base_degrees,
+                    budget,
+                })?
                 else {
                     *exhausted = true;
                     break None;
                 };
                 point_uses[point] += 1;
-                ctx.push_vec(
-                    &mut propagated,
-                    (root, point, undo),
-                    "catia_coordinate_closure_propagated",
-                )?;
-                pending_roots = Some(affected_roots(ctx, root, root_edges, edges, incidence)?);
+                propagated.push((root, point, undo));
+                pending_roots = Some(affected_roots(root, root_edges, edges, incidence));
                 continue;
             }
             let matching_budget = budget.map(|budget| WorkBudget::new(budget.remaining()));
             let mut support_domains = Vec::new();
             for (_, roots) in &point_supports {
-                ctx.push_vec(
-                    &mut support_domains,
-                    roots.as_slice(),
-                    "catia_coordinate_closure_support_domains",
-                )?;
+                support_domains.push(roots.as_slice());
             }
             let coverage_matching = distinct_domain_matching_with_budget(
                 ctx,
@@ -1097,11 +964,7 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
                                 if matching_budget.as_ref().is_some_and(WorkBudget::exhausted) {
                                     break 'supports;
                                 }
-                                ctx.insert_hash_set(
-                                    &mut unsupported_matches,
-                                    (root, point_supports[support].0),
-                                    "catia_coordinate_closure_unsupported_matches",
-                                )?;
+                                unsupported_matches.insert((root, point_supports[support].0));
                             }
                         }
                     }
@@ -1122,30 +985,23 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
                     break None;
                 }
                 if let Some((point, root)) = matching_forced {
-                    let Some(undo) = assign(
-                        ctx,
-                        CoordinateAssignment {
-                            root,
-                            point,
-                            assigned,
-                            edges,
-                            root_edges,
-                            incidence,
-                            degrees: base_degrees,
-                            budget,
-                        },
-                    )?
+                    let Some(undo) = assign(CoordinateAssignment {
+                        root,
+                        point,
+                        assigned,
+                        edges,
+                        root_edges,
+                        incidence,
+                        degrees: base_degrees,
+                        budget,
+                    })?
                     else {
                         *exhausted = true;
                         break None;
                     };
                     point_uses[point] += 1;
-                    ctx.push_vec(
-                        &mut propagated,
-                        (root, point, undo),
-                        "catia_coordinate_closure_propagated",
-                    )?;
-                    pending_roots = Some(affected_roots(ctx, root, root_edges, edges, incidence)?);
+                    propagated.push((root, point, undo));
+                    pending_roots = Some(affected_roots(root, root_edges, edges, incidence));
                     continue;
                 }
                 for (root, values) in &mut viable_domains {
@@ -1161,30 +1017,23 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
                     viable_domains.iter().find(|(_, values)| values.len() == 1)
                 {
                     let point = values[0];
-                    let Some(undo) = assign(
-                        ctx,
-                        CoordinateAssignment {
-                            root,
-                            point,
-                            assigned,
-                            edges,
-                            root_edges,
-                            incidence,
-                            degrees: base_degrees,
-                            budget,
-                        },
-                    )?
+                    let Some(undo) = assign(CoordinateAssignment {
+                        root,
+                        point,
+                        assigned,
+                        edges,
+                        root_edges,
+                        incidence,
+                        degrees: base_degrees,
+                        budget,
+                    })?
                     else {
                         *exhausted = true;
                         break None;
                     };
                     point_uses[point] += 1;
-                    ctx.push_vec(
-                        &mut propagated,
-                        (root, point, undo),
-                        "catia_coordinate_closure_propagated",
-                    )?;
-                    pending_roots = Some(affected_roots(ctx, root, root_edges, edges, incidence)?);
+                    propagated.push((root, point, undo));
+                    pending_roots = Some(affected_roots(root, root_edges, edges, incidence));
                     continue;
                 }
             }
@@ -1199,11 +1048,7 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
             }
             let mut complete = Vec::new();
             for &point in assigned.iter().flatten() {
-                ctx.push_vec(
-                    &mut complete,
-                    point,
-                    "catia_coordinate_closure_complete_branch",
-                )?;
+                complete.push(point);
             }
             break Some(CoordinateBranch::Complete(complete));
         };
@@ -1229,11 +1074,6 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
                                 continue;
                             }
                             for point in [left, right] {
-                                ctx.admit_hash_map_entry(
-                                    &mut degrees,
-                                    &(face, point),
-                                    "catia_coordinate_closure_completed_degrees",
-                                )?;
                                 let degree = degrees.entry((face, point)).or_default();
                                 let Some(next_degree) = degree.checked_add(1) else {
                                     return Ok(false);
@@ -1300,7 +1140,7 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
                     && boundaries_close
                     && component_points.iter().all(|point| point_uses[*point] > 0)
                 {
-                    ctx.push_vec(solutions, solution, "catia_coordinate_closure_solutions")?;
+                    solutions.push(solution);
                 }
                 rollback(assigned, point_uses, propagated, base_degrees);
                 return Ok(());
@@ -1317,19 +1157,16 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
         }
         *states += 1;
         for point in values {
-            let Some(undo) = assign(
-                ctx,
-                CoordinateAssignment {
-                    root,
-                    point,
-                    assigned,
-                    edges,
-                    root_edges,
-                    incidence,
-                    degrees: base_degrees,
-                    budget,
-                },
-            )?
+            let Some(undo) = assign(CoordinateAssignment {
+                root,
+                point,
+                assigned,
+                edges,
+                root_edges,
+                incidence,
+                degrees: base_degrees,
+                budget,
+            })?
             else {
                 *exhausted = true;
                 break;
@@ -1379,8 +1216,8 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
 
     let mut roots = Vec::new();
     for node in 0..quotient.union.len() {
-        if quotient.union.find(ctx, node)? == node {
-            ctx.push_vec(&mut roots, node, "catia_coordinate_closure_roots")?;
+        if quotient.union.find(node)? == node {
+            roots.push(node);
         }
     }
     if roots.len() < point_count {
@@ -1409,22 +1246,17 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
     }
     let mut root_indices = HashMap::new();
     for (index, root) in roots.iter().copied().enumerate() {
-        ctx.insert_hash_map(
-            &mut root_indices,
-            root,
-            index,
-            "catia_coordinate_closure_root_indices",
-        )?;
+        root_indices.insert(root, index);
     }
     let mut edges = Vec::new();
     for edge in 0..edge_candidates.len() {
-        let Some(&left) = root_indices.get(&quotient.union.find(ctx, edge * 2)?) else {
+        let Some(&left) = root_indices.get(&quotient.union.find(edge * 2)?) else {
             return Ok(None);
         };
-        let Some(&right) = root_indices.get(&quotient.union.find(ctx, edge * 2 + 1)?) else {
+        let Some(&right) = root_indices.get(&quotient.union.find(edge * 2 + 1)?) else {
             return Ok(None);
         };
-        ctx.push_vec(&mut edges, [left, right], "catia_coordinate_closure_edges")?;
+        edges.push([left, right]);
     }
     let mut domains = Vec::new();
     for root in roots.iter().copied() {
@@ -1434,78 +1266,44 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
             .copied()
             .filter(|point| *point < point_count)
         {
-            ctx.push_vec(&mut domain, point, "catia_coordinate_closure_domain_points")?;
+            domain.push(point);
         }
-        ctx.sort_unstable_by(
-            &mut domain,
-            Ord::cmp,
-            |_| 0,
-            "catia_coordinate_closure_domain_points_sort",
-        )?;
-        ctx.push_vec(&mut domains, domain, "catia_coordinate_closure_domains")?;
+        domain.sort_unstable_by(Ord::cmp);
+        domains.push(domain);
     }
     if domains.iter().any(Vec::is_empty) {
         return Ok(None);
     }
     let mut covered_points = HashSet::new();
     for point in domains.iter().flatten().copied() {
-        ctx.insert_hash_set(
-            &mut covered_points,
-            point,
-            "catia_coordinate_closure_covered_points",
-        )?;
+        covered_points.insert(point);
     }
     if covered_points.len() != point_count {
         return Ok(None);
     }
-    let mut dependency =
-        UnionFind::charged(ctx, roots.len(), "catia_coordinate_closure_dependency")?;
+    let mut dependency = UnionFind::new(roots.len());
     for [left, right] in &edges {
-        dependency.union(ctx, *left, *right)?;
+        dependency.union(*left, *right)?;
     }
     let mut root_by_point = HashMap::new();
     for (root, domain) in domains.iter().enumerate() {
         for point in domain {
-            if let Some(previous) = ctx.insert_hash_map(
-                &mut root_by_point,
-                *point,
-                root,
-                "catia_coordinate_closure_point_roots",
-            )? {
-                dependency.union(ctx, previous, root)?;
+            if let Some(previous) = root_by_point.insert(*point, root) {
+                dependency.union(previous, root)?;
             }
         }
     }
     let mut components = HashMap::<usize, Vec<usize>>::new();
     for root in 0..roots.len() {
-        let component = dependency.find(ctx, root)?;
-        if !components.contains_key(&component) {
-            ctx.insert_hash_map(
-                &mut components,
-                component,
-                Vec::new(),
-                "catia_coordinate_closure_component_keys",
-            )?;
-        }
-        if let Some(members) = components.get_mut(&component) {
-            ctx.push_vec(members, root, "catia_coordinate_closure_component_members")?;
-        }
+        let component = dependency.find(root)?;
+        components.entry(component).or_default().push(root);
     }
     let mut ordered_components = Vec::new();
     for component in components.into_values() {
-        ctx.push_vec(
-            &mut ordered_components,
-            component,
-            "catia_coordinate_closure_components",
-        )?;
+        ordered_components.push(component);
     }
     let mut components = ordered_components;
-    ctx.stable_sort_by(
-        &mut components,
-        |left, right| left[0].cmp(&right[0]),
-        |_| 0,
-        "catia_coordinate_closure_components_sort",
-    )?;
+    components.sort_by(|left, right| left[0].cmp(&right[0]));
     let incidence = if let Some((edge_faces, boundary_domains)) = incidence {
         if budget.is_some_and(|budget| !budget.charge_by(edge_faces.len())) {
             exhausted.set(true);
@@ -1540,31 +1338,18 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
         let mut component_set = HashSet::new();
         let mut local_index = HashMap::new();
         for (local, &global) in component.iter().enumerate() {
-            ctx.insert_hash_set(
-                &mut component_set,
-                global,
-                "catia_coordinate_closure_component_set",
-            )?;
-            ctx.insert_hash_map(
-                &mut local_index,
-                global,
-                local,
-                "catia_coordinate_closure_local_index",
-            )?;
+            component_set.insert(global);
+            local_index.insert(global, local);
         }
         let mut edge_ids = Vec::new();
         for (edge, [left, _]) in edges.iter().enumerate() {
             if component_set.contains(left) {
-                ctx.push_vec(&mut edge_ids, edge, "catia_coordinate_closure_edge_ids")?;
+                edge_ids.push(edge);
             }
         }
         let mut component_points = HashSet::new();
         for point in component.iter().flat_map(|root| domains[*root].iter()) {
-            ctx.insert_hash_set(
-                &mut component_points,
-                *point,
-                "catia_coordinate_closure_component_points",
-            )?;
+            component_points.insert(*point);
         }
         let Some(explicit_pair_supports) = edge_ids
             .iter()
@@ -1613,17 +1398,8 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
             else {
                 return Ok(None);
             };
-            ctx.push_vec(
-                &mut local_edges,
-                [left, right],
-                "catia_coordinate_closure_local_edges",
-            )?;
-            ctx.insert_hash_map(
-                &mut local_edge_by_id,
-                edge,
-                local,
-                "catia_coordinate_closure_local_edge_index",
-            )?;
+            local_edges.push([left, right]);
+            local_edge_by_id.insert(edge, local);
         }
         let local_incidence = match incidence.as_ref() {
             Some((edge_faces, boundary_domains, counts)) => {
@@ -1633,11 +1409,7 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
                 }
                 let mut local_edge_faces = Vec::new();
                 for &edge in &edge_ids {
-                    ctx.push_vec(
-                        &mut local_edge_faces,
-                        edge_faces[edge],
-                        "catia_coordinate_closure_local_edge_faces",
-                    )?;
+                    local_edge_faces.push(edge_faces[edge]);
                 }
                 let mut face_edges = ctx.alloc_filled(
                     boundary_domains.len(),
@@ -1647,21 +1419,13 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
                 for (edge, faces) in local_edge_faces.iter().copied().enumerate() {
                     for (rank, face) in faces.into_iter().enumerate() {
                         if rank == 0 || face != faces[0] {
-                            ctx.push_vec(
-                                &mut face_edges[face],
-                                edge,
-                                "catia_coordinate_closure_face_edge_entries",
-                            )?;
+                            face_edges[face].push(edge);
                         }
                     }
                 }
                 let mut closed_faces = Vec::new();
                 for (local, total) in face_edges.iter().zip(counts.iter()) {
-                    ctx.push_vec(
-                        &mut closed_faces,
-                        local.len() == *total,
-                        "catia_coordinate_closure_closed_faces",
-                    )?;
+                    closed_faces.push(local.len() == *total);
                 }
                 Some(LocalIncidence {
                     edge_faces: local_edge_faces,
@@ -1674,15 +1438,8 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
         };
         let mut local_domains = Vec::new();
         for &root in &component {
-            let domain = ctx.copy_slice(
-                &domains[root],
-                "catia_coordinate_closure_local_domain_points",
-            )?;
-            ctx.push_vec(
-                &mut local_domains,
-                domain,
-                "catia_coordinate_closure_local_domains",
-            )?;
+            let domain = domains[root].clone();
+            local_domains.push(domain);
         }
         let mut root_edges = ctx.alloc_filled(
             component.len(),
@@ -1690,27 +1447,18 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
             "catia_coordinate_closure_root_edges",
         )?;
         for (edge, [left, right]) in local_edges.iter().copied().enumerate() {
-            ctx.push_vec(
-                &mut root_edges[left],
-                edge,
-                "catia_coordinate_closure_root_edge_entries",
-            )?;
+            root_edges[left].push(edge);
             if right != left {
-                ctx.push_vec(
-                    &mut root_edges[right],
-                    edge,
-                    "catia_coordinate_closure_root_edge_entries",
-                )?;
+                root_edges[right].push(edge);
             }
         }
         if !enforce_sparse_endpoint_membership(
-            ctx,
             &mut local_domains,
             &local_edges,
             &edge_ids,
             edge_candidates,
             budget,
-        )? {
+        ) {
             if budget.is_some_and(WorkBudget::exhausted) {
                 exhausted.set(true);
             }
@@ -1718,12 +1466,8 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
         }
         let mut arc_domains = Vec::new();
         for domain in &local_domains {
-            let copy = ctx.copy_slice(domain, "catia_coordinate_closure_arc_domain_points")?;
-            ctx.push_vec(
-                &mut arc_domains,
-                copy,
-                "catia_coordinate_closure_arc_domains",
-            )?;
+            let copy = domain.clone();
+            arc_domains.push(copy);
         }
         let arc_budget = budget.map(|budget| WorkBudget::new(budget.remaining()));
         let arc_consistent = enforce_edge_arc_consistency(
@@ -1752,11 +1496,7 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
         }
         let mut remaining_points = HashSet::new();
         for &point in local_domains.iter().flatten() {
-            ctx.insert_hash_set(
-                &mut remaining_points,
-                point,
-                "catia_coordinate_closure_remaining_points",
-            )?;
+            remaining_points.insert(point);
         }
         if remaining_points != component_points {
             return Ok(None);
@@ -1816,37 +1556,24 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
         let Some(point) = point else {
             return Ok(None);
         };
-        ctx.push_vec(
-            &mut completed_assignment,
-            point,
-            "catia_coordinate_closure_completed_assignment",
-        )?;
+        completed_assignment.push(point);
     }
     let assignment = completed_assignment;
     for (&root, &point) in roots.iter().zip(&assignment) {
         let mut fixed_domain = HashSet::new();
-        ctx.insert_hash_set(
-            &mut fixed_domain,
-            point,
-            "catia_coordinate_closure_fixed_domain_point",
-        )?;
+        fixed_domain.insert(point);
         quotient.domains[root] = Arc::new(fixed_domain);
     }
     let mut root_by_point = HashMap::new();
     for (&root, &point) in roots.iter().zip(&assignment) {
-        if let Some(previous) = ctx.insert_hash_map(
-            &mut root_by_point,
-            point,
-            root,
-            "catia_coordinate_closure_assigned_point_roots",
-        )? {
-            let Some(merged) = quotient.merge_charged(ctx, previous, root)? else {
+        if let Some(previous) = root_by_point.insert(point, root) {
+            let Some(merged) = quotient.merge(previous, root)? else {
                 return Ok(None);
             };
             root_by_point.insert(point, merged);
         }
     }
-    if !quotient.edge_domains_viable(ctx, edge_candidates)? {
+    if !quotient.edge_domains_viable(edge_candidates)? {
         return Ok(None);
     }
     quotient.point_assignment(ctx, point_count, edge_candidates, None)
@@ -1854,16 +1581,17 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
 
 #[cfg(test)]
 mod tests {
-    use super::{partial_compact_assignment_viable, MeshFaceBoundaryDomain};
+    use super::{
+        partial_compact_assignment_viable, MeshFaceBoundaryDomain,
+        PartialCompactAssignmentViableInputs,
+    };
     use crate::solve::missing_edge::{
         MeshBoundaryEdgeCandidate, MeshDeferredBoundaryCycle, MeshDeferredFaceBoundary,
     };
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
     use std::collections::HashMap;
 
     #[test]
-    fn deferred_coordinate_boundary_refuses_edge_point_collection_limit() {
+    fn deferred_coordinate_boundary_admits_a_consistent_partial_assignment() {
         let domain = MeshFaceBoundaryDomain::DeferredValidation(MeshDeferredFaceBoundary {
             cycles: vec![MeshDeferredBoundaryCycle {
                 length: 2,
@@ -1882,29 +1610,26 @@ mod tests {
         let edge_by_id = HashMap::from([(0, 0), (1, 1)]);
         let edges = [[0, 1], [2, 3]];
         let assigned = [None, Some(1), Some(1), Some(0)];
-
-        let arena = DecodeArena::new();
-        let service = DecodePolicy::service();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &service)
-            .expect("fixture fits the service profile");
-        assert!(partial_compact_assignment_viable(&ctx, crate::solve::mesh_quotient::coordinate_assignment::PartialCompactAssignmentViableInputs { domain: &domain, local_edge_by_id: &edge_by_id, edges: &edges, global_edge_count: 2, assigned: &assigned, candidate: (0, 0), budget: None })
-        .expect("service budget"));
-
-        let mut limited = DecodePolicy::service();
-        limited.limits.max_collection_items = 29;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &limited)
-            .expect("fixture fits the input limit");
-        let error = partial_compact_assignment_viable(&ctx, crate::solve::mesh_quotient::coordinate_assignment::PartialCompactAssignmentViableInputs { domain: &domain, local_edge_by_id: &edge_by_id, edges: &edges, global_edge_count: 2, assigned: &assigned, candidate: (0, 0), budget: None })
-        .expect_err("edge point collection exceeds the limit");
-        assert!(matches!(error, CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "catia coordinate assignment edge points"));
+        let viable = crate::test_support::with_service_context(|ctx| {
+            partial_compact_assignment_viable(
+                ctx,
+                PartialCompactAssignmentViableInputs {
+                    domain: &domain,
+                    local_edge_by_id: &edge_by_id,
+                    edges: &edges,
+                    global_edge_count: 2,
+                    assigned: &assigned,
+                    candidate: (0, 0),
+                    budget: None,
+                },
+            )
+        })
+        .expect("service budget");
+        assert!(viable);
     }
 
     #[test]
-    fn deferred_coordinate_boundary_charges_cycle_matching_arrays() {
-        use std::collections::BTreeSet;
-
+    fn deferred_coordinate_boundary_admits_a_closed_three_edge_cycle() {
         let domain = MeshFaceBoundaryDomain::DeferredValidation(MeshDeferredFaceBoundary {
             cycles: vec![MeshDeferredBoundaryCycle {
                 length: 3,
@@ -1915,32 +1640,52 @@ mod tests {
         let edge_by_id = HashMap::from([(0, 0), (1, 1), (2, 2)]);
         let edges = [[0, 1], [2, 3], [4, 5]];
         let assigned = [Some(0), Some(1), Some(1), Some(2), Some(2), Some(0)];
-        let mut operations = BTreeSet::new();
-        let mut completed = false;
-        for limit in 0..=128 {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = limit;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-                .expect("fixture fits the input limit");
-            match partial_compact_assignment_viable(&ctx, crate::solve::mesh_quotient::coordinate_assignment::PartialCompactAssignmentViableInputs { domain: &domain, local_edge_by_id: &edge_by_id, edges: &edges, global_edge_count: 3, assigned: &assigned, candidate: (0, 0), budget: None }) {
-                Err(CodecError::ResourceLimit(error)) => {
-                    assert_eq!(error.dimension, ResourceDimension::CollectionItems);
-                    operations.insert(error.operation);
-                }
-                Ok(true) => {
-                    completed = true;
-                    break;
-                }
-                Ok(false) => panic!("closed deferred cycle must remain viable"),
-                Err(error) => panic!("unexpected deferred boundary refusal: {error}"),
-            }
-        }
-        assert!(
-            completed,
-            "collection limit 128 must admit the deferred cycle"
-        );
-        assert!(operations.contains("catia_deferred_matched"));
-        assert!(operations.contains("catia_deferred_augment_visit"));
+        let viable = crate::test_support::with_service_context(|ctx| {
+            partial_compact_assignment_viable(
+                ctx,
+                PartialCompactAssignmentViableInputs {
+                    domain: &domain,
+                    local_edge_by_id: &edge_by_id,
+                    edges: &edges,
+                    global_edge_count: 3,
+                    assigned: &assigned,
+                    candidate: (0, 0),
+                    budget: None,
+                },
+            )
+        })
+        .expect("service budget");
+        assert!(viable);
+    }
+
+    #[test]
+    fn deferred_coordinate_boundary_result() {
+        use cadmpeg_core::decode::DecodeArena;
+        use cadmpeg_core::decode::DecodeContext;
+        use cadmpeg_core::decode::DecodePolicy;
+        let domain = MeshFaceBoundaryDomain::DeferredValidation(MeshDeferredFaceBoundary {
+            cycles: vec![MeshDeferredBoundaryCycle {
+                length: 2,
+                exact_uses: vec![(
+                    MeshBoundaryEdgeCandidate {
+                        edge: 0,
+                        start: 0,
+                        end: 1,
+                        reversed: Some(false),
+                    },
+                    1,
+                )],
+            }],
+            missing_edges: vec![1],
+        });
+        let edge_by_id = HashMap::from([(0, 0), (1, 1)]);
+        let edges = [[0, 1], [2, 3]];
+        let assigned = [None, Some(1), Some(1), Some(0)];
+        let arena = DecodeArena::new();
+        let service = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &service)
+            .expect("fixture fits the service profile");
+        assert!(partial_compact_assignment_viable(&ctx, crate::solve::mesh_quotient::coordinate_assignment::PartialCompactAssignmentViableInputs { domain: &domain, local_edge_by_id: &edge_by_id, edges: &edges, global_edge_count: 2, assigned: &assigned, candidate: (0, 0), budget: None })
+        .expect("service budget"));
     }
 }

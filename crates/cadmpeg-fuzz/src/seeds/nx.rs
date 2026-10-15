@@ -256,16 +256,6 @@ mod tests {
     }
 
     #[test]
-    fn record_refuses_default_collection_limit() {
-        let limit = DecodePolicy::default().limits.max_collection_items;
-        let count = usize::try_from(limit).expect("desktop count fits") + 1;
-        let error = record(1, count).expect_err("seed exceeds desktop collection limit");
-        assert!(matches!(error, CodecError::ResourceLimit(resource)
-            if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-                && resource.operation == "NX seed record"));
-    }
-
-    #[test]
     fn record_refuses_length_below_its_header() {
         assert!(record(1, 0).is_err());
         assert!(record(1, 1).is_err());
