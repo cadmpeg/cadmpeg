@@ -123,7 +123,6 @@ fn port_domain_pruning_refuses_input_sized_collections() {
         "catia_port_effective_deferred",
         "catia_deferred_ports",
         "catia_port_all_points",
-        "catia_port_deferred_domain",
         "catia_port_candidate_domain",
         "catia_port_domains",
         "catia_port_nodes",
@@ -391,6 +390,7 @@ fn equivalent_edge_rows_share_one_incidence_assignment_gauge() {
 fn native_edge_carrier_binding_requires_equal_object_identity() {
     use crate::families::standard::decode::standard_native_support_edge_ids;
     use crate::families::standard::records::{StandardCurveGeometry, StandardCurveSupport};
+    use std::collections::HashMap;
 
     let supports = [
         StandardCurveSupport {
@@ -406,7 +406,7 @@ fn native_edge_carrier_binding_requires_equal_object_identity() {
             geometry: StandardCurveGeometry::Line,
         },
     ];
-    let native_support_ids = HashSet::from([70, 71]);
+    let native_support_ids = HashMap::from([(70, true), (71, true)]);
     assert_eq!(
         crate::test_support::with_service_context(|ctx| standard_native_support_edge_ids(
             ctx,
@@ -421,7 +421,7 @@ fn native_edge_carrier_binding_requires_equal_object_identity() {
         crate::test_support::with_service_context(|ctx| standard_native_support_edge_ids(
             ctx,
             &supports[1..],
-            &HashSet::from([900])
+            &HashMap::from([(900, true)])
         ))
         .expect("service budget"),
         vec![Some(900)]

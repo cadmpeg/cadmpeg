@@ -25,6 +25,7 @@ fn token_record(sequence: u32, values: &[TokenValue]) -> ParameterRecord {
             .collect(),
         parameter_end: values.len(),
         comment: Vec::new(),
+        double_precision_reals: Vec::new(),
     }
 }
 

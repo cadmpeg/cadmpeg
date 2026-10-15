@@ -13,6 +13,15 @@ pub(crate) fn local_system_lanes(slots: [f64; 12]) -> [[f64; 3]; 4] {
     [[ax, ay, az], [bx, by, bz], [cx, cy, cz], [ox, oy, oz]]
 }
 
+/// `value <= bound`, written as an ordering test so a NaN on either side is
+/// outside the bound.
+pub(crate) fn within(value: f64, bound: f64) -> bool {
+    matches!(
+        value.partial_cmp(&bound),
+        Some(std::cmp::Ordering::Less | std::cmp::Ordering::Equal)
+    )
+}
+
 pub(crate) fn dot(left: [f64; 3], right: [f64; 3]) -> f64 {
     Vector3::from(left).dot(Vector3::from(right))
 }

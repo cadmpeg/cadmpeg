@@ -53,17 +53,16 @@ fn formula_local_unary_depth_refuses_instead_of_returning_absence() {
 #[test]
 fn formula_bound_string_operations_admit_operand_work() {
     use super::super::{EvaluatedFormulaString, EvaluatedFormulaValue};
-    for (source, operation, literal_bytes) in [
-        ("#1_.Length()", "catia_formula_string_length", 0),
-        ("#1_.Search(\"x\")", "catia_formula_string_search", 1),
-        ("#1_.Extract(0,1)", "catia_formula_string_boundary", 0),
-        ("#1_.ToReal()", "catia_formula_string_real", 0),
+    for (source, operation) in [
+        ("#1_.Length()", "catia_formula_string_length"),
+        ("#1_.Search(\"x\")", "catia_formula_string_search"),
+        ("#1_.Extract(0,1)", "catia_formula_string_boundary"),
+        ("#1_.ToReal()", "catia_formula_string_real"),
         (
             "ReplaceSubText(#1_,\"x\",\"y\")",
-            "catia_formula_replace_work",
-            2,
+            "catia_formula_replace_subtext",
         ),
-        ("ToUpper(#1_)", "catia_formula_case_work", 0),
+        ("ToUpper(#1_)", "catia_formula_string_case"),
     ] {
         let bindings = BTreeMap::from([(
             "#1_",
@@ -72,19 +71,212 @@ fn formula_bound_string_operations_admit_operand_work() {
                 true,
             )),
         )]);
-        // The source scan, the evaluator's copy of the 4096-byte bound string, and each
-        // literal's copy precede the operation's own operand work.
-        crate::test_support::with_work_limit(
-            u64::try_from(source.len()).expect("source length") + 4096 + literal_bytes,
+        let result = crate::test_support::with_work_refusal(operation, |ctx| {
+            let result = super::super::evaluate_formula_expression_charged(ctx, source, &bindings);
+            if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
+                assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
+            }
+            result
+        });
+        assert!(
+            matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == operation)
+        );
+    }
+}
+
+#[test]
+fn formula_literal_scan_propagates_caller_work_refusal() {
+    crate::test_support::with_work_limit(0, |ctx| {
+        let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) =
+            super::super::string_literal_expression(ctx, "text")
+        else {
+            panic!("literal scan must refuse")
+        };
+        assert_eq!(limit.operation, "catia_formula_string_literal_scan");
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+    });
+}
+
+#[test]
+fn formula_string_boundary_admission_preserves_unicode_indices() {
+    crate::test_support::with_service_context(|ctx| {
+        let bindings = std::collections::BTreeMap::new();
+        let mut parser = super::super::FormulaExpressionParser {
+            source: "",
+            at: 0,
+            bindings: &bindings,
+            ctx,
+            evaluate: false,
+            static_check: false,
+        };
+        for (index, expected) in [
+            (0, Some(0)),
+            (1, Some(1)),
+            (2, Some(3)),
+            (3, Some(7)),
+            (4, None),
+        ] {
+            assert_eq!(
+                parser
+                    .string_boundary("aé😀", index)
+                    .expect("service work budget"),
+                expected
+            );
+        }
+    });
+}
+
+#[test]
+fn formula_string_boundary_scan_propagates_resource_refusal() {
+    crate::test_support::with_work_limit(0, |ctx| {
+        let bindings = std::collections::BTreeMap::new();
+        let mut parser = super::super::FormulaExpressionParser {
+            source: "",
+            at: 0,
+            bindings: &bindings,
+            ctx,
+            evaluate: false,
+            static_check: false,
+        };
+        let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = parser.string_boundary("é", 0)
+        else {
+            panic!("boundary scan must refuse")
+        };
+        assert_eq!(limit.operation, "catia_formula_string_boundary");
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+    });
+}
+
+#[test]
+fn formula_string_length_scan_propagates_resource_refusal() {
+    let refusal = crate::test_support::with_work_refusal("catia_formula_string_length", |ctx| {
+        let bindings = std::collections::BTreeMap::new();
+        let mut parser = super::super::FormulaExpressionParser {
+            source: "\"a\".Length()",
+            at: 0,
+            bindings: &bindings,
+            ctx,
+            evaluate: true,
+            static_check: false,
+        };
+        parser.postfix(0)
+    });
+    assert!(
+        matches!(refusal, Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "catia_formula_string_length")
+    );
+}
+
+#[test]
+fn formula_unsupported_first_token_does_not_admit_the_suffix() {
+    let source = format!("!{}", "x".repeat(4096));
+    // The whitespace probes at unary and primary, then the first numeric scan step.
+    crate::test_support::with_work_limit(3, |ctx| {
+        assert!(
+            super::super::evaluate_formula_expression_charged(ctx, &source, &BTreeMap::new())
+                .expect("unvisited suffix costs no work")
+                .is_none()
+        );
+    });
+}
+
+#[test]
+fn formula_numeric_parse_and_binding_lookup_refuse_before_execution() {
+    use super::super::{EvaluatedFormulaString, EvaluatedFormulaValue};
+    let bindings = BTreeMap::from([(
+        "#1_",
+        EvaluatedFormulaValue::String(EvaluatedFormulaString::from_parts("abc".to_owned(), true)),
+    )]);
+    for (source, operation) in [
+        ("1234", "catia_formula_numeric_parse"),
+        ("#1_", "catia_formula_symbol_lookup"),
+    ] {
+        let refusal = crate::test_support::with_work_refusal(operation, |ctx| {
+            super::super::evaluate_formula_expression_charged(ctx, source, &bindings)
+        });
+        assert!(
+            matches!(refusal, Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == operation)
+        );
+    }
+}
+
+#[test]
+fn formula_search_admits_only_the_resolved_range() {
+    for (start, cap, expected) in [(4, 5, -1), (2, 7, 2)] {
+        crate::test_support::with_work_limit(cap, |ctx| {
+            let bindings = BTreeMap::new();
+            let mut parser = super::super::FormulaExpressionParser {
+                source: "",
+                at: 0,
+                bindings: &bindings,
+                ctx,
+                evaluate: true,
+                static_check: false,
+            };
+            let needle = if start == 4 {
+                "x".repeat(4096)
+            } else {
+                "c".to_owned()
+            };
+            assert_eq!(
+                parser
+                    .search_string("abc", &needle, start, true)
+                    .expect("range budget"),
+                Some(expected)
+            );
+        });
+    }
+}
+
+#[test]
+fn formula_case_conversion_preserves_per_character_lowercase() {
+    assert_eq!(
+        super::super::evaluate_formula_expression("ToLower(\"ΟΣİ\")", &BTreeMap::new())
+            .and_then(super::super::EvaluatedFormulaValue::string),
+        Some("οσi\u{307}".to_owned())
+    );
+}
+
+#[test]
+fn formula_extremum_fold_propagates_the_original_work_refusal() {
+    for expression in ["min(8,5,7,3)", "max(1,4,2)"] {
+        let refusal = crate::test_support::with_work_refusal(
+            "catia_formula_extremum_argument_visits",
             |ctx| {
-                let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) =
-                    super::super::evaluate_formula_expression_charged(ctx, source, &bindings)
-                else {
-                    panic!("operand work refusal required")
-                };
-                assert_eq!(limit.operation, operation);
-                assert_eq!(ctx.resource_refusal(), Some(limit));
+                let result = super::super::evaluate_formula_expression_charged(
+                    ctx,
+                    expression,
+                    &BTreeMap::new(),
+                );
+                if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
+                    assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
+                }
+                result
             },
         );
+        assert!(
+            matches!(refusal, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_formula_extremum_argument_visits")
+        );
+    }
+}
+
+#[test]
+fn formula_scalar_calls_keep_only_the_original_argument_slots() {
+    for (expression, cap, expected) in [
+        ("abs(-2)", 1, 2.0),
+        ("mod(7.8,3)", 2, 1.0),
+        ("min(8,5,7,3)", 4, 3.0),
+        ("max(1,4,2)", 3, 4.0),
+        ("LinearInterpolation(2,10,0.25)", 3, 4.0),
+        ("CubicInterpolation(2,10,0.25)", 3, 3.25),
+    ] {
+        let value = crate::test_support::with_collection_limit(cap, |ctx| {
+            super::super::evaluate_formula_expression_charged(ctx, expression, &BTreeMap::new())
+        })
+        .expect("one parsed argument vector")
+        .and_then(super::super::EvaluatedFormulaValue::scalar)
+        .expect("scalar result");
+        assert_eq!(value.value(), expected, "{expression}");
     }
 }

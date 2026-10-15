@@ -298,7 +298,7 @@ pub(crate) struct ContainerScan<'a> {
     /// Decoded BREP stream facts, in archive order.
     pub(crate) breps: Vec<BrepFacts>,
     /// Each text B-rep's one admitted parse, shared by model and report paths.
-    pub(crate) text_breps: std::collections::HashMap<String, TextBrepFraming>,
+    pub(crate) text_breps: std::collections::HashMap<String, TextBrepFraming<'a>>,
     /// Whether this ZIP is one F3D document or an outer F3Z archive.
     pub(crate) kind: F3dContainerKind,
     /// Entry payload views, keyed by archive path.
@@ -312,8 +312,8 @@ pub(crate) struct ContainerScan<'a> {
 }
 
 /// The framing outcome of one text B-rep member.
-pub(crate) enum TextBrepFraming {
-    Parsed(cadmpeg_asm::sat::TextStream),
+pub(crate) enum TextBrepFraming<'ctx> {
+    Parsed(cadmpeg_asm::sat::TextStream<'ctx>),
     Unframed(cadmpeg_asm::stream_error::StreamError),
     Malformed(cadmpeg_asm::stream_error::StreamError),
     UnsupportedLength(cadmpeg_asm::stream_error::StreamError),
@@ -520,7 +520,7 @@ fn is_numbered_segment(
 /// Every entry is registered as a slice when stored or a decompressed space
 /// when compressed.
 pub(crate) fn scan<'a>(
-    ctx: &DecodeContext<'a>,
+    ctx: &'a DecodeContext<'a>,
     root: View<'a>,
 ) -> Result<ContainerScan<'a>, CodecError> {
     let source_image = root.window();
@@ -1134,7 +1134,7 @@ mod tests {
                 {
                     return error;
                 }
-            }
+            };
         }
         panic!("operation {operation} did not refuse a collection limit");
     }
@@ -1229,7 +1229,7 @@ mod tests {
                 {
                     return;
                 }
-            }
+            };
         }
         panic!("text BREP framing did not refuse a collection limit");
     }

@@ -10,6 +10,8 @@ use cadmpeg_ir::scalar::{Angle, Length};
 use cadmpeg_ir::sketches::{SketchGeometry, SketchGeometryDefinition};
 use std::collections::BTreeMap;
 
+const EPS_TEST_ANGLE: f64 = 1.0e-12;
+
 fn trimmed_section_segment_geometry(
     definition: &crate::feature::definitions::FeatureDefinition,
     points: &BTreeMap<u32, [f64; 2]>,
@@ -264,7 +266,8 @@ fn arc_carriers_use_trim_vertices() {
                 internal_id: 3,
                 bitmask: 0,
                 offset: 10,
-            }],
+            }]
+            .into(),
             offset: 8,
         }),
         section_3d: None,
@@ -288,6 +291,32 @@ fn arc_carriers_use_trim_vertices() {
     };
     let trim_vertices = BTreeMap::from([(1, [-2.0, 0.0]), (2, [0.0, -2.0])]);
     let points = BTreeMap::from([(7, [2.0, 0.0]), (8, [0.0, 0.0]), (9, [0.0, 2.0])]);
+
+    let normalization_vertices = BTreeMap::from([(1, [-2.0, -0.0]), (2, [-2.0, 0.0])]);
+    let normalized =
+        crate::decode::with_test_decode_ctx(|ctx| -> Result<_, cadmpeg_core::CodecError> {
+            let radii = crate::decode::sketch::radii::resolved_section_radii(ctx, &definition)?;
+            trimmed_section_segment_geometry_with_missing_line(
+                ctx,
+                &definition,
+                &points,
+                &radii,
+                &normalization_vertices,
+                &segment,
+                None,
+            )
+        })
+        .expect("service trimmed arc");
+    let Some(SketchGeometryDefinition::Arc {
+        start_angle,
+        end_angle,
+        ..
+    }) = normalized.map(SketchGeometry::into_definition)
+    else {
+        panic!("trimmed service arc");
+    };
+    assert!((start_angle.get() - std::f64::consts::PI).abs() < EPS_TEST_ANGLE);
+    assert!((end_angle.get() - 3.0 * std::f64::consts::PI).abs() < EPS_TEST_ANGLE);
 
     assert_eq!(
         trimmed_section_segment_geometry(&definition, &points, &trim_vertices, &segment),

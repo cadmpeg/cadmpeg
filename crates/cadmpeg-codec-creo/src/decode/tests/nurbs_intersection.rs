@@ -82,49 +82,41 @@ fn carrier_scan() -> crate::container::ContainerScan<'static> {
         half_edge(31, crate::topology::Side::One, 0),
     ];
     scan.topology.vertices = vec![
-        crate::decode::with_test_decode_ctx(|ctx| {
-            crate::topology::TopologicalVertex::new_for_test(
-                ctx,
-                1,
-                vec![
-                    HalfEdgeId {
-                        curve_id: 10,
-                        side: crate::topology::Side::Zero,
-                    },
-                    HalfEdgeId {
-                        curve_id: 20,
-                        side: crate::topology::Side::Zero,
-                    },
-                    HalfEdgeId {
-                        curve_id: 30,
-                        side: crate::topology::Side::Zero,
-                    },
-                    HalfEdgeId {
-                        curve_id: 31,
-                        side: crate::topology::Side::Zero,
-                    },
-                ],
-            )
-        })
-        .expect("vertex admission")
+        crate::topology::TopologicalVertex::new_for_test(
+            1,
+            vec![
+                HalfEdgeId {
+                    curve_id: 10,
+                    side: crate::topology::Side::Zero,
+                },
+                HalfEdgeId {
+                    curve_id: 20,
+                    side: crate::topology::Side::Zero,
+                },
+                HalfEdgeId {
+                    curve_id: 30,
+                    side: crate::topology::Side::Zero,
+                },
+                HalfEdgeId {
+                    curve_id: 31,
+                    side: crate::topology::Side::Zero,
+                },
+            ],
+        )
         .expect("valid vertex fixture"),
-        crate::decode::with_test_decode_ctx(|ctx| {
-            crate::topology::TopologicalVertex::new_for_test(
-                ctx,
-                2,
-                vec![
-                    HalfEdgeId {
-                        curve_id: 10,
-                        side: crate::topology::Side::One,
-                    },
-                    HalfEdgeId {
-                        curve_id: 20,
-                        side: crate::topology::Side::One,
-                    },
-                ],
-            )
-        })
-        .expect("vertex admission")
+        crate::topology::TopologicalVertex::new_for_test(
+            2,
+            vec![
+                HalfEdgeId {
+                    curve_id: 10,
+                    side: crate::topology::Side::One,
+                },
+                HalfEdgeId {
+                    curve_id: 20,
+                    side: crate::topology::Side::One,
+                },
+            ],
+        )
         .expect("valid vertex fixture"),
     ];
     scan.topology.half_edge_vertex_incidence = vec![
@@ -219,6 +211,7 @@ fn carrier_intersection_uses_nurbs_boundary_endpoints_to_select_a_generator() {
 
     let mut with_witness = source_ir();
     let transferred = crate::decode::with_test_decode_ctx(|ctx| {
+        let mut result_storage = ctx.reserve_scoped(0, "creo curve evidence workspace")?;
         transfer_carrier_intersection_curves(
             ctx,
             &scan,
@@ -226,6 +219,7 @@ fn carrier_intersection_uses_nurbs_boundary_endpoints_to_select_a_generator() {
             &mut AnnotationBuilder::new(),
             &witness,
             &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+            &mut result_storage,
         )
     })
     .expect("valid source object identity");
@@ -251,16 +245,18 @@ fn carrier_intersection_uses_nurbs_boundary_endpoints_to_select_a_generator() {
             }));
 
     let mut without_witness = source_ir();
-    assert!(
-        crate::decode::with_test_decode_ctx(|ctx| transfer_carrier_intersection_curves(
+    assert!(crate::decode::with_test_decode_ctx(|ctx| {
+        let mut result_storage = ctx.reserve_scoped(0, "creo curve evidence workspace")?;
+        transfer_carrier_intersection_curves(
             ctx,
             &scan,
             &mut without_witness,
             &mut AnnotationBuilder::new(),
             &BTreeSet::new(),
             &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
-        ))
-        .expect("valid source object identity")
-        .is_empty()
-    );
+            &mut result_storage,
+        )
+    })
+    .expect("valid source object identity")
+    .is_empty());
 }

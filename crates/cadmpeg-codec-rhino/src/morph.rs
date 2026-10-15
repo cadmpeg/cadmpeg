@@ -100,6 +100,7 @@ pub(crate) struct Morph {
 }
 
 fn anonymous<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &'a [u8],
     offset: usize,
     end: usize,
@@ -110,7 +111,10 @@ fn anonymous<'a>(
     if chunk.typecode != ANONYMOUS || chunk.short() {
         return Err(GeometryError::malformed(
             offset,
-            format!("{family} is not anonymous"),
+            ctx.format_retained(
+                format_args!("{family} is not anonymous"),
+                "Rhino anonymous text",
+            )?,
         ));
     }
     let mut reader = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
@@ -138,6 +142,7 @@ fn captive_ids(
     archive: ArchiveVersion,
 ) -> Result<Vec<Uuid>, GeometryError> {
     let (mut ids, next, major, minor) = anonymous(
+        ctx,
         data,
         reader.position(),
         reader.end(),
@@ -155,6 +160,7 @@ fn captive_ids(
         .collection_vec(count, "Rhino morph captive IDs")
         .map_err(crate::chunks::FramingError::from)?;
     for _ in 0..count {
+        ctx.charge_work(1, "Rhino morph captive_ids records")?;
         values.push(uuid(&mut ids)?);
     }
     ids.skip_remaining()?;
@@ -200,23 +206,25 @@ fn scale_interval(
 }
 
 fn optional_localizer<T>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
     kind: &str,
     parse: impl FnOnce(&mut BoundedReader<'_>) -> Result<T, GeometryError>,
 ) -> Result<Option<T>, GeometryError> {
-    let (mut child, next, major, minor) = anonymous(
-        data,
-        reader.position(),
-        reader.end(),
-        archive,
-        &format!("localizer {kind}"),
-    )?;
+    let (label_buffer, _label_storage) =
+        ctx.format_scoped(format_args!("localizer {kind}"), "Rhino localizer label")?;
+    let label = label_buffer;
+    let (mut child, next, major, minor) =
+        anonymous(ctx, data, reader.position(), reader.end(), archive, &label)?;
     if major != 1 || minor < 0 {
         return Err(GeometryError::UnsupportedVersion {
             offset: child.position() - 8,
-            message: format!("unsupported localizer-{kind} version {major}.{minor}"),
+            message: ctx.format_retained(
+                format_args!("unsupported localizer-{kind} version {major}.{minor}"),
+                "Rhino optional_localizer text",
+            )?,
         });
     }
     let value = child.bool()?.then(|| parse(&mut child)).transpose()?;
@@ -232,8 +240,14 @@ fn localizer(
     scale: MillimeterScale,
     archive: ArchiveVersion,
 ) -> Result<Localizer, GeometryError> {
-    let (mut value, next, major, minor) =
-        anonymous(data, reader.position(), reader.end(), archive, "localizer")?;
+    let (mut value, next, major, minor) = anonymous(
+        ctx,
+        data,
+        reader.position(),
+        reader.end(),
+        archive,
+        "localizer",
+    )?;
     if major != 1 || minor < 0 {
         return Err(GeometryError::UnsupportedVersion {
             offset: value.position() - 8,
@@ -242,14 +256,14 @@ fn localizer(
     }
     let kind = LocalizerKind(value.i32()?);
     let offset = value.position();
-    let point = scale_point(point(&mut value)?, scale, offset)?;
-    let vector = vector(&mut value)?.0;
+    let point = scale_point(point(ctx, &mut value)?, scale, offset)?;
+    let vector = vector(ctx, &mut value)?.0;
     let offset = value.position();
-    let interval = scale_interval(interval(&mut value)?.0.get(), scale, offset)?;
-    let curve = optional_localizer(data, &mut value, archive, "curve", |child| {
+    let interval = scale_interval(interval(ctx, &mut value)?.0.get(), scale, offset)?;
+    let curve = optional_localizer(ctx, data, &mut value, archive, "curve", |child| {
         crate::surfaces::read_nurbs_curve(ctx, child, scale)
     })?;
-    let surface = optional_localizer(data, &mut value, archive, "surface", |child| {
+    let surface = optional_localizer(ctx, data, &mut value, archive, "surface", |child| {
         crate::surfaces::read_nurbs_surface(ctx, child, scale)
     })?;
     value.skip_remaining()?;
@@ -265,6 +279,7 @@ fn localizer(
 }
 
 fn control_child<T>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
@@ -272,11 +287,14 @@ fn control_child<T>(
     read: impl FnOnce(&mut BoundedReader<'_>) -> Result<T, GeometryError>,
 ) -> Result<T, GeometryError> {
     let (mut child, next, major, minor) =
-        anonymous(data, reader.position(), reader.end(), archive, label)?;
+        anonymous(ctx, data, reader.position(), reader.end(), archive, label)?;
     if major != 1 || minor < 0 {
         return Err(GeometryError::UnsupportedVersion {
             offset: child.position() - 8,
-            message: format!("unsupported {label} version {major}.{minor}"),
+            message: ctx.format_retained(
+                format_args!("unsupported {label} version {major}.{minor}"),
+                "Rhino control_child text",
+            )?,
         });
     }
     let value = read(&mut child)?;
@@ -286,10 +304,11 @@ fn control_child<T>(
 }
 
 fn scaled_transform(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     reader: &mut BoundedReader<'_>,
     scale: MillimeterScale,
 ) -> Result<FiniteVector<16>, GeometryError> {
-    let mut transform = xform(reader)?.0;
+    let mut transform = xform(ctx, reader)?.0;
     for index in [3, 7, 11] {
         let scaled = scaled_coordinate(transform[index], scale).ok_or_else(|| {
             GeometryError::malformed(reader.position() - 128, "scaled cage transform is invalid")
@@ -318,93 +337,128 @@ pub(crate) fn decode(
     range: Range<usize>,
     scale: MillimeterScale,
     archive: ArchiveVersion,
+    storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
 ) -> Result<Morph, GeometryError> {
-    let data = expand.data();
-    let (mut outer, _next, major, minor) =
-        anonymous(data, range.start, range.end, archive, "morph control")?;
-    if !matches!(major, 1 | 2) || minor < 0 {
-        return Err(GeometryError::UnsupportedVersion {
-            offset: range.start,
-            message: format!("unsupported morph-control version {major}.{minor}"),
-        });
-    }
-    if major == 1 {
-        let end = cage_at(expand, &mut outer, scale, archive)?;
-        let captive_ids = captive_ids(expand.ctx(), data, &mut outer, archive)?;
-        let start_transform = scaled_transform(&mut outer, scale)?;
-        outer.skip_remaining()?;
-        return Ok(Morph {
-            source_range: range,
-            control: Control::Cage {
-                start_transform,
-                end,
-            },
-            captive_ids,
-            localizers: Vec::new(),
-            tolerance: NonNegativeReal::ZERO,
-            quick_preview: false,
-            preserve_structure: false,
-        });
-    }
-
-    let control = match outer.i32()? {
-        1 => Control::Curve {
-            start: control_child(data, &mut outer, archive, "morph start control", |reader| {
-                crate::surfaces::read_nurbs_curve(expand.ctx(), reader, scale)
-            })?,
-            end: control_child(data, &mut outer, archive, "morph end control", |reader| {
-                crate::surfaces::read_nurbs_curve(expand.ctx(), reader, scale)
-            })?,
-        },
-        2 => Control::Surface {
-            start: control_child(data, &mut outer, archive, "morph start control", |reader| {
-                crate::surfaces::read_nurbs_surface(expand.ctx(), reader, scale)
-            })?,
-            end: control_child(data, &mut outer, archive, "morph end control", |reader| {
-                crate::surfaces::read_nurbs_surface(expand.ctx(), reader, scale)
-            })?,
-        },
-        3 => Control::Cage {
-            start_transform: control_child(
-                data,
-                &mut outer,
-                archive,
-                "morph start control",
-                |reader| scaled_transform(reader, scale),
-            )?,
-            end: control_child(data, &mut outer, archive, "morph end control", |reader| {
-                cage_at(expand, reader, scale, archive)
-            })?,
-        },
-        _ => {
-            return Err(GeometryError::malformed(
-                outer.position() - 4,
-                "invalid morph-control variant",
-            ))
+    storage.with_storage(|| {
+        let data = expand.data();
+        let (mut outer, _next, major, minor) = anonymous(
+            expand.ctx(),
+            data,
+            range.start,
+            range.end,
+            archive,
+            "morph control",
+        )?;
+        if !matches!(major, 1 | 2) || minor < 0 {
+            return Err(GeometryError::UnsupportedVersion {
+                offset: range.start,
+                message: format!("unsupported morph-control version {major}.{minor}"),
+            });
         }
-    };
-    let captive_ids = captive_ids(expand.ctx(), data, &mut outer, archive)?;
+        if major == 1 {
+            let end = cage_at(expand, &mut outer, scale, archive)?;
+            let captive_ids = captive_ids(expand.ctx(), data, &mut outer, archive)?;
+            let start_transform = scaled_transform(expand.ctx(), &mut outer, scale)?;
+            outer.skip_remaining()?;
+            return Ok(Morph {
+                source_range: range,
+                control: Control::Cage {
+                    start_transform,
+                    end,
+                },
+                captive_ids,
+                localizers: Vec::new(),
+                tolerance: NonNegativeReal::ZERO,
+                quick_preview: false,
+                preserve_structure: false,
+            });
+        }
 
-    let localizers = localizers(expand.ctx(), data, &mut outer, scale, archive)?;
-    let (tolerance, quick_preview, preserve_structure) = if minor >= 1 {
-        let tolerance = scaled_coordinate(outer.f64()?, scale)
-            .and_then(NonNegativeReal::from_finite)
-            .ok_or_else(|| {
-                GeometryError::malformed(outer.position() - 8, "invalid morph tolerance")
-            })?;
-        (tolerance, outer.bool()?, outer.bool()?)
-    } else {
-        (NonNegativeReal::ZERO, false, false)
-    };
-    outer.skip_remaining()?;
-    Ok(Morph {
-        source_range: range,
-        control,
-        captive_ids,
-        localizers,
-        tolerance,
-        quick_preview,
-        preserve_structure,
+        let control = match outer.i32()? {
+            1 => Control::Curve {
+                start: control_child(
+                    expand.ctx(),
+                    data,
+                    &mut outer,
+                    archive,
+                    "morph start control",
+                    |reader| crate::surfaces::read_nurbs_curve(expand.ctx(), reader, scale),
+                )?,
+                end: control_child(
+                    expand.ctx(),
+                    data,
+                    &mut outer,
+                    archive,
+                    "morph end control",
+                    |reader| crate::surfaces::read_nurbs_curve(expand.ctx(), reader, scale),
+                )?,
+            },
+            2 => Control::Surface {
+                start: control_child(
+                    expand.ctx(),
+                    data,
+                    &mut outer,
+                    archive,
+                    "morph start control",
+                    |reader| crate::surfaces::read_nurbs_surface(expand.ctx(), reader, scale),
+                )?,
+                end: control_child(
+                    expand.ctx(),
+                    data,
+                    &mut outer,
+                    archive,
+                    "morph end control",
+                    |reader| crate::surfaces::read_nurbs_surface(expand.ctx(), reader, scale),
+                )?,
+            },
+            3 => Control::Cage {
+                start_transform: control_child(
+                    expand.ctx(),
+                    data,
+                    &mut outer,
+                    archive,
+                    "morph start control",
+                    |reader| scaled_transform(expand.ctx(), reader, scale),
+                )?,
+                end: control_child(
+                    expand.ctx(),
+                    data,
+                    &mut outer,
+                    archive,
+                    "morph end control",
+                    |reader| cage_at(expand, reader, scale, archive),
+                )?,
+            },
+            _ => {
+                return Err(GeometryError::malformed(
+                    outer.position() - 4,
+                    "invalid morph-control variant",
+                ))
+            }
+        };
+        let captive_ids = captive_ids(expand.ctx(), data, &mut outer, archive)?;
+
+        let localizers = localizers(expand.ctx(), data, &mut outer, scale, archive)?;
+        let (tolerance, quick_preview, preserve_structure) = if minor >= 1 {
+            let tolerance = scaled_coordinate(outer.f64()?, scale)
+                .and_then(NonNegativeReal::from_finite)
+                .ok_or_else(|| {
+                    GeometryError::malformed(outer.position() - 8, "invalid morph tolerance")
+                })?;
+            (tolerance, outer.bool()?, outer.bool()?)
+        } else {
+            (NonNegativeReal::ZERO, false, false)
+        };
+        outer.skip_remaining()?;
+        Ok(Morph {
+            source_range: range,
+            control,
+            captive_ids,
+            localizers,
+            tolerance,
+            quick_preview,
+            preserve_structure,
+        })
     })
 }
 
@@ -416,6 +470,7 @@ fn localizers(
     archive: ArchiveVersion,
 ) -> Result<Vec<Localizer>, GeometryError> {
     let (mut list, list_next, list_major, list_minor) = anonymous(
+        ctx,
         data,
         outer.position(),
         outer.end(),
@@ -433,6 +488,7 @@ fn localizers(
         .collection_vec(localizer_count, "Rhino morph localizers")
         .map_err(crate::chunks::FramingError::from)?;
     for _ in 0..localizer_count {
+        ctx.charge_work(1, "Rhino morph localizers records")?;
         localizers.push(localizer(ctx, data, &mut list, scale, archive)?);
     }
     list.skip_remaining()?;
@@ -440,15 +496,11 @@ fn localizers(
     Ok(localizers)
 }
 
-struct CommaList<I>(I);
+struct CommaList<T, const N: usize>([T; N]);
 
-impl<I> fmt::Display for CommaList<I>
-where
-    I: Clone + Iterator,
-    I::Item: fmt::Display,
-{
+impl<T: fmt::Display, const N: usize> fmt::Display for CommaList<T, N> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        for (index, value) in self.0.clone().enumerate() {
+        for (index, value) in self.0.iter().enumerate() {
             if index > 0 {
                 f.write_str(",")?;
             }
@@ -458,65 +510,45 @@ where
     }
 }
 
-fn write_points(
-    f: &mut fmt::Formatter<'_>,
-    values: impl Iterator<Item = cadmpeg_ir::math::Point3>,
-) -> fmt::Result {
-    for (index, point) in values.enumerate() {
-        if index > 0 {
-            f.write_str(";")?;
+fn append_points<T>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    text: &mut String,
+    values: &[T],
+    point: impl Fn(&T) -> cadmpeg_ir::math::Point3,
+) -> Result<(), cadmpeg_core::CodecError> {
+    let mut values = values.iter();
+    for _ in 0..values.len() {
+        let value = ctx
+            .next_charged(&mut values, "Rhino morph point projection")?
+            .ok_or_else(|| {
+                cadmpeg_core::CodecError::malformed("Rhino morph point source ended early")
+            })?;
+        if !text.is_empty() {
+            ctx.append_retained(text, ";", "Rhino morph property value")?;
         }
-        write!(f, "{},{},{}", point.x, point.y, point.z)?;
+        let point = point(value);
+        ctx.append_formatted_retained(
+            text,
+            format_args!("{},{},{}", point.x, point.y, point.z),
+            "Rhino morph property value",
+        )?;
     }
     Ok(())
 }
 
-struct CurvePoints<'a>(&'a NurbsPoles3<cadmpeg_ir::features::FinitePoint3>);
-
-impl fmt::Display for CurvePoints<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.0 {
-            NurbsPoles3::Polynomial { points } => {
-                write_points(f, points.iter().map(|point| point.get()))
-            }
-            NurbsPoles3::Rational { points } => {
-                write_points(f, points.iter().map(|pole| pole.point.get()))
-            }
-        }
-    }
-}
-
-struct SurfacePoints<'a>(&'a NurbsPoleGrid<cadmpeg_ir::features::FinitePoint3>);
-
-impl fmt::Display for SurfacePoints<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.0 {
-            NurbsPoleGrid::Polynomial { rows } => {
-                write_points(f, rows.iter().flatten().map(|point| point.get()))
-            }
-            NurbsPoleGrid::Rational { rows } => {
-                write_points(f, rows.iter().flatten().map(|pole| pole.point.get()))
-            }
-        }
-    }
-}
-
-struct CagePoints<'a>(&'a [Vec<FiniteReal>]);
-
-impl fmt::Display for CagePoints<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        for (index, point) in self.0.iter().enumerate() {
-            if index > 0 {
-                f.write_str(";")?;
-            }
-            write!(
-                f,
-                "{}",
-                CommaList(point.iter().copied().map(FiniteReal::get))
-            )?;
-        }
-        Ok(())
-    }
+fn insert_property_value(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    properties: &mut std::collections::BTreeMap<cadmpeg_core::text::NonBlankString, String>,
+    key: fmt::Arguments<'_>,
+    value: String,
+) -> Result<(), cadmpeg_core::CodecError> {
+    let key = ctx.format_retained(key, "Rhino morph property key")?;
+    let key = cadmpeg_core::text::NonBlankString::for_decode(ctx, key, "validate nonblank text")?
+        .ok_or_else(|| {
+        cadmpeg_core::CodecError::malformed("blank generated Rhino morph key")
+    })?;
+    ctx.insert_btree_map(properties, key, value, "Rhino morph property entries")?;
+    Ok(())
 }
 
 fn insert_property(
@@ -525,14 +557,8 @@ fn insert_property(
     key: fmt::Arguments<'_>,
     value: fmt::Arguments<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let key = ctx.format_retained(key, "Rhino morph property key")?;
-    let key = cadmpeg_core::text::NonBlankString::for_decode(ctx, key, "validate nonblank text")?
-        .ok_or_else(|| {
-        cadmpeg_core::CodecError::malformed("blank generated Rhino morph key")
-    })?;
     let value = ctx.format_retained(value, "Rhino morph property value")?;
-    ctx.insert_btree_map(properties, key, value, "Rhino morph property entries")?;
-    Ok(())
+    insert_property_value(ctx, properties, key, value)
 }
 
 fn curve_properties(
@@ -547,17 +573,30 @@ fn curve_properties(
         format_args!("{prefix}_degree"),
         format_args!("{}", curve.degree()),
     )?;
-    insert_property(
+    insert_property_value(
         ctx,
         properties,
         format_args!("{prefix}_knots"),
-        format_args!("{}", CommaList(curve.knots().iter().copied())),
+        ctx.join_display_retained(
+            curve.knots().iter().copied(),
+            ",",
+            "Rhino morph property value",
+        )?,
     )?;
-    insert_property(
+    let mut points_text = String::new();
+    match curve.pole_rows() {
+        NurbsPoles3::Polynomial { points } => {
+            append_points(ctx, &mut points_text, points, |point| point.get())?;
+        }
+        NurbsPoles3::Rational { points } => {
+            append_points(ctx, &mut points_text, points, |pole| pole.point.get())?;
+        }
+    }
+    insert_property_value(
         ctx,
         properties,
         format_args!("{prefix}_control_points"),
-        format_args!("{}", CurvePoints(curve.pole_rows())),
+        points_text,
     )?;
     insert_property(
         ctx,
@@ -566,11 +605,15 @@ fn curve_properties(
         format_args!("{}", curve.periodic()),
     )?;
     if let NurbsPoles3::Rational { points } = curve.pole_rows() {
-        insert_property(
+        insert_property_value(
             ctx,
             properties,
             format_args!("{prefix}_weights"),
-            format_args!("{}", CommaList(points.iter().map(|pole| pole.weight.get()))),
+            ctx.join_display_retained(
+                points.iter().map(|pole| pole.weight.get()),
+                ",",
+                "Rhino morph property value",
+            )?,
         )?;
     }
     Ok(())
@@ -594,17 +637,25 @@ fn surface_properties(
         format_args!("{prefix}_v_degree"),
         format_args!("{}", surface.v_degree()),
     )?;
-    insert_property(
+    insert_property_value(
         ctx,
         properties,
         format_args!("{prefix}_u_knots"),
-        format_args!("{}", CommaList(surface.u_knots().iter().copied())),
+        ctx.join_display_retained(
+            surface.u_knots().iter().copied(),
+            ",",
+            "Rhino morph property value",
+        )?,
     )?;
-    insert_property(
+    insert_property_value(
         ctx,
         properties,
         format_args!("{prefix}_v_knots"),
-        format_args!("{}", CommaList(surface.v_knots().iter().copied())),
+        ctx.join_display_retained(
+            surface.v_knots().iter().copied(),
+            ",",
+            "Rhino morph property value",
+        )?,
     )?;
     insert_property(
         ctx,
@@ -618,11 +669,36 @@ fn surface_properties(
         format_args!("{prefix}_v_count"),
         format_args!("{}", surface.v_count()),
     )?;
-    insert_property(
+    let mut points_text = String::new();
+    match surface.pole_grid() {
+        NurbsPoleGrid::Polynomial { rows } => {
+            let mut rows = rows.iter();
+            for _ in 0..rows.len() {
+                let row = ctx
+                    .next_charged(&mut rows, "Rhino morph surface rows")?
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed("Rhino morph row source ended early")
+                    })?;
+                append_points(ctx, &mut points_text, row, |point| point.get())?;
+            }
+        }
+        NurbsPoleGrid::Rational { rows } => {
+            let mut rows = rows.iter();
+            for _ in 0..rows.len() {
+                let row = ctx
+                    .next_charged(&mut rows, "Rhino morph surface rows")?
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed("Rhino morph row source ended early")
+                    })?;
+                append_points(ctx, &mut points_text, row, |pole| pole.point.get())?;
+            }
+        }
+    }
+    insert_property_value(
         ctx,
         properties,
         format_args!("{prefix}_control_points"),
-        format_args!("{}", SurfacePoints(surface.pole_grid())),
+        points_text,
     )?;
     insert_property(
         ctx,
@@ -637,14 +713,36 @@ fn surface_properties(
         format_args!("{}", surface.v_periodic()),
     )?;
     if let NurbsPoleGrid::Rational { rows } = surface.pole_grid() {
-        insert_property(
+        let mut weights_text = String::new();
+        let mut rows = rows.iter();
+        for _ in 0..rows.len() {
+            let row = ctx
+                .next_charged(&mut rows, "Rhino morph surface weight rows")?
+                .ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed("Rhino morph weight row source ended early")
+                })?;
+            let mut poles = row.iter();
+            for _ in 0..poles.len() {
+                let pole = ctx
+                    .next_charged(&mut poles, "Rhino morph surface weights")?
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed("Rhino morph weight source ended early")
+                    })?;
+                if !weights_text.is_empty() {
+                    ctx.append_retained(&mut weights_text, ",", "Rhino morph property value")?;
+                }
+                ctx.append_formatted_retained(
+                    &mut weights_text,
+                    format_args!("{}", pole.weight.get()),
+                    "Rhino morph property value",
+                )?;
+            }
+        }
+        insert_property_value(
             ctx,
             properties,
             format_args!("{prefix}_weights"),
-            format_args!(
-                "{}",
-                CommaList(rows.iter().flatten().map(|pole| pole.weight.get()))
-            ),
+            weights_text,
         )?;
     }
     Ok(())
@@ -681,28 +779,61 @@ fn cage_properties(
         format_args!("{},{},{}", cage.counts[0], cage.counts[1], cage.counts[2]),
     )?;
     for (axis, knots) in ["u", "v", "w"].into_iter().zip(&cage.knots) {
-        insert_property(
+        insert_property_value(
             ctx,
             properties,
             format_args!("{prefix}_{axis}_knots"),
-            format_args!("{}", CommaList(knots.iter().copied().map(FiniteReal::get))),
+            ctx.join_display_retained(
+                knots.iter().copied().map(FiniteReal::get),
+                ",",
+                "Rhino morph property value",
+            )?,
         )?;
     }
-    insert_property(
+    let mut points_text = String::new();
+    let mut points = cage.control_points.iter();
+    for index in 0..points.len() {
+        let point = ctx
+            .next_charged(&mut points, "Rhino morph cage points")?
+            .ok_or_else(|| {
+                cadmpeg_core::CodecError::malformed("Rhino morph cage point source ended early")
+            })?;
+        if index != 0 {
+            ctx.append_retained(&mut points_text, ";", "Rhino morph property value")?;
+        }
+        let mut coordinates = point.iter();
+        for coordinate in 0..coordinates.len() {
+            let value = ctx
+                .next_charged(&mut coordinates, "Rhino morph cage coordinates")?
+                .ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed("Rhino morph coordinate source ended early")
+                })?;
+            if coordinate != 0 {
+                ctx.append_retained(&mut points_text, ",", "Rhino morph property value")?;
+            }
+            ctx.append_formatted_retained(
+                &mut points_text,
+                format_args!("{}", value.get()),
+                "Rhino morph property value",
+            )?;
+        }
+    }
+    insert_property_value(
         ctx,
         properties,
         format_args!("{prefix}_control_points"),
-        format_args!("{}", CagePoints(&cage.control_points)),
+        points_text,
     )?;
     if let Some(weights) = &cage.weights {
-        insert_property(
+        insert_property_value(
             ctx,
             properties,
             format_args!("{prefix}_weights"),
-            format_args!(
-                "{}",
-                CommaList(weights.iter().copied().map(NonZeroReal::get))
-            ),
+            ctx.join_display_retained(
+                weights.iter().copied().map(NonZeroReal::get),
+                ",",
+                "Rhino morph property value",
+            )?,
         )?;
     }
     Ok(())
@@ -745,17 +876,24 @@ pub(crate) fn project(
                 ctx,
                 &mut properties,
                 format_args!("start_transform"),
-                format_args!("{}", CommaList(start_transform.iter().copied())),
+                format_args!("{}", CommaList(start_transform.get())),
             )?;
             cage_properties(ctx, "end", end, &mut properties)?;
             ("cage", properties)
         }
     };
-    for (index, localizer) in morph.localizers.iter().enumerate() {
-        let prefix = ctx.format_retained(
+    let mut localizers = morph.localizers.iter();
+    for index in 0..localizers.len() {
+        let localizer = ctx
+            .next_charged(&mut localizers, "Rhino project traversal")?
+            .ok_or_else(|| {
+                cadmpeg_core::CodecError::malformed("Rhino localizer source ended early")
+            })?;
+        let (prefix_buffer, _prefix_storage) = ctx.format_scoped(
             format_args!("localizer_{index}"),
             "Rhino morph localizer prefix",
         )?;
+        let prefix = prefix_buffer;
         insert_property(
             ctx,
             &mut properties,
@@ -766,38 +904,44 @@ pub(crate) fn project(
             ctx,
             &mut properties,
             format_args!("{prefix}_point"),
-            format_args!("{}", CommaList(localizer.point.into_iter())),
+            format_args!("{}", CommaList(localizer.point.get())),
         )?;
         insert_property(
             ctx,
             &mut properties,
             format_args!("{prefix}_vector"),
-            format_args!("{}", CommaList(localizer.vector.into_iter())),
+            format_args!("{}", CommaList(localizer.vector.get())),
         )?;
         insert_property(
             ctx,
             &mut properties,
             format_args!("{prefix}_interval"),
-            format_args!("{}", CommaList(localizer.interval.into_iter())),
+            format_args!("{}", CommaList(localizer.interval.get())),
         )?;
         if let Some(curve) = &localizer.curve {
-            let curve_prefix = ctx.format_retained(
+            let (curve_prefix_buffer, _curve_prefix_storage) = ctx.format_scoped(
                 format_args!("{prefix}_curve"),
                 "Rhino morph localizer prefix",
             )?;
+            let curve_prefix = curve_prefix_buffer;
             curve_properties(ctx, &curve_prefix, curve, &mut properties)?;
         }
         if let Some(surface) = &localizer.surface {
-            let surface_prefix = ctx.format_retained(
+            let (surface_prefix_buffer, _surface_prefix_storage) = ctx.format_scoped(
                 format_args!("{prefix}_surface"),
                 "Rhino morph localizer prefix",
             )?;
+            let surface_prefix = surface_prefix_buffer;
             surface_properties(ctx, &surface_prefix, surface, &mut properties)?;
         }
     }
     let key = ctx.copy_retained_text(key, "Rhino morph feature key")?;
-    let key = cadmpeg_ir::ids::IdentityKey::try_new(key)
-        .map_err(|error| cadmpeg_core::CodecError::malformed(error.to_string()))?;
+    let key = cadmpeg_ir::ids::IdentityKey::try_new(key).or_else(|error| {
+        Err(cadmpeg_core::CodecError::malformed(ctx.format_retained(
+            format_args!("{error}"),
+            "Rhino project text",
+        )?))
+    })?;
     let feature_id = FeatureId::compose(
         &cadmpeg_ir::identity_namespace!("rhino", "morph", "feature"),
         key,
@@ -810,11 +954,15 @@ pub(crate) fn project(
         format_args!("variant"),
         format_args!("{variant}"),
     )?;
-    insert_property(
+    insert_property_value(
         ctx,
         &mut parameters,
         format_args!("captive_ids"),
-        format_args!("{}", CommaList(morph.captive_ids.iter().copied())),
+        ctx.join_display_retained(
+            morph.captive_ids.iter().copied(),
+            ",",
+            "Rhino morph property value",
+        )?,
     )?;
     insert_property(
         ctx,
@@ -834,7 +982,13 @@ pub(crate) fn project(
         format_args!("preserve_structure"),
         format_args!("{}", morph.preserve_structure),
     )?;
-    for (index, id) in morph.captive_ids.iter().enumerate() {
+    let mut captive_ids = morph.captive_ids.iter();
+    for index in 0..captive_ids.len() {
+        let id = ctx
+            .next_charged(&mut captive_ids, "Rhino project traversal")?
+            .ok_or_else(|| {
+                cadmpeg_core::CodecError::malformed("Rhino captive source ended early")
+            })?;
         if let Some(record) = resolve_captive(*id)? {
             let key = ctx.format_retained(
                 format_args!("captive_{index}_object"),
@@ -871,6 +1025,8 @@ pub(crate) fn project(
 
 #[cfg(test)]
 mod tests {
+    mod fallible_prefix;
+    mod storage;
     use super::{
         captive_ids, decode, localizer, localizers, project, Control, LocalizerKind, ANONYMOUS,
     };
@@ -1000,11 +1156,13 @@ mod tests {
         let bytes = anonymous(2, 2, &content);
 
         let morph = crate::decode::with_expand_bytes(&bytes, |expand| {
+            let mut storage = expand.ctx().reserve_scoped(0, "Rhino morph raw controls")?;
             decode(
                 expand,
                 0..bytes.len(),
                 crate::test_support::millimeter_scale(10.0),
                 ArchiveVersion::V8,
+                &mut storage,
             )
         })
         .expect("required invariant");
@@ -1087,6 +1245,26 @@ mod tests {
             quick_preview: false,
             preserve_structure: false,
         };
+        // Each projected pole is visited once; scalar formatting has fixed arity.
+        cadmpeg_test_support::refusal::resource_limit_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "Rhino morph point projection",
+            |cap| {
+                let arena = cadmpeg_core::decode::DecodeArena::new();
+                let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                let (ctx, _) =
+                    cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+                        .expect("root");
+                let result =
+                    super::project(&ctx, &morph, "fixture", None, "native".into(), |_| Ok(None));
+                if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
+                    assert_eq!(limit.additional, 1);
+                    assert_eq!(ctx.resource_refusal(), Some(*limit));
+                }
+                result
+            },
+        );
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_collection_items = 0;
@@ -1137,11 +1315,13 @@ mod tests {
     fn rejects_unknown_morph_control_major() {
         let bytes = anonymous(3, 0, &[]);
         let result = crate::decode::with_expand_bytes(&bytes, |expand| {
+            let mut storage = expand.ctx().reserve_scoped(0, "Rhino morph raw controls")?;
             decode(
                 expand,
                 0..bytes.len(),
                 MillimeterScale::IDENTITY,
                 ArchiveVersion::V8,
+                &mut storage,
             )
         });
         assert!(matches!(
@@ -1175,11 +1355,13 @@ mod tests {
         let bytes = anonymous(2, 1, &content);
 
         let morph = crate::decode::with_expand_bytes(&bytes, |expand| {
+            let mut storage = expand.ctx().reserve_scoped(0, "Rhino morph raw controls")?;
             decode(
                 expand,
                 0..bytes.len(),
                 crate::test_support::millimeter_scale(10.0),
                 ArchiveVersion::V8,
+                &mut storage,
             )
         })
         .expect("required invariant");

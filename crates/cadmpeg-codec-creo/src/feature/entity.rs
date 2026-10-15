@@ -8,6 +8,7 @@ use cadmpeg_core::CodecError;
 
 use crate::psb;
 
+use super::entity_rows::EntityRows;
 use super::rows::row_spans;
 
 /// One `AllFeatur` mixed generated-entity table.
@@ -18,9 +19,7 @@ pub(crate) struct FeatureEntityTable {
     /// Entity-class identifier following the table's `f7` marker.
     pub(crate) table_class_id: u32,
     /// Structurally bounded records in their declared generated-entity order.
-    pub(crate) entries: Vec<FeatureEntityTableEntry>,
-    /// Materialized `srf_array` identifiers among this table's entity ids.
-    surface_ids: BTreeSet<u32>,
+    pub(crate) entries: EntityRows,
     /// Byte offset of the `f8` table opener in the original stream.
     pub(crate) offset: usize,
 }
@@ -36,16 +35,10 @@ impl FeatureEntityTable {
         model_surface_ids: &BTreeSet<u32>,
         offset: usize,
     ) -> Self {
-        let surface_ids = entries
-            .iter()
-            .map(|entry| entry.entity_id)
-            .filter(|id| model_surface_ids.contains(id))
-            .collect();
         Self {
             feature_id,
             table_class_id,
-            entries,
-            surface_ids,
+            entries: EntityRows::from_fixture(entries, model_surface_ids),
             offset,
         }
     }
@@ -62,20 +55,17 @@ impl FeatureEntityTable {
 
     /// Iterate materialized surface identities in declared entry order.
     pub(crate) fn surface_ids_iter(&self) -> impl Iterator<Item = u32> + '_ {
-        self.entries
-            .iter()
-            .map(|entry| entry.entity_id)
-            .filter(|id| self.surface_ids.contains(id))
+        self.entries.surfaces_in_order()
     }
 
     /// Return whether this table materializes one surface identity.
     pub(crate) fn contains_surface_id(&self, entity_id: u32) -> bool {
-        self.surface_ids.contains(&entity_id)
+        self.entries.contains_surface(entity_id)
     }
 
     /// Borrow the distinct materialized surface identities.
     pub(crate) fn unique_surface_ids(&self) -> &BTreeSet<u32> {
-        &self.surface_ids
+        self.entries.surfaces()
     }
 
     #[cfg(test)]
@@ -83,15 +73,11 @@ impl FeatureEntityTable {
         self.entries
             .iter()
             .map(|entry| entry.entity_id)
-            .filter(|id| !self.surface_ids.contains(id))
+            .filter(|id| !self.entries.contains_surface(*id))
     }
 
     pub(crate) fn contains_non_surface_entity_id(&self, entity_id: u32) -> bool {
-        !self.surface_ids.contains(&entity_id)
-            && self
-                .entries
-                .iter()
-                .any(|entry| entry.entity_id == entity_id)
+        self.entries.contains_non_surface(entity_id)
     }
 
     #[cfg(test)]
@@ -104,13 +90,7 @@ impl FeatureEntityTable {
 impl FeatureEntityTable {
     pub(crate) fn mark_surface_ids(&mut self, surface_ids: impl IntoIterator<Item = u32>) {
         let model_surface_ids = surface_ids.into_iter().collect();
-        *self = Self::new(
-            self.feature_id,
-            self.table_class_id,
-            std::mem::take(&mut self.entries),
-            &model_surface_ids,
-            self.offset,
-        );
+        self.entries.mark_surfaces(&model_surface_ids);
     }
 
     pub(crate) fn with_surface_ids(mut self, surface_ids: impl IntoIterator<Item = u32>) -> Self {
@@ -119,13 +99,13 @@ impl FeatureEntityTable {
     }
 
     pub(crate) fn mark_surface_id(&mut self, entity_id: u32) {
-        let mut model_surface_ids = std::mem::take(&mut self.surface_ids);
+        let mut model_surface_ids = self.entries.surfaces().clone();
         model_surface_ids.insert(entity_id);
         self.mark_surface_ids(model_surface_ids);
     }
 
     pub(crate) fn unmark_surface_id(&mut self, entity_id: u32) {
-        let mut model_surface_ids = std::mem::take(&mut self.surface_ids);
+        let mut model_surface_ids = self.entries.surfaces().clone();
         model_surface_ids.remove(&entity_id);
         self.mark_surface_ids(model_surface_ids);
     }
@@ -365,9 +345,11 @@ pub(super) fn generated_class_200_source_entity_ids(
     table: &FeatureEntityTable,
 ) -> Result<BTreeSet<u32>, CodecError> {
     let mut ids = BTreeSet::new();
-    for id in table
-        .entries
-        .iter()
+    for id in ctx
+        .admit_iter(
+            table.entries.as_slice(),
+            "creo generated source entry traversal",
+        )?
         .filter_map(FeatureEntityTableEntry::source_entity_id)
     {
         ctx.insert_btree_set(&mut ids, id, "creo generated source entity ID nodes")?;
@@ -381,66 +363,62 @@ pub(crate) fn entity_graph(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
 ) -> Result<(Vec<FeatureEntity>, Vec<FeatureEntityReference>), CodecError> {
-    let Some(root) = psb::token_at(payload, 0) else {
-        return Ok((Vec::new(), Vec::new()));
-    };
-    // The root name ends one byte before the record ends, at its NUL.
-    let root_name = root
-        .length
-        .checked_sub(1)
-        .and_then(|name_end| payload.get(2..name_end));
-    if root.offset != 0
-        || root.kind != psb::TokenKind::NamedRecord
-        || payload.get(1) != Some(&0)
-        || root_name != Some(b"Sld_Features".as_slice())
-    {
+    if !payload.starts_with(b"\xe0\0Sld_Features\0") {
         return Ok((Vec::new(), Vec::new()));
     }
     let mut entities = Vec::new();
+    let mut references = Vec::new();
+    let mut source = None;
     let mut offset = 0;
-    while let Some(token) = psb::token_at(payload, offset) {
-        offset += token.length;
-        if token.kind != psb::TokenKind::NamedRecord || token.length < 3 {
+    while offset < payload.len() {
+        if payload[offset] == psb::token::NAMED_RECORD {
+            ctx.next_charged(
+                &mut (offset..payload.len()),
+                "creo feature entity token traversal",
+            )?;
+            let Some(rest) = payload.get(offset + 2..) else {
+                break;
+            };
+            let Some(name_len) = ctx.position_by(
+                rest,
+                |byte| Ok(*byte == 0),
+                "creo feature entity name terminator",
+            )?
+            else {
+                break;
+            };
+            let entity_id = u32::try_from(entities.len())
+                .map_err(|_| CodecError::malformed("creo feature entity id exceeds u32"))?;
+            ctx.reserve_vec(&mut entities, 1, "creo feature entity graph nodes")?;
+            let name =
+                ctx.copy_retained_lossy_utf8(&rest[..name_len], "creo feature entity name")?;
+            entities.push(FeatureEntity {
+                entity_id,
+                type_byte: payload[offset + 1],
+                name,
+                offset,
+            });
+            source = Some(entity_id);
+            offset += name_len + 3;
             continue;
         }
-        let name_start = token.offset + 2;
-        let name_end = token.offset + token.length - 1;
-        let entity_id = u32::try_from(entities.len())
-            .map_err(|_| CodecError::malformed("creo feature entity id exceeds u32"))?;
-        ctx.reserve_vec(&mut entities, 1, "creo feature entity graph nodes")?;
-        let name_bytes = &payload[name_start..name_end];
-        let text_work = cadmpeg_core::decode::u64_from_index(name_bytes.len())
-            .checked_mul(6)
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit("creo feature entity text work", u64::MAX, u64::MAX)
-            })?;
-        ctx.charge_work(text_work, "creo feature entity text work")?;
-        entities.push(FeatureEntity {
-            entity_id,
-            type_byte: payload[token.offset + 1],
-            name: ctx.copy_retained_lossy_utf8(name_bytes, "creo feature entity name")?,
-            offset: token.offset,
-        });
-    }
-    let mut source = None;
-    let mut references = Vec::new();
-    let mut next_entity = 0;
-    let mut offset = 0;
-    while let Some(token) = psb::token_at(payload, offset) {
+        let Some(token) = psb::token_at(ctx, payload, offset)? else {
+            break;
+        };
         offset += token.length;
-        if token.kind == psb::TokenKind::NamedRecord {
-            source = entities.get(next_entity).map(|entity| entity.entity_id);
-            next_entity += 1;
-        } else if token.kind == psb::TokenKind::EntityReference {
+        if token.kind == psb::TokenKind::EntityReference {
             let Ok((target_entity_id, _)) = psb::reference_id(payload, token.offset + 1) else {
                 continue;
             };
-            ctx.reserve_vec(&mut references, 1, "creo feature entity graph references")?;
-            references.push(FeatureEntityReference {
-                source_entity_id: source,
-                target_entity_id,
-                offset: token.offset,
-            });
+            ctx.push_vec(
+                &mut references,
+                FeatureEntityReference {
+                    source_entity_id: source,
+                    target_entity_id,
+                    offset: token.offset,
+                },
+                "creo feature entity graph references",
+            )?;
         }
     }
     Ok((entities, references))
@@ -461,99 +439,148 @@ pub(super) fn read_entries(
     if count > remaining / 2 {
         return Ok(None);
     }
+    let mut storage = ctx.reserve_scoped(0, "creo feature entry candidates")?;
     let mut entries = Vec::new();
-    ctx.reserve_vec(&mut entries, count, "creo feature table entries")?;
-    Ok((move || {
-        let mut cursor = body_start;
-        for index in 0..count {
-            let prefixed_class = (payload.get(cursor) == Some(&psb::token::ENTITY_REF))
-                .then(|| psb::reference_id(payload, cursor + 1).ok())
-                .flatten();
-            let prefixed = prefixed_class.is_some();
-            if let Some((_, after_class)) = prefixed_class {
-                cursor = after_class;
-            }
-            let offset = cursor;
-            let (id, after) = psb::reference_id(payload, cursor).ok()?;
-            let (class_id, after_class) = psb::reference_id(payload, after).ok().or_else(|| {
-                (index == 0)
-                    .then_some(prefixed_class)
-                    .flatten()
-                    .map(|(class_id, _)| (class_id, after))
-            })?;
-            let related_class = RelatedClass::from_class_id(class_id);
-            let (entry_payload, body_start) = if class_id == 200 {
-                match psb::reference_id(payload, after_class) {
-                    Ok((order, after_order)) => (
-                        EntryPayload::Source {
-                            entity: Some(order),
-                        },
-                        after_order,
-                    ),
-                    Err(_) => (EntryPayload::Source { entity: None }, after_class),
-                }
-            } else if let Some(class) = related_class {
-                psb::reference_id(payload, after_class)
-                    .ok()
-                    .and_then(|(entity, after_related)| {
-                        let state = match (class, payload.get(after_related)) {
-                            (_, Some(&0)) => RelatedState::Zero,
-                            (RelatedClass::Class2017, Some(&1)) => RelatedState::One,
-                            _ => return None,
-                        };
-                        Some((
-                            EntryPayload::Related(RelatedPayload::new(class, entity, state)?),
-                            after_related,
-                        ))
-                    })
-                    .unwrap_or((
-                        EntryPayload::Plain {
-                            class: PlainClass::new(class_id)?,
-                        },
-                        after_class,
-                    ))
-            } else {
-                (
-                    EntryPayload::Plain {
-                        class: PlainClass::new(class_id)?,
-                    },
-                    after_class,
-                )
-            };
-            let terminal_state = match entry_payload {
-                EntryPayload::Source { .. } => payload
-                    .get(body_start)
-                    .copied()
-                    .filter(|state| matches!(state, 0 | 1)),
-                EntryPayload::Related(related) => Some(related.state.as_u8()),
-                EntryPayload::Plain { .. } => None,
-            };
-            let terminal_table_separator = (index + 1 == count
-                && terminal_state.is_some()
-                && payload.get(body_start + 1..body_start + 3)
-                    == Some(&[0xf2, psb::token::ENTITY_REF]))
-            .then_some(body_start + 1);
-            let end_offset = if let Some(end_offset) = terminal_table_separator {
-                end_offset
-            } else {
-                body_start
-                    + payload
-                        .get(body_start..)?
-                        .iter()
-                        .position(|&byte| byte == 0xe3)?
-                    + 1
-            };
-            entries.push(FeatureEntityTableEntry {
-                entity_id: id,
-                payload: entry_payload,
-                prefixed,
-                offset,
-                end_offset,
-            });
-            cursor = end_offset;
+    let mut cursor = body_start;
+    let mut indices = 0..count;
+    while !indices.is_empty() {
+        if cursor >= payload.len() {
+            return Ok(None);
         }
-        Some(entries)
-    })())
+        let Some(index) = ctx.next_charged(&mut indices, "creo feature entry traversal")? else {
+            break;
+        };
+        let Some(EntryPrefix {
+            id,
+            payload: entry_payload,
+            prefixed,
+            offset,
+            body_start,
+            terminal_state,
+        }) = entry_prefix(payload, cursor, index)
+        else {
+            return Ok(None);
+        };
+        let terminal_table_separator = (index + 1 == count
+            && terminal_state.is_some()
+            && payload.get(body_start + 1..body_start + 3)
+                == Some(&[0xf2, psb::token::ENTITY_REF]))
+        .then_some(body_start + 1);
+        let end_offset = if let Some(end_offset) = terminal_table_separator {
+            end_offset
+        } else {
+            let Some(rest) = payload.get(body_start..) else {
+                return Ok(None);
+            };
+            let Some(relative) = ctx.position_by(
+                rest,
+                |byte| Ok(*byte == 0xe3),
+                "creo feature entry terminator",
+            )?
+            else {
+                return Ok(None);
+            };
+            body_start + relative + 1
+        };
+        storage.with_storage(|| {
+            ctx.push_vec(
+                &mut entries,
+                FeatureEntityTableEntry {
+                    entity_id: id,
+                    payload: entry_payload,
+                    prefixed,
+                    offset,
+                    end_offset,
+                },
+                "creo feature table entries",
+            )
+        })?;
+        cursor = end_offset;
+    }
+    let entries = storage.commit_value(entries)?;
+    Ok(Some(entries))
+}
+
+struct EntryPrefix {
+    id: u32,
+    payload: EntryPayload,
+    prefixed: bool,
+    offset: usize,
+    body_start: usize,
+    terminal_state: Option<u8>,
+}
+
+fn entry_prefix(payload: &[u8], mut cursor: usize, index: usize) -> Option<EntryPrefix> {
+    let prefixed_class = (payload.get(cursor) == Some(&psb::token::ENTITY_REF))
+        .then(|| psb::reference_id(payload, cursor + 1).ok())
+        .flatten();
+    let prefixed = prefixed_class.is_some();
+    if let Some((_, after_class)) = prefixed_class {
+        cursor = after_class;
+    }
+    let offset = cursor;
+    let (id, after) = psb::reference_id(payload, cursor).ok()?;
+    let (class_id, after_class) = psb::reference_id(payload, after).ok().or_else(|| {
+        (index == 0)
+            .then_some(prefixed_class)
+            .flatten()
+            .map(|(class_id, _)| (class_id, after))
+    })?;
+    let related_class = RelatedClass::from_class_id(class_id);
+    let (entry_payload, body_start) = if class_id == 200 {
+        match psb::reference_id(payload, after_class) {
+            Ok((order, after_order)) => (
+                EntryPayload::Source {
+                    entity: Some(order),
+                },
+                after_order,
+            ),
+            Err(_) => (EntryPayload::Source { entity: None }, after_class),
+        }
+    } else if let Some(class) = related_class {
+        psb::reference_id(payload, after_class)
+            .ok()
+            .and_then(|(entity, after_related)| {
+                let state = match (class, payload.get(after_related)) {
+                    (_, Some(&0)) => RelatedState::Zero,
+                    (RelatedClass::Class2017, Some(&1)) => RelatedState::One,
+                    _ => return None,
+                };
+                Some((
+                    EntryPayload::Related(RelatedPayload::new(class, entity, state)?),
+                    after_related,
+                ))
+            })
+            .unwrap_or((
+                EntryPayload::Plain {
+                    class: PlainClass::new(class_id)?,
+                },
+                after_class,
+            ))
+    } else {
+        (
+            EntryPayload::Plain {
+                class: PlainClass::new(class_id)?,
+            },
+            after_class,
+        )
+    };
+    let terminal_state = match entry_payload {
+        EntryPayload::Source { .. } => payload
+            .get(body_start)
+            .copied()
+            .filter(|state| matches!(state, 0 | 1)),
+        EntryPayload::Related(related) => Some(related.state.as_u8()),
+        EntryPayload::Plain { .. } => None,
+    };
+    Some(EntryPrefix {
+        id,
+        payload: entry_payload,
+        prefixed,
+        offset,
+        body_start,
+        terminal_state,
+    })
 }
 
 /// Decode valid `AllFeatur` mixed generated-entity tables.
@@ -566,9 +593,16 @@ pub(crate) fn entity_tables(
     feature_ids: &BTreeSet<u32>,
     surface_ids: &BTreeSet<u32>,
 ) -> Result<Vec<FeatureEntityTable>, CodecError> {
-    let spans = row_spans(ctx, payload, feature_ids)?;
+    let mut span_storage = ctx.reserve_scoped(0, "creo feature entity row spans")?;
+    let spans = span_storage.with_storage(|| row_spans(ctx, payload, feature_ids))?;
+    let mut span_rows = spans.iter();
+    let mut span = if span_rows.len() == 0 {
+        None
+    } else {
+        ctx.next_charged(&mut span_rows, "creo generated entity span traversal")?
+    };
     let mut tables = Vec::new();
-    for offset in 0..payload.len() {
+    for offset in ctx.admit_iter(0..payload.len(), "creo generated entity byte traversal")? {
         if payload[offset] != psb::token::ARRAY_OPEN {
             continue;
         }
@@ -583,32 +617,26 @@ pub(crate) fn entity_tables(
         if payload.get(after_table_class..after_table_class + 2) != Some(&[0xfb, 0xe3]) {
             continue;
         }
-        let Some(&(_, row_end, feature_id)) = spans
-            .iter()
-            .find(|&&(start, end, _)| start <= offset && offset < end)
-        else {
+        while span.is_some_and(|(_, end, _)| offset >= *end) {
+            span = if span_rows.len() == 0 {
+                None
+            } else {
+                ctx.next_charged(&mut span_rows, "creo generated entity span traversal")?
+            };
+        }
+        let Some(&(_, row_end, feature_id)) = span.filter(|(start, _, _)| *start <= offset) else {
             continue;
         };
         let Some(entries) = read_entries(ctx, &payload[..row_end], after_table_class + 2, count)?
         else {
             continue;
         };
-        let mut table_surface_ids = BTreeSet::new();
-        for entry in &entries {
-            if surface_ids.contains(&entry.entity_id) {
-                ctx.insert_btree_set(
-                    &mut table_surface_ids,
-                    entry.entity_id,
-                    "creo feature table surface ids",
-                )?;
-            }
-        }
+        let entries = EntityRows::new(ctx, entries, surface_ids)?;
         ctx.reserve_vec(&mut tables, 1, "creo feature entity tables")?;
         tables.push(FeatureEntityTable {
             feature_id,
             table_class_id,
             entries,
-            surface_ids: table_surface_ids,
             offset,
         });
     }
@@ -623,6 +651,39 @@ mod tests {
     use cadmpeg_core::CodecError;
 
     const GRAPH: &[u8] = b"\xe0\0Sld_Features\0\xe0\0N\xff\0\xf7\0";
+
+    #[test]
+    fn entity_graph_fallback_token_has_one_psb_visit() {
+        const PAYLOAD: &[u8] = b"\xe0\0Sld_Features\0\xf7\x01";
+        let needed = |payload| {
+            crate::test_support::allocation_limit_at(ResourceDimension::WorkUnits, None, |work| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = work;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+                entity_graph(&ctx, payload)
+            })
+        };
+        assert_eq!(needed(PAYLOAD), needed(&PAYLOAD[..PAYLOAD.len() - 2]) + 1);
+        crate::test_support::assert_refusal_order(
+            ResourceDimension::WorkUnits,
+            &[
+                "creo feature entity token traversal",
+                "creo PSB token traversal",
+            ],
+            |work| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = work;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+                let (entities, references) = entity_graph(&ctx, PAYLOAD)?;
+                assert_eq!(entities.len(), 1);
+                assert_eq!(references.len(), 1);
+                assert_eq!(references[0].target_entity_id, 1);
+                Ok::<_, CodecError>(())
+            },
+        );
+    }
 
     #[test]
     fn related_payload_enforces_class_state_domain() {
@@ -682,10 +743,18 @@ mod tests {
     #[test]
     fn entity_graph_nodes_refuse_before_vec_growth() {
         assert_eq!(
-            run(3, u64::MAX).expect("graph admitted"),
+            run(u64::MAX, u64::MAX).expect("graph admitted"),
             (2, 1, "N\u{fffd}".into())
         );
-        let error = run(0, u64::MAX).expect_err("root node needs a Vec item");
+        let error = run(
+            crate::test_support::allocation_limit_at(
+                ResourceDimension::CollectionItems,
+                Some("creo feature entity graph nodes"),
+                |cap| run(cap, u64::MAX),
+            ),
+            u64::MAX,
+        )
+        .expect_err("root node needs a Vec item");
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
                 && limit.operation == "creo feature entity graph nodes"));
@@ -693,7 +762,15 @@ mod tests {
 
     #[test]
     fn entity_graph_references_refuse_before_vec_growth() {
-        let error = run(2, u64::MAX).expect_err("reference needs a Vec item");
+        let error = run(
+            crate::test_support::allocation_limit_at(
+                ResourceDimension::CollectionItems,
+                Some("creo feature entity graph references"),
+                |cap| run(cap, u64::MAX),
+            ),
+            u64::MAX,
+        )
+        .expect_err("reference needs a Vec item");
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
                 && limit.operation == "creo feature entity graph references"));
@@ -702,11 +779,11 @@ mod tests {
     #[test]
     fn entity_graph_lossy_name_refuses_before_retained_growth() {
         let error = run(
-            3,
+            u64::MAX,
             crate::test_support::allocation_limit_at(
                 cadmpeg_core::decode::ResourceDimension::RetainedBytes,
                 Some("creo feature entity name"),
-                |cap| run(3, cap),
+                |cap| run(u64::MAX, cap),
             ),
         )
         .expect_err("replacement needs three retained bytes");
@@ -727,13 +804,18 @@ mod tests {
             read_entries(&ctx, &payload, 0, 2)
         };
         assert_eq!(
-            run(2)
+            run(u64::MAX)
                 .expect("two entry slots admitted")
                 .expect("complete table")
                 .len(),
             2
         );
-        let error = run(1).expect_err("two entry slots exceed one-item limit");
+        let error = run(crate::test_support::allocation_limit_at(
+            ResourceDimension::CollectionItems,
+            Some("creo feature table entries"),
+            run,
+        ))
+        .expect_err("entry growth exceeds its boundary");
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
                 && limit.operation == "creo feature table entries"));
@@ -761,8 +843,16 @@ mod tests {
 
     #[test]
     fn feature_table_surface_ids_refuse_before_btree_insert() {
-        assert_eq!(limited_tables(8).expect("one table admitted").len(), 1);
-        let error = limited_tables(6).expect_err("surface id node exceeds limit");
+        assert_eq!(
+            limited_tables(u64::MAX).expect("one table admitted").len(),
+            1
+        );
+        let error = limited_tables(crate::test_support::allocation_limit_at(
+            ResourceDimension::CollectionItems,
+            Some("creo feature table surface ids"),
+            limited_tables,
+        ))
+        .expect_err("surface id node exceeds limit");
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
                 && limit.operation == "creo feature table surface ids"));
@@ -770,18 +860,360 @@ mod tests {
 
     #[test]
     fn feature_entity_tables_refuse_before_vec_growth() {
-        let error = limited_tables(7).expect_err("table Vec item exceeds limit");
+        let error = limited_tables(crate::test_support::allocation_limit_at(
+            ResourceDimension::CollectionItems,
+            Some("creo feature entity tables"),
+            limited_tables,
+        ))
+        .expect_err("table Vec item exceeds limit");
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
                 && limit.operation == "creo feature entity tables"));
     }
     #[test]
     fn entity_graph_lossy_name_refuses_copy_work() {
-        let (entities, references) = crate::test_support::assert_work_boundaries(
-            &["creo feature entity text work"],
-            |ctx| entity_graph(ctx, GRAPH),
-        );
+        let (entities, references) =
+            crate::test_support::assert_work_boundaries(&["creo feature entity name"], |ctx| {
+                entity_graph(ctx, GRAPH)
+            });
         assert_eq!((entities.len(), references.len()), (2, 1));
         assert_eq!(entities[1].name, "N\u{fffd}");
+    }
+    #[test]
+    fn entity_scans_refuse_at_work_boundaries() {
+        crate::test_support::assert_work_boundaries(
+            &[
+                "creo feature entity token traversal",
+                "creo feature entity name terminator",
+                "creo feature entity name",
+            ],
+            |ctx| entity_graph(ctx, GRAPH),
+        );
+        let payload = [10, 0x80, 200, 4, 0, 0xe3, 11, 0x80, 200, 7, 1, 0xf2, 0xf7];
+        crate::test_support::assert_work_boundaries(
+            &[
+                "creo feature entry traversal",
+                "creo feature entry terminator",
+            ],
+            |ctx| read_entries(ctx, &payload, 0, 2),
+        );
+    }
+
+    #[test]
+    fn entry_candidates_charge_present_entries_and_terminators() {
+        for count in 0..=3usize {
+            let payload: Vec<_> = (0..count)
+                .flat_map(|index| [u8::try_from(index).expect("fixture value fits u8"), 1, 0xe3])
+                .collect();
+            // Each entry visits one counted slot and its first-byte terminator.
+            // At most three entries fit the first four-slot Vec allocation.
+            let total = 2 * u64::try_from(count).expect("fixture value fits u64");
+            crate::test_support::assert_refusal_order(
+                ResourceDimension::WorkUnits,
+                &((0..total)
+                    .map(|cap| {
+                        if cap % 2 == 0 {
+                            "creo feature entry traversal"
+                        } else {
+                            "creo feature entry terminator"
+                        }
+                    })
+                    .collect::<Vec<_>>()),
+                |cap| {
+                    let arena = DecodeArena::new();
+                    let mut policy = DecodePolicy::service();
+                    policy.limits.max_work_units = cap;
+                    let (ctx, _) =
+                        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+                    let result = read_entries(
+                        &ctx,
+                        &payload,
+                        0,
+                        u32::try_from(count).expect("fixture value fits u32"),
+                    );
+                    match result {
+                        Ok(value) => {
+                            let entries = value.expect("complete entries");
+                            assert_eq!(entries.len(), count);
+                            for (index, entry) in entries.iter().enumerate() {
+                                assert_eq!(
+                                    (
+                                        entry.entity_id,
+                                        entry.class_id(),
+                                        entry.prefixed,
+                                        entry.offset,
+                                        entry.end_offset
+                                    ),
+                                    (
+                                        u32::try_from(index).expect("fixture value fits u32"),
+                                        1,
+                                        false,
+                                        3 * index,
+                                        3 * index + 3
+                                    )
+                                );
+                            }
+                            assert_eq!(ctx.resource_refusal(), None);
+                            let refusal = ctx
+                                .charge_work_limit(1, "after entry visits")
+                                .expect_err("exact cap");
+                            assert_eq!(
+                                (refusal.dimension, refusal.used, refusal.additional),
+                                (ResourceDimension::WorkUnits, total, 1)
+                            );
+                            Ok(())
+                        }
+                        Err(CodecError::ResourceLimit(original)) => {
+                            assert_eq!(
+                                (
+                                    original.dimension,
+                                    original.used,
+                                    original.additional,
+                                    original.operation
+                                ),
+                                (
+                                    ResourceDimension::WorkUnits,
+                                    cap,
+                                    1,
+                                    if cap % 2 == 0 {
+                                        "creo feature entry traversal"
+                                    } else {
+                                        "creo feature entry terminator"
+                                    }
+                                )
+                            );
+                            Err(CodecError::ResourceLimit(original))
+                        }
+                        Err(error) => Err(error),
+                    }
+                },
+            );
+        }
+    }
+
+    #[test]
+    fn entry_candidates_stop_after_invalid_first_prefix() {
+        let payload = [0xf7, 0xe3];
+        crate::test_support::assert_refusal_order(
+            ResourceDimension::WorkUnits,
+            &(["creo feature entry traversal"]),
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                policy.limits.max_materialized_bytes = 0;
+                policy.limits.max_retained_bytes = 0;
+                policy.limits.max_collection_items = 0;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+                let result = read_entries(&ctx, &payload, 0, 1);
+                match result {
+                    Ok(value) => {
+                        assert_eq!(value, None);
+                        let refusal = ctx
+                            .charge_work_limit(1, "after invalid entry")
+                            .expect_err("exact cap");
+                        assert_eq!(
+                            (refusal.dimension, refusal.used, refusal.additional),
+                            (ResourceDimension::WorkUnits, 1, 1)
+                        );
+                        Ok(())
+                    }
+                    Err(CodecError::ResourceLimit(original)) => {
+                        assert_eq!(
+                            (
+                                original.dimension,
+                                original.used,
+                                original.additional,
+                                original.operation
+                            ),
+                            (
+                                ResourceDimension::WorkUnits,
+                                0,
+                                1,
+                                "creo feature entry traversal"
+                            )
+                        );
+                        Err(CodecError::ResourceLimit(original))
+                    }
+                    Err(error) => Err(error),
+                }
+            },
+        );
+    }
+
+    #[test]
+    fn entity_entry_invalid_spans_are_free() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        policy.limits.max_entities = 0;
+        policy.limits.max_recursion_depth = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        assert_eq!(read_entries(&ctx, &[], 1, 0).expect("invalid start"), None);
+        assert_eq!(read_entries(&ctx, &[], 0, 1).expect("missing entry"), None);
+        assert!(ctx.resource_refusal().is_none());
+    }
+
+    #[test]
+    fn entity_tables_do_not_visit_absent_spans() {
+        for count in 0..=2usize {
+            let payload = vec![0xf8; count];
+            // No row prefix or counted table exists. Each present byte is
+            // visited by the row-boundary scan and the table-byte scan once.
+            let total = 2 * u64::try_from(count).expect("fixture value fits u64");
+            crate::test_support::assert_refusal_order(
+                ResourceDimension::WorkUnits,
+                &(if count == 0 {
+                    Vec::new()
+                } else {
+                    vec![
+                        "creo feature row boundary scan",
+                        "creo generated entity byte traversal",
+                    ]
+                }),
+                |cap| {
+                    let arena = DecodeArena::new();
+                    let mut policy = DecodePolicy::service();
+                    policy.limits.max_work_units = cap;
+                    policy.limits.max_materialized_bytes = 0;
+                    policy.limits.max_retained_bytes = 0;
+                    policy.limits.max_collection_items = 0;
+                    let (ctx, _) =
+                        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+                    let result = entity_tables(
+                        &ctx,
+                        &payload,
+                        &std::collections::BTreeSet::default(),
+                        &std::collections::BTreeSet::default(),
+                    );
+                    match result {
+                        Ok(value) => {
+                            assert!(value.is_empty());
+                            let refusal = ctx
+                                .charge_work_limit(1, "after entity table bytes")
+                                .expect_err("exact cap");
+                            assert_eq!(
+                                (refusal.dimension, refusal.used, refusal.additional),
+                                (ResourceDimension::WorkUnits, total, 1)
+                            );
+                            Ok(())
+                        }
+                        Err(CodecError::ResourceLimit(original)) => {
+                            // Each admit_iter admits its entire exact-size byte range
+                            // before execution, so the failing pass requests n at once.
+                            let before_table_scan =
+                                cap < u64::try_from(count).expect("fixture value fits u64");
+                            assert_eq!(
+                                (
+                                    original.dimension,
+                                    original.used,
+                                    original.additional,
+                                    original.operation
+                                ),
+                                (
+                                    ResourceDimension::WorkUnits,
+                                    if before_table_scan {
+                                        0
+                                    } else {
+                                        u64::try_from(count).expect("fixture value fits u64")
+                                    },
+                                    u64::try_from(count).expect("fixture value fits u64"),
+                                    if before_table_scan {
+                                        "creo feature row boundary scan"
+                                    } else {
+                                        "creo generated entity byte traversal"
+                                    }
+                                )
+                            );
+                            Err(CodecError::ResourceLimit(original))
+                        }
+                        Err(error) => Err(error),
+                    }
+                },
+            );
+        }
+    }
+
+    #[test]
+    fn entry_candidates_admit_present_prefixes_after_variable_width_entries() {
+        use std::mem::size_of;
+
+        // A first entry can consume all bytes despite the initial count bound.
+        // A partial second prefix still exists and must be visited.
+        for (payload, declared, terminator_visits, second_present) in [
+            ([7, 1, 0, 0, 0, 0xe3], 2, 4u64, false),
+            ([7, 1, 0, 0, 0, 0xe3], 3, 4u64, false),
+            ([7, 1, 0, 0, 0xe3, 0xf7], 2, 3u64, true),
+        ] {
+            let total = 1 + terminator_visits + u64::from(second_present);
+            let backing = u64::try_from(4 * size_of::<super::FeatureEntityTableEntry>())
+                .expect("fixture value fits u64");
+            crate::test_support::assert_refusal_order(
+                ResourceDimension::WorkUnits,
+                &((0..total)
+                    .map(|cap| {
+                        if cap == 0 || (second_present && cap == 1 + terminator_visits) {
+                            "creo feature entry traversal"
+                        } else {
+                            "creo feature entry terminator"
+                        }
+                    })
+                    .collect::<Vec<_>>()),
+                |cap| {
+                    let arena = DecodeArena::new();
+                    let mut policy = DecodePolicy::service();
+                    policy.limits.max_work_units = cap;
+                    policy.limits.max_materialized_bytes = backing;
+                    policy.limits.max_retained_bytes = 0;
+                    policy.limits.max_collection_items = 1;
+                    let (ctx, _) =
+                        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+                    let result = read_entries(&ctx, &payload, 0, declared);
+                    match result {
+                        Ok(value) => {
+                            assert_eq!(value, None);
+                            assert!(ctx.resource_refusal().is_none());
+                            // The rejected first candidate dropped its entire Vec.
+                            let storage = ctx
+                                .reserve_scoped(backing, "after rejected entry backing")
+                                .expect("all candidate storage was released");
+                            drop(storage);
+                            let original = ctx
+                                .charge_work_limit(1, "after variable-width entry")
+                                .expect_err("exact input work used");
+                            assert_eq!((original.used, original.additional), (total, 1));
+                            Ok(())
+                        }
+                        Err(CodecError::ResourceLimit(original)) => {
+                            let at_entry =
+                                cap == 0 || (second_present && cap == 1 + terminator_visits);
+                            assert_eq!(
+                                (
+                                    original.dimension,
+                                    original.used,
+                                    original.additional,
+                                    original.operation
+                                ),
+                                (
+                                    ResourceDimension::WorkUnits,
+                                    cap,
+                                    1,
+                                    if at_entry {
+                                        "creo feature entry traversal"
+                                    } else {
+                                        "creo feature entry terminator"
+                                    }
+                                )
+                            );
+                            Err(CodecError::ResourceLimit(original))
+                        }
+                        Err(error) => Err(error),
+                    }
+                },
+            );
+        }
     }
 }

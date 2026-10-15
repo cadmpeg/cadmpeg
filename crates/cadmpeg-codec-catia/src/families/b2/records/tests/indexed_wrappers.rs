@@ -37,25 +37,34 @@ fn indexed_analytic_carrier_decoders_match_one_shot_wrappers() {
                 .collect::<Vec<_>>(),
             _ => unreachable!("unknown analytic carrier fixture: {name}"),
         };
-        let actual = match name {
-            "cone" => crate::families::b2::records::b2_cones_from_records(&bytes, &consolidated)
-                .map(|record| record.pos)
-                .collect::<Vec<_>>(),
-            "sphere" => {
-                crate::families::b2::records::b2_spheres_from_records(&bytes, &consolidated)
-                    .map(|record| record.pos)
-                    .collect::<Vec<_>>()
-            }
-            "torus" => crate::families::b2::records::b2_tori_from_records(&bytes, &consolidated)
-                .map(|record| record.pos)
-                .collect::<Vec<_>>(),
-            "cylinder" => {
-                crate::families::b2::records::b2_cylinders_from_records(&bytes, &consolidated)
-                    .map(|record| record.pos)
-                    .collect::<Vec<_>>()
-            }
+        let actual = crate::test_support::with_service_context(|ctx| match name {
+            "cone" => ctx.collect_vec(
+                crate::families::b2::records::b2_cones_from_records(ctx, &bytes, &consolidated)?
+                    .map(|record| record.pos),
+                "catia_test_indexed_cones",
+            ),
+            "sphere" => ctx.collect_vec(
+                crate::families::b2::records::b2_spheres_from_records(ctx, &bytes, &consolidated)?
+                    .map(|record| record.pos),
+                "catia_test_indexed_spheres",
+            ),
+            "torus" => ctx.collect_vec(
+                crate::families::b2::records::b2_tori_from_records(ctx, &bytes, &consolidated)?
+                    .map(|record| record.pos),
+                "catia_test_indexed_tori",
+            ),
+            "cylinder" => ctx.try_collect_vec(
+                crate::families::b2::records::b2_cylinders_from_records(
+                    ctx,
+                    &bytes,
+                    &consolidated,
+                )?
+                .map(|record| record.map(|record| record.pos)),
+                "catia_test_indexed_cylinders",
+            ),
             _ => unreachable!("unknown analytic carrier fixture: {name}"),
-        };
+        })
+        .expect("service context admits indexed carriers");
         assert_eq!(actual, expected, "carrier decoder changed for {name}");
     }
 
@@ -105,9 +114,14 @@ fn indexed_native_record_decoders_match_one_shot_wrappers() {
             .into_iter()
             .map(|record| record.pos)
             .collect(),
-        crate::families::b2::records::b2_owner_packets_from_records(&bytes, &records)
-            .map(|record| record.pos)
-            .collect(),
+        crate::test_support::with_service_context(|ctx| {
+            ctx.collect_vec(
+                crate::families::b2::records::b2_owner_packets_from_records(ctx, &bytes, &records)?
+                    .map(|record| record.pos),
+                "catia_test_indexed_owner_packets",
+            )
+        })
+        .expect("service context admits indexed owner packets"),
     );
 
     let bytes = b2_width_coded_owner_packet_stream();
@@ -118,9 +132,14 @@ fn indexed_native_record_decoders_match_one_shot_wrappers() {
             .into_iter()
             .map(|record| record.pos)
             .collect(),
-        crate::families::b2::records::b2_owner_packets_from_records(&bytes, &records)
-            .map(|record| record.pos)
-            .collect(),
+        crate::test_support::with_service_context(|ctx| {
+            ctx.collect_vec(
+                crate::families::b2::records::b2_owner_packets_from_records(ctx, &bytes, &records)?
+                    .map(|record| record.pos),
+                "catia_test_indexed_owner_packets",
+            )
+        })
+        .expect("service context admits indexed owner packets"),
     );
 
     let bytes = b2_counted_61_stream();
@@ -182,9 +201,14 @@ fn indexed_native_record_decoders_match_one_shot_wrappers() {
             .into_iter()
             .map(|record| record.pos)
             .collect(),
-        crate::families::b2::records::b2_face_nodes_5f_from_records(&bytes, &records)
-            .map(|record| record.pos)
-            .collect(),
+        crate::test_support::with_service_context(|ctx| {
+            ctx.collect_vec(
+                crate::families::b2::records::b2_face_nodes_5f_from_records(ctx, &bytes, &records)?
+                    .map(|record| record.pos),
+                "catia_test_indexed_face_nodes",
+            )
+        })
+        .expect("service context admits indexed face nodes"),
     );
 
     let bytes = b2_adjacent_face_owner_stream();
@@ -219,9 +243,16 @@ fn indexed_native_record_decoders_match_one_shot_wrappers() {
             .into_iter()
             .map(|record| record.pos)
             .collect(),
-        crate::families::b2::records::b2_parameter_points_from_records(&bytes, &records)
-            .map(|record| record.pos)
-            .collect(),
+        crate::test_support::with_service_context(|ctx| {
+            ctx.collect_vec(
+                crate::families::b2::records::b2_parameter_points_from_records(
+                    ctx, &bytes, &records,
+                )?
+                .map(|record| record.pos),
+                "catia_test_indexed_parameter_points",
+            )
+        })
+        .expect("service context admits indexed parameter points"),
     );
 
     let bytes = b2_line_profile_stream();
@@ -232,9 +263,14 @@ fn indexed_native_record_decoders_match_one_shot_wrappers() {
             .into_iter()
             .map(|record| record.pos)
             .collect(),
-        crate::families::b2::records::b2_line_profiles_from_records(&bytes, &records)
-            .map(|record| record.pos)
-            .collect(),
+        crate::test_support::with_service_context(|ctx| {
+            ctx.collect_vec(
+                crate::families::b2::records::b2_line_profiles_from_records(ctx, &bytes, &records)?
+                    .map(|record| record.pos),
+                "catia_test_indexed_line_profiles",
+            )
+        })
+        .expect("service context admits indexed line profiles"),
     );
 
     let bytes = b2_spatial_circle_stream();
@@ -245,9 +281,16 @@ fn indexed_native_record_decoders_match_one_shot_wrappers() {
             .into_iter()
             .map(|record| record.pos)
             .collect(),
-        crate::families::b2::records::b2_spatial_circles_from_records(&bytes, &records)
-            .map(|record| record.pos)
-            .collect(),
+        crate::test_support::with_service_context(|ctx| {
+            ctx.collect_vec(
+                crate::families::b2::records::b2_spatial_circles_from_records(
+                    ctx, &bytes, &records,
+                )?
+                .map(|record| record.pos),
+                "catia_test_indexed_spatial_circles",
+            )
+        })
+        .expect("service context admits indexed spatial circles"),
     );
 
     let bytes = b2_nurbs_curve_stream([1.0, 0.72, 1.31, 0.93]);
@@ -265,6 +308,7 @@ fn indexed_native_record_decoders_match_one_shot_wrappers() {
                 &records,
                 &mut crate::nurbs::LaneRefusals::new(),
             )
+            .and_then(|(curves, storage)| storage.commit_value(curves))
             .expect("service decode")
         })
         .into_iter()
@@ -296,4 +340,181 @@ fn indexed_native_record_decoders_match_one_shot_wrappers() {
         .map(offset_signature)
         .collect::<Vec<_>>()
     );
+}
+
+#[test]
+fn b2_long61_member_scan_propagates_caller_work_refusal() {
+    let bytes = b2_long_61_stream();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    // One record source visit precedes admission of the three members.
+    crate::test_support::with_work_limit(1, |ctx| {
+        let result = crate::families::b2::records::b2_long_61_from_records(ctx, &bytes, &records);
+        let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = result else {
+            panic!("member order scan work refusal required")
+        };
+        assert_eq!(limit.operation, "catia_b2_long61_member_order");
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+    });
+}
+
+#[test]
+fn b2_revolution_profile_lookups_propagate_caller_work_refusal() {
+    let bytes = b2_resolved_revolution_stream();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    for operation in [
+        "catia_b2_revolution_identity_scan",
+        "catia_b2_resolved_revolution_scan",
+    ] {
+        let refused = crate::test_support::with_work_refusal(operation, |ctx| {
+            let result = crate::families::b2::records::b2_resolved_revolutions_from_records(
+                ctx, &bytes, &records,
+            );
+            if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
+                assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
+            }
+            result
+        });
+        assert!(matches!(
+            refused,
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == operation
+        ));
+    }
+}
+
+#[test]
+fn b2_revolution_circle_record_scan_propagates_work_refusal() {
+    let bytes = b2_resolved_revolution_stream();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    let service = crate::test_support::with_service_context(|ctx| {
+        crate::families::b2::records::b2_resolved_revolutions_from_records(ctx, &bytes, &records)
+    })
+    .expect("service context admits the circle and revolution records");
+    assert_eq!(service.len(), 1);
+
+    let operation = "catia_b2_family_record_scan";
+    let refused = crate::test_support::with_work_refusal(operation, |ctx| {
+        let result = crate::families::b2::records::b2_resolved_revolutions_from_records(
+            ctx, &bytes, &records,
+        )
+        .map(|_| ());
+        if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
+            assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
+        }
+        result
+    });
+    assert!(matches!(
+        refused,
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == operation
+    ));
+}
+
+#[test]
+fn b2_offset_source_scan_refuses_even_without_carriers() {
+    let offsets = crate::families::b2::records::b2_offset_supports(
+        &crate::test_support::test_b2::b2_offset_support_stream(),
+    );
+    let carriers: &[crate::families::a5a8::records::FreeformSurface] = &[];
+    crate::test_support::with_work_limit(0, |ctx| {
+        let result = crate::families::b2::records::offset_support_carriers(ctx, &offsets, carriers);
+        let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = result else {
+            panic!("offset source scan work refusal required")
+        };
+        assert_eq!(limit.operation, "catia_b2_offset_carrier_scan");
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+    });
+}
+
+#[test]
+fn b2_cone_face_byte_scan_propagates_caller_work_refusal() {
+    let bytes = crate::test_support::test_b2::b2_cone_face_stream();
+    crate::test_support::with_work_limit(0, |ctx| {
+        let result = crate::families::b2::records::b2_cone_faces(ctx, &bytes);
+        let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = result else {
+            panic!("cone face byte scan work refusal required")
+        };
+        assert_eq!(limit.operation, "catia_b2_cone_face_byte_scan");
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+    });
+}
+
+#[test]
+fn adjacent_counted_owner_parse_propagates_work_refusal() {
+    let bytes = b2_adjacent_face_counted_owner_stream();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    let operation = "catia_b2_counted_owner_references";
+    let mut run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        let result = crate::families::b2::records::b2_adjacent_face_counted_owners_from_records(
+            ctx, &bytes, &records,
+        );
+        if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
+            assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
+        }
+        result
+    };
+    let admitted = crate::test_support::with_service_context(run).expect("service budget");
+    assert!(!admitted.is_empty());
+    let refused = crate::test_support::with_work_refusal(operation, &mut run);
+    assert!(matches!(
+        refused,
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == operation
+    ));
+}
+
+#[test]
+fn b2_nurbs_source_headers_are_scoped_while_geometry_survives() {
+    use cadmpeg_core::decode::{refusal_probe::RefusalProbe, ResourceDimension};
+    let bytes = super::b2_nurbs_curve_stream([1.0, 0.72, 1.31, 0.93]);
+    let records = crate::wire::records::consolidated_records(&bytes);
+    let probe = RefusalProbe::arm(
+        ResourceDimension::RetainedBytes,
+        "catia_b2_nurbs_curves",
+        None,
+    );
+    crate::test_support::with_materialized_limit(16_384, |ctx| {
+        let (mut curves, storage) = crate::families::b2::records::b2_nurbs_curves_from_records(
+            ctx,
+            &bytes,
+            &records,
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+        .expect("only source headers are temporary");
+        assert_eq!(curves.len(), 1);
+        let geometry = curves.pop().expect("decoded curve").geometry;
+        drop(curves);
+        drop(storage);
+        let _all_scratch = ctx
+            .reserve_scoped(16_384, "curve source headers released")
+            .expect("source headers no longer own scratch");
+        assert_eq!(geometry.degree(), 3);
+    });
+    drop(probe);
+    let file = crate::test_support::test_container::standard_catpart_from_streams(&bytes, &[]);
+    for operation in [
+        "catia_b2_nurbs_curves",
+        "catia_freeform_b2_curve_id",
+        "catia_freeform_standalone_wires",
+    ] {
+        let _probe = RefusalProbe::arm(ResourceDimension::RetainedBytes, operation, None);
+        let output = crate::test_support::with_service_context(|ctx| {
+            let scan = crate::container::scan_bytes(ctx, file.as_slice())?;
+            crate::families::freeform::try_decode_freeform_surfaces(
+                ctx,
+                &scan,
+                &mut crate::nurbs::LaneRefusals::new(),
+            )
+        })
+        .expect("source slots and wire inputs are temporary")
+        .expect("freeform curve family");
+        assert_eq!(output.ir.model.curves.len(), 1);
+        assert_eq!(output.ir.model.edges.len(), 1);
+        assert!(matches!(
+            output.ir.model.curves[0].geometry,
+            cadmpeg_ir::geometry::CurveGeometry::Solved(
+                cadmpeg_ir::geometry::SolvedCurveGeometry::Nurbs(_)
+            )
+        ));
+    }
 }

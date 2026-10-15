@@ -11,11 +11,11 @@ use crate::container::{self};
 use crate::CreoCodec;
 
 use super::{
-    definition_local_plane_equation,
+    definition_local_plane_equation as parse_definition_local_plane_equation,
     generated_cylinder_section_transform as parse_generated_cylinder_section_transform,
     generated_planar_section_transform as parse_generated_planar_section_transform,
-    generated_planar_table_shape, plane_equation, resolve as parse_resolve,
-    FeatureSectionTransform, PlacementSources, SignedPlaneEquation, EPS_PLACEMENT_GEOMETRY,
+    generated_planar_table_shape, resolve as parse_resolve, FeatureSectionTransform,
+    PlacementSources, SignedPlaneEquation, EPS_PLACEMENT_GEOMETRY,
 };
 use crate::datum::DatumPlaneRecord;
 use crate::feature::definitions::ReferencePlanes;
@@ -38,13 +38,20 @@ use crate::feature::entity::FeatureEntityTableEntry;
 use crate::feature::rows::FeatureGeometryTableKind;
 use crate::surface::{PositionalCylinderFrame, SurfaceBodyBoundary, SurfaceParameterRecord};
 
+mod point_storage;
+
 fn generated_cylinder_section_transform(
     definition: &FeatureDefinition,
     sources: &PlacementSources<'_>,
     tables: &[FeatureEntityTable],
 ) -> Option<FeatureSectionTransform> {
     crate::decode::with_test_decode_ctx(|ctx| {
-        parse_generated_cylinder_section_transform(ctx, definition, sources, tables)
+        parse_generated_cylinder_section_transform(
+            ctx,
+            definition,
+            tables,
+            &mut super::PlacementLookup::new(ctx, sources, &[])?,
+        )
     })
     .expect("test cylinder placement")
 }
@@ -55,7 +62,12 @@ fn generated_planar_section_transform(
     tables: &[FeatureEntityTable],
 ) -> Option<FeatureSectionTransform> {
     crate::decode::with_test_decode_ctx(|ctx| {
-        parse_generated_planar_section_transform(ctx, definition, sources, tables)
+        parse_generated_planar_section_transform(
+            ctx,
+            definition,
+            tables,
+            &mut super::PlacementLookup::new(ctx, sources, &[])?,
+        )
     })
     .expect("test planar placement")
 }
@@ -82,7 +94,22 @@ fn generated_planar_table_entry_nodes_refuse_collection_limit() {
     );
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
+    policy.limits.max_collection_items = crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        Some("creo generated planar table entry nodes"),
+        |cap| {
+            let trial_arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut trial_policy = cadmpeg_core::decode::DecodePolicy::service();
+            trial_policy.limits.max_collection_items = cap;
+            let (trial_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                &[],
+                &trial_arena,
+                &trial_policy,
+            )
+            .expect("root");
+            generated_planar_table_shape(&trial_ctx, &table)
+        },
+    );
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root");
     let error = generated_planar_table_shape(&ctx, &table)
@@ -177,7 +204,7 @@ fn placement_reference_ids_refuse_before_growth() {
     });
     let sources = PlacementSources {
         datums: &[],
-        surface_rows: &[],
+        surface_rows: &crate::surface::unique_rows::UniqueIdRows::from_rows([].to_vec()),
         model_planes: &[],
         outline_planes: &[],
         plane_envelopes: &[],
@@ -187,7 +214,22 @@ fn placement_reference_ids_refuse_before_growth() {
     };
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
+    policy.limits.max_collection_items = crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        Some("creo placement reference IDs"),
+        |cap| {
+            let trial_arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut trial_policy = cadmpeg_core::decode::DecodePolicy::service();
+            trial_policy.limits.max_collection_items = cap;
+            let (trial_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                &[0],
+                &trial_arena,
+                &trial_policy,
+            )
+            .expect("test input");
+            parse_resolve(&trial_ctx, &[definition.clone()], &sources, &[])
+        },
+    );
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
         .expect("test input admitted");
     assert!(
@@ -359,7 +401,7 @@ fn resolves_perpendicular_datum_frame() {
                     datum(3, crate::axis::Axis::X, 1.0),
                     datum(4, crate::axis::Axis::Z, 3.0),
                 ],
-                surface_rows: &[],
+                surface_rows: &crate::surface::unique_rows::UniqueIdRows::from_rows([].to_vec()),
                 model_planes: &[],
                 outline_planes: &[],
                 plane_envelopes: &[],
@@ -419,7 +461,7 @@ fn resolves_reference_flip_from_selected_positional_row() {
                 datum(3, crate::axis::Axis::X, 1.0),
                 datum(4, crate::axis::Axis::Z, 3.0),
             ],
-            surface_rows: &[],
+            surface_rows: &crate::surface::unique_rows::UniqueIdRows::from_rows([].to_vec()),
             model_planes: &[],
             outline_planes: &[],
             plane_envelopes: &[],
@@ -475,7 +517,7 @@ fn rejects_duplicate_selected_positional_reference_rows() {
                 datum(3, crate::axis::Axis::X, 1.0),
                 datum(4, crate::axis::Axis::Z, 3.0),
             ],
-            surface_rows: &[],
+            surface_rows: &crate::surface::unique_rows::UniqueIdRows::from_rows([].to_vec()),
             model_planes: &[],
             outline_planes: &[],
             plane_envelopes: &[],
@@ -514,7 +556,7 @@ fn resolves_section_from_complete_local_frame_when_references_are_unresolved() {
             &[definition],
             &PlacementSources {
                 datums: &[],
-                surface_rows: &[],
+                surface_rows: &crate::surface::unique_rows::UniqueIdRows::from_rows([].to_vec()),
                 model_planes: &[],
                 outline_planes: &[],
                 plane_envelopes: &[],
@@ -640,7 +682,7 @@ fn resolves_generated_section_from_declared_cap_pair() {
                     datum(2, crate::axis::Axis::X, 0.0),
                     datum(191, crate::axis::Axis::X, 8.0),
                 ],
-                surface_rows: &rows,
+                surface_rows: &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
                 model_planes: &[],
                 outline_planes: &outlines,
                 plane_envelopes: &[],
@@ -775,7 +817,9 @@ fn resolves_oblique_reference_from_an_earlier_extruded_line() {
                 datum(4, crate::axis::Axis::Z, 0.0),
                 datum(799, crate::axis::Axis::Y, 1.0),
             ],
-            surface_rows: std::slice::from_ref(&generated_plane),
+            surface_rows: &crate::surface::unique_rows::UniqueIdRows::from_rows(
+                std::slice::from_ref(&generated_plane).to_vec(),
+            ),
             model_planes: &[],
             outline_planes: &[],
             plane_envelopes: &[],
@@ -806,7 +850,9 @@ fn resolves_oblique_reference_from_an_earlier_extruded_line() {
                 datum(4, crate::axis::Axis::Z, 0.0),
                 datum(799, crate::axis::Axis::Y, 1.0),
             ],
-            surface_rows: &[generated_plane, duplicate_plane],
+            surface_rows: &crate::surface::unique_rows::UniqueIdRows::from_rows(
+                [generated_plane, duplicate_plane].to_vec(),
+            ),
             model_planes: &[],
             outline_planes: &[],
             plane_envelopes: &[],
@@ -861,7 +907,7 @@ fn resolves_orientation_from_an_outline_plane_carrier() {
         &[definition],
         &PlacementSources {
             datums: &[datum(2, crate::axis::Axis::X, 2.0)],
-            surface_rows: &[],
+            surface_rows: &crate::surface::unique_rows::UniqueIdRows::from_rows([].to_vec()),
             model_planes: &[],
             outline_planes: &[reference],
             plane_envelopes: &[],
@@ -931,7 +977,7 @@ fn resolves_generated_sketch_datum_from_unique_parent_relation() {
                 datum(2, crate::axis::Axis::X, 0.0),
                 datum(4, crate::axis::Axis::Y, 0.0),
             ],
-            surface_rows: &[],
+            surface_rows: &crate::surface::unique_rows::UniqueIdRows::from_rows([].to_vec()),
             model_planes: &[],
             outline_planes: &[],
             plane_envelopes: &[],
@@ -1018,7 +1064,7 @@ fn resolves_generated_plane_from_contextually_unambiguous_envelope_axis() {
         &[definition],
         &PlacementSources {
             datums: &[datum(2, crate::axis::Axis::X, 0.0)],
-            surface_rows: &[row],
+            surface_rows: &crate::surface::unique_rows::UniqueIdRows::from_rows([row].to_vec()),
             model_planes: &[],
             outline_planes: &[],
             plane_envelopes: &[envelope],
@@ -1158,7 +1204,7 @@ fn resolves_section_frame_from_two_generated_arc_cylinders() {
     .with_surface_ids([819, 822])];
     let sources = PlacementSources {
         datums: &[],
-        surface_rows: &rows,
+        surface_rows: &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
         model_planes: &[],
         outline_planes: &[],
         plane_envelopes: &[],
@@ -1223,9 +1269,12 @@ fn resolves_section_frame_from_two_generated_arc_cylinders() {
         generated_cylinder_section_transform(&definition, &divergent_sources, &tables).is_none()
     );
     let mut wrong_class = tables.clone();
-    wrong_class[0].entries[0].payload = crate::feature::entity::EntryPayload::Plain {
-        class: crate::feature::entity::PlainClass::new(201).expect("201 is not the source class"),
-    };
+    wrong_class[0].entries.edit(0, |entry| {
+        entry.payload = crate::feature::entity::EntryPayload::Plain {
+            class: crate::feature::entity::PlainClass::new(201)
+                .expect("201 is not the source class"),
+        }
+    });
     assert!(generated_cylinder_section_transform(&definition, &sources, &wrong_class).is_none());
     let mut non_surface = tables;
     let last_surface_id = non_surface[0]
@@ -1361,7 +1410,7 @@ fn resolves_section_frame_from_complete_generated_planar_prism() {
     .with_surface_ids([13, 18, 23, 25, 27, 29])];
     let sources = PlacementSources {
         datums: &[],
-        surface_rows: &[],
+        surface_rows: &crate::surface::unique_rows::UniqueIdRows::from_rows([].to_vec()),
         model_planes: &[],
         outline_planes: &outlines,
         plane_envelopes: &[],
@@ -1626,3 +1675,37 @@ fn section_frame_refuses_a_non_finite_origin_or_axis() {
         );
     }
 }
+
+mod work_admission;
+
+fn definition_local_plane_equation(definition: &FeatureDefinition) -> Option<SignedPlaneEquation> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        parse_definition_local_plane_equation(ctx, definition)
+    })
+    .expect("test local plane selection")
+}
+
+fn plane_equation(
+    id: u32,
+    datums: &[DatumPlaneRecord],
+    models: &[PlaneLocalSystem],
+    outlines: &[OutlinePlane],
+) -> Option<SignedPlaneEquation> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        let rows = crate::surface::unique_rows::UniqueIdRows::from_rows(Vec::new());
+        let sources = PlacementSources {
+            datums,
+            surface_rows: &rows,
+            model_planes: models,
+            outline_planes: outlines,
+            plane_envelopes: &[],
+            surface_parameters: &[],
+            geometry_tables: &[],
+            affected_ids: &[],
+        };
+        super::PlacementLookup::new(ctx, &sources, &[])?.equation(id)
+    })
+    .expect("test plane equation")
+}
+
+mod visit_boundaries;

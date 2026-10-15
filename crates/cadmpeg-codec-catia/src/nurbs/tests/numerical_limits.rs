@@ -15,7 +15,15 @@ const RELATIVE_ROUNDOFF: f64 = 32.0 * f64::EPSILON;
 
 #[test]
 fn pole_count_refuses_unrepresentable_degree_successor() {
-    assert_eq!(crate::nurbs::pole_count(&[u32::MAX], u32::MAX), None);
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| crate::nurbs::pole_count(
+            ctx,
+            &[u32::MAX],
+            u32::MAX
+        ))
+        .expect("pole count budget"),
+        None
+    );
 }
 
 #[test]
@@ -35,7 +43,7 @@ fn reversed_nurbs_copies_refuse_low_collection_and_retained_limits() {
     });
     assert!(
         matches!(retained, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_reverse_curve_poles")
+        if limit.operation == "catia_reverse_curve_output")
     );
     let collection = crate::test_support::with_collection_limit(0, |ctx| {
         reverse_nurbs_curve(ctx, &curve, [0.0, 1.0])
@@ -67,7 +75,7 @@ fn reversed_nurbs_copies_refuse_low_collection_and_retained_limits() {
     });
     assert!(
         matches!(retained, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_reverse_knots")
+        if limit.operation == "catia_reverse_pcurve_output")
     );
     let collection = crate::test_support::with_collection_limit(0, |ctx| {
         reverse_pcurve_geometry(
@@ -438,6 +446,7 @@ fn quintic_jet_handles_spans_whose_square_overflows_or_underflows() {
         &[[0.0; 3], [1.0, 0.0, 0.0]],
         &[[1.0 / h, 0.0, 0.0]; 2],
         &[[0.0; 3]; 2],
+        cadmpeg_ir::units::FiniteVector::new,
     )
     .expect("service resource budget")
     .expect("finite linear controls");
@@ -465,6 +474,7 @@ fn quintic_jet_handles_spans_whose_square_overflows_or_underflows() {
             &[[0.0; 2]; 2],
             &[[0.0; 2]; 2],
             &[[acceleration, 0.0]; 2],
+            cadmpeg_ir::units::FiniteVector::new,
         )
         .expect("service resource budget")
         .expect("finite curvature offsets");
@@ -485,6 +495,7 @@ fn quintic_jet_refuses_before_each_control_and_knot_allocation() {
             &[[0.0, 0.0], [1.0, 0.0]],
             &[[1.0, 0.0]; 2],
             &[[0.0, 0.0]; 2],
+            cadmpeg_ir::units::FiniteVector::new,
         )
     };
     assert!(crate::test_support::with_service_context(run)
@@ -493,13 +504,253 @@ fn quintic_jet_refuses_before_each_control_and_knot_allocation() {
     for (cap, operation) in [
         (0, "catia quintic jet controls"),
         (6, "catia quintic jet knots"),
-        (18, "catia quintic jet finite controls"),
+        (12, "catia quintic jet knots"),
     ] {
         assert!(matches!(
             crate::test_support::with_collection_limit(cap, run),
             Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == operation
         ));
     }
+}
+
+#[test]
+fn quintic_lowering_keeps_one_control_vector_and_promotes_the_actual_output() {
+    use cadmpeg_core::{decode::ResourceDimension, CodecError};
+    use cadmpeg_ir::units::FiniteVector;
+
+    let controls = crate::test_support::with_materialized_limit(6 * 16, |ctx| {
+        crate::nurbs::quintic_jet_controls(
+            ctx,
+            5,
+            &[0.0, 1.0],
+            &[[0.0, 0.0], [1.0, 0.0]],
+            &[[1.0, 0.0]; 2],
+            &[[0.0, 0.0]; 2],
+            FiniteVector::new,
+        )
+    })
+    .expect("one vector holds six two-coordinate controls")
+    .expect("linear jet");
+    for (control, expected) in controls.iter().zip([0.0, 0.2, 0.4, 0.6, 0.8, 1.0]) {
+        assert!((control[0] - expected).abs() < RELATIVE_ROUNDOFF);
+        assert_eq!(control[1], 0.0);
+    }
+    for expand_knots in [false, true] {
+        let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+            if expand_knots {
+                quintic_jet_bspline(
+                    ctx,
+                    5,
+                    &[0.0, 1.0],
+                    &[[0.0, 0.0], [1.0, 0.0]],
+                    &[[1.0, 0.0]; 2],
+                    &[[0.0, 0.0]; 2],
+                    FiniteVector::new,
+                )
+                .map(|_| ())
+            } else {
+                crate::nurbs::quintic_jet_controls(
+                    ctx,
+                    5,
+                    &[0.0, 1.0],
+                    &[[0.0, 0.0], [1.0, 0.0]],
+                    &[[1.0, 0.0]; 2],
+                    &[[0.0, 0.0]; 2],
+                    FiniteVector::new,
+                )
+                .map(|_| ())
+            }
+        };
+        let result =
+            crate::test_support::with_retained_refusal(&[], "catia quintic jet output", |ctx| {
+                let result = run(ctx);
+                let Err(CodecError::ResourceLimit(limit)) = &result else {
+                    panic!("actual quintic output promotion must refuse");
+                };
+                assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+                assert_eq!(limit.operation, "catia quintic jet output");
+                assert_eq!(ctx.resource_refusal(), Some(*limit));
+                assert!(
+                    matches!(ctx.charge_work(0, "after quintic promotion refusal"),
+                    Err(CodecError::ResourceLimit(later)) if later == *limit)
+                );
+                result
+            });
+        assert!(matches!(result, Err(CodecError::ResourceLimit(_))));
+    }
+    crate::test_support::with_retained_limit(0, |ctx| -> Result<(), CodecError> {
+        let mut storage = ctx.reserve_scoped(0, "test quintic output parent")?;
+        let output = storage
+            .with_storage(|| {
+                quintic_jet_bspline(
+                    ctx,
+                    5,
+                    &[0.0, 1.0],
+                    &[[0.0, 0.0], [1.0, 0.0]],
+                    &[[1.0, 0.0]; 2],
+                    &[[0.0, 0.0]; 2],
+                    FiniteVector::new,
+                )
+            })?
+            .expect("linear jet");
+        assert_eq!(output.0, [vec![0.0; 6], vec![1.0; 6]].concat());
+        assert_eq!(output.1.len(), 6);
+        assert_eq!(ctx.resource_refusal(), None);
+        drop(output);
+        drop(storage);
+        Ok(())
+    })
+    .expect("both actual output lanes remain under their live parent");
+}
+
+#[test]
+fn reversed_carrier_promotions_preserve_sticky_refusal() {
+    use cadmpeg_core::{decode::ResourceDimension, CodecError};
+
+    let curve = NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+        None,
+        false,
+    )
+    .expect("fixture admission")
+    .expect("linear curve");
+    let pcurve = PcurveGeometry::Nurbs {
+        nurbs: PcurveNurbs::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
+            None,
+            false,
+        )
+        .expect("fixture admission")
+        .expect("linear pcurve"),
+    };
+    let model = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve.clone()));
+    for operation in [
+        "catia_reverse_curve_output",
+        "catia_reverse_pcurve_output",
+        "catia_reversed_model_geometry",
+    ] {
+        let result = crate::test_support::with_retained_refusal(&[], operation, |ctx| {
+            let result = match operation {
+                "catia_reverse_curve_output" => {
+                    reverse_nurbs_curve(ctx, &curve, [0.0, 1.0]).map(|_| ())
+                }
+                "catia_reverse_pcurve_output" => reverse_pcurve_geometry(
+                    ctx,
+                    &pcurve,
+                    [0.0, 1.0],
+                    &mut LaneRefusals::new(),
+                    "linear pcurve",
+                )
+                .map(|_| ()),
+                _ => reverse_curve_geometry(
+                    ctx,
+                    &model,
+                    [0.0, 1.0],
+                    &mut LaneRefusals::new(),
+                    "linear curve",
+                )
+                .map(|_| ()),
+            };
+            let Err(CodecError::ResourceLimit(limit)) = &result else {
+                panic!("actual reversal promotion must refuse");
+            };
+            assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+            assert_eq!(limit.operation, operation);
+            assert_eq!(ctx.resource_refusal(), Some(*limit));
+            assert!(
+                matches!(ctx.charge_work(0, "after reversal promotion refusal"),
+                Err(CodecError::ResourceLimit(later)) if later == *limit)
+            );
+            result
+        });
+        assert!(matches!(result, Err(CodecError::ResourceLimit(_))));
+    }
+    crate::test_support::with_retained_limit(0, |ctx| -> Result<(), CodecError> {
+        let mut storage = ctx.reserve_scoped(0, "test reversed carrier parent")?;
+        let reversed = storage
+            .with_storage(|| reverse_nurbs_curve(ctx, &curve, [0.0, 1.0]))?
+            .expect("linear reversed curve");
+        assert_eq!(
+            reversed.control_points()[0].get(),
+            Point3::new(1.0, 0.0, 0.0)
+        );
+        assert_eq!(ctx.resource_refusal(), None);
+        drop(reversed);
+        drop(storage);
+        Ok(())
+    })
+    .expect("actual reversed carrier remains under its live parent");
+}
+
+#[test]
+fn helix_cache_promotes_both_surviving_lanes_together() {
+    use cadmpeg_core::{decode::ResourceDimension, CodecError};
+
+    let definition = ProceduralCurveDefinition::Helix(
+        cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
+            [0.0, 1.0],
+            cadmpeg_ir::geometry::HelixFrame {
+                center: Point3::new(0.0, 0.0, 0.0),
+                major: Vector3::new(1.0, 0.0, 0.0),
+                minor: Vector3::new(0.0, 1.0, 0.0),
+                pitch: Vector3::new(0.0, 0.0, 1.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+            },
+            0.0,
+            None,
+        )
+        .expect("circular helix"),
+    );
+    let tolerance = cadmpeg_ir::scalar::PositiveReal::new(2.0).expect("positive tolerance");
+    let result =
+        crate::test_support::with_retained_refusal(&[], "catia_helix_retained_knots", |ctx| {
+            let result = circular_helix_cache(
+                ctx,
+                &definition,
+                tolerance,
+                &mut LaneRefusals::new(),
+                "circular helix",
+            );
+            let Err(CodecError::ResourceLimit(limit)) = &result else {
+                panic!("actual whole-cache promotion must refuse");
+            };
+            assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+            assert_eq!(limit.operation, "catia_helix_retained_knots");
+            assert_eq!(ctx.resource_refusal(), Some(*limit));
+            assert!(
+                matches!(ctx.charge_work(0, "after helix promotion refusal"),
+                Err(CodecError::ResourceLimit(later)) if later == *limit)
+            );
+            result
+        });
+    assert!(matches!(result, Err(CodecError::ResourceLimit(_))));
+    crate::test_support::with_retained_limit(0, |ctx| -> Result<(), CodecError> {
+        let mut storage = ctx.reserve_scoped(0, "test helix cache parent")?;
+        let cache = storage
+            .with_storage(|| {
+                circular_helix_cache(
+                    ctx,
+                    &definition,
+                    tolerance,
+                    &mut LaneRefusals::new(),
+                    "circular helix",
+                )
+            })?
+            .expect("circular cache");
+        assert_eq!(cache.curve.knots().as_slice(), [0.0, 0.0, 1.0, 1.0]);
+        assert_eq!(cache.curve.pole_count(), 2);
+        assert_eq!(ctx.resource_refusal(), None);
+        drop(cache);
+        drop(storage);
+        Ok(())
+    })
+    .expect("both actual cache lanes remain under their live parent");
 }
 
 #[test]
@@ -550,4 +801,90 @@ fn helix_cache_computes_finite_sagitta_without_doubling_radius() {
         };
         assert!((cache.fit_tolerance.get() / expected - 1.0).abs() < RELATIVE_ROUNDOFF);
     }
+}
+
+#[test]
+fn rejected_reversal_retains_the_loss_without_constructor_scratch() {
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let knots = vec![-f64::MAX, -f64::MAX, 0.0, 0.0];
+    let curve = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+        NurbsCurve::from_lanes(
+            &ctx,
+            1,
+            knots.clone(),
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+            None,
+            false,
+        )
+        .expect("fixture admission")
+        .expect("ordered finite model knots"),
+    ));
+    let pcurve = PcurveGeometry::Nurbs {
+        nurbs: PcurveNurbs::from_lanes(
+            &ctx,
+            1,
+            knots,
+            vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
+            None,
+            false,
+        )
+        .expect("fixture admission")
+        .expect("ordered finite pcurve knots"),
+    };
+    let range = [1.0, f64::MAX];
+    for model_space in [false, true] {
+        let mut refused = LaneRefusals::new();
+        let result = crate::test_support::with_retained_limit(0, |ctx| {
+            let result = if model_space {
+                reverse_curve_geometry(ctx, &curve, range, &mut refused, "overflowing reversal")
+                    .map(|value| value.is_some())
+            } else {
+                reverse_pcurve_geometry(ctx, &pcurve, range, &mut refused, "overflowing reversal")
+                    .map(|value| value.is_some())
+            };
+            if let Err(cadmpeg_core::CodecError::ResourceLimit(ref limit)) = result {
+                assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
+            }
+            result
+        });
+        assert!(
+            matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                && limit.operation == "catia_nurbs_refusal_loss")
+        );
+        assert_eq!(refused.note_count(), 0);
+        let result = crate::test_support::with_service_context(|ctx| {
+            if model_space {
+                reverse_curve_geometry(ctx, &curve, range, &mut refused, "overflowing reversal")
+                    .map(|value| value.is_some())
+            } else {
+                reverse_pcurve_geometry(ctx, &pcurve, range, &mut refused, "overflowing reversal")
+                    .map(|value| value.is_some())
+            }
+        })
+        .expect("service admits the loss");
+        assert!(!result);
+        assert_eq!(refused.note_count(), 1);
+    }
+}
+
+#[test]
+fn scoped_geometry_keeps_refusal_notes_in_retained_storage() {
+    crate::test_support::with_retained_limit(0, |ctx| {
+        let mut storage = ctx
+            .reserve_scoped(0, "test_geometry_scratch")
+            .expect("owner");
+        let mut refusal = LaneRefusals::new();
+        let error = storage
+            .with_storage(|| refusal.push_solver(ctx, "invalid jet", "no carrier"))
+            .expect_err("a geometry scope cannot own a report note");
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+            panic!("typed refusal")
+        };
+        assert_eq!(
+            limit.dimension,
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes
+        );
+        assert_eq!(limit.operation, "catia_solver_refusal_loss");
+    });
 }

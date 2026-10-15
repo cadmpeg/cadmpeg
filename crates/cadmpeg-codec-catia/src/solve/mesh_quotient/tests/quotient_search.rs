@@ -1,10 +1,12 @@
 use crate::families::standard::topology::{
     solve_boundary_orientation_constraints, EdgeBoundaryLayout, EdgeRow, StandardTopologyDraft,
 };
+use crate::solve::mesh_quotient::coordinate_assignment::{
+    MeshImplicitEdgeCandidateSource, MeshImplicitEdgeCandidates,
+};
 use crate::solve::mesh_quotient::selection_search::mesh_assignment_can_merge;
 use crate::solve::mesh_quotient::{
-    admit_orientation_option, deduplicate_mesh_quotient_assignments, initial_mesh_quotient,
-    orientation_fingerprint, orientation_options_equivalent, possible_face_choices,
+    deduplicate_mesh_quotient_assignments, initial_mesh_quotient, possible_face_choices,
     possible_face_choices_with_limit, possible_face_equations, MeshQuotient, MeshSelectionSearch,
     SearchOutcome, MAX_MESH_CONSTRAINT_OPERATIONS,
 };
@@ -13,91 +15,10 @@ use crate::solve::missing_edge::{
 };
 use crate::solve::tests::repeated_domain;
 use cadmpeg_core::decode::WorkBudget;
+use cadmpeg_core::CodecError;
 use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashSet};
 use std::sync::Arc;
-
-#[test]
-fn orientation_fingerprint_preserves_exact_quotient_and_direction_equality() {
-    let domains = vec![
-        Arc::new(HashSet::from([0, 1])),
-        Arc::new(HashSet::from([1, 2])),
-    ];
-    let mut left = MeshQuotient::new(domains.clone());
-    let mut right = MeshQuotient::new(domains);
-    assert!(
-        crate::test_support::with_service_context(|ctx| left.merge_charged(ctx, 0, 1))
-            .expect("service merge")
-            .is_some()
-    );
-    assert!(
-        crate::test_support::with_service_context(|ctx| right.merge_charged(ctx, 1, 0))
-            .expect("service merge")
-            .is_some()
-    );
-    let first = vec![vec![false, true]];
-    let complement = vec![vec![true, false]];
-    assert_eq!(
-        crate::test_support::with_service_context(|ctx| orientation_fingerprint(
-            ctx, &left, &first
-        ))
-        .expect("service orientation"),
-        crate::test_support::with_service_context(|ctx| orientation_fingerprint(
-            ctx,
-            &right,
-            &complement
-        ))
-        .expect("service orientation")
-    );
-    assert!(
-        crate::test_support::with_service_context(|ctx| orientation_options_equivalent(
-            ctx,
-            &left,
-            &first,
-            &right,
-            &complement
-        ))
-        .expect("service orientation")
-    );
-    assert!(
-        !crate::test_support::with_service_context(|ctx| orientation_options_equivalent(
-            ctx,
-            &left,
-            &first,
-            &right,
-            &[vec![false, false]]
-        ))
-        .expect("service orientation")
-    );
-
-    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-        let mut seen = HashMap::new();
-        let mut output = Vec::new();
-        assert!(admit_orientation_option(
-            ctx, &mut seen, &output, &first, &left
-        )?);
-        output.push((first.clone(), left.clone()));
-        assert!(!admit_orientation_option(
-            ctx,
-            &mut seen,
-            &output,
-            &complement,
-            &right
-        )?);
-        Ok::<_, cadmpeg_core::CodecError>(())
-    };
-    crate::test_support::with_service_context(run).expect("service resource budget");
-    for (cap, operation) in [
-        (0, "catia_orientation_fingerprint_keys"),
-        (1, "catia_orientation_fingerprint_indices"),
-    ] {
-        let refusal = crate::test_support::with_collection_limit(cap, run)
-            .expect_err("fingerprint admission exceeds the collection limit");
-        assert!(
-            matches!(refusal, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation)
-        );
-    }
-}
 
 #[test]
 fn quotient_assignments_ignore_span_allocation_with_identical_edge_order() {
@@ -235,7 +156,6 @@ fn possible_face_equations_charge_each_face_and_equation() {
         }
     }
     for operation in [
-        "catia_possible_face_equation_keys",
         "catia_possible_face_equation_values",
         "catia_possible_face_equation_faces",
     ] {
@@ -251,7 +171,6 @@ fn selection_state_signature_charges_nested_face_directions() {
         let search = MeshSelectionSearch {
             ctx,
             assignments: &assignments,
-            possible_face_equations: Vec::new(),
             possible_face_choices: Vec::new(),
             face_work: vec![Some(1)],
             edge_candidates: &[],
@@ -263,7 +182,12 @@ fn selection_state_signature_charges_nested_face_directions() {
             fixed_edge_orientations: vec![Some(true)],
             edge_has_fixed_direction: Vec::new(),
             selected: vec![Some((0, vec![vec![true]]))],
-            visited_states: HashSet::new(),
+            visited_states: std::collections::HashMap::new(),
+            memo_storage: RefCell::new(
+                (ctx)
+                    .reserve_scoped(0, "catia_selection_memo_storage")
+                    .expect("memo storage"),
+            ),
             outcome: SearchOutcome::Open,
             face_equation_cache: RefCell::default(),
         };
@@ -315,7 +239,7 @@ fn mesh_option_enumeration_does_not_scan_fixed_direction_gauges() {
             &ctx,
             &assignment,
             &candidates,
-            &HashSet::new(),
+            &BTreeSet::new(),
             2,
             Some(&budget),
         )
@@ -356,7 +280,7 @@ fn mesh_option_enumeration_preserves_asymmetric_endpoint_directions() {
             &ctx,
             &assignment,
             &[vec![[0, 1]], vec![[0, 1]]],
-            &HashSet::new(),
+            &BTreeSet::new(),
             4,
             None,
         )
@@ -389,8 +313,14 @@ fn quotient_clones_share_unconstrained_point_domains() {
     let quotient = MeshQuotient::new(vec![all.clone(), all.clone(), all.clone(), all.clone()]);
 
     let clone = quotient.clone();
-    assert!(Arc::ptr_eq(&quotient.domains()[0], &clone.domains()[0]));
-    assert!(Arc::ptr_eq(&quotient.domains()[0], &quotient.domains()[3]));
+    assert!(std::rc::Rc::ptr_eq(
+        &quotient.domains()[0],
+        &clone.domains()[0]
+    ));
+    assert!(std::rc::Rc::ptr_eq(
+        &quotient.domains()[0],
+        &quotient.domains()[3]
+    ));
 }
 
 #[test]
@@ -467,18 +397,22 @@ fn coordinate_root_candidate_copy_and_changed_edge_refuse_before_growth() {
         quotient
             .clone()
             .prepare_coordinate_root_domains(ctx, 3, &candidates, None)
+            .map(|result| {
+                result.map(|selected| {
+                    assert_eq!(selected.edge_candidates()[0], [[0, 1]]);
+                })
+            })
     };
-    let selected = crate::test_support::with_service_context(run)
+    crate::test_support::with_service_context(run)
         .expect("service resource budget")
         .expect("coordinate root domains");
-    assert_eq!(selected.edge_candidates()[0], [[0, 1]]);
     let mut operations = std::collections::HashSet::new();
     for limit in 0..256 {
         match crate::test_support::with_collection_limit(limit, run) {
             Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) => {
                 operations.insert(refusal.operation);
             }
-            Ok(Some(_)) => break,
+            Ok(Some(())) => break,
             Ok(None) => panic!("fixture must retain a coordinate matching"),
             Err(error) => panic!("unexpected coordinate refusal: {error}"),
         }
@@ -487,8 +421,6 @@ fn coordinate_root_candidate_copy_and_changed_edge_refuse_before_growth() {
         "catia_quotient_supported_candidate_rows",
         "catia_quotient_supported_candidate_pairs",
         "catia_quotient_changed_edges",
-        "catia_quotient_refine_domain_copy",
-        "catia_quotient_refine_domain_points",
     ] {
         assert!(operations.contains(operation), "no refusal at {operation}");
     }
@@ -514,8 +446,12 @@ fn selected_edge_pair_propagates_through_shared_coordinate_roots() {
         .expect("service resource budget")
         .expect("selected edge pair");
 
-    assert!(domains.supports_edge_candidate(1, [1, 3]));
-    assert!(!domains.supports_edge_candidate(1, [2, 3]));
+    assert!(domains
+        .supports_edge_candidate(&ctx, 1, [1, 3])
+        .expect("service resource budget"));
+    assert!(!domains
+        .supports_edge_candidate(&ctx, 1, [2, 3])
+        .expect("service resource budget"));
 }
 
 #[test]
@@ -575,13 +511,14 @@ fn coordinate_root_domains_keep_unknown_edge_pairs_implicit() {
     ] {
         assert!(refused.contains(operation), "no refusal at {operation}");
     }
-    assert_eq!(
-        domains
-            .implicit_edge_candidates(0, Some(0))
-            .expect("implicit candidates")
-            .collect::<Vec<_>>(),
-        vec![[0, 1]]
-    );
+    let mut implicit = domains
+        .implicit_edge_candidates(0, Some(0))
+        .expect("implicit candidates");
+    let mut pairs = Vec::new();
+    while let Some(pair) = implicit.next_with_context(&ctx).expect("candidate budget") {
+        pairs.push(pair);
+    }
+    assert_eq!(pairs, vec![[0, 1]]);
     assert!(domains
         .refine_edge_candidate_arc(&ctx, 0, [0, 1], None)
         .expect("service resource budget")
@@ -608,25 +545,30 @@ fn required_implicit_coordinate_pairs_scale_with_root_domains_not_their_product(
         .prepare_coordinate_root_domains(&ctx, 4, &candidates, None)
         .expect("service resource budget")
         .expect("implicit coordinate domains");
-    let implicit = domains
+    let mut implicit = domains
         .implicit_edge_candidates(0, Some(1))
         .expect("required implicit candidates");
 
-    assert_eq!(implicit.width_upper_bound(&ctx).expect("bounded width"), 3);
-    assert_eq!(implicit.collect::<Vec<_>>(), vec![[0, 1], [1, 2], [1, 3]]);
+    let mut pairs = Vec::new();
+    while let Some(pair) = implicit.next_with_context(&ctx).expect("candidate budget") {
+        pairs.push(pair);
+    }
+    assert_eq!(pairs, vec![[0, 1], [1, 2], [1, 3]]);
 
     let mut visited = Vec::new();
     assert!(domains
-        .implicit_edge_candidate_with_point(0, 1, None, |pair| {
+        .implicit_edge_candidate_with_point(&ctx, 0, 1, None, |pair| {
             visited.push(pair);
             pair == [1, 3]
         })
+        .expect("service resource budget")
         .is_some());
     assert_eq!(visited, vec![[0, 1], [1, 2], [1, 3]]);
 
     let budget = WorkBudget::new(2);
     assert!(domains
-        .implicit_edge_candidate_with_point(0, 1, Some(&budget), |_| false)
+        .implicit_edge_candidate_with_point(&ctx, 0, 1, Some(&budget), |_| false)
+        .expect("service resource budget")
         .is_none());
     assert!(budget.exhausted());
 }
@@ -643,7 +585,7 @@ fn coordinate_domain_preparation_scales_with_constraint_graph_work() {
             ]
         })
         .collect::<Vec<_>>();
-    let mut quotient =
+    let quotient =
         crate::solve::mesh_quotient::initial_mesh_quotient(&ctx, &candidates, 200, &ports)
             .expect("service resource budget")
             .expect("initial quotient");
@@ -772,7 +714,7 @@ fn ordered_corner_equations_propagate_direction_collection_refusals() {
             std::slice::from_ref(&assignment),
             &budget,
         )?;
-        Ok::<_, CodecError>(equations)
+        Ok::<_, CodecError>(equations.map(|_| ()))
     };
     assert!(run(&service_ctx)
         .expect("service resource budget")
@@ -790,22 +732,16 @@ fn ordered_corner_equations_propagate_direction_collection_refusals() {
                 assert_eq!(error.dimension, ResourceDimension::CollectionItems);
                 refused.insert(error.operation.to_owned());
             }
-            Ok(Some(_)) => break,
+            Ok(Some(())) => break,
             Ok(None) => panic!("closed corner cycle must admit equations"),
             Err(error) => panic!("unexpected refusal: {error}"),
         }
     }
     for operation in [
-        "catia_boundary_direction_options",
         "catia_boundary_directions",
-        "catia_boundary_dir_row",
-        "catia_boundary_dir_grid",
         "catia_boundary_supported_grids",
         "catia_boundary_forward",
-        "catia_boundary_forward_rows",
         "catia_boundary_backward",
-        "catia_boundary_backward_rows",
-        "catia_boundary_corner_equations",
     ] {
         assert!(refused.contains(operation), "no refusal at {operation}");
     }
@@ -829,12 +765,12 @@ fn ordered_corner_equations_propagate_direction_collection_refusals() {
             std::slice::from_ref(&fixed_assignment),
             &budget,
         )
+        .map(|equations| equations.map(|values| values.len()))
     };
     assert_eq!(
         fixed_run(&service_ctx)
             .expect("service resource budget")
-            .expect("fixed cycle has supported corners")
-            .len(),
+            .expect("fixed cycle has supported corners"),
         3
     );
     let mut refused_forced_corner = false;
@@ -849,7 +785,7 @@ fn ordered_corner_equations_propagate_direction_collection_refusals() {
                 assert_eq!(error.dimension, ResourceDimension::CollectionItems);
                 refused_forced_corner |= error.operation == "catia_boundary_forced_corners";
             }
-            Ok(Some(corners)) => assert_eq!(corners.len(), 3),
+            Ok(Some(corners)) => assert_eq!(corners, 3),
             Ok(None) => panic!("fixed closed cycle must admit corners"),
             Err(error) => panic!("unexpected refusal: {error}"),
         }
@@ -882,7 +818,7 @@ fn ordered_corner_equations_propagate_direction_collection_refusals() {
         }
     }
     assert!(ordered_refusals.contains("catia_ordered_face_order"));
-    assert!(ordered_refusals.contains("catia_boundary_direction_options"));
+    assert!(ordered_refusals.contains("catia_boundary_directions"));
 }
 
 #[test]
@@ -910,13 +846,13 @@ fn common_full_quotient_refuses_each_collection_limit() {
         Ok::<_, CodecError>((
             result,
             [
-                crate::test_support::with_service_context(|ctx| quotient.find(ctx, 0))
+                crate::test_support::with_service_context(|ctx| quotient.root(ctx, 0))
                     .expect("service forest traversal"),
-                crate::test_support::with_service_context(|ctx| quotient.find(ctx, 1))
+                crate::test_support::with_service_context(|ctx| quotient.root(ctx, 1))
                     .expect("service forest traversal"),
-                crate::test_support::with_service_context(|ctx| quotient.find(ctx, 2))
+                crate::test_support::with_service_context(|ctx| quotient.root(ctx, 2))
                     .expect("service forest traversal"),
-                crate::test_support::with_service_context(|ctx| quotient.find(ctx, 3))
+                crate::test_support::with_service_context(|ctx| quotient.root(ctx, 3))
                     .expect("service forest traversal"),
             ],
         ))
@@ -949,7 +885,6 @@ fn common_full_quotient_refuses_each_collection_limit() {
     }
     for operation in [
         "catia_common_quotient_signature",
-        "catia_common_quotient_members",
         "catia_common_quotient_classes",
         "catia_quotient_intersection",
         "catia_quotient_merged_members",
@@ -976,10 +911,10 @@ fn quotient_pair_domains_propagate_through_shared_components() {
     assert!(quotient
         .edge_domains_viable(&ctx, &[vec![[0, 2]], vec![[0, 3], [1, 4]],])
         .expect("service resource budget"));
-    assert_eq!(*quotient.domains()[root], HashSet::from([0]));
-    let third_root = crate::test_support::with_service_context(|ctx| quotient.find(ctx, 3))
+    assert_eq!(quotient.domains()[root][..], [0]);
+    let third_root = crate::test_support::with_service_context(|ctx| quotient.root(ctx, 3))
         .expect("service forest traversal");
-    assert_eq!(*quotient.domains()[third_root], HashSet::from([3]));
+    assert_eq!(quotient.domains()[third_root][..], [3]);
 }
 
 #[test]
@@ -1118,7 +1053,6 @@ fn face_choice_materialization_charges_nested_collections_before_absence() {
         "catia_possible_face_choice_direction_rows",
         "catia_possible_face_choice_equations",
         "catia_possible_face_choice_keys",
-        "catia_possible_face_choice_values",
         "catia_possible_face_choice_faces",
     ] {
         assert!(refused.contains(operation), "no refusal at {operation}");
@@ -1217,7 +1151,7 @@ fn quotient_options_reject_an_interior_pair_contradiction() {
     let unrestricted = [Vec::new(), Vec::new(), Vec::new()];
     let options = quotient.assignment_options(&ctx, &assignment, &unrestricted);
     let limited = quotient
-        .assignment_options_limited(&ctx, &assignment, &unrestricted, &HashSet::new(), 1, None)
+        .assignment_options_limited(&ctx, &assignment, &unrestricted, &BTreeSet::new(), 1, None)
         .expect("service resource budget");
     assert_eq!(limited.len(), 1);
     assert_eq!(limited[0].0, options[0].0);
@@ -1226,7 +1160,7 @@ fn quotient_options_reject_an_interior_pair_contradiction() {
             &ctx,
             &assignment,
             &unrestricted,
-            &HashSet::new(),
+            &BTreeSet::new(),
             4_096,
             None,
         )
@@ -1255,7 +1189,7 @@ fn quotient_options_decline_when_their_work_budget_is_exhausted() {
             &ctx,
             &assignment,
             &[vec![[0, 0]]],
-            &HashSet::new(),
+            &BTreeSet::new(),
             1,
             Some(&budget),
         )
@@ -1320,7 +1254,6 @@ fn point_assignment_refuses_before_matching_collections_grow() {
         "catia_point_assignment_root_indices",
         "catia_point_assignment_edge_roots",
         "catia_point_assignment_neighbor_rows",
-        "catia_point_assignment_neighbor_keys",
         "catia_point_assignment_neighbor_points",
         "catia_point_assignment_values",
         "catia_point_assignment_value_rows",
@@ -1428,8 +1361,6 @@ fn mesh_selection_rejects_an_odd_boundary_orientation_cycle() {
     let mut search = MeshSelectionSearch {
         ctx: &ctx,
         assignments: &assignments,
-        possible_face_equations: possible_face_equations(&ctx, &assignments)
-            .expect("service resource budget"),
         possible_face_choices: possible_face_choices(
             &ctx,
             &assignments,
@@ -1449,7 +1380,11 @@ fn mesh_selection_rejects_an_odd_boundary_orientation_cycle() {
             Some((0, vec![vec![false, false]])),
             Some((0, vec![vec![false, false]])),
         ],
-        visited_states: HashSet::new(),
+        visited_states: std::collections::HashMap::new(),
+        memo_storage: RefCell::new(
+            ctx.reserve_scoped(0, "catia_selection_memo_storage")
+                .expect("memo storage"),
+        ),
         outcome: SearchOutcome::Open,
         face_equation_cache: RefCell::default(),
     };
@@ -1462,7 +1397,7 @@ fn mesh_selection_rejects_an_odd_boundary_orientation_cycle() {
 #[test]
 fn partial_boundary_orientation_constraints_reject_an_odd_parity_cycle() {
     catia_test_context!(ctx);
-    let mut edge_uses = HashMap::from([
+    let mut edge_uses = std::collections::BTreeMap::from([
         (0, vec![(0, false), (1, false)]),
         (1, vec![(1, false), (2, false)]),
         (2, vec![(2, false), (0, false)]),
@@ -1539,8 +1474,6 @@ fn mesh_selection_rejects_a_branch_with_no_orientable_remaining_face() {
     let mut search = MeshSelectionSearch {
         ctx: &ctx,
         assignments: &assignments,
-        possible_face_equations: possible_face_equations(&ctx, &assignments)
-            .expect("service resource budget"),
         possible_face_choices: possible_face_choices(
             &ctx,
             &assignments,
@@ -1560,7 +1493,11 @@ fn mesh_selection_rejects_a_branch_with_no_orientable_remaining_face() {
             Some((0, vec![vec![false, false]])),
             None,
         ],
-        visited_states: HashSet::new(),
+        visited_states: std::collections::HashMap::new(),
+        memo_storage: RefCell::new(
+            ctx.reserve_scoped(0, "catia_selection_memo_storage")
+                .expect("memo storage"),
+        ),
         outcome: SearchOutcome::Open,
         face_equation_cache: RefCell::default(),
     };
@@ -1597,8 +1534,6 @@ fn mesh_selection_checks_all_fixed_remaining_faces_together() {
     let search = MeshSelectionSearch {
         ctx: &ctx,
         assignments: &assignments,
-        possible_face_equations: possible_face_equations(&ctx, &assignments)
-            .expect("service resource budget"),
         possible_face_choices: possible_face_choices(
             &ctx,
             &assignments,
@@ -1614,7 +1549,11 @@ fn mesh_selection_checks_all_fixed_remaining_faces_together() {
         fixed_edge_orientations: Vec::new(),
         edge_has_fixed_direction: Vec::new(),
         selected: vec![Some((0, vec![vec![false, false]])), None, None],
-        visited_states: HashSet::new(),
+        visited_states: std::collections::HashMap::new(),
+        memo_storage: RefCell::new(
+            ctx.reserve_scoped(0, "catia_selection_memo_storage")
+                .expect("memo storage"),
+        ),
         outcome: SearchOutcome::Open,
         face_equation_cache: RefCell::default(),
     };
@@ -1665,8 +1604,6 @@ fn partial_mesh_selection_survives_optional_deduction_exhaustion() {
     let search = MeshSelectionSearch {
         ctx: &ctx,
         assignments: &assignments,
-        possible_face_equations: possible_face_equations(&ctx, &assignments)
-            .expect("service resource budget"),
         possible_face_choices: possible_face_choices(
             &ctx,
             &assignments,
@@ -1682,7 +1619,11 @@ fn partial_mesh_selection_survives_optional_deduction_exhaustion() {
         fixed_edge_orientations: Vec::new(),
         edge_has_fixed_direction: Vec::new(),
         selected: vec![None],
-        visited_states: HashSet::new(),
+        visited_states: std::collections::HashMap::new(),
+        memo_storage: RefCell::new(
+            ctx.reserve_scoped(0, "catia_selection_memo_storage")
+                .expect("memo storage"),
+        ),
         outcome: SearchOutcome::Open,
         face_equation_cache: RefCell::default(),
     };
@@ -1695,7 +1636,7 @@ fn partial_mesh_selection_survives_optional_deduction_exhaustion() {
     let propagation_budget = WorkBudget::new(0);
     let changed_edges = HashSet::from([0]);
 
-    let mut prepared = search
+    let prepared = search
         .prepare_selected_branch(&quotient, &changed_edges, &propagation_budget)
         .expect("service resource budget")
         .expect("partial quotient remains viable");
@@ -1753,7 +1694,7 @@ fn mesh_assignment_distinguishes_quotient_work_from_direction_only_work() {
 }
 
 #[test]
-fn remaining_merge_capacity_counts_distinct_quotient_equations() {
+fn production_options_count_distinct_quotient_equations() {
     catia_test_context!(ctx);
     let assignment = MeshFaceBoundaryAssignment {
         boundaries: vec![vec![
@@ -1771,49 +1712,62 @@ fn remaining_merge_capacity_counts_distinct_quotient_equations() {
             },
         ]],
     };
-    let assignments = vec![vec![assignment.clone()], vec![assignment]];
+    let assignments = [vec![assignment.clone()], vec![assignment]];
     let edge_candidates = vec![Vec::new(); 2];
-    let search = MeshSelectionSearch {
-        ctx: &ctx,
-        assignments: &assignments,
-        possible_face_equations: possible_face_equations(&ctx, &assignments)
-            .expect("service resource budget"),
-        possible_face_choices: possible_face_choices(
-            &ctx,
-            &assignments,
-            &possible_face_equations(&ctx, &assignments).expect("service resource budget"),
-        ),
-        face_work: vec![Some(1); 2],
-        edge_candidates: &edge_candidates,
-        edge_rows: &[],
-        vertex_points: &[],
-        candidate_gauge: None,
-        port_identities: None,
-        fixed_face_directions: Vec::new(),
-        fixed_edge_orientations: Vec::new(),
-        edge_has_fixed_direction: Vec::new(),
-        selected: vec![None; 2],
-        visited_states: HashSet::new(),
-        outcome: SearchOutcome::Open,
-        face_equation_cache: RefCell::default(),
-    };
     let mut quotient = MeshQuotient::new(repeated_domain(HashSet::from([0, 1]), 4));
 
-    assert_eq!(
-        search
-            .remaining_equation_merge_capacity(&mut quotient)
-            .expect("service resource budget"),
-        Some(2)
-    );
-    crate::test_support::with_service_context(|ctx| quotient.merge_charged(ctx, 1, 2))
-        .expect("service merge")
-        .expect("first repeated equation");
-    assert_eq!(
-        search
-            .remaining_equation_merge_capacity(&mut quotient)
-            .expect("service resource budget"),
-        Some(1)
-    );
+    for expected_reduction in [2, 1] {
+        let before = quotient.root_count(&ctx).expect("initial roots");
+        let options = quotient
+            .assignment_options_limited(
+                &ctx,
+                &assignments[0][0],
+                &edge_candidates,
+                &std::collections::BTreeSet::new(),
+                16,
+                None,
+            )
+            .expect("production options");
+        assert_eq!(options.len(), 1);
+        assert_eq!(
+            options[0].1.root_count(&ctx).expect("completed roots"),
+            before - expected_reduction
+        );
+        quotient
+            .merge_charged(&ctx, 1, 2)
+            .expect("service merge")
+            .expect("repeated equation");
+    }
 }
 
 mod selection_search;
+
+#[test]
+fn implicit_candidate_scan_charges_rejected_pairs_and_duplicate_queries() {
+    for operation in [
+        "catia_implicit_candidate_scan",
+        "catia_implicit_candidate_duplicate",
+    ] {
+        let result = crate::test_support::with_work_refusal(operation, |ctx| {
+            let mut values = MeshImplicitEdgeCandidates {
+                source: MeshImplicitEdgeCandidateSource::Cartesian {
+                    domains: std::rc::Rc::new(crate::solve::mesh_quotient::ScopedValue {
+                        value: vec![vec![0, 1], vec![0, 1]],
+                        storage: None,
+                    }),
+                    left_root: 0,
+                    right_root: 1,
+                    left_index: 0,
+                    right_index: 0,
+                    same_root: false,
+                },
+            };
+            assert_eq!(values.next_with_context(ctx)?, Some([0, 1]));
+            assert_eq!(values.next_with_context(ctx)?, None);
+            Ok(())
+        });
+        assert!(
+            matches!(result, Err(CodecError::ResourceLimit(limit)) if limit.operation == operation)
+        );
+    }
+}

@@ -4,12 +4,12 @@ use crate::families::standard::topology::reconstruct_incidence;
 use crate::families::standard::topology::EdgeBoundaryLayout;
 use crate::families::standard::topology::EdgeRow;
 use crate::solve::matching::unique_coordinate_bijection;
+use crate::solve::mesh_quotient::coordinate_assignment::MeshIncidenceBoundary;
 use crate::solve::mesh_quotient::mesh_assignment_endpoint_cycles_viable;
 use crate::solve::mesh_quotient::mesh_face_endpoint_configurations;
 use crate::solve::mesh_quotient::prune_mesh_endpoint_pair_support;
 use crate::solve::mesh_quotient::prune_mesh_endpoint_pair_support_with_limit;
 use crate::solve::mesh_quotient::selection_search::mesh_edge_points_compatible;
-use crate::solve::mesh_quotient::MeshIncidenceBoundary;
 use crate::solve::mesh_quotient::MeshQuotient;
 use crate::solve::missing_edge::bind_edge_port_candidates;
 use crate::solve::missing_edge::expand_deferred_edge_port_components;
@@ -206,9 +206,15 @@ fn endpoint_port_propagation_closes_equal_port_edges() {
 
 #[test]
 fn mesh_endpoint_validation_accepts_equal_points_only_for_closed_ports() {
-    assert!(mesh_edge_points_compatible(true, &[[2, 2]], [2, 2]));
-    assert!(!mesh_edge_points_compatible(false, &[[2, 2]], [2, 2]));
-    assert!(!mesh_edge_points_compatible(true, &[[1, 1]], [2, 2]));
+    let compatible = |closed_ports, candidates: &[[usize; 2]], points| {
+        crate::test_support::with_service_context(|ctx| {
+            mesh_edge_points_compatible(ctx, closed_ports, candidates, points)
+        })
+        .expect("service resource budget")
+    };
+    assert!(compatible(true, &[[2, 2]], [2, 2]));
+    assert!(!compatible(false, &[[2, 2]], [2, 2]));
+    assert!(!compatible(true, &[[1, 1]], [2, 2]));
 }
 
 #[test]
@@ -230,9 +236,9 @@ fn quotient_merges_roots_forced_to_one_coordinate_identity() {
         3
     );
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 0))
+        crate::test_support::with_service_context(|ctx| quotient.root(ctx, 0))
             .expect("service forest traversal"),
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 2))
+        crate::test_support::with_service_context(|ctx| quotient.root(ctx, 2))
             .expect("service forest traversal")
     );
 }
@@ -278,28 +284,28 @@ fn quotient_closes_coordinate_roots_forced_by_joint_edge_pairs() {
         3
     );
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 0))
+        crate::test_support::with_service_context(|ctx| quotient.root(ctx, 0))
             .expect("service forest traversal"),
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 5))
+        crate::test_support::with_service_context(|ctx| quotient.root(ctx, 5))
             .expect("service forest traversal")
     );
     assert_eq!(
-        assignment[&crate::test_support::with_service_context(|ctx| quotient.find(ctx, 0))
+        assignment[&crate::test_support::with_service_context(|ctx| quotient.root(ctx, 0))
             .expect("service forest traversal")],
         0
     );
     assert_eq!(
-        assignment[&crate::test_support::with_service_context(|ctx| quotient.find(ctx, 1))
+        assignment[&crate::test_support::with_service_context(|ctx| quotient.root(ctx, 1))
             .expect("service forest traversal")],
         1
     );
     assert_eq!(
-        assignment[&crate::test_support::with_service_context(|ctx| quotient.find(ctx, 3))
+        assignment[&crate::test_support::with_service_context(|ctx| quotient.root(ctx, 3))
             .expect("service forest traversal")],
         2
     );
     for node in 0..6 {
-        let root = crate::test_support::with_service_context(|ctx| quotient.find(ctx, node))
+        let root = crate::test_support::with_service_context(|ctx| quotient.root(ctx, node))
             .expect("service forest traversal");
         assert_eq!(quotient.domains()[root].len(), 1);
         assert_eq!(
@@ -432,12 +438,12 @@ fn quotient_coordinate_closure_propagates_edge_arc_consistency_to_a_fixpoint() {
         2
     );
     assert_eq!(
-        assignment[&crate::test_support::with_service_context(|ctx| quotient.find(ctx, 0))
+        assignment[&crate::test_support::with_service_context(|ctx| quotient.root(ctx, 0))
             .expect("service forest traversal")],
         0
     );
     assert_eq!(
-        assignment[&crate::test_support::with_service_context(|ctx| quotient.find(ctx, 4))
+        assignment[&crate::test_support::with_service_context(|ctx| quotient.root(ctx, 4))
             .expect("service forest traversal")],
         1
     );
@@ -466,17 +472,17 @@ fn quotient_coordinate_closure_forces_the_only_root_supporting_a_point() {
         3
     );
     assert_eq!(
-        assignment[&crate::test_support::with_service_context(|ctx| quotient.find(ctx, 0))
+        assignment[&crate::test_support::with_service_context(|ctx| quotient.root(ctx, 0))
             .expect("service forest traversal")],
         1
     );
     assert_eq!(
-        assignment[&crate::test_support::with_service_context(|ctx| quotient.find(ctx, 1))
+        assignment[&crate::test_support::with_service_context(|ctx| quotient.root(ctx, 1))
             .expect("service forest traversal")],
         0
     );
     assert_eq!(
-        assignment[&crate::test_support::with_service_context(|ctx| quotient.find(ctx, 2))
+        assignment[&crate::test_support::with_service_context(|ctx| quotient.root(ctx, 2))
             .expect("service forest traversal")],
         2
     );
@@ -808,9 +814,9 @@ fn quotient_closes_independent_coordinate_components_with_local_budgets() {
     for component in 0..COMPONENT_COUNT {
         let node = component * 6;
         assert_eq!(
-            crate::test_support::with_service_context(|ctx| quotient.find(ctx, node))
+            crate::test_support::with_service_context(|ctx| quotient.root(ctx, node))
                 .expect("service forest traversal"),
-            crate::test_support::with_service_context(|ctx| quotient.find(ctx, node + 5))
+            crate::test_support::with_service_context(|ctx| quotient.root(ctx, node + 5))
                 .expect("service forest traversal")
         );
     }
@@ -989,8 +995,12 @@ fn quotient_retains_diagonal_pairs_until_ports_are_merged() {
         .edge_domains_viable(&ctx, &[vec![[2, 2]]])
         .expect("service resource budget"));
     assert_eq!(
-        quotient.domains(),
-        vec![Arc::new(HashSet::from([2])), Arc::new(HashSet::from([2]))]
+        quotient
+            .domains()
+            .iter()
+            .map(|domain| domain.to_vec())
+            .collect::<Vec<_>>(),
+        vec![vec![2], vec![2]]
     );
     crate::test_support::with_service_context(|ctx| quotient.merge_charged(ctx, 0, 1))
         .expect("service merge")
@@ -1196,16 +1206,16 @@ fn mesh_assignment_endpoint_cycle_support_removes_open_layered_paths() {
         |edge| {
             candidates
                 .get(edge)
-                .map(|values| crate::solve::mesh_quotient::MeshEndpointCandidates::Explicit(values))
+                .map(|values| crate::solve::mesh_quotient::coordinate_assignment::MeshEndpointCandidates::Explicit(values))
         },
         |_, _| true,
     )
     .expect("service resource budget")
     .expect("bounded layered-cycle support");
 
-    assert_eq!(support.by_edge[&0], HashSet::from([[0, 1]]));
-    assert_eq!(support.by_edge[&1], HashSet::from([[1, 3]]));
-    assert_eq!(support.by_edge[&2], HashSet::from([[0, 3]]));
+    assert_eq!(support.by_edge[&0], vec![[0, 1]]);
+    assert_eq!(support.by_edge[&1], vec![[1, 3]]);
+    assert_eq!(support.by_edge[&2], vec![[0, 3]]);
     assert!(!budget.exhausted());
 }
 
@@ -1229,7 +1239,7 @@ fn layered_endpoint_relations_and_support_maps_refuse_before_growth() {
             None,
             |edge| {
                 candidates.get(edge).map(|values| {
-                    crate::solve::mesh_quotient::MeshEndpointCandidates::Explicit(values)
+                    crate::solve::mesh_quotient::coordinate_assignment::MeshEndpointCandidates::Explicit(values)
                 })
             },
             |_, _| true,
@@ -1238,7 +1248,7 @@ fn layered_endpoint_relations_and_support_maps_refuse_before_growth() {
     let support = crate::test_support::with_service_context(run)
         .expect("service resource budget")
         .expect("bounded layered support");
-    assert_eq!(support.by_edge[&0], HashSet::from([[0, 1]]));
+    assert_eq!(support.by_edge[&0], vec![[0, 1]]);
     let mut operations = HashSet::new();
     for cap in 0..256 {
         match crate::test_support::with_collection_limit(cap, run) {
@@ -1288,7 +1298,7 @@ fn mesh_assignment_endpoint_cycle_support_requires_one_complete_traversal() {
         |edge| {
             candidates
                 .get(edge)
-                .map(|values| crate::solve::mesh_quotient::MeshEndpointCandidates::Explicit(values))
+                .map(|values| crate::solve::mesh_quotient::coordinate_assignment::MeshEndpointCandidates::Explicit(values))
         },
         |_, _| true,
     )
@@ -1319,7 +1329,7 @@ fn mesh_assignment_endpoint_cycle_support_refuses_suffix_collection_limit() {
             None,
             |edge| {
                 candidates.get(edge).map(|values| {
-                    crate::solve::mesh_quotient::MeshEndpointCandidates::Explicit(values)
+                    crate::solve::mesh_quotient::coordinate_assignment::MeshEndpointCandidates::Explicit(values)
                 })
             },
             |_, _| true,
@@ -1648,11 +1658,7 @@ fn mesh_endpoint_pair_support_refuses_before_incident_faces_and_snapshot() {
         }
     }
     assert!(completed, "fixture must fit the final cap");
-    for operation in [
-        "catia_prune_incident_faces",
-        "catia_prune_snapshot_rows",
-        "catia_prune_snapshot_pairs",
-    ] {
+    for operation in ["catia_prune_incident_faces", "catia_prune_retained_pairs"] {
         assert!(refusals.contains(operation), "no refusal at {operation}");
     }
 }
@@ -1726,3 +1732,49 @@ fn duplicate_face_assignment_visitor_keeps_alternates_correlated() {
 }
 
 mod endpoint_ports;
+
+#[test]
+fn unchanged_implicit_face_pruning_retains_no_trial_pairs() {
+    catia_test_context!(service_ctx);
+    let original = vec![vec![[0, 1]], vec![[1, 2]], vec![[0, 2]]];
+    let mut quotient = crate::solve::mesh_quotient::initial_mesh_quotient(
+        &service_ctx,
+        &original,
+        3,
+        &[[10, 11], [12, 13], [14, 15]],
+    )
+    .expect("service resource budget")
+    .expect("initial quotient");
+    let coordinate_domains = quotient
+        .prepare_coordinate_root_domains(&service_ctx, 3, &original, None)
+        .expect("service resource budget")
+        .expect("coordinate domains");
+    let domains = [MeshFaceBoundaryDomain::Ordered(vec![
+        MeshFaceBoundaryAssignment {
+            boundaries: vec![(0..3)
+                .map(|edge| MeshBoundaryEdgeCandidate {
+                    edge,
+                    start: edge,
+                    end: (edge + 1) % 3,
+                    reversed: None,
+                })
+                .collect()],
+        },
+    ])];
+    crate::test_support::with_retained_limit(0, |ctx| {
+        let mut choices = original.clone();
+        let budget = WorkBudget::new(10_000);
+        assert!(
+            crate::solve::incidence::prune_implicit_ordered_face_endpoint_support(
+                ctx,
+                &domains,
+                &mut choices,
+                &coordinate_domains,
+                &budget,
+            )
+            .expect("unchanged trial rows stay temporary")
+        );
+        assert_eq!(choices, original);
+        assert!(!budget.exhausted());
+    });
+}

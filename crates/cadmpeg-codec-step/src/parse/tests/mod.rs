@@ -8,3 +8,21 @@ mod index;
 mod omitted;
 mod resource_limits;
 mod storage;
+
+mod header_references;
+
+mod admission;
+
+mod known_length;
+
+mod borrowed_union;
+
+mod borrowed_queries;
+
+mod schema_matching;
+
+mod string_validation;
+
+mod reference_memo;
+
+mod signature_validation;

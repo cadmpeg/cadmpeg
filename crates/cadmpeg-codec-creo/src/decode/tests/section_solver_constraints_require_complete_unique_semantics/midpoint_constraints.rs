@@ -141,7 +141,8 @@ fn section_solver_midpoints_preserve_saved_geometry_and_coordinate_constraints()
             internal_id: 20,
             bitmask: 1,
             offset: 95,
-        }],
+        }]
+        .into(),
         offset: 94,
     });
     saved_line_midpoint.saved_section = Some(crate::feature::definitions::FeatureSavedSection {
@@ -392,15 +393,19 @@ fn section_solver_midpoints_preserve_saved_geometry_and_coordinate_constraints()
         offset: 84,
     });
     synchronize_skamp_count(&mut midpoint_definition);
-    assert!(section_skamp_is_circular(
-        &midpoint_definition,
-        &midpoint_definition
-            .relations
-            .as_ref()
-            .expect("relations")
-            .skamps()[0]
-            .items[1],
-    ));
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| section_skamp_is_circular(
+            ctx,
+            &midpoint_definition,
+            &midpoint_definition
+                .relations
+                .as_ref()
+                .expect("relations")
+                .skamps()[0]
+                .items[1],
+        ))
+        .expect("admitted section lookup")
+    );
     assert_eq!(
         *(section_skamp_constraints(
             &midpoint_definition,

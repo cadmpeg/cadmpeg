@@ -24,9 +24,12 @@ use super::report_losses::{
 use crate::decode::analytic::planes::is_axis_aligned;
 use cadmpeg_ir::codec::DecodeBody;
 
-pub(in super::super) fn has_transferred_geometry(ir: &CadIr) -> bool {
+pub(in super::super) fn has_transferred_geometry(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ir: &CadIr,
+) -> Result<bool, cadmpeg_core::CodecError> {
     let model = &ir.model;
-    !model.points.is_empty()
+    Ok(!model.points.is_empty()
         || !model.vertices.is_empty()
         || !model.edges.is_empty()
         || !model.coedges.is_empty()
@@ -35,39 +38,59 @@ pub(in super::super) fn has_transferred_geometry(ir: &CadIr) -> bool {
         || !model.shells.is_empty()
         || !model.regions.is_empty()
         || !model.bodies.is_empty()
-        || model.surfaces.iter().any(|surface| {
-            !matches!(
-                surface.geometry.solved(),
-                Some(SolvedSurfaceGeometry::Unknown { .. })
-            )
-        })
-        || model.curves.iter().any(|curve| {
-            !matches!(
-                curve.geometry.solved(),
-                Some(SolvedCurveGeometry::Unknown { .. })
-            )
-        })
+        || ctx.any_by(
+            &model.surfaces,
+            |surface| {
+                Ok(!matches!(
+                    surface.geometry.solved(),
+                    Some(SolvedSurfaceGeometry::Unknown { .. })
+                ))
+            },
+            "creo transferred surfaces search",
+        )?
+        || ctx.any_by(
+            &model.curves,
+            |curve| {
+                Ok(!matches!(
+                    curve.geometry.solved(),
+                    Some(SolvedCurveGeometry::Unknown { .. })
+                ))
+            },
+            "creo transferred curves search",
+        )?
         || !model.subds.is_empty()
         || !model.pcurves.is_empty()
-        || model.procedural_surfaces.iter().any(|surface| {
-            !matches!(
-                surface.definition(),
-                ProceduralSurfaceDefinition::Unknown { .. }
-            )
-        })
-        || model.procedural_curves.iter().any(|curve| {
-            !matches!(
-                curve.definition(),
-                ProceduralCurveDefinition::Unknown { .. }
-            )
-        })
-        || model.sketch_entities.iter().any(|entity| {
-            !matches!(
-                entity.geometry.definition(),
-                SketchGeometryDefinition::Native { .. }
-            )
-        })
-        || !model.tessellations.is_empty()
+        || ctx.any_by(
+            &model.procedural_surfaces,
+            |surface| {
+                Ok(!matches!(
+                    surface.definition(),
+                    ProceduralSurfaceDefinition::Unknown { .. }
+                ))
+            },
+            "creo transferred procedural_surfaces search",
+        )?
+        || ctx.any_by(
+            &model.procedural_curves,
+            |curve| {
+                Ok(!matches!(
+                    curve.definition(),
+                    ProceduralCurveDefinition::Unknown { .. }
+                ))
+            },
+            "creo transferred procedural_curves search",
+        )?
+        || ctx.any_by(
+            &model.sketch_entities,
+            |entity| {
+                Ok(!matches!(
+                    entity.geometry.definition(),
+                    SketchGeometryDefinition::Native { .. }
+                ))
+            },
+            "creo transferred sketch_entities search",
+        )?
+        || !model.tessellations.is_empty())
 }
 
 /// Build the decode body from the entry point's one dialect classification.
@@ -90,42 +113,53 @@ pub(in super::super) fn build_report(
         }
     }
 
-    let geom_sections = scan
-        .framing
-        .sections
-        .iter()
+    let geom_sections = ctx
+        .admit_iter(&scan.framing.sections, "creo geometry section census")?
         .filter(|s| s.role() == SectionRole::PsbGeometry)
         .count();
-    let placed_frames = scan
-        .planes
-        .local_systems
-        .iter()
-        .filter(|frame| {
-            let frame = frame.frame();
-            frame.origin.is_some()
-                && frame.u_axis.is_some()
-                && frame
-                    .normal()
-                    .is_some_and(|normal| !is_axis_aligned(normal))
-        })
-        .map(|frame| frame.surface_id);
+    let placed_frames = ctx
+        .admit_iter(&scan.planes.local_systems, "creo placed local frame census")?
+        .map(|source| {
+            let frame = source.frame();
+            let placed = if frame.origin.is_some() && frame.u_axis.is_some() {
+                match frame.normal() {
+                    Some(normal) => !is_axis_aligned(normal),
+                    None => false,
+                }
+            } else {
+                false
+            };
+            Ok::<_, cadmpeg_core::CodecError>(placed.then_some(source.surface_id))
+        });
+    let mut lookup_storage = ctx.reserve_scoped(0, "creo report placed plane lookup storage")?;
     let mut placed_plane_ids = BTreeSet::new();
     for id in placed_frames
-        .chain(scan.planes.outlines.iter().map(|plane| plane.surface_id))
         .chain(
-            scan.planes
-                .positional_frames
-                .iter()
-                .map(|plane| plane.surface_id),
+            ctx.admit_iter(&scan.planes.outlines, "creo placed outline census")?
+                .map(|plane| Ok(Some(plane.surface_id))),
+        )
+        .chain(
+            ctx.admit_iter(
+                &scan.planes.positional_frames,
+                "creo placed positional frame census",
+            )?
+            .map(|plane| Ok(Some(plane.surface_id))),
         )
     {
-        ctx.insert_btree_set(
-            &mut placed_plane_ids,
-            id,
-            "creo report placed plane ID nodes",
-        )?;
+        let Some(id) = id? else {
+            continue;
+        };
+        lookup_storage.with_storage(|| {
+            ctx.insert_btree_set(
+                &mut placed_plane_ids,
+                id,
+                "creo report placed plane ID nodes",
+            )
+        })?;
     }
     let placed_plane_count = placed_plane_ids.len();
+    drop(placed_plane_ids);
+    drop(lookup_storage);
     let mut losses = Vec::new();
 
     // The admission charge, first: it describes how the whole document was
@@ -184,7 +218,7 @@ pub(in super::super) fn build_report(
         transfer: if container_only {
             cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {}
         } else {
-            cadmpeg_ir::report::decode::DecodeTransfer::full(has_transferred_geometry(ir))
+            cadmpeg_ir::report::decode::DecodeTransfer::full(has_transferred_geometry(ctx, ir)?)
         },
         coverage,
         losses,
@@ -202,6 +236,29 @@ mod tests {
     use cadmpeg_core::CodecError;
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::units::UnitVector3;
+
+    #[test]
+    fn geometry_signal_refuses_before_surface_search() {
+        let mut ir = CadIr::empty();
+        ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
+            id: cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#surface".to_string())
+                .expect("identity grammar"),
+            geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(
+                cadmpeg_ir::geometry::SolvedSurfaceGeometry::Unknown { record: None },
+            ),
+            source_object: None,
+        });
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
+        let error =
+            super::has_transferred_geometry(&ctx, &ir).expect_err("surface traversal refused");
+        assert!(matches!(error, CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::WorkUnits
+                && resource.operation == "creo transferred surfaces search"));
+    }
 
     #[test]
     fn placed_plane_id_nodes_refuse_collection_limit() {

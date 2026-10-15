@@ -10,6 +10,7 @@ use crate::vecmath::{cross, dot};
 
 use super::intersection_candidates::apex_plane_cone_generator_candidates;
 
+const EPS_PLANE_INTERSECTION_DENOMINATOR: f64 = 1e-18;
 const EPS_AXIS_ORTHO: f64 = 1.0e-10;
 const EPS_CARRIER_AGREEMENT: f64 = 1.0e-9;
 const EPS_CONE_SLOPE_NONZERO: f64 = 1.0e-12;
@@ -27,7 +28,7 @@ pub(in super::super) fn carrier_intersection_curve(
         (CarrierEquation::Plane(first), CarrierEquation::Plane(second)) => {
             let direction = cross(first.normal, second.normal);
             let denominator = dot(direction, direction);
-            if denominator <= 1e-18 {
+            if denominator <= EPS_PLANE_INTERSECTION_DENOMINATOR {
                 return None;
             }
             let first_distance = dot(first.normal, first.origin);
@@ -172,14 +173,14 @@ pub(in super::super) fn carrier_intersection_curve(
                     let direction = normalize(std::array::from_fn(|index| {
                         axis[index] - alignment * normal[index]
                     }))?;
+                    let Ok(line) = cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                        Point3::from(apex),
+                        Vector3::from(direction),
+                    ) else {
+                        return None;
+                    };
                     return Some((
-                        CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-                                Point3::from(apex),
-                                Vector3::from(direction),
-                            )
-                            .ok()?,
-                        )),
+                        CurveGeometry::Solved(SolvedCurveGeometry::Line(line)),
                         "plane_cone_tangent_line",
                     ));
                 }
@@ -203,35 +204,33 @@ pub(in super::super) fn carrier_intersection_curve(
                 let center: [f64; 3] =
                     std::array::from_fn(|index| cone.origin()[index] + axial * axis[index]);
                 let reference = normalize(cone.ref_direction())?;
-                let (geometry, tag) = if circular_cone(cone) {
-                    (
-                        CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                            cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                                Point3::from(center),
-                                Vector3::from(normal),
-                                Vector3::from(reference),
-                                radius,
-                            )
-                            .ok()?,
-                        )),
+                if circular_cone(cone) {
+                    let Ok(circle) = cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+                        Point3::from(center),
+                        Vector3::from(normal),
+                        Vector3::from(reference),
+                        radius,
+                    ) else {
+                        return None;
+                    };
+                    return Some((
+                        CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle)),
                         "plane_cone_circle",
-                    )
-                } else {
-                    (
-                        CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
-                            cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
-                                Point3::from(center),
-                                Vector3::from(normal),
-                                Vector3::from(reference),
-                                radius,
-                                radius * cone.ratio(),
-                            )
-                            .ok()?,
-                        )),
-                        "plane_cone_parallel_ellipse",
-                    )
+                    ));
+                }
+                let Ok(ellipse) = cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
+                    Point3::from(center),
+                    Vector3::from(normal),
+                    Vector3::from(reference),
+                    radius,
+                    radius * cone.ratio(),
+                ) else {
+                    return None;
                 };
-                return Some((geometry, tag));
+                return Some((
+                    CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse)),
+                    "plane_cone_parallel_ellipse",
+                ));
             }
             plane_cone_conic(plane, cone)
         }

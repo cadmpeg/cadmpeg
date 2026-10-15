@@ -5,9 +5,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 
-use super::super::split_neutral_component_shells;
+use super::super::{split_neutral_component_shells, NeutralShellSpec};
 
-fn split_error(limit: u64, connected: bool, wire: bool, attached: bool) -> CodecError {
+fn split_error(operation: &'static str, connected: bool, wire: bool, attached: bool) -> CodecError {
     let faces: &[u32] = if connected { &[1, 2] } else { &[1] };
     let adjacency = if connected {
         BTreeMap::from([(1, BTreeSet::from([2])), (2, BTreeSet::from([1]))])
@@ -24,20 +24,21 @@ fn split_error(limit: u64, connected: bool, wire: bool, attached: bool) -> Codec
         BTreeSet::new()
     };
     let edge_vertices = BTreeMap::from([(10, [1, 2])]);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-    split_neutral_component_shells(
-        &ctx,
-        faces,
-        &wires,
-        &adjacency,
-        &face_vertices,
-        &edge_vertices,
+    crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::CollectionItems,
+        operation,
+        |ctx| {
+            split_neutral_component_shells(
+                ctx,
+                faces,
+                &wires,
+                &adjacency,
+                &face_vertices,
+                &edge_vertices,
+            )
+        },
     )
-    .expect_err("shell partition allocation refused")
 }
 
 fn assert_refusal(error: &CodecError, operation: &'static str) {
@@ -50,9 +51,57 @@ fn assert_refusal(error: &CodecError, operation: &'static str) {
 }
 
 #[test]
+fn shell_component_face_traversal_refuses_before_pop() {
+    let shells = crate::test_support::assert_work_boundaries(
+        &["creo B-rep shell component face visits"],
+        |ctx| {
+            split_neutral_component_shells(
+                ctx,
+                &[1],
+                &BTreeSet::new(),
+                &BTreeMap::new(),
+                &BTreeMap::new(),
+                &BTreeMap::new(),
+            )
+        },
+    );
+    assert_eq!(
+        shells,
+        vec![NeutralShellSpec {
+            faces: vec![1],
+            wire_curves: BTreeSet::new(),
+        }]
+    );
+}
+
+#[test]
+fn disconnected_shell_faces_admit_each_tree_removal() {
+    let shells = crate::test_support::assert_work_boundaries(
+        &["creo B-rep shell component face removal"],
+        |ctx| {
+            split_neutral_component_shells(
+                ctx,
+                &[1, 2, 3],
+                &BTreeSet::new(),
+                &BTreeMap::new(),
+                &BTreeMap::new(),
+                &BTreeMap::new(),
+            )
+        },
+    );
+    assert_eq!(
+        shells,
+        [1, 2, 3].map(|face| NeutralShellSpec {
+            faces: vec![face],
+            wire_curves: BTreeSet::new(),
+        })
+    );
+}
+
+#[test]
 fn brep_remaining_face_nodes_refuse_collection_limit() {
     assert_refusal(
-        &split_error(0, false, false, false),
+        &split_error("creo B-rep remaining face nodes", false, false, false),
         "creo B-rep remaining face nodes",
     );
 }
@@ -60,7 +109,7 @@ fn brep_remaining_face_nodes_refuse_collection_limit() {
 #[test]
 fn brep_shell_group_face_nodes_refuse_collection_limit() {
     assert_refusal(
-        &split_error(1, false, false, false),
+        &split_error("creo B-rep shell group face nodes", false, false, false),
         "creo B-rep shell group face nodes",
     );
 }
@@ -68,7 +117,7 @@ fn brep_shell_group_face_nodes_refuse_collection_limit() {
 #[test]
 fn brep_pending_shell_faces_refuse_collection_limit() {
     assert_refusal(
-        &split_error(2, false, false, false),
+        &split_error("creo B-rep pending shell faces", false, false, false),
         "creo B-rep pending shell faces",
     );
 }
@@ -76,7 +125,7 @@ fn brep_pending_shell_faces_refuse_collection_limit() {
 #[test]
 fn brep_shell_face_ids_refuse_collection_limit() {
     assert_refusal(
-        &split_error(3, false, false, false),
+        &split_error("creo B-rep shell face IDs", false, false, false),
         "creo B-rep shell face IDs",
     );
 }
@@ -84,7 +133,7 @@ fn brep_shell_face_ids_refuse_collection_limit() {
 #[test]
 fn brep_shell_records_refuse_collection_limit() {
     assert_refusal(
-        &split_error(4, false, false, false),
+        &split_error("creo B-rep shell records", false, false, false),
         "creo B-rep shell records",
     );
 }
@@ -92,7 +141,7 @@ fn brep_shell_records_refuse_collection_limit() {
 #[test]
 fn brep_connected_shell_group_nodes_refuse_collection_limit() {
     assert_refusal(
-        &split_error(4, true, false, false),
+        &split_error("creo B-rep shell group face nodes", true, false, false),
         "creo B-rep shell group face nodes",
     );
 }
@@ -100,7 +149,7 @@ fn brep_connected_shell_group_nodes_refuse_collection_limit() {
 #[test]
 fn brep_connected_pending_shell_faces_refuse_collection_limit() {
     assert_refusal(
-        &split_error(5, true, false, false),
+        &split_error("creo B-rep pending shell faces", true, false, false),
         "creo B-rep pending shell faces",
     );
 }
@@ -108,7 +157,7 @@ fn brep_connected_pending_shell_faces_refuse_collection_limit() {
 #[test]
 fn brep_attached_wire_nodes_refuse_collection_limit() {
     assert_refusal(
-        &split_error(5, false, true, true),
+        &split_error("creo B-rep attached wire nodes", false, true, true),
         "creo B-rep attached wire nodes",
     );
 }
@@ -116,7 +165,7 @@ fn brep_attached_wire_nodes_refuse_collection_limit() {
 #[test]
 fn brep_unattached_wire_nodes_refuse_collection_limit() {
     assert_refusal(
-        &split_error(5, false, true, false),
+        &split_error("creo B-rep unattached wire nodes", false, true, false),
         "creo B-rep unattached wire nodes",
     );
 }
@@ -124,7 +173,154 @@ fn brep_unattached_wire_nodes_refuse_collection_limit() {
 #[test]
 fn brep_unattached_wire_shell_record_refuses_collection_limit() {
     assert_refusal(
-        &split_error(6, false, true, false),
+        &split_error("creo B-rep shell records", false, true, false),
         "creo B-rep shell records",
+    );
+}
+
+#[test]
+fn pending_shell_face_traversal_refuses_before_pop() {
+    let run = |limit| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        split_neutral_component_shells(
+            &ctx,
+            &[1],
+            &BTreeSet::new(),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+        )
+    };
+    let limit = crate::test_support::allocation_limit_at(
+        ResourceDimension::WorkUnits,
+        Some("creo B-rep pending shell face traversal"),
+        run,
+    );
+    assert!(
+        matches!(run(limit), Err(CodecError::ResourceLimit(resource))
+        if resource.dimension == ResourceDimension::WorkUnits
+            && resource.operation == "creo B-rep pending shell face traversal")
+    );
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| split_neutral_component_shells(
+            ctx,
+            &[1],
+            &BTreeSet::new(),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &BTreeMap::new()
+        ))
+        .expect("service shell partition"),
+        vec![NeutralShellSpec {
+            faces: vec![1],
+            wire_curves: BTreeSet::new()
+        }]
+    );
+}
+
+#[test]
+fn shell_seed_projection_preserves_sorted_unique_component_order() {
+    let shells = crate::test_support::assert_work_boundaries(
+        &[
+            "creo B-rep shell seed projection",
+            "creo B-rep shell component face visits",
+            "creo B-rep shell component face removal",
+        ],
+        |ctx| {
+            split_neutral_component_shells(
+                ctx,
+                &[4, 3, 1, 3, 2],
+                &BTreeSet::new(),
+                &BTreeMap::from([(1, BTreeSet::from([3])), (3, BTreeSet::from([1]))]),
+                &BTreeMap::new(),
+                &BTreeMap::new(),
+            )
+        },
+    );
+    assert_eq!(
+        shells,
+        [vec![1, 3], vec![2], vec![4]].map(|faces| NeutralShellSpec {
+            faces,
+            wire_curves: BTreeSet::new()
+        })
+    );
+}
+
+#[test]
+fn shell_seed_storage_admits_only_unique_face_slots() {
+    let shells = crate::test_support::assert_refusal_order(
+        ResourceDimension::CollectionItems,
+        &["creo B-rep shell seed storage"],
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            let result = split_neutral_component_shells(
+                &ctx,
+                &[3, 1, 3, 2],
+                &BTreeSet::new(),
+                &BTreeMap::new(),
+                &BTreeMap::new(),
+                &BTreeMap::new(),
+            );
+            if let Err(CodecError::ResourceLimit(limit)) = &result {
+                if limit.operation == "creo B-rep shell seed storage" {
+                    assert_eq!((limit.used, limit.additional), (3, 3));
+                }
+            }
+            result
+        },
+    );
+    assert_eq!(
+        shells,
+        [1, 2, 3].map(|face| NeutralShellSpec {
+            faces: vec![face],
+            wire_curves: BTreeSet::new()
+        })
+    );
+}
+
+#[test]
+fn shell_seed_storage_is_scoped_and_admits_its_exact_backing() {
+    let seed_bytes = u64::try_from(3 * std::mem::size_of::<u32>()).expect("three face IDs");
+    crate::test_support::assert_refusal_order(
+        ResourceDimension::MaterializedBytes,
+        &["creo B-rep shell seed storage"],
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_materialized_bytes = cap;
+            policy.limits.max_retained_bytes = 0;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            let mut storage = ctx.reserve_scoped(0, "test shell planning storage")?;
+            let result = storage.with_storage(|| {
+                split_neutral_component_shells(
+                    &ctx,
+                    &[3, 1, 3, 2],
+                    &BTreeSet::new(),
+                    &BTreeMap::new(),
+                    &BTreeMap::new(),
+                    &BTreeMap::new(),
+                )
+            });
+            if let Err(CodecError::ResourceLimit(limit)) = &result {
+                if limit.operation == "creo B-rep shell seed storage" {
+                    assert_eq!(limit.additional, seed_bytes);
+                }
+            }
+            result.map(|shells| {
+                assert_eq!(
+                    shells,
+                    [1, 2, 3].map(|face| NeutralShellSpec {
+                        faces: vec![face],
+                        wire_curves: BTreeSet::new()
+                    })
+                );
+            })
+        },
     );
 }

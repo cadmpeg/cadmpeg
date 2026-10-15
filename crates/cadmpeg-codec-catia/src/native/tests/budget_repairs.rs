@@ -1,0 +1,642 @@
+// SPDX-License-Identifier: Apache-2.0
+//! Native projection storage and traversal admission.
+
+use crate::test_support::{
+    with_materialized_limit, with_retained_limit, with_service_context, with_work_limit,
+};
+use cadmpeg_core::{
+    decode::{u64_from_index, ResourceDimension},
+    CodecError,
+};
+
+#[test]
+fn native_graph_index_computes_terminal_identity_in_its_single_source_pass() {
+    let native = crate::native::CatiaNative::decode(
+        &crate::test_support::test_formula::standard_catpart_with_schema_configuration_row_chain(),
+    );
+    let fixture = &native.object_graphs[0].records[0];
+    for (middle, terminal) in [(9, Some(10)), (u32::MAX, None)] {
+        let records = [7, middle, 7].map(|id| {
+            let mut record = fixture.clone();
+            record.entity = Some(super::super::CatiaObjectEntity {
+                record: format!("entity-{id}"),
+                id,
+            });
+            record
+        });
+        // Three visits, four collector steps, six four-byte hashes, and the
+        // initial table growth fit 130 work units without a second source pass.
+        with_work_limit(130, |ctx| -> Result<(), CodecError> {
+            let mut storage = ctx.reserve_scoped(0, "test graph index")?;
+            let index = super::super::GraphRecordIndex::new(ctx, &mut storage, &records)?;
+            assert_eq!(index.positions.len(), 2);
+            assert_eq!(index.positions.get(&7), Some(&2));
+            assert_eq!(index.positions.get(&middle), Some(&1));
+            assert_eq!(index.terminal_null_entity_id, terminal);
+            assert_eq!(ctx.resource_refusal(), None);
+            Ok(())
+        })
+        .expect("indexing and terminal identity share one source pass");
+        let refused = with_work_limit(0, |ctx| {
+            let mut storage = ctx.reserve_scoped(0, "test graph index")?;
+            let result = super::super::GraphRecordIndex::new(ctx, &mut storage, &records);
+            let Err(CodecError::ResourceLimit(limit)) = &result else {
+                panic!("actual record source must refuse before indexing");
+            };
+            assert_eq!(limit.operation, "catia_native_graph_index_source_visits");
+            assert_eq!(ctx.resource_refusal(), Some(*limit));
+            assert!(matches!(ctx.charge_work(0, "after graph index refusal"),
+                Err(CodecError::ResourceLimit(later)) if later == *limit));
+            result.map(|_| ())
+        });
+        assert!(matches!(refused, Err(CodecError::ResourceLimit(_))));
+    }
+    with_service_context(|ctx| -> Result<(), CodecError> {
+        let mut storage = ctx.reserve_scoped(0, "test empty graph index")?;
+        let index = super::super::GraphRecordIndex::new(ctx, &mut storage, &[])?;
+        assert!(index.positions.is_empty());
+        assert_eq!(index.terminal_null_entity_id, None);
+        Ok(())
+    })
+    .expect("empty index has no terminal identity");
+}
+
+#[test]
+fn native_signature_promotion_preserves_refusal_and_parent_storage() {
+    let source = "(#1_ : #In LENGTH,#2_ : #In Real) : LENGTH";
+    let refused =
+        crate::test_support::with_retained_refusal(&[], "catia_native_signature_scratch", |ctx| {
+            let result = super::super::relation_type_signature_charged(ctx, None, source);
+            let Err(CodecError::ResourceLimit(limit)) = &result else {
+                panic!("signature promotion refusal");
+            };
+            assert_eq!(limit.operation, "catia_native_signature_scratch");
+            assert_eq!(ctx.resource_refusal(), Some(*limit));
+            assert!(matches!(
+                ctx.charge_work(0, "after signature refusal"),
+                Err(CodecError::ResourceLimit(later)) if later == *limit
+            ));
+            result
+        });
+    assert!(matches!(refused, Err(CodecError::ResourceLimit(_))));
+
+    with_retained_limit(0, |ctx| -> Result<(), CodecError> {
+        let mut storage = ctx.reserve_scoped(0, "test signature parent")?;
+        let signature = storage
+            .with_storage(|| super::super::relation_type_signature_charged(ctx, None, source))?
+            .expect("complete signature");
+        assert_eq!(signature.result_type, "LENGTH");
+        assert_eq!(signature.inputs.len(), 2);
+        assert_eq!(signature.inputs[0].parameter, "#1_");
+        assert_eq!(signature.inputs[0].input_type, "LENGTH");
+        assert_eq!(signature.inputs[1].parameter, "#2_");
+        assert_eq!(signature.inputs[1].input_type, "Real");
+        assert_eq!(ctx.resource_refusal(), None);
+        drop(signature);
+        drop(storage);
+        Ok(())
+    })
+    .expect("signature transfers to its actual live parent without session retention");
+}
+
+#[test]
+fn native_program_input_promotion_preserves_refusal_and_parent_storage() {
+    use super::super::{
+        CatiaEntityReference, CatiaRelationParameterDependency, CatiaRelationTypeInput,
+        CatiaRelationTypeSignature,
+    };
+
+    let signature = CatiaRelationTypeSignature {
+        inputs: vec![CatiaRelationTypeInput {
+            parameter: "#1_".into(),
+            input_type: "LENGTH".into(),
+        }],
+        result_type: "LENGTH".into(),
+    };
+    let dependencies = [CatiaRelationParameterDependency {
+        source_offset: 7,
+        symbol: "#1_/2".into(),
+        candidates: vec![CatiaEntityReference::Resolved {
+            entity_id: 10,
+            entity: "entity-10".into(),
+            class_name: Some("param".into()),
+        }],
+    }];
+    let refused = crate::test_support::with_retained_refusal(
+        &[],
+        "catia_native_program_input_scratch",
+        |ctx| {
+            let result =
+                super::super::resolved_relation_program_inputs(ctx, &signature, &dependencies);
+            let Err(CodecError::ResourceLimit(limit)) = &result else {
+                panic!("program input promotion refusal");
+            };
+            assert_eq!(limit.operation, "catia_native_program_input_scratch");
+            assert_eq!(ctx.resource_refusal(), Some(*limit));
+            assert!(matches!(
+                ctx.charge_work(0, "after program input refusal"),
+                Err(CodecError::ResourceLimit(later)) if later == *limit
+            ));
+            result
+        },
+    );
+    assert!(matches!(refused, Err(CodecError::ResourceLimit(_))));
+
+    with_retained_limit(0, |ctx| -> Result<(), CodecError> {
+        let mut storage = ctx.reserve_scoped(0, "test program input parent")?;
+        let inputs = storage
+            .with_storage(|| {
+                super::super::resolved_relation_program_inputs(ctx, &signature, &dependencies)
+            })?
+            .expect("complete program inputs");
+        let [input] = inputs.as_slice() else {
+            panic!("one program input");
+        };
+        assert_eq!(input.parameter, "#1_");
+        assert_eq!(input.value_type, "LENGTH");
+        assert_eq!(input.entity, dependencies[0].candidates[0]);
+        assert_eq!(ctx.resource_refusal(), None);
+        drop(inputs);
+        drop(storage);
+        Ok(())
+    })
+    .expect("program inputs transfer to the actual parent without session retention");
+}
+
+#[test]
+fn native_rejected_signature_releases_speculative_storage() {
+    with_materialized_limit(4096, |ctx| -> Result<_, CodecError> {
+        for source in [
+            "(#1_ : #In Real,bad) : Real",
+            "(#1_ : #In Real,#1_ : #In Real) : Real",
+        ] {
+            assert!(super::super::relation_type_signature_charged(ctx, None, source)?.is_none());
+            let storage = ctx.reserve_scoped(4096, "test released signature")?;
+            drop(storage);
+        }
+        Ok(())
+    })
+    .expect("rejected signatures release their input copies");
+    with_retained_limit(0, |ctx| -> Result<_, CodecError> {
+        assert!(super::super::relation_type_signature_charged(
+            ctx,
+            None,
+            "(#1_ : #In Real,bad) : Real"
+        )?
+        .is_none());
+        Ok(())
+    })
+    .expect("rejected signature retains no input copies");
+}
+
+#[test]
+fn native_owner_packet_boxes_refuse_retained_storage() {
+    use crate::test_support::test_b2::{
+        b2_fixed_owner_boundary_cycle_stream, b2_owner_chart_stream,
+    };
+    for bytes in [
+        b2_owner_chart_stream(0x28),
+        b2_fixed_owner_boundary_cycle_stream().0,
+    ] {
+        let records = crate::wire::records::consolidated_records(&bytes);
+        let refused = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::RetainedBytes,
+            "catia_native_owner_packet_box",
+            |cap| {
+                with_retained_limit(cap, |ctx| {
+                    super::super::projection::consolidated_owner_packets(ctx, &bytes, &records)
+                })
+            },
+        );
+        assert!(
+            matches!(refused, CodecError::ResourceLimit(limit) if limit.operation == "catia_native_owner_packet_box")
+        );
+        let packets = with_service_context(|ctx| {
+            super::super::projection::consolidated_owner_packets(ctx, &bytes, &records)
+        })
+        .expect("owner packet boxes admitted");
+        assert_eq!(packets.len(), 1);
+    }
+}
+
+#[test]
+fn native_vertex_reference_membership_preserves_order_with_linear_work() {
+    let native = crate::native::CatiaNative::decode(
+        &crate::test_support::test_a5_bound::a5_native_edge_run_stream(6, 14, 15),
+    );
+    let template = &native.consolidated_edge_nodes[0];
+    let nodes: Vec<_> = (0..1024)
+        .map(|identity| {
+            let mut node = template.clone();
+            node.endpoint_records = Some([100, 200]);
+            node.vertex_refs = [identity, identity + 2000];
+            node
+        })
+        .collect();
+    // Two endpoint lookups and insertions, two incident-name comparisons,
+    // and geometric table/vector relocation fit within 512 units per node.
+    // Scanning the growing reference vectors requires more than 4 million units.
+    let vertices = with_work_limit(1024 * 512, |ctx| {
+        super::super::edge_node::consolidated_vertex_identities(ctx, &nodes)
+    })
+    .expect("membership work is linear in distinct distances");
+    assert_eq!(vertices.len(), 2);
+    assert_eq!(vertices[0].reference_values, (0..1024).collect::<Vec<_>>());
+    assert_eq!(
+        vertices[1].reference_values,
+        (2000..3024).collect::<Vec<_>>()
+    );
+    let refused = crate::test_support::with_work_refusal(
+        "catia_native_vertex_identity_reference_checks",
+        |ctx| super::super::edge_node::consolidated_vertex_identities(ctx, &nodes),
+    );
+    assert!(
+        matches!(refused, Err(CodecError::ResourceLimit(limit)) if limit.operation == "catia_native_vertex_identity_reference_checks")
+    );
+}
+
+#[test]
+fn native_relation_index_preserves_signature_order_with_bounded_work() {
+    use super::super::{
+        CatiaEntityReference, CatiaRelationParameterDependency, CatiaRelationTypeInput,
+        CatiaRelationTypeSignature,
+    };
+    let signature = CatiaRelationTypeSignature {
+        inputs: (1..=2048)
+            .map(|index| CatiaRelationTypeInput {
+                parameter: format!("#{index}_"),
+                input_type: "Real".into(),
+            })
+            .collect(),
+        result_type: "Real".into(),
+    };
+    let dependencies: Vec<_> = (1..=2048)
+        .rev()
+        .map(|index| CatiaRelationParameterDependency {
+            source_offset: 0,
+            symbol: format!("#{index}_/12"),
+            candidates: vec![CatiaEntityReference::Resolved {
+                entity_id: index,
+                entity: format!("entity:{index}"),
+                class_name: None,
+            }],
+        })
+        .collect();
+    // Index construction, grouped slots and bounded lookups fit within 1024 units
+    // per input. A full signature scan per dependency exceeds four million steps.
+    let inputs = with_work_limit(2048 * 1024, |ctx| {
+        super::super::resolved_relation_program_inputs(ctx, &signature, &dependencies)
+    })
+    .expect("indexed relation work")
+    .expect("complete inputs");
+    assert_eq!(inputs.len(), signature.inputs.len());
+    for (index, input) in inputs.iter().enumerate() {
+        assert_eq!(input.parameter, signature.inputs[index].parameter);
+        assert_eq!(
+            input.entity.entity_id(),
+            u32::try_from(index + 1).expect("fixture index")
+        );
+    }
+    let mut duplicate = signature;
+    duplicate.inputs.push(duplicate.inputs[0].clone());
+    assert!(with_service_context(|ctx| {
+        super::super::resolved_relation_program_inputs(ctx, &duplicate, &dependencies)
+    })
+    .expect("duplicate index")
+    .is_none());
+}
+
+#[test]
+fn native_signature_stops_at_first_invalid_clause() {
+    let source = format!("(bad,{}) : Real", "#2_ : #In Real,".repeat(2048));
+    with_service_context(|ctx| {
+        assert!(
+            super::super::relation_type_signature_charged(ctx, None, &source)
+                .expect("invalid first clause")
+                .is_none()
+        );
+    });
+    let refusal =
+        crate::test_support::with_work_refusal("catia_native_signature_clause_visits", |ctx| {
+            super::super::relation_type_signature_charged(ctx, None, &source)
+        });
+    assert!(matches!(refusal, Err(CodecError::ResourceLimit(limit)) if limit.additional == 1));
+}
+
+#[test]
+fn native_extent_index_preserves_strict_containment_and_overlap_boundaries() {
+    let sources = [
+        (10_usize, 10),
+        (2, 20),
+        (5, 2),
+        (10, 20),
+        (8, 0),
+        (usize::MAX, 1),
+    ];
+    with_service_context(|ctx| -> Result<_, CodecError> {
+        let index = ctx.with_scoped_storage("test extent index", || {
+            super::super::NativeExtentIndex::new(ctx, &sources, |&extent| extent)
+        })?;
+        for start in (0..32).chain([usize::MAX]) {
+            for len in 0..16 {
+                assert_eq!(
+                    index
+                        .0
+                        .contains(ctx, start, len, "test indexed containment")?,
+                    sources
+                        .iter()
+                        .any(|&(owner, width)| crate::object_graph::extent_contains(
+                            owner, width, start, len
+                        ))
+                );
+                assert_eq!(
+                    index.0.overlaps(ctx, start, len, "test indexed overlap")?,
+                    sources
+                        .iter()
+                        .any(|&(owner, width)| crate::checked::extents_overlap(
+                            owner, width, start, len
+                        ))
+                );
+            }
+        }
+        Ok(())
+    })
+    .expect("indexed predicates preserve interval boundaries and overflow");
+}
+
+#[test]
+fn native_extent_prefixes_admit_their_source_once() {
+    for count in [0, 1, 4, 5, 64] {
+        let sources = (0..count)
+            .rev()
+            .map(|index| (index * 2, 8 - index % 8))
+            .collect::<Vec<(usize, usize)>>();
+        // Vector growth admits moved inline bytes; source steps belong only
+        // to the ordered walk, including the empty case with no visits.
+        let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+            ResourceDimension::WorkUnits,
+            "catia_native_extent_prefixes",
+            Some(1),
+        );
+        with_work_limit(u64::MAX, |ctx| -> Result<(), CodecError> {
+            let index = super::super::NativeExtentIndex::new(ctx, &sources, |&extent| extent)?;
+            assert_eq!(index.0.len(), count);
+            let mut maximum = 0;
+            for (ordinal, &(start, end)) in index.0.iter().enumerate() {
+                let expected_start = ordinal * 2;
+                maximum = maximum.max(expected_start + 8 - ordinal % 8);
+                assert_eq!(start, expected_start);
+                assert_eq!(end, maximum);
+            }
+            assert_eq!(ctx.resource_refusal(), None);
+            Ok(())
+        })
+        .expect("prefix construction has no second source-step charge");
+    }
+    let sources = (0..64_usize)
+        .map(|index| (index * 2, 8))
+        .collect::<Vec<_>>();
+    let error =
+        crate::test_support::with_work_refusal("catia_native_extent_prefix_visits", |ctx| {
+            super::super::NativeExtentIndex::new(ctx, &sources, |&extent| extent).map(|_| ())
+        })
+        .expect_err("the ordered source walk still needs admission");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.operation == "catia_native_extent_prefix_visits" && limit.additional == 64));
+}
+
+#[test]
+fn native_inventory_overlap_filter_has_bounded_work_and_preserves_source_order() {
+    let mut graphs: Vec<_> = (0..8192)
+        .rev()
+        .map(|index| crate::object_graph::ObjectGraph {
+            pos: index * 64 + 32,
+            total_len: 8,
+            catalog_pos: None,
+            records: Vec::new(),
+        })
+        .collect();
+    let mut blocks: Vec<_> = (0..8192)
+        .map(|index| crate::value_block::ValueBlock {
+            pos: index * 64,
+            payload: Vec::new(),
+        })
+        .collect();
+    let graph_offsets: Vec<_> = graphs.iter().map(|graph| graph.pos).collect();
+    let block_offsets: Vec<_> = blocks.iter().map(|block| block.pos).collect();
+    // Ordered index construction and logarithmic queries fit this allowance.
+    // The old block-by-graph scan alone needs 8192 squared comparisons.
+    with_work_limit(8192 * 4096, |ctx| {
+        super::super::filter_nested_inventory(ctx, &mut graphs, &mut blocks, &mut Vec::new())
+    })
+    .expect("overlap filtering does not scan every graph for every block");
+    assert_eq!(
+        graphs.iter().map(|graph| graph.pos).collect::<Vec<_>>(),
+        graph_offsets
+    );
+    assert_eq!(
+        blocks.iter().map(|block| block.pos).collect::<Vec<_>>(),
+        block_offsets
+    );
+}
+
+#[test]
+fn native_alias_overlap_filter_has_bounded_work_and_preserves_source_order() {
+    let graphs: Vec<_> = (0..8192)
+        .rev()
+        .map(|index| super::super::CatiaObjectGraph {
+            id: String::new(),
+            byte_offset: index * 64 + 32,
+            byte_len: 8,
+            finjpl_segment: None,
+            outer_container: None,
+            catalog_byte_offset: None,
+            catalog: None,
+            records: Vec::new(),
+        })
+        .collect();
+    let mut rows: Vec<_> = (0..8192)
+        .map(|index| super::super::CatiaAliasRow {
+            id: String::new(),
+            byte_offset: index * 64 + u64_from_index(crate::layout::outer_alias_row::MARKER),
+            lead_raw: 0,
+            tag_raw: 0,
+            flag: 0,
+            f1: [0; 3],
+            object_graph: None,
+            object_record: None,
+            design_object: None,
+            f2: 0,
+            f3: 0,
+            group: None,
+            canonical_surface_tag: None,
+        })
+        .collect();
+    let offsets: Vec<_> = rows.iter().map(|row| row.byte_offset).collect();
+    // The old row-by-graph scan needs 8192 squared comparisons.
+    with_work_limit(8192 * 2048, |ctx| {
+        super::super::filter_nested_alias_rows(ctx, &mut rows, &graphs, &[], &[])
+    })
+    .expect("alias filtering uses indexed overlap queries");
+    assert_eq!(
+        rows.iter().map(|row| row.byte_offset).collect::<Vec<_>>(),
+        offsets
+    );
+}
+
+#[test]
+fn native_inventory_index_preserves_transitive_and_equal_start_containment() {
+    let mut graphs = vec![crate::object_graph::ObjectGraph {
+        pos: 10,
+        total_len: 20,
+        catalog_pos: None,
+        records: Vec::new(),
+    }];
+    // The complete block spans [0, 40), including its header and terminator.
+    let mut blocks = vec![crate::value_block::ValueBlock {
+        pos: 0,
+        payload: vec![0; 33],
+    }];
+    let mut catalogs: Vec<_> = [(15, 4), (0, 1), (32, 8)]
+        .into_iter()
+        .map(|(pos, total_len)| crate::catalog::Catalog {
+            pos,
+            total_len,
+            entries: Vec::new(),
+        })
+        .collect();
+    with_service_context(|ctx| {
+        super::super::filter_nested_inventory(ctx, &mut graphs, &mut blocks, &mut catalogs)
+    })
+    .expect("indexed inventory containment");
+    assert!(graphs.is_empty());
+    assert_eq!(blocks.len(), 1);
+    assert_eq!(catalogs.len(), 1);
+    assert_eq!(catalogs[0].pos, 0);
+}
+
+#[test]
+fn native_inventory_with_no_comparisons_requires_no_index_work() {
+    with_work_limit(0, |ctx| -> Result<_, CodecError> {
+        let mut graphs: Vec<_> = (0..1024)
+            .map(|pos| crate::object_graph::ObjectGraph {
+                pos,
+                total_len: 8,
+                catalog_pos: None,
+                records: Vec::new(),
+            })
+            .collect();
+        super::super::filter_nested_inventory(ctx, &mut graphs, &mut Vec::new(), &mut Vec::new())?;
+        assert_eq!(graphs.len(), 1024);
+        let mut blocks: Vec<_> = (0..1024)
+            .map(|pos| crate::value_block::ValueBlock {
+                pos,
+                payload: Vec::new(),
+            })
+            .collect();
+        super::super::filter_nested_inventory(ctx, &mut Vec::new(), &mut blocks, &mut Vec::new())?;
+        assert_eq!(blocks.len(), 1024);
+        let mut catalogs: Vec<_> = (0..1024)
+            .map(|pos| crate::catalog::Catalog {
+                pos,
+                total_len: 8,
+                entries: Vec::new(),
+            })
+            .collect();
+        super::super::filter_nested_inventory(
+            ctx,
+            &mut Vec::new(),
+            &mut Vec::new(),
+            &mut catalogs,
+        )?;
+        assert_eq!(catalogs.len(), 1024);
+        Ok(())
+    })
+    .expect("single-inventory filters perform no work");
+}
+
+#[test]
+fn native_empty_alias_rows_require_no_extent_index_work() {
+    let graphs: Vec<_> = (0..1024)
+        .map(|byte_offset| super::super::CatiaObjectGraph {
+            id: String::new(),
+            byte_offset,
+            byte_len: 8,
+            finjpl_segment: None,
+            outer_container: None,
+            catalog_byte_offset: None,
+            catalog: None,
+            records: Vec::new(),
+        })
+        .collect();
+    let blocks: Vec<_> = (0..1024)
+        .map(|pos| crate::value_block::ValueBlock {
+            pos,
+            payload: Vec::new(),
+        })
+        .collect();
+    let catalogs: Vec<_> = (0..1024)
+        .map(|byte_offset| super::super::CatiaCatalog {
+            id: String::new(),
+            byte_offset,
+            byte_len: 8,
+            entries: Vec::new(),
+        })
+        .collect();
+    let mut rows = Vec::new();
+    with_work_limit(0, |ctx| {
+        super::super::filter_nested_alias_rows(ctx, &mut rows, &graphs, &blocks, &catalogs)
+    })
+    .expect("no alias rows require no index work");
+    assert!(rows.is_empty());
+}
+
+#[test]
+fn native_legacy_identities_admit_their_source_once() {
+    let leads = [0x81, 0x82, 0xe5, 0xfd];
+    for count in [1_u32, 2, 4, 5, 64] {
+        let mut bytes = Vec::new();
+        for entity_id in 1..=count {
+            bytes.push(0xea);
+            bytes.extend_from_slice(&entity_id.to_le_bytes());
+            let ordinal = usize::try_from(entity_id - 1).expect("identity ordinal");
+            bytes.extend_from_slice(&[leads[ordinal % leads.len()], 0xfd, 0x8c]);
+        }
+        bytes.extend_from_slice(b"\xde\x04\xfe\xfe\x12CATCatalogManager");
+        {
+            // The reader admits following identities; destination work pays
+            // only for vector relocation, in multiples of the inline record size.
+            let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+                ResourceDimension::WorkUnits,
+                "catia_native_legacy_identities",
+                Some(1),
+            );
+            with_work_limit(u64::MAX, |ctx| -> Result<(), CodecError> {
+                let runs = super::super::legacy_entity_runs(ctx, &bytes)?;
+                assert_eq!(runs.len(), 1);
+                let run = &runs[0];
+                assert_eq!(run.byte_offset, 0);
+                assert_eq!(run.byte_len, u64::from(count) * 8);
+                assert_eq!(run.catalog_offset, u64::from(count) * 8);
+                assert_eq!(run.identities.len(), usize::try_from(count).expect("count"));
+                for (ordinal, identity) in run.identities.iter().enumerate() {
+                    assert_eq!(identity.byte_offset, u64_from_index(ordinal) * 8);
+                    assert_eq!(identity.entity_id, u32::try_from(ordinal + 1).expect("id"));
+                    assert_eq!(u8::from(identity.lead), leads[ordinal % leads.len()]);
+                }
+                assert_eq!(ctx.resource_refusal(), None);
+                Ok(())
+            })
+            .expect("native identity conversion does not repeat reader admission");
+        }
+        if count == 64 {
+            let error =
+                crate::test_support::with_work_refusal("catia_legacy_identity_visits", |ctx| {
+                    super::super::legacy_entity_runs(ctx, &bytes).map(|_| ())
+                })
+                .expect_err("the reader still admits its following identities");
+            assert!(matches!(error, CodecError::ResourceLimit(limit)
+                if limit.operation == "catia_legacy_identity_visits" && limit.additional == 63));
+        }
+    }
+}

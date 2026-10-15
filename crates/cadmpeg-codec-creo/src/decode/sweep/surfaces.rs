@@ -11,7 +11,7 @@ use super::super::sketch::geometry::{
     resolved_section_segment_geometry, saved_section_entity_geometry,
 };
 use super::super::sketch::intersect::section_point_in_model;
-use super::super::sketch::radii::trim_segment_id;
+use super::super::sketch::radii::trim_segment_ids;
 use super::super::sketch::skamp::complete_section_segment_rows;
 use super::super::sketch_ids::sketch_section_curve_id_admitted;
 use super::super::uniqueness::{
@@ -250,7 +250,7 @@ pub(in super::super) fn placed_sketch_curve_ref(
 }
 
 fn unique_feature_surface_row(
-    rows: &[crate::surface::SurfaceRow],
+    rows: &crate::surface::SurfaceRows,
     surface_id: u32,
     feature_id: u32,
     expected_kind: crate::surface::SurfaceKind,
@@ -268,7 +268,12 @@ pub(in super::super) fn transfer_saved_spline_curves(
     source_carriers: &mut SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
     let mut transferred = 0;
-    for transform in &scan.features.section_transforms {
+    let mut curve_id_storage = ctx.reserve_scoped(0, "creo model curve identity index scratch")?;
+    let mut curve_id_index = None;
+    for transform in ctx.admit_iter(
+        &scan.features.section_transforms,
+        "creo sweep transform scan",
+    )? {
         if unique_feature_section_transform(
             ctx,
             &scan.features.section_transforms,
@@ -284,14 +289,22 @@ pub(in super::super) fn transfer_saved_spline_curves(
         else {
             continue;
         };
-        for spline in
-            semantic_saved_section_entities(definition).filter_map(|entity| match entity {
+        let entities_owned_storage = semantic_saved_section_entities(ctx, definition)?;
+        let _entity_storage = entities_owned_storage.1;
+        let entities = entities_owned_storage.0;
+        for spline in ctx
+            .admit_iter(&entities, "creo saved section spline traversal")?
+            .filter_map(|entity| match entity {
                 crate::feature::definitions::FeatureSavedEntity::Spline(spline) => Some(spline),
                 _ => None,
             })
         {
             let mut refusal = crate::lane_refusal::LaneRefusals::new();
-            let Some(nurbs) = saved_spline_nurbs(ctx, spline, &mut refusal)? else {
+            let (nurbs, _nurbs_storage) = ctx
+                .with_scoped_storage("creo saved spline source curve", || {
+                    saved_spline_nurbs(ctx, spline, &mut refusal)
+                })?;
+            let Some(nurbs) = nurbs else {
                 let records = refusal.take_records_checked()?;
                 if records.is_empty() {
                     push_saved_spline_loss(
@@ -315,7 +328,7 @@ pub(in super::super) fn transfer_saved_spline_curves(
                 }
                 continue;
             };
-            let (suffix, _suffix_reservation) = if let Some(entity_id) = spline.entity_id {
+            let suffix_owned_storage = if let Some(entity_id) = spline.entity_id {
                 ctx.format_scoped(
                     format_args!("{entity_id}"),
                     "creo saved spline identity suffix",
@@ -326,16 +339,40 @@ pub(in super::super) fn transfer_saved_spline_curves(
                     "creo saved spline identity suffix",
                 )?
             };
-            let curve_id = crate::identity::compose_checked::<CurveId>(
-                ctx,
-                &crate::identity::FEATDEFS_SAVED_SPLINE_CURVE,
-                format_args!("{}:{suffix}", definition.identity.id()),
-                "creo saved spline curve identity",
-            )?;
-            if ir.model.curves.iter().any(|curve| curve.id == curve_id) {
+            let _suffix_reservation = suffix_owned_storage.1;
+            let suffix = suffix_owned_storage.0;
+            let (curve_id, candidate_identity_storage) =
+                ctx.with_scoped_storage("creo sweep identity candidate", || {
+                    crate::identity::compose_checked::<CurveId>(
+                        ctx,
+                        &crate::identity::FEATDEFS_SAVED_SPLINE_CURVE,
+                        format_args!("{}:{suffix}", definition.identity.id()),
+                        "creo saved spline curve identity",
+                    )
+                })?;
+            if curve_id_index.is_none() {
+                curve_id_index = Some(curve_id_storage.with_storage(|| {
+                    ctx.collect_string_set(
+                        ir.model.curves.iter().map(|record| record.id.as_str()),
+                        "creo model curve identity index",
+                    )
+                })?);
+            }
+            let Some(indexed_curve_ids) = &mut curve_id_index else {
+                continue;
+            };
+            if ctx.contains_hash_set(
+                indexed_curve_ids,
+                curve_id.as_str(),
+                "creo model identity comparison",
+            )? {
                 continue;
             }
-            let Some(placed) = placed_section_nurbs(ctx, transform, &nurbs)? else {
+            let (placed, placed_storage) = ctx
+                .with_scoped_storage("creo saved spline placed curve candidate", || {
+                    placed_section_nurbs(ctx, transform, &nurbs)
+                })?;
+            let Some(placed) = placed else {
                 continue;
             };
             annotate(
@@ -348,12 +385,21 @@ pub(in super::super) fn transfer_saved_spline_curves(
                 Exactness::Derived,
             )?;
             ctx.charge_entities(1, "admit Creo model curves")?;
+            curve_id_storage.with_storage(|| {
+                ctx.insert_string_set(
+                    indexed_curve_ids,
+                    curve_id.as_str(),
+                    "creo model curve identity index",
+                )
+            })?;
             source_carriers.admit_curve(
                 ctx,
                 ir,
                 Curve {
-                    id: curve_id,
-                    geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(placed)),
+                    id: candidate_identity_storage.commit_value(curve_id)?,
+                    geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                        placed_storage.commit_value(placed)?,
+                    )),
                     source_object: Some(SourceObjectAssociation {
                         format: cadmpeg_ir::CodecFormat::Creo,
                         object_id: crate::identity::source_object_id_checked(
@@ -410,9 +456,15 @@ pub(in super::super) fn revolved_nurbs_surface(
         diagonal_weight,
         1.0,
     ];
+    let mut lane_storage = ctx.reserve_scoped(0, "creo revolved raw NURBS lanes")?;
     let mut control_points = Vec::new();
     let mut weights = Vec::new();
-    for index in 0..directrix.pole_count() {
+    let mut poles = 0..directrix.pole_count();
+    while !poles.is_empty() {
+        let Some(index) = ctx.next_charged(&mut poles, "creo revolved NURBS pole projection")?
+        else {
+            break;
+        };
         let Some(point) = directrix.pole_rows().point_at(index) else {
             return Ok(None);
         };
@@ -435,16 +487,28 @@ pub(in super::super) fn revolved_nurbs_surface(
             .pole_rows()
             .weight_at(index)
             .map_or(1.0, |weight| weight);
-        ctx.reserve_vec(&mut control_points, 1, "creo revolved NURBS pole rows")?;
-        ctx.reserve_vec(&mut weights, 1, "creo revolved NURBS weight rows")?;
+        ctx.reserve_scoped_vec(
+            &mut lane_storage,
+            &mut control_points,
+            1,
+            "creo revolved NURBS pole rows",
+        )?;
+        ctx.reserve_scoped_vec(
+            &mut lane_storage,
+            &mut weights,
+            1,
+            "creo revolved NURBS weight rows",
+        )?;
         let mut point_row = Vec::new();
         let mut weight_row = Vec::new();
-        ctx.reserve_vec(
+        ctx.reserve_scoped_vec(
+            &mut lane_storage,
             &mut point_row,
             angular_poles.len(),
             "creo revolved NURBS poles",
         )?;
-        ctx.reserve_vec(
+        ctx.reserve_scoped_vec(
+            &mut lane_storage,
             &mut weight_row,
             angular_weights.len(),
             "creo revolved NURBS weights",
@@ -468,7 +532,13 @@ pub(in super::super) fn revolved_nurbs_surface(
         directrix.knots().as_slice().len(),
         "creo revolved NURBS u knots",
     )?;
-    u_knots.extend_from_slice(directrix.knots().as_slice());
+    u_knots.extend(
+        ctx.admit_iter(
+            directrix.knots().as_slice(),
+            "creo revolved NURBS u knot copy",
+        )?
+        .copied(),
+    );
     let angular_knots = [
         0.0,
         0.0,
@@ -585,7 +655,15 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
     source_carriers: &mut SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
     let mut transferred = 0;
-    for transform in &scan.features.section_transforms {
+    let mut surface_id_storage =
+        ctx.reserve_scoped(0, "creo model surface identity index scratch")?;
+    let mut surface_id_index = None;
+    let mut curve_id_storage = ctx.reserve_scoped(0, "creo model curve identity index scratch")?;
+    let mut curve_id_index = None;
+    for transform in ctx.admit_iter(
+        &scan.features.section_transforms,
+        "creo sweep transform scan",
+    )? {
         if unique_feature_section_transform(
             ctx,
             &scan.features.section_transforms,
@@ -604,18 +682,38 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
         let Some(feature_id) = transform.feature_id else {
             continue;
         };
-        if !feature_allows_linear_extrusion(scan, feature_id) {
+        if !feature_allows_linear_extrusion(ctx, scan, feature_id)? {
             continue;
         }
         let Some(order_table) = &definition.order_table else {
             continue;
         };
-        let points = resolved_section_points(ctx, definition)?;
-        let solved = extrusion_solved_segment_ids(ctx, definition)?;
-        for segment in complete_section_segment_rows(ctx, definition)?
-            .iter()
-            .filter(|segment| solved.contains(&segment.external_id))
-        {
+        let points_owned_storage = ctx
+            .with_scoped_storage("creo extrusion section point scratch", || {
+                resolved_section_points(ctx, definition)
+            })?;
+        let _point_storage = points_owned_storage.1;
+        let points = points_owned_storage.0;
+        let solved_owned_storage = ctx
+            .with_scoped_storage("creo extrusion solved segment scratch", || {
+                extrusion_solved_segment_ids(ctx, definition)
+            })?;
+        let _solved_storage = solved_owned_storage.1;
+        let solved = solved_owned_storage.0;
+        let segments_owned_storage = ctx
+            .with_scoped_storage("creo extrusion section row scratch", || {
+                complete_section_segment_rows(ctx, definition)
+            })?;
+        let _segment_storage = segments_owned_storage.1;
+        let segments = segments_owned_storage.0;
+        for segment in ctx.admit_iter(&segments, "creo extrusion section segment traversal")? {
+            if !ctx.contains_btree_set(
+                &solved,
+                &segment.external_id,
+                "creo extrusion solved segment membership",
+            )? {
+                continue;
+            }
             let Some(section_geometry) =
                 resolved_section_segment_geometry(ctx, definition, &points, segment)?
             else {
@@ -625,21 +723,41 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 continue;
             };
             let Some(surface_id) = analytic_surface_id_for_feature(
+                ctx,
                 &scan.surfaces.rows,
                 &scan.features.entity_tables,
                 feature_id,
                 segment.external_id,
                 &geometry,
-            ) else {
+            )?
+            else {
                 continue;
             };
-            let id = crate::identity::compose_checked::<SurfaceId>(
-                ctx,
-                &crate::identity::VISIBGEOM_SURFACE,
-                surface_id,
-                "creo extrusion surface identity",
-            )?;
-            if ir.model.surfaces.iter().any(|surface| surface.id == id) {
+            let (id, candidate_identity_storage) =
+                ctx.with_scoped_storage("creo sweep identity candidate", || {
+                    crate::identity::compose_checked::<SurfaceId>(
+                        ctx,
+                        &crate::identity::VISIBGEOM_SURFACE,
+                        surface_id,
+                        "creo extrusion surface identity",
+                    )
+                })?;
+            if surface_id_index.is_none() {
+                surface_id_index = Some(surface_id_storage.with_storage(|| {
+                    ctx.collect_string_set(
+                        ir.model.surfaces.iter().map(|record| record.id.as_str()),
+                        "creo model surface identity index",
+                    )
+                })?);
+            }
+            let Some(indexed_surface_ids) = &mut surface_id_index else {
+                continue;
+            };
+            if ctx.contains_hash_set(
+                indexed_surface_ids,
+                id.as_str(),
+                "creo model identity comparison",
+            )? {
                 continue;
             }
             annotate(
@@ -652,11 +770,18 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 Exactness::Derived,
             )?;
             ctx.charge_entities(1, "admit Creo model surfaces")?;
+            surface_id_storage.with_storage(|| {
+                ctx.insert_string_set(
+                    indexed_surface_ids,
+                    id.as_str(),
+                    "creo model surface identity index",
+                )
+            })?;
             source_carriers.admit_surface(
                 ctx,
                 ir,
                 Surface {
-                    id,
+                    id: candidate_identity_storage.commit_value(id)?,
                     geometry,
                     source_object: Some(SourceObjectAssociation {
                         format: cadmpeg_ir::CodecFormat::Creo,
@@ -676,17 +801,25 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
             transferred += 1;
         }
 
-        for (internal_id, section_geometry, offset) in
-            semantic_saved_section_entities(definition).filter_map(saved_section_entity_geometry)
-        {
+        let entities_owned_storage = semantic_saved_section_entities(ctx, definition)?;
+        let _entity_storage = entities_owned_storage.1;
+        let entities = entities_owned_storage.0;
+        for entity in ctx.admit_iter(&entities, "creo saved section geometry traversal")? {
+            let Some((internal_id, section_geometry, offset)) =
+                saved_section_entity_geometry(entity)
+            else {
+                continue;
+            };
             let Some(external_id) = order_table.external_id(internal_id) else {
                 continue;
             };
             let Some(native_surface_id) = generated_surface_id_for_feature(
+                ctx,
                 &scan.features.entity_tables,
                 feature_id,
                 external_id,
-            ) else {
+            )?
+            else {
                 continue;
             };
             let Some(geometry) = extruded_geometry_surface(transform, &section_geometry) else {
@@ -703,13 +836,31 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
             ) {
                 continue;
             }
-            let id = crate::identity::compose_checked::<SurfaceId>(
-                ctx,
-                &crate::identity::VISIBGEOM_SURFACE,
-                native_surface_id,
-                "creo extrusion surface identity",
-            )?;
-            if ir.model.surfaces.iter().any(|surface| surface.id == id) {
+            let (id, candidate_identity_storage) =
+                ctx.with_scoped_storage("creo sweep identity candidate", || {
+                    crate::identity::compose_checked::<SurfaceId>(
+                        ctx,
+                        &crate::identity::VISIBGEOM_SURFACE,
+                        native_surface_id,
+                        "creo extrusion surface identity",
+                    )
+                })?;
+            if surface_id_index.is_none() {
+                surface_id_index = Some(surface_id_storage.with_storage(|| {
+                    ctx.collect_string_set(
+                        ir.model.surfaces.iter().map(|record| record.id.as_str()),
+                        "creo model surface identity index",
+                    )
+                })?);
+            }
+            let Some(indexed_surface_ids) = &mut surface_id_index else {
+                continue;
+            };
+            if ctx.contains_hash_set(
+                indexed_surface_ids,
+                id.as_str(),
+                "creo model identity comparison",
+            )? {
                 continue;
             }
             annotate(
@@ -722,11 +873,18 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 Exactness::Derived,
             )?;
             ctx.charge_entities(1, "admit Creo model surfaces")?;
+            surface_id_storage.with_storage(|| {
+                ctx.insert_string_set(
+                    indexed_surface_ids,
+                    id.as_str(),
+                    "creo model surface identity index",
+                )
+            })?;
             source_carriers.admit_surface(
                 ctx,
                 ir,
                 Surface {
-                    id,
+                    id: candidate_identity_storage.commit_value(id)?,
                     geometry,
                     source_object: Some(SourceObjectAssociation {
                         format: cadmpeg_ir::CodecFormat::Creo,
@@ -746,29 +904,6 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
             transferred += 1;
         }
 
-        let splines = semantic_saved_section_entities(definition)
-            .filter_map(|entity| match entity {
-                crate::feature::definitions::FeatureSavedEntity::Spline(spline) => Some(spline),
-                _ => None,
-            })
-            .filter_map(|spline| {
-                let internal_id = spline.entity_id?;
-                let external_id = order_table.external_id(internal_id)?;
-                let surface_id = generated_surface_id_for_feature(
-                    &scan.features.entity_tables,
-                    feature_id,
-                    external_id,
-                )?;
-                unique_feature_surface_row(
-                    &scan.surfaces.rows,
-                    surface_id,
-                    feature_id,
-                    crate::surface::SurfaceKind::Extrusion(
-                        crate::surface::ExtrusionVariant::Linear,
-                    ),
-                )
-                .then_some((surface_id, internal_id, spline))
-            });
         let Some(span) =
             resolved_feature_extrusion_span(ctx, scan, ir, source_carriers, definition, transform)?
         else {
@@ -778,9 +913,42 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
         let sweep = transform
             .normal()
             .map(|value| value * (span.upper() - span.lower()));
-        for (native_surface_id, internal_id, spline) in splines {
+        for spline in ctx
+            .admit_iter(&entities, "creo saved section spline traversal")?
+            .filter_map(|entity| match entity {
+                crate::feature::definitions::FeatureSavedEntity::Spline(spline) => Some(spline),
+                _ => None,
+            })
+        {
+            let Some(internal_id) = spline.entity_id else {
+                continue;
+            };
+            let Some(external_id) = order_table.external_id(internal_id) else {
+                continue;
+            };
+            let Some(native_surface_id) = generated_surface_id_for_feature(
+                ctx,
+                &scan.features.entity_tables,
+                feature_id,
+                external_id,
+            )?
+            else {
+                continue;
+            };
+            if !unique_feature_surface_row(
+                &scan.surfaces.rows,
+                native_surface_id,
+                feature_id,
+                crate::surface::SurfaceKind::Extrusion(crate::surface::ExtrusionVariant::Linear),
+            ) {
+                continue;
+            }
             let mut refusal = crate::lane_refusal::LaneRefusals::new();
-            let Some(section_curve) = saved_spline_nurbs(ctx, spline, &mut refusal)? else {
+            let (section_curve, _section_storage) = ctx
+                .with_scoped_storage("creo saved extrusion section curve", || {
+                    saved_spline_nurbs(ctx, spline, &mut refusal)
+                })?;
+            let Some(section_curve) = section_curve else {
                 let records = refusal.take_records_checked()?;
                 if records.is_empty() {
                     push_saved_spline_loss(
@@ -804,14 +972,23 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 }
                 continue;
             };
-            let Some(placed) = placed_section_nurbs(ctx, transform, &section_curve)? else {
+            let (placed, _placed_storage) = ctx
+                .with_scoped_storage("creo saved extrusion placed curve", || {
+                    placed_section_nurbs(ctx, transform, &section_curve)
+                })?;
+            let Some(placed) = placed else {
                 continue;
             };
-            let Some(directrix) = translated_nurbs_curve(ctx, &placed, lower_translation)? else {
+            let (directrix, directrix_storage) = ctx
+                .with_scoped_storage("creo saved extrusion translated curve", || {
+                    translated_nurbs_curve(ctx, &placed, lower_translation)
+                })?;
+            let Some(directrix) = directrix else {
                 continue;
             };
             let mut refusal = crate::lane_refusal::LaneRefusals::new();
-            let Some(surface) = extruded_nurbs_surface(
+            let (surface, surface_storage) = ctx.with_scoped_storage(
+                "creo saved extrusion surface candidate", || extruded_nurbs_surface(
                 ctx,
                 &directrix,
                 sweep,
@@ -820,13 +997,20 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                     spline.offset
                 ),
                 &mut refusal,
-            )?
-            else {
-                for record in refusal.take_records_checked()? {
-                    push_saved_spline_loss(ctx, losses, format_args!(
+            ))?;
+            let Some(surface) = surface else {
+                for record in ctx.admit_iter(
+                    refusal.take_records_checked()?,
+                    "creo saved spline refusal records",
+                )? {
+                    push_saved_spline_loss(
+                        ctx,
+                        losses,
+                        format_args!(
                         "Extruded section spline at offset {} states no surface carrier: {record}",
                         spline.offset
-                    ))?;
+                    ),
+                    )?;
                 }
                 continue;
             };
@@ -835,13 +1019,34 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 .first()
                 .zip(directrix.knots().last())
                 .map(|(lower, upper)| (*lower, *upper));
-            let curve_id = crate::identity::compose_checked::<CurveId>(
-                ctx,
-                &crate::identity::FEATURE_EXTRUSION_DIRECTRIX,
-                format_args!("{feature_id}:{internal_id}"),
-                "creo extrusion directrix identity",
-            )?;
-            if !ir.model.curves.iter().any(|curve| curve.id == curve_id) {
+            let (curve_id, candidate_identity_storage) =
+                ctx.with_scoped_storage("creo sweep identity candidate", || {
+                    crate::identity::compose_checked::<CurveId>(
+                        ctx,
+                        &crate::identity::FEATURE_EXTRUSION_DIRECTRIX,
+                        format_args!("{feature_id}:{internal_id}"),
+                        "creo extrusion directrix identity",
+                    )
+                })?;
+            if curve_id_index.is_none() {
+                curve_id_index = Some(curve_id_storage.with_storage(|| {
+                    ctx.collect_string_set(
+                        ir.model.curves.iter().map(|record| record.id.as_str()),
+                        "creo model curve identity index",
+                    )
+                })?);
+            }
+            let Some(indexed_curve_ids) = &mut curve_id_index else {
+                continue;
+            };
+            if ctx.contains_hash_set(
+                indexed_curve_ids,
+                curve_id.as_str(),
+                "creo model identity comparison",
+            )? {
+                drop(directrix);
+                drop(directrix_storage);
+            } else {
                 annotate(
                     ctx,
                     annotations,
@@ -852,6 +1057,13 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                     Exactness::Derived,
                 )?;
                 ctx.charge_entities(1, "admit Creo model curves")?;
+                curve_id_storage.with_storage(|| {
+                    ctx.insert_string_set(
+                        indexed_curve_ids,
+                        curve_id.as_str(),
+                        "creo model curve identity index",
+                    )
+                })?;
                 source_carriers.admit_curve(
                     ctx,
                     ir,
@@ -874,22 +1086,44 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                         }),
                     },
                 )?;
+                directrix_storage.commit()?;
             }
-            let surface_id = crate::identity::compose_checked::<SurfaceId>(
-                ctx,
-                &crate::identity::VISIBGEOM_SURFACE,
-                native_surface_id,
-                "creo extrusion surface identity",
-            )?;
-            if ir.model.surfaces.iter().any(|item| item.id == surface_id) {
+            let (surface_id, _surface_identity_storage) =
+                ctx.with_scoped_storage("creo sweep identity candidate", || {
+                    crate::identity::compose_checked::<SurfaceId>(
+                        ctx,
+                        &crate::identity::VISIBGEOM_SURFACE,
+                        native_surface_id,
+                        "creo extrusion surface identity",
+                    )
+                })?;
+            if surface_id_index.is_none() {
+                surface_id_index = Some(surface_id_storage.with_storage(|| {
+                    ctx.collect_string_set(
+                        ir.model.surfaces.iter().map(|record| record.id.as_str()),
+                        "creo model surface identity index",
+                    )
+                })?);
+            }
+            let Some(indexed_surface_ids) = &mut surface_id_index else {
+                continue;
+            };
+            if ctx.contains_hash_set(
+                indexed_surface_ids,
+                surface_id.as_str(),
+                "creo model identity comparison",
+            )? {
                 continue;
             }
-            let procedural_id = crate::identity::compose_checked::<ProceduralSurfaceId>(
-                ctx,
-                &crate::identity::FEATURE_EXTRUSION_CONSTRUCTION,
-                format_args!("{feature_id}:{internal_id}"),
-                "creo extrusion construction identity",
-            )?;
+            let (procedural_id, procedural_identity_storage) =
+                ctx.with_scoped_storage("creo sweep construction identity candidate", || {
+                    crate::identity::compose_checked::<ProceduralSurfaceId>(
+                        ctx,
+                        &crate::identity::FEATURE_EXTRUSION_CONSTRUCTION,
+                        format_args!("{feature_id}:{internal_id}"),
+                        "creo extrusion construction identity",
+                    )
+                })?;
             annotate(
                 ctx,
                 annotations,
@@ -909,13 +1143,22 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 Exactness::Derived,
             )?;
             ctx.charge_entities(1, "admit Creo model surfaces")?;
+            surface_id_storage.with_storage(|| {
+                ctx.insert_string_set(
+                    indexed_surface_ids,
+                    surface_id.as_str(),
+                    "creo model surface identity index",
+                )
+            })?;
             source_carriers.admit_surface(
                 ctx,
                 ir,
                 Surface {
                     id: surface_id
                         .try_clone_for_decode(ctx, "creo construction surface identity copy")?,
-                    geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
+                    geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
+                        surface_storage.commit_value(surface)?,
+                    )),
                     source_object: Some(SourceObjectAssociation {
                         format: cadmpeg_ir::CodecFormat::Creo,
                         object_id: crate::identity::source_object_id_checked(
@@ -942,25 +1185,24 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 )?;
                 continue;
             };
-            source_carriers.admit_procedural_surface(
-                ctx,
-                ir,
-                &surface_id,
+            let construction =
                 cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
-                    curve_id,
+                    candidate_identity_storage.commit_value(curve_id)?,
                     Some([lower_knot, upper_knot]),
                     Vector3::from(sweep),
                     None,
                     cadmpeg_ir::geometry::CacheContract::from_form(None),
                 )
-                .map(|admitted_payload| {
-                    ProceduralSurface::new(
-                        procedural_id,
-                        ProceduralSurfaceDefinition::Extrusion(admitted_payload),
-                        None,
-                    )
-                })
-                .map_err(cadmpeg_core::CodecError::malformed)?,
+                .map_err(cadmpeg_core::CodecError::malformed)?;
+            source_carriers.admit_procedural_surface(
+                ctx,
+                ir,
+                &surface_id,
+                ProceduralSurface::new(
+                    procedural_identity_storage.commit_value(procedural_id)?,
+                    ProceduralSurfaceDefinition::Extrusion(construction),
+                    None,
+                ),
             )?;
             transferred += 1;
         }
@@ -973,11 +1215,12 @@ fn extrusion_solved_segment_ids(
     definition: &crate::feature::definitions::FeatureDefinition,
 ) -> Result<BTreeSet<u32>, cadmpeg_core::CodecError> {
     let mut solved = BTreeSet::new();
-    for id in definition
-        .trim_entities
-        .iter()
-        .flat_map(|trim_entities| &trim_entities.rows)
-        .filter_map(|row| trim_segment_id(definition, row))
+    for id in ctx
+        .admit_iter(
+            trim_segment_ids(ctx, definition)?,
+            "creo extrusion solved trim rows",
+        )?
+        .flatten()
     {
         ctx.insert_btree_set(&mut solved, id, "creo extrusion solved segment ID nodes")?;
     }
