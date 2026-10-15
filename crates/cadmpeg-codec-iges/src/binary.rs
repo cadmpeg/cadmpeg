@@ -72,8 +72,12 @@ struct BinaryDirectory {
 
 impl BinaryDirectory {
     fn new(offset: u32, values: [BinaryValue; 16]) -> Result<Self, CodecError> {
-        let [entity_type, parameter_pointer, structure, line_font, level, view, transform, label_display, status, line_weight, color, form, reserved_first, reserved_second, label, subscript] =
-            values;
+        #[rustfmt::skip]
+        let [
+            entity_type, parameter_pointer, structure, line_font, level, view, transform,
+            label_display, status, line_weight, color, form, reserved_first, reserved_second,
+            label, subscript,
+        ] = values;
         Ok(Self {
             offset,
             entity_type: integer_value(&entity_type, "Directory entity type")?,

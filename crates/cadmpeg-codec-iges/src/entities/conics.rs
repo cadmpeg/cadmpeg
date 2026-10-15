@@ -159,8 +159,11 @@ pub(super) fn project(
         };
         let values =
             std::array::from_fn(|index| record.number(index + 1).and_then(FiniteReal::new));
-        let [Some(coeff_a), Some(coeff_b), Some(coeff_c), Some(coeff_d), Some(coeff_e), Some(coeff_f), Some(plane_z), Some(start_x), Some(start_y), Some(end_x), Some(end_y)] =
-            values
+        #[rustfmt::skip]
+        let [
+            Some(coeff_a), Some(coeff_b), Some(coeff_c), Some(coeff_d), Some(coeff_e),
+            Some(coeff_f), Some(plane_z), Some(start_x), Some(start_y), Some(end_x), Some(end_y),
+        ] = values
         else {
             push_geometry_loss(
                 &mut losses,
