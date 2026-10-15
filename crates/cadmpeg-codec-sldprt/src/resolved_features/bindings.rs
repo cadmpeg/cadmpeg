@@ -531,10 +531,7 @@ pub(crate) fn bind_pattern_inputs(
         let Some(seed) = candidates.pop() else {
             continue;
         };
-        if !model_features[index].dependencies.contains(&seed) {
-            let dependency = seed.clone();
-            model_features[index].dependencies.insert(dependency);
-        }
+        model_features[index].dependencies.insert(seed.clone());
         model_features[index].evaluation.edit(|definition, _| {
             if let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. }) =
                 definition
@@ -564,9 +561,7 @@ pub(crate) fn bind_pattern_inputs(
         let Some((dependency, path)) = candidates.pop() else {
             continue;
         };
-        if !model_features[index].dependencies.contains(&dependency) {
-            model_features[index].dependencies.insert(dependency);
-        }
+        model_features[index].dependencies.insert(dependency);
         model_features[index].evaluation.edit(|definition, _| {
             if let FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. }) =
                 definition
@@ -688,10 +683,7 @@ pub(crate) fn bind_pattern_inputs(
             continue;
         };
         for seed in &seeds {
-            if !model_features[index].dependencies.contains(seed) {
-                let dependency = seed.clone();
-                model_features[index].dependencies.insert(dependency);
-            }
+            model_features[index].dependencies.insert(seed.clone());
         }
         model_features[index].evaluation.edit(|definition, _| {
             if let FeatureDefinition::Operation(FeatureOperation::Pattern {
@@ -1039,19 +1031,13 @@ pub(crate) fn bind_sweep_adjacent_profiles(
                 path_dependency = path.map(|(dependency, _)| dependency);
             }
         });
-        if profile_bound
-            && !model_features[index]
-                .dependencies
-                .contains(&profile_dependency)
-        {
+        if profile_bound {
             model_features[index]
                 .dependencies
                 .insert(profile_dependency);
         }
         if let Some(dependency) = path_dependency {
-            if !model_features[index].dependencies.contains(&dependency) {
-                model_features[index].dependencies.insert(dependency);
-            }
+            model_features[index].dependencies.insert(dependency);
         }
     }
 }

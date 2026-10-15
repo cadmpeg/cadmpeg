@@ -169,25 +169,21 @@ impl<'a> FaceInputs<'a> {
             })?;
             if !faces.iter().all(|face| current.contains(face)) {
                 let native = native.to_owned();
-                let historical = (|| -> Result<Option<FaceSelection>, CodecError> {
-                    let Some(topology) = self.feature(feature) else {
-                        return Ok(None);
-                    };
+                let historical = (|| -> Option<FaceSelection> {
+                    let topology = self.feature(feature)?;
 
                     let source = topology
                         .native_ref
                         .as_deref()
                         .and_then(super::historical_brep_source);
-                    let Some(state) = topology
+                    let state = topology
                         .id
                         .as_str()
                         .rsplit_once(':')
-                        .and_then(|(_, state)| state.parse::<i64>().ok())
-                    else {
-                        return Ok(None);
-                    };
-                    if crate::ids::history_input_state_id_charged(feature, state)? != topology.id {
-                        return Ok(None);
+                        .and_then(|(_, state)| state.parse::<i64>().ok())?;
+                    let prefix = crate::ids::history_input_prefix(&feature.key(), state);
+                    if crate::ids::history_input_state_id(&prefix) != topology.id {
+                        return None;
                     }
                     let members = self.members(topology);
                     let mut selected = Vec::new();
@@ -197,21 +193,19 @@ impl<'a> FaceInputs<'a> {
                                 super::active_brep_face_matches_source(face, source)
                             })
                         {
-                            return Ok(None);
+                            return None;
                         }
-                        let Some(slot) = super::stable_ref(face.as_str()) else {
-                            return Ok(None);
-                        };
-                        let id = crate::ids::history_input_face_id_charged(feature, state, slot)?;
+                        let slot = super::stable_ref(face.as_str())?;
+                        let id = crate::ids::history_input_face_id(&prefix, slot);
                         if !members.contains(&id) {
-                            return Ok(None);
+                            return None;
                         }
                         selected.push(id);
                     }
                     let state = topology.id.clone();
                     let identity = native.clone();
-                    Ok(FaceSelection::historical(state, selected, identity).ok())
-                })()?;
+                    FaceSelection::historical(state, selected, identity).ok()
+                })();
                 *selection = match historical {
                     Some(value) => value,
                     None => {

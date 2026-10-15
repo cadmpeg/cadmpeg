@@ -3,7 +3,7 @@ use super::length;
 use super::neutral_feature;
 use super::reference;
 use super::simple_hole_definition;
-use crate::swift::enrich_implicit_nominals_with_context;
+use crate::swift::enrich_implicit_nominals;
 use crate::swift::pattern_hole_nominal_context;
 use crate::swift::project;
 use crate::swift::project_with_topology;
@@ -60,7 +60,7 @@ fn empty_swift_pattern_uses_one_native_hole_join() {
         ..Entity::default()
     };
     let mut projected = project(&root);
-    enrich_implicit_nominals_with_context(&root, &[], &mut projected, Some(&context));
+    enrich_implicit_nominals(&root, &[], &mut projected, Some(&context));
     let PmiDefinition::Dimension(relation) =
         &projected.first().expect("diameter annotation").definition
     else {

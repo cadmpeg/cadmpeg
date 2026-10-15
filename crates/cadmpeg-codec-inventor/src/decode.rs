@@ -1106,7 +1106,7 @@ fn decode_container<'a>(
             kernel_stats.unknown_surface_faces(),
         ),
     ];
-    let coverage = cadmpeg_ir::report::decode::Coverage::from_iter_for_decode(coverage_entries)?;
+    let coverage: cadmpeg_ir::report::decode::Coverage = coverage_entries.into_iter().collect();
     let body = DecodeBody {
         transfer: if ctx.container_only() {
             cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {}

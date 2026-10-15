@@ -112,7 +112,7 @@ fn selection_fixture() -> (
     )
 }
 
-fn bind() -> Result<BodySelection, cadmpeg_core::CodecError> {
+fn bind() -> BodySelection {
     let (scope, groups, operands, mut selection) = selection_fixture();
     let feature = FeatureId::mint("f3d:model:feature#body").unwrap();
     super::super::bind_body_recipe_body_selection(
@@ -122,8 +122,8 @@ fn bind() -> Result<BodySelection, cadmpeg_core::CodecError> {
         &scope,
         &groups,
         &operands,
-    )?;
-    Ok(selection)
+    );
+    selection
 }
 
 fn face_geometry() -> (
@@ -275,7 +275,7 @@ fn linked_body() -> Option<cadmpeg_ir::ids::BodyId> {
 
 #[test]
 fn body_recipe_keeps_historical_selection() {
-    assert!(matches!(bind().unwrap(), BodySelection::Historical { .. }));
+    assert!(matches!(bind(), BodySelection::Historical { .. }));
 }
 
 #[test]

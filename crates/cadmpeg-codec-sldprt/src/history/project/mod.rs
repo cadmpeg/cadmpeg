@@ -588,7 +588,7 @@ pub(super) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
             feature
                 .dependencies
                 .retain(|dependency| dependency != &reference_id);
-        } else if !feature.dependencies.contains(&reference_id) {
+        } else {
             feature.dependencies.insert(reference_id);
         }
     }
@@ -1111,16 +1111,15 @@ fn project_feature_dependencies(
             let Some(dependency) = by_source.get(reference) else {
                 continue;
             };
-            if dependency == &owner || dependencies.contains(dependency) {
-                continue;
+            if dependency != &owner {
+                dependencies.insert(dependency.clone());
             }
-            dependencies.insert(dependency.clone());
         }
     }
     Ok(dependencies)
 }
 
-/// Project decoded native configurations under the caller's resource budget.
+/// Project decoded native configurations into neutral design configurations.
 pub(crate) fn project_configurations(
     histories: &[FeatureHistory],
 ) -> Result<Vec<DesignConfiguration>, CodecError> {

@@ -362,7 +362,7 @@ pub(super) fn try_decode_freeform_surfaces(
                 Ok(records) => records,
                 Err(error) => return Some(Err(error)),
             };
-        let mut b5_graph = match crate::families::b5::graph::parse_from_records_budgeted(
+        let mut b5_graph = match crate::families::b5::graph::parse_from_records(
             ctx,
             &object_source,
             &selected_object_records,
@@ -3518,6 +3518,7 @@ mod tests {
                 std::slice::from_ref(&record),
                 &[],
                 false,
+                None,
                 &mut crate::nurbs::LaneRefusals::new()
             ))
             .expect("service resource budget")
@@ -3530,6 +3531,7 @@ mod tests {
                 &[record.clone(), record],
                 &[],
                 false,
+                None,
                 &mut crate::nurbs::LaneRefusals::new()
             ))
             .expect("service resource budget")

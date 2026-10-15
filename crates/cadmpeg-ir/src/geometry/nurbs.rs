@@ -11,7 +11,6 @@ pub(super) mod admitted;
 use crate::features::FinitePoint3;
 use crate::math::Point3;
 use crate::scalar::{FiniteReal, NonZeroReal};
-use cadmpeg_core::CodecError;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -1395,33 +1394,25 @@ pub struct NurbsCurve {
 }
 
 impl NurbsCurve {
-    /// Copy a curve after charging its knot and pole lanes, then map the
-    /// copied positions without another allocation. A non-finite result leaves
-    /// the source untouched and returns no curve.
-    pub fn map_control_points(
-        &self,
-        mut map: impl FnMut(Point3) -> Point3,
-    ) -> Result<Option<Self>, CodecError> {
+    /// Copy the curve and map the copied pole positions. A non-finite result
+    /// leaves the source untouched and returns no curve.
+    pub fn map_control_points(&self, mut map: impl FnMut(Point3) -> Point3) -> Option<Self> {
         let mut mapped = self.clone();
         match &mut mapped.poles {
             NurbsPoles3::Polynomial { points } => {
                 for point in points {
-                    let Some(next) = FinitePoint3::new(map(point.get())) else {
-                        return Ok(None);
-                    };
+                    let next = FinitePoint3::new(map(point.get()))?;
                     *point = next;
                 }
             }
             NurbsPoles3::Rational { points } => {
                 for pole in points {
-                    let Some(next) = FinitePoint3::new(map(pole.point.get())) else {
-                        return Ok(None);
-                    };
+                    let next = FinitePoint3::new(map(pole.point.get()))?;
                     pole.point = next;
                 }
             }
         }
-        Ok(Some(mapped))
+        Some(mapped)
     }
 
     /// Build a NURBS curve with consistent knot, pole, and weight cardinalities.

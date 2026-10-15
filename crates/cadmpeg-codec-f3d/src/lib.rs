@@ -171,7 +171,7 @@ impl CodecBackend for F3dCodec {
         ctx: &DecodeContext<'_>,
         ir: &CadIr,
     ) -> Result<Vec<cadmpeg_ir::report::check::Finding>, CodecError> {
-        validate::validate_native_charged(ctx, ir)
+        validate::validate_native(ctx, ir)
     }
 
     fn detect_impl(

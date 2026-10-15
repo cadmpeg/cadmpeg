@@ -258,7 +258,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                         ),
                         &mut refusal,
                     ),
-                )?
+                )
                 .is_none()
                 {
                     unprojectable = true;
@@ -520,7 +520,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                             else {
                                 continue;
                             };
-                            let Some(placed) = placed_section_nurbs(transform, &nurbs)? else {
+                            let Some(placed) = placed_section_nurbs(transform, &nurbs) else {
                                 continue;
                             };
                             let Some(translated) = translated_nurbs_curve(
@@ -530,8 +530,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                                     offset * transform.normal()[1],
                                     offset * transform.normal()[2],
                                 ],
-                            )?
-                            else {
+                            ) else {
                                 continue;
                             };
                             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(translated))
@@ -765,7 +764,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     [start, profile[index].end()],
                     span,
                     &mut diagnostics,
-                )?;
+                );
                 let records = refusal.take_records();
                 if !records.is_empty() {
                     // The shell of this body already declares this side face,

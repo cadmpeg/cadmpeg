@@ -35,7 +35,7 @@ pub(in crate::solve) struct MeshCoordinateGauge {
 }
 
 #[derive(Clone, Copy)]
-pub(super) struct MeshCandidateGauge<'a> {
+pub(crate) struct MeshCandidateGauge<'a> {
     pub(super) edge_rows: &'a [EdgeRow],
     pub(super) edge_faces: &'a [[usize; 2]],
     pub(super) edge_geometry: &'a [MeshEdgeGeometry],
@@ -1129,15 +1129,6 @@ pub(crate) fn canonicalize_mesh_vertex_labels(
 }
 
 #[cfg(test)]
-pub(crate) fn mesh_candidates_equivalent(
-    ctx: &DecodeContext<'_>,
-    left: &(StandardTopologyDraft, Vec<usize>),
-    right: &(StandardTopologyDraft, Vec<usize>),
-) -> Result<bool, CodecError> {
-    mesh_candidates_equivalent_with_context(ctx, left, right, None)
-}
-
-#[cfg(test)]
 pub(crate) fn mesh_candidates_equivalent_with_gauge(
     ctx: &DecodeContext<'_>,
     left: &(StandardTopologyDraft, Vec<usize>),
@@ -1146,7 +1137,7 @@ pub(crate) fn mesh_candidates_equivalent_with_gauge(
     edge_candidates: &[Vec<[usize; 2]>],
     edge_identity_evidence: &[bool],
 ) -> Result<bool, CodecError> {
-    mesh_candidates_equivalent_with_context(
+    mesh_candidates_equivalent(
         ctx,
         left,
         right,
@@ -1161,7 +1152,7 @@ pub(crate) fn mesh_candidates_equivalent_with_gauge(
     )
 }
 
-pub(super) fn mesh_candidates_equivalent_with_context(
+pub(crate) fn mesh_candidates_equivalent(
     ctx: &DecodeContext<'_>,
     left: &(StandardTopologyDraft, Vec<usize>),
     right: &(StandardTopologyDraft, Vec<usize>),
@@ -1299,20 +1290,17 @@ fn mesh_candidate_comparison_collapses_coordinate_row_gauge() {
     let right = (topology(true), vec![0, 1, 2, 3]);
 
     assert!(
-        !mesh_candidates_equivalent_with_context(&ctx, &left, &right, None)
-            .expect("service resource budget")
+        !mesh_candidates_equivalent(&ctx, &left, &right, None).expect("service resource budget")
     );
-    assert!(
-        mesh_candidates_equivalent_with_context(&ctx, &left, &right, Some(gauge))
-            .expect("service resource budget")
-    );
+    assert!(mesh_candidates_equivalent(&ctx, &left, &right, Some(gauge))
+        .expect("service resource budget"));
 
     let mut mismatched_topology = topology(false);
     let boundary = &mut mismatched_topology.faces[1].boundaries[0];
     boundary.coedges = NonEmptyMembers::<CoedgeUse>::one(boundary.coedges[0]);
     let mismatched = (mismatched_topology, vec![0, 1, 2, 3]);
     assert!(
-        !mesh_candidates_equivalent_with_context(&ctx, &left, &mismatched, Some(gauge))
+        !mesh_candidates_equivalent(&ctx, &left, &mismatched, Some(gauge))
             .expect("service resource budget")
     );
 }
@@ -1441,12 +1429,10 @@ fn mesh_candidate_comparison_collapses_independent_seam_row_coordinate_automorph
 
     for mask in 1..(1 << COMPONENT_COUNT) {
         let right = (topology(mask), identity.clone());
+        assert!(!mesh_candidates_equivalent(&ctx, &left, &right, None)
+            .expect("service resource budget"));
         assert!(
-            !mesh_candidates_equivalent_with_context(&ctx, &left, &right, None)
-                .expect("service resource budget")
-        );
-        assert!(
-            mesh_candidates_equivalent_with_context(&ctx, &left, &right, Some(gauge))
+            mesh_candidates_equivalent(&ctx, &left, &right, Some(gauge))
                 .expect("service resource budget"),
             "seam gauge did not collapse mask {mask:#b}"
         );
@@ -1461,13 +1447,10 @@ fn mesh_candidate_comparison_collapses_independent_seam_row_coordinate_automorph
 
     let mut displaced = topology(0);
     displaced.vertex_points[0][0] = -1.0;
-    assert!(!mesh_candidates_equivalent_with_context(
-        &ctx,
-        &left,
-        &(displaced, identity),
-        Some(gauge)
-    )
-    .expect("service resource budget"));
+    assert!(
+        !mesh_candidates_equivalent(&ctx, &left, &(displaced, identity), Some(gauge))
+            .expect("service resource budget")
+    );
 
     let mut mismatched_geometry = edge_geometry;
     mismatched_geometry[1] = MeshEdgeGeometry::Circle {
@@ -1494,7 +1477,7 @@ fn mesh_candidate_comparison_collapses_independent_seam_row_coordinate_automorph
     };
     let mut row_swapped = topology(0);
     row_swapped.edge_rows.swap(0, 1);
-    assert!(!mesh_candidates_equivalent_with_context(
+    assert!(!mesh_candidates_equivalent(
         &ctx,
         &left,
         &(row_swapped, (0..COMPONENT_COUNT * 4).collect()),
@@ -2104,7 +2087,7 @@ fn mesh_candidate_canonicalization_result() {
         coordinate_gauge: Some(&coordinate_gauge),
     };
     let run = |ctx: &DecodeContext<'_>| {
-        mesh_candidates_equivalent_with_context(ctx, &candidate, &candidate, Some(gauge))
+        mesh_candidates_equivalent(ctx, &candidate, &candidate, Some(gauge))
     };
     catia_test_context!(service_ctx);
     assert!(crate::test_support::with_service_context(run).expect("service resource budget"));

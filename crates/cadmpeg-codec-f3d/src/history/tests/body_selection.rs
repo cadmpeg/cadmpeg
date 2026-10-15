@@ -177,7 +177,7 @@ fn move_body_selection_uses_unique_owning_history() {
     ));
 }
 
-fn pattern_seed_error() -> Result<cadmpeg_ir::features::Feature, cadmpeg_core::CodecError> {
+fn pattern_seed_feature() -> cadmpeg_ir::features::Feature {
     use cadmpeg_ir::features::{
         patterns::PatternKind, Feature, FeatureDefinition, FeatureId, FeatureOperation,
     };
@@ -265,8 +265,8 @@ fn pattern_seed_error() -> Result<cadmpeg_ir::features::Feature, cadmpeg_core::C
             inputs.construction_recipes,
             inputs.persistent_design_links,
         ),
-    )?;
-    Ok(feature)
+    );
+    feature
 }
 
 #[test]
@@ -274,7 +274,7 @@ fn pattern_body_seed_preserves_native_selection() {
     use cadmpeg_ir::features::{
         patterns::PatternSeed, BodySelection, FeatureDefinition, FeatureOperation,
     };
-    let feature = pattern_seed_error().unwrap();
+    let feature = pattern_seed_feature();
     assert!(matches!(feature.evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. })
             if matches!(seeds.as_slice(),

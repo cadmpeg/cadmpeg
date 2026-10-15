@@ -249,7 +249,7 @@ fn recovery_never_turns_a_resource_refusal_into_an_omission() {
     let mut policy = DecodePolicy::desktop();
     policy.limits.max_entities = 1;
     with_policy_context(source.as_bytes(), &policy, |source, ctx| {
-        assert!(matches!(crate::parse::parse_with_context(source, ctx),
+        assert!(matches!(crate::parse::parse(source, ctx),
             Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::Entities));
     });
 }

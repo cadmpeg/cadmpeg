@@ -9,7 +9,7 @@ use cadmpeg_ir::report::loss::LossNote;
 use crate::loss::StepLossCode;
 use crate::parse::{Exchange, RawRecord, Value};
 
-use super::decode_text_charged;
+use super::decode_text;
 use super::StageOutcome;
 use super::{RecordExt, ValueExt};
 
@@ -22,7 +22,7 @@ pub(super) fn decode(exchange: &Exchange) -> Result<StageOutcome<()>, CodecError
             let identifier = parameters
                 .first()
                 .and_then(|value| {
-                    decode_text_charged(
+                    decode_text(
                         exchange,
                         value,
                         &mut losses,
@@ -35,7 +35,7 @@ pub(super) fn decode(exchange: &Exchange) -> Result<StageOutcome<()>, CodecError
             let name = parameters
                 .get(1)
                 .and_then(|value| {
-                    decode_text_charged(
+                    decode_text(
                         exchange,
                         value,
                         &mut losses,
@@ -80,7 +80,7 @@ pub(super) fn decode(exchange: &Exchange) -> Result<StageOutcome<()>, CodecError
             let source = parameters
                 .get(1)
                 .and_then(|value| {
-                    decode_text_charged(
+                    decode_text(
                         exchange,
                         value,
                         &mut losses,
@@ -149,7 +149,7 @@ fn source_text(
     field: &str,
 ) -> Result<Option<String>, CodecError> {
     match value {
-        Value::String(_) => Ok(decode_text_charged(
+        Value::String(_) => Ok(decode_text(
             exchange,
             value,
             losses,

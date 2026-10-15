@@ -62,7 +62,7 @@ fn neutral_assembly_joint_id_preserves_bytes() {
     let scope = encoded_scope();
     assert_eq!(
         super::neutral_assembly_joint_id(&scope).unwrap(),
-        crate::ids::neutral_assembly_joint_id(&scope).unwrap()
+        crate::ids::neutral_assembly_joint_id(&scope)
     );
 }
 

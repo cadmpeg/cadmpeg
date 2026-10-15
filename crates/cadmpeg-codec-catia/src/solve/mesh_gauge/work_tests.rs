@@ -259,7 +259,7 @@ fn comparison_topology() -> crate::families::standard::topology::StandardTopolog
 fn candidate_equivalence_result() {
     let candidate = (comparison_topology(), vec![0, 1]);
     assert!(crate::test_support::with_service_context(|ctx| {
-        super::mesh_candidates_equivalent_with_context(ctx, &candidate, &candidate, None)
+        super::mesh_candidates_equivalent(ctx, &candidate, &candidate, None)
     })
     .expect("service comparison"));
 }

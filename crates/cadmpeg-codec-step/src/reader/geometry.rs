@@ -495,7 +495,7 @@ pub(super) fn decode(
                     points.insert(id, position);
                     let source_name = representation_item_name(record)
                         .and_then(|value| {
-                            super::decode_text_charged(
+                            super::decode_text(
                                 exchange,
                                 value,
                                 &mut losses,
@@ -2307,7 +2307,7 @@ fn decode_tessellated_curve_sets(
         };
         let source_name = representation_item_name(record)
             .and_then(|value| {
-                super::decode_text_charged(
+                super::decode_text(
                     exchange,
                     value,
                     losses,
@@ -2424,7 +2424,7 @@ pub(super) fn associate_free_geometric_set_members(
                 .get(&member)
                 .and_then(representation_item_name)
                 .and_then(|value| {
-                    super::decode_text_charged(
+                    super::decode_text(
                         exchange,
                         value,
                         losses,
@@ -2495,7 +2495,7 @@ pub(super) fn associate_free_representation_members(
                 .get(&member)
                 .and_then(representation_item_name)
                 .and_then(|value| {
-                    super::decode_text_charged(
+                    super::decode_text(
                         exchange,
                         value,
                         losses,
@@ -2590,7 +2590,7 @@ fn associate_presentation_carrier(
         .get(&target)
         .and_then(representation_item_name)
         .and_then(|value| {
-            super::decode_text_charged(
+            super::decode_text(
                 exchange,
                 value,
                 losses,

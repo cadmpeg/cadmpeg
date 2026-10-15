@@ -2598,7 +2598,7 @@ impl<'a> F3dDecodeSession<'a> {
             &self.native.asm_histories,
             &self.native.design_edge_operands,
             &scope_histories,
-        )?;
+        );
         crate::history::bind_feature_outputs(
             &mut self.ir.model.features,
             &self.native.design_parameter_scopes,
@@ -2637,7 +2637,7 @@ impl<'a> F3dDecodeSession<'a> {
             &self.native.design_parameter_scopes,
             &self.native.design_construction_operand_groups,
             &self.native.design_entity_selection_operands,
-        )?;
+        );
         crate::design::feature_project::bind_revolve_face_axes(
             &mut self.ir.model.features,
             &self.native.design_parameter_scopes,
@@ -5060,7 +5060,7 @@ fn build_geometry_ir(
         creation_timestamps,
     } = brep;
     let (namespace, remainder) = transfer_into_ir(ctx, &mut ir, "f3d", asm)?;
-    let mut native = F3dNative::load_charged(ctx, namespace)?;
+    let mut native = F3dNative::load_inner(ctx, namespace)?;
     native.sketch_curve_links = sketch_curve_links;
     native.persistent_design_links = persistent_design_links;
     native.persistent_subentity_tags = persistent_subentity_tags;
@@ -5653,11 +5653,16 @@ pub(crate) fn resolve_face_appearance_bindings(
             bound_faces.insert(*face, &appearance.id);
             let target = AppearanceTarget::Face((*face).clone());
             let appearance_id = appearance.id.clone();
-            let id = crate::ids::face_appearance_binding_id_charged(
+            let id = crate::ids::face_appearance_binding_id(
                 face_guid,
-                assignment.visual_guid,
+                assignment.visual_guid.identity_key(),
                 face,
-            )?;
+            )
+            .map_err(|error| {
+                CodecError::malformed(format_args!(
+                    "F3D face appearance binding identity is invalid: {error}"
+                ))
+            })?;
             new_bindings.push(AppearanceBinding {
                 // The face id completes the key: one appearance attribute GUID
                 // reaches every face carrying it, so the assignment pair alone

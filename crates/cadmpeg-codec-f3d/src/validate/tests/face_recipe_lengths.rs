@@ -128,7 +128,7 @@ fn face_findings(
         native.design_face_operands = vec![operand];
     }
     crate::test_support::with_decode_context(|ctx| {
-        crate::validate::validate_native_charged(ctx, &ir).expect("service native validation")
+        crate::validate::validate_native(ctx, &ir).expect("service native validation")
     })
     .into_iter()
     .filter(|finding| {

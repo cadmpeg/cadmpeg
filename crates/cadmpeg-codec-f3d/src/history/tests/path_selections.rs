@@ -95,14 +95,14 @@ fn path_fixture() -> (
     (scope, vec![group], vec![operand], PathRef::Native(group_id))
 }
 
-fn bind() -> Result<PathRef, cadmpeg_core::CodecError> {
+fn bind() -> PathRef {
     let (scope, groups, operands, mut path) = path_fixture();
     let feature = FeatureId::mint("f3d:model:feature#path").unwrap();
-    super::super::bind_entity_selection_path(&mut path, &feature, 1, &scope, &groups, &operands)?;
-    Ok(path)
+    super::super::bind_entity_selection_path(&mut path, &feature, 1, &scope, &groups, &operands);
+    path
 }
 
 #[test]
 fn path_edges_keep_historical_identity() {
-    assert!(matches!(bind().unwrap(), PathRef::HistoricalEdges { .. }));
+    assert!(matches!(bind(), PathRef::HistoricalEdges { .. }));
 }
