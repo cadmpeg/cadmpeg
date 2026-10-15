@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed `PmDc` feature records and feature-list terminators.
+use cadmpeg_core::decode::unique_index;
 use cadmpeg_ir::native::bytes::NativeBytes;
 
 use cadmpeg_ir::features::{PlanarProfileRef, ProfileRef};
@@ -1076,8 +1077,7 @@ pub(crate) fn project(
         });
     }
 
-    let (unique_properties, _properties_storage) = ctx.unique_index(
-        inventory.properties.iter().map(|record| {
+    let unique_properties = unique_index(inventory.properties.iter().map(|record| {
             (
                 {
                     (
@@ -1087,12 +1087,8 @@ pub(crate) fn project(
                 },
                 record,
             )
-        }),
-        |_| Ok(0),
-        "index Inventor feature properties",
-    )?;
-    let (unique_parameters, _parameters_storage) = ctx.unique_index(
-        design.parameters.iter().map(|record| {
+        }));
+    let unique_parameters = unique_index(design.parameters.iter().map(|record| {
             (
                 {
                     (
@@ -1102,12 +1098,8 @@ pub(crate) fn project(
                 },
                 record,
             )
-        }),
-        |_| Ok(0),
-        "index Inventor feature parameters",
-    )?;
-    let (unique_sketches, _sketches_storage) = ctx.unique_index(
-        sketch.sketches.iter().map(|record| {
+        }));
+    let unique_sketches = unique_index(sketch.sketches.iter().map(|record| {
             (
                 {
                     (
@@ -1117,12 +1109,8 @@ pub(crate) fn project(
                 },
                 record,
             )
-        }),
-        |_| Ok(0),
-        "index Inventor feature sketches",
-    )?;
-    let (unique_directions, _directions_storage) = ctx.unique_index(
-        sketch.directions.iter().map(|record| {
+        }));
+    let unique_directions = unique_index(sketch.directions.iter().map(|record| {
             (
                 {
                     (
@@ -1132,12 +1120,8 @@ pub(crate) fn project(
                 },
                 record,
             )
-        }),
-        |_| Ok(0),
-        "index Inventor feature directions",
-    )?;
-    let (unique_transforms, _transforms_storage) = ctx.unique_index(
-        sketch.transforms.iter().map(|record| {
+        }));
+    let unique_transforms = unique_index(sketch.transforms.iter().map(|record| {
             (
                 {
                     (
@@ -1147,10 +1131,7 @@ pub(crate) fn project(
                 },
                 record,
             )
-        }),
-        |_| Ok(0),
-        "index Inventor feature transforms",
-    )?;
+        }));
     let index = ProjectionIndex {
         properties: unique_properties,
         parameters: unique_parameters,
@@ -1190,8 +1171,7 @@ pub(crate) fn project(
     // The label owner is a one-based reference. Keying on the optional record
     // ordinal keeps the null reference out of the ordinal space, so a label
     // with no owner never claims the feature at ordinal 0.
-    let (labels, _labels_storage) = ctx.unique_index(
-        inventory.labels.iter().map(|label| {
+    let labels = unique_index(inventory.labels.iter().map(|label| {
             (
                 {
                     (
@@ -1201,10 +1181,7 @@ pub(crate) fn project(
                 },
                 label,
             )
-        }),
-        |_| Ok(0),
-        "index Inventor feature labels",
-    )?;
+        }));
     let mut projected = Vec::new();
     for feature in &inventory.features {
         let Some(label) = labels

@@ -382,7 +382,7 @@ fn enumeration_value(
     ctx: &DecodeContext<'_>,
     property: &PropertyRecord,
 ) -> Result<String, CodecError> {
-    let admitted_document = ctx
+    let document = ctx
         .parse_xml(property.xml.text(), "FreeCAD XML tree")
         .map_err(|error| {
             let CodecError::Malformed(error) = error else {
@@ -393,7 +393,6 @@ fn enumeration_value(
                 property.id
             ))
         })?;
-    let document = admitted_document.document();
     let root = document.root_element();
     if !root.has_tag_name("Property") {
         return Err(CodecError::malformed(format_args!(

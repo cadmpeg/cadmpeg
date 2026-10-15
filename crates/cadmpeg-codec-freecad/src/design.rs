@@ -818,7 +818,7 @@ fn append_spreadsheet(
             object.id()
         ))
     })?;
-    let admitted_xml = ctx
+    let xml = ctx
         .parse_xml(property.xml.text(), "FreeCAD XML tree")
         .map_err(|error| {
             let CodecError::Malformed(error) = error else {
@@ -826,8 +826,7 @@ fn append_spreadsheet(
             };
             CodecError::malformed(format_args!("invalid spreadsheet {}: {error}", property.id))
         })?;
-    let xml = admitted_xml.document();
-    let cells = direct_spreadsheet_value(xml, "Cells", &property.id)?;
+    let cells = direct_spreadsheet_value(&xml, "Cells", &property.id)?;
     let declared = cells
         .attribute("Count")
         .and_then(|value| value.parse::<usize>().ok())
@@ -982,7 +981,7 @@ fn spreadsheet_dimensions(
     else {
         return Ok(Vec::new());
     };
-    let admitted_xml = ctx
+    let xml = ctx
         .parse_xml(property.xml.text(), "FreeCAD XML tree")
         .map_err(|error| {
             let CodecError::Malformed(error) = error else {
@@ -993,8 +992,7 @@ fn spreadsheet_dimensions(
                 property.id
             ))
         })?;
-    let xml = admitted_xml.document();
-    let root = direct_spreadsheet_value(xml, container, &property.id)?;
+    let root = direct_spreadsheet_value(&xml, container, &property.id)?;
     let found = root
         .children()
         .filter(|node| node.has_tag_name(element))
@@ -1421,7 +1419,7 @@ fn parse_sketch(
                 geometry.id, geometry.type_name
             )));
         }
-        let admitted_xml = ctx
+        let xml = ctx
             .parse_xml(geometry.xml.text(), "FreeCAD XML tree")
             .map_err(|error| {
                 let CodecError::Malformed(error) = error else {
@@ -1432,8 +1430,7 @@ fn parse_sketch(
                     geometry.id
                 ))
             })?;
-        let xml = admitted_xml.document();
-        let records = direct_counted_records(xml, "GeometryList", "Geometry", &geometry.id)?;
+        let records = direct_counted_records(&xml, "GeometryList", "Geometry", &geometry.id)?;
         for (index, node) in records.into_iter().enumerate() {
             let carrier = sketch_carrier(node);
             if let (Some(kind), Some(carrier)) = (node.attribute("type"), carrier.as_ref()) {
@@ -1626,14 +1623,13 @@ fn builtin_reference_usage(
     let Some(property) = property(properties, "Constraints") else {
         return Ok((false, false, false));
     };
-    let admitted_xml = match ctx.parse_xml(property.xml.text(), "FreeCAD XML tree") {
+    let xml = match ctx.parse_xml(property.xml.text(), "FreeCAD XML tree") {
         Ok(tree) => tree,
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         Err(_) => {
             return Ok((false, false, false));
         }
     };
-    let xml = admitted_xml.document();
     let mut horizontal = false;
     let mut vertical = false;
     let mut root = false;
@@ -2086,7 +2082,7 @@ fn parse_constraints(
             property.id, property.type_name
         )));
     }
-    let admitted_xml = ctx
+    let xml = ctx
         .parse_xml(property.xml.text(), "FreeCAD XML tree")
         .map_err(|error| {
             let CodecError::Malformed(error) = error else {
@@ -2097,8 +2093,7 @@ fn parse_constraints(
                 property.id
             ))
         })?;
-    let xml = admitted_xml.document();
-    let records = direct_counted_records(xml, "ConstraintList", "Constrain", &property.id)?;
+    let records = direct_counted_records(&xml, "ConstraintList", "Constrain", &property.id)?;
     let mut constraints = Vec::new();
     let mut parameters = Vec::new();
     for (index, node) in records.into_iter().enumerate() {
@@ -2271,10 +2266,10 @@ fn parse_constraints(
                     let Some(metadata) = node.attribute("MetaData") else {
                         return Ok(None);
                     };
-                    let (_reservation, metadata) = match ctx
+                    let metadata = match ctx
                         .parse_json_value(metadata, "fcstd constraint text metadata parse")
                     {
-                        Ok((metadata, reservation)) => (reservation, metadata),
+                        Ok(metadata) => metadata,
                         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
                         Err(_) => return Ok(None),
                     };
@@ -5697,13 +5692,12 @@ fn direct_root<T>(
     expected_tag: &str,
     use_root: impl FnOnce(roxmltree::Node<'_, '_>) -> T,
 ) -> Result<Option<T>, CodecError> {
-    let admitted_document =
+    let document =
         match ctx.parse_xml(property.xml.text(), "FreeCAD direct property XML tree") {
             Ok(tree) => tree,
             Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
             Err(_) => return Ok(None),
         };
-    let document = admitted_document.document();
     let mut roots = document
         .root_element()
         .children()
@@ -6832,14 +6826,13 @@ fn enumeration_label(
     if property.type_name != "App::PropertyEnumeration" {
         return Ok(None);
     }
-    let admitted_document = match ctx.parse_xml(property.xml.text(), "FreeCAD XML tree") {
+    let document = match ctx.parse_xml(property.xml.text(), "FreeCAD XML tree") {
         Ok(tree) => tree,
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         Err(_) => {
             return Ok(None);
         }
     };
-    let document = admitted_document.document();
     let root = document.root_element();
     if !root.has_tag_name("Property") {
         return Ok(None);

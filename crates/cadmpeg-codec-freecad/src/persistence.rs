@@ -127,14 +127,13 @@ pub(crate) fn parse_with_context(
 ) -> Result<Graph, CodecError> {
     let text = std::str::from_utf8(bytes)
         .map_err(|_| CodecError::Malformed("Document.xml is not UTF-8".into()))?;
-    let admitted_xml = ctx.parse_xml(text, "FreeCAD XML tree").map_err(|error| {
+    let xml = ctx.parse_xml(text, "FreeCAD XML tree").map_err(|error| {
         let CodecError::Malformed(error) = error else {
             return error;
         };
         CodecError::malformed(format_args!("invalid Document.xml: {error}"))
     })?;
-    let xml = admitted_xml.document();
-    parse_document(xml, Vocabulary::from_declaration(schema_version)?)
+    parse_document(&xml, Vocabulary::from_declaration(schema_version)?)
 }
 
 /// Recover the persistence graph from an already admitted document.

@@ -1659,7 +1659,7 @@ fn classify_rdk_material_payload(
     let xml = std::str::from_utf8(xml).map_err(|_| {
         FramingError::structural(payload_range.start, "legacy RDK XML is not UTF-8")
     })?;
-    let admitted_document = ctx
+    let document = ctx
         .parse_xml(xml, "Rhino legacy RDK XML tree")
         .map_err(|error| {
             let CodecError::Malformed(error) = error else {
@@ -1670,7 +1670,6 @@ fn classify_rdk_material_payload(
                 format!("legacy RDK XML is malformed: {error}"),
             )
         })?;
-    let document = admitted_document.document();
     let root = document.root_element();
     if root.tag_name().name() != "xml" {
         return Err(FramingError::structural(

@@ -329,32 +329,4 @@ fn the_layout_token_vocabulary_is_not_the_registry_vocabulary() {
     }
 }
 
-#[test]
-fn source_dialect_copy_preserves_legacy_declarations() {
-    let bytes = legacy_ascii_bytes();
-    let scan = scan_bytes_ok(bytes.as_slice());
-    let classification = classify_ok(&scan);
-    assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| classification
-            .matched()
-            .try_clone_for_decode(ctx, "creo source dialect copy"))
-        .expect("service"),
-        *classification.matched()
-    );
-}
 
-#[test]
-fn source_dialect_copy_preserves_all_layouts() {
-    for case in cases() {
-        let bytes = (case.bytes)();
-        let scan = scan_bytes_ok(bytes.as_slice());
-        let classification = classify_ok(&scan);
-        let copied = crate::decode::with_test_decode_ctx(|ctx| {
-            classification
-                .matched()
-                .try_clone_for_decode(ctx, "creo source dialect copy")
-        })
-        .expect("service");
-        assert_eq!(copied, *classification.matched(), "{}", case.label);
-    }
-}

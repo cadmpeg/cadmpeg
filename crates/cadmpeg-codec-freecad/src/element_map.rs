@@ -218,7 +218,7 @@ pub(crate) fn parse(
         .filter(|property| property.type_name == "Part::PropertyPartShape")
     {
         let parsed = (|| {
-            let admitted_property_xml = ctx
+            let property_xml = ctx
                 .parse_xml(property.xml.text(), "FreeCAD XML tree")
                 .map_err(|error| {
                     let CodecError::Malformed(error) = error else {
@@ -229,7 +229,6 @@ pub(crate) fn parse(
                         property.id
                     ))
                 })?;
-            let property_xml = admitted_property_xml.document();
             let Some((part, carrier)) = direct_element_map(property_xml.root_element())? else {
                 return Ok(None);
             };

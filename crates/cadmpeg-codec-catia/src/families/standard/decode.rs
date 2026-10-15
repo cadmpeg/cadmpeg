@@ -4661,7 +4661,7 @@ struct AttachStandardTopologyInputs<
     'input9,
     'input10,
     'input11,
-    'input12,
+    
     'input13,
     'input14,
     'input15,
@@ -4686,7 +4686,7 @@ struct AttachStandardTopologyInputs<
     native_edge_faces: &'input9 HashMap<u32, HashSet<u32>>,
     native_edge_supports: &'input10 HashMap<u32, StandardEdgeSupport>,
     limit_curves: &'input11 [NurbsCurve],
-    work_budget: &'input13 WorkBudget<'input12>,
+    work_budget: &'input13 WorkBudget,
     diagnostics: &'input14 mut StandardTopologyDiagnostics,
     bound_limit_curve_count: &'input15 mut usize,
     refusal: &'input16 mut crate::nurbs::LaneRefusals,
@@ -4696,7 +4696,6 @@ struct AttachStandardTopologyInputs<
 fn attach_standard_topology(
     ctx: &DecodeContext<'_>,
     inputs: AttachStandardTopologyInputs<
-        '_,
         '_,
         '_,
         '_,

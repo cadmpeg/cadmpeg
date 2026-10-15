@@ -1152,9 +1152,9 @@ pub(super) fn source_meta(
             DialectLayers::of(
                 classification
                     .matched()
-                    .try_clone_for_decode(ctx, "creo source dialect copy")?,
+                    .clone(),
             ),
-            cadmpeg_core::text::named_entries_for_decode(ctx, "the creo container", attributes)?,
+            cadmpeg_core::text::named_entries("the creo container", attributes)?,
         ),
         coverage,
     ))

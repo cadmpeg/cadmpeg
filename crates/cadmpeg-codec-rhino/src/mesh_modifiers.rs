@@ -507,7 +507,7 @@ fn parse_xml(
     xml_version: i32,
     archive: ArchiveVersion,
 ) -> Result<DisplacementModifier, FramingError> {
-    let admitted_document =
+    let document =
         ctx.parse_xml(xml, "Rhino mesh modifier XML tree")
             .map_err(|error| {
                 let cadmpeg_core::CodecError::Malformed(error) = error else {
@@ -515,7 +515,6 @@ fn parse_xml(
                 };
                 FramingError::unpositioned(format!("invalid displacement XML: {error}"))
             })?;
-    let document = admitted_document.document();
     let root = document.root_element();
     if !same_name(root, "xml") {
         return Err(FramingError::unpositioned(format!(
@@ -562,7 +561,7 @@ fn parse_edge_softening_xml(
     xml: &str,
     xml_version: i32,
 ) -> Result<EdgeSofteningModifier, FramingError> {
-    let admitted_document =
+    let document =
         ctx.parse_xml(xml, "Rhino mesh modifier XML tree")
             .map_err(|error| {
                 let cadmpeg_core::CodecError::Malformed(error) = error else {
@@ -570,7 +569,6 @@ fn parse_edge_softening_xml(
                 };
                 FramingError::unpositioned(format!("invalid edge-softening XML: {error}"))
             })?;
-    let document = admitted_document.document();
     let root = document.root_element();
     if !same_name(root, "xml") {
         return Err(FramingError::unpositioned(format!(
@@ -601,7 +599,7 @@ fn parse_thickening_xml(
     xml: &str,
     xml_version: i32,
 ) -> Result<ThickeningModifier, FramingError> {
-    let admitted_document =
+    let document =
         ctx.parse_xml(xml, "Rhino mesh modifier XML tree")
             .map_err(|error| {
                 let cadmpeg_core::CodecError::Malformed(error) = error else {
@@ -609,7 +607,6 @@ fn parse_thickening_xml(
                 };
                 FramingError::unpositioned(format!("invalid thickening XML: {error}"))
             })?;
-    let document = admitted_document.document();
     let root = document.root_element();
     if !same_name(root, "xml") {
         return Err(FramingError::unpositioned(format!(
@@ -637,7 +634,7 @@ fn parse_curve_piping_xml(
     xml: &str,
     xml_version: i32,
 ) -> Result<CurvePipingModifier, FramingError> {
-    let admitted_document =
+    let document =
         ctx.parse_xml(xml, "Rhino mesh modifier XML tree")
             .map_err(|error| {
                 let cadmpeg_core::CodecError::Malformed(error) = error else {
@@ -645,7 +642,6 @@ fn parse_curve_piping_xml(
                 };
                 FramingError::unpositioned(format!("invalid curve-piping XML: {error}"))
             })?;
-    let document = admitted_document.document();
     let root = document.root_element();
     if !same_name(root, "xml") {
         return Err(FramingError::unpositioned(format!(
@@ -674,7 +670,7 @@ fn parse_shut_lining_xml(
     xml: &str,
     xml_version: i32,
 ) -> Result<ShutLiningModifier, FramingError> {
-    let admitted_document =
+    let document =
         ctx.parse_xml(xml, "Rhino mesh modifier XML tree")
             .map_err(|error| {
                 let cadmpeg_core::CodecError::Malformed(error) = error else {
@@ -682,7 +678,6 @@ fn parse_shut_lining_xml(
                 };
                 FramingError::unpositioned(format!("invalid shut-lining XML: {error}"))
             })?;
-    let document = admitted_document.document();
     let root = document.root_element();
     if !same_name(root, "xml") {
         return Err(FramingError::unpositioned(format!(

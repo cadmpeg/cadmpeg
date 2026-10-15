@@ -234,9 +234,7 @@ fn curve_expression_cyclic_dependency_text_joins_with_commas() {
     assert_eq!(super::join_cyclic_dependency_names(&names), "alpha,beta");
 }
 
-fn quantity_property_result(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-) -> Result<
+fn quantity_property_result() -> Result<
     std::collections::BTreeMap<cadmpeg_core::text::NonBlankString, String>,
     cadmpeg_core::CodecError,
 > {
@@ -252,7 +250,6 @@ fn quantity_property_result(
     let parameter_id = cadmpeg_ir::features::ParameterId::mint("test:test:parameter#a")
         .expect("valid parameter ID");
     super::curve_expression_properties(
-        ctx,
         &record.assignments[0],
         0,
         ("a", &parameter_id),
@@ -267,7 +264,7 @@ fn quantity_property_result(
 
 #[test]
 fn curve_expression_quantity_properties_keep_value_and_dimension() {
-    let properties = crate::decode::with_test_decode_ctx(quantity_property_result)
+    let properties = quantity_property_result()
         .expect("service resources admit quantity properties");
     assert_eq!(properties.len(), 4);
     assert_eq!(
@@ -339,8 +336,7 @@ fn curve_expression_named_properties_build_both_maps() {
     let dimensions = std::collections::BTreeMap::new();
     let edges = std::collections::HashSet::new();
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| super::curve_expression_properties(
-            ctx,
+        (super::curve_expression_properties(
             assignment,
             0,
             ("a", &parameter_id),

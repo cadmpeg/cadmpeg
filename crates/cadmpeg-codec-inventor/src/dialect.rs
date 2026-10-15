@@ -63,7 +63,6 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_core::dialect::{DialectId, DialectMatch, Grammar};
 use cadmpeg_core::CodecError;
@@ -393,21 +392,19 @@ fn kernel_layer_for_state(state: &ActiveCarrierState<'_>) -> Option<DialectMatch
 /// The complete host and optional kernel identity reported by both inspection
 /// and decode.
 pub(crate) fn layers(
-    ctx: &DecodeContext<'_>,
     primary: &DialectMatch,
     carrier: &ActiveCarrierState<'_>,
 ) -> Result<DialectLayers, CodecError> {
     let mut layers = DialectLayers::of(primary.clone());
     if let Some(kernel) = kernel_layer_for_state(carrier) {
         layers
-            .insert_for_decode(ctx, kernel, "collect Inventor kernel dialect layer")
+            .insert(kernel)
             .map_err(|error| match error {
                 cadmpeg_core::dialect::DialectLayerError::Duplicate(rejected) => {
                     CodecError::malformed(format_args!(
                         "duplicate Inventor dialect layer: {rejected:?}"
                     ))
                 }
-                cadmpeg_core::dialect::DialectLayerError::ResourceLimit(limit) => limit.into(),
             })?;
     }
     Ok(layers)

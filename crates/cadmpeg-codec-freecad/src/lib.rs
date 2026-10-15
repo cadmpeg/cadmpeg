@@ -918,7 +918,7 @@ impl CodecBackend for FcstdCodec {
         let primary = dialect::FcstdDialect::classify(&scan.document, &scan.schema_version);
         let dialects = cadmpeg_core::dialect::DialectLayers::of(primary);
         let mut ir = CadIr::decoded(SourceMeta::classified(
-            dialects.try_clone_for_decode(ctx, "copy FreeCAD dialect layers")?,
+            dialects.clone(),
             attributes,
         ));
         if let Some((name, bytes)) = thumbnail {
@@ -950,7 +950,7 @@ impl CodecBackend for FcstdCodec {
         }
         let decode_document = !ctx.container_only();
         if decode_document {
-            let document_xml = scan.document_xml.document();
+            let document_xml = &scan.document_xml;
             let mut graph = persistence::parse_document(
                 document_xml,
                 persistence::Vocabulary::from_declaration(&scan.schema_version)?,

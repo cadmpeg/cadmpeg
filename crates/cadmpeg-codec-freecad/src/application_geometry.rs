@@ -98,7 +98,7 @@ fn validate_value_root(
     property: &PropertyRecord,
     expected_tag: &str,
 ) -> Result<Option<String>, CodecError> {
-    let admitted_document = ctx
+    let document = ctx
         .parse_xml(property.xml.text(), "FreeCAD XML tree")
         .map_err(|error| {
             let CodecError::Malformed(error) = error else {
@@ -109,7 +109,6 @@ fn validate_value_root(
                 property.id
             ))
         })?;
-    let document = admitted_document.document();
     let mut roots = document
         .root_element()
         .children()
@@ -259,7 +258,7 @@ fn point_transform(
     ctx: &DecodeContext<'_>,
     property: &PropertyRecord,
 ) -> Result<[[FiniteReal; 4]; 4], CodecError> {
-    let admitted_document = ctx
+    let document = ctx
         .parse_xml(property.xml.text(), "FreeCAD XML tree")
         .map_err(|error| {
             let CodecError::Malformed(error) = error else {
@@ -270,7 +269,6 @@ fn point_transform(
                 property.id
             ))
         })?;
-    let document = admitted_document.document();
     let Some(text) = document
         .root_element()
         .children()

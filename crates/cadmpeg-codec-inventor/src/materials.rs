@@ -130,9 +130,7 @@ pub(crate) fn project_catalog(
                 schema: Some(record.schema.clone()),
                 category: None,
                 base_color,
-                properties: cadmpeg_core::text::named_entries_for_decode(
-                    ctx,
-                    format_args!(
+                properties: cadmpeg_core::text::named_entries(format_args!(
                         "inventor:protein:appearance#{instance_ordinal}-{}",
                         record.ordinal
                     ),

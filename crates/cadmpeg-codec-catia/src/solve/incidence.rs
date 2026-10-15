@@ -3870,7 +3870,7 @@ struct VisitComponentIncidencePairSolutionsWithCoordinateRootPolicyInputs<
     'input4,
     'input5,
     'input6,
-    'input7,
+    
     'input8,
     F,
     V,
@@ -3888,13 +3888,12 @@ struct VisitComponentIncidencePairSolutionsWithCoordinateRootPolicyInputs<
     partial_solution_valid: Option<MeshPartialEndpointConstraint<'input4>>,
     solution_valid: &'input5 F,
     visitor: &'input6 mut V,
-    search_budget: &'input8 WorkBudget<'input7>,
+    search_budget: &'input8 WorkBudget,
 }
 
 fn visit_component_incidence_pair_solutions_with_coordinate_root_policy<F, V>(
     ctx: &DecodeContext<'_>,
     inputs: VisitComponentIncidencePairSolutionsWithCoordinateRootPolicyInputs<
-        '_,
         '_,
         '_,
         '_,
@@ -3921,13 +3920,13 @@ where
         'input6,
         'input7,
         'input8,
-        'input9,
+        
         'input10,
-        'input11,
+        
         'input12,
-        'input13,
+        
         'input14,
-        'input15,
+        
         'input16,
         'input17,
     > {
@@ -3941,19 +3940,15 @@ where
         assignment: &'input7 [Option<[usize; 2]>],
         degrees: &'input8 [BTreeMap<usize, u8>],
         point_count: usize,
-        budget: &'input10 WorkBudget<'input9>,
-        coordinate_propagation_budget: &'input12 WorkBudget<'input11>,
-        boundary_propagation_budget: &'input14 WorkBudget<'input13>,
-        orientation_budget: &'input16 WorkBudget<'input15>,
+        budget: &'input10 WorkBudget,
+        coordinate_propagation_budget: &'input12 WorkBudget,
+        boundary_propagation_budget: &'input14 WorkBudget,
+        orientation_budget: &'input16 WorkBudget,
         solution_visitor: Option<MeshEndpointSolutionVisitor<'input17>>,
     }
     fn solve_component_domain(
         ctx: &DecodeContext<'_>,
         inputs: SolveComponentDomainInputs<
-            '_,
-            '_,
-            '_,
-            '_,
             '_,
             '_,
             '_,
@@ -4135,21 +4130,21 @@ where
         'input7,
         'input8,
         'input9,
-        'input10,
+        
         'input11,
         'input12,
         'input13,
         'input14,
         'input15,
-        'input16,
+        
         'input17,
-        'input18,
+        
         'input19,
-        'input20,
+        
         'input21,
-        'input22,
+        
         'input23,
-        'input24,
+        
         'input25,
         F,
         V,
@@ -4171,26 +4166,20 @@ where
         assignment: &'input8 mut [Option<[usize; 2]>],
         degrees: &'input9 mut [BTreeMap<usize, u8>],
         point_count: usize,
-        budget: &'input11 WorkBudget<'input10>,
+        budget: &'input11 WorkBudget,
         visitor: &'input12 mut V,
         visited: &'input13 mut usize,
         ambiguous: &'input14 mut bool,
         components: &'input15 [Vec<usize>],
-        component_budget: &'input17 WorkBudget<'input16>,
-        orientation_budget: &'input19 WorkBudget<'input18>,
-        coordinate_propagation_budget: &'input21 WorkBudget<'input20>,
-        boundary_propagation_budget: &'input23 WorkBudget<'input22>,
-        search_budget: &'input25 WorkBudget<'input24>,
+        component_budget: &'input17 WorkBudget,
+        orientation_budget: &'input19 WorkBudget,
+        coordinate_propagation_budget: &'input21 WorkBudget,
+        boundary_propagation_budget: &'input23 WorkBudget,
+        search_budget: &'input25 WorkBudget,
     }
     fn visit_components<F, V>(
         ctx: &DecodeContext<'_>,
         inputs: VisitComponentsInputs<
-            '_,
-            '_,
-            '_,
-            '_,
-            '_,
-            '_,
             '_,
             '_,
             '_,
@@ -4930,7 +4919,7 @@ struct VisitIncidenceEndpointPairSolutionsInputs<
     'input4,
     'input5,
     'input6,
-    'input7,
+    
     'input8,
     'input9,
     'input10,
@@ -4948,7 +4937,7 @@ struct VisitIncidenceEndpointPairSolutionsInputs<
     mesh_assignments: Option<&'input4 [MeshFaceBoundaryDomain]>,
     mesh_quotient: Option<&'input5 MeshQuotient>,
     partial_solution_valid: Option<MeshPartialEndpointConstraint<'input6>>,
-    complete_solution_budget: Option<&'input8 WorkBudget<'input7>>,
+    complete_solution_budget: Option<&'input8 WorkBudget>,
     solution_valid: &'input9 F,
     visitor: &'input10 mut V,
 }
@@ -4956,7 +4945,6 @@ struct VisitIncidenceEndpointPairSolutionsInputs<
 fn visit_incidence_endpoint_pair_solutions<F, V>(
     ctx: &DecodeContext<'_>,
     inputs: VisitIncidenceEndpointPairSolutionsInputs<
-        '_,
         '_,
         '_,
         '_,
@@ -5000,7 +4988,7 @@ pub(super) struct VisitIncidenceEndpointPairSolutionsWithCoordinateRootPolicyInp
     'input4,
     'input5,
     'input6,
-    'input7,
+    
     'input8,
     'input9,
     'input10,
@@ -5019,7 +5007,7 @@ pub(super) struct VisitIncidenceEndpointPairSolutionsWithCoordinateRootPolicyInp
     pub(super) mesh_quotient: Option<&'input5 MeshQuotient>,
     pub(super) coordinate_root_policy: CoordinateRootPolicy,
     pub(super) partial_solution_valid: Option<MeshPartialEndpointConstraint<'input6>>,
-    pub(super) complete_solution_budget: Option<&'input8 WorkBudget<'input7>>,
+    pub(super) complete_solution_budget: Option<&'input8 WorkBudget>,
     pub(super) solution_valid: &'input9 F,
     pub(super) visitor: &'input10 mut V,
 }
@@ -5027,7 +5015,6 @@ pub(super) struct VisitIncidenceEndpointPairSolutionsWithCoordinateRootPolicyInp
 pub(super) fn visit_incidence_endpoint_pair_solutions_with_coordinate_root_policy<F, V>(
     ctx: &DecodeContext<'_>,
     inputs: VisitIncidenceEndpointPairSolutionsWithCoordinateRootPolicyInputs<
-        '_,
         '_,
         '_,
         '_,

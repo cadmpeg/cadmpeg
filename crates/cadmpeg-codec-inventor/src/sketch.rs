@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed planar-sketch records and closed neutral sketch graphs.
 
+use cadmpeg_core::decode::unique_index;
 use std::collections::{HashMap, HashSet};
 
 use cadmpeg_core::decode::{DecodeContext, View};
@@ -995,8 +996,7 @@ pub(crate) fn project(
     inventory: &SketchInventory,
     parameters: &[DesignParameter],
 ) -> Result<SketchProjection, CodecError> {
-    let (raw_sketches, _raw_sketches_storage) = ctx.unique_index(
-        inventory.sketches.iter().map(|record| {
+    let raw_sketches = unique_index(inventory.sketches.iter().map(|record| {
             (
                 {
                     (
@@ -1006,12 +1006,8 @@ pub(crate) fn project(
                 },
                 record,
             )
-        }),
-        |_| Ok(0),
-        "index Inventor sketches",
-    )?;
-    let (raw_entities, _raw_entities_storage) = ctx.unique_index(
-        inventory.entities.iter().map(|record| {
+        }));
+    let raw_entities = unique_index(inventory.entities.iter().map(|record| {
             (
                 {
                     (
@@ -1021,12 +1017,8 @@ pub(crate) fn project(
                 },
                 record,
             )
-        }),
-        |_| Ok(0),
-        "index Inventor sketch entities",
-    )?;
-    let (transforms, _transforms_storage) = ctx.unique_index(
-        inventory.transforms.iter().map(|record| {
+        }));
+    let transforms = unique_index(inventory.transforms.iter().map(|record| {
             (
                 {
                     (
@@ -1036,12 +1028,8 @@ pub(crate) fn project(
                 },
                 record,
             )
-        }),
-        |_| Ok(0),
-        "index Inventor sketch transforms",
-    )?;
-    let (directions, _directions_storage) = ctx.unique_index(
-        inventory.directions.iter().map(|record| {
+        }));
+    let directions = unique_index(inventory.directions.iter().map(|record| {
             (
                 {
                     (
@@ -1051,12 +1039,8 @@ pub(crate) fn project(
                 },
                 record,
             )
-        }),
-        |_| Ok(0),
-        "index Inventor sketch directions",
-    )?;
-    let (raw_constraints, _raw_constraints_storage) = ctx.unique_index(
-        inventory.constraints.iter().map(|record| {
+        }));
+    let raw_constraints = unique_index(inventory.constraints.iter().map(|record| {
             (
                 {
                     (
@@ -1066,10 +1050,7 @@ pub(crate) fn project(
                 },
                 record,
             )
-        }),
-        |_| Ok(0),
-        "index Inventor sketch constraints",
-    )?;
+        }));
     let mut parameter_index = HashMap::new();
     for parameter in parameters {
         if let Some(native) = &parameter.native_ref {
