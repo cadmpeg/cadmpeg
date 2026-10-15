@@ -241,20 +241,32 @@ fn deltas_fixed_records_share_a_terminal_zero_with_their_successor() {
     assert_eq!(census.bytes_decoded(), stream.len());
 }
 
+fn world_record(escaped: bool) -> Vec<u8> {
+    let mut bytes = vec![0, 101];
+    if escaped {
+        bytes.push(255);
+    }
+    bytes.extend_from_slice(&2u16.to_be_bytes());
+    for reference in 3u16..13 {
+        bytes.extend_from_slice(&reference.to_be_bytes());
+        bytes.push(1);
+    }
+    bytes.push(1); // alive
+    for reference in 13u16..15 {
+        bytes.extend_from_slice(&reference.to_be_bytes());
+        bytes.push(1);
+    }
+    bytes.extend_from_slice(&[0; 12]); // highest_id, current_id, index_map_offset
+    for reference in 15u16..18 {
+        bytes.extend_from_slice(&reference.to_be_bytes());
+        bytes.push(1);
+    }
+    bytes
+}
+
 #[test]
 fn deltas_type_101_record_takes_precedence_over_an_overlapping_fixed_candidate() {
-    let mut type_101 = vec![0, 101];
-    type_101.extend_from_slice(&2u16.to_be_bytes());
-    for reference in 3u16..15 {
-        type_101.extend_from_slice(&reference.to_be_bytes());
-        type_101.push(1);
-    }
-    type_101.push(1);
-    type_101.extend_from_slice(&[0; 12]);
-    for reference in 15u16..18 {
-        type_101.extend_from_slice(&reference.to_be_bytes());
-        type_101.push(1);
-    }
+    let type_101 = world_record(false);
 
     let mut stream = 13u16.to_be_bytes().to_vec();
     stream.extend(encoded_xmt(256));
@@ -791,18 +803,7 @@ fn deltas_walks_complete_attdef_lists() {
 
 #[test]
 fn deltas_walks_complete_type_101_records() {
-    let mut direct = vec![0, 101];
-    direct.extend_from_slice(&2u16.to_be_bytes());
-    for reference in 3u16..15 {
-        direct.extend_from_slice(&reference.to_be_bytes());
-        direct.push(1);
-    }
-    direct.push(1);
-    direct.extend_from_slice(&[0; 12]);
-    for reference in 15u16..18 {
-        direct.extend_from_slice(&reference.to_be_bytes());
-        direct.push(1);
-    }
+    let mut direct = world_record(false);
     let direct_len = direct.len();
     direct.extend_from_slice(&[0xfe, 0xdc]);
 
@@ -832,18 +833,7 @@ fn deltas_walks_complete_type_101_records() {
     assert!(residual[..direct_len].iter().all(|byte| *byte == 0xff));
     assert_eq!(&residual[direct_len..], &[0xfe, 0xdc]);
 
-    let mut escaped = vec![0, 101, 0xff];
-    escaped.extend_from_slice(&2u16.to_be_bytes());
-    for reference in 3u16..15 {
-        escaped.extend_from_slice(&reference.to_be_bytes());
-        escaped.push(1);
-    }
-    escaped.push(1);
-    escaped.extend_from_slice(&[0; 12]);
-    for reference in 15u16..18 {
-        escaped.extend_from_slice(&reference.to_be_bytes());
-        escaped.push(1);
-    }
+    let mut escaped = world_record(true);
     assert_eq!(
         crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(ctx, &escaped))
             .unwrap()
@@ -852,15 +842,16 @@ fn deltas_walks_complete_type_101_records() {
         2
     );
 
-    escaped[41] = 0;
+    // WORLD alive follows ten status-framed pointers after kind/envelope/XMT.
+    escaped[35] = 2;
     assert!(
         crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(ctx, &escaped))
             .unwrap()
             .records
             .is_empty()
     );
-    escaped[41] = 1;
-    escaped[42] = 1;
+    escaped[35] = 1;
+    escaped[7] = 2; // Unknown first-pointer status.
     assert!(
         crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(ctx, &escaped))
             .unwrap()

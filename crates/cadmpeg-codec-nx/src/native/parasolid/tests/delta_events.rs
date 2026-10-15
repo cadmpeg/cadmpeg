@@ -281,9 +281,7 @@ fn deltas_events_subtract_transmit_headers_from_residuals() {
         &(u32::try_from(schema.len()).expect("fixture value fits u32")).to_be_bytes(),
     );
     bytes.extend_from_slice(schema);
-    bytes.extend_from_slice(&[
-        0, 0xe7, 0, 0, 0, 0, 0, 3, 0xff, 0x04, 0x27, 0x04, 0x28, 0, 0,
-    ]);
+    bytes.extend_from_slice(&[0, 0xe7, 0, 0, 0, 0]);
     let header_end = bytes.len();
     bytes.extend([0xaa, 0xbb]);
     let streams = [Stream {
@@ -306,7 +304,8 @@ fn deltas_events_subtract_transmit_headers_from_residuals() {
     assert_eq!(header.id, "nx:s0:deltas-transmit-header#0");
     assert_eq!(header.state.description().as_bytes(), description);
     assert_eq!(header.state.schema().as_bytes(), schema);
-    assert_eq!(header.state.references(), [1063, 1064]);
+    assert_eq!(header.state.maximum_node_type(), 231);
+    assert_eq!(header.state.user_field_size(), 0);
     assert_eq!(
         header.byte_len,
         cadmpeg_core::decode::u64_from_index(header_end)
@@ -412,19 +411,12 @@ fn deltas_events_subtract_reference_type_maps_from_residuals() {
 }
 
 #[test]
-fn deltas_events_subtract_reference_state_packets_from_residuals() {
-    let mut bytes = [0xaa, 0xbb].to_vec();
+fn deltas_events_subtract_pmark_packets_from_residuals() {
+    let mut bytes = crate::test_support::test_pmarks::prefix(40_000);
+    bytes.extend([0xaa, 0xbb]);
     bytes.extend(deltas_type_45(10));
     let packet_offset = bytes.len();
-    bytes.extend([0, 1, 0, 1, 0, 4]);
-    for reference in [2u16, 3, 4, 1] {
-        bytes.extend_from_slice(&reference.to_be_bytes());
-    }
-    bytes.extend_from_slice(&1u16.to_be_bytes());
-    for word in [34u32, 6, 11, 22_362, 1] {
-        bytes.extend_from_slice(&word.to_be_bytes());
-    }
-    bytes.push(65);
+    bytes.extend(crate::test_support::test_pmarks::packet());
     let packet_end = bytes.len();
     bytes.extend(deltas_type_45(11));
     let suffix_offset = bytes.len();
@@ -441,18 +433,13 @@ fn deltas_events_subtract_reference_state_packets_from_residuals() {
 
     let events = crate::native::parasolid::parasolid_deltas_events(&streams);
 
-    assert_eq!(events.reference_state_packets.len(), 1);
-    let packet = &events.reference_state_packets[0];
-    assert_eq!(
-        packet.frames.as_slice(),
-        [crate::deltas::state_frame::ReferenceStateFrame {
-            references: [2, 3, 4, 1].try_into().unwrap(),
-            state_words: [34, 6, 11, 22_362, 1],
-            state_byte: 65,
-        }]
-    );
+    assert_eq!(events.pmark_packets.len(), 1);
+    let packet = &events.pmark_packets[0];
+    assert_eq!(packet.nodes.as_slice().len(), 1);
+    assert_eq!(packet.nodes.as_slice()[0].xmt(), 40_000);
+    assert_eq!(packet.nodes.as_slice()[0].identifier(), 0x1234_5677);
     assert!(!packet.terminal);
-    assert_eq!(packet.byte_len, 37);
+    assert_eq!(packet.byte_len, 41);
     assert_eq!(
         packet.inflated_offset,
         cadmpeg_core::decode::u64_from_index(packet_offset)
@@ -471,35 +458,10 @@ fn deltas_events_subtract_reference_state_packets_from_residuals() {
 }
 
 #[test]
-fn deltas_events_retain_schema_reference_preambles() {
-    let mut bytes = [0xaa, 0xbb].to_vec();
-    bytes.extend(deltas_type_45(10));
-    let preamble_offset = bytes.len();
-    bytes.extend_from_slice(&300u16.to_be_bytes());
-    bytes.extend_from_slice(&4u16.to_be_bytes());
-    bytes.push(0xff);
-    for reference in [2u16, 3, 1, 1, 1] {
-        bytes.extend_from_slice(&reference.to_be_bytes());
-    }
-    for state_word in [2u32, 0, 1, 55] {
-        bytes.extend_from_slice(&state_word.to_be_bytes());
-    }
-    bytes.extend_from_slice(&[0, 0, 0]);
-    bytes.extend_from_slice(&300u16.to_be_bytes());
-    for reference in [1u16, 1] {
-        bytes.extend_from_slice(&reference.to_be_bytes());
-    }
-    bytes.extend_from_slice(&5u16.to_be_bytes());
-    for (kind, reference) in [(81u16, 4u16), (82, 5), (81, 6)] {
-        bytes.extend_from_slice(&kind.to_be_bytes());
-        bytes.extend_from_slice(&reference.to_be_bytes());
-    }
-    bytes.extend_from_slice(&82u16.to_be_bytes());
-    bytes.extend_from_slice(&1u16.to_be_bytes());
-    bytes.extend_from_slice(&0u16.to_be_bytes());
-    bytes.extend_from_slice(&9u16.to_be_bytes());
-    let preamble_end = bytes.len();
-    bytes.extend(deltas_type_45(11));
+fn deltas_events_retain_partition_prefixes() {
+    let bytes = crate::test_support::test_pmarks::prefix(1);
+    let prefix_offset = crate::test_support::test_pmarks::header().len();
+    let prefix_end = bytes.len();
     let streams = [Stream {
         file_offset: 0,
         consumed: 0,
@@ -512,26 +474,21 @@ fn deltas_events_retain_schema_reference_preambles() {
 
     let events = crate::native::parasolid::parasolid_deltas_events(&streams);
 
-    assert_eq!(events.schema_reference_preambles.len(), 1);
-    let preamble = &events.schema_reference_preambles[0];
-    assert_eq!(preamble.state.identity(), 300);
-    assert_eq!(preamble.state.references(), [2, 3]);
-    assert_eq!(preamble.state.state_reference(), None);
-    assert_eq!(preamble.state.state_words(), [2, 0, 1, 55]);
-    assert_eq!(preamble.state.count(), 5);
-    assert_eq!(preamble.state.entries(), [(81, 4), (82, 5), (81, 6)]);
-    assert_eq!(preamble.state.terminal_value(), 9);
+    assert_eq!(events.partition_prefixes.len(), 1);
+    let prefix = &events.partition_prefixes[0];
+    assert_eq!(prefix.state.highest_id(), u32::MAX);
+    assert_eq!(prefix.state.current_pmark().identifier(), 0x1234_5678);
     assert_eq!(
-        preamble.inflated_offset,
-        cadmpeg_core::decode::u64_from_index(preamble_offset)
+        prefix.inflated_offset,
+        cadmpeg_core::decode::u64_from_index(prefix_offset)
     );
     assert_eq!(
-        preamble.byte_len,
-        cadmpeg_core::decode::u64_from_index(preamble_end - preamble_offset)
+        prefix.byte_len,
+        cadmpeg_core::decode::u64_from_index(prefix_end - prefix_offset)
     );
     assert_eq!(
-        preamble.sha256,
-        cadmpeg_ir::hash::digest::Sha256Digest::digest(&bytes[preamble_offset..preamble_end])
+        prefix.sha256,
+        cadmpeg_ir::hash::digest::Sha256Digest::digest(&bytes[prefix_offset..prefix_end])
     );
 }
 

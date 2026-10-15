@@ -7,11 +7,10 @@ use super::{
     body_revision_prefix, compact_tombstone, consume_fixed, consume_intersection_auxiliary,
     consume_shared_record, consume_variable, first_complete_record, fixed_signature,
     inline_body_states, inline_schema_declaration, inline_schema_declarations, is_value_family,
-    merged_event_spans, reference_marker_packets, reference_state_packets, reference_type_map,
-    reference_type_maps, schema_reference_preamble, schema_reference_preambles,
+    merged_event_spans, reference_marker_packets, reference_type_map, reference_type_maps,
     tagged_reference_lanes, transmit_header, type_150_state_packets, uncovered_spans, BodyRevision,
-    InlineBodyState, InlineSchemaDeclaration, Record, ReferenceMarkerPacket, ReferenceStatePacket,
-    ReferenceTypeMap, ReferenceTypeMapLimit, SchemaReferencePreamble, TaggedReferenceLane,
+    InlineBodyState, InlineSchemaDeclaration, PartitionPrefix, PartitionPrefixState, PmarkPacket,
+    Record, ReferenceMarkerPacket, ReferenceTypeMap, ReferenceTypeMapLimit, TaggedReferenceLane,
     Tombstone, TransmitHeader, Type150StatePacket,
 };
 use cadmpeg_core::decode::{DecodeContext, View};
@@ -42,10 +41,10 @@ pub(crate) struct CensusEvents {
     pub(crate) tagged_reference_lanes: Vec<TaggedReferenceLane>,
     /// Complete framed reference/type maps in source order.
     pub(crate) reference_type_maps: Vec<ReferenceTypeMap>,
-    /// Complete four-reference state packets in source order.
-    pub(crate) reference_state_packets: Vec<ReferenceStatePacket>,
-    /// Complete schema reference preambles in source order.
-    pub(crate) schema_reference_preambles: Vec<SchemaReferencePreamble>,
+    /// Partition-owned PMARK packets in source order.
+    pub(crate) pmark_packets: Vec<PmarkPacket>,
+    /// Leading ordinary PARTITION and current PMARK nodes.
+    pub(crate) partition_prefix: Option<PartitionPrefix>,
     /// Complete reference-marker packets in source order.
     pub(crate) reference_marker_packets: Vec<ReferenceMarkerPacket>,
     /// Complete single-byte type-150 state packets in source order.
@@ -115,41 +114,53 @@ impl Census {
 pub(crate) fn walk(ctx: &DecodeContext<'_>, stream: &[u8]) -> Result<Census, CodecError> {
     let transmit_header = transmit_header(ctx, stream)?;
     let header_byte_len = transmit_header.as_ref().map_or(0, |header| header.end);
-    let terminal_null_references = TerminalNullReferences::at_end(stream);
-    let trailer_byte_len = terminal_null_references
+    let partition_prefix = transmit_header.as_ref().and_then(|header| {
+        let schema = header.state.schema();
+        (schema.split('_').count() == 4
+            && schema.ends_with("_13006")
+            && header.state.maximum_node_type() >= 4
+            && header.state.user_field_size() == 0)
+            .then_some(())?;
+        let (state, end) = PartitionPrefixState::read(stream, header.end)?;
+        Some(PartitionPrefix {
+            state,
+            offset: header.end,
+            end,
+        })
+    });
+    let prefix_byte_len = partition_prefix
         .as_ref()
-        .map_or(0, |trailer| trailer.end() - trailer.offset());
+        .map_or(0, |prefix| prefix.end - prefix.offset);
     let mut census = Census {
         events: CensusEvents {
             transmit_header,
-            terminal_null_references,
+            partition_prefix,
             ..CensusEvents::default()
         },
-        bytes_decoded: header_byte_len + trailer_byte_len,
+        bytes_decoded: header_byte_len + prefix_byte_len,
     };
     let mut offset = census
-        .transmit_header
+        .partition_prefix
         .as_ref()
-        .map_or(0, |header| header.end);
+        .map_or(header_byte_len, |prefix| prefix.end);
     let mut value_boundary = true;
     let mut referenced_value_offsets = None::<BTreeSet<usize>>;
     let mut referenced_offsets_guard = ctx.reserve_scoped(0, "NX referenced value offsets")?;
     let mut intersection_schema_anchor_seen = false;
     while offset + 4 <= stream.len() {
+        if let Some(prefix) = census.partition_prefix.as_ref() {
+            if let Some(packet) = super::pmark_packets::at(ctx, stream, offset, prefix)? {
+                // The walk reaches this head only after complete preceding
+                // records have consumed their entire counted storage.
+                offset = packet.end;
+                value_boundary = true;
+                ctx.push_vec(&mut census.events.pmark_packets, packet, "NX PMARK packets")?;
+                continue;
+            }
+        }
         ctx.charge_work(1, "walk NX deltas census")?;
         intersection_schema_anchor_seen |=
             crate::topology::intersection_data_schema_header_at(stream, offset);
-        if let Some(preamble) = schema_reference_preamble(ctx, stream, offset, stream.len())? {
-            census.bytes_decoded += preamble.end - preamble.offset;
-            offset = preamble.end;
-            value_boundary = true;
-            ctx.push_vec(
-                &mut census.events.schema_reference_preambles,
-                preamble,
-                "NX deltas schema preambles",
-            )?;
-            continue;
-        }
         if let Some(declaration) = inline_schema_declaration(ctx, stream, offset, stream.len())? {
             census.bytes_decoded += declaration.end - declaration.offset;
             offset = declaration.end;
@@ -293,6 +304,33 @@ pub(crate) fn walk(ctx: &DecodeContext<'_>, stream: &[u8]) -> Result<Census, Cod
         offset += 1;
         value_boundary = false;
     }
+    if let Some(prefix) = census.partition_prefix.as_ref() {
+        if !super::pmark_packets::admit(ctx, &census.pmark_packets, prefix.state)? {
+            census.events.pmark_packets.clear();
+        }
+    }
+    census.bytes_decoded += census
+        .pmark_packets
+        .iter()
+        .map(|packet| packet.end - packet.offset)
+        .sum::<usize>();
+    // A PMARK scalar with null-reference-shaped bytes remains scalar storage.
+    // Existing record reference tails can still share the stream trailer.
+    census.events.terminal_null_references =
+        TerminalNullReferences::at_end(stream).filter(|tail| {
+            census
+                .partition_prefix
+                .as_ref()
+                .is_none_or(|prefix| prefix.end <= tail.offset())
+                && census
+                    .pmark_packets
+                    .iter()
+                    .all(|packet| packet.end <= tail.offset() || packet.offset >= tail.end())
+        });
+    census.bytes_decoded += census
+        .terminal_null_references
+        .as_ref()
+        .map_or(0, |tail| tail.end() - tail.offset());
     census.bytes_decoded += populate_gap_events(ctx, stream, &mut census)?;
     let body_revision_state_bytes = populate_body_revision_state_tails(ctx, stream, &mut census)?;
     census.bytes_decoded += body_revision_state_bytes;
@@ -339,30 +377,6 @@ fn populate_gap_events(
             &mut census.events.reference_type_maps,
             maps,
             "NX reference type maps",
-        )?;
-
-        let state_packets = reference_state_packets(ctx, stream, &covered)?;
-        extend_covered_spans(
-            ctx,
-            &mut covered,
-            state_packets.iter().map(|event| (event.offset, event.end)),
-        )?;
-        ctx.extend_vec(
-            &mut census.events.reference_state_packets,
-            state_packets,
-            "NX reference state packets",
-        )?;
-
-        let preambles = schema_reference_preambles(ctx, stream, &covered)?;
-        extend_covered_spans(
-            ctx,
-            &mut covered,
-            preambles.iter().map(|event| (event.offset, event.end)),
-        )?;
-        ctx.extend_vec(
-            &mut census.events.schema_reference_preambles,
-            preambles,
-            "NX schema reference preambles",
         )?;
 
         let declarations = inline_schema_declarations(ctx, stream, &covered)?;
@@ -442,18 +456,6 @@ fn populate_gap_events(
         |left, right| left.offset.cmp(&right.offset),
         |_| 0,
         "NX deltas reference type maps",
-    )?;
-    ctx.sort_unstable_by(
-        &mut census.events.reference_state_packets,
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
-        "NX deltas reference state packets",
-    )?;
-    ctx.sort_unstable_by(
-        &mut census.events.schema_reference_preambles,
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
-        "NX deltas schema reference preambles",
     )?;
     ctx.sort_unstable_by(
         &mut census.events.inline_schema_declarations,

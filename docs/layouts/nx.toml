@@ -57,6 +57,58 @@ source = "spec"
 anchor = "The big-endian u32 at offset 2 after `PS` counts the description bytes that start at offset 6."
 
 [[record]]
+name = "pmark_scalar_tail"
+parsed_by = "crates/cadmpeg-codec-nx/src/deltas/pmark_state.rs"
+kind = "byte"
+section = "4.2"
+anchor = "A PMARK scalar tail starts immediately after the five encoded indices."
+size = 21
+endianness = "big"
+note = "Relative to the endpoint of the five variable-width XMT indices, excluding the type tag and first-use schema information."
+
+[[record.field]]
+name = "n_new_nodes"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "A PMARK scalar tail starts immediately after the five encoded indices."
+
+[[record.field]]
+name = "n_del_nodes"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "A PMARK scalar tail starts immediately after the five encoded indices."
+
+[[record.field]]
+name = "n_copy_mod_nodes"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "A PMARK scalar tail starts immediately after the five encoded indices."
+
+[[record.field]]
+name = "delta_key"
+offset = 12
+type = "u32"
+source = "spec"
+anchor = "A PMARK scalar tail starts immediately after the five encoded indices."
+
+[[record.field]]
+name = "delta_is_forward"
+offset = 16
+type = "u8"
+source = "spec"
+anchor = "A PMARK scalar tail starts immediately after the five encoded indices."
+
+[[record.field]]
+name = "identifier"
+offset = 17
+type = "u32"
+source = "spec"
+anchor = "A PMARK scalar tail starts immediately after the five encoded indices."
+
+[[record]]
 name = "studio_post_branch_prefix"
 parsed_by = "crates/cadmpeg-codec-nx/src/om/studio_references.rs"
 kind = "byte"

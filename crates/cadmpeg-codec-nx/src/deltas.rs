@@ -16,9 +16,9 @@ mod attdef_state;
 pub(crate) mod inline_schema_fields;
 mod precision_state;
 pub(crate) mod reference_lanes;
-mod type101_state;
 mod type38_state;
 mod type70_state;
+pub(crate) mod world_state;
 use attdef_state::AttdefState;
 use cadmpeg_ir::units::FiniteVector;
 use inline_schema_fields::{BodyStateBytes, InlineBodyStateFields, InlineSchemaFields};
@@ -27,15 +27,15 @@ use reference_lanes::{MapEntries, TaggedReferences};
 use type38_state::{IntersectionMarker, ReferenceLaneForm, Type38State};
 use type70_state::{TrailingCopies, Type70State};
 pub(crate) mod packet_marker;
-pub(crate) mod state_frame;
-mod state_references;
+pub(crate) mod partition_prefix;
+pub(crate) mod pmark_nodes;
+mod pmark_packets;
+pub(crate) mod pmark_state;
+use partition_prefix::PartitionPrefixState;
+use pmark_packets::PmarkPacket;
 pub(crate) mod transmit_state;
 use crate::framing::xmt_reference::NonNullXmt;
-use state_frame::{ReferenceStateFrame, StateFrames};
-use state_references::StateReferences;
 use transmit_state::TransmitState;
-pub(crate) mod preamble_state;
-use preamble_state::PreambleState;
 pub(crate) mod type150_state;
 use packet_marker::{ReferenceMarker, Type150Marker};
 use type150_state::Type150State;
@@ -136,26 +136,11 @@ pub(crate) struct ReferenceTypeMap {
     pub(crate) end: usize,
 }
 
-/// One deltas packet carrying one or more reference-state frames.
+/// The ordinary leading PARTITION and current PMARK node pair.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ReferenceStatePacket {
-    /// Ordered packet frames.
-    pub(crate) frames: StateFrames,
-    /// Whether the packet ends with `ref(1)[3], u32(1)`.
-    pub(crate) terminal: bool,
-    /// First byte of the packet.
+pub(crate) struct PartitionPrefix {
+    pub(crate) state: PartitionPrefixState,
     pub(crate) offset: usize,
-    /// First byte following the packet.
-    pub(crate) end: usize,
-}
-
-/// One deltas schema preamble carrying typed references and unassigned state.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct SchemaReferencePreamble {
-    pub(crate) state: PreambleState,
-    /// First byte of the preamble.
-    pub(crate) offset: usize,
-    /// First byte following the preamble.
     pub(crate) end: usize,
 }
 
@@ -459,33 +444,22 @@ fn transmit_header(
     ctx: &DecodeContext<'_>,
     stream: &[u8],
 ) -> Result<Option<TransmitHeader>, CodecError> {
-    let Some((description_bytes, schema_bytes, references, end)) = (|| {
-        (stream.get(..2) == Some(b"PS")).then_some(())?;
-        let description_len = usize::try_from(View::u32_be_at(stream, 2)?).ok()?;
-        let description_start = 6usize;
-        let description_end = description_start.checked_add(description_len)?;
-        let description_bytes = stream.get(description_start..description_end)?;
-        let schema_len = usize::try_from(View::u32_be_at(stream, description_end)?).ok()?;
-        let schema_start = description_end.checked_add(4)?;
-        let schema_end = schema_start.checked_add(schema_len)?;
-        let schema_bytes = stream.get(schema_start..schema_end)?;
-        let mut at = schema_end;
-        (stream.get(at..at.checked_add(2)?) == Some([0x00, 0xe7].as_slice())).then_some(())?;
-        at = at.checked_add(2)?;
-        (View::u32_be_at(stream, at) == Some(0)).then_some(())?;
-        at = at.checked_add(4)?;
-        (View::u16_be_at(stream, at) == Some(3)).then_some(())?;
-        at = at.checked_add(2)?;
-        (stream.get(at) == Some(&0xff)).then_some(())?;
-        at = at.checked_add(1)?;
-        let (first, consumed) = read_xmt(stream, at)?;
-        at = at.checked_add(consumed)?;
-        let (second, consumed) = read_xmt(stream, at)?;
-        at = at.checked_add(consumed)?;
-        (View::u16_be_at(stream, at) == Some(0)).then_some(())?;
-        at = at.checked_add(2)?;
-
-        Some((description_bytes, schema_bytes, [first, second], at))
+    let Some((description_bytes, schema_bytes, maximum_node_type, user_field_size, end)) = (|| {
+        let mut view = View::over_retained(stream);
+        (view.take(2)? == b"PS").then_some(())?;
+        let description_len = usize::try_from(view.u32_be()?).ok()?;
+        let description_bytes = view.take(description_len)?;
+        let schema_len = usize::try_from(view.u32_be()?).ok()?;
+        let schema_bytes = view.take(schema_len)?;
+        let maximum_node_type = view.u16_be()?;
+        let user_field_size = view.u32_be()?;
+        Some((
+            description_bytes,
+            schema_bytes,
+            maximum_node_type,
+            user_field_size,
+            view.position(),
+        ))
     })() else {
         return Ok(None);
     };
@@ -494,7 +468,8 @@ fn transmit_header(
     let schema = String::from_utf8(ctx.copy_retained(schema_bytes, "NX deltas schema")?).ok();
     Ok(description.zip(schema).and_then(|(description, schema)| {
         Some(TransmitHeader {
-            state: TransmitState::new(description, schema, references).ok()?,
+            state: TransmitState::new(description, schema, maximum_node_type, user_field_size)
+                .ok()?,
             end,
         })
     }))
@@ -698,211 +673,6 @@ fn reference_type_map(
     }
 }
 
-fn reference_state_packets(
-    ctx: &DecodeContext<'_>,
-    stream: &[u8],
-    covered: &[(usize, usize)],
-) -> Result<Vec<ReferenceStatePacket>, CodecError> {
-    let mut packets = Vec::new();
-    for (offset, gap_end) in uncovered_spans(ctx, stream.len(), covered)? {
-        let mut at = offset;
-        while let Some(packet) = reference_state_packet(ctx, stream, at, gap_end)? {
-            at = packet.end;
-            ctx.push_vec(&mut packets, packet, "NX reference state packets")?;
-        }
-    }
-    Ok(packets)
-}
-
-fn reference_state_packet(
-    ctx: &DecodeContext<'_>,
-    stream: &[u8],
-    offset: usize,
-    gap_end: usize,
-) -> Result<Option<ReferenceStatePacket>, CodecError> {
-    if View::u16_be_at(stream, offset) != Some(1) || View::u16_be_at(stream, offset + 2) != Some(1)
-    {
-        return Ok(None);
-    }
-    let Some((first, mut at)) = offset
-        .checked_add(4)
-        .and_then(|first_offset| reference_state_frame(stream, first_offset, gap_end))
-    else {
-        return Ok(None);
-    };
-    let mut frames = StateFrames::new(ctx, first)?;
-    while let Some((frame, end)) = reference_state_frame(stream, at, gap_end) {
-        ctx.charge_work(1, "scan NX reference state frames")?;
-        frames.push(ctx, frame)?;
-        at = end;
-    }
-    let terminal_end = reference_state_terminal(stream, at, gap_end);
-    let terminal = terminal_end.is_some();
-    at = terminal_end.unwrap_or(at);
-    Ok(Some(ReferenceStatePacket {
-        frames,
-        terminal,
-        offset,
-        end: at,
-    }))
-}
-
-fn reference_state_frame(
-    stream: &[u8],
-    offset: usize,
-    gap_end: usize,
-) -> Option<(ReferenceStateFrame, usize)> {
-    (View::u16_be_at(stream, offset) == Some(4)).then_some(())?;
-    let mut at = offset.checked_add(2)?;
-    let mut references = [0; 4];
-    for reference in &mut references {
-        let (value, consumed) = read_xmt(stream, at)?;
-        at = at.checked_add(consumed)?;
-        *reference = value;
-    }
-    let references = StateReferences::try_from(references).ok()?;
-    (View::u16_be_at(stream, at) == Some(1)).then_some(())?;
-    at = at.checked_add(2)?;
-    let mut state_words = [0; 5];
-    for word in &mut state_words {
-        *word = View::u32_be_at(stream, at)?;
-        at = at.checked_add(4)?;
-    }
-    let state_byte = *stream.get(at)?;
-    at = at.checked_add(1)?;
-    (at <= gap_end).then_some((
-        ReferenceStateFrame {
-            references,
-            state_words,
-            state_byte,
-        },
-        at,
-    ))
-}
-
-fn reference_state_terminal(stream: &[u8], offset: usize, gap_end: usize) -> Option<usize> {
-    let mut at = offset;
-    for _ in 0..3 {
-        let (reference, consumed) = read_xmt(stream, at)?;
-        (reference == 1).then_some(())?;
-        at = at.checked_add(consumed)?;
-    }
-    (View::u32_be_at(stream, at) == Some(1)).then_some(())?;
-    at = at.checked_add(4)?;
-    (at <= gap_end).then_some(at)
-}
-
-fn schema_reference_preambles(
-    ctx: &DecodeContext<'_>,
-    stream: &[u8],
-    covered: &[(usize, usize)],
-) -> Result<Vec<SchemaReferencePreamble>, CodecError> {
-    let mut preambles = Vec::new();
-    for (offset, gap_end) in uncovered_spans(ctx, stream.len(), covered)? {
-        let mut at = offset;
-        while let Some(preamble) = schema_reference_preamble(ctx, stream, at, gap_end)? {
-            at = preamble.end;
-            ctx.push_vec(&mut preambles, preamble, "NX schema reference preambles")?;
-        }
-    }
-    Ok(preambles)
-}
-
-fn schema_reference_preamble(
-    ctx: &DecodeContext<'_>,
-    stream: &[u8],
-    offset: usize,
-    gap_end: usize,
-) -> Result<Option<SchemaReferencePreamble>, CodecError> {
-    let Some((identity, references, state_references, state_words, count, mut at)) = (|| {
-        let identity = View::u16_be_at(stream, offset)?;
-        (View::u16_be_at(stream, offset.checked_add(2)?) == Some(4)
-            && stream.get(offset.checked_add(4)?) == Some(&0xff))
-        .then_some(())?;
-        let mut at = offset.checked_add(5)?;
-        let mut references = [0; 2];
-        for reference in &mut references {
-            let (value, consumed) = read_xmt(stream, at)?;
-            *reference = value;
-            at = at.checked_add(consumed)?;
-        }
-        let mut state_references = [0; 3];
-        for reference in &mut state_references {
-            let (value, consumed) = read_xmt(stream, at)?;
-            *reference = value;
-            at = at.checked_add(consumed)?;
-        }
-        let mut state_words = [0; 4];
-        for state_word in &mut state_words {
-            *state_word = View::u32_be_at(stream, at)?;
-            at = at.checked_add(4)?;
-        }
-        (stream.get(at..at.checked_add(3)?) == Some(&[0, 0, 0])).then_some(())?;
-        at = at.checked_add(3)?;
-        (View::u16_be_at(stream, at) == Some(identity)).then_some(())?;
-        at = at.checked_add(2)?;
-        for _ in 0..2 {
-            let (reference, consumed) = read_xmt(stream, at)?;
-            (reference == 1).then_some(())?;
-            at = at.checked_add(consumed)?;
-        }
-        let count = View::u16_be_at(stream, at)?;
-        at = at.checked_add(2)?;
-        Some((
-            identity,
-            references,
-            state_references,
-            state_words,
-            count,
-            at,
-        ))
-    })() else {
-        return Ok(None);
-    };
-    let mut entries = Vec::new();
-    loop {
-        ctx.charge_work(1, "scan NX schema reference preamble")?;
-        let Some((entry_kind, reference, next)) = (|| {
-            let entry_kind = View::u16_be_at(stream, at)?;
-            let next = at.checked_add(2)?;
-            let (reference, consumed) = read_xmt(stream, next)?;
-            Some((entry_kind, reference, next.checked_add(consumed)?))
-        })() else {
-            return Ok(None);
-        };
-        at = next;
-        if entry_kind == 82 && reference == 1 {
-            let Some((terminal_value, end)) = (|| {
-                (View::u16_be_at(stream, at) == Some(0)).then_some(())?;
-                let terminal_at = at.checked_add(2)?;
-                let terminal_value = View::u16_be_at(stream, terminal_at)?;
-                Some((terminal_value, terminal_at.checked_add(2)?))
-            })() else {
-                return Ok(None);
-            };
-            if end > gap_end {
-                return Ok(None);
-            }
-            return Ok(PreambleState::new(
-                identity,
-                references,
-                state_references,
-                state_words,
-                count,
-                entries,
-                terminal_value,
-            )
-            .ok()
-            .map(|state| SchemaReferencePreamble { state, offset, end }));
-        }
-        ctx.push_vec(
-            &mut entries,
-            (entry_kind, reference),
-            "NX schema reference entries",
-        )?;
-    }
-}
-
 fn reference_marker_packets(
     ctx: &DecodeContext<'_>,
     stream: &[u8],
@@ -1022,15 +792,6 @@ const TYPE_101_SCHEMA_HEADER: &[u8] = &[
     0x70, 0x00, 0x52, 0x00, 0x01, 0x41, 0x10, 0x6d, 0x65, 0x73, 0x68, 0x5f, 0x6f, 0x66, 0x66, 0x73,
     0x65, 0x74, 0x5f, 0x64, 0x61, 0x74, 0x61, 0x00, 0xce, 0x00, 0x01, 0x5a,
 ];
-
-const TYPE_101_SCHEMA_STATE_PREFIX: &[u8] = &[
-    0x00, 0x01, 0x01, 0x00, 0x01, 0x01, 0x00, 0x03, 0x01, 0x00, 0x04, 0x01, 0x00, 0x01, 0x01, 0x00,
-    0x01, 0x01, 0x00, 0x01, 0x01, 0x00, 0x01, 0x01, 0x00, 0x01, 0x01, 0x00, 0x01, 0x01, 0x01, 0x00,
-    0x01, 0x01, 0x00, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x01, 0x01, 0x00, 0x01, 0x01, 0x00, 0x01, 0x01, 0x00, 0x01, 0x00, 0x01,
-];
-
-const TYPE_101_COMPACT_STATE_LEN: usize = 58;
 
 fn inline_schema_declaration(
     ctx: &DecodeContext<'_>,
@@ -1218,80 +979,13 @@ fn inline_schema_declaration(
         if stream.get(offset..offset.checked_add(TYPE_101_SCHEMA_HEADER.len())?)
             == Some(TYPE_101_SCHEMA_HEADER)
         {
-            let mut at = offset.checked_add(TYPE_101_SCHEMA_HEADER.len())?;
-            let (xmt, consumed) = read_xmt(stream, at)?;
-            (xmt == 2).then_some(())?;
-            at = at.checked_add(consumed)?;
-            let compact_end = at.checked_add(TYPE_101_COMPACT_STATE_LEN)?;
-            let compact = stream.get(at..compact_end)
-                == TYPE_101_SCHEMA_STATE_PREFIX.get(..TYPE_101_COMPACT_STATE_LEN);
-            let prefix = stream.get(at..at.checked_add(TYPE_101_SCHEMA_STATE_PREFIX.len())?);
-            let prefix_state = prefix.map(|prefix| [prefix[7], prefix[10], prefix[30]]);
-            let full_prefix = prefix_state.is_some_and(|state| {
-                matches!(state, [3, 4, 1] | [1, 1, 0])
-                    && prefix.is_some_and(|prefix| {
-                        prefix
-                            .iter()
-                            .zip(TYPE_101_SCHEMA_STATE_PREFIX)
-                            .enumerate()
-                            .all(|(index, (actual, expected))| {
-                                matches!(index, 7 | 10 | 30) || actual == expected
-                            })
-                    })
-            });
-            if !full_prefix {
-                (compact && compact_end <= gap_end && plausible_next(stream, compact_end))
-                    .then_some(())?;
-                return Some(InlineSchemaDeclaration {
-                    fields: InlineSchemaFields::Type101Compact,
-                    offset,
-                    end: compact_end,
-                });
-            }
-            let prefix_state = prefix_state?;
-            at = at.checked_add(TYPE_101_SCHEMA_STATE_PREFIX.len())?;
-            (View::u16_be_at(stream, at) == Some(4)).then_some(())?;
-            at = at.checked_add(2)?;
-            let mut references = [0; 4];
-            for reference in &mut references {
-                let (value, consumed) = read_xmt(stream, at)?;
-                at = at.checked_add(consumed)?;
-                *reference = value;
-            }
-            let (null_reference, consumed) = read_xmt(stream, at)?;
-            (null_reference == 1).then_some(())?;
-            at = at.checked_add(consumed)?;
-            (View::u16_be_at(stream, at) == Some(0)).then_some(())?;
-            at = at.checked_add(2)?;
-            let (anchor_reference, consumed) = read_xmt(stream, at)?;
-            let anchor_reference = match anchor_reference {
-                0 => None,
-                value => Some(value),
-            };
-            at = at.checked_add(consumed)?;
-            let mut state_words = [0; 3];
-            for state_word in &mut state_words {
-                *state_word = View::u32_be_at(stream, at)?;
-                at = at.checked_add(4)?;
-            }
-            let terminal = stream.get(at..at.checked_add(5)?)?;
-            let terminal_value = terminal
-                .iter()
-                .fold(0_u64, |value, byte| (value << 8) | u64::from(*byte));
-            at = at.checked_add(5)?;
-            (at <= gap_end).then_some(())?;
-            let state = type101_state::Type101State::new(
-                references,
-                anchor_reference,
-                state_words,
-                terminal_value,
-            )
-            .ok()?;
-            (state.prefix_state() == prefix_state).then_some(())?;
+            let at = offset.checked_add(TYPE_101_SCHEMA_HEADER.len())?;
+            let (state, end) = world_state::WorldState::read(stream, at)?;
+            (end <= gap_end).then_some(())?;
             return Some(InlineSchemaDeclaration {
-                fields: InlineSchemaFields::Type101 { state },
+                fields: InlineSchemaFields::World { state },
                 offset,
-                end: at,
+                end,
             });
         }
         None
@@ -1588,6 +1282,8 @@ fn merged_event_spans(
 ) -> Result<Vec<(usize, usize)>, CodecError> {
     let base_count = [
         usize::from(census.transmit_header.is_some()),
+        usize::from(census.partition_prefix.is_some()),
+        census.pmark_packets.len(),
         usize::from(census.terminal_null_references.is_some()),
         census.records.len(),
         census.tombstones.len(),
@@ -1596,8 +1292,6 @@ fn merged_event_spans(
     let derived_count = [
         census.tagged_reference_lanes.len(),
         census.reference_type_maps.len(),
-        census.reference_state_packets.len(),
-        census.schema_reference_preambles.len(),
         census.reference_marker_packets.len(),
         census.type_150_state_packets.len(),
         census.inline_schema_declarations.len(),
@@ -1652,6 +1346,18 @@ fn merged_event_spans(
                     .map(|revision| (revision.offset, revision.end)),
             ),
     );
+    covered.extend(
+        census
+            .pmark_packets
+            .iter()
+            .map(|packet| (packet.offset, packet.end)),
+    );
+    covered.extend(
+        census
+            .partition_prefix
+            .iter()
+            .map(|prefix| (prefix.offset, prefix.end)),
+    );
     if include_derived_events {
         covered.extend(
             census
@@ -1664,18 +1370,6 @@ fn merged_event_spans(
                 .reference_type_maps
                 .iter()
                 .map(|map| (map.offset, map.end)),
-        );
-        covered.extend(
-            census
-                .reference_state_packets
-                .iter()
-                .map(|packet| (packet.offset, packet.end)),
-        );
-        covered.extend(
-            census
-                .schema_reference_preambles
-                .iter()
-                .map(|preamble| (preamble.offset, preamble.end)),
         );
         covered.extend(
             census
@@ -2873,25 +2567,17 @@ fn type_101_shape(stream: &[u8], offset: usize) -> Option<([u32; 15], usize)> {
         .then(|| type_101_layout(stream, offset, 1))
         .flatten();
     let (references, end) = select_enveloped_layout(escaped_marker, direct, escaped)?;
-    Some((references.try_into().ok()?, end))
+    Some((references, end))
 }
 
-fn type_101_layout(stream: &[u8], offset: usize, envelope_len: usize) -> Option<(Vec<u32>, usize)> {
-    let (xmt, consumed) = read_xmt(stream, offset.checked_add(2 + envelope_len)?)?;
-    (xmt == 2).then_some(())?;
-    let mut at = offset.checked_add(2 + envelope_len + consumed)?;
-    let mut references = Vec::new();
-    for _ in 0..12 {
-        references.push(read_status_one_reference(stream, &mut at)?);
-    }
-    (stream.get(at) == Some(&1)).then_some(())?;
-    at += 1;
-    (stream.get(at..at + 12)? == [0; 12]).then_some(())?;
-    at += 12;
-    for _ in 0..3 {
-        references.push(read_status_one_reference(stream, &mut at)?);
-    }
-    Some((references, at))
+fn type_101_layout(
+    stream: &[u8],
+    offset: usize,
+    envelope_len: usize,
+) -> Option<([u32; 15], usize)> {
+    let (state, end) =
+        world_state::WorldState::read(stream, offset.checked_add(2 + envelope_len)?)?;
+    (state.xmt() == 2).then_some((state.reference_targets(), end))
 }
 
 fn read_status_one_reference(stream: &[u8], at: &mut usize) -> Option<u32> {
@@ -3696,147 +3382,47 @@ mod type_150_state_packet_tests {
 }
 
 #[cfg(test)]
-mod schema_reference_preamble_tests {
+mod partition_prefix_tests {
     use super::census::walk;
-    use super::inline_schema_fields::InlineSchemaFields;
-    use super::preamble_state::PreambleState;
-    use super::{
-        schema_reference_preamble, InlineSchemaDeclaration, SchemaReferencePreamble,
-        BODY_SCHEMA_HEADER,
-    };
-    use crate::test_support::test_deltas::push_xmt;
-
-    fn preamble() -> Vec<u8> {
-        let mut bytes = Vec::new();
-        bytes.extend_from_slice(&300u16.to_be_bytes());
-        bytes.extend_from_slice(&4u16.to_be_bytes());
-        bytes.push(0xff);
-        for reference in [40_000, 40_001, 1, 1, 1] {
-            push_xmt(&mut bytes, reference);
-        }
-        for state_word in [2u32, 0, 1, 55] {
-            bytes.extend_from_slice(&state_word.to_be_bytes());
-        }
-        bytes.extend_from_slice(&[0, 0, 0]);
-        bytes.extend_from_slice(&300u16.to_be_bytes());
-        for reference in [1, 1] {
-            push_xmt(&mut bytes, reference);
-        }
-        bytes.extend_from_slice(&7u16.to_be_bytes());
-        for (kind, reference) in [(81u16, 4u32), (82, 40_000), (81, 5)] {
-            bytes.extend_from_slice(&kind.to_be_bytes());
-            push_xmt(&mut bytes, reference);
-        }
-        bytes.extend_from_slice(&82u16.to_be_bytes());
-        push_xmt(&mut bytes, 1);
-        bytes.extend_from_slice(&0u16.to_be_bytes());
-        bytes.extend_from_slice(&9u16.to_be_bytes());
-        bytes
-    }
+    use crate::test_support::test_pmarks;
 
     #[test]
-    fn schema_reference_preamble_retains_variable_reference_lane() {
-        let bytes = preamble();
-        let parsed = crate::test_support::with_decode_context(|ctx| {
-            schema_reference_preamble(ctx, &bytes, 0, bytes.len())
-        })
-        .unwrap()
-        .expect("complete preamble must be admitted");
-
-        assert_eq!(
-            parsed,
-            SchemaReferencePreamble {
-                state: PreambleState::new(
-                    300,
-                    [40_000, 40_001],
-                    [1; 3],
-                    [2, 0, 1, 55],
-                    7,
-                    vec![(81, 4), (82, 40_000), (81, 5)],
-                    9
-                )
-                .unwrap(),
-                offset: 0,
-                end: bytes.len(),
-            }
-        );
-    }
-
-    #[test]
-    fn schema_reference_preamble_requires_complete_consistent_framing() {
-        let bytes = preamble();
-        let mut mismatched_kind = bytes.clone();
-        let repeated_kind = 5 + 2 * 4 + 3 * 2 + 16 + 3;
-        mismatched_kind[repeated_kind + 1] ^= 1;
-
-        for malformed in [&bytes[..bytes.len() - 1], mismatched_kind.as_slice()] {
-            assert!(
-                crate::test_support::with_decode_context(|ctx| schema_reference_preamble(
-                    ctx,
-                    malformed,
-                    0,
-                    malformed.len()
-                ))
-                .unwrap()
-                .is_none()
-            );
-        }
-    }
-
-    #[test]
-    fn schema_events_precede_record_like_bytes() {
-        let preamble = preamble();
-        let preamble_end = preamble.len();
-        let bytes = [preamble, BODY_SCHEMA_HEADER.to_vec()].concat();
+    fn leading_nodes_are_separate_from_the_counted_header() {
+        let bytes = test_pmarks::prefix(1);
         let census = crate::test_support::with_decode_context(|ctx| walk(ctx, &bytes)).unwrap();
-
-        assert_eq!(census.schema_reference_preambles.len(), 1);
-        assert_eq!(census.schema_reference_preambles[0].end, preamble_end);
-        assert_eq!(
-            census.inline_schema_declarations,
-            [InlineSchemaDeclaration {
-                fields: InlineSchemaFields::BodyHeader,
-                offset: preamble_end,
-                end: bytes.len(),
-            }]
-        );
+        let header = census.transmit_header.as_ref().unwrap();
+        assert_eq!(header.end, test_pmarks::header().len());
+        let prefix = census.partition_prefix.as_ref().unwrap();
+        assert_eq!(prefix.offset, header.end);
+        assert_eq!(prefix.end, bytes.len());
+        assert_eq!(prefix.state.highest_id(), u32::MAX);
+        assert_eq!(prefix.state.current_pmark().identifier(), 0x1234_5678);
+        assert_eq!(census.bytes_decoded(), bytes.len());
         assert!(census.records.is_empty());
+        assert!(census.tombstones.is_empty());
+    }
+
+    #[test]
+    fn a_full_pmark_identifier_owns_null_trailer_shaped_bytes() {
+        let mut bytes = test_pmarks::prefix(1);
+        let start = bytes.len() - 4;
+        bytes[start..].copy_from_slice(&0x0001_0001_u32.to_be_bytes());
+        let census = crate::test_support::with_decode_context(|ctx| walk(ctx, &bytes)).unwrap();
+        let prefix = census.partition_prefix.as_ref().unwrap();
+        assert_eq!(prefix.state.current_pmark().identifier(), 0x0001_0001);
+        assert!(census.terminal_null_references.is_none());
         assert_eq!(census.bytes_decoded(), bytes.len());
     }
 
     #[test]
-    fn schema_reference_preamble_retains_linked_state_reference() {
-        let mut bytes = preamble();
-        let first_state_reference = 5 + 2 * 4;
-        let mut linked_state = 1u16.to_be_bytes().to_vec();
-        push_xmt(&mut linked_state, 40_002);
-        linked_state.extend_from_slice(&1u16.to_be_bytes());
-        bytes.splice(
-            first_state_reference..first_state_reference + 6,
-            linked_state,
-        );
-
-        let parsed = crate::test_support::with_decode_context(|ctx| {
-            schema_reference_preamble(ctx, &bytes, 0, bytes.len())
-        })
-        .unwrap()
-        .expect("linked state-reference lane must be admitted");
-
-        assert_eq!(parsed.state.references(), [40_000, 40_001]);
-        assert_eq!(parsed.state.state_references(), [1, 40_002, 1]);
-
-        let mut invalid = bytes;
-        invalid[first_state_reference + 3] ^= 1;
-        assert!(
-            crate::test_support::with_decode_context(|ctx| schema_reference_preamble(
-                ctx,
-                &invalid,
-                0,
-                invalid.len()
-            ))
-            .unwrap()
-            .is_none()
-        );
+    fn incomplete_prefix_preserves_the_complete_header() {
+        let bytes = test_pmarks::prefix(1);
+        for end in test_pmarks::header().len()..bytes.len() {
+            let census =
+                crate::test_support::with_decode_context(|ctx| walk(ctx, &bytes[..end])).unwrap();
+            assert!(census.transmit_header.is_some());
+            assert!(census.partition_prefix.is_none());
+        }
     }
 }
 
@@ -3846,14 +3432,12 @@ mod inline_schema_tests {
     use super::inline_schema_fields::InlineBodyStateFields;
     use super::inline_schema_fields::InlineSchemaFields;
     use super::precision_state::PrecisionState;
-    use super::type101_state;
     use super::type38_state::IntersectionMarker;
     use super::type38_state::Type38State;
     use super::{
         inline_schema_declaration, InlineBodyState, InlineSchemaDeclaration,
         ATTDEF_LIST_SCHEMA_HEADER, BODY_SCHEMA_HEADER, TYPE_100_SCHEMA_HEADER,
-        TYPE_101_COMPACT_STATE_LEN, TYPE_101_SCHEMA_HEADER, TYPE_101_SCHEMA_STATE_PREFIX,
-        TYPE_41_SCHEMA_HEADER, TYPE_70_SCHEMA_HEADER,
+        TYPE_101_SCHEMA_HEADER, TYPE_41_SCHEMA_HEADER, TYPE_70_SCHEMA_HEADER,
     };
     use crate::framing::xmt_reference::NonNullXmt;
     use crate::test_support::test_deltas::push_xmt;
@@ -4012,18 +3596,22 @@ mod inline_schema_tests {
     fn type_101_declaration() -> Vec<u8> {
         let mut bytes = TYPE_101_SCHEMA_HEADER.to_vec();
         push_xmt(&mut bytes, 2);
-        bytes.extend_from_slice(TYPE_101_SCHEMA_STATE_PREFIX);
-        bytes.extend_from_slice(&4u16.to_be_bytes());
-        for reference in [40_000, 3, 1, 9] {
-            push_xmt(&mut bytes, reference);
+        for value in [1, 1, 3, 4, 1, 1, 1, 1, 1, 1] {
+            push_xmt(&mut bytes, value);
+            bytes.push(1);
         }
-        push_xmt(&mut bytes, 1);
-        bytes.extend_from_slice(&0u16.to_be_bytes());
-        push_xmt(&mut bytes, 11);
-        for state_word in [19u32, 9, 27] {
-            bytes.extend_from_slice(&state_word.to_be_bytes());
+        bytes.push(1);
+        for value in [5, 6] {
+            push_xmt(&mut bytes, value);
+            bytes.push(1);
         }
-        bytes.extend_from_slice(&[0, 0, 0, 1, 2]);
+        for value in [0x1234_5678_u32, 17, 19] {
+            bytes.extend_from_slice(&value.to_be_bytes());
+        }
+        for value in [7, 8, 40_000] {
+            push_xmt(&mut bytes, value);
+            bytes.push(1);
+        }
         bytes
     }
 
@@ -4336,107 +3924,79 @@ mod inline_schema_tests {
     }
 
     #[test]
-    fn type_101_schema_declaration_retains_bound_state() {
-        let bytes = type_101_declaration();
+    fn world_fields_end_before_an_independent_pmark_packet() {
+        let declaration = type_101_declaration();
+        let mut bytes = crate::test_support::test_pmarks::prefix(40_000);
+        let start = bytes.len();
+        bytes.extend(&declaration);
+        let end = bytes.len();
+        bytes.extend(crate::test_support::test_pmarks::packet());
         let census = crate::test_support::with_decode_context(|ctx| walk(ctx, &bytes)).unwrap();
-
+        assert_eq!(census.inline_schema_declarations.len(), 1);
+        let row = &census.inline_schema_declarations[0];
+        assert_eq!((row.offset, row.end), (start, end));
+        let wire = serde_json::to_value(&row.fields).unwrap();
+        assert_eq!(wire["schema"], "world");
+        assert_eq!(wire["body"], serde_json::json!({"target":3,"status":true}));
+        assert_eq!(wire["highest_id"], 0x1234_5678_u32);
         assert_eq!(
-            census.inline_schema_declarations,
-            [InlineSchemaDeclaration {
-                fields: InlineSchemaFields::Type101 {
-                    state: type101_state::Type101State::new(
-                        [40_000, 3, 1, 9],
-                        Some(11),
-                        [19, 9, 27],
-                        258
-                    )
-                    .unwrap(),
-                },
-                offset: 0,
-                end: bytes.len(),
-            }]
+            wire["mesh_offset_data"],
+            serde_json::json!({"target":40_000,"status":true})
         );
+        assert_eq!(census.pmark_packets.len(), 1);
+        assert_eq!(census.pmark_packets[0].offset, end);
         assert_eq!(census.bytes_decoded(), bytes.len());
-
-        let mut alternate = TYPE_101_SCHEMA_HEADER.to_vec();
-        push_xmt(&mut alternate, 2);
-        let mut prefix = TYPE_101_SCHEMA_STATE_PREFIX.to_vec();
-        prefix[7] = 1;
-        prefix[10] = 1;
-        prefix[30] = 0;
-        alternate.extend(prefix);
-        alternate.extend_from_slice(&4u16.to_be_bytes());
-        for reference in [7, 6, 8, 1, 1] {
-            push_xmt(&mut alternate, reference);
-        }
-        alternate.extend_from_slice(&0u16.to_be_bytes());
-        push_xmt(&mut alternate, 5);
-        for state_word in [0u32, 0, 9] {
-            alternate.extend_from_slice(&state_word.to_be_bytes());
-        }
-        alternate.extend_from_slice(&[0, 0, 0, 0, 3]);
-
-        let alternate_census =
-            crate::test_support::with_decode_context(|ctx| walk(ctx, &alternate)).unwrap();
-        assert!(matches!(
-            alternate_census.inline_schema_declarations[0].fields,
-            InlineSchemaFields::Type101 {
-                state,
-            } if state.state_words() == [0, 0, 9] && state.terminal_value() == 3
-        ));
-        assert_eq!(alternate_census.bytes_decoded(), alternate.len());
-
-        let mut unanchored = TYPE_101_SCHEMA_HEADER.to_vec();
-        push_xmt(&mut unanchored, 2);
-        let mut prefix = TYPE_101_SCHEMA_STATE_PREFIX.to_vec();
-        prefix[7] = 1;
-        prefix[10] = 1;
-        prefix[30] = 0;
-        unanchored.extend(prefix);
-        unanchored.extend_from_slice(&4u16.to_be_bytes());
-        for reference in [6022, 6021, 6019, 1, 1] {
-            push_xmt(&mut unanchored, reference);
-        }
-        unanchored.extend_from_slice(&0u16.to_be_bytes());
-        push_xmt(&mut unanchored, 0);
-        for state_word in [0u32, 0, 0xc06f] {
-            unanchored.extend_from_slice(&state_word.to_be_bytes());
-        }
-        unanchored.extend_from_slice(&[0, 0, 0, 0, 4]);
-
-        let unanchored_census =
-            crate::test_support::with_decode_context(|ctx| walk(ctx, &unanchored)).unwrap();
-        assert!(matches!(
-            unanchored_census.inline_schema_declarations[0].fields,
-            InlineSchemaFields::Type101 {
-                state,
-            } if state.anchor_reference().is_none() && state.state_words() == [0, 0, 0xc06f] && state.terminal_value() == 4
-        ));
-        assert_eq!(unanchored_census.bytes_decoded(), unanchored.len());
-
-        let mut compact = TYPE_101_SCHEMA_HEADER.to_vec();
-        push_xmt(&mut compact, 2);
-        compact.extend_from_slice(&TYPE_101_SCHEMA_STATE_PREFIX[..TYPE_101_COMPACT_STATE_LEN]);
-
-        let compact_census =
-            crate::test_support::with_decode_context(|ctx| walk(ctx, &compact)).unwrap();
-        assert_eq!(
-            compact_census.inline_schema_declarations,
-            [InlineSchemaDeclaration {
-                fields: InlineSchemaFields::Type101Compact,
-                offset: 0,
-                end: compact.len(),
-            }]
-        );
-        assert_eq!(compact_census.bytes_decoded(), compact.len());
-
-        compact.push(0);
-        assert!(
-            crate::test_support::with_decode_context(|ctx| walk(ctx, &compact))
+        for length in 0..declaration.len() {
+            assert!(
+                crate::test_support::with_decode_context(|ctx| inline_schema_declaration(
+                    ctx,
+                    &declaration[..length],
+                    0,
+                    length
+                ))
                 .unwrap()
-                .inline_schema_declarations
-                .is_empty()
+                .is_none()
+            );
+        }
+        let mut opaque = declaration.clone();
+        opaque.extend([0xde, 0xad]);
+        assert_eq!(
+            crate::test_support::with_decode_context(|ctx| inline_schema_declaration(
+                ctx,
+                &opaque,
+                0,
+                opaque.len()
+            ))
+            .unwrap()
+            .unwrap()
+            .end,
+            declaration.len()
         );
+    }
+
+    #[test]
+    fn repeated_world_uses_the_same_reference_order_as_its_declaration() {
+        let declaration = type_101_declaration();
+        for escaped in [false, true] {
+            let mut bytes = 101_u16.to_be_bytes().to_vec();
+            if escaped {
+                bytes.push(255);
+            }
+            bytes.extend_from_slice(&declaration[TYPE_101_SCHEMA_HEADER.len()..]);
+            let end = bytes.len();
+            bytes.extend_from_slice(&[0xde, 0xad]);
+            let record = crate::test_support::with_decode_context(|ctx| {
+                super::consume_type_101(ctx, &bytes, 0)
+            })
+            .unwrap()
+            .unwrap();
+            assert_eq!(record.end, end);
+            assert_eq!(record.xmt, 2);
+            assert_eq!(
+                record.family.references(),
+                [1, 1, 3, 4, 1, 1, 1, 1, 1, 1, 5, 6, 7, 8, 40_000]
+            );
+        }
     }
 
     #[test]
@@ -4846,20 +4406,14 @@ mod reference_type_map_tests {
 
     #[test]
     fn reference_type_map_is_discovered_after_state_packet_prefix() {
-        let mut bytes = Vec::new();
-        for word in [1u16, 1, 4, 2, 3, 4, 1, 1] {
-            bytes.extend_from_slice(&word.to_be_bytes());
-        }
-        for word in [5u32, 6, 7, 8, 9] {
-            bytes.extend_from_slice(&word.to_be_bytes());
-        }
-        bytes.push(10);
+        let mut bytes = crate::test_support::test_pmarks::prefix(40_000);
+        bytes.extend(crate::test_support::test_pmarks::packet());
         let map_offset = bytes.len();
         bytes.extend(map_bytes());
 
         let census = crate::test_support::with_decode_context(|ctx| walk(ctx, &bytes)).unwrap();
 
-        assert_eq!(census.reference_state_packets.len(), 1);
+        assert_eq!(census.pmark_packets.len(), 1);
         assert_eq!(census.reference_type_maps.len(), 1);
         assert_eq!(census.reference_type_maps[0].offset, map_offset);
         assert_eq!(census.bytes_decoded(), bytes.len());
@@ -4956,83 +4510,42 @@ mod terminal_null_reference_tests {
 #[cfg(test)]
 mod transmit_header_tests {
     use super::census::walk;
+    use crate::test_support::test_pmarks::header;
 
     #[test]
     fn deltas_census_route_refuses_retained_limit() {
         use cadmpeg_core::decode::ResourceDimension;
-        let bytes = header(&[0x04, 0x27, 0x04, 0x28]);
-
+        let bytes = header();
         crate::test_support::with_decode_context_over(
             &bytes,
-            |policy| {
-                policy.limits.max_retained_bytes = 0;
-            },
+            |policy| policy.limits.max_retained_bytes = 0,
             |ctx| {
                 let error = walk(ctx, &bytes).expect_err("retained refusal");
                 assert!(
                     matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::RetainedBytes)
+                    if limit.dimension == ResourceDimension::RetainedBytes)
                 );
             },
         );
     }
 
-    fn header(references: &[u8]) -> Vec<u8> {
-        let description = b": TRANSMIT FILE (deltas) created by modeller version 3501171";
-        let schema = b"SCH_3501171_35102_13006";
-        let mut bytes = b"PS".to_vec();
-        bytes.extend_from_slice(
-            &(u32::try_from(description.len()).expect("fixture value fits u32")).to_be_bytes(),
-        );
-        bytes.extend_from_slice(description);
-        bytes.extend_from_slice(
-            &(u32::try_from(schema.len()).expect("fixture value fits u32")).to_be_bytes(),
-        );
-        bytes.extend_from_slice(schema);
-        bytes.extend_from_slice(&[0, 0xe7, 0, 0, 0, 0, 0, 3, 0xff]);
-        bytes.extend_from_slice(references);
-        bytes.extend_from_slice(&[0, 0]);
-        bytes
-    }
-
     #[test]
-    fn transmit_header_accepts_compact_and_extended_consecutive_references() {
-        for (references, expected) in [
-            (&[0x04, 0x27, 0x04, 0x28][..], [1063, 1064]),
-            (&[0xbc, 0xe4, 0, 1, 0xbc, 0xe3, 0, 1][..], [49_947, 49_948]),
-        ] {
-            let bytes = header(references);
-            let census = crate::test_support::with_decode_context(|ctx| walk(ctx, &bytes)).unwrap();
-            let parsed = census
-                .transmit_header
-                .as_ref()
-                .expect("complete transmit header");
-            assert_eq!(parsed.state.references(), expected);
-            assert_eq!(parsed.state.schema(), "SCH_3501171_35102_13006");
-            assert_eq!(parsed.end, bytes.len());
-            assert_eq!(census.bytes_decoded(), bytes.len());
-            assert!(census.records.is_empty());
-            assert!(census.tombstones.is_empty());
+    fn header_ends_after_user_field_size_without_consuming_node_bytes() {
+        let mut bytes = header();
+        let end = bytes.len();
+        bytes.extend([0xaa, 0xbb]);
+        let census = crate::test_support::with_decode_context(|ctx| walk(ctx, &bytes)).unwrap();
+        let parsed = census.transmit_header.as_ref().unwrap();
+        assert_eq!(parsed.state.maximum_node_type(), 239);
+        assert_eq!(parsed.state.user_field_size(), 0);
+        assert_eq!(parsed.state.schema(), "SCH_3501171_35102_13006");
+        assert_eq!(parsed.end, end);
+        assert_eq!(census.bytes_decoded(), end);
+        for len in 0..end {
+            let census =
+                crate::test_support::with_decode_context(|ctx| walk(ctx, &bytes[..len])).unwrap();
+            assert!(census.transmit_header.is_none());
         }
-    }
-
-    #[test]
-    fn transmit_header_rejects_nonconsecutive_references_and_truncation() {
-        let nonconsecutive = header(&[0x04, 0x27, 0x04, 0x29]);
-        let complete = header(&[0x04, 0x27, 0x04, 0x28]);
-        assert!(
-            crate::test_support::with_decode_context(|ctx| walk(ctx, &nonconsecutive))
-                .unwrap()
-                .transmit_header
-                .is_none()
-        );
-        assert!(crate::test_support::with_decode_context(|ctx| walk(
-            ctx,
-            &complete[..complete.len() - 1]
-        ))
-        .unwrap()
-        .transmit_header
-        .is_none());
     }
 }
 

@@ -954,7 +954,7 @@ Type 74 `ATTDEF_LIST` has the complete deltas record `004a [ff], slot_count:u32 
 
 Type 90 `GROUP` has the complete deltas record `005a [ff], xmt, node_id:u32 BE, ref 01, ref 01, ref 01, ref 01, mode, ref status`. The XMT identity is non-null, `mode` is `02`, `04`, or `09`, and the final status is binary. The optional `ff` envelope byte precedes the XMT identity. The record ends after the final status byte, participates in the deltas byte ledger, and does not enter the procedural-intersection semantic lane. This two-byte type tag is distinct from the single-byte `5a` intersection record.
 
-Type 101 has the complete deltas record `0065 [ff], xmt(2), ref_status[12], flag:01, zero[12], ref_status[3]`. Every reference status is `01`. The optional `ff` envelope byte precedes the fixed XMT identity. The record ends after the fifteenth reference status, participates in the deltas byte ledger, and does not replace topology or geometry records. An inline type-101 schema declaration has a printable signature after `0065` and is not an instance of this grammar.
+A repeated type-101 `WORLD` record is `0065 [ff]` followed by the same nineteen schema-declared instance fields as the inline WORLD form below. The optional `ff` envelope byte precedes the XMT identity. The record ends after the `mesh_offset_data` pointer status. Its reference projection contains the fifteen pointer targets in schema order; it excludes the `alive` logical and the three integer fields. An inline declaration places its schema edit program between `0065` and the WORLD identity.
 
 The state tail of a validated BODY revision begins immediately after its
 eight-reference prefix and ends at the next admitted deltas event or at the end
@@ -987,29 +987,46 @@ When present, `target_kind` is any nonzero schema type code, including the null
 type-code sentinel `1`; it need not identify a parsed record family. The
 terminal null reference distinguishes the clause from the non-null entry lane.
 
-One reference-state packet is `0001, 0001, frame[n], terminal?`, where `n > 0`
-and each frame is `0004, ref[4], 0001, state_word[5]:u32 BE, state_byte:u8`.
-Each reference uses compact or extended XMT encoding. A frame reference lane is
-either three leading non-null references followed by a nullable reference, or
-`non-null, ref(1), non-null, ref(1)`. `terminal`, when present, is
-`ref(1)[3], one:u32 BE`, where `one` is `1`. The packet ends after the last
-frame or its terminal and retains frame, reference, and state-word order without
-assigned field roles.
+A type-3 `PARTITION` instance contains `xmt, current_pmark:ref,
+highest_id:u32 BE`. The identity belongs to the partition node;
+`current_pmark` names its current type-4 `PMARK` node. `highest_id` is the
+highest allocated persistent identifier, not an XMT index. The partition and
+current mark have distinct identities; their indices need not be consecutive.
+For an embedded schema, first-use schema information precedes each instance.
+The schema-match byte `ff` selects the base field list for that node type.
 
-A schema reference preamble is `identity:u16 BE, 0004, ff, ref[2], state_ref[3],
-state_word[4]:u32 BE, 000000, identity, ref(1)[2], count:u16 BE, entry[n],
-0052, ref(1), 0000, terminal_value:u16 BE`, where `identity > 1`, `n > 0`,
-and `count > 0`. The repeated `identity` equals the leading value. The two
-leading references are consecutive non-null compact or extended XMT indices.
-The state-reference lane is either `ref(1)[3]` or
-`ref(1), ref(ref[1] + 1), ref(1)`.
-The four state words have the form `(0|2), 0, 1, value`. Each
-entry is `entry_kind:u16 BE, ref`, `entry_kind` is type 81 or type 82, and its
-reference is non-null. The type-82 entry carrying the null XMT value terminates
-the entry lane. The preamble ends after `terminal_value`. At a preamble
-boundary this terminal clause belongs to the preamble rather than to a counted
-type-82 record. Exact inline schema declarations likewise own their complete
-declaration bytes before ordinary deltas record framing is applied.
+A type-4 `PMARK` instance contains `xmt, preceding:ref,
+first_following:ref, next_sibling:ref, prev_sibling:ref,
+n_new_nodes:u32 BE, n_del_nodes:u32 BE, n_copy_mod_nodes:u32 BE,
+delta_key:u32 BE, delta_is_forward:u8, identifier:u32 BE`.
+Each reference uses compact or extended XMT encoding; `1` is the null value.
+The node's own identity is non-null. `identifier` retains all 32 bits and is
+distinct from the stream-local XMT identity. `delta_is_forward` is `0` or `1`.
+The four preceding words count new, deleted, and copied-or-modified nodes and
+identify the delta. The delta relates adjacent partition marks and is keyed by
+the succeeding mark.
+
+A PMARK scalar tail starts immediately after the five encoded indices. Its
+21 bytes contain `n_new_nodes` at `+0`, `n_del_nodes` at `+4`,
+`n_copy_mod_nodes` at `+8`, `delta_key` at `+12`, `delta_is_forward` at `+16`,
+and `identifier` at `+17`. The logical byte precedes the full identifier; it
+does not follow a fifth state word.
+
+The initial partition mark is the unique mark with null `preceding`.
+`first_following` names the first successor; `next_sibling` and `prev_sibling`
+link the following marks with the same predecessor. A sibling is not a second
+child. The main line follows the initial mark to the partition's current mark.
+
+A historical PMARK packet is `0001, 0001, node[n], terminal?`, where `n > 0`
+and each node is `0004` followed by the established PMARK instance fields.
+The packet prefix does not change those fields. `terminal`, when present, is
+`ref(1)[3], one:u32 BE`, where `one` is `1`. The packet ends after its final
+node or terminal. Each node owns its fields independently of the containing
+packet and joins the partition's mark graph by XMT identity.
+
+There is no separate schema-reference preamble between the leading PARTITION
+and current PMARK. Their fields end at the full PMARK identifier. A following
+reference/type map or schema declaration owns its own bytes.
 
 One reference-marker packet is `ref 01, ref(1) 01, marker:u8, ref(1) 01`.
 The leading reference is non-null and uses compact or extended XMT encoding.
@@ -1076,24 +1093,16 @@ arbitrary finite translation at elements 9 through 11, and positive zero at
 every other element. `one` is `1`. Every tolerance has the exact sentinel bits
 `c2bc928f996e0000`. The declaration ends after the final reference status.
 
-The type-101 form has a 156-byte header beginning
+The type-101 `WORLD` form has a 156-byte header beginning
 `0065134343434343434349046d657368` and ending
-`6d6573685f6f66667365745f6461746100ce00015a`. It declares 19 fields,
-including `mesh`, `polyline`, `lattice`, `attdef_list`, `index_map_offset`,
-`index_map`, `schema_embedding_map`, and `mesh_offset_data`. Its bound state is
-`ref(2), prefix[62], count:u16 BE, ref[4], ref(1), zero:u16 BE, anchor_ref,
-state_word[3]:u32 BE, terminal_value:u40 BE`. `prefix` is either
-`0001010001010003010004010001010001010001010001010001010001010100010100010100000000000000000000000000010100010100010100010001`
-or
-`0001010001010001010001010001010001010001010001010001010001010000010100010100000000000000000000000000010100010100010100010001`.
-The first prefix requires leading state words `19, 9`; the second requires
-`0, 0`. `count` is `4`. `anchor_ref` is zero or a non-null reference; zero
-denotes the absence of an anchor. All references use compact or extended XMT
-encoding. The declaration ends after `terminal_value`.
-
-The compact type-101 form is the same header followed by `ref(2)` and the
-first 58 bytes of the first 62-byte prefix. It ends at the next deltas record
-boundary.
+`6d6573685f6f66667365745f6461746100ce00015a`. It declares 19 fields.
+The instance is `xmt, assembly, attribute, body, transform, surface, curve,
+point, mesh, polyline, lattice, alive:u8, attrib_def, attdef_list,
+highest_id:u32 BE, current_id:u32 BE, index_map_offset:u32 BE, index_map,
+schema_embedding_map, mesh_offset_data`. Each pointer field is a compact or
+extended XMT reference followed by its `00` or `01` status byte. `alive` is
+`0` or `1`. The declaration and instance end after the `mesh_offset_data`
+status byte. A following PMARK packet owns its own fields.
 
 The REGION form begins with
 `00130943434343434349056672616d6500e600014341056f776e6572000c00015a`.
@@ -1114,7 +1123,7 @@ Adjacent inline declarations are independently framed and may occur in either
 order.
 
 The union of the transmit header, terminal null-reference trailer, those events, tagged-reference lanes,
-reference-state packets, schema reference preambles, reference/type maps,
+the leading PARTITION/current-PMARK pair, historical PMARK packets, reference/type maps,
 reference-marker packets, and inline schema declarations defines the typed
 deltas-event coverage. Each maximal nonempty complement interval in the
 inflated stream is one residual span. Residual spans retain their exact offset,

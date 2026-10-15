@@ -66,6 +66,24 @@ Parsed by:
 | 0 | 2 | `signature` | `bytes[2]` | big | spec | The big-endian u32 at offset 2 after `PS` counts the description bytes that start at offset 6. · value `[80, 83]` |
 | 2 | 4 | `description_length` | `u32` | big | spec | The big-endian u32 at offset 2 after `PS` counts the description bytes that start at offset 6. |
 
+## `pmark_scalar_tail`
+
+Spec §4.2 · layout: byte offsets · size: 21 B
+
+Relative to the endpoint of the five variable-width XMT indices, excluding the type tag and first-use schema information.
+
+Parsed by:
+- `crates/cadmpeg-codec-nx/src/deltas/pmark_state.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `n_new_nodes` | `u32` | big | spec | A PMARK scalar tail starts immediately after the five encoded indices. |
+| 4 | 4 | `n_del_nodes` | `u32` | big | spec | A PMARK scalar tail starts immediately after the five encoded indices. |
+| 8 | 4 | `n_copy_mod_nodes` | `u32` | big | spec | A PMARK scalar tail starts immediately after the five encoded indices. |
+| 12 | 4 | `delta_key` | `u32` | big | spec | A PMARK scalar tail starts immediately after the five encoded indices. |
+| 16 | 1 | `delta_is_forward` | `u8` | big | spec | A PMARK scalar tail starts immediately after the five encoded indices. |
+| 17 | 4 | `identifier` | `u32` | big | spec | A PMARK scalar tail starts immediately after the five encoded indices. |
+
 ## `studio_post_branch_prefix`
 
 Spec §7.1 · layout: byte offsets · size: 22 B

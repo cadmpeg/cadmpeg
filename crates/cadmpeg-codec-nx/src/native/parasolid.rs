@@ -44,9 +44,9 @@ mod tail_wire;
 mod transmit_header_wire;
 use crate::deltas::inline_schema_fields::{InlineBodyStateFields, InlineSchemaFields};
 use crate::deltas::packet_marker::ReferenceMarker;
-use crate::deltas::preamble_state::PreambleState;
+use crate::deltas::partition_prefix::PartitionPrefixState;
+use crate::deltas::pmark_nodes::PmarkNodes;
 use crate::deltas::reference_lanes::{MapEntries, TaggedReferences};
-use crate::deltas::state_frame::StateFrames;
 use crate::deltas::tails::NullTailForm;
 use crate::deltas::transmit_state::TransmitState;
 use crate::deltas::type150_state::Type150State;
@@ -1074,15 +1074,15 @@ where
         .transpose()
 }
 
-/// Reference-state packet in a Parasolid deltas stream.
+/// Partition-owned PMARK packet in a Parasolid deltas stream.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(super) struct ParasolidDeltasReferenceStatePacket {
+pub(super) struct ParasolidDeltasPmarkPacket {
     /// Globally unique packet identity.
     pub(super) id: String,
     /// Zero-based source stream ordinal.
     pub(super) stream_ordinal: u32,
-    /// Ordered packet frames.
-    frames: StateFrames,
+    /// Ordered PMARK nodes.
+    nodes: PmarkNodes,
     /// Whether the packet ends with `ref(1)[3], u32(1)`.
     terminal: bool,
     /// Exact packet byte length.
@@ -1093,20 +1093,20 @@ pub(super) struct ParasolidDeltasReferenceStatePacket {
     pub(super) inflated_offset: u64,
 }
 
-/// Schema reference preamble in a Parasolid deltas stream.
+/// Leading PARTITION and current PMARK nodes in a Parasolid deltas stream.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(super) struct ParasolidDeltasSchemaReferencePreamble {
-    /// Globally unique preamble identity.
+pub(super) struct ParasolidDeltasPartitionPrefix {
+    /// Globally unique partition-prefix identity.
     pub(super) id: String,
     /// Zero-based source stream ordinal.
     pub(super) stream_ordinal: u32,
     #[serde(flatten)]
-    state: PreambleState,
-    /// Exact preamble byte length.
+    state: PartitionPrefixState,
+    /// Exact partition-prefix byte length.
     byte_len: u64,
-    /// SHA-256 of the exact preamble bytes.
+    /// SHA-256 of the exact partition-prefix bytes.
     sha256: cadmpeg_ir::hash::digest::Sha256Digest,
-    /// First preamble byte offset in the inflated stream.
+    /// First partition-prefix byte offset in the inflated stream.
     pub(super) inflated_offset: u64,
 }
 
@@ -1205,8 +1205,8 @@ pub(in crate::native) struct ParasolidDeltasEvents {
     pub(super) body_revisions: Vec<ParasolidDeltasBodyRevision>,
     pub(super) tagged_reference_lanes: Vec<ParasolidDeltasTaggedReferenceLane>,
     pub(super) reference_type_maps: Vec<ParasolidDeltasReferenceTypeMap>,
-    pub(super) reference_state_packets: Vec<ParasolidDeltasReferenceStatePacket>,
-    pub(super) schema_reference_preambles: Vec<ParasolidDeltasSchemaReferencePreamble>,
+    pub(super) pmark_packets: Vec<ParasolidDeltasPmarkPacket>,
+    pub(super) partition_prefixes: Vec<ParasolidDeltasPartitionPrefix>,
     pub(super) reference_marker_packets: Vec<ParasolidDeltasReferenceMarkerPacket>,
     pub(super) type_150_state_packets: Vec<ParasolidDeltasType150StatePacket>,
     pub(super) inline_schema_declarations: Vec<ParasolidDeltasInlineSchemaDeclaration>,
@@ -1299,8 +1299,8 @@ pub(super) fn parasolid_deltas_events_with_censuses(
         body_revisions: Vec::new(),
         tagged_reference_lanes: Vec::new(),
         reference_type_maps: Vec::new(),
-        reference_state_packets: Vec::new(),
-        schema_reference_preambles: Vec::new(),
+        pmark_packets: Vec::new(),
+        partition_prefixes: Vec::new(),
         reference_marker_packets: Vec::new(),
         type_150_state_packets: Vec::new(),
         inline_schema_declarations: Vec::new(),
@@ -1501,20 +1501,14 @@ pub(super) fn parasolid_deltas_events_with_censuses(
                 "NX deltas events",
             )?;
         }
-        for packet in census.reference_state_packets {
+        for packet in census.pmark_packets {
             let bytes = &stream.inflated[packet.offset..packet.end];
             ctx.push_vec(
-                &mut events.reference_state_packets,
-                ParasolidDeltasReferenceStatePacket {
-                    id: deltas_event_id(
-                        ctx,
-                        stream_ordinal,
-                        "deltas-reference-state",
-                        packet.offset,
-                        None,
-                    )?,
+                &mut events.pmark_packets,
+                ParasolidDeltasPmarkPacket {
+                    id: deltas_event_id(ctx, stream_ordinal, "deltas-pmark", packet.offset, None)?,
                     stream_ordinal: stream_ordinal_u32,
-                    frames: packet.frames,
+                    nodes: packet.nodes,
                     terminal: packet.terminal,
                     byte_len: cadmpeg_core::decode::u64_from_index(bytes.len()),
                     sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
@@ -1527,27 +1521,27 @@ pub(super) fn parasolid_deltas_events_with_censuses(
                 "NX deltas events",
             )?;
         }
-        for preamble in census.schema_reference_preambles {
-            let bytes = &stream.inflated[preamble.offset..preamble.end];
+        if let Some(prefix) = census.partition_prefix {
+            let bytes = &stream.inflated[prefix.offset..prefix.end];
             ctx.push_vec(
-                &mut events.schema_reference_preambles,
-                ParasolidDeltasSchemaReferencePreamble {
+                &mut events.partition_prefixes,
+                ParasolidDeltasPartitionPrefix {
                     id: deltas_event_id(
                         ctx,
                         stream_ordinal,
-                        "deltas-schema-reference-preamble",
-                        preamble.offset,
+                        "deltas-partition-prefix",
+                        prefix.offset,
                         None,
                     )?,
                     stream_ordinal: stream_ordinal_u32,
-                    state: preamble.state,
+                    state: prefix.state,
                     byte_len: cadmpeg_core::decode::u64_from_index(bytes.len()),
                     sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
                         ctx,
                         bytes,
                         "NX retained record digest",
                     )?,
-                    inflated_offset: cadmpeg_core::decode::u64_from_index(preamble.offset),
+                    inflated_offset: cadmpeg_core::decode::u64_from_index(prefix.offset),
                 },
                 "NX deltas events",
             )?;
@@ -1667,10 +1661,8 @@ pub(super) fn parasolid_deltas_events_with_censuses(
     sort_deltas_events(ctx, &mut events.reference_type_maps, |value| {
         value.id.as_str()
     })?;
-    sort_deltas_events(ctx, &mut events.reference_state_packets, |value| {
-        value.id.as_str()
-    })?;
-    sort_deltas_events(ctx, &mut events.schema_reference_preambles, |value| {
+    sort_deltas_events(ctx, &mut events.pmark_packets, |value| value.id.as_str())?;
+    sort_deltas_events(ctx, &mut events.partition_prefixes, |value| {
         value.id.as_str()
     })?;
     sort_deltas_events(ctx, &mut events.reference_marker_packets, |value| {

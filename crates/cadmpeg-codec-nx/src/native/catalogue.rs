@@ -56,18 +56,17 @@ use super::om::{
 use super::parasolid::{
     ParasolidAttributeDefinition, ParasolidBlendBoundRecord, ParasolidBlendSurfaceRecord,
     ParasolidChartRecord, ParasolidDeltasBodyRevision, ParasolidDeltasInlineBodyState,
-    ParasolidDeltasInlineSchemaDeclaration, ParasolidDeltasRecord,
-    ParasolidDeltasReferenceMarkerPacket, ParasolidDeltasReferenceStatePacket,
+    ParasolidDeltasInlineSchemaDeclaration, ParasolidDeltasPartitionPrefix,
+    ParasolidDeltasPmarkPacket, ParasolidDeltasRecord, ParasolidDeltasReferenceMarkerPacket,
     ParasolidDeltasReferenceTypeMap, ParasolidDeltasResidualSpan,
-    ParasolidDeltasSchemaReferencePreamble, ParasolidDeltasTaggedReferenceLane,
-    ParasolidDeltasTerminalNullReferences, ParasolidDeltasTombstone, ParasolidDeltasTransmitHeader,
-    ParasolidDeltasType150StatePacket, ParasolidEntity51NumericUse, ParasolidEntity51Record,
-    ParasolidEntity51StringUse, ParasolidEntity51StructuredUse, ParasolidEntity52IntegerRecord,
-    ParasolidEntity53DoubleRecord, ParasolidEntity54StringRecord, ParasolidEntity57AxisRecord,
-    ParasolidEntity58TagRecord, ParasolidEntity62UnicodeRecord, ParasolidEntityVectorRecord,
-    ParasolidGroupRecord, ParasolidOffsetSurfaceRecord, ParasolidSupportUvRecord,
-    ParasolidSurfaceCurveRecord, ParasolidTermUseRecord, ParasolidTopologyAttributeListReference,
-    ParasolidTrimmedCurveRecord,
+    ParasolidDeltasTaggedReferenceLane, ParasolidDeltasTerminalNullReferences,
+    ParasolidDeltasTombstone, ParasolidDeltasTransmitHeader, ParasolidDeltasType150StatePacket,
+    ParasolidEntity51NumericUse, ParasolidEntity51Record, ParasolidEntity51StringUse,
+    ParasolidEntity51StructuredUse, ParasolidEntity52IntegerRecord, ParasolidEntity53DoubleRecord,
+    ParasolidEntity54StringRecord, ParasolidEntity57AxisRecord, ParasolidEntity58TagRecord,
+    ParasolidEntity62UnicodeRecord, ParasolidEntityVectorRecord, ParasolidGroupRecord,
+    ParasolidOffsetSurfaceRecord, ParasolidSupportUvRecord, ParasolidSurfaceCurveRecord,
+    ParasolidTermUseRecord, ParasolidTopologyAttributeListReference, ParasolidTrimmedCurveRecord,
 };
 use super::segments::{
     SegmentBodyBinding, SegmentBodyLineageStatus, SegmentIndexRow, SegmentOmLink, SegmentStreamLink,
@@ -657,12 +656,12 @@ impl StreamNoted for ParasolidDeltasReferenceTypeMap {
         (&self.id, self.stream_ordinal, self.inflated_offset)
     }
 }
-impl StreamNoted for ParasolidDeltasReferenceStatePacket {
+impl StreamNoted for ParasolidDeltasPmarkPacket {
     fn stream_note(&self) -> (&str, u32, u64) {
         (&self.id, self.stream_ordinal, self.inflated_offset)
     }
 }
-impl StreamNoted for ParasolidDeltasSchemaReferencePreamble {
+impl StreamNoted for ParasolidDeltasPartitionPrefix {
     fn stream_note(&self) -> (&str, u32, u64) {
         (&self.id, self.stream_ordinal, self.inflated_offset)
     }
@@ -1491,37 +1490,29 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         counts_toward_emptiness: true,
     },
     CatalogueRow {
-        arena: "parasolid_deltas_reference_state_packets",
+        arena: "parasolid_deltas_pmark_packets",
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
-            tag: Some("DELTAS_REFERENCE_STATE"),
+            tag: Some("DELTAS_PMARK"),
             note: |ctx, m, r, tag, a| {
-                note_per_stream(ctx, &m.parasolid.deltas_reference_state_packets, r, tag, a)
+                note_per_stream(ctx, &m.parasolid.deltas_pmark_packets, r, tag, a)
             },
         },
-        emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.deltas_reference_state_packets, r, ns),
-        len: |m| m.parasolid.deltas_reference_state_packets.len(),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.deltas_pmark_packets, r, ns),
+        len: |m| m.parasolid.deltas_pmark_packets.len(),
         counts_toward_emptiness: true,
     },
     CatalogueRow {
-        arena: "parasolid_deltas_schema_reference_preambles",
+        arena: "parasolid_deltas_partition_prefixes",
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
-            tag: Some("DELTAS_SCHEMA_REFERENCE_PREAMBLE"),
+            tag: Some("DELTAS_PARTITION_PREFIX"),
             note: |ctx, m, r, tag, a| {
-                note_per_stream(
-                    ctx,
-                    &m.parasolid.deltas_schema_reference_preambles,
-                    r,
-                    tag,
-                    a,
-                )
+                note_per_stream(ctx, &m.parasolid.deltas_partition_prefixes, r, tag, a)
             },
         },
-        emit: |ctx, m, r, ns| {
-            emit_arena(ctx, &m.parasolid.deltas_schema_reference_preambles, r, ns)
-        },
-        len: |m| m.parasolid.deltas_schema_reference_preambles.len(),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.deltas_partition_prefixes, r, ns),
+        len: |m| m.parasolid.deltas_partition_prefixes.len(),
         counts_toward_emptiness: true,
     },
     CatalogueRow {

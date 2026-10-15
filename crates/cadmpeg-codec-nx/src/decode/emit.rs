@@ -2123,12 +2123,12 @@ pub(super) fn source_meta(
                 census.reference_type_maps.len(),
             )?;
         }
-        if !census.reference_state_packets.is_empty() {
+        if !census.pmark_packets.is_empty() {
             insert_source_attribute(
                 ctx,
                 &mut attributes,
-                format_args!("deltas.{index}.reference_state_packets"),
-                census.reference_state_packets.len(),
+                format_args!("deltas.{index}.pmark_packets"),
+                census.pmark_packets.len(),
             )?;
         }
         if !census.reference_marker_packets.is_empty() {

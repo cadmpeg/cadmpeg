@@ -3,9 +3,9 @@
 
 use super::attdef_state::AttdefState;
 use super::precision_state::PrecisionState;
-use super::type101_state::Type101State;
 use super::type38_state::Type38State;
 use super::type70_state::Type70State;
+use super::world_state::WorldState;
 use crate::framing::xmt_reference::NonNullXmt;
 use cadmpeg_ir::native::bytes::NativeBytes;
 use cadmpeg_ir::units::FiniteVector;
@@ -41,13 +41,11 @@ pub(crate) enum InlineSchemaFields {
         #[serde(flatten)]
         state: PrecisionState,
     },
-    /// Type 101 declaration and its schema-bound instance state.
-    Type101 {
+    /// Modern WORLD declaration and its complete schema-bound state.
+    World {
         #[serde(flatten)]
-        state: Type101State,
+        state: WorldState,
     },
-    /// Type 101 declaration with the compact fixed state.
-    Type101Compact,
     /// Type 38 intersection-data declaration state.
     Type38 {
         #[serde(flatten)]

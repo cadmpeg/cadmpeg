@@ -201,15 +201,15 @@ pub(super) fn summarize(
                         )),
                     )?;
                 }
-                if !census.reference_state_packets.is_empty() {
+                if !census.pmark_packets.is_empty() {
                     insert_summary_attribute(
                         ctx,
                         &mut attributes,
-                        "records.delta.reference_state_packets",
+                        "records.delta.pmark_packets",
                         "",
                         false,
                         SummaryValue::Number(cadmpeg_core::decode::u64_from_index(
-                            census.reference_state_packets.len(),
+                            census.pmark_packets.len(),
                         )),
                     )?;
                 }

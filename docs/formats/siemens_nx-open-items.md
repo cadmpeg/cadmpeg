@@ -68,14 +68,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know each grammar to delimit and transfer the remaining deltas records as typed data.
 
-### PS-07. Deltas transmit-header XMT identities
-
-**Question.** What is the semantic role of each of the two consecutive XMT identities in a deltas transmit header?
-
-**Known.** `siemens_nx.md` §4.2 "A deltas stream uses the counted transmit header in section 3.1." separates the counted metadata from the following PARTITION node. The leading identity pair occurs in that node sequence, not in the counted header.
-
-**Need.** We must know the roles to relate the header identities to the deltas schema and body history.
-
 ### PS-08. Deltas BODY state tail
 
 **Question.** What fields and semantics does the bounded state tail after the eight-reference deltas `BODY` prefix contain?
@@ -130,7 +122,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What is the canonical node-type name of deltas type 101 (`0065`), and what does each field mean?
 
-**Known.** `siemens_nx.md` §4.2 "A complete type-101 record whose start lies inside a fixed-record candidate and" defines its boundary precedence. `siemens_nx.md` §4.2 "Type 101 has the complete deltas record" defines its complete field grammar.
+**Known.** `siemens_nx.md` §4.2 "A complete type-101 record whose start lies inside a fixed-record candidate and" defines its boundary precedence. `siemens_nx.md` §4.2 "A repeated type-101 `WORLD` record is" defines the nineteen-field instance order and pointer projection.
 
 **Need.** We must know the name and field roles to transfer the record as typed Parasolid state.
 
@@ -157,22 +149,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Known.** `siemens_nx.md` §4.2 "A reference/type map begins with either" defines the counted reference and type lanes and their byte boundary.
 
 **Need.** We must know ownership and entry roles to apply the map to the correct entities.
-
-### PS-20. Deltas four-reference state packets
-
-**Question.** Which record owns each deltas four-reference state packet, and what is the role of each reference?
-
-**Known.** `siemens_nx.md` §4.2 "One reference-state packet is" defines its reference-status grammar and exact boundary.
-
-**Need.** We must know ownership and reference roles to attach the packet to typed state.
-
-### PS-21. Deltas schema reference preambles
-
-**Question.** Which declaration owns each deltas schema reference preamble, and what is the role of each field?
-
-**Known.** `siemens_nx.md` §4.2 "A schema reference preamble is" defines the preamble variants, reference lanes, state bytes, and boundary.
-
-**Need.** We must know ownership and field roles to construct the complete inline schema model.
 
 ### PS-22. Deltas reference-marker packets
 
