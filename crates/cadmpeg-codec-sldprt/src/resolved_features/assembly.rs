@@ -85,7 +85,7 @@ fn feature_input_lane(
     let classes = class_declarations(payload, &parent)?;
     let names = object_names(ctx, payload, &parent)?;
     let scalars = named_scalars(payload, &parent, &names)?;
-    let relation_bindings = relation_bindings(&parent, &classes, &scalars)?;
+    let relation_bindings = relation_bindings(&parent, &classes, &scalars, &[])?;
     let references = reference_cells(&scalars, &classes)?;
     let sketch_entities = admit_sketch_input_entities(payload, &parent)?;
     for entity in &sketch_entities {

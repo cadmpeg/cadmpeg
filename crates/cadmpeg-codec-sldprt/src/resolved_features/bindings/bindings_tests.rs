@@ -107,7 +107,6 @@ fn dissected_profile_scalar_tail_belongs_to_parent_extrusion() {
         name: name.into(),
         value: cadmpeg_ir::scalar::FiniteReal::new(0.001).expect("finite test scalar"),
         role: FeatureInputScalarRole::Driving,
-
         operands: Vec::new(),
     };
     let mut lane = FeatureInputLane {
@@ -220,7 +219,6 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Pattern {
                 seeds: Vec::new(),
@@ -487,7 +485,6 @@ fn circular_pattern_seed_binds_from_generated_identity_path() {
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
-
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Pattern {
                     seeds: Vec::new(),
@@ -506,7 +503,6 @@ fn circular_pattern_seed_binds_from_generated_identity_path() {
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
-
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Pattern {
                     seeds: Vec::new(),
@@ -632,7 +628,6 @@ fn circular_pattern_axis_binds_from_unique_temporary_axis() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Pattern {
                 seeds: vec![PatternSeed::Feature(
@@ -858,7 +853,6 @@ fn detached_spatial_relation_group_binds_by_its_complete_dimension_signature() {
         name: format!("name-{index}"),
         value: cadmpeg_ir::scalar::FiniteReal::new(value).expect("finite test scalar"),
         role: FeatureInputScalarRole::Driving,
-
         operands: Vec::new(),
     };
     let entity = |id: &str, offset| {

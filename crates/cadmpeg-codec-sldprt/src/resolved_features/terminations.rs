@@ -985,7 +985,6 @@ pub(crate) fn project_surface_sweep_profiles(
             projections.insert(key, (profile, dependencies));
         }
     }
-    drop(feature_ids_by_native);
     for feature in features {
         let Some(native) = feature.native_ref.as_deref() else {
             continue;
@@ -1208,7 +1207,6 @@ pub(crate) fn project_compact_combine_paths(
             },
         );
     }
-    drop(feature_ids_by_native);
     for feature in features {
         let Some(native) = feature.native_ref.as_deref() else {
             continue;

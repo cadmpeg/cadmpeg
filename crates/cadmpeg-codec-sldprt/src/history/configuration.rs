@@ -855,7 +855,6 @@ fn inherit_configuration_hole_semantics(
         direction: _,
         placements,
         shape,
-
         extent,
         bottom,
         taper_angle,
@@ -874,7 +873,6 @@ fn inherit_configuration_hole_semantics(
         direction: _,
         placements: base_placements,
         shape: base_shape,
-
         extent: base_extent,
         bottom: base_bottom,
         taper_angle: base_taper_angle,

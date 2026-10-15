@@ -1461,7 +1461,7 @@ fn source_less_lanes(
         lane.classes = class_declarations(&lane.native_payload, &lane.id)?;
         lane.names = object_names(&ctx, &lane.native_payload, &lane.id)?;
         lane.scalars = named_scalars(&lane.native_payload, &lane.id, &lane.names)?;
-        lane.relation_bindings = relation_bindings(&lane.id, &lane.classes, &lane.scalars)?;
+        lane.relation_bindings = relation_bindings(&lane.id, &lane.classes, &lane.scalars, &[])?;
         lane.references = reference_cells(&lane.scalars, &lane.classes)?;
         lane.sketch_entities = admit_sketch_input_entities(&lane.native_payload, &lane.id)?;
     }
@@ -1625,7 +1625,6 @@ mod source_less_lane_tests {
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
-
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 cadmpeg_ir::features::FeatureDefinition::Operation(
                     cadmpeg_ir::features::FeatureOperation::Sketch {

@@ -3149,7 +3149,6 @@ mod relation_geometry_tests {
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
-
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Sketch {
                     sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(
@@ -3184,7 +3183,6 @@ mod relation_geometry_tests {
                 name: "distance".into(),
                 value: cadmpeg_ir::scalar::FiniteReal::new(value).expect("finite test scalar"),
                 role: FeatureInputScalarRole::Driving,
-
                 operands,
             };
         let relation = FeatureInputRelationInstance {
@@ -3344,7 +3342,6 @@ mod relation_geometry_tests {
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
-
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Sketch {
                     sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(
@@ -3447,7 +3444,6 @@ mod relation_geometry_tests {
                 name: "distance".into(),
                 value: cadmpeg_ir::scalar::FiniteReal::new(0.005).expect("finite test scalar"),
                 role: FeatureInputScalarRole::Driving,
-
                 operands: relation.operands.clone(),
             }],
             relation_bindings: Vec::new(),
@@ -3747,7 +3743,6 @@ mod relation_geometry_tests {
             name: "distance".into(),
             value: cadmpeg_ir::scalar::FiniteReal::new(0.0065).expect("finite test scalar"),
             role: FeatureInputScalarRole::Driving,
-
             operands: Vec::new(),
         };
         let operand = |entity_index| FeatureInputOperand {
@@ -3807,7 +3802,6 @@ mod relation_geometry_tests {
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
-
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::SpatialSketch {
                     sketch: Some(sketch.id.clone()),

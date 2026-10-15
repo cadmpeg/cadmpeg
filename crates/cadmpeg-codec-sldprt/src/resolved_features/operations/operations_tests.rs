@@ -547,7 +547,6 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
         native_ref: Some(native_ref.into()),
     };

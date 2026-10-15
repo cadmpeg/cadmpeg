@@ -12,7 +12,7 @@ use super::endpoints::{
     marker_is_selected_construction_line, wide_indexed_curve_endpoint_indices,
 };
 use super::markers::{
-    current_reverse_incidence_endpoint_offsets, linked_profile_point, relation_bindings_scoped,
+    current_reverse_incidence_endpoint_offsets, linked_profile_point, relation_bindings,
 };
 use super::operands::resolve_scalar_operand_markers;
 use super::reference_geometry::explicit_reference_plane_frame;
@@ -1214,8 +1214,7 @@ pub(crate) fn finalize_lane_bindings(
             .map(str::to_owned);
     }
     let intervals = feature_intervals(histories, lane);
-    lane.relation_bindings =
-        relation_bindings_scoped(&lane.id, &lane.classes, &lane.scalars, &intervals)?;
+    lane.relation_bindings = relation_bindings(&lane.id, &lane.classes, &lane.scalars, &intervals)?;
     lane.relation_instances = relation_instances(histories, lane)?;
     lane.body_selections = compact_body_selections(histories, lane)?;
     lane.edge_selections = compact_edge_selections(ctx, histories, lane)?;

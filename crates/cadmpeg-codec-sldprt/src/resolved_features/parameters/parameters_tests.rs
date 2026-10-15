@@ -257,7 +257,6 @@ fn explicit_sketch_dimension_scalar_preserves_display_outside_object_range() {
             name: "d1-name".into(),
             value: cadmpeg_ir::scalar::FiniteReal::new(0.007_137_4).expect("finite test scalar"),
             role: FeatureInputScalarRole::Driving,
-
             operands: Vec::new(),
         }],
         relation_bindings: Vec::new(),

@@ -43,7 +43,6 @@ fn complete_parting_line_draft_does_not_require_an_outward_flag() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Draft {
                 faces: faces.clone(),
@@ -133,7 +132,6 @@ fn configuration_feature_states_drive_design_completeness_accounting() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::TreeNode {
                 role: FeatureTreeNodeRole::History,
@@ -158,7 +156,6 @@ fn configuration_feature_states_drive_design_completeness_accounting() {
                     BodySelection::Native("tools".into()),
                 )
                 .unwrap(),
-
                 op: cadmpeg_ir::features::BooleanKind::Join,
                 keep_tools: false,
             }),
@@ -248,7 +245,6 @@ fn metadata_only_native_feature_does_not_report_missing_operation() {
         source_tag: Some("Feature".into()),
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Native {
                 kind: "Localized tree item".into(),
@@ -288,7 +284,6 @@ fn active_configuration_inherits_late_feature_resolutions() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Pattern {
                 seeds: vec![seed.clone()],
@@ -318,7 +313,6 @@ fn active_configuration_inherits_late_feature_resolutions() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Hole {
                 profile: None,
@@ -337,7 +331,6 @@ fn active_configuration_inherits_late_feature_resolutions() {
                     Some(cadmpeg_ir::scalar::PositiveLength::new(4.0).unwrap()),
                 )
                 .unwrap(),
-
                 extent: Some(LinearTermination::Blind {
                     length: cadmpeg_ir::scalar::NonZeroLength::new(12.0).unwrap(),
                 }),
@@ -392,7 +385,6 @@ fn active_configuration_inherits_late_feature_resolutions() {
                             None,
                         )
                         .unwrap(),
-
                         extent: None,
                         bottom: None,
                         taper_angle: None,
@@ -477,7 +469,6 @@ fn incomplete_configuration_snapshots_are_reported_as_design_losses() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::TreeNode {
                 role: FeatureTreeNodeRole::History,
@@ -580,7 +571,6 @@ fn active_configuration_snapshots_final_neutral_design_state() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
             FeatureDefinition::Operation(FeatureOperation::TreeNode {
                 role: FeatureTreeNodeRole::History,

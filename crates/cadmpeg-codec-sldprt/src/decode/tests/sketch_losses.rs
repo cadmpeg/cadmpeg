@@ -99,7 +99,6 @@ fn typed_native_operands_are_reported_as_design_losses() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Combine {
                 operands: cadmpeg_ir::features::CombineOperands::new(
@@ -107,7 +106,6 @@ fn typed_native_operands_are_reported_as_design_losses() {
                     BodySelection::Native("tools".into()),
                 )
                 .unwrap(),
-
                 op: cadmpeg_ir::features::BooleanKind::Join,
                 keep_tools: false,
             }),

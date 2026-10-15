@@ -631,7 +631,6 @@ fn semantic_writer_round_trips_typed_sweep() {
         decoded.ir().model.features[3].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Sweep {
             shape,
             path: Some(PathRef::Native(path_ref)),
-
             twist: Some(twist),
             scale: Some(scale),
             ..
@@ -644,7 +643,6 @@ fn semantic_writer_round_trips_typed_sweep() {
         ir_edit.model.features[3].evaluation.edit(|definition, _| {
             let FeatureDefinition::Operation(FeatureOperation::Sweep {
                 shape,
-
                 twist,
                 scale,
                 ..
@@ -740,7 +738,6 @@ fn semantic_writer_round_trips_sparse_surface_sweep() {
         decoded.ir().model.features[0].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Sweep {
             shape,
             path: None,
-
             twist: None,
             scale: None,
             ..
@@ -778,7 +775,6 @@ fn semantic_writer_round_trips_sparse_surface_sweep() {
         regenerated.ir().model.features[0].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Sweep {
             shape,
             path: None,
-
             twist: Some(actual_twist),
             scale: None,
             ..
@@ -810,7 +806,6 @@ fn semantic_writer_retains_native_solid_sweep_with_unresolved_operation() {
         decoded.ir().model.features[0].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Sweep {
             shape,
             path: None,
-
             twist: None,
             scale: None,
             ..

@@ -845,7 +845,6 @@ fn semantic_writer_round_trips_typed_combine() {
     assert!(matches!(
         decoded.ir().model.features[0].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Combine {
             operands,
-
             op: cadmpeg_ir::features::BooleanKind::Join,
             keep_tools: false,
         }) if matches!((operands.target(), operands.tools(),), (BodySelection::Native(target), BodySelection::Native(tools),) if target == "body:1" && tools == "body:2,body:3")));
@@ -885,7 +884,6 @@ fn semantic_writer_round_trips_typed_combine() {
     assert!(matches!(
         regenerated.ir().model.features[0].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Combine {
             operands,
-
             op: cadmpeg_ir::features::BooleanKind::Intersect,
             keep_tools: false,
         }) if matches!((operands.target(), operands.tools(),), (BodySelection::Native(target), BodySelection::Native(tools),) if target == "body:4" && tools == "body:5,body:6")));

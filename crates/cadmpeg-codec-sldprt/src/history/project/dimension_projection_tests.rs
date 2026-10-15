@@ -134,7 +134,6 @@ fn hole_wizard_rejects_unsupported_countersink_child_schema() {
     assert!(matches!(
         projected[0].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Hole {
             shape,
-
             extent: None,
             ..
         }) if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::holes::HoleConstruction::Form {
@@ -189,7 +188,6 @@ fn hole_wizard_drill_point_profile_retains_bore_and_blind_depth() {
     assert!(matches!(
         projected[0].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Hole {
             shape,
-
             extent: Some(LinearTermination::Blind {
                 length: actual_length,
             }),

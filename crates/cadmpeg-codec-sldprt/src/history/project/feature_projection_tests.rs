@@ -548,7 +548,6 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
                 Some(cadmpeg_ir::scalar::PositiveLength::new(10.05).unwrap())
             )
             .unwrap(),
-
             depth: cadmpeg_ir::scalar::PositiveLength::new(5.4).unwrap(),
             angle: cadmpeg_ir::scalar::InteriorAngle::new(std::f64::consts::FRAC_PI_2).unwrap(),
         })
@@ -643,7 +642,6 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
     .unwrap();
     let FeatureDefinition::Operation(FeatureOperation::Hole {
         ref shape,
-
         extent: Some(LinearTermination::Blind { length }),
         ..
     }) = projected

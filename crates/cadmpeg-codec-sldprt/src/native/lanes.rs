@@ -225,6 +225,7 @@ fn rebuild_scalar_relations(
         &lane.id,
         &lane.classes,
         &lane.scalars,
+        &[],
     )?;
     lane.references =
         crate::resolved_features::markers::reference_cells(&lane.scalars, &lane.classes)?;
