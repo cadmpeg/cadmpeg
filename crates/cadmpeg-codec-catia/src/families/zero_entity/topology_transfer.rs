@@ -1525,6 +1525,104 @@ mod tests {
         )
         .expect("resource allocation did not fail"));
     }
+
+    #[test]
+    fn closed_topology_face_ids_result() {
+        use cadmpeg_core::decode::DecodeArena;
+        use cadmpeg_core::decode::DecodeContext;
+        use cadmpeg_core::decode::DecodePolicy;
+        let points = [
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0, 0.0, 0.0),
+            Point3::new(0.0, 1.0, 0.0),
+        ];
+        let support_runs = vec![run(1, 10, points, false)];
+        let surface_id = SurfaceId::mint("catia:test:surface#0").expect("identity grammar");
+        let surface_ids = HashMap::from([(100, surface_id.clone())]);
+        let curve_ids = HashMap::new();
+        let run_with = |ctx: &DecodeContext<'_>| {
+            let mut ir = CadIr::empty();
+            ir.model.surfaces.push(Surface {
+                id: surface_id.clone(),
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                    cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                        points[0],
+                        Vector3::new(0.0, 0.0, 1.0),
+                        Vector3::new(1.0, 0.0, 0.0),
+                    )
+                    .expect("valid plane"),
+                )),
+                source_object: None,
+            });
+            let mut annotations = AnnotationBuilder::new();
+            let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+            transfer_closed_face_topology(
+                &mut admission,
+                &mut ir,
+                &mut annotations,
+                ZeroEntityClosedTopology {
+                    support_runs: &support_runs,
+                    surface_ids_by_position: &surface_ids,
+                    support_curve_ids: &curve_ids,
+                    ownership_root: None,
+                },
+                &WorkBudget::new(100),
+                &mut crate::nurbs::LaneRefusals::new(),
+            )
+        };
+        let service_arena = DecodeArena::new();
+        let service_policy = DecodePolicy::service();
+        let (service_ctx, _) =
+            DecodeContext::from_root_bytes(&[0], &service_arena, &service_policy)
+                .expect("fixture fits the input limit");
+        assert!(run_with(&service_ctx)
+            .expect("service resource budget")
+            .is_none());
+    }
+
+    #[test]
+    fn closed_topology_face_identity_result() {
+        use cadmpeg_core::decode::DecodeContext;
+        let points = [
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0, 0.0, 0.0),
+            Point3::new(0.0, 1.0, 0.0),
+        ];
+        let support_runs = vec![run(1, 10, points, false)];
+        let surface_id = SurfaceId::mint("catia:test:surface#0").expect("identity grammar");
+        let surface_ids = HashMap::from([(100, surface_id.clone())]);
+        let curve_ids = HashMap::new();
+        let run_with = |ctx: &DecodeContext<'_>| {
+            let mut ir = CadIr::empty();
+            ir.model.surfaces.push(Surface {
+                id: surface_id.clone(),
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                    cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                        points[0],
+                        Vector3::new(0.0, 0.0, 1.0),
+                        Vector3::new(1.0, 0.0, 0.0),
+                    )
+                    .expect("valid plane"),
+                )),
+                source_object: None,
+            });
+            transfer_closed_face_topology(
+                &mut crate::families::FamilyEntityAdmission::new(ctx),
+                &mut ir,
+                &mut AnnotationBuilder::new(),
+                ZeroEntityClosedTopology {
+                    support_runs: &support_runs,
+                    surface_ids_by_position: &surface_ids,
+                    support_curve_ids: &curve_ids,
+                    ownership_root: None,
+                },
+                &WorkBudget::new(100),
+                &mut crate::nurbs::LaneRefusals::new(),
+            )
+        };
+        let service = crate::test_support::with_service_context(run_with);
+        assert!(service.expect("service budget").is_none());
+    }
 }
 
 #[cfg(test)]

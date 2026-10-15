@@ -2346,6 +2346,59 @@ mod tests {
                 .contains("persistent_lead")
         );
     }
+
+    #[test]
+    fn resolved_cylinder_winner_and_loci_result() {
+        let pcurve_bytes = crate::test_support::test_a5a8::a5_pcurve_stream();
+        let pcurve_records = crate::wire::records::consolidated_records(&pcurve_bytes);
+        let pcurves = crate::wire::records::family_pcurves_from_records(
+            &pcurve_bytes,
+            &pcurve_records,
+            crate::wire::records::ConsolidatedFamily::A,
+        );
+        let pcurve = &pcurves[0];
+        let cylinder_bytes = crate::test_support::test_b2::b2_cylinder_stream();
+        let cylinder_records = crate::wire::records::consolidated_records(&cylinder_bytes);
+        let cylinders: Vec<_> = crate::families::b2::records::b2_cylinders_from_records(
+            &cylinder_bytes,
+            &cylinder_records,
+        )
+        .collect();
+        let carriers = super::ConsolidatedCarriers {
+            cylinders: &cylinders,
+            embedded_cylinders: &[],
+            circles: &[],
+            cones: &[],
+            spheres: &[],
+            tori: &[],
+            planes: &[],
+            nurbs_surfaces: &[],
+        };
+        let cylinder = &cylinders[0];
+        let points: Vec<_> = pcurve
+            .sites
+            .iter()
+            .map(|site| {
+                let point = super::b2_cylinder_point(cylinder, site.point.get())
+                    .expect("finite cylinder site");
+                cadmpeg_ir::features::FinitePoint3::new(point).expect("finite point")
+            })
+            .collect();
+        let binding = crate::test_support::with_service_context(|ctx| {
+            super::resolve_side_support(ctx, pcurve, &points, &carriers)
+        })
+        .expect("service decode")
+        .expect("unique cylinder");
+        let lifted = crate::test_support::with_service_context(|ctx| {
+            super::support_points(ctx, &binding, pcurve, &carriers)
+        })
+        .expect("service decode")
+        .expect("lifted cylinder sites");
+        assert_eq!(
+            lifted,
+            points.iter().map(|point| point.get()).collect::<Vec<_>>()
+        );
+    }
 }
 
 #[cfg(test)]

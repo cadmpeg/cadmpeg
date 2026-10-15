@@ -1606,4 +1606,72 @@ mod tests {
             notes[0].message
         );
     }
+
+    #[test]
+    fn quintic_jet_control_workspace_result() {
+        let run = || {
+            quintic_jet_bspline(
+                5,
+                &[0.0, 1.0],
+                &[[0.0, 0.0], [1.0, 0.0]],
+                &[[1.0, 0.0], [1.0, 0.0]],
+                &[[0.0, 0.0], [0.0, 0.0]],
+            )
+        };
+        assert!(run().is_some());
+    }
+
+    #[test]
+    fn circular_helix_cache_result() {
+        let definition = ProceduralCurveDefinition::Helix(
+            cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
+                [0.0, 1.0],
+                cadmpeg_ir::geometry::HelixFrame {
+                    center: Point3::new(0.0, 0.0, 0.0),
+                    major: Vector3::new(1.0, 0.0, 0.0),
+                    minor: Vector3::new(0.0, 1.0, 0.0),
+                    pitch: Vector3::new(0.0, 0.0, 1.0),
+                    axis: Vector3::new(0.0, 0.0, 1.0),
+                },
+                0.0,
+                None,
+            )
+            .expect("valid helix fixture"),
+        );
+        let tolerance = PositiveReal::new(2.0).expect("positive fixture tolerance");
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("fixture fits input limit");
+        assert!(circular_helix_cache(
+            &ctx,
+            &definition,
+            tolerance,
+            &mut LaneRefusals::new(),
+            "test record"
+        )
+        .expect("service resource budget")
+        .is_some());
+    }
+
+    #[test]
+    fn annotation_collision_note_result() {
+        let collision = cadmpeg_ir::annotations::AnnotationIdentityCollision {
+            id: "catia:test:curve#duplicate".to_string(),
+        };
+        let mut refusal = LaneRefusals::new();
+        refusal.push_annotation_collision(&collision);
+        let notes = refusal.take_notes();
+        assert_eq!(notes.len(), 1);
+        assert_eq!(notes[0].message, collision.to_string());
+    }
+
+    #[test]
+    fn solver_refusal_note_result() {
+        let mut refusal = LaneRefusals::new();
+        refusal.push_solver("a5 record", "jet does not close");
+        let notes = refusal.take_notes();
+        assert_eq!(notes.len(), 1);
+        assert!(notes[0].message.contains("a5 record jet does not close"));
+    }
 }

@@ -56,4 +56,10 @@ mod tests {
         assert_eq!(index.get("two"), Some(&2));
         assert_eq!(index.get("missing"), None);
     }
+
+    #[test]
+    fn unique_index_result() {
+        let admitted = UniqueIndex::collect([("one", 1)]);
+        assert_eq!(admitted.get("one"), Some(&1));
+    }
 }

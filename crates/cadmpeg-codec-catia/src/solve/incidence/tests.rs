@@ -1330,3 +1330,37 @@ fn persistent_face_configuration_preparation_retains_global_contradictions() {
 mod allocation_limits;
 mod components;
 mod face_configuration;
+
+#[test]
+fn incidence_factor_checkpoint_result() {
+    use crate::solve::incidence::{FaceFactorRefinement, PreparedFaceFactors};
+
+    let run = || {
+        let mut factors = PreparedFaceFactors {
+            domains: Vec::new(),
+            factor_faces: Vec::new(),
+            factor_by_face: Vec::new(),
+            factors_by_edge: Vec::new(),
+            active: Some(vec![vec![1u64, 2u64]]),
+        };
+        factors.refine_edges(&[])
+    };
+    assert!(matches!(run(), FaceFactorRefinement::Tracked(_)));
+}
+
+#[test]
+fn incidence_choice_pruning_result() {
+    let choices = vec![vec![[0, 1]], vec![[0, 1]]];
+    let edge_faces = [[0, 0], [0, 0]];
+    catia_test_context!(service_ctx);
+    let mut service_choices = choices.clone();
+    assert!(crate::solve::incidence::prune_incidence_choices(
+        &service_ctx,
+        &mut service_choices,
+        &edge_faces,
+        1,
+        2,
+    )
+    .expect("service budget")
+    .is_some());
+}

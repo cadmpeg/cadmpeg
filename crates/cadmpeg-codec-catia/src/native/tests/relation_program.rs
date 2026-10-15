@@ -231,6 +231,21 @@ fn relation_program_output_selects_only_the_framing_specific_paramout_slot() {
 }
 
 #[test]
+fn relation_program_output_wire_result() {
+    let native = crate::native::CatiaNative::decode(
+        &standard_catpart_with_relation_program_instance_class(1, 1, 1, 2, "paramout"),
+    );
+    let wire = serde_json::to_value(super::super::CatiaEntityRecordWire::from(
+        native.entity_records[1].clone(),
+    ))
+    .expect("serialize entity record wire");
+    assert_eq!(
+        wire["relation_program_instance"]["output_entity"]["class_name"],
+        "paramout"
+    );
+}
+
+#[test]
 fn relation_program_inputs_require_complete_unique_signature_bindings() {
     let resolve =
         |signature: &crate::native::CatiaRelationTypeSignature,
@@ -1133,4 +1148,62 @@ fn native_load_validates_relation_program_instances() {
             Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
         ));
     }
+}
+
+#[test]
+fn native_relation_symbols_and_candidates_result() {
+    let service_symbols = crate::native::relation_symbols("#1_ + #2_");
+    assert_eq!(
+        service_symbols,
+        [(0, "#1_".to_string()), (6, "#2_".to_string())]
+    );
+    let candidate = crate::native::CatiaEntityReference::resolved_or_unresolved(
+        10,
+        Some("entity-10".to_string()),
+        Some("param".to_string()),
+    );
+    let bindings = std::collections::HashMap::from([(
+        "graph".to_string(),
+        std::collections::HashMap::from([("#1_".to_string(), vec![candidate])]),
+    )]);
+    let dependencies = crate::native::relation_parameter_dependencies("#1_", "graph", &bindings);
+    assert_eq!(dependencies.len(), 1);
+    assert_eq!(dependencies[0].candidates[0].entity(), Some("entity-10"));
+}
+
+#[test]
+fn native_resolved_input_result() {
+    let signature = crate::native::CatiaRelationTypeSignature {
+        inputs: vec![crate::native::CatiaRelationTypeInput {
+            parameter: "#1_".to_string(),
+            input_type: "Real".to_string(),
+        }],
+        result_type: "Real".to_string(),
+    };
+    let dependencies = vec![crate::native::CatiaRelationParameterDependency {
+        source_offset: 0,
+        symbol: "#1_".to_string(),
+        candidates: vec![crate::native::CatiaEntityReference::resolved_or_unresolved(
+            10,
+            Some("entity-10".to_string()),
+            Some("param".to_string()),
+        )],
+    }];
+
+    let service = crate::native::resolved_relation_program_inputs(&signature, &dependencies)
+        .expect("one resolved input");
+    assert_eq!(service[0].entity.entity(), Some("entity-10"));
+}
+
+#[test]
+fn native_entity_reference_result() {
+    let entities =
+        std::collections::HashMap::from([(("graph".to_string(), 10_u32), "entity-10".to_string())]);
+    let classes =
+        std::collections::HashMap::from([(("graph".to_string(), 10_u32), "param".to_string())]);
+    let terminal_nulls = std::collections::HashMap::new();
+    let service =
+        crate::native::entity_reference("graph", 10, &entities, &classes, &terminal_nulls);
+    assert_eq!(service.entity(), Some("entity-10"));
+    assert_eq!(service.class_name(), Some("param"));
 }

@@ -3719,4 +3719,43 @@ mod tests {
         let face = runs[0].face.as_ref().expect("face");
         assert!(face.loops.is_none());
     }
+
+    #[test]
+    fn zero_entity_isocurve_result() {
+        use cadmpeg_ir::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
+        let fixed_degree = 16;
+        let fixed_poles = fixed_degree + 1;
+        let mut fixed_knots = vec![0.0; fixed_poles];
+        fixed_knots.extend(vec![1.0; fixed_poles]);
+        let rows = (0..fixed_poles)
+            .map(|row| {
+                let x = cadmpeg_core::convert::f64_from_index(row)
+                    .expect("fixture index is exactly representable");
+                vec![Point3::new(x, 0.0, 0.0), Point3::new(x, 1.0, 0.0)]
+            })
+            .collect();
+        let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
+            crate::test_support::with_service_context(|ctx| {
+                NurbsSurface::from_lanes(
+                    ctx,
+                    NurbsSurfaceAxis::new(16, fixed_knots, false),
+                    NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+                    NurbsSurfaceLanes::new(rows, None),
+                    false,
+                )
+            })
+            .expect("fixture surface admission")
+            .expect("valid NURBS surface"),
+        ));
+        let pcurve = test_pcurve(vec![Point2::new(0.5, 0.0), Point2::new(0.5, 1.0)]);
+        let endpoints = [[0.5, 0.0], [0.5, 1.0]];
+        assert!(zero_entity_model_curve(
+            &surface,
+            &pcurve,
+            endpoints,
+            &"test support",
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+        .is_some());
+    }
 }

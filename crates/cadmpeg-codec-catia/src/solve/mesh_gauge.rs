@@ -1909,3 +1909,211 @@ fn relation_state_memo_applies_one_row_mapping_to_assigned_and_domains() {
 
 #[cfg(test)]
 mod work_tests;
+
+#[test]
+fn mesh_gauge_reversed_coedges_result() {
+    let topology = || StandardTopologyDraft {
+        faces: vec![crate::families::standard::topology::FaceTopologyDraft {
+            boundaries: vec![crate::families::standard::topology::BoundaryDraft {
+                coedges: NonEmptyMembers::<CoedgeUse>::one(CoedgeUse {
+                    edge_row: 0,
+                    reversed: false,
+                    start_vertex: 0,
+                    end_vertex: 1,
+                }),
+            }],
+        }],
+        edge_rows: Vec::new(),
+        vertex_points: Vec::new(),
+        logical_vertex_count: 0,
+    };
+    let mut candidate = topology();
+    canonicalize_topology_boundary_gauges(&mut candidate);
+    assert_eq!(candidate.faces[0].boundaries[0].coedges.len(), 1);
+}
+
+#[test]
+fn mesh_edge_gauge_rows_result() {
+    use crate::families::standard::topology::{BoundaryDraft, FaceTopologyDraft};
+
+    let topology = StandardTopologyDraft {
+        faces: vec![FaceTopologyDraft {
+            boundaries: vec![BoundaryDraft {
+                coedges: NonEmptyMembers::<CoedgeUse>::try_from(vec![
+                    CoedgeUse {
+                        edge_row: 0,
+                        reversed: false,
+                        start_vertex: 0,
+                        end_vertex: 1,
+                    },
+                    CoedgeUse {
+                        edge_row: 1,
+                        reversed: false,
+                        start_vertex: 1,
+                        end_vertex: 0,
+                    },
+                ])
+                .expect("two coedges are nonempty"),
+            }],
+        }],
+        edge_rows: vec![
+            EdgeRow::new(1, vec![0, 1], EdgeBoundaryLayout::CompleteBoundaryRun)
+                .expect("admitted edge row"),
+            EdgeRow::new(1, vec![1, 0], EdgeBoundaryLayout::CompleteBoundaryRun)
+                .expect("admitted edge row"),
+        ],
+        vertex_points: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
+        logical_vertex_count: 2,
+    };
+    let edge_faces = [];
+    let edge_geometry = [MeshEdgeGeometry::Line; 2];
+    let edge_candidates = [vec![[0, 1]], vec![[0, 1]]];
+    let edge_identity_evidence = [false; 2];
+    let gauge = MeshCandidateGauge {
+        edge_rows: &topology.edge_rows,
+        edge_faces: &edge_faces,
+        edge_geometry: &edge_geometry,
+        edge_candidates: &edge_candidates,
+        edge_identity_evidence: &edge_identity_evidence,
+        coordinate_gauge: None,
+    };
+    assert!(crate::test_support::with_service_context(|ctx| {
+        canonicalize_mesh_edge_row_gauges(ctx, topology.clone(), gauge, None)
+    })
+    .expect("service resource budget")
+    .is_some());
+}
+
+#[test]
+fn complete_endpoint_pair_gauge_result() {
+    let rows = [{
+        assert!(EdgeRow::new(1, Vec::new(), EdgeBoundaryLayout::CompleteBoundaryRun).is_none());
+        EdgeRow::new(1, vec![0, 0], EdgeBoundaryLayout::CompleteBoundaryRun)
+            .expect("admitted edge row")
+    }];
+    let faces = [[0, 1]];
+    let geometry = [MeshEdgeGeometry::Line];
+    let candidates = [vec![[0, 1]]];
+    let evidence = [false];
+    let gauge = MeshCandidateGauge {
+        edge_rows: &rows,
+        edge_faces: &faces,
+        edge_geometry: &geometry,
+        edge_candidates: &candidates,
+        edge_identity_evidence: &evidence,
+        coordinate_gauge: None,
+    };
+    let run = || canonicalize_complete_endpoint_pairs(&[[0, 1]], gauge);
+    assert_eq!(run(), Some(vec![[0, 1]]));
+}
+
+#[test]
+fn endpoint_relation_gauge_result() {
+    let candidates = [vec![[0, 1]]];
+    let coordinate_gauge = MeshCoordinateGauge {
+        components: vec![vec![vec![0, 1], vec![1, 0]]],
+    };
+    let gauge = MeshCandidateGauge {
+        edge_rows: &[],
+        edge_faces: &[],
+        edge_geometry: &[],
+        edge_candidates: &candidates,
+        edge_identity_evidence: &[],
+        coordinate_gauge: Some(&coordinate_gauge),
+    };
+    let domains = [vec![MeshEndpointRelationChoice {
+        id: 0,
+        selection: MeshEndpointRelationSelection::Enumerated {
+            assignments: vec![0],
+            edge_pairs: vec![(0, [0, 1])],
+        },
+    }]];
+    let run = |ctx: &DecodeContext<'_>| {
+        canonicalize_endpoint_relation_state(ctx, &domains, &[Some([0, 1])], gauge)
+    };
+    assert!(crate::test_support::with_service_context(run)
+        .expect("service resource budget")
+        .is_some());
+}
+
+#[test]
+fn mesh_coordinate_gauge_result() {
+    let edge_rows = [
+        EdgeRow::new(2, vec![10, 11], EdgeBoundaryLayout::CompleteBoundaryRun)
+            .expect("admitted edge row"),
+        EdgeRow::new(2, vec![20, 21], EdgeBoundaryLayout::CompleteBoundaryRun)
+            .expect("admitted edge row"),
+    ];
+    let edge_faces = [[0, 1], [0, 1]];
+    let edge_geometry = [MeshEdgeGeometry::Line, MeshEdgeGeometry::Line];
+    let edge_candidates = vec![vec![[0, 3], [1, 2]], vec![[0, 3], [1, 2]]];
+    let edge_identity_evidence = [false, false];
+    let run = |ctx: &DecodeContext<'_>| {
+        build_mesh_coordinate_gauge(
+            ctx,
+            4,
+            &edge_rows,
+            &edge_faces,
+            &edge_geometry,
+            &edge_candidates,
+            &edge_identity_evidence,
+        )
+    };
+    assert!(!crate::test_support::with_service_context(run)
+        .expect("service resource budget")
+        .components
+        .is_empty());
+}
+
+#[test]
+fn mesh_candidate_canonicalization_result() {
+    let edge_rows = vec![{
+        assert!(EdgeRow::new(1, vec![10], EdgeBoundaryLayout::CompleteBoundaryRun).is_none());
+        EdgeRow::new(1, vec![10, 10], EdgeBoundaryLayout::CompleteBoundaryRun)
+            .expect("admitted edge row")
+    }];
+    let topology = StandardTopologyDraft {
+        faces: vec![crate::families::standard::topology::FaceTopologyDraft {
+            boundaries: vec![
+                crate::families::standard::topology::BoundaryDraft::new(vec![CoedgeUse {
+                    edge_row: 0,
+                    reversed: false,
+                    start_vertex: 0,
+                    end_vertex: 1,
+                }])
+                .expect("nonempty topology boundary"),
+            ],
+        }],
+        edge_rows: edge_rows.clone(),
+        vertex_points: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
+        logical_vertex_count: 2,
+    };
+    let candidate = (topology, vec![0, 1]);
+    let edge_geometry = [MeshEdgeGeometry::Line];
+    let edge_candidates = vec![vec![[0, 1]]];
+    let edge_identity_evidence = [false];
+    let coordinate_gauge = MeshCoordinateGauge {
+        components: vec![vec![vec![0, 1]]],
+    };
+    let gauge = MeshCandidateGauge {
+        edge_rows: &edge_rows,
+        edge_faces: &[],
+        edge_geometry: &edge_geometry,
+        edge_candidates: &edge_candidates,
+        edge_identity_evidence: &edge_identity_evidence,
+        coordinate_gauge: Some(&coordinate_gauge),
+    };
+    let run = |ctx: &DecodeContext<'_>| {
+        mesh_candidates_equivalent_with_context(ctx, &candidate, &candidate, Some(gauge))
+    };
+    catia_test_context!(service_ctx);
+    assert!(crate::test_support::with_service_context(run).expect("service resource budget"));
+    assert!(canonicalize_mesh_candidate_for_output(
+        &service_ctx,
+        &candidate.0,
+        &candidate.1,
+        Some(gauge),
+    )
+    .expect("service resource budget")
+    .is_some());
+}

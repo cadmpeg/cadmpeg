@@ -4710,4 +4710,87 @@ mod route_tests {
     }
 
     mod boundary_cases;
+
+    #[test]
+    fn e5_unused_surface_stash_result() {
+        let topology = E5Topology {
+            bodies: Vec::new(),
+            faces: Vec::new(),
+            edges: BTreeMap::new(),
+            pcurves: BTreeMap::new(),
+            bounds: BTreeMap::new(),
+            curve_supports: BTreeMap::new(),
+            vertex_refs: Vec::new(),
+        };
+        let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+            let mut ir = CadIr::empty();
+            ir.model.surfaces.push(super::Surface {
+                id: SurfaceId::compose(
+                    &cadmpeg_ir::identity_namespace!("catia", "e5", "surf"),
+                    0usize,
+                ),
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                    cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                        Point3::new(0.0, 0.0, 0.0),
+                        Vector3::new(0.0, 0.0, 1.0),
+                        Vector3::new(1.0, 0.0, 0.0),
+                    )
+                    .expect("valid test plane"),
+                )),
+                source_object: None,
+            });
+            let mut unused = Vec::new();
+            super::prune_e5_unused_surfaces(
+                ctx,
+                &mut ir,
+                &mut AnnotationBuilder::new(),
+                &topology,
+                &HashMap::new(),
+                (&BTreeMap::new(), &BTreeMap::new()),
+                &mut unused,
+            )?;
+            Ok::<_, cadmpeg_core::CodecError>((ir.model.surfaces, unused))
+        };
+        let (surfaces, unused) = crate::test_support::with_service_context(run)
+            .expect("service budget admits the unused surface stash");
+        assert!(surfaces.is_empty());
+        assert_eq!(unused.len(), 1);
+    }
+
+    #[test]
+    fn e5_jet_pcurve_result() {
+        let surface = E5Surface {
+            pos: 0,
+            record_id: 7,
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .expect("valid plane fixture"),
+            )),
+            uv_scale: finite_pair([1.0, 1.0]),
+        };
+        let pcurve = jet_pcurve(
+            7,
+            vec![0.0, 1.0],
+            vec![6, 6],
+            vec![[0.0, 0.0], [1.0, 0.0]],
+            vec![[1.0, 0.0]; 2],
+            vec![[0.0, 0.0]; 2],
+            [0.0, 1.0],
+        );
+        let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+            e5_pcurve_on_surface(
+                ctx,
+                &pcurve,
+                &surface,
+                &mut crate::nurbs::LaneRefusals::new(),
+            )
+        };
+        assert!(crate::test_support::with_service_context(run)
+            .expect("service resource budget")
+            .is_some());
+    }
 }

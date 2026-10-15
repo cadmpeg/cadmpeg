@@ -2147,4 +2147,65 @@ mod tests {
         );
         assert!(ir.model.sketch_constraints.is_empty());
     }
+
+    #[test]
+    fn sketch_unique_record_indexes_result() {
+        let (_, native, _, _) = fixture(false);
+        let admitted = super::unique_entity_records(&native);
+        assert!(admitted.get(native.entity_records[0].id.as_str()).is_some());
+    }
+
+    #[test]
+    fn sketch_native_identity_indexes_result() {
+        let (mut ir, _, _, _) = fixture(false);
+        let admitted = crate::test_support::with_service_context(|ctx| {
+            super::sketch_ids_by_native_ref(ctx, &ir)
+        })
+        .expect("service profile admits sketch identity index");
+        assert!(admitted.get("sketch-object").is_some());
+        ir.model.sketch_entities.push(
+            SketchEntity::new(
+                SketchEntityId::mint("synthetic:test:sketch-entity#0".to_string())
+                    .expect("identity grammar"),
+                ir.model.sketches[0].id.clone(),
+                SketchGeometry::native(cadmpeg_core::nonblank_literal!("2DPoint")),
+            )
+            .with_native_ref(Some("field-record".to_string())),
+        );
+        let admitted = crate::test_support::with_service_context(|ctx| {
+            super::sketch_entities_by_native_ref(ctx, &ir)
+        })
+        .expect("service profile admits native entity index");
+        assert!(admitted.get("field-record").is_some());
+    }
+
+    #[test]
+    fn sketch_transfer_result() {
+        let (mut ir, native, transfer, graph_scope) = native_sketch_fixture("Point");
+        let admitted = crate::test_support::with_service_context(|ctx| {
+            transfer_native_sketch_entities(ctx, &mut ir, &native, &transfer, &graph_scope)
+        })
+        .expect("service profile admits sketch scan");
+        assert!(admitted.is_empty());
+    }
+
+    #[test]
+    fn sketch_constraint_scan_result() {
+        let (mut ir, native, transfer, graph_scope) = native_sketch_fixture("Point");
+        let admitted = crate::test_support::with_service_context(|ctx| {
+            transfer_native_sketch_constraints(ctx, &mut ir, &native, &transfer, &graph_scope)
+        })
+        .expect("service profile admits constraint scan");
+        assert!(admitted.is_empty());
+    }
+
+    #[test]
+    fn sketch_range_properties_result() {
+        let (_, native, _, _) = fixture(false);
+        let range = native.entity_records[0]
+            .constraint_range()
+            .expect("constraint range");
+        let admitted = super::constraint_properties(range);
+        assert_eq!(admitted["catia_constraint_value"], "CstAttr_Dimension");
+    }
 }

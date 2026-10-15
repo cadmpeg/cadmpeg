@@ -981,4 +981,20 @@ mod tests {
             5
         );
     }
+
+    #[test]
+    fn appearance_packet_views_result() {
+        let input = native(vec![inline(&[0x01, 1, 2, 3])]);
+        let admitted = crate::test_support::with_service_context(|ctx| {
+            transfer(
+                ctx,
+                &mut model(0),
+                &input,
+                &crate::decode::ModelingGraphScope::Unscoped,
+                None,
+            )
+        })
+        .expect("service profile admits one appearance packet");
+        assert_eq!(admitted.decoded_packets(), 1);
+    }
 }

@@ -4,6 +4,7 @@ use crate::families::b2::records::B2OwnerReferenceEncoding;
 use crate::families::b5::graph::B5LogicalVertex;
 use crate::families::standard::decode::associate_standard_freeform_e5_rolling_ball_jets;
 use crate::families::standard::decode::associate_standard_freeform_e5_surfaces;
+use crate::families::standard::decode::bind_standard_a5_owner_surfaces;
 use crate::families::standard::decode::combine_propagated_endpoint_pairs;
 use crate::families::standard::decode::corroborate_successor_endpoint_points;
 use crate::families::standard::decode::edge_geometry::build_standard_edge_curve;
@@ -24,11 +25,17 @@ use crate::families::standard::decode::owner_matches_a5_carrier;
 use crate::families::standard::decode::point_on_standard_face;
 use crate::families::standard::decode::same_cone_generator_pair;
 use crate::families::standard::decode::standard_circle_endpoint_candidates;
+use crate::families::standard::decode::standard_curve_edge_classes;
+use crate::families::standard::decode::standard_curve_geometry_gauge_keys;
 use crate::families::standard::decode::standard_endpoint_pair_supports_topology as charged_endpoint_pair_supports_topology;
+use crate::families::standard::decode::standard_face_boundary_witnesses;
 use crate::families::standard::decode::standard_face_point_membership;
+use crate::families::standard::decode::standard_freeform_e5_carrier_ids;
+use crate::families::standard::decode::standard_id;
 use crate::families::standard::decode::standard_serialized_endpoint_pairs;
 use crate::families::standard::decode::standard_successor_endpoint_points;
 use crate::families::standard::decode::unique_native_identity_points;
+use crate::families::standard::decode::StandardConsolidatedSource;
 use crate::families::standard::decode::StandardRollingBallSource;
 use crate::families::standard::decode::StandardSurfaceProcedure;
 use crate::families::standard::records::StandardCurveGeometry;
@@ -1413,4 +1420,132 @@ fn owner_carrier_helper_preserves_session_depth_refusal() {
         assert_eq!(ctx.resource_refusal(), Some(limit));
         assert_eq!(owner_matches_a5_carrier(ctx, &tail, &surface), Err(limit));
     });
+}
+
+#[test]
+fn standard_e5_carrier_identity_maps_result() {
+    let mut stream = e5_torus_stream();
+    let mut wrapper = vec![0x85, 0xaa, 0x81, 0x82, 0x83, 0x84];
+    wrapper.extend_from_slice(&[0; 38]);
+    append_e5_record(&mut stream, 0xf1, 8, &wrapper);
+    append_e5_record(&mut stream, 0x00, 7, &[0x82, 0x88, 0x89, 1, 0]);
+    assert_eq!(standard_freeform_e5_carrier_ids(&stream).get(&7), Some(&42));
+}
+
+#[test]
+fn a5_owner_domain_entries_result() {
+    let domains = vec![vec![(0, vec![7])]];
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| {
+            invariant_face_carrier_bindings(ctx, &domains, 1, None)
+        })
+        .expect("service context admits one owner domain"),
+        Some(vec![Some(7)])
+    );
+}
+
+#[test]
+fn a5_face_witness_index_result() {
+    let mut ir = CadIr::empty();
+    ir.model.points.push(Point::new(
+        PointId::mint("catia:test:point#a5-witness").expect("identity grammar"),
+        FinitePoint3::new(Point3::new(1.0, 0.0, 0.0)).expect("finite point"),
+        None,
+    ));
+    assert!(crate::test_support::with_service_context(|ctx| {
+        standard_face_boundary_witnesses(ctx, &ir)
+    })
+    .expect("service context admits witness index")
+    .is_empty());
+}
+
+#[test]
+fn a5_owner_binding_result() {
+    let mut bytes = crate::test_support::test_a5a8::a5_surface_stream();
+    bytes.extend(crate::test_support::test_b2::b2_all_compact_owner_packet_stream());
+    let records = crate::wire::records::consolidated_records(&bytes);
+    assert!(!crate::test_support::with_service_context(|ctx| {
+        crate::families::a5a8::records::a5_surfaces_from_records(
+            ctx,
+            &bytes,
+            &records,
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+        .expect("service decode")
+    })
+    .is_empty());
+    assert!(
+        !crate::families::b2::records::b2_owner_packets_from_records(&bytes, &records)
+            .collect::<Vec<_>>()
+            .is_empty()
+    );
+    let mut ir = CadIr::empty();
+    let surface_id = SurfaceId::mint("catia:standard:surface#a5-limit").expect("identity grammar");
+    ir.model.surfaces.push(Surface {
+        id: surface_id.clone(),
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+        source_object: None,
+    });
+    ir.model.faces.push(Face {
+        id: FaceId::mint("catia:standard:face#0").expect("identity grammar"),
+        shell: ShellId::mint("catia:standard:shell#0").expect("identity grammar"),
+        surface: surface_id,
+        sense: Sense::Forward,
+        loops: cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
+        name: None,
+        color: None,
+        tolerance: None,
+    });
+    let source = StandardConsolidatedSource {
+        data: &bytes,
+        records: &records,
+    };
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| {
+            bind_standard_a5_owner_surfaces(
+                ctx,
+                &mut ir,
+                &mut AnnotationBuilder::new(),
+                source,
+                &[],
+                &cadmpeg_core::decode::WorkBudget::new(100),
+                &mut crate::nurbs::LaneRefusals::new(),
+            )
+        })
+        .expect("service context admits owner search"),
+        0
+    );
+}
+
+#[test]
+fn standard_endpoint_and_edge_builders_result() {
+    let support = StandardCurveSupport {
+        pos: 0,
+        tag: 7,
+        faces: [0, 1],
+        geometry: StandardCurveGeometry::Line,
+    };
+    let supports = [support];
+
+    assert_eq!(standard_curve_edge_classes(&supports), [0]);
+    assert_eq!(standard_curve_geometry_gauge_keys(&supports).len(), 1);
+}
+
+#[test]
+fn native_endpoint_evidence_result() {
+    assert_eq!(
+        combine_propagated_endpoint_pairs(
+            Some(vec![Some([0, 1]), None]),
+            Some(vec![None, Some([2, 3])])
+        ),
+        Some(vec![Some([0, 1]), Some([2, 3])])
+    );
+}
+
+#[test]
+fn standard_topology_identity_result() {
+    use cadmpeg_ir::ids::LoopId;
+    let admitted =
+        standard_id("loop", format_args!("0:0"), LoopId::mint).expect("valid loop identity");
+    assert_eq!(admitted.as_str(), "catia:standard:loop#0:0");
 }

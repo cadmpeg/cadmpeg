@@ -1460,3 +1460,265 @@ fn exact_sketch_owner_declaration_transfers_identity_without_geometry() {
 
 mod feature_identity;
 mod parentage;
+
+#[test]
+fn feature_transfer_lookup_result() {
+    let native = CatiaNative {
+        design_objects: vec![design_object("synthetic:test:object#one", None)],
+        ..CatiaNative::default()
+    };
+    let mut ir = CadIr::empty();
+    let service = crate::test_support::with_service_context(|ctx| {
+        transfer_design_features(
+            ctx,
+            &mut ir,
+            &native,
+            &crate::decode::ModelingGraphScope::Unscoped,
+        )
+    })
+    .expect("service profile admits feature lookup");
+    assert!(service.feature_ids.is_empty());
+}
+
+#[test]
+fn principal_and_reference_features_result() {
+    let object = design_object("synthetic:test:object#plane", None);
+    let record = object_record("plane-record", None, None, None, None, None);
+
+    let mut ir = CadIr::empty();
+    let mut transfer = DesignFeatureTransfer::default();
+    let principal = super::PrincipalPlaneCandidate {
+        object: &object,
+        declarations: vec![&record],
+        plane: cadmpeg_ir::features::PrincipalPlane::Top,
+        declaration_class: "xy-plane",
+    };
+    crate::test_support::with_service_context(|ctx| {
+        super::transfer_principal_plane(ctx, &mut ir, &mut transfer, principal)
+    })
+    .expect("service profile admits principal plane");
+    assert_eq!(ir.model.features.len(), 1);
+    let reference = super::ReferencePlaneCandidate {
+        object: &object,
+        owner_record: &record,
+        kind: "GSMPlaneOffset",
+    };
+    let mut reference_ir = CadIr::empty();
+    let mut reference_transfer = DesignFeatureTransfer::default();
+    crate::test_support::with_service_context(|ctx| {
+        super::transfer_reference_plane(ctx, &mut reference_ir, &mut reference_transfer, &reference)
+    })
+    .expect("service profile admits reference plane");
+    assert_eq!(reference_ir.model.features.len(), 1);
+}
+
+#[test]
+fn principal_plane_declaration_list_result() {
+    let mut object = design_object("synthetic:test:object#plane", None);
+    object.owner_record = Some("plane-record".to_string());
+    object.fields.push("plane-record".to_string());
+    let record = object_record("plane-record", None, None, None, None, None);
+    let records = HashMap::from([(record.id.as_str(), &record)]);
+    assert!(super::principal_plane_candidate(&object, &records).is_none());
+}
+
+#[test]
+fn sketch_and_operation_feature_rows_result() {
+    let native = sketch_owner_native();
+    let sketch_object = &native.design_objects[0];
+    let sketch_record = &native.object_graphs[0].records[0];
+    let mut ir = CadIr::empty();
+    let mut transfer = DesignFeatureTransfer::default();
+    crate::test_support::with_service_context(|ctx| {
+        super::transfer_sketch(ctx, &mut ir, &mut transfer, sketch_object, sketch_record)
+    })
+    .expect("service profile admits sketch feature");
+    assert_eq!(ir.model.sketches.len(), 1);
+    assert_eq!(ir.model.features.len(), 1);
+    let operation_object = design_object("synthetic:test:object#operation", None);
+    let operation_record = object_record("operation-record", None, None, None, None, None);
+    let candidate = super::NativeOperationCandidate {
+        object: &operation_object,
+        owner_record: &operation_record,
+        kind: super::NativeOperationClass::EdgeFillet,
+    };
+    let records = HashMap::from([(operation_record.id.as_str(), &operation_record)]);
+    let entities = HashMap::new();
+    let objects = HashMap::from([(operation_object.id.as_str(), &operation_object)]);
+    let object_ids = HashSet::new();
+    let sources = super::NativeOperationSources {
+        object_records: &records,
+        entities: &entities,
+        design_objects: &objects,
+        object_ids: &object_ids,
+    };
+    let mut operation_ir = CadIr::empty();
+    let mut operation_transfer = DesignFeatureTransfer::default();
+    crate::test_support::with_service_context(|ctx| {
+        super::transfer_native_operation(
+            ctx,
+            &mut operation_ir,
+            &mut operation_transfer,
+            &candidate,
+            &sources,
+        )
+    })
+    .expect("service profile admits native operation");
+    assert_eq!(operation_ir.model.features.len(), 1);
+}
+
+#[test]
+fn feature_parameter_name_indexes_result() {
+    let mut ir = CadIr::empty();
+    let mut value = parameter("one", "native");
+    value.name = "Length".to_string();
+    ir.model.parameters.push(value);
+    crate::test_support::with_service_context(|ctx| normalize_parameter_names(ctx, &mut ir))
+        .expect("service profile admits name indexes");
+    assert_eq!(ir.model.parameters[0].name, "Length");
+}
+
+#[test]
+fn exact_parameter_owner_lookup_result() {
+    let object_id = "synthetic:test:object#owner";
+    let native = CatiaNative {
+        object_graphs: vec![CatiaObjectGraph {
+            id: "graph".to_string(),
+            byte_offset: 0,
+            byte_len: 0,
+            finjpl_segment: None,
+            outer_container: None,
+            catalog_byte_offset: None,
+            catalog: None,
+            records: vec![object_record(
+                "owner-record",
+                Some(object_id),
+                Some(1),
+                None,
+                None,
+                None,
+            )],
+        }],
+        entity_records: vec![entity_record("owner-entity", "owner-record", 0, 1)],
+        design_objects: vec![design_object(object_id, None)],
+        ..CatiaNative::default()
+    };
+    let feature_id = FeatureId::mint("synthetic:test:id#owner").expect("identity grammar");
+    let transfer = DesignFeatureTransfer {
+        feature_ids: HashMap::from([(object_id.to_string(), feature_id.clone())]),
+        ..DesignFeatureTransfer::default()
+    };
+    let mut ir = CadIr::empty();
+    ir.model.parameters.push(parameter("one", "owner-entity"));
+    crate::test_support::with_service_context(|ctx| {
+        transfer.assign_parameter_owners(ctx, &mut ir, &native)
+    })
+    .expect("service profile admits owner indexes");
+    assert_eq!(ir.model.parameters[0].owner.as_ref(), Some(&feature_id));
+}
+
+#[test]
+fn feature_dependency_lookup_result() {
+    let object_id = "synthetic:test:object#owner";
+    let native = CatiaNative {
+        design_objects: vec![design_object(object_id, None)],
+        ..CatiaNative::default()
+    };
+    let transfer = DesignFeatureTransfer::default();
+    let mut ir = CadIr::empty();
+    ir.model.features.push(feature("owner", object_id));
+    crate::test_support::with_service_context(|ctx| {
+        transfer.assign_feature_dependencies(ctx, &mut ir, &native)
+    })
+    .expect("service profile admits dependency indexes");
+    assert!(ir.model.features[0].dependencies.is_empty());
+}
+
+#[test]
+fn native_operation_owned_object_rows_result() {
+    let object = design_object("synthetic:test:object#operation", None);
+    let objects = HashMap::from([(object.id.as_str(), &object)]);
+    let records = HashMap::new();
+    let entities = HashMap::new();
+    let operation_ids = HashSet::new();
+    let admitted = super::native_operation_definition_properties(
+        &object,
+        &records,
+        &entities,
+        &objects,
+        &operation_ids,
+    )
+    .expect("service profile admits operation owner rows");
+    assert!(admitted.source_properties.is_empty());
+}
+
+#[test]
+fn native_operation_parameter_map_result() {
+    let mut ir = CadIr::empty();
+    let mut owner = feature("owner", "native");
+    owner
+        .evaluation
+        .set_definition(FeatureDefinition::Operation(FeatureOperation::Native {
+            kind: cadmpeg_ir::features::NativeFeatureKind::Other("Custom".to_string()),
+            parameters: BTreeMap::new(),
+        }));
+    ir.model.features.push(owner);
+    let mut value = parameter("one", "native-parameter");
+    value.name = "Length".to_string();
+    ir.model.parameters.push(value);
+    let owners = HashMap::from([(
+        ir.model.parameters[0].id.clone(),
+        ir.model.features[0].id.clone(),
+    )]);
+    crate::test_support::with_service_context(|ctx| {
+        assign_native_operation_parameter_values(ctx, &mut ir, &owners)
+    })
+    .expect("service profile admits operation values");
+    let FeatureDefinition::Operation(FeatureOperation::Native { parameters, .. }) =
+        ir.model.features[0].evaluation.definition()
+    else {
+        panic!("expected native operation")
+    };
+    assert_eq!(parameters.get("Length").map(String::as_str), Some("1 mm"));
+}
+
+#[test]
+fn native_operation_property_values_result() {
+    let value = crate::native::CatiaEntitySchemaValue {
+        offset: 7,
+        ordinal: 1,
+        entry: "catalog-entry".to_string(),
+        value: "Length".to_string(),
+    };
+    let prefix = cadmpeg_core::nonblank_literal!("catia_definition_value_0");
+    let properties = {
+        let mut properties = BTreeMap::new();
+        super::insert_schema_value_properties(&mut properties, &prefix, &value)
+            .expect("service profile admits operation properties");
+        properties
+    };
+    assert_eq!(
+        properties
+            .get("catia_definition_value_0_entry")
+            .map(String::as_str),
+        Some("catalog-entry")
+    );
+    assert_eq!(
+        properties
+            .get("catia_definition_value_0_value")
+            .map(String::as_str),
+        Some("Length")
+    );
+}
+
+#[test]
+fn native_sweep_unresolved_references_result() {
+    let admitted = super::native_operation_definition(
+        super::NativeOperationClass::SweepThickThin1,
+        "synthetic:test:object#sweep",
+    );
+    assert!(matches!(
+        admitted,
+        FeatureDefinition::Operation(FeatureOperation::Sweep { .. })
+    ));
+}

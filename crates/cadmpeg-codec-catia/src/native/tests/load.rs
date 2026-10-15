@@ -1124,3 +1124,147 @@ fn native_load_derives_complete_source_ordered_preview_views() {
     invalid_data.preview_images[0].data[0] = 0;
     assert_rejected(invalid_data);
 }
+
+#[test]
+fn native_projection_result() {
+    let mut native = super::super::CatiaNative::default();
+    native.catalogs.push(super::super::CatiaCatalog {
+        id: "catia:catalog#0".to_string(),
+        byte_offset: 0,
+        byte_len: 1,
+        entries: vec![super::super::CatiaCatalogEntry {
+            id: "catia:catalog-entry#0".to_string(),
+            parent: "catia:catalog#0".to_string(),
+            ordinal: 0,
+            byte_offset: 0,
+            value: "schema".to_string(),
+        }],
+    });
+    let service = super::super::CatiaArenaProjection::from_owned(native.clone())
+        .expect("service native projection budget");
+    assert_eq!(service.catalogs.len(), 1);
+    assert_eq!(service.catalog_entries.len(), 1);
+}
+
+#[test]
+fn legacy_native_projection_result() {
+    let mut bytes = vec![0xea];
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    bytes.extend_from_slice(&[0x81, 0xfd, 0x8c]);
+    bytes.extend_from_slice(b"\xde\x04\xfe\xfe\x12CATCatalogManager");
+    let admitted = super::super::legacy_entity_runs(&bytes);
+    assert_eq!(admitted.len(), 1);
+    assert_eq!(admitted[0].identities.len(), 1);
+}
+
+#[test]
+fn native_graph_projection_result() {
+    let bytes = object_graph_stream();
+    let parsed = crate::object_graph::parse(&bytes).expect("fixture has an object graph");
+    let admitted = super::super::projection::native_object_graph(parsed, Vec::new(), None, None);
+    assert!(!admitted.0.records.is_empty());
+}
+
+#[test]
+fn native_incoming_incidences_result() {
+    let file = standard_catpart_with_configuration_incidences(8, 5, 7);
+    let native = crate::native::CatiaNative::decode(&file);
+    let graph = &native.object_graphs[0];
+    let admitted = super::super::entity_incidences(&graph.records, &graph.id, 5);
+    assert!(!admitted.0.is_empty());
+}
+
+#[test]
+fn configuration_chain_derivation_result() {
+    let native =
+        crate::native::CatiaNative::decode(&standard_catpart_with_schema_configuration_row_chain());
+    let classes = super::super::entity_class_index(
+        native.object_graphs.iter().flat_map(|graph| &graph.records),
+    );
+    let (_, _, entities, terminal_nulls, _) =
+        super::super::semantic_entity_indices(&native.entity_records, &classes)
+            .expect("native semantic indices fit service limits");
+    let derive = || {
+        super::super::derive_schema_configuration_row_chains(
+            &native.entity_records,
+            &entities,
+            &classes,
+            &terminal_nulls,
+        )
+    };
+    let chains = derive();
+    assert_eq!(chains, native.schema_configuration_row_chains);
+}
+
+#[test]
+fn native_semantic_indices_result() {
+    let native =
+        crate::native::CatiaNative::decode(&standard_catpart_with_schema_configuration_row_chain());
+    let records = native
+        .object_graphs
+        .iter()
+        .flat_map(|graph| &graph.records)
+        .collect::<Vec<_>>();
+    let classes = super::super::entity_class_index(records.iter().copied());
+    assert!(!classes.is_empty());
+    let admitted = super::super::semantic_entity_indices(&native.entity_records, &classes)
+        .expect("service profile admits semantic indices");
+    assert!(!admitted.2.is_empty());
+}
+
+#[test]
+fn native_relation_signature_result() {
+    let source = "(#1_ : #In Length) : Real\n";
+    let service = super::super::relation_type_signature(None, source).expect("valid signature");
+    assert_eq!(service.inputs[0].parameter, "#1_");
+}
+
+#[test]
+fn native_configuration_production_result() {
+    let file = standard_catpart_with_configuration_incidences(8, 5, 7);
+    let native = crate::native::CatiaNative::decode(&file);
+    let graph = &native.object_graphs[0];
+    let configuration_entity = &native.entity_records[0];
+    let configuration_object = graph
+        .records
+        .iter()
+        .find(|record| record.id == configuration_entity.object_record)
+        .expect("configuration object record");
+
+    let classes = super::super::entity_class_index(graph.records.iter());
+    let (expressions, expression_entities, entities, terminal_nulls, bindings) =
+        super::super::semantic_entity_indices(&native.entity_records, &classes)
+            .expect("service profile admits semantic indexes");
+    let references = super::super::CatiaEntityReferenceIndex {
+        entities: &entities,
+        classes: &classes,
+        terminal_nulls: &terminal_nulls,
+    };
+    let service = super::super::object_production(
+        configuration_entity,
+        configuration_object,
+        &references,
+        &expressions,
+        &expression_entities,
+        &bindings,
+    );
+    assert!(matches!(
+        service,
+        Some(crate::native::CatiaEntityObjectProduction::SchemaConfigurationRecord(_))
+    ));
+}
+
+#[test]
+fn native_graph_catalog_link_result() {
+    let bytes = standard_catpart_with_value_block();
+    let native = crate::test_support::with_service_context(|ctx| {
+        super::super::CatiaNative::decode_with_record_sources(
+            ctx,
+            &bytes,
+            &[],
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+    })
+    .expect("service decode");
+    assert!(native.object_graphs[0].catalog.is_some());
+}

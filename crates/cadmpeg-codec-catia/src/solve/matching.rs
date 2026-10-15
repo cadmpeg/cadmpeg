@@ -619,6 +619,7 @@ mod tests {
         });
     }
 
+    use crate::solve::matching::unique_coordinate_bijection;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
     use super::{
@@ -748,5 +749,69 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn distinct_matching_domain_collection_result() {
+        let domains = [vec![0]];
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("matching fixture fits the service profile");
+        assert!(distinct_domain_matching_with_budget(
+            &ctx,
+            domains.iter().map(Vec::as_slice),
+            0,
+            None,
+            None,
+        )
+        .expect("service resource budget")
+        .is_none());
+    }
+
+    #[test]
+    fn matching_repair_domain_collection_result() {
+        let domains = [vec![0]];
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("matching fixture fits the service profile");
+        assert!(repair_distinct_domain_matching_with_budget(
+            &ctx,
+            domains.iter().map(Vec::as_slice),
+            1,
+            &[],
+            None,
+        )
+        .expect("service resource budget")
+        .is_none());
+    }
+
+    #[test]
+    fn matching_support_inner_arcs_result() {
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("matching fixture fits the service profile");
+        let mut domains = [vec![0, 2]];
+        assert!(
+            retain_distinct_matching_supports(&ctx, &mut domains, 2, &[0], None)
+                .expect("service resource budget")
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn coordinate_bijection_queue_result() {
+        use std::collections::HashSet;
+        let domains = [HashSet::from([0, 1]), HashSet::from([0, 1])];
+        let points = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]];
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("matching fixture fits the service profile");
+        assert!(unique_coordinate_bijection(&ctx, &domains, &points)
+            .expect("service resource budget")
+            .is_none());
     }
 }

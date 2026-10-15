@@ -637,3 +637,83 @@ fn endpoint_pruning_with_known_domains_keeps_them() {
     .expect("known domains admit the quad");
     assert_eq!(pruned, candidates);
 }
+
+#[test]
+fn mesh_boundary_assignment_projection_result() {
+    let bytes = standard_quad_topology_stream();
+    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        crate::solve::missing_edge::standard_mesh_boundary_assignments(
+            ctx,
+            &bytes,
+            &[[0, 0]; 4],
+            None,
+        )
+    };
+    assert!(crate::test_support::with_service_context(run)
+        .expect("service budget")
+        .is_some());
+}
+
+#[test]
+fn boundary_support_outer_rows_and_sets_result() {
+    use cadmpeg_core::decode::WorkBudget;
+    let boundary = [crate::solve::missing_edge::MeshBoundaryEdgeCandidate {
+        edge: 0,
+        start: 0,
+        end: 1,
+        reversed: None,
+    }];
+    let candidates = [vec![[0, 0]]];
+    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        crate::solve::missing_edge::boundary_endpoint_support(
+            ctx,
+            &boundary,
+            &candidates,
+            &WorkBudget::new(100),
+        )
+    };
+    assert!(crate::test_support::with_service_context(run)
+        .expect("service budget")
+        .is_some());
+}
+
+#[test]
+fn unmatched_standard_gap_walk_result() {
+    let mut bytes = standard_quad_topology_stream();
+    let header = bytes
+        .windows(3)
+        .position(|window| window == [0x01, 0x01, 0x04])
+        .expect("edge table header");
+    let first_row = header + 3;
+    bytes[first_row + 1] = 4;
+    bytes.splice(first_row + 6..first_row + 6, 0x7ffe_u16.to_be_bytes());
+    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        crate::solve::missing_edge::standard_mesh_missing_edge_assignments(
+            ctx,
+            &bytes,
+            &[[0, 0]; 4],
+            None,
+            false,
+        )
+    };
+    assert!(crate::test_support::with_service_context(run)
+        .expect("service budget")
+        .is_some());
+}
+
+#[test]
+fn endpoint_pruning_result() {
+    let bytes = standard_quad_topology_stream();
+    let candidates = [Vec::new(), vec![[1, 2]], vec![[2, 3]], vec![[3, 0]]];
+    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        crate::solve::missing_edge::standard_mesh_prune_endpoint_candidates(
+            ctx,
+            &bytes,
+            &[[0, 0]; 4],
+            &candidates,
+        )
+    };
+    assert!(crate::test_support::with_service_context(run)
+        .expect("service budget")
+        .is_some());
+}
