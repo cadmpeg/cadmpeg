@@ -7,37 +7,11 @@ use cadmpeg_ir::math::Point2;
 
 const EPS_TEXT_ROTATION: f64 = 1.0e-12;
 
-fn decode_sketch_points_from_stream(
-    bytes: &[u8],
-    meta: &crate::metastream::MetaStream,
-    stream: &str,
-) -> Result<Vec<crate::records::sketch_geometry::SketchPoint>, cadmpeg_core::CodecError> {
-    crate::design::test_support::with_test_decode_context(|ctx| {
-        crate::design::decode::sketch::decode_sketch_points_from_stream(ctx, bytes, meta, stream)
-    })
-}
+use crate::design::decode::sketch::decode_sketch_points_from_stream;
 
-fn decode_sketch_texts_from_stream(
-    bytes: &[u8],
-    meta: &crate::metastream::MetaStream,
-    stream: &str,
-) -> Result<Vec<crate::records::sketch_geometry::SketchText>, cadmpeg_core::CodecError> {
-    crate::design::test_support::with_test_decode_context(|ctx| {
-        crate::design::decode::sketch::decode_sketch_texts_from_stream(ctx, bytes, meta, stream)
-    })
-}
+use crate::design::decode::sketch::decode_sketch_texts_from_stream;
 
-fn decode_sketch_curve_identities_from_stream(
-    bytes: &[u8],
-    meta: &crate::metastream::MetaStream,
-    stream: &str,
-) -> Result<Vec<crate::records::sketch_geometry::SketchCurveIdentity>, cadmpeg_core::CodecError> {
-    crate::design::test_support::with_test_decode_context(|ctx| {
-        crate::design::decode::sketch::decode_sketch_curve_identities_from_stream(
-            ctx, bytes, meta, stream,
-        )
-    })
-}
+use crate::design::decode::sketch::decode_sketch_curve_identities_from_stream;
 
 #[test]
 fn native_sketch_text_refuses_zero_height() {
@@ -133,11 +107,10 @@ fn indexed_textex_tag_sketch_text_record_decodes_frame_and_path_types() {
 }
 
 #[test]
-fn sketch_text_output_refuses_collection_limit() {
+fn sketch_text_stream_decodes_its_text_records() {
     use crate::metastream::{MetaStream, RecordIndexEntry};
     use crate::records::entity_header::{BaseTypeGuid, SegmentTypeData};
     use crate::records::identity::{Located, ReferenceRun};
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     let bytes = indexed_sketch_text_record(1);
     let types = (0..32)
@@ -174,12 +147,8 @@ fn sketch_text_output_refuses_collection_limit() {
         }],
         secondary_records: Vec::new(),
     };
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::service();
-    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
     assert_eq!(
         crate::design::decode::sketch::decode_sketch_texts_from_stream(
-            &ctx,
             &bytes,
             &meta,
             "Design/BulkStream.dat"
@@ -188,119 +157,6 @@ fn sketch_text_output_refuses_collection_limit() {
         .len(),
         1
     );
-
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 4;
-    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-    let error = crate::design::decode::sketch::decode_sketch_texts_from_stream(
-        &ctx,
-        &bytes,
-        &meta,
-        "Design/BulkStream.dat",
-    )
-    .unwrap_err();
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "f3d sketch text records"
-    ));
-}
-
-fn sketch_text_with_retained_limit(
-    bytes: &[u8],
-    class_version: u32,
-    maximum: u64,
-) -> cadmpeg_core::CodecError {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = maximum;
-    let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
-    crate::design::decode::sketch::decode_sketch_text_record(
-        &ctx,
-        bytes,
-        "Design/BulkStream.dat",
-        crate::records::references::DesignClassTag::try_from("329".to_owned()).unwrap(),
-        class_version,
-        304,
-        7,
-    )
-    .unwrap_err()
-}
-
-#[test]
-fn sketch_text_identifier_refuses_retained_limit() {
-    let bytes = indexed_sketch_text_record(1);
-    let id_len = crate::ids::native_sketch_text_id("Design/BulkStream.dat", 7).len();
-    let text_len = "Arial".len() + "B6 Probe 47".len();
-    let error =
-        sketch_text_with_retained_limit(&bytes, 3, u64::try_from(text_len + id_len - 1).unwrap());
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-                && limit.operation == "f3d sketch text identifier"
-    ));
-}
-
-#[test]
-fn sketch_text_raw_bytes_refuse_retained_limit() {
-    let bytes = indexed_sketch_text_record(1);
-    let id_len = crate::ids::native_sketch_text_id("Design/BulkStream.dat", 7).len();
-    let text_len = "Arial".len() + "B6 Probe 47".len();
-    let maximum = u64::try_from(text_len + id_len + bytes.len() - 1).unwrap();
-    let error = sketch_text_with_retained_limit(&bytes, 3, maximum);
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-                && limit.operation == "f3d sketch text raw bytes"
-    ));
-}
-
-fn assert_sketch_text_utf16_refusal(bytes: &[u8], version: u32, maximum: u64) {
-    let error = sketch_text_with_retained_limit(bytes, version, maximum);
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-                && limit.operation == "f3d Design UTF-16 text"
-    ));
-}
-
-#[test]
-fn legacy_sketch_text_font_refuses_retained_limit() {
-    let bytes = sketch_text_record(&[("textex_tag", 109)], [None, None], None);
-    assert_sketch_text_utf16_refusal(&bytes, 4, 4);
-}
-
-#[test]
-fn indexed_sketch_text_font_refuses_retained_limit() {
-    let bytes = indexed_sketch_text_record(1);
-    assert_sketch_text_utf16_refusal(&bytes, 3, 4);
-}
-
-#[test]
-fn legacy_sketch_text_content_refuses_retained_limit() {
-    let bytes = sketch_text_record(&[("textex_tag", 109)], [None, None], None);
-    let maximum = u64::try_from("Arial".len() + "path text".len() - 1).unwrap();
-    assert_sketch_text_utf16_refusal(&bytes, 4, maximum);
-}
-
-#[test]
-fn txt_tag_sketch_text_content_refuses_retained_limit() {
-    let bytes = txt_tag_sketch_text_record(&[("txt_tag", 115)], &[], &[], (0.0, 0.0));
-    let maximum = u64::try_from("Arial".len() + "sketch text".len() - 1).unwrap();
-    assert_sketch_text_utf16_refusal(&bytes, 4, maximum);
-}
-
-#[test]
-fn indexed_sketch_text_content_refuses_retained_limit() {
-    let bytes = indexed_sketch_text_record(1);
-    let maximum = u64::try_from("Arial".len() + "B6 Probe 47".len() - 1).unwrap();
-    assert_sketch_text_utf16_refusal(&bytes, 3, maximum);
 }
 
 fn indexed_sketch_fixture() -> (
@@ -586,99 +442,6 @@ fn sketch_records_use_the_primary_index_live_copy() {
         decode_sketch_points_from_stream(&mismatched_secondary, &meta, "Design/BulkStream.dat",),
         Err(cadmpeg_core::CodecError::Malformed(_))
     ));
-}
-
-#[test]
-fn sketch_point_indices_and_output_refuse_collection_limits() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
-    let (bytes, meta, _, _, _, _) = indexed_sketch_fixture();
-    for (limit, operation) in [
-        (21, "f3d sketch point frame index"),
-        (26, "f3d sketch point type index"),
-        (31, "f3d sketch point output"),
-    ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = crate::design::decode::sketch::decode_sketch_points_from_stream(
-            &ctx,
-            &bytes,
-            &meta,
-            "Design/BulkStream.dat",
-        )
-        .expect_err("collection limit must refuse point decode");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
-            if failure.dimension == ResourceDimension::CollectionItems
-                && failure.operation == operation)
-        );
-    }
-}
-
-#[test]
-fn sketch_curve_output_refuses_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
-    let (bytes, meta, _, _, _, _) = indexed_sketch_fixture();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 21;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = crate::design::decode::sketch::decode_sketch_curve_identities_from_stream(
-        &ctx,
-        &bytes,
-        &meta,
-        "Design/BulkStream.dat",
-    )
-    .expect_err("collection limit must refuse curve decode");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
-        if failure.dimension == ResourceDimension::CollectionItems
-            && failure.operation == "f3d sketch curve output")
-    );
-}
-
-#[test]
-fn sketch_point_and_curve_ids_refuse_retained_limit() {
-    use cadmpeg_core::decode::ResourceDimension;
-
-    let (bytes, meta, _, _, _, _) = indexed_sketch_fixture();
-    for (decode_point, operation) in [
-        (true, "f3d sketch point ID"),
-        (false, "f3d sketch curve ID"),
-    ] {
-        let error = crate::test_support::resource_refusal_at(
-            ResourceDimension::RetainedBytes,
-            operation,
-            0,
-            |ctx| {
-                if decode_point {
-                    crate::design::decode::sketch::decode_sketch_points_from_stream(
-                        ctx,
-                        &bytes,
-                        &meta,
-                        "Design/BulkStream.dat",
-                    )
-                    .map(|_| ())
-                } else {
-                    crate::design::decode::sketch::decode_sketch_curve_identities_from_stream(
-                        ctx,
-                        &bytes,
-                        &meta,
-                        "Design/BulkStream.dat",
-                    )
-                    .map(|_| ())
-                }
-            },
-        );
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
-            if failure.dimension == ResourceDimension::RetainedBytes
-                && failure.operation == operation)
-        );
-    }
 }
 
 #[test]
@@ -1176,17 +939,14 @@ fn decode_sketch_text_at(
     bytes: &[u8],
     class_version: u32,
 ) -> Option<crate::records::sketch_geometry::SketchText> {
-    crate::test_support::with_decode_context(|decode_ctx| {
-        crate::design::decode::sketch::decode_sketch_text_record(
-            decode_ctx,
-            bytes,
-            "Design/BulkStream.dat",
-            crate::records::references::DesignClassTag::try_from("329".to_owned()).unwrap(),
-            class_version,
-            304,
-            7,
-        )
-    })
+    crate::design::decode::sketch::decode_sketch_text_record(
+        bytes,
+        "Design/BulkStream.dat",
+        crate::records::references::DesignClassTag::try_from("329".to_owned()).unwrap(),
+        class_version,
+        304,
+        7,
+    )
     .unwrap()
 }
 

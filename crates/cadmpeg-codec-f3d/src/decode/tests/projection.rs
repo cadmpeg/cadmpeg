@@ -34,7 +34,7 @@ fn design_projection_gaps(
     ir: &cadmpeg_ir::document::CadIr,
     native: &F3dNative,
 ) -> super::super::DesignProjectionGaps {
-    with_test_ctx(|ctx| super::super::design_projection_gaps(ctx, ir, native).unwrap())
+    super::super::design_projection_gaps(ir, native).unwrap()
 }
 
 #[test]
@@ -76,11 +76,13 @@ fn active_face_substitutions_have_a_distinct_loss_note() {
         transfer_ledger: Default::default(),
     };
 
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    report_design_projection_gaps(&ctx, &mut report, &ir, &native).unwrap();
+    report_design_projection_gaps(
+        &mut report,
+        &cadmpeg_test_support::service_decode_context(),
+        &ir,
+        &native,
+    )
+    .unwrap();
 
     let loss = report
         .losses
@@ -88,6 +90,126 @@ fn active_face_substitutions_have_a_distinct_loss_note() {
         .find(|loss| loss.code == F3dLossCode::FeatureFaceSelectionActiveSubstituted.kind())
         .expect("active-face substitution loss");
     assert_eq!(loss.message, "1 legacy face operand(s) use a current active-BREP face because no unique preceding-state face slot resolved.");
+}
+
+#[test]
+fn recipe_side_search_past_its_work_cap_reports_a_loss() {
+    let ir = cadmpeg_ir::document::CadIr::empty();
+    let mut native = F3dNative::default();
+    let mut operand: crate::records::topology::face::DesignFaceOperand =
+        serde_json::from_value(serde_json::json!({
+            "id": "f3d:test:face-operand#200",
+            "scope_record_index": 100,
+            "scope_reference_ordinal": 0,
+            "record_index": 200,
+            "byte_offset": 0,
+            "class_tag": "346",
+            "paired_byte_offset": 325,
+            "paired_class_tag": "262",
+            "recipe_record_index": 203,
+            "recipe_record_byte_offset": 341,
+            "recipe_id": "f3d:test:recipe#201",
+            "recipe_prefix_offset": 352,
+            "recipe_prefix_bytes": "",
+            "recipe_references": [],
+            "recipe_kind": "bounded_face",
+            "recipe_program_offset": 0,
+            "recipe_program": [],
+            "recipe_node_offsets": [],
+            "recipe_nodes": [],
+            "next_record_index": 202,
+            "next_byte_offset": 469
+        }))
+        .expect("face operand");
+    // One counted side with 3,000 payload-prefix splits needs more search
+    // work than the cap allows.
+    let mut program = vec![-1, -1, 2, 1, -1, 0, -1, 0, -1, 2, 5, -1, 7, -1];
+    program.extend_from_slice(&[0; 3000]);
+    operand
+        .recipe_nodes
+        .push(crate::records::topology::face::DesignFaceRecipeNode {
+            byte_offset: 0,
+            end_byte_offset: 4 * u64::try_from(program.len()).unwrap(),
+            program,
+            recipe_structure: None,
+        });
+    native.design_face_operands.push(operand);
+    let mut report = cadmpeg_ir::codec::DecodeBody {
+        transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(true),
+        coverage: cadmpeg_ir::report::decode::Coverage::default(),
+        losses: Vec::new(),
+        notes: Vec::new(),
+        transfer_ledger: Default::default(),
+    };
+
+    report_design_projection_gaps(
+        &mut report,
+        &cadmpeg_test_support::service_decode_context(),
+        &ir,
+        &native,
+    )
+    .unwrap();
+
+    let loss = report
+        .losses
+        .iter()
+        .find(|loss| loss.code == F3dLossCode::RecipeSideSearchBudgetExceeded.kind())
+        .expect("recipe search loss");
+    assert_eq!(loss.message, "1 Design recipe program(s) retain no recipe structure because their side-sequence search exceeded its work cap.");
+}
+
+#[test]
+fn capped_rectangular_pattern_instance_search_reports_a_loss() {
+    let ir = cadmpeg_ir::document::CadIr::empty();
+    let mut native = F3dNative::default();
+    let mut scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:parameter-scope#10",
+        crate::records::feature::scope::DesignFeatureKind::RPattern,
+        10,
+    );
+    if let crate::records::feature::scope::DesignScopePayloadMut::RPattern(slot)
+    | crate::records::feature::scope::DesignScopePayloadMut::RectangularPattern(slot) =
+        scope.payload_mut()
+    {
+        *slot = Some(
+            crate::records::feature::patterns::DesignRectangularPatternConstruction::try_from(
+                crate::records::feature::patterns::DesignRectangularPatternConstructionWire {
+                    u_count: 3,
+                    v_count: 1,
+                    u_extent: 10.0,
+                    v_extent: 0.0,
+                    owner_record_indices: [11, 12, 13, 14],
+                    value_offsets: [101, 102, 103, 104],
+                    instances: None,
+                    instance_search_capped: true,
+                },
+            )
+            .unwrap(),
+        );
+    }
+    native.design_parameter_scopes.push(scope);
+    let mut report = cadmpeg_ir::codec::DecodeBody {
+        transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(true),
+        coverage: cadmpeg_ir::report::decode::Coverage::default(),
+        losses: Vec::new(),
+        notes: Vec::new(),
+        transfer_ledger: Default::default(),
+    };
+
+    report_design_projection_gaps(
+        &mut report,
+        &cadmpeg_test_support::service_decode_context(),
+        &ir,
+        &native,
+    )
+    .unwrap();
+
+    let loss = report
+        .losses
+        .iter()
+        .find(|loss| loss.code == F3dLossCode::FeaturePatternInstanceSearchCapped.kind())
+        .expect("pattern instance search loss");
+    assert_eq!(loss.message, "1 rectangular pattern(s) have no instance transforms or direction because their instance search exceeded a local cap.");
 }
 
 #[test]
@@ -137,8 +259,7 @@ fn mesh_feature_binds_tessellations_in_design_body_order() {
         )]),
     };
 
-    with_test_ctx(|ctx| bind_mesh_feature_definitions(ctx, &mut features, &[scope], &projection))
-        .unwrap();
+    bind_mesh_feature_definitions(&mut features, &[scope], &projection).unwrap();
 
     assert_eq!(
         *features[0].evaluation.definition(),
@@ -151,78 +272,6 @@ fn mesh_feature_binds_tessellations_in_design_body_order() {
     assert!(!feature_definition_is_incomplete(
         features[0].evaluation.definition()
     ));
-}
-
-#[test]
-fn mesh_feature_tessellation_collection_refuses_limit() {
-    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
-
-    let scope_id = "f3d:Design/BulkStream.dat:design-parameter-scope#10";
-    let scope = DesignParameterScope::empty(
-        scope_id,
-        crate::records::feature::scope::DesignFeatureKind::BaseMeshFeature,
-        10,
-    );
-    let mut features = vec![Feature {
-        id: FeatureId::mint("test:model:feature#mesh-import-limit").unwrap(),
-        ordinal: 0,
-        name: None,
-        suppressed: None,
-        dependencies: Default::default(),
-        source_properties: Default::default(),
-        source_tag: Some("Base Mesh Feature".into()),
-        source_text: None,
-        source_content: Default::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Operation(FeatureOperation::Native {
-                kind: "Base Mesh Feature".into(),
-                parameters: Default::default(),
-            }),
-        ),
-        native_ref: Some(scope_id.into()),
-    }];
-    let projection = MeshProjection {
-        count: 1,
-        tessellations_by_scope: std::collections::HashMap::from([(
-            ("f3d:Design/BulkStream.dat".into(), 10),
-            vec!["tessellation:one".into()],
-        )]),
-    };
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error =
-        bind_mesh_feature_definitions(&ctx, &mut features, &[scope], &projection).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D mesh feature tessellations")
-    );
-}
-
-#[test]
-fn mesh_feature_tessellation_lookup_refuses_scoped_limit() {
-    let projection = MeshProjection {
-        count: 0,
-        tessellations_by_scope: std::collections::HashMap::new(),
-    };
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_materialized_bytes = 0;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::super::mesh_feature_tessellations(
-        &ctx,
-        &projection,
-        "f3d:Design/BulkStream.dat",
-        10,
-    )
-    .unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "look up F3D mesh feature tessellations")
-    );
 }
 
 #[test]
@@ -273,114 +322,6 @@ fn mesh_texture_ids_resolve_through_design_table_order() {
 }
 
 #[test]
-fn mesh_texture_assignments_report_collection_limit() {
-    let asset =
-        cadmpeg_ir::assets::AssetId::mint("synthetic:test:id#asset:one").expect("identity grammar");
-    let textures = [("resource:one".into(), asset)];
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("test decode context");
-    let error = mesh_texture_assignments(&ctx, Some(&[1]), &textures, 1)
-        .expect_err("one texture group exceeds the collection limit");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-            && limit.operation == "f3d mesh texture assignments")
-    );
-}
-
-fn one_mesh_texture() -> [(String, cadmpeg_ir::assets::AssetId); 1] {
-    [(
-        "resource:one".into(),
-        cadmpeg_ir::assets::AssetId::mint("synthetic:test:id#asset:one").unwrap(),
-    )]
-}
-
-#[test]
-fn mesh_texture_triangle_group_refuses_collection_limit() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 1;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = mesh_texture_assignments(&ctx, Some(&[1]), &one_mesh_texture(), 1).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D mesh texture triangles")
-    );
-}
-
-#[test]
-fn mesh_texture_output_refuses_collection_limit() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 2;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = mesh_texture_assignments(&ctx, Some(&[1]), &one_mesh_texture(), 1).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D mesh texture assignments")
-    );
-}
-
-#[test]
-fn mesh_texture_source_id_refuses_retained_limit() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = match cadmpeg_test_support::refusal::resource_limit_at(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-        "copy F3D mesh texture source ID",
-        |cap| {
-            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-            policy.limits.max_retained_bytes = cap;
-            let (ctx, _) =
-                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            mesh_texture_assignments(&ctx, Some(&[1]), &one_mesh_texture(), 1).map(|_| ())
-        },
-    ) {
-        cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
-        error => panic!("unexpected refusal: {error:?}"),
-    };
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = mesh_texture_assignments(&ctx, Some(&[1]), &one_mesh_texture(), 1).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "copy F3D mesh texture source ID")
-    );
-}
-
-#[test]
-fn mesh_texture_asset_id_refuses_retained_limit() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = match cadmpeg_test_support::refusal::resource_limit_at(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-        "copy F3D mesh texture asset ID",
-        |cap| {
-            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-            policy.limits.max_retained_bytes = cap;
-            let (ctx, _) =
-                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            mesh_texture_assignments(&ctx, Some(&[1]), &one_mesh_texture(), 1).map(|_| ())
-        },
-    ) {
-        cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
-        error => panic!("unexpected refusal: {error:?}"),
-    };
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = mesh_texture_assignments(&ctx, Some(&[1]), &one_mesh_texture(), 1).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "copy F3D mesh texture asset ID")
-    );
-}
-
-#[test]
 fn indexed_mesh_channels_project_default_and_override_selectors() {
     let attribute = crate::paramesh::MeshAttribute {
         role: 4,
@@ -394,10 +335,10 @@ fn indexed_mesh_channels_project_default_and_override_selectors() {
         addressing: crate::paramesh::MeshAttributeAddressing::Corner(vec![0, 2]),
     };
     let mut unresolved = std::collections::BTreeMap::new();
-    let channels = crate::test_support::with_decode_context(|ctx| {
-        mesh_attribute_channels(ctx, &[attribute], 3, &[[0, 1, 2]], &mut unresolved)
+    let channels = {
+        mesh_attribute_channels(&[attribute], 3, &[[0, 1, 2]], &mut unresolved)
             .expect("mesh attribute budget")
-    });
+    };
 
     assert!(unresolved.is_empty());
     assert_eq!(channels.len(), 1);
@@ -1264,121 +1205,9 @@ fn incomplete_feature_families_are_counted_by_source_operation() {
         "Canvas",
     ));
 
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert_eq!(
-        incomplete_feature_families(&ctx, &ir).unwrap(),
+        incomplete_feature_families(&ir),
         std::collections::BTreeMap::from([("EdgeFlange", 2), ("Hem", 1)])
-    );
-}
-
-#[test]
-fn incomplete_feature_family_index_refuses_collection_limit() {
-    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
-
-    let mut ir = cadmpeg_ir::document::CadIr::empty();
-    ir.model.features.push(Feature {
-        id: FeatureId::mint("synthetic:test:feature#1").unwrap(),
-        ordinal: 0,
-        name: None,
-        suppressed: None,
-        dependencies: Default::default(),
-        source_properties: Default::default(),
-        source_tag: Some("EdgeFlange".into()),
-        source_text: None,
-        source_content: Default::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Operation(FeatureOperation::Native {
-                kind: "EdgeFlange".into(),
-                parameters: Default::default(),
-            }),
-        ),
-        native_ref: None,
-    });
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = incomplete_feature_families(&ctx, &ir).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index incomplete F3D feature families")
-    );
-}
-
-#[test]
-fn projection_loss_refuses_collection_limit() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut report = cadmpeg_ir::codec::DecodeBody::new(
-        cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {},
-    );
-    let error = super::super::push_loss_vec(
-        &ctx,
-        &mut report.losses,
-        crate::loss::F3dLossCode::FeatureDefinitionIncomplete,
-        format_args!("one incomplete feature"),
-        "collect F3D projection losses",
-        "retain F3D projection loss",
-    )
-    .unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D projection losses")
-    );
-}
-
-#[test]
-fn projection_loss_refuses_retained_limit() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = match cadmpeg_test_support::refusal::resource_limit_at(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-        "retain F3D projection loss",
-        |cap| {
-            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-            policy.limits.max_retained_bytes = cap;
-            let (ctx, _) =
-                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let mut report = cadmpeg_ir::codec::DecodeBody::new(
-                cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {},
-            );
-            super::super::push_loss_vec(
-                &ctx,
-                &mut report.losses,
-                crate::loss::F3dLossCode::FeatureDefinitionIncomplete,
-                format_args!("one incomplete feature"),
-                "collect F3D projection losses",
-                "retain F3D projection loss",
-            )
-        },
-    ) {
-        cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
-        error => panic!("unexpected refusal: {error:?}"),
-    };
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut report = cadmpeg_ir::codec::DecodeBody::new(
-        cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {},
-    );
-    let error = super::super::push_loss_vec(
-        &ctx,
-        &mut report.losses,
-        crate::loss::F3dLossCode::FeatureDefinitionIncomplete,
-        format_args!("one incomplete feature"),
-        "collect F3D projection losses",
-        "retain F3D projection loss",
-    )
-    .unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "retain F3D projection loss")
     );
 }
 

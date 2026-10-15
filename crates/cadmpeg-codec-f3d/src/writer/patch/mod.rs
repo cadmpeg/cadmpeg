@@ -607,11 +607,7 @@ pub(crate) fn write_semantic(
             if read == 0 {
                 break;
             }
-            encode_ctx.extend_retained_bytes(
-                &mut bytes,
-                &chunk[..read],
-                "retain F3D patch ZIP entry",
-            )?;
+            bytes.extend_from_slice(&chunk[..read]);
         }
         if let Some(configuration) = configuration_edits.get(&name) {
             bytes.clone_from(configuration);

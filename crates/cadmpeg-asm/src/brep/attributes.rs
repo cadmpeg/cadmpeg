@@ -24,16 +24,14 @@ pub fn collect_attributes(
     let mut current = entity.ref_at(0);
     let mut chain = HashSet::new();
     while let Some(index) = current {
-        if !ctx.insert_hash_set(&mut chain, index, "ASM attribute chain")? {
+        if !chain.insert(index) {
             break;
         }
         let Some(record) = by_index.get(&index) else {
             break;
         };
-        if ctx.insert_hash_set(emitted, index, "ASM emitted attributes")? {
-            ctx.reserve_vec(out, 1, "ASM source attributes")?;
+        if emitted.insert(index) {
             out.push(source_attribute(
-                ctx,
                 record,
                 target.try_clone_for_decode(ctx, "ASM source attribute target")?,
                 format,
@@ -152,7 +150,6 @@ pub fn attribute_key(attribute: &SourceAttribute) -> &str {
 /// Serialize one attribute record's value chunks as a [`SourceAttribute`]
 /// bound to `target`. A NaN or infinite number refuses the record.
 pub fn source_attribute(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     record: &Record,
     target: AttributeTarget,
     format: IdFormat,
@@ -162,8 +159,7 @@ pub fn source_attribute(
     // rather than carrying an attribute value.
     let mut values = Vec::new();
     for token in record.chunks() {
-        ctx.reserve_vec(&mut values, 1, "ASM attribute values")?;
-        let value = attribute_value(ctx, token, format)?.ok_or_else(|| {
+        let value = attribute_value(token, format).ok_or_else(|| {
             cadmpeg_core::CodecError::malformed(format_args!(
                 "attribute record {} ({}) holds a non-finite number",
                 record.index, record.name
@@ -174,35 +170,23 @@ pub fn source_attribute(
     Ok(SourceAttribute {
         id: brep_id!(format, AttributeId, "attribute", record.index),
         target,
-        name: ctx.copy_retained_text(&record.name, "ASM attribute record name")?,
+        name: record.name.clone(),
         values,
     })
 }
 
 /// The attribute value one token carries, or `None` for a number that is not
 /// finite.
-fn attribute_value(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    token: &Token,
-    format: IdFormat,
-) -> Result<Option<AttributeValue>, cadmpeg_core::CodecError> {
-    Ok(Some(match token {
+fn attribute_value(token: &Token, format: IdFormat) -> Option<AttributeValue> {
+    Some(match token {
         Token::Char(value) => AttributeValue::Integer(i64::from(*value)),
         Token::Short(value) => AttributeValue::Integer(i64::from(*value)),
         Token::Long(value) | Token::Enum(value) | Token::Int64(value) => {
             AttributeValue::Integer(*value)
         }
-        Token::Float(value) => match AttributeValue::float(f64::from(*value)) {
-            Some(value) => value,
-            None => return Ok(None),
-        },
-        Token::Double(value) => match AttributeValue::float(*value) {
-            Some(value) => value,
-            None => return Ok(None),
-        },
-        Token::Str(value) => {
-            AttributeValue::String(ctx.copy_retained_text(value, "ASM attribute string")?)
-        }
+        Token::Float(value) => AttributeValue::float(f64::from(*value))?,
+        Token::Double(value) => AttributeValue::float(*value)?,
+        Token::Str(value) => AttributeValue::String(value.to_owned()),
         Token::True => AttributeValue::Boolean(true),
         Token::False => AttributeValue::Boolean(false),
         Token::Ref(value) => {
@@ -210,18 +194,10 @@ fn attribute_value(
         }
         Token::SubtypeOpen => AttributeValue::String("subtype_open".into()),
         Token::SubtypeClose => AttributeValue::String("subtype_close".into()),
-        Token::Position(value) | Token::Vector3(value) => match AttributeValue::vector(*value) {
-            Some(value) => value,
-            None => return Ok(None),
-        },
-        Token::Vector2(value) => match AttributeValue::vector(*value) {
-            Some(value) => value,
-            None => return Ok(None),
-        },
-        Token::Ident(value) | Token::SubIdent(value) => {
-            AttributeValue::String(ctx.copy_retained_text(value, "ASM attribute identifier")?)
-        }
-    }))
+        Token::Position(value) | Token::Vector3(value) => AttributeValue::vector(*value)?,
+        Token::Vector2(value) => AttributeValue::vector(*value)?,
+        Token::Ident(value) | Token::SubIdent(value) => AttributeValue::String(value.to_owned()),
+    })
 }
 
 /// Decode a native transform record into an IR affine transform, scaling the
@@ -426,17 +402,12 @@ pub fn attribute_chain_color(
 
 /// The first non-empty name attribute on `entity`'s attribute chain.
 pub fn attribute_chain_name(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     entity: &Record,
     by_index: &HashMap<i64, &Record, RandomState>,
-) -> Result<Option<String>, cadmpeg_core::CodecError> {
-    let Some(mut current) = entity.ref_at(0) else {
-        return Ok(None);
-    };
+) -> Option<String> {
+    let mut current = entity.ref_at(0)?;
     for _ in 0..by_index.len() {
-        let Some(record) = by_index.get(&current) else {
-            return Ok(None);
-        };
+        let record = by_index.get(&current)?;
         if record.name == "string_attrib-name_attrib-gen-attrib" {
             let mut values = record.tokens.iter().filter_map(|token| match token {
                 Token::Str(value) => Some(value.as_str()),
@@ -450,24 +421,20 @@ pub fn attribute_chain_name(
             }
             if let (Some("name"), Some(value)) = (previous, last) {
                 if !value.is_empty() {
-                    let name = ctx.copy_retained_text(value, "ASM attribute name")?;
-                    return Ok(Some(name));
+                    return Some(value.to_owned());
                 }
             }
         }
-        let Some(next) = attribute_next(record) else {
-            return Ok(None);
-        };
+        let next = attribute_next(record)?;
         current = next;
     }
-    Ok(None)
+    None
 }
 
 /// The `UnknownId` for a preserved carrier record. Shared by the passthrough
 /// `UnknownRecord` and any `SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown)` that links to it, so the
 /// reference resolves under validation.
 pub fn unknown_record_id(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     rec: &Record,
     format: IdFormat,
 ) -> Result<UnknownId, cadmpeg_core::CodecError> {
@@ -478,49 +445,19 @@ pub fn unknown_record_id(
     } else {
         rec.head()
     };
-    let name = ctx.copy_retained_text(head, "ASM unknown record kind")?;
+    let name = head.to_owned();
     let kind = IdentityComponent::try_new(name).map_err(|error| {
         cadmpeg_core::CodecError::malformed(format_args!(
             "invalid ASM source identity component: {error}"
         ))
     })?;
-    Ok(UnknownId::from(
-        format.try_brep_identity(ctx, &kind, rec.index)?,
-    ))
+    Ok(UnknownId::from(format.try_brep_identity(&kind, rec.index)?))
 }
 
 #[cfg(test)]
 mod tests {
     use super::decode_transform;
     use crate::sab::{Record, Token};
-
-    #[test]
-    fn unknown_record_identity_refuses_retained_limit() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-        use cadmpeg_core::CodecError;
-
-        let record = Record {
-            index: 1,
-            name: "mystery".into(),
-            tokens: std::sync::Arc::from([]),
-            offset: 0,
-            len: 0,
-        };
-        let expected = "f3d:brep:mystery#1";
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes =
-            7 + cadmpeg_core::decode::u64_from_index(expected.len()) - 1;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty test input fits input limit");
-        let error = super::unknown_record_id(&ctx, &record, crate::asm_format!("f3d"))
-            .expect_err("dynamic identity exceeds retained limit");
-        let CodecError::ResourceLimit(refusal) = error else {
-            panic!("expected resource refusal, got {error:?}");
-        };
-        assert_eq!(refusal.dimension, ResourceDimension::RetainedBytes);
-        assert_eq!(refusal.operation, "ASM unknown record identity");
-    }
 
     fn transform_record(scale: f64, x: [f64; 3]) -> Record {
         Record {

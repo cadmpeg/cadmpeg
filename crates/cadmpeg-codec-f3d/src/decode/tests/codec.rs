@@ -10,7 +10,6 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
-use cadmpeg_test_support::service_decode_context;
 use cadmpeg_test_support::EditableDecodeResult;
 
 const EXPECTED_HEADER_LINEAR_TOLERANCE: f64 = 1.0e-5;
@@ -318,9 +317,7 @@ fn reversed_edge_sense_reverses_its_conic_carrier() {
 #[test]
 fn delta_state_boundary_is_located_at_an_exact_identifier() {
     let bytes = synthetic_smbh();
-    let off = asm_header::solved_record_limit(&service_decode_context(), &bytes)
-        .expect("history scan")
-        .expect("has a delta_state");
+    let off = asm_header::solved_record_limit(&bytes).expect("has a delta_state");
     assert_eq!(&bytes[off..off + 2], &[0x0d, 0x0b]);
     assert_eq!(&bytes[off + 2..off + 13], b"delta_state");
 
@@ -329,29 +326,20 @@ fn delta_state_boundary_is_located_at_an_exact_identifier() {
     let mut smb = bytes;
     smb[39..47].copy_from_slice(&2u64.to_le_bytes());
     smb.truncate(off);
-    assert!(
-        asm_header::solved_record_limit(&service_decode_context(), &smb)
-            .expect("history scan")
-            .is_none()
-    );
+    assert!(asm_header::solved_record_limit(&smb).is_none());
 }
 
 #[test]
 fn history_preamble_record_is_the_modern_partition_boundary() {
     let direct = synthetic_smbh();
-    let delta = asm_header::solved_record_limit(&service_decode_context(), &direct)
-        .expect("history scan")
-        .unwrap();
+    let delta = asm_header::solved_record_limit(&direct).unwrap();
     let mut bytes = direct[..delta].to_vec();
     let expected = bytes.len();
     t_ident(&mut bytes, "Begin-of-ASM-History-Data");
     t_end(&mut bytes);
     bytes.extend_from_slice(&direct[delta..]);
 
-    assert_eq!(
-        asm_header::solved_record_limit(&service_decode_context(), &bytes).expect("history scan"),
-        Some(expected)
-    );
+    assert_eq!(asm_header::solved_record_limit(&bytes), Some(expected));
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let solved = cadmpeg_asm::test_support::sab::frame(
         &bytes,
@@ -369,9 +357,7 @@ fn history_preamble_record_is_the_modern_partition_boundary() {
 #[test]
 fn delta_state_text_inside_a_payload_cannot_cut_the_solved_stream() {
     let direct = synthetic_smbh();
-    let delta = asm_header::solved_record_limit(&service_decode_context(), &direct)
-        .expect("history scan")
-        .unwrap();
+    let delta = asm_header::solved_record_limit(&direct).unwrap();
     let start = asm_header::record_stream_start(&direct).unwrap();
     let mut bytes = direct[..start].to_vec();
     t_ident(&mut bytes, "metadata");
@@ -380,10 +366,7 @@ fn delta_state_text_inside_a_payload_cannot_cut_the_solved_stream() {
     let expected = bytes.len();
     bytes.extend_from_slice(&direct[delta..]);
 
-    assert_eq!(
-        asm_header::solved_record_limit(&service_decode_context(), &bytes).expect("history scan"),
-        Some(expected)
-    );
+    assert_eq!(asm_header::solved_record_limit(&bytes), Some(expected));
 }
 
 #[test]
@@ -583,56 +566,6 @@ fn inspect_enumerates_and_reads_headers() {
 }
 
 #[test]
-fn f3d_brep_scan_propagates_header_string_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    let bytes = synthetic_f3d(true);
-    let mut cap = 0;
-    let mut needed = None;
-    for _ in 0..128 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = cap;
-        let (limited, root) =
-            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
-        match container::scan(&limited, root) {
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes =>
-            {
-                let next = limit
-                    .used
-                    .checked_add(limit.additional)
-                    .expect("fixture charge fits u64");
-                if limit.operation == "retain kernel header product string" {
-                    needed = Some(next);
-                    break;
-                }
-                assert!(next > cap, "fixture advances to its next retained charge");
-                cap = next;
-            }
-            Ok(_) => panic!("BREP scan did not reach the header limit"),
-            Err(error) => panic!("BREP scan failed elsewhere: {error}"),
-        }
-    }
-    let needed = needed.expect("header string reached within fixture charges");
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = needed - 1;
-    let (limited, root) =
-        DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
-    assert!(matches!(
-        container::scan(&limited, root),
-        Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "retain kernel header product string"
-    ));
-    let (service, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
-        .expect("service context");
-    assert!(container::scan(&service, root).is_ok());
-}
-
-#[test]
 fn decode_refuses_when_max_entities_is_zero_before_ir_build() {
     use cadmpeg_core::decode::ResourceDimension;
 
@@ -735,12 +668,7 @@ fn smb_only_is_an_explicit_geometry_fallback_without_history() {
             "FusionAssetName[Active]/Breps.BlobParts/Body1.smb"
         );
         assert!(container::select_history_brep(scan).is_none());
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let policy = cadmpeg_core::decode::DecodePolicy::service();
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let notes =
-            container::summary_notes(&ctx, scan, container::SummaryScope::FullDecode).unwrap();
+        let notes = container::summary_notes(scan, container::SummaryScope::FullDecode);
         assert!(notes
             .iter()
             .any(|note| note.contains("no BREP header declares a history partition")));
@@ -859,9 +787,7 @@ fn smbh_header_string_region_starts_at_byte_47() {
 fn sab_framer_indexes_records_from_asmheader() {
     let bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).expect("record stream start");
-    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
-        .expect("history scan")
-        .unwrap_or(bytes.len());
+    let limit = asm_header::solved_record_limit(&bytes).unwrap_or(bytes.len());
     let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,

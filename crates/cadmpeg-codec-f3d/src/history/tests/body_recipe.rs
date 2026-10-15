@@ -96,9 +96,7 @@ fn form33_without_unique_body_proof_remains_unresolved() {
     .unwrap();
 
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    // Membership maps are fixed; each ambiguous query admits four candidate-set slots.
-    policy.limits.max_collection_items = 4_100;
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut candidates =

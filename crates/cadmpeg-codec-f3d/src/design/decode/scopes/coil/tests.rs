@@ -19,7 +19,6 @@ use crate::records::recipes::ConstructionRecipe;
 use crate::records::recipes::ConstructionRecipeKind;
 use crate::test_support::indexed_header;
 use crate::test_support::lp_utf16;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
 fn marked(bytes: &mut [u8], offset: usize, record_index: u32) {
     bytes[offset] = 1;
@@ -778,146 +777,6 @@ fn compact_coil_placement_accepts_face_recipe_selection() {
 }
 
 #[test]
-fn coil_face_selection_refuses_header_and_recipe_id_limits() {
-    let (bytes, scope, recipes) = compact_coil_face_selection_fixture();
-    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
-    let mut policy = DecodePolicy::default();
-    // The persistent probe and face probe each copy two 36-byte GUIDs.
-    let selection_prefix_bytes = 4 * 36;
-    policy.limits.max_retained_bytes =
-        u64::try_from(selection_prefix_bytes + scope.id.len()).unwrap() - 1;
-    let arena = DecodeArena::new();
-    let refusal_cap = match cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::RetainedBytes,
-        "f3d Coil selection header ID",
-        |cap| {
-            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-            match ResourceDimension::RetainedBytes {
-                cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
-                    policy.limits.max_retained_bytes = cap;
-                }
-                cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-                    policy.limits.max_collection_items = cap;
-                }
-                cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
-                    policy.limits.max_materialized_bytes = cap;
-                }
-                cadmpeg_core::decode::ResourceDimension::WorkUnits => {
-                    policy.limits.max_work_units = cap;
-                }
-                cadmpeg_core::decode::ResourceDimension::RecursionDepth => {
-                    policy.limits.max_recursion_depth = cap;
-                }
-                dimension => panic!("unsupported refusal dimension: {dimension:?}"),
-            }
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            (exact_coil_placement(&ctx, &bytes, &records, &scope, &recipes)).map(|_| ())
-        },
-    ) {
-        cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
-        error => panic!("unexpected refusal: {error:?}"),
-    };
-    policy.limits = cadmpeg_core::decode::DecodePolicy::service().limits;
-    match ResourceDimension::RetainedBytes {
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
-            policy.limits.max_retained_bytes = refusal_cap;
-        }
-        cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-            policy.limits.max_collection_items = refusal_cap;
-        }
-        cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
-            policy.limits.max_materialized_bytes = refusal_cap;
-        }
-        cadmpeg_core::decode::ResourceDimension::WorkUnits => {
-            policy.limits.max_work_units = refusal_cap;
-        }
-        cadmpeg_core::decode::ResourceDimension::RecursionDepth => {
-            policy.limits.max_recursion_depth = refusal_cap;
-        }
-        dimension => panic!("unsupported refusal dimension: {dimension:?}"),
-    }
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let result = exact_coil_placement(&ctx, &bytes, &records, &scope, &recipes);
-    assert!(matches!(
-        result,
-        Err(cadmpeg_core::CodecError::ResourceLimit(failure))
-            if failure.dimension == ResourceDimension::RetainedBytes
-                && failure.operation == "f3d Coil selection header ID"
-    ));
-
-    // The face operand retains its recipe ID and its own record ID before
-    // the selection retains a second recipe ID. This fixture has no prefix bytes.
-    let arena = DecodeArena::new();
-    let refusal_cap = match cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::RetainedBytes,
-        "f3d Coil face recipe ID",
-        |cap| {
-            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-            match ResourceDimension::RetainedBytes {
-                cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
-                    policy.limits.max_retained_bytes = cap;
-                }
-                cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-                    policy.limits.max_collection_items = cap;
-                }
-                cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
-                    policy.limits.max_materialized_bytes = cap;
-                }
-                cadmpeg_core::decode::ResourceDimension::WorkUnits => {
-                    policy.limits.max_work_units = cap;
-                }
-                cadmpeg_core::decode::ResourceDimension::RecursionDepth => {
-                    policy.limits.max_recursion_depth = cap;
-                }
-                dimension => panic!("unsupported refusal dimension: {dimension:?}"),
-            }
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            (exact_coil_placement(&ctx, &bytes, &records, &scope, &recipes)).map(|_| ())
-        },
-    ) {
-        cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
-        error => panic!("unexpected refusal: {error:?}"),
-    };
-    policy.limits = cadmpeg_core::decode::DecodePolicy::service().limits;
-    match ResourceDimension::RetainedBytes {
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
-            policy.limits.max_retained_bytes = refusal_cap;
-        }
-        cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-            policy.limits.max_collection_items = refusal_cap;
-        }
-        cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
-            policy.limits.max_materialized_bytes = refusal_cap;
-        }
-        cadmpeg_core::decode::ResourceDimension::WorkUnits => {
-            policy.limits.max_work_units = refusal_cap;
-        }
-        cadmpeg_core::decode::ResourceDimension::RecursionDepth => {
-            policy.limits.max_recursion_depth = refusal_cap;
-        }
-        dimension => panic!("unsupported refusal dimension: {dimension:?}"),
-    }
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let result = exact_coil_placement(&ctx, &bytes, &records, &scope, &recipes);
-    assert!(matches!(
-        result,
-        Err(cadmpeg_core::CodecError::ResourceLimit(failure))
-            if failure.dimension == ResourceDimension::RetainedBytes
-                && failure.operation == "f3d Coil face recipe ID"
-    ));
-
-    policy.limits.max_retained_bytes = refusal_cap + 1;
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let placement = exact_coil_placement(&ctx, &bytes, &records, &scope, &recipes)
-        .unwrap()
-        .expect("admitted Coil face placement");
-    assert!(
-        matches!(placement.selection, DesignCoilSelection::FaceRecipe { recipe_id, .. } if recipe_id == recipes[0].id)
-    );
-}
-
-#[test]
 fn coil_scope_discriminators_use_the_fixed_scope_prologue() {
     let mut bytes = Vec::new();
     bytes.extend_from_slice(&3u32.to_le_bytes());
@@ -951,7 +810,6 @@ fn coil_scope_discriminators_use_the_fixed_scope_prologue() {
     };
 
     let scope = parse_parameter_scope(
-        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         header.record_index,
@@ -1017,7 +875,6 @@ fn compact_coil_scope_uses_its_own_closed_discriminators() {
     };
 
     let scope = parse_parameter_scope(
-        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         header.record_index,
@@ -1055,7 +912,6 @@ fn compact_coil_scope_uses_its_own_closed_discriminators() {
             bytes[92..96].copy_from_slice(&placement_code.to_le_bytes());
             bytes[107..111].copy_from_slice(&section_code.to_le_bytes());
             let parsed = parse_parameter_scope(
-                &cadmpeg_test_support::service_decode_context(),
                 &bytes,
                 &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
                 header.record_index,
@@ -1071,7 +927,6 @@ fn compact_coil_scope_uses_its_own_closed_discriminators() {
 
     bytes[20..24].copy_from_slice(&2u32.to_le_bytes());
     let unsupported = parse_parameter_scope(
-        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         header.record_index,
@@ -1121,7 +976,6 @@ fn compact_coil_new_body_scope_accepts_unlinked_state_trailer() {
     };
 
     let scope = parse_parameter_scope(
-        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         header.record_index,
@@ -1199,7 +1053,6 @@ fn long_coil_scope_discriminators_use_the_ten_reference_envelope() {
             byte_offset: 0,
         };
         parse_parameter_scope(
-            &cadmpeg_test_support::service_decode_context(),
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             header.record_index,

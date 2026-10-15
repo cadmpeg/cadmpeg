@@ -46,15 +46,11 @@ impl IdFormat {
     /// Compose an identity whose kind came from a source record.
     pub(crate) fn try_brep_identity(
         self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         kind: &IdentityComponent,
         record_index: usize,
     ) -> Result<Identity, cadmpeg_core::CodecError> {
         let format = IdentityComponent::from_static(self.proof);
-        let text = ctx.format_retained(
-            format_args!("{}:brep:{}#{record_index}", format.as_str(), kind.as_str()),
-            "ASM unknown record identity",
-        )?;
+        let text = format!("{}:brep:{}#{record_index}", format.as_str(), kind.as_str());
         Identity::new(text).map_err(cadmpeg_core::CodecError::malformed)
     }
 }

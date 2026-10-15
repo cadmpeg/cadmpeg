@@ -2,7 +2,7 @@
 //! Parse exact image-plane bindings owned by Design `Canvas` scopes.
 
 use crate::bytes::lp_ascii_filtered_view;
-use crate::bytes::lp_utf16_bounded_charged;
+use crate::bytes::lp_utf16_bounded;
 use crate::container::ContainerScan;
 use crate::design::decode::image::embedded_image_asset;
 use crate::design::decode::scopes::shared_frames::marked_reference;
@@ -26,12 +26,10 @@ const DESIGN_LENGTH_TO_MM: f64 = 10.0;
 
 /// Decode every structurally complete Canvas geometry and image-asset record.
 pub(crate) fn decode_canvas_images(
-    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     scopes: &[DesignParameterScope],
 ) -> Result<Vec<DesignCanvasImage>, CodecError> {
     super::image::decode_scoped_images(
-        ctx,
         scan,
         scopes,
         &crate::records::feature::scope::DesignFeatureKind::Canvas,
@@ -57,7 +55,7 @@ pub(crate) fn project_canvas_images(
         }) else {
             continue;
         };
-        let feature_id = crate::design::identity::neutral_feature_id(ctx, scope)?;
+        let feature_id = crate::design::identity::neutral_feature_id(scope)?;
         let Some(feature) = features.iter_mut().find(|feature| feature.id == feature_id) else {
             continue;
         };
@@ -73,7 +71,6 @@ pub(crate) fn project_canvas_images(
             .iter()
             .any(|candidate: &Asset| candidate.id == asset_id)
         {
-            ctx.reserve_vec(&mut assets, 1, "f3d Canvas assets")?;
             assets.push(asset);
         }
         let (opacity, frame) = image.geometry().payload.decoded();
@@ -111,17 +108,11 @@ pub(crate) fn project_canvas_images(
                 },
             ));
     }
-    ctx.stable_sort_by(
-        &mut assets[..],
-        |a, b| a.id.cmp(&b.id),
-        |value| value.id.as_str().len(),
-        "sort f3d design canvas 1",
-    )?;
+    assets.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(assets)
 }
 
 fn parse_canvas_image(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     stream: &str,
     scope: &DesignParameterScope,
@@ -213,17 +204,7 @@ fn parse_canvas_image(
         let geometry_payload = bytes.get(geometry_at + 69..geometry_at + 146)?;
         let geometry_payload = DesignCanvasGeometryPayload::try_from(geometry_payload).ok()?;
 
-        let (label, after_label) = match lp_utf16_bounded_charged(
-            ctx,
-            bytes,
-            geometry_at + 213,
-            1..=256,
-            "f3d Design UTF-16 text",
-        ) {
-            Ok(Some(value)) => value,
-            Ok(None) => return None,
-            Err(error) => return Some(Err(error)),
-        };
+        let (label, after_label) = lp_utf16_bounded(bytes, geometry_at + 213, 1..=256)?;
         if after_label != paired_at {
             return None;
         }
@@ -235,37 +216,14 @@ fn parse_canvas_image(
         {
             return None;
         }
-        let (asset_name, after_asset_name) = match lp_utf16_bounded_charged(
-            ctx,
-            bytes,
-            asset_record_at + 21,
-            1..=1024,
-            "f3d Design UTF-16 text",
-        ) {
-            Ok(Some(value)) => value,
-            Ok(None) => return None,
-            Err(error) => return Some(Err(error)),
-        };
+        let (asset_name, after_asset_name) =
+            lp_utf16_bounded(bytes, asset_record_at + 21, 1..=1024)?;
         if after_asset_name != scope_at {
             return None;
         }
-        let geometry_class_tag =
-            match ctx.copy_retained_text(geometry_class_tag, "f3d Canvas geometry class tag") {
-                Ok(value) => value,
-                Err(error) => return Some(Err(error)),
-            };
-        let paired_geometry_class_tag = match ctx.copy_retained_text(
-            paired_geometry_class_tag,
-            "f3d Canvas paired geometry class tag",
-        ) {
-            Ok(value) => value,
-            Err(error) => return Some(Err(error)),
-        };
-        let asset_class_tag =
-            match ctx.copy_retained_text(asset_class_tag, "f3d Canvas asset class tag") {
-                Ok(value) => value,
-                Err(error) => return Some(Err(error)),
-            };
+        let geometry_class_tag = geometry_class_tag.to_owned();
+        let paired_geometry_class_tag = paired_geometry_class_tag.to_owned();
+        let asset_class_tag = asset_class_tag.to_owned();
 
         DesignCanvasImage::new(
             ids::native_design_canvas_image_id(stream, geometry_at),
@@ -299,7 +257,6 @@ fn parse_canvas_image(
 #[cfg(test)]
 mod tests {
     use super::parse_canvas_image;
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     fn header(bytes: &mut [u8], at: usize, tag: [u8; 3], index: u32) {
         bytes[at..at + 4].copy_from_slice(&3u32.to_le_bytes());
@@ -374,67 +331,17 @@ mod tests {
         (bytes, scope)
     }
 
-    fn assert_class_tag_retained_refusal(limit: u64, operation: &'static str) {
+    #[test]
+    fn canvas_image_decodes_asset_name() {
         let (bytes, scope) = fixture();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = parse_canvas_image(&ctx, &bytes, "Design/BulkStream.dat", &scope)
-            .err()
+        let image = parse_canvas_image(&bytes, "Design/BulkStream.dat", &scope)
+            .unwrap()
             .unwrap();
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
-            if refusal.dimension == ResourceDimension::RetainedBytes
-                && refusal.operation == operation)
-        );
-    }
-
-    #[test]
-    fn canvas_geometry_class_tag_refuses_retained_limit() {
-        assert_class_tag_retained_refusal(8, "f3d Canvas geometry class tag");
-    }
-
-    #[test]
-    fn canvas_paired_geometry_class_tag_refuses_retained_limit() {
-        assert_class_tag_retained_refusal(11, "f3d Canvas paired geometry class tag");
-    }
-
-    #[test]
-    fn canvas_asset_class_tag_refuses_retained_limit() {
-        assert_class_tag_retained_refusal(14, "f3d Canvas asset class tag");
-    }
-
-    #[test]
-    fn canvas_label_and_asset_name_refuse_retained_limits() {
-        let (bytes, scope) = fixture();
-        let image = parse_canvas_image(
-            &cadmpeg_test_support::service_decode_context(),
-            &bytes,
-            "Design/BulkStream.dat",
-            &scope,
-        )
-        .unwrap()
-        .unwrap();
         assert_eq!(image.asset_name(), "a.png");
-        for limit in [0, 5] {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = limit;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let error = parse_canvas_image(&ctx, &bytes, "Design/BulkStream.dat", &scope)
-                .err()
-                .unwrap();
-            assert!(
-                matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
-                if refusal.dimension == ResourceDimension::RetainedBytes
-                    && refusal.operation == "f3d Design UTF-16 text")
-            );
-        }
     }
 
     #[test]
-    fn canvas_projection_refuses_asset_copy_and_output_limits() {
+    fn canvas_projection_emits_one_asset() {
         use cadmpeg_ir::features::{
             Feature, FeatureDefinition, FeatureEvaluation, FeatureOperation, SketchFeatureBinding,
         };
@@ -444,14 +351,9 @@ mod tests {
 
         const ENTRY: &str = "FusionAssetName[Active]/Design1/Images.BlobParts/a.png";
         let (bytes, scope) = fixture();
-        let image = parse_canvas_image(
-            &cadmpeg_test_support::service_decode_context(),
-            &bytes,
-            "Design/BulkStream.dat",
-            &scope,
-        )
-        .unwrap()
-        .unwrap();
+        let image = parse_canvas_image(&bytes, "Design/BulkStream.dat", &scope)
+            .unwrap()
+            .unwrap();
         let feature = || Feature {
             id: crate::ids::neutral_feature_id(&scope),
             ordinal: 0,
@@ -476,41 +378,6 @@ mod tests {
         zip.write_all(b"PNG").unwrap();
         let archive = zip.finish().unwrap().into_inner();
         crate::test_support::zip_test::with_scan(&archive, |scan| {
-            let asset_id_len = crate::ids::neutral_asset_id(ENTRY).as_str().len();
-            let base = 3 + "a.png".len() + crate::ids::native_scope(ENTRY).len() + asset_id_len;
-            for (retained, items, dimension, operation) in [
-                (
-                    u64::MAX,
-                    0,
-                    ResourceDimension::CollectionItems,
-                    "f3d Canvas assets",
-                ),
-                (
-                    u64::try_from(base + asset_id_len - 1).unwrap(),
-                    u64::MAX,
-                    ResourceDimension::RetainedBytes,
-                    "f3d image feature asset identifier",
-                ),
-            ] {
-                let arena = DecodeArena::new();
-                let mut policy = DecodePolicy::default();
-                policy.limits.max_retained_bytes = retained;
-                policy.limits.max_collection_items = items;
-
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-                let result = super::project_canvas_images(
-                    &ctx,
-                    scan,
-                    std::slice::from_ref(&scope),
-                    std::slice::from_ref(&image),
-                    &mut [feature()],
-                );
-                assert!(matches!(
-                    result,
-                    Err(cadmpeg_core::CodecError::ResourceLimit(failure))
-                        if failure.dimension == dimension && failure.operation == operation
-                ));
-            }
             let assets = super::project_canvas_images(
                 &cadmpeg_test_support::service_decode_context(),
                 scan,

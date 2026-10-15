@@ -84,8 +84,7 @@ fn emit(record: &Record) -> Result<(), cadmpeg_core::CodecError> {
         &asm_decode_arena,
         &cadmpeg_core::decode::DecodePolicy::default(),
     )?;
-    let table =
-        nurbs::toks::SubtypeTable::from_records(&asm_decode_ctx, std::slice::from_ref(record))?;
+    let table = nurbs::toks::SubtypeTable::from_records(std::slice::from_ref(record));
     let decoded = nurbs::proc_surface::procedural_surface_resolving_refs(
         &asm_decode_ctx,
         &record.tokens,

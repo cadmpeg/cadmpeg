@@ -394,99 +394,6 @@ fn coincident_relation_projects_one_unique_shared_locus_per_member() {
     );
 }
 
-fn coincident_limit_fixture() -> [cadmpeg_ir::sketches::SketchEntity; 2] {
-    let sketch = SketchId::mint("generated:test:sketch#coincident-limit").unwrap();
-    [
-        cadmpeg_ir::sketches::SketchEntity::new(
-            SketchEntityId::mint("generated:test:line#coincident-limit").unwrap(),
-            sketch.clone(),
-            SketchGeometry::try_from(SketchGeometryDefinition::Line {
-                start: Point2::new(1.0, 2.0),
-                end: Point2::new(4.0, 2.0),
-            })
-            .unwrap(),
-        ),
-        cadmpeg_ir::sketches::SketchEntity::new(
-            SketchEntityId::mint("generated:test:point#coincident-limit").unwrap(),
-            sketch,
-            SketchGeometry::try_from(SketchGeometryDefinition::Point {
-                position: Point2::new(1.0, 2.0),
-            })
-            .unwrap(),
-        ),
-    ]
-}
-
-fn assert_coincident_limit(
-    operation: &'static str,
-    dimension: cadmpeg_core::decode::ResourceDimension,
-) {
-    let entities = coincident_limit_fixture();
-    let error = crate::test_support::resource_refusal_at(dimension, operation, 0, |ctx| {
-        crate::design::dimensions::exact_coincident_loci(&[&entities[0], &entities[1]], ctx)
-    });
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
-        if failure.operation == operation && failure.dimension == dimension)
-    );
-}
-
-#[test]
-fn coincident_local_entity_id_refuses_retained_limit() {
-    assert_coincident_limit(
-        "f3d coincident local entity id",
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-    );
-}
-
-#[test]
-fn coincident_solution_entity_id_refuses_retained_limit() {
-    assert_coincident_limit(
-        "f3d coincident solution entity id",
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-    );
-}
-
-#[test]
-fn coincident_entity_uniqueness_refuses_collection_limit() {
-    assert_coincident_limit(
-        "f3d coincident entity uniqueness",
-        cadmpeg_core::decode::ResourceDimension::CollectionItems,
-    );
-}
-
-#[test]
-fn coincident_local_locus_refuses_collection_limit() {
-    assert_coincident_limit(
-        "f3d coincident local locus",
-        cadmpeg_core::decode::ResourceDimension::CollectionItems,
-    );
-}
-
-#[test]
-fn coincident_member_loci_refuse_collection_limit() {
-    assert_coincident_limit(
-        "f3d coincident member loci",
-        cadmpeg_core::decode::ResourceDimension::CollectionItems,
-    );
-}
-
-#[test]
-fn coincident_solution_locus_refuses_collection_limit() {
-    assert_coincident_limit(
-        "f3d coincident solution locus",
-        cadmpeg_core::decode::ResourceDimension::CollectionItems,
-    );
-}
-
-#[test]
-fn coincident_locus_matching_refuses_work_limit() {
-    assert_coincident_limit(
-        "f3d coincident locus matching",
-        cadmpeg_core::decode::ResourceDimension::WorkUnits,
-    );
-}
-
 #[test]
 fn polygon_constraint_requires_three_distinct_resolved_members() {
     let entity = |id: &str| {
@@ -779,51 +686,48 @@ fn single_curve_annotation_projects_parameterized_offset() {
         },
     )
     .unwrap();
-    let frame = crate::test_support::with_decode_context(|ctx| {
-        DesignDimensionAnnotationFrame::try_new_charged(
-            ctx,
-            crate::records::dimensions::DesignDimensionAnnotationFrameDraft {
-                id: format!("{stream}:design-dimension-annotation-frame#14"),
-                companion_record_index: Some(15),
-                governing_companion_record_index: 15,
-                byte_offset: 0,
-                class_tag: crate::records::references::DesignClassTag::try_from("256".to_owned())
-                    .unwrap(),
-                record_index: 14,
-                frame_length: 100,
-                operands: vec![
-                    DesignDimensionAnnotationOperand {
-                        geometry_record_index: std::num::NonZeroU32::new(0),
-                        geometry_reference_offset: 25,
-                        role: 3,
-                        role_offset: 35,
-                    },
-                    DesignDimensionAnnotationOperand {
-                        geometry_record_index: std::num::NonZeroU32::new(10),
-                        geometry_reference_offset: 40,
-                        role: 2,
-                        role_offset: 50,
-                    },
-                ],
-                entity_genesis: 0x80,
-                annotation_bytes: Vec::new(),
-                annotation_byte_offset: 111,
-                governing_owner_record_index: 13,
-                governing_owner_reference_offset: 112,
-                return_members: vec![crate::records::identity::Located {
-                    value: std::num::NonZeroU32::new(10).unwrap(),
-                    offset: 127,
-                }],
-                paired_class_tag: crate::records::references::DesignClassTag::try_from(
-                    "256".to_owned(),
-                )
+    let frame = DesignDimensionAnnotationFrame::try_new(
+        crate::records::dimensions::DesignDimensionAnnotationFrameDraft {
+            id: format!("{stream}:design-dimension-annotation-frame#14"),
+            companion_record_index: Some(15),
+            governing_companion_record_index: 15,
+            byte_offset: 0,
+            class_tag: crate::records::references::DesignClassTag::try_from("256".to_owned())
                 .unwrap(),
-                paired_byte_offset: 100,
-                owner_reference: 100,
-                owner_reference_offset: 120,
-            },
-        )
-    })
+            record_index: 14,
+            frame_length: 100,
+            operands: vec![
+                DesignDimensionAnnotationOperand {
+                    geometry_record_index: std::num::NonZeroU32::new(0),
+                    geometry_reference_offset: 25,
+                    role: 3,
+                    role_offset: 35,
+                },
+                DesignDimensionAnnotationOperand {
+                    geometry_record_index: std::num::NonZeroU32::new(10),
+                    geometry_reference_offset: 40,
+                    role: 2,
+                    role_offset: 50,
+                },
+            ],
+            entity_genesis: 0x80,
+            annotation_bytes: Vec::new(),
+            annotation_byte_offset: 111,
+            governing_owner_record_index: 13,
+            governing_owner_reference_offset: 112,
+            return_members: vec![crate::records::identity::Located {
+                value: std::num::NonZeroU32::new(10).unwrap(),
+                offset: 127,
+            }],
+            paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                "256".to_owned(),
+            )
+            .unwrap(),
+            paired_byte_offset: 100,
+            owner_reference: 100,
+            owner_reference_offset: 120,
+        },
+    )
     .unwrap();
     let parameter_id =
         ParameterId::mint("generated:test:parameter#offset").expect("identity grammar");
@@ -860,46 +764,43 @@ fn single_curve_annotation_projects_parameterized_offset() {
             && actual_parameter == parameter_id
     ));
 
-    let explicit_frame = crate::test_support::with_decode_context(|ctx| {
-        DesignDimensionAnnotationFrame::try_new_charged(
-            ctx,
-            crate::records::dimensions::DesignDimensionAnnotationFrameDraft {
-                operands: vec![
-                    DesignDimensionAnnotationOperand {
-                        geometry_record_index: std::num::NonZeroU32::new(0),
-                        geometry_reference_offset: 25,
-                        role: 3,
-                        role_offset: 35,
-                    },
-                    DesignDimensionAnnotationOperand {
-                        geometry_record_index: std::num::NonZeroU32::new(11),
-                        geometry_reference_offset: 40,
-                        role: 1,
-                        role_offset: 50,
-                    },
-                    DesignDimensionAnnotationOperand {
-                        geometry_record_index: std::num::NonZeroU32::new(10),
-                        geometry_reference_offset: 55,
-                        role: 2,
-                        role_offset: 65,
-                    },
-                ],
-                return_members: vec![
-                    crate::records::identity::Located {
-                        value: std::num::NonZeroU32::new(10).unwrap(),
-                        offset: 142,
-                    },
-                    crate::records::identity::Located {
-                        value: std::num::NonZeroU32::new(11).unwrap(),
-                        offset: 153,
-                    },
-                ],
-                annotation_byte_offset: 126,
-                governing_owner_reference_offset: 127,
-                ..frame.clone().into_draft()
-            },
-        )
-    })
+    let explicit_frame = DesignDimensionAnnotationFrame::try_new(
+        crate::records::dimensions::DesignDimensionAnnotationFrameDraft {
+            operands: vec![
+                DesignDimensionAnnotationOperand {
+                    geometry_record_index: std::num::NonZeroU32::new(0),
+                    geometry_reference_offset: 25,
+                    role: 3,
+                    role_offset: 35,
+                },
+                DesignDimensionAnnotationOperand {
+                    geometry_record_index: std::num::NonZeroU32::new(11),
+                    geometry_reference_offset: 40,
+                    role: 1,
+                    role_offset: 50,
+                },
+                DesignDimensionAnnotationOperand {
+                    geometry_record_index: std::num::NonZeroU32::new(10),
+                    geometry_reference_offset: 55,
+                    role: 2,
+                    role_offset: 65,
+                },
+            ],
+            return_members: vec![
+                crate::records::identity::Located {
+                    value: std::num::NonZeroU32::new(10).unwrap(),
+                    offset: 142,
+                },
+                crate::records::identity::Located {
+                    value: std::num::NonZeroU32::new(11).unwrap(),
+                    offset: 153,
+                },
+            ],
+            annotation_byte_offset: 126,
+            governing_owner_reference_offset: 127,
+            ..frame.clone().into_draft()
+        },
+    )
     .unwrap();
     let explicit_definition = crate::test_support::with_decode_context(|decode_ctx| {
         crate::design::dimensions::annotation_offset_dimension_definition(
@@ -1401,13 +1302,3 @@ fn parallel_group_binds_one_common_axis_angle() {
     .unwrap()
     .is_none());
 }
-
-mod refusal_parallel_group_axis_angle;
-
-mod refusal_exact_centered_entity_relation;
-
-mod refusal_indirect_angular_lines;
-
-mod refusal_annotation_offset;
-
-mod refusal_exact_offset_constraint;

@@ -73,11 +73,7 @@ impl Stats {
         self.other_record_kinds.values().sum()
     }
 
-    pub(super) fn merge(
-        &mut self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        other: Self,
-    ) -> Result<(), cadmpeg_core::CodecError> {
+    pub(super) fn merge(&mut self, other: Self) {
         macro_rules! add_counts {
             ($($field:ident),+ $(,)?) => {
                 $(self.$field += other.$field;)+
@@ -106,11 +102,9 @@ impl Stats {
             (&mut self.other_record_kinds, other.other_record_kinds),
         ] {
             for (kind, count) in source {
-                ctx.admit_btree_entry(target, &kind, "ASM merge loss kinds")?;
                 *target.entry(kind).or_default() += count;
             }
         }
-        Ok(())
     }
 }
 

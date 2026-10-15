@@ -6,86 +6,6 @@ use crate::sab::Record;
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 
 #[test]
-fn annotation_curve_index_refuses_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-    use cadmpeg_ir::geometry::{Curve, CurveGeometry, SolvedCurveGeometry};
-
-    let mut out = AsmBrep {
-        curves: vec![Curve {
-            parameter_range: None,
-            id: CurveId::mint("f3d:brep:entity#1").unwrap(),
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
-            source_object: None,
-        }],
-        ..AsmBrep::default()
-    };
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = emit_annotation_records(
-        &ctx,
-        &mut out,
-        &[],
-        &std::collections::HashMap::new(),
-        &Carriers::default(),
-        "source",
-        crate::asm_format!("f3d"),
-    )
-    .expect_err("one curve index entry exceeds zero items");
-    let CodecError::ResourceLimit(limit) = error else {
-        panic!("expected collection refusal: {error:?}");
-    };
-    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-}
-
-#[test]
-fn annotation_stream_refuses_retained_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-    use cadmpeg_ir::geometry::{Curve, CurveGeometry, SolvedCurveGeometry};
-
-    let records = [Record {
-        index: 1,
-        name: "straight".into(),
-        tokens: Vec::new().into(),
-        offset: 0,
-        len: 0,
-    }];
-    let mut out = AsmBrep {
-        curves: vec![Curve {
-            parameter_range: None,
-            id: CurveId::mint("f3d:brep:entity#1").unwrap(),
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
-            source_object: None,
-        }],
-        ..AsmBrep::default()
-    };
-    let by_index = std::collections::HashMap::from([(1, &records[0])]);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes =
-        cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<super::AnnotationRecord>());
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = emit_annotation_records(
-        &ctx,
-        &mut out,
-        &records,
-        &by_index,
-        &Carriers::default(),
-        "source",
-        crate::asm_format!("f3d"),
-    )
-    .expect_err("one stream label exceeds zero retained bytes");
-    let CodecError::ResourceLimit(limit) = error else {
-        panic!("expected retained refusal: {error:?}");
-    };
-    assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
-    assert_eq!(limit.operation, "ASM annotation stream");
-}
-
-#[test]
 fn synthetic_annotations_use_record_keys_independent_of_id_text() {
     let records = [Record {
         index: 37,
@@ -109,15 +29,7 @@ fn synthetic_annotations_use_record_keys_independent_of_id_text() {
         procedural_curve_child_sources: vec![(37, CurveId::mint("f3d:child:curve#named").unwrap())],
         ..Carriers::default()
     };
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::default(),
-    )
-    .expect("test decode context");
     emit_annotation_records(
-        &ctx,
         &mut out,
         &records,
         &by_index,
@@ -205,9 +117,7 @@ fn ellipse_edge_annotation_names_only_a_stored_carrier_range() {
             }],
             ..AsmBrep::default()
         };
-        let ctx = cadmpeg_test_support::service_decode_context();
         emit_annotation_records(
-            &ctx,
             &mut out,
             &records,
             &by_index,
@@ -264,9 +174,7 @@ fn unresolved_analytic_carriers_have_no_derived_geometry_fields() {
         }],
         ..AsmBrep::default()
     };
-    let ctx = cadmpeg_test_support::service_decode_context();
     emit_annotation_records(
-        &ctx,
         &mut out,
         &records,
         &std::collections::HashMap::new(),
