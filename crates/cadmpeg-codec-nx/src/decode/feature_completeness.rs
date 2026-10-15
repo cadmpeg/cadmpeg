@@ -90,6 +90,9 @@ pub(super) fn output_free_trim_surface_construction(
         )
 }
 
+/// Whether the configuration has no body selection, its active-feature
+/// closure does not resolve, or its suppression, feature states, or parameter
+/// values differ from the model.
 pub(crate) fn active_configuration_state_is_incomplete(
     ir: &CadIr,
     configuration: &cadmpeg_ir::features::DesignConfiguration,
@@ -104,31 +107,6 @@ pub(crate) fn active_configuration_state_is_incomplete(
         BTreeMap::new()
     } else {
         let Ok(active_features) = crate::native::history::active_feature_closure(ir, bodies) else {
-            return true;
-        };
-        active_features
-    };
-    configuration_state_differs(ir, configuration, &required_features)
-}
-
-/// Decode-time form of [`active_configuration_state_is_incomplete`]: the
-/// active-feature closure runs under the decode context.
-pub(crate) fn active_configuration_state_is_incomplete_for_decode(
-    ir: &CadIr,
-    configuration: &cadmpeg_ir::features::DesignConfiguration,
-) -> bool {
-    if configuration_suppression_differs(ir, configuration) {
-        return true;
-    }
-    let Some(bodies) = configuration.bodies.as_deref() else {
-        return true;
-    };
-    let required_features = if ir.model.features.is_empty() {
-        BTreeMap::new()
-    } else {
-        let Ok(active_features) =
-            crate::native::history::active_feature_closure_for_decode(ir, bodies)
-        else {
             return true;
         };
         active_features

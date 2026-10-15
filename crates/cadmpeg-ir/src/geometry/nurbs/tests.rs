@@ -1161,7 +1161,6 @@ fn nurbs_curve_mapping_maps_poles_and_keeps_knots_and_weights() {
     .expect("rational curve");
     let mapped = curve
         .map_control_points(|point| Point3::new(point.x + 2.0, point.y, point.z))
-        .expect("mapping admission")
         .expect("finite mapped curve");
     assert_eq!(mapped.knots(), curve.knots());
     assert_eq!(mapped.weights(), curve.weights());
@@ -1171,7 +1170,6 @@ fn nurbs_curve_mapping_maps_poles_and_keeps_knots_and_weights() {
     );
     assert!(curve
         .map_control_points(|_| { Point3::new(f64::INFINITY, 0.0, 0.0) })
-        .expect("mapping admission")
         .is_none());
     assert_eq!(curve.control_points()[0], Point3::new(1.0, 2.0, 3.0));
 }

@@ -350,10 +350,9 @@ fn project_parameter_dependencies(
         let Some(dependency) = aliases.get(token.value()).and_then(Option::as_ref) else {
             continue;
         };
-        if dependency == &parameter.id || dependencies.contains(dependency) {
-            continue;
+        if dependency != &parameter.id {
+            dependencies.insert(dependency.clone());
         }
-        dependencies.insert(dependency.clone());
     }
     dependencies
 }

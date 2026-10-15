@@ -196,15 +196,8 @@ fn implicit_unit_weights_match_explicit_unit_weights_in_curve_search() {
     );
     let controls = [Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)];
     assert_eq!(
-        nurbs_pcurve_contains_point(
-            1,
-            &[0.0, 0.0, 1.0, 1.0],
-            &controls,
-            None,
-            controls[0],
-            0.0,
-        )
-        .expect("resource allocation did not fail"),
+        nurbs_pcurve_contains_point(1, &[0.0, 0.0, 1.0, 1.0], &controls, None, controls[0], 0.0,)
+            .expect("resource allocation did not fail"),
         nurbs_pcurve_contains_point(
             1,
             &[0.0, 0.0, 1.0, 1.0],

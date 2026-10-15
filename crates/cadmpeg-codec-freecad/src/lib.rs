@@ -221,7 +221,6 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
                 None,
             ));
         }
-        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         Err(error) => findings.push(finding(
             Check::ReferentialIntegrity,
             error.to_string(),
@@ -310,7 +309,6 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
             "FCStd attachment graph does not match the application property graph",
             None,
         )),
-        Err(CodecError::ResourceLimit(limit)) => return Err(CodecError::ResourceLimit(limit)),
         Err(error) => findings.push(finding(
             Check::NativeLinks,
             format!("FCStd attachment properties are malformed: {error}"),

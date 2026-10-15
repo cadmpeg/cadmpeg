@@ -38,7 +38,7 @@ fn explicit_knot_expansion_retains_admitted_bits_and_refusal() {
 }
 
 #[test]
-fn knot_constructors_move_one_admitted_value_vector() {
+fn knot_constructors_expand_explicit_and_default_knot_vectors() {
     use super::super::DefaultNurbsKnotKind;
     use crate::parse::Value;
 

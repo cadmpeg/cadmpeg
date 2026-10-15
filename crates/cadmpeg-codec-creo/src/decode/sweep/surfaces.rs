@@ -316,7 +316,7 @@ pub(in super::super) fn transfer_saved_spline_curves(
             if ir.model.curves.iter().any(|curve| curve.id == curve_id) {
                 continue;
             }
-            let Some(placed) = placed_section_nurbs(transform, &nurbs)? else {
+            let Some(placed) = placed_section_nurbs(transform, &nurbs) else {
                 continue;
             };
             annotate(
@@ -743,10 +743,10 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 }
                 continue;
             };
-            let Some(placed) = placed_section_nurbs(transform, &section_curve)? else {
+            let Some(placed) = placed_section_nurbs(transform, &section_curve) else {
                 continue;
             };
-            let Some(directrix) = translated_nurbs_curve(&placed, lower_translation)? else {
+            let Some(directrix) = translated_nurbs_curve(&placed, lower_translation) else {
                 continue;
             };
             let mut refusal = crate::lane_refusal::LaneRefusals::new();

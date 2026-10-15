@@ -23,7 +23,7 @@ use crate::ids;
 use crate::loss::StepLossCode;
 use crate::parse::{Exchange, RawRecord, Value};
 
-use super::decode_text_charged;
+use super::decode_text;
 use super::groups::NonemptyGroup;
 use super::topology::TopologyData;
 use super::StageOutcome;
@@ -189,7 +189,7 @@ pub(super) fn decode(
         }
         let Some(name) =
             named_parameter(layer, "PRESENTATION_LAYER_ASSIGNMENT", 0).and_then(|value| {
-                decode_text_charged(
+                decode_text(
                     exchange,
                     value,
                     &mut losses,
@@ -206,7 +206,7 @@ pub(super) fn decode(
         };
         let description = named_parameter(layer, "PRESENTATION_LAYER_ASSIGNMENT", 1)
             .and_then(|value| {
-                decode_text_charged(
+                decode_text(
                     exchange,
                     value,
                     &mut losses,
@@ -1413,7 +1413,7 @@ fn find_color(
                     return Ok(None);
                 };
                 let name = name_value.and_then(|value| {
-                    decode_text_charged(
+                    decode_text(
                         exchange,
                         value,
                         losses,
@@ -1442,7 +1442,7 @@ fn find_color(
                 let Some(name_value) = name_value else {
                     return Ok(None);
                 };
-                let Some(name) = decode_text_charged(
+                let Some(name) = decode_text(
                     exchange,
                     name_value,
                     losses,

@@ -1613,10 +1613,8 @@ fn builtin_reference_usage(
         .filter(|node| node.has_tag_name("Constrain"))
     {
         let type_code = int_attr(node, "Type");
-        let operands = match constraint_operands(node) {
-            Ok(operands) => operands,
-            Err(CodecError::ResourceLimit(limit)) => return Err(CodecError::ResourceLimit(limit)),
-            Err(_) => continue,
+        let Ok(operands) = constraint_operands(node) else {
+            continue;
         };
         root |= matches!(type_code, Some(7 | 8)) && operands.len() == 1;
         for (entity, position) in operands {

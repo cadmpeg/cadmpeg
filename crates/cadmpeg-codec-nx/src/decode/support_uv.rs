@@ -2084,7 +2084,7 @@ pub(super) fn complete_parameterization_equivalent_support_uv(
                 .as_ref()
                 .map(|pcurve| &pcurve.geometry),
         ) {
-            context.try_copy_pcurve_for_decode(source, side)?;
+            context.copy_pcurve(source, side);
         }
     }
     Ok(())

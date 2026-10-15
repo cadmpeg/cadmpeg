@@ -6,13 +6,13 @@ use cadmpeg_ir::ids::FaceId;
 
 fn input(feature: &FeatureId, slot: i64) -> FeatureInputTopology {
     FeatureInputTopology {
-        id: crate::ids::history_input_state_id_charged(feature, 4).unwrap(),
+        id: crate::ids::feature_input_topology_id(feature, 4),
         input_of: feature.clone(),
         bodies: Default::default(),
-        faces: DistinctMembers::try_from(vec![crate::ids::history_input_face_id_charged(
-            feature, 4, slot,
-        )
-        .unwrap()])
+        faces: DistinctMembers::try_from(vec![crate::ids::history_input_face_id(
+            &crate::ids::history_input_prefix(&feature.key(), 4),
+            slot,
+        )])
         .unwrap(),
         edges: Default::default(),
         vertices: Default::default(),
@@ -22,7 +22,10 @@ fn input(feature: &FeatureId, slot: i64) -> FeatureInputTopology {
 fn historical(input: &FeatureInputTopology, slot: i64) -> FaceSelection {
     FaceSelection::historical(
         input.id.clone(),
-        vec![crate::ids::history_input_face_id_charged(&input.input_of, 4, slot).unwrap()],
+        vec![crate::ids::history_input_face_id(
+            &crate::ids::history_input_prefix(&input.input_of.key(), 4),
+            slot,
+        )],
         "f3d:design:face-operand#1".into(),
     )
     .unwrap()
@@ -165,10 +168,10 @@ fn feature_admission_keeps_extrude_face_operands_native_without_an_input_topolog
                 profile: ProfileRef::Planar(
                     PlanarProfileRef::historical_faces(
                         topology.id.clone(),
-                        vec![
-                            crate::ids::history_input_face_id_charged(&topology.input_of, 4, 2)
-                                .unwrap(),
-                        ],
+                        vec![crate::ids::history_input_face_id(
+                            &crate::ids::history_input_prefix(&topology.input_of.key(), 4),
+                            2,
+                        )],
                         vec!["f3d:design:profile#1".into(), "f3d:design:profile#2".into()],
                     )
                     .unwrap(),
@@ -297,7 +300,12 @@ fn repeated_membership_queries_reuse_only_the_topologies_they_need() {
     let mut topologies = [input(&first, 2), input(&second, 3), input(&unused, 4)];
     topologies[2].faces = DistinctMembers::try_from(
         (0..128)
-            .map(|slot| crate::ids::history_input_face_id_charged(&unused, 4, slot).unwrap())
+            .map(|slot| {
+                crate::ids::history_input_face_id(
+                    &crate::ids::history_input_prefix(&unused.key(), 4),
+                    slot,
+                )
+            })
             .collect::<Vec<_>>(),
     )
     .unwrap();

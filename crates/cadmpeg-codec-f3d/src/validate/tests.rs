@@ -157,7 +157,7 @@ fn validation_accepts_class_410_component_insert_identity_frame() {
     }
 
     let findings = crate::test_support::with_decode_context(|ctx| {
-        crate::validate::validate_native_charged(ctx, &ir).expect("service native validation")
+        crate::validate::validate_native(ctx, &ir).expect("service native validation")
     });
     assert!(!findings.iter().any(|finding| {
         finding.entity.as_deref() == Some(scope_id.as_str())
@@ -172,7 +172,7 @@ fn validation_accepts_class_410_component_insert_identity_frame() {
         *slot = None;
     }
     let findings = crate::test_support::with_decode_context(|ctx| {
-        crate::validate::validate_native_charged(ctx, &envelope_only).unwrap()
+        crate::validate::validate_native(ctx, &envelope_only).unwrap()
     });
     assert!(!findings.iter().any(|finding| {
         finding.entity.as_deref() == Some(scope_id.as_str())
@@ -182,7 +182,7 @@ fn validation_accepts_class_410_component_insert_identity_frame() {
     f3d_native_mut(&mut ir).design_parameter_scopes[0].paired_class_tag =
         crate::records::references::DesignClassTag::try_from("263".to_owned()).unwrap();
     let findings = crate::test_support::with_decode_context(|ctx| {
-        crate::validate::validate_native_charged(ctx, &ir).expect("service native validation")
+        crate::validate::validate_native(ctx, &ir).expect("service native validation")
     });
     assert!(findings.iter().any(|finding| {
         finding.entity.as_deref() == Some(scope_id.as_str())
@@ -258,7 +258,7 @@ fn validation_accepts_only_the_class_397_symmetric_extent_frame() {
     }
     let has_invalid_frame = |ir: &cadmpeg_ir::CadIr| {
         crate::test_support::with_decode_context(|ctx| {
-            crate::validate::validate_native_charged(ctx, ir).expect("service native validation")
+            crate::validate::validate_native(ctx, ir).expect("service native validation")
         })
         .iter()
         .any(|finding| {
@@ -402,7 +402,7 @@ fn validation_requires_timeline_items_to_resolve_through_the_type_table() {
         )
         .unwrap();
     let findings = crate::test_support::with_decode_context(|ctx| {
-        crate::validate::validate_native_charged(ctx, &ir).expect("service native validation")
+        crate::validate::validate_native(ctx, &ir).expect("service native validation")
     });
     assert!(
         !findings.iter().any(|finding| {
@@ -431,7 +431,7 @@ fn validation_requires_timeline_items_to_resolve_through_the_type_table() {
         )
         .unwrap();
     assert!(crate::test_support::with_decode_context(|ctx| {
-        crate::validate::validate_native_charged(ctx, &ir).expect("service native validation")
+        crate::validate::validate_native(ctx, &ir).expect("service native validation")
     })
     .iter()
     .any(|finding| {
@@ -471,7 +471,7 @@ fn validation_requires_timeline_items_to_resolve_through_the_type_table() {
         )
         .unwrap();
     assert!(crate::test_support::with_decode_context(|ctx| {
-        crate::validate::validate_native_charged(ctx, &ir).expect("service native validation")
+        crate::validate::validate_native(ctx, &ir).expect("service native validation")
     })
     .iter()
     .any(|finding| {
@@ -514,7 +514,7 @@ fn validation_accepts_carrier_local_component_references() {
     }
 
     let findings = crate::test_support::with_decode_context(|ctx| {
-        crate::validate::validate_native_charged(ctx, &ir).expect("service native validation")
+        crate::validate::validate_native(ctx, &ir).expect("service native validation")
     });
     assert!(!findings
         .iter()
@@ -690,7 +690,7 @@ fn validation_scopes_direct_body_operand_ordinals_by_owning_scope() {
     }
 
     let findings = crate::test_support::with_decode_context(|ctx| {
-        crate::validate::validate_native_charged(ctx, &ir).expect("service native validation")
+        crate::validate::validate_native(ctx, &ir).expect("service native validation")
     });
     let invalid_operands = findings
         .iter()
@@ -820,7 +820,7 @@ fn validation_accepts_hole_and_surface_trim_construction_group_roles() {
         finding.message == "Fusion Design construction operand group has an invalid frame"
     };
     assert!(!crate::test_support::with_decode_context(|ctx| {
-        crate::validate::validate_native_charged(ctx, &ir).expect("service native validation")
+        crate::validate::validate_native(ctx, &ir).expect("service native validation")
     })
     .iter()
     .any(invalid_frame));
@@ -830,7 +830,7 @@ fn validation_accepts_hole_and_surface_trim_construction_group_roles() {
             DesignOperandRole::BODIES_B,
         );
     assert!(crate::test_support::with_decode_context(|ctx| {
-        crate::validate::validate_native_charged(ctx, &ir).expect("service native validation")
+        crate::validate::validate_native(ctx, &ir).expect("service native validation")
     })
     .iter()
     .any(invalid_frame));
@@ -850,7 +850,7 @@ fn validation_accepts_hole_and_surface_trim_construction_group_roles() {
             );
     }
     assert!(!crate::test_support::with_decode_context(|ctx| {
-        crate::validate::validate_native_charged(ctx, &ir).expect("service native validation")
+        crate::validate::validate_native(ctx, &ir).expect("service native validation")
     })
     .iter()
     .any(invalid_frame));
@@ -860,7 +860,7 @@ fn validation_accepts_hole_and_surface_trim_construction_group_roles() {
             DesignOperandRole::BODIES_B,
         );
     assert!(crate::test_support::with_decode_context(|ctx| {
-        crate::validate::validate_native_charged(ctx, &ir).expect("service native validation")
+        crate::validate::validate_native(ctx, &ir).expect("service native validation")
     })
     .iter()
     .any(invalid_frame));
@@ -985,7 +985,7 @@ fn validation_checks_pipe_path_group_roles() {
 
     let has_role_finding = |ir: &cadmpeg_ir::CadIr| {
         crate::test_support::with_decode_context(|ctx| {
-            crate::validate::validate_native_charged(ctx, ir).expect("service native validation")
+            crate::validate::validate_native(ctx, ir).expect("service native validation")
         })
         .iter()
         .any(|finding| {
@@ -998,7 +998,7 @@ fn validation_checks_pipe_path_group_roles() {
 
     let group_native_finding_count = |ir: &cadmpeg_ir::CadIr| {
         crate::test_support::with_decode_context(|ctx| {
-            crate::validate::validate_native_charged(ctx, ir).expect("service native validation")
+            crate::validate::validate_native(ctx, ir).expect("service native validation")
         })
         .iter()
         .filter(|finding| {
@@ -1078,7 +1078,7 @@ fn validation_rejects_duplicate_sketch_geometry_persistent_identities() {
     };
 
     let findings = crate::test_support::with_decode_context(|ctx| {
-        crate::validate::validate_native_charged(ctx, &ir).expect("service native validation")
+        crate::validate::validate_native(ctx, &ir).expect("service native validation")
     });
     assert!(findings.iter().any(|finding| {
         finding.check == cadmpeg_ir::report::check::Check::NativeLinks
@@ -1129,7 +1129,7 @@ fn validation_accepts_sketch_geometry_persistent_identities_reused_by_another_ow
     };
 
     assert!(!crate::test_support::with_decode_context(|ctx| {
-        crate::validate::validate_native_charged(ctx, &ir).expect("service native validation")
+        crate::validate::validate_native(ctx, &ir).expect("service native validation")
     })
     .iter()
     .any(|finding| {
@@ -1173,7 +1173,7 @@ fn validation_accepts_sketch_geometry_identities_with_unknown_owner() {
     }
 
     assert!(!crate::test_support::with_decode_context(|ctx| {
-        crate::validate::validate_native_charged(ctx, &ir).expect("service native validation")
+        crate::validate::validate_native(ctx, &ir).expect("service native validation")
     })
     .iter()
     .any(|finding| {
@@ -1197,7 +1197,7 @@ fn validation_rejects_aliased_sketch_geometry_records() {
     };
 
     assert!(crate::test_support::with_decode_context(|ctx| {
-        crate::validate::validate_native_charged(ctx, &ir).expect("service native validation")
+        crate::validate::validate_native(ctx, &ir).expect("service native validation")
     })
     .iter()
     .any(|finding| {
@@ -1234,7 +1234,7 @@ fn validation_rejects_duplicate_design_entity_suffixes() {
     };
 
     assert!(crate::test_support::with_decode_context(|ctx| {
-        crate::validate::validate_native_charged(ctx, &ir).expect("service native validation")
+        crate::validate::validate_native(ctx, &ir).expect("service native validation")
     })
     .iter()
     .any(|finding| {
@@ -1282,7 +1282,7 @@ fn validation_accepts_user_design_parameter_frame() {
     .unwrap();
     f3d_native_mut(&mut ir).design_parameters.push(parameter);
     assert!(crate::test_support::with_decode_context(|ctx| {
-        crate::validate::validate_native_charged(ctx, &ir).expect("service native validation")
+        crate::validate::validate_native(ctx, &ir).expect("service native validation")
     })
     .is_empty());
 }
@@ -1419,7 +1419,7 @@ fn validation_accepts_legacy_owner_frames_and_ownerless_class_287_parameters() {
     }
 
     let findings = crate::test_support::with_decode_context(|ctx| {
-        crate::validate::validate_native_charged(ctx, &ir).expect("service native validation")
+        crate::validate::validate_native(ctx, &ir).expect("service native validation")
     });
     assert!(
         findings.iter().all(|finding| {
@@ -1586,7 +1586,7 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
         finding.message == "Fusion Design Extrude profile conflicts with its profile operand group"
     };
     let findings = crate::test_support::with_decode_context(|ctx| {
-        crate::validate::validate_native_charged(ctx, &ir).expect("service native validation")
+        crate::validate::validate_native(ctx, &ir).expect("service native validation")
     });
     assert!(!findings.iter().any(profile_message));
     assert!(!findings
@@ -1597,7 +1597,7 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
         .design_construction_operand_groups
         .push(group);
     assert!(crate::test_support::with_decode_context(|ctx| {
-        crate::validate::validate_native_charged(ctx, &ir).expect("service native validation")
+        crate::validate::validate_native(ctx, &ir).expect("service native validation")
     })
     .iter()
     .any(profile_message));
@@ -1608,7 +1608,7 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
         .extrude_profile
         .take();
     assert!(!crate::test_support::with_decode_context(|ctx| {
-        crate::validate::validate_native_charged(ctx, &ir).expect("service native validation")
+        crate::validate::validate_native(ctx, &ir).expect("service native validation")
     })
     .iter()
     .any(profile_message));
@@ -1621,7 +1621,7 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
         .design_construction_operand_groups
         .clear();
     assert!(!crate::test_support::with_decode_context(|ctx| {
-        crate::validate::validate_native_charged(ctx, &ir).expect("service native validation")
+        crate::validate::validate_native(ctx, &ir).expect("service native validation")
     })
     .iter()
     .any(profile_message));
@@ -1631,7 +1631,7 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
         .expect("test Extrude profile")
         .scope_reference_ordinal = 1;
     assert!(crate::test_support::with_decode_context(|ctx| {
-        crate::validate::validate_native_charged(ctx, &ir).expect("service native validation")
+        crate::validate::validate_native(ctx, &ir).expect("service native validation")
     })
     .iter()
     .any(profile_message));
@@ -1767,7 +1767,7 @@ fn validation_accepts_unindexed_construction_identity_terminal() {
             && finding.message.contains("invalid nested frame")
     };
     assert!(!crate::test_support::with_decode_context(|ctx| {
-        crate::validate::validate_native_charged(ctx, &ir).expect("service native validation")
+        crate::validate::validate_native(ctx, &ir).expect("service native validation")
     })
     .iter()
     .any(invalid_identity));
@@ -1786,7 +1786,7 @@ fn validation_accepts_unindexed_construction_identity_terminal() {
         )
         .unwrap();
     assert!(crate::test_support::with_decode_context(|ctx| {
-        crate::validate::validate_native_charged(ctx, &ir).expect("service native validation")
+        crate::validate::validate_native(ctx, &ir).expect("service native validation")
     })
     .iter()
     .any(invalid_identity));
@@ -1906,7 +1906,7 @@ fn validation_accepts_class_338_sketch_curve_entity_selection_frame() {
                 == "Fusion Design entity-selection operand has an invalid nested frame"
     };
     assert!(!crate::test_support::with_decode_context(|ctx| {
-        crate::validate::validate_native_charged(ctx, &ir).expect("service native validation")
+        crate::validate::validate_native(ctx, &ir).expect("service native validation")
     })
     .iter()
     .any(invalid_entity_selection));

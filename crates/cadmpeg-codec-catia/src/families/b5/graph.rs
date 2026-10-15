@@ -884,8 +884,8 @@ fn parse_flat(
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Option<B5Graph>, CodecError> {
     let frames = collect_object_stream_frames(bytes);
-    let records = records_from_frames(bytes, &frames);
-    parse_from_records(ctx, bytes, &records, &frames, true, refusal)
+    let records = records_from_frames(bytes, &frames, None);
+    parse_from_records(ctx, bytes, &records, &frames, true, None, refusal)
 }
 
 pub(in crate::families) fn parse_from_frames(
@@ -894,22 +894,11 @@ pub(in crate::families) fn parse_from_frames(
     frames: &[ObjectFrame],
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Option<B5Graph>, CodecError> {
-    let records = records_from_frames(bytes, frames);
-    parse_from_records(ctx, bytes, &records, frames, true, refusal)
+    let records = records_from_frames(bytes, frames, None);
+    parse_from_records(ctx, bytes, &records, frames, true, None, refusal)
 }
 
 pub(in crate::families) fn parse_from_records(
-    ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-    records: &[B5Record],
-    frames: &[ObjectFrame],
-    require_topology: bool,
-    refusal: &mut crate::nurbs::LaneRefusals,
-) -> Result<Option<B5Graph>, CodecError> {
-    parse_from_records_budgeted(ctx, bytes, records, frames, require_topology, None, refusal)
-}
-
-pub(in crate::families) fn parse_from_records_budgeted(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &[B5Record],
@@ -2014,7 +2003,7 @@ pub(in crate::families) fn targeted_geometry_graph_from_frames(
         records.push(record);
     }
     records.sort_by_key(|left| left.offset);
-    parse_from_records(ctx, bytes, &records, frames, false, refusal)
+    parse_from_records(ctx, bytes, &records, frames, false, None, refusal)
 }
 
 fn is_targeted_geometry_class(family: u8, class: u8) -> bool {
@@ -5195,11 +5184,7 @@ fn parse_line_pcurve_fields(
 #[cfg(test)]
 fn records(bytes: &[u8]) -> Vec<B5Record> {
     let frames = object_stream_frames(bytes).collect::<Vec<_>>();
-    records_from_frames(bytes, &frames)
-}
-
-fn records_from_frames(bytes: &[u8], frames: &[ObjectFrame]) -> Vec<B5Record> {
-    records_from_frames_budgeted(bytes, frames, None)
+    records_from_frames(bytes, &frames, None)
 }
 
 /// Dependency-admission fixpoint with an optional local work budget.
@@ -5208,7 +5193,7 @@ fn records_from_frames(bytes: &[u8], frames: &[ObjectFrame]) -> Vec<B5Record> {
 /// passes rescanned every frame for every newly discovered dependency, which
 /// made a large population spend its bounded work slice on repeated scans
 /// before the selected topology graph could be parsed.
-fn records_from_frames_budgeted(
+fn records_from_frames(
     bytes: &[u8],
     frames: &[ObjectFrame],
     budget: Option<&WorkBudget>,
@@ -5221,7 +5206,7 @@ fn records_from_frames_budgeted(
 ///
 /// Each materialized topology record and each admitted dependency in the
 /// closure fixpoint spends one unit of the local work budget.
-fn records_from_indexed_frames_budgeted(
+fn records_from_indexed_frames(
     bytes: &[u8],
     frames: &[ObjectFrame],
     budget: Option<&WorkBudget>,
@@ -5832,8 +5817,7 @@ pub(in crate::families) fn select_object_stream_population(
         let mut census_records = Vec::new();
         for run in &runs {
             let frames = &stream_frames[run.stream_index][run.frame_range.clone()];
-            let records =
-                records_from_frames_budgeted(streams[run.stream_index].as_ref(), frames, budget);
+            let records = records_from_frames(streams[run.stream_index].as_ref(), frames, budget);
             if budget.is_some_and(WorkBudget::exhausted) {
                 return exhausted();
             }
@@ -5849,7 +5833,7 @@ pub(in crate::families) fn select_object_stream_population(
     let selected_stream = streams[selected.stream_index].as_ref();
     let selected_frames = &stream_frames[selected.stream_index][selected.frame_range.clone()];
     let Some(selected_records) =
-        records_from_indexed_frames_budgeted(selected_stream, selected_frames, budget)
+        records_from_indexed_frames(selected_stream, selected_frames, budget)
     else {
         return exhausted();
     };
@@ -5869,8 +5853,7 @@ pub(in crate::families) fn select_object_stream_population(
             continue;
         }
         let frames = &stream_frames[run.stream_index][run.frame_range.clone()];
-        let records =
-            records_from_frames_budgeted(streams[run.stream_index].as_ref(), frames, budget);
+        let records = records_from_frames(streams[run.stream_index].as_ref(), frames, budget);
         if budget.is_some_and(WorkBudget::exhausted) {
             return exhausted();
         }
@@ -5951,7 +5934,7 @@ pub(in crate::families) fn select_object_stream_population(
             }
         }
         if source.len() != selected.range.len() {
-            records = records_from_frames(&source, &frames);
+            records = records_from_frames(&source, &frames, None);
         }
     }
     ObjectStreamSelection::Selected {
@@ -5972,7 +5955,7 @@ fn owned_object_stream_population<'stream>(
 ) -> std::borrow::Cow<'stream, [u8]> {
     let run = &stream[topology_run.clone()];
     let run_frames = collect_object_stream_frames(run);
-    let run_records = records_from_frames(run, &run_frames);
+    let run_records = records_from_frames(run, &run_frames, None);
     let referenced = topology_surface_references(&run_records);
     let mut owned_ids = HashSet::new();
     for record in &run_records {
@@ -6190,7 +6173,7 @@ fn parse_face_record(record: &B5Record) -> Option<B5FaceRecord> {
 #[cfg(test)]
 fn typed_face_records(bytes: &[u8]) -> BTreeMap<u32, B5FaceRecord> {
     let frames = object_stream_frames(bytes).collect::<Vec<_>>();
-    let records = records_from_frames(bytes, &frames);
+    let records = records_from_frames(bytes, &frames, None);
     typed_face_records_from_records(&records)
 }
 
@@ -6211,7 +6194,7 @@ pub(in crate::families) fn typed_face_records_from_records(
 #[cfg(test)]
 fn typed_loop_records(bytes: &[u8]) -> BTreeMap<u32, B5Loop> {
     let frames = object_stream_frames(bytes).collect::<Vec<_>>();
-    let records = records_from_frames(bytes, &frames);
+    let records = records_from_frames(bytes, &frames, None);
     typed_loop_records_from_records(&records)
 }
 
@@ -6232,7 +6215,7 @@ pub(in crate::families) fn typed_loop_records_from_records(
 #[cfg(test)]
 fn typed_edge_records(bytes: &[u8]) -> BTreeMap<u32, B5Edge> {
     let frames = object_stream_frames(bytes).collect::<Vec<_>>();
-    let records = records_from_frames(bytes, &frames);
+    let records = records_from_frames(bytes, &frames, None);
     typed_edge_records_from_records(&records)
 }
 
@@ -6253,7 +6236,7 @@ pub(in crate::families) fn typed_edge_records_from_records(
 #[cfg(test)]
 fn typed_vertex_incidence_links(bytes: &[u8]) -> BTreeMap<u32, B5VertexIncidenceLink> {
     let frames = object_stream_frames(bytes).collect::<Vec<_>>();
-    let records = records_from_frames(bytes, &frames);
+    let records = records_from_frames(bytes, &frames, None);
     typed_vertex_incidence_links_from_records(&records)
 }
 
@@ -6274,7 +6257,7 @@ pub(in crate::families) fn typed_vertex_incidence_links_from_records(
 #[cfg(test)]
 fn typed_class_21_pcurves(bytes: &[u8]) -> BTreeMap<u32, B5Pcurve> {
     let frames = object_stream_frames(bytes).collect::<Vec<_>>();
-    let records = records_from_frames(bytes, &frames);
+    let records = records_from_frames(bytes, &frames, None);
     typed_class_21_pcurves_from_records(&records)
 }
 
@@ -6295,7 +6278,7 @@ pub(in crate::families) fn typed_class_21_pcurves_from_records(
 #[cfg(test)]
 fn typed_parameter_incidences(bytes: &[u8]) -> BTreeMap<u32, B5ParameterIncidence> {
     let frames = object_stream_frames(bytes).collect::<Vec<_>>();
-    let records = records_from_frames(bytes, &frames);
+    let records = records_from_frames(bytes, &frames, None);
     typed_parameter_incidences_from_records(&records)
 }
 
@@ -6316,7 +6299,7 @@ pub(in crate::families) fn typed_parameter_incidences_from_records(
 #[cfg(test)]
 fn typed_vertex_incidence_rosters(bytes: &[u8]) -> BTreeMap<u32, Vec<u32>> {
     let frames = object_stream_frames(bytes).collect::<Vec<_>>();
-    let records = records_from_frames(bytes, &frames);
+    let records = records_from_frames(bytes, &frames, None);
     typed_vertex_incidence_rosters_from_records(&records)
 }
 
@@ -6371,7 +6354,7 @@ pub(in crate::families) fn edge_face_references_from_frames(
     bytes: &[u8],
     frames: &[ObjectFrame],
 ) -> HashMap<u32, HashSet<u32>> {
-    let records = records_from_frames(bytes, frames);
+    let records = records_from_frames(bytes, frames, None);
     let mut edge_ids = HashSet::new();
     for record in records
         .iter()

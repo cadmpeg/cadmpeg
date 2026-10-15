@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::super::{
-    edge_recipe_structure_with_context, edge_recipe_structure_within,
-    face_recipe_nodes_with_context, FaceRecipeProgramKind, RECIPE_SIDE_SEARCH_WORK,
+    edge_recipe_structure, edge_recipe_structure_within, face_recipe_nodes, FaceRecipeProgramKind,
+    RECIPE_SIDE_SEARCH_WORK,
 };
 use cadmpeg_core::decode::{
     DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, WorkBudget,
@@ -20,7 +20,7 @@ fn edge_recipe_structure_refuses_recursion_limit() {
 
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
-        edge_recipe_structure_with_context(&ctx, &EDGE_RECIPE),
+        edge_recipe_structure(&ctx, &EDGE_RECIPE),
         Err(CodecError::ResourceLimit(failure))
             if failure.dimension == ResourceDimension::RecursionDepth
                 && failure.operation == "f3d recipe side recursion"
@@ -33,7 +33,7 @@ fn face_recipe_nodes_split_at_each_node_marker() {
     let arena = DecodeArena::new();
     let policy = DecodePolicy::default();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let nodes = face_recipe_nodes_with_context(
+    let nodes = face_recipe_nodes(
         &ctx,
         &program,
         0,
@@ -59,10 +59,7 @@ fn exhausting_edge_recipe_program() -> Vec<i32> {
 fn edge_recipe_side_search_skips_the_structure_past_its_work_cap() {
     let ctx = cadmpeg_test_support::service_decode_context();
     let program = exhausting_edge_recipe_program();
-    assert_eq!(
-        edge_recipe_structure_with_context(&ctx, &program).unwrap(),
-        None
-    );
+    assert_eq!(edge_recipe_structure(&ctx, &program).unwrap(), None);
     let budget = WorkBudget::new(RECIPE_SIDE_SEARCH_WORK);
     assert_eq!(
         edge_recipe_structure_within(&ctx, &budget, &program).unwrap(),

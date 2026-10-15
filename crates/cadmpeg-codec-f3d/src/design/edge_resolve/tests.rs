@@ -1643,7 +1643,7 @@ fn edge_group_resolves_only_one_perfect_candidate_assignment() {
     );
     assert_eq!(
         crate::test_support::with_decode_context(|decode_ctx| {
-            crate::design::edge_resolve::unique_edge_assignment_with_context(
+            crate::design::edge_resolve::unique_edge_assignment(
                 &[
                     crate::design::edge_resolve::EdgeAssignmentCandidates::Edges(vec![17, 18]),
                     crate::design::edge_resolve::EdgeAssignmentCandidates::Context,
@@ -1657,7 +1657,7 @@ fn edge_group_resolves_only_one_perfect_candidate_assignment() {
     );
     assert_eq!(
         crate::test_support::with_decode_context(|decode_ctx| {
-            crate::design::edge_resolve::unique_edge_assignment_with_context(
+            crate::design::edge_resolve::unique_edge_assignment(
                 &[
                     crate::design::edge_resolve::EdgeAssignmentCandidates::Context,
                     crate::design::edge_resolve::EdgeAssignmentCandidates::Context,

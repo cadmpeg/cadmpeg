@@ -848,11 +848,7 @@ pub(crate) fn project_compact_edge_selections(
                 .filter_map(|native| feature_ids_by_native.get(native))
             {
                 if dependency != feature_id {
-                    if dependencies.contains(dependency) {
-                        continue;
-                    }
-                    let id = dependency.clone();
-                    dependencies.insert(id);
+                    dependencies.insert(dependency.clone());
                 }
             }
             Ok(())
@@ -1261,10 +1257,7 @@ pub(crate) fn project_compact_surface_selections(
                                     }) {
                                         continue;
                                     }
-                                    if !dependencies.contains(producer) {
-                                        let dependency = producer.clone();
-                                        dependencies.insert(dependency);
-                                    }
+                                    dependencies.insert(producer.clone());
                                     let faces = vec![face];
                                     let native_copy = native.clone();
                                     PatternSeed::Faces(
@@ -1322,10 +1315,7 @@ pub(crate) fn project_compact_surface_selections(
                                 .filter_map(|producer| feature_ids_by_native.get(producer))
                                 .filter(|producer| *producer != feature_id)
                             {
-                                if !dependencies.contains(producer) {
-                                    let dependency = producer.clone();
-                                    dependencies.insert(dependency);
-                                }
+                                dependencies.insert(producer.clone());
                             }
                         }
                         *targets = if complete && !faces.is_empty() {
@@ -1372,10 +1362,7 @@ pub(crate) fn project_compact_surface_selections(
                             let native_copy = target_native.clone();
                             *targets = BodySelection::generated(bodies, native_copy)
                                 .unwrap_or(BodySelection::Native(target_native));
-                            if !dependencies.contains(producer) {
-                                let dependency = producer.clone();
-                                dependencies.insert(dependency);
-                            }
+                            dependencies.insert(producer.clone());
                         }
                         let tool_native = compact_surface_selection_value(&tool.components);
                         let tool_generated = tool
@@ -1398,10 +1385,7 @@ pub(crate) fn project_compact_surface_selections(
                             } else {
                                 FaceSelection::Native(tool_native)
                             };
-                            if !dependencies.contains(producer) {
-                                let dependency = producer.clone();
-                                dependencies.insert(dependency);
-                            }
+                            dependencies.insert(producer.clone());
                         }
                         break 'feature_edit;
                     }
@@ -1434,7 +1418,6 @@ pub(crate) fn project_compact_surface_selections(
                                 let face = match generated {
                                     Some((producer, local_id)) => {
                                         if producer != feature_id
-                                            && !dependencies.contains(producer)
                                         {
                                             dependencies.insert(producer.clone());
                                         }
@@ -1457,9 +1440,7 @@ pub(crate) fn project_compact_surface_selections(
                                     .filter_map(|producer| feature_ids_by_native.get(producer))
                                     .filter(|producer| *producer != feature_id)
                                 {
-                                    if !dependencies.contains(producer) {
-                                        dependencies.insert(producer.clone());
-                                    }
+                                    dependencies.insert(producer.clone());
                                 }
                                 Ok(face)
                             });
@@ -1495,10 +1476,7 @@ pub(crate) fn project_compact_surface_selections(
                                 .filter_map(|producer| feature_ids_by_native.get(producer))
                                 .filter(|producer| *producer != feature_id)
                             {
-                                if !dependencies.contains(producer) {
-                                    let dependency = producer.clone();
-                                    dependencies.insert(dependency);
-                                }
+                                dependencies.insert(producer.clone());
                             }
                         }
                         break 'feature_edit;
@@ -1528,10 +1506,7 @@ pub(crate) fn project_compact_surface_selections(
                             .and_then(|(feature, component)| Some((feature, component.local_id?)));
                         let face = match generated {
                             Some((producer, local_id)) => {
-                                if !dependencies.contains(producer) {
-                                    let dependency = producer.clone();
-                                    dependencies.insert(dependency);
-                                }
+                                dependencies.insert(producer.clone());
                                 let producer_id = producer.clone();
                                 let local_id_text = local_id.to_string();
                                 match cadmpeg_ir::features::GeneratedFaceRef::new(producer_id, local_id_text) {
@@ -1698,10 +1673,7 @@ pub(crate) fn project_compact_surface_selections(
                         .filter_map(|producer| feature_ids_by_native.get(producer))
                         .filter(|producer| *producer != feature_id)
                     {
-                        if !dependencies.contains(producer) {
-                            let dependency = producer.clone();
-                            dependencies.insert(dependency);
-                        }
+                        dependencies.insert(producer.clone());
                     }
                 }
                 Ok(())
@@ -1742,9 +1714,8 @@ pub(crate) fn project_compact_surface_selections(
         let face = face.clone();
         if let FaceSelection::Generated { faces, .. } = &face {
             for producer in faces.iter().map(|face| &face.feature) {
-                if producer != &feature.id && !feature.dependencies.contains(producer) {
-                    let copy = producer.clone();
-                    feature.dependencies.insert(copy);
+                if producer != &feature.id {
+                    feature.dependencies.insert(producer.clone());
                 }
             }
         }
@@ -1970,10 +1941,7 @@ fn draft_face_selection(
         if !generated.contains(&face) {
             generated.push(face);
         }
-        if !generated_dependencies.contains(producer) {
-            let dependency = producer.clone();
-            generated_dependencies.push(dependency);
-        }
+        generated_dependencies.push(producer.clone());
     }
     if generated.is_empty() {
         cadmpeg_ir::features::FaceSelection::Native(native)
@@ -2326,9 +2294,8 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
                         }
                         Err(_) => cadmpeg_ir::features::FaceSelection::Native(native),
                     };
-                    if producer != feature_id && !dependencies.contains(producer) {
-                        let dependency = producer.clone();
-                        dependencies.insert(dependency);
+                    if producer != feature_id {
+                        dependencies.insert(producer.clone());
                     }
                     return Ok(());
                 }

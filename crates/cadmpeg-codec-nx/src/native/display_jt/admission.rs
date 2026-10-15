@@ -58,7 +58,7 @@ impl DisplayJtGraph {
         &self.0.compressed_element_sequences
     }
 
-    pub(crate) fn from_namespace_with_context(
+    pub(crate) fn from_namespace(
         ctx: &DecodeContext<'_>,
         namespace: &NativeNamespace,
     ) -> Result<Self, NativeConvertError> {
@@ -71,13 +71,6 @@ impl DisplayJtGraph {
                 .arena_as_for_decode(ctx, "display_jt_compressed_elements")?,
             compressed_element_sequences: namespace
                 .arena_as_for_decode(ctx, "display_jt_compressed_element_sequences")?,
-        })
-    }
-
-    #[cfg(test)]
-    fn from_namespace(namespace: &NativeNamespace) -> Result<Self, NativeConvertError> {
-        crate::test_support::with_decode_context(|ctx| {
-            Self::from_namespace_with_context(ctx, namespace)
         })
     }
 
@@ -228,7 +221,7 @@ impl TryFrom<&NativeNamespace> for DisplayJtGraph {
     type Error = NativeConvertError;
 
     fn try_from(namespace: &NativeNamespace) -> Result<Self, Self::Error> {
-        Self::from_namespace(namespace)
+        crate::test_support::with_decode_context(|ctx| Self::from_namespace(ctx, namespace))
     }
 }
 

@@ -147,11 +147,9 @@ pub(crate) fn bind_unique_sketch_feature(
             continue;
         };
         let native_ref = native_ref.to_owned();
-        if !features[*index].dependencies.contains(&base_dependency) {
-            features[*index]
-                .dependencies
-                .insert(base_dependency.clone());
-        }
+        features[*index]
+            .dependencies
+            .insert(base_dependency.clone());
         let Some(binding) = bindings.iter().find(|binding| binding.index == base_index) else {
             continue;
         };
@@ -175,8 +173,7 @@ pub(crate) fn bind_unique_sketch_feature(
                     &binding.feature_id,
                     &binding.sketch,
                     binding.has_profile,
-                ) && !dependencies.contains(&binding.feature_id)
-                {
+                ) {
                     dependencies.insert(binding.feature_id.clone());
                 }
             }
@@ -402,13 +399,9 @@ pub(crate) fn derive_feature_outputs(
                 Err(cadmpeg_core::CodecError::Malformed(_)) => continue,
                 Err(error) => return Err(error),
             };
-            if !feature.evaluation.outputs().contains(&body) {
-                let mut outputs = feature.evaluation.outputs().clone();
-                outputs.push(body);
-                feature
-                    .evaluation
-                    .set_outputs(cadmpeg_ir::features::DistinctMembers::try_from(outputs)?);
-            }
+            feature.evaluation.edit(|_, outputs| {
+                outputs.insert(body);
+            });
         }
     }
     if face_producers.is_empty() {

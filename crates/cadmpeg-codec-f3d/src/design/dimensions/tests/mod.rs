@@ -17,12 +17,8 @@ fn project_dimension_constraints(
     inputs: &crate::design::dimensions::DimensionConstraintInputs<'_>,
     spatial_sketches: &[cadmpeg_ir::sketches::SpatialSketch],
 ) -> Vec<cadmpeg_ir::sketches::SketchConstraint> {
-    crate::design::dimensions::project_dimension_constraints(
-            inputs,
-            spatial_sketches,
-            1.0e-6,
-        )
-    .expect("dimension projection")
+    crate::design::dimensions::project_dimension_constraints(inputs, spatial_sketches, 1.0e-6)
+        .expect("dimension projection")
 }
 
 fn project_spatial_dimension_constraints(
@@ -31,11 +27,11 @@ fn project_spatial_dimension_constraints(
     spatial_entities: &[cadmpeg_ir::sketches::SpatialSketchEntity],
 ) -> Vec<cadmpeg_ir::sketches::SpatialSketchConstraint> {
     crate::design::dimensions::project_spatial_dimension_constraints(
-            inputs,
-            spatial_sketches,
-            spatial_entities,
-            1.0e-6,
-        )
+        inputs,
+        spatial_sketches,
+        spatial_entities,
+        1.0e-6,
+    )
     .expect("dimension projection")
 }
 

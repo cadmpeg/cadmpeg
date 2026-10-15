@@ -1004,7 +1004,7 @@ pub(crate) fn project_surface_sweep_profiles(
             }
         });
         for dependency in dependencies {
-            if dependency != feature.id && !feature.dependencies.contains(&dependency) {
+            if dependency != feature.id {
                 feature.dependencies.insert(dependency);
             }
         }
@@ -1223,7 +1223,7 @@ pub(crate) fn project_compact_combine_paths(
             continue;
         }
         for dependency in projection.dependencies {
-            if dependency != feature.id && !feature.dependencies.contains(&dependency) {
+            if dependency != feature.id {
                 feature.dependencies.insert(dependency);
             }
         }

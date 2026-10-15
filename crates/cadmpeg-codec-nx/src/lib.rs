@@ -138,13 +138,11 @@ impl CodecBackend for NxCodec {
         let Some(namespace) = ir.native.namespace("nx") else {
             return Ok(Vec::new());
         };
-        let admitted = native::display_jt::admission::DisplayJtGraph::from_namespace_with_context(
+        let admitted = native::display_jt::admission::DisplayJtGraph::from_namespace(
             ctx, namespace,
         )
         .and_then(|_| {
-            native::structure::occurrences::FastLoadOccurrences::from_namespace_with_context(
-                ctx, namespace,
-            )
+            native::structure::occurrences::FastLoadOccurrences::from_namespace(ctx, namespace)
         });
         Ok(match admitted {
             Ok(_) => Vec::new(),

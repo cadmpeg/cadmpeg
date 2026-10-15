@@ -1355,9 +1355,7 @@ fn nonplanar_saved_spline_places_as_model_curve() {
     )
     .expect("valid local NURBS");
 
-    let placed = (placed_section_nurbs(&transform, &local))
-        .expect("placement resources")
-        .expect("finite placed NURBS");
+    let placed = placed_section_nurbs(&transform, &local).expect("finite placed NURBS");
 
     assert_eq!(placed.control_points()[0], Point3::new(11.0, 17.0, 32.0));
     assert_eq!(placed.control_points()[1], Point3::new(14.0, 14.0, 35.0));
@@ -1471,7 +1469,6 @@ fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense
         &"revolved spline fixture",
         &mut crate::lane_refusal::LaneRefusals::new(),
     )
-    .expect("service revolution allocation")
     .expect("revolved spline surface");
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) = &surface else {
         panic!("spline revolution must retain a NURBS surface");
@@ -1593,7 +1590,6 @@ fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense
         &"reversed revolved spline fixture",
         &mut crate::lane_refusal::LaneRefusals::new(),
     )
-    .expect("service revolution allocation")
     .expect("reversed revolved spline surface");
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(reversed)) = reversed else {
         panic!("reversed spline revolution must retain a NURBS surface");

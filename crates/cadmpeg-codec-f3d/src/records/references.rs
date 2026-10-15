@@ -318,7 +318,6 @@ impl DesignVisualToken {
     }
 
     /// The admitted visual token as an identity key.
-    #[cfg(test)]
     pub(crate) fn identity_key(&self) -> cadmpeg_ir::ids::IdentityKey {
         self.0.clone()
     }
