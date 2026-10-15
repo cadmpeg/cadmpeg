@@ -4,6 +4,7 @@
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 
+mod assembly_bodies;
 mod occurrence_limits;
 mod placement_limits;
 

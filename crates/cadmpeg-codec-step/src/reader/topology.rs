@@ -344,19 +344,152 @@ pub(super) fn representation_bodies<'a>(
     })
 }
 
+/// The orientation map of [`assembly_placement_orientation`] and the scoped
+/// reservation its node storage is admitted against.
+type PlacementOrientation<'ctx> = (BTreeMap<u64, (u64, u64)>, ScopedReservation<'ctx>);
+
+/// Which representation of an assembly placement is the PARENT's and which the CHILD's.
+///
+/// Taken from STEP's own structure, not from argument order:
+/// `CONTEXT_DEPENDENT_SHAPE_REPRESENTATION(rel, pds)` says *`rel` places the component named by
+/// `pds`*; `pds` wraps the `NEXT_ASSEMBLY_USAGE_OCCURRENCE`, whose relating and related product
+/// definitions are the parent and the child; and `SHAPE_DEFINITION_REPRESENTATION` maps each
+/// definition to its representation.
+///
+/// Argument order is not the discriminator: writers disagree about it. Some name the assembly's
+/// representation first and others the component's, so a first-to-second rule walks child to
+/// parent on half of them.
+///
+/// A relationship this cannot orient is left out of the reachability graph entirely — it is an
+/// assembly placement whose structure did not resolve, and following it in an unknown direction is
+/// what the defect above was.
+///
+/// Both maps are scratch: they live for one call of [`shape_representation_relationships`], so
+/// their node storage is admitted against a scoped reservation the caller drops, and each record
+/// visited is charged as work (every charge is also a cancellation point).
+fn assembly_placement_orientation<'ctx>(
+    exchange: &Exchange,
+    ctx: &'ctx DecodeContext<'_>,
+) -> Result<PlacementOrientation<'ctx>, CodecError> {
+    const OPERATION: &str = "step_assembly_placement_orientation";
+    let mut reservation = ctx.reserve_scoped(0, OPERATION)?;
+    let mut definition_representation = BTreeMap::<u64, u64>::new();
+    for (_, record) in exchange.entities("SHAPE_DEFINITION_REPRESENTATION") {
+        ctx.charge_work(1, OPERATION)?;
+        let Some(shape) = named_reference(record, "SHAPE_DEFINITION_REPRESENTATION", 0, 0) else {
+            continue;
+        };
+        let Some(representation) = named_reference(record, "SHAPE_DEFINITION_REPRESENTATION", 1, 1)
+        else {
+            continue;
+        };
+        let Some(shape_record) = exchange.records().get(&shape) else {
+            continue;
+        };
+        let Some(definition) = named_reference(shape_record, "PRODUCT_DEFINITION_SHAPE", 2, 0)
+        else {
+            continue;
+        };
+        reservation.with_storage(|| {
+            ctx.insert_btree_map(
+                &mut definition_representation,
+                definition,
+                representation,
+                OPERATION,
+            )
+        })?;
+    }
+
+    let mut oriented = BTreeMap::<u64, (u64, u64)>::new();
+    for (_, record) in exchange.entities("CONTEXT_DEPENDENT_SHAPE_REPRESENTATION") {
+        ctx.charge_work(1, OPERATION)?;
+        let Some(relationship) =
+            named_reference(record, "CONTEXT_DEPENDENT_SHAPE_REPRESENTATION", 0, 0)
+        else {
+            continue;
+        };
+        let Some(shape) = named_reference(record, "CONTEXT_DEPENDENT_SHAPE_REPRESENTATION", 1, 1)
+        else {
+            continue;
+        };
+        let Some(shape_record) = exchange.records().get(&shape) else {
+            continue;
+        };
+        let Some(usage) = named_reference(shape_record, "PRODUCT_DEFINITION_SHAPE", 2, 0) else {
+            continue;
+        };
+        let Some(usage_record) = exchange.records().get(&usage) else {
+            continue;
+        };
+        let Some(parent) = named_reference(usage_record, "NEXT_ASSEMBLY_USAGE_OCCURRENCE", 3, 0)
+        else {
+            continue;
+        };
+        let Some(child) = named_reference(usage_record, "NEXT_ASSEMBLY_USAGE_OCCURRENCE", 4, 1)
+        else {
+            continue;
+        };
+        let (Some(&parent), Some(&child)) = (
+            definition_representation.get(&parent),
+            definition_representation.get(&child),
+        ) else {
+            continue;
+        };
+        reservation.with_storage(|| {
+            ctx.insert_btree_map(&mut oriented, relationship, (parent, child), OPERATION)
+        })?;
+    }
+    Ok((oriented, reservation))
+}
+
 /// A product shape can use a placement-only `SHAPE_REPRESENTATION` and link
 /// it to the body-producing representation with `SHAPE_REPRESENTATION_RELATIONSHIP`.
 /// The relationship is undirected for body reachability; retain both endpoints
 /// in one indexed graph so resolution does not rescan the exchange per call.
+///
+/// **An assembly component's PLACEMENT is spelled as a `SHAPE_REPRESENTATION_RELATIONSHIP`
+/// too, and it is a ONE-WAY edge, parent -> child.** The complex entity
+/// `( REPRESENTATION_RELATIONSHIP(..a,..b) REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION(..)
+/// SHAPE_REPRESENTATION_RELATIONSHIP() )` -- the one a `CONTEXT_DEPENDENT_SHAPE_REPRESENTATION`
+/// names -- relates an assembly's representation to a component's *through a transform*.
+/// Followed parent -> child it gives an assembly's definition its TRANSITIVE body list, which a
+/// placement resolver subtracts level by level. Retained in BOTH directions, a leaf component
+/// walked back up to the assembly root and absorbed the entire model.
+///
+/// Undirected, a body becomes claimed by every product definition above it, and a placement
+/// resolver places it once per claimant. Dropping these edges instead leaves an assembly's own
+/// definition with no bodies at all. A directed first-to-second rule is not the fix either -- see
+/// [`assembly_placement_orientation`].
 fn shape_representation_relationships(
     exchange: &Exchange,
     ctx: &DecodeContext<'_>,
 ) -> Result<BTreeMap<u64, Vec<u64>>, CodecError> {
+    let (oriented, _oriented_bytes) = assembly_placement_orientation(exchange, ctx)?;
     let mut related = BTreeMap::<u64, Vec<u64>>::new();
-    for record in exchange.records().values() {
+    for (record_id, record) in exchange.records() {
         let Some(relationship) = record.partial("SHAPE_REPRESENTATION_RELATIONSHIP") else {
             continue;
         };
+        if record
+            .partial("REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION")
+            .is_some()
+        {
+            // An assembly placement is a ONE-WAY reachability edge, parent -> child. Retaining it
+            // undirected is what let a leaf component walk back up to the assembly root and absorb
+            // the entire model; dropping it entirely is also wrong, because an assembly's own
+            // definition would then list no bodies at all. The direction is taken from the
+            // source's structure below, never from argument order, which writers disagree about.
+            if let Some(&(parent, child)) = oriented.get(record_id) {
+                ctx.push_btree_group(
+                    &mut related,
+                    parent,
+                    child,
+                    "step_shape_relationship_groups",
+                    "step_shape_relationship_members",
+                )?;
+            }
+            continue;
+        }
         let mut references = relationship
             .parameters
             .iter()
