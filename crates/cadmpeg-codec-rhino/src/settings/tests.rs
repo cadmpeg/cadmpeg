@@ -23,9 +23,8 @@ fn parse_test_metadata(
         &arena,
         &cadmpeg_core::decode::DecodePolicy::service(),
     )
-    .expect("test input fits the service profile");
-    settings::parse_metadata(&ctx, data, archive, tables, warnings)
-        .expect("test metadata fits the service profile")
+    .expect("build the decode context");
+    settings::parse_metadata(&ctx, data, archive, tables, warnings).expect("parse metadata")
 }
 
 fn parse_test_extensions(

@@ -81,7 +81,7 @@ fn assert_planar_sheet_round_trip(ir: &CadIr, loop_count: usize, edge_count: usi
         }
         assert!(
             cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
-                .expect("resource allocation did not fail")
+                .expect("validate the neutral model")
                 .is_ok(),
             "{version:?}"
         );

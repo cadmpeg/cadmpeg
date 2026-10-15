@@ -509,7 +509,7 @@ fn embedded_history_point_cloud_projects_one_feature() {
                 &mut ir,
                 &mut Diagnostics::new(),
             )
-            .expect("service profile admits embedded point cloud"),
+            .expect("project the embedded point cloud"),
             (1, 0, 0, 0)
         );
         assert_eq!(ir.model.features.len(), 1);

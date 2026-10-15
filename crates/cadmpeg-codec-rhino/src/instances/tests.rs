@@ -944,7 +944,7 @@ pub(crate) fn static_instance_suppresses_member_and_two_references_expand_with_d
         && loss.message.contains("decoded 3/3 Rhino object records")));
     assert!(
         cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -991,7 +991,7 @@ fn instance_transform_uses_member_carriers_for_mixed_body_and_free_geometry() {
     assert_eq!(curve.control_points()[1].x, 12.0);
     assert!(
         cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -1090,7 +1090,7 @@ pub(crate) fn nested_instance_composes_parent_child_and_records_outer_to_inner_p
     )));
     assert!(
         cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -1180,7 +1180,7 @@ pub(crate) fn nil_and_duplicate_reference_ids_use_distinct_record_path_segments(
     );
     assert!(
         cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -1251,7 +1251,7 @@ pub(crate) fn instance_bakes_mesh_subd_and_normals_without_changing_subd_metadat
     );
     assert!(
         cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -1330,7 +1330,7 @@ pub(crate) fn nonuniform_instance_converts_analytic_circle_to_exact_nurbs() {
     );
     assert!(
         cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -1371,7 +1371,7 @@ pub(crate) fn transformed_procedural_instance_keeps_solved_carriers_without_dang
         .any(|loss| loss.message.contains("exact solved carrier retained")));
     assert!(
         cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -1603,7 +1603,7 @@ fn invalid_instance_families_are_atomic_and_later_reference_recovers() {
     }));
     assert!(
         cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }

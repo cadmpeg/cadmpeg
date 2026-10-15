@@ -2117,7 +2117,7 @@ mod tests {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let policy = cadmpeg_core::decode::DecodePolicy::service();
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
-            .expect("test context input fits service profile");
+            .expect("build the decode context");
         f(&ctx)
     }
 
@@ -2139,7 +2139,7 @@ mod tests {
             FiniteReal::new(3.0).expect("finite"),
         ];
         let remapped = super::remap_nurbs_domain(rational_line_for_limits(), target, 0)
-            .expect("service profile admits remapped knots");
+            .expect("remap NURBS domain");
         assert_eq!(remapped.knots().as_slice(), &[2.0, 2.0, 3.0, 3.0]);
     }
 
@@ -2157,7 +2157,7 @@ mod tests {
                 0,
                 "polycurve knot insertion failed",
             )
-            .expect("service profile admits knot insertion");
+            .expect("insert knot once");
         });
         assert_eq!(points.len(), 4);
     }
