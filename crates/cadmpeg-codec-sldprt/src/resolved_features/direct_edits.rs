@@ -510,7 +510,6 @@ mod tests {
                 name: "d1-name".into(),
                 value: cadmpeg_ir::scalar::FiniteReal::new(0.005).expect("finite test scalar"),
                 role: FeatureInputScalarRole::Driving,
-
                 operands: Vec::new(),
             }],
             relation_bindings: Vec::new(),

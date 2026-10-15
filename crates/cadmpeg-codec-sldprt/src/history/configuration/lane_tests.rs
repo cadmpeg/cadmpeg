@@ -296,7 +296,6 @@ fn configuration_sketch_state_reuses_projected_neutral_sketch() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
             unresolved.clone(),
             cadmpeg_ir::features::DistinctMembers::try_from(Vec::new()).unwrap(),
@@ -316,7 +315,6 @@ fn configuration_sketch_state_reuses_projected_neutral_sketch() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
             FeatureDefinition::Operation(FeatureOperation::SpatialSketch {
                 sketch: Some(spatial_sketch_id.clone()),
@@ -514,7 +512,6 @@ fn dissected_sketch_alias_inherits_an_omitted_class_without_solved_geometry() {
         source_tag: Some("Sketch".into()),
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
@@ -580,7 +577,6 @@ fn configuration_sketch_states_reuse_shared_geometry_across_lanes() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
             FeatureDefinition::Operation(FeatureOperation::SpatialSketch {
                 sketch: Some(sketch_id.clone()),
@@ -599,7 +595,6 @@ fn configuration_sketch_states_reuse_shared_geometry_across_lanes() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
             FeatureDefinition::Operation(FeatureOperation::SpatialSketch {
                 sketch: Some(planar_sketch_id.clone()),
@@ -714,7 +709,6 @@ fn configuration_sketch_state_reuses_scoped_spatial_sketch() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
             FeatureDefinition::Operation(FeatureOperation::SpatialSketch {
                 sketch: Some(sketch_id.clone()),
@@ -790,7 +784,6 @@ fn supplemental_edge_paths_project_into_matching_configuration_state() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
             definition,
             cadmpeg_ir::features::DistinctMembers::try_from(Vec::new()).unwrap(),
@@ -978,7 +971,6 @@ fn scoped_offset_plane_inherits_only_a_frame_matching_reference() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
             definition,
             cadmpeg_ir::features::DistinctMembers::try_from(Vec::new()).unwrap(),
@@ -1093,7 +1085,6 @@ fn scoped_offset_plane_inherits_an_omitted_resolved_reference() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
             definition,
             cadmpeg_ir::features::DistinctMembers::try_from(Vec::new()).unwrap(),
@@ -1199,7 +1190,6 @@ fn scoped_offset_plane_does_not_merge_a_resolved_plane_with_a_face() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
             definition,
             cadmpeg_ir::features::DistinctMembers::try_from(Vec::new()).unwrap(),
@@ -1475,7 +1465,6 @@ fn configuration_topology_binding_updates_snapshot_face_selection() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
             definition(),
             cadmpeg_ir::features::DistinctMembers::try_from(Vec::new()).unwrap(),
@@ -1578,7 +1567,6 @@ fn configuration_frame_alias_binds_without_body_membership() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
             definition(),
             cadmpeg_ir::features::DistinctMembers::try_from(Vec::new()).unwrap(),

@@ -638,7 +638,6 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(
@@ -900,7 +899,6 @@ fn unique_unindexed_point_locus_is_projected() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(
@@ -1029,7 +1027,6 @@ fn spatial_position_point_uses_unique_radius_matched_bore_axis() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::SpatialSketch {
                 sketch: Some(sketch_id.clone()),
@@ -1183,7 +1180,6 @@ fn shared_spatial_sketch_falls_back_to_geometry_without_scoped_markers() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::SpatialSketch {
                 sketch: Some(sketch_id.clone()),
@@ -1295,7 +1291,6 @@ fn spatial_position_relation_handle_uses_its_model_space_bore_locus() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::SpatialSketch {
                 sketch: Some(sketch_id.clone()),
@@ -1508,7 +1503,6 @@ fn source_intervals_supply_legacy_hole_profiles() {
         name: "depth-name".into(),
         value: cadmpeg_ir::scalar::FiniteReal::new(0.0068).expect("finite test scalar"),
         role: FeatureInputScalarRole::Native,
-
         operands: Vec::new(),
     });
     let mut histories = [history];
@@ -1738,7 +1732,6 @@ fn parameter_class_supplies_an_operandless_scalar_unit() {
         value: cadmpeg_ir::scalar::FiniteReal::new(std::f64::consts::TAU)
             .expect("finite test scalar"),
         role: FeatureInputScalarRole::Native,
-
         operands: Vec::new(),
     });
 

@@ -1159,14 +1159,6 @@ pub(crate) fn relation_bindings(
     parent: &str,
     classes: &[FeatureInputClass],
     scalars: &[FeatureInputScalar],
-) -> Result<Vec<FeatureInputRelationBinding>, CodecError> {
-    relation_bindings_scoped(parent, classes, scalars, &[])
-}
-
-pub(super) fn relation_bindings_scoped(
-    parent: &str,
-    classes: &[FeatureInputClass],
-    scalars: &[FeatureInputScalar],
     intervals: &[(u64, Option<u64>, String)],
 ) -> Result<Vec<FeatureInputRelationBinding>, CodecError> {
     let lane_key = parent.rsplit_once('#').map_or(parent, |(_, key)| key);

@@ -502,7 +502,6 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
         native_ref: Some(native_ref.into()),
     };
@@ -960,9 +959,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
                 cadmpeg_ir::features::SweepSection::Unresolved(None),
                 Vec::new(),
             ),
-
             path: Some(PathRef::Native("curve-reference".into())),
-
             orientation: None,
             transition: None,
             transformation: None,
@@ -1106,7 +1103,6 @@ fn e1_line_distance_indices_address_coordinate_point_pairs() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
@@ -1308,7 +1304,6 @@ fn roster_point_line_distance_materializes_one_solver_line() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
@@ -1497,7 +1492,6 @@ fn point_line_projection_uses_the_resolved_point_when_marker_frames_are_ambiguou
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
@@ -1685,7 +1679,6 @@ fn reused_point_handle_gets_one_solved_locus_per_dimension_relation() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),

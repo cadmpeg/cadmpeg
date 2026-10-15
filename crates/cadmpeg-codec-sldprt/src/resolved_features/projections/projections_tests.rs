@@ -196,7 +196,6 @@ fn resolved_plane_binds_to_a_face_without_retaining_a_duplicate_frame() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
                 reference: Some(DatumPlaneReference::ResolvedPlane {
@@ -269,7 +268,6 @@ fn generic_native_offset_plane_support_stays_native() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
                 reference: Some(DatumPlaneReference::Face {
@@ -337,7 +335,6 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
         native_ref: Some(native_ref.into()),
     };
@@ -530,7 +527,6 @@ fn cosmetic_thread_accepts_repeated_carriers_with_distinct_owner_paths() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
         native_ref: Some(native_ref.into()),
     };
@@ -632,7 +628,6 @@ fn compact_surface_selection_binds_surface_operation_face_slot() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::OffsetSurface {
                 faces: FaceSelection::Unresolved,
@@ -695,7 +690,6 @@ fn compact_surface_selection_binds_full_round_fillet_face_sets() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
         native_ref: Some(native_ref.into()),
     };
@@ -811,7 +805,6 @@ fn compact_surface_cut_binds_target_body_and_tool_face_by_vector_order() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
         native_ref: Some(native_ref.into()),
     };
@@ -937,7 +930,6 @@ fn planar_surface_keeps_unresolved_definition_and_adds_defining_dependencies() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
         native_ref: Some(native_ref.into()),
     };
@@ -1064,7 +1056,6 @@ fn compact_surface_selection_accepts_semantic_lane_consensus() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
         native_ref: Some(native_ref.into()),
     };
@@ -1224,7 +1215,6 @@ fn split_face_collects_distinct_generated_target_faces() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
         native_ref: Some(native_ref.into()),
     };

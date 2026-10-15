@@ -203,9 +203,7 @@ pub(super) fn project_sweep(
             ),
             Vec::new(),
         ),
-
         path,
-
         orientation: None,
         transition: None,
         transformation: None,

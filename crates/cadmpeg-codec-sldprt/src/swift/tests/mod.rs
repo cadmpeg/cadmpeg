@@ -165,7 +165,6 @@ fn neutral_feature(
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
         native_ref: Some(format!("sldprt:history:feature#{id}")),
     }
@@ -186,7 +185,6 @@ fn simple_hole_definition(diameter: f64) -> cadmpeg_ir::features::FeatureDefinit
             Some(cadmpeg_ir::scalar::PositiveLength::new(diameter).unwrap()),
         )
         .unwrap(),
-
         extent: None,
         bottom: None,
         taper_angle: None,

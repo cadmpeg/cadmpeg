@@ -25,7 +25,6 @@ use crate::resolved_features::markers::marker_object_index;
 use crate::resolved_features::markers::marker_spatial_coordinates;
 use crate::resolved_features::markers::reference_cells;
 use crate::resolved_features::markers::relation_bindings;
-use crate::resolved_features::markers::relation_bindings_scoped;
 use crate::resolved_features::markers::sketch_input_entities;
 use crate::resolved_features::markers::spatial_sketches;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureId, FeatureOperation};
@@ -76,7 +75,6 @@ fn reference_cells_bind_reused_lane_local_tokens_to_their_declared_class() {
         name: "name".into(),
         value: cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite test scalar"),
         role: FeatureInputScalarRole::Driving,
-
         operands: vec![reference(143), reference(287)],
     }];
     let classes = [FeatureInputClass {
@@ -411,7 +409,6 @@ fn compact_spatial_profile_points_project_and_ignore_unindexed_anchors() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::SpatialSketch { sketch: None }),
         ),
@@ -517,7 +514,6 @@ fn current_indexed_profile_spatial_points_project_from_indexed_markers() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::SpatialSketch { sketch: None }),
         ),
@@ -697,7 +693,6 @@ fn relation_binding_requires_family_operand_signature() {
         name: "name".into(),
         value: cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite test scalar"),
         role: FeatureInputScalarRole::Driving,
-
         operands: vec![operand(kind, 0), operand(kind, 1)],
     };
 
@@ -706,6 +701,7 @@ fn relation_binding_requires_family_operand_signature() {
             "lane",
             std::slice::from_ref(&class),
             &[scalar(FeatureInputOperandKind::E1)],
+            &[],
         )
         .unwrap()
         .len(),
@@ -717,6 +713,7 @@ fn relation_binding_requires_family_operand_signature() {
         &[scalar(FeatureInputOperandKind::Native(
             NativeOperandTag::TAG_8DDA
         ))],
+        &[],
     )
     .unwrap()
     .is_empty());
@@ -748,7 +745,6 @@ fn relation_binding_with_ambiguous_declarations_is_withheld() {
         name: "name".into(),
         value: cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite test scalar"),
         role: FeatureInputScalarRole::Driving,
-
         operands: vec![operand(0), operand(1)],
     };
 
@@ -756,6 +752,7 @@ fn relation_binding_with_ambiguous_declarations_is_withheld() {
         "lane",
         &[class(10, "sgPntPntDist"), class(20, "sgPntPntVertDist")],
         &[scalar],
+        &[],
     )
     .unwrap()
     .is_empty());
@@ -787,11 +784,10 @@ fn scoped_relation_binding_does_not_cross_feature_interval() {
         name: "name".into(),
         value: cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite test scalar"),
         role: FeatureInputScalarRole::Driving,
-
         operands: vec![operand(0), operand(1)],
     };
 
-    assert!(relation_bindings_scoped(
+    assert!(relation_bindings(
         "lane",
         &[class],
         &[scalar],

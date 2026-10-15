@@ -175,7 +175,6 @@ fn encoder_rejects_source_less_unresolved_extrusion_profile() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Extrude {
                 profile: ProfileRef::Planar(PlanarProfileRef::Unresolved(
@@ -362,7 +361,6 @@ fn encoder_writes_source_less_line_sketches() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
@@ -405,9 +403,7 @@ fn encoder_writes_source_less_line_sketches() {
                 cadmpeg_ir::features::SweepSection::Profile(profile.clone()),
                 Vec::new(),
             ),
-
             path: Some(path.clone()),
-
             orientation: None,
             transition: None,
             transformation: None,
@@ -462,7 +458,6 @@ fn encoder_writes_source_less_line_sketches() {
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
-
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
             native_ref: None,
         });
@@ -479,7 +474,6 @@ fn encoder_writes_source_less_line_sketches() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Extrude {
                 profile: ProfileRef::Planar(PlanarProfileRef::Sketch(sketch_id)),
@@ -780,7 +774,6 @@ fn encoder_writes_source_less_spatial_point_and_line_sketches() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::SpatialSketch {
                 sketch: Some(sketch_id),

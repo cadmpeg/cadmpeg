@@ -737,7 +737,6 @@ mod tests {
             source_tag: Some("Draft".into()),
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
-
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Draft {
                     faces: FaceSelection::Unresolved,
