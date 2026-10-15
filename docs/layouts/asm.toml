@@ -875,13 +875,19 @@ source = "spec"
 anchor = "dir2 (polar axis)"
 note = "Token tag not stated."
 
+[[record.field]]
+name = "v_sense"
+type = "sab_logical"
+source = "spec"
+anchor = "dir2 (polar axis), v-sense logical"
+
 [[record]]
 name = "torus_surface"
 kind = "slot"
 section = "6.2"
 anchor = "**`torus` (142 B basic / 160 B ranged)**"
 size = 142
-note = "The 142-byte form ends at the range flag `0x0b`. A `0x0a` range flag selects the 160-byte variant, which appends start and end angles. `minor < 0` with `|minor| ≤ |major|` describes an apple/lemon torus."
+note = "The 142-byte form stores four absent parameter bounds. The 160-byte form stores two present bounds. `minor < 0` with `|minor| ≤ |major|` describes an apple/lemon torus."
 
 [[record.field]]
 name = "origin"
@@ -915,10 +921,10 @@ anchor = "`ref_direction`"
 note = "Token tag not stated; typed here as the vector token used by the other frame directions."
 
 [[record.field]]
-name = "range_flag"
+name = "v_sense"
 type = "sab_logical"
 source = "spec"
-anchor = "then a range flag (`0x0b` = full 142-B variant; `0x0a` = 160-B variant with start/end angles)"
+anchor = "then the v-sense logical and four optional parameter bounds"
 
 [[record]]
 name = "straight_curve"
