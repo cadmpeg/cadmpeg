@@ -1035,7 +1035,7 @@ fn spline_scalar_reader_withholds_zero_count_past_end() {
 fn parent_feature_array_keeps_three_byte_ids_and_excludes_its_trailer() {
     let payload =
         b"srf_prim_ptr(plane)\0\xe0\0parent_feats\0\xf8\x02\xbf\xff\xc0\x40\0\xf7\x10\x01\xe1";
-    let records = crate::decode::with_test_decode_ctx(|ctx| {
+    let records = crate::decode::with_service_context(|ctx| {
         super::super::named_prototype_records(
             ctx,
             payload,

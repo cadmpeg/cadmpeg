@@ -153,7 +153,7 @@ fn section_solver_entity_identity_and_loci_require_unique_semantics() {
         }
     );
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(ctx, &point_symmetry))
+        crate::decode::with_service_context(|ctx| resolved_section_points(ctx, &point_symmetry))
             .expect("test section solve")[&3],
         [4.0, 4.0]
     );
@@ -366,7 +366,7 @@ fn section_solver_entity_identity_and_loci_require_unique_semantics() {
     };
     assert_eq!(
         section_point_row_geometry(
-            &crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(ctx, &opaque_point))
+            &crate::decode::with_service_context(|ctx| resolved_section_points(ctx, &opaque_point))
                 .expect("test section solve"),
             &opaque_point
                 .segments
@@ -739,7 +739,7 @@ fn section_solver_entity_identity_and_loci_require_unique_semantics() {
         Some(SectionEntityIncidenceFamily::Point)
     );
     assert_eq!(
-        *(crate::decode::with_test_decode_ctx(|ctx| section_skamp_constraints_for_geometry(
+        *(crate::decode::with_service_context(|ctx| section_skamp_constraints_for_geometry(
             ctx,
             &opaque_line,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"),
@@ -827,7 +827,7 @@ fn section_solver_entity_identity_and_loci_require_unique_semantics() {
         .rows_mut()[0]
         .status = 1;
     assert!(matches!(
-        crate::decode::with_test_decode_ctx(|ctx| section_skamp_constraints_for_geometry(
+        crate::decode::with_service_context(|ctx| section_skamp_constraints_for_geometry(
             ctx,
             &opaque_line,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"),
@@ -848,7 +848,7 @@ fn section_solver_entity_identity_and_loci_require_unique_semantics() {
         SketchConstraintDefinitionInput::Vertical { .. }
     ));
     assert!(matches!(
-        crate::decode::with_test_decode_ctx(|ctx| section_skamp_constraints_for_geometry(
+        crate::decode::with_service_context(|ctx| section_skamp_constraints_for_geometry(
             ctx,
             &opaque_line,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"),

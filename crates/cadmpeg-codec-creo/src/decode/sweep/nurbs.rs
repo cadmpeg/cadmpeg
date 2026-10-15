@@ -1240,7 +1240,7 @@ mod tests {
     fn a_planar_saved_spline_is_sketch_geometry_and_states_no_refusal() {
         let mut refusal = crate::lane_refusal::LaneRefusals::new();
         assert!(
-            crate::decode::with_test_decode_ctx(|ctx| super::saved_spline_sketch_geometry(
+            crate::decode::with_service_context(|ctx| super::saved_spline_sketch_geometry(
                 ctx,
                 &planar_or_offset_spline(0.0),
                 &mut refusal
@@ -1255,7 +1255,7 @@ mod tests {
     fn a_non_planar_saved_spline_states_the_interpolation_point_that_left_the_sketch_plane() {
         let mut refusal = crate::lane_refusal::LaneRefusals::new();
         assert!(
-            crate::decode::with_test_decode_ctx(|ctx| super::saved_spline_sketch_geometry(
+            crate::decode::with_service_context(|ctx| super::saved_spline_sketch_geometry(
                 ctx,
                 &planar_or_offset_spline(2.0),
                 &mut refusal
@@ -1285,7 +1285,7 @@ mod tests {
 
         let mut refusal = crate::lane_refusal::LaneRefusals::new();
         assert!(
-            crate::decode::with_test_decode_ctx(|ctx| super::saved_spline_sketch_geometry(
+            crate::decode::with_service_context(|ctx| super::saved_spline_sketch_geometry(
                 ctx,
                 &spline,
                 &mut refusal
@@ -1328,14 +1328,14 @@ mod tests {
     fn malformed_basis_knots_are_rejected() {
         for knots in [&[][..], &[0.0][..]] {
             assert_eq!(
-                crate::decode::with_test_decode_ctx(|ctx| super::bspline_basis(
+                crate::decode::with_service_context(|ctx| super::bspline_basis(
                     ctx, 0, 3, 0.5, knots, 4
                 ))
                 .expect("service basis"),
                 None
             );
             assert_eq!(
-                crate::decode::with_test_decode_ctx(|ctx| super::bspline_basis_derivative(
+                crate::decode::with_service_context(|ctx| super::bspline_basis_derivative(
                     ctx, 0, 3, 0.5, knots, 4
                 ))
                 .expect("service basis"),

@@ -167,7 +167,7 @@ fn transfer_with_curve_count_and_scale(
         crate::decode::source_carriers::SourceUnitCarriers::new(length_scale_mm);
     for curve in (0..curve_count).map(|_| saved_spline_curve()) {
         if length_scale_mm.is_some() {
-            crate::decode::with_test_decode_ctx(|ctx| {
+            crate::decode::with_service_context(|ctx| {
                 source_carriers.admit_curve(ctx, &mut ir, curve)
             })
             .expect("saved spline admission");
@@ -175,7 +175,7 @@ fn transfer_with_curve_count_and_scale(
             ir.model.curves.push(curve);
         }
     }
-    let transferred = crate::decode::with_test_decode_ctx(|ctx| {
+    let transferred = crate::decode::with_service_context(|ctx| {
         transfer_resolved_revolution_surfaces(
             ctx,
             &scan,

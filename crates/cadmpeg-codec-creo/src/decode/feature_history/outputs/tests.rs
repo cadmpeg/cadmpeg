@@ -141,8 +141,8 @@ fn generated_edge_outputs_follow_producer_history_before_ir_feature_insertion() 
     });
 
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| feature_output_bodies(ctx, &scan, &ir, 10))
-            .expect("service profile admits output bodies"),
+        crate::decode::with_service_context(|ctx| feature_output_bodies(ctx, &scan, &ir, 10))
+            .expect("compute the feature output bodies"),
         vec![BodyId::mint("creo:feature:extrusion#70:body".to_string()).expect("identity grammar")]
     );
 }
@@ -191,12 +191,12 @@ fn generated_face_outputs_follow_producer_history_after_feature_insertion() {
     });
 
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| feature_output_bodies(ctx, &scan, &ir, 10))
-            .expect("service profile admits output bodies"),
+        crate::decode::with_service_context(|ctx| feature_output_bodies(ctx, &scan, &ir, 10))
+            .expect("compute the feature output bodies"),
         vec![BodyId::mint("creo:feature:extrusion#50:body".to_string()).expect("identity grammar")]
     );
 
-    crate::decode::with_test_decode_ctx(|ctx| {
+    crate::decode::with_service_context(|ctx| {
         super::super::dependencies::reconcile_feature_links(ctx, &scan, &mut ir, &BTreeMap::new())
     })
     .expect("the fixture feature links reconcile");
@@ -295,8 +295,8 @@ fn generated_result_faces_are_outputs_alongside_generated_input_bodies() {
     });
 
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| feature_output_bodies(ctx, &scan, &ir, 10))
-            .expect("service profile admits output bodies"),
+        crate::decode::with_service_context(|ctx| feature_output_bodies(ctx, &scan, &ir, 10))
+            .expect("compute the feature output bodies"),
         vec![
             BodyId::mint("creo:generated:result#10".to_string()).expect("identity grammar"),
             BodyId::mint("creo:feature:extrusion#50:body".to_string()).expect("identity grammar"),
@@ -315,13 +315,13 @@ fn generated_result_faces_are_outputs_alongside_generated_input_bodies() {
         .expect("valid test fixture"),
     );
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| feature_output_bodies(
+        crate::decode::with_service_context(|ctx| feature_output_bodies(
             ctx,
             &scan,
             &duplicate_shell,
             10
         ))
-        .expect("service profile admits output bodies"),
+        .expect("compute the feature output bodies"),
         vec![BodyId::mint("creo:feature:extrusion#50:body".to_string()).expect("identity grammar")]
     );
 
@@ -332,13 +332,13 @@ fn generated_result_faces_are_outputs_alongside_generated_input_bodies() {
         shells: Vec::new(),
     });
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| feature_output_bodies(
+        crate::decode::with_service_context(|ctx| feature_output_bodies(
             ctx,
             &scan,
             &duplicate_region,
             10
         ))
-        .expect("service profile admits output bodies"),
+        .expect("compute the feature output bodies"),
         vec![BodyId::mint("creo:feature:extrusion#50:body".to_string()).expect("identity grammar")]
     );
 
@@ -346,13 +346,13 @@ fn generated_result_faces_are_outputs_alongside_generated_input_bodies() {
     let feature = duplicate_feature.model.features[0].clone();
     duplicate_feature.model.features.push(feature);
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| feature_output_bodies(
+        crate::decode::with_service_context(|ctx| feature_output_bodies(
             ctx,
             &scan,
             &duplicate_feature,
             10
         ))
-        .expect("service profile admits output bodies"),
+        .expect("compute the feature output bodies"),
         vec![BodyId::mint("creo:generated:result#10".to_string()).expect("identity grammar")]
     );
 }
@@ -423,7 +423,7 @@ fn edge_output_joins_reject_duplicate_topology_owners() {
     });
     assert_eq!(
         bodies_containing_edges(&ir, std::slice::from_ref(&edge_id))
-            .expect("service profile admits output bodies"),
+            .expect("compute the bodies containing edges"),
         vec![body_id.clone()]
     );
 
@@ -439,7 +439,7 @@ fn edge_output_joins_reject_duplicate_topology_owners() {
     });
     assert!(
         bodies_containing_edges(&duplicate_loop, std::slice::from_ref(&edge_id))
-            .expect("service profile admits output bodies")
+            .expect("compute the bodies containing edges")
             .is_empty()
     );
 
@@ -458,7 +458,7 @@ fn edge_output_joins_reject_duplicate_topology_owners() {
     });
     assert!(
         bodies_containing_edges(&duplicate_face, std::slice::from_ref(&edge_id))
-            .expect("service profile admits output bodies")
+            .expect("compute the bodies containing edges")
             .is_empty()
     );
 
@@ -476,7 +476,7 @@ fn edge_output_joins_reject_duplicate_topology_owners() {
     );
     assert!(
         bodies_containing_edges(&duplicate_shell, std::slice::from_ref(&edge_id))
-            .expect("service profile admits output bodies")
+            .expect("compute the bodies containing edges")
             .is_empty()
     );
 
@@ -489,7 +489,7 @@ fn edge_output_joins_reject_duplicate_topology_owners() {
     });
     assert!(
         bodies_containing_edges(&duplicate_region, std::slice::from_ref(&edge_id))
-            .expect("service profile admits output bodies")
+            .expect("compute the bodies containing edges")
             .is_empty()
     );
 
@@ -505,7 +505,7 @@ fn edge_output_joins_reject_duplicate_topology_owners() {
     });
     assert!(
         bodies_containing_edges(&duplicate_body, std::slice::from_ref(&edge_id))
-            .expect("service profile admits output bodies")
+            .expect("compute the bodies containing edges")
             .is_empty()
     );
 }
@@ -523,7 +523,7 @@ fn evaluated_sweep_body_joins_reject_duplicate_ids() {
         visible: None,
     });
     assert_eq!(
-        evaluated_sweep_output_bodies(&ir, 40).expect("service profile admits output bodies"),
+        evaluated_sweep_output_bodies(&ir, 40).expect("compute the evaluated sweep output bodies"),
         vec![BodyId::mint("creo:feature:extrusion#40:body".to_string()).expect("identity grammar")]
     );
     assert_eq!(
@@ -541,7 +541,7 @@ fn evaluated_sweep_body_joins_reject_duplicate_ids() {
         visible: None,
     });
     assert!(evaluated_sweep_output_bodies(&ir, 40)
-        .expect("service profile admits output bodies")
+        .expect("compute the evaluated sweep output bodies")
         .is_empty());
     assert_eq!(evaluated_sweep_body_kind(&ir, "extrusion", 40), None);
 }

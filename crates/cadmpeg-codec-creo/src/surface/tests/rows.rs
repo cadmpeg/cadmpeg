@@ -54,7 +54,7 @@ fn lossy_prototype_family_formatter_preserves_utf8_replacement() {
 fn contour_surface_frames_without_rows_yield_no_records() {
     let payload = b"srf_array\0\xf8\x01";
     let records =
-        crate::decode::with_test_decode_ctx(|ctx| contour_records_for_rows(ctx, payload, &[]))
+        crate::decode::with_service_context(|ctx| contour_records_for_rows(ctx, payload, &[]))
             .expect("one frame admitted");
     assert!(records.is_empty());
 }
@@ -680,7 +680,7 @@ fn u_params_decode_as_counted_zero_arrays() {
         payload,
         &mut crate::lane_refusal::LaneRefusals::new(),
     )
-    .expect("service profile admits four slots");
+    .expect("parse the named prototype records");
     let Some(SurfaceNamedValue::CountedScalarArray(array)) =
         records[0].field("u_params").map(|field| &field.value)
     else {
@@ -703,7 +703,7 @@ fn v_params_decode_as_counted_zero_arrays() {
         payload,
         &mut crate::lane_refusal::LaneRefusals::new(),
     )
-    .expect("service profile admits four slots");
+    .expect("parse the named prototype records");
     let Some(SurfaceNamedValue::CountedScalarArray(array)) =
         records[0].field("v_params").map(|field| &field.value)
     else {
@@ -726,7 +726,7 @@ fn params_decode_as_counted_zero_arrays() {
         payload,
         &mut crate::lane_refusal::LaneRefusals::new(),
     )
-    .expect("service profile admits three slots");
+    .expect("parse the named prototype records");
     let Some(SurfaceNamedValue::CountedScalarArray(array)) =
         records[0].field("params").map(|field| &field.value)
     else {
@@ -751,7 +751,7 @@ fn counted_surface_arrays_decode_both_parameter_arrays() {
         payload,
         &mut crate::lane_refusal::LaneRefusals::new(),
     )
-    .expect("service profile admits both arrays");
+    .expect("parse the named prototype records");
     for name in ["u_params", "v_params"] {
         let Some(SurfaceNamedValue::CountedScalarArray(array)) =
             records[0].field(name).map(|field| &field.value)
@@ -993,7 +993,7 @@ fn tabulated_cylinder_frame_owns_compound_close_bytes_inside_scalars() {
     assert_eq!(frame_end, body.len() - 3);
 
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             surface_body_compound_close(
                 ctx,
                 SurfaceKind::Extrusion(crate::surface::ExtrusionVariant::TabulatedCylinder),

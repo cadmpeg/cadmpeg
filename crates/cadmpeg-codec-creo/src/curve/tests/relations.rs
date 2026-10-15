@@ -30,10 +30,10 @@ fn parse_relation_expression<V: ExpressionValue>(
     values: &BTreeMap<String, V>,
     context: RelationEvaluationContext<'_>,
 ) -> Option<V> {
-    crate::decode::with_test_decode_ctx(|ctx| {
+    crate::decode::with_service_context(|ctx| {
         crate::curve::parse_relation_expression(ctx, expression, values, context)
     })
-    .expect("service profile admits relation expression")
+    .expect("parse relation expression")
 }
 
 #[test]
@@ -273,7 +273,7 @@ fn evaluates_creo_math_functions_without_treating_function_names_as_dependencies
         ))
     );
     let excessive_power_depth = format!("{}2", "2^".repeat(129));
-    crate::decode::with_test_decode_ctx(|ctx| {
+    crate::decode::with_service_context(|ctx| {
         assert_eq!(
             crate::curve::parse_relation_expression::<f64>(
                 ctx,
@@ -947,7 +947,7 @@ fn reevaluates_expression_records_after_external_symbols_are_decoded() {
     );
     let mut external_symbols = ExternalRelationSymbols::default();
     observe_relation_symbol(&mut external_symbols, "d42", None);
-    crate::decode::with_test_decode_ctx(|ctx| {
+    crate::decode::with_service_context(|ctx| {
         reevaluate_expression_records(ctx, &mut records, None, &external_symbols)
     })
     .expect("test curve expression reevaluation");
@@ -1131,7 +1131,7 @@ fn curve_equations_retain_but_do_not_evaluate_prohibited_constructs() {
             cadmpeg_ir::scalar::FiniteReal::new(5.0).expect("finite relation fixture"),
         )),
     );
-    crate::decode::with_test_decode_ctx(|ctx| {
+    crate::decode::with_service_context(|ctx| {
         reevaluate_expression_records(ctx, &mut records, None, &symbols)
     })
     .expect("test curve expression reevaluation");

@@ -156,7 +156,7 @@ fn circular_sweep_scan() -> crate::container::ContainerScan<'static> {
 fn hole_and_circular_sweep_identities_preserve_service_geometry() {
     let hole = hole_scan();
     let mut hole_ir = cadmpeg_ir::document::CadIr::empty();
-    let hole_count = crate::decode::with_test_decode_ctx(|ctx| {
+    let hole_count = crate::decode::with_service_context(|ctx| {
         super::super::transfer_hole_cylinders(
             ctx,
             &hole,
@@ -182,7 +182,7 @@ fn hole_and_circular_sweep_identities_preserve_service_geometry() {
 
     let sweep = circular_sweep_scan();
     let mut sweep_ir = cadmpeg_ir::document::CadIr::empty();
-    let sweep_count = crate::decode::with_test_decode_ctx(|ctx| {
+    let sweep_count = crate::decode::with_service_context(|ctx| {
         super::super::transfer_circular_sweep_cylinders(
             ctx,
             &sweep,
@@ -247,7 +247,7 @@ fn cross_section_plane_identities_preserve_service_geometry() {
     for local_system in [true, false] {
         let scan = cross_section_plane_scan(local_system);
         let mut ir = cadmpeg_ir::document::CadIr::empty();
-        let count = crate::decode::with_test_decode_ctx(|ctx| {
+        let count = crate::decode::with_service_context(|ctx| {
             super::super::transfer_cross_section_planes(
                 ctx,
                 &scan,
@@ -315,7 +315,7 @@ fn positional_cone_scan() -> crate::container::ContainerScan<'static> {
 fn positional_cone_identity_preserves_service_geometry() {
     let scan = positional_cone_scan();
     let mut ir = cadmpeg_ir::document::CadIr::empty();
-    let count = crate::decode::with_test_decode_ctx(|ctx| {
+    let count = crate::decode::with_service_context(|ctx| {
         super::super::transfer_positional_cones(
             ctx,
             &scan,

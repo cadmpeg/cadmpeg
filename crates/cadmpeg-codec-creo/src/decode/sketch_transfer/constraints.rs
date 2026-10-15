@@ -2909,7 +2909,7 @@ mod tests {
             offset: 0,
         };
         let sketch = SketchId::mint("creo:model:sketch#5").expect("valid sketch ID");
-        let admitted = crate::decode::with_test_decode_ctx(|ctx| {
+        let admitted = crate::decode::with_service_context(|ctx| {
             super::section_dimension_constraints(ctx, &definition, &sketch)
         })
         .expect("dimension row");
@@ -2971,7 +2971,7 @@ mod binding_tests {
         retained.offset = 13;
         table.rows.extend([skipped, retained]);
         let sketch = SketchId::mint("creo:model:sketch#5").expect("valid sketch ID");
-        let constraints = crate::decode::with_test_decode_ctx(|ctx| {
+        let constraints = crate::decode::with_service_context(|ctx| {
             super::section_dimension_constraints(ctx, &definition, &sketch)
         })
         .expect("constraints");

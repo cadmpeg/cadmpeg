@@ -118,7 +118,7 @@ fn referenced_inline_compact_x_cylinder_accepts_oblique_trim_containment() {
     }
     body.extend_from_slice(&[0xe4, 0xe3]);
 
-    let InlineSurfaceCarrier::Cylinder { frame, .. } = crate::decode::with_test_decode_ctx(|ctx| {
+    let InlineSurfaceCarrier::Cylinder { frame, .. } = crate::decode::with_service_context(|ctx| {
         inline_surface_body(
             ctx,
             SurfaceKind::Cylinder,
@@ -356,7 +356,7 @@ fn selector_envelope_places_a_compact_y_cylinder() {
         body
     };
     let decode = |body: &[u8]| {
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             inline_surface_body(
                 ctx,
                 SurfaceKind::Cylinder,
@@ -406,7 +406,7 @@ fn selector_envelope_decodes_bare_zero_and_oblique_outline() {
     }
     body.extend_from_slice(&[0x2f, 0x00, 0x00, 0xe3]);
 
-    let InlineSurfaceCarrier::Cylinder { frame, .. } = crate::decode::with_test_decode_ctx(|ctx| {
+    let InlineSurfaceCarrier::Cylinder { frame, .. } = crate::decode::with_service_context(|ctx| {
         inline_surface_body(
             ctx,
             SurfaceKind::Cylinder,
@@ -443,7 +443,7 @@ fn selector_placeholder_resolves_from_one_radial_extreme() {
     }
     body.extend_from_slice(&[0x2f, 0x00, 0x00, 0xe3]);
 
-    let InlineSurfaceCarrier::Cylinder { frame, .. } = crate::decode::with_test_decode_ctx(|ctx| {
+    let InlineSurfaceCarrier::Cylinder { frame, .. } = crate::decode::with_service_context(|ctx| {
         inline_surface_body(
             ctx,
             SurfaceKind::Cylinder,
@@ -504,7 +504,7 @@ fn four_bound_inline_envelope_accepts_oblique_axial_containment() {
     payload.extend_from_slice(&[0x0f, 0xe3]);
 
     let body = &payload[6..];
-    let InlineSurfaceCarrier::Cylinder { frame, .. } = crate::decode::with_test_decode_ctx(|ctx| {
+    let InlineSurfaceCarrier::Cylinder { frame, .. } = crate::decode::with_service_context(|ctx| {
         inline_surface_body(
             ctx,
             SurfaceKind::Cylinder,
@@ -544,7 +544,7 @@ fn four_bound_inline_envelope_accepts_an_endpoint_anchored_oblique_trim() {
     payload.extend_from_slice(&[0x0f, 0xe3]);
 
     let body = &payload[6..];
-    let InlineSurfaceCarrier::Cylinder { frame, .. } = crate::decode::with_test_decode_ctx(|ctx| {
+    let InlineSurfaceCarrier::Cylinder { frame, .. } = crate::decode::with_service_context(|ctx| {
         inline_surface_body(
             ctx,
             SurfaceKind::Cylinder,
@@ -595,7 +595,7 @@ fn four_bound_inline_envelope_decodes_directrix_dict_outline() {
     }
     body.extend_from_slice(&[0x0f, 0xe3]);
 
-    let InlineSurfaceCarrier::Cylinder { frame, .. } = crate::decode::with_test_decode_ctx(|ctx| {
+    let InlineSurfaceCarrier::Cylinder { frame, .. } = crate::decode::with_service_context(|ctx| {
         inline_surface_body(
             ctx,
             SurfaceKind::Cylinder,
@@ -633,7 +633,7 @@ fn inline_envelope_rejects_lane_aliases_by_geometry() {
     payload.extend_from_slice(&[0xe4, 0xe3]);
 
     let body = &payload[6..];
-    let InlineSurfaceCarrier::Cylinder { frame, .. } = crate::decode::with_test_decode_ctx(|ctx| {
+    let InlineSurfaceCarrier::Cylinder { frame, .. } = crate::decode::with_service_context(|ctx| {
         inline_surface_body(
             ctx,
             SurfaceKind::Cylinder,
@@ -679,7 +679,7 @@ fn decodes_local_system_suffix_frames_without_an_axial_envelope() {
     assert_eq!(torus_frame.frame().ref_direction(), [0.8, 0.6, 0.0]);
     assert_eq!(torus_frame.major_radius.get(), 3.0);
     assert_eq!(torus_frame.minor_radius.get(), 1.0);
-    assert!(crate::decode::with_test_decode_ctx(
+    assert!(crate::decode::with_service_context(
         |ctx| torus.has_inline_non_plane_local_system_suffix(ctx)
     )
     .expect("service scalar admission"));
@@ -698,7 +698,7 @@ fn decodes_local_system_suffix_frames_without_an_axial_envelope() {
     assert_eq!(cylinder_frame.frame().ref_direction(), [0.0, 0.0, 1.0]);
     assert_eq!(cylinder_frame.radius.get(), 1.0);
     assert_eq!(cylinder_frame.length, None);
-    assert!(crate::decode::with_test_decode_ctx(
+    assert!(crate::decode::with_service_context(
         |ctx| cylinder.has_inline_non_plane_local_system_suffix(ctx)
     )
     .expect("service scalar admission"));

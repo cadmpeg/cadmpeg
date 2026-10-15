@@ -779,7 +779,7 @@ mod tests {
         let sketch =
             cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#917").expect("sketch ID");
         let emitted = std::collections::BTreeSet::from([42]);
-        let profiles = crate::decode::with_test_decode_ctx(|ctx| {
+        let profiles = crate::decode::with_service_context(|ctx| {
             resolved_profile_chains(ctx, &definition, &sketch, &emitted)
         })
         .expect("service trim profile");
@@ -819,7 +819,7 @@ mod tests {
         let sketch =
             cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#917").expect("sketch ID");
         let emitted = std::collections::BTreeSet::from([10, 11]);
-        let profiles = crate::decode::with_test_decode_ctx(|ctx| {
+        let profiles = crate::decode::with_service_context(|ctx| {
             resolved_profile_chains(ctx, &definition, &sketch, &emitted)
         })
         .expect("service segment profile");

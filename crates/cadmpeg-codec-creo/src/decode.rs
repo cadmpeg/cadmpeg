@@ -39,7 +39,7 @@ use crate::decode::build::report::build_report;
 mod tests;
 
 #[cfg(test)]
-pub(crate) fn with_test_decode_ctx<T>(run: impl FnOnce(&DecodeContext<'_>) -> T) -> T {
+pub(crate) fn with_service_context<T>(run: impl FnOnce(&DecodeContext<'_>) -> T) -> T {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
     let (ctx, _) =

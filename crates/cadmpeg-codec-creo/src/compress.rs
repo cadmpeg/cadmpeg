@@ -369,7 +369,7 @@ mod tests {
     #[test]
     fn lzw_rejects_output_after_declared_prefix() {
         let stream = [0x1f, 0x9d, 0x10, 0x41, 0x84, 0x0c, 0x01];
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             assert!(matches!(
                 super::decode(ctx, &stream, 1),
                 Err(cadmpeg_core::CodecError::Malformed(_))
@@ -381,7 +381,7 @@ mod tests {
     fn lzw_rejects_invalid_code_after_declared_prefix() {
         let mut stream = vec![0x1f, 0x9d, 0x10];
         stream.extend(codes(&[65, 400]));
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             assert!(matches!(
                 super::decode(ctx, &stream, 1),
                 Err(cadmpeg_core::CodecError::Malformed(_))
@@ -392,7 +392,7 @@ mod tests {
     #[test]
     fn lzw_rejects_nonzero_terminal_padding() {
         let stream = [0x1f, 0x9d, 0x10, 0x41, 0x80];
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             assert!(matches!(
                 super::decode(ctx, &stream, 1),
                 Err(cadmpeg_core::CodecError::Malformed(_))
@@ -406,7 +406,7 @@ mod tests {
         first_block.resize(9, 0);
         stream.extend(first_block);
         stream.extend(codes(&[CLEAR]));
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             assert!(matches!(
                 super::decode(ctx, &stream, 1),
                 Err(cadmpeg_core::CodecError::Malformed(_))

@@ -209,7 +209,7 @@ fn carrier_intersection_uses_nurbs_boundary_endpoints_to_select_a_generator() {
     ]);
 
     let mut with_witness = source_ir();
-    let transferred = crate::decode::with_test_decode_ctx(|ctx| {
+    let transferred = crate::decode::with_service_context(|ctx| {
         transfer_carrier_intersection_curves(
             ctx,
             &scan,
@@ -243,7 +243,7 @@ fn carrier_intersection_uses_nurbs_boundary_endpoints_to_select_a_generator() {
 
     let mut without_witness = source_ir();
     assert!(
-        crate::decode::with_test_decode_ctx(|ctx| transfer_carrier_intersection_curves(
+        crate::decode::with_service_context(|ctx| transfer_carrier_intersection_curves(
             ctx,
             &scan,
             &mut without_witness,

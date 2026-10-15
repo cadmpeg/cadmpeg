@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 #[test]
 fn dimension_arithmetic_preserves_service_values() {
     let values = BTreeMap::new();
-    let result = crate::decode::with_test_decode_ctx(|ctx| {
+    let result = crate::decode::with_service_context(|ctx| {
         crate::curve::parse_relation_expression::<DimensionProbeValue>(
             ctx,
             "2+3*4",
@@ -54,7 +54,7 @@ fn dimension_conversion_result(
             cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite relation fixture"),
         ),
     )]);
-    crate::decode::with_test_decode_ctx(|ctx| {
+    crate::decode::with_service_context(|ctx| {
         crate::curve::infer_solve_variable_dimensions(
             ctx,
             &block,

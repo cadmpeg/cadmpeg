@@ -1690,7 +1690,7 @@ mod tests {
     const REF_DIRECTION: [f64; 3] = [1.0, 0.0, 0.0];
 
     fn polynomial_roots(coefficients: &[BoundedCoefficient]) -> Vec<super::PolynomialRoot> {
-        crate::decode::with_test_decode_ctx(|ctx| super::real_polynomial_roots(ctx, coefficients))
+        crate::decode::with_service_context(|ctx| super::real_polynomial_roots(ctx, coefficients))
             .expect("polynomial roots admitted")
     }
 
@@ -1730,7 +1730,7 @@ mod tests {
             major_radius: 3.0,
             minor_radius: 1.0,
         };
-        let points = crate::decode::with_test_decode_ctx(|ctx| {
+        let points = crate::decode::with_service_context(|ctx| {
             super::intersect_two_planes_with_torus(ctx, axial_plane, equatorial_plane, torus)
         })
         .expect("four intersections admitted");
@@ -1771,10 +1771,10 @@ mod tests {
     fn intersecting_circle_conics_share_two_parameters() {
         let (first, second) = intersecting_circle_conics();
         assert_eq!(
-            crate::decode::with_test_decode_ctx(|ctx| {
+            crate::decode::with_service_context(|ctx| {
                 super::common_plane_conic_parameters(ctx, first, second)
             })
-            .expect("service budget admits both intersections")
+            .expect("compute the common plane conic parameters")
             .len(),
             2
         );
@@ -1815,10 +1815,10 @@ mod tests {
             })
         };
         assert_eq!(
-            crate::decode::with_test_decode_ctx(|ctx| {
+            crate::decode::with_service_context(|ctx| {
                 super::intersect_plane_with_two_quadrics(ctx, plane, sphere(0.0), sphere(1.0))
             })
-            .expect("service budget admits both points")
+            .expect("intersect plane with two quadrics")
             .len(),
             2
         );
@@ -1835,10 +1835,10 @@ mod tests {
             })
         });
         assert_eq!(
-            crate::decode::with_test_decode_ctx(|ctx| {
+            crate::decode::with_service_context(|ctx| {
                 super::sylvester_polynomial(ctx, &matrix, |value| value)
             })
-            .expect("service profile admits the determinant"),
+            .expect("compute the sylvester polynomial"),
             [1.0]
         );
     }
@@ -2003,7 +2003,7 @@ mod tests {
         // carries four structural zeros. Every permutation that avoids them has
         // total degree four, so the resultant has five coefficients however
         // dense the conics are.
-        let resultant = crate::decode::with_test_decode_ctx(|ctx| {
+        let resultant = crate::decode::with_service_context(|ctx| {
             super::conic_resultant(
                 ctx,
                 dense_conic([1.0, 2.0, 3.0, 5.0, 7.0, 11.0]),
@@ -2042,7 +2042,7 @@ mod tests {
             minor_radius: 1.0,
         };
 
-        let mut points = crate::decode::with_test_decode_ctx(|ctx| {
+        let mut points = crate::decode::with_service_context(|ctx| {
             super::intersect_two_planes_with_torus(ctx, offset_plane, equatorial_plane, torus)
         })
         .expect("torus intersections admitted");

@@ -565,7 +565,7 @@ mod tests {
     #[test]
     fn materialized_saved_section_external_ids_follow_the_order_table() {
         let definition = saved_line_definition();
-        let ids = crate::decode::with_test_decode_ctx(|ctx| {
+        let ids = crate::decode::with_service_context(|ctx| {
             super::materialized_saved_section_external_ids(
                 ctx,
                 &definition,

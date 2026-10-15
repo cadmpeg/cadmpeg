@@ -546,7 +546,7 @@ mod tests {
                 &"cap",
                 &mut crate::lane_refusal::LaneRefusals::new(),
             )
-            .expect("service resources")
+            .expect("compute the circular pcurve")
             .expect("cap pcurve");
             let PcurveGeometry::Nurbs { .. } = &geometry else {
                 panic!("circular cap is NURBS")

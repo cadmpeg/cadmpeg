@@ -162,7 +162,7 @@ fn axis_endpoint_with_offset_neighbor_reports_boundary_rejection() {
         native_ref: None,
     });
     let mut losses = Vec::new();
-    let count = crate::decode::with_test_decode_ctx(|ctx| {
+    let count = crate::decode::with_service_context(|ctx| {
         transfer_resolved_revolution_breps(
             ctx,
             &scan,
@@ -262,7 +262,7 @@ fn closed_off_axis_revolution() -> (crate::container::ContainerScan<'static>, Ca
 fn closed_off_axis_revolution_reaches_brep_admission() {
     let (scan, mut ir) = closed_off_axis_revolution();
     let mut losses = Vec::new();
-    let count = crate::decode::with_test_decode_ctx(|ctx| {
+    let count = crate::decode::with_service_context(|ctx| {
         transfer_resolved_revolution_breps(
             ctx,
             &scan,
@@ -272,7 +272,7 @@ fn closed_off_axis_revolution_reaches_brep_admission() {
             &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
         )
     })
-    .expect("service profile admits the closed revolution");
+    .expect("transfer resolved revolution B-reps");
     assert_eq!(count, 1);
     assert_eq!(ir.model.bodies.len(), 1);
     assert!(losses.is_empty());

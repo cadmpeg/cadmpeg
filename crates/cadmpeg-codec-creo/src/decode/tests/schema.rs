@@ -1246,7 +1246,7 @@ fn decode_types_round_with_labeled_edge_selection() {
         Some("44,45")
     );
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{validation:#?}");
 }
 

@@ -70,8 +70,7 @@ fn feature_edge_selection_with_service(
     ir: &CadIr,
     feature_id: u32,
 ) -> Option<EdgeSelection> {
-    (feature_edge_selection(scan, ir, feature_id))
-        .expect("service profile admits feature edge selection")
+    (feature_edge_selection(scan, ir, feature_id)).expect("compute the feature edge selection")
 }
 
 fn generated_curve_edge_refs_with_service(
@@ -81,7 +80,7 @@ fn generated_curve_edge_refs_with_service(
     result_edge_ids: &BTreeMap<u32, Vec<u32>>,
 ) -> Option<Vec<GeneratedEdgeRef>> {
     ({ generated_curve_edge_refs(curve_ids, rows, available_features, result_edge_ids) })
-        .expect("service profile admits generated curve references")
+        .expect("compute the generated curve edge refs")
 }
 
 fn generated_surface_face_refs_with_service(
@@ -91,7 +90,7 @@ fn generated_surface_face_refs_with_service(
     available_features: &BTreeSet<IrFeatureId>,
 ) -> Option<Vec<GeneratedFaceRef>> {
     ({ generated_surface_face_refs(source_ids, rows, result_surface_ids, available_features) })
-        .expect("service profile admits generated surface references")
+        .expect("compute the generated surface face refs")
 }
 
 fn native_feature_dependency_ids_with_service(
@@ -403,7 +402,7 @@ fn section_coordinate_system_solves_coupled_equations_and_withholds_derivations_
     SectionEquationFixture::add_point(&mut difference, 2, SectionAxis::U, -1.0);
     difference.rhs = 2.0;
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| solve_section_coordinate_equations(
+        crate::decode::with_service_context(|ctx| solve_section_coordinate_equations(
             ctx,
             &[
                 sum,
@@ -419,7 +418,7 @@ fn section_coordinate_system_solves_coupled_equations_and_withholds_derivations_
 
     let stored = BTreeMap::from([((1, SectionAxis::U), 1.0), ((1, SectionAxis::V), 3.0)]);
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| solve_section_coordinate_equations(
+        crate::decode::with_service_context(|ctx| solve_section_coordinate_equations(
             ctx,
             &[
                 SectionEquationFixture::point_value(1, SectionAxis::U, 1.0),
@@ -438,7 +437,7 @@ fn section_coordinate_system_solves_coupled_equations_and_withholds_derivations_
         ((2, SectionAxis::V), 4.0),
     ]);
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| solve_section_coordinate_equations(
+        crate::decode::with_service_context(|ctx| solve_section_coordinate_equations(
             ctx,
             &[
                 SectionEquationFixture::point_value(1, SectionAxis::U, 1.0),
@@ -459,7 +458,7 @@ fn section_coordinate_system_solves_coupled_equations_and_withholds_derivations_
         ])
     );
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| solve_section_coordinate_equations(
+        crate::decode::with_service_context(|ctx| solve_section_coordinate_equations(
             ctx,
             &[
                 SectionEquationFixture::point_value(3, SectionAxis::U, 1.0e12),
@@ -471,7 +470,7 @@ fn section_coordinate_system_solves_coupled_equations_and_withholds_derivations_
         BTreeMap::from([(3, [Some(1.0e12), Some(-1.0e12)])])
     );
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| solve_section_coordinate_equations(
+        crate::decode::with_service_context(|ctx| solve_section_coordinate_equations(
             ctx,
             &[SectionEquationFixture::point_value(4, SectionAxis::U, 7.0)],
             &BTreeMap::new(),
@@ -489,7 +488,7 @@ fn unsigned_dimension_signs_are_reconciled_only_when_unique() {
     ];
     let stored = BTreeMap::from([((1, SectionAxis::U), 0.0), ((2, SectionAxis::U), 10.0)]);
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| solve_unsigned_dimension_coordinates(
+        crate::decode::with_service_context(|ctx| solve_unsigned_dimension_coordinates(
             ctx,
             &equations,
             &stored,
@@ -499,7 +498,7 @@ fn unsigned_dimension_signs_are_reconciled_only_when_unique() {
         BTreeMap::from([((3, SectionAxis::U), 3.0)])
     );
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| solve_unsigned_dimension_coordinates(
+        crate::decode::with_service_context(|ctx| solve_unsigned_dimension_coordinates(
             ctx,
             &[SectionEquationFixture::point_value(1, SectionAxis::U, 0.0)],
             &BTreeMap::from([((1, SectionAxis::U), 0.0)]),
@@ -1175,8 +1174,7 @@ fn model_feature_ids_include_row_backed_generated_producers() {
             offset: 100,
         });
 
-    let available_features =
-        model_feature_ids(&scan).expect("service profile admits feature identities");
+    let available_features = model_feature_ids(&scan).expect("compute the model feature IDs");
     assert_eq!(
         available_features,
         BTreeSet::from([

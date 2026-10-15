@@ -63,7 +63,7 @@ fn evaluate_expression_program_details(
     model_name: Option<&str>,
     external_symbols: &ExternalRelationSymbols,
 ) -> crate::curve::CurveExpressionEvaluation {
-    crate::decode::with_test_decode_ctx(|ctx| {
+    crate::decode::with_service_context(|ctx| {
         crate::curve::evaluate_expression_program_details(ctx, lines, model_name, external_symbols)
     })
     .expect("test curve expression evaluation")
@@ -75,7 +75,7 @@ fn infer_solve_variable_dimensions(
     known_dimensions: &[Option<RelationDimension>],
     context: RelationEvaluationContext<'_>,
 ) -> Option<Vec<RelationDimension>> {
-    crate::decode::with_test_decode_ctx(|ctx| {
+    crate::decode::with_service_context(|ctx| {
         crate::curve::infer_solve_variable_dimensions(ctx, block, values, known_dimensions, context)
     })
     .expect("test dimension inference")
@@ -698,8 +698,8 @@ fn affine_solver_is_invariant_under_independent_equation_scaling() {
     ];
 
     let solution =
-        crate::decode::with_test_decode_ctx(|ctx| solve_unique_affine_system(ctx, &mut rows, 2))
-            .expect("service profile")
+        crate::decode::with_service_context(|ctx| solve_unique_affine_system(ctx, &mut rows, 2))
+            .expect("solve unique affine system")
             .expect("independently scaled unique system");
     assert!((solution[0] - 6.0).abs() <= 1.0e-12);
     assert!((solution[1] - 4.0).abs() <= 1.0e-12);

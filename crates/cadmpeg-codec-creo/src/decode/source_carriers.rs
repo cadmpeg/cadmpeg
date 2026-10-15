@@ -627,7 +627,7 @@ mod tests {
         };
         let geometry = curve.geometry.clone();
         let mut carriers = SourceUnitCarriers::default();
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             carriers.replace_curve_geometry(ctx, &mut curve, geometry.clone())
         })
         .expect("service replacement");
@@ -651,7 +651,7 @@ mod tests {
             source_object: None,
         };
         let mut carriers = SourceUnitCarriers::default();
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             carriers.replace_curve_geometry(ctx, &mut curve, geometry.clone())
         })
         .expect("valid test setup or admitted service result");
@@ -667,7 +667,7 @@ mod tests {
         };
         let geometry = surface.geometry.clone();
         let mut carriers = SourceUnitCarriers::default();
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             carriers.replace_surface_geometry(ctx, &mut surface, geometry.clone())
         })
         .expect("service replacement");
@@ -690,7 +690,7 @@ mod tests {
             source_object: None,
         };
         let mut carriers = SourceUnitCarriers::default();
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             carriers.replace_surface_geometry(ctx, &mut surface, geometry.clone())
         })
         .expect("valid test setup or admitted service result");
@@ -707,7 +707,7 @@ mod tests {
         };
         let mut ir = CadIr::empty();
         let mut carriers = SourceUnitCarriers::default();
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             carriers.admit_curve(ctx, &mut ir, curve.clone())
         })
         .expect("service curve admission");
@@ -736,7 +736,7 @@ mod tests {
         };
         let mut carriers = SourceUnitCarriers::default();
         let mut ir = CadIr::empty();
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             carriers.admit_curve(ctx, &mut ir, curve.clone())
         })
         .expect("valid test setup or admitted service result");
@@ -752,7 +752,7 @@ mod tests {
         };
         let mut ir = CadIr::empty();
         let mut carriers = SourceUnitCarriers::default();
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             carriers.admit_surface(ctx, &mut ir, surface.clone())
         })
         .expect("service surface admission");
@@ -780,7 +780,7 @@ mod tests {
         };
         let mut carriers = SourceUnitCarriers::default();
         let mut ir = CadIr::empty();
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             carriers.admit_surface(ctx, &mut ir, surface.clone())
         })
         .expect("valid test setup or admitted service result");
@@ -977,7 +977,7 @@ mod tests {
     fn datum_offset_distance_is_in_millimeters_at_feature_admission() {
         let mut ir = CadIr::empty();
         let carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             carriers.admit_feature(
                 ctx,
                 &mut ir,
@@ -1002,7 +1002,7 @@ mod tests {
     fn post_process_fuzzy_tolerance_is_in_millimeters_at_feature_admission() {
         let mut ir = CadIr::empty();
         let carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             carriers.admit_feature(
                 ctx,
                 &mut ir,
@@ -1031,7 +1031,7 @@ mod tests {
     fn feature_length_overflow_refuses_before_admission() {
         let mut ir = CadIr::empty();
         let carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
-        let error = crate::decode::with_test_decode_ctx(|ctx| {
+        let error = crate::decode::with_service_context(|ctx| {
             carriers.admit_feature(
                 ctx,
                 &mut ir,
@@ -1170,7 +1170,7 @@ mod tests {
         };
         let mut ir = CadIr::empty();
         let mut source_carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
-        let error = crate::decode::with_test_decode_ctx(|ctx| {
+        let error = crate::decode::with_service_context(|ctx| {
             source_carriers.admit_surface(ctx, &mut ir, surface)
         })
         .expect_err("millimeter radius cannot be represented");
@@ -1193,7 +1193,7 @@ mod tests {
         };
         let mut ir = CadIr::empty();
         let mut source_carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
-        let error = crate::decode::with_test_decode_ctx(|ctx| {
+        let error = crate::decode::with_service_context(|ctx| {
             source_carriers.admit_curve(ctx, &mut ir, curve)
         })
         .expect_err("millimeter origin cannot be represented");
@@ -1219,7 +1219,7 @@ mod tests {
         let mut ir = CadIr::empty();
         let scale = PositiveReal::new(25.4).expect("inch scale");
         let mut source_carriers = SourceUnitCarriers::new(Some(scale));
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             source_carriers.admit_surface(ctx, &mut ir, surface)
         })
         .expect("surface admission");
@@ -1330,7 +1330,7 @@ mod tests {
         let curve_id = CurveId::mint("creo:depdb:curve#1").expect("identity grammar");
         let mut ir = CadIr::empty();
         let mut source_carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             source_carriers.admit_curve(
                 ctx,
                 &mut ir,
@@ -1400,7 +1400,7 @@ mod tests {
         let mut ir = CadIr::empty();
         let mut source_carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
         let curve_id = CurveId::mint("creo:visibgeom:curve#1").expect("identity grammar");
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             source_carriers.admit_curve(
                 ctx,
                 &mut ir,
@@ -1428,7 +1428,7 @@ mod tests {
             end: vertex,
             tolerance: PositiveReal::new(0.1),
         };
-        crate::decode::with_test_decode_ctx(|ctx| source_carriers.admit_edge(ctx, &mut ir, edge))
+        crate::decode::with_service_context(|ctx| source_carriers.admit_edge(ctx, &mut ir, edge))
             .expect("edge admission");
         assert_eq!(
             ir.model.edges[0]
@@ -1450,7 +1450,7 @@ mod tests {
         let mut ir = CadIr::empty();
         let mut source_carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
         let curve_id = CurveId::mint("creo:visibgeom:curve#1").expect("identity grammar");
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             source_carriers.admit_curve(
                 ctx,
                 &mut ir,
@@ -1477,7 +1477,7 @@ mod tests {
         let (mut ir, mut source_carriers, curve_id) = source_line_for_range_tests();
         let vertex =
             cadmpeg_ir::ids::VertexId::mint("creo:visibgeom:vertex#1").expect("identity grammar");
-        let error = crate::decode::with_test_decode_ctx(|ctx| {
+        let error = crate::decode::with_service_context(|ctx| {
             source_carriers.admit_edge(
                 ctx,
                 &mut ir,
@@ -1499,7 +1499,7 @@ mod tests {
 
     #[test]
     fn coedge_line_use_range_overflow_refuses_at_admission() {
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             let (mut ir, source_carriers, curve_id) = source_line_for_range_tests();
             let coedge_id = cadmpeg_ir::ids::CoedgeId::mint("creo:visibgeom:coedge#1")
                 .expect("identity grammar");
@@ -1531,11 +1531,11 @@ mod tests {
 
     #[test]
     fn vertex_face_tolerances_and_coedge_line_range_are_in_millimeters_at_admission() {
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             let mut ir = CadIr::empty();
             let mut source_carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
             let curve_id = CurveId::mint("creo:visibgeom:curve#1").expect("identity grammar");
-            crate::decode::with_test_decode_ctx(|ctx| {
+            crate::decode::with_service_context(|ctx| {
                 source_carriers.admit_curve(
                     ctx,
                     &mut ir,
@@ -1649,11 +1649,11 @@ mod tests {
 
     #[test]
     fn plane_pcurve_coordinates_are_in_millimeters_at_admission() {
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             let mut ir = CadIr::empty();
             let mut source_carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
             let surface_id = SurfaceId::mint("creo:visibgeom:surface#1").expect("identity grammar");
-            crate::decode::with_test_decode_ctx(|ctx| {
+            crate::decode::with_service_context(|ctx| {
                 source_carriers.admit_surface(
                     ctx,
                     &mut ir,
@@ -1707,7 +1707,7 @@ mod tests {
 
     #[test]
     fn pcurve_without_owning_surface_is_malformed_at_admission() {
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             let mut ir = CadIr::empty();
             let source_carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
             let error = source_carriers
@@ -1738,11 +1738,11 @@ mod tests {
 
     #[test]
     fn plane_pcurve_coordinate_overflow_refuses_at_admission() {
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             let mut ir = CadIr::empty();
             let mut source_carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
             let surface_id = SurfaceId::mint("creo:visibgeom:surface#1").expect("identity grammar");
-            crate::decode::with_test_decode_ctx(|ctx| {
+            crate::decode::with_service_context(|ctx| {
                 source_carriers.admit_surface(
                     ctx,
                     &mut ir,

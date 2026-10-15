@@ -192,7 +192,7 @@ fn section_skamp_constraints(
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
 ) -> Vec<(SketchConstraint, usize)> {
-    crate::decode::with_test_decode_ctx(|ctx| {
+    crate::decode::with_service_context(|ctx| {
         section_skamp_constraints_for_geometry(ctx, definition, sketch, None)
     })
     .expect("test section solve")

@@ -124,7 +124,7 @@ fn section_solver_midpoints_preserve_saved_geometry_and_coordinate_constraints()
         ],
     );
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(
+        crate::decode::with_service_context(|ctx| resolved_section_points(
             ctx,
             &midpoint_definition
         ))
@@ -172,7 +172,7 @@ fn section_solver_midpoints_preserve_saved_geometry_and_coordinate_constraints()
         .entity_id = 99;
     synchronize_skamp_count(&mut saved_line_midpoint);
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(
+        crate::decode::with_service_context(|ctx| resolved_section_points(
             ctx,
             &saved_line_midpoint
         ))
@@ -250,7 +250,7 @@ fn section_solver_midpoints_preserve_saved_geometry_and_coordinate_constraints()
         },
     ];
     assert!(
-        crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(
+        crate::decode::with_service_context(|ctx| resolved_section_points(
             ctx,
             &arc_midpoint_definition
         ))
@@ -311,7 +311,7 @@ fn section_solver_midpoints_preserve_saved_geometry_and_coordinate_constraints()
             };
         }
         assert_eq!(
-            crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(
+            crate::decode::with_service_context(|ctx| resolved_section_points(
                 ctx,
                 &arc_alignment_definition
             ))
@@ -331,7 +331,7 @@ fn section_solver_midpoints_preserve_saved_geometry_and_coordinate_constraints()
             .expect("skamp table")
             .rows_mut()[0]
             .status = 0;
-        let unresolved = crate::decode::with_test_decode_ctx(|ctx| {
+        let unresolved = crate::decode::with_service_context(|ctx| {
             resolved_section_points(ctx, &arc_alignment_definition)
         })
         .expect("test section solve");
@@ -347,7 +347,7 @@ fn section_solver_midpoints_preserve_saved_geometry_and_coordinate_constraints()
         .expect("midpoint point")
         .value = ScalarLane::Value(3.0);
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| resolved_section_coordinates(
+        crate::decode::with_service_context(|ctx| resolved_section_coordinates(
             ctx,
             &midpoint_definition
         ))
@@ -459,7 +459,7 @@ fn section_solver_midpoints_preserve_saved_geometry_and_coordinate_constraints()
         ),
     ]);
     assert!(matches!(
-        crate::decode::with_test_decode_ctx(|ctx| section_skamp_constraints_for_geometry(
+        crate::decode::with_service_context(|ctx| section_skamp_constraints_for_geometry(
             ctx,
             &midpoint_definition,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"),
@@ -481,7 +481,7 @@ fn section_solver_midpoints_preserve_saved_geometry_and_coordinate_constraints()
         .expect("valid test fixture"),
     )]);
     assert!(matches!(
-        crate::decode::with_test_decode_ctx(|ctx| section_skamp_constraints_for_geometry(
+        crate::decode::with_service_context(|ctx| section_skamp_constraints_for_geometry(
             ctx,
             &midpoint_definition,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"),
