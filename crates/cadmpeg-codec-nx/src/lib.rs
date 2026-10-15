@@ -91,6 +91,7 @@ mod dialect;
 mod evaluation;
 mod framing;
 mod geometry;
+mod grouping;
 mod immutable_text;
 mod inspect;
 mod intersection;

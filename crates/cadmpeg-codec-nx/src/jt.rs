@@ -99,11 +99,7 @@ pub(crate) struct DecodedVertexArray<T> {
 }
 
 /// Reconstruct JT primal integers from predictor residuals.
-pub(crate) fn unpack_predictor_residuals(residuals: &[i32], predictor: Predictor) -> Vec<i32> {
-    unpack_predictor(residuals, predictor)
-}
-
-fn unpack_predictor(residuals: &[i32], predictor: Predictor) -> Vec<i32> {
+pub(crate) fn unpack_predictor(residuals: &[i32], predictor: Predictor) -> Vec<i32> {
     if predictor == Predictor::Null {
         return residuals.to_vec();
     }

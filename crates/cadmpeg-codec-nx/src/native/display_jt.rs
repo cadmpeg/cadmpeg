@@ -27,11 +27,13 @@ use cadmpeg_ir::hash::digest::Sha256Digest;
 use packet_role::{TopologyContext, TopologyPacketRole};
 use version::JtVersionField;
 
+use crate::loss::NxLossCode;
 use cadmpeg_container::compression::inflate_zlib_member_owned;
 use cadmpeg_core::bytes::{assemble_f32_le, assemble_u32_le, assemble_u64_le};
 use cadmpeg_core::decode::{DecodeContext, View, WorkBudget};
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{FiniteBinary32, UnitBinary32};
 use cadmpeg_ir::tessellation::{Tessellation, TessellationChannel};
 use cadmpeg_ir::units::UnitVector3;
@@ -3314,7 +3316,7 @@ pub(super) fn display_jt_initial_face_degree_symbols(
         else {
             return Ok(Vec::new());
         };
-        let degrees = crate::jt::unpack_predictor_residuals(&residuals, crate::jt::Predictor::Null);
+        let degrees = crate::jt::unpack_predictor(&residuals, crate::jt::Predictor::Null);
         let Some(packet) = representation.get(..packet_byte_len) else {
             return Ok(Vec::new());
         };
@@ -3426,7 +3428,7 @@ pub(super) fn display_jt_topology_packet_sequences(
                         }
                         _ => crate::jt::Predictor::Null,
                     };
-                    Some(crate::jt::unpack_predictor_residuals(&residuals, predictor))
+                    Some(crate::jt::unpack_predictor(&residuals, predictor))
                 }
                 _ => None,
             };
@@ -5160,7 +5162,8 @@ struct JtPathLookup<'a, 'b> {
 
 /// Upper bound on node visits while enumerating the instance paths of one
 /// shape node. Shared parents make the path count exponential in graph depth;
-/// a graph that exceeds the bound yields no tessellations.
+/// a graph that exceeds the bound yields no tessellations and a
+/// `source.scan-bounded` loss.
 const MAX_JT_NODE_PATH_VISITS: usize = 1 << 16;
 
 fn resolve_display_jt_node_paths(
@@ -5263,6 +5266,7 @@ fn display_jt_node_paths(
     scene_segment: &str,
     shape_object_id: u32,
     inputs: &DisplayJtTessellationInputs<'_>,
+    visits: &WorkBudget,
 ) -> Result<Option<Vec<DisplayJtPath>>, CodecError> {
     let in_scene = |element_id: &str| {
         inputs
@@ -5341,13 +5345,7 @@ fn display_jt_node_paths(
         transforms: &scoped_transforms,
         materials: &scoped_materials,
     };
-    resolve_display_jt_node_paths(
-        ctx,
-        shape_object_id,
-        &lookup,
-        &mut BTreeSet::new(),
-        &WorkBudget::new(MAX_JT_NODE_PATH_VISITS),
-    )
+    resolve_display_jt_node_paths(ctx, shape_object_id, &lookup, &mut BTreeSet::new(), visits)
 }
 
 fn transform_jt_point(matrix: [[f64; 4]; 4], point: [f32; 3]) -> Option<FinitePoint3> {
@@ -5402,6 +5400,9 @@ fn transform_jt_normal(matrix: [[f64; 4]; 4], normal: [f32; 3]) -> Option<UnitVe
 /// A record the graph does not shape as a mesh yields no tessellation and is
 /// not an error; a mesh whose lanes do not pair is.
 ///
+/// A shape node whose instance paths exceed [`MAX_JT_NODE_PATH_VISITS`]
+/// yields no tessellation and pushes a `source.scan-bounded` loss.
+///
 /// # Errors
 ///
 /// Refuses a vertex-normal lane that does not cover the vertex lane, and a
@@ -5409,21 +5410,13 @@ fn transform_jt_normal(matrix: [[f64; 4]; 4], normal: [f32; 3]) -> Option<UnitVe
 pub(super) fn display_jt_tessellations(
     ctx: &DecodeContext<'_>,
     inputs: &DisplayJtTessellationInputs<'_>,
+    losses: &mut Vec<LossNote>,
 ) -> Result<Vec<(Tessellation, u64)>, CodecError> {
-    let rows = display_jt_tessellation_rows(ctx, inputs)?;
-
-    Ok(rows.unwrap_or_default())
-}
-
-fn display_jt_tessellation_rows(
-    ctx: &DecodeContext<'_>,
-    inputs: &DisplayJtTessellationInputs<'_>,
-) -> Result<Option<Vec<(Tessellation, u64)>>, CodecError> {
     macro_rules! required {
         ($value:expr) => {
             match $value {
                 Some(value) => value,
-                None => return Ok(None),
+                None => return Ok(Vec::new()),
             }
         };
     }
@@ -5460,7 +5453,7 @@ fn display_jt_tessellation_rows(
         });
         let binding = required!(matching_bindings.next());
         if matching_bindings.next().is_some() {
-            return Ok(None);
+            return Ok(Vec::new());
         }
         let mut matching_nodes = shape_nodes.iter().filter(|node| {
             if node.object_id != binding.shape_node_object_id {
@@ -5476,14 +5469,26 @@ fn display_jt_tessellation_rows(
         });
         let shape_node = required!(matching_nodes.next());
         if matching_nodes.next().is_some() {
-            return Ok(None);
+            return Ok(Vec::new());
         }
-        let paths = required!(display_jt_node_paths(
+        let visits = WorkBudget::new(MAX_JT_NODE_PATH_VISITS);
+        let Some(paths) = display_jt_node_paths(
             ctx,
             &binding.scene_segment,
             shape_node.object_id,
-            inputs
-        )?);
+            inputs,
+            &visits,
+        )?
+        else {
+            if visits.exhausted() {
+                losses.push(NxLossCode::SourceScanBounded.note(format!(
+                    "The instance-path scan of Display-JT shape node {} reached its visit bound; \
+                     the part's Display-JT tessellations were skipped.",
+                    shape_node.object_id
+                )));
+            }
+            return Ok(Vec::new());
+        };
         let mut rendered = Vec::new();
         for polygon in &mesh.polygons {
             if polygon.group < 0 {
@@ -5496,7 +5501,7 @@ fn display_jt_tessellation_rows(
             rendered.push((triangle, attributes));
         }
         if rendered.is_empty() {
-            return Ok(None);
+            return Ok(Vec::new());
         }
         let vertex_header = required!(vertex_headers
             .iter()
@@ -5509,7 +5514,7 @@ fn display_jt_tessellation_rows(
             })
             .flatten();
         if vertex_header.vertex_bindings & 0x8 != 0 && normal_array.is_none() {
-            return Ok(None);
+            return Ok(Vec::new());
         }
         let color_array = (vertex_header.vertex_bindings & 0x30 != 0)
             .then(|| {
@@ -5519,7 +5524,7 @@ fn display_jt_tessellation_rows(
             })
             .flatten();
         if vertex_header.vertex_bindings & 0x30 != 0 && color_array.is_none() {
-            return Ok(None);
+            return Ok(Vec::new());
         }
         let mut texture_arrays = Vec::new();
         for channel in (0..8_u8)
@@ -5539,7 +5544,7 @@ fn display_jt_tessellation_rows(
             })
             .flatten();
         if vertex_header.vertex_bindings & 0x40 != 0 && vertex_flag_array.is_none() {
-            return Ok(None);
+            return Ok(Vec::new());
         }
         for path in paths {
             let transform = path.matrix;
@@ -5576,7 +5581,7 @@ fn display_jt_tessellation_rows(
                     if !(1..=4).contains(&count)
                         || !array.values.iter().all(|value| value.len() == count)
                     {
-                        return Ok(None);
+                        return Ok(Vec::new());
                     }
                     texture_component_counts.push(count);
                 }
@@ -5725,7 +5730,7 @@ fn display_jt_tessellation_rows(
             ));
         }
     }
-    Ok(Some(tessellations))
+    Ok(tessellations)
 }
 
 #[cfg(test)]
