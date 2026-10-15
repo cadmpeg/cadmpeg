@@ -210,7 +210,6 @@ fn prt_with_file_entry(name: &[u8], payload: &[u8]) -> Result<Vec<u8>, CodecErro
 mod tests {
     use super::{record, single_part_prt_with_partition};
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    use cadmpeg_core::CodecError;
 
     #[test]
     fn long_partition_has_exact_directory_offset_and_size() {
@@ -248,7 +247,7 @@ mod tests {
             &DecodePolicy::default(),
         )
         .expect("root");
-        let (recovered, _storage) = ctx
+        let recovered = ctx
             .inflate_probe(root, stream.len(), true)
             .expect("probe")
             .expect("zlib partition");
