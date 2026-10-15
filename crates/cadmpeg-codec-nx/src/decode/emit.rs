@@ -898,12 +898,13 @@ pub(super) fn emit_topology(
                             face.surface
                                 .and_then(|target| surfaces.get(&u32::from(target)))
                         })?;
-                    let carrier_id = fields
-                        .curve_xmt
-                        .and_then(|target| pcurves.get(&u32::from(target)))?;
-                    let use_range = fields
-                        .curve_xmt
-                        .and_then(|target| trim_ranges.get(&u32::from(target)))
+                    let carrier_xmt = u32::from(fields.curve_xmt?);
+                    if pcurve_supports.get(&carrier_xmt) != Some(support) {
+                        return None;
+                    }
+                    let carrier_id = pcurves.get(&carrier_xmt)?;
+                    let use_range = trim_ranges
+                        .get(&carrier_xmt)
                         .copied()
                         .and_then(ordered_parameter_range);
                     Some((edge, support, carrier_id, use_range))
@@ -1122,10 +1123,6 @@ pub(super) fn emit_topology(
                 .curve_xmt
                 .and_then(|target| curves.get(&u32::from(target)))
                 == Some(edge_curve)
-                && fields
-                    .curve_xmt
-                    .and_then(|target| pcurve_supports.get(&u32::from(target)))
-                    == Some(support)
             {
                 ctx.insert_btree_set(
                     &mut serialized_branch_pcurves,

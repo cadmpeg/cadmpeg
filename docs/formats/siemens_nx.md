@@ -1335,10 +1335,15 @@ reference is the carrier path. When it resolves through
 surface and pcurve define a procedural parametric surface curve. Its finite
 domain is the trim interval, or the solved NURBS pcurve knot domain when the FIN
 references the SP_CURVE directly.
-A FIN pcurve attaches to a coedge only when evaluation through that face's
-surface reaches both edge vertices within the larger of the edge, vertex, and
-pcurve fit tolerances. A pcurve carried on a different support remains part of
-the procedural curve construction but is not attached to that face.
+A FIN pcurve attaches to a coedge only when its `SP_CURVE.surface` and the
+owning `FACE.surface` reference the same surface in the same physical stream,
+and evaluation through that surface reaches both edge vertices within the
+larger of the edge, vertex, and pcurve fit tolerances. Coincident surface
+geometry does not establish this identity. A pcurve carried on a different
+support remains part of the procedural curve construction but is not attached
+to that face. This relation also applies to plane and quadric supports without
+a chart. The serialized pcurve's control points, weights, and knots define its
+parameter-space interior; endpoint inversion does not define that interior.
 A body is solid when every assembled EDGE has exactly two FIN uses in that body. A body with faces and any edge-use count other than two is a sheet body.
 
 BODY, REGION, and SHELL records contain no placement reference. POINT coordinates and the origins and axes stored by curve and surface carriers are part-model coordinates. An inline Parasolid body's part placement is therefore the identity transform.

@@ -150,14 +150,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the name to give the node one stable schema identity.
 
-### PS-26. Boundary pcurve relation without a chart
-
-**Question.** Which serialized relation defines the boundary pcurve of an EDGE whose supports carry no chart and no analytic isocurve relation?
-
-**Known.** `siemens_nx.md` §5.3 "An EDGE may carry null curve reference `1` with a finite tolerance. With a null" defines chart-certified transfer for a null carrier and states that transfer does not synthesize a model-space line between the vertices. `siemens_nx.md` §5.3 "A null `EDGE.curve` may instead have a non-null owning `FIN.curve`. The FIN" defines the FIN-carrier case. Neither defines a boundary pcurve for a plane or quadric support that has no chart.
-
-**Need.** We must define the relation that fixes the complete parameter-space interior. Endpoint inversion fixes only the interval ends; it does not determine the curve between them.
-
 ### PS-27. Unresolved EDGE end vertex
 
 **Question.** What is the correct reading of an EDGE whose end vertex does not resolve to a decoded POINT?

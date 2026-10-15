@@ -793,6 +793,116 @@ fn decode_attaches_dimension_two_bcurve_through_surface_curve() {
 }
 
 #[test]
+fn decode_attaches_rational_pcurve_through_surface_curve() {
+    let mut stream = pcurve_topology_partition_stream();
+    let payload = stream
+        .windows(4)
+        .position(|window| window == [0, 135, 0, 22])
+        .expect("pcurve payload");
+    let mut rational_payload = record(135, 15 + 6 * 8);
+    put_ref(&mut rational_payload, 2, 22);
+    rational_payload[9..13].copy_from_slice(&6u32.to_be_bytes());
+    // Homogeneous UV triples represent the same point with weights one and two.
+    for (index, value) in [0.01, 0.02, 1.0, 0.02, 0.04, 2.0].into_iter().enumerate() {
+        put_f64(&mut rational_payload, 15 + index * 8, value);
+    }
+    stream.splice(payload..payload + 15 + 4 * 8, rational_payload);
+    let result = NxCodec
+        .decode(
+            &mut Cursor::new(prt_with_partition(&stream)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert_eq!(result.ir().model.pcurves.len(), 1);
+    assert_eq!(
+        result.ir().model.coedges[0].pcurves[0].pcurve,
+        result.ir().model.pcurves[0].id
+    );
+    let PcurveGeometry::Nurbs { nurbs } = &result.ir().model.pcurves[0].geometry else {
+        panic!("expected rational NURBS pcurve");
+    };
+    assert_eq!(
+        nurbs.control_points(),
+        [Point2::new(10.0, 20.0), Point2::new(10.0, 20.0)]
+    );
+    assert_eq!(
+        nurbs.weights().map(|weights| weights
+            .into_iter()
+            .map(cadmpeg_ir::scalar::NonZeroReal::get)
+            .collect::<Vec<_>>()),
+        Some(vec![1.0, 2.0])
+    );
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
+}
+
+#[test]
+fn decode_does_not_attach_fin_pcurve_from_a_distinct_coincident_support() {
+    for (trimmed, null_edge_curve) in [(false, false), (true, false), (false, true), (true, true)] {
+        let mut stream = pcurve_topology_partition_stream();
+        let plane = stream
+            .windows(4)
+            .position(|window| window == [0, 50, 0, 6])
+            .expect("face plane");
+        let mut distinct_support =
+            stream[plane..plane + crate::layout::plane_payload::LEN].to_vec();
+        put_ref(&mut distinct_support, 2, 26);
+        stream.extend(distinct_support);
+        let surface_curve = stream
+            .windows(4)
+            .position(|window| window == [0, 137, 0, 25])
+            .expect("surface curve");
+        put_ref(&mut stream, surface_curve + 19, 26);
+        if null_edge_curve {
+            let edge = stream
+                .windows(4)
+                .position(|window| window == [0, 16, 0, 8])
+                .expect("edge record");
+            put_ref(&mut stream, edge + 24, 1);
+            put_ref(&mut stream, surface_curve + 23, 1);
+        }
+
+        if trimmed {
+            let fin = stream
+                .windows(4)
+                .position(|window| window == [0, 17, 0, 7])
+                .expect("fin record");
+            put_ref(&mut stream, fin + 18, 27);
+            let mut trim = record(133, 85);
+            put_ref(&mut trim, 2, 27);
+            trim[18] = b'+';
+            put_ref(&mut trim, 19, 25);
+            put_f64(&mut trim, 69, 1.0);
+            put_f64(&mut trim, 77, 0.0);
+            stream.extend(trim);
+        }
+
+        let mut input = Cursor::new(prt_with_partition(&stream));
+        let result = NxCodec
+            .decode(&mut input, &DecodeOptions::default())
+            .unwrap();
+
+        assert_eq!(result.ir().model.coedges.len(), 1);
+        // An unattached standalone pcurve is pruned; an embedded parametric
+        // construction remains when it is the edge's only carrier.
+        assert!(result.ir().model.pcurves.is_empty());
+        if null_edge_curve {
+            assert_eq!(result.ir().model.procedural_curves.len(), 1);
+        }
+        assert_eq!(result.ir().model.surfaces.len(), 2);
+        // Equal geometry and endpoint incidence do not make distinct XT surface
+        // identities the same FIN/FACE support.
+        assert!(result.ir().model.coedges[0].pcurves.is_empty());
+        let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail");
+        assert!(validation.is_ok(), "findings: {:?}", validation.findings);
+    }
+}
+
+#[test]
 fn decode_assigns_descending_pcurve_trim_to_the_coedge_use() {
     let mut stream = pcurve_topology_partition_stream();
     let fin = stream
