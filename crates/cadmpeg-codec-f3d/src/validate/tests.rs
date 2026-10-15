@@ -24,28 +24,12 @@ use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
 use crate::test_support::zip_test::f3d_with_smbh_and_protein;
 use crate::F3dCodec;
 
-/// The collection items a validator's typed reload of one stored arena
-/// admits: the least item allowance under which the reload succeeds.
-fn typed_reload_items<T: serde::de::DeserializeOwned>(ir: &cadmpeg_ir::CadIr, arena: &str) -> u64 {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    let namespace = ir.native.namespace("f3d").unwrap();
-    (0..=u64::from(u16::MAX))
-        .find(|items| {
-            let decode_arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = *items;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &decode_arena, &policy).unwrap();
-            namespace.arena_as_for_decode::<T>(&ctx, arena).is_ok()
-        })
-        .unwrap()
-}
-
 mod act_limits;
 mod arithmetic;
+mod audit_indexes;
 mod body_recipe_limits;
 mod construction_group_limits;
 mod construction_identity_limits;
-mod dimension_validation_limits;
 mod edge_identity_limits;
 mod edge_operand_limits;
 mod edge_treatment_limits;
@@ -62,8 +46,6 @@ mod image_limits;
 mod link_limits;
 mod mesh_feature_limits;
 mod operand_group_carrier_limits;
-mod parameter_scope_collection_limits;
-mod parameter_scope_limits;
 mod path_feature_limits;
 mod resource_limits;
 mod timeline_limits;
@@ -90,10 +72,16 @@ fn native_validation_refuses_decode_collection_limit() {
         )
         .unwrap();
     let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = F3dCodec.validate_native(&ctx, &ir).unwrap_err();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "load typed native record",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            F3dCodec.validate_native(&ctx, &ir)
+        },
+    );
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
 }
 
@@ -116,27 +104,29 @@ fn recipe_reference() -> crate::records::dimensions::DesignRecipeReference {
 
 #[test]
 fn finalized_recipe_reference_validation_ignores_only_derived_candidates() {
-    let actual = recipe_reference();
-    let mut expected = actual.clone();
-    expected.candidate_faces =
-        vec![cadmpeg_ir::ids::FaceId::mint("f3d:brep:entity#20").expect("identity grammar")];
-    assert!(super::recipe_reference_frames_match(
-        &[actual.clone()],
-        &[expected.clone()],
-        true,
-    ));
-    assert!(!super::recipe_reference_frames_match(
-        &[actual.clone()],
-        &[expected.clone()],
-        false,
-    ));
+    crate::test_support::with_decode_context(|ctx| {
+        let actual = recipe_reference();
+        let mut expected = actual.clone();
+        expected.candidate_faces =
+            vec![cadmpeg_ir::ids::FaceId::mint("f3d:brep:entity#20").expect("identity grammar")];
+        assert!(super::recipe_reference_frames_match(
+            ctx,
+            &[actual.clone()],
+            &[expected.clone()],
+            true,
+        )
+        .unwrap());
+        assert!(!super::recipe_reference_frames_match(
+            ctx,
+            &[actual.clone()],
+            &[expected.clone()],
+            false,
+        )
+        .unwrap());
 
-    expected.design_reference += 1;
-    assert!(!super::recipe_reference_frames_match(
-        &[actual],
-        &[expected],
-        true,
-    ));
+        expected.design_reference += 1;
+        assert!(!super::recipe_reference_frames_match(ctx, &[actual], &[expected], true,).unwrap());
+    });
 }
 
 #[test]
@@ -415,7 +405,10 @@ fn validation_requires_timeline_items_to_resolve_through_the_type_table() {
         ],
         design_feature_timelines: vec![
             crate::records::entity_header::DesignFeatureTimeline::try_new(
-                crate::ids::native_design_feature_timeline_id(bulk_entry, 200),
+                crate::test_support::with_decode_context(|ctx| {
+                    crate::ids::native_design_feature_timeline_id(ctx, bulk_entry, 200)
+                        .expect("test F3D native identity")
+                }),
                 crate::records::entity_header::DesignTimelineFrame::new(
                     crate::records::admission::RecordAdmission::Admitted,
                     200,
@@ -1342,7 +1335,10 @@ fn validation_accepts_legacy_owner_frames_and_ownerless_class_287_parameters() {
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let owned_parameter = crate::records::parameters::DesignParameter::try_from(
         crate::records::parameters::DesignParameterDraft::<String> {
-            id: crate::ids::native_design_parameter_id(DESIGN_STREAM, 101),
+            id: crate::test_support::with_decode_context(|ctx| {
+                crate::ids::native_design_parameter_id(ctx, DESIGN_STREAM, 101)
+                    .expect("test F3D native identity")
+            }),
             byte_offset: 1_068,
             class_tag: crate::records::references::DesignClassTag::try_from("305".to_owned())
                 .unwrap(),
@@ -1371,7 +1367,10 @@ fn validation_accepts_legacy_owner_frames_and_ownerless_class_287_parameters() {
     .unwrap();
     let owner =
         DesignParameterOwner::try_from(crate::records::parameters::DesignParameterOwnerWire {
-            id: crate::ids::native_design_parameter_owner_id(DESIGN_STREAM, 1_000),
+            id: crate::test_support::with_decode_context(|ctx| {
+                crate::ids::native_design_parameter_owner_id(ctx, DESIGN_STREAM, 1_000)
+                    .expect("test F3D native identity")
+            }),
             byte_offset: 1_000,
             frame_length: 68,
             class_tag: crate::records::references::DesignClassTag::try_from("268".to_owned())
@@ -1390,7 +1389,10 @@ fn validation_accepts_legacy_owner_frames_and_ownerless_class_287_parameters() {
     let companion = DesignParameterCompanion::unbound(
         format!(
             "{}:design-parameter-companion#1200",
-            crate::ids::native_scope(DESIGN_STREAM)
+            crate::test_support::with_decode_context(|ctx| {
+                crate::ids::native_scope(ctx, DESIGN_STREAM, "retain F3D native scope")
+                    .expect("test F3D native identity")
+            })
         ),
         1_200,
         crate::records::references::DesignClassTag::try_from("258".to_owned()).unwrap(),
@@ -1406,7 +1408,10 @@ fn validation_accepts_legacy_owner_frames_and_ownerless_class_287_parameters() {
     ));
     let ownerless_parameter = crate::records::parameters::DesignParameter::try_from(
         crate::records::parameters::DesignParameterDraft::<String> {
-            id: crate::ids::native_design_parameter_id(DESIGN_STREAM, 201),
+            id: crate::test_support::with_decode_context(|ctx| {
+                crate::ids::native_design_parameter_id(ctx, DESIGN_STREAM, 201)
+                    .expect("test F3D native identity")
+            }),
             byte_offset: 1_400,
             class_tag: crate::records::references::DesignClassTag::try_from("287".to_owned())
                 .unwrap(),
@@ -1439,21 +1444,30 @@ fn validation_accepts_legacy_owner_frames_and_ownerless_class_287_parameters() {
         native.design_parameter_companions.push(companion);
         native.design_record_headers.extend([
             DesignRecordHeader {
-                id: crate::ids::native_scoped_id(DESIGN_STREAM, "record-header", 100),
+                id: crate::test_support::with_decode_context(|ctx| {
+                    crate::ids::native_scoped_id(ctx, DESIGN_STREAM, "record-header", 100)
+                        .expect("test F3D native identity")
+                }),
                 record_index: 100,
                 class_tag: crate::records::references::DesignClassTag::try_from("268".to_owned())
                     .unwrap(),
                 byte_offset: 1_000,
             },
             DesignRecordHeader {
-                id: crate::ids::native_scoped_id(DESIGN_STREAM, "record-header", 101),
+                id: crate::test_support::with_decode_context(|ctx| {
+                    crate::ids::native_scoped_id(ctx, DESIGN_STREAM, "record-header", 101)
+                        .expect("test F3D native identity")
+                }),
                 record_index: 101,
                 class_tag: crate::records::references::DesignClassTag::try_from("305".to_owned())
                     .unwrap(),
                 byte_offset: 1_068,
             },
             DesignRecordHeader {
-                id: crate::ids::native_scoped_id(DESIGN_STREAM, "record-header", 102),
+                id: crate::test_support::with_decode_context(|ctx| {
+                    crate::ids::native_scoped_id(ctx, DESIGN_STREAM, "record-header", 102)
+                        .expect("test F3D native identity")
+                }),
                 record_index: 102,
                 class_tag: crate::records::references::DesignClassTag::try_from("258".to_owned())
                     .unwrap(),

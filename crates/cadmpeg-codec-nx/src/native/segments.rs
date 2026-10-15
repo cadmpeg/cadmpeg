@@ -1174,9 +1174,10 @@ mod tests {
         use cadmpeg_core::decode::ResourceDimension;
 
         let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", segment_index_payload())]);
-        let container =
-            crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, file))
-                .expect("valid segment-index container");
+        let container = crate::test_support::with_decode_context(|ctx| {
+            crate::container::scan_bytes(ctx, &file)
+        })
+        .expect("valid segment-index container");
 
         crate::test_support::with_decode_context_over(
             &[],
@@ -1201,9 +1202,10 @@ mod tests {
         use cadmpeg_core::decode::ResourceDimension;
 
         let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", segment_index_payload())]);
-        let container =
-            crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, file))
-                .expect("valid segment-index container");
+        let container = crate::test_support::with_decode_context(|ctx| {
+            crate::container::scan_bytes(ctx, &file)
+        })
+        .expect("valid segment-index container");
         let row_slots = 4 * std::mem::size_of::<super::SegmentIndexRow>();
         let first_id = "nx:segment-index:row#0";
 
@@ -1231,9 +1233,10 @@ mod tests {
         use cadmpeg_core::decode::ResourceDimension;
 
         let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", segment_index_payload())]);
-        let container =
-            crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, file))
-                .expect("valid segment-index container");
+        let container = crate::test_support::with_decode_context(|ctx| {
+            crate::container::scan_bytes(ctx, &file)
+        })
+        .expect("valid segment-index container");
         let row_slots = 4 * std::mem::size_of::<super::SegmentIndexRow>();
         let first_id = "nx:segment-index:row#0";
         let source_entry = "/Root/UG_PART/UG_PART";

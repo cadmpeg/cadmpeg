@@ -195,7 +195,6 @@ fn scene_node_families_reject_elements_independently() {
     let version = match JtVersionField::new(
         format!("{:<80}", "Version 9.4 JT"),
         Ok::<_, std::convert::Infallible>,
-        |text, _| Ok(text.parse()),
     ) {
         Ok(version) => version.unwrap(),
         Err(error) => match error {},

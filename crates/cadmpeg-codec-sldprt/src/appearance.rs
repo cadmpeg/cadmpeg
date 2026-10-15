@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `SolidWorks` appearance definitions, assignments, and resolution.
 
+use std::cell::OnceCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation, View};
 use cadmpeg_ir::topology::Color;
 use cadmpeg_ir::StreamName;
 
@@ -37,19 +38,18 @@ struct DisplayAppearanceAssignment {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct FeatureAppearanceAssignment {
+pub(crate) struct FeatureAppearanceAssignment<'scan> {
     pub(crate) feature_source_id: FeatureSourceId,
     feature_timestamp: u32,
     packed_color: u32,
-    color: Color,
-    source_name: StreamName,
+    source_name: &'scan StreamName,
     record_offset: usize,
 }
 
 /// The winning source of one face appearance, before its output copy.
 enum AppearanceSource<'a> {
     Display(&'a AppearanceDefinition),
-    Feature(&'a FeatureAppearanceAssignment),
+    Feature(&'a FeatureAppearanceAssignment<'a>),
 }
 
 pub(crate) struct ResolvedDisplayAppearances {
@@ -91,12 +91,18 @@ pub(crate) fn definitions(
     Ok(definitions)
 }
 
-fn definition_at(
-    ctx: &DecodeContext<'_>,
+/// A validated name and color before any output copies are made.
+struct AppearanceCandidate<'ctx> {
+    name: String,
+    color: Color,
+    name_storage: ScopedReservation<'ctx>,
+}
+
+fn candidate_at<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     section: Section<'_>,
     packed_offset: usize,
-    record_offset: usize,
-) -> Result<Option<AppearanceDefinition>, cadmpeg_core::CodecError> {
+) -> Result<Option<AppearanceCandidate<'ctx>>, cadmpeg_core::CodecError> {
     let bytes = section.payload();
     let Some(packed_color) = View::u32_le_at(bytes, packed_offset) else {
         return Ok(None);
@@ -124,20 +130,49 @@ fn definition_at(
             Err(cadmpeg_core::CodecError::Malformed(_)) => return Ok(None),
             Err(error) => return Err(error),
         };
-    let trimmed = ctx.trim_text(&decoded, "trim SLDPRT appearance name")?;
-    if trimmed.is_empty() {
+    if !ctx.any_by(
+        decoded.chars(),
+        |character| Ok(!character.is_whitespace()),
+        "validate SLDPRT appearance name",
+    )? {
         return Ok(None);
     }
-    let name = ctx.copy_retained_text(trimmed, "retain SLDPRT appearance name")?;
-    drop(decoded);
-    drop(name_reservation);
-    let source_name = clone_stream_name(ctx, section.source_stream())?;
-    Ok(Some(AppearanceDefinition {
-        name,
+    Ok(Some(AppearanceCandidate {
+        name: decoded,
         color: packed_rgb(packed_color),
+        name_storage: name_reservation,
+    }))
+}
+
+fn materialize_candidate(
+    ctx: &DecodeContext<'_>,
+    section: Section<'_>,
+    candidate: AppearanceCandidate<'_>,
+    record_offset: usize,
+) -> Result<AppearanceDefinition, cadmpeg_core::CodecError> {
+    let trimmed = ctx.trim_text(&candidate.name, "trim SLDPRT appearance name")?;
+    let name = ctx.copy_retained_text(trimmed, "retain SLDPRT appearance name")?;
+    let color = candidate.color;
+    drop(candidate.name);
+    drop(candidate.name_storage);
+    let source_name = clone_stream_name(ctx, section.source_stream())?;
+    Ok(AppearanceDefinition {
+        name,
+        color,
         source_name,
         record_offset,
-    }))
+    })
+}
+
+fn definition_at(
+    ctx: &DecodeContext<'_>,
+    section: Section<'_>,
+    packed_offset: usize,
+    record_offset: usize,
+) -> Result<Option<AppearanceDefinition>, cadmpeg_core::CodecError> {
+    candidate_at(ctx, section, packed_offset)?
+        .map(|candidate| materialize_candidate(ctx, section, candidate, record_offset))
+        .transpose()
 }
 
 fn clone_stream_name(
@@ -168,46 +203,34 @@ fn inline_definition<'ctx>(
     section: Section<'_>,
     start: usize,
     end: usize,
-) -> Result<
-    (
-        Option<AppearanceDefinition>,
-        cadmpeg_core::decode::ScopedReservation<'ctx>,
-    ),
-    cadmpeg_core::CodecError,
-> {
-    let mut storage = ctx.reserve_scoped(0, "SLDPRT inline appearance candidate")?;
+) -> Result<Option<(AppearanceDefinition, ScopedReservation<'ctx>)>, cadmpeg_core::CodecError> {
     let Some(bytes) = section.payload().get(start..end) else {
-        return Ok((None, storage));
+        return Ok(None);
     };
     let mut selected = None;
-    let mut ambiguous = false;
-    for (relative, marker) in ctx
-        .admit_iter(bytes, "scan inline SLDPRT appearances")?
-        .windows(const { crate::nonzero(inline_visual::MARKER_VALUE.len()) })
-        .enumerate()
-    {
-        if marker != inline_visual::MARKER_VALUE {
-            continue;
-        }
+    let mut windows = bytes.windows(inline_visual::MARKER_VALUE.len()).enumerate();
+    while let Some(relative) = ctx.find_map(
+        windows.by_ref(),
+        |(relative, marker)| Ok((marker == inline_visual::MARKER_VALUE).then_some(relative)),
+        "scan inline SLDPRT appearances",
+    )? {
         let offset = start + relative;
-        let (definition, mut candidate_storage) = ctx
-            .with_scoped_storage("SLDPRT inline appearance candidate", || {
-                definition_at(ctx, section, offset + inline_visual::PACKED_COLOR, offset)
-            })?;
-        let Some(definition) = definition else {
+        let Some(candidate) = candidate_at(ctx, section, offset + inline_visual::PACKED_COLOR)?
+        else {
             continue;
         };
-        if selected.is_none() && !ambiguous {
-            storage.absorb(&mut candidate_storage)?;
-            selected = Some(definition);
-        } else {
-            selected = None;
-            drop(storage);
-            storage = ctx.reserve_scoped(0, "SLDPRT inline appearance candidate")?;
-            ambiguous = true;
+        if selected.is_some() {
+            return Ok(None);
         }
+        selected = Some((candidate, offset));
     }
-    Ok((selected, storage))
+    selected
+        .map(|(candidate, offset)| {
+            ctx.with_scoped_storage("SLDPRT inline appearance candidate", || {
+                materialize_candidate(ctx, section, candidate, offset)
+            })
+        })
+        .transpose()
 }
 
 /// Decode body/default and face-local assignments from `DisplayLists`.
@@ -232,13 +255,13 @@ fn display_assignments(
         else {
             continue;
         };
-        let (definition, definition_storage) = inline_definition(
+        let definition = inline_definition(
             ctx,
             section,
             face.metadata.start(),
             face.metadata.end().min(class.content.end()),
         )?;
-        if let Some(definition) = definition {
+        if let Some((definition, definition_storage)) = definition {
             let definition = definition_storage.commit_value(definition)?;
             ctx.push_vec(
                 &mut assignments,
@@ -261,9 +284,9 @@ fn display_assignments(
             continue;
         }
         let body_start = std::mem::replace(&mut previous_body_end, class.content.end());
-        let (definition, definition_storage) =
-            inline_definition(ctx, section, class.content.start(), class.content.end())?;
-        let Some(definition) = definition else {
+        let Some((definition, definition_storage)) =
+            inline_definition(ctx, section, class.content.start(), class.content.end())?
+        else {
             continue;
         };
         if faces_by_start.len() != faces.len() {
@@ -338,12 +361,22 @@ fn containing_class<'a, 'c>(
         .filter(|class| offset < class.content.end()))
 }
 
-/// Decode feature-source assignments from `ThirdPtyStore/VisualStates`.
-pub(crate) fn feature_assignments(
+struct FeatureAppearanceRecord {
+    source_id: FeatureSourceId,
+    timestamp: u32,
+    packed_color: u32,
+    offset: usize,
+}
+
+/// Visits every structurally valid feature appearance in source order.
+fn visit_feature_appearances<'scan>(
     ctx: &DecodeContext<'_>,
-    scan: &ContainerScan,
-) -> Result<Vec<FeatureAppearanceAssignment>, cadmpeg_core::CodecError> {
-    let mut assignments = Vec::new();
+    scan: &'scan ContainerScan,
+    mut visit: impl FnMut(
+        Section<'scan>,
+        FeatureAppearanceRecord,
+    ) -> Result<(), cadmpeg_core::CodecError>,
+) -> Result<(), cadmpeg_core::CodecError> {
     for section in scan
         .sections(ctx)?
         .filter(|section| section.name() == Some("ThirdPtyStore/VisualStates"))
@@ -403,28 +436,162 @@ pub(crate) fn feature_assignments(
             let Some(packed_color) = View::u32_le_at(record, feature_visual::PACKED_COLOR) else {
                 continue;
             };
-            let source_name = clone_stream_name(ctx, section.source_stream())?;
-            ctx.push_vec(
-                &mut assignments,
-                FeatureAppearanceAssignment {
-                    feature_source_id,
-                    feature_timestamp,
+            visit(
+                section,
+                FeatureAppearanceRecord {
+                    source_id: feature_source_id,
+                    timestamp: feature_timestamp,
                     packed_color,
-                    color: packed_rgb(packed_color),
-                    source_name,
-                    record_offset,
+                    offset: record_offset,
                 },
-                "collect SLDPRT feature appearances",
             )?;
         }
     }
+    Ok(())
+}
+
+/// Decode feature-source assignments from `ThirdPtyStore/VisualStates`.
+pub(crate) fn feature_assignments<'scan>(
+    ctx: &DecodeContext<'_>,
+    scan: &'scan ContainerScan,
+) -> Result<Vec<FeatureAppearanceAssignment<'scan>>, cadmpeg_core::CodecError> {
+    let mut assignments = Vec::new();
+    visit_feature_appearances(ctx, scan, |section, record| {
+        let source_name = section.source_stream();
+        ctx.push_vec(
+            &mut assignments,
+            FeatureAppearanceAssignment {
+                feature_source_id: record.source_id,
+                feature_timestamp: record.timestamp,
+                packed_color: record.packed_color,
+                source_name,
+                record_offset: record.offset,
+            },
+            "collect SLDPRT feature appearances",
+        )
+    })?;
     Ok(assignments)
 }
 
+/// Feature records and their unique-source index shared by one geometry pass.
+/// Each is built at its first query and owns its temporary storage.
+#[derive(Default)]
+pub(crate) struct FeatureAppearances<'scan, 'ctx> {
+    records: OnceCell<(
+        Vec<FeatureAppearanceAssignment<'scan>>,
+        ScopedReservation<'ctx>,
+    )>,
+    index: OnceCell<(
+        HashMap<FeatureSourceId, Option<usize>>,
+        ScopedReservation<'ctx>,
+    )>,
+}
+
+impl<'scan, 'ctx> FeatureAppearances<'scan, 'ctx> {
+    fn records(
+        &self,
+        ctx: &'ctx DecodeContext<'_>,
+        scan: &'scan ContainerScan,
+    ) -> Result<&[FeatureAppearanceAssignment<'scan>], cadmpeg_core::CodecError> {
+        if self.records.get().is_none() {
+            let records = ctx.with_scoped_storage("SLDPRT feature appearance workspace", || {
+                feature_assignments(ctx, scan)
+            })?;
+            self.records.set(records).map_err(|_| {
+                cadmpeg_core::CodecError::malformed("SLDPRT appearance records initialized twice")
+            })?;
+        }
+        self.records
+            .get()
+            .map(|(records, _)| records.as_slice())
+            .ok_or_else(|| cadmpeg_core::CodecError::malformed("missing SLDPRT appearance records"))
+    }
+
+    fn lookup(
+        &self,
+        ctx: &'ctx DecodeContext<'_>,
+        scan: &'scan ContainerScan,
+        source_id: FeatureSourceId,
+    ) -> Result<Option<&FeatureAppearanceAssignment<'scan>>, cadmpeg_core::CodecError> {
+        let records = self.records(ctx, scan)?;
+        if self.index.get().is_none() {
+            let index =
+                ctx.with_scoped_storage("SLDPRT feature appearance index workspace", || {
+                    let mut index = HashMap::<FeatureSourceId, Option<usize>>::new();
+                    for (position, assignment) in ctx
+                        .admit_iter(records, "scan SLDPRT feature appearance assignments")?
+                        .enumerate()
+                    {
+                        if let Some(existing) = ctx.get_mut_hash_map(
+                            &mut index,
+                            &assignment.feature_source_id,
+                            "index SLDPRT feature appearances",
+                        )? {
+                            if existing
+                                .and_then(|position| records.get(position))
+                                .is_some_and(|previous| {
+                                    previous.feature_timestamp != assignment.feature_timestamp
+                                        || previous.packed_color != assignment.packed_color
+                                })
+                            {
+                                *existing = None;
+                            }
+                        } else {
+                            ctx.insert_hash_map(
+                                &mut index,
+                                assignment.feature_source_id,
+                                Some(position),
+                                "index SLDPRT feature appearances",
+                            )?;
+                        }
+                    }
+                    Ok::<_, cadmpeg_core::CodecError>(index)
+                })?;
+            self.index.set(index).map_err(|_| {
+                cadmpeg_core::CodecError::malformed("SLDPRT appearance index initialized twice")
+            })?;
+        }
+        let (index, _) = self.index.get().ok_or_else(|| {
+            cadmpeg_core::CodecError::malformed("missing SLDPRT appearance index")
+        })?;
+        Ok(ctx
+            .get_hash_map(index, &source_id, "look up SLDPRT hash key")?
+            .and_then(|position| *position)
+            .and_then(|position| records.get(position)))
+    }
+
+    /// Collects source identities and releases all cached record and index storage.
+    pub(crate) fn into_source_ids(
+        self,
+        ctx: &'ctx DecodeContext<'_>,
+        scan: &'scan ContainerScan,
+    ) -> Result<BTreeSet<FeatureSourceId>, cadmpeg_core::CodecError> {
+        if let Some((records, _)) = self.records.get() {
+            return ctx.collect_btree_set(
+                records
+                    .iter()
+                    .map(|assignment| assignment.feature_source_id),
+                "index SLDPRT feature appearance sources",
+            );
+        }
+        let mut sources = BTreeSet::new();
+        visit_feature_appearances(ctx, scan, |_, record| {
+            ctx.insert_btree_set(
+                &mut sources,
+                record.source_id,
+                "index SLDPRT feature appearance sources",
+            )?;
+            Ok(())
+        })?;
+        Ok(sources)
+    }
+}
+
 /// Resolve the verified `DisplayLists` precedence: body, feature, then face.
-pub(crate) fn resolve_display_appearances(
-    ctx: &DecodeContext<'_>,
-    scan: &ContainerScan,
+pub(crate) fn resolve_display_appearances<'scan, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    scan: &'scan ContainerScan,
+    feature_appearances: &FeatureAppearances<'scan, 'ctx>,
     section: Section<'_>,
     faces: &[DisplayFace],
 ) -> Result<ResolvedDisplayAppearances, cadmpeg_core::CodecError> {
@@ -453,40 +620,6 @@ pub(crate) fn resolve_display_appearances(
             }
         }
     }
-    let (feature_records, feature_records_storage) = ctx
-        .with_scoped_storage("SLDPRT feature appearance workspace", || {
-            feature_assignments(ctx, scan)
-        })?;
-    let mut feature_index_storage =
-        ctx.reserve_scoped(0, "SLDPRT feature appearance index workspace")?;
-    let mut feature_by_source =
-        HashMap::<FeatureSourceId, Option<&FeatureAppearanceAssignment>>::new();
-    for assignment in ctx.admit_iter(
-        &feature_records,
-        "scan SLDPRT feature appearance assignments",
-    )? {
-        if let Some(existing) = ctx.get_mut_hash_map(
-            &mut feature_by_source,
-            &assignment.feature_source_id,
-            "index SLDPRT feature appearances",
-        )? {
-            if existing.as_ref().is_some_and(|previous| {
-                previous.feature_timestamp != assignment.feature_timestamp
-                    || previous.packed_color != assignment.packed_color
-            }) {
-                *existing = None;
-            }
-        } else {
-            feature_index_storage.with_storage(|| {
-                ctx.insert_hash_map(
-                    &mut feature_by_source,
-                    assignment.feature_source_id,
-                    Some(assignment),
-                    "index SLDPRT feature appearances",
-                )
-            })?;
-        }
-    }
     let mut matched_feature_sources = BTreeSet::new();
     for (face_index, face) in ctx
         .admit_iter(faces, "scan SLDPRT feature appearance faces")?
@@ -495,9 +628,7 @@ pub(crate) fn resolve_display_appearances(
         let Some(source_id) = face.feature_source_id(ctx)? else {
             continue;
         };
-        let Some(Some(assignment)) =
-            ctx.get_hash_map(&feature_by_source, &source_id, "look up SLDPRT hash key")?
-        else {
+        let Some(assignment) = feature_appearances.lookup(ctx, scan, source_id)? else {
             continue;
         };
         ctx.insert_btree_set(
@@ -514,7 +645,6 @@ pub(crate) fn resolve_display_appearances(
             )
         })?;
     }
-    drop((feature_by_source, feature_index_storage));
     for assignment in ctx.admit_iter(&native_assignments, "index SLDPRT face appearances")? {
         if let DisplayAppearanceTarget::Face(face_index) = assignment.target {
             winner_storage.with_storage(|| {
@@ -536,8 +666,8 @@ pub(crate) fn resolve_display_appearances(
                     "SolidWorks feature appearance",
                     "copy SLDPRT appearance name",
                 )?,
-                color: assignment.color,
-                source_name: clone_stream_name(ctx, &assignment.source_name)?,
+                color: packed_rgb(assignment.packed_color),
+                source_name: clone_stream_name(ctx, assignment.source_name)?,
                 record_offset: assignment.record_offset,
             },
         };
@@ -550,7 +680,6 @@ pub(crate) fn resolve_display_appearances(
     }
     drop(winner_storage);
     drop((native_assignments, assignment_storage));
-    drop((feature_records, feature_records_storage));
     Ok(ResolvedDisplayAppearances {
         by_face,
         matched_feature_sources,

@@ -35,13 +35,12 @@ fn operand() -> crate::records::feature::work_geometry::DesignEdgeTreatmentVerte
     }
 }
 
-fn reload_items(ir: &cadmpeg_ir::CadIr) -> u64 {
-    super::typed_reload_items::<
-        crate::records::feature::work_geometry::DesignEdgeTreatmentVertexOperand,
-    >(ir, "design_edge_treatment_vertex_operands")
-}
-
-fn vertex_error(stored: bool, extra_items: u64, max_retained: u64) -> cadmpeg_core::CodecError {
+fn vertex_result(
+    stored: bool,
+    max_items: u64,
+    max_retained: u64,
+    max_materialized: u64,
+) -> Result<(), cadmpeg_core::CodecError> {
     crate::test_support::with_decode_context(|service_ctx| {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
         let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
@@ -61,23 +60,27 @@ fn vertex_error(stored: bool, extra_items: u64, max_retained: u64) -> cadmpeg_co
         }
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = if stored {
-            reload_items(&ir) + extra_items
-        } else {
-            extra_items
-        };
+        policy.limits.max_collection_items = max_items;
         policy.limits.max_retained_bytes = max_retained;
+        policy.limits.max_materialized_bytes = max_materialized;
         let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
         ctx.decode = &decode;
-        super::super::validate_edge_treatment_vertex_operands(&decode, &ctx, &mut Vec::new())
-            .unwrap_err()
+        super::super::validate_edge_treatment_vertex_operands(&ctx, &mut Vec::new()).map(|_| ())
     })
+}
+
+fn vertex_error(stored: bool, max_items: u64, max_retained: u64) -> cadmpeg_core::CodecError {
+    vertex_result(stored, max_items, max_retained, u64::MAX).unwrap_err()
 }
 
 #[test]
 fn vertex_operand_expected_index_refuses_collection_limit() {
-    let error = vertex_error(true, 0, u64::MAX);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "index F3D expected edge treatment vertex operands",
+        |cap| Err::<(), cadmpeg_core::CodecError>(vertex_error(true, cap, u64::MAX)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D expected edge treatment vertex operands")
@@ -85,17 +88,26 @@ fn vertex_operand_expected_index_refuses_collection_limit() {
 }
 
 #[test]
-fn vertex_operand_generated_id_refuses_retained_limit() {
-    let error = vertex_error(false, u64::MAX, 0);
+fn vertex_operand_generated_id_refuses_materialized_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::MaterializedBytes,
+        "retain F3D native record ID",
+        |cap| vertex_result(false, u64::MAX, u64::MAX, cap),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "retain F3D native record ID")
+        if limit.operation == "retain F3D native record ID" && limit.dimension == ResourceDimension::MaterializedBytes)
     );
 }
 
 #[test]
 fn vertex_operand_invalid_finding_refuses_collection_limit() {
-    let error = vertex_error(false, 0, u64::MAX);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "collect F3D native validation findings",
+        |cap| Err::<(), cadmpeg_core::CodecError>(vertex_error(false, cap, u64::MAX)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D native validation findings")
@@ -104,14 +116,11 @@ fn vertex_operand_invalid_finding_refuses_collection_limit() {
 
 #[test]
 fn vertex_operand_invalid_entity_refuses_retained_limit() {
-    let native = operand();
-    let stream = super::super::design_stream(&native.id);
-    let expected_id = crate::ids::native_scoped_id(
-        stream,
-        "edge-treatment-vertex-operand",
-        native.recipe.byte_offset(),
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain F3D validation entity",
+        |cap| vertex_result(false, u64::MAX, cap, u64::MAX),
     );
-    let error = vertex_error(false, u64::MAX, u64::try_from(expected_id.len()).unwrap());
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "retain F3D validation entity")
@@ -137,7 +146,7 @@ fn vertex_recipe_valid_at(recipe_offset: u64) -> bool {
         draft.recipe_program_offset = recipe_offset.saturating_add(18);
         draft.next_byte_offset = draft.recipe_program_offset.saturating_add(4);
         let vertex = DesignVertexRecipe::try_new(draft).unwrap();
-        let stream = super::super::design_stream(&vertex.recipe_id);
+        let stream = crate::ids::design_stream(decode, &vertex.recipe_id).unwrap();
         let scope = DesignParameterScope::empty(
             "f3d:Design/BulkStream.dat:scope#10",
             DesignFeatureKind::WorkPoint,

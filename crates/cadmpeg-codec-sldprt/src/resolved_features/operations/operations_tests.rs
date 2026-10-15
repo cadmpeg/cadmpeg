@@ -890,7 +890,7 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
         ),
     ];
 
-    inherit_configuration_operations(&ctx, &mut configured, &base, &histories, &[], None)
+    inherit_configuration_operations(&ctx, &mut configured, &base, &histories, &[], &[], None)
         .expect("bind configuration operations");
 
     assert!(matches!(
@@ -911,7 +911,7 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
     configured[0]
         .evaluation
         .set_definition(extrude(BooleanOp::NewBody));
-    inherit_configuration_operations(&ctx, &mut configured, &base, &histories, &[], None)
+    inherit_configuration_operations(&ctx, &mut configured, &base, &histories, &[], &[], None)
         .expect("bind configuration operations");
     assert!(matches!(
         configured[0].evaluation.definition(),
@@ -961,6 +961,7 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
         &mut inherited,
         &base,
         &histories,
+        &[],
         &[operation_lane.clone()],
         Some(4),
     )
@@ -984,6 +985,7 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
         &mut unresolved,
         &base,
         &histories,
+        &[],
         &[operation_lane],
         Some(4),
     )
@@ -995,4 +997,213 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
             ..
         })
     ));
+}
+
+#[test]
+fn configuration_operation_base_resolves_borrowed_unresolved_evidence() {
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+    let mut native = configuration_extrusion_feature();
+    native.xml_tag = "Extrusion".into();
+    native.kind = "Extrusion".into();
+    native
+        .parameters
+        .insert(cadmpeg_core::nonblank_literal!("Depth"), "1mm".into());
+    let mut histories = [FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![native],
+    }];
+    let fixture_ctx = cadmpeg_test_support::service_decode_context();
+    let local = crate::history::project::project_features(&fixture_ctx, &histories).unwrap();
+    assert!(matches!(
+        local[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
+            op: BooleanOp::Unresolved,
+            ..
+        })
+    ));
+    histories[0].features[0].input_class = Some("moExtrusion_c".into());
+    let mut base = local.clone();
+    let mut lanes = split_line_limit_input().1;
+    let lane = &mut lanes[0];
+    lane.native_payload = vec![0; 128];
+    lane.classes = vec![FeatureInputClass {
+        id: "class".into(),
+        parent: lane.id.clone(),
+        ordinal: 0,
+        offset: 33,
+        name: "moExtrusion_c".into(),
+    }];
+    lane.names[0].offset = 52;
+    lane.names[0].value = histories[0].features[0].name.clone();
+    lane.native_payload[25..29].copy_from_slice(&3_u32.to_le_bytes());
+    let mut expected = local.clone();
+    expected[0].evaluation.edit(|definition, _| {
+        if let FeatureDefinition::Operation(FeatureOperation::Extrude { op, .. }) = definition {
+            *op = BooleanOp::Join;
+        }
+    });
+    let mut configured = local.clone();
+    inherit_configuration_operations(
+        &fixture_ctx,
+        &mut configured,
+        &base,
+        &histories,
+        &lanes,
+        &[],
+        Some(4),
+    )
+    .unwrap();
+    assert_eq!(configured, expected);
+    let mut last = base[0].clone();
+    last.evaluation.set_definition(FeatureDefinition::Operation(
+        FeatureOperation::StoredGeometry {},
+    ));
+    base.push(last);
+    let mut configured = local.clone();
+    inherit_configuration_operations(
+        &fixture_ctx,
+        &mut configured,
+        &base,
+        &histories,
+        &lanes,
+        &[],
+        Some(4),
+    )
+    .unwrap();
+    assert_eq!(configured, local);
+}
+
+fn configuration_extrusion_feature() -> Feature {
+    Feature {
+        id: "extrusion".into(),
+        parent: "history".into(),
+        xml_tag: "Feature".into(),
+        tree_parent: None,
+        source_id: FeatureSource::from_value(1),
+        ordinal: 0,
+        name: "extrusion".into(),
+        kind: "Custom".into(),
+        input_class: None,
+        suppressed: false,
+        parameters: BTreeMap::new(),
+        dimension_properties: BTreeMap::new(),
+        properties: BTreeMap::new(),
+        text: None,
+        content: Vec::new(),
+    }
+}
+
+fn run_operation_base(
+    policy: &cadmpeg_core::decode::DecodePolicy,
+) -> Result<(), cadmpeg_core::CodecError> {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;
+    let mut native = configuration_extrusion_feature();
+    native.kind = "Extrusion".into();
+    native.xml_tag = "Extrusion".into();
+    native
+        .parameters
+        .insert(cadmpeg_core::nonblank_literal!("Depth"), "1mm".into());
+    let histories = [crate::records::FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![native],
+    }];
+    let fixture_ctx = cadmpeg_test_support::service_decode_context();
+    let local = crate::history::project::project_features(&fixture_ctx, &histories)?;
+    assert!(matches!(
+        local[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
+            op: cadmpeg_ir::features::BooleanOp::Unresolved,
+            ..
+        })
+    ));
+    let mut model = local.clone();
+    model[0].name = Some("x".repeat(32 * 1024));
+    model[0].evaluation.edit(|definition, _| {
+        if let FeatureDefinition::Operation(FeatureOperation::Extrude { profile, op, .. }) =
+            definition
+        {
+            *op = cadmpeg_ir::features::BooleanOp::Cut;
+            *profile = cadmpeg_ir::features::ProfileRef::Planar(
+                cadmpeg_ir::features::PlanarProfileRef::Sketch(
+                    cadmpeg_ir::sketches::SketchId::mint(format!(
+                        "synthetic:test:sketch#{}",
+                        "p".repeat(17 * 1024 * 1024)
+                    ))
+                    .unwrap(),
+                ),
+            );
+        }
+    });
+    model[0].native_ref = Some("n".repeat(17 * 1024 * 1024));
+    let mut expected = local.clone();
+    expected[0].evaluation.edit(|definition, _| {
+        if let FeatureDefinition::Operation(FeatureOperation::Extrude { op, .. }) = definition {
+            *op = cadmpeg_ir::features::BooleanOp::Cut;
+        }
+    });
+    let mut local = local;
+    crate::resolved_features::operations::inherit_configuration_operations(
+        &ctx,
+        &mut local,
+        &model,
+        &histories,
+        &[],
+        &[],
+        None,
+    )?;
+    assert_eq!(local, expected);
+    ctx.finish_session()?;
+    Ok(())
+}
+
+#[test]
+fn configuration_operation_base_uses_scoped_storage() {
+    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+    for dimension in [
+        ResourceDimension::MaterializedBytes,
+        ResourceDimension::CollectionItems,
+        ResourceDimension::WorkUnits,
+    ] {
+        const OPERATION: &str = "index SLDPRT configuration operation consumers";
+        run_operation_base(&DecodePolicy::service()).unwrap();
+        let error =
+            cadmpeg_test_support::refusal::resource_limit_at(dimension, OPERATION, |limit| {
+                let mut policy = DecodePolicy::service();
+                match dimension {
+                    ResourceDimension::MaterializedBytes => {
+                        policy.limits.max_materialized_bytes = limit;
+                    }
+                    ResourceDimension::CollectionItems => {
+                        policy.limits.max_collection_items = limit;
+                    }
+                    ResourceDimension::WorkUnits => policy.limits.max_work_units = limit,
+                    _ => panic!("unexpected test dimension"),
+                }
+                run_operation_base(&policy)
+            });
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == dimension)
+        );
+    }
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = u64::MAX;
+    policy.limits.max_materialized_bytes = 4096;
+    policy.limits.max_work_units = 4096;
+    let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        ResourceDimension::RetainedBytes,
+        "index SLDPRT configuration operation consumers",
+        None,
+    );
+    run_operation_base(&policy).expect("operation base is temporary");
 }

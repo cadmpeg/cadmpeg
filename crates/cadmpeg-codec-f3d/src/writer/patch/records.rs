@@ -181,7 +181,7 @@ pub(crate) fn native_stream(id: &str, delimiter: &str) -> Result<String, CodecEr
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         &[],
         &decode_arena,
-        &cadmpeg_core::decode::DecodePolicy::default(),
+        &crate::writer::primitives::WRITING_POLICY,
     )?;
     let Some((stream, _)) = id
         .strip_prefix(crate::ids::SCHEME_PREFIX)

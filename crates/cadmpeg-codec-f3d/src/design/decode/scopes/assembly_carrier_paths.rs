@@ -211,7 +211,9 @@ fn exact_class_363_operand_path(
     }
     let Some((scope_record_index, locator_scope_reference_offset)) = carrier_at
         .checked_add(class_363_carrier::SCOPE_REFERENCE)
-        .and_then(|at| exact_same_segment_record_reference(bytes, at))
+        .map(|at| exact_same_segment_record_reference(ctx, bytes, at))
+        .transpose()?
+        .flatten()
     else {
         return Ok(None);
     };
@@ -221,7 +223,9 @@ fn exact_class_363_operand_path(
     let Some((_, wrapper_reference_offset)) = leading
         .start
         .checked_add(class_363_leading::IDENTITY_REFERENCE)
-        .and_then(|at| exact_same_segment_record_reference(bytes, at))
+        .map(|at| exact_same_segment_record_reference(ctx, bytes, at))
+        .transpose()?
+        .flatten()
     else {
         return Ok(None);
     };

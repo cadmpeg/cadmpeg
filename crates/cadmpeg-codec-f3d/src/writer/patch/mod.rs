@@ -67,13 +67,13 @@ pub(crate) fn write_semantic(
     writer: &mut dyn Write,
     notes: &mut Vec<String>,
 ) -> Result<(), CodecError> {
-    // Semantic patching reserializes native records under the same desktop
-    // decode policy used for the source-image salvage decode below.
+    // Semantic patching reserializes native records through code shared with
+    // decode; the writing policy keeps a decode budget from refusing it.
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (encode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         source_image,
         &arena,
-        &cadmpeg_core::decode::DecodePolicy::desktop(),
+        &crate::writer::primitives::WRITING_POLICY,
     )?;
     let target_native = f3d_native(target)?;
     if let Some(native) = target_native.as_ref() {
@@ -186,7 +186,7 @@ pub(crate) fn write_semantic(
     )?;
     let sketch_point_edits = validate_sketch_point_edits(natives)?;
     let sketch_curve_edits = validate_sketch_curve_edits(natives)?;
-    let sketch_relation_edits = validate_sketch_relation_edits(natives)?;
+    let sketch_relation_edits = validate_sketch_relation_edits(&encode_ctx, natives)?;
     let persistent_reference_edits = validate_persistent_reference_edits(natives)?;
     let construction_recipe_edits = validate_construction_recipe_edits(natives)?;
     let body_member_edits = validate_body_member_edits(natives)?;

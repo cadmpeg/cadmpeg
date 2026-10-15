@@ -2,6 +2,7 @@
 //! External-reference designs, their references and the placement transform they state.
 
 use super::identity::DesignAffineTransform;
+use cadmpeg_core::decode::cost::DecodeCost;
 use serde::{Deserialize, Serialize};
 
 cadmpeg_core::named_optional_field!(deserialize_transform, XrefPlacementTransform, "transform");
@@ -78,6 +79,16 @@ pub(crate) struct RequiredXrefText(String);
 impl RequiredXrefText {
     pub(crate) fn as_str(&self) -> &str {
         &self.0
+    }
+}
+
+impl DecodeCost for RequiredXrefText {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        self.0.decode_cost(ctx, operation)
     }
 }
 

@@ -5,7 +5,7 @@
 fn stream_summary_counts_refuse_exhausted_work() {
     let file = crate::test_support::test_prt::single_part_prt();
     let container =
-        crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, file))
+        crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, &file))
             .unwrap();
     let scan = crate::decode::Scan {
         container,
@@ -42,7 +42,7 @@ fn stream_summary_counts_refuse_exhausted_work() {
 fn summary_refuses_directory_scan_before_building_notes() {
     let file = crate::test_support::test_prt::single_part_prt();
     let container =
-        crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, file))
+        crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, &file))
             .unwrap();
     let scan = crate::decode::Scan {
         container,

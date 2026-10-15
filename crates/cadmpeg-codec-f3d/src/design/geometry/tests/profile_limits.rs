@@ -432,7 +432,16 @@ fn certified_loop_containment_uses_existing_tube_vertices() {
     })
     .unwrap()
     .unwrap();
-    assert!(loop_.contains_point(Point2::new(0.25, 0.25)));
-    assert!(!loop_.contains_point(Point2::new(1.5, 1.5)));
-    assert!(!loop_.contains_point(Point2::new(0.0, 0.0)));
+    assert!(crate::test_support::with_decode_context(
+        |ctx| loop_.contains_point(Point2::new(0.25, 0.25), ctx)
+    )
+    .unwrap());
+    assert!(!crate::test_support::with_decode_context(
+        |ctx| loop_.contains_point(Point2::new(1.5, 1.5), ctx)
+    )
+    .unwrap());
+    assert!(!crate::test_support::with_decode_context(
+        |ctx| loop_.contains_point(Point2::new(0.0, 0.0), ctx)
+    )
+    .unwrap());
 }

@@ -89,7 +89,7 @@ pub(super) fn native_tolerant_coedge_extension(
             let mut native_curve = curve.clone();
             if *curve_reversed {
                 let writer_arena = cadmpeg_core::decode::DecodeArena::new();
-                let writer_policy = cadmpeg_core::decode::DecodePolicy::desktop();
+                let writer_policy = crate::writer::primitives::WRITING_POLICY;
                 let (writer_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
                     &[],
                     &writer_arena,
@@ -131,7 +131,7 @@ pub(super) fn encode_design_bulkstream(
     let (decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         &[],
         &decode_arena,
-        &cadmpeg_core::decode::DecodePolicy::default(),
+        &crate::writer::primitives::WRITING_POLICY,
     )?;
     let decode_ctx = &decode_ctx;
 
@@ -803,7 +803,7 @@ fn encode_sketch_text(out: &mut Vec<u8>, text: &SketchText) -> Result<(), CodecE
     let (decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         &text.raw_bytes,
         &decode_arena,
-        &cadmpeg_core::decode::DecodePolicy::default(),
+        &crate::writer::primitives::WRITING_POLICY,
     )?;
     let decode_ctx = &decode_ctx;
 

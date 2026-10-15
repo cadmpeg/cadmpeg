@@ -1,7 +1,7 @@
 //! Typed marker relation definitions and geometry predicates.
 
 use super::curves::compact_bounded_curve_tangent;
-use super::endpoints::geometry_index::{MarkerGeometryIndex, MarkerPrefixIndex};
+use super::endpoints::geometry_index::MarkerGeometryIndex;
 use super::endpoints::{
     collect_endpoint_markers, compact_indexed_curve_endpoint_indices,
     compact_indexed_curve_record_end, compact_legacy_code_one_line_endpoint_indices,
@@ -2711,7 +2711,7 @@ pub(super) enum CurveEndpointGeometry<'index, 'a, 'payload, 'ctx> {
 }
 
 impl<'a, 'payload, 'ctx> CurveEndpointGeometry<'_, 'a, 'payload, 'ctx> {
-    fn get(
+    pub(super) fn get(
         &mut self,
         markers: &[&'a SketchInputEntity],
     ) -> Result<&MarkerGeometryIndex<'a, 'payload, 'ctx>, CodecError> {
@@ -2721,14 +2721,7 @@ impl<'a, 'payload, 'ctx> CurveEndpointGeometry<'_, 'a, 'payload, 'ctx> {
                 ctx,
                 payload,
                 cache,
-            } => match cache {
-                Some(geometry) => Ok(geometry),
-                None => Ok(cache.insert(MarkerGeometryIndex::new(
-                    ctx,
-                    markers,
-                    MarkerPrefixIndex::new(ctx, payload)?,
-                )?)),
-            },
+            } => super::endpoints::cached_marker_geometry(ctx, payload, markers, cache),
         }
     }
 

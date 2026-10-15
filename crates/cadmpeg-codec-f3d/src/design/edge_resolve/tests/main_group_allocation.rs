@@ -150,64 +150,75 @@ fn edge_group_matched_identity_refuses_collection_limit() {
     let operand = identity(10, &[]);
     let feature_id =
         cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#identity-index").unwrap();
-    for limit in 0..128 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match resolved_edge_group(
-            &group,
-            std::slice::from_ref(&group),
-            &[],
-            std::slice::from_ref(&operand),
-            Some(7),
-            &feature_id,
-            &ctx,
-        ) {
-            Err(CodecError::ResourceLimit(failure))
-                if failure.operation == "f3d edge group matched identity" =>
-            {
-                return
-            }
-            Err(CodecError::ResourceLimit(_)) => {}
-            other => panic!("expected matched identity refusal: {other:?}"),
-        }
-    }
-    panic!("no matched identity refusal");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "f3d edge group matched identity",
+        |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+
+            (resolved_edge_group(
+                &group,
+                std::slice::from_ref(&group),
+                &[],
+                std::slice::from_ref(&operand),
+                Some(7),
+                &feature_id,
+                &ctx,
+            ))
+            .map(|_| ())
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(failure)
+        if failure.operation == "f3d edge group matched identity" && failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
 }
 
 fn assert_identity_transition_refusal(operation: &'static str) {
-    let group = group(2, 10);
-    let operand = identity(10, &[(17, 3.0), (18, 5.0)]);
+    let mut group = group(2, 10);
+    let mut identities = vec![identity(10, &[(17, 3.0), (18, 5.0)])];
+    if operation != "f3d single identity transition slot" {
+        group
+            .try_set_members(vec![
+                crate::records::identity::Located {
+                    value: 10,
+                    offset: 0,
+                },
+                crate::records::identity::Located {
+                    value: 11,
+                    offset: 11,
+                },
+            ])
+            .unwrap();
+        identities.push(identity(11, &[(17, 3.0), (18, 5.0)]));
+    }
     let feature_id =
         cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#transition-index").unwrap();
-    for limit in 0..128 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match resolved_edge_treatment_group_with_corners(
-            &group,
-            crate::design::edge_resolve::EdgeTreatmentInputs {
-                groups: std::slice::from_ref(&group),
-                operands: &[],
-                identity_operands: std::slice::from_ref(&operand),
-                vertex_operands: &[],
-                histories: &[],
-                previous_state_id: Some(7),
-                feature_id: &feature_id,
-                treatment_radius: None,
-            },
-            &ctx,
-        ) {
-            Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
-            Err(CodecError::ResourceLimit(_)) => {}
-            other => panic!("expected {operation} refusal: {other:?}"),
-        }
-    }
-    panic!("no {operation} refusal");
+    let error = crate::test_support::resource_refusal_at(
+        ResourceDimension::CollectionItems,
+        operation,
+        0,
+        |ctx| {
+            resolved_edge_treatment_group_with_corners(
+                &group,
+                crate::design::edge_resolve::EdgeTreatmentInputs {
+                    groups: std::slice::from_ref(&group),
+                    operands: &[],
+                    identity_operands: &identities,
+                    vertex_operands: &[],
+                    histories: &[],
+                    previous_state_id: Some(7),
+                    feature_id: &feature_id,
+                    treatment_radius: None,
+                },
+                ctx,
+            )
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(failure)
+        if failure.operation == operation && failure.dimension == ResourceDimension::CollectionItems));
 }
-
 #[test]
 fn single_identity_transition_slot_refuses_collection_limit() {
     assert_identity_transition_refusal("f3d single identity transition slot");
@@ -229,26 +240,29 @@ fn assert_combined_edge_refusal(operation: &'static str) {
     let identity = identity(10, &[]);
     let feature_id =
         cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#combined-edge").unwrap();
-    for limit in 0..128 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match resolved_edge_group(
-            &group,
-            std::slice::from_ref(&group),
-            std::slice::from_ref(&recipe),
-            std::slice::from_ref(&identity),
-            Some(7),
-            &feature_id,
-            &ctx,
-        ) {
-            Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
-            Err(CodecError::ResourceLimit(_)) => {}
-            other => panic!("expected {operation} refusal: {other:?}"),
-        }
-    }
-    panic!("no {operation} refusal");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation,
+        |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+
+            (resolved_edge_group(
+                &group,
+                std::slice::from_ref(&group),
+                std::slice::from_ref(&recipe),
+                std::slice::from_ref(&identity),
+                Some(7),
+                &feature_id,
+                &ctx,
+            ))
+            .map(|_| ())
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(failure)
+        if failure.operation == operation && failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
 }
 
 #[test]
@@ -549,26 +563,25 @@ fn standard_recipe_native_edge_group_id_refuses_retained_limit() {
 
 #[test]
 fn edge_assignment_reference_candidate_refuses_collection_limit() {
-    for limit in 0..16 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match crate::design::edge_resolve::edge_group_assignment_candidates(
-            &[],
-            [&[17, 18][..], &[18, 19][..]],
-            &ctx,
-        ) {
-            Err(CodecError::ResourceLimit(failure))
-                if failure.operation == "f3d edge assignment reference candidate" =>
-            {
-                return
-            }
-            Err(CodecError::ResourceLimit(_)) => {}
-            other => panic!("expected assignment reference refusal: {other:?}"),
-        }
-    }
-    panic!("no assignment reference refusal");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "f3d edge assignment reference candidate",
+        |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+
+            (crate::design::edge_resolve::edge_group_assignment_candidates(
+                &[],
+                [&[17, 18][..], &[18, 19][..]].into_iter().map(Some),
+                &ctx,
+            ))
+            .map(|_| ())
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(failure)
+        if failure.operation == "f3d edge assignment reference candidate" && failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
 }
 
 #[test]
@@ -581,24 +594,23 @@ fn corroborated_edge_candidate_refuses_collection_limit() {
             boundary_count_matching_edge_slots: Vec::new(),
         },
     ];
-    for limit in 0..16 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match crate::design::edge_resolve::edge_assignment_candidates(
-            &selectors,
-            [&[17, 18][..]],
-            &ctx,
-        ) {
-            Err(CodecError::ResourceLimit(failure))
-                if failure.operation == "f3d corroborated edge candidate" =>
-            {
-                return
-            }
-            Err(CodecError::ResourceLimit(_)) => {}
-            other => panic!("expected corroborated edge refusal: {other:?}"),
-        }
-    }
-    panic!("no corroborated edge refusal");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "f3d corroborated edge candidate",
+        |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+
+            (crate::design::edge_resolve::edge_assignment_candidates(
+                &selectors,
+                [&[17, 18][..]].into_iter().map(Some),
+                &ctx,
+            ))
+            .map(|_| ())
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(failure)
+        if failure.operation == "f3d corroborated edge candidate" && failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
 }

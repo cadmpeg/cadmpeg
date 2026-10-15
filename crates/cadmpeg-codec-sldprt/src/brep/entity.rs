@@ -34,65 +34,145 @@ pub(crate) struct Facts<'ctx> {
     /// Face-color links whose current framed records conflict.
     pub(super) unresolved_face_colors: usize,
     /// Version of every face record that can carry a color.
-    pub(super) face_color_versions: Vec<FaceColorVersion>,
-    pub(super) face_colors: Vec<FaceColor>,
+    face_color_versions: Vec<FaceColorVersion>,
+    face_colors: Vec<FaceColor>,
     /// Per-face producing-feature identities carried by Parasolid attributes.
-    pub(super) face_atoms: Vec<super::attrib::RawFaceAtom<'ctx>>,
+    face_atoms: Vec<super::attrib::RawFaceAtom<'ctx>>,
     /// Body-to-history ordinals carried by Parasolid attributes.
-    pub(super) body_modifiers: Vec<super::attrib::BodyModifier>,
+    body_modifiers: Vec<super::attrib::BodyModifier>,
 }
 
 /// Facts scanned from one stream, with the temporary storage for their vector
 /// shells held until they are merged or consumed.
 pub(crate) struct FactsSource<'ctx> {
     facts: Facts<'ctx>,
-    storage: ScopedReservation<'ctx>,
+    face_color_storage: Option<ScopedReservation<'ctx>>,
+    face_color_version_storage: Option<ScopedReservation<'ctx>>,
+    face_atom_storage: Option<ScopedReservation<'ctx>>,
+    body_modifier_storage: Option<ScopedReservation<'ctx>>,
 }
 
 impl<'ctx> FactsSource<'ctx> {
     pub(crate) fn empty(ctx: &'ctx DecodeContext<'_>) -> Result<Self, cadmpeg_core::CodecError> {
         Ok(Self {
             facts: Facts::default(),
-            storage: ctx.reserve_scoped(0, "hold Parasolid entity facts")?,
+            face_color_storage: Some(ctx.reserve_scoped(0, "hold Parasolid face color slots")?),
+            face_color_version_storage: Some(
+                ctx.reserve_scoped(0, "hold Parasolid face color version slots")?,
+            ),
+            face_atom_storage: Some(ctx.reserve_scoped(0, "hold Parasolid face atom slots")?),
+            body_modifier_storage: Some(
+                ctx.reserve_scoped(0, "hold Parasolid body modifier slots")?,
+            ),
         })
     }
 
     pub(crate) fn append(
         &mut self,
-        ctx: &DecodeContext<'_>,
+        ctx: &'ctx DecodeContext<'_>,
         mut source: Self,
     ) -> Result<(), cadmpeg_core::CodecError> {
-        let Self {
-            facts: target,
-            storage,
-        } = self;
-        storage.with_storage(|| {
-            ctx.append_vec(
-                &mut target.face_colors,
-                &mut source.facts.face_colors,
-                "merge Parasolid face colors",
-            )?;
-            ctx.append_vec(
-                &mut target.face_color_versions,
-                &mut source.facts.face_color_versions,
-                "merge Parasolid face color versions",
-            )?;
-            ctx.append_vec(
-                &mut target.face_atoms,
-                &mut source.facts.face_atoms,
-                "merge Parasolid face atoms",
-            )?;
-            ctx.append_vec(
-                &mut target.body_modifiers,
-                &mut source.facts.body_modifiers,
-                "merge Parasolid body modifiers",
-            )?;
-            target.entity_count += source.facts.entity_count;
-            target.unresolved_face_colors += source.facts.unresolved_face_colors;
-            Ok::<_, cadmpeg_core::CodecError>(())
-        })?;
+        let target = &mut self.facts;
+        {
+            let storage = self
+                .face_color_storage
+                .get_or_insert(ctx.reserve_scoped(0, "hold Parasolid face color slots")?);
+            storage.with_storage(|| {
+                ctx.append_vec(
+                    &mut target.face_colors,
+                    &mut source.facts.face_colors,
+                    "merge Parasolid face colors",
+                )
+            })?;
+        }
+        {
+            let storage = self
+                .face_color_version_storage
+                .get_or_insert(ctx.reserve_scoped(0, "hold Parasolid face color version slots")?);
+            storage.with_storage(|| {
+                ctx.append_vec(
+                    &mut target.face_color_versions,
+                    &mut source.facts.face_color_versions,
+                    "merge Parasolid face color versions",
+                )
+            })?;
+        }
+        {
+            let storage = self
+                .face_atom_storage
+                .get_or_insert(ctx.reserve_scoped(0, "hold Parasolid face atom slots")?);
+            storage.with_storage(|| {
+                ctx.append_vec(
+                    &mut target.face_atoms,
+                    &mut source.facts.face_atoms,
+                    "merge Parasolid face atoms",
+                )
+            })?;
+        }
+        {
+            let storage = self
+                .body_modifier_storage
+                .get_or_insert(ctx.reserve_scoped(0, "hold Parasolid body modifier slots")?);
+            storage.with_storage(|| {
+                ctx.append_vec(
+                    &mut target.body_modifiers,
+                    &mut source.facts.body_modifiers,
+                    "merge Parasolid body modifiers",
+                )
+            })?;
+        }
+        target.entity_count += source.facts.entity_count;
+        target.unresolved_face_colors += source.facts.unresolved_face_colors;
         drop(source);
         Ok(())
+    }
+
+    pub(super) fn face_colors_mut(&mut self) -> &mut [FaceColor] {
+        &mut self.facts.face_colors
+    }
+
+    pub(super) fn face_color_versions_mut(&mut self) -> &mut [FaceColorVersion] {
+        &mut self.facts.face_color_versions
+    }
+
+    pub(super) fn take_face_colors(&mut self) -> (Vec<FaceColor>, Option<ScopedReservation<'ctx>>) {
+        (
+            std::mem::take(&mut self.facts.face_colors),
+            self.face_color_storage.take(),
+        )
+    }
+
+    pub(super) fn take_face_color_versions(
+        &mut self,
+    ) -> (Vec<FaceColorVersion>, Option<ScopedReservation<'ctx>>) {
+        (
+            std::mem::take(&mut self.facts.face_color_versions),
+            self.face_color_version_storage.take(),
+        )
+    }
+
+    pub(super) fn take_face_atoms(
+        &mut self,
+    ) -> (
+        Vec<super::attrib::RawFaceAtom<'ctx>>,
+        Option<ScopedReservation<'ctx>>,
+    ) {
+        (
+            std::mem::take(&mut self.facts.face_atoms),
+            self.face_atom_storage.take(),
+        )
+    }
+
+    pub(super) fn take_body_modifiers(
+        &mut self,
+    ) -> (
+        Vec<super::attrib::BodyModifier>,
+        Option<ScopedReservation<'ctx>>,
+    ) {
+        (
+            std::mem::take(&mut self.facts.body_modifiers),
+            self.body_modifier_storage.take(),
+        )
     }
 }
 
@@ -588,17 +668,6 @@ pub(crate) fn scan_metadata<'ctx>(
     body: &[u8],
     prefixed: bool,
 ) -> Result<FactsSource<'ctx>, cadmpeg_core::CodecError> {
-    let (facts, storage) = ctx.with_scoped_storage("hold Parasolid entity facts", || {
-        scan_metadata_inner(ctx, body, prefixed)
-    })?;
-    Ok(FactsSource { facts, storage })
-}
-
-fn scan_metadata_inner<'ctx>(
-    ctx: &'ctx DecodeContext<'_>,
-    body: &[u8],
-    prefixed: bool,
-) -> Result<Facts<'ctx>, cadmpeg_core::CodecError> {
     let _entity_storage;
     let entities;
     (entities, _entity_storage) = scan_entities(ctx, body, prefixed)?;
@@ -621,6 +690,9 @@ fn scan_metadata_inner<'ctx>(
     let _color_storage;
     let color_index;
     (color_index, _color_storage) = linked_colors(ctx, body, &entities, &requested)?;
+    let mut face_color_storage = ctx.reserve_scoped(0, "hold Parasolid face color slots")?;
+    let mut face_color_version_storage =
+        ctx.reserve_scoped(0, "hold Parasolid face color version slots")?;
     let mut face_colors = Vec::new();
     let mut face_color_versions = Vec::new();
     let mut unresolved_face_colors = 0;
@@ -643,7 +715,8 @@ fn scan_metadata_inner<'ctx>(
         if !named_face_color && !unnamed_face_color {
             continue;
         }
-        ctx.push_vec(
+        ctx.push_scoped_vec(
+            &mut face_color_version_storage,
             &mut face_color_versions,
             FaceColorVersion {
                 face_attr: face.attr,
@@ -680,7 +753,8 @@ fn scan_metadata_inner<'ctx>(
         let Some((color_attr, framed)) = framed else {
             continue;
         };
-        ctx.push_vec(
+        ctx.push_scoped_vec(
+            &mut face_color_storage,
             &mut face_colors,
             FaceColor {
                 face_attr: face.attr,
@@ -695,13 +769,19 @@ fn scan_metadata_inner<'ctx>(
         )?;
     }
     let bindings = super::attrib::bindings(ctx, body, &dictionary)?;
-    Ok(Facts {
-        entity_count: entities.len(),
-        unresolved_face_colors,
-        face_color_versions,
-        face_colors,
-        face_atoms: bindings.face_atoms,
-        body_modifiers: bindings.body_modifiers,
+    Ok(FactsSource {
+        facts: Facts {
+            entity_count: entities.len(),
+            unresolved_face_colors,
+            face_color_versions,
+            face_colors,
+            face_atoms: bindings.face_atoms,
+            body_modifiers: bindings.body_modifiers,
+        },
+        face_color_storage: Some(face_color_storage),
+        face_color_version_storage: Some(face_color_version_storage),
+        face_atom_storage: bindings.face_atom_storage,
+        body_modifier_storage: bindings.body_modifier_storage,
     })
 }
 
@@ -712,6 +792,59 @@ mod tests {
         ReferenceRuns, References,
     };
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    #[test]
+    fn consumed_fact_fields_release_only_their_own_slots() {
+        use cadmpeg_core::CodecError;
+        let mut bytes = bare_entity(700, 1, 16, &[0, 0, 0, 0, 0, 900]);
+        bytes.extend(color(900, [0.25, 0.5, 0.75], false));
+        let operation = "test live fact shells";
+        let boundary = |drop_colors, drop_versions| {
+            let error = cadmpeg_test_support::refusal::resource_limit_at(
+                ResourceDimension::MaterializedBytes,
+                operation,
+                |cap| {
+                    let arena = DecodeArena::new();
+                    let mut policy = DecodePolicy::service();
+                    policy.limits.max_materialized_bytes = cap;
+                    policy.limits.max_retained_bytes = 0;
+                    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+                    let mut facts = scan_metadata(&ctx, &bytes, false)?;
+                    assert_eq!(facts.face_colors.len(), 1);
+                    assert_eq!(facts.face_color_versions.len(), 1);
+                    let color_bytes =
+                        facts.face_colors.capacity() * std::mem::size_of::<super::FaceColor>();
+                    let version_bytes = facts.face_color_versions.capacity()
+                        * std::mem::size_of::<super::FaceColorVersion>();
+                    if drop_colors {
+                        drop(facts.take_face_colors());
+                    }
+                    if drop_versions {
+                        drop(facts.take_face_color_versions());
+                    }
+                    let live = usize::from(!drop_colors) * color_bytes
+                        + usize::from(!drop_versions) * version_bytes;
+                    // Keep the exhausted source live during this probe.
+                    let result = ctx.reserve_scoped(1024 * 1024, operation);
+                    if let Err(CodecError::ResourceLimit(limit)) = &result {
+                        assert_eq!(limit.used, u64::try_from(live).unwrap());
+                    }
+                    drop(facts);
+                    result.map(drop)
+                },
+            );
+            let CodecError::ResourceLimit(limit) = error else {
+                panic!("live shell boundary")
+            };
+            limit.used
+        };
+        let both = boundary(false, false);
+        let colors = boundary(false, true);
+        let versions = boundary(true, false);
+        assert!(colors > 0 && versions > 0);
+        assert_eq!(both, colors + versions);
+        assert_eq!(boundary(true, true), 0);
+    }
 
     #[test]
     fn long_color_suffix_holds_one_reduction_and_releases_its_backing() {

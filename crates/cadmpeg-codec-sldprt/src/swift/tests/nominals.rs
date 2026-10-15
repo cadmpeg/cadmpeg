@@ -11,7 +11,6 @@ use crate::swift::pmi_id;
 use crate::swift::project;
 use crate::swift::rendered_dimensions;
 use crate::swift::rendered_nominal;
-use crate::swift::unique_diameter;
 use crate::swift::Entity;
 use crate::swift::Reference;
 use crate::swift::RelatedObject;
@@ -369,22 +368,31 @@ fn numerically_equivalent_pattern_sizes_supply_diameter_without_rendered_text() 
 
 #[test]
 fn diameter_equivalence_does_not_merge_distinct_sizes() {
-    assert_eq!(
-        unique_diameter(
+    let diameter = |values: [f64; 2]| {
+        let contributors = values
+            .into_iter()
+            .enumerate()
+            .map(|(index, value)| (format!("F{index}"), cylinder_with_radius(value / 2.0)))
+            .collect::<Vec<_>>();
+        let index = contributors
+            .iter()
+            .map(|(id, feature)| (id.as_str(), feature))
+            .collect::<std::collections::BTreeMap<_, _>>();
+        let mut annotation = entity("GdtDiameter");
+        annotation.features.references = contributors
+            .iter()
+            .map(|(id, _)| reference(id, "GdtCylinder"))
+            .collect();
+        crate::swift::diameter_from_applied_geometry(
             &cadmpeg_test_support::service_decode_context(),
-            [10.0, 10.000_005].into_iter()
+            &annotation,
+            &index,
         )
-        .unwrap(),
-        Some(10.0)
-    );
-    assert_eq!(
-        unique_diameter(
-            &cadmpeg_test_support::service_decode_context(),
-            [10.0, 10.000_02].into_iter()
-        )
-        .unwrap(),
-        None
-    );
+        .unwrap()
+        .map(crate::swift::PositiveReal::get)
+    };
+    assert_eq!(diameter([10.0, 10.000_005]), Some(10.0));
+    assert_eq!(diameter([10.0, 10.000_02]), None);
 }
 
 #[test]
@@ -1417,6 +1425,7 @@ fn counterbore_disagreement_scans_skip_unvisited_candidate_tails() {
         ("low", &low),
         ("high", &high),
     ]);
+    let mut prefix_work = BTreeMap::new();
     for tail in [1, 128] {
         let mut root = entity("GdtAnalysis");
         for index in 0..2 + tail {
@@ -1499,6 +1508,77 @@ fn counterbore_disagreement_scans_skip_unvisited_candidate_tails() {
                     );
                 }
             }
+            let measure = |repeat| {
+                let error =
+                    crate::test_support::work_refusal_at("measure warm counterbore query", |ctx| {
+                        let cached = crate::swift::Counterbores::new(ctx, &root)?;
+                        let context = std::collections::BTreeSet::from(["FP"]);
+                        assert!(cached.visit_in_context(
+                            ctx,
+                            &features,
+                            &context,
+                            operation,
+                            |_| Ok(true)
+                        )?);
+                        if repeat {
+                            let value = if operation == "scan SWIFT counterbore diameters" {
+                                crate::swift::hole_diameter_excluding_counterbore(
+                                    ctx,
+                                    &cached,
+                                    &annotation,
+                                    &features,
+                                )?
+                            } else {
+                                crate::swift::counterbore_depth_from_sibling(
+                                    ctx,
+                                    &cached,
+                                    &annotation,
+                                    &features,
+                                )?
+                            };
+                            assert_eq!(value, None);
+                        }
+                        ctx.copy_retained_text("x", "measure warm counterbore query")
+                    });
+                let CodecError::ResourceLimit(limit) = error else {
+                    panic!("counterbore query measurement");
+                };
+                limit.used
+            };
+            let visited_work = measure(true).checked_sub(measure(false)).unwrap();
+            if let Some(expected) = prefix_work.insert(operation, visited_work) {
+                assert_eq!(
+                    visited_work, expected,
+                    "cached matching skips unused bucket members"
+                );
+            }
+            let error = crate::test_support::work_refusal_at(operation, |ctx| query(ctx, &root));
+            let CodecError::ResourceLimit(limit) = error else {
+                panic!("visited counterbore scan boundary");
+            };
+            assert_eq!(limit.additional, 1);
+            // Warm the group index, then check that matching requests only the
+            // two candidates consumed by a disagreement query.
+            let cached = crate::swift::Counterbores::new(&fixture_ctx, &root).unwrap();
+            let context = std::collections::BTreeSet::from(["FP"]);
+            for _ in 0..2 {
+                let mut visited = 0_usize;
+                assert!(cached
+                    .visit_in_context(&fixture_ctx, &features, &context, operation, |candidate| {
+                        assert!(visited < 2, "an unused counterbore reached the consumer");
+                        assert!(std::ptr::eq(
+                            candidate,
+                            root.annotations
+                                .entities
+                                .get(visited)
+                                .expect("counterbore prefix")
+                        ));
+                        visited = visited.checked_add(1).unwrap();
+                        Ok(visited == 2)
+                    })
+                    .unwrap());
+                assert_eq!(visited, 2);
+            }
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = u64::MAX;
@@ -1512,4 +1592,193 @@ fn counterbore_disagreement_scans_skip_unvisited_candidate_tails() {
             ctx.finish_session().unwrap();
         }
     }
+}
+
+#[test]
+fn rendered_nominal_ambiguity_skips_unvisited_values() {
+    use cadmpeg_core::decode::refusal_probe::RefusalProbe;
+    use cadmpeg_ir::scalar::PositiveReal;
+    assert!(approximately_equal(39_999_999.97, 40_000_000.0));
+    assert!(approximately_equal(40_000_000.03, 40_000_000.0));
+    assert!(!approximately_equal(3.999_999_997, 4.000_000_003));
+    let value = |value| RenderedDimension {
+        kind: RenderedDimensionKind::Diameter,
+        value: PositiveReal::new(value).unwrap(),
+        decimal_places: 2,
+    };
+    let mut prefix_work = None;
+    for tail in [1, 128] {
+        let mut values = vec![value(39_999_999.97), value(40_000_000.03)];
+        values.extend((0..tail).map(|_| value(1.0)));
+        let query = |ctx: &DecodeContext<'_>| {
+            rendered_nominal(
+                ctx,
+                PositiveReal::new(4.0).unwrap(),
+                2,
+                RenderedDimensionKind::Diameter,
+                &values,
+            )
+        };
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = u64::MAX;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let probe = RefusalProbe::arm(
+            ResourceDimension::WorkUnits,
+            "scan SWIFT rendered dimension values",
+            Some(u64::try_from(values.len()).unwrap()),
+        );
+        assert!(query(&ctx).unwrap().is_none());
+        drop(probe);
+        ctx.finish_session().unwrap();
+        let error =
+            crate::test_support::work_refusal_at("scan SWIFT rendered dimension values", query);
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("rendered nominal step boundary");
+        };
+        assert_eq!(limit.additional, 1);
+        let error = crate::test_support::work_refusal_at(
+            "measure ambiguous rendered nominal work",
+            |ctx| {
+                assert!(query(ctx)?.is_none());
+                ctx.copy_retained_text("x", "measure ambiguous rendered nominal work")
+            },
+        );
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("rendered nominal work measurement");
+        };
+        if let Some(expected) = prefix_work {
+            assert_eq!(limit.used, expected);
+        } else {
+            prefix_work = Some(limit.used);
+        }
+    }
+}
+
+#[test]
+fn diameter_disagreement_skips_unmeasured_feature_tails() {
+    use std::collections::BTreeMap;
+    let mut features = vec![
+        ("bore".into(), cylinder_with_radius(5.0)),
+        ("low".into(), cylinder_with_radius(2.0)),
+        ("high".into(), cylinder_with_radius(3.0)),
+    ];
+    // Keep lookup cardinality fixed while varying the unvisited child roster.
+    features.extend((0..128).map(|index| (format!("tail{index}"), cylinder_with_radius(50.0))));
+    let mut work = BTreeMap::new();
+    for tail in [1, 128] {
+        let mut pattern = entity("GdtPattern");
+        pattern.features.references = vec![
+            reference("bore", "GdtCylinder"),
+            reference("low", "GdtCylinder"),
+            reference("high", "GdtCylinder"),
+        ];
+        pattern
+            .features
+            .references
+            .extend((0..tail).map(|index| reference(&format!("tail{index}"), "GdtCylinder")));
+        let mut index = features
+            .iter()
+            .map(|(id, feature)| (id.as_str(), feature))
+            .collect::<BTreeMap<_, _>>();
+        index.insert("FP", &pattern);
+        let mut annotation = entity("GdtDiameter");
+        annotation
+            .features
+            .references
+            .push(reference("FP", "GdtPattern"));
+        let mut root = entity("GdtAnalysis");
+        let mut counterbore = entity("GdtCounterBore");
+        counterbore.features.references = vec![
+            reference("FP", "GdtPattern"),
+            reference("bore", "GdtCylinder"),
+        ];
+        root.annotations
+            .references
+            .push(reference("A1", "GdtCounterBore"));
+        root.annotations.entities.push(counterbore);
+        for exclude in [false, true] {
+            let query = |ctx: &DecodeContext<'_>| {
+                if exclude {
+                    let counterbores = crate::swift::Counterbores::new(ctx, &root)?;
+                    crate::swift::hole_diameter_excluding_counterbore(
+                        ctx,
+                        &counterbores,
+                        &annotation,
+                        &index,
+                    )
+                } else {
+                    crate::swift::diameter_from_applied_geometry(ctx, &annotation, &index)
+                }
+            };
+            crate::test_support::work_refusal_at("scan SWIFT diameter features", query);
+            crate::test_support::work_refusal_at("scan SWIFT child features", query);
+            let error =
+                crate::test_support::work_refusal_at("measure streamed diameter work", |ctx| {
+                    assert_eq!(query(ctx)?, None);
+                    ctx.copy_retained_text("x", "measure streamed diameter work")
+                });
+            let CodecError::ResourceLimit(limit) = error else {
+                panic!("streamed diameter work")
+            };
+            if let Some(expected) = work.insert(exclude, limit.used) {
+                assert_eq!(
+                    limit.used, expected,
+                    "disagreement must stop before tail measurement or storage"
+                );
+            }
+        }
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let mut visited = Vec::new();
+        assert!(
+            !crate::swift::diameter_contributors(&ctx, &annotation, &index, |value| {
+                visited.push(value.get());
+                Ok(visited.len() < 3)
+            })
+            .unwrap()
+        );
+        assert_eq!(visited, [10.0, 4.0, 6.0]);
+    }
+}
+
+#[test]
+fn diameter_stream_preserves_cycles_and_repeated_contributor_paths() {
+    use std::collections::BTreeMap;
+    let mut loop_feature = entity("GdtCompoundHole");
+    loop_feature
+        .features
+        .references
+        .push(reference("loop", "GdtCompoundHole"));
+    let cylinder = cylinder_with_radius(2.0);
+    let mut pattern = entity("GdtPattern");
+    pattern.features.references = vec![
+        reference("loop", "GdtCompoundHole"),
+        reference("cylinder", "GdtCylinder"),
+    ];
+    let mut annotation = entity("GdtDiameter");
+    annotation.features.references = vec![
+        reference("FP", "GdtPattern"),
+        reference("cylinder", "GdtCylinder"),
+    ];
+    let index = BTreeMap::from([
+        ("loop", &loop_feature),
+        ("cylinder", &cylinder),
+        ("FP", &pattern),
+    ]);
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let mut values = Vec::new();
+    assert!(
+        crate::swift::diameter_contributors(&ctx, &annotation, &index, |value| {
+            values.push(value.get());
+            Ok(true)
+        })
+        .unwrap()
+    );
+    assert_eq!(values, [4.0, 4.0]);
+    assert_eq!(
+        crate::swift::diameter_from_applied_geometry(&ctx, &annotation, &index)
+            .unwrap()
+            .map(crate::swift::PositiveReal::get),
+        Some(4.0)
+    );
 }

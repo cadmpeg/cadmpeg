@@ -46,52 +46,45 @@ fn fixture(multiple: bool) -> DesignParameterScope {
 
 fn assert_refusal(operation: &'static str, dimension: ResourceDimension, multiple: bool) {
     let scope = fixture(multiple);
-    for limit in 0..256 {
+    let error = cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |limit| {
         let mut policy = DecodePolicy::default();
         match dimension {
-            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = limit,
+            ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = limit,
             ResourceDimension::CollectionItems => policy.limits.max_collection_items = limit,
             _ => panic!("unsupported dimension"),
         }
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match project_combine(&ctx, &scope, STREAM) {
-            Err(CodecError::ResourceLimit(failure))
-                if failure.operation == operation && failure.dimension == dimension =>
-            {
-                return
-            }
-            Err(CodecError::ResourceLimit(_)) => {}
-            Ok(_) => panic!("expected {operation} refusal"),
-            Err(error) => panic!("expected {operation} refusal: {error}"),
-        }
-    }
-    panic!("no {operation} refusal");
+
+        (project_combine(&ctx, &scope, STREAM)).map(|_| ())
+    });
+    assert!(matches!(error, CodecError::ResourceLimit(failure)
+        if failure.operation == operation && failure.dimension == dimension));
 }
 
 #[test]
-fn combine_target_id_refuses_retained_limit() {
+fn combine_target_id_refuses_materialized_limit() {
     assert_refusal(
         "f3d Combine target id",
-        ResourceDimension::RetainedBytes,
+        ResourceDimension::MaterializedBytes,
         false,
     );
 }
 
 #[test]
-fn combine_single_tool_id_refuses_retained_limit() {
+fn combine_single_tool_id_refuses_materialized_limit() {
     assert_refusal(
         "f3d Combine single tool id",
-        ResourceDimension::RetainedBytes,
+        ResourceDimension::MaterializedBytes,
         false,
     );
 }
 
 #[test]
-fn combine_tool_set_id_refuses_retained_limit() {
+fn combine_tool_set_id_refuses_materialized_limit() {
     assert_refusal(
         "f3d Combine tool set id",
-        ResourceDimension::RetainedBytes,
+        ResourceDimension::MaterializedBytes,
         true,
     );
 }
@@ -111,5 +104,38 @@ fn combine_tool_uniqueness_refuses_collection_limit() {
         "f3d Combine tool uniqueness",
         ResourceDimension::CollectionItems,
         true,
+    );
+}
+
+#[test]
+fn combine_repeated_tool_returns_no_definition_with_zero_retained_bytes() {
+    let mut scope = fixture(true);
+    if let DesignScopePayloadMut::Combine(Some(operation)) = scope.payload_mut() {
+        operation.tools.additional[0].record_index = operation.tools.first.record_index;
+    }
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_retained_bytes = 0;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(project_combine(&ctx, &scope, STREAM).unwrap().is_none());
+    assert_eq!(ctx.resource_refusal(), None);
+}
+
+#[test]
+fn combine_accepted_definition_refuses_retained_limit() {
+    let scope = fixture(true);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes,
+        "f3d Combine accepted output",
+        |limit| {
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_retained_bytes = limit;
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            project_combine(&ctx, &scope, STREAM).map(|_| ())
+        },
+    );
+    assert!(
+        matches!(error, CodecError::ResourceLimit(failure) if failure.operation == "f3d Combine accepted output" && failure.dimension == ResourceDimension::RetainedBytes)
     );
 }
