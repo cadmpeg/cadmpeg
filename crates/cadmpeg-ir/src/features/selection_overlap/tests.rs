@@ -1,8 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use cadmpeg_core::decode::{
-    u64_from_index, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension,
-};
-use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
 use crate::features::{
     BodyMember, BodyMembers, BodySelection, DistinctMembers, FaceSelection, FeatureId,
@@ -25,52 +22,6 @@ fn bodies(name: &str) -> BodySelection {
         "test:model:body#{name}"
     ))
     .expect("body identity")]))
-}
-
-#[test]
-fn selection_overlap_preserves_each_visit_and_identity_comparison_refusal() {
-    let first_face = faces("same");
-    let first_body = bodies("same");
-    for body in [false, true] {
-        let identity_len = if body {
-            "test:model:body#same".len()
-        } else {
-            "test:model:face#same".len()
-        };
-        let required = 3 + u64_from_index(identity_len);
-        for cap in 0..required {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = cap;
-            let arena = DecodeArena::new();
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-            let result = if body {
-                super::body_selections_overlap(&ctx, &first_body, &first_body)
-            } else {
-                super::face_selections_overlap(&ctx, &first_face, &first_face)
-            };
-            let limit = result.expect_err("every visit and identity comparison requires admission");
-            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-            assert_eq!(limit.operation, "IR selection membership overlap");
-            assert!(
-                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
-            );
-        }
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = required;
-        policy.limits.max_materialized_bytes = 0;
-        policy.limits.max_retained_bytes = 0;
-        policy.limits.max_collection_items = 0;
-        policy.limits.max_recursion_depth = 0;
-        let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let result = if body {
-            super::body_selections_overlap(&ctx, &first_body, &first_body)
-        } else {
-            super::face_selections_overlap(&ctx, &first_face, &first_face)
-        };
-        assert!(result.expect("exact comparison cap"));
-        ctx.finish_session().expect("no storage or depth needed");
-    }
 }
 
 #[test]
@@ -210,9 +161,7 @@ fn selection_overlap_preserves_every_membership_form() {
         (bodies("same"), historical_body(), false),
     ];
     let mut policy = DecodePolicy::service();
-    policy.limits.max_materialized_bytes = 0;
     policy.limits.max_retained_bytes = 0;
-    policy.limits.max_collection_items = 0;
     policy.limits.max_recursion_depth = 0;
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
@@ -258,8 +207,7 @@ fn selection_overlap_stops_at_the_first_shared_member() {
         first_id.clone(),
         FaceId::mint("test:model:face#third").expect("face identity"),
     ]);
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 3 + u64_from_index(first_id.as_str().len());
+    let policy = DecodePolicy::service();
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     assert!(

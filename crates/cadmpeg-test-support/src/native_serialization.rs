@@ -2,7 +2,7 @@
 //! Native arena serialization limit checks for codec-owned record tests.
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-use cadmpeg_ir::native::{arena_from, NativeConvertError, NativeRecord};
+use cadmpeg_ir::native::{arena_from, NativeConvertError};
 use serde::Serialize;
 use std::cell::Cell;
 
@@ -27,20 +27,6 @@ pub fn assert_native_limit<T: Serialize>(record: &T, expected: impl Into<serde_j
         visits: &visits,
     };
     let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes =
-        u64::try_from(4 * std::mem::size_of::<NativeRecord>()).expect("record vector capacity") + 1;
-    let (limited, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
-    let error = arena_from(&limited, [Ok::<_, NativeConvertError>(&counted)])
-        .expect_err("retained-byte refusal");
-    assert_eq!(visits.get(), 1);
-    assert!(matches!(cadmpeg_core::CodecError::from(error),
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "serialize native record"));
-
-    visits.set(0);
     let (service, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("service context");
     let stored =
@@ -50,4 +36,21 @@ pub fn assert_native_limit<T: Serialize>(record: &T, expected: impl Into<serde_j
         serde_json::to_value(&stored[0]).expect("stored record"),
         expected
     );
+
+    // The stored text is the record's only retained charge, so a ceiling one
+    // byte below its length refuses the record.
+    let text = serde_json::to_string(&stored[0]).expect("stored text");
+    visits.set(0);
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes =
+        u64::try_from(text.len()).expect("record text length") - 1;
+    let (limited, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
+    let error = arena_from(&limited, [Ok::<_, NativeConvertError>(&counted)])
+        .expect_err("retained-byte refusal");
+    assert_eq!(visits.get(), 1);
+    assert!(matches!(cadmpeg_core::CodecError::from(error),
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "serialize native record"));
 }

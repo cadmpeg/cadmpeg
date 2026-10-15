@@ -9,31 +9,6 @@ use cadmpeg_ir::features::FeatureId;
 use std::collections::HashMap;
 
 #[test]
-fn feature_parent_lookup_refuses_collection_limit() {
-    let native = CatiaNative {
-        design_objects: vec![design_object("synthetic:test:object#one", None)],
-        ..CatiaNative::default()
-    };
-    let mut ir = CadIr::empty();
-    ir.model
-        .features
-        .push(feature("one", "synthetic:test:object#one"));
-    let transfer = DesignFeatureTransfer::default();
-    let refused = crate::test_support::with_collection_limit(0, |ctx| {
-        transfer.assign_feature_parents(ctx, &mut ir, &native)
-    });
-    assert!(
-        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_feature_parent_objects")
-    );
-    crate::test_support::with_service_context(|ctx| {
-        transfer.assign_feature_parents(ctx, &mut ir, &native)
-    })
-    .expect("service profile admits parent indexes");
-    assert!(ir.model.feature_parent(&ir.model.features[0].id).is_none());
-}
-
-#[test]
 fn assigns_parent_from_an_exact_transferred_owner_chain() {
     let native = CatiaNative {
         design_objects: vec![
@@ -248,4 +223,22 @@ fn omits_all_parents_in_an_owner_cycle() {
         .features
         .iter()
         .all(|feature| ir.model.feature_parent(&feature.id).is_none()));
+}
+
+#[test]
+fn feature_parent_lookup_result() {
+    let native = CatiaNative {
+        design_objects: vec![design_object("synthetic:test:object#one", None)],
+        ..CatiaNative::default()
+    };
+    let mut ir = CadIr::empty();
+    ir.model
+        .features
+        .push(feature("one", "synthetic:test:object#one"));
+    let transfer = DesignFeatureTransfer::default();
+    crate::test_support::with_service_context(|ctx| {
+        transfer.assign_feature_parents(ctx, &mut ir, &native)
+    })
+    .expect("service profile admits parent indexes");
+    assert!(ir.model.feature_parent(&ir.model.features[0].id).is_none());
 }

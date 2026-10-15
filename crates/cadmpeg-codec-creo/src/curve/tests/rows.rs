@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use crate::curve::curve_scalar_lane;
 use crate::curve::depdb_cross_section_rows;
 use crate::curve::expression_records;
 use crate::curve::fc02_short_pcurve_endpoints;
@@ -31,31 +30,12 @@ use crate::curve::Fc02ShortPcurveEndpoints;
 use crate::curve::Fc05Circle;
 use crate::curve::Fc05CylinderCapPair;
 use crate::curve::TopologySuffixCandidate;
-use crate::scalar;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-use cadmpeg_core::CodecError;
 use std::collections::BTreeSet;
 use std::num::NonZeroU32;
 
 fn expression_helix(record: &crate::curve::CurveExpressionRecord) -> Option<CurveExpressionHelix> {
     crate::decode::with_test_decode_ctx(|ctx| crate::curve::expression_helix(ctx, record))
         .expect("service helix admission")
-}
-
-fn two_chart_samples_service(
-    payload: &[u8],
-    face_ids: Option<&BTreeSet<u32>>,
-) -> Vec<crate::curve::TwoChartPcurveSamples> {
-    crate::decode::with_test_decode_ctx(|ctx| two_chart_pcurve_samples(ctx, payload, face_ids))
-        .expect("service two-chart samples admitted")
-}
-
-fn topology_rows_service(
-    payload: &[u8],
-    face_ids: Option<&BTreeSet<u32>>,
-) -> Vec<CurveTopologyRow> {
-    crate::decode::with_test_decode_ctx(|ctx| topology_rows_with_face_ids(ctx, payload, face_ids))
-        .expect("service topology rows admitted")
 }
 
 fn one_prototype_pcurve_input() -> Vec<u8> {
@@ -65,61 +45,13 @@ fn one_prototype_pcurve_input() -> Vec<u8> {
 }
 
 #[test]
-fn prototype_pcurve_endpoint_record_refuses_collection_limit() {
-    let payload = one_prototype_pcurve_input();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-    let error = prototype_pcurve_endpoints(&ctx, &payload)
-        .expect_err("prototype endpoint exceeds collection limit");
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == "creo prototype pcurve endpoints"));
-}
-
-#[test]
 fn prototype_pcurve_endpoint_record_preserves_eight_slots() {
     let payload = one_prototype_pcurve_input();
-    let records =
-        crate::decode::with_test_decode_ctx(|ctx| prototype_pcurve_endpoints(ctx, &payload))
-            .expect("service prototype endpoint admitted");
+    let records = prototype_pcurve_endpoints(&payload);
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].curve_id, 7);
     assert_eq!(records[0].face_0_endpoints, [[0.0; 2]; 2]);
     assert_eq!(records[0].face_1_endpoints, [[0.0; 2]; 2]);
-}
-
-fn fc05_caps_service(
-    circles: &[Fc05Circle],
-    topology: &[CurveTopologyRow],
-    surfaces: &[crate::surface::SurfaceRow],
-) -> Vec<Fc05CylinderCapPair> {
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::service();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    fc05_cylinder_cap_pairs(&ctx, circles, topology, surfaces).expect("service cap pairs")
-}
-
-fn pcurve_endpoints_service(
-    parameters: &[CurveParameterRecord],
-    topology: &[CurveTopologyRow],
-) -> Vec<crate::curve::PcurveEndpoints> {
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::service();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    pcurve_endpoints(&ctx, parameters, topology).expect("service pcurve endpoints")
-}
-
-fn fc02_short_pcurve_endpoints_service(
-    parameters: &[CurveParameterRecord],
-    topology: &[CurveTopologyRow],
-) -> Vec<Fc02ShortPcurveEndpoints> {
-    crate::decode::with_test_decode_ctx(|ctx| {
-        fc02_short_pcurve_endpoints(ctx, parameters, topology)
-    })
-    .expect("service FC02 short pcurve endpoints")
 }
 
 fn pcurve_zero_lane_input() -> (CurveParameterRecord, CurveTopologyRow) {
@@ -137,154 +69,13 @@ fn pcurve_zero_lane_input() -> (CurveParameterRecord, CurveTopologyRow) {
     (record, topology)
 }
 
-fn assert_pcurve_endpoint_collection_refusal(limit: u64, operation: &'static str) {
-    let (record, topology) = pcurve_zero_lane_input();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    let error = pcurve_endpoints(&ctx, &[record], &[topology])
-        .expect_err("one eight-slot pcurve exceeds limit");
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == operation));
-}
-
-#[test]
-fn pcurve_endpoints_refuse_unique_parameter_count_node() {
-    assert_pcurve_endpoint_collection_refusal(0, "creo unique-row count nodes");
-}
-
-#[test]
-fn pcurve_endpoints_refuse_unique_parameter_projection() {
-    assert_pcurve_endpoint_collection_refusal(1, "creo unique-row projection");
-}
-
-#[test]
-fn pcurve_endpoints_refuse_output_vector() {
-    assert_pcurve_endpoint_collection_refusal(2, "creo pcurve endpoint rows");
-}
-
 #[test]
 fn pcurve_endpoints_preserve_eight_zero_slots() {
     let (record, topology) = pcurve_zero_lane_input();
-    let endpoints = pcurve_endpoints_service(&[record], &[topology]);
+    let endpoints = pcurve_endpoints(&[record], &[topology]);
     assert_eq!(endpoints.len(), 1);
     assert_eq!(endpoints[0].face_0_endpoints, [[0.0, 0.0]; 2]);
     assert_eq!(endpoints[0].face_1_endpoints, [[0.0, 0.0]; 2]);
-}
-
-fn fc05_caps_with_collection_limit(
-    max_collection_items: u64,
-) -> Result<Vec<Fc05CylinderCapPair>, CodecError> {
-    let first = Fc05Circle {
-        curve_id: 20,
-        center_row_frame: [3.0, 4.0],
-        radius_mm: 2.0,
-        sample_direction_row_frame: cadmpeg_ir::units::HypotDirection2::normalized_with_length([
-            1.0, 0.0,
-        ])
-        .expect("unit sample direction")
-        .0,
-        angle_parameter: crate::curve::Fc05AngleParameterRelation::Consistent {
-            sense: crate::curve::ParameterSense::Increasing,
-            reference_direction_row_frame: [1.0, 0.0],
-        },
-        cap_ordinate_row_frame: Some(-5.0),
-        point_count: 8,
-        max_residual: 0.0,
-        offset: 100,
-    };
-    let second = Fc05Circle {
-        curve_id: 21,
-        cap_ordinate_row_frame: Some(7.0),
-        offset: 200,
-        ..first.clone()
-    };
-    let topology = |id, plane, offset| CurveTopologyRow {
-        id,
-        type_byte: 5,
-        feature_id: 4,
-        directions: [1, 0xf6],
-        faces: [NonZeroU32::new(10), NonZeroU32::new(plane)],
-        next_edges: [id, id],
-        offset,
-    };
-    let surface = |id, kind| crate::surface::SurfaceRow {
-        id,
-        kind,
-        feature_id: 4,
-        reversed: false,
-        boundary_type: crate::surface::BoundaryType::Code00,
-        next_surface: 0,
-        offset: usize::try_from(id).expect("fixture id fits usize"),
-    };
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = max_collection_items;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    fc05_cylinder_cap_pairs(
-        &ctx,
-        &[first, second],
-        &[topology(20, 11, 100), topology(21, 12, 200)],
-        &[
-            surface(10, crate::surface::SurfaceKind::Cylinder),
-            surface(11, crate::surface::SurfaceKind::Plane),
-            surface(12, crate::surface::SurfaceKind::Plane),
-        ],
-    )
-}
-
-fn assert_fc05_cap_collection_refusal(limit: u64, operation: &'static str) {
-    let error = fc05_caps_with_collection_limit(limit).expect_err("two caps exceed limit");
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == operation));
-}
-
-#[test]
-fn fc05_caps_refuse_unique_topology_count_node() {
-    assert_fc05_cap_collection_refusal(0, "creo unique-row count nodes");
-}
-
-#[test]
-fn fc05_caps_refuse_unique_topology_projection() {
-    assert_fc05_cap_collection_refusal(2, "creo unique-row projection");
-}
-
-#[test]
-fn fc05_caps_refuse_topology_face_node() {
-    assert_fc05_cap_collection_refusal(4, "creo fc05 topology-face nodes");
-}
-
-#[test]
-fn fc05_caps_refuse_circle_count_node() {
-    assert_fc05_cap_collection_refusal(6, "creo fc05 circle-count nodes");
-}
-
-#[test]
-fn fc05_caps_refuse_cylinder_group_node() {
-    assert_fc05_cap_collection_refusal(8, "creo fc05 cylinder group nodes");
-}
-
-#[test]
-fn fc05_caps_refuse_cylinder_group_member() {
-    assert_fc05_cap_collection_refusal(9, "creo fc05 cylinder group members");
-}
-
-#[test]
-fn fc05_caps_refuse_distinct_ordinate() {
-    assert_fc05_cap_collection_refusal(11, "creo fc05 distinct cap ordinates");
-}
-
-#[test]
-fn fc05_caps_refuse_cap_edge_vector() {
-    assert_fc05_cap_collection_refusal(13, "creo fc05 cap edges");
-}
-
-#[test]
-fn fc05_caps_refuse_pair_vector() {
-    assert_fc05_cap_collection_refusal(15, "creo fc05 cylinder cap pairs");
 }
 
 fn parameter_record(curve_id: u32) -> CurveParameterRecord {
@@ -306,25 +97,15 @@ fn parameter_record(curve_id: u32) -> CurveParameterRecord {
 fn typed_parameter_rows_require_unique_identity() {
     let unique = parameter_record(7);
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| {
-            crate::identity::uniquely_identified_rows_checked(
-                ctx,
-                std::slice::from_ref(&unique),
-                |record| record.curve_id,
-            )
-        })
-        .expect("service unique rows")
+        crate::identity::uniquely_identified_rows(std::slice::from_ref(&unique), |record| record
+            .curve_id,)
         .len(),
         1
     );
     let duplicates = [unique.clone(), unique];
-    assert!(crate::decode::with_test_decode_ctx(|ctx| {
-        crate::identity::uniquely_identified_rows_checked(ctx, &duplicates, |record| {
-            record.curve_id
-        })
-    })
-    .expect("service duplicate rows")
-    .is_empty());
+    assert!(
+        crate::identity::uniquely_identified_rows(&duplicates, |record| record.curve_id).is_empty()
+    );
 }
 
 #[test]
@@ -355,7 +136,7 @@ fn pcurve_endpoint_slots_must_be_finite() {
         offset: 1,
     };
 
-    assert!(pcurve_endpoints_service(&[record], &[topology]).is_empty());
+    assert!(pcurve_endpoints(&[record], &[topology]).is_empty());
 }
 
 fn canonical_and_positional_two_chart_input() -> (Vec<u8>, BTreeSet<u32>) {
@@ -375,69 +156,10 @@ fn canonical_and_positional_two_chart_input() -> (Vec<u8>, BTreeSet<u32>) {
     (payload, BTreeSet::from([10, 11]))
 }
 
-fn two_chart_limit_error(limit: u64) -> CodecError {
-    let (payload, face_ids) = canonical_and_positional_two_chart_input();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-    two_chart_pcurve_samples(&ctx, &payload, Some(&face_ids))
-        .expect_err("two-chart samples exceed collection limit")
-}
-
-#[test]
-fn two_chart_counted_samples_refuse_collection_limit() {
-    let error = two_chart_limit_error(11);
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == "creo two-chart sample points"));
-}
-
-#[test]
-fn two_chart_canonical_group_node_refuses_collection_limit() {
-    let error = two_chart_limit_error(12);
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == "creo two-chart canonical group nodes"));
-}
-
-#[test]
-fn two_chart_canonical_count_node_refuses_collection_limit() {
-    let error = two_chart_limit_error(13);
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == "creo two-chart canonical count nodes"));
-}
-
-#[test]
-fn two_chart_sample_row_refuses_collection_limit() {
-    let error = two_chart_limit_error(17);
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == "creo two-chart sample rows"));
-}
-
-#[test]
-fn two_chart_replay_samples_refuse_collection_limit() {
-    let error = two_chart_limit_error(16);
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == "creo two-chart sample points"));
-}
-
-#[test]
-fn two_chart_result_count_node_refuses_collection_limit() {
-    let error = two_chart_limit_error(22);
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == "creo two-chart result count nodes"));
-}
-
 #[test]
 fn decodes_canonical_and_positional_two_chart_sample_rows() {
     let (payload, face_ids) = canonical_and_positional_two_chart_input();
-    let decoded = two_chart_samples_service(&payload, Some(&face_ids));
+    let decoded = two_chart_pcurve_samples(&payload, Some(&face_ids));
     assert_eq!(decoded.len(), 2);
     assert_eq!(decoded[0].curve_id, 7);
     assert_eq!(decoded[0].faces, [10, 11]);
@@ -458,7 +180,7 @@ fn two_chart_sample_rows_require_exact_counted_consumption() {
     ]);
 
     let face_ids = BTreeSet::from([10, 11]);
-    assert!(two_chart_samples_service(&payload, Some(&face_ids)).is_empty());
+    assert!(two_chart_pcurve_samples(&payload, Some(&face_ids)).is_empty());
 }
 
 #[test]
@@ -469,7 +191,7 @@ fn two_chart_sample_rows_do_not_claim_fc05_circle_bodies() {
     payload.extend_from_slice(&[10, 11, 7, 7, 0, 0, 0xe3, 0xe1, 0xe3]);
 
     let face_ids = BTreeSet::from([10, 11]);
-    assert!(two_chart_samples_service(&payload, Some(&face_ids)).is_empty());
+    assert!(two_chart_pcurve_samples(&payload, Some(&face_ids)).is_empty());
 }
 
 #[test]
@@ -488,7 +210,7 @@ fn two_chart_replay_consumes_curve_local_scalar_forms() {
     payload.extend(samples);
     payload.extend_from_slice(&[10, 11, 7, 7, 0, 0, 0xe3, 0xe1, 0xe3]);
 
-    let decoded = two_chart_samples_service(&payload, Some(&BTreeSet::from([10, 11])));
+    let decoded = two_chart_pcurve_samples(&payload, Some(&BTreeSet::from([10, 11])));
     assert_eq!(decoded.len(), 1);
     assert_eq!(decoded[0].samples.len(), 2);
     let expected_first = f64::from_be_bytes([0x3f, 0, 0, 0, 0, 0, 0, 0]);
@@ -556,7 +278,7 @@ fn decodes_only_complete_fc02_short_pcurve_endpoints() {
     let (record, topology) = fc02_short_input();
 
     assert_eq!(
-        fc02_short_pcurve_endpoints_service(
+        fc02_short_pcurve_endpoints(
             std::slice::from_ref(&record),
             std::slice::from_ref(&topology),
         ),
@@ -570,42 +292,11 @@ fn decodes_only_complete_fc02_short_pcurve_endpoints() {
 
     let mut malformed = record.clone();
     malformed.scalar_tokens[3].value = 2.0;
-    assert!(
-        fc02_short_pcurve_endpoints_service(&[malformed], std::slice::from_ref(&topology))
-            .is_empty()
-    );
+    assert!(fc02_short_pcurve_endpoints(&[malformed], std::slice::from_ref(&topology)).is_empty());
 
     let mut malformed = record;
     malformed.scalar_tokens[6].raw[2] = 0xfe;
-    assert!(fc02_short_pcurve_endpoints_service(&[malformed], &[topology]).is_empty());
-}
-
-fn assert_fc02_short_collection_refusal(limit: u64, operation: &'static str) {
-    let (record, topology) = fc02_short_input();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    let error = fc02_short_pcurve_endpoints(&ctx, &[record], &[topology])
-        .expect_err("one complete FC02 path exceeds limit");
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == operation));
-}
-
-#[test]
-fn fc02_short_pcurve_refuses_unique_parameter_node() {
-    assert_fc02_short_collection_refusal(0, "creo unique-row count nodes");
-}
-
-#[test]
-fn fc02_short_pcurve_refuses_unique_parameter_projection() {
-    assert_fc02_short_collection_refusal(1, "creo unique-row projection");
-}
-
-#[test]
-fn fc02_short_pcurve_refuses_endpoint_output() {
-    assert_fc02_short_collection_refusal(2, "creo FC02 short pcurve endpoints");
+    assert!(fc02_short_pcurve_endpoints(&[malformed], &[topology]).is_empty());
 }
 
 #[test]
@@ -613,8 +304,7 @@ fn finds_labeled_prototypes_in_concatenated_namespaces() {
     let payload = b"crv_array\0crv_id\0\x07type\0\x08feat_id\0\x04\
                    crv_array\0crv_id\0\x80\x80type\0\x01";
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| prototypes(ctx, payload))
-            .expect("service profile admits curve prototypes"),
+        prototypes(payload),
         vec![
             CurvePrototype {
                 id: 7,
@@ -636,11 +326,7 @@ fn finds_labeled_prototypes_in_concatenated_namespaces() {
 
 #[test]
 fn ignores_incomplete_labeled_rows() {
-    assert!(crate::decode::with_test_decode_ctx(|ctx| {
-        prototypes(ctx, b"crv_array\0crv_id\0\x07")
-    })
-    .expect("service profile admits curve prototypes")
-    .is_empty());
+    assert!(prototypes(b"crv_array\0crv_id\0\x07").is_empty());
 }
 
 #[test]
@@ -674,16 +360,12 @@ fn promotes_only_referenced_unique_prototype_topology() {
         offset: 200,
     }];
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| {
-            prototype_topology_rows(
-                ctx,
-                &prototypes,
-                &prototype_topology,
-                &positional_rows,
-                &BTreeSet::from([43, 141, 235]),
-            )
-        })
-        .expect("service profile admits prototype topology rows"),
+        prototype_topology_rows(
+            &prototypes,
+            &prototype_topology,
+            &positional_rows,
+            &BTreeSet::from([43, 141, 235]),
+        ),
         vec![CurveTopologyRow {
             id: 44,
             type_byte: 0,
@@ -698,86 +380,13 @@ fn promotes_only_referenced_unique_prototype_topology() {
         }]
     );
 
-    assert!(crate::decode::with_test_decode_ctx(|ctx| {
-        prototype_topology_rows(
-            ctx,
-            &prototypes,
-            &prototype_topology,
-            &positional_rows,
-            &BTreeSet::from([43, 235]),
-        )
-    })
-    .expect("service profile admits absent prototype topology rows")
-    .is_empty());
-}
-
-fn prototype_topology_collection_error(limit: u64) -> CodecError {
-    let prototypes = [CurvePrototype {
-        id: 44,
-        type_byte: 0,
-        feature_id: Some(40),
-        directions: Some([0x01, 0xf6]),
-        offset: 100,
-    }];
-    let prototype_topology = [CurvePrototypeTopology {
-        curve_id: 44,
-        faces: [NonZeroU32::new(43), NonZeroU32::new(141)],
-        next_edges: [271, 142],
-        offset: 100,
-    }];
-    let positional_rows = [CurveTopologyRow {
-        id: 605,
-        type_byte: 0,
-        feature_id: 547,
-        directions: [0x01, 0xf6],
-        faces: [NonZeroU32::new(43), NonZeroU32::new(235)],
-        next_edges: [44, 597],
-        offset: 200,
-    }];
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    prototype_topology_rows(
-        &ctx,
+    assert!(prototype_topology_rows(
         &prototypes,
         &prototype_topology,
         &positional_rows,
-        &BTreeSet::from([43, 141, 235]),
+        &BTreeSet::from([43, 235]),
     )
-    .expect_err("one promoted prototype topology row exceeds limit")
-}
-
-fn assert_prototype_topology_refusal(limit: u64, operation: &'static str) {
-    let error = prototype_topology_collection_error(limit);
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == operation));
-}
-
-#[test]
-fn prototype_topology_refuses_prototype_count_node() {
-    assert_prototype_topology_refusal(0, "creo prototype ID count nodes");
-}
-
-#[test]
-fn prototype_topology_refuses_topology_count_node() {
-    assert_prototype_topology_refusal(1, "creo prototype topology count nodes");
-}
-
-#[test]
-fn prototype_topology_refuses_positional_id_node() {
-    assert_prototype_topology_refusal(2, "creo positional topology ID nodes");
-}
-
-#[test]
-fn prototype_topology_refuses_referenced_id_node() {
-    assert_prototype_topology_refusal(3, "creo referenced topology ID nodes");
-}
-
-#[test]
-fn prototype_topology_refuses_promoted_row_vector() {
-    assert_prototype_topology_refusal(7, "creo promoted prototype topology rows");
+    .is_empty());
 }
 
 #[test]
@@ -895,80 +504,6 @@ fn decodes_a_uniquely_delimited_topology_suffix() {
     );
 }
 
-fn one_framed_curve_input() -> Vec<u8> {
-    vec![
-        b't', b'o', b'p', b'o', b'l', b'_', b'r', b'e', b'f', b'_', b'd', b'a', b't', b'a', 0, 7,
-        8, 4, 1, 0xf6, 0x29, 0x43, 0, 10, 11, 7, 7, 0, 0, 0xe3, 0xe1, 0xe3,
-    ]
-}
-
-fn framed_curve_limit_error(limit: u64, face_ids: Option<&BTreeSet<u32>>) -> CodecError {
-    let payload = one_framed_curve_input();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-    topology_rows_with_face_ids(&ctx, &payload, face_ids)
-        .expect_err("framed curve exceeds collection limit")
-}
-
-#[test]
-fn framed_curve_namespace_start_refuses_collection_limit() {
-    let error = framed_curve_limit_error(0, None);
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == "creo curve namespace starts"));
-}
-
-#[test]
-fn framed_curve_segment_refuses_collection_limit() {
-    let error = framed_curve_limit_error(1, None);
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == "creo framed curve segments"));
-}
-
-#[test]
-fn framed_curve_known_face_node_refuses_collection_limit() {
-    let error = framed_curve_limit_error(2, Some(&BTreeSet::from([10, 11])));
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == "creo known curve face ID nodes"));
-}
-
-#[test]
-fn framed_curve_discovered_face_node_refuses_collection_limit() {
-    let error = framed_curve_limit_error(2, Some(&BTreeSet::new()));
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == "creo known curve face ID nodes"));
-}
-
-#[test]
-fn framed_curve_prefix_refuses_collection_limit() {
-    let error = framed_curve_limit_error(2, None);
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == "creo framed curve prefixes"));
-}
-
-#[test]
-fn framed_curve_row_refuses_collection_limit() {
-    let error = framed_curve_limit_error(3, None);
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == "creo framed curve rows"));
-}
-
-#[test]
-fn topology_curve_row_refuses_collection_limit() {
-    let error = framed_curve_limit_error(4, None);
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == "creo topology curve rows"));
-}
-
 #[test]
 fn retains_nonzero_reference_geometry_after_topology_references() {
     let payload = [
@@ -982,7 +517,7 @@ fn retains_nonzero_reference_geometry_after_topology_references() {
     let face_ids = BTreeSet::from([10, 11]);
 
     assert_eq!(
-        topology_rows_service(&payload, Some(&face_ids))[0].faces,
+        topology_rows_with_face_ids(&payload, Some(&face_ids))[0].faces,
         [std::num::NonZeroU32::new(10), std::num::NonZeroU32::new(11)]
     );
     let parameters = crate::decode::with_test_decode_ctx(|ctx| {
@@ -1023,7 +558,7 @@ fn face_namespace_resolves_ambiguous_reference_boundaries() {
     assert!(parameter_records(&payload).is_empty());
 
     let face_ids = std::collections::BTreeSet::from([141, 143]);
-    let rows = topology_rows_service(&payload, Some(&face_ids));
+    let rows = topology_rows_with_face_ids(&payload, Some(&face_ids));
     assert_eq!(
         rows,
         vec![CurveTopologyRow {
@@ -1061,7 +596,7 @@ fn topology_evidence_resolves_an_ambiguous_suffix_with_an_unmaterialized_face() 
     ]);
 
     let face_ids = std::collections::BTreeSet::from([143]);
-    let rows = topology_rows_service(&payload, Some(&face_ids));
+    let rows = topology_rows_with_face_ids(&payload, Some(&face_ids));
     assert_eq!(rows.len(), 2);
     assert_eq!(rows[1].id, 144);
     assert_eq!(
@@ -1161,25 +696,6 @@ fn decodes_complete_depdb_one_sided_curve_array() {
 }
 
 #[test]
-fn curve_scalar_claims_refuse_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("test decode context");
-    let error = curve_scalar_lane(&ctx, &[0xff], 0, &scalar::ScalarCache::default())
-        .expect_err("one scalar claim exceeds the collection limit");
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "creo curve scalar claims"
-    ));
-}
-
-#[test]
 fn row_terminator_selects_the_first_short_or_long_marker() {
     let short_then_long = [0xe1, 0xe3, 0, 0xe1, 0xf5, 0x05, 0xf6, 0xe3];
     assert_eq!(
@@ -1234,7 +750,7 @@ fn binds_agreeing_fc05_caps_to_one_typed_cylinder() {
         next_surface: 0,
         offset: usize::try_from(id).expect("fixture id fits usize"),
     };
-    let pairs = fc05_caps_service(
+    let pairs = fc05_cylinder_cap_pairs(
         &[circle(20, -5.0, 100), circle(21, 7.0, 200)],
         &[topology(20, 11, 100), topology(21, 12, 200)],
         &[
@@ -1321,18 +837,18 @@ fn fc05_cap_pairs_require_unique_topology_and_surface_identities() {
 
     let mut duplicate_topology = topology_rows.to_vec();
     duplicate_topology.push(topology(20, 11, 300));
-    assert!(fc05_caps_service(&circles, &duplicate_topology, &surfaces).is_empty());
+    assert!(fc05_cylinder_cap_pairs(&circles, &duplicate_topology, &surfaces).is_empty());
 
     let mut duplicate_surfaces = surfaces.to_vec();
     duplicate_surfaces.push(surface(10, crate::surface::SurfaceKind::Cylinder, 20));
-    assert!(fc05_caps_service(&circles, &topology_rows, &duplicate_surfaces).is_empty());
+    assert!(fc05_cylinder_cap_pairs(&circles, &topology_rows, &duplicate_surfaces).is_empty());
 
     let duplicate_circles = [
         circle(20, -5.0, 100),
         circle(20, 7.0, 150),
         circle(21, 7.0, 200),
     ];
-    assert!(fc05_caps_service(&duplicate_circles, &topology_rows, &surfaces).is_empty());
+    assert!(fc05_cylinder_cap_pairs(&duplicate_circles, &topology_rows, &surfaces).is_empty());
 }
 
 #[test]
@@ -1383,7 +899,7 @@ fn withholds_fc05_caps_without_distinct_ordinates() {
         max_residual: 0.0,
         offset: 100,
     }];
-    assert!(fc05_caps_service(&circles, &[], &[]).is_empty());
+    assert!(fc05_cylinder_cap_pairs(&circles, &[], &[]).is_empty());
 }
 
 #[test]
@@ -1442,18 +958,21 @@ fn numerical_ranges_fc05_cap_agreement_separates_lengths_and_directions() {
         for cap in &mut caps {
             cap.radius_mm = radius;
         }
-        assert_eq!(fc05_caps_service(&caps, &topology, &surfaces).len(), 1);
+        assert_eq!(
+            fc05_cylinder_cap_pairs(&caps, &topology, &surfaces).len(),
+            1
+        );
         let mut wrong_radius = caps.clone();
         wrong_radius[1].radius_mm *= 1.0005;
-        assert!(fc05_caps_service(&wrong_radius, &topology, &surfaces).is_empty());
+        assert!(fc05_cylinder_cap_pairs(&wrong_radius, &topology, &surfaces).is_empty());
         let mut wrong_center = caps.clone();
         wrong_center[1].center_row_frame[0] = radius * 0.0005;
-        assert!(fc05_caps_service(&wrong_center, &topology, &surfaces).is_empty());
+        assert!(fc05_cylinder_cap_pairs(&wrong_center, &topology, &surfaces).is_empty());
         caps[1].angle_parameter = crate::curve::Fc05AngleParameterRelation::Consistent {
             sense: crate::curve::ParameterSense::Increasing,
             reference_direction_row_frame: [0., 1.],
         };
-        assert!(fc05_caps_service(&caps, &topology, &surfaces).is_empty());
+        assert!(fc05_cylinder_cap_pairs(&caps, &topology, &surfaces).is_empty());
     }
 }
 

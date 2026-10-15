@@ -79,8 +79,8 @@ pub(crate) fn elliptical_arc_nurbs(
         return Ok(None);
     };
     let step = delta / span_count;
-    let mut knots = ctx.collection_vec(spans * 2 + 4, "iges analytic arc knots")?;
-    let mut poles = ctx.collection_vec(spans * 2 + 1, "iges analytic arc weighted poles")?;
+    let mut knots = Vec::new();
+    let mut poles = Vec::new();
     for span in 0..spans {
         let start = if span == 0 {
             interval[0]
@@ -215,9 +215,8 @@ pub(crate) fn parabolic_arc_nurbs(
     {
         return Ok(None);
     }
-    let mut knots = ctx.collection_vec(6, "iges parabolic arc knots")?;
-    knots.extend([start, start, start, end, end, end]);
-    let mut points = ctx.collection_vec(3, "iges parabolic arc poles")?;
+    let knots = vec![start, start, start, end, end, end];
+    let mut points = Vec::new();
     for point in [start_point, middle_point, end_point] {
         points.push(finite_arc_point(point)?);
     }

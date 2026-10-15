@@ -20,30 +20,7 @@ pub struct TextureAsset {
 
 impl TextureAsset {
     /// Bind this texture to an appearance property.
-    pub fn to_ref(&self, ctx: &DecodeContext<'_>, slot: &str) -> Result<TextureRef, CodecError> {
-        ctx.charge_collection_items(1, "Protein appearance texture")?;
-        ctx.charge_collection_items(
-            cadmpeg_core::decode::u64_from_index(self.paths.len()),
-            "Protein appearance texture paths",
-        )?;
-        for value in [self.asset_guid.as_str(), slot, &self.schema] {
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(value.len()),
-                "Protein appearance texture field",
-            )?;
-        }
-        for path in &self.paths {
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(path.len()),
-                "Protein appearance texture path",
-            )?;
-        }
-        if let Some(urn) = &self.urn {
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(urn.len()),
-                "Protein appearance texture URN",
-            )?;
-        }
+    pub fn to_ref(&self, _ctx: &DecodeContext<'_>, slot: &str) -> Result<TextureRef, CodecError> {
         Ok(TextureRef {
             asset_guid: self.asset_guid.clone(),
             slot: slot.to_owned(),
@@ -55,8 +32,6 @@ impl TextureAsset {
         })
     }
 }
-
-const PROPERTY_SEARCHES: u64 = 18;
 
 /// Result of projecting one record as a texture asset.
 pub enum TextureAssetResult {
@@ -74,7 +49,7 @@ pub enum TextureAssetResult {
 /// Project a bitmap or bump asset without constructing a scale from an unknown unit.
 /// A stated float or distance that is not finite refuses the asset.
 pub fn texture_asset(
-    ctx: &DecodeContext<'_>,
+    _ctx: &DecodeContext<'_>,
     record: &crate::DecodedRecord,
 ) -> Result<TextureAssetResult, CodecError> {
     if !matches!(
@@ -83,25 +58,6 @@ pub fn texture_asset(
     ) {
         return Ok(TextureAssetResult::NotTexture);
     }
-    // Projection performs at most eighteen searches, each with two name comparisons.
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(record.properties.len()),
-        "inventory Protein texture search work",
-    )?;
-    let search_work = record
-        .properties
-        .keys()
-        .try_fold(0_u64, |total, id| {
-            cadmpeg_core::decode::u64_from_index(id.len())
-                .checked_mul(2)?
-                .checked_add(1)?
-                .checked_mul(PROPERTY_SEARCHES)?
-                .checked_add(total)
-        })
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit("Protein texture property searches", u64::MAX, u64::MAX)
-        })?;
-    ctx.charge_work(search_work, "Protein texture property searches")?;
     let mut distances = [Length::ZERO; 5];
     let mut unknown_count = 0_usize;
     for (index, suffix) in [
@@ -143,21 +99,7 @@ pub fn texture_asset(
                 _ => None,
             })
     });
-    let paths = if let Some(source_paths) = source_paths {
-        ctx.charge_collection_items(
-            cadmpeg_core::decode::u64_from_index(source_paths.len()),
-            "Protein texture paths",
-        )?;
-        for path in source_paths {
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(path.len()),
-                "Protein texture path",
-            )?;
-        }
-        source_paths.clone()
-    } else {
-        Vec::new()
-    };
+    let paths = source_paths.cloned().unwrap_or_default();
     let source_urn = record.properties.iter().find_map(|(id, property)| {
         (id.ends_with("_Bitmap_urn"))
             .then(|| property.value())
@@ -167,15 +109,7 @@ pub fn texture_asset(
                 _ => None,
             })
     });
-    let urn = if let Some(source_urn) = source_urn {
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(source_urn.len()),
-            "Protein texture URN",
-        )?;
-        Some(source_urn.clone())
-    } else {
-        None
-    };
+    let urn = source_urn.cloned();
     let mapping = TextureMap2d {
         map_channel: integer_property(record, "MapChannel").unwrap_or(1),
         uvw_source: integer_property(record, "MapChannel_UVWSource_Advanced").unwrap_or(0),
@@ -211,14 +145,6 @@ pub fn texture_asset(
     } else {
         None
     };
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(record.guid.len()),
-        "Protein texture GUID",
-    )?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(record.schema.len()),
-        "Protein texture schema",
-    )?;
     let texture = TextureAsset {
         asset_guid: record.guid.clone(),
         schema: record.schema.clone(),

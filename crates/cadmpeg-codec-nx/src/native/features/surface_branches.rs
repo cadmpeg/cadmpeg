@@ -4,8 +4,7 @@
 use cadmpeg_ir::native::bytes::NativeBytes;
 
 use super::{
-    charged_unique_offset_data_block, format_feature_history_id,
-    visit_feature_history_operation_records,
+    format_feature_history_id, unique_offset_data_block_id, visit_feature_history_operation_records,
 };
 use crate::container::Container;
 use crate::om::branch_items::BranchItems;
@@ -173,11 +172,10 @@ pub(in crate::native) fn feature_surface_construction_branches(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
 ) -> Result<Vec<FeatureSurfaceConstructionBranch>, cadmpeg_core::CodecError> {
-    let indexed = container.indexed_om_sections(ctx)?;
+    let indexed = container.indexed_om_sections()?;
     let mut branches = Vec::new();
     let mut failure = None;
     visit_feature_history_operation_records(
-        ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
             if failure.is_some() {
@@ -195,28 +193,25 @@ pub(in crate::native) fn feature_surface_construction_branches(
                     else {
                         continue;
                     };
-                    let Some(references) = branch.resolve(ctx, entry_offset, |token| {
-                        charged_unique_offset_data_block(ctx, &indexed, token.value())
-                    })?
-                    else {
+                    let Some(references) = branch.resolve(entry_offset, |token| {
+                        unique_offset_data_block_id(&indexed, token.value())
+                    }) else {
                         continue;
                     };
                     let id = format_feature_history_id(
-                        ctx,
                         "surface-construction-branch",
                         section_key,
                         operation_ordinal,
                         Some(ordinal),
-                    )?;
+                    );
                     let operation_label = format_feature_history_id(
-                        ctx,
                         "operation-label",
                         section_key,
                         operation_ordinal,
                         None,
-                    )?;
+                    );
                     ctx.charge_entities(1, "NX surface construction branch")?;
-                    ctx.reserve_vec(&mut branches, 1, "NX surface construction branches")?;
+
                     branches.push(FeatureSurfaceConstructionBranch {
                         id,
                         operation_label,
@@ -258,8 +253,7 @@ mod tests {
             part,
         )]);
         let container =
-            crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, file))
-                .expect("composed surface branch container");
+            crate::container::scan_bytes(file).expect("composed surface branch container");
         let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
             super::feature_surface_construction_branches(ctx, &container)
         };
@@ -280,42 +274,6 @@ mod tests {
             },
             |ctx| decode(ctx).expect_err("surface branch resource limit"),
         )
-    }
-
-    #[test]
-    fn surface_branch_route_refuses_collection_limit() {
-        let error = surface_branch_route_refusal(|policy| policy.limits.max_collection_items = 0);
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
-        );
-    }
-
-    #[test]
-    fn surface_branch_route_refuses_retained_limit() {
-        let error = surface_branch_route_refusal(|policy| policy.limits.max_retained_bytes = 0);
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
-        );
-    }
-
-    #[test]
-    fn surface_branch_route_refuses_scoped_limit() {
-        let error = surface_branch_route_refusal(|policy| policy.limits.max_materialized_bytes = 0);
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
-        );
-    }
-
-    #[test]
-    fn surface_branch_route_refuses_work_limit() {
-        let error = surface_branch_route_refusal(|policy| policy.limits.max_work_units = 0);
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
-        );
     }
 
     #[test]

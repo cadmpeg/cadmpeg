@@ -9,7 +9,6 @@ use crate::container::{Container, SegmentStreamWrapper};
 use crate::parasolid::{Stream, StreamKind};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
-use std::fmt::Write;
 
 use crate::native::features::{
     FeatureBodyDataBlockUse, FeatureBodyReference, FeatureBooleanOperation, FeatureInputBlock,
@@ -19,15 +18,6 @@ use crate::native::om::{DataBlock, DataBlockRole, OmSchemaRole};
 pub(super) mod om_location;
 use om_location::OmLocation;
 mod row_wire;
-
-fn decimal_digits(mut value: usize) -> usize {
-    let mut digits = 1;
-    while value >= 10 {
-        value /= 10;
-        digits += 1;
-    }
-    digits
-}
 
 /// Classify the semantic role of one linked OM registry.
 ///
@@ -86,36 +76,22 @@ pub(super) fn segment_index_rows(
     };
     let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
     let count = index.rows().count();
-    let count_u64 = cadmpeg_core::decode::u64_from_index(count);
-    ctx.charge_collection_items(count_u64, "nx segment index rows")?;
-    ctx.charge_entities(count_u64, "nx segment index rows")?;
+    ctx.charge_entities(
+        cadmpeg_core::decode::u64_from_index(count),
+        "nx segment index rows",
+    )?;
     let mut rows = Vec::new();
-    ctx.reserve_capacity(&mut rows, count, "nx segment index rows")?;
+
     for (ordinal, row) in index.rows().enumerate() {
         let ordinal_u32 = u32::try_from(ordinal)
-            .map_err(|_| ctx.refuse_codec_limit("nx segment index ordinal", 0, count_u64))?;
-        let digits = decimal_digits(ordinal);
-        let prefix = "nx:segment-index:row#";
-        let id_len = prefix
-            .len()
-            .checked_add(digits)
-            .ok_or_else(|| ctx.refuse_codec_limit("nx segment index row identity", 0, count_u64))?;
-        let mut id = ctx.retained_string(id_len, "nx segment index row identity")?;
-        write!(&mut id, "{prefix}{ordinal}").map_err(|_| {
-            ctx.refuse_codec_limit(
-                "nx segment index row identity",
-                0,
-                cadmpeg_core::decode::u64_from_index(id_len),
-            )
-        })?;
-        let name_len = entry.name.len();
-        let mut source_entry = ctx.retained_string(name_len, "nx segment index source entry")?;
-        source_entry.push_str(&entry.name);
+            .map_err(|_| CodecError::malformed("NX segment index row ordinal overflows u32"))?;
+        let id = format!("nx:segment-index:row#{ordinal}");
+        let source_entry = entry.name.clone();
         let byte_offset = ordinal
             .checked_mul(12)
             .and_then(|offset| u64::try_from(offset).ok())
             .and_then(|offset| entry_offset.checked_add(offset))
-            .ok_or_else(|| ctx.refuse_codec_limit("nx segment index row offset", 0, count_u64))?;
+            .ok_or_else(|| CodecError::malformed("NX segment index row offset overflows"))?;
         rows.push(SegmentIndexRow {
             id,
             ordinal: ordinal_u32,
@@ -171,32 +147,29 @@ struct SegmentStreamCandidate {
 }
 
 fn segment_stream_candidates<'a>(
-    ctx: &'a DecodeContext<'_>,
     container: &'a Container<'_>,
     streams: &'a [Stream],
-) -> impl Iterator<Item = Result<Option<SegmentStreamCandidate>, CodecError>> + 'a {
-    container.segment_stream_wrappers().map(move |wrapper| {
-        let slot = match wrapper.word_ordinal {
-            0 => SegmentIndexSlot::TypeCode,
-            1 => SegmentIndexSlot::SubtypeCode,
-            2 => SegmentIndexSlot::Value,
-            _ => return Ok(None),
-        };
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(streams.len()),
-            "nx segment stream matching",
-        )?;
-        Ok(streams
-            .iter()
-            .enumerate()
-            .find(|(_, stream)| stream.file_offset == wrapper.zlib_offset)
-            .map(|(stream_ordinal, stream)| SegmentStreamCandidate {
-                wrapper,
-                slot,
-                stream_ordinal,
-                stream_kind: stream.kind(),
-            }))
-    })
+) -> impl Iterator<Item = SegmentStreamCandidate> + 'a {
+    container
+        .segment_stream_wrappers()
+        .filter_map(move |wrapper| {
+            let slot = match wrapper.word_ordinal {
+                0 => SegmentIndexSlot::TypeCode,
+                1 => SegmentIndexSlot::SubtypeCode,
+                2 => SegmentIndexSlot::Value,
+                _ => return None,
+            };
+            streams
+                .iter()
+                .enumerate()
+                .find(|(_, stream)| stream.file_offset == wrapper.zlib_offset)
+                .map(|(stream_ordinal, stream)| SegmentStreamCandidate {
+                    wrapper,
+                    slot,
+                    stream_ordinal,
+                    stream_kind: stream.kind(),
+                })
+        })
 }
 
 #[cfg(test)]
@@ -332,9 +305,8 @@ pub(super) struct BodyLineageInputs<'inputs> {
 /// source/newest-first; all history positions below use oldest-first order
 /// within each section.
 fn terminal_feature_body_indices(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     body_lineage_inputs: &BodyLineageInputs<'_>,
-) -> Result<Option<BTreeSet<u32>>, cadmpeg_core::CodecError> {
+) -> Option<BTreeSet<u32>> {
     let &BodyLineageInputs {
         labels,
         references,
@@ -346,36 +318,13 @@ fn terminal_feature_body_indices(
         inputs,
     } = body_lineage_inputs;
 
-    let scan_work = references
-        .len()
-        .checked_mul(references.len())
-        .and_then(|count| count.checked_add(references.len().checked_mul(data_block_uses.len())?))
-        .ok_or_else(|| ctx.refuse_codec_limit("scan NX terminal body references", 0, 1))?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(scan_work),
-        "scan NX terminal body references",
-    )?;
-    let mut offset_store_reservation =
-        ctx.reserve_scoped(0, "NX terminal offset-store references")?;
-    let mut offset_store_references = BTreeSet::new();
-    for use_ in data_block_uses {
-        offset_store_reservation.with_storage(|| {
-            ctx.insert_btree_set(
-                &mut offset_store_references,
-                use_.feature_body_reference.as_str(),
-                "NX terminal offset-store references",
-            )
-        })?;
-    }
-    let (offset_store_operations, _offset_store_operations_storage) = ctx
-        .with_scoped_storage("NX local offset_store_operations storage", || {
-            crate::native::features::feature_input_store_operations(ctx, inputs, data_blocks)
-        })?;
-    let (unique_references, _unique_references_storage) = ctx
-        .with_scoped_storage("NX local unique_references storage", || {
-            crate::native::features::unique_feature_body_references(ctx, references)
-        })?;
-    let mut object_reservation = ctx.reserve_scoped(0, "NX terminal body object references")?;
+    let offset_store_references = data_block_uses
+        .iter()
+        .map(|use_| use_.feature_body_reference.as_str())
+        .collect::<BTreeSet<_>>();
+    let offset_store_operations =
+        crate::native::features::feature_input_store_operations(inputs, data_blocks);
+    let unique_references = crate::native::features::unique_feature_body_references(references);
     let mut object_references = Vec::new();
     for (_, reference) in unique_references {
         if offset_store_references.contains(reference.id.as_str())
@@ -383,133 +332,78 @@ fn terminal_feature_body_indices(
         {
             continue;
         }
-        ctx.reserve_scoped_vec(
-            &mut object_reservation,
-            &mut object_references,
-            1,
-            "NX terminal body object references",
-        )?;
         object_references.push(reference);
     }
     if object_references.is_empty() && bindings.is_empty() {
-        return Ok(None);
+        return None;
     }
-    let (chronological_labels, _chronological_labels_storage) = ctx
-        .with_scoped_storage("NX local chronological_labels storage", || {
-            crate::native::features::feature_operation_chronological_labels(ctx, labels)
-        })?;
-    let mut positions_reservation = ctx.reserve_scoped(0, "NX terminal label positions")?;
-    let mut positions = BTreeMap::new();
-    for (position, label) in chronological_labels.iter().enumerate() {
-        positions_reservation.with_storage(|| {
-            ctx.insert_btree_map(
-                &mut positions,
-                label.id.as_str(),
-                position,
-                "NX terminal label positions",
-            )
-        })?;
-    }
-    let (aliases, _aliases_storage) = ctx
-        .with_scoped_storage("NX local aliases storage", || {
-            body_alias_roots(ctx, bindings)
-        })?;
+    let chronological_labels =
+        crate::native::features::feature_operation_chronological_labels(labels);
+    let positions = chronological_labels
+        .iter()
+        .enumerate()
+        .map(|(position, label)| (label.id.as_str(), position))
+        .collect::<BTreeMap<_, _>>();
+    let aliases = body_alias_roots(bindings);
     let canonical = |identity: u32| aliases.get(&identity).copied().unwrap_or(identity);
-    let (segment_boolean_operations, _segment_boolean_storage) = ctx
-        .with_scoped_storage("NX segment Boolean operation labels", || {
-            segment_boolean_operation_labels(ctx, booleans, data_blocks)
-        })?;
-    let mut kinds_reservation = ctx.reserve_scoped(0, "NX terminal operation kinds")?;
-    let mut operation_kinds = BTreeMap::new();
-    for label in &chronological_labels {
-        kinds_reservation.with_storage(|| {
-            ctx.insert_btree_map(
-                &mut operation_kinds,
-                label.id.as_str(),
-                label.value.as_str(),
-                "NX terminal operation kinds",
-            )
-        })?;
-    }
-    let mut writers_reservation = ctx.reserve_scoped(0, "NX terminal last writers")?;
+    let segment_boolean_operations = segment_boolean_operation_labels(booleans, data_blocks);
+    let operation_kinds = chronological_labels
+        .iter()
+        .map(|label| (label.id.as_str(), label.value.as_str()))
+        .collect::<BTreeMap<_, _>>();
     let mut last_writers = BTreeMap::<u32, Option<usize>>::new();
     for binding in bindings {
         for identity in [binding.body_object_index, binding.body_alias_object_index] {
-            writers_reservation.with_storage(|| {
-                ctx.insert_btree_map(
-                    &mut last_writers,
-                    canonical(identity),
-                    None,
-                    "NX terminal last writers",
-                )
-            })?;
+            last_writers.insert(canonical(identity), None);
         }
     }
     {
-        let mut record_writer = |body, position| -> Result<(), cadmpeg_core::CodecError> {
-            writers_reservation.with_storage(|| {
-                ctx.admit_btree_entry(&last_writers, &body, "NX terminal last writers")
-            })?;
-
+        let mut record_writer = |body, position| {
             let writer = last_writers.entry(body).or_default();
             if writer.is_none_or(|writer| writer < position) {
                 *writer = Some(position);
             }
-            Ok(())
         };
         for reference in &object_references {
-            let Some(&position) = positions.get(reference.operation_label.as_str()) else {
-                return Ok(None);
-            };
+            let &position = positions.get(reference.operation_label.as_str())?;
             if operation_kinds.get(reference.operation_label.as_str()) == Some(&"DELETE") {
                 continue;
             }
-            record_writer(canonical(reference.body.value()), position)?;
+            record_writer(canonical(reference.body.value()), position);
         }
         for operation in booleans
             .iter()
             .filter(|operation| segment_boolean_operations.contains(&operation.operation_label))
         {
-            let Some(&position) = positions.get(operation.operation_label.as_str()) else {
-                return Ok(None);
-            };
-            record_writer(canonical(operation.target.token.value()), position)?;
+            let &position = positions.get(operation.operation_label.as_str())?;
+            record_writer(canonical(operation.target.token.value()), position);
         }
     }
     let mut consumed = BTreeSet::new();
-    let mut consumed_reservation = ctx.reserve_scoped(0, "NX consumed segment bodies")?;
     for operation in booleans
         .iter()
         .filter(|operation| segment_boolean_operations.contains(&operation.operation_label))
     {
-        let Some(&position) = positions.get(operation.operation_label.as_str()) else {
-            return Ok(None);
-        };
+        let &position = positions.get(operation.operation_label.as_str())?;
         for tool in &operation.tools {
             let tool = canonical(tool.token.value());
             if last_writers
                 .get(&tool)
                 .is_some_and(|writer| writer.is_none_or(|writer| writer < position))
             {
-                consumed_reservation.with_storage(|| {
-                    ctx.insert_btree_set(&mut consumed, tool, "NX consumed segment bodies")
-                })?;
+                consumed.insert(tool);
             }
         }
     }
     for reference in &object_references {
         if operation_kinds.get(reference.operation_label.as_str()) == Some(&"DELETE") {
-            let Some(&position) = positions.get(reference.operation_label.as_str()) else {
-                return Ok(None);
-            };
+            let &position = positions.get(reference.operation_label.as_str())?;
             let body = canonical(reference.body.value());
             if last_writers
                 .get(&body)
                 .is_some_and(|writer| writer.is_none_or(|writer| writer < position))
             {
-                consumed_reservation.with_storage(|| {
-                    ctx.insert_btree_set(&mut consumed, body, "NX consumed segment bodies")
-                })?;
+                consumed.insert(body);
             }
         }
     }
@@ -525,17 +419,13 @@ fn terminal_feature_body_indices(
         {
             continue;
         }
-        let Some(&position) = positions.get(operand.operation_label.as_str()) else {
-            return Ok(None);
-        };
+        let &position = positions.get(operand.operation_label.as_str())?;
         let body = canonical(operand.operand.atom.value());
         if last_writers
             .get(&body)
             .is_some_and(|writer| writer.is_none_or(|writer| writer < position))
         {
-            consumed_reservation.with_storage(|| {
-                ctx.insert_btree_set(&mut consumed, body, "NX consumed segment bodies")
-            })?;
+            consumed.insert(body);
         }
     }
     let mut terminal = BTreeSet::new();
@@ -553,56 +443,37 @@ fn terminal_feature_body_indices(
             continue;
         }
 
-        ctx.insert_btree_set(&mut terminal, identity, "NX terminal segment bodies")?;
+        terminal.insert(identity);
     }
-    Ok(Some(terminal))
+    Some(terminal)
 }
 
 /// Resolve one atomic terminal status for every segment-bound body image.
 pub(super) fn segment_body_lineage_statuses(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     body_lineage_inputs: &BodyLineageInputs<'_>,
-) -> Result<Option<Vec<SegmentBodyLineageStatus>>, cadmpeg_core::CodecError> {
-    let (terminal, _terminal_storage) = ctx
-        .with_scoped_storage("NX local terminal storage", || {
-            terminal_feature_body_indices(ctx, body_lineage_inputs)
-        })?;
-    let Some(terminal) = terminal else {
-        return Ok(None);
-    };
+) -> Option<Vec<SegmentBodyLineageStatus>> {
+    let terminal = terminal_feature_body_indices(body_lineage_inputs)?;
     let mut output = Vec::new();
     for binding in body_lineage_inputs.bindings {
         let statuses = [binding.body_object_index, binding.body_alias_object_index]
             .map(|identity| terminal.contains(&identity));
         if statuses[0] != statuses[1] {
-            return Ok(None);
+            return None;
         }
         let key = binding
             .id
             .rsplit_once('#')
             .map_or(binding.id.as_str(), |(_, key)| key);
-        let prefix = "nx:segment-body-lineage:status#";
-        let id_len = prefix
-            .len()
-            .checked_add(key.len())
-            .ok_or_else(|| ctx.refuse_codec_limit("NX segment lineage status identity", 0, 1))?;
-        let mut id = ctx.retained_string(id_len, "NX segment lineage status identity")?;
-        id.push_str(prefix);
-        id.push_str(key);
-        let mut segment_body_binding =
-            ctx.retained_string(binding.id.len(), "NX segment lineage binding identity")?;
-        segment_body_binding.push_str(&binding.id);
-        ctx.reserve_vec(&mut output, 1, "NX segment lineage statuses")?;
         output.push(SegmentBodyLineageStatus {
-            id,
-            segment_body_binding,
+            id: format!("nx:segment-body-lineage:status#{key}"),
+            segment_body_binding: binding.id.clone(),
             body_object_index: binding.body_object_index,
             body_alias_object_index: binding.body_alias_object_index,
             terminal: statuses[0],
             source_offset: binding.source_offset,
         });
     }
-    Ok(Some(output))
+    Some(output)
 }
 
 /// Namespace proof for one Boolean's target and ordered tool participants.
@@ -621,23 +492,10 @@ pub(super) enum BooleanOffsetStoreResolution {
 /// A partial, duplicate, or cross-store offset-store relation is unresolved;
 /// it must not fall back to a segment-body alias with the same integer.
 pub(super) fn boolean_offset_store_resolution(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     operation: &FeatureBooleanOperation,
     data_blocks: &[DataBlock],
-) -> Result<BooleanOffsetStoreResolution, cadmpeg_core::CodecError> {
-    let participant_count = operation
-        .tools
-        .len()
-        .checked_add(1)
-        .ok_or_else(|| ctx.refuse_codec_limit("scan NX Boolean participants", 0, 1))?;
-    let work = participant_count
-        .checked_mul(data_blocks.len())
-        .and_then(|count| count.checked_mul(2))
-        .ok_or_else(|| ctx.refuse_codec_limit("scan NX Boolean participants", 0, 1))?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(work),
-        "scan NX Boolean participants",
-    )?;
+) -> BooleanOffsetStoreResolution {
+    let participant_count = operation.tools.len() + 1;
     let participants = std::iter::once(operation.target.token.value())
         .chain(operation.tools.iter().map(|token| token.token.value()));
     let mut has_offset_store_evidence = false;
@@ -654,39 +512,27 @@ pub(super) fn boolean_offset_store_resolution(
         if matches.next().is_some()
             || section_ordinal.is_some_and(|section| section != block.section_ordinal)
         {
-            return Ok(BooleanOffsetStoreResolution::Unresolved);
+            return BooleanOffsetStoreResolution::Unresolved;
         }
         section_ordinal = Some(block.section_ordinal);
         resolved_count += 1;
     }
     if !has_offset_store_evidence {
-        return Ok(BooleanOffsetStoreResolution::None);
+        return BooleanOffsetStoreResolution::None;
     }
     if resolved_count != participant_count {
-        return Ok(BooleanOffsetStoreResolution::Unresolved);
+        return BooleanOffsetStoreResolution::Unresolved;
     }
     let mut complete = BTreeMap::new();
     for object_index in participants {
         let Some(block) = data_blocks.iter().find(|block| {
             block.role == DataBlockRole::Column && block.block_ordinal == object_index
         }) else {
-            return Ok(BooleanOffsetStoreResolution::Unresolved);
+            return BooleanOffsetStoreResolution::Unresolved;
         };
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(u32, String)>() * 4),
-            "NX Boolean offset-store participant slots",
-        )?;
-        let mut id =
-            ctx.retained_string(block.id.len(), "NX Boolean offset-store block identity")?;
-        id.push_str(&block.id);
-        ctx.insert_btree_map(
-            &mut complete,
-            object_index,
-            id,
-            "NX Boolean offset-store participants",
-        )?;
+        complete.insert(object_index, block.id.clone());
     }
-    Ok(BooleanOffsetStoreResolution::Complete(complete))
+    BooleanOffsetStoreResolution::Complete(complete)
 }
 
 /// Return Boolean operations that are safe to treat as segment-object
@@ -695,160 +541,71 @@ pub(super) fn boolean_offset_store_resolution(
 /// namespaces is not an identity proof. Only operations with no offset-store
 /// participant evidence retain the native Boolean lineage rules.
 fn segment_boolean_operation_labels(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     booleans: &[FeatureBooleanOperation],
     data_blocks: &[DataBlock],
-) -> Result<BTreeSet<String>, cadmpeg_core::CodecError> {
+) -> BTreeSet<String> {
     let mut labels = BTreeSet::new();
 
     for operation in booleans {
         if !matches!(
-            boolean_offset_store_resolution(ctx, operation, data_blocks)?,
+            boolean_offset_store_resolution(operation, data_blocks),
             BooleanOffsetStoreResolution::None
         ) {
             continue;
         }
-
-        let mut label = String::new();
-        ctx.try_reserve_retained_text(
-            &mut label,
-            operation.operation_label.len(),
-            "allocate NX segment Boolean operation label",
-        )?;
-        label.push_str(&operation.operation_label);
-        ctx.insert_btree_set(&mut labels, label, "NX segment Boolean operation labels")?;
+        labels.insert(operation.operation_label.clone());
     }
-    Ok(labels)
+    labels
 }
 
 /// Map each segment body identity to the smallest identity in its transitive alias component.
-pub(super) fn body_alias_roots(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    bindings: &[SegmentBodyBinding],
-) -> Result<BTreeMap<u32, u32>, cadmpeg_core::CodecError> {
+pub(super) fn body_alias_roots(bindings: &[SegmentBodyBinding]) -> BTreeMap<u32, u32> {
     let mut adjacency = BTreeMap::<u32, BTreeSet<u32>>::new();
-    let mut adjacency_reservation = ctx.reserve_scoped(0, "NX segment alias adjacency")?;
     for binding in bindings {
-        ctx.charge_collection_items(2, "NX segment alias identities")?;
-
-        adjacency_reservation.with_storage(|| {
-            if !adjacency.contains_key(&binding.body_object_index) {
-                ctx.admit_btree_node_storage::<u32, BTreeSet<u32>>(
-                    adjacency.len(),
-                    "NX segment alias identities",
-                )?;
-            }
-            let neighbors = adjacency.entry(binding.body_object_index).or_default();
-            if !neighbors.contains(&binding.body_alias_object_index) {
-                ctx.admit_btree_node_storage::<u32, ()>(
-                    neighbors.len(),
-                    "NX segment alias identities",
-                )?;
-            }
-            neighbors.insert(binding.body_alias_object_index);
-            Ok::<(), cadmpeg_core::CodecError>(())
-        })?;
-        ctx.charge_collection_items(2, "NX segment alias links")?;
-
-        adjacency_reservation.with_storage(|| {
-            if !adjacency.contains_key(&binding.body_alias_object_index) {
-                ctx.admit_btree_node_storage::<u32, BTreeSet<u32>>(
-                    adjacency.len(),
-                    "NX segment alias links",
-                )?;
-            }
-            let neighbors = adjacency
-                .entry(binding.body_alias_object_index)
-                .or_default();
-            if !neighbors.contains(&binding.body_object_index) {
-                ctx.admit_btree_node_storage::<u32, ()>(neighbors.len(), "NX segment alias links")?;
-            }
-            neighbors.insert(binding.body_object_index);
-            Ok::<(), cadmpeg_core::CodecError>(())
-        })?;
+        adjacency
+            .entry(binding.body_object_index)
+            .or_default()
+            .insert(binding.body_alias_object_index);
+        adjacency
+            .entry(binding.body_alias_object_index)
+            .or_default()
+            .insert(binding.body_object_index);
     }
-    let work = bindings
-        .len()
-        .checked_mul(8)
-        .ok_or_else(|| ctx.refuse_codec_limit("walk NX segment aliases", 0, 1))?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(work),
-        "walk NX segment aliases",
-    )?;
     let mut roots = BTreeMap::new();
     for identity in adjacency.keys().copied() {
         if roots.contains_key(&identity) {
             continue;
         }
         let mut component = BTreeSet::new();
-        let mut component_reservation = ctx.reserve_scoped(0, "NX segment alias component")?;
-        let mut pending_reservation = ctx.reserve_scoped(0, "NX segment alias traversal")?;
-        let mut pending = Vec::new();
-        ctx.reserve_scoped_vec(
-            &mut pending_reservation,
-            &mut pending,
-            1,
-            "NX segment alias traversal",
-        )?;
-        pending.push(identity);
+        let mut pending = vec![identity];
         while let Some(member) = pending.pop() {
-            if !component_reservation.with_storage(|| {
-                ctx.insert_btree_set(&mut component, member, "NX segment alias component")
-            })? {
+            if !component.insert(member) {
                 continue;
             }
             for neighbor in adjacency.get(&member).into_iter().flatten() {
                 if component.contains(neighbor) {
                     continue;
                 }
-                ctx.reserve_scoped_vec(
-                    &mut pending_reservation,
-                    &mut pending,
-                    1,
-                    "NX segment alias traversal",
-                )?;
                 pending.push(*neighbor);
             }
         }
         let root = component.iter().copied().fold(identity, u32::min);
         for member in component {
-            ctx.insert_btree_map(&mut roots, member, root, "NX segment alias roots")?;
+            roots.insert(member, root);
         }
     }
-    Ok(roots)
+    roots
 }
 
 /// Resolve segment-index words that point to validated framed OM sections.
 pub(super) fn segment_om_links(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
 ) -> Result<Vec<SegmentOmLink>, cadmpeg_core::CodecError> {
     let Some((entry, index)) = container.segment_index() else {
         return Ok(Vec::new());
     };
     let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
-    let sections = container.om_sections(ctx)?;
-    let type_count = sections
-        .iter()
-        .try_fold(0usize, |count, (_, section)| {
-            count.checked_add(section.types.len())
-        })
-        .ok_or_else(|| ctx.refuse_codec_limit("scan NX segment OM links", 0, 1))?;
-    let per_lookup = type_count
-        .checked_mul(4)
-        .and_then(|count| count.checked_add(sections.len()))
-        .ok_or_else(|| ctx.refuse_codec_limit("scan NX segment OM links", 0, 1))?;
-    let work = index
-        .rows()
-        .count()
-        .checked_mul(3)
-        .and_then(|count| count.checked_mul(2))
-        .and_then(|count| count.checked_mul(per_lookup))
-        .ok_or_else(|| ctx.refuse_codec_limit("scan NX segment OM links", 0, 1))?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(work),
-        "scan NX segment OM links",
-    )?;
+    let sections = container.om_sections()?;
     let mut links = Vec::new();
     for (row_ordinal, row) in index.rows().enumerate() {
         for (slot, relative) in [
@@ -856,15 +613,15 @@ pub(super) fn segment_om_links(
             (SegmentIndexSlot::SubtypeCode, row.subtype_code),
             (SegmentIndexSlot::Value, row.value),
         ] {
-            let relative = usize::try_from(relative).map_err(|_| {
-                ctx.refuse_codec_limit("NX segment OM relative offset", 0, u64::from(relative))
-            })?;
+            let Ok(relative) = usize::try_from(relative) else {
+                continue;
+            };
             let Some(relative_u64) = u64::try_from(relative).ok() else {
                 continue;
             };
             let separated_marker = match entry_offset.checked_add(relative_u64) {
                 Some(offset) => container
-                    .bounded_entry_bytes(ctx, offset, 4)?
+                    .bounded_entry_bytes(offset, 4)
                     .is_some_and(|bytes| bytes == [0xc0, 0xd1, 0xf1, 0xed]),
                 None => false,
             };
@@ -895,12 +652,10 @@ pub(super) fn segment_om_links(
             }) else {
                 continue;
             };
-            ctx.reserve_vec(&mut links, 1, "NX segment OM links")?;
-            let id = segment_link_identity(ctx, "nx:segment-om-links:link#", links.len())?;
-            let row = segment_link_identity(ctx, "nx:segment-index:row#", row_ordinal)?;
+
             links.push(SegmentOmLink {
-                id,
-                row,
+                id: format!("nx:segment-om-links:link#{}", links.len()),
+                row: format!("nx:segment-index:row#{row_ordinal}"),
                 slot,
                 schema_role,
                 location,
@@ -910,21 +665,6 @@ pub(super) fn segment_om_links(
     Ok(links)
 }
 
-fn segment_link_identity(
-    ctx: &DecodeContext<'_>,
-    prefix: &str,
-    ordinal: usize,
-) -> Result<String, CodecError> {
-    let length = prefix
-        .len()
-        .checked_add(decimal_digits(ordinal))
-        .ok_or_else(|| ctx.refuse_codec_limit("NX segment link identity length", 0, 1))?;
-    let mut identity = ctx.retained_string(length, "retain NX segment link identity")?;
-    write!(identity, "{prefix}{ordinal}")
-        .map_err(|_| ctx.refuse_codec_limit("write NX segment link identity", 0, 1))?;
-    Ok(identity)
-}
-
 /// Resolve segment-index words that point to validated compressed wrappers.
 pub(super) fn segment_stream_links(
     ctx: &DecodeContext<'_>,
@@ -932,35 +672,19 @@ pub(super) fn segment_stream_links(
     streams: &[Stream],
 ) -> Result<Vec<SegmentStreamLink>, CodecError> {
     let mut links = Vec::new();
-    for candidate in segment_stream_candidates(ctx, container, streams) {
-        let Some(candidate) = candidate? else {
-            continue;
-        };
+    for candidate in segment_stream_candidates(container, streams) {
         let ordinal = links.len();
-        let digits = decimal_digits(ordinal);
-        let prefix = "nx:segment-stream-links:link#";
-        let id_len = prefix.len().checked_add(digits).ok_or_else(|| {
-            ctx.refuse_codec_limit("nx segment stream link identity", 0, u64::MAX)
-        })?;
         let stream_ordinal = u32::try_from(candidate.stream_ordinal)
-            .map_err(|_| ctx.refuse_codec_limit("nx segment stream ordinal", 0, u64::MAX))?;
+            .map_err(|_| CodecError::malformed("NX segment stream ordinal overflows u32"))?;
         let wrapper_byte_len = u32::try_from(candidate.wrapper.wrapper_byte_len)
-            .map_err(|_| ctx.refuse_codec_limit("nx segment wrapper size", 0, u64::MAX))?;
+            .map_err(|_| CodecError::malformed("NX segment wrapper size overflows u32"))?;
         let source_offset = u64::try_from(candidate.wrapper.wrapper_offset)
-            .map_err(|_| ctx.refuse_codec_limit("nx segment wrapper offset", 0, u64::MAX))?;
-        ctx.charge_collection_items(1, "nx segment stream links")?;
+            .map_err(|_| CodecError::malformed("NX segment wrapper offset overflows u64"))?;
+
         ctx.charge_entities(1, "nx segment stream links")?;
-        ctx.reserve_capacity(&mut links, 1, "nx segment stream links")?;
-        let mut id = ctx.retained_string(id_len, "nx segment stream link identity")?;
-        write!(&mut id, "{prefix}{ordinal}").map_err(|_| {
-            ctx.refuse_codec_limit(
-                "nx segment stream link identity",
-                0,
-                cadmpeg_core::decode::u64_from_index(id_len),
-            )
-        })?;
+
         links.push(SegmentStreamLink {
-            id,
+            id: format!("nx:segment-stream-links:link#{ordinal}"),
             row: candidate.wrapper.row_ordinal,
             slot: candidate.slot,
             stream_ordinal,
@@ -991,15 +715,7 @@ pub(super) fn segment_body_bindings(
         })
     };
     let mut bindings = Vec::new();
-    let mut link_ordinal = 0usize;
-    for candidate in segment_stream_candidates(ctx, container, streams) {
-        let Some(candidate) = candidate? else {
-            continue;
-        };
-        let ordinal = link_ordinal;
-        link_ordinal = link_ordinal
-            .checked_add(1)
-            .ok_or_else(|| ctx.refuse_codec_limit("nx segment link ordinal", 0, u64::MAX))?;
+    for (ordinal, candidate) in segment_stream_candidates(container, streams).enumerate() {
         if !matches!(
             candidate.stream_kind,
             crate::parasolid::StreamKind::Partition | crate::parasolid::StreamKind::Plain
@@ -1040,46 +756,14 @@ pub(super) fn segment_body_bindings(
         else {
             continue;
         };
-        let link_prefix = "nx:segment-stream-links:link#";
-        let binding_prefix = "nx:segment-body-bindings:binding#";
-        let digits = decimal_digits(ordinal);
-        let id_len = binding_prefix.len().checked_add(digits).ok_or_else(|| {
-            ctx.refuse_codec_limit("nx segment body binding identity", 0, u64::MAX)
-        })?;
-        let link_len = link_prefix.len().checked_add(digits).ok_or_else(|| {
-            ctx.refuse_codec_limit("nx segment body stream link identity", 0, u64::MAX)
-        })?;
         let stream_ordinal = u32::try_from(candidate.stream_ordinal)
-            .map_err(|_| ctx.refuse_codec_limit("nx segment stream ordinal", 0, u64::MAX))?;
-        ctx.charge_collection_items(1, "nx segment body bindings")?;
-        ctx.charge_entities(1, "nx segment body bindings")?;
-        ctx.reserve_capacity(&mut bindings, 1, "nx segment body bindings")?;
+            .map_err(|_| CodecError::malformed("NX segment stream ordinal overflows u32"))?;
 
-        let mut id = String::new();
-        ctx.try_reserve_retained_text(&mut id, id_len, "nx segment body binding identity")?;
-        write!(&mut id, "{binding_prefix}{ordinal}").map_err(|_| {
-            ctx.refuse_codec_limit(
-                "nx segment body binding identity",
-                0,
-                cadmpeg_core::decode::u64_from_index(id_len),
-            )
-        })?;
-        let mut stream_link = String::new();
-        ctx.try_reserve_retained_text(
-            &mut stream_link,
-            link_len,
-            "nx segment body stream link identity",
-        )?;
-        write!(&mut stream_link, "{link_prefix}{ordinal}").map_err(|_| {
-            ctx.refuse_codec_limit(
-                "nx segment body stream link identity",
-                0,
-                cadmpeg_core::decode::u64_from_index(link_len),
-            )
-        })?;
+        ctx.charge_entities(1, "nx segment body bindings")?;
+
         bindings.push(SegmentBodyBinding {
-            id,
-            stream_link,
+            id: format!("nx:segment-body-bindings:binding#{ordinal}"),
+            stream_link: format!("nx:segment-stream-links:link#{ordinal}"),
             stream_ordinal,
             stream_kind: candidate.stream_kind,
             body_object_index,
@@ -1093,10 +777,8 @@ pub(super) fn segment_body_bindings(
 
 #[cfg(test)]
 mod tests {
-    mod om_links;
-    fn segment_alias_lineage_refusal(
-        configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
-    ) -> cadmpeg_core::CodecError {
+    #[test]
+    fn segment_alias_lineage_admits_bindings_without_history() {
         let bindings = [super::SegmentBodyBinding {
             id: "binding#0".to_string(),
             stream_link: "stream#0".to_string(),
@@ -1107,70 +789,20 @@ mod tests {
             stream_role: 19,
             source_offset: 0,
         }];
-        let route = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-            super::segment_body_lineage_statuses(
-                ctx,
-                &super::BodyLineageInputs {
-                    labels: &[],
-                    references: &[],
-                    data_block_uses: &[],
-                    data_blocks: &[],
-                    booleans: &[],
-                    operands: &[],
-                    bindings: &bindings,
-                    inputs: &[],
-                },
-            )
-        };
-        let admitted = crate::test_support::with_decode_context(|ctx| route(ctx))
-            .expect("admitted segment alias lineage")
-            .expect("complete segment alias lineage");
+        let admitted = {
+            super::segment_body_lineage_statuses(&super::BodyLineageInputs {
+                labels: &[],
+                references: &[],
+                data_block_uses: &[],
+                data_blocks: &[],
+                booleans: &[],
+                operands: &[],
+                bindings: &bindings,
+                inputs: &[],
+            })
+        }
+        .expect("admitted segment alias lineage");
         assert_eq!(admitted.len(), 1);
-
-        crate::test_support::with_decode_context_over(
-            &[],
-            |policy| {
-                configure(policy);
-            },
-            |ctx| route(ctx).expect_err("segment alias resource limit"),
-        )
-    }
-
-    #[test]
-    fn segment_alias_lineage_refuses_collection_limit() {
-        let error = segment_alias_lineage_refusal(|policy| policy.limits.max_collection_items = 0);
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
-        );
-    }
-
-    #[test]
-    fn segment_alias_lineage_refuses_retained_limit() {
-        let error = segment_alias_lineage_refusal(|policy| policy.limits.max_retained_bytes = 0);
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
-        );
-    }
-
-    #[test]
-    fn segment_alias_lineage_refuses_scoped_limit() {
-        let error =
-            segment_alias_lineage_refusal(|policy| policy.limits.max_materialized_bytes = 0);
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
-        );
-    }
-
-    #[test]
-    fn segment_alias_lineage_refuses_work_limit() {
-        let error = segment_alias_lineage_refusal(|policy| policy.limits.max_work_units = 0);
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
-        );
     }
 
     use crate::test_support::test_om::segment_body_binding_payload;
@@ -1207,88 +839,25 @@ mod tests {
     }
 
     #[test]
-    fn segment_index_rows_refuse_collection_limit_before_record_allocation() {
+    fn segment_index_rows_refuse_entity_limit_before_record_allocation() {
         use cadmpeg_core::decode::ResourceDimension;
 
         let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", segment_index_payload())]);
-        let container =
-            crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, file))
-                .expect("valid segment-index container");
+        let container = crate::container::scan_bytes(file).expect("valid segment-index container");
 
         crate::test_support::with_decode_context_over(
             &[],
             |policy| {
-                policy.limits.max_collection_items = 1;
+                policy.limits.max_entities = 1;
             },
             |ctx| {
                 let error = super::segment_index_rows(ctx, &container)
-                    .expect_err("two native rows exceed one collection item");
+                    .expect_err("two native rows exceed one entity");
                 assert!(matches!(
                     error,
                     cadmpeg_core::CodecError::ResourceLimit(limit)
-                        if limit.dimension == ResourceDimension::CollectionItems
+                        if limit.dimension == ResourceDimension::Entities
                             && limit.operation == "nx segment index rows"
-                ));
-            },
-        );
-    }
-
-    #[test]
-    fn segment_index_rows_refuse_identity_retained_limit() {
-        use cadmpeg_core::decode::ResourceDimension;
-
-        let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", segment_index_payload())]);
-        let container =
-            crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, file))
-                .expect("valid segment-index container");
-        let row_slots = 4 * std::mem::size_of::<super::SegmentIndexRow>();
-        let first_id = "nx:segment-index:row#0";
-
-        crate::test_support::with_decode_context_over(
-            &[],
-            |policy| {
-                policy.limits.max_retained_bytes =
-                    u64::try_from(row_slots + first_id.len() - 1).unwrap();
-            },
-            |ctx| {
-                let error = super::segment_index_rows(ctx, &container)
-                    .expect_err("first identity exceeds the retained limit by one byte");
-                assert!(matches!(
-                    error,
-                    cadmpeg_core::CodecError::ResourceLimit(limit)
-                        if limit.dimension == ResourceDimension::RetainedBytes
-                            && limit.operation == "nx segment index row identity"
-                ));
-            },
-        );
-    }
-
-    #[test]
-    fn segment_index_rows_refuse_source_entry_retained_limit() {
-        use cadmpeg_core::decode::ResourceDimension;
-
-        let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", segment_index_payload())]);
-        let container =
-            crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, file))
-                .expect("valid segment-index container");
-        let row_slots = 4 * std::mem::size_of::<super::SegmentIndexRow>();
-        let first_id = "nx:segment-index:row#0";
-        let source_entry = "/Root/UG_PART/UG_PART";
-
-        crate::test_support::with_decode_context_over(
-            &[],
-            |policy| {
-                policy.limits.max_retained_bytes =
-                    u64::try_from(row_slots + first_id.len() + source_entry.len() - 1).unwrap();
-            },
-            |ctx| {
-                let error = super::segment_index_rows(ctx, &container)
-                    .expect_err("source entry exceeds the retained limit by one byte");
-                assert!(matches!(
-                    error,
-                    cadmpeg_core::CodecError::ResourceLimit(limit)
-                        if limit.dimension == ResourceDimension::RetainedBytes
-                            && limit.operation == "nx segment index source entry"
                 ));
             },
         );
@@ -1316,7 +885,7 @@ mod tests {
     }
 
     #[test]
-    fn segment_stream_links_refuse_matching_work_limit() {
+    fn segment_stream_links_refuse_entity_limit() {
         use cadmpeg_core::decode::ResourceDimension;
 
         let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", segment_stream_payload())]);
@@ -1332,92 +901,17 @@ mod tests {
                 crate::test_support::with_decode_context_over(
                     &[],
                     |policy| {
-                        policy.limits.max_work_units = 0;
+                        policy.limits.max_entities = 0;
                     },
                     |ctx| {
                         let error =
                             super::segment_stream_links(ctx, &scan.container, &scan.streams)
-                                .expect_err("stream matching needs work");
+                                .expect_err("one stream link exceeds zero entities");
                         assert!(matches!(
                             error,
                             cadmpeg_core::CodecError::ResourceLimit(limit)
-                                if limit.dimension == ResourceDimension::WorkUnits
-                                    && limit.operation == "nx segment stream matching"
-                        ));
-                    },
-                );
-            },
-        );
-    }
-
-    #[test]
-    fn segment_stream_links_refuse_collection_limit() {
-        use cadmpeg_core::decode::ResourceDimension;
-
-        let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", segment_stream_payload())]);
-
-        crate::test_support::with_decode_context_over(
-            &file,
-            |_| {},
-            |scan_ctx| {
-                let root = cadmpeg_core::decode::View::over_retained(&file);
-
-                let scan = crate::decode::scan(scan_ctx, root).expect("valid stream wrapper");
-
-                crate::test_support::with_decode_context_over(
-                    &[],
-                    |policy| {
-                        policy.limits.max_collection_items = 0;
-                    },
-                    |ctx| {
-                        let error =
-                            super::segment_stream_links(ctx, &scan.container, &scan.streams)
-                                .expect_err("one stream link exceeds zero collection items");
-                        assert!(matches!(
-                            error,
-                            cadmpeg_core::CodecError::ResourceLimit(limit)
-                                if limit.dimension == ResourceDimension::CollectionItems
+                                if limit.dimension == ResourceDimension::Entities
                                     && limit.operation == "nx segment stream links"
-                        ));
-                    },
-                );
-            },
-        );
-    }
-
-    #[test]
-    fn segment_stream_links_refuse_retained_identity_limit() {
-        use cadmpeg_core::decode::ResourceDimension;
-
-        let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", segment_stream_payload())]);
-
-        crate::test_support::with_decode_context_over(
-            &file,
-            |_| {},
-            |scan_ctx| {
-                let root = cadmpeg_core::decode::View::over_retained(&file);
-
-                let scan = crate::decode::scan(scan_ctx, root).expect("valid stream wrapper");
-                let slot = 4 * std::mem::size_of::<super::SegmentStreamLink>();
-                let id = "nx:segment-stream-links:link#0";
-
-                crate::test_support::with_decode_context_over(
-                    &[],
-                    |policy| {
-                        policy.limits.max_retained_bytes =
-                            u64::try_from(slot + id.len() - 1).unwrap();
-                    },
-                    |ctx| {
-                        let error =
-                            super::segment_stream_links(ctx, &scan.container, &scan.streams)
-                                .expect_err(
-                                    "stream link identity exceeds the retained limit by one byte",
-                                );
-                        assert!(matches!(
-                            error,
-                            cadmpeg_core::CodecError::ResourceLimit(limit)
-                                if limit.dimension == ResourceDimension::RetainedBytes
-                                    && limit.operation == "nx segment stream link identity"
                         ));
                     },
                 );
@@ -1451,7 +945,7 @@ mod tests {
     }
 
     #[test]
-    fn segment_body_bindings_refuse_collection_limit_before_record_allocation() {
+    fn segment_body_bindings_refuse_entity_limit_before_record_allocation() {
         use cadmpeg_core::decode::ResourceDimension;
 
         let file = prt_with_named_payloads(&[(
@@ -1470,103 +964,17 @@ mod tests {
                 crate::test_support::with_decode_context_over(
                     &[],
                     |policy| {
-                        policy.limits.max_collection_items = 0;
+                        policy.limits.max_entities = 0;
                     },
                     |ctx| {
                         let error =
                             super::segment_body_bindings(ctx, &scan.container, &scan.streams)
-                                .expect_err("one binding exceeds zero collection items");
+                                .expect_err("one binding exceeds zero entities");
                         assert!(matches!(
                             error,
                             cadmpeg_core::CodecError::ResourceLimit(limit)
-                                if limit.dimension == ResourceDimension::CollectionItems
+                                if limit.dimension == ResourceDimension::Entities
                                     && limit.operation == "nx segment body bindings"
-                        ));
-                    },
-                );
-            },
-        );
-    }
-
-    #[test]
-    fn segment_body_bindings_refuse_identity_retained_limit() {
-        use cadmpeg_core::decode::ResourceDimension;
-
-        let file = prt_with_named_payloads(&[(
-            "/Root/UG_PART/UG_PART",
-            segment_body_binding_payload("partition"),
-        )]);
-
-        crate::test_support::with_decode_context_over(
-            &file,
-            |_| {},
-            |scan_ctx| {
-                let root = cadmpeg_core::decode::View::over_retained(&file);
-
-                let scan = crate::decode::scan(scan_ctx, root).expect("valid partition stream");
-                let binding_slot = 4 * std::mem::size_of::<super::SegmentBodyBinding>();
-                let first_id = "nx:segment-body-bindings:binding#0";
-
-                crate::test_support::with_decode_context_over(
-                    &[],
-                    |policy| {
-                        policy.limits.max_retained_bytes =
-                            u64::try_from(binding_slot + first_id.len() - 1).unwrap();
-                    },
-                    |ctx| {
-                        let error =
-                            super::segment_body_bindings(ctx, &scan.container, &scan.streams)
-                                .expect_err("binding identity exceeds retained limit by one byte");
-                        assert!(matches!(
-                            error,
-                            cadmpeg_core::CodecError::ResourceLimit(limit)
-                                if limit.dimension == ResourceDimension::RetainedBytes
-                                    && limit.operation == "nx segment body binding identity"
-                        ));
-                    },
-                );
-            },
-        );
-    }
-
-    #[test]
-    fn segment_body_bindings_refuse_stream_link_identity_retained_limit() {
-        use cadmpeg_core::decode::ResourceDimension;
-
-        let file = prt_with_named_payloads(&[(
-            "/Root/UG_PART/UG_PART",
-            segment_body_binding_payload("partition"),
-        )]);
-
-        crate::test_support::with_decode_context_over(
-            &file,
-            |_| {},
-            |scan_ctx| {
-                let root = cadmpeg_core::decode::View::over_retained(&file);
-
-                let scan = crate::decode::scan(scan_ctx, root).expect("valid partition stream");
-                let binding_slot = 4 * std::mem::size_of::<super::SegmentBodyBinding>();
-                let binding_id = "nx:segment-body-bindings:binding#0";
-                let stream_link = "nx:segment-stream-links:link#0";
-
-                crate::test_support::with_decode_context_over(
-                    &[],
-                    |policy| {
-                        policy.limits.max_retained_bytes =
-                            u64::try_from(binding_slot + binding_id.len() + stream_link.len() - 1)
-                                .unwrap();
-                    },
-                    |ctx| {
-                        let error =
-                            super::segment_body_bindings(ctx, &scan.container, &scan.streams)
-                                .expect_err(
-                                    "stream-link identity exceeds retained limit by one byte",
-                                );
-                        assert!(matches!(
-                            error,
-                            cadmpeg_core::CodecError::ResourceLimit(limit)
-                                if limit.dimension == ResourceDimension::RetainedBytes
-                                    && limit.operation == "nx segment body stream link identity"
                         ));
                     },
                 );
@@ -1798,20 +1206,16 @@ mod tests {
         }];
 
         assert_eq!(
-            crate::test_support::with_decode_context(|ctx| super::terminal_feature_body_indices(
-                ctx,
-                &super::BodyLineageInputs {
-                    labels: &labels,
-                    references: &references,
-                    data_block_uses: &[],
-                    data_blocks: &[],
-                    booleans: &booleans,
-                    operands: &[],
-                    bindings: &[],
-                    inputs: &[]
-                },
-            ))
-            .expect("admitted terminal body lineage"),
+            super::terminal_feature_body_indices(&super::BodyLineageInputs {
+                labels: &labels,
+                references: &references,
+                data_block_uses: &[],
+                data_blocks: &[],
+                booleans: &booleans,
+                operands: &[],
+                bindings: &[],
+                inputs: &[]
+            },),
             Some([10].into_iter().collect())
         );
     }
@@ -1872,20 +1276,16 @@ mod tests {
         ];
 
         assert_eq!(
-            crate::test_support::with_decode_context(|ctx| super::terminal_feature_body_indices(
-                ctx,
-                &super::BodyLineageInputs {
-                    labels: &labels,
-                    references: &[],
-                    data_block_uses: &[],
-                    data_blocks: &[],
-                    booleans: &booleans,
-                    operands: &[],
-                    bindings: &bindings,
-                    inputs: &[]
-                },
-            ))
-            .expect("admitted terminal body lineage"),
+            super::terminal_feature_body_indices(&super::BodyLineageInputs {
+                labels: &labels,
+                references: &[],
+                data_block_uses: &[],
+                data_blocks: &[],
+                booleans: &booleans,
+                operands: &[],
+                bindings: &bindings,
+                inputs: &[]
+            },),
             Some([10, 11].into_iter().collect())
         );
     }
@@ -1954,20 +1354,16 @@ mod tests {
         ];
 
         assert_eq!(
-            crate::test_support::with_decode_context(|ctx| super::terminal_feature_body_indices(
-                ctx,
-                &super::BodyLineageInputs {
-                    labels: &labels,
-                    references: &references,
-                    data_block_uses: &[],
-                    data_blocks: &[],
-                    booleans: &booleans,
-                    operands: &[],
-                    bindings: &bindings,
-                    inputs: &[]
-                },
-            ))
-            .expect("admitted terminal body lineage"),
+            super::terminal_feature_body_indices(&super::BodyLineageInputs {
+                labels: &labels,
+                references: &references,
+                data_block_uses: &[],
+                data_blocks: &[],
+                booleans: &booleans,
+                operands: &[],
+                bindings: &bindings,
+                inputs: &[]
+            },),
             Some([10, 11, 20, 21].into_iter().collect())
         );
     }
@@ -2005,20 +1401,16 @@ mod tests {
         }];
 
         assert_eq!(
-            crate::test_support::with_decode_context(|ctx| super::terminal_feature_body_indices(
-                ctx,
-                &super::BodyLineageInputs {
-                    labels: &labels,
-                    references: &references,
-                    data_block_uses: &[],
-                    data_blocks: &[],
-                    booleans: &[],
-                    operands: &[],
-                    bindings: &bindings,
-                    inputs: &[]
-                },
-            ))
-            .expect("admitted terminal body lineage"),
+            super::terminal_feature_body_indices(&super::BodyLineageInputs {
+                labels: &labels,
+                references: &references,
+                data_block_uses: &[],
+                data_blocks: &[],
+                booleans: &[],
+                operands: &[],
+                bindings: &bindings,
+                inputs: &[]
+            },),
             Some(std::collections::BTreeSet::new())
         );
     }
@@ -2079,20 +1471,16 @@ mod tests {
         ];
 
         assert_eq!(
-            crate::test_support::with_decode_context(|ctx| super::terminal_feature_body_indices(
-                ctx,
-                &super::BodyLineageInputs {
-                    labels: &labels,
-                    references: &references,
-                    data_block_uses: &[],
-                    data_blocks: &[],
-                    booleans: &[],
-                    operands: &[],
-                    bindings: &bindings,
-                    inputs: &[]
-                },
-            ))
-            .expect("admitted terminal body lineage"),
+            super::terminal_feature_body_indices(&super::BodyLineageInputs {
+                labels: &labels,
+                references: &references,
+                data_block_uses: &[],
+                data_blocks: &[],
+                booleans: &[],
+                operands: &[],
+                bindings: &bindings,
+                inputs: &[]
+            },),
             Some([10, 11, 20, 21].into_iter().collect())
         );
     }
@@ -2130,23 +1518,19 @@ mod tests {
         };
         let bindings = [binding(0, 10, 11), binding(1, 20, 21)];
 
-        let statuses = crate::test_support::with_decode_context(|ctx| {
-            super::segment_body_lineage_statuses(
-                ctx,
-                &super::BodyLineageInputs {
-                    labels: &labels,
-                    references: &references,
-                    data_block_uses: &[],
-                    data_blocks: &[],
-                    booleans: &[],
-                    operands: &[],
-                    bindings: &bindings,
-                    inputs: &[],
-                },
-            )
-        })
-        .expect("admitted segment lineage statuses")
-        .expect("complete delete-only lineage");
+        let statuses = {
+            super::segment_body_lineage_statuses(&super::BodyLineageInputs {
+                labels: &labels,
+                references: &references,
+                data_block_uses: &[],
+                data_blocks: &[],
+                booleans: &[],
+                operands: &[],
+                bindings: &bindings,
+                inputs: &[],
+            })
+        }
+        .expect("admitted segment lineage statuses");
         assert_eq!(statuses.len(), 2);
         assert!(!statuses[0].terminal);
         assert!(statuses[1].terminal);
@@ -2191,23 +1575,19 @@ mod tests {
             source_offset: 0,
         }];
 
-        let statuses = crate::test_support::with_decode_context(|ctx| {
-            super::segment_body_lineage_statuses(
-                ctx,
-                &super::BodyLineageInputs {
-                    labels: &labels,
-                    references: &references,
-                    data_block_uses: &data_block_uses,
-                    data_blocks: &[],
-                    booleans: &[],
-                    operands: &[],
-                    bindings: &bindings,
-                    inputs: &[],
-                },
-            )
-        })
-        .expect("admitted segment lineage statuses")
-        .expect("segment binding establishes lineage");
+        let statuses = {
+            super::segment_body_lineage_statuses(&super::BodyLineageInputs {
+                labels: &labels,
+                references: &references,
+                data_block_uses: &data_block_uses,
+                data_blocks: &[],
+                booleans: &[],
+                operands: &[],
+                bindings: &bindings,
+                inputs: &[],
+            })
+        }
+        .expect("admitted segment lineage statuses");
         assert_eq!(statuses.len(), 1);
         assert!(statuses[0].terminal);
     }
@@ -2267,23 +1647,19 @@ mod tests {
             source_offset: 0,
         }];
 
-        let statuses = crate::test_support::with_decode_context(|ctx| {
-            super::segment_body_lineage_statuses(
-                ctx,
-                &super::BodyLineageInputs {
-                    labels: &labels,
-                    references: &references,
-                    data_block_uses: &[],
-                    data_blocks: &blocks,
-                    booleans: &[],
-                    operands: &[],
-                    bindings: &bindings,
-                    inputs: &inputs,
-                },
-            )
-        })
-        .expect("admitted segment lineage statuses")
-        .expect("segment binding establishes lineage");
+        let statuses = {
+            super::segment_body_lineage_statuses(&super::BodyLineageInputs {
+                labels: &labels,
+                references: &references,
+                data_block_uses: &[],
+                data_blocks: &blocks,
+                booleans: &[],
+                operands: &[],
+                bindings: &bindings,
+                inputs: &inputs,
+            })
+        }
+        .expect("admitted segment lineage statuses");
         assert_eq!(statuses.len(), 1);
         assert!(statuses[0].terminal);
     }
@@ -2342,20 +1718,16 @@ mod tests {
         let bindings = [binding(0, 10, 11), binding(1, 20, 21)];
 
         assert_eq!(
-            crate::test_support::with_decode_context(|ctx| super::terminal_feature_body_indices(
-                ctx,
-                &super::BodyLineageInputs {
-                    labels: &labels,
-                    references: &[],
-                    data_block_uses: &[],
-                    data_blocks: &blocks,
-                    booleans: &booleans,
-                    operands: &[],
-                    bindings: &bindings,
-                    inputs: &[]
-                },
-            ))
-            .expect("admitted terminal body lineage"),
+            super::terminal_feature_body_indices(&super::BodyLineageInputs {
+                labels: &labels,
+                references: &[],
+                data_block_uses: &[],
+                data_blocks: &blocks,
+                booleans: &booleans,
+                operands: &[],
+                bindings: &bindings,
+                inputs: &[]
+            },),
             Some([10, 11, 20, 21].into_iter().collect())
         );
     }
@@ -2413,20 +1785,16 @@ mod tests {
         let bindings = [binding(0, 10, 11), binding(1, 20, 21)];
 
         assert_eq!(
-            crate::test_support::with_decode_context(|ctx| super::terminal_feature_body_indices(
-                ctx,
-                &super::BodyLineageInputs {
-                    labels: &labels,
-                    references: &[],
-                    data_block_uses: &[],
-                    data_blocks: &blocks,
-                    booleans: &booleans,
-                    operands: &[],
-                    bindings: &bindings,
-                    inputs: &[]
-                },
-            ))
-            .expect("admitted terminal body lineage"),
+            super::terminal_feature_body_indices(&super::BodyLineageInputs {
+                labels: &labels,
+                references: &[],
+                data_block_uses: &[],
+                data_blocks: &blocks,
+                booleans: &booleans,
+                operands: &[],
+                bindings: &bindings,
+                inputs: &[]
+            },),
             Some([10, 11, 20, 21].into_iter().collect())
         );
     }
@@ -2468,20 +1836,16 @@ mod tests {
         }];
 
         assert_eq!(
-            crate::test_support::with_decode_context(|ctx| super::terminal_feature_body_indices(
-                ctx,
-                &super::BodyLineageInputs {
-                    labels: &labels,
-                    references: &references,
-                    data_block_uses: &[],
-                    data_blocks: &[],
-                    booleans: &[],
-                    operands: &[],
-                    bindings: &bindings,
-                    inputs: &[]
-                },
-            ))
-            .expect("admitted terminal body lineage"),
+            super::terminal_feature_body_indices(&super::BodyLineageInputs {
+                labels: &labels,
+                references: &references,
+                data_block_uses: &[],
+                data_blocks: &[],
+                booleans: &[],
+                operands: &[],
+                bindings: &bindings,
+                inputs: &[]
+            },),
             Some([10, 11].into_iter().collect())
         );
     }
@@ -2523,20 +1887,16 @@ mod tests {
         }];
 
         assert_eq!(
-            crate::test_support::with_decode_context(|ctx| super::terminal_feature_body_indices(
-                ctx,
-                &super::BodyLineageInputs {
-                    labels: &labels,
-                    references: &references,
-                    data_block_uses: &[],
-                    data_blocks: &[],
-                    booleans: &[],
-                    operands: &[],
-                    bindings: &bindings,
-                    inputs: &[]
-                },
-            ))
-            .expect("admitted terminal body lineage"),
+            super::terminal_feature_body_indices(&super::BodyLineageInputs {
+                labels: &labels,
+                references: &references,
+                data_block_uses: &[],
+                data_blocks: &[],
+                booleans: &[],
+                operands: &[],
+                bindings: &bindings,
+                inputs: &[]
+            },),
             Some(std::collections::BTreeSet::new())
         );
     }
@@ -2580,20 +1940,16 @@ mod tests {
         }];
 
         assert_eq!(
-            crate::test_support::with_decode_context(|ctx| super::terminal_feature_body_indices(
-                ctx,
-                &super::BodyLineageInputs {
-                    labels: &labels,
-                    references: &references,
-                    data_block_uses: &[],
-                    data_blocks: &[],
-                    booleans: &booleans,
-                    operands: &[],
-                    bindings: &[],
-                    inputs: &[]
-                },
-            ))
-            .expect("admitted terminal body lineage"),
+            super::terminal_feature_body_indices(&super::BodyLineageInputs {
+                labels: &labels,
+                references: &references,
+                data_block_uses: &[],
+                data_blocks: &[],
+                booleans: &booleans,
+                operands: &[],
+                bindings: &[],
+                inputs: &[]
+            },),
             Some(std::collections::BTreeSet::new())
         );
     }
@@ -2646,20 +2002,16 @@ mod tests {
         }];
 
         assert_eq!(
-            crate::test_support::with_decode_context(|ctx| super::terminal_feature_body_indices(
-                ctx,
-                &super::BodyLineageInputs {
-                    labels: &labels,
-                    references: &references,
-                    data_block_uses: &[],
-                    data_blocks: &[],
-                    booleans: &booleans,
-                    operands: &[],
-                    bindings: &bindings,
-                    inputs: &[]
-                },
-            ))
-            .expect("admitted terminal body lineage"),
+            super::terminal_feature_body_indices(&super::BodyLineageInputs {
+                labels: &labels,
+                references: &references,
+                data_block_uses: &[],
+                data_blocks: &[],
+                booleans: &booleans,
+                operands: &[],
+                bindings: &bindings,
+                inputs: &[]
+            },),
             Some(std::collections::BTreeSet::new())
         );
     }
@@ -2701,20 +2053,16 @@ mod tests {
             segment_body_bindings: vec!["binding#0".to_string()],
         }];
         assert_eq!(
-            crate::test_support::with_decode_context(|ctx| super::terminal_feature_body_indices(
-                ctx,
-                &super::BodyLineageInputs {
-                    labels: &labels,
-                    references: &[],
-                    data_block_uses: &[],
-                    data_blocks: &[],
-                    booleans: &[],
-                    operands: &operands,
-                    bindings: &bindings,
-                    inputs: &[]
-                },
-            ))
-            .expect("admitted terminal body lineage"),
+            super::terminal_feature_body_indices(&super::BodyLineageInputs {
+                labels: &labels,
+                references: &[],
+                data_block_uses: &[],
+                data_blocks: &[],
+                booleans: &[],
+                operands: &operands,
+                bindings: &bindings,
+                inputs: &[]
+            },),
             Some(std::collections::BTreeSet::new())
         );
     }
@@ -2756,20 +2104,16 @@ mod tests {
             segment_body_bindings: Vec::new(),
         }];
         assert_eq!(
-            crate::test_support::with_decode_context(|ctx| super::terminal_feature_body_indices(
-                ctx,
-                &super::BodyLineageInputs {
-                    labels: &labels,
-                    references: &[],
-                    data_block_uses: &[],
-                    data_blocks: &[],
-                    booleans: &[],
-                    operands: &operands,
-                    bindings: &bindings,
-                    inputs: &[]
-                },
-            ))
-            .expect("admitted terminal body lineage"),
+            super::terminal_feature_body_indices(&super::BodyLineageInputs {
+                labels: &labels,
+                references: &[],
+                data_block_uses: &[],
+                data_blocks: &[],
+                booleans: &[],
+                operands: &operands,
+                bindings: &bindings,
+                inputs: &[]
+            },),
             Some([20, 30].into_iter().collect())
         );
     }

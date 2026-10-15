@@ -33,7 +33,6 @@ pub(in crate::resolved_features) fn marker(
     }
 }
 
-mod admission;
 mod frames;
 mod join;
 mod patterns;
@@ -41,6 +40,7 @@ mod profile;
 mod relation_links;
 mod relation_operands;
 mod selection;
+mod transform_votes;
 
 fn sketch_entity(geometry: SketchGeometryDefinition) -> SketchEntity {
     SketchEntity::new(

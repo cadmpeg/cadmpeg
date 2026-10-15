@@ -30,56 +30,16 @@ fn one_row_index() -> Container<'static> {
     }
 }
 
-fn refused_at(
-    adjust: impl FnOnce(&mut DecodePolicy),
-    collection_limit: Option<u64>,
-    retained_limit: Option<u64>,
-) -> (ResourceDimension, String) {
+fn refused_at(adjust: impl FnOnce(&mut DecodePolicy)) -> (ResourceDimension, String) {
     let container = one_row_index();
 
-    crate::test_support::with_decode_context_over(
-        &[],
-        |policy| {
-            adjust(policy);
-            if let Some(limit) = collection_limit {
-                policy.limits.max_collection_items = limit;
-            }
-            if let Some(limit) = retained_limit {
-                policy.limits.max_retained_bytes = limit;
-            }
-        },
-        |ctx| {
-            let error = super::display_jt_indices(ctx, &container).unwrap_err();
-            let CodecError::ResourceLimit(limit) = error else {
-                panic!("expected resource refusal");
-            };
-            (limit.dimension, limit.operation.to_string())
-        },
-    )
-}
-
-#[test]
-fn display_jt_index_row_count_refuses_before_vector_reservation() {
-    assert_eq!(
-        refused_at(|_| {}, Some(0), None),
-        (
-            ResourceDimension::CollectionItems,
-            "admit DisplayJT index rows".to_string()
-        )
-    );
-}
-
-#[test]
-fn display_jt_index_row_storage_refuses_before_vector_reservation() {
-    let bytes =
-        cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<super::DisplayJtIndexRow>());
-    assert_eq!(
-        refused_at(|_| {}, None, Some(bytes - 1)),
-        (
-            ResourceDimension::RetainedBytes,
-            "retain DisplayJT index rows".to_string()
-        )
-    );
+    crate::test_support::with_decode_context_over(&[], adjust, |ctx| {
+        let error = super::display_jt_indices(ctx, &container).unwrap_err();
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("expected resource refusal");
+        };
+        (limit.dimension, limit.operation.to_string())
+    })
 }
 
 #[test]
@@ -88,67 +48,10 @@ fn display_jt_index_row_entity_refuses_before_identity_allocation() {
         policy.limits.max_entities = 0;
     };
     assert_eq!(
-        refused_at(adjust_policy, None, None),
+        refused_at(adjust_policy),
         (
             ResourceDimension::Entities,
             "admit DisplayJT index row".to_string()
-        )
-    );
-}
-
-#[test]
-fn display_jt_index_row_identity_refuses_before_format_allocation() {
-    let rows =
-        cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<super::DisplayJtIndexRow>());
-    let row_id = cadmpeg_core::decode::u64_from_index("nx:display-jt:index#0-row-0".len());
-    assert_eq!(
-        refused_at(|_| {}, None, Some(rows + row_id - 1)),
-        (
-            ResourceDimension::RetainedBytes,
-            "retain DisplayJT index row identity".to_string()
-        )
-    );
-}
-
-#[test]
-fn display_jt_index_identity_refuses_before_format_allocation() {
-    let rows =
-        cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<super::DisplayJtIndexRow>());
-    let row_id = cadmpeg_core::decode::u64_from_index("nx:display-jt:index#0-row-0".len());
-    let index_id = cadmpeg_core::decode::u64_from_index("nx:display-jt:index#0".len());
-    assert_eq!(
-        refused_at(|_| {}, None, Some(rows + row_id + index_id - 1)),
-        (
-            ResourceDimension::RetainedBytes,
-            "retain DisplayJT index identity".to_string()
-        )
-    );
-}
-
-#[test]
-fn display_jt_index_result_count_refuses_before_vector_reservation() {
-    assert_eq!(
-        refused_at(|_| {}, Some(1), None),
-        (
-            ResourceDimension::CollectionItems,
-            "admit DisplayJT index".to_string()
-        )
-    );
-}
-
-#[test]
-fn display_jt_index_result_storage_refuses_before_vector_reservation() {
-    let rows =
-        cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<super::DisplayJtIndexRow>());
-    let row_id = cadmpeg_core::decode::u64_from_index("nx:display-jt:index#0-row-0".len());
-    let index_id = cadmpeg_core::decode::u64_from_index("nx:display-jt:index#0".len());
-    let index =
-        cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<super::DisplayJtIndex>());
-    assert_eq!(
-        refused_at(|_| {}, None, Some(rows + row_id + index_id + index - 1)),
-        (
-            ResourceDimension::RetainedBytes,
-            "admit DisplayJT index".to_string()
         )
     );
 }

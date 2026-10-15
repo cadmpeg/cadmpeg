@@ -4,10 +4,10 @@ use crate::document::CadIr;
 use crate::geometry::{CurveGeometry, SolvedCurveGeometry};
 use crate::math::{Point3, Vector3};
 use crate::report::check::Finding;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
-fn refuses(
+fn finds(
     ir: &CadIr,
     checker: impl Fn(&DecodeContext<'_>, &CadIr, &mut Vec<Finding>) -> Result<(), CodecError>,
     message: &str,
@@ -17,36 +17,12 @@ fn refuses(
     checker(&ctx, ir, &mut findings).unwrap();
     assert!(!findings.is_empty());
     assert!(findings[0].message.starts_with(message), "{findings:?}");
-    for dimension in [
-        ResourceDimension::RetainedBytes,
-        ResourceDimension::CollectionItems,
-        ResourceDimension::WorkUnits,
-    ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        match dimension {
-            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = 0,
-            ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
-            ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
-            _ => panic!("test dimension"),
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let mut findings = Vec::new();
-        let Err(CodecError::ResourceLimit(limit)) = checker(&ctx, ir, &mut findings) else {
-            panic!("finding must refuse");
-        };
-        assert_eq!(limit.dimension, dimension);
-        assert!(findings.is_empty());
-        assert!(
-            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
-        );
-    }
 }
 
 #[test]
-fn support_side_finding_preserves_output_refusals() {
+fn support_side_finding_is_reported() {
     let ir = super::mapped_surface_curve([3.0, 2.0]);
-    refuses(
+    finds(
         &ir,
         |ctx, ir, findings| {
             let index = crate::index::ModelIndex::new_model_only(ir, ctx)?;
@@ -57,7 +33,7 @@ fn support_side_finding_preserves_output_refusals() {
 }
 
 #[test]
-fn surface_offset_distance_finding_preserves_output_refusals() {
+fn surface_offset_distance_finding_is_reported() {
     let mut ir = super::mapped_surface_offset();
     ir.model.curves[1].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Line(
         crate::geometry::analytic::LineCurve::try_new(
@@ -66,7 +42,7 @@ fn surface_offset_distance_finding_preserves_output_refusals() {
         )
         .unwrap(),
     ));
-    refuses(
+    finds(
         &ir,
         |ctx, ir, findings| {
             let index = crate::index::ModelIndex::new_model_only(ir, ctx)?;
@@ -77,7 +53,7 @@ fn surface_offset_distance_finding_preserves_output_refusals() {
 }
 
 #[test]
-fn edge_endpoint_finding_preserves_output_refusals() {
+fn edge_endpoint_finding_is_reported() {
     let mut ir = crate::examples::unit_cube().unwrap();
     let id = ir.model.edges[0].curve().unwrap().clone();
     ir.model
@@ -92,7 +68,7 @@ fn edge_endpoint_finding_preserves_output_refusals() {
         )
         .unwrap(),
     ));
-    refuses(
+    finds(
         &ir,
         super::super::check_edge_endpoint_consistency,
         "edge curve endpoints miss",
@@ -100,7 +76,7 @@ fn edge_endpoint_finding_preserves_output_refusals() {
 }
 
 #[test]
-fn coedge_use_curve_finding_preserves_output_refusals() {
+fn coedge_use_curve_finding_is_reported() {
     let mut ir = crate::examples::unit_cube().unwrap();
     let mut curve = ir.model.curves[0].clone();
     curve.id = "test:model:curve#use".try_into().unwrap();
@@ -116,7 +92,7 @@ fn coedge_use_curve_finding_preserves_output_refusals() {
         parameter_range: crate::topology::ParameterInterval::new([0.0, 1.0]).unwrap(),
     });
     ir.model.curves.push(curve);
-    refuses(
+    finds(
         &ir,
         super::super::check_edge_endpoint_consistency,
         "coedge use-curve endpoints miss",
@@ -124,7 +100,7 @@ fn coedge_use_curve_finding_preserves_output_refusals() {
 }
 
 #[test]
-fn mapped_pcurve_finding_preserves_output_refusals() {
+fn mapped_pcurve_finding_is_reported() {
     let mut ir = super::untrimmed_surface_curve();
     let crate::geometry::pcurve::PcurveGeometry::Circle(circle) = &ir.model.pcurves[0].geometry
     else {
@@ -139,7 +115,7 @@ fn mapped_pcurve_finding_preserves_output_refusals() {
         )
         .unwrap(),
     );
-    refuses(
+    finds(
         &ir,
         |ctx, ir, findings| {
             let index = crate::index::ModelIndex::new_model_only(ir, ctx)?;
@@ -225,8 +201,8 @@ fn charted(with_supports: bool) -> CadIr {
 }
 
 #[test]
-fn charted_intersection_missing_evaluation_finding_preserves_output_refusals() {
-    refuses(
+fn charted_intersection_missing_evaluation_finding_is_reported() {
+    finds(
         &charted(false),
         |ctx, ir, findings| {
             let index = crate::index::ModelIndex::new_model_only(ir, ctx)?;
@@ -237,8 +213,8 @@ fn charted_intersection_missing_evaluation_finding_preserves_output_refusals() {
 }
 
 #[test]
-fn charted_intersection_witness_finding_preserves_output_refusals() {
-    refuses(
+fn charted_intersection_witness_finding_is_reported() {
+    finds(
         &charted(true),
         |ctx, ir, findings| {
             let index = crate::index::ModelIndex::new_model_only(ir, ctx)?;

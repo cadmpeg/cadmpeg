@@ -5,7 +5,6 @@ use serde::ser::SerializeStruct;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::printable_string::PrintableString;
-use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -34,15 +33,9 @@ impl<S: crate::immutable_text::ImmutableText> StateMessageText<S> {
 }
 
 impl StateMessageText<&str> {
-    pub(super) fn into_owned(
-        self,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<StateMessageText<String>, CodecError> {
-        let text = self.as_str();
-        let mut owned = ctx.retained_string(text.len(), "NX state message text")?;
-        owned.push_str(text);
+    pub(super) fn into_owned(self) -> Result<StateMessageText<String>, CodecError> {
         Ok(StateMessageText(
-            PrintableString::new(owned).map_err(CodecError::malformed)?,
+            PrintableString::new(self.as_str().to_owned()).map_err(CodecError::malformed)?,
             self.1,
         ))
     }
@@ -82,12 +75,10 @@ mod tests {
     #[test]
     fn message_text_derives_length_and_preserves_spaces() {
         for text in [" ".to_string(), "x".repeat(253)] {
-            let value = crate::test_support::with_decode_context(|ctx| {
-                StateMessageText::new(text.as_str())
-                    .unwrap()
-                    .into_owned(ctx)
-            })
-            .unwrap();
+            let value = StateMessageText::new(text.as_str())
+                .unwrap()
+                .into_owned()
+                .unwrap();
             assert_eq!(usize::from(value.declared_length()), text.len() + 2);
             let json = format!(
                 r#"{{"declared_length":{},"text":{}}}"#,

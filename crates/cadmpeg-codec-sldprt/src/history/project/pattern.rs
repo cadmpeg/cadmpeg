@@ -3,8 +3,6 @@
 
 use crate::classification::NativeClassKind;
 use crate::records::Feature;
-use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{
     patterns::{PatternKind, PatternSeed, PatternTransform},
     FeatureDefinition, FeatureId, FeatureOperation, PathRef,
@@ -72,40 +70,31 @@ pub(in crate::history) fn pattern_form(feature: &Feature) -> Option<NativePatter
 }
 
 pub(super) fn project_pattern(
-    ctx: &DecodeContext<'_>,
     feature: &Feature,
     by_source: &HashMap<String, FeatureId>,
     native_by_source: &HashMap<String, &str>,
-) -> Result<FeatureDefinition, CodecError> {
-    const OPERATION: &str = "project SLDPRT pattern seeds";
+) -> FeatureDefinition {
     let form = pattern_form(feature);
     let mut seeds = Vec::new();
     if let Some(source_seeds) = feature.properties.get("Seeds") {
         for source in source_seeds.split(',').map(str::trim) {
-            ctx.charge_work(1, OPERATION)?;
             let Some(id) = by_source.get(source) else {
                 seeds.clear();
                 break;
             };
-            let copied = ctx.format_retained(format_args!("{}", id.as_str()), OPERATION)?;
-            let id = FeatureId::mint(copied).map_err(CodecError::malformed)?;
-            ctx.reserve_vec(&mut seeds, 1, OPERATION)?;
-            seeds.push(PatternSeed::Feature(id));
+            seeds.push(PatternSeed::Feature(id.clone()));
         }
     }
     let mut curve_path = if form == Some(NativePatternClass::CurveDriven) {
-        feature
-            .properties
-            .get("Path")
-            .map(|source| {
-                let text = native_by_source
+        feature.properties.get("Path").map(|source| {
+            PathRef::Native(
+                native_by_source
                     .get(source.as_str())
                     .copied()
-                    .unwrap_or(source);
-                ctx.format_retained(format_args!("{text}"), "retain SLDPRT pattern path")
-                    .map(PathRef::Native)
-            })
-            .transpose()?
+                    .unwrap_or(source)
+                    .to_owned(),
+            )
+        })
     } else {
         None
     };
@@ -190,56 +179,9 @@ pub(super) fn project_pattern(
             Some(NativePatternClass::CurveDriven) => PatternKind::UNRESOLVED_CURVE_DRIVEN,
             Some(NativePatternClass::Mirror) => PatternKind::UNRESOLVED_MIRROR,
         });
-    Ok(FeatureDefinition::Operation(FeatureOperation::Pattern {
-        seeds,
-        pattern,
-    }))
+    FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, pattern })
 }
 
 pub(crate) fn parse_count(value: &str) -> Option<u32> {
     value.trim().parse().ok().filter(|count| *count > 0)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::project_pattern;
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    use cadmpeg_core::CodecError;
-    use cadmpeg_ir::features::FeatureId;
-    use std::collections::HashMap;
-
-    #[test]
-    fn pattern_seed_projection_refuses_collection_limit() {
-        let mut feature = crate::history::tests::feature("pattern", None, 0);
-        feature.properties.insert(
-            cadmpeg_core::nonblank_literal!("Seeds"),
-            "source".to_owned(),
-        );
-        let by_source = HashMap::from([(
-            "source".to_owned(),
-            FeatureId::mint("synthetic:test:id#seed").unwrap(),
-        )]);
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(b"pattern", &arena, &policy).unwrap();
-        let error = project_pattern(&ctx, &feature, &by_source, &HashMap::new()).unwrap_err();
-        assert!(matches!(error, CodecError::ResourceLimit(_)));
-    }
-
-    #[test]
-    fn pattern_path_projection_refuses_retained_limit() {
-        let mut feature = crate::history::tests::feature("pattern", None, 0);
-        feature.kind = "CurvePattern".to_owned();
-        feature.properties.insert(
-            cadmpeg_core::nonblank_literal!("Path"),
-            "native-path".to_owned(),
-        );
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 0;
-        let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(b"pattern", &arena, &policy).unwrap();
-        let error = project_pattern(&ctx, &feature, &HashMap::new(), &HashMap::new()).unwrap_err();
-        assert!(matches!(error, CodecError::ResourceLimit(_)));
-    }
 }

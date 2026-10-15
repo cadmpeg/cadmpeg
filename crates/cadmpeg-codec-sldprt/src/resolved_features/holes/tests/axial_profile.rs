@@ -1,7 +1,6 @@
 //! Axial hole-profile role tests.
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_test_support::edit;
 
 use super::{lane_with_position_reference, model_hole, native_history, profile_line};
@@ -24,42 +23,7 @@ use crate::resolved_features::holes::project_profiled_hole_constructions;
 use crate::resolved_features::holes::ProfileEvidence;
 
 #[test]
-fn profiled_hole_histories_report_collection_limit() {
-    let histories = [native_history()];
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::default();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).unwrap();
-    project_profiled_hole_constructions(&ctx, &mut [], &[], &histories, &[])
-        .expect("service profile admits one history");
-
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 3;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).unwrap();
-    let error = project_profiled_hole_constructions(&ctx, &mut [], &[], &histories, &[])
-        .expect_err("one history exceeds the collection limit");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "SLDPRT unowned incomplete-hole histories"));
-}
-
-#[test]
-fn profiled_hole_histories_refuse_retained_copy() {
-    let histories = [native_history()];
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).unwrap();
-    let error = project_profiled_hole_constructions(&ctx, &mut [], &[], &histories, &[])
-        .expect_err("history text requires retained storage");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "clone SLDPRT history text"));
-}
-
-#[test]
 fn axial_profile_resolves_counterbore_roles() {
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let mut profile = native_history().features.remove(0);
     profile.parameters = [
         (cadmpeg_core::nonblank_literal!("a"), "118°".into()),
@@ -96,7 +60,7 @@ fn axial_profile_resolves_counterbore_roles() {
         ),
     ];
 
-    let construction = profiled_hole_construction(&ctx, &profile, &sketch, &entities)
+    let construction = profiled_hole_construction(&profile, &sketch, &entities)
         .unwrap()
         .expect("exact profile");
     assert_eq!(
@@ -139,7 +103,7 @@ fn axial_profile_resolves_counterbore_roles() {
         })
         .unwrap();
     }
-    let translated = profiled_hole_construction(&ctx, &profile, &sketch, &translated_entities)
+    let translated = profiled_hole_construction(&profile, &sketch, &translated_entities)
         .unwrap()
         .expect("translated exact profile");
     assert_eq!(translated.diameter, construction.diameter);
@@ -171,19 +135,16 @@ fn axial_profile_resolves_counterbore_roles() {
         })
         .unwrap();
     }
-    assert!(profiled_hole_construction(
-        &ctx,
-        &profile,
-        &sketch,
-        &independently_translated_entities
-    )
-    .unwrap()
-    .is_none());
+    assert!(
+        profiled_hole_construction(&profile, &sketch, &independently_translated_entities)
+            .unwrap()
+            .is_none()
+    );
 
     profile
         .parameters
         .insert(cadmpeg_core::nonblank_literal!("a"), "180°".into());
-    let construction = profiled_hole_construction(&ctx, &profile, &sketch, &entities[..3])
+    let construction = profiled_hole_construction(&profile, &sketch, &entities[..3])
         .unwrap()
         .expect("flat-bottom profile");
     assert_eq!(
@@ -204,8 +165,6 @@ fn axial_profile_resolves_counterbore_roles() {
 
 #[test]
 fn axial_profile_resolves_counterdrill_roles() {
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let mut profile = native_history().features.remove(0);
     profile.parameters = [
         (cadmpeg_core::nonblank_literal!("a"), "<MOD-DIAM>2.9".into()),
@@ -247,7 +206,7 @@ fn axial_profile_resolves_counterdrill_roles() {
         ),
     ];
 
-    let construction = profiled_hole_construction(&ctx, &profile, &sketch, &entities)
+    let construction = profiled_hole_construction(&profile, &sketch, &entities)
         .unwrap()
         .expect("exact profile");
     assert_eq!(
@@ -295,7 +254,7 @@ fn axial_profile_resolves_counterdrill_roles() {
         .unwrap();
     }
     assert_eq!(
-        profiled_hole_construction(&ctx, &profile, &sketch, &translated)
+        profiled_hole_construction(&profile, &sketch, &translated)
             .unwrap()
             .expect("translated exact profile")
             .kind,
@@ -303,7 +262,7 @@ fn axial_profile_resolves_counterdrill_roles() {
     );
 
     assert!(
-        profiled_hole_construction(&ctx, &profile, &sketch, &entities[..5])
+        profiled_hole_construction(&profile, &sketch, &entities[..5])
             .unwrap()
             .is_none()
     );
@@ -311,8 +270,6 @@ fn axial_profile_resolves_counterdrill_roles() {
 
 #[test]
 fn single_diameter_axial_profile_resolves_flat_and_drilled_holes() {
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let mut profile = native_history().features.remove(0);
     profile.parameters = [
         (
@@ -325,7 +282,7 @@ fn single_diameter_axial_profile_resolves_flat_and_drilled_holes() {
     .collect();
     let sketch = SketchId::mint("synthetic:test:id#profile").unwrap();
 
-    let flat = profiled_hole_construction(&ctx, &profile, &sketch, &[])
+    let flat = profiled_hole_construction(&profile, &sketch, &[])
         .unwrap()
         .expect("exact flat profile");
     assert_eq!(
@@ -342,7 +299,6 @@ fn single_diameter_axial_profile_resolves_flat_and_drilled_holes() {
     assert_eq!(flat.bottom, Some(HoleBottom::Flat));
     assert_eq!(flat.taper_angle, None);
     assert!(profiled_hole_construction_with_evidence(
-        &ctx,
         &profile,
         &sketch,
         &[],
@@ -368,7 +324,6 @@ fn single_diameter_axial_profile_resolves_flat_and_drilled_holes() {
         profile_line(&sketch, 3, Point2::new(-15.0, 0.0), Point2::new(0.0, 0.0)),
     ];
     let topology_proven = profiled_hole_construction_with_evidence(
-        &ctx,
         &profile,
         &sketch,
         &entities,
@@ -382,7 +337,7 @@ fn single_diameter_axial_profile_resolves_flat_and_drilled_holes() {
     profile
         .parameters
         .insert(cadmpeg_core::nonblank_literal!("point"), "118°".into());
-    let drilled = profiled_hole_construction(&ctx, &profile, &sketch, &[])
+    let drilled = profiled_hole_construction(&profile, &sketch, &[])
         .unwrap()
         .expect("exact drilled profile");
     assert!(matches!(
@@ -402,8 +357,6 @@ fn single_diameter_axial_profile_resolves_flat_and_drilled_holes() {
 
 #[test]
 fn closed_tapered_axial_profile_resolves_conical_hole() {
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let mut profile = native_history().features.remove(0);
     profile.parameters = [
         (
@@ -444,7 +397,7 @@ fn closed_tapered_axial_profile_resolves_conical_hole() {
         profile_line(&sketch, 3, Point2::new(-42.0, 0.0), Point2::new(0.0, 0.0)),
     ];
 
-    let construction = profiled_hole_construction(&ctx, &profile, &sketch, &entities)
+    let construction = profiled_hole_construction(&profile, &sketch, &entities)
         .unwrap()
         .expect("exact taper");
     assert_eq!(
@@ -471,8 +424,6 @@ fn closed_tapered_axial_profile_resolves_conical_hole() {
 
 #[test]
 fn tapered_profile_reconstructs_missing_edges_from_endpoint_points() {
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let mut profile = native_history().features.remove(0);
     profile.parameters = [
         (
@@ -509,7 +460,7 @@ fn tapered_profile_reconstructs_missing_edges_from_endpoint_points() {
         ),
     ];
 
-    let construction = profiled_hole_construction(&ctx, &profile, &sketch, &entities)
+    let construction = profiled_hole_construction(&profile, &sketch, &entities)
         .unwrap()
         .expect("endpoint proof");
     assert_eq!(
@@ -530,8 +481,6 @@ fn tapered_profile_reconstructs_missing_edges_from_endpoint_points() {
 
 #[test]
 fn axial_profile_resolves_countersink_and_drill_point_roles() {
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let mut profile = native_history().features.remove(0);
     profile.parameters = [
         (cadmpeg_core::nonblank_literal!("a"), "120°".into()),
@@ -570,7 +519,7 @@ fn axial_profile_resolves_countersink_and_drill_point_roles() {
         ),
     ];
 
-    let construction = profiled_hole_construction(&ctx, &profile, &sketch, &entities)
+    let construction = profiled_hole_construction(&profile, &sketch, &entities)
         .unwrap()
         .expect("exact profile");
     assert_eq!(
@@ -623,7 +572,7 @@ fn axial_profile_resolves_countersink_and_drill_point_roles() {
         })
         .unwrap();
     }
-    let translated = profiled_hole_construction(&ctx, &profile, &sketch, &translated_entities)
+    let translated = profiled_hole_construction(&profile, &sketch, &translated_entities)
         .unwrap()
         .expect("translated exact profile");
     assert_eq!(translated.diameter, construction.diameter);
@@ -642,17 +591,13 @@ fn axial_profile_resolves_countersink_and_drill_point_roles() {
             Point2::new(-6.193_383_012, 0.0),
         ),
     ];
-    assert!(
-        profiled_hole_construction(&ctx, &profile, &sketch, &insufficient)
-            .unwrap()
-            .is_none()
-    );
+    assert!(profiled_hole_construction(&profile, &sketch, &insufficient)
+        .unwrap()
+        .is_none());
 }
 
 #[test]
 fn axial_profile_resolves_open_countersink_with_optional_terminal_overrun() {
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let mut profile = native_history().features.remove(0);
     profile.parameters = [
         (cadmpeg_core::nonblank_literal!("a"), "6".into()),
@@ -681,7 +626,7 @@ fn axial_profile_resolves_open_countersink_with_optional_terminal_overrun() {
 
     for (terminal, mirror_wall) in [(-6.0, false), (-6.000_05, false), (-6.001, true)] {
         let exact_entities = entities(terminal, mirror_wall);
-        let construction = profiled_hole_construction(&ctx, &profile, &sketch, &exact_entities)
+        let construction = profiled_hole_construction(&profile, &sketch, &exact_entities)
             .unwrap()
             .expect("exact profile");
         assert_eq!(
@@ -719,7 +664,7 @@ fn axial_profile_resolves_open_countersink_with_optional_terminal_overrun() {
             .unwrap();
         }
         assert_eq!(
-            profiled_hole_construction(&ctx, &profile, &sketch, &translated_entities)
+            profiled_hole_construction(&profile, &sketch, &translated_entities)
                 .unwrap()
                 .expect("translated exact profile")
                 .kind,
@@ -727,7 +672,7 @@ fn axial_profile_resolves_open_countersink_with_optional_terminal_overrun() {
         );
     }
     assert!(
-        profiled_hole_construction(&ctx, &profile, &sketch, &entities(-6.002, true))
+        profiled_hole_construction(&profile, &sketch, &entities(-6.002, true))
             .unwrap()
             .is_none()
     );
@@ -756,7 +701,7 @@ fn axial_profile_resolves_open_countersink_with_optional_terminal_overrun() {
         .unwrap();
     }
     assert!(
-        profiled_hole_construction(&ctx, &profile, &sketch, &independently_translated)
+        profiled_hole_construction(&profile, &sketch, &independently_translated)
             .unwrap()
             .is_none()
     );
@@ -764,8 +709,6 @@ fn axial_profile_resolves_open_countersink_with_optional_terminal_overrun() {
 
 #[test]
 fn incomplete_axial_profile_does_not_assign_dimension_roles() {
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let mut profile = native_history().features.remove(0);
     profile.parameters = [
         (cadmpeg_core::nonblank_literal!("a"), "8.6".into()),
@@ -781,11 +724,9 @@ fn incomplete_axial_profile_does_not_assign_dimension_roles() {
         profile_line(&sketch, 1, Point2::new(-8.6, 4.5), Point2::new(-23.0, 4.5)),
     ];
 
-    assert!(
-        profiled_hole_construction(&ctx, &profile, &sketch, &entities)
-            .unwrap()
-            .is_none()
-    );
+    assert!(profiled_hole_construction(&profile, &sketch, &entities)
+        .unwrap()
+        .is_none());
 }
 
 #[test]
@@ -890,7 +831,6 @@ fn unique_axial_profile_resolves_the_unique_incomplete_hole() {
     let histories = [history.clone()];
     assert_eq!(
         direct_hole_position_feature(
-            &ctx,
             &histories[0].features[0],
             &histories,
             |id| model_sketches.get(id),
@@ -910,7 +850,6 @@ fn unique_axial_profile_resolves_the_unique_incomplete_hole() {
     single_child_history.features[2].ordinal = 1;
     assert_eq!(
         direct_hole_position_feature(
-            &ctx,
             &single_child_history.features[0],
             std::slice::from_ref(&single_child_history),
             |id| model_sketches.get(id),
@@ -925,7 +864,6 @@ fn unique_axial_profile_resolves_the_unique_incomplete_hole() {
         .remove("DissectableChildren");
     assert_eq!(
         direct_hole_position_feature(
-            &ctx,
             &single_child_history.features[0],
             std::slice::from_ref(&single_child_history),
             |id| model_sketches.get(id),

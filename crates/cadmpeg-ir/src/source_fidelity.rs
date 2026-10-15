@@ -15,7 +15,7 @@ use crate::native::NativeConvertError;
 use crate::provenance::SourceOwner;
 use crate::report::decode::DecodeReport;
 use crate::unknown::UnknownRecord;
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
 /// A decode report and source fidelity bound to exact CADIR bytes.
@@ -354,37 +354,12 @@ impl SourceFidelity {
         mut other: Self,
     ) -> Result<(), cadmpeg_core::CodecError> {
         for id in other.retained_records.keys() {
-            let work = id
-                .as_str()
-                .len()
-                .checked_add(1)
-                .and_then(|bytes| {
-                    self.retained_records
-                        .len()
-                        .checked_add(1)
-                        .and_then(|count| bytes.checked_mul(count))
-                })
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit("check appended source records", u64::MAX - 1, u64::MAX)
-                })?;
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(work),
-                "check appended source records",
-            )?;
             if self.retained_records.contains_key(id) {
-                return Err(cadmpeg_core::CodecError::Malformed(ctx.format_retained(
-                    format_args!("duplicate retained or native unknown record {id}"),
-                    "report duplicate source record",
-                )?));
+                return Err(cadmpeg_core::CodecError::malformed(format_args!(
+                    "duplicate retained or native unknown record {id}"
+                )));
             }
         }
-        crate::annotations::admit_btree_append(
-            ctx,
-            &self.retained_records,
-            &other.retained_records,
-            |id| id.as_str().len(),
-            "append source records",
-        )?;
         self.annotations
             .append(ctx, other.annotations, "append source provenance")?
             .map_err(cadmpeg_core::CodecError::from)?;
@@ -461,28 +436,14 @@ impl SourceFidelity {
             Some(namespace) => namespace.arena_as_for_decode(ctx, "unknowns")?,
             None => Vec::new(),
         };
-        let (existing_ids, _identity_storage) =
-            ctx.with_scoped_storage("native unknown existing identities", || {
-                let mut existing_ids = BTreeSet::new();
-                for record in ir
-                    .native
-                    .0
-                    .values()
-                    .filter_map(|namespace| namespace.arenas().get("unknowns"))
-                    .flatten()
-                {
-                    ctx.charge_work(
-                        u64_from_index(record.id().len()),
-                        "native unknown identity scan",
-                    )?;
-                    ctx.insert_btree_set(
-                        &mut existing_ids,
-                        record.id(),
-                        "native unknown existing identities",
-                    )?;
-                }
-                Ok::<_, CodecError>(existing_ids)
-            })?;
+        let existing_ids: BTreeSet<&str> = ir
+            .native
+            .0
+            .values()
+            .filter_map(|namespace| namespace.arenas().get("unknowns"))
+            .flatten()
+            .map(crate::native::NativeRecord::id)
+            .collect();
         let mut retained = BTreeMap::new();
         for record in records {
             if self.retained_records.contains_key(record.id())
@@ -495,70 +456,25 @@ impl SourceFidelity {
                 .id()
                 .try_clone_for_decode(ctx, "native unknown product identity")?;
             let mut links = Vec::new();
-            ctx.charge_collection_items(
-                u64_from_index(record.links().len()),
-                "native unknown product links",
-            )?;
-            links.try_reserve_exact(record.links().len()).map_err(|_| {
-                cadmpeg_core::CodecError::ResourceLimit(
-                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                        cadmpeg_core::decode::ResourceDimension::Codec(
-                            "native unknown product links",
-                        ),
-                        0,
-                        u64_from_index(record.links().len()),
-                        "native unknown product links",
-                    ),
-                )
-            })?;
+
             for link in record.links() {
-                let text = ctx.copy_retained_text(link, "native unknown product link text")?;
+                let text = link.to_owned();
                 links.push(crate::ids::Identity::new(text).map_err(CodecError::malformed)?);
             }
-            ctx.charge_collection_items(1, "native unknown products")?;
-            products.try_reserve(1).map_err(|_| {
-                cadmpeg_core::CodecError::ResourceLimit(
-                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                        cadmpeg_core::decode::ResourceDimension::Codec("native unknown products"),
-                        0,
-                        1,
-                        "native unknown products",
-                    ),
-                )
-            })?;
+
             products.push(crate::NativeUnknownRecord { id, links });
-            let stream = if let Some(provenance) =
-                self.annotations.provenance.get(record.id().as_str())
-            {
-                SourceOwner::from(
-                    ctx.copy_retained_text(provenance.stream(), "native unknown source stream")?,
-                )
-            } else {
-                SourceOwner::Root
-            };
+            let stream =
+                if let Some(provenance) = self.annotations.provenance.get(record.id().as_str()) {
+                    SourceOwner::from(provenance.stream().to_owned())
+                } else {
+                    SourceOwner::Root
+                };
             let (id, record) = RetainedSourceRecord::from_unknown(stream, record)?;
-            ctx.insert_btree_map(&mut retained, id, record, "native unknown retained index")?;
+            retained.insert(id, record);
         }
 
         let mut native_records = Vec::new();
-        ctx.charge_collection_items(
-            u64_from_index(products.len()),
-            "native unknown arena records",
-        )?;
-        native_records
-            .try_reserve_exact(products.len())
-            .map_err(|_| {
-                cadmpeg_core::CodecError::ResourceLimit(
-                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                        cadmpeg_core::decode::ResourceDimension::Codec(
-                            "native unknown arena records",
-                        ),
-                        0,
-                        u64_from_index(products.len()),
-                        "native unknown arena records",
-                    ),
-                )
-            })?;
+
         for product in &products {
             let id = product
                 .id
@@ -567,62 +483,31 @@ impl SourceFidelity {
             let mut fields = serde_json::Map::new();
             if !product.links.is_empty() {
                 let mut links = Vec::new();
-                ctx.charge_collection_items(
-                    u64_from_index(product.links.len()),
-                    "native unknown arena links",
-                )?;
-                links.try_reserve_exact(product.links.len()).map_err(|_| {
-                    cadmpeg_core::CodecError::ResourceLimit(
-                        cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                            cadmpeg_core::decode::ResourceDimension::Codec(
-                                "native unknown arena links",
-                            ),
-                            0,
-                            u64_from_index(product.links.len()),
-                            "native unknown arena links",
-                        ),
-                    )
-                })?;
+
                 for link in &product.links {
-                    links.push(serde_json::Value::String(ctx.copy_retained_text(
-                        link.as_str(),
-                        "native unknown arena link text",
-                    )?));
+                    links.push(serde_json::Value::String(link.as_str().to_owned()));
                 }
-                ctx.charge_collection_items(1, "native unknown arena link field")?;
-                let field =
-                    ctx.copy_retained_text("links", "native unknown arena link field name")?;
+
+                let field = "links".to_owned();
                 fields.insert(field, serde_json::Value::Array(links));
             }
             native_records.push(crate::native::NativeRecord::new(id, fields)?);
         }
-        ctx.stable_sort_by(
-            &mut native_records,
-            |left, right| left.id().cmp(right.id()),
-            |record| record.id().len(),
-            "native unknown arena records sort",
-        )?;
+        native_records.sort_by(|left, right| left.id().cmp(right.id()));
         if let Some(pair) = native_records
             .windows(2)
             .find(|pair| pair[0].id() == pair[1].id())
         {
             let id = pair[0].id();
-            ctx.charge_retained(u64_from_index(id.len()), "native unknown duplicate message")?;
+
             return Err(NativeConvertError::InvalidCollection(format!(
                 "duplicate native unknown record {id}"
             ))
             .into());
         }
-        ctx.charge_collection_items(2, "native unknown namespace and arena")?;
-        ctx.charge_retained(
-            u64_from_index(format.len()),
-            "native unknown namespace name",
-        )?;
-        let arena_name = ctx.copy_retained_text("unknowns", "native unknown arena name")?;
-        ctx.charge_collection_items(
-            u64_from_index(retained.len()),
-            "native unknown retained records",
-        )?;
+
+        let arena_name = "unknowns".to_owned();
+
         ir.native
             .namespace_mut(format)
             .arenas_mut()

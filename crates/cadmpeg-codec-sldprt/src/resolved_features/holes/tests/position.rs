@@ -1,8 +1,7 @@
 //! Hole position-sketch and spatial-locus tests.
 
 use super::{cylinder, lane, lane_with_position_reference, model_hole, native_history};
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use std::collections::BTreeMap;
 
 use cadmpeg_ir::features::{holes::HolePlacement, FeatureDefinition, FeatureId, FeatureOperation};
@@ -35,48 +34,6 @@ use crate::resolved_features::holes::project_hole_position_sketches;
 use crate::resolved_features::holes::project_spatial_hole_position_sketches;
 use crate::resolved_features::holes::HoleTopology;
 use crate::resolved_features::parameters::enrich_history_parameters;
-
-#[test]
-fn spatial_hole_position_route_refuses_collection_growth() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = project_spatial_hole_position_sketches(
-        &ctx,
-        &mut [],
-        &[],
-        &[],
-        &[],
-        &[native_history()],
-        &[],
-    )
-    .expect_err("native feature lookup requires one collection item");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "index SLDPRT spatial position features"));
-}
-
-#[test]
-fn spatial_hole_position_route_refuses_lookup_work() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = project_spatial_hole_position_sketches(
-        &ctx,
-        &mut [],
-        &[],
-        &[],
-        &[],
-        &[native_history()],
-        &[],
-    )
-    .expect_err("native feature scan requires work");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::WorkUnits
-            && limit.operation == "index SLDPRT spatial position features"));
-}
 
 #[test]
 fn hole_position_carrier_presence_requires_a_serialized_position_source() {
@@ -582,8 +539,6 @@ fn an_absent_object_name_trailer_sources_no_hole_position() {
 
 #[test]
 fn embedded_position_sketch_name_resolves_its_typed_source() {
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let history = native_history();
     let mut lane = lane();
     lane.native_payload.resize(200, 0);
@@ -661,12 +616,10 @@ fn embedded_position_sketch_name_resolves_its_typed_source() {
         .copy_from_slice(&[0, 0xc0, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
     assert_eq!(
         hole_position_feature(
-            &ctx,
             &legacy_history.features[0],
             std::slice::from_ref(&legacy_history),
             &[lane],
         )
-        .unwrap()
         .map(|feature| feature.id.as_str()),
         Some("native-position")
     );
@@ -1467,8 +1420,6 @@ fn spatial_position_relation_handle_uses_its_model_space_bore_locus() {
 
 #[test]
 fn noncollinear_coplanar_spatial_positions_define_one_hole_axis() {
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let points = [
         Point3::new(23.5, 10.0, -75.0),
         Point3::new(23.5, 10.0, -23.0),
@@ -1476,7 +1427,7 @@ fn noncollinear_coplanar_spatial_positions_define_one_hole_axis() {
         Point3::new(151.5, 10.0, -75.0),
     ];
     assert_eq!(
-        coplanar_spatial_position_placements(&ctx, &points).unwrap(),
+        coplanar_spatial_position_placements(&points),
         Some(vec![
             HolePlacement::Axis {
                 origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(23.5, 10.0, -23.0))
@@ -1505,30 +1456,21 @@ fn noncollinear_coplanar_spatial_positions_define_one_hole_axis() {
         ])
     );
     assert_eq!(
-        coplanar_spatial_position_placements(
-            &ctx,
-            &[
-                Point3::new(0.0, 0.0, 0.0),
-                Point3::new(1.0, 0.0, 0.0),
-                Point3::new(0.0, 1.0, 1.0),
-                Point3::new(0.0, 2.0, 0.0),
-            ]
-        )
-        .unwrap(),
+        coplanar_spatial_position_placements(&[
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0, 0.0, 0.0),
+            Point3::new(0.0, 1.0, 1.0),
+            Point3::new(0.0, 2.0, 0.0),
+        ]),
         None
     );
     let translated =
         points.map(|point| Point3::new(point.x + 1.0e12, point.y - 1.0e12, point.z + 1.0e12));
-    assert!(coplanar_spatial_position_placements(&ctx, &translated)
-        .unwrap()
-        .is_some());
+    assert!(coplanar_spatial_position_placements(&translated).is_some());
 }
 
 #[test]
 fn source_intervals_supply_legacy_hole_profiles() {
-    let hole_arena = DecodeArena::new();
-    let (hole_ctx, _) =
-        DecodeContext::from_root_bytes(&[], &hole_arena, &DecodePolicy::service()).unwrap();
     let mut history = native_history();
     history.features.push(crate::records::Feature {
         id: "native-profile-sketch".into(),
@@ -1591,17 +1533,9 @@ fn source_intervals_supply_legacy_hole_profiles() {
         operands: Vec::new(),
     });
     let mut histories = [history];
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &lane.native_payload,
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )
-    .expect("hole lane fits service policy");
-    enrich_history_parameters(&ctx, &mut histories, [&lane], true)
-        .expect("hole parameter enrichment succeeds");
+    enrich_history_parameters(&mut histories, [&lane], true);
     assert_eq!(histories[0].features[1].parameters["depth"], "6.8mm");
-    enrich_history_hole_constructions(&hole_ctx, &mut histories, &[lane]).unwrap();
+    enrich_history_hole_constructions(&mut histories, &[lane]).unwrap();
     assert_eq!(
         histories[0].features[0]
             .properties
@@ -1619,7 +1553,7 @@ fn source_intervals_supply_legacy_hole_profiles() {
     next_hole.source_id = FeatureSource::from_value(20);
     next_hole.ordinal = 1;
     histories[0].features.push(next_hole);
-    enrich_history_hole_constructions(&hole_ctx, &mut histories, &[]).unwrap();
+    enrich_history_hole_constructions(&mut histories, &[]).unwrap();
     assert_eq!(
         histories[0].features[0]
             .properties
@@ -1631,9 +1565,6 @@ fn source_intervals_supply_legacy_hole_profiles() {
 
 #[test]
 fn serialized_position_successor_owns_legacy_hole_profile() {
-    let hole_arena = DecodeArena::new();
-    let (hole_ctx, _) =
-        DecodeContext::from_root_bytes(&[], &hole_arena, &DecodePolicy::service()).unwrap();
     let mut history = native_history();
     let mut position = history.features[0].clone();
     position.id = "native-position-sketch".into();
@@ -1695,12 +1626,7 @@ fn serialized_position_successor_owns_legacy_hole_profile() {
         },
     ]);
 
-    enrich_history_hole_constructions(
-        &hole_ctx,
-        std::slice::from_mut(&mut history),
-        &[lane.clone()],
-    )
-    .unwrap();
+    enrich_history_hole_constructions(std::slice::from_mut(&mut history), &[lane.clone()]).unwrap();
     assert_eq!(
         history.features[0]
             .properties
@@ -1743,12 +1669,8 @@ fn serialized_position_successor_owns_legacy_hole_profile() {
             object_id: ObjectId::from_value(58),
         },
     ]);
-    enrich_history_hole_constructions(
-        &hole_ctx,
-        std::slice::from_mut(&mut history),
-        &[lane, alternate_lane],
-    )
-    .unwrap();
+    enrich_history_hole_constructions(std::slice::from_mut(&mut history), &[lane, alternate_lane])
+        .unwrap();
     assert!(!history.features[0]
         .properties
         .contains_key("DissectableChildren"));
@@ -1756,9 +1678,6 @@ fn serialized_position_successor_owns_legacy_hole_profile() {
 
 #[test]
 fn ordered_legacy_sketch_children_identify_the_unique_hole_profile() {
-    let hole_arena = DecodeArena::new();
-    let (hole_ctx, _) =
-        DecodeContext::from_root_bytes(&[], &hole_arena, &DecodePolicy::service()).unwrap();
     let mut history = native_history();
     let mut position = history.features[0].clone();
     position.id = "native-position-sketch".into();
@@ -1798,7 +1717,7 @@ fn ordered_legacy_sketch_children_identify_the_unique_hole_profile() {
         ],
     });
 
-    enrich_history_hole_constructions(&hole_ctx, std::slice::from_mut(&mut history), &[]).unwrap();
+    enrich_history_hole_constructions(std::slice::from_mut(&mut history), &[]).unwrap();
 
     assert_eq!(
         history.features[0]
@@ -1844,15 +1763,7 @@ fn parameter_class_supplies_an_operandless_scalar_unit() {
         operands: Vec::new(),
     });
 
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &lane.native_payload,
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )
-    .expect("hole lane fits service policy");
-    enrich_history_parameters(&ctx, std::slice::from_mut(&mut history), [&lane], true)
-        .expect("hole parameter enrichment succeeds");
+    enrich_history_parameters(std::slice::from_mut(&mut history), [&lane], true);
     assert_eq!(
         history.features[0].parameters.get("D1").map(String::as_str),
         Some("6.283185307179586rad")

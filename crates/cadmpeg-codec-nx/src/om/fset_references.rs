@@ -3,7 +3,6 @@
 
 use super::operation_record::OperationPayload;
 use cadmpeg_core::decode::View;
-use cadmpeg_core::CodecError;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct FsetReferences<B> {
@@ -126,27 +125,12 @@ impl FsetReferences<()> {
     pub(crate) fn resolve<B>(
         self,
         file_base: u64,
-        mut target: impl FnMut(u16) -> Result<B, CodecError>,
-    ) -> Result<Option<FsetReferences<B>>, CodecError> {
-        let Some(offset) = self.offset.checked_add(file_base) else {
-            return Ok(None);
-        };
-        let [(first_head, ()), (first_tail, ())] = self.first;
-        let [(second_head, ()), (second_middle, ()), (second_tail, ())] = self.second;
-        Ok(FsetReferences::new(
-            offset,
-            self.selector,
-            [
-                (first_head, target(first_head)?),
-                (first_tail, target(first_tail)?),
-            ],
-            [
-                (second_head, target(second_head)?),
-                (second_middle, target(second_middle)?),
-                (second_tail, target(second_tail)?),
-            ],
-        )
-        .ok())
+        mut target: impl FnMut(u16) -> B,
+    ) -> Option<FsetReferences<B>> {
+        let offset = self.offset.checked_add(file_base)?;
+        let first = self.first.map(|(index, ())| (index, target(index)));
+        let second = self.second.map(|(index, ())| (index, target(index)));
+        FsetReferences::new(offset, self.selector, first, second).ok()
     }
 }
 
@@ -166,33 +150,8 @@ mod tests {
     }
 
     #[test]
-    fn fset_resolution_returns_collection_refusal() {
-        crate::test_support::with_decode_context_over(
-            &[],
-            |policy| {
-                policy.limits.max_collection_items = 0;
-            },
-            |ctx| {
-                let error = graph()
-                    .resolve(0, |index| {
-                        ctx.charge_collection_items(1, "NX FSET target")?;
-                        Ok(Some(index))
-                    })
-                    .expect_err("target resolution refusal");
-                assert!(
-                    matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
-                );
-            },
-        );
-    }
-
-    #[test]
     fn fset_resolution_preserves_both_groups() {
-        let resolved = graph()
-            .resolve(20, |index| Ok::<_, cadmpeg_core::CodecError>(Some(index)))
-            .expect("target resolution")
-            .expect("valid relocated graph");
+        let resolved = graph().resolve(20, Some).expect("target resolution");
         assert_eq!(resolved.offset(), 120);
         assert_eq!(
             resolved.first().map(|(index, value)| (index, value)),

@@ -47,16 +47,11 @@ use super::{
     sectioned_area_curves_coplanar, sectioned_area_valid, vertical_text_flag_valid,
 };
 
-fn assert_section_refusal(bytes: &[u8], operation: &str, dimension: ResourceDimension) {
+fn assert_section_recursion_refusal(bytes: &[u8], operation: &str) {
     let mut cap = 0_u64;
     for _ in 0..4096 {
         let mut policy = DecodePolicy::service();
-        match dimension {
-            ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
-            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = cap,
-            ResourceDimension::RecursionDepth => policy.limits.max_recursion_depth = cap,
-            _ => panic!("unsupported test dimension"),
-        }
+        policy.limits.max_recursion_depth = cap;
         match IgesCodec.decode(
             &mut Cursor::new(bytes),
             &DecodeOptions {
@@ -65,7 +60,7 @@ fn assert_section_refusal(bytes: &[u8], operation: &str, dimension: ResourceDime
             },
         ) {
             Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
-                assert_eq!(limit.dimension, dimension);
+                assert_eq!(limit.dimension, ResourceDimension::RecursionDepth);
                 if limit.operation == operation {
                     return;
                 }
@@ -80,23 +75,9 @@ fn assert_section_refusal(bytes: &[u8], operation: &str, dimension: ResourceDime
 }
 
 #[test]
-fn sectioned_area_coplanarity_refuses_active_nodes_and_recursion() {
+fn sectioned_area_coplanarity_refuses_recursion() {
     let bytes = symbol_and_sectioned_area_file();
-    assert_section_refusal(
-        &bytes,
-        "iges section active curves",
-        ResourceDimension::CollectionItems,
-    );
-    assert_section_refusal(
-        &bytes,
-        "iges section active curve id",
-        ResourceDimension::RetainedBytes,
-    );
-    assert_section_refusal(
-        &bytes,
-        "iges coplanar curve recursion",
-        ResourceDimension::RecursionDepth,
-    );
+    assert_section_recursion_refusal(&bytes, "iges coplanar curve recursion");
 }
 
 #[test]

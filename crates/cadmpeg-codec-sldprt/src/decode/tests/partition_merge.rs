@@ -422,10 +422,10 @@ fn partition_topology_wins_when_deltas_reuse_a_bridge_identity() {
     let deltas = bridge_owned(10, 120, 200, 700);
     let partition_payload = parasolid_with_body("partition body", "SCH_SW_33103_11000", &partition);
     let deltas_payload = parasolid_with_body("deltas body", "SCH_SW_33103_11000", &deltas);
-    let partition_header = crate::parasolid::stream_header(&ctx, &partition_payload)
+    let partition_header = crate::parasolid::stream_header(&partition_payload)
         .unwrap()
         .unwrap();
-    let deltas_header = crate::parasolid::stream_header(&ctx, &deltas_payload)
+    let deltas_header = crate::parasolid::stream_header(&deltas_payload)
         .unwrap()
         .unwrap();
 
@@ -442,32 +442,6 @@ fn partition_topology_wins_when_deltas_reuse_a_bridge_identity() {
     assert_eq!(decoded.faces.len(), 1);
     assert_eq!(decoded.faces[0].id.as_str(), "sldprt:brep:face#10");
     assert_eq!(decoded.faces[0].surface.as_str(), "sldprt:brep:surf#10");
-}
-
-#[test]
-fn partition_stream_index_refuses_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-
-    let payload = parasolid_with_body("partition body", "SCH_SW_33103_11000", &triangle_body());
-    let arena = DecodeArena::new();
-    let (header_ctx, _) =
-        DecodeContext::from_root_bytes(&payload, &arena, &DecodePolicy::service())
-            .expect("header context");
-    let header = crate::parasolid::stream_header(&header_ctx, &payload)
-        .expect("header read")
-        .expect("header");
-
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).expect("root");
-    assert!(matches!(
-        crate::brep::graph::decode_bodies(
-            &ctx,
-            &[(&payload, &header)],
-            &cadmpeg_ir::stream_name!("precedence"),
-        ),
-        Err(cadmpeg_core::CodecError::ResourceLimit(_))
-    ));
 }
 
 #[test]

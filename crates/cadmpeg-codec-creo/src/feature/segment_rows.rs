@@ -6,8 +6,6 @@ use super::definitions::{
     FeatureConicSegment, FeatureOpaqueSegment, FeaturePointSegment, FeatureReferenceLineSegment,
     FeatureSegment,
 };
-use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_core::CodecError;
 use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -71,14 +69,10 @@ impl FromIterator<SegmentRow> for SegmentRows {
 }
 
 impl SegmentRows {
-    pub(crate) fn from_parsed_rows(
-        ctx: &DecodeContext<'_>,
-        rows: Vec<SegmentRow>,
-    ) -> Result<Self, CodecError> {
+    pub(crate) fn from_parsed_rows(rows: Vec<SegmentRow>) -> Self {
         let mut identities = BTreeMap::new();
         for (ordinal, row) in rows.iter().enumerate() {
             let external_id = row.external_id();
-            ctx.admit_btree_entry(&identities, &external_id, "creo segment identity nodes")?;
             match identities.entry(external_id) {
                 std::collections::btree_map::Entry::Vacant(entry) => {
                     entry.insert(Some(ordinal));
@@ -88,7 +82,7 @@ impl SegmentRows {
                 }
             }
         }
-        Ok(Self { rows, identities })
+        Self { rows, identities }
     }
 
     #[cfg(test)]

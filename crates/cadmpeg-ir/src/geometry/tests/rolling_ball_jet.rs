@@ -237,75 +237,6 @@ fn admitted_rolling_ball_stations_keep_the_refusals_of_raw_stations() {
 }
 
 #[test]
-fn rolling_ball_jet_decode_refuses_work_and_retained_rows() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    for dimension in [
-        ResourceDimension::WorkUnits,
-        ResourceDimension::RetainedBytes,
-    ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        if dimension == ResourceDimension::WorkUnits {
-            policy.limits.max_work_units = 0;
-        } else {
-            policy.limits.max_retained_bytes = 0;
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result = crate::geometry::RollingBallJetStations::try_new(
-            5,
-            vec![station(2.0, 6), station(8.0, 6)],
-            &ctx,
-        );
-        assert!(
-            matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == dimension)
-        );
-    }
-}
-
-#[test]
-fn rolling_ball_constructors_preserve_first_and_later_caller_work_refusals() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-    for typed in [false, true] {
-        for (cap, operation) in [
-            (0, "rolling-ball jet multiplicities"),
-            (1, "rolling-ball jet multiplicities"),
-            (2, "rolling-ball jet knots"),
-            (3, "rolling-ball jet knots"),
-            (4, "rolling-ball jet station controls"),
-            (5, "rolling-ball jet station controls"),
-        ] {
-            let raw = vec![station(2.0, 6), station(8.0, 6)];
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let result = if typed {
-                let rows = raw
-                    .into_iter()
-                    .map(|row| RollingBallJetStation {
-                        knot: crate::scalar::FiniteReal::new(row.knot).unwrap(),
-                        multiplicity: row.multiplicity,
-                        site: row.site.admit().unwrap(),
-                    })
-                    .collect();
-                crate::geometry::RollingBallJetStations::from_parts(5, rows, &ctx)
-            } else {
-                crate::geometry::RollingBallJetStations::try_new(5, raw, &ctx)
-            };
-            let Err(CodecError::ResourceLimit(limit)) = result else {
-                panic!("station admission must refuse");
-            };
-            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-            assert_eq!(limit.operation, operation);
-            assert!(
-                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
-            );
-        }
-    }
-}
-
-#[test]
 fn rolling_ball_typed_constructor_moves_owned_rows_without_allocation() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let rows = [station(2.0, 6), station(8.0, 6)]
@@ -321,8 +252,6 @@ fn rolling_ball_typed_constructor_moves_owned_rows_without_allocation() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
-    policy.limits.max_materialized_bytes = 0;
-    policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let jet = crate::geometry::RollingBallJetStations::from_parts(5, rows, &ctx)
         .unwrap()

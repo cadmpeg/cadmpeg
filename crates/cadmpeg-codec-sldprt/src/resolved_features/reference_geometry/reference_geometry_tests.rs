@@ -101,12 +101,7 @@ fn solved_reference_point_layouts_project_to_a_datum_point() {
     for (layout, form) in [(243, 4), (259, 5)] {
         let lane = reference_point_lane(layout, form, [0.125, -0.25, 0.0]);
         let mut histories = vec![reference_point_history()];
-        super::enrich_history_reference_points(
-            &cadmpeg_test_support::service_decode_context(),
-            &mut histories,
-            &[lane],
-        )
-        .unwrap();
+        super::enrich_history_reference_points(&mut histories, &[lane]);
         assert_eq!(
             histories[0].features[0].properties.get("Position"),
             Some(&"125mm,-250mm,0mm".to_string())
@@ -131,12 +126,7 @@ fn solved_reference_point_layouts_project_to_a_datum_point() {
     lanes[1].id = "lane-2".into();
     lanes[1].names[0].parent = "lane-2".into();
     let mut histories = vec![reference_point_history()];
-    super::enrich_history_reference_points(
-        &cadmpeg_test_support::service_decode_context(),
-        &mut histories,
-        &lanes,
-    )
-    .unwrap();
+    super::enrich_history_reference_points(&mut histories, &lanes);
     assert!(!histories[0].features[0].properties.contains_key("Position"));
 }
 
@@ -258,25 +248,15 @@ fn plane_intersection_axis_requires_two_complete_known_references() {
     let mut payload = record(17, 0xb6, 3);
     payload.extend_from_slice(&record(23, 0x98, 0));
     let known = [17, 23].into_iter().collect();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert_eq!(
-        plane_intersection_axis_sources(&ctx, &payload, &known).unwrap(),
+        plane_intersection_axis_sources(&payload, &known),
         Some([17, 23])
     );
 
     payload.pop();
-    assert_eq!(
-        plane_intersection_axis_sources(&ctx, &payload, &known).unwrap(),
-        None
-    );
+    assert_eq!(plane_intersection_axis_sources(&payload, &known), None);
     let incomplete = record(17, 0xb6, 3);
-    assert_eq!(
-        plane_intersection_axis_sources(&ctx, &incomplete, &known).unwrap(),
-        None
-    );
+    assert_eq!(plane_intersection_axis_sources(&incomplete, &known), None);
 }
 
 #[test]
@@ -302,15 +282,8 @@ fn legacy_reference_axis_triad_requires_consecutive_native_records() {
         .map(|index| feature(10 + index, 40 + index, "moRefPlane_c"))
         .chain((0..3).map(|index| feature(13 + index, 43 + index, "moRefAxis_c")))
         .collect::<Vec<_>>();
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )
-    .unwrap();
     assert_eq!(
-        legacy_reference_axis_triads(&ctx, &features).unwrap(),
+        legacy_reference_axis_triads(&features),
         vec![super::ReferenceAxisTriad(
             [3, 4, 5],
             [[40, 41], [40, 42], [42, 41]]
@@ -319,7 +292,7 @@ fn legacy_reference_axis_triad_requires_consecutive_native_records() {
 
     features.insert(3, feature(99, 4, "moRefPlane_c"));
     assert_eq!(
-        legacy_reference_axis_triads(&ctx, &features).unwrap(),
+        legacy_reference_axis_triads(&features),
         vec![super::ReferenceAxisTriad(
             [4, 5, 6],
             [[40, 41], [40, 42], [42, 41]]
@@ -327,9 +300,7 @@ fn legacy_reference_axis_triad_requires_consecutive_native_records() {
     );
 
     features[5].source_id = FeatureSource::from_value(99);
-    assert!(legacy_reference_axis_triads(&ctx, &features)
-        .unwrap()
-        .is_empty());
+    assert!(legacy_reference_axis_triads(&features).is_empty());
 }
 
 #[test]
@@ -378,17 +349,13 @@ fn explicit_reference_axis_requires_redundant_collinear_witnesses() {
     let mut payload = vec![0xaa; 17];
     payload.extend_from_slice(&record);
     payload.extend_from_slice(&[0xbb; 11]);
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert_eq!(
-        explicit_reference_axis_frame(&ctx, &payload).unwrap(),
+        explicit_reference_axis_frame(&payload),
         Some((Point3::new(250.0, 0.0, 100.0), Vector3::new(0.0, 1.0, 0.0),))
     );
 
     record[24..32].copy_from_slice(&0.5_f64.to_le_bytes());
-    assert_eq!(explicit_reference_axis_frame(&ctx, &record).unwrap(), None);
+    assert_eq!(explicit_reference_axis_frame(&record), None);
 }
 
 #[test]
@@ -415,91 +382,7 @@ fn explicit_reference_axis_does_not_rank_unanchored_candidates() {
     let mut payload = frame(0.25, 0.0, -0.5);
     payload.extend_from_slice(&[0xff; 88]);
     payload.extend_from_slice(&frame(0.35, 1.0, 1.0));
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
-    assert_eq!(explicit_reference_axis_frame(&ctx, &payload).unwrap(), None);
-}
-
-#[test]
-fn reference_axis_enrichment_refuses_collection_limit() {
-    let feature = Feature {
-        id: "axis".into(),
-        parent: "history".into(),
-        xml_tag: "Feature".into(),
-        tree_parent: None,
-        source_id: FeatureSource::from_value(2080),
-        ordinal: 0,
-        name: "Axis1".into(),
-        kind: String::new(),
-        input_class: Some("moRefAxis_c".into()),
-        suppressed: false,
-        parameters: BTreeMap::new(),
-        dimension_properties: BTreeMap::new(),
-        properties: BTreeMap::new(),
-        text: None,
-        content: Vec::new(),
-    };
-    let history = FeatureHistory {
-        id: "history".into(),
-        part_name: None,
-        properties: BTreeMap::new(),
-        content: Vec::new(),
-        configurations: Vec::new(),
-        features: vec![feature],
-    };
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::enrich_history_reference_axes(&ctx, &mut [history], &[]).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-            && limit.operation == "index SLDPRT reference axis sources")
-    );
-}
-
-#[test]
-fn reference_axis_enrichment_refuses_work_limit() {
-    let feature = Feature {
-        id: "axis".into(),
-        parent: "history".into(),
-        xml_tag: "Feature".into(),
-        tree_parent: None,
-        source_id: FeatureSource::from_value(2080),
-        ordinal: 0,
-        name: "Axis1".into(),
-        kind: String::new(),
-        input_class: Some("moRefAxis_c".into()),
-        suppressed: false,
-        parameters: BTreeMap::new(),
-        dimension_properties: BTreeMap::new(),
-        properties: BTreeMap::new(),
-        text: None,
-        content: Vec::new(),
-    };
-    let history = FeatureHistory {
-        id: "history".into(),
-        part_name: None,
-        properties: BTreeMap::new(),
-        content: Vec::new(),
-        configurations: Vec::new(),
-        features: vec![feature],
-    };
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::enrich_history_reference_axes(&ctx, &mut [history], &[]).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && limit.operation == "scan SLDPRT reference axis triad candidates")
-    );
+    assert_eq!(explicit_reference_axis_frame(&payload), None);
 }
 
 #[test]
@@ -665,8 +548,7 @@ fn fixed_reference_plane_uses_all_three_stored_basis_vectors() {
     frame[81..89].fill(0);
     frame[89..97].fill(0);
     assert_eq!(
-        explicit_reference_plane_frame(&cadmpeg_test_support::service_decode_context(), &frame)
-            .unwrap(),
+        explicit_reference_plane_frame(&frame),
         Ok(Some((
             Point3::new(374.0, -250.0, 125.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -722,12 +604,7 @@ fn offset_plane_frame_pair_stores_result_before_reference() {
     payload.extend(frame(0.0));
 
     assert_eq!(
-        offset_reference_plane_frame_pair(
-            &cadmpeg_test_support::service_decode_context(),
-            &payload,
-            cadmpeg_ir::scalar::Length::new(37.0).unwrap()
-        )
-        .unwrap(),
+        offset_reference_plane_frame_pair(&payload, cadmpeg_ir::scalar::Length::new(37.0).unwrap()),
         Some((
             (
                 Point3::new(-37.0, 0.0, 0.0),
@@ -743,19 +620,12 @@ fn offset_plane_frame_pair_stores_result_before_reference() {
     );
     payload[65..73].copy_from_slice(&(-1.0_f64).to_le_bytes());
     assert!(offset_reference_plane_frame_pair(
-        &cadmpeg_test_support::service_decode_context(),
         &payload,
         cadmpeg_ir::scalar::Length::new(37.0).unwrap()
     )
-    .unwrap()
     .is_some());
     assert_eq!(
-        offset_reference_plane_frame_pair(
-            &cadmpeg_test_support::service_decode_context(),
-            &payload,
-            cadmpeg_ir::scalar::Length::new(38.0).unwrap()
-        )
-        .unwrap(),
+        offset_reference_plane_frame_pair(&payload, cadmpeg_ir::scalar::Length::new(38.0).unwrap()),
         None
     );
 
@@ -764,11 +634,9 @@ fn offset_plane_frame_pair_stores_result_before_reference() {
     antiparallel.extend([0; 13]);
     antiparallel.extend(frame(0.0));
     assert!(offset_reference_plane_frame_pair(
-        &cadmpeg_test_support::service_decode_context(),
         &antiparallel,
         cadmpeg_ir::scalar::Length::new(37.0).unwrap()
     )
-    .unwrap()
     .is_some());
 }
 
@@ -799,12 +667,7 @@ fn offset_plane_frame_pair_uses_matrix_axes_instead_of_fixed_prefixes() {
     payload.extend(frame(0.0));
 
     assert_eq!(
-        offset_reference_plane_frame_pair(
-            &cadmpeg_test_support::service_decode_context(),
-            &payload,
-            cadmpeg_ir::scalar::Length::new(37.0).unwrap()
-        )
-        .unwrap(),
+        offset_reference_plane_frame_pair(&payload, cadmpeg_ir::scalar::Length::new(37.0).unwrap()),
         Some((
             (
                 Point3::new(-37.0, 0.0, 0.0),
@@ -857,12 +720,7 @@ fn offset_plane_frame_pair_accepts_ordered_mixed_frame_layouts() {
     payload.extend(reference);
 
     assert_eq!(
-        offset_reference_plane_frame_pair(
-            &cadmpeg_test_support::service_decode_context(),
-            &payload,
-            cadmpeg_ir::scalar::Length::new(25.0).unwrap()
-        )
-        .unwrap(),
+        offset_reference_plane_frame_pair(&payload, cadmpeg_ir::scalar::Length::new(25.0).unwrap()),
         Some((
             (
                 Point3::new(0.0, 0.0, 210.0),
@@ -1126,8 +984,7 @@ fn constraint_midplane_uses_its_normal_form_with_opaque_prefix() {
     payload.extend(0.0f64.to_le_bytes());
     payload.extend(1.0f64.to_le_bytes());
     assert_eq!(
-        constraint_midplane_frame(&cadmpeg_test_support::service_decode_context(), &payload)
-            .unwrap(),
+        constraint_midplane_frame(&payload).unwrap(),
         Some((
             Point3::new(0.0, 0.0, 145.0),
             Vector3::new(0.0, 0.0, 1.0),
@@ -1137,11 +994,7 @@ fn constraint_midplane_uses_its_normal_form_with_opaque_prefix() {
 
     let normal = payload.len() - 24;
     payload[normal..normal + 8].copy_from_slice(&1.0f64.to_le_bytes());
-    assert_eq!(
-        constraint_midplane_frame(&cadmpeg_test_support::service_decode_context(), &payload)
-            .unwrap(),
-        None
-    );
+    assert_eq!(constraint_midplane_frame(&payload).unwrap(), None);
 }
 
 #[test]
@@ -1419,8 +1272,7 @@ fn matrix_reference_plane_owns_its_fixed_frame_prefix() {
         ))
     );
     assert_eq!(
-        explicit_reference_plane_frame(&cadmpeg_test_support::service_decode_context(), &payload)
-            .unwrap(),
+        explicit_reference_plane_frame(&payload),
         Ok(Some((
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -1472,17 +1324,8 @@ fn ambiguous_reference_plane_frame_encodings_are_withheld() {
     payload[compact + 64] = 0;
     payload[compact + 81] = 0;
 
-    assert!(compact_reference_plane_frame(
-        &cadmpeg_test_support::service_decode_context(),
-        &payload
-    )
-    .unwrap()
-    .is_some());
-    assert_eq!(
-        explicit_reference_plane_frame(&cadmpeg_test_support::service_decode_context(), &payload)
-            .unwrap(),
-        Err(())
-    );
+    assert!(compact_reference_plane_frame(&payload).is_some());
+    assert_eq!(explicit_reference_plane_frame(&payload), Err(()));
 }
 
 #[test]
@@ -1506,8 +1349,7 @@ fn compact_reference_plane_solves_omitted_basis_components() {
     payload[root + 64] = 0;
     payload[root + 81] = 0;
     assert_eq!(
-        compact_reference_plane_frame(&cadmpeg_test_support::service_decode_context(), &payload)
-            .unwrap(),
+        compact_reference_plane_frame(&payload),
         Some((
             Point3::new(1.0, -2.0, 3.0),
             Vector3::new(0.0, 0.0, 1.0),
@@ -1516,11 +1358,7 @@ fn compact_reference_plane_solves_omitted_basis_components() {
     );
 
     payload[root + 73..root + 81].copy_from_slice(&0.5f64.to_le_bytes());
-    assert_eq!(
-        compact_reference_plane_frame(&cadmpeg_test_support::service_decode_context(), &payload)
-            .unwrap(),
-        None
-    );
+    assert_eq!(compact_reference_plane_frame(&payload), None);
 }
 
 #[test]
@@ -1550,6 +1388,3 @@ fn ranges_overlap_orders_ends_past_usize_max_beyond_every_offset() {
 mod coordinate_systems;
 mod offset_planes;
 mod plane_frames;
-mod reference_planes;
-mod reference_points;
-mod sketch_blocks;

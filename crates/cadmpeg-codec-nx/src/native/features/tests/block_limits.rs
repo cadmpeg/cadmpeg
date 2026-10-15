@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
-fn block_construction_refusal(
-    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
-) -> cadmpeg_core::CodecError {
+#[test]
+fn block_construction_admits_fixture() {
     let references = (0..19_u32)
         .map(|ordinal| {
             crate::native::features::block_reference::FeatureBlockConstructionReference {
@@ -26,23 +25,9 @@ fn block_construction_refusal(
             }
         })
         .collect::<Vec<_>>();
-    let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-        crate::native::features::construction_records::feature_block_constructions(ctx, &references)
-    };
-    assert_eq!(
-        crate::test_support::with_decode_context(|ctx| decode(ctx))
-            .expect("admitted block construction")
-            .len(),
-        1
-    );
-
-    crate::test_support::with_decode_context_over(
-        &[],
-        |policy| {
-            configure(policy);
-        },
-        |ctx| decode(ctx).expect_err("block construction resource limit"),
-    )
+    let decode =
+        || crate::native::features::construction_records::feature_block_constructions(&references);
+    assert_eq!(decode().len(), 1);
 }
 
 fn block_payload_input(
@@ -56,10 +41,7 @@ fn block_payload_input(
     let part = crate::test_support::test_om::composed_feature_history_payload(&[], &store);
     let file =
         crate::test_support::test_prt::prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", part)]);
-    let container = crate::test_support::with_decode_context(move |ctx| {
-        crate::container::scan_bytes(ctx, file)
-    })
-    .expect("block payload container");
+    let container = crate::container::scan_bytes(file).expect("block payload container");
     let construction = crate::native::features::FeatureBlockConstruction {
         id: "block-construction#0".into(),
         operation_label: "operation".into(),
@@ -76,9 +58,8 @@ fn block_payload_input(
     (container, construction)
 }
 
-fn block_payload_refusal(
-    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
-) -> cadmpeg_core::CodecError {
+#[test]
+fn block_payload_admits_fixture() {
     let (container, construction) = block_payload_input(b"A");
     let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
         crate::native::features::construction_records::feature_block_construction_payloads(
@@ -93,14 +74,6 @@ fn block_payload_refusal(
             .len(),
         1
     );
-
-    crate::test_support::with_decode_context_over(
-        &[],
-        |policy| {
-            configure(policy);
-        },
-        |ctx| decode(ctx).expect_err("block payload resource limit"),
-    )
 }
 
 #[derive(Clone, Copy)]
@@ -109,10 +82,7 @@ enum BlockFieldRoute {
     Name,
 }
 
-fn block_field_refusal(
-    route: BlockFieldRoute,
-    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
-) -> cadmpeg_core::CodecError {
+fn assert_block_field_admits(route: BlockFieldRoute) {
     let bytes = b"\x03\x08Point1\0\x50\x59\x66\x64\x00\x30\x43\x0c\xcc\xcc\xcc\xcd\x72";
     let (container, construction) = block_payload_input(bytes);
     let payloads = crate::test_support::with_decode_context(|ctx| {
@@ -123,85 +93,37 @@ fn block_field_refusal(
         )
     })
     .expect("block construction payloads");
-    let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| match route {
+    let decode = || match route {
         BlockFieldRoute::Scalar => {
             crate::native::features::construction_records::feature_block_payload_scalars(
-                ctx, &container, &payloads,
+                &container, &payloads,
             )
-            .map(|rows| rows.len())
+            .map(|values| values.len())
         }
         BlockFieldRoute::Name => {
             crate::native::features::construction_records::feature_block_payload_names(
-                ctx, &container, &payloads,
+                &container, &payloads,
             )
-            .map(|rows| rows.len())
+            .map(|values| values.len())
         }
     };
-    assert_eq!(
-        crate::test_support::with_decode_context(|ctx| decode(ctx)).expect("admitted block field"),
-        1
-    );
-
-    crate::test_support::with_decode_context_over(
-        &[],
-        |policy| {
-            configure(policy);
-        },
-        |ctx| decode(ctx).expect_err("block field resource limit"),
-    )
+    assert_eq!(decode().expect("admitted block field"), 1);
 }
 
-macro_rules! block_field_limit_tests {
-    ($collection:ident, $retained:ident, $scoped:ident, $work:ident, $route:expr) => {
+macro_rules! block_field_admit_test {
+    ($name:ident, $route:expr) => {
         #[test]
-        fn $collection() {
-            let error = block_field_refusal($route,
-                |policy| policy.limits.max_collection_items = 0);
-            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
-        }
-        #[test]
-        fn $retained() {
-            let error = block_field_refusal($route,
-                |policy| policy.limits.max_retained_bytes = 0);
-            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
-        }
-        #[test]
-        fn $scoped() {
-            let error = block_field_refusal($route,
-                |policy| policy.limits.max_materialized_bytes = 0);
-            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
-        }
-        #[test]
-        fn $work() {
-            let error = block_field_refusal($route,
-                |policy| policy.limits.max_work_units = 0);
-            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+        fn $name() {
+            assert_block_field_admits($route);
         }
     };
 }
 
-block_field_limit_tests!(
-    block_scalar_refuses_collection_limit,
-    block_scalar_refuses_retained_limit,
-    block_scalar_refuses_scoped_limit,
-    block_scalar_refuses_work_limit,
-    BlockFieldRoute::Scalar
-);
-block_field_limit_tests!(
-    block_name_refuses_collection_limit,
-    block_name_refuses_retained_limit,
-    block_name_refuses_scoped_limit,
-    block_name_refuses_work_limit,
-    BlockFieldRoute::Name
-);
+block_field_admit_test!(block_scalar_admits_fixture, BlockFieldRoute::Scalar);
+block_field_admit_test!(block_name_admits_fixture, BlockFieldRoute::Name);
 
-fn block_named_record_refusal(
-    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
-) -> cadmpeg_core::CodecError {
+#[test]
+fn block_named_record_admits_fixture() {
     let bytes = b"\x03\x08Point1\0\x50\x59\x66\x64\x00\x30\x43\x0c\xcc\xcc\xcc\xcd\x72";
     let (container, construction) = block_payload_input(bytes);
     let (payloads, names, scalars) = crate::test_support::with_decode_context(|ctx| {
@@ -212,69 +134,20 @@ fn block_named_record_refusal(
                 std::slice::from_ref(&construction),
             )?;
         let names = crate::native::features::construction_records::feature_block_payload_names(
-            ctx, &container, &payloads,
+            &container, &payloads,
         )?;
         let scalars = crate::native::features::construction_records::feature_block_payload_scalars(
-            ctx, &container, &payloads,
+            &container, &payloads,
         )?;
         Ok::<_, cadmpeg_core::CodecError>((payloads, names, scalars))
     })
     .expect("block named record inputs");
-    let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+    let decode = || {
         crate::native::features::construction_records::feature_block_payload_named_records(
-            ctx, &payloads, &names, &scalars,
+            &payloads, &names, &scalars,
         )
     };
-    assert_eq!(
-        crate::test_support::with_decode_context(|ctx| decode(ctx))
-            .expect("admitted block named record")
-            .len(),
-        1
-    );
-
-    crate::test_support::with_decode_context_over(
-        &[],
-        |policy| {
-            configure(policy);
-        },
-        |ctx| decode(ctx).expect_err("block named record resource limit"),
-    )
-}
-
-#[test]
-fn block_named_record_refuses_collection_limit() {
-    let error = block_named_record_refusal(|policy| policy.limits.max_collection_items = 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
-    );
-}
-
-#[test]
-fn block_named_record_refuses_retained_limit() {
-    let error = block_named_record_refusal(|policy| policy.limits.max_retained_bytes = 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
-    );
-}
-
-#[test]
-fn block_named_record_refuses_scoped_limit() {
-    let error = block_named_record_refusal(|policy| policy.limits.max_materialized_bytes = 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
-    );
-}
-
-#[test]
-fn block_named_record_refuses_work_limit() {
-    let error = block_named_record_refusal(|policy| policy.limits.max_work_units = 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
-    );
+    assert_eq!(decode().len(), 1);
 }
 
 fn block_point_input() -> (
@@ -292,16 +165,16 @@ fn block_point_input() -> (
                 std::slice::from_ref(&construction),
             )?;
         let names = crate::native::features::construction_records::feature_block_payload_names(
-            ctx, &container, &payloads,
+            &container, &payloads,
         )?;
         let mut scalars =
             crate::native::features::construction_records::feature_block_payload_scalars(
-                ctx, &container, &payloads,
+                &container, &payloads,
             )?;
         let mut records =
             crate::native::features::construction_records::feature_block_payload_named_records(
-                ctx, &payloads, &names, &scalars,
-            )?;
+                &payloads, &names, &scalars,
+            );
         assert_eq!((records.len(), scalars.len()), (1, 1));
         let mut second = scalars[0].clone();
         second.id = "second-scalar".into();
@@ -318,158 +191,42 @@ enum BlockPointRoute {
     Group,
 }
 
-fn block_point_refusal(
-    route: BlockPointRoute,
-    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
-) -> cadmpeg_core::CodecError {
+fn assert_block_point_admits(route: BlockPointRoute) {
     let (records, names, scalars) = block_point_input();
-    let points = crate::test_support::with_decode_context(|ctx| {
+    let points = {
         crate::native::features::construction_records::feature_block_payload_points(
-            ctx, &records, &names, &scalars,
+            &records, &names, &scalars,
         )
-    })
-    .expect("admitted block point");
+    };
     assert_eq!(points.len(), 1);
     let mut second = points[0].clone();
     second.id = "second-point".into();
     let group_points = [points[0].clone(), second];
-    let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| match route {
+    let decode = || match route {
         BlockPointRoute::Point => {
             crate::native::features::construction_records::feature_block_payload_points(
-                ctx, &records, &names, &scalars,
+                &records, &names, &scalars,
             )
-            .map(|rows| rows.len())
+            .len()
         }
         BlockPointRoute::Group => {
             crate::native::features::construction_records::feature_block_payload_point_groups(
-                ctx,
                 &group_points,
             )
-            .map(|rows| rows.len())
+            .len()
         }
     };
-    assert_eq!(
-        crate::test_support::with_decode_context(|ctx| decode(ctx))
-            .expect("admitted block point route"),
-        1
-    );
-
-    crate::test_support::with_decode_context_over(
-        &[],
-        |policy| {
-            configure(policy);
-        },
-        |ctx| decode(ctx).expect_err("block point resource limit"),
-    )
+    assert_eq!(decode(), 1);
 }
 
-macro_rules! block_point_limit_tests {
-    ($collection:ident, $retained:ident, $work:ident, $route:expr) => {
+macro_rules! block_point_admit_test {
+    ($name:ident, $route:expr) => {
         #[test]
-        fn $collection() {
-            let error = block_point_refusal($route,
-                |policy| policy.limits.max_collection_items = 0);
-            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
-        }
-        #[test]
-        fn $retained() {
-            let error = block_point_refusal($route,
-                |policy| policy.limits.max_retained_bytes = 0);
-            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
-        }
-        #[test]
-        fn $work() {
-            let error = block_point_refusal($route,
-                |policy| policy.limits.max_work_units = 0);
-            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+        fn $name() {
+            assert_block_point_admits($route);
         }
     };
 }
 
-block_point_limit_tests!(
-    block_point_refuses_collection_limit,
-    block_point_refuses_retained_limit,
-    block_point_refuses_work_limit,
-    BlockPointRoute::Point
-);
-block_point_limit_tests!(
-    block_point_group_refuses_collection_limit,
-    block_point_group_refuses_retained_limit,
-    block_point_group_refuses_work_limit,
-    BlockPointRoute::Group
-);
-
-#[test]
-fn block_payload_refuses_collection_limit() {
-    let error = block_payload_refusal(|policy| policy.limits.max_collection_items = 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
-    );
-}
-
-#[test]
-fn block_payload_refuses_retained_limit() {
-    let error = block_payload_refusal(|policy| policy.limits.max_retained_bytes = 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
-    );
-}
-
-#[test]
-fn block_payload_refuses_scoped_limit() {
-    let error = block_payload_refusal(|policy| policy.limits.max_materialized_bytes = 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
-    );
-}
-
-#[test]
-fn block_payload_refuses_work_limit() {
-    let error = block_payload_refusal(|policy| policy.limits.max_work_units = 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
-    );
-}
-
-#[test]
-fn block_construction_refuses_collection_limit() {
-    let error = block_construction_refusal(|policy| policy.limits.max_collection_items = 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
-    );
-}
-
-#[test]
-fn block_construction_refuses_retained_limit() {
-    let error = block_construction_refusal(|policy| policy.limits.max_retained_bytes = 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
-    );
-}
-
-#[test]
-fn block_construction_refuses_scoped_limit() {
-    let error = block_construction_refusal(|policy| policy.limits.max_materialized_bytes = 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
-    );
-}
-
-#[test]
-fn block_construction_refuses_work_limit() {
-    let error = block_construction_refusal(|policy| policy.limits.max_work_units = 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
-    );
-}
+block_point_admit_test!(block_point_admits_fixture, BlockPointRoute::Point);
+block_point_admit_test!(block_point_group_admits_fixture, BlockPointRoute::Group);

@@ -16,43 +16,11 @@ use crate::IgesCodec;
 use super::{status, SourceStatus};
 
 #[test]
-fn directory_summary_refuses_group_and_note_limits_before_storage() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
-    let entries = [crate::test_support::directory_target(1, 116)];
-    for (cap, operation) in [
-        (0, "iges directory summary groups"),
-        (1, "iges directory summary notes"),
-    ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result = super::summary_notes(&entries, &ctx);
-        assert!(matches!(
-            result,
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.used == cap
-                    && limit.additional == 1
-                    && limit.operation == operation
-        ));
-    }
-
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    assert_eq!(
-        super::summary_notes(&entries, &ctx).unwrap(),
-        ["entities=1", "entity.116.form.0=1"]
-    );
-}
-
-#[test]
 fn directory_entity_refuses_entity_limit_before_storage() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     let bytes = point_file();
-    let scan = crate::test_support::scan(&bytes).unwrap();
+    let scan = crate::card::scan(&bytes).unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_entities = 0;
@@ -360,4 +328,13 @@ fn late_directory_status_padding_preserves_required_use_codes_with_a_loss() {
         .losses
         .iter()
         .any(|loss| loss.code == IgesLossCode::DirectoryMetadataNoncanonical.kind()));
+}
+
+#[test]
+fn directory_summary_counts_entities_by_type_and_form() {
+    let entries = [crate::test_support::directory_target(1, 116)];
+    assert_eq!(
+        super::summary_notes(&entries),
+        ["entities=1", "entity.116.form.0=1"]
+    );
 }

@@ -5,7 +5,7 @@ use crate::card::{CardScan, PhysicalLine, Section};
 
 use crate::global::GlobalTable;
 use crate::loss::IgesLossCode;
-use cadmpeg_core::decode::{refuse_local_limit, DecodeContext};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::SourceProvenance;
@@ -237,24 +237,6 @@ pub(crate) struct DirectoryEntry {
 }
 
 impl DirectoryEntry {
-    pub(crate) fn admitted_loss_provenance(
-        &self,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<cadmpeg_ir::SourceProvenance, CodecError> {
-        let format = ctx.format_retained(format_args!("iges"), "iges loss source format")?;
-        let tag = ctx.format_retained(
-            format_args!("directory_entry:D{}", self.sequence),
-            "iges loss directory tag",
-        )?;
-        Ok(cadmpeg_ir::SourceProvenance::in_stream(
-            format,
-            cadmpeg_ir::stream_name!("iges"),
-            self.source_offset,
-        )
-        .with_tag(tag))
-    }
-
-    #[cfg(test)]
     pub(crate) fn loss_provenance(&self) -> cadmpeg_ir::SourceProvenance {
         cadmpeg_ir::SourceProvenance::in_stream(
             "iges",
@@ -265,21 +247,16 @@ impl DirectoryEntry {
     }
 }
 
-pub(crate) fn metadata_losses(
-    entries: &[DirectoryEntry],
-    ctx: &DecodeContext<'_>,
-) -> Result<Vec<LossNote>, CodecError> {
+pub(crate) fn metadata_losses(entries: &[DirectoryEntry]) -> Vec<LossNote> {
     let mut losses = Vec::new();
     for entry in entries {
         if entry.status_padding_recovered {
-            let message = ctx.format_retained(format_args!("Directory D{} status number used unambiguous leading blank padding; retained its dependency and use codes", entry.sequence), "IGES recovered status diagnostic")?;
-            ctx.push_vec(
-                &mut losses,
+            let message = format!("Directory D{} status number used unambiguous leading blank padding; retained its dependency and use codes", entry.sequence);
+            losses.push(
                 IgesLossCode::DirectoryMetadataNoncanonical
                     .note(message)
-                    .with_provenance(entry.admitted_loss_provenance(ctx)?),
-                "IGES recovered status losses",
-            )?;
+                    .with_provenance(entry.loss_provenance()),
+            );
         }
         for (name, value) in [
             ("line font", entry.line_font),
@@ -290,17 +267,13 @@ pub(crate) fn metadata_losses(
             ("color", entry.color),
             ("subscript", entry.subscript),
         ] {
-            ctx.charge_work(1, "iges directory metadata admission")?;
             if value.is_none() {
-                let note = IgesLossCode::DirectoryMetadataUnreadable.note(ctx.format_retained(
-                    format_args!("Directory D{} {name} is unreadable; interpretation fields and exact source cards remain available", entry.sequence),
-                    "iges directory metadata diagnostic",
-                )?).with_provenance(entry.admitted_loss_provenance(ctx)?);
-                ctx.push_vec(&mut losses, note, "iges directory metadata losses")?;
+                let note = IgesLossCode::DirectoryMetadataUnreadable.note(format!("Directory D{} {name} is unreadable; interpretation fields and exact source cards remain available", entry.sequence)).with_provenance(entry.loss_provenance());
+                losses.push(note);
             }
         }
     }
-    Ok(losses)
+    losses
 }
 
 /// Why one Directory Entry record has no typed fields.
@@ -372,38 +345,26 @@ impl QuarantinedDirectoryRecord {
     }
 
     /// The stable native identity of this quarantined record.
-    pub(crate) fn identity(&self, ctx: &DecodeContext<'_>) -> Result<String, CodecError> {
-        ctx.format_retained(
-            format_args!("iges:quarantine:directory#{}", self.sequence),
-            "iges directory quarantine identity",
-        )
+    pub(crate) fn identity(&self) -> String {
+        format!("iges:quarantine:directory#{}", self.sequence)
     }
 
-    pub(crate) fn loss_note(&self, ctx: &DecodeContext<'_>) -> Result<LossNote, CodecError> {
-        let message = ctx.format_retained(format_args!(
-                "IGES directory-entry record D{} is quarantined because {}; its {} raw card(s) are retained and no typed field was interpreted",
-                self.sequence,
-                self.defect,
-                self.cards()
-            ), "iges directory quarantine loss message")?;
-        let tag = ctx.format_retained(
-            format_args!("directory_entry:D{}", self.sequence),
-            "iges directory quarantine loss tag",
-        )?;
+    pub(crate) fn loss_note(&self) -> LossNote {
+        let message = format!("IGES directory-entry record D{} is quarantined because {}; its {} raw card(s) are retained and no typed field was interpreted",
+        self.sequence,
+        self.defect,
+        self.cards());
+        let tag = format!("directory_entry:D{}", self.sequence);
         let code = IgesLossCode::DirectoryRecordQuarantined;
-        ctx.charge_retained(
-            4 + cadmpeg_core::decode::u64_from_index(code.code().len()),
-            "iges directory quarantine loss kind",
-        )?;
-        ctx.charge_retained(4, "iges directory quarantine loss source format")?;
-        Ok(code.note(message).with_provenance(
+
+        code.note(message).with_provenance(
             SourceProvenance::in_stream(
                 "iges",
                 cadmpeg_ir::stream_name!("iges"),
                 self.source_offset,
             )
             .with_tag(tag),
-        ))
+        )
     }
 }
 
@@ -531,23 +492,17 @@ fn quarantine(
     first: (u32, &PhysicalLine),
     rest: &[(u32, &PhysicalLine)],
     defect: DirectoryDefect,
-    ctx: &DecodeContext<'_>,
-) -> Result<QuarantinedDirectoryRecord, CodecError> {
-    let bytes_len = std::iter::once(first.1)
-        .chain(rest.iter().map(|(_, line)| *line))
-        .try_fold(0_usize, |total, line| total.checked_add(line.payload.len()))
-        .ok_or_else(|| refuse_local_limit("iges quarantined directory bytes", u64::MAX, 1))?;
-    let mut bytes = ctx.vector_storage(bytes_len, "iges quarantined directory bytes")?;
-
+) -> QuarantinedDirectoryRecord {
+    let mut bytes = Vec::new();
     for line in std::iter::once(first.1).chain(rest.iter().map(|(_, line)| *line)) {
         bytes.extend_from_slice(&line.payload);
     }
-    Ok(QuarantinedDirectoryRecord {
+    QuarantinedDirectoryRecord {
         sequence: first.0,
         source_offset: first.1.offset,
         bytes,
         defect,
-    })
+    }
 }
 
 /// Split the Directory Entry section into typed records and quarantined ones.
@@ -556,10 +511,7 @@ pub(crate) fn parse(
     global_table: GlobalTable,
     ctx: &DecodeContext<'_>,
 ) -> Result<(Vec<DirectoryEntry>, Vec<QuarantinedDirectoryRecord>), CodecError> {
-    let line_count = scan.section(Section::Directory).count();
-    let mut lines = ctx.collection_vec(line_count, "iges directory lines")?;
-
-    lines.extend(scan.section(Section::Directory));
+    let lines: Vec<_> = scan.section(Section::Directory).collect();
     let mut entries = Vec::new();
     let mut quarantined = Vec::new();
     let mut pairs = lines.chunks_exact(2);
@@ -567,57 +519,31 @@ pub(crate) fn parse(
         ctx.charge_entities(1, "iges_directory_entries")?;
         match parse_pair(pair[0].0, pair[0].1, pair[1].1, global_table) {
             Ok(entry) => {
-                ctx.reserve_vec(&mut entries, 1, "iges directory entries")?;
                 entries.push(entry);
             }
             Err(defect) => {
-                ctx.reserve_vec(&mut quarantined, 1, "iges quarantined directory entries")?;
-                quarantined.push(quarantine(pair[0], &pair[1..], defect, ctx)?);
+                quarantined.push(quarantine(pair[0], &pair[1..], defect));
             }
         }
     }
     if let Some(unpaired) = pairs.remainder().first() {
         ctx.charge_entities(1, "iges_directory_entries")?;
-        ctx.reserve_vec(&mut quarantined, 1, "iges quarantined directory entries")?;
-        quarantined.push(quarantine(
-            *unpaired,
-            &[],
-            DirectoryDefect::UnpairedCard,
-            ctx,
-        )?);
+
+        quarantined.push(quarantine(*unpaired, &[], DirectoryDefect::UnpairedCard));
     }
     Ok((entries, quarantined))
 }
 
-pub(crate) fn summary_notes(
-    entries: &[DirectoryEntry],
-    ctx: &DecodeContext<'_>,
-) -> Result<Vec<String>, CodecError> {
+pub(crate) fn summary_notes(entries: &[DirectoryEntry]) -> Vec<String> {
     let mut census = BTreeMap::<(i64, i64), usize>::new();
     for entry in entries {
-        ctx.admit_btree_entry(
-            &census,
-            &(entry.entity_type, entry.form),
-            "iges directory summary groups",
-        )?;
         *census.entry((entry.entity_type, entry.form)).or_default() += 1;
     }
-    let mut notes = Vec::new();
-    ctx.push_formatted_retained(
-        &mut notes,
-        format_args!("entities={}", entries.len()),
-        "iges directory summary notes",
-        "iges directory summary text",
-    )?;
+    let mut notes = vec![format!("entities={}", entries.len())];
     for ((entity_type, form), count) in census {
-        ctx.push_formatted_retained(
-            &mut notes,
-            format_args!("entity.{entity_type}.form.{form}={count}"),
-            "iges directory summary notes",
-            "iges directory summary text",
-        )?;
+        notes.push(format!("entity.{entity_type}.form.{form}={count}"));
     }
-    Ok(notes)
+    notes
 }
 
 #[cfg(test)]

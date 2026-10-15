@@ -120,7 +120,7 @@ fn rational_spine_closest_search_resolves_close_global_branches() {
             Some(0.099),
             &crate::decode::geometry_work::GeometryWorkBudget::from_context(
                 geometry_ctx,
-                cadmpeg_core::decode::u64_from_index(8_000_000),
+                8_000_000,
             ),
         )
         .expect("evaluator allocation succeeds")
@@ -131,7 +131,7 @@ fn rational_spine_closest_search_resolves_close_global_branches() {
             Some(0.101),
             &crate::decode::geometry_work::GeometryWorkBudget::from_context(
                 geometry_ctx,
-                cadmpeg_core::decode::u64_from_index(8_000_000),
+                8_000_000,
             ),
         )
         .expect("evaluator allocation succeeds")
@@ -142,7 +142,7 @@ fn rational_spine_closest_search_resolves_close_global_branches() {
             Some(0.69),
             &crate::decode::geometry_work::GeometryWorkBudget::from_context(
                 geometry_ctx,
-                cadmpeg_core::decode::u64_from_index(8_000_000),
+                8_000_000,
             ),
         )
         .expect("evaluator allocation succeeds")
@@ -202,7 +202,7 @@ fn periodic_nurbs_inversion_lifts_the_continuation_phase() {
                 Some(4.1),
                 &crate::decode::geometry_work::GeometryWorkBudget::from_context(
                     geometry_ctx,
-                    cadmpeg_core::decode::u64_from_index(8_000_000)
+                    8_000_000
                 )
             )
             .expect("evaluator allocation succeeds")
@@ -214,11 +214,7 @@ fn periodic_nurbs_inversion_lifts_the_continuation_phase() {
 
 #[test]
 fn polynomial_root_isolation_retains_repeated_real_roots() {
-    let roots = crate::test_support::with_decode_context(|ctx| {
-        real_polynomial_roots(ctx, &[-1.0, 3.5, -3.0, -0.5, 1.0])
-    })
-    .expect("roots are admitted")
-    .expect("finite quartic roots");
+    let roots = real_polynomial_roots(&[-1.0, 3.5, -3.0, -0.5, 1.0]).expect("finite quartic roots");
 
     assert_eq!(roots.len(), 3);
     for (actual, expected) in roots.iter().zip([-2.0, 0.5, 1.0]) {
@@ -284,16 +280,7 @@ fn pcurve_bezier_extraction_preserves_rational_knot_spans() {
                     parameter,
                 )
                 .expect("source NURBS evaluation");
-                let actual = homogeneous_residual_distance(
-                    &span.controls,
-                    parameter,
-                    span.domain,
-                    &crate::decode::geometry_work::GeometryWorkBudget::from_context(
-                        geometry_ctx,
-                        cadmpeg_core::decode::u64_from_index(100),
-                    ),
-                )
-                .expect("test solver allocation succeeds");
+                let actual = homogeneous_residual_distance(&span.controls, parameter, span.domain);
                 let expected = expected.as_raw();
                 assert!((actual - expected.u.hypot(expected.v)).abs() < 1.0e-12);
             }

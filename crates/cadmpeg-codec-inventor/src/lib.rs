@@ -75,7 +75,7 @@ impl CodecBackend for InventorCodec {
         let CompoundPrefixProbe::DirectoryEvidence(paths) = probe else {
             return Ok(Confidence::No);
         };
-        if container::has_inventor_evidence(ctx, &paths)? {
+        if container::has_inventor_evidence(&paths) {
             Ok(Confidence::High)
         } else {
             Ok(Confidence::No)

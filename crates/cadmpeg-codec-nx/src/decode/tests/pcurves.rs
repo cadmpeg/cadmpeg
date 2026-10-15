@@ -105,7 +105,7 @@ fn rmfastload_preselection_keeps_only_streams_with_selected_body_images() {
         let selected = rmfastload_selected_bodies(ctx, &body_node_ids, &[7, 8]).unwrap();
         assert_eq!(selected, BTreeSet::from([first]));
         assert_eq!(
-            rmfastload_stream_indices(ctx, &selected).unwrap(),
+            rmfastload_stream_indices(&selected),
             Some(BTreeSet::from([3]))
         );
     });
@@ -367,10 +367,8 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
         let procedural_start = ir.model.procedural_curves.len();
         let mut annotations = AnnotationBuilder::new();
         let transfer_budget = WorkBudget::new(usize::MAX);
-        let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::from_context(
-            ctx,
-            cadmpeg_core::decode::u64_from_index(usize::MAX),
-        );
+        let geometry_budget =
+            crate::decode::geometry_work::GeometryWorkBudget::from_context(ctx, usize::MAX);
         crate::decode::pcurves::complete_exact_boundary_intersection_pcurves_with_budget(
             ctx,
             &mut ir,
@@ -980,10 +978,8 @@ fn adaptive_offset_certification_fails_closed_when_the_work_slice_is_empty() {
         let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(support)) = &support else {
             unreachable!();
         };
-        let budget = crate::decode::geometry_work::GeometryWorkBudget::from_context(
-            geometry_ctx,
-            cadmpeg_core::decode::u64_from_index(0),
-        );
+        let budget =
+            crate::decode::geometry_work::GeometryWorkBudget::from_context(geometry_ctx, 0);
 
         let fit = crate::decode::offset::certified_curved_offset_cache_fit_with_budget(
             support, support, 0.01, 0.02, true, &budget,
@@ -998,17 +994,14 @@ fn adaptive_offset_certification_fails_closed_when_the_work_slice_is_empty() {
 #[test]
 fn adaptive_bezier_root_isolation_fails_closed_when_the_work_slice_is_empty() {
     crate::test_support::with_decode_context(|geometry_ctx| {
-        let budget = crate::decode::geometry_work::GeometryWorkBudget::from_context(
-            geometry_ctx,
-            cadmpeg_core::decode::u64_from_index(0),
-        );
+        let budget =
+            crate::decode::geometry_work::GeometryWorkBudget::from_context(geometry_ctx, 0);
         let span = crate::decode::blend::ScalarBezierSpan {
             domain: [0.0, 1.0],
             controls: vec![-1.0, 1.0],
         };
 
-        let roots = crate::decode::blend::scalar_bezier_roots_with_budget(span, &budget)
-            .expect("an empty geometry work slice skips root isolation");
+        let roots = crate::decode::blend::scalar_bezier_roots_with_budget(span, &budget);
         assert!(roots.is_none());
         assert!(budget.exhausted());
         assert!(geometry_ctx.resource_refusal().is_none());
@@ -1076,10 +1069,8 @@ fn pcurve_edge_admission_fails_closed_when_the_geometry_slice_is_empty() {
             tolerance: None,
         });
         let index = cadmpeg_ir::index::ModelIndex::build(&ir, cadmpeg_ir::index::StandardIndex);
-        let budget = crate::decode::geometry_work::GeometryWorkBudget::from_context(
-            geometry_ctx,
-            cadmpeg_core::decode::u64_from_index(0),
-        );
+        let budget =
+            crate::decode::geometry_work::GeometryWorkBudget::from_context(geometry_ctx, 0);
         let pcurve = PcurveGeometry::Line(
             cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
                 Point2::new(0.0, 0.0),
@@ -1432,20 +1423,13 @@ fn offset_cache_subdivision_uses_the_remaining_divisible_axis() {
     let u = u0 + (u1 - u0) * 0.5;
     let mut rectangles = Vec::new();
 
-    crate::test_support::with_decode_context(|ctx| {
-        let geometry_budget =
-            crate::decode::geometry_work::GeometryWorkBudget::from_context(ctx, 100);
-
-        assert!(subdivide_offset_rectangle(
-            &mut rectangles,
-            [u0, u1, 0.0, 1.0],
-            [u, 0.5],
-            true,
-            &geometry_budget,
-        )
-        .expect("subdivision allocation"));
-        assert_eq!(rectangles, vec![[u0, u1, 0.0, 0.5], [u0, u1, 0.5, 1.0]]);
-    });
+    assert!(subdivide_offset_rectangle(
+        &mut rectangles,
+        [u0, u1, 0.0, 1.0],
+        [u, 0.5],
+        true
+    ));
+    assert_eq!(rectangles, vec![[u0, u1, 0.0, 0.5], [u0, u1, 0.5, 1.0]]);
 }
 
 #[test]

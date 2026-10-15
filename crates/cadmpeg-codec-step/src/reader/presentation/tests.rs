@@ -6,7 +6,6 @@ use std::collections::BTreeSet;
 
 mod cache_storage;
 mod collection_limits;
-mod string_limits;
 mod surface_styles;
 
 /// A style whose override walk does not terminate states no depth. Its
@@ -41,46 +40,6 @@ ENDSEC;END-ISO-10303-21;",
             style_application_order(*id, &exchange, graph_limit, ctx).expect("local style depth")
         });
         assert_eq!(styles, [5, 6]);
-    });
-}
-
-#[test]
-fn surface_color_search_ignores_curve_style_colors() {
-    crate::test_support::with_service_context(b"", |_, ctx| {
-        let (exchange, _) = crate::test_support::with_service_context(
-        b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;\
-#1=COLOUR_RGB('curve',0.,0.,1.);\
-#2=CURVE_STYLE('',#1);\
-#3=COLOUR_RGB('surface',1.,0.,0.);\
-#4=SURFACE_STYLE_FILL_AREA(#3);\
-#5=PRESENTATION_STYLE_ASSIGNMENT((#2,#4));\
-ENDSEC;END-ISO-10303-21;",
-        crate::parse::parse_inner)
-    .expect("parse style graph");
-        let color = find_color(
-            5,
-            &exchange,
-            StyleDomain::Surface,
-            super::ColorSearchState {
-                storage: &std::cell::RefCell::new(
-                    ctx.reserve_scoped(0, "color search fixture")
-                        .expect("scope"),
-                ),
-                active: &mut BTreeSet::new(),
-                cache: &mut super::ColorCache::default(),
-                losses: &mut Vec::new(),
-                invalid_surface_sides: &mut BTreeSet::new(),
-            },
-            0,
-            ctx,
-        )
-        .expect("colour search fits local resources")
-        .expect("surface color");
-        let ColorResolution::Candidate(color) = color else {
-            panic!("expected one surface color");
-        };
-        assert_eq!(color.color.r(), 1.0);
-        assert_eq!(color.color.b(), 0.0);
     });
 }
 
@@ -1948,4 +1907,41 @@ pub(crate) fn face_override_wins_over_body_color_and_body_fills_the_rest() {
     let mut counts: Vec<usize> = per_style.values().copied().collect();
     counts.sort_unstable();
     assert_eq!(counts, vec![1, face_count - 1]);
+}
+
+#[test]
+fn surface_color_search_ignores_curve_style_colors() {
+    let (exchange, _) = crate::test_support::with_service_context(
+        b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;\
+#1=COLOUR_RGB('curve',0.,0.,1.);\
+#2=CURVE_STYLE('',#1);\
+#3=COLOUR_RGB('surface',1.,0.,0.);\
+#4=SURFACE_STYLE_FILL_AREA(#3);\
+#5=PRESENTATION_STYLE_ASSIGNMENT((#2,#4));\
+ENDSEC;END-ISO-10303-21;",
+        crate::parse::parse_inner,
+    )
+    .expect("parse style graph");
+    crate::test_support::with_service_context(b"", |_, ctx| {
+        let color = find_color(
+            5,
+            &exchange,
+            StyleDomain::Surface,
+            super::ColorSearchState {
+                active: &mut BTreeSet::new(),
+                cache: &mut super::ColorCache::default(),
+                losses: &mut Vec::new(),
+                invalid_surface_sides: &mut BTreeSet::new(),
+            },
+            0,
+            ctx,
+        )
+        .expect("colour search resolves")
+        .expect("surface color");
+        let ColorResolution::Candidate(color) = color else {
+            panic!("expected one surface color");
+        };
+        assert_eq!(color.color.r(), 1.0);
+        assert_eq!(color.color.b(), 0.0);
+    });
 }

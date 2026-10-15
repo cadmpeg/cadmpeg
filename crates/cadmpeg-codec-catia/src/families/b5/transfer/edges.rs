@@ -23,18 +23,17 @@ use crate::math::distance;
 const EPS_SUPPORT_ENDPOINT: f64 = 1.0e-6;
 
 pub(super) fn merge_curve_plan(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     plans: &mut HashMap<u32, CurvePlan>,
     conflicts: &mut HashSet<u32>,
     edge: u32,
     candidate: CurvePlan,
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     if conflicts.contains(&edge) {
-        return Ok(());
+        return;
     }
     let Some(existing) = plans.get_mut(&edge) else {
-        ctx.insert_hash_map(plans, edge, candidate, "catia_b5_edge_curve_plans")?;
-        return Ok(());
+        plans.insert(edge, candidate);
+        return;
     };
     let range_conflict = existing
         .parameter_range
@@ -53,9 +52,9 @@ pub(super) fn merge_curve_plan(
         || edge_tolerance_conflict
         || cache_tolerance_conflict
     {
-        ctx.insert_hash_set(conflicts, edge, "catia_b5_conflicting_edge_curves")?;
+        conflicts.insert(edge);
         plans.remove(&edge);
-        return Ok(());
+        return;
     }
     if existing.parameter_range.is_none() {
         existing.parameter_range = candidate.parameter_range;
@@ -66,7 +65,6 @@ pub(super) fn merge_curve_plan(
     if existing.cache_fit_tolerance.is_none() {
         existing.cache_fit_tolerance = candidate.cache_fit_tolerance;
     }
-    Ok(())
 }
 
 fn curve_plan_parameter_range(plan: &CurvePlan) -> Option<[f64; 2]> {
@@ -360,24 +358,16 @@ pub(super) fn emit_edges(
     let mut edge_id_map = HashMap::new();
     let edge_ids = std::mem::take(&mut plan.edge_ids);
     for edge_id in edge_ids {
-        let index = usize::try_from(edge_id).map_err(|_| {
-            admission
-                .context()
-                .refuse_codec_limit("catia_b5_edge_id", u64::MAX, u64::MAX)
-        })?;
+        let index = cadmpeg_core::decode::index_from_u32(edge_id);
         let id = crate::resource::compose_index_id(
-            admission.context(),
             &cadmpeg_ir::identity_namespace!("catia", "b5", "edge"),
             index,
             EdgeId::mint,
-            "catia_b5_edge_id",
         )?;
         let curve_id = crate::resource::compose_index_id(
-            admission.context(),
             &cadmpeg_ir::identity_namespace!("catia", "b5", "curve"),
             index,
             CurveId::mint,
-            "catia_b5_edge_curve_id",
         )?;
         let endpoints = graph.vertices.edges()[&edge_id]
             .map(|vertex| vertex.combined_index(graph.vertices.raw_points().len()));
@@ -423,22 +413,16 @@ pub(super) fn emit_edges(
             geometry,
             CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
         ) {
-            crate::resource::derived_annotation(
-                admission.context(),
-                annotations,
-                curve_id.as_str(),
-                "geometry",
-                "catia_b5_curve_geometry_annotation",
-            )?;
+            annotations.derived(admission.context(), curve_id.as_str(), "geometry")?;
         }
         let model_curve_id =
             curve_id.try_clone_for_decode(admission.context(), "catia_b5_model_edge_curve_id")?;
-        admission.reserve_entity(&mut ir.model.curves, "catia_b5_emit_curves")?;
+        admission.charge()?;
         ir.model.curves.push(Curve {
             parameter_range: None,
             id: model_curve_id,
             geometry,
-            source_object: Some(cgm_source(admission.context(), "edge", edge_id)?),
+            source_object: Some(cgm_source("edge", edge_id)?),
         });
         let procedural = if let Some(helix) = helix {
             Some((
@@ -464,13 +448,8 @@ pub(super) fn emit_edges(
             None
         };
         if let Some((namespace, tag, definition)) = procedural {
-            let procedural_id = crate::resource::compose_index_id(
-                admission.context(),
-                &namespace,
-                index,
-                ProceduralCurveId::mint,
-                "catia_b5_edge_procedural_id",
-            )?;
+            let procedural_id =
+                crate::resource::compose_index_id(&namespace, index, ProceduralCurveId::mint)?;
             annotate(
                 admission.context(),
                 annotations,
@@ -480,21 +459,13 @@ pub(super) fn emit_edges(
                 Exactness::Derived,
             )?;
             for field in ["curve", "definition"] {
-                crate::resource::derived_annotation(
-                    admission.context(),
-                    annotations,
-                    procedural_id.as_str(),
-                    field,
-                    "catia_b5_procedural_curve_annotation",
-                )?;
+                annotations.derived(admission.context(), procedural_id.as_str(), field)?;
             }
             if cache_fit_tolerance.is_some() {
-                crate::resource::derived_annotation(
+                annotations.derived(
                     admission.context(),
-                    annotations,
                     procedural_id.as_str(),
                     "cache_fit_tolerance",
-                    "catia_b5_procedural_curve_annotation",
                 )?;
             }
             let mut definition = definition;
@@ -521,54 +492,27 @@ pub(super) fn emit_edges(
             Exactness::ByteExact,
         )?;
         for field in ["start", "end"] {
-            crate::resource::derived_annotation(
-                admission.context(),
-                annotations,
-                id.as_str(),
-                field,
-                "catia_b5_edge_annotation",
-            )?;
+            annotations.derived(admission.context(), id.as_str(), field)?;
         }
         if edge_range.is_some() {
-            crate::resource::derived_annotation(
-                admission.context(),
-                annotations,
-                id.as_str(),
-                "param_range",
-                "catia_b5_edge_annotation",
-            )?;
+            annotations.derived(admission.context(), id.as_str(), "param_range")?;
         }
         if edge_tolerance.is_some() {
-            crate::resource::derived_annotation(
-                admission.context(),
-                annotations,
-                id.as_str(),
-                "tolerance",
-                "catia_b5_edge_annotation",
-            )?;
+            annotations.derived(admission.context(), id.as_str(), "tolerance")?;
         }
         let map_id = id.try_clone_for_decode(admission.context(), "catia_b5_edge_map_id")?;
-        admission.context().insert_hash_map(
-            &mut edge_id_map,
-            edge_id,
-            map_id,
-            "catia_b5_emitted_edge_ids",
-        )?;
+        edge_id_map.insert(edge_id, map_id);
         let start = crate::resource::compose_index_id(
-            admission.context(),
             &cadmpeg_ir::identity_namespace!("catia", "b5", "vertex"),
             endpoints[0],
             VertexId::mint,
-            "catia_b5_edge_start_vertex_id",
         )?;
         let end = crate::resource::compose_index_id(
-            admission.context(),
             &cadmpeg_ir::identity_namespace!("catia", "b5", "vertex"),
             endpoints[1],
             VertexId::mint,
-            "catia_b5_edge_end_vertex_id",
         )?;
-        admission.reserve_entity(&mut ir.model.edges, "catia_b5_emit_edges")?;
+        admission.charge()?;
         ir.model.edges.push(Edge {
             id,
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id), edge_range)

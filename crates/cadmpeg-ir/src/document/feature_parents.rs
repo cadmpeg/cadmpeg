@@ -3,12 +3,8 @@
 
 use std::collections::HashMap;
 
-use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_core::CodecError;
-
 use super::Model;
 use crate::features::{FeatureDefinition, FeatureId, FeatureOperation};
-use crate::index::{identity_hash, public_result, DecodeStorage, IndexStorage, PublicStorage};
 
 /// A rejected parent relation expressed through borrowed model identities.
 #[derive(Debug, thiserror::Error)]
@@ -60,161 +56,86 @@ impl ParentError<'_> {
     }
 }
 
-/// Check supplied models using the caller context and scoped indexes.
-pub(crate) fn validate<'a>(
-    ctx: &DecodeContext<'_>,
-    models: &[&'a Model],
-) -> Result<Result<(), ParentError<'a>>, CodecError> {
-    let (result, _storage) = ctx
-        .with_scoped_storage("feature parent validation storage", || {
-            validate_graph(models, &DecodeStorage(ctx)).map_err(CodecError::from)
-        })?;
-    Ok(result)
-}
-
-/// Check reconstructed models with infallible standard index admission.
-pub(crate) fn validate_reconstructed<'a>(models: &[&'a Model]) -> Result<(), ParentError<'a>> {
-    public_result(validate_graph(models, &PublicStorage))
-}
-
-/// Scalar hashes select borrowed facts; full identity comparison resolves collisions.
-struct ParentFacts<'a, T> {
-    entries: HashMap<u64, Vec<(&'a FeatureId, T)>>,
-}
-
-impl<'a, T: Copy> ParentFacts<'a, T> {
-    fn new() -> Self {
-        Self {
-            entries: HashMap::new(),
-        }
-    }
-
-    fn hash<S: IndexStorage>(id: &FeatureId, storage: &S) -> Result<u64, S::Error> {
-        storage.work(id.as_str().len(), "feature parent identity hash")?;
-        storage.work(1, "feature parent identity hash")?;
-        Ok(identity_hash(id.as_str()))
-    }
-
-    fn find<S: IndexStorage>(
-        &self,
-        hash: u64,
-        id: &FeatureId,
-        storage: &S,
-    ) -> Result<Option<T>, S::Error> {
-        storage.work(1, "feature parent fact lookup")?;
-        for (candidate, value) in self.entries.get(&hash).into_iter().flatten() {
-            storage.work(1, "feature parent collision scan")?;
-            storage.work(
-                candidate.as_str().len().min(id.as_str().len()),
-                "feature parent identity comparison",
-            )?;
-            if candidate == &id {
-                return Ok(Some(*value));
-            }
-        }
-        Ok(None)
-    }
-
-    fn get<S: IndexStorage>(&self, id: &FeatureId, storage: &S) -> Result<Option<T>, S::Error> {
-        self.find(Self::hash(id, storage)?, id, storage)
-    }
-
-    fn insert<S: IndexStorage>(
-        &mut self,
-        id: &'a FeatureId,
-        value: T,
-        storage: &S,
-    ) -> Result<Option<T>, S::Error> {
-        let hash = Self::hash(id, storage)?;
-        if let Some(previous) = self.find(hash, id, storage)? {
-            return Ok(Some(previous));
-        }
-        storage.work(1, "feature parent fact insertion")?;
-        storage.entry(&mut self.entries, &hash, "feature parent identities")?;
-        storage.push(
-            self.entries.entry(hash).or_default(),
-            (id, value),
-            "feature parent fact slots",
-        )?;
-        Ok(None)
-    }
-}
-
-fn validate_graph<'a, S: IndexStorage>(
-    models: &[&'a Model],
-    storage: &S,
-) -> Result<Result<(), ParentError<'a>>, S::Error> {
-    let mut features = ParentFacts::new();
+/// Check the parent relations of the supplied models.
+pub(crate) fn validate<'a>(models: &[&'a Model]) -> Result<(), ParentError<'a>> {
+    let mut features = HashMap::new();
     for feature in models.iter().flat_map(|model| &model.features) {
-        storage.work(1, "feature parent validation scan")?;
-        if features.insert(&feature.id, feature, storage)?.is_some() {
-            return Ok(Err(ParentError::Repeated { owner: &feature.id }));
+        if insert_first(&mut features, &feature.id, feature).is_some() {
+            return Err(ParentError::Repeated { owner: &feature.id });
         }
     }
-    let mut tree_parents = ParentFacts::new();
+    let mut tree_parents = HashMap::new();
     for parent in models.iter().flat_map(|model| &model.features) {
-        storage.work(1, "feature tree definition scan")?;
         let FeatureDefinition::Operation(FeatureOperation::TreeNode { children, .. }) =
             parent.evaluation.definition()
         else {
             continue;
         };
         for child in children {
-            storage.work(1, "feature tree parent scan")?;
-            if let Some(previous) = tree_parents.insert(child, &parent.id, storage)? {
-                return Ok(Err(ParentError::TreeParents {
+            if let Some(previous) = insert_first(&mut tree_parents, child, &parent.id) {
+                return Err(ParentError::TreeParents {
                     owner: child,
                     first: previous,
                     second: &parent.id,
-                }));
+                });
             }
         }
     }
-    let mut regeneration_parents = ParentFacts::new();
+    let mut regeneration_parents = HashMap::new();
     for (child, parent) in models
         .iter()
         .flat_map(|model| &model.feature_regeneration_parents.0)
     {
-        storage.work(1, "feature regeneration parent scan")?;
-        if let Some(previous) = regeneration_parents.insert(child, parent, storage)? {
-            return Ok(Err(ParentError::RegenerationParents {
+        if let Some(previous) = insert_first(&mut regeneration_parents, child, parent) {
+            return Err(ParentError::RegenerationParents {
                 owner: child,
                 first: previous,
                 second: parent,
-            }));
+            });
         }
-        let Some(child_feature) = features.get(child, storage)? else {
-            return Ok(Err(ParentError::MissingChild { owner: child }));
+        let Some(child_feature) = features.get(child) else {
+            return Err(ParentError::MissingChild { owner: child });
         };
-        if let Some(existing) = tree_parents.get(child, storage)? {
-            return Ok(Err(ParentError::TreeChild {
+        if let Some(existing) = tree_parents.get(child) {
+            return Err(ParentError::TreeChild {
                 owner: child,
                 parent: existing,
-            }));
+            });
         }
-        let Some(parent_feature) = features.get(parent, storage)? else {
-            return Ok(Err(ParentError::MissingParent {
+        let Some(parent_feature) = features.get(parent) else {
+            return Err(ParentError::MissingParent {
                 owner: child,
                 parent,
-            }));
+            });
         };
         if parent_feature.ordinal >= child_feature.ordinal {
-            return Ok(Err(ParentError::Order {
+            return Err(ParentError::Order {
                 owner: child,
                 parent,
-            }));
+            });
         }
     }
-    Ok(Ok(()))
+    Ok(())
+}
+
+/// Insert `value` for an absent `id`; return the value already present otherwise.
+fn insert_first<'a, T: Copy>(
+    facts: &mut HashMap<&'a FeatureId, T>,
+    id: &'a FeatureId,
+    value: T,
+) -> Option<T> {
+    match facts.entry(id) {
+        std::collections::hash_map::Entry::Occupied(entry) => Some(*entry.get()),
+        std::collections::hash_map::Entry::Vacant(entry) => {
+            entry.insert(value);
+            None
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{validate, FeatureDefinition, FeatureOperation, Model, ParentFacts};
-    use crate::index::{identity_hash, DecodeStorage};
-    use cadmpeg_core::decode::DecodeContext;
-    use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
+    use super::{validate, FeatureDefinition, FeatureOperation, Model};
 
     fn model() -> Model {
         let mut model = Model::default();
@@ -237,72 +158,10 @@ mod tests {
     }
 
     #[test]
-    fn feature_parent_validation_preserves_caller_refusals_and_serde_reconstruction() {
+    fn feature_parent_validation_accepts_one_feature_and_serde_reconstruction() {
         let model = model();
         let wire = serde_json::to_value(&model).unwrap();
-        for dimension in [
-            ResourceDimension::MaterializedBytes,
-            ResourceDimension::CollectionItems,
-            ResourceDimension::WorkUnits,
-        ] {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            match dimension {
-                ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
-                ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
-                ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
-                _ => panic!("test dimension"),
-            }
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let Err(CodecError::ResourceLimit(limit)) = validate(&ctx, &[&model]) else {
-                panic!("parent graph must retain the caller refusal");
-            };
-            assert_eq!(limit.dimension, dimension);
-            assert_eq!(
-                serde_json::from_value::<Model>(wire.clone()).unwrap(),
-                model
-            );
-            assert!(
-                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
-            );
-        }
-    }
-
-    #[test]
-    fn feature_parent_validation_releases_indexes_without_retaining_text() {
-        let model = model();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 0;
-        policy.limits.max_materialized_bytes = 4096;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        validate(&ctx, &[&model]).unwrap().unwrap();
-        let storage = ctx
-            .reserve_scoped(4096, "feature parent indexes released")
-            .unwrap();
-        drop(storage);
-        ctx.finish_session().unwrap();
-    }
-
-    #[test]
-    fn feature_parent_hash_collision_admits_full_identity_comparison() {
-        let first: crate::features::FeatureId = "test:parents:feature#first".try_into().unwrap();
-        let second: crate::features::FeatureId = "test:parents:feature#other".try_into().unwrap();
-        let hash = identity_hash(second.as_str());
-        let facts = ParentFacts {
-            entries: std::collections::HashMap::from([(hash, vec![(&first, 7)])]),
-        };
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 2;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let Err(limit) = facts.find(hash, &second, &DecodeStorage(&ctx)) else {
-            panic!("collision comparison must refuse");
-        };
-        assert_eq!(limit.operation, "feature parent identity comparison");
-        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-        assert!(
-            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
-        );
+        validate(&[&model]).unwrap();
+        assert_eq!(serde_json::from_value::<Model>(wire).unwrap(), model);
     }
 }

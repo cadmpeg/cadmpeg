@@ -31,13 +31,12 @@ fn admit_conic<T>(
     result: Result<T, &str>,
     entry: &DirectoryEntry,
     losses: &mut Vec<LossNote>,
-    ctx: &DecodeContext<'_>,
-) -> Result<Option<T>, CodecError> {
+) -> Option<T> {
     match result {
-        Ok(value) => Ok(Some(value)),
+        Ok(value) => Some(value),
         Err(message) => {
-            push_geometry_loss(ctx, losses, entry, format_args!("{message}"))?;
-            Ok(None)
+            push_geometry_loss(losses, entry, format_args!("{message}"));
+            None
         }
     }
 }
@@ -66,55 +65,47 @@ fn add_bounded_curve(
         tolerance,
     } = span;
     let stem = crate::ids::Stem::directory(entry.sequence);
-    let start_point = crate::ids::point_admitted(&stem.tail(crate::ids::Word::Start), ctx)?;
-    sequences.record_point(&start_point, &stem, ctx)?;
-    let end_point = crate::ids::point_admitted(&stem.tail(crate::ids::Word::End), ctx)?;
-    sequences.record_point(&end_point, &stem, ctx)?;
-    let start_vertex = crate::ids::vertex_admitted(&stem.tail(crate::ids::Word::Start), ctx)?;
-    let end_vertex = crate::ids::vertex_admitted(&stem.tail(crate::ids::Word::End), ctx)?;
-    let curve = crate::ids::curve_admitted(&stem, ctx)?;
-    let edge = crate::ids::edge_admitted(&stem, ctx)?;
-    ctx.reserve_vec(&mut ir.model.points, 2, "iges conic neutral points")?;
+    let start_point = crate::ids::point(&stem.tail(crate::ids::Word::Start));
+    sequences.record_point(&start_point, &stem);
+    let end_point = crate::ids::point(&stem.tail(crate::ids::Word::End));
+    sequences.record_point(&end_point, &stem);
+    let start_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::Start));
+    let end_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::End));
+    let curve = crate::ids::curve(&stem);
+    let edge = crate::ids::edge(&stem);
+
     ctx.charge_entities(2, "iges_geometry_conics")?;
     ir.model.points.extend([
-        Point::new(
-            start_point.try_clone_for_decode(ctx, "iges conics identity copy")?,
-            start,
-            None,
-        ),
-        Point::new(
-            end_point.try_clone_for_decode(ctx, "iges conics identity copy")?,
-            end,
-            None,
-        ),
+        Point::new(start_point.clone(), start, None),
+        Point::new(end_point.clone(), end, None),
     ]);
-    ctx.reserve_vec(&mut ir.model.vertices, 2, "iges conic neutral vertices")?;
+
     ctx.charge_entities(2, "iges_geometry_conics")?;
     ir.model.vertices.extend([
         Vertex {
-            id: start_vertex.try_clone_for_decode(ctx, "iges conics identity copy")?,
+            id: start_vertex.clone(),
             point: start_point,
             tolerance,
         },
         Vertex {
-            id: end_vertex.try_clone_for_decode(ctx, "iges conics identity copy")?,
+            id: end_vertex.clone(),
             point: end_point,
             tolerance,
         },
     ]);
-    sequences.record_curve(&curve, entry.sequence, ctx)?;
-    ctx.reserve_vec(&mut ir.model.curves, 1, "iges conic neutral curves")?;
+    sequences.record_curve(&curve, entry.sequence);
+
     ctx.charge_entities(1, "iges_geometry_conics")?;
     ir.model.curves.push(Curve {
         parameter_range: None,
-        id: curve.try_clone_for_decode(ctx, "iges conics identity copy")?,
+        id: curve.clone(),
         geometry,
-        source_object: Some(source_object(entry, ctx)?),
+        source_object: Some(source_object(entry)?),
     });
-    ctx.reserve_vec(&mut ir.model.edges, 1, "iges conic neutral edges")?;
+
     ctx.charge_entities(1, "iges_geometry_conics")?;
     ir.model.edges.push(Edge {
-        id: edge.try_clone_for_decode(ctx, "iges conics identity copy")?,
+        id: edge.clone(),
         carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve), Some(parameter_range))
             .map_err(cadmpeg_core::CodecError::malformed)?,
         start: start_vertex,
@@ -143,21 +134,11 @@ pub(super) fn project(
 ) -> Result<WireProjectionOutcome, CodecError> {
     let mut records = BTreeMap::new();
     for record in parameters {
-        ctx.insert_btree_map(
-            &mut records,
-            record.directory_sequence,
-            record,
-            "iges conic parameter index",
-        )?;
+        records.insert(record.directory_sequence, record);
     }
     let mut entries = BTreeMap::new();
     for entry in directory {
-        ctx.insert_btree_map(
-            &mut entries,
-            entry.sequence,
-            entry,
-            "iges conic directory index",
-        )?;
+        entries.insert(entry.sequence, entry);
     }
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
@@ -170,11 +151,10 @@ pub(super) fn project(
         let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
             push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("Parameter Data record is missing"),
-            )?;
+            );
             continue;
         };
         let values =
@@ -183,11 +163,10 @@ pub(super) fn project(
             values
         else {
             push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("conic coefficients or endpoints are invalid"),
-            )?;
+            );
             continue;
         };
         let [coeff_a, coeff_b, coeff_c, coeff_d, coeff_e, coeff_f, plane_z, start_x, start_y, end_x, end_y] =
@@ -208,11 +187,10 @@ pub(super) fn project(
         };
         if !zero(coeff_b) || (!zero(coeff_d) && !zero(coeff_e)) {
             push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("conic axes or center are not in the required standard position"),
-            )?;
+            );
             continue;
         }
         let transform = match resolve_transform(
@@ -227,7 +205,7 @@ pub(super) fn project(
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
-                push_geometry_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
+                push_geometry_loss(&mut losses, entry, format_args!("{message}"));
                 continue;
             }
         };
@@ -241,11 +219,10 @@ pub(super) fn project(
             })
         else {
             push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("conic placement collapses the x axis"),
-            )?;
+            );
             continue;
         };
         let Some((basis_y, scale_y)) = transform
@@ -258,20 +235,18 @@ pub(super) fn project(
             })
         else {
             push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("conic placement collapses the y axis"),
-            )?;
+            );
             continue;
         };
         if basis_x.as_raw().dot(*basis_y.as_raw()).abs() > EPS_CONIC_DEGENERATE {
             push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("conic placement produces non-orthogonal principal axes"),
-            )?;
+            );
             continue;
         }
         let Some((mut axis, mut axis_raw)) = ({
@@ -281,21 +256,19 @@ pub(super) fn project(
                 .then(|| (UnitVector3::normalized_by_reciprocal(v), v.scale(1.0 / n)))
         }) else {
             push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("conic placement collapses its plane"),
-            )?;
+            );
             continue;
         };
         let Some(plane_origin) = transform.apply_point(Point3::new(0.0, 0.0, plane_z * factor))
         else {
             push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("placement produces a non-finite point"),
-            )?;
+            );
             continue;
         };
         let Some(start_position) = transform.apply_point(Point3::new(
@@ -304,11 +277,10 @@ pub(super) fn project(
             plane_z * factor,
         )) else {
             push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("placement produces a non-finite point"),
-            )?;
+            );
             continue;
         };
         let Some(end_position) = transform.apply_point(Point3::new(
@@ -317,11 +289,10 @@ pub(super) fn project(
             plane_z * factor,
         )) else {
             push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("placement produces a non-finite point"),
-            )?;
+            );
             continue;
         };
         let start = start_position.get();
@@ -389,9 +360,7 @@ pub(super) fn project(
                         }),
                     entry,
                     &mut losses,
-                    ctx,
-                )?
-                else {
+                ) else {
                     continue;
                 };
                 (sweep > 0.0).then_some((
@@ -475,9 +444,7 @@ pub(super) fn project(
                         }),
                     entry,
                     &mut losses,
-                    ctx,
-                )?
-                else {
+                ) else {
                     continue;
                 };
                 (end_parameter > start_parameter).then_some((
@@ -498,11 +465,10 @@ pub(super) fn project(
             )
             .map(cadmpeg_ir::scalar::FiniteReal::abs) else {
                 push_geometry_loss(
-                    ctx,
                     &mut losses,
                     entry,
                     format_args!("parabola focal distance is not representable"),
-                )?;
+                );
                 continue;
             };
             let focal_distance = focal.get();
@@ -522,11 +488,10 @@ pub(super) fn project(
                 (parameter(start, axis_raw), parameter(end, axis_raw))
             else {
                 push_geometry_loss(
-                    ctx,
                     &mut losses,
                     entry,
                     format_args!("parabola endpoint parameter is not representable"),
-                )?;
+                );
                 continue;
             };
             if end_parameter < start_parameter {
@@ -548,9 +513,7 @@ pub(super) fn project(
                     }),
                 entry,
                 &mut losses,
-                ctx,
-            )?
-            else {
+            ) else {
                 continue;
             };
             (focal_distance > 0.0 && end_parameter > start_parameter).then_some((
@@ -570,11 +533,10 @@ pub(super) fn project(
             )
             .map(cadmpeg_ir::scalar::FiniteReal::abs) else {
                 push_geometry_loss(
-                    ctx,
                     &mut losses,
                     entry,
                     format_args!("parabola focal distance is not representable"),
-                )?;
+                );
                 continue;
             };
             let focal_distance = focal.get();
@@ -594,11 +556,10 @@ pub(super) fn project(
                 (parameter(start, axis_raw), parameter(end, axis_raw))
             else {
                 push_geometry_loss(
-                    ctx,
                     &mut losses,
                     entry,
                     format_args!("parabola endpoint parameter is not representable"),
-                )?;
+                );
                 continue;
             };
             if end_parameter < start_parameter {
@@ -620,9 +581,7 @@ pub(super) fn project(
                     }),
                 entry,
                 &mut losses,
-                ctx,
-            )?
-            else {
+            ) else {
                 continue;
             };
             (focal_distance > 0.0 && end_parameter > start_parameter).then_some((
@@ -635,13 +594,12 @@ pub(super) fn project(
 
         let Some((geometry, parameter_range)) = geometry_and_range else {
             push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!(
                     "standard-position coefficients do not define a nondegenerate conic arc"
                 ),
-            )?;
+            );
             continue;
         };
         let Some(evaluated_start) = finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
@@ -649,11 +607,10 @@ pub(super) fn project(
         )?)?
         else {
             push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("conic start point cannot be evaluated"),
-            )?;
+            );
             continue;
         };
         let Some(evaluated_end) = finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
@@ -661,32 +618,30 @@ pub(super) fn project(
         )?)?
         else {
             push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("conic terminate point cannot be evaluated"),
-            )?;
+            );
             continue;
         };
         // CADIR decision: IGES defines the carrier and ordered endpoints but
         // does not prescribe an endpoint-consistency test or receiver action.
         let resolution = global.minimum_resolution_mm();
         if !endpoint_agrees_with_coefficient_carrier(start, evaluated_start.get(), resolution) {
-            push_geometry_loss(ctx, &mut losses, entry, format_args!("conic start point disagrees with the evaluated carrier beyond the minimum resolution"))?;
+            push_geometry_loss(&mut losses, entry, format_args!("conic start point disagrees with the evaluated carrier beyond the minimum resolution"));
             continue;
         }
         if !endpoint_agrees_with_coefficient_carrier(end, evaluated_end.get(), resolution) {
-            push_geometry_loss(ctx, &mut losses, entry, format_args!("conic terminate point disagrees with the evaluated carrier beyond the minimum resolution"))?;
+            push_geometry_loss(&mut losses, entry, format_args!("conic terminate point disagrees with the evaluated carrier beyond the minimum resolution"));
             continue;
         }
         let tolerance = if resolution > 0.0 {
             let Some(value) = cadmpeg_ir::scalar::PositiveReal::new(resolution) else {
                 push_geometry_loss(
-                    ctx,
                     &mut losses,
                     entry,
                     format_args!("conic tolerance must be finite"),
-                )?;
+                );
                 continue;
             };
             Some(value)
@@ -708,14 +663,14 @@ pub(super) fn project(
         ) {
             Ok(edge) => edge,
             Err(error) => {
-                let message = super::non_resource_error(error, ctx)?;
-                push_geometry_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
+                let message = super::non_resource_error(error)?;
+                push_geometry_loss(&mut losses, entry, format_args!("{message}"));
                 continue;
             }
         };
-        ctx.reserve_vec(&mut wire_edges, 1, "iges conic wire edges")?;
+
         wire_edges.push(edge);
-        ctx.insert_btree_set(&mut decoded, entry.sequence, "iges conic decoded sequences")?;
+        decoded.insert(entry.sequence);
     }
 
     Ok(WireProjectionOutcome {

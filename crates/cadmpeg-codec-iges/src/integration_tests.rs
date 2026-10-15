@@ -283,7 +283,7 @@ fn decode_matrix(
                 assert_matrix_destination(&matrix, subject_type, expected_arena);
                 let (expected_subjects, expected_total, expected_associated) =
                     expected_counts(name);
-                let scan = crate::test_support::scan(&bytes).expect("integration fixture cards");
+                let scan = crate::card::scan(&bytes).expect("integration fixture cards");
                 let (global, _global_losses) =
                     crate::test_support::parse_global(&scan).expect("integration global");
                 let (directory, _quarantined) =

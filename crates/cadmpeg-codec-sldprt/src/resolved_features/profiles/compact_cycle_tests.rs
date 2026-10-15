@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-use cadmpeg_core::CodecError;
-
-fn assert_cycle_refusal(dimension: ResourceDimension) {
+#[test]
+fn compact_cycle_projection_orders_closed_cycle() {
     let (history, mut lane, feature) =
         super::detached_legacy_sketch_tests::compact_profile_projection_fixture();
     lane.native_payload.extend(b"moSketchRegion_c");
@@ -23,26 +21,28 @@ fn assert_cycle_refusal(dimension: ResourceDimension) {
         offset: 0,
         name: "sgLineHandle".into(),
     });
-    let arena = DecodeArena::new();
-    let run = |policy: &DecodePolicy| {
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&lane.native_payload, &arena, policy).unwrap();
-        let mut features = [feature.clone()];
-        let mut sketches = Vec::new();
-        let mut entities = Vec::new();
-        let mut losses = Vec::new();
-        super::project_compact_sketch_profiles(
-            &ctx,
-            &mut features,
-            &mut sketches,
-            &mut entities,
-            std::slice::from_ref(&history),
-            std::slice::from_ref(&lane),
-            &mut losses,
-        )
-        .map(|()| (features, sketches, entities, losses))
-    };
-    let expected = run(&DecodePolicy::service()).unwrap();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &lane.native_payload,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
+    let mut features = [feature];
+    let mut sketches = Vec::new();
+    let mut entities = Vec::new();
+    let mut losses = Vec::new();
+    super::project_compact_sketch_profiles(
+        &ctx,
+        &mut features,
+        &mut sketches,
+        &mut entities,
+        std::slice::from_ref(&history),
+        std::slice::from_ref(&lane),
+        &mut losses,
+    )
+    .unwrap();
+    let expected = (features, sketches, entities, losses);
     assert_eq!(expected.1.len(), 1);
     assert_eq!(expected.2.len(), 4);
     assert_eq!(expected.1[0].profiles[0].len(), 4);
@@ -59,53 +59,4 @@ fn assert_cycle_refusal(dimension: ResourceDimension) {
             "sldprt:model:sketch-entity#compact:1:30:1",
         ]
     );
-    let set_limit = |policy: &mut DecodePolicy, limit| match dimension {
-        ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = limit,
-        ResourceDimension::WorkUnits => policy.limits.max_work_units = limit,
-        _ => panic!("unsupported cycle limit"),
-    };
-    let mut policy = DecodePolicy::service();
-    let admitted = |policy: &DecodePolicy| match run(policy) {
-        Ok(actual) => {
-            assert_eq!(actual, expected);
-            true
-        }
-        Err(CodecError::ResourceLimit(limit)) => {
-            assert_eq!(limit.dimension, dimension);
-            false
-        }
-        Err(error) => panic!("unexpected cycle projection error: {error}"),
-    };
-    let mut lower = 0;
-    let mut upper = 1_u64;
-    loop {
-        set_limit(&mut policy, upper);
-        if admitted(&policy) {
-            break;
-        }
-        upper = upper.checked_mul(2).unwrap();
-    }
-    while lower < upper {
-        let middle = lower + (upper - lower) / 2;
-        set_limit(&mut policy, middle);
-        if admitted(&policy) {
-            upper = middle;
-        } else {
-            lower = middle + 1;
-        }
-    }
-    assert!(upper > 0);
-    set_limit(&mut policy, upper);
-    assert!(admitted(&policy));
-    set_limit(&mut policy, upper - 1);
-    assert!(!admitted(&policy));
-}
-
-#[test]
-fn compact_cycle_projection_refuses_retained_limit() {
-    assert_cycle_refusal(ResourceDimension::RetainedBytes);
-}
-#[test]
-fn compact_cycle_projection_refuses_work_limit() {
-    assert_cycle_refusal(ResourceDimension::WorkUnits);
 }

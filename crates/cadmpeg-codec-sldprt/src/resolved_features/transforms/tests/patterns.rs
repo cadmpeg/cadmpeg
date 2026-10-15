@@ -46,15 +46,7 @@ fn declared_line_reference_directions(
     class_offset: u64,
     object_end: usize,
 ) -> Vec<Vector3> {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        payload,
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )
-    .expect("line reference test input fits service policy");
-    typed_declared_line_reference_directions(&ctx, payload, class_offset, object_end)
-        .expect("line reference test scan succeeds")
+    typed_declared_line_reference_directions(payload, class_offset, object_end)
         .into_iter()
         .map(|direction| *direction.as_raw())
         .collect()
@@ -66,22 +58,8 @@ fn compact_line_reference_direction(
     object_end: usize,
     excluded_handles: &[usize],
 ) -> Option<Vector3> {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        payload,
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )
-    .expect("line reference test input fits service policy");
-    typed_compact_line_reference_direction(
-        &ctx,
-        payload,
-        object_start,
-        object_end,
-        excluded_handles,
-    )
-    .expect("line reference test scan succeeds")
-    .map(|direction| *direction.as_raw())
+    typed_compact_line_reference_direction(payload, object_start, object_end, excluded_handles)
+        .map(|direction| *direction.as_raw())
 }
 
 fn bind_pattern_inputs_test(
@@ -509,12 +487,8 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
     for (start, end) in [(500usize, 600usize), (600, 700)] {
         let object = &lane.native_payload[start..end];
         assert_eq!(
-            crate::resolved_features::reference_geometry::explicit_reference_plane_frame(
-                &cadmpeg_test_support::service_decode_context(),
-                object,
-            )
-            .expect("resource budget")
-            .expect("a zero object states no frame"),
+            crate::resolved_features::reference_geometry::explicit_reference_plane_frame(object,)
+                .expect("a zero object states no frame"),
             None
         );
         assert_eq!(
@@ -1664,13 +1638,11 @@ fn point_line_projection_uses_the_resolved_point_when_marker_frames_are_ambiguou
     };
     let transforms =
         crate::resolved_features::relation_loci::marker_transform_candidates_by_feature(
-            &ctx,
             std::slice::from_ref(&feature),
             std::slice::from_ref(&sketch),
             &entities,
             std::slice::from_ref(&lane),
-        )
-        .expect("transform resource admission");
+        );
     assert!(transforms["feature-native"].len() > 1);
     project_relation_solved_line_geometry(
         &ctx,
@@ -1843,13 +1815,11 @@ fn reused_point_handle_gets_one_solved_locus_per_dimension_relation() {
     ];
 
     project_relation_point_geometry(
-        &ctx,
         &mut entities,
         &[],
         std::slice::from_ref(&feature),
         std::slice::from_ref(&lane),
-    )
-    .unwrap();
+    );
     project_relation_solved_point_geometry(
         &ctx,
         &mut entities,

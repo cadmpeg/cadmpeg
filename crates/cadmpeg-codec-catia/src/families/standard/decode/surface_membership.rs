@@ -34,10 +34,8 @@ fn refine_nurbs_surface_point(
     seed: Point2,
     domains: [[f64; 2]; 2],
 ) -> Result<Option<f64>, cadmpeg_core::decode::ResourceLimit> {
-    ctx.charge_work_limit(0, "catia surface refinement boundary")?;
     let mut parameters = seed;
     for iteration in 0..NURBS_SURFACE_REFINEMENT_ITERATIONS {
-        ctx.charge_work_limit(1, "catia surface refinement step")?;
         if iteration == 0 {
             let Some(distance) = nurbs_surface_point_distance(ctx, surface, point, parameters)?
             else {
@@ -70,7 +68,6 @@ fn refine_nurbs_surface_point(
         let mut scale = 1.0;
         let mut accepted = None;
         for _ in 0..NURBS_SURFACE_BACKTRACK_STEPS {
-            ctx.charge_work_limit(1, "catia surface refinement backtrack")?;
             let candidate = Point2::new(
                 (parameters.u - scale * step.u).clamp(domains[0][0], domains[0][1]),
                 (parameters.v - scale * step.v).clamp(domains[1][0], domains[1][1]),
@@ -106,7 +103,6 @@ pub(super) fn nurbs_surface_witness_distance(
     surface: &NurbsSurface,
     point: Point3,
 ) -> Result<Option<f64>, cadmpeg_core::decode::ResourceLimit> {
-    ctx.charge_work_limit(0, "catia surface witness boundary")?;
     let Some(domains) = nurbs_surface_parameter_domain(surface) else {
         return Ok(None);
     };
@@ -124,12 +120,10 @@ pub(super) fn nurbs_surface_witness_distance(
     };
     let mut u_spans = 0_usize;
     for pair in u_knots.windows(2) {
-        ctx.charge_work_limit(1, "catia surface knot span count")?;
         u_spans += usize::from(pair[0] != pair[1]);
     }
     let mut v_spans = 0_usize;
     for pair in v_knots.windows(2) {
-        ctx.charge_work_limit(1, "catia surface knot span count")?;
         v_spans += usize::from(pair[0] != pair[1]);
     }
     if u_spans == 0 || v_spans == 0 {
@@ -144,7 +138,6 @@ pub(super) fn nurbs_surface_witness_distance(
     };
     let mut best: Option<f64> = None;
     let mut consider = |seed: Point2| -> Result<Option<f64>, cadmpeg_core::decode::ResourceLimit> {
-        ctx.charge_work_limit(1, "catia surface witness seed")?;
         if let Some(distance) = refine_nurbs_surface_point(ctx, surface, point, seed, domains)? {
             best = Some(best.map_or(distance, |previous| {
                 if previous.total_cmp(&distance).is_le() {
@@ -163,12 +156,10 @@ pub(super) fn nurbs_surface_witness_distance(
         const SIDE: usize = 16;
         for knots in [u_knots, v_knots] {
             for pair in knots.windows(2) {
-                ctx.charge_work_limit(1, "catia surface knot span visit")?;
                 if pair[0] == pair[1] {
                     continue;
                 }
                 for step in 0..NURBS_SURFACE_SEEDS_PER_SPAN {
-                    ctx.charge_work_limit(1, "catia surface knot sample")?;
                     let fraction = match f64_from_index(step) {
                         Some(value) => value,
                         None => return Ok(None),
@@ -215,12 +206,10 @@ pub(super) fn nurbs_surface_witness_distance(
         }
     } else {
         for u_pair in u_knots.windows(2) {
-            ctx.charge_work_limit(1, "catia surface knot span visit")?;
             if u_pair[0] == u_pair[1] {
                 continue;
             }
             for u_step in 0..NURBS_SURFACE_SEEDS_PER_SPAN {
-                ctx.charge_work_limit(1, "catia surface u seed")?;
                 let u_fraction = match f64_from_index(u_step) {
                     Some(value) => value,
                     None => return Ok(None),
@@ -233,7 +222,6 @@ pub(super) fn nurbs_surface_witness_distance(
                     return Ok(None);
                 };
                 for v_pair in v_knots.windows(2) {
-                    ctx.charge_work_limit(1, "catia surface knot span visit")?;
                     if v_pair[0] == v_pair[1] {
                         continue;
                     }
@@ -265,10 +253,9 @@ pub(super) fn nurbs_surface_witness_distance(
 #[cfg(test)]
 mod tests {
     use super::{
-        nurbs_surface_point_distance, nurbs_surface_witness_distance, refine_nurbs_surface_point,
-        NurbsSurface, Point2, Point3,
+        nurbs_surface_witness_distance, refine_nurbs_surface_point, NurbsSurface, Point2, Point3,
     };
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
     use cadmpeg_ir::geometry::nurbs::{NurbsSurfaceAxis, NurbsSurfaceLanes};
 
     fn surface() -> NurbsSurface {
@@ -292,7 +279,7 @@ mod tests {
     #[test]
     fn membership_stops_after_a_complete_point_witness() {
         let surface = surface();
-        crate::test_support::with_collection_limit(512, |ctx| {
+        crate::test_support::with_service_context(|ctx| {
             let distance =
                 nurbs_surface_witness_distance(ctx, &surface, Point3::new(0.3, 0.7, 0.0))
                     .expect("one planar witness fits")
@@ -304,7 +291,7 @@ mod tests {
     #[test]
     fn stationary_refinement_does_not_repeat_the_same_evaluation() {
         let surface = surface();
-        crate::test_support::with_collection_limit(512, |ctx| {
+        crate::test_support::with_service_context(|ctx| {
             let distance = refine_nurbs_surface_point(
                 ctx,
                 &surface,
@@ -364,11 +351,11 @@ mod tests {
     }
 
     #[test]
-    fn conservative_face_membership_does_not_allocate_witness_basis() {
+    fn conservative_face_membership_uses_the_control_net() {
         let geometry = cadmpeg_ir::geometry::SurfaceGeometry::Solved(
             cadmpeg_ir::geometry::SolvedSurfaceGeometry::Nurbs(surface()),
         );
-        crate::test_support::with_collection_limit(0, |ctx| {
+        crate::test_support::with_service_context(|ctx| {
             assert!(super::super::point_on_standard_face(
                 ctx,
                 Point3::new(0.3, 0.7, 0.0),
@@ -384,80 +371,5 @@ mod tests {
             )
             .expect("outside the control net is impossible"));
         });
-    }
-
-    #[test]
-    fn surface_witness_refuses_knot_scan_work() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 0;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty fixture root");
-        let original = nurbs_surface_witness_distance(&ctx, &surface(), Point3::new(0.3, 0.7, 0.0))
-            .expect_err("knot span work refuses");
-        assert_eq!(original.dimension, ResourceDimension::WorkUnits);
-        assert_eq!(original.operation, "catia surface knot span count");
-        assert_eq!(
-            (original.limit, original.used, original.additional),
-            (0, 0, 1)
-        );
-        assert_eq!(ctx.resource_refusal(), Some(original));
-    }
-
-    #[test]
-    fn surface_refinement_refuses_step_work() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 0;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty fixture root");
-        let surface = surface();
-        let original = refine_nurbs_surface_point(
-            &ctx,
-            &surface,
-            Point3::new(0.3, 0.7, 0.0),
-            Point2::new(0.0, 0.0),
-            [[0.0, 1.0]; 2],
-        )
-        .expect_err("refinement work refuses");
-        assert_eq!(original.dimension, ResourceDimension::WorkUnits);
-        assert_eq!(original.operation, "catia surface refinement step");
-        assert_eq!(
-            (original.limit, original.used, original.additional),
-            (0, 0, 1)
-        );
-        assert_eq!(
-            nurbs_surface_point_distance(
-                &ctx,
-                &surface,
-                Point3::new(0.0, 0.0, 0.0),
-                Point2::new(f64::NAN, 0.0)
-            ),
-            Err(original)
-        );
-        assert_eq!(
-            nurbs_surface_witness_distance(&ctx, &surface, Point3::new(0.0, 0.0, 0.0)),
-            Err(original)
-        );
-        assert_eq!(ctx.resource_refusal(), Some(original));
-    }
-
-    #[test]
-    fn surface_bounds_refuses_pole_work() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 0;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty fixture root");
-        let original =
-            super::super::point_on_nurbs_surface(&ctx, Point3::new(2.0, 2.0, 2.0), &surface())
-                .expect_err("pole work refuses");
-        assert_eq!(original.dimension, ResourceDimension::WorkUnits);
-        assert_eq!(original.operation, "catia surface bound pole");
-        assert_eq!(
-            (original.limit, original.used, original.additional),
-            (0, 0, 1)
-        );
-        assert_eq!(ctx.resource_refusal(), Some(original));
     }
 }

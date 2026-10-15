@@ -67,22 +67,7 @@ fn append_borrowed_curve_ids<'a>(
         if target.contains(id) {
             continue;
         }
-        ctx.insert_btree_set(
-            target,
-            id.try_clone_for_decode(ctx, "creo derived intersection curve ID copies")?,
-            "creo derived intersection curve IDs",
-        )?;
-    }
-    Ok(())
-}
-
-fn append_owned_curve_ids(
-    ctx: &DecodeContext<'_>,
-    target: &mut BTreeSet<CurveId>,
-    source: BTreeSet<CurveId>,
-) -> Result<(), CodecError> {
-    for id in source {
-        ctx.insert_btree_set(target, id, "creo derived topology carrier IDs")?;
+        target.insert(id.try_clone_for_decode(ctx, "creo derived intersection curve ID copies")?);
     }
     Ok(())
 }
@@ -253,7 +238,7 @@ pub(super) fn transfer_and_record_scanned_geometry(
         &nurbs_boundary_curves.endpoint_witnesses,
         source_carriers,
     )?;
-    append_owned_curve_ids(ctx, &mut derived_intersection_curves, topology_carriers)?;
+    derived_intersection_curves.extend(topology_carriers);
     append_borrowed_curve_ids(
         ctx,
         &mut derived_intersection_curves,
@@ -323,12 +308,8 @@ pub(super) fn transfer_and_record_scanned_geometry(
                 .map_or(0, SolverSubtable::missing_rows)
         })
         .sum::<usize>();
-    let skamp_constraint_coverage = design_constraint_transfer_coverage(
-        ctx,
-        &ir.model.sketch_constraints,
-        ":skamp:",
-        "creo:skamp:",
-    )?;
+    let skamp_constraint_coverage =
+        design_constraint_transfer_coverage(&ir.model.sketch_constraints, ":skamp:", "creo:skamp:");
     let decoded_feature_relation_count = scan
         .features
         .definitions
@@ -373,19 +354,16 @@ pub(super) fn transfer_and_record_scanned_geometry(
         })
         .sum::<usize>();
     let relation_constraint_coverage = design_constraint_transfer_coverage(
-        ctx,
         &ir.model.sketch_constraints,
         ":relation:",
         "creo:relation:",
-    )?;
+    );
     let equation_constraint_coverage = design_constraint_transfer_coverage(
-        ctx,
         &ir.model.sketch_constraints,
         ":equation:",
         "creo:equation:",
-    )?;
+    );
     let surface_coverage = surface_transfer_coverage(
-        ctx,
         &scan.surfaces.rows,
         &ir.model.surfaces,
         &ir.model.procedural_surfaces,
@@ -405,8 +383,7 @@ pub(super) fn transfer_and_record_scanned_geometry(
             record.type24_round_edge_envelope()
         })
         .count();
-    let curve_coverage =
-        curve_transfer_coverage(ctx, &scan.curves.topology_rows, &ir.model.curves)?;
+    let curve_coverage = curve_transfer_coverage(&scan.curves.topology_rows, &ir.model.curves)?;
     {
         coverage.record(
             ctx,
@@ -960,8 +937,8 @@ pub(super) fn transfer_and_record_scanned_geometry(
 
 #[cfg(test)]
 mod tests {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::geometry::{
         Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
@@ -971,38 +948,11 @@ mod tests {
     use cadmpeg_ir::AnnotationBuilder;
     use std::collections::BTreeSet;
 
-    use super::{
-        append_borrowed_curve_ids, append_owned_curve_ids, transfer_and_record_scanned_geometry,
-    };
+    use super::{append_borrowed_curve_ids, transfer_and_record_scanned_geometry};
 
     #[test]
-    fn derived_curve_id_copy_refuses_each_resource_limit() {
+    fn derived_curve_id_copy_appends_missing_ids() {
         let id = CurveId::mint("creo:visibgeom:curve#12").expect("identity grammar");
-        for (item_limit, byte_limit, dimension, operation) in [
-            (
-                0,
-                u64::MAX,
-                ResourceDimension::CollectionItems,
-                "creo derived intersection curve IDs",
-            ),
-            (
-                1,
-                0,
-                ResourceDimension::RetainedBytes,
-                "creo derived intersection curve ID copies",
-            ),
-        ] {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = item_limit;
-            policy.limits.max_retained_bytes = byte_limit;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-            let error =
-                append_borrowed_curve_ids(&ctx, &mut BTreeSet::new(), std::slice::from_ref(&id))
-                    .expect_err("below-need limit");
-            assert!(matches!(error, CodecError::ResourceLimit(resource)
-                if resource.dimension == dimension && resource.operation == operation));
-        }
         let arena = DecodeArena::new();
         let policy = DecodePolicy::service();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
@@ -1010,29 +960,6 @@ mod tests {
         append_borrowed_curve_ids(&ctx, &mut copied, std::slice::from_ref(&id))
             .expect("service copy");
         assert_eq!(copied, BTreeSet::from([id]));
-    }
-
-    #[test]
-    fn derived_topology_carrier_node_refuses_below_collection_limit() {
-        let id = CurveId::mint("creo:visibgeom:curve#12").expect("identity grammar");
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let error =
-            append_owned_curve_ids(&ctx, &mut BTreeSet::new(), BTreeSet::from([id.clone()]))
-                .expect_err("one node exceeds limit");
-        assert!(matches!(error, CodecError::ResourceLimit(resource)
-            if resource.dimension == ResourceDimension::CollectionItems
-                && resource.operation == "creo derived topology carrier IDs"));
-
-        let arena = DecodeArena::new();
-        let policy = DecodePolicy::service();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let mut target = BTreeSet::new();
-        append_owned_curve_ids(&ctx, &mut target, BTreeSet::from([id.clone()]))
-            .expect("service node");
-        assert_eq!(target, BTreeSet::from([id]));
     }
 
     #[test]

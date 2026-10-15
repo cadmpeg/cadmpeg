@@ -6,39 +6,9 @@ use crate::classification::{classify, FeatureClass};
 use crate::layout::extrusion_sparse_operation_trailer as sparse_tr;
 use crate::records::ObjectId;
 use crate::records::{Feature, FeatureInputLane, FeatureInputName};
-use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
-use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::{u64_from_index, View};
 use cadmpeg_ir::features::{BooleanOp, FeatureDefinition, FeatureOperation};
 use std::collections::HashMap;
-use std::hash::Hash;
-
-fn collect_index<K: Eq + Hash, V>(
-    ctx: &DecodeContext<'_>,
-    items: impl IntoIterator<Item = (K, V)>,
-    operation: &'static str,
-) -> Result<HashMap<K, V>, CodecError> {
-    let mut index = HashMap::new();
-    for (key, value) in items {
-        ctx.charge_work(1, operation)?;
-        ctx.insert_hash_map(&mut index, key, value, operation)?;
-    }
-    Ok(index)
-}
-
-fn copy_retained_string(
-    ctx: &DecodeContext<'_>,
-    value: &str,
-    operation: &'static str,
-) -> Result<String, CodecError> {
-    let copy_work = cadmpeg_core::decode::u64_from_index(value.len())
-        .checked_mul(4)
-        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-    ctx.charge_work(copy_work, operation)?;
-    let mut copy = String::new();
-    ctx.try_reserve_retained_text(&mut copy, value.len(), operation)?;
-    copy.push_str(value);
-    Ok(copy)
-}
 
 pub(crate) const SPLIT_LINE_MODE_PROPERTY: &str = "SplitLineMode";
 pub(crate) const SPLIT_LINE_PROJECTION_MODE: &str = "Projection";
@@ -160,33 +130,28 @@ fn extrusion_operation(class: Option<&str>, code: u32) -> Option<BooleanOp> {
 
 /// Bind operation discriminators shared by geometry and metadata decode.
 pub(crate) fn bind_feature_operations(
-    ctx: &DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
     form_padding: Option<usize>,
-) -> Result<(), CodecError> {
-    bind_extrusion_operations(ctx, features, histories, lanes, form_padding)?;
-    bind_revolution_operations(ctx, features, histories, lanes, form_padding)?;
-    bind_sweep_operations(ctx, features, histories, lanes, form_padding)
+) {
+    bind_extrusion_operations(features, histories, lanes, form_padding);
+    bind_revolution_operations(features, histories, lanes, form_padding);
+    bind_sweep_operations(features, histories, lanes, form_padding);
 }
 
 /// Project revolution Boolean form words from declared and compact objects.
 pub(crate) fn bind_revolution_operations(
-    ctx: &DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
     form_padding: Option<usize>,
-) -> Result<(), CodecError> {
-    let history_features = collect_index(
-        ctx,
-        histories
-            .iter()
-            .flat_map(|history| &history.features)
-            .map(|feature| (feature.id.as_str(), feature)),
-        "index SLDPRT revolution history",
-    )?;
+) {
+    let history_features = histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .map(|feature| (feature.id.as_str(), feature))
+        .collect::<HashMap<_, _>>();
     for feature in features {
         let native_ref = feature.native_ref.as_deref();
         feature.evaluation.edit(|definition, _| 'feature_edit: {
@@ -221,25 +186,20 @@ pub(crate) fn bind_revolution_operations(
             }
         });
     }
-    Ok(())
 }
 
 /// Project compact solid-sweep Boolean operation discriminators.
 pub(crate) fn bind_sweep_operations(
-    ctx: &DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
     form_padding: Option<usize>,
-) -> Result<(), CodecError> {
-    let history_features = collect_index(
-        ctx,
-        histories
-            .iter()
-            .flat_map(|history| &history.features)
-            .map(|feature| (feature.id.as_str(), feature)),
-        "index SLDPRT sweep history",
-    )?;
+) {
+    let history_features = histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .map(|feature| (feature.id.as_str(), feature))
+        .collect::<HashMap<_, _>>();
     for feature in features {
         let native_ref = feature.native_ref.as_deref();
         feature.evaluation.edit(|definition, _| 'feature_edit: {
@@ -301,7 +261,6 @@ pub(crate) fn bind_sweep_operations(
             }
         });
     }
-    Ok(())
 }
 
 /// Inline extrusion trailer fields: the family word and operation byte.
@@ -381,20 +340,16 @@ fn feature_inline_operation(lane: &FeatureInputLane, name: &FeatureInputName) ->
 
 /// Project the feature-input operation discriminator onto typed extrusions.
 pub(crate) fn bind_extrusion_operations(
-    ctx: &DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
     form_padding: Option<usize>,
-) -> Result<(), CodecError> {
-    let history_by_id = collect_index(
-        ctx,
-        histories
-            .iter()
-            .flat_map(|history| &history.features)
-            .map(|feature| (feature.id.as_str(), feature)),
-        "index SLDPRT extrusion history",
-    )?;
+) {
+    let history_by_id = histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .map(|feature| (feature.id.as_str(), feature))
+        .collect::<HashMap<_, _>>();
     for feature in features {
         let native_ref = feature.native_ref.as_deref();
         feature.evaluation.edit(|definition, _| 'feature_edit: {
@@ -432,7 +387,6 @@ pub(crate) fn bind_extrusion_operations(
             }
         });
     }
-    Ok(())
 }
 
 #[derive(Clone, Copy)]
@@ -444,28 +398,21 @@ enum OperationKind {
 /// Preserve a Boolean operation that is invariant across a configuration lane
 /// when that lane carries no independent operation carrier.
 pub(crate) fn inherit_configuration_operations(
-    ctx: &DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
     base_features: &[cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
     form_padding: Option<usize>,
-) -> Result<(), CodecError> {
-    let history_by_id = collect_index(
-        ctx,
-        histories
-            .iter()
-            .flat_map(|history| &history.features)
-            .map(|feature| (feature.id.as_str(), feature)),
-        "index SLDPRT configuration history",
-    )?;
-    let base_definitions = collect_index(
-        ctx,
-        base_features
-            .iter()
-            .map(|feature| (&feature.id, feature.evaluation.definition())),
-        "index SLDPRT base definitions",
-    )?;
+) {
+    let history_by_id = histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .map(|feature| (feature.id.as_str(), feature))
+        .collect::<HashMap<_, _>>();
+    let base_definitions = base_features
+        .iter()
+        .map(|feature| (&feature.id, feature.evaluation.definition()))
+        .collect::<HashMap<_, _>>();
     for feature in features {
         let native_ref = feature.native_ref.as_deref();
         let feature_id = &feature.id;
@@ -515,7 +462,6 @@ pub(crate) fn inherit_configuration_operations(
             }
         });
     }
-    Ok(())
 }
 
 fn operation_carrier_present(
@@ -565,26 +511,18 @@ fn operation_carrier_present(
 /// Establish projected split-line mode and source sketch from each
 /// `moPLine_c` feature-input object while native dimension values remain raw.
 pub(crate) fn enrich_history_split_lines(
-    ctx: &DecodeContext<'_>,
     histories: &mut [crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-) -> Result<(), CodecError> {
+) {
     let mut observations = HashMap::<String, (bool, bool)>::new();
     for lane in lanes {
         let mut objects = Vec::new();
         for feature in histories.iter().flat_map(|history| &history.features) {
-            ctx.charge_work(1, "scan SLDPRT split-line objects")?;
             if let Some(name) = feature_object_name(feature, lane) {
-                ctx.reserve_vec(&mut objects, 1, "collect SLDPRT split-line objects")?;
                 objects.push((name.offset, feature));
             }
         }
-        ctx.sort_unstable_by(
-            &mut objects,
-            |(left, _), (right, _)| left.cmp(right),
-            |_| 0,
-            "sort SLDPRT split-line objects",
-        )?;
+        objects.sort_unstable_by_key(|(left, _)| *left);
         for (index, (start, feature)) in objects.iter().enumerate() {
             if feature.input_class.as_deref() != Some("moPLine_c") {
                 continue;
@@ -608,12 +546,7 @@ pub(crate) fn enrich_history_split_lines(
                     observation.1 = true;
                 }
             } else {
-                ctx.reserve_map(&mut observations, 1, "index SLDPRT split-line observations")?;
-                let key = copy_retained_string(
-                    ctx,
-                    &feature.id,
-                    "retain SLDPRT split-line observation ID",
-                )?;
+                let key = feature.id.clone();
                 observations.insert(key, (project_classes == 1, project_classes != 1));
             }
         }
@@ -624,26 +557,14 @@ pub(crate) fn enrich_history_split_lines(
             if observations.get(&feature.id) != Some(&(true, false)) {
                 continue;
             }
-            ctx.charge_work(
-                u64::try_from(history.features.len()).map_err(|_| {
-                    ctx.refuse_codec_limit(
-                        "resolve SLDPRT split-line source",
-                        u64::MAX - 1,
-                        u64::MAX,
-                    )
-                })?,
-                "resolve SLDPRT split-line source",
-            )?;
             let Some(tool) = split_line_source_sketch(feature, &history.features) else {
                 continue;
             };
-            let value = copy_retained_string(ctx, &tool.id, "retain SLDPRT split-line tool ID")?;
+            let value = tool.id.clone();
             if let Some(existing) = tools.get_mut(&feature.id) {
                 *existing = value;
             } else {
-                ctx.reserve_map(&mut tools, 1, "index SLDPRT split-line tools")?;
-                let key =
-                    copy_retained_string(ctx, &feature.id, "retain SLDPRT split-line tool key")?;
+                let key = feature.id.clone();
                 tools.insert(key, value);
             }
         }
@@ -654,29 +575,15 @@ pub(crate) fn enrich_history_split_lines(
     {
         if observations.get(&feature.id) == Some(&(true, false)) {
             let mode_key = cadmpeg_core::nonblank_const!(SPLIT_LINE_MODE_PROPERTY);
-            ctx.admit_btree_entry(
-                &feature.properties,
-                &mode_key,
-                "bind SLDPRT split-line mode",
-            )?;
             feature
                 .properties
                 .insert(mode_key, SPLIT_LINE_PROJECTION_MODE.into());
             if let Some(tool) = tools.get(&feature.id) {
                 let tool_key = cadmpeg_core::nonblank_const!(SPLIT_LINE_TOOL_PROPERTY);
-                ctx.admit_btree_entry(
-                    &feature.properties,
-                    &tool_key,
-                    "bind SLDPRT split-line tool",
-                )?;
-                feature.properties.insert(
-                    tool_key,
-                    copy_retained_string(ctx, tool, "retain SLDPRT split-line tool property")?,
-                );
+                feature.properties.insert(tool_key, tool.to_owned());
             }
         }
     }
-    Ok(())
 }
 
 fn split_line_source_sketch<'a>(

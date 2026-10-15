@@ -76,15 +76,12 @@ fn write_seekable(
     )?;
     let mut entry_views = std::collections::BTreeMap::new();
     for entry in &entries {
-        ctx.insert_btree_map(
-            &mut entry_views,
+        entry_views.insert(
             entry.name().to_owned(),
             cadmpeg_core::decode::View::over_retained(entry.data()),
-            "FCStd written side entries",
-        )?;
+        );
     }
     crate::persistence::resolve_side_entries(
-        &ctx,
         &mut written_graph.properties,
         &entry_views,
         &mut written_graph.losses,

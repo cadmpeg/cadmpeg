@@ -9,12 +9,13 @@ use cadmpeg_ir::{
 };
 use std::collections::HashMap;
 
-use super::{ParameterAliasView, ParameterTokenText};
+use super::ParameterAliasView;
 use crate::history::literals::parse_parameter_literal;
+use std::borrow::Cow;
 
-enum Token<'a, 'ctx> {
-    Quoted(ParameterTokenText<'a, 'ctx>),
-    Bare(ParameterTokenText<'a, 'ctx>),
+enum Token<'a> {
+    Quoted(Cow<'a, str>),
+    Bare(Cow<'a, str>),
 }
 
 enum ExpressionFailure {
@@ -93,18 +94,14 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
     }
 
     fn parse_value(&mut self) -> Result<ParameterValue, ExpressionFailure> {
-        self.skip_space()?;
+        self.skip_space();
         self.take('=');
-        self.skip_space()?;
-        self.ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(self.input.len() - self.offset),
-            "parse SLDPRT parameter literal",
-        )?;
+        self.skip_space();
         if let Some(value) = parse_parameter_literal(&self.input[self.offset..]) {
             return Ok(value);
         }
         let value = self.comparison()?;
-        self.skip_space()?;
+        self.skip_space();
         if self.offset == self.input.len() {
             Ok(value)
         } else {
@@ -114,10 +111,8 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
 
     fn comparison(&mut self) -> Result<ParameterValue, ExpressionFailure> {
         let _depth = self.ctx.enter_nested("parse SLDPRT parameter comparison")?;
-        self.ctx
-            .charge_work(1, "parse SLDPRT parameter expression")?;
         let left = self.sum()?;
-        self.skip_space()?;
+        self.skip_space();
         let operator = ["<=", ">=", "<>", "=", "<", ">"]
             .into_iter()
             .find(|operator| self.input[self.offset..].starts_with(operator));
@@ -133,9 +128,7 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
     fn sum(&mut self) -> Result<ParameterValue, ExpressionFailure> {
         let mut value = self.product()?;
         loop {
-            self.ctx
-                .charge_work(1, "parse SLDPRT parameter expression")?;
-            self.skip_space()?;
+            self.skip_space();
             let Some(op) = self.take_one(&['+', '-']) else {
                 return Ok(value);
             };
@@ -147,9 +140,7 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
     fn product(&mut self) -> Result<ParameterValue, ExpressionFailure> {
         let mut value = self.unary()?;
         loop {
-            self.ctx
-                .charge_work(1, "parse SLDPRT parameter expression")?;
-            self.skip_space()?;
+            self.skip_space();
             let Some(op) = self.take_one(&['*', '/']) else {
                 return Ok(value);
             };
@@ -160,9 +151,7 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
 
     fn unary(&mut self) -> Result<ParameterValue, ExpressionFailure> {
         let _depth = self.ctx.enter_nested("parse SLDPRT parameter unary")?;
-        self.ctx
-            .charge_work(1, "parse SLDPRT parameter expression")?;
-        self.skip_space()?;
+        self.skip_space();
         if self.take('-') {
             negate_parameter_value(&self.unary()?).ok_or(ExpressionFailure::NoValue)
         } else if self.take('+') {
@@ -174,7 +163,7 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
 
     fn power(&mut self) -> Result<ParameterValue, ExpressionFailure> {
         let base = self.primary()?;
-        self.skip_space()?;
+        self.skip_space();
         if self.take('^') {
             exponentiate_parameter_value(&base, &self.unary()?).ok_or(ExpressionFailure::NoValue)
         } else {
@@ -183,10 +172,10 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
     }
 
     fn primary(&mut self) -> Result<ParameterValue, ExpressionFailure> {
-        self.skip_space()?;
+        self.skip_space();
         if self.take('(') {
             let value = self.comparison()?;
-            self.skip_space()?;
+            self.skip_space();
             return if self.take(')') {
                 Ok(value)
             } else {
@@ -195,27 +184,27 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
         }
         let token = self.token()?;
         if let Token::Bare(token) = &token {
-            self.skip_space()?;
+            self.skip_space();
             if self.take('(') {
                 let function =
-                    ParameterFunction::parse(token.as_str()).ok_or(ExpressionFailure::NoValue)?;
+                    ParameterFunction::parse(token.as_ref()).ok_or(ExpressionFailure::NoValue)?;
                 let mut arguments = Vec::with_capacity(function.argument_count());
                 for index in 0..function.argument_count() {
                     if index != 0 {
-                        self.skip_space()?;
+                        self.skip_space();
                         if !self.take(',') {
                             return Err(ExpressionFailure::NoValue);
                         }
                     }
                     arguments.push(self.comparison()?);
                 }
-                self.skip_space()?;
+                self.skip_space();
                 if !self.take(')') {
                     return Err(ExpressionFailure::NoValue);
                 }
                 return function.apply(arguments).ok_or(ExpressionFailure::NoValue);
             }
-            if token.as_str().eq_ignore_ascii_case("pi") {
+            if token.as_ref().eq_ignore_ascii_case("pi") {
                 return FiniteReal::new(std::f64::consts::PI)
                     .map(ParameterValue::Real)
                     .ok_or(ExpressionFailure::NoValue);
@@ -231,17 +220,16 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
             Ok((value).try_clone_for_decode(self.ctx, "retain SLDPRT parameter value text")?)
         };
         match token {
-            Token::Quoted(token) => referenced(token.as_str()),
-            Token::Bare(token) => match parse_parameter_literal(token.as_str()) {
+            Token::Quoted(token) => referenced(token.as_ref()),
+            Token::Bare(token) => match parse_parameter_literal(token.as_ref()) {
                 Some(value) => Ok(value),
-                None => referenced(token.as_str()),
+                None => referenced(token.as_ref()),
             },
         }
     }
 
-    fn token(&mut self) -> Result<Token<'a, 'ctx>, ExpressionFailure> {
+    fn token(&mut self) -> Result<Token<'a>, ExpressionFailure> {
         let _depth = self.ctx.enter_nested("parse SLDPRT parameter token")?;
-        self.ctx.charge_work(1, "parse SLDPRT parameter token")?;
         let rest = &self.input[self.offset..];
         if let Some((marker, prefix)) = [
             ("<MOD-DIAM>", "<MOD-DIAM>"),
@@ -256,29 +244,7 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
             let Token::Bare(value) = self.token()? else {
                 return Err(ExpressionFailure::NoValue);
             };
-            let bytes = prefix
-                .len()
-                .checked_add(value.as_str().len())
-                .ok_or_else(|| {
-                    self.ctx.refuse_codec_limit(
-                        "normalize SLDPRT parameter token",
-                        u64::MAX - 1,
-                        u64::MAX,
-                    )
-                })?;
-            self.ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(bytes),
-                "normalize SLDPRT parameter token",
-            )?;
-            let (mut text, reservation) = self
-                .ctx
-                .scoped_string(bytes, "normalize SLDPRT parameter token")?;
-            text.push_str(prefix);
-            text.push_str(value.as_str());
-            return Ok(Token::Bare(ParameterTokenText::Owned {
-                value: text,
-                _reservation: reservation,
-            }));
+            return Ok(Token::Bare(Cow::Owned(format!("{prefix}{value}"))));
         }
         if rest.starts_with('"') {
             self.offset += 1;
@@ -286,8 +252,6 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
             let mut end = start;
             let mut closed = false;
             while end < self.input.len() {
-                self.ctx
-                    .charge_work(1, "scan SLDPRT quoted parameter token")?;
                 let rest = &self.input[end..];
                 if rest.starts_with("\"\"") {
                     end += 2;
@@ -306,13 +270,7 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
                 self.offset = end;
                 return Err(ExpressionFailure::NoValue);
             }
-            let (mut value, reservation) = self
-                .ctx
-                .scoped_string(end - start, "retain SLDPRT quoted parameter token")?;
-            self.ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(end - start),
-                "copy SLDPRT quoted parameter token",
-            )?;
+            let mut value = String::new();
             let mut cursor = start;
             while cursor < end {
                 let rest = &self.input[cursor..end];
@@ -326,10 +284,7 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
                 }
             }
             self.offset = end + 1;
-            return Ok(Token::Quoted(ParameterTokenText::Owned {
-                value,
-                _reservation: reservation,
-            }));
+            return Ok(Token::Quoted(Cow::Owned(value)));
         }
         let start = self.offset;
         let numeric = self.input[start..]
@@ -337,7 +292,6 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
             .next()
             .is_some_and(|character| character.is_ascii_digit() || character == '.');
         while self.offset < self.input.len() {
-            self.ctx.charge_work(1, "scan SLDPRT parameter token")?;
             let character = self.input[self.offset..]
                 .chars()
                 .next()
@@ -353,21 +307,16 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
         if self.offset == start {
             return Err(ExpressionFailure::NoValue);
         }
-        Ok(Token::Bare(ParameterTokenText::Borrowed(
-            &self.input[start..self.offset],
-        )))
+        Ok(Token::Bare(Cow::Borrowed(&self.input[start..self.offset])))
     }
 
-    fn skip_space(&mut self) -> Result<(), ExpressionFailure> {
+    fn skip_space(&mut self) {
         while let Some(character) = self.input[self.offset..].chars().next() {
-            self.ctx
-                .charge_work(1, "scan SLDPRT parameter whitespace")?;
             if !character.is_whitespace() {
                 break;
             }
             self.offset += character.len_utf8();
         }
-        Ok(())
     }
 
     fn take(&mut self, expected: char) -> bool {

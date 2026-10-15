@@ -6,8 +6,6 @@ use crate::records::{
     FeatureInputLane, FeatureInputName, FeatureInputRelationFamily, FeatureInputScalar,
     FeatureInputScalarRole,
 };
-use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_core::CodecError;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -31,46 +29,17 @@ fn scalar_owned_by_feature(
 
 /// Add unambiguous `ResolvedFeatures` length parameters to a projection copy of history.
 pub(crate) fn enrich_history_parameters<'a>(
-    ctx: &DecodeContext<'_>,
     histories: &mut [crate::records::FeatureHistory],
     lanes: impl IntoIterator<Item = &'a FeatureInputLane>,
     replace_existing: bool,
-) -> Result<(), CodecError> {
+) {
     let mut candidates = BTreeMap::<(usize, usize, String), Vec<(f64, ScalarUnit)>>::new();
     for lane in lanes {
-        let feature_count = histories.iter().try_fold(0usize, |count, history| {
-            count.checked_add(history.features.len()).ok_or_else(|| {
-                ctx.refuse_codec_limit("scan SLDPRT parameter candidates", u64::MAX - 1, u64::MAX)
-            })
-        })?;
-        let work = lane
-            .classes
-            .len()
-            .checked_add(lane.names.len())
-            .and_then(|count| count.checked_mul(lane.scalars.len()))
-            .and_then(|count| {
-                feature_count
-                    .checked_mul(lane.names.len().checked_add(lane.scalars.len())?)
-                    .and_then(|features| count.checked_add(features))
-            })
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit("scan SLDPRT parameter candidates", u64::MAX - 1, u64::MAX)
-            })?;
-        ctx.charge_work(
-            u64::try_from(work).map_err(|_| {
-                ctx.refuse_codec_limit("scan SLDPRT parameter candidates", u64::MAX - 1, u64::MAX)
-            })?,
-            "scan SLDPRT parameter candidates",
-        )?;
-        let mut names_by_id = HashMap::new();
-        ctx.reserve_map(
-            &mut names_by_id,
-            lane.names.len(),
-            "index SLDPRT parameter names",
-        )?;
-        for name in &lane.names {
-            names_by_id.insert(name.id.as_str(), name);
-        }
+        let names_by_id = lane
+            .names
+            .iter()
+            .map(|name| (name.id.as_str(), name))
+            .collect::<HashMap<_, _>>();
         let relation_unit = |family| match family {
             FeatureInputRelationFamily::Angle => ScalarUnit::Angle,
             FeatureInputRelationFamily::LineLineDistance
@@ -107,19 +76,11 @@ pub(crate) fn enrich_history_parameters<'a>(
                     .iter()
                     .map(|binding| (binding.scalar_ref.as_str(), relation_unit(binding.family))),
             );
-        let mut scalar_units = HashMap::new();
-        for (scalar, unit) in units {
-            ctx.insert_hash_map(&mut scalar_units, scalar, unit, "index SLDPRT scalar units")?;
-        }
+        let mut scalar_units = units.collect::<HashMap<_, _>>();
         for relation in &lane.relation_instances {
             let unit = relation_unit(relation.family);
             for scalar in relation.scalar_refs() {
-                ctx.insert_hash_map(
-                    &mut scalar_units,
-                    scalar.as_str(),
-                    unit,
-                    "index SLDPRT scalar units",
-                )?;
+                scalar_units.insert(scalar.as_str(), unit);
             }
         }
         let mut starts = Vec::<(u64, usize, usize)>::new();
@@ -128,16 +89,10 @@ pub(crate) fn enrich_history_parameters<'a>(
                 let Some(name) = feature_object_name(feature, lane) else {
                     continue;
                 };
-                ctx.reserve_vec(&mut starts, 1, "collect SLDPRT parameter feature starts")?;
                 starts.push((name.offset, history_index, feature_index));
             }
         }
-        ctx.stable_sort_by(
-            &mut starts,
-            |left, right| left.0.cmp(&right.0),
-            |_| 0,
-            "sort SLDPRT feature starts",
-        )?;
+        starts.sort_by_key(|left| left.0);
         for (index, &(start, history_index, feature_index)) in starts.iter().enumerate() {
             let end = starts.get(index + 1).map(|next| next.0);
             let feature = &histories[history_index].features[feature_index];
@@ -150,33 +105,19 @@ pub(crate) fn enrich_history_parameters<'a>(
                 let Some(name) = names_by_id.get(scalar.name.as_str()) else {
                     continue;
                 };
-                ctx.push_btree_group(
-                    &mut owned,
-                    name.value.as_str(),
-                    scalar,
-                    "index SLDPRT owned scalar names",
-                    "collect SLDPRT owned scalars",
-                )?;
+                owned.entry(name.value.as_str()).or_default().push(scalar);
             }
             for (name, scalars) in owned {
-                let mut driving = Vec::new();
-                for scalar in scalars
+                let driving = scalars
                     .iter()
+                    .copied()
                     .filter(|scalar| scalar.role == FeatureInputScalarRole::Driving)
-                {
-                    ctx.reserve_vec(&mut driving, 1, "collect SLDPRT driving scalars")?;
-                    driving.push(*scalar);
-                }
+                    .collect::<Vec<_>>();
                 let candidates_for_name = if driving.is_empty() {
-                    let mut native = Vec::new();
-                    for scalar in scalars
+                    scalars
                         .into_iter()
                         .filter(|scalar| scalar.role == FeatureInputScalarRole::Native)
-                    {
-                        ctx.reserve_vec(&mut native, 1, "collect SLDPRT native scalars")?;
-                        native.push(scalar);
-                    }
-                    native
+                        .collect()
                 } else {
                     driving
                 };
@@ -193,18 +134,10 @@ pub(crate) fn enrich_history_parameters<'a>(
                     if value_only {
                         continue;
                     }
-                    let name = ctx.format_retained(
-                        format_args!("{name}"),
-                        "retain SLDPRT parameter candidate name",
-                    )?;
-                    let key = (history_index, feature_index, name);
-                    ctx.push_btree_group(
-                        &mut candidates,
-                        key,
-                        (scalar.value.get(), unit),
-                        "index SLDPRT parameter candidates",
-                        "collect SLDPRT parameter candidates",
-                    )?;
+                    candidates
+                        .entry((history_index, feature_index, name.to_owned()))
+                        .or_default()
+                        .push((scalar.value.get(), unit));
                 }
             }
         }
@@ -273,22 +206,11 @@ pub(crate) fn enrich_history_parameters<'a>(
             continue;
         };
         if replace_existing {
-            ctx.insert_btree_map(
-                &mut feature.parameters,
-                name,
-                expression,
-                "insert SLDPRT enriched parameter",
-            )?;
+            feature.parameters.insert(name, expression);
         } else {
-            ctx.admit_btree_entry(
-                &feature.parameters,
-                &name,
-                "insert SLDPRT enriched parameter",
-            )?;
             feature.parameters.entry(name).or_insert(expression);
         }
     }
-    Ok(())
 }
 
 /// Infer a length unit from the owning operation and its native display role.
@@ -362,7 +284,6 @@ fn native_scalar_matches_discrete_parameter(
 }
 
 pub(crate) fn sync_changed_feature_scalars(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     histories: &[crate::records::FeatureHistory],
     lanes: &mut [FeatureInputLane],
     changed: &HashSet<(String, cadmpeg_core::text::NonBlankString)>,
@@ -382,12 +303,7 @@ pub(crate) fn sync_changed_feature_scalars(
                 feature_object_name(feature, lane).map(|name| (name.offset, feature))
             })
             .collect::<Vec<_>>();
-        ctx.stable_sort_by(
-            &mut starts,
-            |(left, _), (right, _)| left.cmp(right),
-            |_| 0,
-            "sldprt feature name starts sort",
-        )?;
+        starts.sort_by_key(|(left, _)| *left);
         let mut updates = Vec::<(usize, f64)>::new();
         for (index, &(start, feature)) in starts.iter().enumerate() {
             let end = starts.get(index + 1).map(|(offset, _)| *offset);

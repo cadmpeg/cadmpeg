@@ -12,126 +12,16 @@ use crate::unknown::NativeUnknownRecord;
 mod decode_copy;
 
 #[test]
-fn admitted_nurbs_geometry_copy_refuses_each_nested_vector() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    use cadmpeg_core::CodecError;
-
-    let curve = crate::geometry::CurveGeometry::Solved(
-        crate::geometry::SolvedCurveGeometry::Nurbs(crate::test_support::nurbs::curve()),
-    );
-    let surface = SurfaceGeometry::Solved(crate::geometry::SolvedSurfaceGeometry::Nurbs(
-        crate::test_support::nurbs::surface(),
-    ));
-    let arena = DecodeArena::new();
-    for limit in [0, 4] {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        assert!(matches!(curve.try_clone_for_decode(&ctx, "curve copy"),
-            Err(CodecError::ResourceLimit(resource)) if resource.operation == "curve copy"));
-    }
-    for limit in [0, 4, 8, 10, 12] {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        assert!(matches!(surface.try_clone_for_decode(&ctx, "surface copy"),
-            Err(CodecError::ResourceLimit(resource)) if resource.operation == "surface copy"));
-    }
-    let policy = DecodePolicy::service();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert_eq!(
-        curve.try_clone_for_decode(&ctx, "curve copy").unwrap(),
-        curve
-    );
-    assert_eq!(
-        surface.try_clone_for_decode(&ctx, "surface copy").unwrap(),
-        surface
-    );
-}
-
-#[test]
-fn admitted_sampled_geometry_copy_refuses_both_polygon_lanes_and_polyline_rows() {
-    use crate::geometry::sampled::{PolygonalSurface, PolylineCurve, PolylineSamples};
-    use crate::math::Point3;
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    use cadmpeg_core::CodecError;
-
-    let points = vec![
-        Point3::new(0.0, 0.0, 0.0),
-        Point3::new(1.0, 0.0, 0.0),
-        Point3::new(0.0, 1.0, 0.0),
-    ];
-    let polygon = SurfaceGeometry::Solved(crate::geometry::SolvedSurfaceGeometry::Polygonal(
-        PolygonalSurface::new(
-            points.clone(),
-            vec![[0, 1, 2]],
-            0.0,
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .expect("polygonal construction admission")
-        .unwrap(),
-    ));
-    let polyline =
-        crate::geometry::CurveGeometry::Solved(crate::geometry::SolvedCurveGeometry::Polyline(
-            PolylineCurve::new(
-                PolylineSamples::Unparameterized {
-                    points: points.try_into().unwrap(),
-                },
-                0.0,
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .expect("polyline construction admission")
-            .unwrap(),
-        ));
-    let arena = DecodeArena::new();
-    for limit in [0, 3] {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        assert!(matches!(polygon.try_clone_for_decode(&ctx, "polygon copy"),
-            Err(CodecError::ResourceLimit(resource)) if resource.operation == "polygon copy"));
-    }
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(
-        matches!(polyline.try_clone_for_decode(&ctx, "polyline copy"),
-        Err(CodecError::ResourceLimit(resource)) if resource.operation == "polyline copy")
-    );
-    let policy = DecodePolicy::service();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert_eq!(
-        polygon.try_clone_for_decode(&ctx, "polygon copy").unwrap(),
-        polygon
-    );
-    assert_eq!(
-        polyline
-            .try_clone_for_decode(&ctx, "polyline copy")
-            .unwrap(),
-        polyline
-    );
-}
-
-#[test]
-fn admitted_inline_geometry_copy_refuses_node_and_record_text() {
+fn inline_geometry_copy_preserves_each_carrier() {
     use crate::geometry::{
         CompositeCurveSegment, CompositeCurveSegments, CompositeCurveTransition, CurveGeometry,
         PlacedCurve, SolvedCurveGeometry,
     };
     use crate::ids::CurveId;
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    use cadmpeg_core::CodecError;
 
-    let record = UnknownId::mint("test:geometry:unknown#1").unwrap();
     let unknown = CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
-        record: Some(record),
+        record: Some(UnknownId::mint("test:geometry:unknown#1").unwrap()),
     });
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(matches!(unknown.try_clone_for_decode(&ctx, "unknown copy"),
-        Err(CodecError::ResourceLimit(resource)) if resource.operation == "unknown copy"));
     let composite = CurveGeometry::Solved(SolvedCurveGeometry::Composite {
         segments: CompositeCurveSegments::try_from(vec![CompositeCurveSegment {
             curve: CurveId::mint("test:geometry:curve#1").unwrap(),
@@ -141,11 +31,6 @@ fn admitted_inline_geometry_copy_refuses_node_and_record_text() {
         .unwrap(),
         self_intersect: None,
     });
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(
-        matches!(composite.try_clone_for_decode(&ctx, "composite copy"),
-        Err(CodecError::ResourceLimit(resource)) if resource.operation == "composite copy")
-    );
     let transformed = CurveGeometry::Solved(SolvedCurveGeometry::Transformed(
         PlacedCurve::try_new(
             Box::new(SolvedCurveGeometry::Nurbs(
@@ -155,31 +40,15 @@ fn admitted_inline_geometry_copy_refuses_node_and_record_text() {
         )
         .unwrap(),
     ));
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 6;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(
-        matches!(transformed.try_clone_for_decode(&ctx, "inline copy"),
-        Err(CodecError::ResourceLimit(resource)) if resource.operation == "inline copy")
-    );
-    let policy = DecodePolicy::service();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert_eq!(
-        unknown.try_clone_for_decode(&ctx, "unknown copy").unwrap(),
-        unknown
-    );
-    assert_eq!(
-        composite
-            .try_clone_for_decode(&ctx, "composite copy")
-            .unwrap(),
-        composite
-    );
-    assert_eq!(
-        transformed
-            .try_clone_for_decode(&ctx, "inline copy")
-            .unwrap(),
-        transformed
-    );
+    let ctx = cadmpeg_test_support::service_decode_context();
+    for geometry in [unknown, composite, transformed] {
+        assert_eq!(
+            geometry
+                .try_clone_for_decode(&ctx, "geometry copy")
+                .unwrap(),
+            geometry
+        );
+    }
 }
 
 #[test]
@@ -1229,7 +1098,6 @@ fn the_ir_scalar_mints_name_no_native_sentinel() {
 
 // Each optional key below names itself in whatever it refuses.
 cadmpeg_core::named_optional_field!(deserialize_v_lower, f64, "v_lower");
-mod charged_curves;
 mod nesting_bound;
 mod support_mapping;
 

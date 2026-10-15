@@ -12,8 +12,7 @@ use crate::swift::ObjectSection;
 use crate::swift::RelatedObject;
 use crate::swift::TopologyIdentityIndex;
 use crate::swift::ROOT_CLASS;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::features::{
     patterns::{PatternKind, PatternSeed},
     Feature, FeatureDefinition, FeatureId, FeatureOperation,
@@ -27,10 +26,7 @@ use std::collections::BTreeMap;
 #[test]
 fn empty_swift_pattern_uses_one_native_hole_join() {
     let features = pattern_hole_features();
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-        .expect("empty root fits policy");
-    let context = pattern_hole_nominal_context(&ctx, &features).expect("pattern context");
+    let context = pattern_hole_nominal_context(&features);
     assert_eq!(
         context.get("Hole Pattern6").copied().map(PositiveReal::get),
         Some(6.1468)
@@ -81,9 +77,7 @@ fn empty_swift_pattern_uses_one_native_hole_join() {
         vec![FeatureId::mint("sldprt:model:feature#seed").expect("identity grammar")],
         simple_hole_definition(6.1468),
     ));
-    assert!(pattern_hole_nominal_context(&ctx, &ambiguous)
-        .expect("ambiguous pattern context")
-        .is_empty());
+    assert!(pattern_hole_nominal_context(&ambiguous).is_empty());
 
     let mut unresolved = features;
     let mut unresolved_hole = neutral_feature(
@@ -100,9 +94,7 @@ fn empty_swift_pattern_uses_one_native_hole_join() {
         shape.try_edit(|_, _, diameter| *diameter = None).unwrap();
     });
     unresolved.push(unresolved_hole);
-    assert!(pattern_hole_nominal_context(&ctx, &unresolved)
-        .expect("unresolved pattern context")
-        .is_empty());
+    assert!(pattern_hole_nominal_context(&unresolved).is_empty());
 }
 
 fn pattern_hole_features() -> Vec<Feature> {
@@ -131,48 +123,6 @@ fn pattern_hole_features() -> Vec<Feature> {
             simple_hole_definition(6.1468),
         ),
     ]
-}
-
-fn pattern_hole_limit_error(
-    set_limit: impl FnOnce(&mut cadmpeg_core::decode::ResourceLimits),
-) -> CodecError {
-    let features = pattern_hole_features();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    set_limit(&mut policy.limits);
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root fits policy");
-    pattern_hole_nominal_context(&ctx, &features).expect_err("pattern context must refuse")
-}
-
-#[test]
-fn pattern_hole_nominal_context_refuses_collection_limit() {
-    let CodecError::ResourceLimit(limit) =
-        pattern_hole_limit_error(|limits| limits.max_collection_items = 0)
-    else {
-        panic!("expected collection refusal")
-    };
-    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-}
-
-#[test]
-fn pattern_hole_nominal_context_refuses_retained_limit() {
-    let CodecError::ResourceLimit(limit) =
-        pattern_hole_limit_error(|limits| limits.max_retained_bytes = 0)
-    else {
-        panic!("expected retained refusal")
-    };
-    assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
-}
-
-#[test]
-fn pattern_hole_nominal_context_refuses_work_limit() {
-    let CodecError::ResourceLimit(limit) =
-        pattern_hole_limit_error(|limits| limits.max_work_units = 0)
-    else {
-        panic!("expected work refusal")
-    };
-    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
 }
 
 fn cad_feature(class: &str, identifier: &str) -> Entity {
@@ -266,9 +216,6 @@ fn cad_identifier_resolves_each_primary_topology_kind_and_rejects_collisions() {
     use cadmpeg_ir::ids::{BodyId, EdgeId, FaceId, PointId, ShellId, SurfaceId, VertexId};
     use cadmpeg_ir::topology::{Body, BodyKind, Edge, Face, Sense, Vertex};
 
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-        .expect("empty root fits policy");
     let body = Body {
         id: BodyId::mint("sldprt:brep:body#11").expect("identity grammar"),
         kind: BodyKind::default(),
@@ -301,7 +248,6 @@ fn cad_identifier_resolves_each_primary_topology_kind_and_rejects_collisions() {
         tolerance: None,
     };
     let index = TopologyIdentityIndex::from_model(
-        &ctx,
         crate::swift::PrimaryTopology {
             bodies: std::slice::from_ref(&body),
             faces: std::slice::from_ref(&face),
@@ -311,8 +257,7 @@ fn cad_identifier_resolves_each_primary_topology_kind_and_rejects_collisions() {
         &[(222, 22)],
         &[(333, 33)],
         &[(444, 44)],
-    )
-    .expect("topology index");
+    );
 
     assert_eq!(
         index.resolve("schema-a:11").cloned(),
@@ -357,7 +302,6 @@ fn cad_identifier_resolves_each_primary_topology_kind_and_rejects_collisions() {
         ..face.clone()
     };
     let active_with_alternate = TopologyIdentityIndex::from_model(
-        &ctx,
         crate::swift::PrimaryTopology {
             bodies: std::slice::from_ref(&body),
             faces: &[face.clone(), qualified_alternate],
@@ -367,8 +311,7 @@ fn cad_identifier_resolves_each_primary_topology_kind_and_rejects_collisions() {
         &[(222, 22)],
         &[],
         &[],
-    )
-    .expect("topology index");
+    );
     assert_eq!(
         active_with_alternate.resolve("schema-g:222").cloned(),
         Some(PmiTarget::Face {
@@ -383,7 +326,6 @@ fn cad_identifier_resolves_each_primary_topology_kind_and_rejects_collisions() {
         ..face.clone()
     };
     let index = TopologyIdentityIndex::from_model(
-        &ctx,
         crate::swift::PrimaryTopology {
             bodies: std::slice::from_ref(&body),
             faces: &[collision],
@@ -393,8 +335,7 @@ fn cad_identifier_resolves_each_primary_topology_kind_and_rejects_collisions() {
         &[],
         &[],
         &[],
-    )
-    .expect("topology index");
+    );
     assert_eq!(
         index.resolve("schema-g:11").cloned(),
         Some(PmiTarget::Body {
@@ -403,7 +344,6 @@ fn cad_identifier_resolves_each_primary_topology_kind_and_rejects_collisions() {
     );
 
     let sequence_wins = TopologyIdentityIndex::from_model(
-        &ctx,
         crate::swift::PrimaryTopology {
             bodies: std::slice::from_ref(&body),
             faces: std::slice::from_ref(&face),
@@ -413,8 +353,7 @@ fn cad_identifier_resolves_each_primary_topology_kind_and_rejects_collisions() {
         &[],
         &[(11, 33)],
         &[],
-    )
-    .expect("topology index");
+    );
     assert_eq!(
         sequence_wins.resolve("schema-h:11").cloned(),
         Some(PmiTarget::Edge {
@@ -423,7 +362,6 @@ fn cad_identifier_resolves_each_primary_topology_kind_and_rejects_collisions() {
     );
 
     let unresolved = TopologyIdentityIndex::from_model(
-        &ctx,
         crate::swift::PrimaryTopology {
             bodies: std::slice::from_ref(&body),
             faces: std::slice::from_ref(&face),
@@ -433,12 +371,10 @@ fn cad_identifier_resolves_each_primary_topology_kind_and_rejects_collisions() {
         &[(11, 999)],
         &[],
         &[],
-    )
-    .expect("topology index");
+    );
     assert!(unresolved.resolve("schema-i:11").cloned().is_none());
 
     let conflicting = TopologyIdentityIndex::from_model(
-        &ctx,
         crate::swift::PrimaryTopology {
             bodies: std::slice::from_ref(&body),
             faces: &[
@@ -454,12 +390,10 @@ fn cad_identifier_resolves_each_primary_topology_kind_and_rejects_collisions() {
         &[(77, 22), (77, 23)],
         &[],
         &[],
-    )
-    .expect("topology index");
+    );
     assert!(conflicting.resolve("schema-j:77").cloned().is_none());
 
     let conflicting_families = TopologyIdentityIndex::from_model(
-        &ctx,
         crate::swift::PrimaryTopology {
             bodies: std::slice::from_ref(&body),
             faces: std::slice::from_ref(&face),
@@ -469,75 +403,9 @@ fn cad_identifier_resolves_each_primary_topology_kind_and_rejects_collisions() {
         &[(88, 22)],
         &[(88, 33)],
         &[],
-    )
-    .expect("topology index");
+    );
     assert!(conflicting_families
         .resolve("schema-k:88")
         .cloned()
         .is_none());
-}
-
-fn topology_index_limit_error(
-    set_limit: impl FnOnce(&mut cadmpeg_core::decode::ResourceLimits),
-) -> CodecError {
-    use cadmpeg_ir::ids::BodyId;
-    use cadmpeg_ir::topology::{Body, BodyKind};
-
-    let body = Body {
-        id: BodyId::mint("sldprt:brep:body#11").expect("identity grammar"),
-        kind: BodyKind::default(),
-        regions: Vec::new(),
-        transform: None,
-        name: None,
-        color: None,
-        visible: None,
-    };
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    set_limit(&mut policy.limits);
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root fits policy");
-    TopologyIdentityIndex::from_model(
-        &ctx,
-        crate::swift::PrimaryTopology {
-            bodies: &[body],
-            faces: &[],
-            edges: &[],
-            vertices: &[],
-        },
-        &[],
-        &[],
-        &[],
-    )
-    .expect_err("topology index must refuse")
-}
-
-#[test]
-fn swift_topology_index_refuses_work_limit() {
-    let CodecError::ResourceLimit(limit) =
-        topology_index_limit_error(|limits| limits.max_work_units = 0)
-    else {
-        panic!("expected work refusal")
-    };
-    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-}
-
-#[test]
-fn swift_topology_index_refuses_retained_limit() {
-    let CodecError::ResourceLimit(limit) =
-        topology_index_limit_error(|limits| limits.max_retained_bytes = 0)
-    else {
-        panic!("expected retained refusal")
-    };
-    assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
-}
-
-#[test]
-fn swift_topology_index_refuses_collection_limit() {
-    let CodecError::ResourceLimit(limit) =
-        topology_index_limit_error(|limits| limits.max_collection_items = 0)
-    else {
-        panic!("expected collection refusal")
-    };
-    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
 }

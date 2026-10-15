@@ -852,41 +852,6 @@ fn advanced_face_name_transfers_through_inherited_representation_item() {
 }
 
 #[test]
-fn face_name_refuses_retained_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    let source = export(&unit_cube().expect("unit cube fixture is admitted"));
-    let named = source.replacen("ADVANCED_FACE('", "ADVANCED_FACE('budgeted face ", 1);
-    assert_ne!(named, source, "STEP export contains an advanced face");
-    let (exchange, _) =
-        crate::test_support::with_service_context(named.as_bytes(), crate::parse::parse_inner)
-            .expect("valid named-face exchange");
-    let arena = DecodeArena::new();
-    let refused = {
-        let error = cadmpeg_test_support::refusal::resource_limit_at(
-            ResourceDimension::RetainedBytes,
-            "step_string_text",
-            |limit| {
-                let mut policy = DecodePolicy::service();
-                policy.limits.max_retained_bytes = limit;
-                let (ctx, _) = DecodeContext::from_root_bytes(named.as_bytes(), &arena, &policy)
-                    .expect("root fits retained policy");
-                let mut ir = cadmpeg_ir::document::CadIr::empty();
-                crate::reader::geometry::decode(&exchange, &mut ir, &ctx)?;
-                let index = crate::reader::index::CarrierIndex::from_ir(&ir, &ctx)?;
-                super::super::decode(&exchange, &mut ir, &index, &ctx)?;
-                Ok::<(), CodecError>(())
-            },
-        );
-        matches!(Err::<(), CodecError>(error), Err(CodecError::ResourceLimit(refusal))
-                if refusal.dimension == ResourceDimension::RetainedBytes
-                    && refusal.operation == "step_string_text")
-    };
-    assert!(refused, "no retained limit refused the advanced face name");
-}
-
-#[test]
 fn complex_advanced_face_name_uses_representation_item_partial() {
     let source = String::from_utf8(include_bytes!("../../../../tests/fixtures/ap214_sheet.p21").to_vec())
         .expect("fixture is UTF-8")

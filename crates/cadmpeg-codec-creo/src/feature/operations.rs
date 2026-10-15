@@ -5,9 +5,6 @@
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_core::CodecError;
-
 use super::schema::SchemaClass;
 use crate::psb;
 
@@ -385,13 +382,10 @@ impl FeatureReferenceName {
 }
 
 /// Decode structurally closed feature-name entries from model reference data.
-pub(crate) fn reference_names(
-    ctx: &DecodeContext<'_>,
-    payload: &[u8],
-) -> Result<Vec<FeatureReferenceName>, CodecError> {
+pub(crate) fn reference_names(payload: &[u8]) -> Vec<FeatureReferenceName> {
     let mut names = Vec::new();
     let Some(last) = payload.len().checked_sub(2) else {
-        return Ok(names);
+        return names;
     };
     for offset in 0..last {
         if payload.get(offset..offset + 2) != Some(&[psb::token::ENTITY_REF, 0x71]) {
@@ -427,16 +421,15 @@ pub(crate) fn reference_names(
         {
             continue;
         }
-        ctx.reserve_vec(&mut names, 1, "creo reference name entries")?;
         names.push(FeatureReferenceName {
             feature_id,
-            name_bytes: ctx.copy_retained(name_bytes, "creo reference name bytes")?,
+            name_bytes: name_bytes.to_vec(),
             own_reference_id,
             reference_type,
             offset,
         });
     }
-    Ok(names)
+    names
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -447,10 +440,7 @@ struct FeatureRecipeBinding {
     offset: usize,
 }
 
-fn recipe_bindings(
-    ctx: &DecodeContext<'_>,
-    payload: &[u8],
-) -> Result<Vec<(u32, FeatureRecipeBinding)>, CodecError> {
+fn recipe_bindings(payload: &[u8]) -> Vec<(u32, FeatureRecipeBinding)> {
     let mut bindings = Vec::new();
     for marker in 0..payload.len() {
         if payload.get(marker) != Some(&psb::token::ENTITY_REF) {
@@ -486,7 +476,6 @@ fn recipe_bindings(
             .iter()
             .find(|(name, _)| payload.get(recipe_start..recipe_start + name.len()) == Some(*name))
         {
-            ctx.reserve_vec(&mut bindings, 1, "creo recipe bindings")?;
             bindings.push((
                 feature_id,
                 FeatureRecipeBinding {
@@ -498,7 +487,7 @@ fn recipe_bindings(
             ));
         }
     }
-    Ok(bindings)
+    bindings
 }
 
 fn agreeing_recipe_binding(bindings: &[FeatureRecipeBinding]) -> Option<FeatureRecipeBinding> {
@@ -526,23 +515,16 @@ fn inline_recipe_resolution(record: &[u8]) -> RecipeState {
     found.into()
 }
 
-fn conflicting_recipe_features(
-    ctx: &DecodeContext<'_>,
-    bindings: &[(u32, FeatureRecipeBinding)],
-) -> Result<BTreeSet<u32>, CodecError> {
+fn conflicting_recipe_features(bindings: &[(u32, FeatureRecipeBinding)]) -> BTreeSet<u32> {
     let mut by_feature = BTreeMap::<u32, Vec<FeatureRecipeBinding>>::new();
     for (feature_id, binding) in bindings {
-        ctx.admit_btree_entry(&by_feature, feature_id, "creo recipe feature nodes")?;
         match by_feature.entry(*feature_id) {
             std::collections::btree_map::Entry::Vacant(entry) => {
-                let mut values = Vec::new();
-                ctx.reserve_vec(&mut values, 1, "creo recipe feature bindings")?;
-                values.push(*binding);
+                let values = vec![*binding];
                 entry.insert(values);
             }
             std::collections::btree_map::Entry::Occupied(mut entry) => {
                 let values = entry.get_mut();
-                ctx.reserve_vec(values, 1, "creo recipe feature bindings")?;
                 values.push(*binding);
             }
         }
@@ -550,14 +532,10 @@ fn conflicting_recipe_features(
     let mut conflicting = BTreeSet::new();
     for (feature_id, bindings) in by_feature {
         if agreeing_recipe_binding(&bindings).is_none() {
-            ctx.insert_btree_set(
-                &mut conflicting,
-                feature_id,
-                "creo conflicting recipe features",
-            )?;
+            conflicting.insert(feature_id);
         }
     }
-    Ok(conflicting)
+    conflicting
 }
 
 fn agreeing_value<T: Clone + Eq>(mut values: impl Iterator<Item = T>) -> Option<T> {
@@ -567,25 +545,17 @@ fn agreeing_value<T: Clone + Eq>(mut values: impl Iterator<Item = T>) -> Option<
 
 /// Decode every NUL-terminated `<Kind> id <N>` operation state and bounded
 /// procedural-recipe record from one feature-state namespace, in byte order.
-pub(crate) fn operation_states(
-    ctx: &DecodeContext<'_>,
-    payload: &[u8],
-) -> Result<Vec<FeatureOperationState>, CodecError> {
+pub(crate) fn operation_states(payload: &[u8]) -> Vec<FeatureOperationState> {
     const SEPARATORS: &[&[u8]] = &[b" id ", b" ID "];
     let family_byte = |byte: u8| {
         byte.is_ascii_alphanumeric()
             || byte >= 0x80
             || matches!(byte, b' ' | b'_' | b'-' | b'/' | b'(' | b')')
     };
-    let bound_recipes = recipe_bindings(ctx, payload)?;
-    let conflicting_features = conflicting_recipe_features(ctx, &bound_recipes)?;
+    let bound_recipes = recipe_bindings(payload);
+    let conflicting_features = conflicting_recipe_features(&bound_recipes);
     let mut recipe_binding_counts = BTreeMap::<u32, usize>::new();
     for (feature_id, _) in &bound_recipes {
-        ctx.admit_btree_entry(
-            &recipe_binding_counts,
-            feature_id,
-            "creo recipe binding counts",
-        )?;
         match recipe_binding_counts.entry(*feature_id) {
             std::collections::btree_map::Entry::Vacant(entry) => {
                 entry.insert(1);
@@ -595,7 +565,7 @@ pub(crate) fn operation_states(
     }
     let mut result = Vec::new();
     let Some(last) = payload.len().checked_sub(4) else {
-        return Ok(result);
+        return result;
     };
     for separator in 0..last {
         let Some(separator_bytes) = SEPARATORS.iter().find(|candidate| {
@@ -660,18 +630,8 @@ pub(crate) fn operation_states(
                 RecipeState::Resolved(binding.recipe)
             })
         };
-        let text_work = cadmpeg_core::decode::u64_from_index(family.len())
-            .checked_mul(6)
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit("creo operation family text work", u64::MAX, u64::MAX)
-            })?;
-        ctx.charge_work(text_work, "creo operation family text work")?;
-        let kind = ctx.copy_retained_lossy_utf8(family, "creo operation family name")?;
-        let name_bytes = ctx.copy_retained(
-            &payload[state_offset..separator + separator_bytes.len() + end],
-            "creo operation stored name bytes",
-        )?;
-        ctx.reserve_vec(&mut result, 1, "creo feature operation states")?;
+        let kind = String::from_utf8_lossy(family).into_owned();
+        let name_bytes = payload[state_offset..separator + separator_bytes.len() + end].to_vec();
         result.push(FeatureOperation {
             feature_id,
             kind: OperationKind::Stored(kind),
@@ -702,7 +662,6 @@ pub(crate) fn operation_states(
         {
             continue;
         }
-        ctx.reserve_vec(&mut result, 1, "creo feature operation states")?;
         result.push(FeatureOperation {
             feature_id,
             kind: OperationKind::from_recipe(binding.recipe),
@@ -723,22 +682,12 @@ pub(crate) fn operation_states(
             state_offset: binding.offset,
         });
     }
-    ctx.stable_sort_by(
-        result.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
-        "creo operation states result ordering",
-    )?;
+    result.as_mut_slice().sort_by_key(|left| left.offset);
     let mut display_counts = BTreeMap::<u32, usize>::new();
     for operation in result
         .iter()
         .filter(|operation| operation.display_name_stored())
     {
-        ctx.admit_btree_entry(
-            &display_counts,
-            &operation.feature_id,
-            "creo operation display counts",
-        )?;
         match display_counts.entry(operation.feature_id) {
             std::collections::btree_map::Entry::Vacant(entry) => {
                 entry.insert(1);
@@ -749,44 +698,29 @@ pub(crate) fn operation_states(
     let mut conflicting_display_features = BTreeSet::new();
     for (feature_id, count) in display_counts {
         if count > 1 {
-            ctx.insert_btree_set(
-                &mut conflicting_display_features,
-                feature_id,
-                "creo conflicting operation displays",
-            )?;
+            conflicting_display_features.insert(feature_id);
         }
     }
     for operation in &mut result {
         operation.display_state_conflict =
             conflicting_display_features.contains(&operation.feature_id);
     }
-    Ok(result)
+    result
 }
 
 /// Decode one unambiguous or consensus operation projection per feature identifier.
-pub(crate) fn operations(
-    ctx: &DecodeContext<'_>,
-    payload: &[u8],
-) -> Result<Vec<FeatureOperation>, CodecError> {
-    let bindings = recipe_bindings(ctx, payload)?;
-    let conflicting_features = conflicting_recipe_features(ctx, &bindings)?;
+pub(crate) fn operations(payload: &[u8]) -> Vec<FeatureOperation> {
+    let bindings = recipe_bindings(payload);
+    let conflicting_features = conflicting_recipe_features(&bindings);
     let mut by_feature = BTreeMap::<u32, Vec<FeatureOperationState>>::new();
-    for operation in operation_states(ctx, payload)? {
-        ctx.admit_btree_entry(
-            &by_feature,
-            &operation.feature_id,
-            "creo operation feature nodes",
-        )?;
+    for operation in operation_states(payload) {
         match by_feature.entry(operation.feature_id) {
             std::collections::btree_map::Entry::Vacant(entry) => {
-                let mut states = Vec::new();
-                ctx.reserve_vec(&mut states, 1, "creo operation feature states")?;
-                states.push(operation);
+                let states = vec![operation];
                 entry.insert(states);
             }
             std::collections::btree_map::Entry::Occupied(mut entry) => {
                 let states = entry.get_mut();
-                ctx.reserve_vec(states, 1, "creo operation feature states")?;
                 states.push(operation);
             }
         }
@@ -869,7 +803,6 @@ pub(crate) fn operations(
             }
         };
         if let Some(projection) = projection {
-            ctx.reserve_vec(&mut current, 1, "creo current operation projections")?;
             current.push(projection);
         }
     }
@@ -883,13 +816,8 @@ pub(crate) fn operations(
             operation.kind = OperationKind::Native;
         }
     }
-    ctx.stable_sort_by(
-        current.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
-        "creo operations current ordering",
-    )?;
-    Ok(current)
+    current.as_mut_slice().sort_by_key(|left| left.offset);
+    current
 }
 
 #[cfg(test)]
@@ -897,57 +825,18 @@ mod tests {
     mod resource_limits;
 
     use super::reference_names;
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
     use std::borrow::Cow;
 
     #[test]
-    fn reference_name_entry_refuses_before_vec_growth() {
+    fn reference_names_read_one_entry() {
         let data = b"\xf7\x71\x01\x05\x02Name\0\x01\x01";
-        let run = |limit| {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = limit;
-            let (ctx, _) = DecodeContext::from_root_bytes(data, &arena, &policy)
-                .expect("root input is admitted");
-            reference_names(&ctx, data)
-        };
-        assert_eq!(run(1).expect("one entry admitted").len(), 1);
-        let error = run(0).expect_err("entry needs one Vec item");
-        assert!(matches!(error, CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "creo reference name entries"));
-    }
-
-    #[test]
-    fn reference_name_bytes_refuse_before_retained_copy() {
-        let data = b"\xf7\x71\x01\x05\x02Name\0\x01\x01";
-        let run = |limit| {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = limit;
-            let (ctx, _) = DecodeContext::from_root_bytes(data, &arena, &policy)
-                .expect("root input is admitted");
-            reference_names(&ctx, data)
-        };
-        let slots = cadmpeg_core::decode::u64_from_index(
-            4 * std::mem::size_of::<super::FeatureReferenceName>(),
-        );
-        assert_eq!(run(slots + 4).expect("four name bytes admitted").len(), 1);
-        let error = run(slots + 3).expect_err("fourth retained byte exceeds limit");
-        assert!(matches!(error, CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "creo reference name bytes"));
+        assert_eq!(reference_names(data).len(), 1);
     }
 
     #[test]
     fn reference_name_text_follows_stored_bytes() {
         let data = b"\xf7\x71\x01\x05\x02N\xff\0\x01\x01";
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let policy = cadmpeg_core::decode::DecodePolicy::service();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
-            .expect("root input is admitted");
-        let mut names = reference_names(&ctx, data).expect("one reference name");
+        let mut names = reference_names(data);
         let [record] = names.as_mut_slice() else {
             panic!("one closed reference name");
         };

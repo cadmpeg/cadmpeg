@@ -3,7 +3,6 @@
 
 mod resource_limits;
 
-use super::counted_parameter_scalar_slots;
 use super::named_prototype_records;
 use super::named_surface_value;
 use super::parameter_records;
@@ -12,6 +11,7 @@ use crate::psb;
 use crate::scalar;
 use crate::surface::admitted_counted_parameter_body;
 use crate::surface::complete_plane_local_system_slots;
+use crate::surface::counted_parameter_scalar_slots;
 use crate::surface::decode_row_scalar;
 use crate::surface::first_compound_close;
 use crate::surface::plane_direct_frame;
@@ -19,7 +19,7 @@ use crate::surface::plane_envelope_scalar_slots_with_tokens_and_end;
 use crate::surface::plane_frame;
 use crate::surface::plane_local_system_compound_close;
 use crate::surface::plane_matrix_frame;
-use crate::surface::rows as checked_rows;
+use crate::surface::rows;
 use crate::surface::scalar_slots_with_tokens_and_end;
 use crate::surface::slot_equality;
 use crate::surface::LocalSystemClassification;
@@ -38,42 +38,13 @@ use crate::surface::SurfaceParameterScalarFrame;
 use crate::surface::SurfacePrototypeFamily;
 use crate::surface::SurfaceRow;
 
-fn rows(payload: &[u8]) -> Vec<SurfaceRow> {
-    crate::decode::with_test_decode_ctx(|ctx| checked_rows(ctx, payload))
-        .expect("surface rows are admitted")
-}
-
-fn service_scalar_tokens(
-    kind: SurfaceKind,
-    body: &[u8],
-    cache: &scalar::ScalarCache,
-) -> Vec<SurfaceParameterScalar> {
-    crate::decode::with_test_decode_ctx(|ctx| crate::surface::scalar_tokens(ctx, kind, body, cache))
-        .expect("scalar tokens fit service limits")
-}
-
-fn service_opaque_spans(
-    body: &[u8],
-    tokens: &[SurfaceParameterScalar],
-) -> Vec<SurfaceParameterOpaqueSpan> {
-    crate::decode::with_test_decode_ctx(|ctx| crate::surface::opaque_spans(ctx, body, tokens))
-        .expect("opaque spans fit service limits")
-}
-
-fn service_scalar_frames(tokens: &[SurfaceParameterScalar]) -> Vec<SurfaceParameterScalarFrame> {
-    crate::decode::with_test_decode_ctx(|ctx| crate::surface::scalar_frames(ctx, tokens))
-        .expect("scalar frames fit service limits")
-}
-
 fn service_complete_plane_compact_scalar_suffix<'a>(
     body: &'a [u8],
     cache: &scalar::ScalarCache,
 ) -> Option<Vec<(Option<f64>, &'a [u8])>> {
-    crate::decode::with_test_decode_ctx(|ctx| {
-        crate::surface::complete_plane_compact_scalar_suffix(ctx, body, cache)
-            .map(|result| result.map(|table| table.slots))
-    })
-    .expect("compact suffix fits service limits")
+    {
+        crate::surface::complete_plane_compact_scalar_suffix(body, cache).map(|table| table.slots)
+    }
 }
 
 fn frame_bound_outline_planes(
@@ -89,7 +60,7 @@ fn frame_bound_outline_planes(
 }
 
 fn outline_planes(envelopes: &[PlaneEnvelopeRecord]) -> Vec<OutlinePlane> {
-    super::with_decode_ctx(&[], |ctx| crate::surface::outline_planes(ctx, envelopes))
+    crate::surface::outline_planes(envelopes)
 }
 
 fn plane_envelopes(payload: &[u8]) -> Vec<PlaneEnvelopeRecord> {
@@ -100,9 +71,9 @@ fn positional_frame_planes(
     parameters: &[SurfaceParameterRecord],
     rows: &[SurfaceRow],
 ) -> Vec<OutlinePlane> {
-    super::with_decode_ctx(&[], |ctx| {
-        crate::surface::positional_frame_planes(ctx, parameters, rows)
-    })
+    {
+        crate::surface::positional_frame_planes(parameters, rows)
+    }
 }
 
 fn sequential_named_local_system_slots(
@@ -111,9 +82,9 @@ fn sequential_named_local_system_slots(
     cache: &scalar::ScalarCache,
     refusal: &mut ScalarBodyRefusal,
 ) -> Option<Vec<Option<f64>>> {
-    super::with_decode_ctx(body, |ctx| {
-        crate::surface::sequential_named_local_system_slots(ctx, body, count, cache, refusal)
-    })
+    {
+        crate::surface::sequential_named_local_system_slots(body, count, cache, refusal)
+    }
 }
 
 #[test]
@@ -142,137 +113,6 @@ fn derives_one_held_coordinate_outline_plane() {
             u_axis: cadmpeg_ir::units::UnitVector3::Y_AXIS,
             offset: 20,
         }]
-    );
-}
-
-#[test]
-fn held_coordinate_outline_refuses_output_vector() {
-    let records = [PlaneEnvelopeRecord {
-        surface_id: 42,
-        body: Vec::new(),
-        envelope: PlaneEnvelope::Standard {
-            bounds_2d: [[Some(0.0), Some(1.0)], [Some(0.0), Some(1.0)]],
-            corners_3d: [
-                [Some(3.0), Some(-2.0), Some(4.0)],
-                [Some(3.0), Some(5.0), Some(9.0)],
-            ],
-        },
-        corner_coordinate_equal: [Some(true), Some(false), Some(false)],
-        scalar_tokens: Vec::new(),
-        row_offset: 10,
-        offset: 20,
-    }];
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root");
-    let error =
-        crate::surface::outline_planes(&ctx, &records).expect_err("outline vector exceeds limit");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.operation == "creo held-coordinate outline planes")
-    );
-}
-
-fn placed_frame_bound_limit_error(limit: u64) -> cadmpeg_core::CodecError {
-    let records = [PlaneEnvelopeRecord {
-        surface_id: 42,
-        body: Vec::new(),
-        envelope: PlaneEnvelope::Standard {
-            bounds_2d: [[None; 2]; 2],
-            corners_3d: [
-                [Some(-3.0), Some(-4.0), Some(7.0)],
-                [Some(5.0), Some(-4.0), None],
-            ],
-        },
-        corner_coordinate_equal: [Some(false), Some(true), None],
-        scalar_tokens: Vec::new(),
-        row_offset: 10,
-        offset: 20,
-    }];
-    let frames = [PlaneLocalSystem {
-        surface_id: 42,
-        body: Vec::new(),
-        slots: [
-            0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 100.0, 200.0, 300.0,
-        ]
-        .map(Some),
-        layout: Some(crate::scalar::PlaneSupportFrameLayout::DirectNormalTriples),
-        classification: LocalSystemClassification::Unclassified,
-        row_offset: 10,
-        offset: 30,
-    }];
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root");
-    crate::surface::placed_outline_planes(&ctx, &records, &frames)
-        .expect_err("placed outline collection exceeds limit")
-}
-
-#[test]
-fn placed_outline_refuses_frame_bound_vector() {
-    let error = placed_frame_bound_limit_error(0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.operation == "creo frame-bound outline planes")
-    );
-}
-
-#[test]
-fn placed_outline_refuses_frame_bound_id_node() {
-    let error = placed_frame_bound_limit_error(1);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.operation == "creo frame-bound outline ID nodes")
-    );
-}
-
-#[test]
-fn placed_outline_refuses_output_vector() {
-    let error = placed_frame_bound_limit_error(2);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.operation == "creo placed outline planes")
-    );
-}
-
-#[test]
-fn placed_outline_refuses_matrix_frame_id_node() {
-    let frames = [PlaneLocalSystem {
-        surface_id: 42,
-        body: Vec::new(),
-        slots: [
-            Some(1.0),
-            Some(0.0),
-            Some(1.0),
-            Some(0.0),
-            Some(0.0),
-            Some(0.0),
-            Some(-1.0),
-            Some(0.0),
-            Some(1.0),
-            Some(0.0),
-            Some(0.0),
-            Some(0.0),
-        ],
-        layout: Some(crate::scalar::PlaneSupportFrameLayout::MatrixColumns),
-        classification: LocalSystemClassification::Unclassified,
-        row_offset: 10,
-        offset: 30,
-    }];
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root");
-    let error = crate::surface::placed_outline_planes(&ctx, &[], &frames)
-        .expect_err("matrix frame ID exceeds limit");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.operation == "creo matrix frame ID nodes")
     );
 }
 
@@ -336,39 +176,6 @@ fn derives_plane_from_unique_six_scalar_positional_frame() {
     let mut ambiguous = record;
     ambiguous.scalar_frames[0].slots[4].value = Some(2.0);
     assert!(positional_frame_planes(&[ambiguous], &[row]).is_empty());
-}
-
-fn positional_frame_limit_error(limit: u64) -> cadmpeg_core::CodecError {
-    let (record, row) = unique_positional_frame_fixture();
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root");
-    crate::surface::positional_frame_planes(
-        &ctx,
-        std::slice::from_ref(&record),
-        std::slice::from_ref(&row),
-    )
-    .expect_err("positional plane collection exceeds limit")
-}
-
-#[test]
-fn positional_frame_refuses_candidate_vector() {
-    let error = positional_frame_limit_error(0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.operation == "creo positional plane candidates")
-    );
-}
-
-#[test]
-fn positional_frame_refuses_output_vector() {
-    let error = positional_frame_limit_error(1);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.operation == "creo positional frame planes")
-    );
 }
 
 #[test]
@@ -516,12 +323,12 @@ fn derives_plane_from_auxiliary_corner_frame() {
         0xd5, 0xd6, 0x25, 0xa6, 0xec, 0x06, 0x18, 0x46, 0x18, 0x81, 0x99, 0x6a, 0xa2, 0x99, 0x53,
         0x2e, 0x20, 0x33, 0xf7, 0x0c,
     ];
-    compact_prefix.scalar_tokens = service_scalar_tokens(
+    compact_prefix.scalar_tokens = crate::surface::scalar_tokens(
         SurfaceKind::Plane,
         &compact_prefix.body,
         &scalar::ScalarCache::default(),
     );
-    compact_prefix.scalar_frames = service_scalar_frames(&compact_prefix.scalar_tokens);
+    compact_prefix.scalar_frames = crate::surface::scalar_frames(&compact_prefix.scalar_tokens);
     assert_eq!(
         positional_frame_planes(&[compact_prefix], std::slice::from_ref(&row)),
         vec![OutlinePlane {
@@ -676,11 +483,12 @@ fn derives_plane_from_marker_bounded_corner_frames() {
         0x00, 0xdc, 0x9c, 0x95, 0x35, 0x00, 0x80, 0xf8, 0x46, 0x1a, 0xa3, 0x11, 0xff, 0x6a, 0x47,
         0x68, 0x2e, 0x20, 0x33, 0xf7, 0x0c,
     ];
-    let tokens = service_scalar_tokens(SurfaceKind::Plane, &body, &scalar::ScalarCache::default());
-    let frames = service_scalar_frames(&tokens);
+    let tokens =
+        crate::surface::scalar_tokens(SurfaceKind::Plane, &body, &scalar::ScalarCache::default());
+    let frames = crate::surface::scalar_frames(&tokens);
     let record = SurfaceParameterRecord {
         surface_id: 41,
-        opaque_spans: service_opaque_spans(&body, &tokens),
+        opaque_spans: crate::surface::opaque_spans(&body, &tokens),
         scalar_tokens: tokens,
         scalar_frames: frames,
         carrier: crate::surface::SurfaceParameterCarrier::Unresolved(
@@ -728,12 +536,13 @@ fn derives_plane_from_marker_bounded_corner_frames() {
         0x20, 0x00, 0x46, 0x1e, 0x3e, 0x61, 0xf5, 0x38, 0x92, 0x68, 0x46, 0x18, 0xfa, 0xaf, 0xda,
         0xc1, 0x51, 0xa5, 0x2e, 0x20, 0x33,
     ];
-    prefixed_eight_byte.scalar_tokens = service_scalar_tokens(
+    prefixed_eight_byte.scalar_tokens = crate::surface::scalar_tokens(
         SurfaceKind::Plane,
         &prefixed_eight_byte.body,
         &scalar::ScalarCache::default(),
     );
-    prefixed_eight_byte.scalar_frames = service_scalar_frames(&prefixed_eight_byte.scalar_tokens);
+    prefixed_eight_byte.scalar_frames =
+        crate::surface::scalar_frames(&prefixed_eight_byte.scalar_tokens);
     assert_eq!(
         positional_frame_planes(&[prefixed_eight_byte], std::slice::from_ref(&row)),
         vec![OutlinePlane {
@@ -752,12 +561,13 @@ fn derives_plane_from_marker_bounded_corner_frames() {
         0x00, 0x4a, 0x19, 0x29, 0x8e, 0x22, 0xd2, 0x2c, 0x46, 0x18, 0xfa, 0xaf, 0xda, 0xc1, 0x51,
         0xa5, 0x2e, 0x20, 0x33,
     ];
-    prefixed_seven_byte.scalar_tokens = service_scalar_tokens(
+    prefixed_seven_byte.scalar_tokens = crate::surface::scalar_tokens(
         SurfaceKind::Plane,
         &prefixed_seven_byte.body,
         &scalar::ScalarCache::default(),
     );
-    prefixed_seven_byte.scalar_frames = service_scalar_frames(&prefixed_seven_byte.scalar_tokens);
+    prefixed_seven_byte.scalar_frames =
+        crate::surface::scalar_frames(&prefixed_seven_byte.scalar_tokens);
     assert_eq!(
         positional_frame_planes(&[prefixed_seven_byte], std::slice::from_ref(&row)),
         vec![OutlinePlane {
@@ -771,12 +581,12 @@ fn derives_plane_from_marker_bounded_corner_frames() {
 
     let mut unterminated = record.clone();
     unterminated.body.truncate(unterminated.body.len() - 2);
-    unterminated.scalar_tokens = service_scalar_tokens(
+    unterminated.scalar_tokens = crate::surface::scalar_tokens(
         SurfaceKind::Plane,
         &unterminated.body,
         &scalar::ScalarCache::default(),
     );
-    unterminated.scalar_frames = service_scalar_frames(&unterminated.scalar_tokens);
+    unterminated.scalar_frames = crate::surface::scalar_frames(&unterminated.scalar_tokens);
     assert_eq!(
         positional_frame_planes(&[unterminated], std::slice::from_ref(&row)),
         vec![OutlinePlane {
@@ -795,12 +605,12 @@ fn derives_plane_from_marker_bounded_corner_frames() {
         0xd0, 0x0d, 0x05, 0xd2, 0xf6, 0xc4, 0x80, 0x46, 0x1b, 0x1c, 0x28, 0x70, 0x5d, 0x7a, 0x9b,
         0x2e, 0x20, 0x33, 0xf7, 0x0c,
     ];
-    y_held.scalar_tokens = service_scalar_tokens(
+    y_held.scalar_tokens = crate::surface::scalar_tokens(
         SurfaceKind::Plane,
         &y_held.body,
         &scalar::ScalarCache::default(),
     );
-    y_held.scalar_frames = service_scalar_frames(&y_held.scalar_tokens);
+    y_held.scalar_frames = crate::surface::scalar_frames(&y_held.scalar_tokens);
     assert_eq!(
         positional_frame_planes(&[y_held], std::slice::from_ref(&row)),
         vec![OutlinePlane {
@@ -819,12 +629,12 @@ fn derives_plane_from_marker_bounded_corner_frames() {
         0x46, 0x18, 0xb0, 0x77, 0xb6, 0x05, 0x5f, 0x34, 0x46, 0x1a, 0x29, 0xfb, 0x8f, 0x4b, 0x8f,
         0x16, 0x2e, 0x20, 0x33,
     ];
-    mixed_width.scalar_tokens = service_scalar_tokens(
+    mixed_width.scalar_tokens = crate::surface::scalar_tokens(
         SurfaceKind::Plane,
         &mixed_width.body,
         &scalar::ScalarCache::default(),
     );
-    mixed_width.scalar_frames = service_scalar_frames(&mixed_width.scalar_tokens);
+    mixed_width.scalar_frames = crate::surface::scalar_frames(&mixed_width.scalar_tokens);
     assert_eq!(
         positional_frame_planes(&[mixed_width], std::slice::from_ref(&row)),
         vec![OutlinePlane {
@@ -838,13 +648,13 @@ fn derives_plane_from_marker_bounded_corner_frames() {
 
     let mut malformed = record;
     malformed.body[31] = 0x00;
-    let tokens = service_scalar_tokens(
+    let tokens = crate::surface::scalar_tokens(
         SurfaceKind::Plane,
         &malformed.body,
         &scalar::ScalarCache::default(),
     );
     assert!(tokens.iter().all(|token| token.offset != 13));
-    malformed.scalar_frames = service_scalar_frames(&tokens);
+    malformed.scalar_frames = crate::surface::scalar_frames(&tokens);
     assert!(positional_frame_planes(&[malformed], &[row]).is_empty());
 }
 
@@ -958,16 +768,10 @@ fn plane_envelope_coordinates_decode_compact_positive_half() {
     let body = [
         0x0f, 0xe4, 0x0d, 0x0f, 0x43, 0xe0, 0x00, 0xe4, 0x0f, 0x0e, 0xe4, 0x0f,
     ];
-    let (slots, consumed) = crate::decode::with_test_decode_ctx(|ctx| {
-        plane_envelope_scalar_slots_with_tokens_and_end(
-            ctx,
-            &body,
-            10,
-            &scalar::ScalarCache::default(),
-        )
-        .map(|result| result.map(|table| (table.slots, table.consumed)))
-    })
-    .expect("envelope slots are admitted")
+    let (slots, consumed) = {
+        plane_envelope_scalar_slots_with_tokens_and_end(&body, 10, &scalar::ScalarCache::default())
+            .map(|table| (table.slots, table.consumed))
+    }
     .expect("a complete ten-slot envelope table");
 
     assert_eq!(consumed, body.len());
@@ -1331,11 +1135,10 @@ fn signed_surface_dict_slots_decode_as_mirrors() {
     let body = [
         0xbb, 1, 2, 3, 4, 5, 6, 0xbb, 1, 2, 3, 4, 5, 6, 0x73, 1, 2, 3, 4, 5, 6,
     ];
-    let slots = crate::decode::with_test_decode_ctx(|ctx| {
-        scalar_slots_with_tokens_and_end(ctx, &body, 3, &scalar::ScalarCache::default())
-            .map(|result| result.map(|table| (table.slots, table.consumed)))
-    })
-    .expect("scalar slots are admitted")
+    let slots = {
+        scalar_slots_with_tokens_and_end(&body, 3, &scalar::ScalarCache::default())
+            .map(|table| (table.slots, table.consumed))
+    }
     .expect("a complete three-slot table")
     .0;
 
@@ -1353,30 +1156,23 @@ fn a_surface_row_slot_table_states_no_slot_it_did_not_decode() {
     let cache = scalar::ScalarCache::default();
     // A byte the surface-row lane defines no scalar form for ends the table.
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| {
-            scalar_slots_with_tokens_and_end(ctx, &[0xe4, 0x01, 0xe4], 3, &cache)
-                .map(|result| result.map(|table| (table.slots, table.consumed)))
-        })
-        .expect("scalar slots are admitted"),
+        scalar_slots_with_tokens_and_end(&[0xe4, 0x01, 0xe4], 3, &cache)
+            .map(|table| (table.slots, table.consumed)),
         None
     );
     // A body that runs out before its declared count states fewer slots than
     // it declares.
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| {
-            scalar_slots_with_tokens_and_end(ctx, &[0xe4, 0x18], 3, &cache)
-                .map(|result| result.map(|table| (table.slots, table.consumed)))
-        })
-        .expect("scalar slots are admitted"),
+        scalar_slots_with_tokens_and_end(&[0xe4, 0x18], 3, &cache)
+            .map(|table| (table.slots, table.consumed)),
         None
     );
     // A complete table states every slot with the bytes it was decoded from,
     // and those bytes run from zero to the returned offset.
-    let (slots, consumed) = crate::decode::with_test_decode_ctx(|ctx| {
-        scalar_slots_with_tokens_and_end(ctx, &[0xe4, 0xe4, 0x18], 3, &cache)
-            .map(|result| result.map(|table| (table.slots, table.consumed)))
-    })
-    .expect("scalar slots are admitted")
+    let (slots, consumed) = {
+        scalar_slots_with_tokens_and_end(&[0xe4, 0xe4, 0x18], 3, &cache)
+            .map(|table| (table.slots, table.consumed))
+    }
     .expect("a complete three-slot table");
     assert_eq!(consumed, 3);
     assert_eq!(
@@ -1390,26 +1186,19 @@ fn a_surface_row_slot_table_states_no_slot_it_did_not_decode() {
 fn a_plane_envelope_slot_table_states_no_slot_it_did_not_decode() {
     let cache = scalar::ScalarCache::default();
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| {
-            plane_envelope_scalar_slots_with_tokens_and_end(ctx, &[0x0e, 0x01, 0x0e], 3, &cache)
-                .map(|result| result.map(|table| (table.slots, table.consumed)))
-        })
-        .expect("envelope slots are admitted"),
+        plane_envelope_scalar_slots_with_tokens_and_end(&[0x0e, 0x01, 0x0e], 3, &cache)
+            .map(|table| (table.slots, table.consumed)),
         None
     );
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| {
-            plane_envelope_scalar_slots_with_tokens_and_end(ctx, &[0x0e, 0x18], 3, &cache)
-                .map(|result| result.map(|table| (table.slots, table.consumed)))
-        })
-        .expect("envelope slots are admitted"),
+        plane_envelope_scalar_slots_with_tokens_and_end(&[0x0e, 0x18], 3, &cache)
+            .map(|table| (table.slots, table.consumed)),
         None
     );
-    let (slots, consumed) = crate::decode::with_test_decode_ctx(|ctx| {
-        plane_envelope_scalar_slots_with_tokens_and_end(ctx, &[0x0e, 0x0e, 0x18], 3, &cache)
-            .map(|result| result.map(|table| (table.slots, table.consumed)))
-    })
-    .expect("envelope slots are admitted")
+    let (slots, consumed) = {
+        plane_envelope_scalar_slots_with_tokens_and_end(&[0x0e, 0x0e, 0x18], 3, &cache)
+            .map(|table| (table.slots, table.consumed))
+    }
     .expect("a complete three-slot envelope table");
     assert_eq!(consumed, 3);
     assert_eq!(
@@ -1420,30 +1209,12 @@ fn a_plane_envelope_slot_table_states_no_slot_it_did_not_decode() {
 }
 
 #[test]
-fn spline_scalar_grid_parser_propagates_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
+fn spline_scalar_grid_parser_decodes_six_slots() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
     let mut payload = b"srf_prim_ptr(spline)\0\xe0\x02i_points\0\xf9\x02\x03".to_vec();
     payload.extend([0x0f; 6]);
     let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 5;
-    let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy)
-        .expect("small prototype payload is admitted");
-    let error = crate::surface::named_prototype_records(
-        &ctx,
-        &payload,
-        &mut crate::lane_refusal::LaneRefusals::new(),
-    )
-    .expect_err("six scalar slots exceed the five-item limit");
-    assert!(matches!(
-        error,
-        CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "creo named spline scalar slots"
-    ));
-
     let service = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &service)
         .expect("small prototype payload is admitted");
@@ -1477,23 +1248,18 @@ fn fillet_vectors_use_the_signed_coordinate_dict_lane() {
         Some(&SurfaceNamedValue::ScalarArray({
             let mut array = crate::surface::arrays::DimensionedScalars::empty(1, 3)
                 .expect("valid scalar array");
-            crate::decode::with_test_decode_ctx(|ctx| {
-                array.fill_tokens(
-                    ctx,
-                    vec![
-                        (
-                            Some(f64::from_be_bytes([
-                                0xbf, 0xef, 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc,
-                            ])),
-                            negative.to_vec(),
-                        ),
-                        (Some(1.0), vec![0xe4]),
-                        (Some(0.0), vec![0x0f]),
-                    ],
-                )
-            })
-            .expect("admitted scalar fill")
-            .expect("matching scalar extent");
+            array
+                .fill_tokens(vec![
+                    (
+                        Some(f64::from_be_bytes([
+                            0xbf, 0xef, 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc,
+                        ])),
+                        negative.to_vec(),
+                    ),
+                    (Some(1.0), vec![0xe4]),
+                    (Some(0.0), vec![0x0f]),
+                ])
+                .expect("matching scalar extent");
             array
         }))
     );

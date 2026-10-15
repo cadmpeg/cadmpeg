@@ -271,8 +271,7 @@ fn strict_decode_rejects_the_reported_record_omission() {
 #[test]
 fn reference_walk_allocates_only_reference_outputs() {
     let value = crate::parse::Value::List(vec![crate::parse::Value::Integer(1); 32]);
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
+    let policy = DecodePolicy::service();
     with_policy_context(b"", &policy, |_, ctx| {
         super::visit_references(&value, ctx, &mut |_, _| panic!("scalar has no reference"))
             .expect("scalar traversal stores no collection items");

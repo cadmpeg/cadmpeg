@@ -10,22 +10,9 @@ impl crate::schema::rewrite::typed::RewriteIdentities for AttributeTarget {
         map: &mut crate::schema::rewrite::typed::IdentityMap<'_, F>,
     ) -> Result<(), cadmpeg_core::CodecError> {
         let _depth = ctx.enter_nested("walk native attribute target")?;
-        let work =
-            cadmpeg_core::decode::u64_from_index(value.as_object().map_or(0, serde_json::Map::len))
-                .checked_mul(4)
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit("find native attribute kind", u64::MAX - 1, u64::MAX)
-                })?;
-        ctx.charge_work(work, "find native attribute kind")?;
+
         let kind = value.get("kind").and_then(serde_json::Value::as_str);
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(kind.map_or(0, str::len))
-                .checked_mul(8)
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit("match native attribute kind", u64::MAX - 1, u64::MAX)
-                })?,
-            "match native attribute kind",
-        )?;
+
         match kind {
             Some("body") => crate::schema::rewrite::typed::native_fields::rewrite_field(
                 ctx,
@@ -109,7 +96,7 @@ impl crate::schema::rewrite::typed::RewriteIdentities for AttributeTarget {
         visitor: &mut dyn FnMut(&str) -> Result<(), cadmpeg_core::CodecError>,
     ) -> Result<(), cadmpeg_core::CodecError> {
         let _depth = ctx.enter_nested("walk typed reference fields")?;
-        ctx.charge_work(1, "walk typed reference fields")?;
+
         match self {
             Self::Document => Ok(()),
             Self::Body(id) => id.visit_identity_references(ctx, visitor),
@@ -127,7 +114,7 @@ impl crate::schema::rewrite::typed::RewriteIdentities for AttributeTarget {
         map: &mut crate::schema::rewrite::typed::IdentityMap<'_, F>,
     ) -> Result<Self, cadmpeg_core::CodecError> {
         let _depth = ctx.enter_nested("typed rewrite variant")?;
-        ctx.charge_work(1, "typed rewrite variant")?;
+
         Ok(match self {
             Self::Document => Self::Document,
             Self::Body(id) => Self::Body(id.rewrite_identities(ctx, map)?),

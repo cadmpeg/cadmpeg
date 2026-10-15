@@ -3,12 +3,18 @@
 use serde::ser::{SerializeMap, SerializeSeq, SerializeStruct, SerializeStructVariant};
 use serde::{Serialize, Serializer};
 
-use super::CanonValue;
+use super::{CanonText, Written};
 use crate::native::NativeNamespace;
 
+/// The text a serializer wrote into `out`, with the object it returned placed.
+fn render(written: Written, mut out: Vec<u8>) -> String {
+    written.place(&mut out);
+    String::from_utf8(out).expect("canonical text")
+}
+
 #[test]
-fn display_value_charges_escaped_chunks_and_formats_once() {
-    use std::cell::{Cell, RefCell};
+fn display_value_formats_once() {
+    use std::cell::Cell;
     use std::fmt::Write as _;
 
     struct DisplayText<'a>(&'a Cell<usize>);
@@ -35,11 +41,6 @@ fn display_value_charges_escaped_chunks_and_formats_once() {
     }
 
     let calls = Cell::new(0);
-    let captured = RefCell::new(Vec::new());
-    let sink = |bytes: &[u8]| {
-        captured.borrow_mut().extend_from_slice(bytes);
-        Ok(())
-    };
     let ctx = crate::native::test_ctx();
     let record = super::super::NativeRecord::from_typed_for_decode(
         &ctx,
@@ -47,7 +48,6 @@ fn display_value_charges_escaped_chunks_and_formats_once() {
             id: "test:native:record#display",
             value: DisplayText(&calls),
         },
-        Some(&sink),
     )
     .expect("valid display record");
     assert_eq!(calls.get(), 1);
@@ -55,12 +55,11 @@ fn display_value_charges_escaped_chunks_and_formats_once() {
         record.field("value"),
         Some(serde_json::json!("line\nquote\"\u{1}"))
     );
-    assert_eq!(*captured.borrow(), serde_json::to_vec(&record).unwrap());
 }
 
 #[test]
-fn display_map_key_charges_escaped_chunks_and_formats_once() {
-    use std::cell::{Cell, RefCell};
+fn display_map_key_formats_once() {
+    use std::cell::Cell;
 
     struct Key<'a>(&'a Cell<usize>);
 
@@ -89,18 +88,11 @@ fn display_map_key_charges_escaped_chunks_and_formats_once() {
     }
 
     let calls = Cell::new(0);
-    let captured = RefCell::new(Vec::new());
-    let sink = |bytes: &[u8]| {
-        captured.borrow_mut().extend_from_slice(bytes);
-        Ok(())
-    };
     let ctx = crate::native::test_ctx();
-    let record =
-        super::super::NativeRecord::from_typed_for_decode(&ctx, &Record(&calls), Some(&sink))
-            .expect("valid key record");
+    let record = super::super::NativeRecord::from_typed_for_decode(&ctx, &Record(&calls))
+        .expect("valid key record");
     assert_eq!(calls.get(), 1);
     assert_eq!(record.field("key\n"), Some(serde_json::json!(7)));
-    assert_eq!(*captured.borrow(), serde_json::to_vec(&record).unwrap());
 }
 
 enum ObjectShape {
@@ -171,14 +163,15 @@ fn duplicate_typed_fields_cannot_replace_a_native_arena() {
 #[test]
 fn malformed_map_protocol_is_reported() {
     let ctx = crate::native::test_ctx();
+    let mut out = Vec::new();
     let mut pending =
-        serde::Serializer::serialize_map(CanonValue::for_record(&ctx), None).expect("map");
+        serde::Serializer::serialize_map(CanonText::for_record(&ctx, &mut out), None).expect("map");
     pending.serialize_key("first").expect("first key");
     assert!(pending.serialize_key("second").is_err());
     assert!(SerializeMap::end(pending).is_err());
 
     let mut no_key =
-        serde::Serializer::serialize_map(CanonValue::for_record(&ctx), None).expect("map");
+        serde::Serializer::serialize_map(CanonText::for_record(&ctx, &mut out), None).expect("map");
     assert!(no_key.serialize_value(&1).is_err());
 }
 
@@ -192,18 +185,20 @@ fn a_rejected_sequence_element_does_not_corrupt_rendered_json() {
     }
 
     let ctx = crate::native::test_ctx();
+    let mut out = Vec::new();
     let mut sequence =
-        serde::Serializer::serialize_seq(CanonValue::for_record(&ctx), None).expect("sequence");
+        serde::Serializer::serialize_seq(CanonText::for_record(&ctx, &mut out), None)
+            .expect("sequence");
     sequence.serialize_element(&1).expect("first element");
     assert!(sequence.serialize_element(&Refused).is_err());
     sequence.serialize_element(&2).expect("second element");
-    assert_eq!(sequence.end().expect("sequence").render(), "[1,2]");
+    let written = sequence.end().expect("sequence");
+    assert_eq!(render(written, out), "[1,2]");
 }
 
 #[test]
-fn raw_value_streams_unescaped_json_before_materialization() {
+fn raw_value_is_stored_as_canonical_json() {
     use serde_json::value::RawValue;
-    use std::cell::RefCell;
 
     #[derive(Serialize)]
     struct Record {
@@ -216,18 +211,9 @@ fn raw_value_streams_unescaped_json_before_materialization() {
         raw: RawValue::from_string(r#"{ "text": "quoted \"value\"" }"#.to_owned())
             .expect("valid raw JSON"),
     };
-    let captured = RefCell::new(Vec::new());
-    let sink = |bytes: &[u8]| {
-        captured.borrow_mut().extend_from_slice(bytes);
-        Ok(())
-    };
     let ctx = crate::native::test_ctx();
-    let stored = super::super::NativeRecord::from_typed_for_decode(&ctx, &typed, Some(&sink))
-        .expect("valid raw record");
-    assert_eq!(
-        *captured.borrow(),
-        serde_json::to_vec(&typed).expect("reference raw JSON bytes")
-    );
+    let stored =
+        super::super::NativeRecord::from_typed_for_decode(&ctx, &typed).expect("valid raw record");
     assert_eq!(
         stored.field("raw"),
         Some(serde_json::json!({"text": "quoted \"value\""}))
@@ -461,74 +447,36 @@ fn a_display_member_writes_its_text_through_collect_str() {
 
 #[test]
 fn malformed_raw_json_protocol_cannot_produce_a_native_value() {
-    let ctx = crate::native::test_ctx();
-    let make = || {
-        CanonValue::for_record(&ctx)
+    fn make<'a, 'o>(
+        ctx: &'a cadmpeg_core::decode::DecodeContext<'a>,
+        out: &'o mut Vec<u8>,
+    ) -> super::CanonStruct<'a, 'o> {
+        CanonText::for_record(ctx, out)
             .serialize_struct(super::RAW_VALUE_STRUCT, 1)
             .expect("raw struct")
-    };
-    assert!(make().end().is_err());
-    assert!(make().serialize_field("other", &"null").is_err());
-    assert!(make().serialize_field(super::RAW_VALUE_STRUCT, &7).is_err());
-    assert!(make()
+    }
+    let ctx = crate::native::test_ctx();
+    let mut out = Vec::new();
+    assert!(make(&ctx, &mut out).end().is_err());
+    assert!(make(&ctx, &mut out)
+        .serialize_field("other", &"null")
+        .is_err());
+    assert!(make(&ctx, &mut out)
+        .serialize_field(super::RAW_VALUE_STRUCT, &7)
+        .is_err());
+    assert!(make(&ctx, &mut out)
         .serialize_field(super::RAW_VALUE_STRUCT, &"invalid JSON")
         .is_err());
+    assert!(out.is_empty(), "a refused payload leaves no text behind");
 
-    let mut raw = make();
+    let mut raw = make(&ctx, &mut out);
     raw.serialize_field(super::RAW_VALUE_STRUCT, &"null")
         .expect("one raw value");
     assert!(raw
         .serialize_field(super::RAW_VALUE_STRUCT, &"true")
         .is_err());
-    assert_eq!(
-        raw.end().expect("first payload remains intact").render(),
-        "null"
-    );
-}
-
-#[test]
-fn raw_native_resource_refusals_keep_the_caller_dimension() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use serde_json::value::RawValue;
-
-    #[derive(Serialize)]
-    struct Record {
-        id: &'static str,
-        raw: Box<RawValue>,
-    }
-    let id = "test:native:record#raw-limit";
-    let json = r#"[["retained"]]"#;
-    let record = Record {
-        id,
-        raw: RawValue::from_string(json.into()).unwrap(),
-    };
-    let arena = DecodeArena::new();
-    let (service, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default()).unwrap();
-    let stored =
-        super::super::NativeRecord::from_typed_for_decode(&service, &record, None).unwrap();
-    assert_eq!(stored.field("raw"), Some(serde_json::json!([["retained"]])));
-    for dimension in [
-        ResourceDimension::CollectionItems,
-        ResourceDimension::RetainedBytes,
-        ResourceDimension::RecursionDepth,
-    ] {
-        let mut policy = DecodePolicy::default();
-        match dimension {
-            ResourceDimension::CollectionItems => policy.limits.max_collection_items = 2,
-            ResourceDimension::RetainedBytes => {
-                policy.limits.max_retained_bytes =
-                    u64::try_from(2 + id.len() + 3 + json.len()).unwrap();
-            }
-            ResourceDimension::RecursionDepth => policy.limits.max_recursion_depth = 1,
-            _ => panic!("unsupported raw-native test dimension"),
-        }
-        let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error =
-            super::super::NativeRecord::from_typed_for_decode(&limited, &record, None).unwrap_err();
-        assert!(matches!(cadmpeg_core::CodecError::from(error),
-            cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == dimension));
-    }
+    let written = raw.end().expect("first payload remains intact");
+    assert_eq!(render(written, out), "null");
 }
 
 #[test]
@@ -583,67 +531,6 @@ fn native_float_keys_keep_the_scalar_json_spelling() {
 }
 
 #[test]
-fn raw_native_replay_text_uses_scoped_storage() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use serde_json::value::RawValue;
-    #[derive(Serialize)]
-    struct Record {
-        id: &'static str,
-        raw: Box<RawValue>,
-    }
-    let json = r#"[["retained"]]"#;
-    let record = Record {
-        id: "test:native:record#raw-storage",
-        raw: RawValue::from_string(json.into()).unwrap(),
-    };
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(json.len()) - 1;
-    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = record
-        .serialize(CanonValue::for_record(&limited))
-        .err()
-        .unwrap()
-        .into_native(&limited);
-    assert!(
-        matches!(cadmpeg_core::CodecError::from(error), cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::MaterializedBytes && limit.operation == "serialize native record")
-    );
-    policy.limits.max_materialized_bytes += 1;
-    let (exact, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let stored = record
-        .serialize(CanonValue::for_record(&exact))
-        .ok()
-        .unwrap()
-        .into_value();
-    assert_eq!(stored["raw"], serde_json::json!([["retained"]]));
-    let _released = exact
-        .reserve_scoped(
-            policy.limits.max_materialized_bytes,
-            "released raw replay text",
-        )
-        .unwrap();
-}
-
-#[test]
-fn known_sequence_length_reserves_only_its_backing_slots() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes =
-        cadmpeg_core::decode::u64_from_index(3 * std::mem::size_of::<serde_json::Value>());
-    policy.limits.max_collection_items = 3;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let values = [1u32, 2, 3];
-    let value = values
-        .serialize(CanonValue::for_record(&ctx))
-        .unwrap()
-        .into_value();
-    assert_eq!(value, serde_json::json!([1, 2, 3]));
-    assert_eq!(value.as_array().unwrap().capacity(), 3);
-}
-
-#[test]
 fn canonical_native_root_and_transparent_wrappers_use_session_depth() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     let arena = DecodeArena::new();
@@ -651,17 +538,13 @@ fn canonical_native_root_and_transparent_wrappers_use_session_depth() {
     policy.limits.max_recursion_depth = 0;
     for trigger in 0..4 {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut out = Vec::new();
+        let canon = CanonText::for_record(&ctx, &mut out);
         let result = match trigger {
-            0 => CanonValue::for_record(&ctx)
-                .serialize_map(Some(0))
-                .map(|_| ()),
-            1 => CanonValue::for_record(&ctx)
-                .serialize_seq(Some(0))
-                .map(|_| ()),
-            2 => CanonValue::for_record(&ctx).serialize_some(&7).map(|_| ()),
-            3 => CanonValue::for_record(&ctx)
-                .serialize_newtype_struct("Wrapped", &7)
-                .map(|_| ()),
+            0 => canon.serialize_map(Some(0)).map(|_| ()),
+            1 => canon.serialize_seq(Some(0)).map(|_| ()),
+            2 => canon.serialize_some(&7).map(|_| ()),
+            3 => canon.serialize_newtype_struct("Wrapped", &7).map(|_| ()),
             _ => unreachable!(),
         };
         let super::CanonError::Resource(cadmpeg_core::CodecError::ResourceLimit(first)) =
@@ -679,91 +562,125 @@ fn canonical_native_root_and_transparent_wrappers_use_session_depth() {
     }
 }
 
+/// Members are placed in key order at every depth whatever order they arrive
+/// in, and the record's `id` member leads. The oracle is the `serde_json`
+/// text of the record's `serde_json::to_value` tree behind a leading `id`.
 #[test]
-fn canonical_native_scalar_visits_preserve_the_first_work_refusal() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    for trigger in 0..4 {
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result = match trigger {
-            0 => CanonValue::for_record(&ctx).serialize_bool(true),
-            1 => CanonValue::for_record(&ctx).serialize_f64(1.0),
-            2 => CanonValue::for_record(&ctx).serialize_none(),
-            3 => CanonValue::for_record(&ctx).serialize_unit(),
-            _ => unreachable!(),
-        };
-        let super::CanonError::Resource(cadmpeg_core::CodecError::ResourceLimit(first)) =
-            result.err().unwrap()
-        else {
-            panic!("scalar work admission must refuse");
-        };
-        assert_eq!(first.dimension, ResourceDimension::WorkUnits);
-        assert_eq!(first.used, 0);
-        assert_eq!(first.additional, 1);
-        assert!(
-            matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit == first)
-        );
-    }
-}
+fn members_are_placed_in_key_order_however_they_arrive() {
+    use std::collections::BTreeMap;
 
-#[test]
-fn canonical_native_sequence_slots_are_admitted_before_allocation() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = CanonValue::for_record(&ctx)
-        .serialize_seq(Some(3))
-        .err()
-        .unwrap();
-    let super::CanonError::Resource(cadmpeg_core::CodecError::ResourceLimit(first)) = error else {
-        panic!("sequence slots must refuse");
+    use crate::native::NativeRecord;
+
+    #[derive(Serialize)]
+    struct Leading {
+        id: &'static str,
+        value: u8,
+    }
+
+    #[derive(Serialize)]
+    struct Before {
+        alpha: u8,
+        id: &'static str,
+    }
+
+    #[derive(Serialize)]
+    struct Reversed {
+        zulu: u8,
+        yankee: [u8; 2],
+        alpha: Option<u8>,
+    }
+
+    #[derive(Serialize)]
+    enum Tagged {
+        Fields { zulu: u8, alpha: u8 },
+    }
+
+    struct Descending;
+
+    impl Serialize for Descending {
+        fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+            let mut map = serializer.serialize_map(None)?;
+            for key in ["c", "b", "a"] {
+                map.serialize_entry(
+                    key,
+                    &Reversed {
+                        zulu: 1,
+                        yankee: [2, 3],
+                        alpha: None,
+                    },
+                )?;
+            }
+            map.end()
+        }
+    }
+
+    #[derive(Serialize)]
+    struct Nested {
+        zulu: Vec<Reversed>,
+        id: &'static str,
+        map: Descending,
+        tagged: Tagged,
+        raw: Box<serde_json::value::RawValue>,
+        sorted: BTreeMap<&'static str, Leading>,
+    }
+
+    fn oracle<T: Serialize>(record: &T) -> String {
+        let serde_json::Value::Object(mut fields) = serde_json::to_value(record).unwrap() else {
+            panic!("record serializes as an object");
+        };
+        let id = fields.remove("id").unwrap();
+        let mut text = format!("{{\"id\":{id}");
+        for (key, value) in fields {
+            text.push(',');
+            text.push_str(&serde_json::Value::String(key).to_string());
+            text.push(':');
+            text.push_str(&value.to_string());
+        }
+        text.push('}');
+        text
+    }
+
+    fn stored<T: Serialize>(record: &T) -> String {
+        serde_json::to_string(&NativeRecord::from_typed(record).unwrap()).unwrap()
+    }
+
+    let leading = Leading {
+        id: "test:native:record#leading",
+        value: 7,
     };
-    assert_eq!(first.dimension, ResourceDimension::CollectionItems);
-    assert_eq!(first.additional, 3);
-    assert!(
-        matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit == first)
-    );
-}
-
-#[test]
-fn canonical_native_key_comparisons_admit_the_complete_key_bound() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use serde_json::{Map, Value};
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    for copied in [false, true] {
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let mut entries = Map::from_iter([("a".into(), Value::Null), ("b".into(), Value::Null)]);
-        let error = if copied {
-            super::super::copy::insert(&ctx, &mut entries, String::new(), Value::Null).unwrap_err()
-        } else {
-            let mut map = super::CanonMap {
-                ctx: &ctx,
-                _nested: ctx.enter_nested(super::WORK).unwrap(),
-                entries,
-                key: None,
-                depth: super::MAX_NATIVE_NESTING_DEPTH,
-                sink: None,
-            };
-            let super::CanonError::Resource(error) = map.insert(String::new(), &7).unwrap_err()
-            else {
-                panic!("key comparison must refuse");
-            };
-            assert_eq!(map.entries.len(), 2);
-            error
-        };
-        let cadmpeg_core::CodecError::ResourceLimit(first) = error else {
-            panic!("key work must refuse");
-        };
-        assert_eq!(first.dimension, ResourceDimension::WorkUnits);
-        assert_eq!(first.additional, 3);
-        assert!(
-            matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit == first)
-        );
-    }
+    assert_eq!(stored(&leading), oracle(&leading));
+    let before = Before {
+        alpha: 7,
+        id: "test:native:record#before",
+    };
+    assert_eq!(stored(&before), oracle(&before));
+    let nested = Nested {
+        zulu: vec![
+            Reversed {
+                zulu: 1,
+                yankee: [2, 3],
+                alpha: Some(4),
+            },
+            Reversed {
+                zulu: 5,
+                yankee: [6, 7],
+                alpha: None,
+            },
+        ],
+        id: "test:native:record#nested",
+        map: Descending,
+        tagged: Tagged::Fields { zulu: 1, alpha: 2 },
+        raw: serde_json::value::RawValue::from_string(
+            r#"{"z":{"y":1,"x":[{"b":1,"a":2}]},"a":0}"#.to_owned(),
+        )
+        .unwrap(),
+        sorted: BTreeMap::from([(
+            "k",
+            Leading {
+                id: "inner",
+                value: 1,
+            },
+        )]),
+    };
+    assert_eq!(stored(&nested), oracle(&nested));
 }

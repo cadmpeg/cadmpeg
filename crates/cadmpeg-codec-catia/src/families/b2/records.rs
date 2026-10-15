@@ -33,7 +33,7 @@ use crate::native::owner_chart::{CatiaOwnerChartMiddleControl, CatiaOwnerChartTe
 use crate::native::owner_numeric_tail::CatiaOwnerNumericTail;
 use crate::wire::bytes::persistent_ref;
 use crate::wire::bytes::{
-    allocation_reference, compact_int, f64_le, f64_point, finite_f64_lane_charged, read_f64_array,
+    allocation_reference, compact_int, f64_le, f64_point, finite_f64_lane, read_f64_array,
     u32_le_24, AllocationReferenceEncoding,
 };
 #[cfg(test)]
@@ -596,19 +596,16 @@ pub(crate) struct B2EdgeNode {
 #[cfg(test)]
 pub(in crate::families) fn b2_use_metadata(data: &[u8]) -> Vec<B2UseMetadata> {
     let records = consolidated_records(data);
-    crate::test_support::with_service_context(|ctx| {
-        b2_use_metadata_from_records(ctx, data, &records).expect("service decode")
-    })
+    b2_use_metadata_from_records(data, &records)
 }
 
 pub(in crate::families) fn b2_use_metadata_from_records(
-    ctx: &DecodeContext<'_>,
     data: &[u8],
     records: &[ConsolidatedRecord],
-) -> Result<Vec<B2UseMetadata>, CodecError> {
+) -> Vec<B2UseMetadata> {
     let mut uses = Vec::new();
     for frame in family_frames_from_records(records, ConsolidatedFamily::B, 0x06) {
-        let payload = ctx.copy_retained(&data[frame.payload..frame.end], "catia_b2_use_payload")?;
+        let payload = data[frame.payload..frame.end].to_vec();
         let sense = match payload.last() {
             Some(0x84) => Some(B2UseSense::Sense84),
             Some(0x88) => Some(B2UseSense::Sense88),
@@ -633,7 +630,7 @@ pub(in crate::families) fn b2_use_metadata_from_records(
                         *value = reference;
                     }
                     if valid && at == end {
-                        Some(ctx.copy_slice(&parsed[..count], "catia_b2_use_references")?)
+                        Some(parsed[..count].to_vec())
                     } else {
                         None
                     }
@@ -646,17 +643,13 @@ pub(in crate::families) fn b2_use_metadata_from_records(
                 }
             }
         };
-        ctx.push_vec(
-            &mut uses,
-            B2UseMetadata {
-                pos: frame.pos,
-                payload,
-                kind,
-            },
-            "catia_b2_uses",
-        )?;
+        uses.push(B2UseMetadata {
+            pos: frame.pos,
+            payload,
+            kind,
+        });
     }
-    Ok(uses)
+    uses
 }
 
 /// Decode class-`0x5e` payloads and their `0x0a <u16le>` reference tokens.
@@ -758,13 +751,10 @@ pub(crate) fn b2_edge_nodes_from_records<'a>(
 }
 
 /// Decode width-coded `b2/b3/b4 03 3b` cone-face descriptors.
-pub(crate) fn b2_cone_faces(
-    ctx: &DecodeContext<'_>,
-    data: &[u8],
-) -> Result<Vec<B2ConeFace>, CodecError> {
+pub(crate) fn b2_cone_faces(data: &[u8]) -> Vec<B2ConeFace> {
     let mut faces = Vec::new();
     let Some(last) = data.len().checked_sub(5) else {
-        return Ok(faces);
+        return faces;
     };
     for pos in 0..last {
         let Some(width) = data[pos]
@@ -809,21 +799,17 @@ pub(crate) fn b2_cone_faces(
             && program.ends_with(&[0x03, 0x11])
             && half_angle.get() < std::f64::consts::FRAC_PI_2
         {
-            let program = ctx.copy_slice(program, "catia_b2_cone_face_program")?;
-            ctx.push_vec(
-                &mut faces,
-                B2ConeFace {
-                    pos,
-                    end,
-                    program,
-                    angular_scale,
-                    half_angle,
-                },
-                "catia_b2_cone_faces",
-            )?;
+            let program = program.to_vec();
+            faces.push(B2ConeFace {
+                pos,
+                end,
+                program,
+                angular_scale,
+                half_angle,
+            });
         }
     }
-    Ok(faces)
+    faces
 }
 
 /// Decode `b2/b3/b4 03 37` compact reference lists with their unit tail.
@@ -831,16 +817,13 @@ pub(crate) fn b2_cone_faces(
 #[cfg(test)]
 fn b2_reference_lists(data: &[u8]) -> Vec<B2ReferenceList> {
     let records = consolidated_records(data);
-    crate::test_support::with_service_context(|ctx| {
-        b2_reference_lists_from_records(ctx, data, &records).expect("service decode")
-    })
+    b2_reference_lists_from_records(data, &records)
 }
 
 pub(crate) fn b2_reference_lists_from_records(
-    ctx: &DecodeContext<'_>,
     data: &[u8],
     records: &[ConsolidatedRecord],
-) -> Result<Vec<B2ReferenceList>, CodecError> {
+) -> Vec<B2ReferenceList> {
     let mut lists = Vec::new();
     for frame in family_frames_from_records(records, ConsolidatedFamily::B, 0x37) {
         if frame.header_token != 5
@@ -858,24 +841,16 @@ pub(crate) fn b2_reference_lists_from_records(
                 valid = false;
                 break;
             };
-            ctx.push_vec(
-                &mut references,
-                reference,
-                "catia_b2_reference_list_entries",
-            )?;
+            references.push(reference);
         }
         if valid && at == refs_end {
-            ctx.push_vec(
-                &mut lists,
-                B2ReferenceList {
-                    pos: frame.pos,
-                    references,
-                },
-                "catia_b2_reference_lists",
-            )?;
+            lists.push(B2ReferenceList {
+                pos: frame.pos,
+                references,
+            });
         }
     }
-    Ok(lists)
+    lists
 }
 
 /// Decode class-`0x62` owner packets whose leading count fixes the persistent
@@ -884,17 +859,13 @@ pub(crate) fn b2_reference_lists_from_records(
 #[cfg(test)]
 fn b2_counted_owners(data: &[u8]) -> Vec<B2CountedOwner> {
     let records = consolidated_records(data);
-    crate::test_support::with_service_context(|ctx| {
-        b2_counted_owners_from_records(ctx, data, &records)
-    })
-    .expect("service context admits counted owner packets")
+    b2_counted_owners_from_records(data, &records)
 }
 
 pub(crate) fn b2_counted_owners_from_records(
-    ctx: &DecodeContext<'_>,
     data: &[u8],
     records: &[ConsolidatedRecord],
-) -> Result<Vec<B2CountedOwner>, CodecError> {
+) -> Vec<B2CountedOwner> {
     let mut owners = Vec::new();
     for (frame, source_index) in b2_owner_frames(records) {
         let Some(count) = data
@@ -915,39 +886,27 @@ pub(crate) fn b2_counted_owners_from_records(
                 valid = false;
                 break;
             };
-            ctx.push_vec(
-                &mut references,
-                reference.value,
-                "catia_b2_counted_owner_references",
-            )?;
-            ctx.push_vec(
-                &mut reference_encodings,
-                reference.encoding,
-                "catia_b2_counted_owner_encodings",
-            )?;
+            references.push(reference.value);
+            reference_encodings.push(reference.encoding);
         }
         if !valid || at >= frame.end {
             continue;
         }
-        let Some(tail) = super::counted_owner_tail::CountedOwnerTail::new(
-            ctx.copy_slice(&data[at..frame.end], "catia_b2_counted_owner_tail")?,
-        ) else {
+        let Some(tail) =
+            super::counted_owner_tail::CountedOwnerTail::new(data[at..frame.end].to_vec())
+        else {
             continue;
         };
-        ctx.push_vec(
-            &mut owners,
-            B2CountedOwner {
-                pos: frame.pos,
-                source_index,
-                header_token: frame.header_token,
-                references,
-                reference_encodings,
-                tail,
-            },
-            "catia_b2_counted_owner_packets",
-        )?;
+        owners.push(B2CountedOwner {
+            pos: frame.pos,
+            source_index,
+            header_token: frame.header_token,
+            references,
+            reference_encodings,
+            tail,
+        });
     }
-    Ok(owners)
+    owners
 }
 
 /// Decode fixed-nine class-`0x62` owner packets whose references and numeric
@@ -981,18 +940,12 @@ pub(crate) fn b2_owner_packets_from_records<'a>(
 /// sequence. The explicit class-`0x65` group separator starts a new
 /// allocation sequence even when its frame is physically contiguous.
 pub(crate) fn b2_owner_identity_targets_from_records(
-    ctx: &DecodeContext<'_>,
     data: &[u8],
     records: &[ConsolidatedRecord],
-) -> Result<Vec<B2OwnerIdentityTarget>, CodecError> {
+) -> Vec<B2OwnerIdentityTarget> {
     let mut packets = BTreeMap::new();
     for packet in b2_owner_packets_from_records(data, records) {
-        ctx.insert_btree_map(
-            &mut packets,
-            (packet.source_index, packet.pos),
-            packet,
-            "catia_b2_owner_identity_packets",
-        )?;
+        packets.insert((packet.source_index, packet.pos), packet);
     }
     let mut allocation = Vec::<usize>::new();
     let mut targets = Vec::new();
@@ -1013,11 +966,7 @@ pub(crate) fn b2_owner_identity_targets_from_records(
         if record.family() == crate::wire::records::ConsolidatedFamily::B
             && matches!(record.class(), 0x5d | 0x5e)
         {
-            ctx.push_vec(
-                &mut allocation,
-                index,
-                "catia_b2_owner_identity_allocations",
-            )?;
+            allocation.push(index);
         }
         let Some(packet) = packets.get(&(record.source_index(), record.byte_offset())) else {
             continue;
@@ -1049,21 +998,17 @@ pub(crate) fn b2_owner_identity_targets_from_records(
             else {
                 continue;
             };
-            ctx.push_vec(
-                &mut targets,
-                B2OwnerIdentityTarget {
-                    owner_pos: packet.pos,
-                    source_index: packet.source_index,
-                    slot,
-                    distance,
-                    target_pos: target.byte_offset(),
-                    target_class,
-                },
-                "catia_b2_owner_identity_targets",
-            )?;
+            targets.push(B2OwnerIdentityTarget {
+                owner_pos: packet.pos,
+                source_index: packet.source_index,
+                slot,
+                distance,
+                target_pos: target.byte_offset(),
+                target_class,
+            });
         }
     }
-    Ok(targets)
+    targets
 }
 
 /// Select a fixed-nine boundary only when its complete resolved target set is
@@ -1071,18 +1016,17 @@ pub(crate) fn b2_owner_identity_targets_from_records(
 /// this predicate does not assign a face or promote the records to a global
 /// identity namespace.
 pub(in crate::families) fn b2_closed_owner_boundary_edges(
-    ctx: &DecodeContext<'_>,
     targets: &[B2OwnerIdentityTarget],
     endpoint_records: &HashMap<usize, [usize; 2]>,
-) -> Result<Option<[B2OwnerBoundaryEdge; 4]>, CodecError> {
+) -> Option<[B2OwnerBoundaryEdge; 4]> {
     let [first, second, third, fourth] = targets else {
-        return Ok(None);
+        return None;
     };
     if targets
         .iter()
         .any(|target| target.target_class != crate::native::CatiaOwnerIdentityClass::Edge)
     {
-        return Ok(None);
+        return None;
     }
     let edge = |target: &B2OwnerIdentityTarget| {
         Some(B2OwnerBoundaryEdge {
@@ -1094,21 +1038,16 @@ pub(in crate::families) fn b2_closed_owner_boundary_edges(
     let (Some(first), Some(second), Some(third), Some(fourth)) =
         (edge(first), edge(second), edge(third), edge(fourth))
     else {
-        return Ok(None);
+        return None;
     };
     let mut edges = [first, second, third, fourth];
-    ctx.sort_unstable_by(
-        &mut edges,
-        |left, right| left.slot.cmp(&right.slot),
-        |_| 0,
-        "catia b2 owner boundary edges sort",
-    )?;
+    edges.sort_unstable_by_key(|left| left.slot);
     if edges.windows(2).any(|pair| pair[0].slot == pair[1].slot)
         || edges
             .iter()
             .any(|edge| edge.endpoint_records[0] == edge.endpoint_records[1])
     {
-        return Ok(None);
+        return None;
     }
 
     let mut edge_keys = edges.map(|edge| {
@@ -1119,14 +1058,9 @@ pub(in crate::families) fn b2_closed_owner_boundary_edges(
             [end, start]
         }
     });
-    ctx.sort_unstable_by(
-        &mut edge_keys,
-        Ord::cmp,
-        |_| 0,
-        "catia b2 owner boundary edge keys sort",
-    )?;
+    edge_keys.sort_unstable_by(Ord::cmp);
     if edge_keys.windows(2).any(|pair| pair[0] == pair[1]) {
-        return Ok(None);
+        return None;
     }
     let mut vertices = [
         edges[0].endpoint_records[0],
@@ -1138,45 +1072,29 @@ pub(in crate::families) fn b2_closed_owner_boundary_edges(
         edges[3].endpoint_records[0],
         edges[3].endpoint_records[1],
     ];
-    ctx.sort_unstable_by(
-        &mut vertices,
-        Ord::cmp,
-        |_| 0,
-        "catia b2 owner boundary vertices sort",
-    )?;
-    Ok((vertices[0] == vertices[1]
+    vertices.sort_unstable_by(Ord::cmp);
+    (vertices[0] == vertices[1]
         && vertices[1] != vertices[2]
         && vertices[2] == vertices[3]
         && vertices[3] != vertices[4]
         && vertices[4] == vertices[5]
         && vertices[5] != vertices[6]
         && vertices[6] == vertices[7])
-        .then_some(edges))
+        .then_some(edges)
 }
 
 /// Decode source-closed carrier/reference/side/owner chart productions.
 pub(crate) fn b2_owner_charts_from_records(
-    ctx: &DecodeContext<'_>,
     data: &[u8],
     records: &[ConsolidatedRecord],
-) -> Result<Vec<B2OwnerChart>, CodecError> {
+) -> Vec<B2OwnerChart> {
     let mut owners = BTreeMap::new();
     for owner in b2_owner_packets_from_records(data, records) {
-        ctx.insert_btree_map(
-            &mut owners,
-            (owner.source_index, owner.pos),
-            owner,
-            "catia_b2_owner_chart_owners",
-        )?;
+        owners.insert((owner.source_index, owner.pos), owner);
     }
     let mut parameter_points = BTreeMap::new();
     for point in b2_parameter_points_from_records(data, records) {
-        ctx.insert_btree_map(
-            &mut parameter_points,
-            point.pos,
-            point,
-            "catia_b2_owner_chart_points",
-        )?;
+        parameter_points.insert(point.pos, point);
     }
     let mut charts = Vec::new();
     for window in records.windows(7) {
@@ -1230,10 +1148,10 @@ pub(crate) fn b2_owner_charts_from_records(
             })
         })();
         if let Some(chart) = chart {
-            ctx.push_vec(&mut charts, chart, "catia_b2_owner_charts")?;
+            charts.push(chart);
         }
     }
-    Ok(charts)
+    charts
 }
 
 fn owner_chart_bridge(
@@ -1506,16 +1424,13 @@ fn b2_owner_numeric_tail(data: &[u8]) -> Option<CatiaOwnerNumericTail> {
 #[cfg(test)]
 fn b2_counted_61(data: &[u8]) -> Vec<B2Counted61> {
     let records = consolidated_records(data);
-    crate::test_support::with_service_context(|ctx| {
-        b2_counted_61_from_records(ctx, data, &records).expect("service decode")
-    })
+    b2_counted_61_from_records(data, &records)
 }
 
 pub(crate) fn b2_counted_61_from_records(
-    ctx: &DecodeContext<'_>,
     data: &[u8],
     records: &[ConsolidatedRecord],
-) -> Result<Vec<B2Counted61>, CodecError> {
+) -> Vec<B2Counted61> {
     let mut output = Vec::new();
     for frame in family_frames_from_records(records, ConsolidatedFamily::B, 0x61) {
         let Some(count) = data
@@ -1553,20 +1468,16 @@ pub(crate) fn b2_counted_61_from_records(
         if tail.is_empty() || tail.last() != Some(&0x03) {
             continue;
         }
-        let references = ctx.copy_slice(&parsed[..count], "catia_b2_counted61_references")?;
-        let tail = ctx.copy_slice(tail, "catia_b2_counted61_tail")?;
-        ctx.push_vec(
-            &mut output,
-            B2Counted61 {
-                pos: frame.pos,
-                header_token: frame.header_token,
-                references,
-                tail,
-            },
-            "catia_b2_counted61_records",
-        )?;
+        let references = parsed[..count].to_vec();
+        let tail = tail.to_vec();
+        output.push(B2Counted61 {
+            pos: frame.pos,
+            header_token: frame.header_token,
+            references,
+            tail,
+        });
     }
-    Ok(output)
+    output
 }
 
 /// Decode the long class-`0x61` form. Its fixed 25-byte suffix determines the
@@ -1575,16 +1486,13 @@ pub(crate) fn b2_counted_61_from_records(
 #[cfg(test)]
 fn b2_long_61(data: &[u8]) -> Vec<B2Long61> {
     let records = consolidated_records(data);
-    crate::test_support::with_service_context(|ctx| {
-        b2_long_61_from_records(ctx, data, &records).expect("service decode")
-    })
+    b2_long_61_from_records(data, &records)
 }
 
 pub(crate) fn b2_long_61_from_records(
-    ctx: &DecodeContext<'_>,
     data: &[u8],
     records: &[ConsolidatedRecord],
-) -> Result<Vec<B2Long61>, CodecError> {
+) -> Vec<B2Long61> {
     let mut output = Vec::new();
     for frame in family_frames_from_records(records, ConsolidatedFamily::B, 0x61) {
         let Some(payload_len) = frame.end.checked_sub(frame.payload) else {
@@ -1616,8 +1524,8 @@ pub(crate) fn b2_long_61_from_records(
             let Some(member) = members_view.u16_le() else {
                 break;
             };
-            ctx.charge_retained(2, "catia_b2_long61_members")?;
-            ctx.push_vec(&mut members, member, "catia_b2_long61_members")?;
+
+            members.push(member);
         }
         if !members_view.is_empty()
             || members.is_empty()
@@ -1649,20 +1557,16 @@ pub(crate) fn b2_long_61_from_records(
         if at + 9 != frame.end {
             continue;
         }
-        ctx.push_vec(
-            &mut output,
-            B2Long61 {
-                pos: frame.pos,
-                header_token: frame.header_token,
-                prefix,
-                members,
-                references,
-                scalar,
-            },
-            "catia_b2_long61_records",
-        )?;
+        output.push(B2Long61 {
+            pos: frame.pos,
+            header_token: frame.header_token,
+            prefix,
+            members,
+            references,
+            scalar,
+        });
     }
-    Ok(output)
+    output
 }
 
 /// Decode complete B-family class-`0x5b` and class-`0x5c` control records.
@@ -1673,13 +1577,10 @@ pub(crate) fn b2_long_61_from_records(
 #[cfg(test)]
 fn b2_class5b5c_records(data: &[u8]) -> Vec<B2Class5b5cRecord> {
     let records = consolidated_records(data);
-    crate::test_support::with_service_context(|ctx| {
-        b2_class5b5c_records_from_records(ctx, data, &records).expect("service decode")
-    })
+    b2_class5b5c_records_from_records(data, &records).expect("service decode")
 }
 
 pub(crate) fn b2_class5b5c_records_from_records(
-    ctx: &DecodeContext<'_>,
     data: &[u8],
     records: &[ConsolidatedRecord],
 ) -> Result<Vec<B2Class5b5cRecord>, CodecError> {
@@ -1694,17 +1595,13 @@ pub(crate) fn b2_class5b5c_records_from_records(
         let Some(payload) = record.payload().and_then(|range| data.get(range)) else {
             continue;
         };
-        let payload = ctx.copy_slice(payload, "catia_b2_class5b5c_payload")?;
-        ctx.push_vec(
-            &mut output,
-            B2Class5b5cRecord {
-                frame: ConsolidatedRawFrame::from_record(record, payload)?,
-                source_index: record.source_index(),
-                source_offset: record.source_range().start,
-                class,
-            },
-            "catia_b2_class5b5c_records",
-        )?;
+        let payload = payload.to_vec();
+        output.push(B2Class5b5cRecord {
+            frame: ConsolidatedRawFrame::from_record(record, payload)?,
+            source_index: record.source_index(),
+            source_offset: record.source_range().start,
+            class,
+        });
     }
     Ok(output)
 }
@@ -1756,28 +1653,20 @@ pub(in crate::families) fn b2_face_nodes_5f_from_records<'a>(
 #[cfg(test)]
 fn b2_adjacent_face_owners(data: &[u8]) -> Vec<B2AdjacentFaceOwner> {
     let records = consolidated_records(data);
-    crate::test_support::with_service_context(|ctx| {
-        b2_adjacent_face_owners_from_records(ctx, data, &records).expect("service decode")
-    })
+    b2_adjacent_face_owners_from_records(data, &records)
 }
 
 pub(crate) fn b2_adjacent_face_owners_from_records(
-    ctx: &DecodeContext<'_>,
     data: &[u8],
     records: &[ConsolidatedRecord],
-) -> Result<Vec<B2AdjacentFaceOwner>, CodecError> {
+) -> Vec<B2AdjacentFaceOwner> {
     let mut nodes = BTreeMap::new();
     for value in b2_face_nodes_5f_from_records(data, records) {
-        ctx.insert_btree_map(&mut nodes, value.pos, value, "catia_b2_adjacent_face_nodes")?;
+        nodes.insert(value.pos, value);
     }
     let mut owners = BTreeMap::new();
     for value in b2_owner_packets_from_records(data, records) {
-        ctx.insert_btree_map(
-            &mut owners,
-            value.pos,
-            value,
-            "catia_b2_adjacent_face_owners",
-        )?;
+        owners.insert(value.pos, value);
     }
     let mut adjacent = Vec::new();
     for window in records.windows(2) {
@@ -1794,17 +1683,13 @@ pub(crate) fn b2_adjacent_face_owners_from_records(
             || (face_node.terminal == [0x03, 0x03]
                 && owner.reference_encoding == B2OwnerReferenceEncoding::AllCompact);
         if terminal_is_admitted && face_node.target.checked_add(1) == Some(owner.references[8]) {
-            ctx.push_vec(
-                &mut adjacent,
-                B2AdjacentFaceOwner {
-                    face_node: *face_node,
-                    owner: owner.clone(),
-                },
-                "catia_b2_adjacent_face_pairs",
-            )?;
+            adjacent.push(B2AdjacentFaceOwner {
+                face_node: *face_node,
+                owner: owner.clone(),
+            });
         }
     }
-    Ok(adjacent)
+    adjacent
 }
 
 /// Bind immediately adjacent `5f,62` records when the count-framed packet's
@@ -1813,31 +1698,22 @@ pub(crate) fn b2_adjacent_face_owners_from_records(
 #[cfg(test)]
 fn b2_adjacent_face_counted_owners(data: &[u8]) -> Vec<B2AdjacentFaceCountedOwner> {
     let records = consolidated_records(data);
-    crate::test_support::with_service_context(|ctx| {
-        b2_adjacent_face_counted_owners_from_records(ctx, data, &records)
-    })
-    .expect("service context admits adjacent counted owners")
+    b2_adjacent_face_counted_owners_from_records(data, &records)
 }
 
 pub(crate) fn b2_adjacent_face_counted_owners_from_records(
-    ctx: &DecodeContext<'_>,
     data: &[u8],
     records: &[ConsolidatedRecord],
-) -> Result<Vec<B2AdjacentFaceCountedOwner>, CodecError> {
+) -> Vec<B2AdjacentFaceCountedOwner> {
     let mut nodes = BTreeMap::new();
     for value in
         b2_face_nodes_5f_from_records(data, records).filter(|value| value.terminal == [0x03, 0x05])
     {
-        ctx.insert_btree_map(&mut nodes, value.pos, value, "catia_b2_counted_face_nodes")?;
+        nodes.insert(value.pos, value);
     }
     let mut owners = BTreeMap::new();
-    for value in b2_counted_owners_from_records(ctx, data, records)? {
-        ctx.insert_btree_map(
-            &mut owners,
-            value.pos,
-            value,
-            "catia_b2_counted_owner_index",
-        )?;
+    for value in b2_counted_owners_from_records(data, records) {
+        owners.insert(value.pos, value);
     }
     let mut adjacent = Vec::new();
     for window in records.windows(2) {
@@ -1857,16 +1733,12 @@ pub(crate) fn b2_adjacent_face_counted_owners_from_records(
         let Some(owner) = owners.remove(&owner_pos) else {
             continue;
         };
-        ctx.push_vec(
-            &mut adjacent,
-            B2AdjacentFaceCountedOwner {
-                face_node: *face_node,
-                owner,
-            },
-            "catia_b2_adjacent_counted_owners",
-        )?;
+        adjacent.push(B2AdjacentFaceCountedOwner {
+            face_node: *face_node,
+            owner,
+        });
     }
-    Ok(adjacent)
+    adjacent
 }
 
 /// Decode width-coded `b2/b3/b4 03 18` parameter-space records.
@@ -1923,16 +1795,13 @@ pub(crate) fn b2_parameter_points_from_records<'a>(
 #[cfg(test)]
 pub(crate) fn b2_plane_carriers(data: &[u8]) -> Vec<B2PlaneCarrier> {
     let records = consolidated_records(data);
-    crate::test_support::with_service_context(|ctx| {
-        b2_plane_carriers_from_records(ctx, data, &records).expect("service decode")
-    })
+    b2_plane_carriers_from_records(data, &records)
 }
 
 pub(crate) fn b2_plane_carriers_from_records(
-    ctx: &DecodeContext<'_>,
     data: &[u8],
     records: &[ConsolidatedRecord],
-) -> Result<Vec<B2PlaneCarrier>, CodecError> {
+) -> Vec<B2PlaneCarrier> {
     let mut carriers = Vec::new();
     for record in records
         .iter()
@@ -2010,9 +1879,7 @@ pub(crate) fn b2_plane_carriers_from_records(
                 }
             }
             _ => {
-                let Some(values) =
-                    finite_f64_lane_charged(ctx, lane, "catia_b2_plane_scalar_lane")?
-                else {
+                let Some(values) = finite_f64_lane(lane) else {
                     continue;
                 };
                 if values.is_empty() {
@@ -2024,20 +1891,16 @@ pub(crate) fn b2_plane_carriers_from_records(
         let Some(record_range) = record.range() else {
             continue;
         };
-        ctx.push_vec(
-            &mut carriers,
-            B2PlaneCarrier {
-                pos: record.byte_offset(),
-                end: record_range.end,
-                width: record.width(),
-                flag: record.flag(),
-                header_token: record.header_token(),
-                payload,
-            },
-            "catia_b2_plane_carriers",
-        )?;
+        carriers.push(B2PlaneCarrier {
+            pos: record.byte_offset(),
+            end: record_range.end,
+            width: record.width(),
+            flag: record.flag(),
+            header_token: record.header_token(),
+            payload,
+        });
     }
-    Ok(carriers)
+    carriers
 }
 
 /// Admit the plane chart of a direction-bearing class-`0x27` layout from its
@@ -2078,10 +1941,9 @@ pub(in crate::families) fn b2_plane_geometry(carrier: &B2PlaneCarrier) -> Option
 
 /// Decode class-`0x18` descriptors that prefix class-`0x25` edge definitions.
 pub(in crate::families) fn b2_class25_descriptors_from_records(
-    ctx: &DecodeContext<'_>,
     data: &[u8],
     records: &[ConsolidatedRecord],
-) -> Result<Vec<B2Class25Descriptor>, CodecError> {
+) -> Vec<B2Class25Descriptor> {
     let mut descriptors = Vec::new();
     for frame in family_frames_from_records(records, ConsolidatedFamily::B, 0x18) {
         let parsed = (|| {
@@ -2101,21 +1963,17 @@ pub(in crate::families) fn b2_class25_descriptors_from_records(
         let Some((record_id, control, lane)) = parsed else {
             continue;
         };
-        let Some(values) = finite_f64_lane_charged(ctx, lane, "catia_b2_class25_values")? else {
+        let Some(values) = finite_f64_lane(lane) else {
             continue;
         };
-        ctx.push_vec(
-            &mut descriptors,
-            B2Class25Descriptor {
-                pos: frame.pos,
-                record_id,
-                control,
-                values,
-            },
-            "catia_b2_class25_descriptors",
-        )?;
+        descriptors.push(B2Class25Descriptor {
+            pos: frame.pos,
+            record_id,
+            control,
+            values,
+        });
     }
-    Ok(descriptors)
+    descriptors
 }
 
 /// Shared-edge parameter range stored in a `b2 03 23` packet.
@@ -2324,7 +2182,7 @@ pub(in crate::families) fn b2_nurbs_curves_from_records(
     let mut curves = Vec::new();
     for frame in family_frames_from_records(records, ConsolidatedFamily::B, 0x16) {
         if let Some(curve) = parse_b2_nurbs_curve(ctx, data, frame, refusal)? {
-            ctx.push_vec(&mut curves, curve, "catia_b2_nurbs_curves")?;
+            curves.push(curve);
         }
     }
     Ok(curves)
@@ -2391,11 +2249,7 @@ fn parse_b2_nurbs_curve(
         return Ok(None);
     };
     let mut control_points = Vec::new();
-    ctx.reserve_vec(
-        &mut control_points,
-        control_count,
-        "catia_b2_nurbs_control_points",
-    )?;
+
     for index in 0..control_count {
         let Some(point) = f64_point(data, point_start + index * 24) else {
             return Ok(None);
@@ -2403,7 +2257,7 @@ fn parse_b2_nurbs_curve(
         control_points.push(point);
     }
     let mut weights = Vec::new();
-    ctx.reserve_vec(&mut weights, control_count, "catia_b2_nurbs_weights")?;
+
     for index in 0..control_count {
         let Some(weight) = f64_le(data, weight_start + index * 8)
             .and_then(|weight| PositiveReal::new(weight.get()))
@@ -2413,22 +2267,19 @@ fn parse_b2_nurbs_curve(
         weights.push(NonZeroReal::from(weight));
     }
     let mut knots = Vec::new();
-    ctx.reserve_vec(&mut knots, 2 * control_count, "catia_b2_nurbs_knots")?;
+
     knots.extend(std::iter::repeat_with(|| knot_start).take(control_count));
     knots.extend(std::iter::repeat_with(|| knot_end).take(control_count));
-    crate::nurbs::note_refusal(
-        ctx,
+    Ok(crate::nurbs::note_refusal(
         NurbsCurve::from_checked_lanes(ctx, degree, knots, control_points, Some(weights), false)?,
         refusal,
         format_args!("b2 NURBS curve record at byte {}", frame.pos),
     )
-    .map(|geometry| {
-        geometry.map(|geometry| B2NurbsCurve {
-            pos: frame.pos,
-            header_token: frame.header_token,
-            geometry,
-        })
-    })
+    .map(|geometry| B2NurbsCurve {
+        pos: frame.pos,
+        header_token: frame.header_token,
+        geometry,
+    }))
 }
 
 /// Analytic cylinder support stored in a `b2 03 28` record.
@@ -2717,10 +2568,9 @@ pub(crate) fn b2_embedded_cylinders_from_records<'a>(
 }
 
 fn b2_construction_offset_supports_from_records(
-    ctx: &DecodeContext<'_>,
     data: &[u8],
     records: &[ConsolidatedRecord],
-) -> Result<Vec<B2OffsetSupport>, CodecError> {
+) -> Vec<B2OffsetSupport> {
     let mut out = Vec::new();
     for frame in family_frames_from_records(records, ConsolidatedFamily::B, 0x30) {
         let pos = frame.pos;
@@ -2762,19 +2612,15 @@ fn b2_construction_offset_supports_from_records(
         ) else {
             continue;
         };
-        ctx.push_vec(
-            &mut out,
-            B2OffsetSupport {
-                pos,
-                support_id,
-                distance,
-                u_range,
-                v_range,
-            },
-            "catia_b2_construction_offset_supports",
-        )?;
+        out.push(B2OffsetSupport {
+            pos,
+            support_id,
+            distance,
+            u_range,
+            v_range,
+        });
     }
-    Ok(out)
+    out
 }
 
 /// Decode `b2 03 29` analytic cone charts.
@@ -2982,62 +2828,50 @@ pub(crate) fn b2_revolutions_from_records<'a>(
 #[cfg(test)]
 fn b2_resolved_revolutions(data: &[u8]) -> Vec<B2ResolvedRevolution> {
     let records = consolidated_records(data);
-    crate::test_support::with_service_context(|ctx| {
-        b2_resolved_revolutions_from_records(ctx, data, &records).expect("service decode")
-    })
+    b2_resolved_revolutions_from_records(data, &records)
 }
 
 pub(crate) fn b2_resolved_revolutions_from_records(
-    ctx: &DecodeContext<'_>,
     data: &[u8],
     records: &[ConsolidatedRecord],
-) -> Result<Vec<B2ResolvedRevolution>, CodecError> {
-    let (circles, _circle_storage) =
-        ctx.with_scoped_storage("catia_b2_revolution_profiles", || {
-            ctx.collect_vec(
-                b2_circles_from_records(data, records),
-                "catia_b2_revolution_profiles",
-            )
-        })?;
-    ctx.collect_vec(
-        b2_revolutions_from_records(data, records)
-            .enumerate()
-            .filter_map(|(revolution_index, revolution)| {
-                let mut identity_profiles = circles.iter().filter(|circle| {
-                    circle.record_id == u32::from(revolution.profile_allocation_id)
-                });
-                let profile = match (identity_profiles.next(), identity_profiles.next()) {
-                    (Some(profile), None)
-                        if profile.range.lower().to_bits()
-                            == revolution.profile_range.lower().to_bits()
-                            && profile.range.upper().to_bits()
-                                == revolution.profile_range.upper().to_bits() =>
-                    {
-                        profile.clone()
-                    }
-                    (None, None) => {
-                        let mut interval_profiles = circles.iter().filter(|circle| {
-                            circle.range.lower().to_bits()
-                                == revolution.profile_range.lower().to_bits()
-                                && circle.range.upper().to_bits()
-                                    == revolution.profile_range.upper().to_bits()
-                        });
-                        let profile = interval_profiles.next()?;
-                        interval_profiles
-                            .next()
-                            .is_none()
-                            .then(|| (*profile).clone())?
-                    }
-                    _ => return None,
-                };
-                Some(B2ResolvedRevolution {
-                    revolution_index,
-                    revolution,
-                    profile,
-                })
-            }),
-        "catia_b2_resolved_revolutions",
-    )
+) -> Vec<B2ResolvedRevolution> {
+    let circles = b2_circles_from_records(data, records).collect::<Vec<_>>();
+    b2_revolutions_from_records(data, records)
+        .enumerate()
+        .filter_map(|(revolution_index, revolution)| {
+            let mut identity_profiles = circles
+                .iter()
+                .filter(|circle| circle.record_id == u32::from(revolution.profile_allocation_id));
+            let profile = match (identity_profiles.next(), identity_profiles.next()) {
+                (Some(profile), None)
+                    if profile.range.lower().to_bits()
+                        == revolution.profile_range.lower().to_bits()
+                        && profile.range.upper().to_bits()
+                            == revolution.profile_range.upper().to_bits() =>
+                {
+                    profile.clone()
+                }
+                (None, None) => {
+                    let mut interval_profiles = circles.iter().filter(|circle| {
+                        circle.range.lower().to_bits() == revolution.profile_range.lower().to_bits()
+                            && circle.range.upper().to_bits()
+                                == revolution.profile_range.upper().to_bits()
+                    });
+                    let profile = interval_profiles.next()?;
+                    interval_profiles
+                        .next()
+                        .is_none()
+                        .then(|| (*profile).clone())?
+                }
+                _ => return None,
+            };
+            Some(B2ResolvedRevolution {
+                revolution_index,
+                revolution,
+                profile,
+            })
+        })
+        .collect()
 }
 
 /// Decode exact B-family metric line profiles.
@@ -3505,18 +3339,15 @@ pub(in crate::families) fn b2_edge_parameters_from_records<'a>(
 #[cfg(test)]
 fn b2_offset_supports(data: &[u8]) -> Vec<B2OffsetSupport> {
     let records = consolidated_records(data);
-    crate::test_support::with_service_context(|ctx| {
-        b2_offset_supports_from_records(ctx, data, &records).expect("service decode")
-    })
+    b2_offset_supports_from_records(data, &records)
 }
 
 pub(in crate::families) fn b2_offset_supports_from_records(
-    ctx: &DecodeContext<'_>,
     data: &[u8],
     records: &[ConsolidatedRecord],
-) -> Result<Vec<B2OffsetSupport>, CodecError> {
-    let mut offsets = ctx.collect_vec(
-        family_frames_from_records(records, ConsolidatedFamily::B, 0x31).filter_map(|frame| {
+) -> Vec<B2OffsetSupport> {
+    let mut offsets = family_frames_from_records(records, ConsolidatedFamily::B, 0x31)
+        .filter_map(|frame| {
             if frame.header_token != 5 {
                 return None;
             }
@@ -3539,29 +3370,22 @@ pub(in crate::families) fn b2_offset_supports_from_records(
                 u_range: IncreasingParameterInterval::new([u0.get(), u1.get()])?,
                 v_range: IncreasingParameterInterval::new([v0.get(), v1.get()])?,
             })
-        }),
-        "catia_b2_offset_supports",
-    )?;
-    let extra = b2_construction_offset_supports_from_records(ctx, data, records)?;
-    ctx.reserve_vec(&mut offsets, extra.len(), "catia_b2_offset_supports")?;
+        })
+        .collect::<Vec<_>>();
+    let extra = b2_construction_offset_supports_from_records(data, records);
+
     offsets.extend(extra);
-    ctx.sort_unstable_by(
-        &mut offsets,
-        |left, right| left.pos.cmp(&right.pos),
-        |_| 0,
-        "catia_b2_offset_supports_sort",
-    )?;
-    Ok(offsets)
+    offsets.sort_unstable_by_key(|left| left.pos);
+    offsets
 }
 
 /// Bind each offset constructor to the unique consolidated NURBS carrier whose
 /// parameter domain contains the offset box and whose V-knot lane contains both
 /// serialized V limits.
 pub(in crate::families) fn offset_support_carriers(
-    ctx: &DecodeContext<'_>,
     offsets: &[B2OffsetSupport],
     carriers: &[FreeformSurface],
-) -> Result<Vec<Option<usize>>, CodecError> {
+) -> Vec<Option<usize>> {
     const RELATIVE_PARAMETER_TOLERANCE: f64 = 1e-3;
     let mut bindings = Vec::new();
     for offset in offsets {
@@ -3570,7 +3394,6 @@ pub(in crate::families) fn offset_support_carriers(
         let mut selected = None;
         let mut ambiguous = false;
         for (index, carrier) in carriers.iter().enumerate() {
-            ctx.charge_work(1, "catia_b2_offset_carrier_scan")?;
             let surface = &carrier.geometry;
             let (Some(&u_min), Some(&u_max), Some(&v_min), Some(&v_max)) = (
                 surface.u_knots().first(),
@@ -3591,27 +3414,19 @@ pub(in crate::families) fn offset_support_carriers(
                 && u1 <= u_max + u_tolerance
                 && v0 >= v_min - v_tolerance
                 && v1 <= v_max + v_tolerance;
-            let has_v_limit = |limit: f64| -> Result<bool, CodecError> {
-                for knot in surface.v_knots() {
-                    ctx.charge_work(1, "catia_b2_offset_knot_scan")?;
-                    if (*knot - limit).abs() <= v_tolerance {
-                        return Ok(true);
-                    }
-                }
-                Ok(false)
+            let has_v_limit = |limit: f64| {
+                surface
+                    .v_knots()
+                    .iter()
+                    .any(|knot| (*knot - limit).abs() <= v_tolerance)
             };
-            if contains && has_v_limit(v0)? && has_v_limit(v1)? && selected.replace(index).is_some()
-            {
+            if contains && has_v_limit(v0) && has_v_limit(v1) && selected.replace(index).is_some() {
                 ambiguous = true;
             }
         }
-        ctx.push_vec(
-            &mut bindings,
-            if ambiguous { None } else { selected },
-            "catia_b2_offset_bindings",
-        )?;
+        bindings.push(if ambiguous { None } else { selected });
     }
-    Ok(bindings)
+    bindings
 }
 
 /// Decode width-coded `b2/b3/b4 03 20` consolidated UV jets.
@@ -3619,15 +3434,7 @@ pub(in crate::families) fn offset_support_carriers(
 #[cfg(test)]
 fn b2_pcurves(data: &[u8]) -> Vec<ConsolidatedPcurve> {
     let records = consolidated_records(data);
-    crate::test_support::with_service_context(|ctx| {
-        crate::wire::records::family_pcurves_from_records(
-            ctx,
-            data,
-            &records,
-            ConsolidatedFamily::B,
-        )
-        .expect("service decode")
-    })
+    crate::wire::records::family_pcurves_from_records(data, &records, ConsolidatedFamily::B)
 }
 
 #[cfg(test)]

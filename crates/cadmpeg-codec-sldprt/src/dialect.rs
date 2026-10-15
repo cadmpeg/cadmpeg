@@ -135,16 +135,10 @@ impl LayerClassification {
         losses: &mut Vec<LossNote>,
     ) -> Result<(), CodecError> {
         for loss in dialect_losses(ctx, &self.layers)? {
-            ctx.reserve_vec(losses, 1, "append SLDPRT dialect losses")?;
             losses.push(loss);
         }
         for loss in &self.losses {
-            let message = ctx.format_retained(
-                format_args!("{}", loss.message),
-                "copy SLDPRT dialect collision loss",
-            )?;
-            ctx.reserve_vec(losses, 1, "append SLDPRT dialect losses")?;
-            losses.push(SldprtLossCode::DialectLayerCollision.note(message));
+            losses.push(SldprtLossCode::DialectLayerCollision.note(loss.message.clone()));
         }
         Ok(())
     }
@@ -173,32 +167,22 @@ pub(crate) fn classify_layers(
             // A nameless section states its absence by omission: the site
             // key and the stream offset already separate two of them.
             let carrier = match section.name() {
-                Some(name) => ctx.format_retained(
-                    format_args!("{site_prefix}@{site_ordinal}:{name}+{}", stream.offset),
-                    "retain SLDPRT Parasolid carrier",
-                )?,
-                None => ctx.format_retained(
-                    format_args!("{site_prefix}@{site_ordinal}+{}", stream.offset),
-                    "retain SLDPRT Parasolid carrier",
-                )?,
+                Some(name) => format!("{site_prefix}@{site_ordinal}:{name}+{}", stream.offset),
+                None => format!("{site_prefix}@{site_ordinal}+{}", stream.offset),
             };
-            let schema = ctx.format_retained(
-                format_args!("{}", stream.header.schema.value()),
-                "retain SLDPRT Parasolid schema",
-            )?;
-            let schema = cadmpeg_parasolid::OwnedSchemaToken::try_from(schema)
-                .map_err(|_| CodecError::Malformed("invalid admitted Parasolid schema".into()))?;
-            ctx.reserve_vec(&mut kernels, 1, "collect SLDPRT Parasolid layers")?;
+            let schema = cadmpeg_parasolid::OwnedSchemaToken::try_from(
+                stream.header.schema.value().to_owned(),
+            )
+            .map_err(|_| CodecError::Malformed("invalid admitted Parasolid schema".into()))?;
             kernels.push((schema, cadmpeg_parasolid::Carrier::new(carrier)));
         }
     }
     let declaration = crate::container::declared_sw_version(scan);
     let host = SldprtDialect::from_declaration(declaration);
-    let mut layers = DialectLayers::of(host.matched(ctx, declaration)?);
+    let mut layers = DialectLayers::of(host.matched(declaration));
     let extra = cadmpeg_parasolid::extra_layers(ctx, kernels, &VERIFIED_KERNELS)?;
     let mut losses = Vec::new();
     for message in cadmpeg_parasolid::push_extras(ctx, &mut layers, extra)? {
-        ctx.reserve_vec(&mut losses, 1, "collect SLDPRT dialect collision losses")?;
         losses.push(SldprtLossCode::DialectLayerCollision.note(message));
     }
     Ok(LayerClassification {
@@ -260,40 +244,23 @@ impl SldprtDialect {
     /// classification bug and the report can never disagree.
     #[cfg(test)]
     pub(crate) fn classify(sw_version: Option<&str>) -> DialectMatch {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(
-            &[],
-            &arena,
-            &cadmpeg_core::decode::DecodePolicy::service(),
-        )
-        .expect("test dialect context fits service policy");
-        Self::from_declaration(sw_version)
-            .matched(&ctx, sw_version)
-            .expect("test declaration fits service policy")
+        Self::from_declaration(sw_version).matched(sw_version)
     }
 
     /// Build the wire identity for this typed row and its source declaration.
-    fn matched(
-        self,
-        ctx: &DecodeContext<'_>,
-        sw_version: Option<&str>,
-    ) -> Result<DialectMatch, CodecError> {
+    fn matched(self, sw_version: Option<&str>) -> DialectMatch {
         let mut declared = BTreeMap::new();
         if let Some(value) = sw_version {
-            let value =
-                ctx.format_retained(format_args!("{value}"), "retain SLDPRT dialect declaration")?;
-            ctx.insert_btree_map(
-                &mut declared,
+            declared.insert(
                 cadmpeg_core::nonblank_const!(DECLARED_SW_VERSION),
-                value,
-                "index SLDPRT dialect declaration",
-            )?;
+                value.to_owned(),
+            );
         }
-        Ok(match self {
+        match self {
             Self::SwVersionPre12000 | Self::SwVersion12000Plus => DialectMatch::admitted(self.id()),
             Self::Unknown => DialectMatch::residual(self.id()),
         }
-        .with_declared(declared))
+        .with_declared(declared)
     }
 
     /// Classifies one scanned document, reading the declaration from the scan.
@@ -326,23 +293,19 @@ fn dialect_loss(
                 return Ok(None);
             }
             let message = match matched.declared().get(DECLARED_SW_VERSION) {
-                Some(value) => ctx.format_retained(format_args!(
-                        "the swSolidWorks swVersion declaration {value:?} does not read as a version \
-                         above zero, so no declared identity was verified. The document is read on \
-                         the `{}` residual path without substituting a declared dialect grammar: the \
-                         feature-operation form-code padding filter is not applied, and an \
-                         operation code binds only where the four- and eight-byte candidates agree. \
-                         Agreement is consistency, not a declaration.",
-                        matched.dialect()
-                    ), "retain SLDPRT source dialect loss")?,
-                None => ctx.format_retained(format_args!(
-                        "the document carries no swSolidWorks swVersion declaration, so no declared identity was verified. The document is read on \
-                         the `{}` residual path without substituting a declared dialect grammar: the \
-                         feature-operation form-code padding filter is not applied, and an \
-                         operation code binds only where the four- and eight-byte candidates agree. \
-                         Agreement is consistency, not a declaration.",
-                        matched.dialect()
-                    ), "retain SLDPRT source dialect loss")?,
+                Some(value) => format!("the swSolidWorks swVersion declaration {value:?} does not read as a version \
+                 above zero, so no declared identity was verified. The document is read on \
+                 the `{}` residual path without substituting a declared dialect grammar: the \
+                 feature-operation form-code padding filter is not applied, and an \
+                 operation code binds only where the four- and eight-byte candidates agree. \
+                 Agreement is consistency, not a declaration.",
+                matched.dialect()),
+                None => format!("the document carries no swSolidWorks swVersion declaration, so no declared identity was verified. The document is read on \
+                 the `{}` residual path without substituting a declared dialect grammar: the \
+                 feature-operation form-code padding filter is not applied, and an \
+                 operation code binds only where the four- and eight-byte candidates agree. \
+                 Agreement is consistency, not a declaration.",
+                matched.dialect()),
             };
             Ok(Some(SldprtLossCode::SourceDialectUnverified.note(message)))
         }
@@ -357,7 +320,6 @@ fn dialect_losses(
     let mut losses = Vec::new();
     for layer in layers.iter() {
         if let Some(loss) = dialect_loss(ctx, layer)? {
-            ctx.reserve_vec(&mut losses, 1, "collect SLDPRT dialect losses")?;
             losses.push(loss);
         }
     }

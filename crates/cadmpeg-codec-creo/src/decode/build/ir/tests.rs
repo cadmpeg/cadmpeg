@@ -18,416 +18,20 @@ use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::scalar::PositiveReal;
 use cadmpeg_ir::units::FiniteVector;
 
-fn retained_boundary_sweep(
-    expected: &[&str],
-    mut run: impl for<'a> FnMut(&cadmpeg_core::decode::DecodeContext<'a>) -> Result<(), CodecError>,
-) {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
-    let arena = DecodeArena::new();
-    let mut observed = std::collections::BTreeSet::new();
-    let mut exact_cap = None;
-    let mut limit = 0_u64;
-    for _ in 0..4096 {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = limit;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-        match run(&ctx) {
-            Err(CodecError::ResourceLimit(resource)) => {
-                let need = resource
-                    .used
-                    .checked_add(resource.additional)
-                    .expect("retained need");
-                assert!(need > limit);
-                limit = need;
-                assert_eq!(resource.dimension, ResourceDimension::RetainedBytes);
-                observed.insert(resource.operation);
-            }
-            Ok(()) => {
-                exact_cap = Some(limit);
-                break;
-            }
-            Err(error) => panic!("unexpected transfer error: {error:?}"),
-        }
-    }
-    assert!(
-        exact_cap.is_some(),
-        "transfer did not fit within scanned cap"
-    );
-    assert!(
-        expected
-            .iter()
-            .all(|operation| observed.contains(operation)),
-        "missing admission boundary: {expected:?} vs {observed:?}"
-    );
-}
-
-fn collection_boundary_sweep(
-    expected: &[&str],
-    mut run: impl for<'a> FnMut(&cadmpeg_core::decode::DecodeContext<'a>) -> Result<(), CodecError>,
-) {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
-    let arena = DecodeArena::new();
-    let mut observed = std::collections::BTreeSet::new();
-    let mut exact_cap = None;
-    for limit in 0..128 {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-        match run(&ctx) {
-            Err(CodecError::ResourceLimit(resource)) => {
-                assert_eq!(resource.dimension, ResourceDimension::CollectionItems);
-                observed.insert(resource.operation);
-            }
-            Ok(()) => {
-                exact_cap = Some(limit);
-                break;
-            }
-            Err(error) => panic!("unexpected transfer error: {error:?}"),
-        }
-    }
-    assert!(
-        exact_cap.is_some(),
-        "transfer did not fit within scanned cap"
-    );
-    assert!(
-        expected
-            .iter()
-            .all(|operation| observed.contains(operation)),
-        "missing admission boundary: {expected:?} vs {observed:?}"
-    );
-}
-
-#[test]
-fn reference_line_identity_and_count_refuse_below_limits() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    let mut scan = scan_bytes_ok(crate::test_support::build_prt("reference", &[]));
-    scan.references.lines.push(
-        crate::reference::ReferenceLine::try_new(
-            crate::reference::ReferenceLineKind::Line3d {
-                entity_id: 7,
-                original_length: PositiveReal::new(1.0).expect("positive length"),
-            },
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).expect("start"),
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0)).expect("end"),
-            0,
-        )
-        .expect("checked reference geometry"),
-    );
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    let error = transfer_reference_lines(
-        &ctx,
-        &scan,
-        &mut CadIr::empty(),
-        &mut cadmpeg_ir::AnnotationBuilder::new(),
-        &mut SourceUnitCarriers::default(),
-    )
-    .expect_err("count node exceeds cap");
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.operation == "creo reference line3d count nodes"));
-    retained_boundary_sweep(
-        &[
-            "creo reference line3d identity",
-            "creo reference line3d object identity",
-        ],
-        |ctx| {
-            transfer_reference_lines(
-                ctx,
-                &scan,
-                &mut CadIr::empty(),
-                &mut cadmpeg_ir::AnnotationBuilder::new(),
-                &mut SourceUnitCarriers::default(),
-            )
-        },
-    );
-    let mut second = scan.references.lines[0].clone();
-    second.offset = 1;
-    scan.references.lines.push(second);
-    retained_boundary_sweep(
-        &[
-            "creo reference line3d identity",
-            "creo reference line3d object identity",
-        ],
-        |ctx| {
-            transfer_reference_lines(
-                ctx,
-                &scan,
-                &mut CadIr::empty(),
-                &mut cadmpeg_ir::AnnotationBuilder::new(),
-                &mut SourceUnitCarriers::default(),
-            )
-        },
-    );
-    scan.references.lines.pop();
-    scan.references.lines[0] = crate::reference::ReferenceLine::try_new(
-        crate::reference::ReferenceLineKind::Line,
-        scan.references.lines[0].start(),
-        scan.references.lines[0].end(),
-        scan.references.lines[0].offset,
-    )
-    .expect("finite planar line");
-    retained_boundary_sweep(
-        &[
-            "creo reference line identity",
-            "creo reference line object identity",
-        ],
-        |ctx| {
-            transfer_reference_lines(
-                ctx,
-                &scan,
-                &mut CadIr::empty(),
-                &mut cadmpeg_ir::AnnotationBuilder::new(),
-                &mut SourceUnitCarriers::default(),
-            )
-        },
-    );
-}
-
-#[test]
-fn reference_circle_identity_and_count_refuse_below_limits() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    let mut scan = scan_bytes_ok(crate::test_support::build_prt("reference", &[]));
-    scan.references.circles.push(
-        crate::reference::ReferenceCircle::try_new(
-            7,
-            crate::reference::ReferenceCircleCenter::Stored(
-                cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
-                    .expect("center"),
-            ),
-            cadmpeg_ir::scalar::PositiveLength::new(1.0).expect("radius"),
-            cadmpeg_ir::units::UnitVector3::new([0.0, 0.0, 1.0].into()).expect("axis"),
-            [
-                cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0)).expect("start"),
-                cadmpeg_ir::features::FinitePoint3::new(Point3::new(-1.0, 0.0, 0.0))
-                    .expect("on-circle end"),
-            ],
-            0,
-        )
-        .expect("checked reference geometry"),
-    );
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    let error = transfer_reference_circles(
-        &ctx,
-        &scan,
-        &mut CadIr::empty(),
-        &mut cadmpeg_ir::AnnotationBuilder::new(),
-        &mut SourceUnitCarriers::default(),
-    )
-    .expect_err("count node exceeds cap");
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.operation == "creo reference circle count nodes"));
-    retained_boundary_sweep(
-        &[
-            "creo reference circle identity",
-            "creo reference circle object identity",
-        ],
-        |ctx| {
-            transfer_reference_circles(
-                ctx,
-                &scan,
-                &mut CadIr::empty(),
-                &mut cadmpeg_ir::AnnotationBuilder::new(),
-                &mut SourceUnitCarriers::default(),
-            )
-        },
-    );
-    let mut second = scan.references.circles[0].clone();
-    second.offset = 1;
-    scan.references.circles.push(second);
-    retained_boundary_sweep(
-        &[
-            "creo reference circle identity",
-            "creo reference circle object identity",
-        ],
-        |ctx| {
-            transfer_reference_circles(
-                ctx,
-                &scan,
-                &mut CadIr::empty(),
-                &mut cadmpeg_ir::AnnotationBuilder::new(),
-                &mut SourceUnitCarriers::default(),
-            )
-        },
-    );
-}
-
-#[test]
-fn reference_ellipse_identity_and_count_refuse_below_limits() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    let mut scan = scan_bytes_ok(crate::test_support::build_prt("reference", &[]));
-    scan.references.ellipses.push(
-        crate::reference::ReferenceEllipse::try_new(
-            8,
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).expect("center"),
-            cadmpeg_ir::units::UnitVector3::new([0.0, 0.0, 1.0].into()).expect("axis"),
-            cadmpeg_ir::units::UnitVector3::new([1.0, 0.0, 0.0].into()).expect("direction"),
-            [
-                cadmpeg_ir::scalar::PositiveLength::new(2.0).expect("major radius"),
-                cadmpeg_ir::scalar::PositiveLength::new(1.0).expect("minor radius"),
-            ],
-            0,
-        )
-        .expect("checked reference geometry"),
-    );
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    let error = transfer_reference_ellipses(
-        &ctx,
-        &scan,
-        &mut CadIr::empty(),
-        &mut cadmpeg_ir::AnnotationBuilder::new(),
-        &mut SourceUnitCarriers::default(),
-    )
-    .expect_err("count node exceeds cap");
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.operation == "creo reference ellipse count nodes"));
-    retained_boundary_sweep(
-        &[
-            "creo reference ellipse identity",
-            "creo reference ellipse object identity",
-        ],
-        |ctx| {
-            transfer_reference_ellipses(
-                ctx,
-                &scan,
-                &mut CadIr::empty(),
-                &mut cadmpeg_ir::AnnotationBuilder::new(),
-                &mut SourceUnitCarriers::default(),
-            )
-        },
-    );
-    let mut second = scan.references.ellipses[0].clone();
-    second.offset = 1;
-    scan.references.ellipses.push(second);
-    retained_boundary_sweep(
-        &[
-            "creo reference ellipse identity",
-            "creo reference ellipse object identity",
-        ],
-        |ctx| {
-            transfer_reference_ellipses(
-                ctx,
-                &scan,
-                &mut CadIr::empty(),
-                &mut cadmpeg_ir::AnnotationBuilder::new(),
-                &mut SourceUnitCarriers::default(),
-            )
-        },
-    );
-}
-
-#[test]
-fn datum_surface_identity_refuses_below_retained_limits() {
-    let scan = inch_datum_plane(1.0);
-    retained_boundary_sweep(
-        &[
-            "creo datum plane surface identity",
-            "creo datum plane object identity",
-        ],
-        |ctx| {
-            transfer_datum_plane_surfaces(
-                ctx,
-                &scan,
-                &mut CadIr::empty(),
-                &mut cadmpeg_ir::AnnotationBuilder::new(),
-                &mut SourceUnitCarriers::default(),
-            )
-        },
-    );
-}
-
-#[test]
-fn placed_plane_identity_and_overflow_text_refuse_below_retained_limits() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-
-    let mut payload = b"srf_array\0\xf8\x01".to_vec();
-    crate::test_support::push_generated_plane_row(
-        &mut payload,
-        18,
-        false,
-        [0.0, 1.0, 0.0],
-        [0.0, 0.0, 1.0],
-        [1.0, 0.0, 0.0],
-    );
-    payload.extend_from_slice(b"crv_array\0\xf3\xf8\0");
-    let scan = scan_bytes_ok(crate::test_support::build_prt(
-        "plane",
-        &[("ND:0:VisibGeom:0", payload)],
-    ));
-    retained_boundary_sweep(
-        &[
-            "creo placed plane surface identity",
-            "creo placed plane object identity",
-        ],
-        |ctx| {
-            transfer_placed_plane_surfaces_into_ir(
-                ctx,
-                &scan,
-                &mut CadIr::empty(),
-                &mut cadmpeg_ir::AnnotationBuilder::new(),
-                &mut SourceUnitCarriers::default(),
-            )
-        },
-    );
-
-    let a = f64::from_bits(0x5fed_817d_bb14_96d1);
-    let b = f64::from_bits(0x5fd8_c57e_64a4_a42f);
-    let mut overflow = scan_bytes_ok(crate::test_support::build_prt("plane", &[]));
-    overflow.planes.local_systems.push(PlaneLocalSystem {
-        surface_id: 17,
-        body: Vec::new(),
-        slots: [a, b, 0.0, -b, a, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0].map(Some),
-        layout: Some(PlaneSupportFrameLayout::SupportTriples),
-        classification: LocalSystemClassification::Simple,
-        row_offset: 0,
-        offset: 0,
-    });
-
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    let error = transfer_placed_plane_surfaces_into_ir(
-        &ctx,
-        &overflow,
-        &mut CadIr::empty(),
-        &mut cadmpeg_ir::AnnotationBuilder::new(),
-        &mut SourceUnitCarriers::default(),
-    )
-    .expect_err("overflow refusal text exceeds cap");
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.operation == "creo plane overflow refusal text"));
-}
-
 fn inch_strip(positions: Vec<[f64; 3]>) -> ContainerScan<'static> {
     let mut scan = scan_bytes_ok(crate::test_support::build_prt("strip", &[]));
     scan.framing.principal_unit = Some(PrincipalUnitSystem::InchPoundMassSecond);
     scan.primitives.triangle_strips.push(
-        crate::decode::with_test_decode_ctx(|ctx| {
-            PrimitiveTriangleStrip::new(
-                ctx,
-                0,
-                positions
-                    .into_iter()
-                    .map(|position| FiniteVector::new(position).expect("finite strip position"))
-                    .collect(),
-                None,
-                vec![3],
-            )
-        })
-        .expect("service strip")
-        .expect("valid strip"),
+        PrimitiveTriangleStrip::new(
+            0,
+            positions
+                .into_iter()
+                .map(|position| FiniteVector::new(position).expect("finite strip position"))
+                .collect(),
+            None,
+            vec![3],
+        )
+        .expect("service strip"),
     );
     scan
 }
@@ -481,68 +85,22 @@ fn display_tessellation_vertex_overflow_refuses_unrepresentable_ir() {
 }
 
 #[test]
-fn display_strip_allocations_refuse_at_each_collection_boundary() {
-    let scan = inch_strip(vec![[1.0, 0.0, 0.0], [0.0, 2.0, 0.0], [0.0, 0.0, 4.0]]);
-    retained_boundary_sweep(&["creo display tessellation identity"], |ctx| {
-        transfer_display_tessellations(
-            ctx,
-            &scan,
-            &mut CadIr::empty(),
-            &mut cadmpeg_ir::AnnotationBuilder::new(),
-        )
-    });
-    collection_boundary_sweep(
-        &[
-            "creo display tessellation positions",
-            "creo display tessellation strip rows",
-            "creo display tessellation strip vertices",
-            "creo model tessellations",
-        ],
-        |ctx| {
-            transfer_display_tessellations(
-                ctx,
-                &scan,
-                &mut CadIr::empty(),
-                &mut cadmpeg_ir::AnnotationBuilder::new(),
-            )
-        },
-    );
+fn display_shaded_strip_keeps_vertex_normals() {
     let mut shaded = inch_strip(vec![[1.0, 0.0, 0.0], [0.0, 2.0, 0.0], [0.0, 0.0, 4.0]]);
-    shaded.primitives.triangle_strips[0] = crate::decode::with_test_decode_ctx(|ctx| {
-        PrimitiveTriangleStrip::new(
-            ctx,
-            0,
-            shaded.primitives.triangle_strips[0]
-                .positions()
-                .copied()
-                .collect(),
-            Some(vec![
-                FiniteVector::new([0.0, 0.0, 1.0])
-                    .expect("finite normal");
-                3
-            ]),
-            vec![3],
-        )
-    })
-    .expect("service")
-    .expect("valid strip");
-    collection_boundary_sweep(
-        &[
-            "creo display tessellation positions",
-            "creo display tessellation shaded rows",
-            "creo display tessellation strip rows",
-            "creo display tessellation strip vertices",
-            "creo model tessellations",
-        ],
-        |ctx| {
-            transfer_display_tessellations(
-                ctx,
-                &shaded,
-                &mut CadIr::empty(),
-                &mut cadmpeg_ir::AnnotationBuilder::new(),
-            )
-        },
-    );
+    shaded.primitives.triangle_strips[0] = PrimitiveTriangleStrip::new(
+        0,
+        shaded.primitives.triangle_strips[0]
+            .positions()
+            .copied()
+            .collect(),
+        Some(vec![
+            FiniteVector::new([0.0, 0.0, 1.0])
+                .expect("finite normal");
+            3
+        ]),
+        vec![3],
+    )
+    .expect("service");
     let mut ir = CadIr::empty();
     crate::decode::with_test_decode_ctx(|ctx| {
         transfer_display_tessellations(
@@ -561,57 +119,32 @@ fn display_strip_allocations_refuse_at_each_collection_boundary() {
 }
 
 #[test]
-fn display_strip_error_text_refuses_below_retained_limits() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
-    crate::decode::with_test_decode_ctx(|ctx| {
-        assert!(PrimitiveTriangleStrip::new(
-            ctx,
-            0,
-            vec![FiniteVector::new([1.0, 0.0, 0.0]).expect("finite"); 3],
-            None,
-            vec![2]
-        )
-        .expect("service")
-        .is_none());
-    });
+fn display_strip_short_lengths_and_overflow_are_rejected() {
+    assert!(PrimitiveTriangleStrip::new(
+        0,
+        vec![FiniteVector::new([1.0, 0.0, 0.0]).expect("finite"); 3],
+        None,
+        vec![2]
+    )
+    .is_none());
     let overflow = inch_strip(vec![[f64::MAX, 0.0, 0.0], [0.0, 2.0, 0.0], [0.0, 0.0, 4.0]]);
-    let arena = DecodeArena::new();
-    for (scan, operation, expected) in [
-        (&overflow, "creo display tessellation overflow text",
-            "SolidPrimdata display triangle strip at byte 0 has a vertex that cannot be represented in millimeters"),
-    ] {
-        let mut observed = false;
-        let mut service_error = None;
-        let mut limit = 0_u64;
-        for _ in 0..4096 {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = limit;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-                .expect("empty root admitted");
-            match transfer_display_tessellations(&ctx, scan, &mut CadIr::empty(),
-                &mut cadmpeg_ir::AnnotationBuilder::new()) {
-                Err(CodecError::ResourceLimit(resource)) => {
-                    let need = resource.used.checked_add(resource.additional).expect("retained need");
-                    assert!(need > limit);
-                    limit = need;
-                    assert_eq!(resource.dimension, ResourceDimension::RetainedBytes);
-                    observed |= resource.operation == operation;
-                }
-                Err(error) => {
-                    service_error = Some(error);
-                    break;
-                }
-                Ok(()) => panic!("invalid display strip was admitted"),
-            }
+    let error = crate::decode::with_test_decode_ctx(|ctx| {
+        transfer_display_tessellations(
+            ctx,
+            &overflow,
+            &mut CadIr::empty(),
+            &mut cadmpeg_ir::AnnotationBuilder::new(),
+        )
+    })
+    .expect_err("invalid display strip was admitted");
+    match error {
+        CodecError::Malformed(message) | CodecError::NotImplemented(message) => {
+            assert_eq!(
+                message,
+                "SolidPrimdata display triangle strip at byte 0 has a vertex that cannot be represented in millimeters"
+            );
         }
-        assert!(observed, "missing below-limit refusal for {operation}");
-        match service_error.expect("malformed strip fits within scanned cap") {
-            CodecError::Malformed(message) | CodecError::NotImplemented(message) => {
-                assert_eq!(message, expected);
-            }
-            error => panic!("unexpected display strip result: {error:?}"),
-        }
+        error => panic!("unexpected display strip result: {error:?}"),
     }
 }
 

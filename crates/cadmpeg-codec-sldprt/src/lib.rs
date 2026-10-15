@@ -402,10 +402,6 @@ impl CodecBackend for SldprtCodec {
         prefix: cadmpeg_core::decode::View<'_>,
     ) -> Result<Confidence, cadmpeg_core::CodecError> {
         let prefix = prefix.window();
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(prefix.len()),
-            "detect input",
-        )?;
         if container::looks_like_sldprt(ctx, prefix)? {
             Ok(Confidence::High)
         } else {
@@ -421,12 +417,11 @@ impl CodecBackend for SldprtCodec {
         let scan = container::scan(ctx, root)?;
         let classification = dialect::classify_layers(ctx, &scan)?;
         let mut summary = container::summarize(
-            ctx,
             &scan,
             classification
                 .layers()
                 .try_clone_for_decode(ctx, "copy dialect layers")?,
-        )?;
+        );
         classification.append_losses(ctx, &mut summary.losses)?;
         Ok(summary)
     }

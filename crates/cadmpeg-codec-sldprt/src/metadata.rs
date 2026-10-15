@@ -94,7 +94,6 @@ fn scan_transformed_reference_plane(
         ) else {
             continue;
         };
-        ctx.reserve_vec(out, 1, "collect SLDPRT document attributes")?;
         out.push(attribute(
             ctx,
             section,
@@ -117,10 +116,6 @@ fn scan_length_user_units(
     const TOKEN: &[u8] = b"moLengthUserUnits_c";
     const STRING_MARKER: &[u8] = &[0xff, 0xfe, 0xff];
     let payload = section.payload();
-    ctx.charge_work(
-        u64_from_index(payload.len()),
-        "scan SLDPRT linear unit names",
-    )?;
     for offset in payload
         .windows(TOKEN.len())
         .enumerate()
@@ -147,10 +142,6 @@ fn scan_length_user_units(
         if bytes.is_empty() || bytes.len() % 2 != 0 {
             continue;
         }
-        ctx.charge_work(
-            u64_from_index(bytes.len() / 2),
-            "validate SLDPRT linear unit name",
-        )?;
         let scalars = || {
             char::decode_utf16(
                 (0..bytes.len() / 2).filter_map(|index| View::u16_le_at(bytes, index * 2)),
@@ -166,7 +157,6 @@ fn scan_length_user_units(
             false,
             "retain SLDPRT linear unit name",
         )?;
-        ctx.reserve_vec(out, 1, "collect SLDPRT document attributes")?;
         out.push(attribute(
             ctx,
             section,
@@ -186,12 +176,7 @@ fn scan_units_xml(
     out: &mut Vec<SourceAttribute>,
     annotations: &mut Annotations,
 ) -> Result<(), CodecError> {
-    let Some(text) = crate::container::xml_text_charged(
-        ctx,
-        section.payload(),
-        "materialize SLDPRT document metadata XML",
-    )?
-    else {
+    let Some(text) = crate::container::xml_text(section.payload()) else {
         return Ok(());
     };
     let admitted_document = match ctx.parse_xml(text.as_str(), "decode XML tree") {
@@ -213,7 +198,6 @@ fn scan_units_xml(
         let Some(code) = value.and_then(|value| value.trim().parse::<i64>().ok()) else {
             continue;
         };
-        ctx.reserve_vec(out, 1, "collect SLDPRT document attributes")?;
         out.push(attribute(
             ctx,
             section,
@@ -275,7 +259,6 @@ fn scan_vectors(
         let Some(values) = values else {
             continue;
         };
-        ctx.reserve_vec(out, 1, "collect SLDPRT document attributes")?;
         out.push(attribute(
             ctx,
             section,
@@ -309,7 +292,6 @@ fn scan_part(
         ) else {
             continue;
         };
-        ctx.reserve_vec(out, 1, "collect SLDPRT document attributes")?;
         out.push(attribute(
             ctx,
             section,
@@ -350,7 +332,6 @@ fn scan_configuration_manager(
         let Ok(filetime) = i64::try_from(filetime) else {
             continue;
         };
-        ctx.reserve_vec(out, 1, "collect SLDPRT document attributes")?;
         out.push(attribute(
             ctx,
             section,

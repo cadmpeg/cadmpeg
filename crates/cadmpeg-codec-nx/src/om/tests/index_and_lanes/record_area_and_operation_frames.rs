@@ -36,9 +36,7 @@ fn legacy_feature_om_section_with_record_area() -> Vec<u8> {
 #[test]
 fn om_feature_section_accepts_the_legacy_record_area_pointer_and_product_frame() {
     let bytes = legacy_feature_om_section_with_record_area();
-    let section = crate::test_support::with_decode_context(|ctx| sections(ctx, &bytes))
-        .unwrap()
-        .remove(0);
+    let section = sections(&bytes).unwrap().remove(0);
     let record_area_offset = section.record_area.expect("record area").offset;
     assert_eq!(
         record_area_offset,
@@ -58,11 +56,7 @@ fn om_feature_section_accepts_the_legacy_record_area_pointer_and_product_frame()
 
     let mut invalid = bytes;
     invalid[record_area_offset + 13] = 0x02;
-    assert!(
-        crate::test_support::with_decode_context(|ctx| sections(ctx, &invalid)).unwrap()[0]
-            .record_area
-            .is_none()
-    );
+    assert!(sections(&invalid).unwrap()[0].record_area.is_none());
 }
 
 #[test]
@@ -95,9 +89,7 @@ fn om_registry_uses_the_bounded_record_area_as_its_registry_end() {
     let payload_len = u32::try_from(bytes.len() - 16).expect("synthetic section fits");
     bytes[8..12].copy_from_slice(&payload_len.to_be_bytes());
 
-    let section = crate::test_support::with_decode_context(|ctx| sections(ctx, &bytes))
-        .unwrap()
-        .remove(0);
+    let section = sections(&bytes).unwrap().remove(0);
     assert_eq!(
         section.fields.last().expect("late field").name,
         "m_lateField"
