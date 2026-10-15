@@ -932,7 +932,7 @@ fn insert_only_history_uses_the_active_record_table_as_revisions() {
 
     {
         assert_eq!(insert_only_active_record_count(&states), Some(4));
-        bind_historical_entity_versions(&mut states, u64::MAX).unwrap();
+        bind_historical_entity_versions(&mut states, &mut { u64::MAX }).unwrap();
     };
 
     assert_eq!(
@@ -1278,7 +1278,7 @@ fn reverse_history_builds_complete_entity_version_maps() {
         })
         .into();
 
-    bind_historical_entity_versions(&mut states, u64::MAX).unwrap();
+    bind_historical_entity_versions(&mut states, &mut { u64::MAX }).unwrap();
 
     assert_eq!(
         states

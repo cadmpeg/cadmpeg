@@ -144,11 +144,14 @@ pub(crate) fn graph_is_coherent(history: &AsmHistory) -> bool {
 /// `bytes` carries no `delta_state` record (the stream is a construction
 /// snapshot with no history tail) or a malformed history body. `width` is the
 /// stream's integer/ref width (4 for `BinaryFile4`, 8 for `BinaryFile8`).
+/// `binding_allowance` is the count of state-record entries that the
+/// decode's history streams may still bind; see [`history_binding_allowance`].
 pub(crate) fn decode(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     stream: &str,
     width: RefWidth,
+    binding_allowance: &mut u64,
 ) -> Result<Option<AsmHistory>, cadmpeg_core::CodecError> {
     let preamble_offset = bytes
         .windows(PREAMBLE.len())
@@ -235,10 +238,9 @@ pub(crate) fn decode(
         });
     }
     bind_snapshot_revision_ids(&mut states)?;
-    let record_table_binding_budget_exceeded = bind_historical_entity_versions(
-        &mut states,
-        history_binding_max_state_records(ctx.policy()),
-    )? == TableBindingCost::Exceeded;
+    let record_table_binding_budget_exceeded =
+        bind_historical_entity_versions(&mut states, binding_allowance)?
+            == TableBindingCost::Exceeded;
     if !record_table_binding_budget_exceeded {
         bind_complete_record_tables(ctx, &mut states, bytes, width)?;
     }
@@ -378,41 +380,42 @@ fn insert_only_active_record_count(states: &[AsmDeltaState]) -> Option<usize> {
 /// Native text that binding retains for one state-record entry: the
 /// entity-version pair and the plane-selection topology that each
 /// `asm_delta_states` record keeps for the entry, and the Design operands that
-/// the bound history resolves. User designs with 1 to 20 million entries
-/// retain 110 to 124 bytes for each entry. The value is rounded up.
+/// the bound history resolves. Designs with 0.9 to 19 million entries retain
+/// 111 to 124 bytes for each entry. The value is rounded up.
 const HISTORY_RETAINED_BYTES_PER_STATE_RECORD: u64 = 128;
 
-/// Largest number of state-record entries that one history stream binds.
+/// Count of state-record entries that all history streams of one decode may
+/// bind together.
 ///
 /// One entry is one record of one state's record table. The per-state
 /// topology decode, the projected snapshots, and the retained native text all
 /// grow linearly with the entry count. At this count the binding alone retains
 /// the policy's complete `max_retained_bytes`, so a larger binding cannot
-/// complete in the session. A history past this count skips historical
-/// topology and reports the skip.
-fn history_binding_max_state_records(policy: &cadmpeg_core::decode::DecodePolicy) -> u64 {
+/// complete in the session. A history whose entries exceed the remaining
+/// allowance skips historical topology and reports the skip.
+pub(crate) fn history_binding_allowance(policy: &cadmpeg_core::decode::DecodePolicy) -> u64 {
     policy.limits.max_retained_bytes / HISTORY_RETAINED_BYTES_PER_STATE_RECORD
 }
 
-/// Whether one history stream's state-record entries fit the binding bound.
+/// Whether one history stream's state-record entries fit the binding allowance.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum TableBindingCost {
     /// The entries fit; the history is bound.
     Admitted,
-    /// The entries exceed the bound; historical topology is skipped.
+    /// The entries exceed the allowance; historical topology is skipped.
     Exceeded,
 }
 
 /// Project the entity-to-record version map onto every state.
 ///
 /// The walk is done twice. The first walk validates the chain and counts the
-/// state-record entries without a projection. A history with more than
-/// `max_state_records` entries is not projected and reports
-/// [`TableBindingCost::Exceeded`]. The second walk stores one version map for
-/// each state.
+/// state-record entries without a projection. A history with more entries
+/// than `binding_allowance` is not projected and reports
+/// [`TableBindingCost::Exceeded`]. Otherwise the entries are subtracted from
+/// the allowance and the second walk stores one version map for each state.
 fn bind_historical_entity_versions(
     states: &mut [AsmDeltaState],
-    max_state_records: u64,
+    binding_allowance: &mut u64,
 ) -> Result<TableBindingCost, cadmpeg_core::CodecError> {
     let mut archived_ids = Vec::new();
     for revision_id in states
@@ -438,9 +441,11 @@ fn bind_historical_entity_versions(
     }) {
         return Ok(TableBindingCost::Admitted);
     }
-    if state_records.is_none_or(|count| count > max_state_records) {
+    let Some(remaining) = state_records.and_then(|count| binding_allowance.checked_sub(count))
+    else {
         return Ok(TableBindingCost::Exceeded);
-    }
+    };
+    *binding_allowance = remaining;
     let mut projected = Vec::new();
     walk_entity_versions(states, active_count, &archived_ids, |ordinal, versions| {
         let mut state_versions = Vec::new();
