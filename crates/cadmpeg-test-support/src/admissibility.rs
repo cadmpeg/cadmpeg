@@ -72,7 +72,7 @@ mod tests {
     /// Frozen legacy Rhino draft predicate: full annotations validation minus `ArenaOrder`.
     fn rhino_draft_gate(ir: &CadIr, annotations: &Annotations) -> bool {
         let mut validation = validate_neutral_with_annotations(ir, annotations, Vec::new())
-            .expect("resource allocation did not fail");
+            .expect("validate the neutral model");
         validation
             .findings
             .retain(|finding| finding.check != Check::ArenaOrder);
@@ -82,7 +82,7 @@ mod tests {
     /// Frozen legacy Rhino instance predicate: full neutral validation.
     fn rhino_instance_gate(ir: &CadIr) -> bool {
         validate_neutral(ir, Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     }
 
@@ -91,7 +91,7 @@ mod tests {
         let ir = accepted_empty();
         let annotations = Annotations::default();
         assert!(validate_neutral(&ir, Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok());
         assert!(rhino_draft_gate(&ir, &annotations));
         assert!(rhino_instance_gate(&ir));
@@ -101,7 +101,7 @@ mod tests {
     fn freeze_rejected_missing_point_under_legacy_predicates() {
         let ir = rejected_missing_point("test:model").expect("valid identity");
         let annotations = Annotations::default();
-        let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
+        let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
         assert!(!report.is_ok(), "{report:?}");
         assert!(report
             .findings
@@ -116,7 +116,7 @@ mod tests {
         let ir = rejected_missing_region("test:model").expect("valid identity");
         let annotations = Annotations::default();
         assert!(!validate_neutral(&ir, Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok());
         assert!(!rhino_draft_gate(&ir, &annotations));
         assert!(!rhino_instance_gate(&ir));
