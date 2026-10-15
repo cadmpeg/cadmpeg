@@ -1966,14 +1966,14 @@ pub(super) fn par_int_cur_isoline(
             reference_context
         )?)
         .value()
-        .map(|support| support.surface),
+        .map(|(support, _)| support.surface),
         propagate_resource!(optional_rolling_ball_surface(
             ctx,
             &mut cur,
             reference_context
         )?)
         .value()
-        .map(|support| support.surface),
+        .map(|(support, _)| support.surface),
     ];
     let pcurves = [
         nullable_embedded_pcurve(&mut cur)?.value(),

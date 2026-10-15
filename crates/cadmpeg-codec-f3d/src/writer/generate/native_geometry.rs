@@ -627,11 +627,7 @@ fn native_procedural_surface_definition(
                     for value in form.reference_endpoints {
                         native_optional_f64(bytes, value);
                     }
-                    if let Some(pcurve) = pcurve {
-                        native_nurbs_pcurve_block(bytes, pcurve)?;
-                    } else {
-                        native_ident(bytes, "nullbs")?;
-                    }
+                    native_optional_support_pcurve(bytes, &support.geometry, pcurve.as_ref())?;
                     native_f64(bytes, parameter.get());
                     native_revision_surface_tail(bytes, "taper surface", form, Some(solved_cache))?;
                     // Orthogonal sense is the record's own trailing logical, written
@@ -647,11 +643,7 @@ fn native_procedural_surface_definition(
                 native_ident(bytes, subtype)?;
                 native_embedded_surface(bytes, &support.geometry)?;
                 native_nurbs_curve(bytes, &reference)?;
-                if let Some(pcurve) = pcurve {
-                    native_nurbs_pcurve_block(bytes, pcurve)?;
-                } else {
-                    native_ident(bytes, "nullbs")?;
-                }
+                native_optional_support_pcurve(bytes, &support.geometry, pcurve.as_ref())?;
                 native_f64(bytes, parameter.get());
                 native_nurbs_surface(bytes, solved_cache)?;
                 if let Some(cache_fit_tolerance) = procedural.cache_fit_tolerance() {
@@ -1369,7 +1361,7 @@ fn native_g2_side(
         native_pcurve_knot_domain(pcurve)?,
     )?;
     native_nurbs_curve(bytes, &curve)?;
-    native_optional_pcurve(bytes, side.pcurves[0].as_ref())?;
+    native_optional_support_pcurve(bytes, &surface.geometry, side.pcurves[0].as_ref())?;
     native_vector(
         bytes,
         [side.direction.x, side.direction.y, side.direction.z],
@@ -1589,10 +1581,11 @@ fn native_loft_section(
                         } else {
                             native_embedded_surface(bytes, &surface.geometry)?;
                         }
+                        native_optional_support_pcurve(bytes, &surface.geometry, pcurve.as_ref())?;
                     } else {
                         native_ident(bytes, "null_surface")?;
+                        native_optional_pcurve(bytes, pcurve.as_ref())?;
                     }
-                    native_optional_pcurve(bytes, pcurve.as_ref())?;
                     bytes.push(native_bool(*first_flag));
                 }
                 cadmpeg_ir::geometry::LoftMemberForm::PcurvePair {
@@ -1694,7 +1687,7 @@ fn native_compound_loft_scale(
                 ))
             })?;
         native_embedded_surface(bytes, &surface.geometry)?;
-        native_optional_pcurve(bytes, member.data.pcurve.as_ref())?;
+        native_optional_support_pcurve(bytes, &surface.geometry, member.data.pcurve.as_ref())?;
         bytes.push(native_bool(member.data.first_flag));
         native_loft_profile_tail(bytes, &member.data);
     }
@@ -2605,7 +2598,7 @@ fn native_skin_profile_data(
             CodecError::malformed(format_args!("skin references missing surface {surface_id}"))
         })?;
     native_embedded_surface(bytes, &surface.geometry)?;
-    native_optional_pcurve(bytes, data.pcurve.as_ref())?;
+    native_optional_support_pcurve(bytes, &surface.geometry, data.pcurve.as_ref())?;
     bytes.push(native_bool(data.first_flag));
     native_loft_profile_tail(bytes, data);
     Ok(())
@@ -3469,6 +3462,20 @@ fn native_optional_pcurve(
     }
 }
 
+/// Write a nullable pcurve on `support` in the native chart of the support
+/// fields `native_embedded_surface` writes.
+fn native_optional_support_pcurve(
+    bytes: &mut Vec<u8>,
+    support: &SurfaceGeometry,
+    pcurve: Option<&PcurveGeometry>,
+) -> Result<(), CodecError> {
+    if let Some(pcurve) = pcurve {
+        native_nurbs_pcurve_payload(bytes, &native_support_pcurve(support, pcurve)?)
+    } else {
+        native_ident(bytes, "nullbs")
+    }
+}
+
 fn native_radius_function_pcurve_block(
     bytes: &mut Vec<u8>,
     function: &PcurveGeometry,
@@ -3725,7 +3732,7 @@ fn native_vertex_blend_boundary(
             } else {
                 native_embedded_surface(bytes, &surface.geometry)?;
             }
-            native_optional_pcurve(bytes, pcurve.as_ref())?;
+            native_optional_support_pcurve(bytes, &surface.geometry, pcurve.as_ref())?;
             bytes.push(native_bool(*sense));
             native_f64(bytes, fit_tolerance.get());
         }
@@ -3824,10 +3831,11 @@ fn native_revision_cl_scale(
                             ))
                         })?;
                     native_embedded_surface_with_bounds(bytes, &surface.geometry, support_bounds)?;
+                    native_optional_support_pcurve(bytes, &surface.geometry, pcurve.as_ref())?;
                 } else {
                     native_ident(bytes, "null_surface")?;
+                    native_optional_pcurve(bytes, pcurve.as_ref())?;
                 }
-                native_optional_pcurve(bytes, pcurve.as_ref())?;
                 bytes.push(native_bool(*first_flag));
             }
             cadmpeg_ir::geometry::LoftMemberForm::PcurvePair {
@@ -4158,7 +4166,7 @@ fn native_rolling_ball_side(
             VariableBlendSupportKind::ZeroCurve => "blend_support_zero_curve",
         },
     )?;
-    if let Some(support) = &side.surface {
+    let support_geometry = if let Some(support) = &side.surface {
         let id = &support.surface;
         let surface = target
             .model
@@ -4188,9 +4196,11 @@ fn native_rolling_ball_side(
                 }
             }
         }
+        Some(&surface.geometry)
     } else {
         native_ident(bytes, "null_surface")?;
-    }
+        None
+    };
     if let Some(support) = &side.curve {
         let id = &support.curve;
         let curve = target
@@ -4220,7 +4230,10 @@ fn native_rolling_ball_side(
     } else {
         native_ident(bytes, "null_curve")?;
     }
-    native_optional_pcurve(bytes, side.pcurve.as_ref())?;
+    match support_geometry {
+        Some(geometry) => native_optional_support_pcurve(bytes, geometry, side.pcurve.as_ref())?,
+        None => native_optional_pcurve(bytes, side.pcurve.as_ref())?,
+    }
     native_point(
         bytes,
         [
@@ -4281,7 +4294,7 @@ fn native_rolling_ball_third_side(
         native_pcurve_knot_domain(pcurve)?,
     )?;
     native_nurbs_curve(bytes, &curve)?;
-    native_optional_pcurve(bytes, side.pcurve.as_ref())?;
+    native_optional_support_pcurve(bytes, &surface.geometry, side.pcurve.as_ref())?;
     native_vector(
         bytes,
         [side.direction.x, side.direction.y, side.direction.z],

@@ -215,6 +215,14 @@ the record grammar does not identify one construction.
 
 **Need.** A pcurve with known edge vertices on each of these supports confirms the rule. A wrong sign mirrors the pcurve in the support chart, and `cadmpeg check` reports the miss at the edge vertices.
 
+### GC-39. Chart of the secondary blend pcurves
+
+**Question.** In which chart are the secondary and tertiary pcurves of a rolling-ball side, the secondary and tertiary pcurves of a rolling-ball third side, the second pcurve of a G2 blend side, the tertiary pcurve of a G2 first-side `none` branch, and the post pcurve of a variable blend stored?
+
+**Known.** `asm.md` §6.2 gives the support chart of the primary side pcurve, which is the contact track. The layouts store the other pcurves after the same support, but no field relates them to that support or to another surface. The decoder keeps their stored control points. In the eight available Fusion designs, the 1120 rolling-ball sides store `nullbs` in the primary, secondary, and tertiary slots, the decoded variable blends store no post pcurve, and no record is a G2 blend.
+
+**Need.** A stream with one of these pcurves present, together with the surface whose chart reproduces a known point of the construction, gives the chart. A pcurve on an analytic support then converts with the rule of §6.2, and the F3D writer inverts it.
+
 ## 2. Topology
 
 ### TG-01. Missing partner coedge substitution

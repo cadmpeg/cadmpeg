@@ -385,6 +385,8 @@ An embedded or face-bound pcurve on an analytic support stores its control point
 - On a `sphere`, `first` is the latitude `φ` and `second` is the longitude `λ` about the polar axis `z`, measured from the equator direction `x` toward `y = z × x`. `reverse_v` negates `λ`. The point is `center + radius·(cos φ·(cos λ·x + sin λ·y) + sin φ·z)` with the signed radius.
 - On a `torus`, `first` is the minor angle `α` and `second` is the major angle `β` about the axis `z`, measured from `x = ref_direction` toward `y = z × x`. `reverse_v` negates `β`. The point is `origin + (major_radius + minor_radius·cos α)·(cos β·x + sin β·y) + minor_radius·sin α·z` with the signed minor radius.
 
+The pcurves on an embedded analytic support use this parameterization: the pcurve of each support slot of an intcurve construction, the primary pcurve of a rolling-ball side and of a rolling-ball third side, the first pcurve of a G2 blend side, the pcurve of a vertex-blend `pcurve` boundary, the pcurve of a loft, skin, or net profile member that stores a support, and the pcurve of a taper surface.
+
 Neutral projection converts plane coordinates to document length units, cone coordinates to `(azimuth, axial distance)`, and sphere and torus coordinates to `(longitude, latitude)`. A neutral cone whose axis is the reverse of the native axis (`sine × cosine < 0` on a cone that is not a circular cylinder) negates both cone coordinates.
 
 Both direction vectors in each analytic-surface frame are required. A `cone` major-axis vector also has nonzero magnitude; its magnitude is the base radius. A record with an absent required vector or a zero cone major-axis vector does not define an analytic surface. `u_scale` does not substitute for the cone radius or reference direction.
