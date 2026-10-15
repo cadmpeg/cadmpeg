@@ -325,6 +325,17 @@ pub(crate) fn neutral_component_occurrence_id(
     )
 }
 
+/// Neutral root occurrence of a Design stream, keyed by the root component's
+/// naming-space UUID.
+pub(crate) fn neutral_root_occurrence_id(
+    context_uuid: &crate::records::mesh::DesignRelaxedGuidText,
+) -> cadmpeg_ir::ids::OccurrenceId {
+    cadmpeg_ir::ids::OccurrenceId::compose(
+        &cadmpeg_ir::identity_namespace!("f3d", "model", "occurrence"),
+        cadmpeg_ir::identity_key!("root").dash(context_uuid.identity_key()),
+    )
+}
+
 /// Neutral occurrence identity for an external component-insert scope whose
 /// target document is not present in the container.
 #[cfg(test)]
