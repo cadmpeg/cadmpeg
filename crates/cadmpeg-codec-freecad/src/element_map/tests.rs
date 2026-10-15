@@ -901,7 +901,7 @@ fn parse(
     })?;
     super::parse(
         ctx,
-        admitted_xml.document(),
+        &admitted_xml,
         file_version,
         properties,
         entries,

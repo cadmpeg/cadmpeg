@@ -409,7 +409,6 @@ fn curve_expression_source_text(lines: &[crate::curve::CurveExpressionLine]) -> 
 }
 
 fn curve_expression_properties(
-    ctx: &DecodeContext<'_>,
     assignment: &crate::curve::CurveExpressionAssignment,
     assignment_ordinal: usize,
     parameter: (&str, &ParameterId),
@@ -503,7 +502,7 @@ fn curve_expression_properties(
         let value = join_cyclic_dependency_names(&cyclic_dependencies);
         insert_curve_expression_property(&mut properties, "cyclic_dependencies", value);
     }
-    cadmpeg_core::text::named_entries_for_decode(ctx, parameter_id.as_str(), properties)
+    cadmpeg_core::text::named_entries(parameter_id.as_str(), properties)
         .map_err(Into::into)
 }
 
@@ -727,7 +726,6 @@ pub(super) fn transfer_curve_expression_features(
                     CodecError::malformed("curve-expression parameter sequence is incomplete")
                 })?;
             parameter.properties = curve_expression_properties(
-                ctx,
                 assignment,
                 assignment_ordinal,
                 (&parameter.name, &parameter.id),

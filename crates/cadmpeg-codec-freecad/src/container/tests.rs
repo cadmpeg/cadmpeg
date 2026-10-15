@@ -51,7 +51,7 @@ fn unreadable_entry_payload_uses_checked_hex() {
     });
 }
 
-fn with_scanned_document<T>(f: impl FnOnce(&mut super::Scan<'_, '_>) -> T) -> T {
+fn with_scanned_document<T>(f: impl FnOnce(&mut super::Scan<'_>) -> T) -> T {
     let document = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="0"/><ObjectData Count="0"/></Document>"#;
     let bytes = archive(document);
     let arena = DecodeArena::new();

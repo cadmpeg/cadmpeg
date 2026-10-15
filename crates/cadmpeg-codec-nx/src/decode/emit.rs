@@ -1797,7 +1797,6 @@ fn unknown_stream_record(
 
 /// Builds source metadata from classified layers and the container scan.
 pub(super) fn source_meta(
-    ctx: &DecodeContext<'_>,
     scan: &Scan,
     dialects: &DialectLayers,
     parsed: Option<&ParsedStreams<'_>>,
@@ -2032,8 +2031,8 @@ pub(super) fn source_meta(
         }
     }
     Ok(SourceMeta::classified(
-        dialects.try_clone_for_decode(ctx, "copy dialect layers")?,
-        cadmpeg_core::text::named_entries_for_decode(ctx, "the nx part", attributes)?,
+        dialects.clone(),
+        cadmpeg_core::text::named_entries("the nx part", attributes)?,
     ))
 }
 
@@ -2122,8 +2121,8 @@ mod tests {
             let parsed = crate::native::substrate::ParsedStreams::parse(&scan)
                 .expect("prepared delta census");
             let expected =
-                source_meta(service_ctx, &scan, &dialects, None).expect("uncached source metadata");
-            let actual = source_meta(service_ctx, &scan, &dialects, Some(&parsed))
+                source_meta(&scan, &dialects, None).expect("uncached source metadata");
+            let actual = source_meta(&scan, &dialects, Some(&parsed))
                 .expect("source metadata reads the existing census");
             assert_eq!(
                 serde_json::to_value(actual).expect("source metadata"),

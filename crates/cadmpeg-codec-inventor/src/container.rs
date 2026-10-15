@@ -48,7 +48,7 @@ impl<'a> InventorContainer<'a> {
         })
     }
 
-    pub(crate) fn summary(&self, ctx: &DecodeContext<'_>) -> Result<ContainerSummary, CodecError> {
+    pub(crate) fn summary(&self) -> Result<ContainerSummary, CodecError> {
         let mut entries = self.snapshot.container_entries(classify);
         for segment in &self.rse.segments {
             let Some(entry) =
@@ -99,7 +99,7 @@ impl<'a> InventorContainer<'a> {
         if let Some(loss) = crate::dialect::dialect_loss(&matched, &recovery) {
             losses.push(loss);
         }
-        let dialects = crate::dialect::layers(ctx, &matched, &self.rse.active_carrier)?;
+        let dialects = crate::dialect::layers(&matched, &self.rse.active_carrier)?;
         if let Some(kernel) = dialects
             .iter()
             .find(|matched| matched.format() == cadmpeg_asm::dialect::FORMAT)

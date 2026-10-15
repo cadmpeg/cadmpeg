@@ -8,7 +8,6 @@ use std::path::Path;
 
 use cadmpeg_container::ArchiveSnapshot;
 use cadmpeg_core::bytes::contains;
-use cadmpeg_core::decode::tree::AdmittedXml;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::{CodecError, ContainerEntry};
@@ -61,7 +60,7 @@ pub(crate) fn has_document_markers(
         8 => {
             inflated =
                 ctx.inflate_probe(View::over_retained(compressed), DETECTION_XML_BYTES, false)?;
-            let Some((ref output, _)) = inflated else {
+            let Some(ref output) = inflated else {
                 return Ok(false);
             };
             output.as_slice()
@@ -72,7 +71,7 @@ pub(crate) fn has_document_markers(
 }
 
 /// Fully scanned container used by inspection and decode.
-pub(crate) struct Scan<'a, 'ctx> {
+pub(crate) struct Scan<'a> {
     /// Recoverable container metadata diagnostics.
     pub(crate) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     /// Container summary entries.
@@ -82,7 +81,7 @@ pub(crate) struct Scan<'a, 'ctx> {
     /// Declared persistence schema version, owned by the source declaration.
     pub(crate) schema_version: String,
     /// One admitted persistence tree shared by all document readers.
-    pub(crate) document_xml: AdmittedXml<'a, 'ctx>,
+    pub(crate) document_xml: roxmltree::Document<'a>,
     /// Exact physical archive partition.
     pub(crate) ledger: Vec<ArchiveSpan>,
     /// Bounded physical payloads that could not be opened.
@@ -105,10 +104,10 @@ pub(crate) struct UnreadableEntry {
 }
 
 /// Scan an archive through the session resource budget.
-pub(crate) fn scan<'a, 'ctx>(
-    ctx: &'ctx DecodeContext<'a>,
+pub(crate) fn scan<'a>(
+    ctx: &DecodeContext<'a>,
     root: View<'a>,
-) -> Result<Scan<'a, 'ctx>, CodecError> {
+) -> Result<Scan<'a>, CodecError> {
     let archive = ArchiveSnapshot::new(ctx, root)?;
     if !archive
         .entries()
@@ -126,7 +125,7 @@ pub(crate) fn scan<'a, 'ctx>(
     }
     let mut losses = Vec::new();
     let document_xml = admit_document(ctx, document_bytes)?;
-    let (document, schema_version) = parse_document(document_xml.document(), &mut losses)?;
+    let (document, schema_version) = parse_document(&document_xml, &mut losses)?;
     let mut data = BTreeMap::new();
     let mut unreadable_entries = Vec::new();
     for file in archive.entries() {
@@ -201,7 +200,7 @@ pub(crate) fn scan<'a, 'ctx>(
 
 pub(crate) fn entry_records(
     ctx: &DecodeContext<'_>,
-    scan: &Scan<'_, '_>,
+    scan: &Scan<'_>,
     properties: &[PropertyRecord],
 ) -> Result<Vec<EntryRecord>, CodecError> {
     let mut records = Vec::new();
@@ -256,7 +255,7 @@ pub(crate) fn entry_records(
 }
 
 pub(crate) fn source_attributes(
-    scan: &Scan<'_, '_>,
+    scan: &Scan<'_>,
 ) -> Result<BTreeMap<NonBlankString, String>, CodecError> {
     let mut attributes = BTreeMap::new();
     for (key, value) in [
@@ -294,7 +293,7 @@ pub(crate) fn source_attributes(
 }
 
 /// Summarize one scan.
-pub(crate) fn summarize(scan: &Scan<'_, '_>) -> ContainerSummary {
+pub(crate) fn summarize(scan: &Scan<'_>) -> ContainerSummary {
     let matched = crate::dialect::FcstdDialect::classify(&scan.document, &scan.schema_version);
     let mut losses = Vec::new();
     for loss in scan
@@ -327,7 +326,7 @@ pub(crate) fn summarize(scan: &Scan<'_, '_>) -> ContainerSummary {
 }
 
 /// Notes shared by inspect and decode without reclassifying host identity.
-pub(crate) fn summary_notes(scan: &Scan<'_, '_>) -> Vec<String> {
+pub(crate) fn summary_notes(scan: &Scan<'_>) -> Vec<String> {
     let mut notes = Vec::new();
     notes.extend([
         format!("SchemaVersion={}", scan.schema_version),
@@ -496,11 +495,11 @@ fn scan_tag_end(bytes: &[u8], start: usize) -> Option<usize> {
     None
 }
 
-/// Admit the persistence tree once and keep its storage charged while it is borrowed.
-pub(crate) fn admit_document<'input, 'ctx>(
-    ctx: &'ctx DecodeContext<'_>,
+/// Parse the persistence tree once, charging its nesting depth.
+pub(crate) fn admit_document<'input>(
+    ctx: &DecodeContext<'_>,
     bytes: &'input [u8],
-) -> Result<AdmittedXml<'input, 'ctx>, CodecError> {
+) -> Result<roxmltree::Document<'input>, CodecError> {
     let text = std::str::from_utf8(bytes)
         .map_err(|_| CodecError::Malformed("Document.xml is not UTF-8".into()))?;
     let admitted_xml = match ctx.parse_xml(text, "FreeCAD document XML tree") {

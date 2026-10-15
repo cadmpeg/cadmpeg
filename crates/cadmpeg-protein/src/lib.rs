@@ -384,7 +384,7 @@ fn parse_schema_document(
     let xml = std::str::from_utf8(bytes).map_err(|error| {
         CodecError::malformed(format_args!("Protein schema {name} is not UTF-8: {error}"))
     })?;
-    let admitted_document = ctx
+    let document = ctx
         .parse_xml(xml, "Protein schema XML tree")
         .map_err(|error| {
             let CodecError::Malformed(error) = error else {
@@ -394,7 +394,6 @@ fn parse_schema_document(
                 "Protein schema {name} is malformed XML: {error}"
             ))
         })?;
-    let document = admitted_document.document();
     let root = document.root_element();
     let uid = root
         .children()

@@ -216,13 +216,12 @@ fn transfer_xml(
 ) -> Result<Graph, CodecError> {
     let text = std::str::from_utf8(bytes)
         .map_err(|_| CodecError::Malformed("GuiDocument.xml is not UTF-8".into()))?;
-    let admitted_xml = ctx.parse_xml(text, "FreeCAD XML tree").map_err(|error| {
+    let xml = ctx.parse_xml(text, "FreeCAD XML tree").map_err(|error| {
         let CodecError::Malformed(error) = error else {
             return error;
         };
         CodecError::malformed(format_args!("invalid GuiDocument.xml: {error}"))
     })?;
-    let xml = admitted_xml.document();
     let schema_declaration = crate::container::canonical_attribute(
         xml.root_element(),
         "SchemaVersion",
@@ -234,7 +233,7 @@ fn transfer_xml(
         ctx,
         ir,
         text,
-        xml,
+        &xml,
         schema_declaration.as_deref(),
         neutral_schema_version,
         sources,
@@ -743,7 +742,7 @@ fn transfer_neutral_presentation(
                     .iter()
                     .map(|(name, value)| (name.as_str(), value.as_str())),
             );
-            charge_refused_gui_keys(&mut state_losses, &refused)?;
+            note_refused_gui_keys(&mut state_losses, &refused);
             let kind = if state.kind == "Camera" && camera_count == 1 {
                 match camera_state_value(state, &mut state_losses) {
                     Ok(camera) => PresentationStateKind::Camera(camera),
@@ -825,7 +824,7 @@ fn transfer_neutral_presentation(
                 )
             }),
         );
-        charge_refused_gui_keys(losses, &refused)?;
+        note_refused_gui_keys(losses, &refused);
         plan.view_presentations.push(ViewPresentation {
             id: PresentationId::mint(crate::native::model_id(
                 "presentation-view",
@@ -870,17 +869,13 @@ fn gui_property_value(property: &GuiPropertyRecord) -> Option<&str> {
 
 /// One loss per property key the reader could not key, naming the key's own
 /// record and, for a restated key, the key.
-fn charge_refused_gui_keys(
+fn note_refused_gui_keys(
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     refused: &[cadmpeg_core::text::NamedEntryError],
-) -> Result<(), CodecError> {
+) {
     use cadmpeg_core::text::NamedEntryError;
     for key in refused {
         let message = match key {
-            NamedEntryError::ResourceRefusal(limit) => return Err((*limit).into()),
-            NamedEntryError::FormattingRefusal => {
-                return Err(CodecError::malformed("cannot format named entry record"))
-            }
             NamedEntryError::Blank { record } => format!(
                 "{record} states a property with a blank key; the property value is not transferred"
             ),
@@ -890,7 +885,6 @@ fn charge_refused_gui_keys(
         };
         losses.push(FreecadLossCode::SourceGuiPropertyKeyBlank.note(message));
     }
-    Ok(())
 }
 
 fn camera_state_value(
@@ -925,7 +919,7 @@ fn camera_state_value(
             .iter()
             .map(|(name, value)| (name.as_str(), value.as_str())),
     );
-    charge_refused_gui_keys(losses, &refused)?;
+    note_refused_gui_keys(losses, &refused);
     Ok(CameraState {
         position,
         orientation,

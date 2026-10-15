@@ -2299,7 +2299,6 @@ fn build_geometry_ir(
         display_sections.push((section, faces));
     }
     let mut ir = CadIr::decoded(source_meta(
-        ctx,
         scan,
         classification,
         metadata_header.as_ref(),
@@ -3137,7 +3136,6 @@ fn assign_native_configuration_indices(ir: &CadIr, native: &mut crate::native::S
 }
 
 fn source_meta(
-    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     classification: &crate::dialect::LayerClassification,
     header: Option<&StreamHeader>,
@@ -3192,7 +3190,7 @@ fn source_meta(
     Ok(SourceMeta::classified(
         classification
             .layers()
-            .try_clone_for_decode(ctx, "copy dialect layers")?,
+            .clone(),
         attributes,
     ))
 }
@@ -3492,7 +3490,7 @@ fn build_metadata_ir(
     ir.source = Some(SourceMeta::classified(
         classification
             .layers()
-            .try_clone_for_decode(ctx, "copy dialect layers")?,
+            .clone(),
         attributes,
     ));
     project_design_history(

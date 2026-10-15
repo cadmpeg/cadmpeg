@@ -323,9 +323,7 @@ pub(super) fn emit_model_features(
                                 .map_or("Native Feature", |operation| operation.kind.as_str())
                                 .to_owned()
                                 .into(),
-                            parameters: cadmpeg_core::text::named_entries_for_decode(
-                                ctx,
-                                format_args!("creo:model:feature#{}", operation.feature_id),
+                            parameters: cadmpeg_core::text::named_entries(format_args!("creo:model:feature#{}", operation.feature_id),
                                 std::mem::take(&mut parameters),
                             )?,
                         }))
@@ -421,9 +419,7 @@ pub(super) fn emit_model_features(
             merge_feature_dependencies(ctx, &mut existing.dependencies, dependencies)?;
             merge_feature_source_properties(
                 &mut existing.source_properties,
-                cadmpeg_core::text::named_entries_for_decode(
-                    ctx,
-                    format_args!("creo:model:feature#{}", operation.feature_id),
+                cadmpeg_core::text::named_entries(format_args!("creo:model:feature#{}", operation.feature_id),
                     source_properties,
                 )?,
             );
@@ -473,9 +469,7 @@ pub(super) fn emit_model_features(
             suppressed: Some(false),
             dependencies: cadmpeg_ir::features::DistinctMembers::try_from(dependencies, ctx)
                 .map_err(cadmpeg_core::CodecError::from)?,
-            source_properties: cadmpeg_core::text::named_entries_for_decode(
-                ctx,
-                format_args!("creo:model:feature#{}", operation.feature_id),
+            source_properties: cadmpeg_core::text::named_entries(format_args!("creo:model:feature#{}", operation.feature_id),
                 source_properties,
             )?,
             source_tag,
@@ -542,9 +536,7 @@ pub(super) fn emit_model_features(
                 Some(definition) => Ok(definition),
                 None => Ok(IrFeatureDefinition::Operation(IrFeatureOperation::Native {
                     kind: kind.to_owned().into(),
-                    parameters: cadmpeg_core::text::named_entries_for_decode(
-                        ctx,
-                        format_args!("creo:model:feature#{feature_id}"),
+                    parameters: cadmpeg_core::text::named_entries(format_args!("creo:model:feature#{feature_id}"),
                         std::mem::take(&mut parameters),
                     )?,
                 })),
@@ -594,9 +586,7 @@ pub(super) fn emit_model_features(
                 ctx,
             )
             .map_err(cadmpeg_core::CodecError::from)?,
-            source_properties: cadmpeg_core::text::named_entries_for_decode(
-                ctx,
-                format_args!("creo:model:feature#{feature_id}"),
+            source_properties: cadmpeg_core::text::named_entries(format_args!("creo:model:feature#{feature_id}"),
                 source_properties,
             )?,
             source_tag: None,

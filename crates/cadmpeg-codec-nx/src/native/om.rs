@@ -2758,14 +2758,13 @@ fn parse_material_texture_catalog(
     let Some(xml) = xml_stream_text(payload) else {
         return Ok(None);
     };
-    let admitted_document = match ctx.parse_xml(xml, "decode XML tree") {
+    let document = match ctx.parse_xml(xml, "decode XML tree") {
         Ok(tree) => tree,
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         Err(_) => {
             return Ok(None);
         }
     };
-    let document = admitted_document.document();
     let root = document.root_element();
     if root.tag_name().name() != "folderContents" {
         return Ok(None);
@@ -3212,14 +3211,13 @@ pub(super) fn configurations(
     let Some(xml) = xml_stream_text(payload) else {
         return Ok(Vec::new());
     };
-    let admitted_document = match ctx.parse_xml(xml, "decode XML tree") {
+    let document = match ctx.parse_xml(xml, "decode XML tree") {
         Ok(tree) => tree,
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         Err(_) => {
             return Ok(Vec::new());
         }
     };
-    let document = admitted_document.document();
     let root = document.root_element();
     if root.tag_name().name() != "Arrangements" {
         return Ok(Vec::new());
@@ -3347,14 +3345,13 @@ fn parse_part_attributes(
     let Some(xml) = xml_stream_text(payload) else {
         return Ok(None);
     };
-    let admitted_document = match ctx.parse_xml(xml, "decode XML tree") {
+    let document = match ctx.parse_xml(xml, "decode XML tree") {
         Ok(tree) => tree,
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         Err(_) => {
             return Ok(None);
         }
     };
-    let document = admitted_document.document();
     let root = document.root_element();
     let Some(version) = root
         .attribute("version")

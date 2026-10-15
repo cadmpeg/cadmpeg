@@ -61,7 +61,7 @@ fn decode_container<'a>(
     // recomputes the other.
     let recovery = DialectRecovery::of(container);
     let matched = recovery.classify();
-    let dialects = crate::dialect::layers(ctx, &matched, &container.rse.active_carrier)?;
+    let dialects = crate::dialect::layers(&matched, &container.rse.active_carrier)?;
     let mut assembly_inventory = crate::assembly::inventory(ctx, &container.rse)?;
     let mut presentation_inventory = crate::presentation::inventory(ctx, &container.rse)?;
     let design_inventory = crate::design::inventory(ctx, &container.rse)?;
@@ -277,7 +277,7 @@ fn decode_container<'a>(
     metadata.apply_attributes(&mut attributes);
     ir.source = Some(SourceMeta::classified(
         dialects,
-        cadmpeg_core::text::named_entries_for_decode(ctx, "the inventor document", attributes)?,
+        cadmpeg_core::text::named_entries("the inventor document", attributes)?,
     ));
     if matches!(document_kind, DocumentKind::Part | DocumentKind::Assembly) {
         let entity_count = ir.model.entity_count();
@@ -1163,9 +1163,7 @@ fn project_root_product(
         label,
         description,
         part_number,
-        bom_properties: cadmpeg_core::text::named_entries_for_decode(
-            ctx,
-            "inventor:document:product#root",
+        bom_properties: cadmpeg_core::text::named_entries("inventor:document:product#root",
             metadata.bom_properties.clone(),
         )?,
         bodies: Vec::new(),

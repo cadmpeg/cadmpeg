@@ -10,7 +10,7 @@
 
 use cadmpeg_test_support::wire;
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, InspectOptions};
+use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_core::dialect::{Admission, DialectMatch};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::report::loss::LossNote;
@@ -459,11 +459,7 @@ fn dialect_layers_without_kernel_evidence_hold_only_the_primary() {
             .into_iter()
             .collect(),
     );
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-        .expect("service context");
     let layers = layers(
-        &ctx,
         &primary,
         &crate::kernel::ActiveCarrierState::NotApplicable,
     )

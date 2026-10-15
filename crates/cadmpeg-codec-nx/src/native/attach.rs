@@ -4261,9 +4261,7 @@ fn attach_feature_operations(
                             .outputs
                             .contains_key(label.id.as_str()),
                     },
-                    cadmpeg_core::text::named_entries_for_decode(
-                        ctx,
-                        &label.id,
+                    cadmpeg_core::text::named_entries(&label.id,
                         native_parameters,
                     )?,
                 )?
@@ -4346,9 +4344,7 @@ fn attach_feature_operations(
             suppressed: None,
             dependencies: cadmpeg_ir::features::DistinctMembers::try_from(dependencies, ctx)
                 .map_err(cadmpeg_core::CodecError::from)?,
-            source_properties: cadmpeg_core::text::named_entries_for_decode(
-                ctx,
-                &label.id,
+            source_properties: cadmpeg_core::text::named_entries(&label.id,
                 source_properties,
             )?,
             source_tag: Some(label.value.clone()),

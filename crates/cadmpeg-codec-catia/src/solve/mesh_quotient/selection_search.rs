@@ -1818,7 +1818,7 @@ pub(super) struct ResolveSingletonMeshSelectionInputs<
     'input3,
     'input4,
     'input5,
-    'input6,
+    
     'input7,
     'input8,
 > {
@@ -1828,13 +1828,13 @@ pub(super) struct ResolveSingletonMeshSelectionInputs<
     pub(super) selected: &'input3 [MeshFaceBoundaryAssignment],
     pub(super) directions: &'input4 [Vec<Vec<bool>>],
     pub(super) port_identities: &'input5 [[u32; 2]],
-    pub(super) budget: &'input7 WorkBudget<'input6>,
+    pub(super) budget: &'input7 WorkBudget,
     pub(super) candidate_gauge: Option<MeshCandidateGauge<'input8>>,
 }
 
 pub(super) fn resolve_singleton_mesh_selection(
     ctx: &DecodeContext<'_>,
-    inputs: ResolveSingletonMeshSelectionInputs<'_, '_, '_, '_, '_, '_, '_, '_, '_>,
+    inputs: ResolveSingletonMeshSelectionInputs< '_, '_, '_, '_, '_, '_, '_, '_>,
 ) -> Result<Option<MeshEndpointResolve>, CodecError> {
     let ResolveSingletonMeshSelectionInputs {
         edge_rows,
