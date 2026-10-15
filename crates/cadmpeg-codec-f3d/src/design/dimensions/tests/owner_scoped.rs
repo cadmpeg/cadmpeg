@@ -493,17 +493,14 @@ fn preceding_incident_angular_dimension_excludes_later_symmetric_geometry() {
         ((stream, 12), &entities[2]),
         ((stream, 13), &entities[3]),
     ]);
-    let parameter = crate::design::decode::parameters::parse_design_parameter(
-        &cadmpeg_test_support::service_decode_context(),
-        &parameter_record(
-            Some(1),
-            "135 deg",
-            "Angular Dimension-2",
-            Some("deg"),
-            "d1",
-            3.0 * std::f64::consts::FRAC_PI_4,
-        ),
-    )
+    let parameter = crate::design::decode::parameters::parse_design_parameter(&parameter_record(
+        Some(1),
+        "135 deg",
+        "Angular Dimension-2",
+        Some("deg"),
+        "d1",
+        3.0 * std::f64::consts::FRAC_PI_4,
+    ))
     .unwrap()
     .expect("angular parameter")
     .into_record("Design/BulkStream.dat", 100)
@@ -770,17 +767,3 @@ fn geometric_membership_rejects_large_residuals_and_short_line_false_positives()
         .expect("resource allocation did not fail")
     );
 }
-
-mod refusal_radial_dimension_definition_at_tolerance;
-
-mod refusal_owner_scoped_radial;
-
-mod refusal_owner_scoped_line_length;
-
-mod refusal_owner_scoped_angular;
-
-mod refusal_preceding_incident_angular;
-
-mod refusal_unique_point_class;
-
-mod refusal_radial_locus;

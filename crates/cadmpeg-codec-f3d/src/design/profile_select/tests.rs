@@ -43,12 +43,6 @@ use cadmpeg_ir::sketches::{
 };
 use std::collections::{HashMap, HashSet};
 
-mod extrude_bind_allocation;
-mod historical_allocation;
-mod historical_candidate_allocation;
-mod loft_bind_allocation;
-mod path_allocation;
-mod region_allocation;
 mod spatial_transition;
 
 fn group() -> DesignConstructionOperandGroup {
@@ -534,15 +528,12 @@ fn loft_spatial_profile_regions_collapse_coincident_curve_revisions() {
     };
 
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            resolved_spatial_sketch_profile_regions(
-                "stream",
-                &profile_operand,
-                &spatial_sketches[0],
-                &resolution,
-                decode_ctx,
-            )
-        })
+        resolved_spatial_sketch_profile_regions(
+            "stream",
+            &profile_operand,
+            &spatial_sketches[0],
+            &resolution
+        )
         .unwrap(),
         Some(vec![0, 1])
     );
@@ -555,15 +546,12 @@ fn loft_spatial_profile_regions_collapse_coincident_curve_revisions() {
     )
     .unwrap();
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            resolved_spatial_sketch_profile_regions(
-                "stream",
-                &whole_sketch_operand,
-                &spatial_sketches[0],
-                &resolution,
-                decode_ctx,
-            )
-        })
+        resolved_spatial_sketch_profile_regions(
+            "stream",
+            &whole_sketch_operand,
+            &spatial_sketches[0],
+            &resolution
+        )
         .unwrap(),
         Some(vec![0, 1, 2])
     );
@@ -600,15 +588,12 @@ fn loft_spatial_profile_regions_collapse_coincident_curve_revisions() {
         ..resolution
     };
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            resolved_spatial_sketch_profile_regions(
-                "stream",
-                &profile_operand,
-                &spatial_sketches[0],
-                &noncoincident_resolution,
-                decode_ctx,
-            )
-        })
+        resolved_spatial_sketch_profile_regions(
+            "stream",
+            &profile_operand,
+            &spatial_sketches[0],
+            &noncoincident_resolution
+        )
         .unwrap(),
         None
     );
@@ -1063,15 +1048,8 @@ fn planar_profile_regions_resolve_by_persistent_curve_members() {
     .unwrap();
 
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| resolved_sketch_profile_regions(
-            "stream",
-            &operand,
-            &source,
-            &curves,
-            &sketch_entities,
-            decode_ctx
-        ))
-        .unwrap(),
+        resolved_sketch_profile_regions("stream", &operand, &source, &curves, &sketch_entities)
+            .unwrap(),
         Some(vec![1, 0])
     );
 
@@ -1083,15 +1061,12 @@ fn planar_profile_regions_resolve_by_persistent_curve_members() {
         .regions[0]
         .members
         .push(profile_region_member(100));
-    assert!(crate::test_support::with_decode_context(
-        |decode_ctx| resolved_sketch_profile_regions(
-            "stream",
-            &mixed_region,
-            &source,
-            &curves,
-            &sketch_entities,
-            decode_ctx
-        )
+    assert!(resolved_sketch_profile_regions(
+        "stream",
+        &mixed_region,
+        &source,
+        &curves,
+        &sketch_entities
     )
     .unwrap()
     .is_none());
@@ -1105,15 +1080,12 @@ fn planar_profile_regions_resolve_by_persistent_curve_members() {
             });
         })
         .unwrap();
-    assert!(crate::test_support::with_decode_context(
-        |decode_ctx| resolved_sketch_profile_regions(
-            "stream",
-            &operand,
-            &source,
-            &curves,
-            &sketch_entities,
-            decode_ctx
-        )
+    assert!(resolved_sketch_profile_regions(
+        "stream",
+        &operand,
+        &source,
+        &curves,
+        &sketch_entities
     )
     .unwrap()
     .is_none());
@@ -1271,34 +1243,20 @@ fn historical_selection_preserves_first_member_region_order() {
         .unwrap()
     };
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            crate::design::profile_select::ordered_unique_profile_selections(
-                [
-                    Some(
-                        crate::design::profile_select::ResolvedProfileSelection::Regions(vec![
-                            region(3),
-                        ]),
-                    ),
-                    Some(
-                        crate::design::profile_select::ResolvedProfileSelection::Regions(vec![
-                            region(1),
-                        ]),
-                    ),
-                    Some(
-                        crate::design::profile_select::ResolvedProfileSelection::Regions(vec![
-                            region(3),
-                        ]),
-                    ),
-                    Some(
-                        crate::design::profile_select::ResolvedProfileSelection::Regions(vec![
-                            region(2),
-                        ]),
-                    ),
-                ],
-                decode_ctx,
-            )
-        })
-        .unwrap(),
+        crate::design::profile_select::ordered_unique_profile_selections([
+            Some(
+                crate::design::profile_select::ResolvedProfileSelection::Regions(vec![region(3,)]),
+            ),
+            Some(
+                crate::design::profile_select::ResolvedProfileSelection::Regions(vec![region(1,)]),
+            ),
+            Some(
+                crate::design::profile_select::ResolvedProfileSelection::Regions(vec![region(3,)]),
+            ),
+            Some(
+                crate::design::profile_select::ResolvedProfileSelection::Regions(vec![region(2,)]),
+            ),
+        ]),
         Some(
             crate::design::profile_select::ResolvedProfileSelection::Regions(vec![
                 region(3),
@@ -1308,20 +1266,12 @@ fn historical_selection_preserves_first_member_region_order() {
         )
     );
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            crate::design::profile_select::ordered_unique_profile_selections(
-                [
-                    Some(
-                        crate::design::profile_select::ResolvedProfileSelection::Regions(vec![
-                            region(3),
-                        ]),
-                    ),
-                    None,
-                ],
-                decode_ctx,
-            )
-        })
-        .unwrap(),
+        crate::design::profile_select::ordered_unique_profile_selections([
+            Some(
+                crate::design::profile_select::ResolvedProfileSelection::Regions(vec![region(3,)]),
+            ),
+            None,
+        ]),
         None
     );
 }
@@ -1516,33 +1466,18 @@ fn historical_profile_members_resolve_through_topology_ownership() {
     };
 
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| historical_profile_face_candidates(
-            Some(AsmHistoricalEntityKind::Pcurve),
-            50,
-            &topology,
-            decode_ctx
-        ))
-        .unwrap(),
+        historical_profile_face_candidates(Some(AsmHistoricalEntityKind::Pcurve), 50, &topology)
+            .unwrap(),
         HashSet::from([10])
     );
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| historical_profile_face_candidates(
-            Some(AsmHistoricalEntityKind::Surface),
-            40,
-            &topology,
-            decode_ctx
-        ))
-        .unwrap(),
+        historical_profile_face_candidates(Some(AsmHistoricalEntityKind::Surface), 40, &topology)
+            .unwrap(),
         HashSet::from([10])
     );
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| historical_profile_face_candidates(
-            Some(AsmHistoricalEntityKind::Edge),
-            30,
-            &topology,
-            decode_ctx
-        ))
-        .unwrap(),
+        historical_profile_face_candidates(Some(AsmHistoricalEntityKind::Edge), 30, &topology)
+            .unwrap(),
         HashSet::from([10, 20])
     );
 }
@@ -1638,10 +1573,7 @@ fn historical_face_points_require_complete_boundary_topology() {
         ..crate::history_records::AsmHistoricalTopology::default()
     };
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            crate::design::profile_select::historical_face_points(10, &topology, decode_ctx)
-        })
-        .unwrap(),
+        crate::design::profile_select::historical_face_points(10, &topology),
         Some(vec![
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(2.0, 0.0, 0.0),
@@ -1651,10 +1583,7 @@ fn historical_face_points_require_complete_boundary_topology() {
 
     topology.point_positions.pop();
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            crate::design::profile_select::historical_face_points(10, &topology, decode_ctx)
-        })
-        .unwrap(),
+        crate::design::profile_select::historical_face_points(10, &topology),
         None
     );
 }
@@ -1796,35 +1725,27 @@ fn inserted_cylinder_selects_its_exact_circular_sketch_profile() {
     };
 
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            crate::design::profile_select::inserted_cylindrical_profile_selection(
-                &sketch,
-                std::slice::from_ref(&circle),
-                &topology,
-                10,
-                1.0e-6,
-                1.0e-9,
-                decode_ctx,
-            )
-        })
-        .unwrap(),
+        crate::design::profile_select::inserted_cylindrical_profile_selection(
+            &sketch,
+            std::slice::from_ref(&circle),
+            &topology,
+            10,
+            1.0e-6,
+            1.0e-9,
+        ),
         Some(crate::design::profile_select::ResolvedProfileSelection::Loops(vec![0]))
     );
     let mut tilted = topology;
     tilted.surface_cylinders[0].axis = Vector3::new(0.0, 1.0, 0.0);
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            crate::design::profile_select::inserted_cylindrical_profile_selection(
-                &sketch,
-                std::slice::from_ref(&circle),
-                &tilted,
-                10,
-                1.0e-6,
-                1.0e-9,
-                decode_ctx,
-            )
-        })
-        .unwrap(),
+        crate::design::profile_select::inserted_cylindrical_profile_selection(
+            &sketch,
+            std::slice::from_ref(&circle),
+            &tilted,
+            10,
+            1.0e-6,
+            1.0e-9,
+        ),
         None
     );
 }
@@ -1851,25 +1772,17 @@ fn deleted_profile_family_requires_one_complete_multi_face_carrier() {
         ..AsmHistoricalTopology::default()
     };
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            crate::design::profile_select::unique_multi_face_deleted_carrier_family(
-                &[20, 11, 10],
-                &topology,
-                decode_ctx,
-            )
-        })
-        .unwrap(),
+        crate::design::profile_select::unique_multi_face_deleted_carrier_family(
+            &[20, 11, 10],
+            &topology,
+        ),
         Some(vec![10, 11])
     );
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            crate::design::profile_select::unique_multi_face_deleted_carrier_family(
-                &[10, 10],
-                &topology,
-                decode_ctx,
-            )
-        })
-        .unwrap(),
+        crate::design::profile_select::unique_multi_face_deleted_carrier_family(
+            &[10, 10],
+            &topology,
+        ),
         None
     );
 
@@ -1885,14 +1798,10 @@ fn deleted_profile_family_requires_one_complete_multi_face_carrier() {
         },
     ]);
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            crate::design::profile_select::unique_multi_face_deleted_carrier_family(
-                &[10, 11, 30, 31],
-                &ambiguous,
-                decode_ctx,
-            )
-        })
-        .unwrap(),
+        crate::design::profile_select::unique_multi_face_deleted_carrier_family(
+            &[10, 11, 30, 31],
+            &ambiguous,
+        ),
         None
     );
 
@@ -1901,14 +1810,10 @@ fn deleted_profile_family_requires_one_complete_multi_face_carrier() {
         .face_surfaces
         .retain(|binding| binding.entity != 20);
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            crate::design::profile_select::unique_multi_face_deleted_carrier_family(
-                &[10, 11, 20],
-                &incomplete,
-                decode_ctx,
-            )
-        })
-        .unwrap(),
+        crate::design::profile_select::unique_multi_face_deleted_carrier_family(
+            &[10, 11, 20],
+            &incomplete,
+        ),
         None
     );
 }

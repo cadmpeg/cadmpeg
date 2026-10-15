@@ -40,7 +40,15 @@ use crate::records::topology::fillet::DesignFilletRadiusLaw;
 use crate::records::topology::fillet::HistoricalBinding;
 use cadmpeg_ir::features::FeatureDefinition;
 use cadmpeg_ir::features::FeatureOperation;
-use fillet_limits::decode_fillet_radius_groups;
+
+fn decode_fillet_radius_groups(
+    scopes: &[DesignParameterScope],
+    groups: &[DesignConstructionOperandGroup],
+    owners: &[DesignParameterOwner],
+    parameters: &[DesignParameter],
+) -> Vec<crate::records::topology::fillet::DesignFilletRadiusGroup> {
+    crate::design::decode::operands::decode_fillet_radius_groups(scopes, groups, owners, parameters)
+}
 
 #[test]
 fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
@@ -522,8 +530,6 @@ fn localized_fillet_owner(
     }
     owner
 }
-
-mod fillet_limits;
 
 #[test]
 fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
@@ -1156,7 +1162,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     let mut cell = group(300, 3, vec![301]);
     cell.operand_role = DesignConstructionOperandRole::Other(DesignOperandRole::ROLE_0X5);
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_boundary_fill(decode_ctx, &fill_scope, &[tools.clone(), cell.clone()])).unwrap(),
+        crate::design::feature_project::project_boundary_fill(&fill_scope, &[tools.clone(), cell.clone()]),
         Some(FeatureDefinition::Operation(FeatureOperation::BoundaryFill {
             tools: cadmpeg_ir::features::BodySelection::Native(ref tool_selection),
             cells: ref cell_selections,

@@ -9,10 +9,9 @@
 use cadmpeg_core::decode::index_from_u32;
 
 use super::{
-    distinct_form_cage_ids, form_cage_lists, form_cage_objects, form_cage_serializers,
-    form_cage_surface, form_cage_surfaces, form_class_325_cage_objects,
-    form_class_325_cage_surface, form_class_328_envelope, legacy_form_cage_count,
-    push_form_cage_id, FormCageSerializers,
+    distinct_form_cage_ids, form_cage_objects, form_cage_serializers, form_cage_surface,
+    form_cage_surfaces, form_class_325_cage_objects, form_class_325_cage_surface,
+    form_class_328_envelope, legacy_form_cage_count, FormCageSerializers,
 };
 
 fn parsed_serializers(
@@ -30,56 +29,9 @@ fn parsed_serializers(
 }
 
 #[test]
-fn form_resolved_cage_id_refuses_retained_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    let id = cadmpeg_ir::ids::SubdId::mint("f3d:model:subd#1").unwrap();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_retained_bytes = 0;
-
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(matches!(push_form_cage_id(&ctx, &mut Vec::new(), &id),
-        Err(CodecError::ResourceLimit(failure))
-            if failure.operation == "f3d form cage id"
-                && failure.dimension == ResourceDimension::RetainedBytes));
-}
-
-#[test]
-fn form_resolved_cage_refuses_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    let id = cadmpeg_ir::ids::SubdId::mint("f3d:model:subd#1").unwrap();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 0;
-
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(matches!(push_form_cage_id(&ctx, &mut Vec::new(), &id),
-        Err(CodecError::ResourceLimit(failure))
-            if failure.operation == "f3d form resolved cage"
-                && failure.dimension == ResourceDimension::CollectionItems));
-}
-
-#[test]
-fn form_cage_uniqueness_index_refuses_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 1;
-
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(matches!(distinct_form_cage_ids(&ctx, &["one", "two"]),
-        Err(CodecError::ResourceLimit(failure))
-            if failure.operation == "f3d form cage uniqueness index"
-                && failure.dimension == ResourceDimension::CollectionItems));
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default()).unwrap();
-    assert!(!distinct_form_cage_ids(&ctx, &["same", "same"]).unwrap());
+fn form_cage_ids_reject_duplicates() {
+    assert!(distinct_form_cage_ids(&["one", "two"]));
+    assert!(!distinct_form_cage_ids(&["same", "same"]));
 }
 
 fn indexed_frame(class: &[u8; 3], record_index: u32, length: usize) -> Vec<u8> {
@@ -92,13 +44,6 @@ fn indexed_frame(class: &[u8; 3], record_index: u32, length: usize) -> Vec<u8> {
 
 #[test]
 fn reads_owned_cage_objects() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::default(),
-    )
-    .unwrap();
     let mut bytes = Vec::new();
     bytes.extend_from_slice(&3u32.to_le_bytes());
     bytes.extend_from_slice(b"402");
@@ -119,26 +64,22 @@ fn reads_owned_cage_objects() {
     bytes.extend_from_slice(&2196u64.to_le_bytes());
     assert_eq!(
         form_cage_objects(
-            &ctx,
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             2196,
-            2190,
-        )
-        .unwrap(),
+            2190
+        ),
         Some(vec![8300, 8303])
     );
     let mut alternate_pair = bytes.clone();
     alternate_pair[110 + 4..110 + 7].copy_from_slice(b"258");
     assert_eq!(
         form_cage_objects(
-            &ctx,
             &alternate_pair,
             &crate::design::test_support::indexed_record_offsets_for_test(&alternate_pair),
             2196,
-            2190,
-        )
-        .unwrap(),
+            2190
+        ),
         Some(vec![8300, 8303])
     );
 
@@ -157,26 +98,17 @@ fn reads_owned_cage_objects() {
     empty.extend_from_slice(&2196u64.to_le_bytes());
     assert_eq!(
         form_cage_objects(
-            &ctx,
             &empty,
             &crate::design::test_support::indexed_record_offsets_for_test(&empty),
             2196,
-            2190,
-        )
-        .unwrap(),
+            2190
+        ),
         Some(Vec::new())
     );
 }
 
 #[test]
 fn reads_single_cage_list_with_opaque_tail() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::default(),
-    )
-    .unwrap();
     let mut list = indexed_frame(b"415", 2196, 99);
     list[21] = 1;
     list[22..30].copy_from_slice(&2190u64.to_le_bytes());
@@ -189,64 +121,13 @@ fn reads_single_cage_list_with_opaque_tail() {
 
     assert_eq!(
         form_cage_objects(
-            &ctx,
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             2196,
-            2190,
-        )
-        .unwrap(),
+            2190
+        ),
         Some(vec![8300])
     );
-}
-
-fn assert_form_cage_collection_refusal(limit: u64, operation: &'static str) {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    let mut bytes = Vec::new();
-    bytes.extend_from_slice(&3u32.to_le_bytes());
-    bytes.extend_from_slice(b"402");
-    bytes.extend_from_slice(&2196u64.to_le_bytes());
-    bytes.extend_from_slice(&[0; 6]);
-    bytes.push(1);
-    bytes.extend_from_slice(&2190u64.to_le_bytes());
-    bytes.extend_from_slice(&[0; 2]);
-    bytes.extend_from_slice(&2u32.to_le_bytes());
-    for reference in [8300u64, 8303] {
-        bytes.push(1);
-        bytes.extend_from_slice(&reference.to_le_bytes());
-        bytes.extend_from_slice(&[0; 2]);
-    }
-    bytes.resize(110, 0);
-    bytes.extend_from_slice(&3u32.to_le_bytes());
-    bytes.extend_from_slice(b"264");
-    bytes.extend_from_slice(&2196u64.to_le_bytes());
-    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = limit;
-
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let result = form_cage_lists(&ctx, &bytes, &records, [2196].into_iter(), 2190);
-    assert!(matches!(result, Err(CodecError::ResourceLimit(failure))
-        if failure.operation == operation
-            && failure.dimension == ResourceDimension::CollectionItems));
-}
-
-#[test]
-fn form_cage_object_refuses_collection_limit() {
-    assert_form_cage_collection_refusal(1, "f3d form cage object");
-}
-
-#[test]
-fn form_cage_list_refuses_collection_limit() {
-    assert_form_cage_collection_refusal(2, "f3d form cage list");
-}
-
-#[test]
-fn form_cage_count_refuses_collection_limit() {
-    assert_form_cage_collection_refusal(3, "f3d form cage count");
 }
 
 #[test]
@@ -287,10 +168,7 @@ fn resolves_cage_surface_through_owned_object_chain() {
 }
 
 #[test]
-fn form_cage_surface_refuses_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
+fn form_cage_surfaces_reject_another_scope() {
     let mut object = indexed_frame(b"301", 8300, 200);
     object[189] = 1;
     object[190..198].copy_from_slice(&8301u64.to_le_bytes());
@@ -307,22 +185,7 @@ fn form_cage_surface_refuses_collection_limit() {
     let paired = indexed_frame(b"264", 8303, 15);
     let bytes = [object, first_wrapper, second_wrapper, carrier, paired].concat();
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 0;
-
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(
-        matches!(form_cage_surfaces(&ctx, &bytes, &records, &[8300], 2190),
-        Err(CodecError::ResourceLimit(failure))
-            if failure.operation == "f3d form cage surface"
-                && failure.dimension == ResourceDimension::CollectionItems)
-    );
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default()).unwrap();
-    assert!(form_cage_surfaces(&ctx, &bytes, &records, &[8300], 2191)
-        .unwrap()
-        .is_none());
+    assert!(form_cage_surfaces(&bytes, &records, &[8300], 2191).is_none());
 }
 
 #[test]
@@ -350,102 +213,8 @@ fn serializer_joins_surface_to_exact_cage_entry_name() {
     }
 }
 
-fn assert_form_serializer_refusal(
-    dimension: cadmpeg_core::decode::ResourceDimension,
-    limit: u64,
-    operation: &'static str,
-) {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    let entry_name = "TSpline.00000000-0000-0000-0000-000000000000.tsm";
-    let mut serializer = indexed_frame(b"315", 8305, 132);
-    serializer[21..25].copy_from_slice(&48u32.to_le_bytes());
-    for (ordinal, code_unit) in entry_name.encode_utf16().enumerate() {
-        let at = 25 + ordinal * 2;
-        serializer[at..at + 2].copy_from_slice(&code_unit.to_le_bytes());
-    }
-    serializer[121] = 1;
-    serializer[122..130].copy_from_slice(&8304u64.to_le_bytes());
-    let following = indexed_frame(b"457", 8306, 15);
-    let bytes = [serializer, following].concat();
-    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    match dimension {
-        ResourceDimension::CollectionItems => policy.limits.max_collection_items = limit,
-        ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = limit,
-        ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = limit,
-        _ => panic!("test dimension must be a serializer allocation dimension"),
-    }
-
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(matches!(form_cage_serializers(&ctx, &bytes, &records),
-        Err(CodecError::ResourceLimit(failure))
-            if failure.operation == operation && failure.dimension == dimension));
-}
-
 #[test]
-fn form_serializer_offset_refuses_collection_limit() {
-    assert_form_serializer_refusal(
-        cadmpeg_core::decode::ResourceDimension::CollectionItems,
-        0,
-        "f3d form serializer offset",
-    );
-}
-
-#[test]
-fn form_serializer_name_refuses_materialized_limit() {
-    assert_form_serializer_refusal(
-        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
-        47,
-        "f3d form serializer name materialization",
-    );
-}
-
-#[test]
-fn form_serializer_name_refuses_work_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-    let entry_name = "TSpline.00000000-0000-0000-0000-000000000000.tsm";
-    let mut serializer = indexed_frame(b"315", 8305, 132);
-    serializer[21..25].copy_from_slice(&48u32.to_le_bytes());
-    for (ordinal, code_unit) in entry_name.encode_utf16().enumerate() {
-        let at = 25 + ordinal * 2;
-        serializer[at..at + 2].copy_from_slice(&code_unit.to_le_bytes());
-    }
-    serializer[121] = 1;
-    serializer[122..130].copy_from_slice(&8304u64.to_le_bytes());
-    let following = indexed_frame(b"457", 8306, 15);
-    let bytes = [serializer, following].concat();
-    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    // The two-offset sort takes its count plus sixteen bytes over three levels at eight units
-    // each, leaving nothing for the serializer name.
-    policy.limits.max_work_units = 2 + 16 * 3 * 8;
-
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    assert!(
-        matches!(form_cage_serializers(&ctx, &bytes, &records), Err(CodecError::ResourceLimit(limit))
-        if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "f3d form serializer name materialization")
-    );
-}
-
-#[test]
-fn form_serializer_entry_name_refuses_retained_limit() {
-    assert_form_serializer_refusal(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-        47,
-        "f3d form serializer entry name",
-    );
-}
-
-#[test]
-fn form_serializer_unicode_name_refuses_exact_retained_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
+fn form_serializer_unicode_name_round_trips() {
     let entry_name = format!("TSpline.{}😀.tsm", "é".repeat(34));
     assert_eq!(entry_name.encode_utf16().count(), 48);
     let mut serializer = indexed_frame(b"315", 8305, 132);
@@ -462,33 +231,6 @@ fn form_serializer_unicode_name_refuses_exact_retained_limit() {
     assert_eq!(
         parsed_serializers(&bytes, &records).entry_name(8304),
         Some(entry_name.as_str())
-    );
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_retained_bytes = u64::try_from(entry_name.len()).unwrap() - 1;
-
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(matches!(form_cage_serializers(&ctx, &bytes, &records),
-        Err(CodecError::ResourceLimit(failure))
-            if failure.dimension == ResourceDimension::RetainedBytes
-                && failure.operation == "f3d form serializer entry name"));
-}
-
-#[test]
-fn form_serializer_entry_index_refuses_collection_limit() {
-    assert_form_serializer_refusal(
-        cadmpeg_core::decode::ResourceDimension::CollectionItems,
-        2,
-        "f3d form serializer entry index",
-    );
-}
-
-#[test]
-fn form_serializer_order_refuses_collection_limit() {
-    assert_form_serializer_refusal(
-        cadmpeg_core::decode::ResourceDimension::CollectionItems,
-        3,
-        "f3d form serializer order",
     );
 }
 
@@ -758,27 +500,25 @@ fn reads_class_325_cage_table_entries() {
     ]
     .concat();
     assert_eq!(
-        crate::test_support::with_decode_context(|ctx| form_class_325_cage_objects(
-            ctx,
+        form_class_325_cage_objects(
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             scope_record,
-            [owner_record].into_iter(),
+            [owner_record].into_iter()
         )
-        .expect("service admission")),
+        .expect("service admission"),
         Some((0..32u32).map(|ordinal| 1_000 + ordinal * 2).collect())
     );
     let mut duplicate_discriminator = bytes.clone();
     duplicate_discriminator[41 + 30 + 11..41 + 30 + 19].copy_from_slice(&307u64.to_le_bytes());
     assert_eq!(
-        crate::test_support::with_decode_context(|ctx| form_class_325_cage_objects(
-            ctx,
+        form_class_325_cage_objects(
             &duplicate_discriminator,
             &crate::design::test_support::indexed_record_offsets_for_test(&duplicate_discriminator),
             scope_record,
-            [owner_record].into_iter(),
+            [owner_record].into_iter()
         )
-        .expect("service admission")),
+        .expect("service admission"),
         None
     );
 }

@@ -3,7 +3,6 @@
 
 use cadmpeg_core::convert::{f64_from_index, truncate_f64_to_usize};
 
-use cadmpeg_core::decode::u64_from_index;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::{CadIr, Model};
 use cadmpeg_ir::geometry::{
@@ -4631,6 +4630,10 @@ fn native_increasing_interval_curve(
     }
 }
 
+/// Quarter-turn spans one generated conic NURBS may carry. Each span adds two
+/// control points, so this bounds the generated curve before it is built.
+const MAX_GENERATED_CONIC_SPANS: usize = 1 << 16;
+
 fn native_conic_interval_curve(
     center: Point3,
     axis: Vector3,
@@ -4662,22 +4665,17 @@ fn native_conic_interval_curve(
             "source-less F3D conic interval exceeds addressable NURBS cardinality".into(),
         )
     };
-    let spans = truncate_f64_to_usize(span_count).ok_or_else(too_large)?;
-    let doubled = spans.checked_mul(2).ok_or_else(too_large)?;
-    let pole_count = doubled.checked_add(1).ok_or_else(too_large)?;
-    let knot_count = doubled.checked_add(4).ok_or_else(too_large)?;
+    let spans = truncate_f64_to_usize(span_count)
+        .filter(|spans| *spans <= MAX_GENERATED_CONIC_SPANS)
+        .ok_or_else(too_large)?;
     let step = delta / f64_from_index(spans).ok_or_else(too_large)?;
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::default();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-    ctx.charge_collection_items(
-        u64_from_index(pole_count),
-        "f3d generated conic control points",
-    )?;
-    let mut control_points =
-        ctx.vector_storage(pole_count, "f3d generated conic control points")?;
-    let mut weights = ctx.collection_vec(pole_count, "f3d generated conic weights")?;
-    let mut knots = ctx.collection_vec(knot_count, "f3d generated conic knots")?;
+
+    let mut control_points = Vec::new();
+    let mut weights = Vec::new();
+    let mut knots = Vec::new();
     let point = |angle: f64, scale: f64| {
         let major_scale = major_radius * angle.cos() * scale;
         let minor_scale = minor_radius * angle.sin() * scale;
@@ -4729,26 +4727,6 @@ mod native_interval_curve_tests {
     } else {
         4_294_967_295.0
     };
-
-    #[test]
-    fn generated_conic_interval_refuses_default_collection_limit() {
-        let circle = SolvedCurveGeometry::Circle(
-            cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                Point3::new(0.0, 0.0, 0.0),
-                Vector3::new(0.0, 0.0, 1.0),
-                Vector3::new(1.0, 0.0, 0.0),
-                5.0,
-            )
-            .unwrap(),
-        );
-        let error = native_interval_curve(&circle, [0.0, 1.0e9]).unwrap_err();
-        assert!(matches!(error, CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-                && limit.operation == "f3d generated conic control points"));
-        let normal = native_interval_curve(&circle, [0.0, std::f64::consts::PI]).unwrap();
-        assert_eq!(normal.degree(), 2);
-        assert_eq!(normal.control_points().len(), 5);
-    }
 
     #[test]
     fn generated_circle_interval_lowers_to_exact_rational_nurbs() {
@@ -4948,15 +4926,7 @@ mod native_interval_curve_tests {
                 assert_eq!(decoded.ir().model.procedural_surfaces.len(), 1);
             } else {
                 let error = result.expect_err("unallocatable conic interval must be refused");
-                if let CodecError::ResourceLimit(limit) = &error {
-                    assert_eq!(limit.operation, "f3d generated conic control points");
-                    assert_eq!(
-                        limit.dimension,
-                        cadmpeg_core::decode::ResourceDimension::CollectionItems
-                    );
-                } else {
-                    assert!(error.to_string().contains("conic"), "{error}");
-                }
+                assert!(error.to_string().contains("conic"), "{error}");
                 assert_eq!(output, [0x93, 0x2a]);
             }
         }

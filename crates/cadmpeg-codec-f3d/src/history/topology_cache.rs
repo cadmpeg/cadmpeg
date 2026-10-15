@@ -23,97 +23,65 @@ pub(super) struct VertexBoundaryIndex {
     pub(super) faces: HashSet<i64>,
 }
 impl VertexBoundaryIndex {
-    pub(super) fn new(
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        topology: &AsmHistoricalTopology,
-    ) -> Result<Self, cadmpeg_core::CodecError> {
-        let boundaries = super::face_boundary_edge_index(ctx, topology)?;
-        let vertices = ctx.collect_hash_set(
-            topology.vertices.iter().copied(),
-            "index F3D boundary live vertices",
-        )?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(topology.vertices.len()),
-            "index F3D boundary live vertices",
-        )?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(topology.faces.len()),
-            "index F3D boundary live faces",
-        )?;
-        let faces = ctx.collect_hash_set(
-            topology.faces.iter().copied(),
-            "index F3D boundary live faces",
-        )?;
-        Ok(Self {
+    pub(super) fn new(topology: &AsmHistoricalTopology) -> Self {
+        let boundaries = super::face_boundary_edge_index(topology);
+        let vertices = topology
+            .vertices
+            .iter()
+            .copied()
+            .collect::<std::collections::HashSet<_>>();
+
+        let faces = topology
+            .faces
+            .iter()
+            .copied()
+            .collect::<std::collections::HashSet<_>>();
+        Self {
             boundaries,
             vertices,
             faces,
-        })
+        }
     }
 }
 
-pub(super) fn endpoint_index(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    topology: &AsmHistoricalTopology,
-) -> Result<EdgeEndpoints, cadmpeg_core::CodecError> {
+pub(super) fn endpoint_index(topology: &AsmHistoricalTopology) -> EdgeEndpoints {
     let mut endpoints = HashMap::new();
     for edge in &topology.edge_vertices {
-        ctx.charge_work(1, "index F3D boundary vertex endpoints")?;
-        if !endpoints.contains_key(&edge.edge) {
-            ctx.reserve_map(&mut endpoints, 1, "index F3D boundary vertex endpoints")?;
-        }
         endpoints
             .entry(edge.edge)
             .and_modify(|value| *value = None)
             .or_insert(Some([edge.start_vertex, edge.end_vertex]));
     }
-    Ok(endpoints)
+    endpoints
 }
 
-pub(super) fn aggregate_boundaries(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    topology: &AsmHistoricalTopology,
-) -> Result<BoundaryEdges, cadmpeg_core::CodecError> {
-    let mut loop_coedges = HashMap::new();
+pub(super) fn aggregate_boundaries(topology: &AsmHistoricalTopology) -> BoundaryEdges {
+    let mut loop_coedges: HashMap<_, Vec<_>> = HashMap::new();
     for relation in &topology.loop_coedges {
         for member in &relation.member_refs {
-            ctx.charge_work(1, "index F3D aggregate boundary loops")?;
-            ctx.push_hash_group(
-                &mut loop_coedges,
-                relation.owner_ref,
-                *member,
-                "index F3D aggregate boundary loops",
-                "collect F3D aggregate boundary coedges",
-            )?;
+            loop_coedges
+                .entry(relation.owner_ref)
+                .or_default()
+                .push(*member);
         }
     }
-    let mut coedge_edges = HashMap::new();
+    let mut coedge_edges: HashMap<_, Vec<_>> = HashMap::new();
     for coedge in &topology.coedge_topology {
-        ctx.charge_work(1, "index F3D aggregate boundary coedges")?;
-        ctx.push_hash_group(
-            &mut coedge_edges,
-            coedge.coedge,
-            coedge.edge,
-            "index F3D aggregate boundary coedges",
-            "collect F3D aggregate boundary edges",
-        )?;
+        coedge_edges
+            .entry(coedge.coedge)
+            .or_default()
+            .push(coedge.edge);
     }
     let mut boundaries = HashMap::<i64, HashSet<i64>>::new();
     for relation in &topology.face_loops {
-        if !boundaries.contains_key(&relation.owner_ref) {
-            ctx.reserve_map(&mut boundaries, 1, "index F3D aggregate boundary faces")?;
-        }
         let edges = boundaries.entry(relation.owner_ref).or_default();
         for loop_slot in &relation.member_refs {
-            ctx.charge_work(1, "walk F3D aggregate boundary loops")?;
             for coedge in loop_coedges.get(loop_slot).into_iter().flatten() {
-                ctx.charge_work(1, "walk F3D aggregate boundary coedges")?;
                 for edge in coedge_edges.get(coedge).into_iter().flatten() {
-                    ctx.charge_work(1, "walk F3D aggregate boundary edges")?;
-                    ctx.insert_hash_set(edges, *edge, "index F3D aggregate face edges")?;
+                    edges.insert(*edge);
                 }
             }
         }
     }
-    Ok(boundaries)
+    boundaries
 }

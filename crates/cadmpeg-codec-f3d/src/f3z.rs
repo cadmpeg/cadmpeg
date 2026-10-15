@@ -19,17 +19,8 @@ use cadmpeg_ir::report::loss::LossNote;
 mod archive;
 mod merge;
 
-fn push_loss(
-    ctx: &DecodeContext<'_>,
-    losses: &mut Vec<LossNote>,
-    code: F3dLossCode,
-    args: std::fmt::Arguments<'_>,
-) -> Result<(), CodecError> {
-    const OPERATION: &str = "collect F3Z report losses";
-
-    ctx.reserve_vec(losses, 1, OPERATION)?;
-    losses.push(code.note(ctx.format_retained(args, "retain F3Z report loss")?));
-    Ok(())
+fn push_loss(losses: &mut Vec<LossNote>, code: F3dLossCode, args: std::fmt::Arguments<'_>) {
+    losses.push(code.note(args.to_string()));
 }
 
 /// Inspects every document member under the F3Z archive identity.
@@ -50,16 +41,13 @@ pub(crate) fn inspect<'a>(
         .filter(|entry| crate::container::is_f3d_name(&entry.name))
         .count();
     let mut notes = Vec::new();
-    ctx.push_formatted_retained(
-        &mut notes,
-        format_args!("f3z archive: {member_count} document member(s); model root {model_root}"),
-        "collect F3Z report notes",
-        "retain F3Z report note",
-    )?;
+    notes.push(format!(
+        "f3z archive: {member_count} document member(s); model root {model_root}"
+    ));
     Ok(ContainerSummary::classified(
         classified.layers,
         cadmpeg_ir::ContainerKind::Zip,
-        crate::container::copy_summary_entries(ctx, &scan.entries)?,
+        crate::container::copy_summary_entries(&scan.entries),
         classified.losses,
         notes,
     ))
@@ -71,7 +59,7 @@ pub(crate) fn decode<'a>(
     scan: &ContainerScan<'a>,
 ) -> Result<Decoded, CodecError> {
     let (model_root, omitted_drawing_root) = archive::model_root(ctx, scan)?;
-    let outer = archive::classify_members(ctx, scan)?;
+    let mut outer = archive::classify_members(ctx, scan)?;
     let root_scan = outer.member_scan(&model_root)?;
     let AuthoredDecoded {
         mut ir,
@@ -80,29 +68,22 @@ pub(crate) fn decode<'a>(
         source_fidelity: mut fidelity,
     } = crate::decode::decode_archive_member(ctx, root_scan, &outer.layers)?;
     fidelity.remove_retained_record(crate::ids::FILE_SOURCE_IMAGE_ID);
-    fidelity.retain_unknown_records("f3d", [crate::decode::preserve_source_image(ctx, scan)?])?;
+    fidelity.retain_unknown_records("f3d", [crate::decode::preserve_source_image(scan)])?;
     if let Some(drawing_root) = omitted_drawing_root {
-        push_loss(ctx, &mut report.losses, F3dLossCode::DrawingDocumentOmitted, format_args!(
+        push_loss(&mut report.losses, F3dLossCode::DrawingDocumentOmitted, format_args!(
             "drawing root {drawing_root} is omitted; decoded its unambiguous derived model {model_root}"
-        ))?;
+        ));
     }
     let member_count = scan
         .entries
         .iter()
         .filter(|entry| crate::container::is_f3d_name(&entry.name))
         .count();
-    ctx.push_formatted_retained(
-        &mut report.notes,
-        format_args!("f3z archive: {member_count} document member(s); root {model_root}"),
-        "collect F3Z report notes",
-        "retain F3Z report note",
-    )?;
+    report.notes.push(format!(
+        "f3z archive: {member_count} document member(s); root {model_root}"
+    ));
     if ctx.container_only() {
-        ctx.append_vec(
-            &mut report.losses,
-            &mut { outer.losses },
-            "append F3Z report losses",
-        )?;
+        report.losses.append(&mut outer.losses);
         return finalize_result(ctx, ir, source, report, fidelity);
     }
 
@@ -117,22 +98,15 @@ pub(crate) fn decode<'a>(
     )?;
     if merged > 0 {
         fidelity.remove_retained_record(crate::ids::FILE_SOURCE_IMAGE_ID);
-        ctx.push_formatted_retained(&mut report.notes, format_args!(
+        report.notes.push(format!(
             "{merged} merged component(s) retain occurrence-scoped model entities, native records, and source bytes"
-        ), "collect F3Z report notes", "retain F3Z report note")?;
+        ));
     }
-    ctx.push_formatted_retained(
-        &mut report.notes,
-        format_args!("merged {merged} external occurrence(s) from the f3z archive"),
-        "collect F3Z report notes",
-        "retain F3Z report note",
-    )?;
-    merge::make_sibling_ordinals_unique(ctx, &mut ir.model.occurrences)?;
-    ctx.append_vec(
-        &mut report.losses,
-        &mut { outer.losses },
-        "append F3Z report losses",
-    )?;
+    report.notes.push(format!(
+        "merged {merged} external occurrence(s) from the f3z archive"
+    ));
+    merge::make_sibling_ordinals_unique(&mut ir.model.occurrences)?;
+    report.losses.append(&mut outer.losses);
     finalize_result(ctx, ir, source, report, fidelity)
 }
 
@@ -152,12 +126,10 @@ fn finalize_result(
         crate::ids::FILE_SOURCE_IMAGE_ID,
         "record F3Z document digest",
     )?;
-    ctx.insert_btree_map(
-        &mut source.attributes,
+    source.attributes.insert(
         cadmpeg_core::nonblank_const!(cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE),
         hash,
-        "record F3Z document digest",
-    )?;
+    );
     ir.source = Some(source);
     Ok(Decoded {
         ir,
