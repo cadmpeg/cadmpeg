@@ -264,32 +264,22 @@ pub(crate) struct JointConnectorRecord {
 }
 
 fn admit_joint_identities(id: String, object: String) -> Result<(Identity, Identity), String> {
-    match admit_joint_identities_with(id, object, |_, _| Ok::<(), std::convert::Infallible>(())) {
-        Ok(result) => result.map_err(str::to_owned),
-        Err(never) => match never {},
-    }
+    let id = Identity::new(id).map_err(|_| "joint id is invalid".to_owned())?;
+    let object = Identity::new(object).map_err(|_| "joint object is invalid".to_owned())?;
+    validate_joint_identity_namespaces(id, object).map_err(str::to_owned)
 }
 
-fn admit_joint_identities_with<E>(
-    id: String,
-    object: String,
-    mut admit: impl FnMut(usize, &'static str) -> Result<(), E>,
-) -> Result<Result<(Identity, Identity), &'static str>, E> {
-    admit(id.len(), "FCStd joint identity admission")?;
-    let Ok(id) = Identity::new(id) else {
-        return Ok(Err("joint id is invalid"));
-    };
-    admit(object.len(), "FCStd joint identity admission")?;
-    let Ok(object) = Identity::new(object) else {
-        return Ok(Err("joint object is invalid"));
-    };
+fn validate_joint_identity_namespaces(
+    id: Identity,
+    object: Identity,
+) -> Result<(Identity, Identity), &'static str> {
     if !id.as_str().starts_with("fcstd:native:joint#") {
-        return Ok(Err("joint id must name an FCStd native joint"));
+        return Err("joint id must name an FCStd native joint");
     }
     if !object.as_str().starts_with("fcstd:native:object#") {
-        return Ok(Err("joint object must name an FCStd native object"));
+        return Err("joint object must name an FCStd native object");
     }
-    Ok(Ok((id, object)))
+    Ok((id, object))
 }
 
 impl JointRecord {
@@ -300,10 +290,12 @@ impl JointRecord {
         body: JointBody,
         parameters: JointParameters,
     ) -> Result<Self, CodecError> {
-        let (id, object) = admit_joint_identities_with(id, object, |length, operation| {
-            ctx.charge_work(cadmpeg_core::decode::u64_from_index(length), operation)
-        })?
-        .map_err(CodecError::malformed)?;
+        let id = Identity::new_for_decode(ctx, id, "FCStd joint identity admission")?
+            .map_err(|_| CodecError::malformed("joint id is invalid"))?;
+        let object = Identity::new_for_decode(ctx, object, "FCStd joint identity admission")?
+            .map_err(|_| CodecError::malformed("joint object is invalid"))?;
+        let (id, object) =
+            validate_joint_identity_namespaces(id, object).map_err(CodecError::malformed)?;
         Ok(Self {
             id,
             object,
