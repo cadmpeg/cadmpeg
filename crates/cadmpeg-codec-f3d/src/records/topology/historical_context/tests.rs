@@ -30,6 +30,7 @@ fn historical_loop_wire_preserves_each_complete_binding_stage() {
             let context: super::DesignHistoricalFaceLoopContext =
                 serde_json::from_value(wire.clone()).unwrap();
             assert_eq!(context.boundary.coedges().count(), index_from_u32(count));
+            assert_eq!(context.boundary.coedge_count(), index_from_u32(count));
             assert_eq!(serde_json::to_value(&context).unwrap(), wire);
             for field in ["edge_slots", "vertex_slots", "point_slots", "positions"] {
                 let mut invalid = wire.clone();
@@ -54,6 +55,21 @@ fn historical_loop_wire_preserves_each_complete_binding_stage() {
                 );
             }
         }
+    }
+}
+
+#[test]
+fn historical_loop_stored_count_covers_all_empty_binding_variants() {
+    use super::DesignHistoricalLoopBoundary;
+
+    for boundary in [
+        DesignHistoricalLoopBoundary::Coedges(Vec::new()),
+        DesignHistoricalLoopBoundary::Vertices(Vec::new()),
+        DesignHistoricalLoopBoundary::Points(Vec::new()),
+        DesignHistoricalLoopBoundary::Positions(Vec::new()),
+    ] {
+        assert_eq!(boundary.coedge_count(), 0);
+        assert_eq!(boundary.coedges().count(), 0);
     }
 }
 

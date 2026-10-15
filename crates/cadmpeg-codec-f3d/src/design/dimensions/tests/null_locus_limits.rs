@@ -55,7 +55,7 @@ fn fixture(operation: &'static str) {
             &entity,
             "Angular Dimension-2",
             std::f64::consts::FRAC_PI_4,
-            parameter.clone(),
+            (&parameter, "f3d null locus parameter id"),
             0.0,
         )
         .transpose()

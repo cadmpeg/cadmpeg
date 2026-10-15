@@ -16,18 +16,48 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::ids::BodyId;
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 
 mod graph_ops;
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+enum BodySelectorKey {
+    Native(u64),
+    Ordinal(u32),
+}
+
+impl cadmpeg_core::decode::cost::DecodeCost for BodySelectorKey {
+    const FIXED_BYTES: Option<u64> =
+        Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()));
+
+    fn decode_cost(
+        &self,
+        _ctx: &DecodeContext<'_>,
+        _operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()))
+    }
+}
 
 fn merge_brep_counts(
     ctx: &DecodeContext<'_>,
     target: &mut BTreeMap<String, usize>,
     source: BTreeMap<String, usize>,
 ) -> Result<(), CodecError> {
-    for (kind, count) in source {
-        ctx.admit_btree_entry(target, &kind, "merge F3D BREP statistic kinds")?;
-        *target.entry(kind).or_default() += count;
+    for (kind, count) in ctx.admit_iter(source, "scan F3D BREP statistic kinds")? {
+        if let Some(total) =
+            ctx.get_mut_btree_map(target, kind.as_str(), "merge F3D BREP statistic kinds")?
+        {
+            *total = total.checked_add(count).ok_or_else(|| {
+                ctx.refuse_codec_limit("merge F3D BREP statistic counts", 0, u64::MAX)
+            })?;
+        } else {
+            ctx.insert_btree_map(target, kind, count, "merge F3D BREP statistic kinds")?;
+        }
     }
     Ok(())
 }
@@ -87,7 +117,7 @@ impl Brep {
         let mut persistent_design_links = Vec::new();
         let mut persistent_subentity_tags = Vec::new();
         let mut creation_timestamps = Vec::new();
-        for attribute in &asm.attributes {
+        for attribute in ctx.admit_iter(&asm.attributes, "scan F3D BREP attributes")? {
             if let Some(link) = sketch_curve_link(ctx, attribute)? {
                 ctx.push_vec(
                     &mut sketch_curve_links,
@@ -95,20 +125,16 @@ impl Brep {
                     "collect F3D sketch curve links",
                 )?;
             }
-            for link in self::persistent_design_links(ctx, attribute)? {
-                ctx.push_vec(
-                    &mut persistent_design_links,
-                    link,
-                    "collect F3D persistent design links",
-                )?;
-            }
-            for tag in self::persistent_subentity_tags(ctx, attribute)? {
-                ctx.push_vec(
-                    &mut persistent_subentity_tags,
-                    tag,
-                    "collect F3D persistent subentity tags",
-                )?;
-            }
+            ctx.extend_vec(
+                &mut persistent_design_links,
+                self::persistent_design_links(ctx, attribute)?,
+                "collect F3D persistent design links",
+            )?;
+            ctx.extend_vec(
+                &mut persistent_subentity_tags,
+                self::persistent_subentity_tags(ctx, attribute)?,
+                "collect F3D persistent subentity tags",
+            )?;
             if let Some(timestamp) = creation_timestamp(ctx, attribute)? {
                 ctx.push_vec(
                     &mut creation_timestamps,
@@ -127,17 +153,24 @@ impl Brep {
     }
 
     /// Map solved bodies to the selector used by this blob's Design body map.
-    pub(crate) fn body_selectors(
+    pub(crate) fn body_selectors<'ctx>(
         &self,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<HashMap<BodyId, u64>, CodecError> {
-        let ordinal_mode = self
-            .asm
-            .body_native_keys
-            .iter()
-            .all(|body| body.asm_body_key.is_none());
-        let mut selectors = HashMap::new();
-        for body in &self.asm.body_native_keys {
+        ctx: &'ctx DecodeContext<'_>,
+    ) -> Result<
+        (
+            BTreeMap<BodyId, u64>,
+            cadmpeg_core::decode::ScopedReservation<'ctx>,
+        ),
+        CodecError,
+    > {
+        let mut storage = ctx.reserve_scoped(0, "stage F3D BREP body selectors")?;
+        let ordinal_mode = ctx.all_by(
+            &self.asm.body_native_keys,
+            |body| Ok(body.asm_body_key.is_none()),
+            "scan F3D ordinal body key mode",
+        )?;
+        let mut selectors = BTreeMap::new();
+        for body in ctx.admit_iter(&self.asm.body_native_keys, "scan F3D body keys")? {
             let selector = if ordinal_mode {
                 Some(u64::from(body.body_ordinal))
             } else {
@@ -146,42 +179,108 @@ impl Brep {
             let Some(selector) = selector else {
                 continue;
             };
-            let id = body
-                .body
-                .try_clone_for_decode(ctx, "copy F3D BREP body ID")?;
+            let id = storage
+                .with_storage(|| body.body.try_clone_for_decode(ctx, "copy F3D BREP body ID"))?;
 
-            ctx.reserve_map(&mut selectors, 1, "index F3D BREP body selectors")?;
-            selectors.insert(id, selector);
+            storage.with_storage(|| {
+                ctx.insert_btree_map(
+                    &mut selectors,
+                    id,
+                    selector,
+                    "index F3D BREP body selectors",
+                )
+            })?;
         }
-        Ok(selectors)
+        Ok((selectors, storage))
     }
 
     /// Resolve the Design selectors present for this blob. An exact native
     /// body key has precedence. A selector absent from the native-key domain
     /// selects the body with the same zero-based ordinal.
-    pub(crate) fn body_selectors_for(
+    pub(crate) fn body_selectors_for<'ctx>(
         &self,
-        ctx: &DecodeContext<'_>,
-        selectors: &HashSet<u64>,
-    ) -> Result<HashMap<BodyId, u64>, cadmpeg_core::CodecError> {
-        let mut resolved = HashMap::new();
-        for selector in selectors {
-            let Some(body) =
-                resolve_body_selector(ctx, self.asm.body_native_keys.iter(), *selector)?
-            else {
+        ctx: &'ctx DecodeContext<'_>,
+        selectors: &BTreeSet<u64>,
+    ) -> Result<
+        (
+            BTreeMap<BodyId, u64>,
+            cadmpeg_core::decode::ScopedReservation<'ctx>,
+        ),
+        cadmpeg_core::CodecError,
+    > {
+        let mut storage = ctx.reserve_scoped(0, "stage F3D selected BREP bodies")?;
+        let mut resolved = BTreeMap::new();
+
+        if selectors.is_empty() {
+            return Ok((resolved, storage));
+        }
+        let _body_keys_storage;
+        let (body_keys, held_storage) = ctx.unique_index(
+            ctx.admit_iter(&self.asm.body_native_keys, "scan F3D indexed body keys")?
+                .flat_map(|body| {
+                    [
+                        body.asm_body_key
+                            .map(|key| (BodySelectorKey::Native(key), &body.body)),
+                        Some((BodySelectorKey::Ordinal(body.body_ordinal), &body.body)),
+                    ]
+                    .into_iter()
+                    .flatten()
+                }),
+            "index F3D native body selectors",
+        )?;
+        _body_keys_storage = held_storage;
+        for selector in ctx.admit_iter(selectors, "scan F3D body selectors")? {
+            let native = ctx.get_hash_map(
+                &body_keys,
+                &BodySelectorKey::Native(*selector),
+                "match F3D native body selector",
+            )?;
+            let (body, domain) = match native {
+                Some(body) => (Some(body), "native body keys"),
+                None => {
+                    let Ok(ordinal) = u32::try_from(*selector) else {
+                        continue;
+                    };
+                    (
+                        ctx.get_hash_map(
+                            &body_keys,
+                            &BodySelectorKey::Ordinal(ordinal),
+                            "match F3D ordinal body selector",
+                        )?,
+                        "body ordinals",
+                    )
+                }
+            };
+            let Some(body) = body else {
                 continue;
             };
-            let id = (body).try_clone_for_decode(ctx, "copy F3D BREP body ID")?;
+            let Some(body) = *body else {
+                return Err(CodecError::Malformed(ctx.format_retained(
+                    format_args!("F3D body selector {selector} matches multiple {domain}"),
+                    "describe ambiguous F3D body selector",
+                )?));
+            };
+            let id =
+                storage.with_storage(|| body.try_clone_for_decode(ctx, "copy F3D BREP body ID"))?;
 
-            ctx.reserve_map(&mut resolved, 1, "index F3D selected BREP bodies")?;
-            if let Some(previous) = resolved.insert(id, *selector) {
-                return Err(cadmpeg_core::CodecError::malformed(format_args!(
-                    "F3D body {} is selected by both {previous} and {selector}",
-                    body.as_str()
-                )));
+            if let Some(previous) = storage.with_storage(|| {
+                ctx.insert_btree_map(
+                    &mut resolved,
+                    id,
+                    *selector,
+                    "index F3D selected BREP bodies",
+                )
+            })? {
+                return Err(CodecError::Malformed(ctx.format_retained(
+                    format_args!(
+                        "F3D body {} is selected by both {previous} and {selector}",
+                        body.as_str()
+                    ),
+                    "describe conflicting F3D body selectors",
+                )?));
             }
         }
-        Ok(resolved)
+        Ok((resolved, storage))
     }
 
     /// Append a disjoint, already-qualified BREP graph.
@@ -381,43 +480,67 @@ struct SketchLinkPayload {
 /// role, form `2` as six integers with a trailing `0`, and form `0` as the five
 /// members alone. All three write the same five members in the same order, so
 /// each yields one link.
-fn sketch_link_payload(values: &[AttributeValue]) -> Option<SketchLinkPayload> {
+fn sketch_link_payload(
+    ctx: &DecodeContext<'_>,
+    values: &[AttributeValue],
+) -> Result<Option<SketchLinkPayload>, CodecError> {
     let [AttributeValue::Integer(1), AttributeValue::Integer(1), AttributeValue::Integer(form), payload @ ..] =
         values
     else {
-        return None;
+        return Ok(None);
     };
-    match (*form, payload) {
+    Ok(match (*form, payload) {
         (3, [AttributeValue::String(field)]) => {
-            let mut fields = field.split_ascii_whitespace();
-            let (
-                Some(sketch_curve_id),
-                Some(ref_b),
-                Some(sense),
-                Some("0"),
-                Some(role),
-                Some(closure),
-                None,
-            ) = (
-                fields.next(),
-                fields.next(),
-                fields.next(),
-                fields.next(),
-                fields.next(),
-                fields.next(),
-                fields.next(),
-            )
+            let mut bytes = field.as_bytes().iter().enumerate();
+            let mut fields = [None; 7];
+            for member in &mut fields {
+                let Some((start, _)) = ctx.find_by(
+                    &mut bytes,
+                    |(_, byte)| Ok(!byte.is_ascii_whitespace()),
+                    "scan F3D sketch link fields",
+                )?
+                else {
+                    continue;
+                };
+                let end = ctx
+                    .find_by(
+                        &mut bytes,
+                        |(_, byte)| Ok(byte.is_ascii_whitespace()),
+                        "scan F3D sketch link fields",
+                    )?
+                    .map_or(field.len(), |(end, _)| end);
+                *member = Some(&field[start..end]);
+            }
+            let [Some(sketch_curve_id), Some(ref_b), Some(sense), Some("0"), Some(role), Some(closure), None] =
+                fields
             else {
-                return None;
+                return Ok(None);
             };
             // `ref_b` reaches the full unsigned 64-bit range, so it is read
             // unsigned; every other member is signed.
             Some(SketchLinkPayload {
-                sketch_curve_id: sketch_curve_id.parse().ok()?,
-                ref_b: ref_b.parse().ok()?,
-                sense: sense.parse().ok()?,
-                role: role.parse().ok()?,
-                closure: closure.parse().ok()?,
+                sketch_curve_id: match ctx
+                    .parse_text(sketch_curve_id, "parse F3D sketch link sketch_curve_id")?
+                {
+                    Ok(value) => value,
+                    Err(_) => return Ok(None),
+                },
+                ref_b: match ctx.parse_text(ref_b, "parse F3D sketch link ref_b")? {
+                    Ok(value) => value,
+                    Err(_) => return Ok(None),
+                },
+                sense: match ctx.parse_text(sense, "parse F3D sketch link sense")? {
+                    Ok(value) => value,
+                    Err(_) => return Ok(None),
+                },
+                role: match ctx.parse_text(role, "parse F3D sketch link role")? {
+                    Ok(value) => value,
+                    Err(_) => return Ok(None),
+                },
+                closure: match ctx.parse_text(closure, "parse F3D sketch link closure")? {
+                    Ok(value) => value,
+                    Err(_) => return Ok(None),
+                },
             })
         }
         (
@@ -429,13 +552,16 @@ fn sketch_link_payload(values: &[AttributeValue]) -> Option<SketchLinkPayload> {
             [AttributeValue::Integer(sketch_curve_id), AttributeValue::Integer(ref_b), AttributeValue::Integer(sense), AttributeValue::Integer(role), AttributeValue::Integer(closure)],
         ) => Some(SketchLinkPayload {
             sketch_curve_id: *sketch_curve_id,
-            ref_b: u64::try_from(*ref_b).ok()?,
+            ref_b: match u64::try_from(*ref_b) {
+                Ok(value) => value,
+                Err(_) => return Ok(None),
+            },
             sense: *sense,
             role: *role,
             closure: *closure,
         }),
         _ => None,
-    }
+    })
 }
 
 /// Locate a Fusion family marker under the caller's scan and comparison allowance.
@@ -444,21 +570,16 @@ fn attribute_family(
     attribute: &SourceAttribute,
     family: &str,
 ) -> Result<Option<usize>, CodecError> {
-    for (index, value) in attribute.values.iter().enumerate() {
-        ctx.charge_work(1, "scan Fusion attribute family")?;
-        if let AttributeValue::String(name) = value {
-            let work = cadmpeg_core::decode::u64_from_index(name.len())
-                .checked_add(cadmpeg_core::decode::u64_from_index(family.len()))
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit("compare Fusion attribute family", 0, u64::MAX)
-                })?;
-            ctx.charge_work(work, "compare Fusion attribute family")?;
-            if name == family {
-                return Ok(Some(index));
+    ctx.position_by(
+        &attribute.values,
+        |value| match value {
+            AttributeValue::String(name) => {
+                ctx.equal(name.as_str(), family, "compare Fusion attribute family")
             }
-        }
-    }
-    Ok(None)
+            _ => Ok(false),
+        },
+        "scan Fusion attribute family",
+    )
 }
 
 fn sketch_curve_link(
@@ -468,7 +589,7 @@ fn sketch_curve_link(
     let Some(family) = attribute_family(ctx, attribute, "sketch_attrib_def")? else {
         return Ok(None);
     };
-    let Some(payload) = sketch_link_payload(&attribute.values[family + 1..]) else {
+    let Some(payload) = sketch_link_payload(ctx, &attribute.values[family + 1..])? else {
         return Ok(None);
     };
     Ok(Some(SketchCurveLink {
@@ -508,7 +629,8 @@ fn persistent_design_links(
         return Ok(Vec::new());
     }
     let mut links = Vec::new();
-    for values in rest.chunks_exact(group_width) {
+    let mut groups = rest.chunks_exact(group_width);
+    while let Some(values) = ctx.next_charged(&mut groups, "scan F3D persistent design groups")? {
         let (entity_kind, design_id, design_reference) = match values {
             [AttributeValue::Integer(entity_kind), AttributeValue::String(design_id), AttributeValue::Integer(design_reference), AttributeValue::Integer(0)]
             | [AttributeValue::Integer(entity_kind), AttributeValue::String(design_id), AttributeValue::Integer(design_reference), AttributeValue::Integer(0), AttributeValue::Integer(0)] => {
@@ -573,7 +695,7 @@ fn persistent_subentity_tags(
     };
     let mut position: usize = 0;
     let mut groups = Vec::new();
-    for ordinal in 0..group_count {
+    for ordinal in ctx.admit_iter(&(0..group_count), "visit F3D persistent subentity groups")? {
         let Some(
             [AttributeValue::Integer(selector), AttributeValue::String(token), AttributeValue::Integer(0), AttributeValue::Integer(reference_count)],
         ) = rest.get(position..position + 4)
@@ -602,7 +724,10 @@ fn persistent_subentity_tags(
             return Ok(Vec::new());
         };
         let mut design_references = Vec::new();
-        for value in reference_values {
+        let mut references = reference_values.iter();
+        while let Some(value) =
+            ctx.next_charged(&mut references, "scan F3D persistent subentity references")?
+        {
             let AttributeValue::Integer(value) = value else {
                 return Ok(Vec::new());
             };
@@ -678,11 +803,14 @@ fn generic_tag_payload<'a>(
     else {
         return Ok(None);
     };
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(marker.len()),
-        "compare Fusion generic-tag marker",
-    )?;
-    if left_version != right_version || marker != "generic_tag_attrib_def " || *group_count < 0 {
+    if left_version != right_version
+        || !ctx.equal(
+            marker.as_str(),
+            "generic_tag_attrib_def ",
+            "compare Fusion generic-tag marker",
+        )?
+        || *group_count < 0
+    {
         return Ok(None);
     }
     let version = match *left_version {
@@ -716,7 +844,10 @@ fn creation_timestamp(
     let Some(AttributeValue::Float(unix_microseconds)) = attribute.values.get(family + 2) else {
         return Ok(None);
     };
-    let Some(record_index) = attribute_key(attribute).parse().ok() else {
+    let Some(record_index) = ctx
+        .parse_text(attribute_key(attribute), "parse F3D timestamp record key")?
+        .ok()
+    else {
         return Ok(None);
     };
     Ok(Some(CreationTimestamp {

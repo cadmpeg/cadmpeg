@@ -138,7 +138,12 @@ fn design_type_copy_refuses_table_entities_module_and_id_limits() {
     );
     assert_eq!(
         types[0].id(),
-        &crate::ids::native_design_type_id(meta_name, types[0].byte_offset)
+        &crate::test_support::with_decode_context(|ctx| crate::ids::native_design_type_id(
+            ctx,
+            meta_name,
+            types[0].byte_offset
+        )
+        .expect("test F3D native identity"))
     );
 }
 
@@ -153,7 +158,9 @@ fn stream_type_indexes_refuse_limits_and_match_escaped_scope() {
     let design_type =
         crate::design::test_support::design_type(type_guid, None, 7, "Fusion", vec![17]);
     let design_type = crate::records::entity_header::SegmentType::try_new(
-        crate::ids::native_design_type_id(&meta_name, 0),
+        crate::test_support::with_decode_context(|ctx| {
+            crate::ids::native_design_type_id(ctx, &meta_name, 0).expect("test F3D native identity")
+        }),
         design_type,
     )
     .unwrap();
@@ -199,18 +206,22 @@ fn design_primary_frames_charge_registration_and_frame_storage() {
         secondary_records: Vec::new(),
     };
     let arena = DecodeArena::new();
-    for (allowance, operation) in [
-        (0, "frame F3D primary records"),
-        (1, "index F3D primary entities"),
-        (2, "f3d registered primary entities"),
-        (3, "f3d design primary frames"),
+    for operation in [
+        "frame F3D primary records",
+        "index F3D primary entities",
+        "f3d registered primary entities",
+        "f3d design primary frames",
     ] {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = allowance;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = super::design_primary_frames(&ctx, &bytes, &meta)
-            .err()
-            .unwrap();
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::CollectionItems,
+            operation,
+            |cap| {
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                super::design_primary_frames(&ctx, &bytes, &meta)
+            },
+        );
         assert!(matches!(error,
             cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.dimension == ResourceDimension::CollectionItems
@@ -244,21 +255,25 @@ fn typed_primary_frames_charge_all_collections() {
         secondary_records: Vec::new(),
     };
     let arena = DecodeArena::new();
-    for (allowance, operation) in [
-        (0, "f3d typed primary entities"),
-        (1, "frame F3D primary records"),
-        (2, "index F3D primary entities"),
-        (3, "f3d registered primary entities"),
-        (4, "f3d design primary frames"),
-        (5, "f3d resolved primary entities"),
-        (6, "f3d typed primary frames"),
+    for operation in [
+        "f3d typed primary entities",
+        "frame F3D primary records",
+        "index F3D primary entities",
+        "f3d registered primary entities",
+        "f3d design primary frames",
+        "f3d resolved primary entities",
+        "f3d typed primary frames",
     ] {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = allowance;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = super::typed_primary_frames(&ctx, &bytes, &meta, type_guid, "test")
-            .err()
-            .unwrap();
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::CollectionItems,
+            operation,
+            |cap| {
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                super::typed_primary_frames(&ctx, &bytes, &meta, type_guid, "test")
+            },
+        );
         assert!(matches!(error,
             cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.dimension == ResourceDimension::CollectionItems
@@ -377,7 +392,13 @@ fn feature_timeline_id_refuses_prefix_and_suffix_limits() {
     bulk.extend_from_slice(&[0, 0]);
     bulk.extend_from_slice(&0_u32.to_le_bytes());
     let arena = DecodeArena::new();
-    let prefix_len = u64_from_index(crate::ids::native_scope(stream).len());
+    let prefix_len = u64_from_index(
+        crate::test_support::with_decode_context(|ctx| {
+            crate::ids::native_scope(ctx, stream, "retain F3D native scope")
+                .expect("test F3D native identity")
+        })
+        .len(),
+    );
     let suffix_len = u64_from_index(":design-feature-timeline#0".len());
     for (allowance, operation) in [
         (prefix_len - 1, "f3d native stream key"),
@@ -415,7 +436,10 @@ fn feature_timeline_id_refuses_prefix_and_suffix_limits() {
     )
     .unwrap()
     .unwrap();
-    let expected_id = crate::ids::native_design_feature_timeline_id(stream, 0);
+    let expected_id = crate::test_support::with_decode_context(|ctx| {
+        crate::ids::native_design_feature_timeline_id(ctx, stream, 0)
+            .expect("test F3D native identity")
+    });
     assert_eq!(timeline.id(), &expected_id);
 }
 
@@ -680,7 +704,10 @@ fn component_naming_space_refuses_each_collection_and_id_limit() {
     assert_eq!(spaces[0].context_uuid.as_str(), context_uuid);
     assert_eq!(
         spaces[0].id,
-        crate::ids::native_design_component_naming_space_id(bulk_name, 2)
+        crate::test_support::with_decode_context(|ctx| {
+            crate::ids::native_design_component_naming_space_id(ctx, bulk_name, 2)
+                .expect("test F3D native identity")
+        })
     );
 }
 

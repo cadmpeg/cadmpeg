@@ -98,3 +98,14 @@ fn repeated_length_output_id_retained_refuses_limit() {
 fn repeated_length_output_member_collection_refuses_limit() {
     fixture("f3d atomic member", ResourceDimension::CollectionItems);
 }
+
+#[test]
+fn line_length_queries_refuse_actual_source_work() {
+    for operation in [
+        "f3d line length source",
+        "f3d line length sketch identity",
+        "f3d atomic output member source",
+    ] {
+        fixture(operation, ResourceDimension::WorkUnits);
+    }
+}

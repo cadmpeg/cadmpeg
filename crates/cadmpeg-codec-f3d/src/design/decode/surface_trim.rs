@@ -300,11 +300,12 @@ pub(crate) fn decode_surface_trim_operations(
         let Some(stream) = record_stream(ctx, &scope.id)? else {
             continue;
         };
-        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
+        let Some(entry) =
+            scan.design_stream_entry_for_scope(ctx, ContainerRole::Bulkstream, stream)?
         else {
             continue;
         };
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         let records = index_storage.with_storage(|| {
             cached_owned_record_offsets(ctx, &mut record_offsets, stream, bytes)
         })?;

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-fn native(valid: bool) -> crate::native::F3dNative {
+pub(super) fn native(valid: bool) -> crate::native::F3dNative {
     use crate::records::{
         decal::DesignRecordHeader,
         identity::Located,
@@ -79,7 +79,11 @@ fn identity_error(valid: bool, max_items: u64, max_retained: u64) -> cadmpeg_cor
 
 #[test]
 fn construction_identity_group_refuses_collection_limit() {
-    let error = identity_error(true, 0, u64::MAX);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "index F3D construction operand identity groups",
+        |cap| Err::<(), cadmpeg_core::CodecError>(identity_error(true, cap, u64::MAX)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D construction operand identity groups")
@@ -88,7 +92,11 @@ fn construction_identity_group_refuses_collection_limit() {
 
 #[test]
 fn construction_identity_invalid_finding_refuses_collection_limit() {
-    let error = identity_error(false, 0, u64::MAX);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "collect F3D native validation findings",
+        |cap| Err::<(), cadmpeg_core::CodecError>(identity_error(false, cap, u64::MAX)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D native validation findings")
@@ -97,7 +105,11 @@ fn construction_identity_invalid_finding_refuses_collection_limit() {
 
 #[test]
 fn construction_identity_invalid_entity_refuses_retained_limit() {
-    let error = identity_error(false, u64::MAX, 0);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain F3D validation entity",
+        |cap| Err::<(), cadmpeg_core::CodecError>(identity_error(false, u64::MAX, cap)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "retain F3D validation entity")
@@ -111,7 +123,7 @@ fn construction_identity_valid_group_has_no_finding() {
         let native = native(true);
         let ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
         let mut findings = Vec::new();
-        let groups =
+        let (groups, _groups_storage) =
             super::super::validate_construction_operand_identities(&ctx, &mut findings).unwrap();
         assert!(findings.is_empty());
         assert!(groups.contains(&("f3d:Design/BulkStream.dat", 100)));

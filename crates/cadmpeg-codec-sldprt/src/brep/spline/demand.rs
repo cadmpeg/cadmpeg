@@ -311,32 +311,58 @@ impl<'input, 'ctx, 'arena> Sources<'input, 'ctx, 'arena> {
         }
     }
 
+    /// Discover multiplicities before their knot source, then cache the
+    /// resolved lane or its absence for this axis demand.
     pub(super) fn prepare_knots(
         &mut self,
         knot_attr: u16,
         multiplicity_attr: u16,
         count: usize,
     ) -> Result<(), CodecError> {
+        const HEADER: &str = "find Parasolid eligible array header";
         let ctx = self.ctx;
         let key = (knot_attr, multiplicity_attr, count);
         if ctx.contains_key_btree_map(&self.knots, &key, "find Parasolid resolved knot lanes")? {
             return Ok(());
         }
-        let mut workspace = ctx.reserve_scoped(0, "hold Parasolid surface array candidates")?;
         let mut output = ctx.reserve_scoped(0, "hold Parasolid resolved knot lanes")?;
-        let resolved = surface_knot_values(
-            ctx,
-            &mut workspace,
-            &mut output,
-            self.bytes,
-            &self.arrays,
-            (knot_attr, multiplicity_attr, count),
-        )?;
+        let resolved = if count == 0 {
+            None
+        } else {
+            self.array(multiplicity_attr)?;
+            let eligible = if ctx
+                .get_btree_map(&self.arrays.u16s, &multiplicity_attr, HEADER)?
+                .is_some_and(|array| array.span.count >= count)
+            {
+                true
+            } else if let Some(headers) =
+                ctx.get_btree_map(&self.arrays.compact, &multiplicity_attr, HEADER)?
+            {
+                ctx.any_by(
+                    headers,
+                    |array| Ok(array.count >= count && array.span::<u16>(self.bytes).is_some()),
+                    HEADER,
+                )?
+            } else {
+                false
+            };
+            if eligible {
+                self.array(knot_attr)?;
+                surface_knot_values(
+                    ctx,
+                    &mut output,
+                    self.bytes,
+                    &self.arrays,
+                    (knot_attr, multiplicity_attr, count),
+                )?
+            } else {
+                None
+            }
+        };
         let result = resolved.map(|values| KnotValues {
             values,
             _storage: output,
         });
-        drop(workspace);
         self.shell.with_storage(|| {
             ctx.insert_btree_map(
                 &mut self.knots,

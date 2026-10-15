@@ -48,7 +48,7 @@ fn native_catalog_emits_feature_history_state_counter_rows() {
         segment_om_record_area_with_state_counter_map(),
     )]);
     let container =
-        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file))
+        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, &file))
             .expect("required invariant");
 
     let rows = crate::test_support::with_decode_context(|ctx| {
@@ -94,7 +94,7 @@ fn native_catalog_emits_role_gated_audit_trail_rows() {
     let payload = audit_trail_test_payload();
     let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]);
     let container =
-        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file))
+        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, &file))
             .expect("required invariant");
 
     let rows =
@@ -309,7 +309,7 @@ fn native_catalog_emits_anchored_operation_state_journal_groups() {
     let payload = composed_feature_history_payload_with_state_journal();
     let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload.clone())]);
     let container =
-        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file))
+        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, &file))
             .expect("required invariant");
 
     let groups = crate::test_support::with_decode_context(|ctx| {
@@ -369,7 +369,7 @@ fn native_catalog_emits_field_declared_roll_forward_groups() {
         segment_om_record_area_with_state_groups_and_counter_map(),
     )]);
     let container =
-        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file))
+        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, &file))
             .expect("required invariant");
 
     let tables = crate::test_support::with_decode_context(|ctx| {
@@ -434,7 +434,7 @@ fn native_operation_state_groups_refuse_retained_limit() {
         segment_om_record_area_with_state_groups_and_counter_map(),
     )]);
     let container =
-        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file.clone()))
+        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, &file))
             .expect("feature-history container");
 
     crate::test_support::with_decode_context_over(
@@ -464,7 +464,7 @@ fn native_operation_state_groups_refuse_collection_limit() {
         segment_om_record_area_with_state_groups_and_counter_map(),
     )]);
     let container =
-        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file.clone()))
+        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, &file))
             .expect("feature-history container");
 
     crate::test_support::with_decode_context_over(
@@ -493,7 +493,7 @@ fn native_operation_state_groups_refuse_work_limit() {
         segment_om_record_area_with_state_groups_and_counter_map(),
     )]);
     let container =
-        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file.clone()))
+        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, &file))
             .expect("feature-history container");
 
     crate::test_support::with_decode_context_over(
@@ -521,7 +521,7 @@ fn native_catalog_emits_bounded_operation_state_messages() {
         segment_om_record_area_with_state_groups_and_counter_map(),
     )]);
     let container =
-        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file))
+        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, &file))
             .expect("required invariant");
 
     let messages = crate::test_support::with_decode_context(|ctx| {
@@ -569,7 +569,7 @@ fn native_operation_state_message_route_refuses_retained_bytes() {
         segment_om_record_area_with_state_groups_and_counter_map(),
     )]);
     let container =
-        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file.clone()))
+        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, &file))
             .expect("feature-history container");
 
     crate::test_support::with_decode_context_over(
@@ -731,7 +731,7 @@ fn native_catalog_emits_bounded_operation_state_statuses_and_slot_lanes() {
     let payload = composed_feature_history_payload_with_operation_state_statuses();
     let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload.clone())]);
     let container =
-        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file))
+        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, &file))
             .expect("required invariant");
 
     let statuses = crate::test_support::with_decode_context(|ctx| {
@@ -873,7 +873,7 @@ fn matching_section_refusal(
 ) {
     let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]);
     let container = crate::test_support::with_decode_context(|ctx| {
-        let container = container::scan_bytes(ctx, file)?;
+        let container = container::scan_bytes(ctx, &file)?;
         // Build the section cache once so every walk step charges the same route.
         container.om_sections(ctx)?;
         Ok::<_, CodecError>(container)
@@ -905,4 +905,39 @@ fn feature_history_section_match_preserves_work_refusal() {
         "match NX feature history section",
         |ctx, container| crate::native::features::FeatureHistory::new(ctx, container).map(|_| ()),
     );
+}
+
+#[test]
+fn native_state_slot_extent_and_storage_transfer_refuse_at_their_boundaries() {
+    let file = prt_with_named_payloads(&[(
+        "/Root/UG_PART/UG_PART",
+        composed_feature_history_payload_with_operation_state_statuses(),
+    )]);
+    let container =
+        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, &file)).unwrap();
+    let lanes = crate::test_support::with_decode_context(|ctx| {
+        operation_state_slot_lanes(
+            ctx,
+            &crate::native::features::FeatureHistory::new(ctx, &container)?,
+        )
+    })
+    .unwrap();
+    assert_eq!(lanes.len(), 1);
+    assert_eq!(lanes[0].frame.slots().len(), 3);
+    for (dimension, operation) in [
+        (ResourceDimension::WorkUnits, "NX native state slot extent"),
+        (
+            ResourceDimension::RetainedBytes,
+            "NX state slot candidate storage",
+        ),
+    ] {
+        let error = crate::test_support::resource_refusal_at(&[], dimension, operation, |ctx| {
+            operation_state_slot_lanes(
+                ctx,
+                &crate::native::features::FeatureHistory::new(ctx, &container)?,
+            )
+        });
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == dimension && limit.operation == operation));
+    }
 }

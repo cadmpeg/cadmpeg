@@ -503,13 +503,11 @@ fn intersection_pcurve_retains_only_output_and_releases_all_workspace() {
         4 * std::mem::size_of::<f64>() + 2 * std::mem::size_of::<cadmpeg_ir::units::FinitePoint2>(),
     )
     .unwrap();
-    // Core amortized growth reserves four Point3 slots for two lifted points.
-    // Two raw UVs and two errors coexist with that backing. After it dies,
-    // raw UVs coexist with four knots and two admitted poles.
+    // The raw UV lane coexists with the final knots and finite poles.
     let peak = u64::try_from(
         2 * std::mem::size_of::<cadmpeg_ir::math::Point2>()
-            + 4 * std::mem::size_of::<cadmpeg_ir::math::Point3>()
-            + 2 * std::mem::size_of::<f64>(),
+            + 4 * std::mem::size_of::<f64>()
+            + 2 * std::mem::size_of::<cadmpeg_ir::units::FinitePoint2>(),
     )
     .unwrap();
     let mut policy = DecodePolicy::service();
@@ -571,50 +569,53 @@ fn intersection_pcurve_refuses_exact_workspace_and_final_backing_boundaries() {
     )
     .unwrap();
     let raw_bytes = u64::try_from(2 * std::mem::size_of::<cadmpeg_ir::math::Point2>()).unwrap();
-    let lifted_bytes = u64::try_from(4 * std::mem::size_of::<cadmpeg_ir::math::Point3>()).unwrap();
-    let error_bytes = u64::try_from(2 * std::mem::size_of::<f64>()).unwrap();
-    for dimension in [
-        ResourceDimension::MaterializedBytes,
-        ResourceDimension::RetainedBytes,
+    let error_bytes = u64::try_from(4 * std::mem::size_of::<f64>()).unwrap();
+    for (dimension, operation) in [
+        (
+            ResourceDimension::MaterializedBytes,
+            "collect intersection support control errors",
+        ),
+        (
+            ResourceDimension::RetainedBytes,
+            "hold intersection support pcurve construction",
+        ),
     ] {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = output_bytes;
-        policy.limits.max_materialized_bytes = raw_bytes + lifted_bytes + error_bytes;
-        if dimension == ResourceDimension::MaterializedBytes {
-            policy.limits.max_materialized_bytes -= 1;
-        } else {
-            policy.limits.max_retained_bytes -= 1;
-        }
-        let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let mut refusals = crate::lane_refusal::scoped::ScopedLaneRefusals::new(&ctx).unwrap();
-        let error = crate::brep::graph::pcurves::intersection_support_pcurve(
-            &ctx,
-            &support,
-            &chart,
-            10,
-            &surface,
-            endpoints,
-            &mut crate::lane_refusal::scoped::RefusalSink::Scoped(&mut refusals),
-        )
-        .unwrap_err();
+        let error = cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
+            let mut policy = DecodePolicy::service();
+            if dimension == ResourceDimension::MaterializedBytes {
+                policy.limits.max_materialized_bytes = cap;
+            } else {
+                policy.limits.max_retained_bytes = cap;
+            }
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let mut refusals = crate::lane_refusal::scoped::ScopedLaneRefusals::new(&ctx).unwrap();
+            let result = crate::brep::graph::pcurves::intersection_support_pcurve(
+                &ctx,
+                &support,
+                &chart,
+                10,
+                &surface,
+                endpoints,
+                &mut crate::lane_refusal::scoped::RefusalSink::Scoped(&mut refusals),
+            );
+            if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
+                assert_eq!(ctx.resource_refusal(), Some(*limit));
+            }
+            result
+        });
         let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
-            panic!("one byte below actual workspace or output backing refuses");
+            panic!("workspace or output backing refuses");
         };
         assert_eq!(limit.dimension, dimension);
+        assert_eq!(limit.operation, operation);
         if dimension == ResourceDimension::MaterializedBytes {
-            assert_eq!(limit.operation, "check intersection support control errors");
-            assert_eq!(limit.used, raw_bytes + lifted_bytes);
+            assert_eq!(limit.used, raw_bytes);
             assert_eq!(limit.additional, error_bytes);
         } else {
-            assert_eq!(
-                limit.operation,
-                "hold intersection support pcurve construction"
-            );
             assert_eq!(limit.used, 0);
             assert_eq!(limit.additional, output_bytes);
         }
-        assert_eq!(ctx.resource_refusal(), Some(limit));
     }
 }
 
@@ -657,4 +658,89 @@ fn rejected_intersection_uv_length_releases_raw_controls_without_retained_output
         drop(reuse);
     }
     assert_eq!(ctx.resource_refusal(), None);
+}
+
+#[test]
+fn rejected_intersection_control_skips_the_remaining_error_lane() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_ir::math::{Point2, Point3};
+    const COUNT: u16 = 16;
+    let (surface, _, mut support, _) = planar_intersection_fixture();
+    let points: Vec<_> = (0..COUNT)
+        .map(|index| Point3::new(f64::from(index), 0., 0.))
+        .collect();
+    let endpoints = [points[0], points[usize::from(COUNT - 1)]];
+    let mut knots = vec![0.];
+    knots.extend((0..COUNT).map(f64::from));
+    knots.push(f64::from(COUNT - 1));
+    let chart = test_nurbs_curve(1, knots, points, None);
+    let mut uv: Vec<_> = (0..COUNT)
+        .map(|index| Point2::new(f64::from(index) / 1000., 0.))
+        .collect();
+    uv[1].v = 1.;
+    support.support_uv = Some([uv, Vec::new()]);
+    let make = |ctx: &DecodeContext<'_>| {
+        crate::brep::graph::pcurves::intersection_support_pcurve(
+            ctx,
+            &support,
+            &chart,
+            10,
+            &surface,
+            endpoints,
+            &mut crate::lane_refusal::scoped::RefusalSink::Retained(
+                &mut crate::lane_refusal::LaneRefusals::new(),
+            ),
+        )
+    };
+    for dimension in [
+        ResourceDimension::CollectionItems,
+        ResourceDimension::MaterializedBytes,
+    ] {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            dimension,
+            "collect intersection support control errors",
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                match dimension {
+                    ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
+                    ResourceDimension::MaterializedBytes => {
+                        policy.limits.max_materialized_bytes = cap;
+                    }
+                    _ => unreachable!(),
+                }
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                make(&ctx)
+            },
+        );
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+            panic!("first accepted error boundary");
+        };
+        if dimension == ResourceDimension::MaterializedBytes {
+            assert_eq!(
+                limit.used,
+                u64::from(COUNT) * u64::try_from(std::mem::size_of::<Point2>()).unwrap()
+            );
+            assert_eq!(
+                limit.additional,
+                u64::try_from(4 * std::mem::size_of::<f64>()).unwrap()
+            );
+        } else {
+            assert_eq!(limit.additional, 1);
+        }
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        match dimension {
+            ResourceDimension::CollectionItems => {
+                policy.limits.max_collection_items = limit.used + limit.additional;
+            }
+            ResourceDimension::MaterializedBytes => {
+                policy.limits.max_materialized_bytes = limit.used + limit.additional;
+            }
+            _ => unreachable!(),
+        }
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(make(&ctx).unwrap().is_none());
+        ctx.finish_session().unwrap();
+    }
 }

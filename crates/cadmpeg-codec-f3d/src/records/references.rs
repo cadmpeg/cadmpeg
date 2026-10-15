@@ -48,6 +48,18 @@ pub(crate) struct PersistentReference {
 #[serde(try_from = "String")]
 pub(crate) struct DesignClassTag(String);
 
+impl cadmpeg_core::decode::cost::DecodeCost for DesignClassTag {
+    const FIXED_BYTES: Option<u64> = Some(3);
+
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&self.0, ctx, operation)
+    }
+}
+
 impl TryFrom<String> for DesignClassTag {
     type Error = String;
     fn try_from(value: String) -> Result<Self, Self::Error> {
@@ -331,14 +343,17 @@ impl std::fmt::Display for DesignVisualToken {
 }
 
 impl DesignVisualToken {
-    pub(crate) fn matches(&self, other: &Self) -> bool {
-        self.0.as_str().eq_ignore_ascii_case(other.0.as_str())
-    }
-
-    /// The admitted visual token as an identity key.
-    #[cfg(test)]
-    pub(crate) fn identity_key(&self) -> cadmpeg_ir::ids::IdentityKey {
-        self.0.clone()
+    pub(crate) fn new(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        value: String,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        let extent = cadmpeg_core::decode::u64_from_index(value.len());
+        ctx.charge_work(extent, "f3d visual token grammar")?;
+        if crate::design::presentation::visual_token(&value).is_none() {
+            return Ok(None);
+        }
+        ctx.charge_work(extent, "f3d visual token identity grammar")?;
+        Ok(cadmpeg_ir::ids::IdentityKey::try_new(value).ok().map(Self))
     }
 }
 

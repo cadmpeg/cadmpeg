@@ -187,6 +187,14 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
 }
 
 #[test]
+fn spatial_offset_locus_prefix_refuses_work_limit() {
+    fixture(
+        "f3d spatial offset locus prefix",
+        ResourceDimension::WorkUnits,
+    );
+}
+
+#[test]
 fn spatial_offset_role_refuses_collection_limit() {
     fixture(
         "f3d spatial offset role",
@@ -264,4 +272,127 @@ fn spatial_counted_offset_parameter_id_refuses_retained_limit() {
         "f3d spatial counted offset parameter id",
         ResourceDimension::RetainedBytes,
     );
+}
+
+#[test]
+fn spatial_offset_rejects_non_locus_before_later_loci_without_allocation() {
+    use cadmpeg_core::decode::DecodePolicy;
+    let mut operands = offset_header_operands();
+    let parameter = ParameterId::mint("synthetic:test:parameter#offset").unwrap();
+    let sketch = SpatialSketchId::mint("synthetic:test:spatial-sketch#offset").unwrap();
+    let by_record = HashMap::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = 0;
+    crate::test_support::with_decode_policy(&policy, |ctx| {
+        let result = spatial_counted_offset_dimension_definition(
+            ctx,
+            ("Linear Dimension-1", Some(0x20), &operands),
+            (&parameter, 3.0, -3.0),
+            &sketch,
+            &[],
+            &by_record,
+        );
+        assert!(
+            matches!(result, Some(Err(cadmpeg_core::CodecError::ResourceLimit(limit)))
+            if limit.operation == "f3d spatial offset role" && limit.dimension == ResourceDimension::MaterializedBytes)
+        );
+    });
+    operands[0].field.as_mut().unwrap().name =
+        cadmpeg_core::text::NonBlankString::try_from("return").unwrap();
+    crate::test_support::with_decode_policy(&policy, |ctx| {
+        assert!(spatial_counted_offset_dimension_definition(
+            ctx,
+            ("Linear Dimension-1", Some(0x20), &operands),
+            (&parameter, 3.0, -3.0),
+            &sketch,
+            &[],
+            &by_record,
+        )
+        .is_none());
+        assert!(ctx.resource_refusal().is_none());
+    });
+}
+
+#[test]
+fn spatial_offset_source_and_lookup_queries_refuse_work_limit() {
+    for operation in [
+        "f3d spatial offset stream search",
+        "f3d spatial offset locus kind",
+        "f3d spatial offset return shape",
+        "f3d spatial offset source role prefix",
+        "f3d spatial offset result role suffix",
+        "f3d spatial offset role source",
+        "f3d spatial offset result record source",
+        "f3d spatial offset result identity source",
+        "f3d spatial offset result entity lookup",
+        "f3d spatial offset sketch identity",
+        "f3d spatial offset sketch search",
+        "f3d spatial offset boundary membership",
+        "f3d spatial offset profile boundary search",
+        "f3d spatial offset profile search",
+        "f3d spatial offset pair source",
+        "f3d spatial offset source role lookup",
+        "f3d spatial offset result role lookup",
+        "f3d spatial offset used source lookup",
+        "f3d spatial offset used result lookup",
+        "f3d spatial offset source entity lookup",
+        "f3d spatial offset pair result entity lookup",
+        "f3d spatial offset source sketch identity",
+        "f3d spatial offset result sketch identity",
+        "f3d spatial offset output pair source",
+    ] {
+        fixture(operation, ResourceDimension::WorkUnits);
+    }
+}
+
+fn offset_header_operands() -> Vec<SketchNativeOperand> {
+    let operand = |kind: &str, field: &str, role, record| SketchNativeOperand {
+        native_kind: cadmpeg_core::text::NonBlankString::try_from(kind).unwrap(),
+        field: Some(cadmpeg_ir::sketches::NativeOperandField {
+            name: cadmpeg_core::text::NonBlankString::try_from(field).unwrap(),
+            role,
+        }),
+        object_index: Some(record),
+        native_ref: Some(format!("f3d:synthetic:sketch-curve#{record}")),
+    };
+    let mut operands = (1..=4)
+        .map(|record| operand("curve", "locus", Some(1), record))
+        .chain((11..=14).map(|record| operand("curve", "locus", Some(0), record)))
+        .collect::<Vec<_>>();
+    operands.push(operand("record", "owner", Some(0), 100));
+    for (source, result) in (1..=4).zip(11..=14) {
+        operands.push(operand("curve", "return", None, source));
+        operands.push(operand("curve", "return", None, result));
+    }
+    operands
+}
+
+#[test]
+fn spatial_offset_invalid_role_index_releases_scratch_without_output_copies() {
+    use cadmpeg_core::decode::DecodePolicy;
+    let mut operands = offset_header_operands();
+    operands[1].object_index = operands[0].object_index;
+    let parameter = ParameterId::mint("synthetic:test:parameter#offset").unwrap();
+    let sketch = SpatialSketchId::mint("synthetic:test:spatial-sketch#offset").unwrap();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = 1 << 20;
+    crate::test_support::with_decode_policy(&policy, |ctx| {
+        assert!(spatial_counted_offset_dimension_definition(
+            ctx,
+            ("Linear Dimension-1", Some(0x20), &operands),
+            (&parameter, 3.0, -3.0),
+            &sketch,
+            &[],
+            &HashMap::new(),
+        )
+        .is_none());
+        let _released = ctx
+            .reserve_scoped(
+                policy.limits.max_materialized_bytes,
+                "released spatial offset roles",
+            )
+            .unwrap();
+        assert!(ctx.resource_refusal().is_none());
+    });
 }

@@ -3,8 +3,7 @@
 
 use crate::history::{
     bind_face_operand_history_candidates, bind_feature_face_selections, bind_sweep_result_modes,
-    complete_table_binding_budget_exceeded, historical_brep_source,
-    select_legacy_extrude_face_candidate, LegacyFaceResolution,
+    historical_brep_source, select_legacy_extrude_face_candidate, LegacyFaceResolution,
 };
 use crate::records::topology::body_recipe::AsmHistoricalEntityKind;
 use crate::records::topology::extrude_selection::DesignOperandRole;
@@ -589,29 +588,6 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
 }
 
 #[test]
-fn history_binding_budget_charges_materialized_state_tables() {
-    let mut limits = cadmpeg_core::decode::ResourceLimits::desktop();
-    limits.max_materialized_bytes = 1920;
-    assert!(!complete_table_binding_budget_exceeded([5, 5], &limits));
-    assert!(complete_table_binding_budget_exceeded([10, 1], &limits));
-    assert!(complete_table_binding_budget_exceeded(
-        [usize::MAX, 1],
-        &limits,
-    ));
-
-    let desktop = cadmpeg_core::decode::ResourceLimits::desktop();
-    let service = cadmpeg_core::decode::ResourceLimits::service();
-    assert!(!complete_table_binding_budget_exceeded(
-        [18_000_000],
-        &desktop,
-    ));
-    assert!(complete_table_binding_budget_exceeded(
-        [18_000_000],
-        &service,
-    ));
-}
-
-#[test]
 fn unresolved_new_body_sweep_mode_follows_output_body_kind() {
     use cadmpeg_ir::features::{
         Feature, FeatureDefinition, FeatureId, FeatureOperation, SweepMode, SweepSection,
@@ -813,11 +789,21 @@ fn solid_sweep_section_conversion_refuses_collection_limit() {
 
 #[test]
 fn historical_brep_source_qualifies_state_local_candidates() {
-    assert_eq!(
-        historical_brep_source("f3d:asset/Breps.BlobParts/BREP.example.smbh:asm-delta-state#42"),
-        Some("example.smbh")
-    );
-    assert_eq!(historical_brep_source("f3d:unqualified:state#42"), None);
+    crate::design::test_support::with_test_decode_context(|decode| {
+        assert_eq!(
+            historical_brep_source(
+                decode,
+                "f3d:asset/Breps.BlobParts/BREP.example.smbh:asm-delta-state#42",
+            )
+            .expect("historical BREP source"),
+            Some("example.smbh")
+        );
+        assert_eq!(
+            historical_brep_source(decode, "f3d:unqualified:state#42")
+                .expect("unqualified BREP source"),
+            None
+        );
+    });
 }
 
 #[test]
@@ -830,53 +816,163 @@ fn legacy_extrude_face_lane_prefers_history_then_source_identity() {
         FaceId::mint(format!("f3d:brep/{source}/brep:entity#{slot}")).expect("identity grammar")
     };
     let active_candidates = vec![source_face("old", 10), source_face("new", 10)];
-    assert_eq!(
-        select_legacy_extrude_face_candidate(
-            active_candidates.clone(),
-            &AsmHistoricalTopology::default(),
-            &HashSet::new(),
-            Some("old"),
-        ),
-        Some(LegacyFaceResolution::Active(source_face("old", 10)))
-    );
-    assert_eq!(
-        select_legacy_extrude_face_candidate(
-            active_candidates,
-            &AsmHistoricalTopology::default(),
-            &HashSet::new(),
-            Some("missing"),
-        ),
-        None
-    );
+    crate::test_support::with_decode_context(|decode| {
+        assert_eq!(
+            select_legacy_extrude_face_candidate(
+                decode,
+                active_candidates.clone(),
+                &AsmHistoricalTopology::default(),
+                &HashSet::new(),
+                Some("old"),
+            )
+            .unwrap(),
+            Some(LegacyFaceResolution::Active(source_face("old", 10)))
+        );
+        assert_eq!(
+            select_legacy_extrude_face_candidate(
+                decode,
+                active_candidates,
+                &AsmHistoricalTopology::default(),
+                &HashSet::new(),
+                Some("missing"),
+            )
+            .unwrap(),
+            None
+        );
 
-    let historical_candidates = vec![
-        FaceId::mint("f3d:brep:entity#20").expect("identity grammar"),
-        source_face("new", 21),
-    ];
+        let historical_candidates = vec![
+            FaceId::mint("f3d:brep:entity#20").expect("identity grammar"),
+            source_face("new", 21),
+        ];
+        let topology = AsmHistoricalTopology {
+            faces: vec![20, 21],
+            ..AsmHistoricalTopology::default()
+        };
+        let mut changed = HashSet::new();
+        changed.insert(21);
+        assert_eq!(
+            select_legacy_extrude_face_candidate(
+                decode,
+                historical_candidates,
+                &topology,
+                &changed,
+                Some("new"),
+            )
+            .unwrap(),
+            Some(LegacyFaceResolution::Historical(21))
+        );
+        assert_eq!(
+            select_legacy_extrude_face_candidate(
+                decode,
+                vec![FaceId::mint("f3d:brep:entity#20").expect("identity grammar")],
+                &topology,
+                &changed,
+                None,
+            )
+            .unwrap(),
+            Some(LegacyFaceResolution::Historical(20))
+        );
+    });
+}
+
+#[test]
+fn legacy_extrude_source_face_search_propagates_text_refusal() {
+    use crate::history_records::AsmHistoricalTopology;
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_ir::ids::FaceId;
+    use std::collections::HashSet;
+
+    let face = FaceId::mint("f3d:brep/history/brep:entity#17").expect("identity grammar");
+    let error = crate::test_support::resource_refusal_at(
+        ResourceDimension::WorkUnits,
+        "strip F3D BREP face prefix",
+        0,
+        |decode| {
+            select_legacy_extrude_face_candidate(
+                decode,
+                vec![face.clone()],
+                &AsmHistoricalTopology::default(),
+                &HashSet::new(),
+                Some("history"),
+            )
+            .map(|_| ())
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "strip F3D BREP face prefix"
+    ));
+}
+
+#[test]
+fn legacy_extrude_topology_membership_propagates_work_refusal() {
+    use crate::history_records::AsmHistoricalTopology;
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_ir::ids::FaceId;
+    use std::collections::HashSet;
+
+    let face = FaceId::mint("f3d:brep:entity#20").expect("identity grammar");
     let topology = AsmHistoricalTopology {
-        faces: vec![20, 21],
+        faces: vec![20],
         ..AsmHistoricalTopology::default()
     };
-    let mut changed = HashSet::new();
-    changed.insert(21);
-    assert_eq!(
-        select_legacy_extrude_face_candidate(
-            historical_candidates,
-            &topology,
-            &changed,
-            Some("new"),
-        ),
-        Some(LegacyFaceResolution::Historical(21))
+    let changed_faces = HashSet::from([20_i64]);
+    let operation = "find F3D legacy Extrude topology face";
+    let error = crate::test_support::resource_refusal_at(
+        ResourceDimension::WorkUnits,
+        operation,
+        0,
+        |decode| {
+            select_legacy_extrude_face_candidate(
+                decode,
+                vec![face.clone()],
+                &topology,
+                &changed_faces,
+                Some("history"),
+            )
+            .map(|_| ())
+        },
     );
-    assert_eq!(
-        select_legacy_extrude_face_candidate(
-            vec![FaceId::mint("f3d:brep:entity#20").expect("identity grammar")],
-            &topology,
-            &changed,
-            None,
-        ),
-        Some(LegacyFaceResolution::Historical(20))
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}
+
+#[test]
+fn legacy_extrude_changed_face_membership_propagates_work_refusal() {
+    use crate::history_records::AsmHistoricalTopology;
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_ir::ids::FaceId;
+    use std::collections::HashSet;
+
+    let face = FaceId::mint("f3d:brep:entity#20").expect("identity grammar");
+    let topology = AsmHistoricalTopology {
+        faces: vec![20],
+        ..AsmHistoricalTopology::default()
+    };
+    let changed_faces = HashSet::from([20_i64]);
+    let operation = "find F3D legacy Extrude changed face";
+    let error = crate::test_support::resource_refusal_at(
+        ResourceDimension::WorkUnits,
+        operation,
+        0,
+        |decode| {
+            select_legacy_extrude_face_candidate(
+                decode,
+                vec![face.clone()],
+                &topology,
+                &changed_faces,
+                Some("history"),
+            )
+            .map(|_| ())
+        },
     );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
 }
 
 fn hole_face_case(
@@ -1130,4 +1226,452 @@ fn hole_face_selection_binds_to_the_feature_input_topology() {
     );
     assert_eq!(faces.len(), 1);
     assert_eq!(input_topologies[0].faces.as_slice(), faces.as_slice());
+}
+
+fn face_selection_group(
+    id: &str,
+    role: DesignOperandRole,
+    members: Vec<crate::records::identity::Located<u32>>,
+) -> crate::records::topology::construction::DesignConstructionOperandGroup {
+    use crate::records::{
+        identity::Located,
+        references::DesignClassTag,
+        topology::construction::{
+            DesignConstructionOperandGroup, DesignConstructionOperandGroupDraft,
+            DesignConstructionOperandGroupFrame, DesignConstructionOperandGroupFrameDraft,
+            DesignConstructionOperandRole,
+        },
+    };
+
+    DesignConstructionOperandGroup::try_from(DesignConstructionOperandGroupDraft {
+        id: id.to_owned(),
+        scope_record_index: 42,
+        scope_reference_ordinal: 2,
+        record_index: 100,
+        byte_offset: 1000,
+        class_tag: DesignClassTag::try_from("297".to_owned()).unwrap(),
+        members,
+        lost_edge_references: Vec::new(),
+        frame: DesignConstructionOperandGroupFrame::try_from(
+            DesignConstructionOperandGroupFrameDraft {
+                member_count_offset: 1008,
+                auxiliary_records: Vec::<Located<u32>>::new(),
+                auxiliary_paths: Vec::new(),
+                trailing_records: Vec::new(),
+                trailing_transforms: Vec::new(),
+                trailing_dual_transforms: Vec::new(),
+                trailing_flags: Vec::new(),
+                opaque_index: 1,
+                opaque_index_offset: 1048,
+                opaque_scalar: 0.0,
+                opaque_scalar_offset: 1052,
+                variant: false,
+            },
+        )
+        .unwrap(),
+        operand_role: DesignConstructionOperandRole::Other(role),
+        role_offset: 1030,
+        paired_class_tag: DesignClassTag::try_from("259".to_owned()).unwrap(),
+        paired_byte_offset: 1100,
+    })
+    .unwrap()
+}
+
+fn face_selection_scope() -> crate::records::feature::scope::DesignParameterScope {
+    crate::records::feature::scope::DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:scope#42",
+        crate::records::feature::scope::DesignFeatureKind::SplitFace,
+        42,
+    )
+}
+
+#[test]
+fn face_selection_scope_identity_comparison_propagates_work_refusal() {
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_ir::features::FaceSelection;
+
+    let scope = face_selection_scope();
+    let operation = "compare F3D face selection scope identity";
+    let error = crate::test_support::resource_refusal_at(
+        ResourceDimension::WorkUnits,
+        operation,
+        0,
+        |ctx| {
+            let mut selection =
+                FaceSelection::Native("f3d:Design/OtherStream.dat:group#100".into());
+            let index = crate::history::FaceSelectionIndex::new(
+                crate::history::FeatureFaceSelectionInputs {
+                    scopes: &[],
+                    groups: &[],
+                    operands: &[],
+                    entity_operands: &[],
+                    body_recipe_operands: &[],
+                    histories: &[],
+                },
+            );
+            crate::history::selection::bind_face_selection(ctx, &mut selection, &scope, &index, &[])
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}
+
+#[test]
+fn face_selection_group_index_propagates_work_refusal() {
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_ir::features::FaceSelection;
+
+    let scope = face_selection_scope();
+    let group_id = "f3d:Design/BulkStream.dat:operand-group#100";
+    let groups = [face_selection_group(
+        group_id,
+        DesignOperandRole::ROLE_0X10,
+        Vec::new(),
+    )];
+    let operation = "index F3D operand groups";
+    let error = crate::test_support::resource_refusal_at(
+        ResourceDimension::WorkUnits,
+        operation,
+        0,
+        |ctx| {
+            let mut selection = FaceSelection::Native(group_id.into());
+            let index = crate::history::FaceSelectionIndex::new(
+                crate::history::FeatureFaceSelectionInputs {
+                    scopes: &[],
+                    groups: &groups,
+                    operands: &[],
+                    entity_operands: &[],
+                    body_recipe_operands: &[],
+                    histories: &[],
+                },
+            );
+            crate::history::selection::bind_face_selection(ctx, &mut selection, &scope, &index, &[])
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}
+
+#[test]
+fn face_selection_group_member_scan_propagates_work_refusal() {
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_ir::features::FaceSelection;
+
+    let scope = face_selection_scope();
+    let group_id = "f3d:Design/BulkStream.dat:operand-group#100";
+    let groups = [face_selection_group(
+        group_id,
+        DesignOperandRole::ROLE_0X10,
+        vec![crate::records::identity::Located {
+            value: 200,
+            offset: 1010,
+        }],
+    )];
+    let operation = "scan F3D face selection group members";
+    let error = crate::test_support::resource_refusal_at(
+        ResourceDimension::WorkUnits,
+        operation,
+        0,
+        |ctx| {
+            let mut selection = FaceSelection::Native(group_id.into());
+            let index = crate::history::FaceSelectionIndex::new(
+                crate::history::FeatureFaceSelectionInputs {
+                    scopes: &[],
+                    groups: &groups,
+                    operands: &[],
+                    entity_operands: &[],
+                    body_recipe_operands: &[],
+                    histories: &[],
+                },
+            );
+            crate::history::selection::bind_face_selection(ctx, &mut selection, &scope, &index, &[])
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}
+
+#[test]
+fn body_recipe_face_selection_group_index_propagates_work_refusal() {
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_ir::features::{FaceSelection, FeatureId};
+
+    let scope = face_selection_scope();
+    let group_id = "f3d:Design/BulkStream.dat:operand-group#100";
+    let groups = [face_selection_group(
+        group_id,
+        DesignOperandRole::ROLE_0X5,
+        Vec::new(),
+    )];
+    let feature_id = FeatureId::mint("f3d:test:feature#42").unwrap();
+    let operation = "index F3D operand groups";
+    let error = crate::test_support::resource_refusal_at(
+        ResourceDimension::WorkUnits,
+        operation,
+        0,
+        |ctx| {
+            let mut selection = FaceSelection::Native(group_id.into());
+            let index = crate::history::FaceSelectionIndex::new(
+                crate::history::FeatureFaceSelectionInputs {
+                    scopes: &[],
+                    groups: &groups,
+                    operands: &[],
+                    entity_operands: &[],
+                    body_recipe_operands: &[],
+                    histories: &[],
+                },
+            );
+            crate::history::selection::bind_body_recipe_face_selection(
+                ctx,
+                &mut selection,
+                &feature_id,
+                1,
+                &scope,
+                &index,
+            )
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}
+
+#[test]
+fn body_recipe_face_selection_slot_scan_propagates_work_refusal() {
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_ir::features::{FaceSelection, FeatureId};
+
+    let scope = face_selection_scope();
+    let group_id = "f3d:Design/BulkStream.dat:operand-group#100";
+    let groups = [face_selection_group(
+        group_id,
+        DesignOperandRole::ROLE_0X5,
+        vec![crate::records::identity::Located {
+            value: 200,
+            offset: 1010,
+        }],
+    )];
+    let operands = [
+        crate::records::topology::body_recipe::DesignBodyRecipeOperand::try_new(
+            crate::records::topology::body_recipe::DesignBodyRecipeOperandDraft {
+                id: "f3d:Design/BulkStream.dat:design-body-recipe-operand#200".into(),
+                scope_record_index: 42,
+                owner: crate::records::topology::body_recipe::DesignOperandOwner::Group {
+                    group_record_index: 100,
+                    group_member_ordinal: 0,
+                },
+                record_index: 200,
+                byte_offset: 0,
+                class_tag: "365".to_owned().try_into().unwrap(),
+                asset_id: "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+                    .to_owned()
+                    .try_into()
+                    .unwrap(),
+                asset_id_offset: 44,
+                context_id: "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e"
+                    .to_owned()
+                    .try_into()
+                    .unwrap(),
+                context_id_offset: 132,
+                selector_tail: None,
+                references: Vec::new(),
+                nested_record_index: 203,
+                nested_record_index_offset: 26,
+                recipe_id: "f3d:Design/BulkStream.dat:construction-recipe#203".into(),
+                resolved_face_slot: Some(7),
+                resolved_body_state_id: None,
+                resolved_body_slot: None,
+                resolved_body_face_slots: Vec::new(),
+                next_record_index: 204,
+                next_byte_offset: 256,
+            },
+        )
+        .unwrap(),
+    ];
+    let feature_id = FeatureId::mint("f3d:test:feature#42").unwrap();
+    let operation = "scan F3D body recipe face slots";
+    let error = crate::test_support::resource_refusal_at(
+        ResourceDimension::WorkUnits,
+        operation,
+        0,
+        |ctx| {
+            let mut selection = FaceSelection::Native(group_id.into());
+            let index = crate::history::FaceSelectionIndex::new(
+                crate::history::FeatureFaceSelectionInputs {
+                    scopes: &[],
+                    groups: &groups,
+                    operands: &[],
+                    entity_operands: &[],
+                    body_recipe_operands: &operands,
+                    histories: &[],
+                },
+            );
+            crate::history::selection::bind_body_recipe_face_selection(
+                ctx,
+                &mut selection,
+                &feature_id,
+                1,
+                &scope,
+                &index,
+            )
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}
+
+#[test]
+fn missing_face_member_releases_copied_identity_prefix() {
+    use crate::records::recipes::ConstructionRecipeKind;
+    use crate::records::topology::face::DesignFaceOperand;
+    use cadmpeg_ir::features::FaceSelection;
+    let scope = face_selection_scope();
+    let group_id = "f3d:Design/BulkStream.dat:operand-group#100";
+    let groups = [face_selection_group(
+        group_id,
+        DesignOperandRole::ROLE_0X10,
+        vec![
+            crate::records::identity::Located {
+                value: 200,
+                offset: 1010,
+            },
+            crate::records::identity::Located {
+                value: 201,
+                offset: 1021,
+            },
+        ],
+    )];
+    let face_id = cadmpeg_ir::ids::FaceId::mint("f3d:brep:entity#7").unwrap();
+    let operand =
+        DesignFaceOperand::try_new(crate::records::topology::face::DesignFaceOperandDraft {
+            id: "f3d:Design/BulkStream.dat:design-face-operand#200".into(),
+            scope_record_index: 42,
+            scope_reference_ordinal: 3,
+            group: Some(crate::records::topology::body_recipe::DesignOperandGroup {
+                group_record_index: 100,
+                group_member_ordinal: 0,
+            }),
+            record_index: 200,
+            byte_offset: 1200,
+            class_tag: crate::records::references::DesignClassTag::try_from("297".to_owned())
+                .unwrap(),
+            paired_byte_offset: 1300,
+            paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                "259".to_owned(),
+            )
+            .unwrap(),
+            recipe_record_index: 203,
+            recipe_record_byte_offset: 1400,
+            recipe_id: "f3d:Design/BulkStream.dat:construction-recipe#203".into(),
+            recipe_prefix_offset: 1411,
+            recipe_prefix_bytes: Vec::new(),
+            recipe_references: Vec::new(),
+            recipe_kind: ConstructionRecipeKind::Face,
+            recipe_program_offset: 1420,
+            recipe_program: Vec::new(),
+
+            recipe_nodes: Vec::new(),
+            candidate_faces: vec![face_id.clone()],
+            unreferenced_candidate_faces: Vec::new(),
+            alternate_selector_candidate_faces: Vec::new(),
+            preceding_candidate_faces: vec![face_id.clone()],
+            changed_candidate_faces: Vec::new(),
+            historical_support_contexts: Vec::new(),
+            resolved_face_slots: Vec::new(),
+            resolved_active_face: None,
+            next_record_index: 204,
+            next_byte_offset: 1500,
+        })
+        .unwrap();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut selection = FaceSelection::Native(group_id.into());
+    let index =
+        crate::history::FaceSelectionIndex::new(crate::history::FeatureFaceSelectionInputs {
+            scopes: &[],
+            groups: &groups,
+            operands: std::slice::from_ref(&operand),
+            entity_operands: &[],
+            body_recipe_operands: &[],
+            histories: &[],
+        });
+    crate::history::selection::bind_face_selection(&ctx, &mut selection, &scope, &index, &[])
+        .unwrap();
+    assert_eq!(selection, FaceSelection::Native(group_id.into()));
+}
+
+#[test]
+fn scope_group_keeps_same_id_in_distinct_scopes() {
+    let scope = face_selection_scope();
+    let id = "f3d:Design/BulkStream.dat:operand-group#100";
+    let group = face_selection_group(id, DesignOperandRole::ROLE_0X5, Vec::new());
+    let mut other = group.clone();
+    other.scope_record_index = 43;
+    let groups = [other, group];
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let index = crate::history::group_index(&groups);
+    let found = crate::history::scope_group(&ctx, &index, &scope, id, |_| true).unwrap();
+    assert!(std::ptr::eq(found.unwrap(), &raw const groups[1]));
+}
+
+#[test]
+fn scope_group_filters_roles_before_uniqueness() {
+    let scope = face_selection_scope();
+    let id = "f3d:Design/BulkStream.dat:operand-group#100";
+    let groups = [
+        face_selection_group(id, DesignOperandRole::ROLE_0X10, Vec::new()),
+        face_selection_group(id, DesignOperandRole::ROLE_0X5, Vec::new()),
+    ];
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let index = crate::history::group_index(&groups);
+    let found = crate::history::scope_group(&ctx, &index, &scope, id, |group| {
+        group.role() == DesignOperandRole::ROLE_0X5
+    })
+    .unwrap();
+    assert!(std::ptr::eq(found.unwrap(), &raw const groups[1]));
+}
+
+#[test]
+fn scope_group_rejects_repeated_eligible_groups() {
+    let scope = face_selection_scope();
+    let id = "f3d:Design/BulkStream.dat:operand-group#100";
+    let group = face_selection_group(id, DesignOperandRole::ROLE_0X5, Vec::new());
+    let groups = [group.clone(), group];
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let index = crate::history::group_index(&groups);
+    assert!(
+        crate::history::scope_group(&ctx, &index, &scope, id, |_| true)
+            .unwrap()
+            .is_none()
+    );
+}
+
+#[test]
+fn scope_group_rejects_other_stream() {
+    let scope = face_selection_scope();
+    let id = "f3d:Design/OtherStream.dat:operand-group#100";
+    let groups = [face_selection_group(
+        id,
+        DesignOperandRole::ROLE_0X5,
+        Vec::new(),
+    )];
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let index = crate::history::group_index(&groups);
+    assert!(
+        crate::history::scope_group(&ctx, &index, &scope, id, |_| true)
+            .unwrap()
+            .is_none()
+    );
 }

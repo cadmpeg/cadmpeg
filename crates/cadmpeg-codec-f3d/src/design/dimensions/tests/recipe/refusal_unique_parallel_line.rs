@@ -126,3 +126,14 @@ fn unique_parallel_line_parameter_id_refuses_retained_limit() {
         ResourceDimension::RetainedBytes,
     );
 }
+
+#[test]
+fn parallel_line_queries_refuse_actual_source_work() {
+    for operation in [
+        "f3d parallel line source",
+        "f3d parallel line sketch identity",
+        "f3d parallel line pair source",
+    ] {
+        fixture(operation, ResourceDimension::WorkUnits);
+    }
+}

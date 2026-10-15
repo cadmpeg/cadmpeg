@@ -1231,7 +1231,7 @@ fn current_compact_curve_resolves_complete_marker_roster_endpoints() {
                 &payload,
                 &curve,
                 true,
-                &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(
+            &mut crate::resolved_features::typed_relations::CurveEndpointGeometry::Borrowed(&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(
                     &roster_ctx,
                     &markers,
                     crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(
@@ -1240,7 +1240,7 @@ fn current_compact_curve_resolves_complete_marker_roster_endpoints() {
                     )
                     .unwrap(),
                 )
-                .unwrap(),
+                .unwrap()), &[],
             );
             result
         }
@@ -1257,16 +1257,19 @@ fn current_compact_curve_resolves_complete_marker_roster_endpoints() {
             &terminal,
             &curve,
             true,
-            &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(
-                &roster_ctx,
-                &markers,
-                crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(
+            &mut crate::resolved_features::typed_relations::CurveEndpointGeometry::Borrowed(
+                &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(
                     &roster_ctx,
-                    &terminal,
+                    &markers,
+                    crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(
+                        &roster_ctx,
+                        &terminal,
+                    )
+                    .unwrap(),
                 )
                 .unwrap(),
-            )
-            .unwrap(),
+            ),
+            &[],
         );
         result
     }
@@ -1420,7 +1423,7 @@ fn compact_complete_marker_roster_rejects_conflicting_index_bases() {
                 &payload,
                 &curve,
                 true,
-                &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(
+            &mut crate::resolved_features::typed_relations::CurveEndpointGeometry::Borrowed(&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(
                     &roster_ctx,
                     &markers,
                     crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(
@@ -1429,7 +1432,7 @@ fn compact_complete_marker_roster_rejects_conflicting_index_bases() {
                     )
                     .unwrap(),
                 )
-                .unwrap(),
+                .unwrap()), &[],
             );
             result
         }
@@ -1444,7 +1447,7 @@ fn compact_complete_marker_roster_rejects_conflicting_index_bases() {
                 &payload,
                 &curve,
                 false,
-                &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(
+            &mut crate::resolved_features::typed_relations::CurveEndpointGeometry::Borrowed(&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(
                     &roster_ctx,
                     &markers,
                     crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(
@@ -1453,7 +1456,7 @@ fn compact_complete_marker_roster_rejects_conflicting_index_bases() {
                     )
                     .unwrap(),
                 )
-                .unwrap(),
+                .unwrap()), &[],
             );
             result
         }
@@ -1467,16 +1470,19 @@ fn compact_complete_marker_roster_rejects_conflicting_index_bases() {
             &roster_ctx,
             &payload,
             &curve,
-            &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(
-                &roster_ctx,
-                &markers,
-                crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(
+            &mut crate::resolved_features::typed_relations::CurveEndpointGeometry::Borrowed(
+                &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(
                     &roster_ctx,
-                    &payload,
+                    &markers,
+                    crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(
+                        &roster_ctx,
+                        &payload,
+                    )
+                    .unwrap(),
                 )
                 .unwrap(),
-            )
-            .unwrap(),
+            ),
+            &[],
         );
         result
     }
@@ -1858,3 +1864,5 @@ fn overlapping_endpoint_index_bases_use_the_marker_roster() {
     .unwrap();
     assert!(ambiguous);
 }
+
+mod lazy_geometry;
