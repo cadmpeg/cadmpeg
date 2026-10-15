@@ -1033,7 +1033,7 @@ fn document_digest_keeps_hex_and_retained_admission() {
     let bytes = [0x5a; 4096];
     for retained in [0, 64] {
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_work_units = 256;
+        policy.limits.max_work_units = u64::try_from(bytes.len()).unwrap();
         policy.limits.max_retained_bytes = retained;
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let (ctx, _) =
@@ -1050,6 +1050,31 @@ fn document_digest_keeps_hex_and_retained_admission() {
             ctx.finish_session().unwrap();
         }
     }
+}
+
+#[test]
+fn document_digest_refuses_unadmitted_byte_work() {
+    let bytes = [0x5a; 4096];
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = u64::try_from(bytes.len() - 1).unwrap();
+    policy.limits.max_retained_bytes = 0;
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let error = super::retained_sha256(&ctx, &bytes, "document digest")
+        .expect_err("source hashing must admit every input byte before allocating text");
+    let cadmpeg_core::CodecError::ResourceLimit(refusal) = error else {
+        panic!("hashing must preserve the work refusal");
+    };
+    assert_eq!(
+        refusal.dimension,
+        cadmpeg_core::decode::ResourceDimension::WorkUnits
+    );
+    assert_eq!(refusal.operation, "document digest");
+    assert_eq!(refusal.used, 0);
+    assert_eq!(refusal.additional, u64::try_from(bytes.len()).unwrap());
+    assert!(matches!(ctx.finish_session(),
+        Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == refusal));
 }
 
 #[test]
