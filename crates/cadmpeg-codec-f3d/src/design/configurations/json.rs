@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Build configuration JSON values under the caller decode budget.
+//! Parse configuration JSON, admitting each nested value against the decode depth limit.
 
 use crate::design::json_value::ValueSeed;
 use cadmpeg_core::decode::DecodeContext;

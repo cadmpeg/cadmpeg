@@ -31,9 +31,8 @@ macro_rules! geometric {
     };
 }
 
-/// Format-side work cap for arrangement edge retention walks.
-///
-/// The local walk slice and the caller's session work allowance are charged separately.
+/// Local work cap for arrangement edge retention walks. An exhausted cap
+/// skips the arrangement.
 pub(crate) const MAX_ARRANGEMENT_WALK_WORK: usize = 1_000_000;
 
 #[derive(Clone)]
@@ -2029,7 +2028,6 @@ fn certified_nurbs_tubes(
 
 fn subdivision_count(travel_bound: f64, target_error: f64) -> Option<usize> {
     // Format invariant: densification above this count is outside the reader.
-    // Session work for arrangement walks is charged separately via work_budget.
     const MAX_SUBDIVISIONS: f64 = 100_000.0;
     if !travel_bound.is_finite()
         || travel_bound < 0.0
