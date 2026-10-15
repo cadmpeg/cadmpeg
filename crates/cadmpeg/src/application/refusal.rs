@@ -420,13 +420,9 @@ impl From<&ResourceLimit> for ResourceReport {
         let dimension = match limit.dimension {
             ResourceDimension::InputBytes => "input_bytes",
             ResourceDimension::DecompressedBytes => "decompressed_bytes",
-            ResourceDimension::MaterializedBytes => "materialized_bytes",
             ResourceDimension::RetainedBytes => "retained_bytes",
             ResourceDimension::Entities => "entities",
-            ResourceDimension::CollectionItems => "collection_items",
             ResourceDimension::RecursionDepth => "recursion_depth",
-            ResourceDimension::WorkUnits => "work_units",
-            ResourceDimension::Codec(name) => name,
         };
         let reason = match limit.reason {
             ResourceFailure::BudgetExceeded => "budget_exceeded",
@@ -901,16 +897,9 @@ mod tests {
         let dimensions = [
             (ResourceDimension::InputBytes, "input_bytes"),
             (ResourceDimension::DecompressedBytes, "decompressed_bytes"),
-            (ResourceDimension::MaterializedBytes, "materialized_bytes"),
             (ResourceDimension::RetainedBytes, "retained_bytes"),
             (ResourceDimension::Entities, "entities"),
-            (ResourceDimension::CollectionItems, "collection_items"),
             (ResourceDimension::RecursionDepth, "recursion_depth"),
-            (ResourceDimension::WorkUnits, "work_units"),
-            (
-                ResourceDimension::Codec("synthetic_constraint_work"),
-                "synthetic_constraint_work",
-            ),
         ];
         for (dimension, name) in dimensions {
             for (reason, reason_name) in [
