@@ -177,7 +177,7 @@ pub(crate) fn decode(
 }
 
 fn malformed(name: &str, message: impl std::fmt::Display) -> CodecError {
-    CodecError::Malformed(format!("T-spline cage {name}: {message}"))
+    CodecError::malformed(format_args!("T-spline cage {name}: {message}"))
 }
 
 fn subd_id_charged(name: &str, source_key: &str) -> Result<cadmpeg_ir::ids::SubdId, CodecError> {

@@ -4,20 +4,12 @@
 use cadmpeg_core::container::ContainerRole;
 
 use crate::container::ContainerScan;
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::assets::{Asset, AssetContent};
 
-/// Mint the neutral asset ID of a Design image entry: the encoded entry name
-/// after its encoded byte length.
-pub(super) fn neutral_asset_id(
-    entry_name: &str,
-) -> Result<cadmpeg_ir::assets::AssetId, CodecError> {
-    let encoded = crate::ids::identity_key_component(entry_name);
-    cadmpeg_ir::assets::AssetId::mint(format!("f3d:model:asset#{}:{encoded}", encoded.len()))
-        .map_err(|error| crate::design::text::malformed_design(format_args!("{error}")))
-}
-
 pub(super) fn embedded_image_asset(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     asset_name: &str,
 ) -> Result<Option<Asset>, CodecError> {
@@ -44,13 +36,15 @@ pub(super) fn embedded_image_asset(
     if entry.attributes.contains_key("payload_error") {
         return Ok(None);
     }
-    let data = scan.entry_bytes(&entry.name)?.to_vec();
-    let name = String::from_utf8(asset_name.as_bytes().to_vec())
-        .map_err(|_| CodecError::Malformed("asset name must be UTF-8".into()))?;
+    let bytes = scan.entry_bytes(&entry.name)?;
+    // The asset keeps a decoded copy of the source image bytes.
+    ctx.retain_bytes(u64_from_index(bytes.len()), "retain F3D embedded image")?;
+    let data = bytes.to_vec();
+    let name = asset_name.to_owned();
     let native_ref = crate::ids::native_scope(&entry.name);
     Ok(Some(
         Asset::try_new(
-            neutral_asset_id(&entry.name)?,
+            crate::ids::neutral_asset_id(&entry.name),
             Some(name),
             media_type,
             AssetContent::Embedded {
@@ -118,7 +112,22 @@ mod tests {
         zip.write_all(DATA).unwrap();
         let archive = zip.finish().unwrap().into_inner();
         with_scan(&archive, |scan| {
-            assert!(super::embedded_image_asset(scan, NAME).unwrap().is_some());
+            let ctx = cadmpeg_test_support::service_decode_context();
+            assert!(super::embedded_image_asset(&ctx, scan, NAME)
+                .unwrap()
+                .is_some());
+
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_retained_bytes = u64::try_from(DATA.len()).unwrap() - 1;
+            let (limited, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            assert!(matches!(
+                super::embedded_image_asset(&limited, scan, NAME),
+                Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                    if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                        && limit.operation == "retain F3D embedded image"
+            ));
         });
     }
 

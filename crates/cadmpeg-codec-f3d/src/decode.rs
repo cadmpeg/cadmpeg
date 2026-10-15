@@ -1762,6 +1762,7 @@ fn push_loss_vec(
 
 fn report_design_projection_gaps(
     report: &mut DecodeBody,
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     native: &F3dNative,
 ) -> Result<(), CodecError> {
@@ -1775,6 +1776,29 @@ fn report_design_projection_gaps(
     if history_budget_skips != 0 {
         push_loss_vec(&mut report.losses, F3dLossCode::HistoryBindingBudgetExceeded, format_args!(
             "{history_budget_skips} ASM history stream(s) retain no historical topology because their binding work exceeded the decoder safety budget."
+        ),);
+    }
+    let recipe_search_skips = crate::design::decode::operands::recipe_side_searches_exhausted(
+        ctx,
+        &native.design_edge_operands,
+        &native.design_face_operands,
+    )?;
+    let capped_pattern_searches = native
+        .design_parameter_scopes
+        .iter()
+        .filter_map(
+            crate::records::feature::scope::DesignParameterScope::rectangular_pattern_construction,
+        )
+        .filter(|construction| construction.instance_search_capped())
+        .count();
+    if capped_pattern_searches != 0 {
+        push_loss_vec(&mut report.losses, F3dLossCode::FeaturePatternInstanceSearchCapped, format_args!(
+            "{capped_pattern_searches} rectangular pattern(s) have no instance transforms or direction because their instance search exceeded a local cap."
+        ),);
+    }
+    if recipe_search_skips != 0 {
+        push_loss_vec(&mut report.losses, F3dLossCode::RecipeSideSearchBudgetExceeded, format_args!(
+            "{recipe_search_skips} Design recipe program(s) retain no recipe structure because their side-sequence search exceeded its work cap."
         ),);
     }
     for error in native
@@ -3038,7 +3062,7 @@ impl<'a> F3dDecodeSession<'a> {
                     &self.native.design_parameter_scopes,
                     &mesh_projection,
                 )?;
-                report_design_projection_gaps(&mut self.report, &self.ir, &self.native)?;
+                report_design_projection_gaps(&mut self.report, ctx, &self.ir, &self.native)?;
                 ctx.admit_entities(
                     u64_from_index(self.ir.model.entity_count()),
                     &mut self.admitted_entities,
@@ -3094,7 +3118,7 @@ impl<'a> F3dDecodeSession<'a> {
             }
         };
 
-        report_design_projection_gaps(&mut self.report, &self.ir, &self.native)?;
+        report_design_projection_gaps(&mut self.report, ctx, &self.ir, &self.native)?;
         ctx.admit_entities(
             u64_from_index(self.ir.model.entity_count()),
             &mut self.admitted_entities,
@@ -3407,10 +3431,6 @@ fn collect_mesh_outcome(
     Ok(())
 }
 
-fn mesh_texture_asset_bytes(scan: &ContainerScan, entry_name: &str) -> Result<Vec<u8>, CodecError> {
-    Ok(scan.entry_bytes(entry_name)?.to_vec())
-}
-
 fn clone_mesh_texture_table(
     ctx: &DecodeContext<'_>,
     table: &[(String, cadmpeg_ir::assets::AssetId)],
@@ -3510,6 +3530,9 @@ fn project_mesh_bodies(
                 }
             })
             .map(str::to_owned);
+        let bytes = scan.entry_bytes(texture.file.archive_entry_name())?;
+        // The asset keeps a decoded copy of the source texture bytes.
+        ctx.retain_bytes(u64_from_index(bytes.len()), "retain F3D mesh texture bytes")?;
         let asset = cadmpeg_ir::assets::Asset::try_new(
             texture
                 .asset
@@ -3517,11 +3540,8 @@ fn project_mesh_bodies(
             Some(texture.file.filename().to_owned()),
             media_type,
             cadmpeg_ir::assets::AssetContent::Embedded {
-                data: cadmpeg_ir::assets::AssetData::new(mesh_texture_asset_bytes(
-                    scan,
-                    texture.file.archive_entry_name(),
-                )?)
-                .ok_or_else(|| CodecError::Malformed("asset data must not be empty".into()))?,
+                data: cadmpeg_ir::assets::AssetData::new(bytes.to_vec())
+                    .ok_or_else(|| CodecError::Malformed("asset data must not be empty".into()))?,
             },
             Some(crate::ids::native_scope(texture.file.archive_entry_name())),
         )

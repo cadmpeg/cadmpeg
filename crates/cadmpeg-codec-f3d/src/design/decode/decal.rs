@@ -95,7 +95,7 @@ pub(crate) fn project_decal_images(
         if faces.is_empty() {
             continue;
         }
-        let Some(asset) = embedded_image_asset(scan, image.asset.name())? else {
+        let Some(asset) = embedded_image_asset(ctx, scan, image.asset.name())? else {
             continue;
         };
         let feature_id = crate::design::identity::neutral_feature_id(scope)?;
