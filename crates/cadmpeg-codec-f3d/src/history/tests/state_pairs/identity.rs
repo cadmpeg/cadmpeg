@@ -36,6 +36,8 @@ fn design_identity_resolves_only_one_invariant_history_family() {
         transition: None,
     };
     let history = AsmHistory {
+        topology_scope: crate::history_records::AsmTopologyScope::Complete,
+        materialized: crate::history_records::MaterializedTopologies::default(),
         id: "history".into(),
         byte_offset: 0,
         preamble: None,
@@ -147,6 +149,8 @@ fn design_identity_resolves_only_one_invariant_history_family() {
         None
     );
     let duplicate_state_history = AsmHistory {
+        topology_scope: crate::history_records::AsmTopologyScope::Complete,
+        materialized: crate::history_records::MaterializedTopologies::default(),
         id: "duplicate-state-history".into(),
         byte_offset: 0,
         preamble: None,
@@ -176,6 +180,8 @@ fn design_identity_resolves_only_one_invariant_history_family() {
         None
     );
     let ambiguous = AsmHistory {
+        topology_scope: crate::history_records::AsmTopologyScope::Complete,
+        materialized: crate::history_records::MaterializedTopologies::default(),
         id: "other-history".into(),
         byte_offset: 0,
         preamble: None,
@@ -220,6 +226,8 @@ fn nested_entity_identity_resolves_through_input_coedge_incidence() {
         ..AsmHistoricalTopology::default()
     };
     let history = AsmHistory {
+        topology_scope: crate::history_records::AsmTopologyScope::Complete,
+        materialized: crate::history_records::MaterializedTopologies::default(),
         id: "history".into(),
         byte_offset: 0,
         preamble: None,

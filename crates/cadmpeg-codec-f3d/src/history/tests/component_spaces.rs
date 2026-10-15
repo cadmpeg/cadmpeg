@@ -32,6 +32,8 @@ fn extrude_history_identity_resolves_only_in_context_component_breps() {
             0,
         );
         AsmHistory {
+            topology_scope: crate::history_records::AsmTopologyScope::Complete,
+            materialized: crate::history_records::MaterializedTopologies::default(),
             states: vec![AsmDeltaState {
                 id: format!("{id}:state#{state_id}"),
                 parent: id.clone(),

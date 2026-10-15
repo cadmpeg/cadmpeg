@@ -40,6 +40,8 @@ fn input_fixture() -> (
         native_ref: Some(scope.id.clone()),
     };
     let history = AsmHistory {
+        topology_scope: crate::history_records::AsmTopologyScope::Complete,
+        materialized: crate::history_records::MaterializedTopologies::default(),
         id: "f3d:history".into(),
         byte_offset: 0,
         preamble: None,

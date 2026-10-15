@@ -123,6 +123,8 @@ fn native() -> crate::native::F3dNative {
         design_parameter_scopes: vec![scope],
         design_edge_operands: vec![operand],
         asm_histories: vec![AsmHistory {
+            topology_scope: crate::history_records::AsmTopologyScope::Complete,
+            materialized: crate::history_records::MaterializedTopologies::default(),
             id: "f3d:test:asm-history#0000000000".into(),
             byte_offset: 0,
             preamble: None,
