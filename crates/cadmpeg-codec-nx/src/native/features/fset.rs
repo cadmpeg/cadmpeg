@@ -296,7 +296,12 @@ fn fset_construction_payload_from_group(
         return Ok(None);
     }
     let Some(content) = source_text_storage.with_storage(|| {
-        FeaturePayloadContent::from_scoped_source(ctx, data_blocks, blocks, source_id_storage)
+        FeaturePayloadContent::from_scoped_source_bounded::<3>(
+            ctx,
+            data_blocks,
+            blocks,
+            source_id_storage,
+        )
     })?
     else {
         return Ok(None);
