@@ -13,36 +13,70 @@ use cadmpeg_ir::math::Vector3;
 
 use super::{
     base_geometry_line_font_valid, base_geometry_use_flag_valid, consumed_support_sequences,
-    declared_affine_progression, enforce_transform_depth, is_finite_nonzero_vector,
-    normal_matches_plane, plane_coordinates, source_object, validate_declared_transform_frame,
-    DeclaredInterval, DeclaredTransformFrameError, ProjectionOutcome, WireProjectionOutcome,
+    enforce_transform_depth, is_finite_nonzero_vector, normal_matches_plane, plane_coordinates,
+    source_object, validate_declared_transform_frame, DeclaredInterval,
+    DeclaredTransformFrameError, ProjectionOutcome, WireProjectionOutcome,
 };
 
 fn assert_geometry_collection_refusal(bytes: &[u8], operation: &str) {
-    use cadmpeg_core::decode::DecodePolicy;
-    use cadmpeg_ir::codec::DecodeFailure;
-    let mut cap = 0_u64;
-    for _ in 0..4096 {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = cap;
-        match crate::IgesCodec.decode(
-            &mut Cursor::new(bytes),
-            &DecodeOptions {
-                policy,
-                ..DecodeOptions::default()
-            },
-        ) {
-            Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
-                assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-                if limit.operation == operation {
-                    return;
-                }
-                cap = limit.used.checked_add(limit.additional).unwrap();
-            }
-            other => panic!("expected geometry collection refusal at {operation}: {other:?}"),
-        }
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems,
+        operation,
+        |cap| {
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            crate::IgesCodec
+                .decode(
+                    &mut Cursor::new(bytes),
+                    &DecodeOptions {
+                        policy,
+                        ..DecodeOptions::default()
+                    },
+                )
+                .map(|_| ())
+                .map_err(|error| match error {
+                    cadmpeg_ir::codec::DecodeFailure::Codec(error) => error,
+                    other => panic!("unexpected decode failure: {other:?}"),
+                })
+        },
+    );
+}
+
+fn projection_outcome<'ctx>(
+    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
+    sequence: u32,
+    include_decoded: bool,
+    include_loss: bool,
+) -> Result<ProjectionOutcome<'ctx>, CodecError> {
+    let mut decoded_storage = ctx.reserve_scoped(0, "test projection decoded sequences")?;
+    let mut decoded = BTreeSet::new();
+    if include_decoded {
+        ctx.insert_scoped_btree_set(
+            &mut decoded_storage,
+            &mut decoded,
+            sequence,
+            "test projection decoded sequences",
+            "test projection decoded sequences",
+        )?;
     }
-    panic!("geometry collection refusal was not reached: {operation}");
+    let mut loss_slots_storage = ctx.reserve_scoped(0, "iges entity loss slots")?;
+    let mut losses = Vec::new();
+    if include_loss {
+        let entry = transform_entry(sequence, 0);
+        crate::entities::push_entity_loss_with_scoped_slots(
+            ctx,
+            &mut loss_slots_storage,
+            &mut losses,
+            &entry,
+            format_args!("test projection loss"),
+        )?;
+    }
+    Ok(ProjectionOutcome {
+        decoded,
+        decoded_storage,
+        losses,
+        loss_slots_storage,
+    })
 }
 
 #[test]
@@ -56,35 +90,31 @@ fn merged_trimming_vertex_derivations_refuse_before_accumulator_growth() {
 
 #[test]
 fn primitive_identity_copy_refuses_retained_budget_before_model_insertion() {
-    use cadmpeg_core::decode::DecodePolicy;
-    use cadmpeg_ir::codec::DecodeFailure;
-
     let bytes = crate::test_support::test_curves_and_surfaces::point_file();
-    let mut cap = 0_u64;
-    for _ in 0..4096 {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = cap;
-        match crate::IgesCodec.decode(
-            &mut Cursor::new(&bytes),
-            &DecodeOptions {
-                policy,
-                ..DecodeOptions::default()
-            },
-        ) {
-            Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
-                assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
-                if limit.operation == "iges geometry neutral identity copy" {
-                    crate::IgesCodec
-                        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-                        .unwrap();
-                    return;
-                }
-                cap = limit.used.checked_add(limit.additional).unwrap();
-            }
-            other => panic!("expected primitive identity refusal: {other:?}"),
-        }
-    }
-    panic!("primitive identity copy was not reached");
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes,
+        "iges geometry neutral identity copy",
+        |cap| {
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            crate::IgesCodec
+                .decode(
+                    &mut Cursor::new(&bytes),
+                    &DecodeOptions {
+                        policy,
+                        ..DecodeOptions::default()
+                    },
+                )
+                .map(|_| ())
+                .map_err(|error| match error {
+                    cadmpeg_ir::codec::DecodeFailure::Codec(error) => error,
+                    other => panic!("unexpected decode failure: {other:?}"),
+                })
+        },
+    );
+    crate::IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
 }
 
 #[test]
@@ -96,9 +126,7 @@ fn nurbs_projection_refuses_source_lanes_neutral_slots_and_decoded_node() {
         "iges NURBS source weights",
         "iges NURBS positive weights",
         "iges NURBS source poles",
-        "iges NURBS source range",
         "iges NURBS placed controls",
-        "iges NURBS plane controls",
         "iges NURBS neutral weights",
         "iges NURBS neutral point slots",
         "iges NURBS neutral vertex slots",
@@ -201,54 +229,64 @@ fn free_wire_topology_refuses_nested_lists_and_model_slots() {
 
 #[test]
 fn projector_merges_refuse_decoded_loss_and_wire_growth() {
-    use crate::loss::IgesLossCode;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut decoded = BTreeSet::new();
-    let mut losses = Vec::new();
-    let result = ProjectionOutcome {
-        decoded: BTreeSet::from([1]),
-        losses: Vec::new(),
+    for operation in [
+        "iges merged decoded sequences",
+        "iges merged loss slots",
+        "iges merged wire edge slots",
+    ] {
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::CollectionItems,
+            operation,
+            |cap| {
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = cap;
+                let arena = DecodeArena::new();
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let mut storage = ctx.reserve_scoped(0, "test decoded storage").unwrap();
+                let mut decoded = BTreeSet::new();
+                let mut losses = Vec::new();
+                match operation {
+                    "iges merged decoded sequences" => projection_outcome(&ctx, 1, true, false)
+                        .unwrap()
+                        .merge_into(&mut decoded, &mut storage, &mut losses, &ctx),
+                    "iges merged loss slots" => projection_outcome(&ctx, 1, false, true)
+                        .unwrap()
+                        .merge_into(&mut decoded, &mut storage, &mut losses, &ctx),
+                    "iges merged wire edge slots" => WireProjectionOutcome {
+                        decoded: BTreeSet::new(),
+                        decoded_storage: ctx
+                            .reserve_scoped(0, "test wire decoded input backing")
+                            .unwrap(),
+                        losses: Vec::new(),
+                        loss_slots_storage: ctx
+                            .reserve_scoped(0, "test wire loss input backing")
+                            .unwrap(),
+                        wire_edges: vec![crate::ids::edge(&crate::ids::Stem::directory(1_u32))],
+                        wire_slots_storage: ctx
+                            .reserve_scoped(
+                                u64::try_from(std::mem::size_of::<cadmpeg_ir::ids::EdgeId>())
+                                    .unwrap(),
+                                "test wire edge input backing",
+                            )
+                            .unwrap(),
+                    }
+                    .merge_into(
+                        &mut decoded,
+                        &mut storage,
+                        &mut losses,
+                        &mut Vec::new(),
+                        &ctx,
+                    ),
+                    _ => unreachable!(),
+                }
+            },
+        );
     }
-    .merge_into(&mut decoded, &mut losses, &ctx);
-    assert!(
-        matches!(result, Err(CodecError::ResourceLimit(limit)) if limit.operation == "iges merged decoded sequences")
-    );
-
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let result = ProjectionOutcome {
-        decoded: BTreeSet::new(),
-        losses: vec![IgesLossCode::EntityNotProjected.note("test")],
-    }
-    .merge_into(&mut decoded, &mut losses, &ctx);
-    assert!(
-        matches!(&result, Err(CodecError::ResourceLimit(limit)) if limit.operation == "iges merged loss slots"),
-        "{result:?}"
-    );
-
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut wire_edges = Vec::new();
-    let edge = crate::ids::edge(&crate::ids::Stem::directory(1_u32));
-    let result = WireProjectionOutcome {
-        decoded: BTreeSet::new(),
-        losses: Vec::new(),
-        wire_edges: vec![edge],
-    }
-    .merge_into(&mut decoded, &mut losses, &mut wire_edges, &ctx);
-    assert!(
-        matches!(result, Err(CodecError::ResourceLimit(limit)) if limit.operation == "iges merged wire edge slots")
-    );
 }
 
 #[test]
 fn analytic_location_vertex_index_refuses_collection_limit() {
-    use cadmpeg_core::decode::DecodePolicy;
-    use cadmpeg_ir::codec::DecodeFailure;
     let bytes = crate::test_support::test_curves_and_surfaces::conic_arc_file(
         0,
         b"104,0.25,0,1,0,0,-1,0,2,0,0,1;",
@@ -257,70 +295,52 @@ fn analytic_location_vertex_index_refuses_collection_limit() {
         .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
         .unwrap();
     assert_eq!(service.ir().model.points.len(), 2);
-    let mut cap = 0_u64;
-    for _ in 0..4096 {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = cap;
-        match crate::IgesCodec.decode(
-            &mut Cursor::new(&bytes),
-            &DecodeOptions {
-                policy,
-                ..DecodeOptions::default()
-            },
-        ) {
-            Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
-                assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-                if limit.operation == "iges analytic-surface vertex point index" {
-                    return;
-                }
-                let next = limit.used.checked_add(limit.additional).unwrap();
-                assert!(next > cap, "limit did not advance from {cap}: {limit:?}");
-                cap = next;
-            }
-            other => panic!("did not reach vertex point index at cap {cap}: {other:?}"),
-        }
-    }
-    panic!("did not reach vertex point index within 4096 admission boundaries");
+    assert_geometry_collection_refusal(&bytes, "iges analytic-surface vertex point index");
 }
 
 #[test]
 fn source_sequence_maps_refuse_nodes_and_copied_keys() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let stem = crate::ids::Stem::directory(1_u32);
-    for (kind, cap, operation) in [
-        ("body", 0, "iges source body sequences"),
-        ("body", 1, "iges source neutral body forms"),
-        ("face", 0, "iges source face sequences"),
-        ("curve", 0, "iges source curve sequences"),
-        ("surface", 0, "iges source surface sequences"),
-        ("point", 0, "iges source point sequences"),
+    for (kind, operation) in [
+        ("body", "iges source body sequences"),
+        ("body", "iges source neutral body forms"),
+        ("face", "iges source face sequences"),
+        ("curve", "iges source curve sequences"),
+        ("surface", "iges source surface sequences"),
+        ("point", "iges source point sequences"),
     ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let mut sequences = super::SourceSequences::default();
-        let result = match kind {
-            "body" => sequences.record_body(&crate::ids::body(&stem), 1, &stem, &ctx),
-            "face" => sequences.record_face(&crate::ids::face(&stem), 1, &ctx),
-            "curve" => sequences.record_curve(&crate::ids::curve(&stem), 1, &ctx),
-            "surface" => sequences.record_surface(&crate::ids::surface(&stem), 1, &ctx),
-            "point" => sequences.record_point(&crate::ids::point(&stem), &stem, &ctx),
-            _ => panic!("unsupported test kind"),
-        };
-        assert!(
-            matches!(result, Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == operation)
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::CollectionItems,
+            operation,
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let mut sequences = super::SourceSequences::default();
+                match kind {
+                    "body" => sequences.record_body(&crate::ids::body(&stem), 1, &stem, &ctx),
+                    "face" => sequences.record_face(&crate::ids::face(&stem), 1, &ctx),
+                    "curve" => sequences.record_curve(&crate::ids::curve(&stem), 1, &ctx),
+                    "surface" => sequences.record_surface(&crate::ids::surface(&stem), 1, &ctx),
+                    "point" => sequences.record_point(&crate::ids::point(&stem), &stem, &ctx),
+                    _ => panic!("unsupported test kind"),
+                }
+            },
         );
     }
-
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut sequences = super::SourceSequences::default();
-    let result = sequences.record_point(&crate::ids::point(&stem), &stem, &ctx);
-    assert!(
-        matches!(result, Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "iges source sequence key")
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes,
+        "iges source sequence key",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let mut sequences = super::SourceSequences::default();
+            sequences.record_point(&crate::ids::point(&stem), &stem, &ctx)
+        },
     );
 
     let arena = DecodeArena::new();
@@ -338,12 +358,12 @@ fn source_sequence_maps_refuse_nodes_and_copied_keys() {
     sequences.record_point(&point, &stem, &ctx).unwrap();
     assert_eq!(
         (
-            sequences.body(&body),
-            sequences.body_neutral_form(&body),
-            sequences.face(&face),
-            sequences.curve(&curve),
-            sequences.surface(&surface),
-            sequences.point(&point)
+            sequences.body(&body, &ctx).unwrap(),
+            sequences.body_neutral_form(&body, &ctx).unwrap(),
+            sequences.face(&face, &ctx).unwrap(),
+            sequences.curve(&curve, &ctx).unwrap(),
+            sequences.surface(&surface, &ctx).unwrap(),
+            sequences.point(&point, &ctx).unwrap()
         ),
         (Some(1), Some(1), Some(1), Some(1), Some(1), Some(1))
     );
@@ -389,50 +409,45 @@ fn composite_coplanarity_refuses_segment_work_active_nodes_and_depth() {
     let index = ModelIndex::build(&ir, cadmpeg_ir::index::StandardIndex);
     let plane = (Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0));
 
-    for (dimension, cap, operation) in [
+    for (dimension, operation) in [
         (
             ResourceDimension::CollectionItems,
-            0,
             "iges coplanar active curves",
         ),
         (
-            ResourceDimension::RetainedBytes,
-            0,
+            ResourceDimension::MaterializedBytes,
             "iges coplanar active curve id",
         ),
         (
             ResourceDimension::WorkUnits,
-            0,
             "iges coplanar composite segments",
         ),
         (
             ResourceDimension::RecursionDepth,
-            1,
             "iges coplanar curve recursion",
         ),
     ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        match dimension {
-            ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
-            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = cap,
-            ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
-            ResourceDimension::RecursionDepth => policy.limits.max_recursion_depth = cap,
-            _ => panic!("unsupported test dimension"),
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result = super::curve_geometry_coplanar(
-            &composite,
-            &index,
-            Transform::identity(),
-            plane,
-            0.001,
-            &mut BTreeSet::new(),
-            &ctx,
-        );
-        assert!(
-            matches!(result, Err(CodecError::ResourceLimit(limit)) if limit.dimension == dimension && limit.operation == operation)
-        );
+        cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            match dimension {
+                ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
+                ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = cap,
+                ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
+                ResourceDimension::RecursionDepth => policy.limits.max_recursion_depth = cap,
+                _ => panic!("unsupported test dimension"),
+            }
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            super::curve_geometry_coplanar(
+                &composite,
+                &index,
+                Transform::identity(),
+                plane,
+                0.001,
+                &mut BTreeSet::new(),
+                &ctx,
+            )
+        });
     }
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
@@ -454,18 +469,21 @@ fn source_object_fields_refuse_retained_limits_before_copy() {
     let mut entry = transform_entry(1, 0);
     entry.label = *b"HELLO   ";
     entry.level = 7;
-    for (cap, operation) in [
-        (0, "iges source object ID"),
-        (2, "iges source object name"),
-        (7, "iges source object layer"),
+    for operation in [
+        "iges source object ID",
+        "iges source object name",
+        "iges source object layer",
     ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = source_object(&entry, &ctx).unwrap_err();
-        assert!(
-            matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == operation)
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::RetainedBytes,
+            operation,
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_retained_bytes = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                source_object(&entry, &ctx)
+            },
         );
     }
     let arena = DecodeArena::new();
@@ -482,13 +500,16 @@ fn plane_coordinates_refuse_collection_limit_before_projection_array() {
     use cadmpeg_ir::math::Point3;
     let points = [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)];
     let plane = (points[0], Vector3::new(0.0, 0.0, 1.0));
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 1;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = plane_coordinates(&points, plane, &ctx).unwrap_err();
-    assert!(
-        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "iges plane coordinates")
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems,
+        "iges plane coordinates",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            plane_coordinates(&points, plane, &ctx)
+        },
     );
 
     let arena = DecodeArena::new();
@@ -504,24 +525,28 @@ fn consumed_support_indexes_refuse_collection_limits_before_insert() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let directory = [transform_entry(1, 0), transform_entry(3, 1)];
     let records = std::collections::BTreeMap::new();
-    for (cap, operation) in [
-        (0, "iges consumed-support directory index"),
-        (2, "iges consumed-support transforms"),
-        (3, "iges consumed-support closure"),
+    for operation in [
+        "iges consumed-support transforms",
+        "iges consumed-support closure",
     ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = consumed_support_sequences(&directory, &records, &ctx).unwrap_err();
-        assert!(
-            matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == operation)
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::CollectionItems,
+            operation,
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                consumed_support_sequences(&directory, &records, &ctx).map(|_| ())
+            },
         );
     }
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     assert_eq!(
-        consumed_support_sequences(&directory, &records, &ctx).unwrap(),
+        consumed_support_sequences(&directory, &records, &ctx)
+            .unwrap()
+            .0,
         [1].into()
     );
 }
@@ -1054,64 +1079,6 @@ fn type125_form0_without_defining_entity_reports_display_loss() {
 }
 
 #[test]
-fn transform_depth_overflow_is_a_structured_resource_refusal() {
-    crate::test_support::with_service_context(&[], |decode_ctx| {
-        let transform_count = 65_u32;
-        let mut directory = (0..transform_count)
-            .map(|index| {
-                let sequence = 1 + index * 2;
-                let transform = if index + 1 < transform_count {
-                    sequence + 2
-                } else {
-                    0
-                };
-                transform_entry(sequence, i64::from(transform))
-            })
-            .collect::<Vec<_>>();
-        directory.push(transform_entry(1 + transform_count * 2, 1));
-
-        let error = enforce_transform_depth(&directory, decode_ctx).unwrap_err();
-        assert!(matches!(
-            error,
-            CodecError::ResourceLimit(limit)
-                if limit.dimension == ResourceDimension::Codec("iges_transform_depth")
-                    && limit.limit == 64
-                    && limit.used == 64
-                    && limit.additional == 1
-        ));
-    });
-}
-
-#[test]
-fn transform_preflight_admits_directory_index_and_walk_path() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-
-    let directory = [transform_entry(1, 3), transform_entry(3, 0)];
-    for (cap, operation) in [
-        (0, "iges transform preflight directory index"),
-        (2, "iges transform preflight path"),
-    ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result = enforce_transform_depth(&directory, &ctx);
-        assert!(matches!(
-            result,
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.used == cap
-                    && limit.additional == 1
-                    && limit.operation == operation
-        ));
-    }
-
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    assert!(enforce_transform_depth(&directory, &ctx).is_ok());
-}
-
-#[test]
 fn decode_preserves_rational_bspline_weights_and_multiplicities() {
     let result = IgesCodec
         .decode(
@@ -1226,60 +1193,6 @@ fn decode_uses_strict_global_resolution_for_type_126_closed_flag() {
             );
         }
     }
-}
-
-#[test]
-fn declared_transform_validation_separates_frame_and_handedness_invariants() {
-    let intervals = |rows: [[f64; 3]; 3]| {
-        std::array::from_fn::<_, 9, _>(|index| {
-            DeclaredInterval::around(rows[index / 3][index % 3], 0.0)
-        })
-    };
-
-    assert_eq!(
-        validate_declared_transform_frame(
-            intervals([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]),
-            1.0,
-        ),
-        Ok(())
-    );
-    assert_eq!(
-        validate_declared_transform_frame(
-            intervals([[-1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]),
-            -1.0,
-        ),
-        Ok(())
-    );
-    assert_eq!(
-        validate_declared_transform_frame(
-            intervals([[-1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]),
-            1.0,
-        ),
-        Err(DeclaredTransformFrameError::WrongDeterminant)
-    );
-    assert_eq!(
-        validate_declared_transform_frame(
-            intervals([[1.1, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]),
-            1.0,
-        ),
-        Err(DeclaredTransformFrameError::NotOrthonormal)
-    );
-}
-
-#[test]
-fn declared_intervals_prove_or_reject_an_affine_control_polygon() {
-    assert!(declared_affine_progression(
-        &[0.0, 1.0, 2.0, 3.0],
-        &[0.0; 4]
-    ));
-    assert!(declared_affine_progression(
-        &[0.0, 1.000_002, 2.000_004, 3.0],
-        &[0.0, 5.0e-6, 5.0e-6, 0.0]
-    ));
-    assert!(!declared_affine_progression(
-        &[0.0, 1.0, 2.2, 3.0],
-        &[0.0; 4]
-    ));
 }
 
 #[test]
@@ -1570,101 +1483,6 @@ fn decode_projects_a_counterclockwise_circular_arc() {
 }
 
 #[test]
-fn decode_accepts_rounded_transformed_circular_arc_frame() {
-    let result = IgesCodec
-        .decode(
-            &mut Cursor::new(transformed_circular_arc_file(
-                b"124,1.0000049,0,0,0,0,1,0,0,0,0,1,0;",
-                b"100,0,0,0,1,0,0,1;",
-            )),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
-
-    let Some(SolvedCurveGeometry::Circle(circle_curve)) =
-        result.ir().model.curves[0].geometry.solved()
-    else {
-        panic!("expected a circle carrier");
-    };
-    let radius = circle_curve.radius().get();
-    assert!((radius - 1.0).abs() < EPS_RADIUS_COMPARISON);
-    assert!(
-        result.report().losses.is_empty(),
-        "{:#?}",
-        result.report().losses
-    );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail");
-    assert!(validation.is_ok(), "{:#?}", validation.findings);
-}
-
-#[test]
-fn decode_rejects_transform_roundoff_beyond_its_declared_precision() {
-    let result = IgesCodec
-        .decode(
-            &mut Cursor::new(transformed_circular_arc_file(
-                b"124,1.0000051,0,0,0,0,1,0,0,0,0,1,0;",
-                b"100,0,0,0,1,0,0,1;",
-            )),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
-
-    assert!(result.ir().model.curves.is_empty());
-    assert!(result.report().losses.iter().any(|loss| {
-        loss.message
-            .contains("not orthonormal within its declared numeric precision")
-    }));
-}
-
-#[test]
-fn decode_applies_declared_double_precision_to_transform_coefficients() {
-    let result = IgesCodec
-        .decode(
-            &mut Cursor::new(transformed_circular_arc_file(
-                b"124,.8D0,-.6000001D0,0,0,.6D0,.8D0,0,0,0,0,1,0;",
-                b"100,0,0,0,1,0,0,1;",
-            )),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
-
-    assert!(result.ir().model.curves.is_empty());
-    assert!(result.report().losses.iter().any(|loss| {
-        loss.message
-            .contains("not orthonormal within its declared numeric precision")
-    }));
-}
-
-#[test]
-fn decode_canonicalizes_a_rounded_left_handed_transform() {
-    let result = IgesCodec
-        .decode(
-            &mut Cursor::new(transformed_circular_arc_file_with_form(
-                1,
-                b"124,.7071068,-.7071068,0,0,.7071068,.7071068,0,0,0,0,-1,0;",
-                b"100,0,0,0,1,0,0,1;",
-            )),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
-
-    let Some(SolvedCurveGeometry::Circle(circle_curve)) =
-        result.ir().model.curves[0].geometry.solved()
-    else {
-        panic!("expected a circle carrier");
-    };
-    let axis = circle_curve.frame().axis().as_raw();
-    let radius = circle_curve.radius().get();
-    assert_eq!(*axis, cadmpeg_ir::math::Vector3::new(0.0, -0.0, 1.0));
-    assert_eq!(radius, 1.0);
-    assert!(result.report().losses.is_empty());
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail");
-    assert!(validation.is_ok(), "{:#?}", validation.findings);
-}
-
-#[test]
 fn decode_accepts_arc_endpoints_within_model_resolution() {
     let result = IgesCodec
         .decode(
@@ -1780,200 +1598,28 @@ fn decode_preserves_semi_bounded_and_unbounded_line_domains_natively() {
     }
 }
 
-#[test]
-fn decode_applies_nested_transforms_reflection_units_and_model_scale_once() {
-    let result = IgesCodec
-        .decode(
-            &mut Cursor::new(nested_transformed_point_file()),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
+mod work_admission;
 
-    assert_eq!(result.ir().model.points.len(), 1);
-    assert_eq!(result.ir().model.points[0].position().get().x, 0.0);
-    assert_eq!(result.ir().model.points[0].position().get().y, 80.0);
-    assert_eq!(result.ir().model.points[0].position().get().z, 60.0);
-    assert_eq!(
-        result.ir().native.namespace("iges").unwrap().arenas()["transformations"].len(),
-        2
-    );
-    assert!(result.report().losses.is_empty());
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail");
-    assert!(validation.is_ok(), "{:#?}", validation.findings);
-}
+mod boundary_storage;
 
-#[test]
-fn transform_translation_overflow_after_inch_scaling_is_rejected() {
-    crate::test_support::with_service_context(&[], |decode_ctx| {
-        use crate::parameter::{ParameterRecord, Token, TokenValue};
-        use std::collections::{BTreeMap, BTreeSet};
-        let entry = transform_entry(1, 0);
-        let values = [
-            124.0,
-            1.0,
-            0.0,
-            0.0,
-            f64::MAX,
-            0.0,
-            1.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            1.0,
-            0.0,
-        ];
-        let record = ParameterRecord::from_test_tokens(
-            1,
-            1..2,
-            Vec::new(),
-            values.len(),
-            values
-                .into_iter()
-                .map(|value| Token {
-                    value: TokenValue::real(value),
-                    span: 0..0,
-                })
-                .collect(),
-            Vec::new(),
-        );
-        let result = super::resolve_transform(
-            1,
-            &BTreeMap::from([(1, &entry)]),
-            &BTreeMap::from([(1, &record)]),
-            25.4,
-            crate::global::RealPrecision {
-                single_significance: 6,
-                double_significance: 15,
-            },
-            &mut BTreeSet::new(),
-            decode_ctx,
-        );
-        assert!(result.is_err());
-    });
-}
+mod projection_outcome_storage;
 
-#[test]
-fn transform_failures_render_original_diagnostics_without_allocating_early() {
-    use super::TransformFailure;
+mod recursive_storage;
 
-    let cases = [
-        (TransformFailure::Literal("transformation chain is cyclic"), "transformation chain is cyclic"),
-        (TransformFailure::Depth, "transformation chain exceeds 64 entities"),
-        (TransformFailure::MissingEntry(7), "transformation D7 is missing"),
-        (TransformFailure::WrongTypeForm { sequence: 7, entity_type: 123, form: 2 }, "transformation D7 is type 123 form 2, expected defining type 124 form 0 or 1"),
-        (TransformFailure::MissingParameters(7), "transformation D7 parameters are missing"),
-        (TransformFailure::NonNumericCoefficient { sequence: 7, index: 12 }, "transformation D7 coefficient 12 is not numeric"),
-        (TransformFailure::NonFiniteCoefficient(7), "transformation D7 has a non-finite coefficient"),
-        (TransformFailure::NotOrthonormal(7), "transformation D7 linear part is not orthonormal within its declared numeric precision"),
-        (TransformFailure::WrongDeterminant { sequence: 7, form: 1 }, "transformation D7 determinant disagrees with form 1 within its declared numeric precision"),
-        (TransformFailure::FirstAxis(7), "transformation D7 first axis cannot be normalized"),
-        (TransformFailure::SecondAxis(7), "transformation D7 second axis cannot be normalized"),
-        (TransformFailure::NonFiniteScaled(7), "transformation D7 has non-finite coefficients after length scaling"),
-        (TransformFailure::NonFiniteComposed(7), "transformation D7 has non-finite coefficients after composition"),
-    ];
-    for (reason, expected) in cases {
-        assert_eq!(reason.to_string(), expected);
-    }
-}
+mod local_limits;
 
-#[test]
-fn transform_chain_path_refuses_collection_limit_before_insertion() {
-    use crate::parameter::{ParameterRecord, Token, TokenValue};
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use std::collections::{BTreeMap, BTreeSet};
+mod source_lanes;
 
-    let identity_record = |sequence| {
-        let values = [
-            124.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0,
-        ];
-        ParameterRecord::from_test_tokens(
-            sequence,
-            1..2,
-            Vec::new(),
-            values.len(),
-            values
-                .into_iter()
-                .map(|value| Token {
-                    value: TokenValue::real(value),
-                    span: 0..0,
-                })
-                .collect(),
-            Vec::new(),
-        )
-    };
-    let parent = transform_entry(1, 0);
-    let child = transform_entry(3, 1);
-    let parent_record = identity_record(1);
-    let child_record = identity_record(3);
-    let entries = BTreeMap::from([(1, &parent), (3, &child)]);
-    let records = BTreeMap::from([(1, &parent_record), (3, &child_record)]);
-    let precision = crate::global::RealPrecision {
-        single_significance: 6,
-        double_significance: 15,
-    };
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 1;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let result = super::resolve_transform(
-        3,
-        &entries,
-        &records,
-        1.0,
-        precision,
-        &mut BTreeSet::new(),
-        &ctx,
-    );
-    assert!(matches!(
-        result,
-        Err(super::TransformResolutionError::Resource(
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-        )) if limit.dimension == ResourceDimension::CollectionItems
-            && limit.used == 1
-            && limit.additional == 1
-    ));
+mod source_visits;
 
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    assert!(super::resolve_transform(
-        3,
-        &entries,
-        &records,
-        1.0,
-        precision,
-        &mut BTreeSet::new(),
-        &ctx,
-    )
-    .is_ok());
-}
+mod affine_progression;
 
-#[test]
-fn affine_composition_rejects_translation_overflow() {
-    let transform = cadmpeg_ir::transform::Transform::affine([
-        [1.0, 0.0, 0.0, f64::MAX],
-        [0.0, 1.0, 0.0, 0.0],
-        [0.0, 0.0, 1.0, 0.0],
-    ])
-    .unwrap();
-    assert!(transform.compose(transform).is_err());
-}
+mod wire_outcome_storage;
 
-#[test]
-fn decode_reports_transform_translation_overflow_after_inch_scaling() {
-    let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,1,2HIN,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
-    let bytes = transformed_circular_arc_file_with_global(
-        0,
-        b"124,1,0,0,1.7D308,0,1,0,0,0,0,1,0;",
-        b"100,0,0,0,1,0,0,1;",
-        global,
-    );
-    let result = IgesCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .unwrap();
-    assert!(result.ir().model.curves.is_empty());
-    assert!(result.report().losses.iter().any(|loss| loss
-        .message
-        .contains("non-finite coefficients after length scaling")));
-}
+mod parameter_index;
+
+mod transform_semantics;
+
+mod candidate_lifetimes;
+
+mod fixed_routes;

@@ -3,7 +3,11 @@
 
 use cadmpeg_test_support::{wire, EditableDecodeResult};
 
-use super::{normalize, parse_data_entity, parse_directory_record, parse_field_specs, DataEntity};
+use super::{
+    field_i64, hollerith_at, logical_global_stream, normalize, parse_data_entity,
+    parse_directory_record, parse_field_specs, parse_sequence, split_lines, CompressedField,
+    DataEntity, DirectoryFields,
+};
 use crate::loss::IgesLossCode;
 use crate::test_support::test_curves_and_surfaces::{point_file, point_file_with_global};
 use crate::test_support::{global_with_version_flag, only_match};
@@ -19,6 +23,12 @@ use cadmpeg_ir::report::export::{FidelityResolution, WritePath};
 use std::fmt::Write as _;
 use std::io::Cursor;
 
+mod copy_work;
+mod fixed_fields;
+mod global_storage;
+mod start_count;
+mod visited_sources;
+
 fn normalize_for_test(source: &[u8]) -> Result<Vec<u8>, cadmpeg_core::CodecError> {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::default();
@@ -30,6 +40,166 @@ fn normalize_with_policy(source: &[u8], policy: &DecodePolicy) -> Result<Vec<u8>
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, policy)?;
     normalize(source, &ctx)
+}
+
+fn with_work_limit<T>(
+    source: &[u8],
+    max_work_units: u64,
+    run: impl FnOnce(&DecodeContext<'_>) -> T,
+) -> T {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = max_work_units;
+    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy).unwrap();
+    run(&ctx)
+}
+
+fn normalize_work_refusal(source: &[u8], operation: &str) -> CodecError {
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        operation,
+        |cap| with_work_limit(source, cap, |ctx| normalize(source, ctx).map(|_| ())),
+    )
+}
+
+fn assert_work_limit(error: &CodecError, operation: &str, additional: u64) {
+    assert!(matches!(error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.additional == additional
+                && limit.operation == operation
+    ));
+}
+
+#[test]
+fn compressed_line_endings_refuse_work_before_scan() {
+    let error = with_work_limit(b"line\n", 0, |ctx| split_lines(b"line\n", ctx).unwrap_err());
+    assert_work_limit(&error, "iges compressed ASCII line endings", 5);
+}
+
+#[test]
+fn compressed_global_hollerith_count_refuses_utf8_work() {
+    let mut card = [b' '; 80];
+    card[..6].copy_from_slice(b"1H,1H;");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "iges compressed Global Hollerith count",
+        |cap| {
+            with_work_limit(&card, cap, |ctx| {
+                logical_global_stream(&[&card], ctx).map(|_| ())
+            })
+        },
+    );
+    assert_work_limit(&error, "iges compressed Global Hollerith count", 1);
+}
+
+#[test]
+fn compressed_hollerith_digit_scan_refuses_work_before_probe() {
+    let error = with_work_limit(b"1H,", 0, |ctx| hollerith_at(b"1H,", 0, ctx).unwrap_err());
+    assert_work_limit(&error, "iges compressed Global Hollerith digits", 1);
+}
+
+#[test]
+fn compressed_hollerith_count_refuses_utf8_work() {
+    let error = with_work_limit(b"1H,", 2, |ctx| hollerith_at(b"1H,", 0, ctx).unwrap_err());
+    assert_work_limit(&error, "iges compressed Global Hollerith count", 1);
+}
+
+#[test]
+fn compressed_sequence_digit_scan_refuses_work_before_probe() {
+    let error = with_work_limit(b"1", 0, |ctx| {
+        parse_sequence(b"1", 0, "test", ctx).unwrap_err()
+    });
+    assert_work_limit(&error, "iges compressed sequence digits", 1);
+}
+
+#[test]
+fn compressed_sequence_number_refuses_utf8_work() {
+    let error = with_work_limit(b"1", 1, |ctx| {
+        parse_sequence(b"1", 0, "test", ctx).unwrap_err()
+    });
+    assert_work_limit(&error, "iges compressed sequence number", 1);
+}
+
+#[test]
+fn compressed_directory_specifier_scan_refuses_work_before_specifier() {
+    let error = with_work_limit(b"@1_116", 0, |ctx| {
+        parse_field_specs(b"@1_116", ctx).unwrap_err()
+    });
+    assert_work_limit(&error, "iges compressed Directory specifiers", 1);
+}
+
+#[test]
+fn compressed_directory_field_digit_scan_refuses_work_before_digit() {
+    let error = with_work_limit(b"@1_116", 1, |ctx| {
+        parse_field_specs(b"@1_116", ctx).unwrap_err()
+    });
+    assert_work_limit(&error, "iges compressed Directory field digits", 1);
+}
+
+#[test]
+fn compressed_directory_field_number_refuses_utf8_work() {
+    let error = with_work_limit(b"@1_116", 3, |ctx| {
+        parse_field_specs(b"@1_116", ctx).unwrap_err()
+    });
+    assert_work_limit(&error, "iges compressed Directory field number", 1);
+}
+
+#[test]
+fn compressed_directory_field_parse_refuses_after_utf8_admission() {
+    // The specifier probe, two digit probes and UTF-8 byte total four prior work units.
+    let error = with_work_limit(b"@1_116", 4, |ctx| {
+        parse_field_specs(b"@1_116", ctx).unwrap_err()
+    });
+    assert_work_limit_at(&error, "iges compressed Directory field index", 4, 1);
+}
+
+#[test]
+fn compressed_directory_field_value_scan_refuses_work_before_value() {
+    // Five units admit the specifier, digit scan, UTF-8 check, and parsed index.
+    let error = with_work_limit(b"@1_116", 5, |ctx| {
+        parse_field_specs(b"@1_116", ctx).unwrap_err()
+    });
+    assert_work_limit_at(&error, "iges compressed Directory field value", 5, 1);
+}
+
+#[test]
+fn compressed_directory_record_line_scan_refuses_work_after_sequence_admission() {
+    let lines = [b"D1;".as_slice()];
+    // Two digit probes, UTF-8 validation and the sequence parse cost four units.
+    let error = with_work_limit(b"D1;", 4, |ctx| {
+        parse_directory_record(&lines, 0, b';', ctx).unwrap_err()
+    });
+    assert_work_limit(&error, "iges compressed Directory record lines", 1);
+}
+
+#[test]
+fn compressed_directory_field_text_refuses_utf8_work() {
+    let fields = DirectoryFields(std::array::from_fn(|_| std::rc::Rc::new(b"1".to_vec())));
+    let error = with_work_limit(b"1", 0, |ctx| {
+        field_i64(
+            &fields,
+            CompressedField::Shared(crate::directory::DirectoryFieldSlot::EntityType),
+            "entity type",
+            ctx,
+        )
+        .unwrap_err()
+    });
+    assert_work_limit(&error, "iges compressed Directory field text", 1);
+}
+
+#[test]
+fn compressed_start_section_scan_refuses_work_before_section_probe() {
+    let source = compressed_points_file();
+    let error = normalize_work_refusal(&source, "iges compressed Start section lines");
+    assert_work_limit(&error, "iges compressed Start section lines", 1);
+}
+
+#[test]
+fn compressed_global_section_scan_refuses_work_after_start_scan() {
+    let source = compressed_points_file();
+    let error = normalize_work_refusal(&source, "iges compressed Global section lines");
+    assert_work_limit(&error, "iges compressed Global section lines", 1);
 }
 
 #[test]
@@ -153,40 +323,24 @@ fn compressed_entity_index_refuses_collection_limit_before_growth() {
 #[test]
 fn compressed_normalization_refuses_work_before_directory_loop() {
     let source = compressed_points_file();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = u64::try_from(source.len() - 1).unwrap();
-    let error = normalize_with_policy(&source, &policy).unwrap_err();
-    assert!(
-        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "iges_compressed_ascii_normalization")
-    );
-}
-
-#[test]
-fn compressed_parameter_lines_refuse_collection_limit_before_allocation() {
-    let lines = [
-        b"D1@1_116@3_0@4_0@5_0@6_0@7_0@8_0@9_00000000".as_slice(),
-        b"@12_0@13_0@14_1@15_0@16_@17_@18_POINT@19_0;".as_slice(),
-        b"116,1.0,2.0,3.0;".as_slice(),
-    ];
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = parse_data_entity(&lines, 0, None, b',', b';', &ctx).unwrap_err();
-    assert!(
-        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "iges_compressed_parameter_lines")
-    );
+    let error = normalize_work_refusal(&source, "iges_compressed_ascii_normalization");
+    assert_work_limit(&error, "iges_compressed_ascii_normalization", 1);
 }
 
 #[test]
 fn compressed_parameter_starts_refuse_collection_limit_before_allocation() {
     let source = compressed_points_file();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = u64::try_from(source_lines(&source).len() + 4).unwrap();
-    let error = normalize_with_policy(&source, &policy).unwrap_err();
-    assert!(
-        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "iges_compressed_parameter_starts")
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems,
+        "iges_compressed_parameter_starts",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            normalize_with_policy(&source, &policy)
+        },
     );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems));
 }
 
 #[test]
@@ -632,4 +786,67 @@ fn compressed_reserved_fields_use_fixed_directory_right_justification() {
         native.arenas()["entities"][0].fields()["reserved"],
         serde_json::json!([b"    LEFT", b"   RIGHT"])
     );
+}
+
+fn assert_work_limit_at(error: &CodecError, operation: &str, used: u64, additional: u64) {
+    assert!(matches!(error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.used == used
+                && limit.additional == additional
+                && limit.operation == operation
+    ));
+}
+
+#[test]
+fn compressed_global_hollerith_parse_refuses_after_utf8_admission() {
+    let mut card = [b' '; 80];
+    card[..3].copy_from_slice(b"1H,");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "iges compressed Global Hollerith number",
+        |cap| {
+            with_work_limit(&card, cap, |ctx| {
+                logical_global_stream(&[&card], ctx).map(|_| ())
+            })
+        },
+    );
+    assert_work_limit(&error, "iges compressed Global Hollerith number", 1);
+}
+
+#[test]
+fn compressed_hollerith_parse_refuses_after_utf8_admission() {
+    // Two digit probes and one UTF-8 byte precede the one-byte parse.
+    let error = with_work_limit(b"1H,", 3, |ctx| hollerith_at(b"1H,", 0, ctx).unwrap_err());
+    assert_work_limit_at(&error, "iges compressed Global Hollerith number", 3, 1);
+}
+
+#[test]
+fn compressed_sequence_parse_refuses_after_utf8_admission() {
+    // One digit probe and one UTF-8 byte precede the one-byte parse.
+    let error = with_work_limit(b"1", 2, |ctx| {
+        parse_sequence(b"1", 0, "test", ctx).unwrap_err()
+    });
+    assert_work_limit_at(&error, "iges compressed sequence value", 2, 1);
+}
+
+#[test]
+fn compressed_directory_integer_parse_refuses_after_utf8_admission() {
+    let fields = DirectoryFields(std::array::from_fn(|_| std::rc::Rc::new(b"1".to_vec())));
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "iges compressed Directory field integer",
+        |cap| {
+            with_work_limit(b"1", cap, |ctx| {
+                field_i64(
+                    &fields,
+                    CompressedField::Shared(crate::directory::DirectoryFieldSlot::EntityType),
+                    "entity type",
+                    ctx,
+                )
+                .map(|_| ())
+            })
+        },
+    );
+    assert_work_limit(&error, "iges compressed Directory field integer", 1);
 }

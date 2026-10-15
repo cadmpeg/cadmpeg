@@ -10,7 +10,12 @@ use crate::sab::Token;
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use cadmpeg_ir::geometry::SurfaceGeometry;
 
-fn record(revision: bool, ranges: [f64; 4], subtransform: Vec<Token>, knot: f64) -> Record {
+fn record(
+    revision: bool,
+    ranges: [f64; 4],
+    subtransform: Vec<Token>,
+    knot: f64,
+) -> Record<'static> {
     let mut tokens = vec![Token::SubtypeOpen, Token::Ident("t_spl_sur".into())];
     if revision {
         tokens.extend([Token::Long(23_100), Token::Enum(2)]);
@@ -59,13 +64,8 @@ fn record(revision: bool, ranges: [f64; 4], subtransform: Vec<Token>, knot: f64)
     tokens.push(Token::SubtypeOpen);
     tokens.extend(subtransform);
     tokens.extend([Token::SubtypeClose, Token::Long(9), Token::SubtypeClose]);
-    Record {
-        index: 0,
-        name: "spline".into(),
-        tokens: tokens.into(),
-        offset: 0,
-        len: 0,
-    }
+    crate::test_support::sab::record(0, "spline".into(), tokens.into(), 0, 0)
+        .expect("indexed record fixture")
 }
 
 fn inline(program: &str) -> Vec<Token> {
@@ -100,12 +100,17 @@ fn emit(record: &Record) -> Result<(), cadmpeg_core::CodecError> {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
     );
     carriers.procedural_surface_defs.insert(0, decoded);
+    let mut scratch = asm_decode_ctx.reserve_scoped(0, "ASM test scratch")?;
     emit_carrier_surface(
         &asm_decode_ctx,
         &mut AsmBrep::default(),
         record,
         0,
-        &mut carriers,
+        (
+            &mut carriers,
+            &mut scratch,
+            crate::brep::DecodePurpose::Model,
+        ),
         &Reachable::default(),
         crate::asm_format!("f3d"),
     )

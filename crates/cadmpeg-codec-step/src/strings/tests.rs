@@ -320,6 +320,9 @@ fn decoded_string_text_refuses_retained_limit_before_output_allocation() {
             if limit.dimension == ResourceDimension::RetainedBytes
                 && limit.operation == "step_string_text"
     ));
+    // Syntax validation has its own context: the output refusal above is sticky.
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits the same policy");
     let malformed = crate::strings::decode_with_context(
         b"\\X\\GG",
         crate::parse::implementation_level::ImplementationLevel::LegacyEdition1,
@@ -327,8 +330,9 @@ fn decoded_string_text_refuses_retained_limit_before_output_allocation() {
     );
     assert!(matches!(
         malformed,
-        Err(crate::strings::StringDecodeFailure::Invalid(error))
-            if error.message == "byte escape contains non-hexadecimal digits"
+        Err(crate::strings::StringDecodeFailure::Resource(CodecError::ResourceLimit(limit)))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "STEP string error message"
     ));
 }
 
@@ -410,3 +414,163 @@ fn legacy_direct_single_byte_text_uses_cadir_iso_8859_1_salvage() {
         .expect("product definition");
     assert_eq!(product.part_number.as_deref(), Some("Pé"));
 }
+
+#[test]
+fn string_error_message_copy_refusal_stays_resource() {
+    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let result = crate::test_support::with_policy_context(b"\\Q\\", &policy, |input, ctx| {
+        crate::strings::decode_with_context(
+            input,
+            crate::parse::implementation_level::ImplementationLevel::LegacyEdition1,
+            ctx,
+        )
+    });
+    assert!(
+        matches!(result, Err(crate::strings::StringDecodeFailure::Resource(CodecError::ResourceLimit(limit)))
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "STEP string error message")
+    );
+}
+
+#[test]
+fn decoded_direct_character_preserves_refusal() {
+    cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "STEP decoded string character",
+        |cap| {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+            let result = super::decode_with_context(
+                b"A",
+                crate::parse::implementation_level::ImplementationLevel::LegacyEdition2,
+                &ctx,
+            )
+            .map(|_| ())
+            .map_err(|error| match error {
+                super::StringDecodeFailure::Resource(error) => error,
+                super::StringDecodeFailure::Invalid(error) => {
+                    panic!("valid text returned {error:?}")
+                }
+            });
+            if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = &result {
+                assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
+            }
+            result
+        },
+    );
+}
+
+#[test]
+fn decoded_wide_unit_character_preserves_refusal() {
+    cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "STEP decoded string character",
+        |cap| {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+            let result = super::decode_with_context(
+                b"\\X2\\0041\\X0\\",
+                crate::parse::implementation_level::ImplementationLevel::LegacyEdition2,
+                &ctx,
+            )
+            .map(|_| ())
+            .map_err(|error| match error {
+                super::StringDecodeFailure::Resource(error) => error,
+                super::StringDecodeFailure::Invalid(error) => {
+                    panic!("valid text returned {error:?}")
+                }
+            });
+            if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = &result {
+                assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
+            }
+            result
+        },
+    );
+}
+
+#[test]
+fn decoded_wide_scalar_character_preserves_refusal() {
+    cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "STEP decoded string character",
+        |cap| {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+            let result = super::decode_with_context(
+                b"\\X4\\0001F600\\X0\\",
+                crate::parse::implementation_level::ImplementationLevel::LegacyEdition2,
+                &ctx,
+            )
+            .map(|_| ())
+            .map_err(|error| match error {
+                super::StringDecodeFailure::Resource(error) => error,
+                super::StringDecodeFailure::Invalid(error) => {
+                    panic!("valid text returned {error:?}")
+                }
+            });
+            if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = &result {
+                assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
+            }
+            result
+        },
+    );
+}
+
+#[test]
+fn decoded_string_cursor_and_terminator_search_preserve_refusal() {
+    for (input, operation) in [
+        (b"AB".as_slice(), "STEP string cursor traversal"),
+        (b"AB".as_slice(), "STEP direct string cursor traversal"),
+        (b"AB".as_slice(), "STEP direct string UTF-8 validation"),
+        (
+            b"\\X2\\00410042\\X0\\".as_slice(),
+            "STEP wide escape terminator search",
+        ),
+        (
+            b"\\X2\\00410042\\X0\\".as_slice(),
+            "STEP wide escape cursor traversal",
+        ),
+    ] {
+        cadmpeg_test_support::refusal::resource_limit_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            operation,
+            |cap| {
+                let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                crate::test_support::with_policy_context(input, &policy, |input, ctx| {
+                    match super::decode_with_context(
+                        input,
+                        crate::parse::implementation_level::ImplementationLevel::Edition3Class2,
+                        ctx,
+                    ) {
+                        Ok(_) => Ok(()),
+                        Err(super::StringDecodeFailure::Resource(error)) => {
+                            if let cadmpeg_core::CodecError::ResourceLimit(refusal) = &error {
+                                assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
+                            }
+                            Err(error)
+                        }
+                        other => panic!("valid string must not fail syntax: {other:?}"),
+                    }
+                })
+            },
+        );
+    }
+}
+
+mod prefix;
+
+mod error_admission;

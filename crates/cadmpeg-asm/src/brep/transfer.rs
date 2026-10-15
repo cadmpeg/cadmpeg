@@ -128,15 +128,31 @@ pub fn transfer_into_ir<'ir>(
     ctx.extend_vec(&mut ir.model.surfaces, surfaces, "ASM transfer surfaces")?;
     ctx.extend_vec(&mut ir.model.curves, curves, "ASM transfer curves")?;
     ctx.extend_vec(&mut ir.model.pcurves, pcurves, "ASM transfer pcurves")?;
-    for (owner, procedural) in procedural_surfaces {
-        ir.model
-            .add_procedural_surface(ctx, &owner, procedural)?
-            .map_err(|error| CodecError::malformed(error.to_string()))?;
+    if !procedural_surfaces.is_empty() {
+        let outcomes = ir.model.add_procedural_surfaces(ctx, procedural_surfaces)?;
+        if let Some(error) = ctx.find_map(
+            outcomes,
+            |outcome| Ok(outcome.err()),
+            "ASM procedural surface transfer",
+        )? {
+            return Err(CodecError::Malformed(ctx.format_retained(
+                format_args!("{error}"),
+                "ASM procedural surface transfer error",
+            )?));
+        }
     }
-    for (owner, procedural) in procedural_curves {
-        ir.model
-            .add_procedural_curve(ctx, &owner, procedural)?
-            .map_err(|error| CodecError::malformed(error.to_string()))?;
+    if !procedural_curves.is_empty() {
+        let outcomes = ir.model.add_procedural_curves(ctx, procedural_curves)?;
+        if let Some(error) = ctx.find_map(
+            outcomes,
+            |outcome| Ok(outcome.err()),
+            "ASM procedural curve transfer",
+        )? {
+            return Err(CodecError::Malformed(ctx.format_retained(
+                format_args!("{error}"),
+                "ASM procedural curve transfer error",
+            )?));
+        }
     }
     ctx.extend_vec(
         &mut ir.model.attributes,
@@ -288,5 +304,140 @@ mod tests {
             .expect("held record remains readable");
         assert_eq!(held.len(), 1);
         assert_eq!(held[0].id, "sat:test:held#0");
+    }
+
+    fn procedural_brep(count: usize, surfaces: bool) -> AsmBrep {
+        use cadmpeg_ir::features::FinitePoint3;
+        use cadmpeg_ir::geometry::{
+            Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
+            ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
+            SurfaceGeometry,
+        };
+        use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
+        use cadmpeg_ir::math::{Point3, Vector3};
+        use cadmpeg_ir::units::{OrthonormalFrame3, UnitVector3};
+        let mut brep = AsmBrep::default();
+        for index in 0..count {
+            // Long valid identities exercise the byte work of the owner index.
+            if surfaces {
+                let owner = SurfaceId::mint(format!("test:model:surface#{index:0192}"))
+                    .expect("owner identity");
+                let procedural = ProceduralSurface::new(
+                    ProceduralSurfaceId::mint(format!(
+                        "test:model:procedural-surface#{index:0192}"
+                    ))
+                    .expect("construction identity"),
+                    ProceduralSurfaceDefinition::Unknown {
+                        record: None,
+                        cache: None,
+                    },
+                    None,
+                );
+                let frame = OrthonormalFrame3::from_units(UnitVector3::Z_AXIS, UnitVector3::X_AXIS)
+                    .expect("orthonormal frame");
+                brep.surfaces.push(Surface {
+                    id: owner.clone(),
+                    geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                        cadmpeg_ir::geometry::analytic::PlaneSurface::new(
+                            FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).expect("finite origin"),
+                            frame,
+                        ),
+                    )),
+                    source_object: None,
+                });
+                brep.procedural_surfaces.push((owner, procedural));
+            } else {
+                let owner = CurveId::mint(format!("test:model:curve#{index:0192}"))
+                    .expect("owner identity");
+                let procedural = ProceduralCurve::new(
+                    ProceduralCurveId::mint(format!("test:model:procedural-curve#{index:0192}"))
+                        .expect("construction identity"),
+                    ProceduralCurveDefinition::Exact { cache: None },
+                );
+                brep.curves.push(Curve {
+                    id: owner.clone(),
+                    geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                        cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                            Point3::new(0.0, 0.0, 0.0),
+                            Vector3::new(1.0, 0.0, 0.0),
+                        )
+                        .expect("line carrier"),
+                    )),
+                    source_object: None,
+                });
+                brep.procedural_curves.push((owner, procedural));
+            }
+        }
+        brep
+    }
+
+    fn transfer_thousands(surfaces: bool) {
+        const COUNT: usize = 4096;
+        let brep = procedural_brep(COUNT, surfaces);
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default())
+            .expect("default context");
+        let mut ir = CadIr::empty();
+        transfer_into_ir(&ctx, &mut ir, "test", brep)
+            .expect("thousands of attachments fit default budget");
+        ctx.finish_session().expect("unfused transfer");
+        let validation = cadmpeg_ir::validate_neutral(&ir, Vec::new()).expect("validation budget");
+        assert!(validation.is_ok(), "{:?}", validation.findings);
+        if surfaces {
+            assert_eq!(ir.model.surfaces.len(), COUNT);
+            assert_eq!(ir.model.procedural_surfaces.len(), COUNT);
+            for (owner, procedural) in ir.model.surfaces.iter().zip(&ir.model.procedural_surfaces) {
+                assert_eq!(
+                    owner.geometry.procedural_construction(),
+                    Some(&procedural.id)
+                );
+                assert!(owner.geometry.solved().is_some());
+            }
+        } else {
+            assert_eq!(ir.model.curves.len(), COUNT);
+            assert_eq!(ir.model.procedural_curves.len(), COUNT);
+            for (owner, procedural) in ir.model.curves.iter().zip(&ir.model.procedural_curves) {
+                assert_eq!(
+                    owner.geometry.procedural_construction(),
+                    Some(&procedural.id)
+                );
+                assert!(owner.geometry.solved().is_some());
+            }
+        }
+    }
+
+    #[test]
+    fn surface_transfer_batch_accepts_thousands_under_default_budget() {
+        transfer_thousands(true);
+    }
+
+    #[test]
+    fn curve_transfer_batch_accepts_thousands_under_default_budget() {
+        transfer_thousands(false);
+    }
+
+    #[test]
+    fn transfer_batches_report_the_first_invalid_carrier() {
+        use cadmpeg_core::CodecError;
+        for surfaces in [true, false] {
+            let mut brep = procedural_brep(2, surfaces);
+            if surfaces {
+                brep.surfaces.clear();
+            } else {
+                brep.curves.clear();
+            }
+            let noun = if surfaces { "surface" } else { "curve" };
+            let expected = CodecError::malformed(format_args!(
+                "procedural {noun} test:model:procedural-{noun}#{:0192} references missing {noun} test:model:{noun}#{:0192}",
+                0, 0,
+            ));
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default())
+                .expect("default context");
+            let actual = transfer_into_ir(&ctx, &mut CadIr::empty(), "test", brep)
+                .err()
+                .expect("missing owner refuses transfer");
+            assert_eq!(actual.to_string(), expected.to_string());
+        }
     }
 }

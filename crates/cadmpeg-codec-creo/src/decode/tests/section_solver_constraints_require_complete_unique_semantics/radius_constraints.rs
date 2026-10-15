@@ -119,7 +119,8 @@ fn section_solver_equal_radius_requires_active_agreeing_sources() {
             internal_id: 20,
             bitmask: 1,
             offset: 92,
-        }],
+        }]
+        .into(),
         offset: 91,
     });
     saved_radius_definition.saved_section =

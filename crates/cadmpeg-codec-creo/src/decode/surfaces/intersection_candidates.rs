@@ -439,10 +439,10 @@ pub(in super::super) fn coaxial_cones_section_candidates(
         if radius <= EPS_RADIUS_NONZERO * scale {
             continue;
         }
-        if !parameters
+        let duplicate = parameters
             .iter()
-            .any(|known| (parameter - known).abs() <= EPS_PARAMETER_DEDUP * scale)
-        {
+            .any(|known| (parameter - *known).abs() <= EPS_PARAMETER_DEDUP * scale);
+        if !duplicate {
             parameters.push(parameter);
         }
     }
@@ -599,7 +599,8 @@ pub(in super::super) fn apex_plane_cone_generator_candidates(
         "plane_cone_secant_generator"
     };
     directions
-        .into_iter()
+        .iter()
+        .copied()
         .filter_map(|direction| {
             Some((
                 CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -749,10 +750,10 @@ pub(in super::super) fn coaxial_cone_torus_circle_candidates(
             if radius <= EPS_RADIUS_NONZERO * scale {
                 continue;
             }
-            if !parameters
+            let duplicate = parameters
                 .iter()
-                .any(|known| (parameter - known).abs() <= EPS_PARAMETER_DEDUP * scale)
-            {
+                .any(|known| (parameter - *known).abs() <= EPS_PARAMETER_DEDUP * scale);
+            if !duplicate {
                 parameters.push(parameter);
             }
         }
@@ -1022,7 +1023,8 @@ pub(in super::super) fn coaxial_sphere_torus_circle_candidates(
         _ => return FixedCandidates::default(),
     };
     intersections
-        .into_iter()
+        .iter()
+        .copied()
         .filter_map(|[radius, center_axial]| {
             let radius = radius.abs();
             if radius <= EPS_POSITIVE_RADIUS * scale {
@@ -1088,7 +1090,8 @@ pub(in super::super) fn coaxial_tori_circle_candidates(
         _ => return FixedCandidates::default(),
     };
     intersections
-        .into_iter()
+        .iter()
+        .copied()
         .filter_map(|[radius, center_axial]| {
             let radius = radius.abs();
             if radius <= EPS_POSITIVE_RADIUS * scale {

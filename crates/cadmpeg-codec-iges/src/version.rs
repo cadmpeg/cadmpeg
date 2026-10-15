@@ -111,20 +111,12 @@ impl VersionFlag {
     }
 
     /// Returns the exact table entry, without applying postprocessor recovery.
-    pub(crate) const fn exact(value: i64) -> Option<Self> {
-        let mut index = 0;
-        while index < Self::ALL.len() {
-            let flag = Self::ALL[index];
-            if flag.value() == value {
-                return Some(flag);
-            }
-            index += 1;
-        }
-        None
+    pub(crate) fn exact(value: i64) -> Option<Self> {
+        Self::ALL.into_iter().find(|flag| flag.value() == value)
     }
 
     /// Applies the IGES 5.3 postprocessor clamp to a declared value.
-    pub(crate) const fn effective(declared: i64) -> Self {
+    pub(crate) fn effective(declared: i64) -> Self {
         match Self::exact(declared) {
             Some(flag) => flag,
             None if declared < Self::MIN => Self::V2_0,

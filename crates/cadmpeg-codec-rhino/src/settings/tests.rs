@@ -788,13 +788,17 @@ fn nonfinite_unit_tolerances_are_refused_at_the_value_first_byte() {
 /// A group refusal names the first byte of the group, not the byte after it.
 #[test]
 fn a_nonfinite_point_component_is_refused_at_the_point_first_byte() {
+    let arena = cadmpeg_core::decode::DecodeArena::default();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("context");
     let mut bytes = vec![0xa5, 0xa5, 0xa5];
     let point_offset = bytes.len();
     for value in [1.0_f64, f64::NAN, 3.0] {
         bytes.extend(value.to_le_bytes());
     }
     let mut reader = BoundedReader::new(&bytes, point_offset, bytes.len()).expect("point reader");
-    let error = settings::point(&mut reader).expect_err("nonfinite point");
+    let error = settings::point(&ctx, &mut reader).expect_err("nonfinite point");
     assert_eq!(
         error,
         crate::chunks::FramingError::structural(point_offset, "point contains a nonfinite value")
@@ -805,6 +809,10 @@ fn a_nonfinite_point_component_is_refused_at_the_point_first_byte() {
 /// nonfinite endpoint at the interval's first byte.
 #[test]
 fn an_interval_holds_its_admitted_finite_endpoints() {
+    let arena = cadmpeg_core::decode::DecodeArena::default();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("context");
     let interval_bytes = |values: [f64; 2]| {
         let mut bytes = vec![0xa5];
         for value in values {
@@ -814,11 +822,11 @@ fn an_interval_holds_its_admitted_finite_endpoints() {
     };
     let bytes = interval_bytes([-2.5, 7.0]);
     let mut reader = BoundedReader::new(&bytes, 1, bytes.len()).expect("interval reader");
-    let interval = settings::interval(&mut reader).expect("finite interval");
+    let interval = settings::interval(&ctx, &mut reader).expect("finite interval");
     assert_eq!(interval.0.get(), [-2.5, 7.0]);
     let bytes = interval_bytes([0.0, f64::INFINITY]);
     let mut reader = BoundedReader::new(&bytes, 1, bytes.len()).expect("interval reader");
-    let error = settings::interval(&mut reader).expect_err("nonfinite interval");
+    let error = settings::interval(&ctx, &mut reader).expect_err("nonfinite interval");
     assert_eq!(
         error,
         crate::chunks::FramingError::structural(1, "interval contains a nonfinite value")
@@ -829,13 +837,17 @@ fn an_interval_holds_its_admitted_finite_endpoints() {
 /// admitted, and the plane reader keeps the admitted coordinates of its parts.
 #[test]
 fn point_vector_plane_and_transform_readers_hold_their_admitted_values() {
+    let arena = cadmpeg_core::decode::DecodeArena::default();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("context");
     let mut bytes = vec![0xa5];
     for value in [1.0_f64, -2.0, 3.0, 0.0, 1.0, 0.0] {
         bytes.extend(value.to_le_bytes());
     }
     let mut reader = BoundedReader::new(&bytes, 1, bytes.len()).expect("point reader");
-    let point = settings::point(&mut reader).expect("finite point");
-    let vector = settings::vector(&mut reader).expect("finite vector");
+    let point = settings::point(&ctx, &mut reader).expect("finite point");
+    let vector = settings::vector(&ctx, &mut reader).expect("finite vector");
     assert_eq!(point.0.get(), [1.0, -2.0, 3.0]);
     assert_eq!(vector.0.get(), [0.0, 1.0, 0.0]);
 
@@ -846,7 +858,7 @@ fn point_vector_plane_and_transform_readers_hold_their_admitted_values() {
         bytes.extend(value.to_le_bytes());
     }
     let mut reader = BoundedReader::new(&bytes, 1, bytes.len()).expect("plane reader");
-    let plane = settings::plane(&mut reader).expect("finite plane");
+    let plane = settings::plane(&ctx, &mut reader).expect("finite plane");
     assert!(matches!(
         plane.origin,
         settings::CoordinateLane::Admitted(_)
@@ -860,13 +872,13 @@ fn point_vector_plane_and_transform_readers_hold_their_admitted_values() {
     assert_eq!(plane.zaxis.get(), [0.0, 0.0, 1.0]);
     assert_eq!(plane.equation.get(), [0.0, 0.0, 1.0, -3.0]);
     let mut reader = BoundedReader::new(&bytes, 1, bytes.len()).expect("transform reader");
-    let transform = settings::xform(&mut reader).expect("finite transform");
+    let transform = settings::xform(&ctx, &mut reader).expect("finite transform");
     assert_eq!(transform.0.get()[15], -3.0);
     let mut refused = bytes.clone();
     refused[1 + 8 * 15..].copy_from_slice(&f64::NAN.to_le_bytes());
     let mut reader = BoundedReader::new(&refused, 1, refused.len()).expect("transform reader");
     assert_eq!(
-        settings::xform(&mut reader).expect_err("nonfinite transform"),
+        settings::xform(&ctx, &mut reader).expect_err("nonfinite transform"),
         crate::chunks::FramingError::structural(1, "transform contains a nonfinite value")
     );
 }
@@ -1092,7 +1104,10 @@ fn rendering_attributes_reject_negative_version_minors_at_each_nested_gate() {
     }
 }
 
+mod deferred_utf16;
 mod embedded_records;
+mod fallible_prefix;
+mod layer_tables;
 mod layers;
 mod rendering_checksums;
 
@@ -1107,3 +1122,6 @@ fn every_standard_unit_reads_its_scale_from_the_admitted_table() {
     }
     assert_eq!(settings::MillimeterScale::IDENTITY.value(), 1.0);
 }
+
+mod bounded_diagnostics;
+mod metadata_lifetimes;

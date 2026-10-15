@@ -10,6 +10,7 @@ use cadmpeg_core::CodecError;
 #[derive(Debug, Clone)]
 pub(crate) struct TrimPacket {
     independent_count: usize,
+    triangle_count: usize,
     strip_lengths: Vec<usize>,
     fan_lengths: Vec<usize>,
     handles: Vec<u32>,
@@ -25,33 +26,66 @@ impl PartialEq for TrimPacket {
     }
 }
 
-impl TryFrom<(usize, Vec<usize>, Vec<usize>, Vec<u32>)> for TrimPacket {
-    type Error = &'static str;
+/// A comparison reads the primitive count and every length and handle.
+impl cadmpeg_core::decode::cost::DecodeCost for TrimPacket {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        let mut bytes = u64_from_index(std::mem::size_of::<usize>());
+        for part in [
+            self.strip_lengths.decode_cost(ctx, operation)?,
+            self.fan_lengths.decode_cost(ctx, operation)?,
+            self.handles.decode_cost(ctx, operation)?,
+        ] {
+            bytes = bytes
+                .checked_add(part)
+                .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+        }
+        Ok(bytes)
+    }
+}
 
-    fn try_from(
+impl TrimPacket {
+    pub(crate) fn try_from(
+        ctx: &DecodeContext<'_>,
         (independent_count, strip_lengths, fan_lengths, handles): (
             usize,
             Vec<usize>,
             Vec<usize>,
             Vec<u32>,
         ),
-    ) -> Result<Self, Self::Error> {
-        let expected = independent_count.checked_mul(3).and_then(|count| {
-            strip_lengths
-                .iter()
-                .chain(&fan_lengths)
-                .try_fold(count, |count, length| count.checked_add(*length))
-        });
-        if expected != Some(handles.len()) {
-            return Err("trim packet partition does not consume handles");
+    ) -> Result<Option<Self>, CodecError> {
+        let operation = "catia_trim_packet_partition";
+        let mut expected = independent_count
+            .checked_mul(3)
+            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+        let mut triangle_count = independent_count;
+        let mut length_visits = strip_lengths.iter().chain(&fan_lengths);
+        while let Some(length) =
+            ctx.next_charged(&mut length_visits, "catia_trim_packet_partition")?
+        {
+            expected = expected
+                .checked_add(*length)
+                .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+            if let Some(triangles) = length.checked_sub(2) {
+                triangle_count = triangle_count
+                    .checked_add(triangles)
+                    .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+            }
         }
-        Ok(Self {
+        if expected != handles.len() {
+            return Ok(None);
+        }
+        Ok(Some(Self {
             independent_count,
+            triangle_count,
             strip_lengths,
             fan_lengths,
             handles,
             triangles: OnceLock::new(),
-        })
+        }))
     }
 }
 
@@ -62,6 +96,7 @@ impl TrimPacket {
     ) -> Result<Self, CodecError> {
         Ok(Self {
             independent_count: self.independent_count,
+            triangle_count: self.triangle_count,
             strip_lengths: ctx.copy_slice(&self.strip_lengths, "catia_trim_clone_strip_lengths")?,
             fan_lengths: ctx.copy_slice(&self.fan_lengths, "catia_trim_clone_fan_lengths")?,
             handles: ctx.copy_slice(&self.handles, "catia_trim_clone_handles")?,
@@ -103,78 +138,52 @@ impl TrimPacket {
 
     fn expand_triangles(&self, ctx: &DecodeContext<'_>) -> Result<Vec<[u32; 3]>, CodecError> {
         let operation = "catia_trim_expansion_work";
-        let lengths = self
-            .strip_lengths
-            .len()
-            .checked_add(self.fan_lengths.len())
-            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
-        ctx.charge_work(u64_from_index(lengths), operation)?;
-        let triangle_count = self
-            .strip_lengths
-            .iter()
-            .chain(&self.fan_lengths)
-            .try_fold(self.independent_count, |count, &length| {
-                count.checked_add(match length {
-                    0 | 1 => 0,
-                    length => length - 2,
-                })
-            })
-            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
-        let work = u64_from_index(triangle_count)
-            .checked_mul(3)
-            .and_then(|work| work.checked_add(u64_from_index(self.handles.len())))
-            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
-        ctx.charge_work(work, operation)?;
         let mut triangles = Vec::new();
+        ctx.reserve_vec(&mut triangles, self.triangle_count, "catia_trim_triangles")?;
         let (independent, mut remaining) = self.handles.split_at(3 * self.independent_count);
-        for triple in independent.chunks_exact(3) {
-            ctx.charge_retained(
-                u64_from_index(std::mem::size_of::<[u32; 3]>()),
-                "catia_trim_triangles",
-            )?;
-            ctx.push_vec(
-                &mut triangles,
-                [triple[0], triple[1], triple[2]],
-                "catia_trim_triangles",
-            )?;
+        for index in ctx.admit_iter(0..self.independent_count, operation)? {
+            let offset = 3 * index;
+            triangles.push([
+                independent[offset],
+                independent[offset + 1],
+                independent[offset + 2],
+            ]);
         }
-        for &length in &self.strip_lengths {
+
+        let mut charged_visits = (self.strip_lengths).iter();
+        while let Some(&length) = ctx.next_charged(&mut charged_visits, operation)? {
             let (strip, tail) = remaining.split_at(length);
             remaining = tail;
-            for (index, triple) in strip.windows(3).enumerate() {
-                ctx.charge_retained(
-                    u64_from_index(std::mem::size_of::<[u32; 3]>()),
-                    "catia_trim_triangles",
-                )?;
-                ctx.push_vec(
-                    &mut triangles,
-                    if index % 2 == 0 {
-                        [triple[0], triple[1], triple[2]]
-                    } else {
-                        [triple[1], triple[0], triple[2]]
-                    },
-                    "catia_trim_triangles",
-                )?;
+            let triangle_indices = match length.checked_sub(2) {
+                Some(count) => 0..count,
+                None => 0..0,
+            };
+            for index in ctx.admit_iter(triangle_indices, operation)? {
+                let triple = &strip[index..index + 3];
+                triangles.push(if index % 2 == 0 {
+                    [triple[0], triple[1], triple[2]]
+                } else {
+                    [triple[1], triple[0], triple[2]]
+                });
             }
         }
-        for &length in &self.fan_lengths {
+
+        let mut charged_visits = (self.fan_lengths).iter();
+        while let Some(&length) = ctx.next_charged(&mut charged_visits, operation)? {
             let (fan, tail) = remaining.split_at(length);
             remaining = tail;
             let Some((&center, rim)) = fan.split_first() else {
                 continue;
             };
-            for pair in rim.windows(2) {
-                ctx.charge_retained(
-                    u64_from_index(std::mem::size_of::<[u32; 3]>()),
-                    "catia_trim_triangles",
-                )?;
-                ctx.push_vec(
-                    &mut triangles,
-                    [center, pair[0], pair[1]],
-                    "catia_trim_triangles",
-                )?;
+            let triangle_indices = match length.checked_sub(2) {
+                Some(count) => 0..count,
+                None => 0..0,
+            };
+            for index in ctx.admit_iter(triangle_indices, operation)? {
+                triangles.push([center, rim[index], rim[index + 1]]);
             }
         }
+
         Ok(triangles)
     }
 }
@@ -184,10 +193,15 @@ mod tests {
     use super::TrimPacket;
     use cadmpeg_core::CodecError;
 
+    fn packet(args: (usize, Vec<usize>, Vec<usize>, Vec<u32>)) -> TrimPacket {
+        crate::test_support::with_service_context(|ctx| TrimPacket::try_from(ctx, args))
+            .expect("service resource budget")
+            .expect("complete trim handle partition")
+    }
+
     #[test]
     fn trim_expansion_refuses_work_before_cache_installation() {
-        let packet =
-            TrimPacket::try_from((1, vec![], vec![], vec![0, 1, 2])).expect("complete partition");
+        let packet = packet((1, vec![], vec![], vec![0, 1, 2]));
         crate::test_support::with_work_limit(0, |ctx| {
             let CodecError::ResourceLimit(limit) = packet
                 .triangles(ctx)
@@ -203,16 +217,50 @@ mod tests {
 
     #[test]
     fn packet_rejects_overflow_and_incomplete_partitions() {
-        assert!(TrimPacket::try_from((usize::MAX, vec![], vec![], vec![])).is_err());
-        assert!(TrimPacket::try_from((0, vec![usize::MAX], vec![1], vec![])).is_err());
-        assert!(TrimPacket::try_from((1, vec![], vec![], vec![0, 1])).is_err());
-        assert!(TrimPacket::try_from((0, vec![1], vec![], vec![0, 1])).is_err());
+        for args in [
+            (usize::MAX, vec![], vec![], vec![]),
+            (0, vec![usize::MAX], vec![1], vec![]),
+        ] {
+            crate::test_support::with_service_context(|ctx| {
+                let CodecError::ResourceLimit(limit) = TrimPacket::try_from(ctx, args)
+                    .expect_err("overflow must refuse as a resource limit")
+                else {
+                    panic!("resource refusal required")
+                };
+                assert_eq!(limit.operation, "catia_trim_packet_partition");
+                assert_eq!(ctx.resource_refusal(), Some(limit));
+            });
+        }
+        for args in [
+            (1, vec![], vec![], vec![0, 1]),
+            (0, vec![1], vec![], vec![0, 1]),
+        ] {
+            let result =
+                crate::test_support::with_service_context(|ctx| TrimPacket::try_from(ctx, args));
+            assert!(result.expect("service resource budget").is_none());
+        }
+    }
+
+    #[test]
+    fn trim_partition_sources_propagate_caller_work_refusals() {
+        // One strip-length visit precedes one fan-length visit.
+        for cap in [0, 1] {
+            crate::test_support::with_work_limit(cap, |ctx| {
+                let CodecError::ResourceLimit(limit) =
+                    TrimPacket::try_from(ctx, (0, vec![1], vec![1], vec![10, 11]))
+                        .expect_err("both partition sources require admission")
+                else {
+                    panic!("resource refusal required")
+                };
+                assert_eq!(limit.operation, "catia_trim_packet_partition");
+                assert_eq!(ctx.resource_refusal(), Some(limit));
+            });
+        }
     }
 
     #[test]
     fn packet_reuses_expansion_without_changing_equality() {
-        let packet = TrimPacket::try_from((1, vec![4], vec![4], (0..11).collect()))
-            .expect("complete trim handle partition");
+        let packet = packet((1, vec![4], vec![4], (0..11).collect()));
         let cold = packet.clone();
         assert!(packet.triangles.get().is_none());
         crate::test_support::with_service_context(|ctx| {
@@ -234,8 +282,7 @@ mod tests {
 
     #[test]
     fn packet_preserves_independent_strip_and_fan_order() {
-        let packet = TrimPacket::try_from((1, vec![4, 1], vec![4], (0..12).collect()))
-            .expect("complete trim handle partition");
+        let packet = packet((1, vec![4, 1], vec![4], (0..12).collect()));
         assert_eq!(
             crate::test_support::with_service_context(|ctx| packet
                 .triangles(ctx)
@@ -247,12 +294,63 @@ mod tests {
 
     #[test]
     fn lazy_trim_triangle_expansion_refuses_before_retained_growth() {
-        let packet = TrimPacket::try_from((1, vec![4], vec![4], (0..11).collect()))
-            .expect("complete trim handle partition");
+        let packet = packet((1, vec![4], vec![4], (0..11).collect()));
         let refusal = crate::test_support::with_collection_limit(4, |ctx| packet.triangles(ctx))
             .expect_err("five triangles exceed four admitted items");
         assert!(matches!(refusal, CodecError::ResourceLimit(limit)
             if limit.operation == "catia_trim_triangles"));
         assert!(packet.triangles.get().is_none());
+    }
+
+    #[test]
+    fn trim_cache_hit_requires_no_input_work() {
+        let packet = packet((1, vec![4], vec![4], (0..11).collect()));
+        crate::test_support::with_service_context(|ctx| {
+            packet.triangles(ctx).expect("warm real triangle cache");
+        });
+        crate::test_support::with_work_limit(0, |ctx| {
+            let cached = packet.triangles(ctx).expect("cache hit visits no input");
+            assert_eq!(
+                cached,
+                [[0, 1, 2], [3, 4, 5], [5, 4, 6], [7, 8, 9], [7, 9, 10]]
+            );
+        });
+    }
+
+    #[test]
+    fn trim_expansion_reuses_validated_count_without_rescanning_lengths() {
+        let packet = packet((0, vec![4], vec![], vec![10, 11, 12, 13]));
+        // One strip visit, two triangle windows, and two end probes use five units.
+        crate::test_support::with_work_limit(5, |ctx| {
+            assert_eq!(
+                packet.triangles(ctx).expect("five input visits"),
+                [[10, 11, 12], [12, 11, 13]]
+            );
+        });
+    }
+    #[test]
+    fn trim_short_strips_and_fans_visit_no_triangle_windows() {
+        for length in 0..=2 {
+            for fan in [false, true] {
+                let packet = packet((
+                    0,
+                    if fan { vec![] } else { vec![length] },
+                    if fan { vec![length] } else { vec![] },
+                    (0..u32::try_from(length).expect("fixed strip length")).collect(),
+                ));
+                crate::test_support::with_work_limit(3, |ctx| {
+                    assert!(packet
+                        .triangles(ctx)
+                        .expect("one length visit and two end probes")
+                        .is_empty());
+                    let CodecError::ResourceLimit(limit) =
+                        ctx.charge_work(1, "probe").expect_err("exact work")
+                    else {
+                        panic!("resource refusal required")
+                    };
+                    assert_eq!(limit.used, 3);
+                });
+            }
+        }
     }
 }

@@ -1,0 +1,555 @@
+// SPDX-License-Identifier: Apache-2.0
+
+use cadmpeg_core::decode::{
+    u64_from_index, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension,
+};
+use cadmpeg_core::CodecError;
+use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::geometry::nurbs::bezier::HomogeneousBezierSpan;
+use cadmpeg_ir::geometry::nurbs::{NurbsCurve, WeightedPole3};
+use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::scalar::NonZeroReal;
+use std::mem::size_of;
+
+fn rail(y: f64, weights: Option<Vec<f64>>) -> NurbsCurve {
+    NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point3::new(0.0, y, 0.0), Point3::new(1.0, y, 0.0)],
+        weights,
+        false,
+    )
+    .unwrap()
+    .unwrap()
+}
+
+#[test]
+fn ruled_pairing_releases_consumed_rows_before_output_knots() {
+    let first = rail(0.0, None);
+    let second = rail(1.0, None);
+    let weights = [NonZeroReal::new(0.5).unwrap(); 2];
+    // Exact collection capacities: two source point rows and weight rows,
+    // each with two controls, then two output weighted rows. The current
+    // aggregate source reservation lasts until pairing returns. Check both
+    // row admission boundaries and its release before the output knot copies.
+    let source = 2 * size_of::<Vec<FinitePoint3>>()
+        + 4 * size_of::<FinitePoint3>()
+        + 2 * size_of::<Vec<NonZeroReal>>()
+        + 4 * size_of::<NonZeroReal>();
+    let output_outer = 2 * size_of::<Vec<WeightedPole3<FinitePoint3>>>();
+    let output_row = 2 * size_of::<WeightedPole3<FinitePoint3>>();
+    let used = u64_from_index(source + output_outer + output_row);
+    let first_used = u64_from_index(source + output_outer);
+    let additional = u64_from_index(output_row);
+    let peak = used + additional;
+    for (cap, refusal_used) in [
+        (first_used + additional - 1, Some(first_used)),
+        (peak - 1, Some(used)),
+        (peak, None),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut output_storage = ctx.reserve_scoped(0, "test ruled output owner").unwrap();
+        let result = output_storage.with_storage(|| {
+            super::super::same_basis_ruled_surface(&first, &second, &weights, &ctx)
+        });
+        if let Some(used) = refusal_used {
+            let error = result.unwrap_err();
+            let CodecError::ResourceLimit(first) = error else {
+                panic!("expected actual weighted-row allocation refusal");
+            };
+            assert_eq!(first.dimension, ResourceDimension::MaterializedBytes);
+            assert_eq!(
+                first.operation,
+                "iges ruled same-basis weighted row controls"
+            );
+            assert_eq!(
+                (first.limit, first.used, first.additional),
+                (cap, used, additional)
+            );
+            drop(output_storage);
+            assert!(
+                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first)
+            );
+        } else {
+            let surface = result.unwrap();
+            assert_eq!((surface.u_degree(), surface.v_degree()), (1, 1));
+            assert_eq!((surface.u_count(), surface.v_count()), (2, 2));
+            assert_eq!(surface.u_knots().as_slice(), [0.0, 0.0, 1.0, 1.0]);
+            assert_eq!(surface.v_knots().as_slice(), [0.0, 0.0, 1.0, 1.0]);
+            for u in 0..2 {
+                for v in 0..2 {
+                    assert_eq!(
+                        surface.pole(u, v).unwrap().get(),
+                        Point3::new(
+                            f64::from(u32::try_from(u).unwrap()),
+                            f64::from(u32::try_from(v).unwrap()),
+                            0.0
+                        )
+                    );
+                    assert_eq!(surface.weight(u, v).unwrap().get(), 0.5);
+                }
+            }
+            drop(surface);
+            drop(output_storage);
+            ctx.finish_session().unwrap();
+        }
+    }
+}
+
+#[test]
+fn closure_extraction_releases_source_points_and_weights_before_bezier_working_lanes() {
+    let curve = rail(0.0, Some(vec![1.0, 0.5]));
+    // Positive controls use two exact slots. The working controls and each
+    // span's controls use the four-slot minimum. One four-knot copy remains
+    // live when the span vector grows. Source point and weight copies have
+    // already been destroyed, so they do not contribute to that peak.
+    let used = u64_from_index(
+        2 * size_of::<[f64; 4]>()
+            + 4 * size_of::<f64>()
+            + 4 * size_of::<[f64; 4]>()
+            + 4 * size_of::<[f64; 4]>(),
+    );
+    let additional = u64_from_index(4 * size_of::<HomogeneousBezierSpan>());
+    let peak = used + additional;
+    for cap in [peak - 1, peak] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let result = super::super::homogeneous_bezier_spans(&ctx, &curve);
+        if cap < peak {
+            let CodecError::ResourceLimit(first) = result.unwrap_err() else {
+                panic!("expected actual Bezier span allocation refusal");
+            };
+            assert_eq!(first.dimension, ResourceDimension::MaterializedBytes);
+            assert_eq!(first.operation, "Bezier spans");
+            assert_eq!(
+                (first.limit, first.used, first.additional),
+                (cap, used, additional)
+            );
+            assert!(
+                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first)
+            );
+        } else {
+            let spans = result.unwrap().unwrap();
+            assert_eq!(spans.len(), 1);
+            assert_eq!(spans[0].domain, [0.0, 1.0]);
+            assert_eq!(
+                spans[0].controls,
+                [[0.0, 0.0, 0.0, 1.0], [0.5, 0.0, 0.0, 0.5]]
+            );
+            drop(spans);
+            ctx.finish_session().unwrap();
+        }
+    }
+}
+
+fn same_basis_source_refusal(cap: u64, operation: &'static str) {
+    let first = rail(0.0, None);
+    let second = rail(1.0, None);
+    let weights = [NonZeroReal::new(0.5).unwrap(); 2];
+    let first_before = serde_json::to_value(&first).unwrap();
+    let second_before = serde_json::to_value(&second).unwrap();
+    // The unit-weight predicate stops at the first non-unit scalar: one
+    // actual visit, with no terminal probe. Each source pole and weight row
+    // then has one visit. Fixed two-control row copies perform no scan.
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = cap;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let Err(CodecError::ResourceLimit(original)) =
+        super::super::same_basis_ruled_surface(&first, &second, &weights, &ctx)
+    else {
+        panic!("expected actual ruled source visit refusal");
+    };
+    assert_eq!(original.dimension, ResourceDimension::WorkUnits);
+    assert_eq!(original.operation, operation);
+    assert_eq!(
+        (original.limit, original.used, original.additional),
+        (cap, cap, 1)
+    );
+    for _ in 0..64 {
+        for replay in [&weights[..], &[]] {
+            assert!(
+                matches!(super::super::same_basis_ruled_surface(&first, &second, replay, &ctx),
+                Err(CodecError::ResourceLimit(last)) if last == original)
+            );
+        }
+    }
+    assert_eq!(serde_json::to_value(&first).unwrap(), first_before);
+    assert_eq!(serde_json::to_value(&second).unwrap(), second_before);
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == original)
+    );
+}
+
+#[test]
+fn ruled_same_basis_poles_refuse_first_actual_source_visit() {
+    same_basis_source_refusal(1, "iges ruled same-basis pole traversal");
+}
+
+#[test]
+fn ruled_same_basis_poles_refuse_last_actual_source_visit() {
+    same_basis_source_refusal(2, "iges ruled same-basis pole traversal");
+}
+
+#[test]
+fn ruled_same_basis_weights_refuse_first_actual_source_visit() {
+    same_basis_source_refusal(3, "iges ruled weight row traversal");
+}
+
+#[test]
+fn ruled_same_basis_weights_refuse_last_actual_source_visit() {
+    same_basis_source_refusal(4, "iges ruled weight row traversal");
+}
+
+fn closure_source_refusal(curve: &NurbsCurve, cap: u64, additional: u64, operation: &'static str) {
+    let before = serde_json::to_value(curve).unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = cap;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let Err(CodecError::ResourceLimit(original)) =
+        super::super::homogeneous_bezier_spans(&ctx, curve)
+    else {
+        panic!("expected closure source or first conversion refusal");
+    };
+    assert_eq!(original.dimension, ResourceDimension::WorkUnits);
+    assert_eq!(original.operation, operation);
+    assert_eq!(
+        (original.limit, original.used, original.additional),
+        (cap, cap, additional)
+    );
+    for _ in 0..64 {
+        assert!(
+            matches!(super::super::homogeneous_bezier_spans(&ctx, curve),
+            Err(CodecError::ResourceLimit(last)) if last == original)
+        );
+    }
+    assert_eq!(serde_json::to_value(curve).unwrap(), before);
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == original)
+    );
+}
+
+#[test]
+fn closure_polynomial_poles_refuse_before_complete_infallible_scan() {
+    // Both immutable positions exist at indices0..pole_count. The complete
+    // infallible pole scan admits two visits together before its first read.
+    closure_source_refusal(
+        &rail(0.0, None),
+        0,
+        2,
+        "iges surface closure pole traversal",
+    );
+}
+
+#[test]
+fn closure_polynomial_poles_complete_before_first_control_conversion() {
+    closure_source_refusal(&rail(0.0, None), 2, 1, "Bezier positive control conversion");
+}
+
+#[test]
+fn closure_rational_weights_refuse_first_actual_source_visit() {
+    closure_source_refusal(
+        &rail(0.0, Some(vec![1.0, 0.5])),
+        0,
+        1,
+        "iges surface closure weight traversal",
+    );
+}
+
+#[test]
+fn closure_rational_weights_refuse_last_actual_source_visit() {
+    closure_source_refusal(
+        &rail(0.0, Some(vec![1.0, 0.5])),
+        1,
+        1,
+        "iges surface closure weight traversal",
+    );
+}
+
+#[test]
+fn closure_relative_weight_underflow_accepts_exact_work_and_releases_scratch() {
+    let curve = rail(0.0, Some(vec![f64::MIN_POSITIVE, f64::MAX]));
+    assert_eq!(f64::MIN_POSITIVE / f64::MAX, 0.0);
+    let before = serde_json::to_value(&curve).unwrap();
+    // Two extracted weights, two extracted poles, two weight validations,
+    // two scale visits, then one conversion rejects the vanished weight.
+    let work = 2 + 2 + 2 + 2 + 1;
+    let source = 2 * size_of::<f64>() + 2 * size_of::<FinitePoint3>();
+    let controls = 2 * size_of::<[f64; 4]>();
+    let peak = u64_from_index(source + controls);
+    for cap in [peak - 1, peak] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = work;
+        policy.limits.max_materialized_bytes = cap;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_collection_items = 6;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let result = super::super::homogeneous_bezier_spans(&ctx, &curve);
+        if cap < peak {
+            let CodecError::ResourceLimit(original) = result.unwrap_err() else {
+                panic!("expected homogeneous control backing refusal");
+            };
+            assert_eq!(original.dimension, ResourceDimension::MaterializedBytes);
+            assert_eq!(original.operation, "iges_surface_closure_controls");
+            assert_eq!(
+                (original.limit, original.used, original.additional),
+                (cap, u64_from_index(source), u64_from_index(controls))
+            );
+            assert!(
+                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == original)
+            );
+        } else {
+            assert!(result.unwrap().is_none());
+            let released = ctx
+                .reserve_scoped(peak, "test released closure scratch")
+                .unwrap();
+            drop(released);
+            assert!(ctx.resource_refusal().is_none());
+            ctx.finish_session().unwrap();
+        }
+        assert_eq!(serde_json::to_value(&curve).unwrap(), before);
+    }
+}
+
+#[test]
+fn shared_weights_last_mismatch_accepts_exact_visits_without_allocation() {
+    let first = rail(0.0, Some(vec![1.0, 0.5]));
+    let second = rail(1.0, None);
+    let before = (
+        serde_json::to_value(&first).unwrap(),
+        serde_json::to_value(&second).unwrap(),
+    );
+    // Scale is 1, the first pair agrees, and the second pair differs.
+    // The matching predicate stops on that second visit before end probing.
+    for cap in [1, 2] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        policy.limits.max_entities = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let result = super::super::projectively_shared_weights(&first, &second, &ctx);
+        if cap == 1 {
+            let Err(CodecError::ResourceLimit(original)) = result else {
+                panic!("second actual equality visit must refuse");
+            };
+            assert_eq!(original.dimension, ResourceDimension::WorkUnits);
+            assert_eq!(original.operation, "iges ruled shared weight equality");
+            assert_eq!(
+                (original.limit, original.used, original.additional),
+                (1, 1, 1)
+            );
+            for _ in 0..64 {
+                {
+                    let replay = &first;
+                    assert!(
+                        matches!(super::super::projectively_shared_weights(replay, &second, &ctx),
+                        Err(CodecError::ResourceLimit(last)) if last == original)
+                    );
+                }
+            }
+            assert!(
+                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == original)
+            );
+        } else {
+            assert!(result.unwrap().is_none());
+            assert!(ctx.resource_refusal().is_none());
+            ctx.finish_session().unwrap();
+        }
+        assert_eq!(
+            (
+                serde_json::to_value(&first).unwrap(),
+                serde_json::to_value(&second).unwrap()
+            ),
+            before
+        );
+    }
+}
+
+fn ruled_row_collection_boundary(count: usize, rational: bool, weight_rows: bool, last: bool) {
+    let mut knots = vec![0.0, 0.0];
+    knots.extend((1..count - 1).map(|index| f64::from(u32::try_from(index).unwrap())));
+    let end = f64::from(u32::try_from(count - 1).unwrap());
+    knots.extend([end, end]);
+    let weight = if rational { 2.0 } else { 1.0 };
+    let curves: Vec<_> = (0..2)
+        .map(|row| {
+            NurbsCurve::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
+                1,
+                knots.clone(),
+                (0..count)
+                    .map(|index| {
+                        Point3::new(
+                            f64::from(u32::try_from(index).unwrap()),
+                            f64::from(row),
+                            0.0,
+                        )
+                    })
+                    .collect(),
+                rational.then(|| (0..count).map(|_| weight).collect()),
+                false,
+            )
+            .unwrap()
+            .unwrap()
+        })
+        .collect();
+    for curve in &curves {
+        assert_eq!(curve.pole_count(), count);
+        assert_eq!(curve.pole_rows().weight_at(0), rational.then_some(weight));
+    }
+    let weights: Vec<_> = (0..count)
+        .map(|_| NonZeroReal::new(weight).unwrap())
+        .collect();
+    let before = (
+        serde_json::to_value(&curves[0]).unwrap(),
+        serde_json::to_value(&curves[1]).unwrap(),
+    );
+    // Pole rows: N outer slots and two per completed row. Weight rows
+    // follow all 3N pole slots and their own N-slot outer vector.
+    let prefix = if weight_rows { 4 * count } else { count };
+    let items = u64_from_index(prefix + if last { 2 * (count - 1) } else { 0 });
+    let pole_storage = count * (size_of::<Vec<FinitePoint3>>() + 2 * size_of::<FinitePoint3>());
+    let weight_storage = count * (size_of::<Vec<NonZeroReal>>() + 2 * size_of::<NonZeroReal>());
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = items;
+    policy.limits.max_materialized_bytes = if rational {
+        u64_from_index(pole_storage + weight_storage)
+    } else {
+        0
+    };
+    policy.limits.max_retained_bytes = if rational {
+        0
+    } else {
+        u64_from_index(pole_storage)
+    };
+    policy.limits.max_entities = 0;
+    policy.limits.max_recursion_depth = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let Err(CodecError::ResourceLimit(first)) =
+        super::super::same_basis_ruled_surface(&curves[0], &curves[1], &weights, &ctx)
+    else {
+        panic!("expected the next ruled row allocation to refuse");
+    };
+    assert_eq!(first.dimension, ResourceDimension::CollectionItems);
+    assert_eq!(
+        first.operation,
+        if weight_rows {
+            "iges ruled same-basis weight row controls"
+        } else {
+            "iges ruled same-basis pole row controls"
+        }
+    );
+    assert_eq!(
+        (first.limit, first.used, first.additional),
+        (items, items, 2)
+    );
+    for _ in 0..64 {
+        for source in [weights.as_slice(), &[]] {
+            assert!(matches!(super::super::same_basis_ruled_surface(
+                &curves[0], &curves[1], source, &ctx),
+                Err(CodecError::ResourceLimit(last)) if last == first));
+        }
+    }
+    assert_eq!(
+        (
+            serde_json::to_value(&curves[0]).unwrap(),
+            serde_json::to_value(&curves[1]).unwrap()
+        ),
+        before
+    );
+    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+}
+
+#[test]
+fn ruled_polynomial_first_pole_row_refuses_collection() {
+    for count in [4, 64] {
+        ruled_row_collection_boundary(count, false, false, false);
+    }
+}
+
+#[test]
+fn ruled_polynomial_last_pole_row_refuses_collection() {
+    for count in [4, 64] {
+        ruled_row_collection_boundary(count, false, false, true);
+    }
+}
+
+#[test]
+fn ruled_rational_first_pole_row_refuses_collection() {
+    for count in [4, 64] {
+        ruled_row_collection_boundary(count, true, false, false);
+    }
+}
+
+#[test]
+fn ruled_rational_last_pole_row_refuses_collection() {
+    for count in [4, 64] {
+        ruled_row_collection_boundary(count, true, false, true);
+    }
+}
+
+#[test]
+fn ruled_rational_first_weight_row_refuses_collection() {
+    for count in [4, 64] {
+        ruled_row_collection_boundary(count, true, true, false);
+    }
+}
+
+#[test]
+fn ruled_rational_last_weight_row_refuses_collection() {
+    for count in [4, 64] {
+        ruled_row_collection_boundary(count, true, true, true);
+    }
+}
+
+fn with_zero_context(mut run: impl FnMut(&cadmpeg_core::decode::DecodeContext<'_>)) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_entities = 0;
+    policy.limits.max_recursion_depth = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    for _ in 0..64 {
+        run(&ctx);
+    }
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn shared_weights_negative_scale_needs_no_work() {
+    let first = rail(0.0, Some(vec![-1.0, 1.0]));
+    let second = rail(1.0, None);
+    let before = (
+        serde_json::to_value(&first).unwrap(),
+        serde_json::to_value(&second).unwrap(),
+    );
+    with_zero_context(|ctx| {
+        // The two fixed indexed weights yield scale -1. No range visit or
+        // vector allocation executes on the nonpositive-scale return.
+        let result = super::super::projectively_shared_weights(&first, &second, ctx);
+        assert!(result.unwrap().is_none());
+        assert_eq!(
+            (
+                serde_json::to_value(&first).unwrap(),
+                serde_json::to_value(&second).unwrap()
+            ),
+            before
+        );
+    });
+}

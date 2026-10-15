@@ -18,7 +18,10 @@ use crate::loss::StepLossCode;
 use crate::test_support::exchange::{decode_inline, decode_inline_result};
 use crate::{StepCodec, StepSchema, StepWriteOptions};
 
+mod case_equality;
 mod collection_limits;
+mod known_length;
+mod scratch_lifetimes;
 mod string_limits;
 
 #[test]
@@ -1742,3 +1745,31 @@ fn nonfinite_pmi_placement_refuses_real_overflow() {
         if message.contains("finite binary64 range"))
     );
 }
+
+mod target_indices;
+
+mod measure_index;
+
+#[test]
+fn typed_omitted_descent_refuses_work_limit() {
+    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+    let value = crate::parse::Value::Typed("WRAP".into(), Box::new(crate::parse::Value::Omitted));
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "STEP typed modifier descent",
+        |limit| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = limit;
+            crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
+                super::modifier_values(&value, &mut Vec::new(), ctx)
+            })
+        },
+    );
+}
+
+mod typed_work;
+
+mod characteristic_analysis;
+mod characteristic_claims;
+
+mod shared_graphs;

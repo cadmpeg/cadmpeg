@@ -5,9 +5,9 @@
 use cadmpeg_core::convert::{f64_from_index, truncate_f64_to_usize};
 use cadmpeg_core::decode::u64_from_index;
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashSet};
 
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::FinitePoint3;
@@ -155,7 +155,7 @@ pub(super) fn neutral_surface(
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
                 record: Some(payload.try_clone_for_decode(ctx, "catia_b5_extrusion_unknown_id")?),
             }),
-            // The resolved extrusion is retained by the surface plan.
+            // The construction belongs to the surface plan.
             procedure: {
                 ctx.charge_retained(
                     u64_from_index(std::mem::size_of::<super::ResolvedExtrusionSurface>()),
@@ -194,7 +194,11 @@ pub(super) fn neutral_surface(
             bounds,
         } => match revolution_surface(
             ctx,
-            graph.profiles.get(&profile_curve),
+            ctx.get_btree_map(
+                &graph.profiles,
+                &profile_curve,
+                "catia_b5_revolution_profile_lookup",
+            )?,
             (axis_origin, axis_direction),
             angular_scale,
             bounds,
@@ -275,41 +279,48 @@ pub(super) fn revolution_surface(
     record: &dyn std::fmt::Display,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Option<(NurbsSurface, RevolutionPlan)>, CodecError> {
-    let (axis_origin, axis_direction) = axis;
-    let Some(profile) = profile else {
-        return Ok(None);
-    };
-    let [parameter_interval, native_angular_interval] = bounds;
-    let Some(directrix) = profile_nurbs(ctx, profile, parameter_interval, record, refusal)? else {
-        return Ok(None);
-    };
-    let angular_interval = [
-        native_angular_interval[0] / angular_scale.get(),
-        native_angular_interval[1] / angular_scale.get(),
-    ];
-    let surface = revolve_nurbs(
-        ctx,
-        &directrix,
-        coordinates(axis_origin),
-        components(&axis_direction),
-        [angular_interval, native_angular_interval],
-        record,
-        refusal,
-    )?;
-    let Some(surface) = surface else {
-        return Ok(None);
-    };
-    Ok(Some((
-        surface,
-        RevolutionPlan {
-            directrix,
-            axis_origin,
-            axis_direction,
-            angular_interval,
-            angular_parameter_interval: native_angular_interval,
-            parameter_interval,
-        },
-    )))
+    let mut output_storage = ctx.reserve_scoped(0, "catia_b5_revolution_output")?;
+    let output = output_storage.with_storage(|| -> Result<_, CodecError> {
+        let (axis_origin, axis_direction) = axis;
+        let Some(profile) = profile else {
+            return Ok(None);
+        };
+        let [parameter_interval, native_angular_interval] = bounds;
+        let Some(directrix) = profile_nurbs(ctx, profile, parameter_interval, record, refusal)?
+        else {
+            return Ok(None);
+        };
+        let angular_interval = [
+            native_angular_interval[0] / angular_scale.get(),
+            native_angular_interval[1] / angular_scale.get(),
+        ];
+        let surface = revolve_nurbs(
+            ctx,
+            &directrix,
+            coordinates(axis_origin),
+            components(&axis_direction),
+            [angular_interval, native_angular_interval],
+            record,
+            refusal,
+        )?;
+        let Some(surface) = surface else {
+            return Ok(None);
+        };
+        Ok(Some((
+            surface,
+            RevolutionPlan {
+                directrix,
+                axis_origin,
+                axis_direction,
+                angular_interval,
+                angular_parameter_interval: native_angular_interval,
+                parameter_interval,
+            },
+        )))
+    })?;
+    output
+        .map(|value| output_storage.commit_value(value))
+        .transpose()
 }
 
 fn profile_nurbs(
@@ -319,55 +330,60 @@ fn profile_nurbs(
     record: &dyn std::fmt::Display,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Option<NurbsCurve>, CodecError> {
-    if !profile
-        .parameter_range()
-        .endpoints()
-        .into_iter()
-        .zip(interval)
-        .all(|(profile, surface)| profile.to_bits() == surface.to_bits())
-    {
-        return Ok(None);
-    }
-    Ok(match profile {
-        B5Profile::Line {
-            point, direction, ..
-        } => crate::nurbs::note_refusal(
-            ctx,
-            cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+    let mut output_storage = ctx.reserve_scoped(0, "catia_b5_revolution_profile_output")?;
+    let output = output_storage.with_storage(|| -> Result<_, CodecError> {
+        if !profile
+            .parameter_range()
+            .endpoints()
+            .into_iter()
+            .zip(interval)
+            .all(|(profile, surface)| profile.to_bits() == surface.to_bits())
+        {
+            return Ok(None);
+        }
+        Ok(match profile {
+            B5Profile::Line {
+                point, direction, ..
+            } => {
+                let mut knots = ctx.collection_vec(4, "catia_b5_revolution_line_profile_knots")?;
+                knots.extend([interval[0], interval[0], interval[1], interval[1]]);
+                let mut input_storage =
+                    ctx.reserve_scoped(0, "catia_b5_revolution_profile_inputs")?;
+                let mut points = input_storage.with_storage(|| {
+                    ctx.collection_vec(2, "catia_b5_revolution_line_profile_points")
+                })?;
+                points.extend(interval.map(|parameter| {
+                    point3(add(coordinates(*point), scale(direction.get(), parameter)))
+                }));
+                crate::nurbs::note_refusal(
+                    ctx,
+                    cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+                        ctx, 1, knots, points, None, false,
+                    )?,
+                    refusal,
+                    format_args!("b5 line profile of a revolution surface: {record}"),
+                )?
+            }
+            B5Profile::Arc {
+                center,
+                direction_x,
+                direction_y,
+                radius,
+                ..
+            } => rational_arc(
                 ctx,
-                1,
-                ctx.collect_vec(
-                    [interval[0], interval[0], interval[1], interval[1]],
-                    "catia_b5_revolution_line_profile_knots",
-                )?,
-                ctx.collect_vec(
-                    interval.into_iter().map(|parameter| {
-                        point3(add(coordinates(*point), scale(direction.get(), parameter)))
-                    }),
-                    "catia_b5_revolution_line_profile_points",
-                )?,
-                None,
-                false,
+                coordinates(*center),
+                (direction_x.get(), direction_y.get()),
+                radius.get(),
+                interval,
+                record,
+                refusal,
             )?,
-            refusal,
-            format_args!("b5 line profile of a revolution surface: {record}"),
-        )?,
-        B5Profile::Arc {
-            center,
-            direction_x,
-            direction_y,
-            radius,
-            ..
-        } => rational_arc(
-            ctx,
-            coordinates(*center),
-            (direction_x.get(), direction_y.get()),
-            radius.get(),
-            interval,
-            record,
-            refusal,
-        )?,
-    })
+        })
+    })?;
+    output
+        .map(|value| output_storage.commit_value(value))
+        .transpose()
 }
 
 pub(super) fn rational_arc(
@@ -379,107 +395,118 @@ pub(super) fn rational_arc(
     record: &dyn std::fmt::Display,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Option<NurbsCurve>, CodecError> {
-    let angles = [interval[0] / radius, interval[1] / radius];
-    let span_count = ((angles[1] - angles[0]).abs() / std::f64::consts::FRAC_PI_2).ceil();
-    if !span_count.is_finite() || span_count > crate::MAX_EXACT_ARC_SPANS {
-        return Ok(None);
-    }
-    // `ceil` answers zero only for an angular span of exactly zero: an arc that
-    // sweeps no angle states no span, which this route refuses as it refuses
-    // every other degeneracy.
-    let Some(span_count) = truncate_f64_to_usize(span_count).and_then(std::num::NonZeroUsize::new)
-    else {
-        return Ok(None);
-    };
-    let span_count = span_count.get();
-    let Some(control_count) = span_count
-        .checked_mul(2)
-        .and_then(|count| count.checked_add(1))
-    else {
-        return Ok(None);
-    };
-    let Some(knot_count) = control_count.checked_add(3) else {
-        return Ok(None);
-    };
-    let mut control_points = Vec::new();
-    ctx.reserve_vec(
-        &mut control_points,
-        control_count,
-        "catia_b5_revolution_arc_points",
-    )?;
-    let mut weights = Vec::new();
-    ctx.reserve_vec(
-        &mut weights,
-        control_count,
-        "catia_b5_revolution_arc_weights",
-    )?;
-    let mut knots = Vec::new();
-    ctx.reserve_vec(&mut knots, knot_count, "catia_b5_revolution_arc_knots")?;
-    for span in 0..span_count {
-        let fraction0 = match f64_from_index(span) {
-            Some(value) => value,
-            None => return Ok(None),
-        } / match f64_from_index(span_count) {
-            Some(value) => value,
-            None => return Ok(None),
-        };
-        let fraction1 = match f64_from_index(span + 1) {
-            Some(value) => value,
-            None => return Ok(None),
-        } / match f64_from_index(span_count) {
-            Some(value) => value,
-            None => return Ok(None),
-        };
-        let angle0 = angles[0] + (angles[1] - angles[0]) * fraction0;
-        let angle1 = angles[0] + (angles[1] - angles[0]) * fraction1;
-        let middle = (angle0 + angle1) * 0.5;
-        let middle_weight = ((angle1 - angle0) * 0.5).cos();
-        if middle_weight <= f64::EPSILON {
+    let mut output_storage = ctx.reserve_scoped(0, "catia_b5_revolution_arc_output")?;
+    let output = output_storage.with_storage(|| -> Result<_, CodecError> {
+        let angles = [interval[0] / radius, interval[1] / radius];
+        let span_count = ((angles[1] - angles[0]).abs() / std::f64::consts::FRAC_PI_2).ceil();
+        if !span_count.is_finite() || span_count > crate::MAX_EXACT_ARC_SPANS {
             return Ok(None);
         }
-        if span == 0 {
+        // `ceil` answers zero only for an angular span of exactly zero: an arc that
+        // sweeps no angle states no span, which this route refuses as it refuses
+        // every other degeneracy.
+        let Some(span_count) =
+            truncate_f64_to_usize(span_count).and_then(std::num::NonZeroUsize::new)
+        else {
+            return Ok(None);
+        };
+        let span_count = span_count.get();
+        let Some(control_count) = span_count
+            .checked_mul(2)
+            .and_then(|count| count.checked_add(1))
+        else {
+            return Ok(None);
+        };
+        let Some(knot_count) = control_count.checked_add(3) else {
+            return Ok(None);
+        };
+        let mut input_storage = ctx.reserve_scoped(0, "catia_b5_revolution_arc_inputs")?;
+        let mut control_points = Vec::new();
+        ctx.reserve_scoped_vec(
+            &mut input_storage,
+            &mut control_points,
+            control_count,
+            "catia_b5_revolution_arc_points",
+        )?;
+        let mut weights = Vec::new();
+        ctx.reserve_scoped_vec(
+            &mut input_storage,
+            &mut weights,
+            control_count,
+            "catia_b5_revolution_arc_weights",
+        )?;
+        let mut knots = Vec::new();
+        ctx.reserve_vec(&mut knots, knot_count, "catia_b5_revolution_arc_knots")?;
+        let mut steps = 0..span_count;
+        while let Some(span) = ctx.next_charged(&mut steps, "catia_b5_revolution_arc_spans")? {
+            let fraction0 = match f64_from_index(span) {
+                Some(value) => value,
+                None => return Ok(None),
+            } / match f64_from_index(span_count) {
+                Some(value) => value,
+                None => return Ok(None),
+            };
+            let fraction1 = match f64_from_index(span + 1) {
+                Some(value) => value,
+                None => return Ok(None),
+            } / match f64_from_index(span_count) {
+                Some(value) => value,
+                None => return Ok(None),
+            };
+            let angle0 = angles[0] + (angles[1] - angles[0]) * fraction0;
+            let angle1 = angles[0] + (angles[1] - angles[0]) * fraction1;
+            let middle = (angle0 + angle1) * 0.5;
+            let middle_weight = ((angle1 - angle0) * 0.5).cos();
+            if middle_weight <= f64::EPSILON {
+                return Ok(None);
+            }
+            if span == 0 {
+                control_points.push(point3(circle_point(
+                    center,
+                    direction_x,
+                    direction_y,
+                    radius,
+                    angle0,
+                )));
+                weights.push(1.0);
+            }
+            control_points.push(point3(circle_point(
+                center,
+                direction_x,
+                direction_y,
+                radius / middle_weight,
+                middle,
+            )));
+            weights.push(middle_weight);
             control_points.push(point3(circle_point(
                 center,
                 direction_x,
                 direction_y,
                 radius,
-                angle0,
+                angle1,
             )));
             weights.push(1.0);
+            if append_quadratic_span_knots(&mut knots, interval, span, span_count).is_none() {
+                return Ok(None);
+            }
         }
-        control_points.push(point3(circle_point(
-            center,
-            direction_x,
-            direction_y,
-            radius / middle_weight,
-            middle,
-        )));
-        weights.push(middle_weight);
-        control_points.push(point3(circle_point(
-            center,
-            direction_x,
-            direction_y,
-            radius,
-            angle1,
-        )));
-        weights.push(1.0);
-        if append_quadratic_span_knots(&mut knots, interval, span, span_count).is_none() {
-            return Ok(None);
-        }
-    }
-    crate::nurbs::note_refusal(
-        ctx,
-        cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+        crate::nurbs::note_refusal(
             ctx,
-            2,
-            knots,
-            control_points,
-            Some(weights),
-            false,
-        )?,
-        refusal,
-        format_args!("b5 rational arc profile of a revolution surface: {record}"),
-    )
+            cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+                ctx,
+                2,
+                knots,
+                control_points,
+                Some(weights),
+                false,
+            )?,
+            refusal,
+            format_args!("b5 rational arc profile of a revolution surface: {record}"),
+        )
+    })?;
+    output
+        .map(|value| output_storage.commit_value(value))
+        .transpose()
 }
 
 pub(super) fn revolve_nurbs(
@@ -491,54 +518,71 @@ pub(super) fn revolve_nurbs(
     record: &dyn std::fmt::Display,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Option<NurbsSurface>, CodecError> {
-    let [angular_interval, native_interval] = intervals;
-    (|| -> Option<Result<NurbsSurface, CodecError>> {
+    let mut output_storage = ctx.reserve_scoped(0, "catia_b5_revolution_surface_output")?;
+    let output = output_storage.with_storage(|| -> Result<_, CodecError> {
+        let [angular_interval, native_interval] = intervals;
         let span_count = ((angular_interval[1] - angular_interval[0]).abs()
             / std::f64::consts::FRAC_PI_2)
             .ceil();
         if !span_count.is_finite() || span_count > crate::MAX_EXACT_ARC_SPANS {
-            return None;
+            return Ok(None);
         }
         // `ceil` answers zero only for an angular span of exactly zero: an arc that
         // sweeps no angle states no span, which this route refuses as it refuses
         // every other degeneracy.
-        let span_count = std::num::NonZeroUsize::new(truncate_f64_to_usize(span_count)?)?.get();
-        let angular_count = span_count.checked_mul(2)?.checked_add(1)?;
-        let control_count =
-            crate::nurbs_surface_control_count(profile.pole_count(), angular_count)?;
-        let mut angles = Vec::new();
-        if let Err(error) =
-            ctx.reserve_vec(&mut angles, angular_count, "catia b5 revolution angles")
-        {
-            return Some(Err(error));
+        let Some(span_count) =
+            truncate_f64_to_usize(span_count).and_then(std::num::NonZeroUsize::new)
+        else {
+            return Ok(None);
+        };
+        let span_count = span_count.get();
+        let Some(angular_count) = span_count
+            .checked_mul(2)
+            .and_then(|count| count.checked_add(1))
+        else {
+            return Ok(None);
+        };
+        if crate::nurbs_surface_control_count(profile.pole_count(), angular_count).is_none() {
+            return Ok(None);
         }
+        let mut angular_storage = ctx.reserve_scoped(0, "catia_b5_revolution_angular_scratch")?;
+        let mut angles = Vec::new();
+        ctx.reserve_scoped_vec(
+            &mut angular_storage,
+            &mut angles,
+            angular_count,
+            "catia b5 revolution angles",
+        )?;
         let mut angular_weights = Vec::new();
-        if let Err(error) = ctx.reserve_vec(
+        ctx.reserve_scoped_vec(
+            &mut angular_storage,
             &mut angular_weights,
             angular_count,
             "catia b5 revolution angular weights",
-        ) {
-            return Some(Err(error));
-        }
+        )?;
         let mut v_knots = Vec::new();
-        if let Err(error) = ctx.reserve_vec(
+        ctx.reserve_vec(
             &mut v_knots,
             angular_count + 3,
             "catia b5 revolution angular knots",
-        ) {
-            return Some(Err(error));
-        }
-        for span in 0..span_count {
-            let fraction0 = f64_from_index(span)? / f64_from_index(span_count)?;
-            let fraction1 = f64_from_index(span + 1)? / f64_from_index(span_count)?;
-            let angle0 =
-                angular_interval[0] + (angular_interval[1] - angular_interval[0]) * fraction0;
-            let angle1 =
-                angular_interval[0] + (angular_interval[1] - angular_interval[0]) * fraction1;
+        )?;
+        let mut steps = 0..span_count;
+        while let Some(span) = ctx.next_charged(&mut steps, "catia_b5_revolution_arc_spans")? {
+            let (Some(span_start), Some(span_end), Some(spans)) = (
+                f64_from_index(span),
+                f64_from_index(span + 1),
+                f64_from_index(span_count),
+            ) else {
+                return Ok(None);
+            };
+            let angle0 = angular_interval[0]
+                + (angular_interval[1] - angular_interval[0]) * (span_start / spans);
+            let angle1 = angular_interval[0]
+                + (angular_interval[1] - angular_interval[0]) * (span_end / spans);
             let middle = (angle0 + angle1) * 0.5;
             let middle_weight = ((angle1 - angle0) * 0.5).cos();
             if middle_weight <= f64::EPSILON {
-                return None;
+                return Ok(None);
             }
             if span == 0 {
                 angles.push((angle0, 1.0));
@@ -548,45 +592,38 @@ pub(super) fn revolve_nurbs(
             angular_weights.push(middle_weight);
             angles.push((angle1, 1.0));
             angular_weights.push(1.0);
-            append_quadratic_span_knots(&mut v_knots, native_interval, span, span_count)?;
-        }
-        let profile_weights = match profile.pole_rows() {
-            cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } => {
-                match ctx.collect_vec(
-                    points.iter().map(|point| point.weight.get()),
-                    "catia b5 revolution profile weights",
-                ) {
-                    Ok(weights) => weights,
-                    Err(error) => return Some(Err(error)),
-                }
+            if append_quadratic_span_knots(&mut v_knots, native_interval, span, span_count)
+                .is_none()
+            {
+                return Ok(None);
             }
-            cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { .. } => match ctx.alloc_filled(
-                profile.pole_count(),
-                1.0,
-                "catia b5 revolution profile weights",
-            ) {
-                Ok(weights) => weights,
-                Err(error) => return Some(Err(error)),
-            },
-        };
-        let mut control_points = Vec::new();
-        if let Err(error) = ctx.reserve_vec(
-            &mut control_points,
-            control_count,
-            "catia b5 revolution control net",
-        ) {
-            return Some(Err(error));
         }
-        let mut weights = Vec::new();
-        if let Err(error) = ctx.reserve_vec(
-            &mut weights,
-            control_count,
-            "catia b5 revolution net weights",
-        ) {
-            return Some(Err(error));
-        }
-        for (index, profile_weight) in profile_weights.into_iter().enumerate() {
-            let profile_point = profile.pole_rows().point_at(index)?;
+        // Each profile pole sweeps one row of the control net.
+        let poles = profile.pole_rows();
+        let mut input_storage = ctx.reserve_scoped(0, "catia_b5_revolution_surface_inputs")?;
+        let mut point_rows = input_storage
+            .with_storage(|| ctx.collection_vec(poles.count(), "catia b5 revolution point rows"))?;
+        let mut weight_rows = input_storage.with_storage(|| {
+            ctx.collection_vec(poles.count(), "catia b5 revolution weight rows")
+        })?;
+        let mut steps = 0..poles.count();
+        while let Some(index) =
+            ctx.next_charged(&mut steps, "catia_b5_revolution_profile_pole_scan")?
+        {
+            let (Some(profile_point), profile_weight) = (
+                poles.point_at(index),
+                match poles {
+                    cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } => {
+                        points.get(index).map(|pole| pole.weight.get())
+                    }
+                    cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { .. } => Some(1.0),
+                },
+            ) else {
+                return Ok(None);
+            };
+            let Some(profile_weight) = profile_weight else {
+                return Ok(None);
+            };
             let relative = [
                 profile_point.x - axis_origin[0],
                 profile_point.y - axis_origin[1],
@@ -594,46 +631,33 @@ pub(super) fn revolve_nurbs(
             ];
             let axial = scale(axis_direction, dot(relative, axis_direction));
             let radial = subtract(relative, axial);
-            for ((angle, radial_scale), angular_weight) in
-                angles.iter().copied().zip(angular_weights.iter().copied())
+            let mut point_row = input_storage.with_storage(|| {
+                ctx.collection_vec(angular_count, "catia b5 revolution point row values")
+            })?;
+            let mut weight_row = input_storage.with_storage(|| {
+                ctx.collection_vec(angular_count, "catia b5 revolution weight row values")
+            })?;
+            for (&(angle, radial_scale), &angular_weight) in ctx
+                .admit_iter(&angles, "catia_b5_revolution_angle_scan")?
+                .zip(&angular_weights)
             {
                 let rotated = rotate_vector(radial, axis_direction, angle);
-                control_points.push(point3(add(
+                point_row.push(point3(add(
                     axis_origin,
                     add(axial, scale(rotated, radial_scale)),
                 )));
-                weights.push(profile_weight * angular_weight);
+                weight_row.push(profile_weight * angular_weight);
             }
+            point_rows.push(point_row);
+            weight_rows.push(weight_row);
         }
-        let row_len = angular_count;
-        let profile_knots = match ctx.copy_slice(
+        let profile_knots = ctx.copy_slice(
             profile.knots().as_slice(),
             "catia b5 revolution profile knots",
-        ) {
-            Ok(knots) => knots,
-            Err(error) => return Some(Err(error)),
-        };
-        let point_rows = match ctx.copy_rows(
-            &control_points,
-            row_len,
-            "catia b5 revolution point rows",
-            "catia b5 revolution point row values",
-        ) {
-            Ok(rows) => rows,
-            Err(error) => return Some(Err(error)),
-        };
-        let weight_rows = match ctx.copy_rows(
-            &weights,
-            row_len,
-            "catia b5 revolution weight rows",
-            "catia b5 revolution weight row values",
-        ) {
-            Ok(rows) => rows,
-            Err(error) => return Some(Err(error)),
-        };
-        let surface = match crate::nurbs::note_refusal(
+        )?;
+        crate::nurbs::note_refusal(
             ctx,
-            match cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes(
+            cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes(
                 ctx,
                 cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                     profile.degree(),
@@ -643,20 +667,14 @@ pub(super) fn revolve_nurbs(
                 cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(2, v_knots, false),
                 cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(point_rows, Some(weight_rows)),
                 false,
-            ) {
-                Ok(value) => value,
-                Err(error) => return Some(Err(error)),
-            },
+            )?,
             refusal,
             format_args!("b5 revolution surface built from its profile: {record}"),
-        ) {
-            Ok(Some(surface)) => surface,
-            Ok(None) => return None,
-            Err(error) => return Some(Err(error)),
-        };
-        Some(Ok(surface))
-    })()
-    .transpose()
+        )
+    })?;
+    output
+        .map(|value| output_storage.commit_value(value))
+        .transpose()
 }
 
 fn append_quadratic_span_knots(
@@ -726,11 +744,17 @@ pub(super) fn emit_surfaces(
     graph: &B5Graph,
     plan: &mut TransferPlan,
     admission: &mut crate::families::FamilyEntityAdmission<'_, '_>,
-) -> Result<HashMap<u32, SurfaceId>, cadmpeg_core::CodecError> {
+    id_storage: &mut ScopedReservation<'_>,
+) -> Result<BTreeMap<u32, SurfaceId>, cadmpeg_core::CodecError> {
+    const LOOKUP: &str = "catia_b5_emitted_surface_lookup";
     let surface_plan: BTreeMap<u32, SurfacePlan> = std::mem::take(&mut plan.surface_plan);
     let namespace = cadmpeg_ir::identity_namespace!("catia", "b5", "surface");
-    let mut surface_ids = HashMap::new();
-    for object_id in surface_plan.keys().copied() {
+    let mut surface_ids = BTreeMap::new();
+    for object_id in admission
+        .context()
+        .admit_iter(&surface_plan, "catia_b5_emitted_surface_id_scan")?
+        .map(|(object_id, _)| *object_id)
+    {
         let index = usize::try_from(object_id).map_err(|_| {
             admission.context().refuse_codec_limit(
                 "catia_b5_emitted_surface_id",
@@ -738,31 +762,48 @@ pub(super) fn emit_surfaces(
                 u64::MAX,
             )
         })?;
-        let id = crate::resource::compose_index_id(
-            admission.context(),
-            &namespace,
-            index,
-            SurfaceId::mint,
-            "catia_b5_emitted_surface_id",
-        )?;
-        admission.context().insert_hash_map(
-            &mut surface_ids,
-            object_id,
-            id,
-            "catia_b5_emitted_surface_ids",
-        )?;
+        let id = id_storage.with_storage(|| {
+            crate::resource::compose_index_id(
+                admission.context(),
+                &namespace,
+                index,
+                SurfaceId::mint,
+                "catia_b5_emitted_surface_id",
+            )
+        })?;
+        id_storage.with_storage(|| {
+            admission.context().insert_btree_map(
+                &mut surface_ids,
+                object_id,
+                id,
+                "catia_b5_emitted_surface_ids",
+            )
+        })?;
     }
+    let mut face_storage = admission
+        .context()
+        .reserve_scoped(0, "catia_b5_face_surface_scratch")?;
     let mut face_surfaces = HashSet::new();
-    for face in &graph.faces {
-        admission.context().insert_hash_set(
-            &mut face_surfaces,
-            face.surface,
-            "catia_b5_face_surface_ids",
-        )?;
+    for face in admission
+        .context()
+        .admit_iter(&graph.faces, "catia_b5_face_surface_scan")?
+    {
+        face_storage.with_storage(|| {
+            admission.context().insert_hash_set(
+                &mut face_surfaces,
+                face.surface,
+                "catia_b5_face_surface_ids",
+            )
+        })?;
     }
-    for (object_id, plan) in surface_plan {
-        let id = surface_ids[&object_id]
-            .try_clone_for_decode(admission.context(), "catia_b5_emitted_surface_ref")?;
+    for (object_id, plan) in admission
+        .context()
+        .admit_iter(surface_plan, "catia_b5_emitted_surface_scan")?
+    {
+        let id = admission
+            .context()
+            .get_btree_map(&surface_ids, &object_id, LOOKUP)?
+            .ok_or_else(|| cadmpeg_core::CodecError::malformed("planned B5 surface without id"))?;
         let revolution_cache = matches!(
             plan.procedure.as_ref(),
             Some(SurfaceProcedure::Revolution(_))
@@ -779,9 +820,12 @@ pub(super) fn emit_surfaces(
         annotate(
             admission.context(),
             annotations,
-            &id,
+            id,
             "object_stream_b5_03",
-            if face_surfaces.contains(&object_id) {
+            if admission
+                .context()
+                .contains_hash_set(&face_surfaces, &object_id, LOOKUP)?
+            {
                 "face_surface"
             } else {
                 "construction_surface"
@@ -805,14 +849,15 @@ pub(super) fn emit_surfaces(
                 annotations,
                 id.as_str(),
                 "geometry",
-                "catia_b5_surface_annotation",
             )?;
         }
         let model_id = id.try_clone_for_decode(admission.context(), "catia_b5_model_surface_id")?;
         admission.reserve_entity(&mut ir.model.surfaces, "catia_b5_emit_surfaces")?;
         ir.model.surfaces.push(Surface {
             id: model_id,
-            geometry: plan.geometry,
+            geometry: plan
+                .geometry
+                .try_clone_for_decode(admission.context(), "catia_b5_model_surface_geometry")?,
             source_object: Some(cgm_source(admission.context(), "surface", object_id)?),
         });
         match plan.procedure {
@@ -821,7 +866,7 @@ pub(super) fn emit_surfaces(
                     ir,
                     annotations,
                     &surface_ids,
-                    &id,
+                    id,
                     object_id,
                     *extrusion,
                     admission,
@@ -848,7 +893,6 @@ pub(super) fn emit_surfaces(
                     annotations,
                     directrix_id.as_str(),
                     "geometry",
-                    "catia_b5_profile_annotation",
                 )?;
                 admission.reserve_entity(&mut ir.model.curves, "catia_b5_emit_curves")?;
                 ir.model.curves.push(Curve {
@@ -857,7 +901,10 @@ pub(super) fn emit_surfaces(
                         "catia_b5_profile_curve_record_id",
                     )?,
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                        revolution.directrix,
+                        revolution.directrix.try_clone_for_decode(
+                            admission.context(),
+                            "catia_b5_model_revolution_directrix",
+                        )?,
                     )),
                     source_object: None,
                 });
@@ -879,7 +926,7 @@ pub(super) fn emit_surfaces(
                 admission.charge()?;
                 let _attached = ir.model.add_procedural_surface(
                     admission.context(),
-                    &id,
+                    id,
                     cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
                         directrix_id,
                         (revolution.axis_origin, revolution.axis_direction),
@@ -902,9 +949,13 @@ pub(super) fn emit_surfaces(
             Some(SurfaceProcedure::RollingBall {
                 carrier_object_id,
                 definition,
-            }) if graph
-                .canonical_surface_id(object_id)
-                .is_some_and(|id| !graph.offset_surfaces.contains_key(&id)) =>
+            }) if match graph.canonical_surface_id(admission.context(), object_id)? {
+                Some(id) => admission
+                    .context()
+                    .get_btree_map(&graph.offset_surfaces, &id, LOOKUP)?
+                    .is_none(),
+                None => false,
+            } =>
             {
                 let procedural_id = crate::resource::compose_u32_id(
                     admission.context(),
@@ -913,7 +964,7 @@ pub(super) fn emit_surfaces(
                     ProceduralSurfaceId::mint,
                     "catia_b5_rolling_ball_id",
                 )?;
-                let carrier_tag = admission.context().format_retained(
+                let (carrier_tag, _tag_storage) = admission.context().format_scoped(
                     format_args!("result_carrier:{carrier_object_id:08x}"),
                     "catia_b5_rolling_ball_carrier_tag",
                 )?;
@@ -928,23 +979,40 @@ pub(super) fn emit_surfaces(
                 admission.charge()?;
                 let _attached = ir.model.add_procedural_surface(
                     admission.context(),
-                    &id,
-                    ProceduralSurface::new(procedural_id, *definition, None),
+                    id,
+                    ProceduralSurface::new(
+                        procedural_id,
+                        copy_rolling_ball_definition(admission.context(), &definition)?,
+                        None,
+                    ),
                 )?;
             }
             Some(SurfaceProcedure::RollingBall { .. }) | None => {}
         }
     }
-    for &object_id in surface_ids.keys() {
-        let Some(construction_id) = graph.canonical_surface_id(object_id) else {
+    for object_id in admission
+        .context()
+        .admit_iter(&surface_ids, "catia_b5_offset_surface_scan")?
+        .map(|(object_id, _)| *object_id)
+    {
+        let Some(construction_id) = graph.canonical_surface_id(admission.context(), object_id)?
+        else {
             continue;
         };
-        let Some(offset) = graph.offset_surfaces.get(&construction_id) else {
+        let Some(offset) =
+            admission
+                .context()
+                .get_btree_map(&graph.offset_surfaces, &construction_id, LOOKUP)?
+        else {
             continue;
         };
         let (Some(surface), Some(support)) = (
-            surface_ids.get(&object_id),
-            surface_ids.get(&offset.source_surface),
+            admission
+                .context()
+                .get_btree_map(&surface_ids, &object_id, LOOKUP)?,
+            admission
+                .context()
+                .get_btree_map(&surface_ids, &offset.source_surface, LOOKUP)?,
         ) else {
             continue;
         };
@@ -967,7 +1035,7 @@ pub(super) fn emit_surfaces(
         admission.charge()?;
         let _attached = ir.model.add_procedural_surface(
             admission.context(),
-            &surface.try_clone_for_decode(admission.context(), "catia_b5_offset_surface_id")?,
+            surface,
             ProceduralSurface::new(
                 procedural_id,
                 ProceduralSurfaceDefinition::Offset(
@@ -991,10 +1059,21 @@ pub(super) fn emit_surfaces(
     Ok(surface_ids)
 }
 
+/// Emitted identity of an extrusion support surface; the plan referenced
+/// every support, so each one was emitted.
+fn extrusion_support_surface<'a>(
+    ctx: &DecodeContext<'_>,
+    surface_ids: &'a BTreeMap<u32, SurfaceId>,
+    object_id: u32,
+) -> Result<&'a SurfaceId, CodecError> {
+    ctx.get_btree_map(surface_ids, &object_id, "catia_b5_extrusion_support_lookup")?
+        .ok_or_else(|| CodecError::malformed("B5 extrusion support without emitted surface"))
+}
+
 fn emit_extrusion_procedure(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
-    surface_ids: &HashMap<u32, SurfaceId>,
+    surface_ids: &BTreeMap<u32, SurfaceId>,
     surface_id: &SurfaceId,
     surface_object_id: u32,
     extrusion: super::ResolvedExtrusionSurface,
@@ -1014,12 +1093,22 @@ fn emit_extrusion_procedure(
         } => {
             let make_side = |side: super::ResolvedExtrusionSupport| {
                 Ok::<_, cadmpeg_core::CodecError>(IntcurveSupportSide {
-                    surface: Some(surface_ids[&side.surface_object_id].try_clone_for_decode(
-                        admission.context(),
-                        "catia_b5_extrusion_support_surface_id",
-                    )?),
+                    surface: Some(
+                        extrusion_support_surface(
+                            admission.context(),
+                            surface_ids,
+                            side.surface_object_id,
+                        )?
+                        .try_clone_for_decode(
+                            admission.context(),
+                            "catia_b5_extrusion_support_surface_id",
+                        )?,
+                    ),
                     pcurve: Some(SupportPcurve::new(
-                        side.pcurve,
+                        side.pcurve.try_clone_for_decode(
+                            admission.context(),
+                            "catia_b5_model_extrusion_support_pcurve",
+                        )?,
                         (side.pcurve_parameter_range
                             != extrusion.directrix_parameter_range.endpoints())
                         .then(|| DirectedParameterRange::new(side.pcurve_parameter_range).ok())
@@ -1080,14 +1169,9 @@ fn emit_extrusion_procedure(
             );
 
             admission.charge()?;
-            let _attached = ir.model.add_procedural_curve(
-                admission.context(),
-                &directrix_id.try_clone_for_decode(
-                    admission.context(),
-                    "catia_b5_extrusion_procedure_owner_id",
-                )?,
-                procedure,
-            )?;
+            let _attached =
+                ir.model
+                    .add_procedural_curve(admission.context(), &directrix_id, procedure)?;
         }
         super::ResolvedExtrusionDirectrix::SurfaceCurve { curve, .. } => {
             annotate(
@@ -1104,7 +1188,7 @@ fn emit_extrusion_procedure(
                     admission.context(),
                     "catia_b5_extrusion_directrix_record_id",
                 )?,
-                geometry: curve,
+                geometry: super::copy_lifted_curve(admission.context(), &curve)?,
                 source_object: Some(cgm_source(
                     admission.context(),
                     "curve",
@@ -1141,7 +1225,7 @@ fn emit_extrusion_procedure(
                     admission.context(),
                     "catia_b5_extrusion_source_record_id",
                 )?,
-                geometry: source_curve,
+                geometry: super::copy_lifted_curve(admission.context(), &source_curve)?,
                 source_object: Some(cgm_source(admission.context(), "curve", source_object_id)?),
             });
             annotate(
@@ -1182,7 +1266,7 @@ fn emit_extrusion_procedure(
             )?;
             admission.charge()?;
             let _attached = ir.model.add_procedural_curve(admission.context(),
-                &directrix_id.try_clone_for_decode(admission.context(), "catia_b5_extrusion_procedure_owner_id")?,
+                &directrix_id,
                 ProceduralCurve::new(
                     procedure_id,
                     ProceduralCurveDefinition::Offset(
@@ -1190,7 +1274,7 @@ fn emit_extrusion_procedure(
                             source_id,
                             distance,
                             direction,
-                            Some(surface_ids[&support.surface_object_id].try_clone_for_decode(admission.context(), "catia_b5_extrusion_support_surface_id")?),
+                            Some(extrusion_support_surface(admission.context(), surface_ids, support.surface_object_id)?.try_clone_for_decode(admission.context(), "catia_b5_extrusion_support_surface_id")?),
                             source_parameter_range,
                         ),
                     ),
@@ -1248,7 +1332,7 @@ mod tests {
     use cadmpeg_ir::geometry::SurfaceGeometry;
     use cadmpeg_ir::ids::SurfaceId;
     use cadmpeg_ir::AnnotationBuilder;
-    use std::collections::HashMap;
+    use std::collections::BTreeMap;
 
     use cadmpeg_ir::geometry::pcurve::{PcurveGeometry, PcurveNurbs};
     use cadmpeg_ir::math::{Point2, Vector3};
@@ -1258,7 +1342,7 @@ mod tests {
     };
 
     #[test]
-    fn revolution_profile_weights_propagate_collection_refusal() {
+    fn revolution_row_slots_propagate_collection_refusal() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
         use cadmpeg_core::CodecError;
         use cadmpeg_ir::geometry::nurbs::NurbsCurve;
@@ -1276,7 +1360,7 @@ mod tests {
         .expect("valid revolution profile");
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        // Three angular points, three weights, and six knots precede the profile weights.
+        // Three angular points, three weights, and six knots precede the two row slots.
         policy.limits.max_collection_items = 12;
         let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
             .expect("fixture fits the input limit");
@@ -1289,14 +1373,14 @@ mod tests {
             &"test record",
             &mut crate::nurbs::LaneRefusals::new(),
         )
-        .expect_err("profile weights exceed the collection limit");
+        .expect_err("row slots exceed the collection limit");
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "catia b5 revolution profile weights"));
+                && limit.operation == "catia b5 revolution point rows"));
     }
 
     #[test]
-    fn revolution_control_rows_refuse_collection_limit_before_nested_copy() {
+    fn revolution_control_rows_refuse_collection_limit_before_construction() {
         use cadmpeg_ir::geometry::nurbs::NurbsCurve;
         use cadmpeg_ir::math::Point3;
 
@@ -1321,7 +1405,8 @@ mod tests {
                 &mut crate::nurbs::LaneRefusals::new(),
             )
         };
-        let refused = crate::test_support::with_collection_limit(37, run);
+        // Twelve angular slots and four outer row slots precede the first three-point row.
+        let refused = crate::test_support::with_collection_limit(16, run);
         assert!(
             matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(error))
             if error.operation == "catia b5 revolution point row values")
@@ -1355,7 +1440,7 @@ mod tests {
 
     #[test]
     fn extrusion_emits_exact_two_support_intersection() {
-        let support_ids = HashMap::from([
+        let support_ids = BTreeMap::from([
             (
                 10,
                 SurfaceId::mint("catia:test:surface#support-10".to_string())
@@ -1403,7 +1488,6 @@ mod tests {
                         )),
                         pcurve: pcurve(0.0),
                         pcurve_parameter_range: [0.0, 1.0],
-                        curve: None,
                     },
                     ResolvedExtrusionSupport {
                         surface_object_id: 20,
@@ -1417,7 +1501,6 @@ mod tests {
                         )),
                         pcurve: pcurve(1.0),
                         pcurve_parameter_range: [0.25, 0.75],
-                        curve: None,
                     },
                 ]),
             },
@@ -1489,3 +1572,6 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod budget_tests;

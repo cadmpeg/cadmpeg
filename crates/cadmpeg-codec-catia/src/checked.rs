@@ -320,6 +320,7 @@ impl ByteExtent for usize {
 
 /// Whether two byte extents share at least one byte. An extent whose end
 /// leaves the width overlaps nothing.
+#[cfg(test)]
 pub(crate) fn extents_overlap<Extent: ByteExtent>(
     first_start: Extent,
     first_len: Extent,

@@ -5,6 +5,8 @@ use cadmpeg_test_support::EditableDecodeResult;
 use cadmpeg_ir::subd;
 use cadmpeg_test_support::wire;
 
+mod checksum_storage;
+mod prefix_admission;
 mod recovery;
 mod resource_limits;
 mod support;
@@ -110,13 +112,14 @@ fn anonymous_instance_crc_mismatch_warns_and_consumes_boundary() {
     bytes[crc] ^= 1;
     let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("required invariant");
     let mut warnings = Diagnostics::new();
+    let ctx = cadmpeg_test_support::service_decode_context();
     let (_, payload) = anonymous(
-        &cadmpeg_test_support::service_decode_context(),
+        &ctx,
         &bytes,
         &mut reader,
         ArchiveVersion::V5,
         "instance test",
-        &mut warnings,
+        &mut |code, message| warnings.push_coded_admitted(&ctx, code, message),
     )
     .expect("recoverable anonymous chunk");
     assert_eq!(reader.remaining(), 0);
@@ -150,7 +153,7 @@ fn anonymous_instance_crc_diagnostic_refuses_collection_limit() {
         &mut reader,
         ArchiveVersion::V5,
         "instance test",
-        &mut Diagnostics::new(),
+        &mut |code, message| Diagnostics::new().push_coded_admitted(&ctx, code, message),
     )
     .expect_err("checksum diagnostic exceeds zero collection items");
     assert!(
@@ -215,8 +218,9 @@ fn append_crc_suffix(chunk: &mut Vec<u8>, suffix: &[u8]) {
 
 #[test]
 fn instance_reference_requires_finite_invertible_affine_payload_and_skips_future_suffix() {
+    let ctx = cadmpeg_test_support::service_decode_context();
     let valid = reference_bytes(Transform::identity());
-    let parsed = parse_reference(&valid, 0..valid.len()).expect("required invariant");
+    let parsed = parse_reference(&ctx, &valid, 0..valid.len()).expect("required invariant");
     assert_eq!(
         parsed.definition_id.to_string(),
         "00112233-4455-6677-8899-aabbccddeeff"
@@ -226,17 +230,18 @@ fn instance_reference_requires_finite_invertible_affine_payload_and_skips_future
     let mut singular = Transform::identity().rows();
     singular[2][2] = 0.0;
     let singular = reference_matrix_bytes(singular);
-    assert!(parse_reference(&singular, 0..singular.len()).is_err());
+    assert!(parse_reference(&ctx, &singular, 0..singular.len()).is_err());
 
     let mut projective = Transform::identity().rows();
     projective[3][0] = 1.0;
     let projective = reference_matrix_bytes(projective);
-    assert!(parse_reference(&projective, 0..projective.len()).is_err());
+    assert!(parse_reference(&ctx, &projective, 0..projective.len()).is_err());
 
     let mut trailing = valid;
     trailing[0] = 0x1f;
     trailing.push(0);
-    let parsed = parse_reference(&trailing, 0..trailing.len()).expect("future suffix is bounded");
+    let parsed =
+        parse_reference(&ctx, &trailing, 0..trailing.len()).expect("future suffix is bounded");
     assert_eq!(parsed.transform, Transform::identity());
 }
 
@@ -244,11 +249,12 @@ fn instance_reference_requires_finite_invertible_affine_payload_and_skips_future
 /// follows the version byte and the definition UUID.
 #[test]
 fn nonfinite_instance_transform_is_refused_at_the_matrix_first_byte() {
+    let ctx = cadmpeg_test_support::service_decode_context();
     let mut rows = Transform::identity().rows();
     rows[1][2] = f64::NAN;
     let bytes = reference_matrix_bytes(rows);
     let matrix_offset = 17;
-    let error = parse_reference(&bytes, 0..bytes.len()).expect_err("nonfinite transform");
+    let error = parse_reference(&ctx, &bytes, 0..bytes.len()).expect_err("nonfinite transform");
     assert_eq!(
         error,
         crate::chunks::FramingError::structural(matrix_offset, "instance transform is not finite")
@@ -257,14 +263,15 @@ fn nonfinite_instance_transform_is_refused_at_the_matrix_first_byte() {
 
 #[test]
 fn instance_reference_rejects_nil_definition_and_nonfinite_transform() {
+    let ctx = cadmpeg_test_support::service_decode_context();
     let mut nil = reference_bytes(Transform::identity());
     nil[1..17].fill(0);
-    assert!(parse_reference(&nil, 0..nil.len()).is_err());
+    assert!(parse_reference(&ctx, &nil, 0..nil.len()).is_err());
 
     let mut nonfinite = Transform::identity().rows();
     nonfinite[1][2] = f64::NAN;
     let nonfinite = reference_matrix_bytes(nonfinite);
-    assert!(parse_reference(&nonfinite, 0..nonfinite.len()).is_err());
+    assert!(parse_reference(&ctx, &nonfinite, 0..nonfinite.len()).is_err());
 }
 
 #[test]
@@ -337,12 +344,13 @@ fn instance_definition_readers_follow_source_minor_boundaries() {
     set_anonymous_minor(&mut reference, 9);
     append_crc_suffix(&mut reference, &[0xa5, 0x5a]);
     let mut reader = BoundedReader::new(&reference, 0, reference.len()).expect("chunk bounds");
+    let ctx = cadmpeg_test_support::service_decode_context();
     let parsed = parse_file_reference(
-        &cadmpeg_test_support::service_decode_context(),
+        &ctx,
         &reference,
         &mut reader,
         ArchiveVersion::V6,
-        &mut Diagnostics::new(),
+        &mut |code, message| Diagnostics::new().push_coded_admitted(&ctx, code, message),
     )
     .expect("future file-reference suffix is bounded");
     assert_eq!(parsed.full_path, "/full/source.3dm");
@@ -1645,13 +1653,10 @@ fn contradictory_standard_unit_detail_preserves_scale_and_name() {
     let data = anonymous_chunk(archive, 0, &body);
     let mut reader = BoundedReader::new(&data, 0, data.len()).expect("bounded units");
     let mut warnings = Diagnostics::new();
-    let units = super::unit_detail(
-        &cadmpeg_test_support::service_decode_context(),
-        &data,
-        &mut reader,
-        archive,
-        &mut warnings,
-    )
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let units = super::unit_detail(&ctx, &data, &mut reader, archive, &mut |code, message| {
+        warnings.push_coded_admitted(&ctx, code, message)
+    })
     .expect("unit evidence");
     assert_eq!(units.unit, 2);
     assert_eq!(f64::from_bits(units.meters_per_unit_bits()), 0.5);
@@ -1675,14 +1680,12 @@ fn file_reference_fixtures_have_valid_nested_checksums() {
         let mut reader =
             BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded file reference");
         let mut warnings = Diagnostics::new();
-        let reference = parse_file_reference(
-            &cadmpeg_test_support::service_decode_context(),
-            &bytes,
-            &mut reader,
-            archive,
-            &mut warnings,
-        )
-        .expect("valid file reference");
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let reference =
+            parse_file_reference(&ctx, &bytes, &mut reader, archive, &mut |code, message| {
+                warnings.push_coded_admitted(&ctx, code, message)
+            })
+            .expect("valid file reference");
         assert_eq!(reference.full_path, "/full/source.3dm");
         assert_eq!(reference.relative_path, "source.3dm");
         assert_eq!(reader.remaining(), 0);

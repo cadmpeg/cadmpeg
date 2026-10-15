@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Directory Entry pairs and fixed status fields.
 
-use crate::card::{CardScan, PhysicalLine, Section};
+use crate::card::{Card, CardScan, PhysicalLine, Section};
 
 use crate::global::GlobalTable;
 use crate::loss::IgesLossCode;
-use cadmpeg_core::decode::{refuse_local_limit, DecodeContext};
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::SourceProvenance;
@@ -212,7 +212,7 @@ impl SourceStatus {
 }
 
 /// Lossless typed Directory Entry fields.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct DirectoryEntry {
     pub(crate) source_offset: u64,
     pub(crate) sequence: u32,
@@ -367,7 +367,7 @@ impl QuarantinedDirectoryRecord {
     }
 }
 
-fn fields(line: &PhysicalLine) -> [[u8; 8]; 9] {
+fn fields(line: &PhysicalLine<'_>) -> [[u8; 8]; 9] {
     let mut fields = [[b' '; 8]; 9];
     for (target, source) in fields.iter_mut().zip(line.payload.chunks_exact(8)) {
         target.copy_from_slice(source);
@@ -445,8 +445,8 @@ fn status(field: [u8; 8], global_table: GlobalTable) -> Result<SourceStatus, Dir
 
 fn parse_pair(
     sequence: u32,
-    first: &PhysicalLine,
-    second: &PhysicalLine,
+    first: &PhysicalLine<'_>,
+    second: &PhysicalLine<'_>,
     global_table: GlobalTable,
 ) -> Result<DirectoryEntry, DirectoryDefect> {
     let first_fields = fields(first);
@@ -492,52 +492,64 @@ fn parse_pair(
     })
 }
 
+/// Keep the one or two cards of a defective entry as its record bytes.
 fn quarantine(
-    first: (u32, &PhysicalLine),
-    rest: &[(u32, &PhysicalLine)],
+    first: &Card<'_>,
+    second: Option<&Card<'_>>,
     defect: DirectoryDefect,
     ctx: &DecodeContext<'_>,
 ) -> Result<QuarantinedDirectoryRecord, CodecError> {
-    let bytes_len = std::iter::once(first.1)
-        .chain(rest.iter().map(|(_, line)| *line))
-        .try_fold(0_usize, |total, line| total.checked_add(line.payload.len()))
-        .ok_or_else(|| refuse_local_limit("iges quarantined directory bytes", u64::MAX, 1))?;
-    let mut bytes = ctx.vector_storage(bytes_len, "iges quarantined directory bytes")?;
-
-    for line in std::iter::once(first.1).chain(rest.iter().map(|(_, line)| *line)) {
-        bytes.extend_from_slice(&line.payload);
-    }
+    let second = second.map_or(&[][..], |card| card.line.payload);
+    let bytes_len = first
+        .line
+        .payload
+        .len()
+        .checked_add(second.len())
+        .ok_or_else(|| ctx.refuse_codec_limit("iges quarantined directory bytes", u64::MAX, 1))?;
+    let mut bytes = ctx.collection_vec(bytes_len, "iges quarantined directory bytes")?;
+    ctx.extend_from_slice(
+        &mut bytes,
+        first.line.payload,
+        "iges quarantined directory bytes",
+    )?;
+    ctx.extend_from_slice(&mut bytes, second, "iges quarantined directory bytes")?;
     Ok(QuarantinedDirectoryRecord {
-        sequence: first.0,
-        source_offset: first.1.offset,
+        sequence: first.sequence,
+        source_offset: first.line.offset,
         bytes,
         defect,
     })
 }
 
 /// Split the Directory Entry section into typed records and quarantined ones.
+///
+/// Entries come out in card order, so their sequences strictly increase; see
+/// [`entry_by_sequence`].
 pub(crate) fn parse(
-    scan: &CardScan,
+    scan: &CardScan<'_>,
     global_table: GlobalTable,
     ctx: &DecodeContext<'_>,
 ) -> Result<(Vec<DirectoryEntry>, Vec<QuarantinedDirectoryRecord>), CodecError> {
-    let line_count = scan.section(Section::Directory).count();
-    let mut lines = ctx.collection_vec(line_count, "iges directory lines")?;
-
-    lines.extend(scan.section(Section::Directory));
+    let cards = scan.section(Section::Directory);
     let mut entries = Vec::new();
     let mut quarantined = Vec::new();
-    let mut pairs = lines.chunks_exact(2);
-    for pair in pairs.by_ref() {
+    let mut pairs = cards.chunks_exact(2);
+    while pairs.len() != 0 {
+        let Some(pair) = ctx.next_charged(&mut pairs, "iges directory card pairs")? else {
+            break;
+        };
+        let [first, second] = pair else {
+            continue;
+        };
         ctx.charge_entities(1, "iges_directory_entries")?;
-        match parse_pair(pair[0].0, pair[0].1, pair[1].1, global_table) {
+        match parse_pair(first.sequence, &first.line, &second.line, global_table) {
             Ok(entry) => {
                 ctx.reserve_vec(&mut entries, 1, "iges directory entries")?;
                 entries.push(entry);
             }
             Err(defect) => {
                 ctx.reserve_vec(&mut quarantined, 1, "iges quarantined directory entries")?;
-                quarantined.push(quarantine(pair[0], &pair[1..], defect, ctx)?);
+                quarantined.push(quarantine(first, Some(second), defect, ctx)?);
             }
         }
     }
@@ -545,8 +557,8 @@ pub(crate) fn parse(
         ctx.charge_entities(1, "iges_directory_entries")?;
         ctx.reserve_vec(&mut quarantined, 1, "iges quarantined directory entries")?;
         quarantined.push(quarantine(
-            *unpaired,
-            &[],
+            unpaired,
+            None,
             DirectoryDefect::UnpairedCard,
             ctx,
         )?);
@@ -554,35 +566,68 @@ pub(crate) fn parse(
     Ok((entries, quarantined))
 }
 
-pub(crate) fn summary_notes(
-    entries: &[DirectoryEntry],
+/// The entry with `sequence` in a directory whose sequences strictly increase,
+/// as [`parse`] emits them and any filtering of its output keeps them.
+pub(crate) fn entry_by_sequence<'a>(
+    directory: &'a [DirectoryEntry],
+    sequence: u32,
     ctx: &DecodeContext<'_>,
-) -> Result<Vec<String>, CodecError> {
+) -> Result<Option<&'a DirectoryEntry>, CodecError> {
+    Ok(ctx
+        .binary_search_by_key(
+            directory,
+            &sequence,
+            |entry| Ok(entry.sequence),
+            "iges directory sequence lookup",
+        )?
+        .ok()
+        .and_then(|index| directory.get(index)))
+}
+
+pub(crate) fn summary_notes<'ctx>(
+    entries: &[DirectoryEntry],
+    ctx: &'ctx DecodeContext<'_>,
+) -> Result<(Vec<String>, ScopedReservation<'ctx>), CodecError> {
+    let mut census_storage = ctx.reserve_scoped(0, "iges directory summary groups")?;
     let mut census = BTreeMap::<(i64, i64), usize>::new();
-    for entry in entries {
-        ctx.admit_btree_entry(
-            &census,
-            &(entry.entity_type, entry.form),
-            "iges directory summary groups",
-        )?;
-        *census.entry((entry.entity_type, entry.form)).or_default() += 1;
+    let mut source = entries.iter();
+    while source.len() != 0 {
+        let Some(entry) = ctx.next_charged(&mut source, "iges directory summary groups")? else {
+            break;
+        };
+        census_storage.with_storage(|| {
+            ctx.admit_btree_entry(
+                &census,
+                &(entry.entity_type, entry.form),
+                "iges directory summary groups",
+            )?;
+            *census.entry((entry.entity_type, entry.form)).or_default() += 1;
+            Ok::<(), CodecError>(())
+        })?;
     }
+    let mut storage = ctx.reserve_scoped(0, "iges directory summary notes")?;
     let mut notes = Vec::new();
-    ctx.push_formatted_retained(
-        &mut notes,
+    ctx.reserve_scoped_vec(&mut storage, &mut notes, 1, "iges directory summary notes")?;
+    notes.push(ctx.format_retained(
         format_args!("entities={}", entries.len()),
-        "iges directory summary notes",
         "iges directory summary text",
-    )?;
-    for ((entity_type, form), count) in census {
-        ctx.push_formatted_retained(
-            &mut notes,
+    )?);
+    let mut grouped = census.into_iter();
+    while grouped.len() != 0 {
+        let Some(((entity_type, form), count)) =
+            ctx.next_charged(&mut grouped, "iges directory summary notes")?
+        else {
+            break;
+        };
+        ctx.reserve_scoped_vec(&mut storage, &mut notes, 1, "iges directory summary notes")?;
+        notes.push(ctx.format_retained(
             format_args!("entity.{entity_type}.form.{form}={count}"),
-            "iges directory summary notes",
             "iges directory summary text",
-        )?;
+        )?);
     }
-    Ok(notes)
+    drop(grouped);
+    drop(census_storage);
+    Ok((notes, storage))
 }
 
 #[cfg(test)]

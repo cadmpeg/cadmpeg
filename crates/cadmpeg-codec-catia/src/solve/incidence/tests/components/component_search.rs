@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! component search tests.
 
+use cadmpeg_core::CodecError;
+
 use super::{
     Arc, HashSet, MeshBoundaryEdgeCandidate, MeshFaceBoundaryAssignment, MeshFaceBoundaryDomain,
     MeshPartialEndpointConstraint, MeshQuotient, WorkBudget,
@@ -43,7 +45,7 @@ fn compact_boundary_advance_refuses_edge_point_collection_limit() {
         &choices,
         &[Some([0, 1]), Some([0, 1])],
         None,
-        vec![(quotient.clone(), HashSet::new())],
+        vec![(quotient.clone(), std::collections::BTreeSet::new())],
         &budget,
     )
     .expect("service resource budget");
@@ -66,7 +68,7 @@ fn compact_boundary_advance_refuses_edge_point_collection_limit() {
             &choices,
             &[Some([0, 1]), Some([0, 1])],
             None,
-            vec![(quotient.clone(), HashSet::new())],
+            vec![(quotient.clone(), std::collections::BTreeSet::new())],
             &budget,
         ) {
             Err(CodecError::ResourceLimit(error)) => {
@@ -80,7 +82,6 @@ fn compact_boundary_advance_refuses_edge_point_collection_limit() {
     }
     for operation in [
         "catia compact boundary edges",
-        "catia compact boundary selected edges",
         "catia compact boundary edge points",
         "catia_compact_boundary_candidate_pair",
         "catia_compact_boundary_candidate_rows",
@@ -125,7 +126,7 @@ fn compact_boundary_advance_refuses_nested_ordered_alternative_copies() {
             &choices,
             &[Some([0, 1]), Some([0, 1])],
             None,
-            vec![(quotient.clone(), HashSet::new())],
+            vec![(quotient.clone(), std::collections::BTreeSet::new())],
             &budget,
         )
         .map(|outcome| {
@@ -194,7 +195,7 @@ fn compact_boundary_advance_charges_existing_oriented_edges() {
     )
     .expect("service resource budget")
     .expect("initial quotient");
-    let initial = vec![(quotient, HashSet::from([0]))];
+    let initial = vec![(quotient, std::collections::BTreeSet::from([0]))];
     let mut refused = HashSet::new();
     for limit in 0..256 {
         let arena = DecodeArena::new();
@@ -260,8 +261,8 @@ fn incidence_components_apply_monotone_partial_constraints_before_solution_limit
     ];
     let edge_faces = [[0, 0], [1, 1]];
     let partial = |assignment: &[Option<[usize; 2]>]| {
-        assignment[0].is_none_or(|pair| pair == [0, 0])
-            && assignment[1].is_none_or(|pair| pair == [300, 300])
+        Ok(assignment[0].is_none_or(|pair| pair == [0, 0])
+            && assignment[1].is_none_or(|pair| pair == [300, 300]))
     };
     let active_edges = [true, true];
 
@@ -285,6 +286,44 @@ fn incidence_components_apply_monotone_partial_constraints_before_solution_limit
     .expect("partially constrained component solutions");
 
     assert_eq!(solutions, vec![vec![[0, 0], [300, 300]]]);
+}
+
+#[test]
+fn partial_constraint_refusal_propagates_from_component_search() {
+    catia_test_context!(ctx);
+    let choices = vec![
+        vec![[0, 1]],
+        vec![[1, 2], [2, 3]],
+        vec![[2, 3], [1, 2]],
+        vec![[3, 0]],
+    ];
+    let edge_faces = [[0, 0]; 4];
+    let active_edges = [true; 4];
+    let refusal = |_: &[Option<[usize; 2]>]| {
+        Err(ctx.refuse_codec_limit("catia test partial constraint", 0, 1))
+    };
+    let result = crate::solve::incidence::component_incidence_pair_solutions(
+        &ctx,
+        &choices,
+        &edge_faces,
+        1,
+        4,
+        None,
+        None,
+        Some(MeshPartialEndpointConstraint {
+            active_edges: &active_edges,
+            coupled_edges: &active_edges,
+            assignment_order: None,
+            valid: &refusal,
+        }),
+        &|_| Ok(true),
+    );
+
+    let Err(CodecError::ResourceLimit(returned)) = result else {
+        panic!("partial constraint refusal must reach the component search caller");
+    };
+    assert_eq!(returned.operation, "catia test partial constraint");
+    assert_eq!(ctx.resource_refusal(), Some(returned));
 }
 
 #[test]
@@ -409,7 +448,7 @@ fn incidence_components_preflight_independent_unsatisfiable_domains() {
     let active_edges = (0..choices.len())
         .map(|edge| edge == constrained_edge)
         .collect::<Vec<_>>();
-    let partial = |assignment: &[Option<[usize; 2]>]| assignment[constrained_edge].is_none();
+    let partial = |assignment: &[Option<[usize; 2]>]| Ok(assignment[constrained_edge].is_none());
     let mut visited = false;
 
     let outcome = crate::solve::incidence::visit_component_incidence_pair_solutions(
@@ -673,4 +712,80 @@ fn incidence_component_prefix_can_prove_the_consumer_result_before_exhaustion() 
     assert_eq!(outcome, IncidenceSolve::Solved(2));
     assert_eq!(visited, 2);
     assert_eq!(validated.get(), 2);
+}
+
+#[test]
+fn rejected_complete_branch_retains_no_solution() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty fixture fits the input limit");
+    let budget = ctx.work_budget(10_000);
+    let reject = |_: &[(usize, [usize; 2])]| Ok(false);
+    let mut search = super::super::super::IncidenceComponentSearch {
+        ctx: &ctx,
+        choices: &[vec![[0, 1]]],
+        explicit_point_supports: Vec::new(),
+        point_support_edges: Vec::new(),
+        degree_support_witnesses: std::cell::RefCell::new(std::collections::HashMap::new()),
+        edge_faces: &[[0, 0]],
+        face_edges: &[vec![0]],
+        mesh_assignments: None,
+        face_configuration_domains: None,
+        coordinate_domains: None,
+        active: vec![true],
+        edges: &[0],
+        constraints: Vec::new(),
+        assignment: vec![Some([0, 1])],
+        degrees: Vec::new(),
+        solutions: Vec::new(),
+        solution_filter: Some(&reject),
+        solution_visitor: None,
+        partial_solution_filter: None,
+        dead_states: std::collections::HashMap::new(),
+        budget: &budget,
+        degree_support_budget: &budget,
+        coordinate_propagation_budget: &budget,
+        boundary_propagation_budget: &budget,
+        state: super::super::super::IncidenceSearchState::Open,
+        search_storage: std::cell::RefCell::new(
+            ctx.reserve_scoped(0, "catia rejected branch")
+                .expect("empty storage"),
+        ),
+    };
+    search
+        .search_edge_state(&[], None, &[])
+        .expect("rejected solution stays temporary");
+    assert!(search.solutions.is_empty());
+    assert!(matches!(
+        search.state,
+        super::super::super::IncidenceSearchState::Open
+    ));
+}
+
+#[test]
+fn unordered_boundary_queries_retain_no_cycle_outputs() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("fixture input");
+    let domains = [MeshFaceBoundaryDomain::UnorderedFullCycle(vec![0, 1, 2])];
+    let points = [[0, 1], [1, 2], [0, 2]];
+    assert!(
+        super::super::super::boundary_domains_close(&ctx, Some(&domains), &points)
+            .expect("temporary cycles")
+    );
+    assert!(super::super::super::component_incidence_faces_viable(
+        &ctx,
+        &[0],
+        &points.map(Some),
+        &points.map(|pair| vec![pair]),
+        &[vec![0, 1, 2]],
+        Some(&domains),
+        3,
+    )
+    .expect("temporary component cycles"));
 }

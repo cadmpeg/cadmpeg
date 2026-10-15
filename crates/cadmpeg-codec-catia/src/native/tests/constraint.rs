@@ -37,7 +37,10 @@ fn native_constraint_and_range_values_refuse_retained_catalog_copies() {
         super::super::value_production(
             ctx,
             constraint_entity,
-            &constraint_native.object_graphs[0].records,
+            &mut super::super::GraphIncidences::new(
+                ctx,
+                &constraint_native.object_graphs[0].records,
+            )?,
             &fields,
         )
     });
@@ -66,8 +69,7 @@ fn native_constraint_and_range_values_refuse_retained_catalog_copies() {
             range_entity.value_payload(),
             &range_entity.value_schema_selections,
             range_entity.suffix_value(),
-            &range_native.object_graphs[0].records,
-            &range_entity.object_graph,
+            &mut super::super::GraphIncidences::new(ctx, &range_native.object_graphs[0].records)?,
             range_entity.entity_id,
         )
     });
@@ -81,8 +83,7 @@ fn native_constraint_and_range_values_refuse_retained_catalog_copies() {
             range_entity.value_payload(),
             &range_entity.value_schema_selections,
             range_entity.suffix_value(),
-            &range_native.object_graphs[0].records,
-            &range_entity.object_graph,
+            &mut super::super::GraphIncidences::new(ctx, &range_native.object_graphs[0].records)?,
             range_entity.entity_id,
         )
     })

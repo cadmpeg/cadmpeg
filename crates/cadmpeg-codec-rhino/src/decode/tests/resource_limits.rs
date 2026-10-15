@@ -11,6 +11,72 @@ use super::{
 };
 
 #[test]
+fn opaque_source_staging_uses_scoped_backing() {
+    use crate::test_support::test_dump::{long_chunk, minimal_document, table};
+    use cadmpeg_core::decode::ResourceDimension;
+
+    const SCRATCH_BYTES: u64 = 1024 * 1024;
+    let archive = ArchiveVersion::V5;
+    let record = long_chunk(archive, 0x1234, &[0x5a; 32]);
+    for count in [1, 64] {
+        let records = vec![record.clone(); count];
+        let bytes = minimal_document(
+            "50",
+            &[
+                table(archive, 0x1000_0014, &records),
+                table(archive, 0x1000_0015, &[]),
+                table(archive, 0x1000_0013, &[]),
+            ],
+        );
+        let scan = crate::container::scan_owned(bytes).expect("opaque source fixture");
+        assert_eq!(scan.opaque_records.len(), count);
+
+        let error = with_transaction_limits(&scan, u64::MAX, None, Some(0), |expand| {
+            DecodeContext::new(&scan, expand)
+                .err()
+                .expect("opaque vector needs scratch storage")
+        });
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::MaterializedBytes
+                && limit.operation == "Rhino opaque source records"
+                && limit.used == 0)
+        );
+
+        let retained = cadmpeg_core::decode::u64_from_index(record.len() * count);
+        with_transaction_limits(&scan, u64::MAX, Some(retained), None, |expand| {
+            let transaction = DecodeContext::new(&scan, expand)
+                .expect("only surviving record bytes consume retained space");
+            assert_eq!(transaction.opaque_records.len(), count);
+            for (retained, source) in transaction.opaque_records.iter().zip(&scan.opaque_records) {
+                assert_eq!(
+                    retained.data(),
+                    Some(&scan.data[source.record.range.clone()])
+                );
+            }
+        });
+
+        with_transaction_limits(&scan, u64::MAX, None, Some(SCRATCH_BYTES), |expand| {
+            let decoded = DecodeContext::new(&scan, expand).unwrap().commit().unwrap();
+            let retained = decoded.source_fidelity.retained_records();
+            assert_eq!(retained.len(), count);
+            for (retained, source) in retained.values().zip(&scan.opaque_records) {
+                assert_eq!(
+                    retained.data(),
+                    Some(&scan.data[source.record.range.clone()])
+                );
+            }
+            drop(
+                expand
+                    .ctx()
+                    .reserve_scoped(SCRATCH_BYTES, "opaque source backing released")
+                    .expect("consumed staging backing no longer uses scratch space"),
+            );
+        });
+    }
+}
+
+#[test]
 fn class_loss_tag_refuses_retained_limit() {
     let scan = scan_with_objects(&[object_record(ArchiveVersion::V5, 1, POINT_CLASS)]);
     let outcome = super::super::ClassOutcome {
@@ -45,9 +111,17 @@ fn staged_curve_tree_refusal(limit: u64, operation: &str) {
     let refusal = with_collection_limit(limit, |ctx| {
         let mut staged = BrepDraft::default();
         stage_curve_tree(
-            ctx,
+            (
+                ctx,
+                &mut ctx
+                    .reserve_scoped(0, "Rhino fixture arena scratch")
+                    .expect("fixture scratch"),
+                &mut ctx
+                    .reserve_scoped(0, "Rhino fixture link scratch")
+                    .expect("fixture scratch"),
+            ),
             &mut staged,
-            one_child_compound(),
+            &one_child_compound(),
             "compound",
             "root",
             &test_association(),
@@ -68,13 +142,16 @@ fn committed_curve_tree_refusal(limit: u64, operation: &str) {
             ctx,
             &mut CadIr::empty(),
             &mut cadmpeg_ir::Annotations::default(),
-            one_child_compound(),
+            &one_child_compound(),
             CurveCommitSource {
                 key: "compound",
                 association: &test_association(),
                 record: None,
                 path: "root",
             },
+            &mut ctx
+                .reserve_scoped(0, "Rhino fixture arena scratch")
+                .expect("fixture scratch"),
         )
         .expect_err("curve tree exceeds collection limit")
     });
@@ -112,6 +189,9 @@ fn hatch_loop_ids_refuse_collection_limit() {
             ctx,
             "fixture",
             std::iter::once(crate::hatch::LoopKind::Outer),
+            &mut ctx
+                .reserve_scoped(0, "Rhino fixture link scratch")
+                .expect("fixture scratch"),
         )
         .expect_err("one loop exceeds zero collection items")
     });
@@ -123,24 +203,30 @@ fn hatch_loop_ids_refuse_collection_limit() {
 }
 
 #[test]
-fn hatch_loop_id_text_refuses_retained_limit() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    let expected_len = "rhino:object:curve#fixture.hatch-loop-0".len();
-    policy.limits.max_retained_bytes = u64::try_from(expected_len - 1).expect("bounded fixture");
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root admitted");
-    let error = hatch_loop_ids(
-        &ctx,
-        "fixture",
-        std::iter::once(crate::hatch::LoopKind::Outer),
-    )
-    .expect_err("the loop ID exceeds the retained-byte limit");
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(refusal)
-            if refusal.operation == "Rhino hatch loop ID text"
-    ));
+fn hatch_loop_id_text_refuses_scratch_limit() {
+    // The scoped row buffer precedes its scoped identity text.
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        "Rhino hatch loop ID text",
+        |cap| {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_materialized_bytes = cap;
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            let mut storage = ctx.reserve_scoped(0, "Rhino fixture link scratch")?;
+            hatch_loop_ids(
+                &ctx,
+                "fixture",
+                std::iter::once(crate::hatch::LoopKind::Outer),
+                &mut storage,
+            )
+        },
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+        if refusal.operation == "Rhino hatch loop ID text")
+    );
 }
 
 #[test]
@@ -154,6 +240,9 @@ fn hatch_source_links_refuse_collection_limit() {
             ctx,
             vec![(crate::hatch::LoopKind::Outer, "loop".to_string())],
             &feature_id,
+            &mut ctx
+                .reserve_scoped(0, "Rhino fixture link scratch")
+                .expect("fixture scratch"),
         )
         .expect_err("two links exceed one collection item")
     });
@@ -165,24 +254,29 @@ fn hatch_source_links_refuse_collection_limit() {
 }
 
 #[test]
-fn hatch_feature_link_text_refuses_retained_limit() {
+fn hatch_feature_link_text_refuses_scratch_limit() {
     let feature_id = cadmpeg_ir::features::FeatureId::compose(
         &cadmpeg_ir::identity_namespace!("rhino", "hatch", "feature"),
         cadmpeg_ir::identity_key!("fixture"),
     );
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes =
-        u64::try_from(feature_id.as_str().len() - 1).expect("bounded fixture");
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root admitted");
-    let error = hatch_source_links(&ctx, Vec::new(), &feature_id)
-        .expect_err("feature link exceeds retained-byte limit");
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(refusal)
-            if refusal.operation == "Rhino hatch feature link text"
-    ));
+    // The scoped link buffer precedes its scoped feature identity text.
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        "Rhino hatch feature link text",
+        |cap| {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_materialized_bytes = cap;
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            let mut storage = ctx.reserve_scoped(0, "Rhino fixture link scratch")?;
+            hatch_source_links(&ctx, Vec::new(), &feature_id, &mut storage)
+        },
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+        if refusal.operation == "Rhino hatch feature link text")
+    );
 }
 
 #[test]
@@ -191,7 +285,7 @@ fn class_outcome_keys_refuse_collection_limit() {
     let error = with_transaction_limits(&scan, 4, None, None, |expand| {
         let context = DecodeContext::new(&scan, expand).expect("transaction admitted");
         context
-            .class_outcomes(expand.ctx())
+            .class_outcomes()
             .expect_err("class key exceeds four collection items")
     });
     assert!(
@@ -201,7 +295,7 @@ fn class_outcome_keys_refuse_collection_limit() {
     let outcomes = with_transaction_limits(&scan, 6, None, None, |expand| {
         let context = DecodeContext::new(&scan, expand).expect("transaction admitted");
         context
-            .class_outcomes(expand.ctx())
+            .class_outcomes()
             .expect("service-size class outcome")
             .len()
     });
@@ -214,7 +308,7 @@ fn class_outcome_rows_refuse_collection_limit() {
     let error = with_transaction_limits(&scan, 5, None, None, |expand| {
         let context = DecodeContext::new(&scan, expand).expect("transaction admitted");
         context
-            .class_outcomes(expand.ctx())
+            .class_outcomes()
             .expect_err("class row exceeds five collection items")
     });
     assert!(
@@ -224,21 +318,21 @@ fn class_outcome_rows_refuse_collection_limit() {
 }
 
 #[test]
-fn class_outcome_label_refuses_retained_limit() {
+fn class_outcome_label_refuses_materialized_limit() {
     let scan = scan_with_objects(&[object_record(ArchiveVersion::V5, 1, POINT_CLASS)]);
-    let retained_record_bytes =
-        u64::try_from(scan.objects[0].range().len()).expect("bounded point-cloud fixture");
-    let error = with_transaction_limits(
-        &scan,
-        6,
-        // Unknown record slots are scoped; the copied label follows the retained source bytes.
-        Some(retained_record_bytes),
-        None,
-        |expand| {
-            let context = DecodeContext::new(&scan, expand).expect("transaction admitted");
-            context
-                .class_outcomes(expand.ctx())
-                .expect_err("class label exceeds retained record bytes")
+    // The class map, output row, and label are scratch until loss reporting completes.
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        "Rhino class outcome label",
+        |cap| {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_materialized_bytes = cap;
+            let (ctx, root) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy)?;
+            let expand = crate::mesh::MeshExpand::new(&ctx, root);
+            let context = DecodeContext::new(&scan, expand)?;
+            context.class_outcomes().map(|rows| rows.len())
         },
     );
     assert!(
@@ -489,7 +583,15 @@ fn curve_warning_tree_refuses_collection_limit() {
 
 #[test]
 fn typed_install_loss_transfer_refuses_collection_limit() {
-    let source = vec![RhinoLossCode::IntegrityFailure.note("invalid source record")];
+    let source_ctx = cadmpeg_test_support::service_decode_context();
+    let mut source = crate::loss::ScratchVec::new(&source_ctx, "fixture loss source").unwrap();
+    source
+        .push_admitted(
+            &source_ctx,
+            RhinoLossCode::IntegrityFailure.note("invalid source record".into()),
+            "fixture loss source",
+        )
+        .unwrap();
     let refusal = with_collection_limit(0, |ctx| {
         super::super::append_report_losses(ctx, &mut Vec::new(), source)
             .expect_err("typed loss transfer requires one report slot")
@@ -499,7 +601,15 @@ fn typed_install_loss_transfer_refuses_collection_limit() {
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.operation == "Rhino typed decode losses"
     ));
-    let source = vec![RhinoLossCode::IntegrityFailure.note("invalid source record")];
+    let source_ctx = cadmpeg_test_support::service_decode_context();
+    let mut source = crate::loss::ScratchVec::new(&source_ctx, "fixture loss source").unwrap();
+    source
+        .push_admitted(
+            &source_ctx,
+            RhinoLossCode::IntegrityFailure.note("invalid source record".into()),
+            "fixture loss source",
+        )
+        .unwrap();
     let mut report = Vec::new();
     super::super::append_report_losses(
         &cadmpeg_test_support::service_decode_context(),
@@ -528,4 +638,169 @@ fn instance_unique_members_refuse_collection_limit() {
         !super::super::instance_members_are_unique(&ctx, &[members[0], members[0]])
             .expect("duplicate members are admitted before rejection")
     );
+}
+
+#[test]
+fn warning_detail_trim_preserves_refusal_at_commit() {
+    let scan = scan_with_objects(&[]);
+    cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "Rhino warning detail trim",
+        |cap| {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, root) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy)
+                    .unwrap();
+            let result = (|| {
+                let expand = crate::mesh::MeshExpand::new(&ctx, root);
+                let mut transaction = super::super::DecodeContext::new(&scan, expand)?;
+                transaction
+                    .report
+                    .phase_warnings
+                    .push("geometry:  field detail  ");
+                transaction.commit().map(|_| ())
+            })();
+            if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = &result {
+                assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
+            }
+            result
+        },
+    );
+}
+
+#[test]
+fn warning_family_split_preserves_refusal_at_commit() {
+    let scan = scan_with_objects(&[]);
+    cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "Rhino warning family split",
+        |cap| {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, root) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy)
+                    .unwrap();
+            let result = (|| {
+                let expand = crate::mesh::MeshExpand::new(&ctx, root);
+                let mut transaction = super::super::DecodeContext::new(&scan, expand)?;
+                transaction.report.phase_warnings.push("geometry: detail");
+                transaction.commit().map(|_| ())
+            })();
+            if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = &result {
+                assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
+            }
+            result
+        },
+    );
+}
+
+#[test]
+fn instance_nurbs_surface_transform_preserves_budget_refusals_and_grid_lanes() {
+    use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
+    use cadmpeg_ir::features::FinitePoint3;
+    use cadmpeg_ir::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
+    use cadmpeg_ir::math::Point3;
+    use cadmpeg_ir::scalar::NonZeroReal;
+    use cadmpeg_ir::transform::Transform;
+
+    let transform = Transform::affine([
+        [2.0, 0.0, 0.0, 5.0],
+        [0.0, 3.0, 0.0, 6.0],
+        [0.0, 0.0, 4.0, 7.0],
+    ])
+    .unwrap();
+    for rational in [false, true] {
+        let points = vec![
+            vec![Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0)],
+            vec![Point3::new(7.0, 8.0, 9.0), Point3::new(10.0, 11.0, 12.0)],
+        ]
+        .into_iter()
+        .map(|row| {
+            row.into_iter()
+                .map(|point| FinitePoint3::new(point).unwrap())
+                .collect()
+        })
+        .collect();
+        let weights = rational.then(|| {
+            vec![vec![1.0, 2.0], vec![3.0, 4.0]]
+                .into_iter()
+                .map(|row| {
+                    row.into_iter()
+                        .map(|weight| NonZeroReal::new(weight).unwrap())
+                        .collect()
+                })
+                .collect()
+        });
+        let nurbs = NurbsSurface::from_checked_lanes(
+            &cadmpeg_test_support::service_decode_context(),
+            NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 2.0, 2.0], false),
+            NurbsSurfaceAxis::new(1, vec![1.0, 1.0, 3.0, 3.0], false),
+            NurbsSurfaceLanes::new(points, weights),
+            true,
+        )
+        .unwrap()
+        .unwrap();
+        let fixture = Surface {
+            id: "rhino:test:surface#grid".try_into().unwrap(),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs.clone())),
+            source_object: None,
+        };
+        for operation in ["IR pole edit validation", "IR pole edit mutation"] {
+            cadmpeg_test_support::refusal::resource_limit_at(
+                ResourceDimension::WorkUnits,
+                operation,
+                |cap| {
+                    let arena = DecodeArena::new();
+                    let mut policy = DecodePolicy::service();
+                    policy.limits.max_work_units = cap;
+                    let (ctx, _) =
+                        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+                    let result = super::transform_surface(&ctx, &mut fixture.clone(), transform);
+                    match result {
+                        Err(super::ReferenceFailure::Codec(error)) => {
+                            if let cadmpeg_core::CodecError::ResourceLimit(refusal) = &error {
+                                assert_eq!(ctx.resource_refusal(), Some(*refusal));
+                            }
+                            Err(error)
+                        }
+                        Err(error) => panic!("unexpected semantic failure: {error:?}"),
+                        Ok(()) => Ok(()),
+                    }
+                },
+            );
+        }
+        let mut surface = fixture;
+        super::transform_surface(
+            &cadmpeg_test_support::service_decode_context(),
+            &mut surface,
+            transform,
+        )
+        .expect("admitted surface placement");
+        let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(placed)) = surface.geometry else {
+            panic!("surface remains a NURBS carrier");
+        };
+        let expected = [
+            [Point3::new(7.0, 12.0, 19.0), Point3::new(13.0, 21.0, 31.0)],
+            [Point3::new(19.0, 30.0, 43.0), Point3::new(25.0, 39.0, 55.0)],
+        ];
+        for (u, row) in expected.iter().enumerate() {
+            for (v, point) in row.iter().enumerate() {
+                assert_eq!(placed.pole(u, v).unwrap().get(), *point);
+                assert_eq!(placed.weight(u, v), nurbs.weight(u, v));
+            }
+        }
+        assert_eq!(placed.u_count(), 2);
+        assert_eq!(placed.v_count(), 2);
+        assert_eq!(placed.u_degree(), nurbs.u_degree());
+        assert_eq!(placed.v_degree(), nurbs.v_degree());
+        assert_eq!(placed.u_knots(), nurbs.u_knots());
+        assert_eq!(placed.v_knots(), nurbs.v_knots());
+        assert_eq!(placed.u_periodic(), nurbs.u_periodic());
+        assert_eq!(placed.v_periodic(), nurbs.v_periodic());
+        assert_eq!(placed.normal_reversed(), nurbs.normal_reversed());
+    }
 }

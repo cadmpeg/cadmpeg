@@ -12,7 +12,6 @@ use cadmpeg_ir::ids::{BodyId, RegionId, SurfaceId};
 use cadmpeg_ir::index::ModelIndex;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::topology::{Body, BodyKind, Region, Vertex};
-use std::collections::HashSet;
 use std::io::Cursor;
 
 use crate::loss::StepLossCode;
@@ -122,9 +121,11 @@ fn trimmed_pcurve_fit_uses_declared_endpoints() {
         .unwrap(),
     );
 
+    let index_ctx = cadmpeg_test_support::service_decode_context();
+    let index = super::super::PcurveSelectionIndex::build(&ir, &index_ctx).unwrap();
     let fit = pcurve_declared_endpoint_fit(
         &cadmpeg_test_support::service_decode_context(),
-        &ModelIndex::build(&ir, cadmpeg_ir::index::StandardIndex),
+        &index,
         &surface_id,
         &pcurve,
         [
@@ -181,7 +182,8 @@ fn bounded_pcurve_search_can_miss_an_unsampled_exact_point() {
     )
     .expect("witness pcurve is evaluable");
     let target = Point3::new(exact_uv.u, exact_uv.v, 0.0);
-    let index = ModelIndex::build(&ir, cadmpeg_ir::index::StandardIndex);
+    let index_ctx = cadmpeg_test_support::service_decode_context();
+    let index = super::super::PcurveSelectionIndex::build(&ir, &index_ctx).unwrap();
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
     let (ctx, _) =
@@ -310,16 +312,11 @@ fn finite_pcurve_admission_marks_unsampled_global_divergence() {
     };
 
     for sample in 0..PCURVE_LOCUS_SAMPLE_COUNT {
-        let fraction = cadmpeg_core::convert::f64_from_index(sample).expect("test sample is exact")
-            / cadmpeg_core::convert::f64_from_index(PCURVE_LOCUS_SAMPLE_COUNT - 1)
-                .expect("test sample count is exact");
+        let fraction = f64::from(sample) / f64::from(PCURVE_LOCUS_SAMPLE_COUNT - 1);
         assert!(point_set_residual(fraction) <= COINCIDENCE_TOLERANCE);
     }
     for gap in 0..(PCURVE_LOCUS_SAMPLE_COUNT - 1) {
-        let fraction = (cadmpeg_core::convert::f64_from_index(gap).expect("test gap is exact")
-            + 0.5)
-            / cadmpeg_core::convert::f64_from_index(PCURVE_LOCUS_SAMPLE_COUNT - 1)
-                .expect("test sample count is exact");
+        let fraction = (f64::from(gap) + 0.5) / f64::from(PCURVE_LOCUS_SAMPLE_COUNT - 1);
         assert!(point_set_residual(fraction) > 1.0);
     }
 
@@ -739,8 +736,12 @@ fn shared_surface_carrier_is_staged_once() {
     let body_id = BodyId::mint("step:data:body#shared-surface").expect("identity grammar");
     let region_id = RegionId::mint("step:data:region#shared-surface").expect("identity grammar");
     let built = super::super::staged_topology(
+        ctx.provisional_retained("test payload")
+            .expect("empty payload"),
+        ctx.reserve_scoped(0, "test staged metadata")
+            .expect("empty staged storage"),
         super::super::StagedTopologyParts {
-            typed: HashSet::new(),
+            typed: std::collections::BTreeSet::new(),
             vertices: Vec::new(),
             edges: Vec::new(),
             coedges: Vec::new(),

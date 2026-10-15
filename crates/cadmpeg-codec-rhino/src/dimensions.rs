@@ -9,6 +9,7 @@ use crate::chunks::{checked_count_bytes, chunk_at, ArchiveVersion, BoundedReader
 use crate::objects::{parse_class_wrapper, UserdataDescriptor};
 use crate::settings::{plane, utf16_retained, CoordinateLane, MillimeterScale, Plane};
 use crate::wire::{scaled_coordinate, uuid, Uuid};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::scalar::{FiniteReal, NonNegativeReal, PositiveAngle, PositiveReal};
 use cadmpeg_ir::units::FiniteVector;
 
@@ -258,7 +259,7 @@ fn text_content(
 ) -> Result<TextContent, FramingError> {
     let (mut text, next, _version) = anonymous(data, reader.position(), reader.end(), archive)?;
     let rich_text = utf16_retained(ctx, &mut text, "Rhino dimension rich text")?;
-    plane(&mut text)?;
+    plane(ctx, &mut text)?;
     let rectangle_width = text.f64()?;
     let rotation_radians = text.f64()?;
     let (Some(rectangle_width), Some(rotation_radians)) = (
@@ -301,7 +302,7 @@ pub(crate) fn annotation(
         anonymous(data, reader.position(), reader.end(), archive)?;
     let text = text_content(ctx, data, &mut annotation, archive)?;
     let dimstyle_id = uuid(&mut annotation)?;
-    let plane = plane(&mut annotation)?;
+    let plane = plane(ctx, &mut annotation)?;
     let annotation_type = if version >= 1 { annotation.i32()? } else { 0 };
     let mut override_present = false;
     if version >= 2 {
@@ -310,14 +311,18 @@ pub(crate) fn annotation(
         if overrides.bool()? {
             override_present = true;
             let wrapper = chunk_at(data, overrides.position(), overrides.end(), archive, false)?;
+            let mut warning_storage =
+                ctx.reserve_scoped(0, "Rhino annotation override diagnostics")?;
             let mut warnings = Diagnostics::new();
-            parse_class_wrapper(
-                ctx,
-                data,
-                overrides.position()..wrapper.next_offset(),
-                archive,
-                &mut warnings,
-            )?;
+            warning_storage.with_storage(|| {
+                parse_class_wrapper(
+                    ctx,
+                    data,
+                    overrides.position()..wrapper.next_offset(),
+                    archive,
+                    &mut warnings,
+                )
+            })?;
             overrides.skip(wrapper.next_offset() - overrides.position())?;
         }
         overrides.skip_remaining()?;
@@ -424,7 +429,7 @@ fn legacy_annotation_fields(
     let kind = annotation.i32()?;
     let text_display_mode = annotation.i32()?;
     let plane_offset = annotation.position();
-    let plane = scale_plane(plane(annotation)?, scale, plane_offset)?;
+    let plane = scale_plane(plane(ctx, annotation)?, scale, plane_offset)?;
     let point_count_offset = annotation.position();
     let point_count = annotation.i32()?;
     let point_count = usize::try_from(point_count)
@@ -437,6 +442,7 @@ fn legacy_annotation_fields(
         .collection_vec(point_count, "Rhino legacy annotation points")
         .map_err(crate::chunks::FramingError::from)?;
     for _ in 0..point_count {
+        ctx.charge_work(1, "Rhino dimensions cursor traversal")?;
         let offset = annotation.position();
         points.push(scaled_point(point2(annotation)?, scale, offset)?);
     }
@@ -596,7 +602,7 @@ pub(crate) fn v2_annotation_direct(
     }
     let kind = reader.i32()?;
     let plane_offset = reader.position();
-    let raw_plane = plane(reader)?;
+    let raw_plane = plane(ctx, reader)?;
     if raw_plane
         .origin
         .iter()
@@ -621,6 +627,7 @@ pub(crate) fn v2_annotation_direct(
         .collection_vec(point_bytes / 16, "Rhino V2 annotation points")
         .map_err(crate::chunks::FramingError::from)?;
     for _ in 0..point_bytes / 16 {
+        ctx.charge_work(1, "Rhino dimensions cursor traversal")?;
         let point_offset = reader.position();
         let raw_point = point2(reader)?;
         if raw_point
@@ -657,10 +664,24 @@ pub(crate) fn v2_effective_text(
     } else {
         &annotation.user_text
     };
-    ctx.copy_retained_text(
-        text.trim_matches(|character: char| character.is_whitespace() || character.is_control()),
-        "Rhino V2 effective text",
-    )
+    let Some((start, _)) = ctx.find_by(
+        text.char_indices(),
+        |(_, character)| Ok(!character.is_whitespace() && !character.is_control()),
+        "Rhino V2 effective text leading boundary",
+    )?
+    else {
+        return ctx.copy_retained_text("", "Rhino V2 effective text");
+    };
+    let end = ctx
+        .find_by(
+            text[start..].char_indices().rev(),
+            |(_, character)| Ok(!character.is_whitespace() && !character.is_control()),
+            "Rhino V2 effective text trailing boundary",
+        )?
+        .map_or(start, |(last, character)| {
+            start + last + character.len_utf8()
+        });
+    ctx.copy_retained_text(&text[start..end], "Rhino V2 effective text")
 }
 
 enum LegacyDimensionFields {
@@ -1103,224 +1124,236 @@ fn read_arrow_position(
 /// Decodes one modern linear, angular, or radial dimension.
 pub(crate) fn decode(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     data: &[u8],
     class: Uuid,
     range: Range<usize>,
     scale: MillimeterScale,
     archive: ArchiveVersion,
 ) -> Result<Dimension, FramingError> {
-    if matches!(class, V2_LINEAR | V2_ANGULAR | V2_RADIAL) {
-        return decode_v2(ctx, data, class, range, scale);
-    }
-    if matches!(class, V5_LINEAR | V5_ANGULAR | V5_RADIAL | V5_ORDINATE) {
-        return decode_legacy(ctx, data, class, range, scale, archive);
-    }
-    // The class reader closes the family child and the enclosing class-data
-    // reader owns any direct suffix after that child.
-    let (mut outer, _outer_next, _outer_version) =
-        anonymous(data, range.start, range.end, archive)?;
-    let (mut common, common_next, common_version) =
-        anonymous(data, outer.position(), outer.end(), archive)?;
-    let mut annotation = annotation(ctx, data, &mut common, archive)?;
-    annotation.plane = scale_plane(annotation.plane, scale, range.start)?;
-    let user_text = utf16_retained(ctx, &mut common, "Rhino dimension user text")?;
-    if !common.f64()?.is_finite() {
-        return Err(FramingError::structural(
-            common.position() - 8,
-            "obsolete text rotation is not finite",
-        ));
-    }
-    let use_default_text_point = common.bool()?;
-    let text_offset = common.position();
-    let user_text_point = scaled_point(point2(&mut common)?, scale, text_offset)?;
-    let flip_arrows = [common.bool()?, common.bool()?];
-    let arrow_position = read_arrow_position(&mut common, ArrowFitWire::Modern)?;
-    let detail_measured = uuid(&mut common)?;
-    let distance_scale = PositiveReal::new(common.f64()?).ok_or_else(|| {
-        FramingError::structural(common.position() - 8, "dimension distance scale is invalid")
-    })?;
-    if common_version >= 1 {
-        common.i32()?;
-    }
-    common.skip_remaining()?;
-    outer.skip(common_next - outer.position())?;
-    let definition = if class == LINEAR {
-        if !matches!(annotation.kind, 1 | 5) {
+    storage.with_storage(|| {
+        if matches!(class, V2_LINEAR | V2_ANGULAR | V2_RADIAL) {
+            return decode_v2(ctx, data, class, range, scale);
+        }
+        if matches!(class, V5_LINEAR | V5_ANGULAR | V5_RADIAL | V5_ORDINATE) {
+            return decode_legacy(ctx, data, class, range, scale, archive);
+        }
+        // The class reader closes the family child and the enclosing class-data
+        // reader owns any direct suffix after that child.
+        let (mut outer, _outer_next, _outer_version) =
+            anonymous(data, range.start, range.end, archive)?;
+        let (mut common, common_next, common_version) =
+            anonymous(data, outer.position(), outer.end(), archive)?;
+        let mut annotation = annotation(ctx, data, &mut common, archive)?;
+        annotation.plane = scale_plane(annotation.plane, scale, range.start)?;
+        let user_text = utf16_retained(ctx, &mut common, "Rhino dimension user text")?;
+        if !common.f64()?.is_finite() {
             return Err(FramingError::structural(
-                outer.position(),
-                "invalid linear annotation type",
+                common.position() - 8,
+                "obsolete text rotation is not finite",
             ));
         }
-        let offset = outer.position();
-        let definition_point = scaled_point(point2(&mut outer)?, scale, offset)?;
-        let offset = outer.position();
-        let dimension_line_point = scaled_point(point2(&mut outer)?, scale, offset)?;
-        Definition::Linear {
-            definition_point: CoordinateLane::Admitted(definition_point),
-            dimension_line_point: CoordinateLane::Admitted(dimension_line_point),
-        }
-    } else if class == ANGULAR {
-        if !matches!(annotation.kind, 2 | 11) {
-            return Err(FramingError::structural(
-                outer.position(),
-                "invalid angular annotation type",
-            ));
-        }
-        let first = point2(&mut outer)?;
-        let second = point2(&mut outer)?;
-        let first_extension_offset = scaled_coordinate(outer.f64()?, scale).ok_or_else(|| {
-            FramingError::structural(outer.position() - 8, "angular extension offset is invalid")
+        let use_default_text_point = common.bool()?;
+        let text_offset = common.position();
+        let user_text_point = scaled_point(point2(&mut common)?, scale, text_offset)?;
+        let flip_arrows = [common.bool()?, common.bool()?];
+        let arrow_position = read_arrow_position(&mut common, ArrowFitWire::Modern)?;
+        let detail_measured = uuid(&mut common)?;
+        let distance_scale = PositiveReal::new(common.f64()?).ok_or_else(|| {
+            FramingError::structural(common.position() - 8, "dimension distance scale is invalid")
         })?;
-        let second_extension_offset = scaled_coordinate(outer.f64()?, scale).ok_or_else(|| {
-            FramingError::structural(outer.position() - 8, "angular extension offset is invalid")
-        })?;
-        let offset = outer.position();
-        let line = point2(&mut outer)?;
-        let dimension_line_point = scaled_point(line, scale, offset)?;
-        Definition::Angular {
-            first_direction: CoordinateLane::Admitted(first),
-            second_direction: CoordinateLane::Admitted(second),
-            first_extension_offset,
-            second_extension_offset,
-            dimension_line_point: CoordinateLane::Admitted(dimension_line_point),
+        if common_version >= 1 {
+            common.i32()?;
         }
-    } else if class == RADIAL {
-        if !matches!(annotation.kind, 3 | 4) {
-            return Err(FramingError::structural(
-                outer.position(),
-                "invalid radial annotation type",
-            ));
-        }
-        let offset = outer.position();
-        let radius_point = scaled_point(point2(&mut outer)?, scale, offset)?;
-        let offset = outer.position();
-        let dimension_line_point = scaled_point(point2(&mut outer)?, scale, offset)?;
-        Definition::Radial {
-            radius_point: CoordinateLane::Admitted(radius_point),
-            dimension_line_point: CoordinateLane::Admitted(dimension_line_point),
-            diameter: annotation.kind == 3,
-        }
-    } else if class == ORDINATE {
-        if annotation.kind != 6 {
-            return Err(FramingError::structural(
-                outer.position(),
-                "invalid ordinate annotation type",
-            ));
-        }
-        let stored_direction = outer.i32()?;
-        if !(0..=2).contains(&stored_direction) {
-            return Err(FramingError::structural(
-                outer.position() - 4,
-                "invalid ordinate measured direction",
-            ));
-        }
-        let offset = outer.position();
-        let definition_point = scaled_point(point2(&mut outer)?, scale, offset)?;
-        let offset = outer.position();
-        let leader_point = scaled_point(point2(&mut outer)?, scale, offset)?;
-        let measured_direction = if stored_direction == 0 {
-            inferred_ordinate_direction(definition_point.get(), leader_point.get())
-        } else if stored_direction == 1 {
-            OrdinateAxis::X
-        } else {
-            OrdinateAxis::Y
-        };
-        let kink_offsets = [
-            scaled_coordinate(outer.f64()?, scale).ok_or_else(|| {
-                FramingError::structural(outer.position() - 8, "invalid ordinate kink offset")
-            })?,
-            scaled_coordinate(outer.f64()?, scale).ok_or_else(|| {
-                FramingError::structural(outer.position() - 8, "invalid ordinate kink offset")
-            })?,
-        ];
-        Definition::Ordinate {
-            definition_point: CoordinateLane::Admitted(definition_point),
-            leader_point: CoordinateLane::Admitted(leader_point),
-            measured_direction,
-            kink_offsets,
-        }
-    } else if class == CENTERMARK {
-        if annotation.kind != 8 {
-            return Err(FramingError::structural(
-                outer.position(),
-                "invalid center-mark annotation type",
-            ));
-        }
-        let radius = scaled_coordinate(outer.f64()?, scale)
-            .and_then(NonNegativeReal::from_finite)
-            .ok_or_else(|| {
-                FramingError::structural(outer.position() - 8, "invalid center-mark radius")
-            })?;
-        Definition::CenterMark { radius }
-    } else {
-        return Err(FramingError::structural(
-            range.start,
-            "unsupported dimension class",
-        ));
-    };
-    outer.skip_remaining()?;
-    let measurement = match &definition {
-        Definition::Linear {
-            definition_point, ..
-        } => definition_point[0].abs() * distance_scale.get(),
-        Definition::Angular {
-            first_direction,
-            second_direction,
-            ..
-        } => angular_measurement(first_direction.get(), second_direction.get()),
-        Definition::Radial {
-            radius_point,
-            diameter,
-            ..
-        } => {
-            radius_point[0].hypot(radius_point[1])
-                * distance_scale.get()
-                * if *diameter { 2.0 } else { 1.0 }
-        }
-        Definition::Ordinate {
-            definition_point,
-            measured_direction,
-            ..
-        } => {
-            (if *measured_direction == OrdinateAxis::X {
-                definition_point[0].abs()
+        common.skip_remaining()?;
+        outer.skip(common_next - outer.position())?;
+        let definition = if class == LINEAR {
+            if !matches!(annotation.kind, 1 | 5) {
+                return Err(FramingError::structural(
+                    outer.position(),
+                    "invalid linear annotation type",
+                ));
+            }
+            let offset = outer.position();
+            let definition_point = scaled_point(point2(&mut outer)?, scale, offset)?;
+            let offset = outer.position();
+            let dimension_line_point = scaled_point(point2(&mut outer)?, scale, offset)?;
+            Definition::Linear {
+                definition_point: CoordinateLane::Admitted(definition_point),
+                dimension_line_point: CoordinateLane::Admitted(dimension_line_point),
+            }
+        } else if class == ANGULAR {
+            if !matches!(annotation.kind, 2 | 11) {
+                return Err(FramingError::structural(
+                    outer.position(),
+                    "invalid angular annotation type",
+                ));
+            }
+            let first = point2(&mut outer)?;
+            let second = point2(&mut outer)?;
+            let first_extension_offset =
+                scaled_coordinate(outer.f64()?, scale).ok_or_else(|| {
+                    FramingError::structural(
+                        outer.position() - 8,
+                        "angular extension offset is invalid",
+                    )
+                })?;
+            let second_extension_offset =
+                scaled_coordinate(outer.f64()?, scale).ok_or_else(|| {
+                    FramingError::structural(
+                        outer.position() - 8,
+                        "angular extension offset is invalid",
+                    )
+                })?;
+            let offset = outer.position();
+            let line = point2(&mut outer)?;
+            let dimension_line_point = scaled_point(line, scale, offset)?;
+            Definition::Angular {
+                first_direction: CoordinateLane::Admitted(first),
+                second_direction: CoordinateLane::Admitted(second),
+                first_extension_offset,
+                second_extension_offset,
+                dimension_line_point: CoordinateLane::Admitted(dimension_line_point),
+            }
+        } else if class == RADIAL {
+            if !matches!(annotation.kind, 3 | 4) {
+                return Err(FramingError::structural(
+                    outer.position(),
+                    "invalid radial annotation type",
+                ));
+            }
+            let offset = outer.position();
+            let radius_point = scaled_point(point2(&mut outer)?, scale, offset)?;
+            let offset = outer.position();
+            let dimension_line_point = scaled_point(point2(&mut outer)?, scale, offset)?;
+            Definition::Radial {
+                radius_point: CoordinateLane::Admitted(radius_point),
+                dimension_line_point: CoordinateLane::Admitted(dimension_line_point),
+                diameter: annotation.kind == 3,
+            }
+        } else if class == ORDINATE {
+            if annotation.kind != 6 {
+                return Err(FramingError::structural(
+                    outer.position(),
+                    "invalid ordinate annotation type",
+                ));
+            }
+            let stored_direction = outer.i32()?;
+            if !(0..=2).contains(&stored_direction) {
+                return Err(FramingError::structural(
+                    outer.position() - 4,
+                    "invalid ordinate measured direction",
+                ));
+            }
+            let offset = outer.position();
+            let definition_point = scaled_point(point2(&mut outer)?, scale, offset)?;
+            let offset = outer.position();
+            let leader_point = scaled_point(point2(&mut outer)?, scale, offset)?;
+            let measured_direction = if stored_direction == 0 {
+                inferred_ordinate_direction(definition_point.get(), leader_point.get())
+            } else if stored_direction == 1 {
+                OrdinateAxis::X
             } else {
-                definition_point[1].abs()
-            }) * distance_scale.get()
+                OrdinateAxis::Y
+            };
+            let kink_offsets = [
+                scaled_coordinate(outer.f64()?, scale).ok_or_else(|| {
+                    FramingError::structural(outer.position() - 8, "invalid ordinate kink offset")
+                })?,
+                scaled_coordinate(outer.f64()?, scale).ok_or_else(|| {
+                    FramingError::structural(outer.position() - 8, "invalid ordinate kink offset")
+                })?,
+            ];
+            Definition::Ordinate {
+                definition_point: CoordinateLane::Admitted(definition_point),
+                leader_point: CoordinateLane::Admitted(leader_point),
+                measured_direction,
+                kink_offsets,
+            }
+        } else if class == CENTERMARK {
+            if annotation.kind != 8 {
+                return Err(FramingError::structural(
+                    outer.position(),
+                    "invalid center-mark annotation type",
+                ));
+            }
+            let radius = scaled_coordinate(outer.f64()?, scale)
+                .and_then(NonNegativeReal::from_finite)
+                .ok_or_else(|| {
+                    FramingError::structural(outer.position() - 8, "invalid center-mark radius")
+                })?;
+            Definition::CenterMark { radius }
+        } else {
+            return Err(FramingError::structural(
+                range.start,
+                "unsupported dimension class",
+            ));
+        };
+        outer.skip_remaining()?;
+        let measurement = match &definition {
+            Definition::Linear {
+                definition_point, ..
+            } => definition_point[0].abs() * distance_scale.get(),
+            Definition::Angular {
+                first_direction,
+                second_direction,
+                ..
+            } => angular_measurement(first_direction.get(), second_direction.get()),
+            Definition::Radial {
+                radius_point,
+                diameter,
+                ..
+            } => {
+                radius_point[0].hypot(radius_point[1])
+                    * distance_scale.get()
+                    * if *diameter { 2.0 } else { 1.0 }
+            }
+            Definition::Ordinate {
+                definition_point,
+                measured_direction,
+                ..
+            } => {
+                (if *measured_direction == OrdinateAxis::X {
+                    definition_point[0].abs()
+                } else {
+                    definition_point[1].abs()
+                }) * distance_scale.get()
+            }
+            Definition::CenterMark { .. } => 0.0,
+        };
+        if !measurement.is_finite() {
+            return Err(FramingError::structural(
+                range.start,
+                "dimension measurement is invalid",
+            ));
         }
-        Definition::CenterMark { .. } => 0.0,
-    };
-    if !measurement.is_finite() {
-        return Err(FramingError::structural(
-            range.start,
-            "dimension measurement is invalid",
-        ));
-    }
-    Ok(Dimension {
-        source_range: range,
-        annotation_type: annotation.kind,
-        rich_text: annotation.rich_text,
-        user_text,
-        family: DimensionFamily::Modern {
-            dimstyle_id: annotation.dimstyle_id,
-        },
-        plane: annotation.plane,
-        horizontal_direction: annotation.horizontal_direction,
-        allow_text_scaling: annotation.allow_text_scaling,
-        use_default_text_point,
-        user_text_point: CoordinateLane::Admitted(user_text_point),
-        flip_arrows,
-        arrow_position,
-        detail_measured,
-        distance_scale,
-        definition,
-        measurement,
-        override_present: annotation.override_present,
+        Ok(Dimension {
+            source_range: range,
+            annotation_type: annotation.kind,
+            rich_text: annotation.rich_text,
+            user_text,
+            family: DimensionFamily::Modern {
+                dimstyle_id: annotation.dimstyle_id,
+            },
+            plane: annotation.plane,
+            horizontal_direction: annotation.horizontal_direction,
+            allow_text_scaling: annotation.allow_text_scaling,
+            use_default_text_point,
+            user_text_point: CoordinateLane::Admitted(user_text_point),
+            flip_arrows,
+            arrow_position,
+            detail_measured,
+            distance_scale,
+            definition,
+            measurement,
+            override_present: annotation.override_present,
+        })
     })
 }
 
 /// Applies the built-in V5 dimension extension carried as class userdata.
 pub(crate) fn apply_userdata(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     userdata: &[UserdataDescriptor],
     archive: ArchiveVersion,
@@ -1333,15 +1366,18 @@ pub(crate) fn apply_userdata(
         ..
     } = &mut dimension.definition
     {
-        if let Some(extra) =
-            userdata
-                .iter()
-                .filter_map(UserdataDescriptor::known)
-                .find(|userdata| {
-                    userdata.class_uuid == V5_ANGULAR_EXTRA
-                        && userdata.item_uuid == V5_ANGULAR_EXTRA
-                })
-        {
+        if let Some(extra) = ctx.find_map(
+            userdata,
+            |raw| {
+                let Some(userdata) = UserdataDescriptor::known(raw) else {
+                    return Ok(None);
+                };
+                Ok((userdata.class_uuid == V5_ANGULAR_EXTRA
+                    && userdata.item_uuid == V5_ANGULAR_EXTRA)
+                    .then_some(userdata))
+            },
+            "Rhino dimension extension traversal",
+        )? {
             let (mut reader, _next, _minor) = anonymous(
                 data,
                 extra.payload_range.start,
@@ -1364,10 +1400,19 @@ pub(crate) fn apply_userdata(
             reader.skip_remaining()?;
         }
     }
-    let Some(extra) = userdata
-        .iter()
-        .filter_map(UserdataDescriptor::known)
-        .find(|userdata| userdata.class_uuid == V5_DIM_EXTRA && userdata.item_uuid == V5_DIM_EXTRA)
+    let Some(extra) = ctx.find_map(
+        userdata,
+        |raw| {
+            let Some(userdata) = UserdataDescriptor::known(raw) else {
+                return Ok(None);
+            };
+            Ok(
+                (userdata.class_uuid == V5_DIM_EXTRA && userdata.item_uuid == V5_DIM_EXTRA)
+                    .then_some(userdata),
+            )
+        },
+        "Rhino dimension extension traversal",
+    )?
     else {
         return Ok(());
     };
@@ -1417,32 +1462,34 @@ pub(crate) fn apply_userdata(
     Ok(())
 }
 
-/// Projects a decoded dimension into one measured semantic annotation.
-///
-/// `object` is the 3DM object-record identity (also used as `native_ref`).
-/// `order` must be a globally unique dense `u32`.
-///
-/// Returns the annotation and the codes for every reference the annotation could
-/// not carry.
-fn insert_dimension_property(
+fn insert_dimension_text(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     parameters: &mut std::collections::BTreeMap<cadmpeg_core::text::NonBlankString, String>,
     key: &'static str,
-    value: fmt::Arguments<'_>,
+    value: String,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let key = ctx.copy_retained_text(key, "Rhino dimension parameter key")?;
     let key = cadmpeg_core::text::NonBlankString::for_decode(ctx, key, "validate nonblank text")?
         .ok_or_else(|| {
         cadmpeg_core::CodecError::malformed("generated dimension key is blank")
     })?;
-    let value = ctx.format_retained(value, "Rhino dimension parameter value")?;
     ctx.insert_btree_map(parameters, key, value, "Rhino dimension parameter entries")?;
     Ok(())
 }
 
-struct CommaValues<'a>(&'a [f64]);
+fn insert_dimension_property(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    parameters: &mut std::collections::BTreeMap<cadmpeg_core::text::NonBlankString, String>,
+    key: &'static str,
+    value: fmt::Arguments<'_>,
+) -> Result<(), cadmpeg_core::CodecError> {
+    let value = ctx.format_retained(value, "Rhino dimension parameter value")?;
+    insert_dimension_text(ctx, parameters, key, value)
+}
 
-impl fmt::Display for CommaValues<'_> {
+struct CommaValues<'a, const N: usize>(&'a [f64; N]);
+
+impl<const N: usize> fmt::Display for CommaValues<'_, N> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for (index, value) in self.0.iter().enumerate() {
             if index > 0 {
@@ -1454,22 +1501,23 @@ impl fmt::Display for CommaValues<'_> {
     }
 }
 
-struct SemicolonPoints<'a>(&'a [FiniteVector<2>]);
-
-impl fmt::Display for SemicolonPoints<'_> {
+struct PointText<'a>(&'a FiniteVector<2>);
+impl fmt::Display for PointText<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        for (index, point) in self.0.iter().enumerate() {
-            if index > 0 {
-                f.write_str(";")?;
-            }
-            write!(f, "{},{}", point[0], point[1])?;
-        }
-        Ok(())
+        write!(f, "{},{}", self.0[0], self.0[1])
     }
 }
 
+/// Projects a decoded dimension into one measured semantic annotation.
+///
+/// `object` is the 3DM object-record identity (also used as `native_ref`).
+/// `order` must be a globally unique dense `u32`.
+///
+/// Returns the annotation and the codes for every reference the annotation could
+/// not carry.
 pub(crate) fn project(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    unresolved_storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     dimension: &Dimension,
     key: &str,
     name: Option<&str>,
@@ -1525,8 +1573,18 @@ pub(crate) fn project(
             "distance_scale",
             format_args!("{}", dimension.distance_scale.get())
         )?;
-        put!("rich_text", format_args!("{}", dimension.rich_text))?;
-        put!("user_text", format_args!("{}", dimension.user_text))?;
+        insert_dimension_text(
+            ctx,
+            &mut parameters,
+            "rich_text",
+            ctx.copy_retained_text(&dimension.rich_text, "Rhino dimension parameter value")?,
+        )?;
+        insert_dimension_text(
+            ctx,
+            &mut parameters,
+            "user_text",
+            ctx.copy_retained_text(&dimension.user_text, "Rhino dimension parameter value")?,
+        )?;
         put!(
             "use_default_text_point",
             format_args!("{}", dimension.use_default_text_point)
@@ -1552,27 +1610,27 @@ pub(crate) fn project(
         )?;
         put!(
             "plane_origin",
-            format_args!("{}", CommaValues(&dimension.plane.origin[..]))
+            format_args!("{}", CommaValues(&dimension.plane.origin.get()))
         )?;
         put!(
             "plane_x_axis",
-            format_args!("{}", CommaValues(&dimension.plane.xaxis[..]))
+            format_args!("{}", CommaValues(&dimension.plane.xaxis.get()))
         )?;
         put!(
             "plane_y_axis",
-            format_args!("{}", CommaValues(&dimension.plane.yaxis[..]))
+            format_args!("{}", CommaValues(&dimension.plane.yaxis.get()))
         )?;
         put!(
             "plane_z_axis",
-            format_args!("{}", CommaValues(&dimension.plane.zaxis[..]))
+            format_args!("{}", CommaValues(&dimension.plane.zaxis.get()))
         )?;
         put!(
             "plane_equation",
-            format_args!("{}", CommaValues(&dimension.plane.equation[..]))
+            format_args!("{}", CommaValues(&dimension.plane.equation.get()))
         )?;
         put!(
             "horizontal_direction",
-            format_args!("{}", CommaValues(&dimension.horizontal_direction[..]))
+            format_args!("{}", CommaValues(&dimension.horizontal_direction.get()))
         )?;
         match &dimension.family {
             DimensionFamily::Modern { dimstyle_id } => {
@@ -1594,8 +1652,18 @@ pub(crate) fn project(
                 points,
                 angular_radius,
             } => {
-                put!("v2_default_text", format_args!("{default_text}"))?;
-                put!("v2_points", format_args!("{}", SemicolonPoints(points)))?;
+                insert_dimension_text(
+                    ctx,
+                    &mut parameters,
+                    "v2_default_text",
+                    ctx.copy_retained_text(default_text, "Rhino dimension parameter value")?,
+                )?;
+                let points_text = ctx.join_display_retained(
+                    points.iter().map(PointText),
+                    ";",
+                    "Rhino dimension parameter value",
+                )?;
+                insert_dimension_text(ctx, &mut parameters, "v2_points", points_text)?;
                 if let Some(radius) = angular_radius {
                     let angle = dimension.measurement;
                     put!("v2_angle_radians", format_args!("{angle}"))?;
@@ -1692,7 +1760,12 @@ pub(crate) fn project(
         }
     }
     if let Some(name) = name {
-        insert_dimension_property(ctx, &mut parameters, "object_name", format_args!("{name}"))?;
+        insert_dimension_text(
+            ctx,
+            &mut parameters,
+            "object_name",
+            ctx.copy_retained_text(name, "Rhino dimension parameter value")?,
+        )?;
     }
 
     // Model-space text point via the dimension plane (stored UV, not world xyz).
@@ -1740,8 +1813,12 @@ pub(crate) fn project(
                 Ok(())
             }
             Some(_) => {
-                ctx.reserve_vec(&mut unresolved, 1, "Rhino unresolved dimension references")?;
-                unresolved.push(code);
+                ctx.push_scoped_vec(
+                    unresolved_storage,
+                    &mut unresolved,
+                    code,
+                    "Rhino unresolved dimension references",
+                )?;
                 Ok(())
             }
         }
@@ -1769,15 +1846,29 @@ pub(crate) fn project(
             })
         })
         .transpose()?;
-    let key = cadmpeg_ir::ids::IdentityKey::try_new(
-        ctx.copy_retained_text(key, "Rhino dimension identity key")?,
-    )
-    .map_err(|error| cadmpeg_core::CodecError::malformed(error.to_string()))?;
+    let (key_buffer, _key_storage) =
+        ctx.with_scoped_storage("Rhino dimension identity key", || {
+            cadmpeg_ir::ids::IdentityKey::try_new(
+                ctx.copy_retained_text(key, "Rhino dimension identity key")?,
+            )
+            .or_else(|error| {
+                Err(cadmpeg_core::CodecError::malformed(ctx.format_retained(
+                    format_args!("{error}"),
+                    "Rhino project text",
+                )?))
+            })
+        })?;
+    let key = key_buffer;
     let annotation_id = SemanticAnnotationId::try_from(ctx.format_retained(
         format_args!("rhino:dimension:annotation#{}", key.as_str()),
         "Rhino dimension annotation identity",
     )?)
-    .map_err(|error| cadmpeg_core::CodecError::malformed(error.to_string()))?;
+    .or_else(|error| {
+        Err(cadmpeg_core::CodecError::malformed(ctx.format_retained(
+            format_args!("{error}"),
+            "Rhino project text",
+        )?))
+    })?;
     let mut text = Vec::new();
     if !dimension.user_text.is_empty() {
         ctx.reserve_vec(&mut text, 1, "Rhino dimension annotation text")?;
@@ -1825,16 +1916,34 @@ pub(crate) fn semantic_json(
             map.end()
         }
     }
-    let (annotation, _) = project(ctx, dimension, "embedded-history-dimension", None, "", 0)?;
-    crate::wire::admitted_canonical_json(
+    let mut unresolved_storage = ctx.reserve_scoped(0, "Rhino dimension unresolved references")?;
+    let ((annotation, unresolved), annotation_storage) =
+        ctx.with_scoped_storage("Rhino dimension semantic fields", || {
+            project(
+                ctx,
+                &mut unresolved_storage,
+                dimension,
+                "embedded-history-dimension",
+                None,
+                "",
+                0,
+            )
+        })?;
+    drop(unresolved);
+    drop(unresolved_storage);
+    let json = crate::wire::admitted_canonical_json(
         ctx,
         &DimensionJson(&annotation),
         "Rhino dimension semantic JSON",
-    )
+    );
+    drop(annotation);
+    drop(annotation_storage);
+    json
 }
 
 #[cfg(test)]
 pub(crate) mod tests {
+    mod budget_repairs;
 
     #[test]
     fn dimension_point_reader_holds_finite_lanes_and_preserves_refusal_offset() {
@@ -1856,6 +1965,10 @@ pub(crate) mod tests {
 
     #[test]
     fn shifted_plane_keeps_computed_overflow_outside_source_admission() {
+        let arena = cadmpeg_core::decode::DecodeArena::default();
+        let policy = cadmpeg_core::decode::DecodePolicy::default();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("context");
         let bytes = plane_bytes(
             [f64::MAX, 0.0, 0.0],
             [1.0, 0.0, 0.0],
@@ -1863,7 +1976,7 @@ pub(crate) mod tests {
             [0.0, 0.0, 1.0, 0.0],
         );
         let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("plane reader");
-        let plane = crate::settings::plane(&mut reader).expect("finite source plane");
+        let plane = crate::settings::plane(&ctx, &mut reader).expect("finite source plane");
         let shifted = super::shifted_plane(plane, [f64::MAX, 0.0]);
         assert!(matches!(
             shifted.origin,
@@ -1934,8 +2047,29 @@ pub(crate) mod tests {
         archive: ArchiveVersion,
     ) -> Result<super::Dimension, crate::chunks::FramingError> {
         with_test_context(data, |ctx| {
-            super::decode(ctx, data, class, range, scale, archive)
+            super::decode(
+                ctx,
+                &mut ctx.reserve_scoped(0, "test dimension fields")?,
+                data,
+                class,
+                range,
+                scale,
+                archive,
+            )
         })
+    }
+
+    fn with_materialized_limit<R>(
+        data: &[u8],
+        limit: u64,
+        apply: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> R,
+    ) -> R {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_materialized_bytes = limit;
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy).unwrap();
+        apply(&ctx)
     }
 
     fn with_collection_limit<R>(
@@ -2062,44 +2196,46 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn modern_dimension_rich_text_refuses_retained_limit() {
+    fn modern_dimension_rich_text_refuses_materialized_limit() {
         let family = [3.0_f64, 4.0, 8.0, 9.0]
             .into_iter()
             .flat_map(f64::to_le_bytes)
             .collect::<Vec<_>>();
         let bytes = payload(1, &family);
-        let error = with_retained_limit(&bytes, 0, |ctx| {
+        let error = with_materialized_limit(&bytes, 0, |ctx| {
             super::decode(
                 ctx,
+                &mut ctx.reserve_scoped(0, "test dimension fields").unwrap(),
                 &bytes,
                 LINEAR,
                 0..bytes.len(),
                 MillimeterScale::IDENTITY,
                 ArchiveVersion::V8,
             )
-            .expect_err("rich text exceeds retained limit")
+            .expect_err("rich text exceeds materialized limit")
         });
         assert_resource(&error, "Rhino dimension rich text");
     }
 
     #[test]
-    fn modern_dimension_user_text_refuses_retained_limit() {
+    fn modern_dimension_user_text_refuses_materialized_limit() {
         let family = [3.0_f64, 4.0, 8.0, 9.0]
             .into_iter()
             .flat_map(f64::to_le_bytes)
             .collect::<Vec<_>>();
         let bytes =
             dimension_payload_with_arrow_fit(1, &family, [0; 16], &plane(), None, 0, "user");
-        let error = with_retained_limit(&bytes, 3, |ctx| {
+        let error = with_materialized_limit(&bytes, 3, |ctx| {
             super::decode(
                 ctx,
+                &mut ctx.reserve_scoped(0, "test dimension fields").unwrap(),
                 &bytes,
                 LINEAR,
                 0..bytes.len(),
                 MillimeterScale::IDENTITY,
                 ArchiveVersion::V8,
             )
-            .expect_err("user text exceeds retained limit")
+            .expect_err("user text exceeds materialized limit")
         });
         assert_resource(&error, "Rhino dimension user text");
         assert!(test_decode(
@@ -2729,8 +2865,16 @@ pub(crate) mod tests {
         )
         .expect("valid linear dimension");
         let refusal = with_collection_limit(&[], 0, |ctx| {
-            super::project(ctx, &dimension, "test", None, "", 0)
-                .expect_err("first parameter exceeds zero items")
+            super::project(
+                ctx,
+                &mut ctx.reserve_scoped(0, "test dimension references").unwrap(),
+                &dimension,
+                "test",
+                None,
+                "",
+                0,
+            )
+            .expect_err("first parameter exceeds zero items")
         });
         assert!(matches!(
             refusal,
@@ -2738,9 +2882,16 @@ pub(crate) mod tests {
                 if limit.operation == "Rhino dimension parameter entries"
         ));
         let ctx = cadmpeg_test_support::service_decode_context();
-        let (annotation, _) =
-            super::project(&ctx, &dimension, "embedded-history-dimension", None, "", 0)
-                .expect("service profile admits projection");
+        let (annotation, _) = super::project(
+            &ctx,
+            &mut ctx.reserve_scoped(0, "test dimension references").unwrap(),
+            &dimension,
+            "embedded-history-dimension",
+            None,
+            "",
+            0,
+        )
+        .expect("service profile admits projection");
         let baseline = serde_json::json!({
             "kind": "dimension",
             "runtime_type": annotation.runtime_type,
@@ -2984,6 +3135,7 @@ pub(crate) mod tests {
         });
         let mut radial = radial;
         apply_userdata(
+            &cadmpeg_test_support::service_decode_context(),
             &extension,
             std::slice::from_ref(&descriptor),
             archive,
@@ -3014,6 +3166,7 @@ pub(crate) mod tests {
         )
         .expect("fresh radial baseline");
         apply_userdata(
+            &cadmpeg_test_support::service_decode_context(),
             &extension,
             std::slice::from_ref(&wrong_item_descriptor),
             archive,
@@ -3041,6 +3194,7 @@ pub(crate) mod tests {
         });
         let mut angular = angular;
         apply_userdata(
+            &cadmpeg_test_support::service_decode_context(),
             &angular_extension,
             std::slice::from_ref(&angular_descriptor),
             archive,
@@ -3072,6 +3226,7 @@ pub(crate) mod tests {
         )
         .expect("fresh angular baseline");
         apply_userdata(
+            &cadmpeg_test_support::service_decode_context(),
             &angular_extension,
             std::slice::from_ref(&wrong_item_descriptor),
             archive,
@@ -3106,6 +3261,7 @@ pub(crate) mod tests {
         *payload_range = second_start..combined.len();
         let mut duplicate_angular = angular;
         apply_userdata(
+            &cadmpeg_test_support::service_decode_context(),
             &combined,
             &[angular_descriptor, second_descriptor],
             archive,

@@ -85,6 +85,12 @@ fn standard_full_circle_edge_uses_vertex_seam_and_radian_domain() {
         build_standard_edge_curve(
             ctx,
             crate::families::standard::decode::edge_geometry::BuildStandardEdgeCurveInputs {
+                support_storage: None,
+                native_surfaces:
+                    &mut crate::families::standard::decode::edge_geometry::NativeSurfaceIndex::new(
+                        admission.context(),
+                    )
+                    .expect("index reservation"),
                 ir: &mut ir,
                 annotations: &mut AnnotationBuilder::new(),
                 bindings: &[(surface_id.clone(), false, 0)],
@@ -682,7 +688,12 @@ fn native_edge_support_match_refuses_work_limit() {
                 &mut AnnotationBuilder::new(),
                 42,
                 &carrier,
+                &mut crate::families::standard::decode::edge_geometry::NativeSurfaceIndex::new(
+                    admission.context(),
+                )
+                .expect("index reservation"),
                 &mut admission,
+                None,
             )
         });
     assert!(
@@ -696,11 +707,16 @@ fn native_edge_support_match_refuses_work_limit() {
             &mut AnnotationBuilder::new(),
             42,
             &carrier,
+            &mut crate::families::standard::decode::edge_geometry::NativeSurfaceIndex::new(
+                admission.context(),
+            )
+            .expect("index reservation"),
             &mut admission,
+            None,
         )
     })
     .expect("service profile admits surface match");
-    assert_eq!(matched, id);
+    assert_eq!(ir.model.surfaces[matched].id, id);
     assert_eq!(ir.model.surfaces.len(), 1);
 }
 
@@ -717,7 +733,12 @@ fn native_edge_support_nurbs_copy_refuses_collection_limit() {
             &mut AnnotationBuilder::new(),
             42,
             &carrier,
+            &mut crate::families::standard::decode::edge_geometry::NativeSurfaceIndex::new(
+                admission.context(),
+            )
+            .expect("index reservation"),
             &mut admission,
+            None,
         )
     });
     assert!(
@@ -727,13 +748,19 @@ fn native_edge_support_nurbs_copy_refuses_collection_limit() {
     let admitted = crate::test_support::with_service_context(|ctx| {
         let mut ir = CadIr::empty();
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
-        let id = ensure_native_edge_support_surface(
+        let surface_index = ensure_native_edge_support_surface(
             &mut ir,
             &mut AnnotationBuilder::new(),
             42,
             &carrier,
+            &mut crate::families::standard::decode::edge_geometry::NativeSurfaceIndex::new(
+                admission.context(),
+            )
+            .expect("index reservation"),
             &mut admission,
+            None,
         )?;
+        let id = ir.model.surfaces[surface_index].id.clone();
         Ok::<_, cadmpeg_core::CodecError>((id, ir.model.surfaces))
     })
     .expect("service budget admits native edge support surface");

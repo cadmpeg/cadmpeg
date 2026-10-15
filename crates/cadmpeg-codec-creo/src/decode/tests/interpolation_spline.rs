@@ -63,8 +63,15 @@ fn thicken_plane_offset_with_service(
     planes: &BTreeMap<u32, PlaneEquation>,
     rows: &[crate::surface::SurfaceRow],
 ) -> Option<(f64, ThickenSide)> {
-    crate::decode::with_test_decode_ctx(|ctx| thicken_plane_offset(ctx, transitions, planes, rows))
-        .expect("service profile admits thicken plane offsets")
+    crate::decode::with_test_decode_ctx(|ctx| {
+        thicken_plane_offset(
+            ctx,
+            transitions,
+            planes,
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
+        )
+    })
+    .expect("service profile admits thicken plane offsets")
 }
 
 fn feature_surface_transitions_with_service(
@@ -73,7 +80,12 @@ fn feature_surface_transitions_with_service(
     rows: &[crate::surface::SurfaceRow],
 ) -> Option<Vec<(u32, u32)>> {
     crate::decode::with_test_decode_ctx(|ctx| {
-        feature_surface_transitions(ctx, feature_id, tables, rows)
+        feature_surface_transitions(
+            ctx,
+            feature_id,
+            tables,
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
+        )
     })
     .expect("service profile admits surface transitions")
 }
@@ -84,16 +96,17 @@ fn surface_transition_dependencies_with_service(
     rows: &[crate::surface::SurfaceRow],
 ) -> Vec<u32> {
     crate::decode::with_test_decode_ctx(|ctx| {
-        surface_transition_dependencies(ctx, feature_id, tables, rows)
+        surface_transition_dependencies(
+            ctx,
+            feature_id,
+            tables,
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
+        )
     })
     .expect("service profile admits transition dependencies")
 }
 
 const EPS_FULL_TURN: f64 = 1e-12;
-
-fn finite_local_system(values: [f64; 12]) -> cadmpeg_ir::units::FiniteVector<12> {
-    cadmpeg_ir::units::FiniteVector::new(values).expect("finite local system fixture")
-}
 
 #[test]
 // These checked constructors must accept the explicit test fixtures.
@@ -479,15 +492,19 @@ fn extrusion_profile_intersections_include_analytic_tangency() {
 
 #[test]
 fn equal_opposite_cap_planes_define_symmetric_extent() {
-    let extent = extrusion_extent_and_direction(
-        [0.0, 0.0, 0.0],
-        [0.0, -1.0, 0.0],
-        [
-            ([0.0, 4.0, 0.0], [0.0, 1.0, 0.0]),
-            ([0.0, -4.0, 0.0], [0.0, 1.0, 0.0]),
-            ([3.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
-        ],
-    );
+    let extent = crate::decode::with_test_decode_ctx(|ctx| {
+        extrusion_extent_and_direction(
+            ctx,
+            [0.0, 0.0, 0.0],
+            [0.0, -1.0, 0.0],
+            [
+                ([0.0, 4.0, 0.0], [0.0, 1.0, 0.0]),
+                ([0.0, -4.0, 0.0], [0.0, 1.0, 0.0]),
+                ([3.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
+            ],
+        )
+    })
+    .expect("service resources");
 
     assert_eq!(
         extent,
@@ -552,9 +569,17 @@ fn unresolved_display_state_family_blocks_schema_sweep_fallback() {
             state_offset: 0,
         });
 
-    assert!(!feature_allows_linear_extrusion(&scan, 917));
+    assert!(
+        !crate::decode::with_test_decode_ctx(|ctx| feature_allows_linear_extrusion(
+            ctx, &scan, 917
+        ))
+        .expect("admitted test lookup")
+    );
     scan.features.operations[0].kind = crate::feature::operations::OperationKind::Extrude;
-    assert!(feature_allows_linear_extrusion(&scan, 917));
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| feature_allows_linear_extrusion(ctx, &scan, 917))
+            .expect("admitted test lookup")
+    );
 }
 
 #[test]
@@ -589,10 +614,23 @@ fn class_942_linear_sweep_requires_a_numbered_extrude_reference() {
             offset: 0,
         });
 
-    assert!(feature_is_sheet_extrusion(&scan, 942));
-    assert!(feature_allows_linear_extrusion(&scan, 942));
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| feature_is_sheet_extrusion(ctx, &scan, 942))
+            .expect("admitted test lookup")
+    );
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| feature_allows_linear_extrusion(ctx, &scan, 942))
+            .expect("admitted test lookup")
+    );
     assert_eq!(
-        sweep_output_kind(&scan, &CadIr::empty(), "extrusion", 942),
+        crate::decode::with_test_decode_ctx(|ctx| sweep_output_kind(
+            ctx,
+            &scan,
+            &CadIr::empty(),
+            "extrusion",
+            942
+        ))
+        .expect("service profile admits scalar parsing"),
         Some(BodyKind::Sheet)
     );
     assert!(matches!(
@@ -615,10 +653,25 @@ fn class_942_linear_sweep_requires_a_numbered_extrude_reference() {
     ));
 
     scan.features.reference_names[0].name_bytes = b"Boundary Blend 1".to_vec();
-    assert!(!feature_is_sheet_extrusion(&scan, 942));
-    assert!(!feature_allows_linear_extrusion(&scan, 942));
+    assert!(
+        !crate::decode::with_test_decode_ctx(|ctx| feature_is_sheet_extrusion(ctx, &scan, 942))
+            .expect("admitted test lookup")
+    );
+    assert!(
+        !crate::decode::with_test_decode_ctx(|ctx| feature_allows_linear_extrusion(
+            ctx, &scan, 942
+        ))
+        .expect("admitted test lookup")
+    );
     assert_eq!(
-        sweep_output_kind(&scan, &CadIr::empty(), "extrusion", 942),
+        crate::decode::with_test_decode_ctx(|ctx| sweep_output_kind(
+            ctx,
+            &scan,
+            &CadIr::empty(),
+            "extrusion",
+            942
+        ))
+        .expect("service profile admits scalar parsing"),
         None
     );
     assert!(matches!(
@@ -781,13 +834,50 @@ fn class_942_sheet_extrusion_uses_linear_cap_extent_evaluation() {
 
 #[test]
 fn numbered_reference_name_selects_only_its_exact_feature_family() {
-    assert!(numbered_feature_name_has_family("Thicken 1", "Thicken"));
-    assert!(numbered_feature_name_has_family("Thicken 12", "Thicken"));
-    assert!(!numbered_feature_name_has_family("Thicken", "Thicken"));
-    assert!(!numbered_feature_name_has_family("Thicken A", "Thicken"));
-    assert!(!numbered_feature_name_has_family("GThicken 1", "Thicken"));
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| numbered_feature_name_has_family(
+            ctx,
+            "Thicken 1",
+            "Thicken"
+        ))
+        .expect("admitted test lookup")
+    );
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| numbered_feature_name_has_family(
+            ctx,
+            "Thicken 12",
+            "Thicken"
+        ))
+        .expect("admitted test lookup")
+    );
+    assert!(
+        !crate::decode::with_test_decode_ctx(|ctx| numbered_feature_name_has_family(
+            ctx, "Thicken", "Thicken"
+        ))
+        .expect("admitted test lookup")
+    );
+    assert!(
+        !crate::decode::with_test_decode_ctx(|ctx| numbered_feature_name_has_family(
+            ctx,
+            "Thicken A",
+            "Thicken"
+        ))
+        .expect("admitted test lookup")
+    );
+    assert!(
+        !crate::decode::with_test_decode_ctx(|ctx| numbered_feature_name_has_family(
+            ctx,
+            "GThicken 1",
+            "Thicken"
+        ))
+        .expect("admitted test lookup")
+    );
     assert!(matches!(
-        reference_named_feature_definition("Boundary Blend 1"),
+        crate::decode::with_test_decode_ctx(|ctx| reference_named_feature_definition(
+            ctx,
+            "Boundary Blend 1"
+        ))
+        .expect("admitted test lookup"),
         Some(IrFeatureDefinition::Operation(
             IrFeatureOperation::Unresolved {
                 family: UnresolvedFamily::BoundarySurface
@@ -795,7 +885,11 @@ fn numbered_reference_name_selects_only_its_exact_feature_family() {
         ))
     ));
     assert!(matches!(
-        reference_named_feature_definition("Thicken 1"),
+        crate::decode::with_test_decode_ctx(|ctx| reference_named_feature_definition(
+            ctx,
+            "Thicken 1"
+        ))
+        .expect("admitted test lookup"),
         Some(IrFeatureDefinition::Operation(
             IrFeatureOperation::Thicken {
                 faces: FaceSelection::Unresolved,
@@ -804,9 +898,18 @@ fn numbered_reference_name_selects_only_its_exact_feature_family() {
             }
         ))
     ));
-    assert!(reference_named_feature_definition("Fill 1").is_none());
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| reference_named_feature_definition(
+            ctx, "Fill 1"
+        ))
+        .expect("admitted test lookup")
+        .is_none()
+    );
     assert!(matches!(
-        reference_named_feature_definition("Merge 2"),
+        crate::decode::with_test_decode_ctx(|ctx| reference_named_feature_definition(
+            ctx, "Merge 2"
+        ))
+        .expect("admitted test lookup"),
         Some(IrFeatureDefinition::Operation(
             IrFeatureOperation::KnitSurface {
                 faces: FaceSelection::Unresolved,
@@ -816,7 +919,14 @@ fn numbered_reference_name_selects_only_its_exact_feature_family() {
             }
         ))
     ));
-    assert!(reference_named_feature_definition("Extrude 2").is_none());
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| reference_named_feature_definition(
+            ctx,
+            "Extrude 2"
+        ))
+        .expect("admitted test lookup")
+        .is_none()
+    );
 }
 
 #[test]
@@ -872,27 +982,31 @@ fn feature_surface_transitions_require_complete_unique_predecessor_chains() {
     );
 
     let mut conflicting = table.clone();
-    conflicting.entries[3].payload = crate::feature::entity::EntryPayload::Related(
-        crate::feature::entity::RelatedPayload::new(
-            crate::feature::entity::RelatedClass::Class210,
-            101,
-            crate::feature::entity::RelatedState::Zero,
-        )
-        .expect("valid related fixture"),
-    );
+    conflicting.entries.edit(3, |entry| {
+        entry.payload = crate::feature::entity::EntryPayload::Related(
+            crate::feature::entity::RelatedPayload::new(
+                crate::feature::entity::RelatedClass::Class210,
+                101,
+                crate::feature::entity::RelatedState::Zero,
+            )
+            .expect("valid related fixture"),
+        );
+    });
     assert_eq!(
         feature_surface_transitions_with_service(17, &[conflicting], &rows),
         None
     );
     let mut wrong_predecessor_class = table.clone();
-    wrong_predecessor_class.entries[0].payload = crate::feature::entity::EntryPayload::Related(
-        crate::feature::entity::RelatedPayload::new(
-            crate::feature::entity::RelatedClass::Class219,
-            11,
-            crate::feature::entity::RelatedState::Zero,
-        )
-        .expect("valid related fixture"),
-    );
+    wrong_predecessor_class.entries.edit(0, |entry| {
+        entry.payload = crate::feature::entity::EntryPayload::Related(
+            crate::feature::entity::RelatedPayload::new(
+                crate::feature::entity::RelatedClass::Class219,
+                11,
+                crate::feature::entity::RelatedState::Zero,
+            )
+            .expect("valid related fixture"),
+        );
+    });
     wrong_predecessor_class
         .entries
         .push(entry(999, 214, Some(888)));
@@ -1373,19 +1487,27 @@ fn boundary_surface_entity_graph_requires_the_complete_generated_chain() {
         offset: 0,
     };
 
-    assert!(class_942_boundary_surface_entity_graph(
-        144,
-        &tables,
-        std::slice::from_ref(&surface),
-    ));
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| class_942_boundary_surface_entity_graph(
+            ctx,
+            144,
+            &tables,
+            std::slice::from_ref(&surface),
+        ))
+        .expect("admitted boundary surface graph")
+    );
 
     let mut incomplete = tables.clone();
     incomplete[1].entries.pop();
-    assert!(!class_942_boundary_surface_entity_graph(
-        144,
-        &incomplete,
-        &[surface],
-    ));
+    assert!(
+        !crate::decode::with_test_decode_ctx(|ctx| class_942_boundary_surface_entity_graph(
+            ctx,
+            144,
+            &incomplete,
+            &[surface],
+        ))
+        .expect("admitted boundary surface graph")
+    );
 }
 
 #[test]
@@ -1425,14 +1547,26 @@ fn new_sheet_output_requires_an_owned_output_surface() {
     };
 
     assert_eq!(
-        new_sheet_output_surface_id(144, &tables, std::slice::from_ref(&surface)),
+        crate::decode::with_test_decode_ctx(|ctx| new_sheet_output_surface_id(
+            ctx,
+            144,
+            &tables,
+            std::slice::from_ref(&surface)
+        ))
+        .expect("admitted test lookup"),
         Some(145)
     );
 
     let mut prior_surface = surface;
     prior_surface.feature_id = 97;
     assert_eq!(
-        new_sheet_output_surface_id(144, &tables, &[prior_surface]),
+        crate::decode::with_test_decode_ctx(|ctx| new_sheet_output_surface_id(
+            ctx,
+            144,
+            &tables,
+            &[prior_surface]
+        ))
+        .expect("admitted test lookup"),
         None
     );
 }
@@ -1484,387 +1618,6 @@ fn stored_section_sweep_family_defines_boolean_operation() {
 }
 
 #[test]
-fn datum_feature_uses_its_unique_transferred_plane_carrier() {
-    let mut scan = crate::test_support::empty_container_scan();
-    scan.surfaces.rows.push(crate::surface::SurfaceRow {
-        id: 6,
-        kind: crate::surface::SurfaceKind::Plane,
-        feature_id: 5,
-        reversed: false,
-        boundary_type: crate::surface::BoundaryType::Code01,
-        next_surface: 0,
-        offset: 0,
-    });
-    let mut ir = CadIr::empty();
-    ir.model.surfaces.push(Surface {
-        id: SurfaceId::mint("creo:visibgeom:surface#6".to_string()).expect("identity grammar"),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-                Point3::new(0.0, 1.0, 0.0),
-                Vector3::new(0.0, 1.0, 0.0),
-                Vector3::new(0.0, 0.0, 1.0),
-            )
-            .expect("valid PlaneSurface fixture"),
-        )),
-        source_object: None,
-    });
-
-    assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| schema_feature_definition(
-            ctx,
-            &scan,
-            &ir,
-            &crate::decode::source_carriers::SourceUnitCarriers::default(),
-            5,
-            Some(SchemaClass::DatumPlane),
-            "Datum Plane"
-        ))
-        .expect("valid test fixture"),
-        IrFeatureDefinition::Operation(IrFeatureOperation::DatumPlane {
-            frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
-                Point3::new(0.0, 1.0, 0.0),
-                Vector3::new(0.0, 1.0, 0.0),
-                Vector3::new(0.0, 0.0, 1.0)
-            )
-            .expect("valid test fixture"),
-        })
-    );
-    assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| schema_feature_definition(
-            ctx,
-            &scan,
-            &ir,
-            &crate::decode::source_carriers::SourceUnitCarriers::default(),
-            5,
-            None,
-            "Native Feature"
-        ))
-        .expect("valid test fixture"),
-        IrFeatureDefinition::Operation(IrFeatureOperation::DatumPlane {
-            frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
-                Point3::new(0.0, 1.0, 0.0),
-                Vector3::new(0.0, 1.0, 0.0),
-                Vector3::new(0.0, 0.0, 1.0)
-            )
-            .expect("valid test fixture"),
-        })
-    );
-
-    scan.surfaces.rows.push(crate::surface::SurfaceRow {
-        id: 7,
-        kind: crate::surface::SurfaceKind::Plane,
-        feature_id: 5,
-        reversed: false,
-        boundary_type: crate::surface::BoundaryType::Code01,
-        next_surface: 0,
-        offset: 1,
-    });
-    assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| schema_feature_definition(
-            ctx,
-            &scan,
-            &ir,
-            &crate::decode::source_carriers::SourceUnitCarriers::default(),
-            5,
-            Some(SchemaClass::DatumPlane),
-            "Datum Plane"
-        ))
-        .expect("valid test fixture"),
-        IrFeatureDefinition::Operation(IrFeatureOperation::Unresolved {
-            family: UnresolvedFamily::DatumPlane
-        })
-    );
-    assert!(matches!(
-        crate::decode::with_test_decode_ctx(|ctx| schema_feature_definition(
-            ctx,
-            &scan,
-            &ir,
-            &crate::decode::source_carriers::SourceUnitCarriers::default(),
-            5,
-            None,
-            "Native Feature"
-        ))
-        .expect("valid test fixture"),
-        IrFeatureDefinition::Operation(IrFeatureOperation::Native { .. })
-    ));
-}
-
-#[test]
-fn datum_feature_preserves_its_unique_transferred_plane_chart() {
-    let mut scan = crate::test_support::empty_container_scan();
-    scan.surfaces.rows.push(crate::surface::SurfaceRow {
-        id: 6,
-        kind: crate::surface::SurfaceKind::Plane,
-        feature_id: 5,
-        reversed: false,
-        boundary_type: crate::surface::BoundaryType::Code01,
-        next_surface: 0,
-        offset: 0,
-    });
-    scan.planes.outlines.push(crate::surface::OutlinePlane {
-        surface_id: 6,
-        origin: [0.0, 1.0, 0.0],
-        normal: cadmpeg_ir::units::UnitVector3::Y_AXIS,
-        u_axis: cadmpeg_ir::units::UnitVector3::Z_AXIS,
-        offset: 1,
-    });
-
-    assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| schema_feature_definition(
-            ctx,
-            &scan,
-            &CadIr::empty(),
-            &crate::decode::source_carriers::SourceUnitCarriers::default(),
-            5,
-            Some(SchemaClass::DatumPlane),
-            "Datum Plane",
-        ))
-        .expect("valid test fixture"),
-        IrFeatureDefinition::Operation(IrFeatureOperation::DatumPlane {
-            frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
-                Point3::new(0.0, 1.0, 0.0),
-                Vector3::new(0.0, 1.0, 0.0),
-                Vector3::new(0.0, 0.0, 1.0)
-            )
-            .expect("valid test fixture"),
-        })
-    );
-}
-
-#[test]
-fn datum_feature_uses_its_unique_complete_local_system() {
-    let mut scan = crate::test_support::empty_container_scan();
-    scan.features
-        .definitions
-        .push(crate::feature::definitions::FeatureDefinition {
-            identity: crate::feature::definitions::DefinitionIdentity::Parsed {
-                schema_id: std::num::NonZeroU32::new(5),
-                owner_feature_id: Some(5),
-            },
-            body: Vec::new(),
-            parameter_frames: vec![
-                crate::feature::definitions::FeatureParameterFrame {
-                    kind: crate::feature::definitions::FeatureParameterFrameKind::LocalSystem,
-                    body: Vec::new(),
-                    decoded_values: Some(finite_local_system([
-                        1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 2.0, 3.0, 4.0, 5.0,
-                    ])),
-                    offset: 1,
-                },
-                crate::feature::definitions::FeatureParameterFrame {
-                    kind: crate::feature::definitions::FeatureParameterFrameKind::LocalSystem,
-                    body: vec![0xff],
-                    decoded_values: None,
-                    offset: 2,
-                },
-            ],
-            outlines: Vec::new(),
-            variables: None,
-            segments: None,
-            trim_entities: None,
-            trim_vertices: None,
-            order_table: None,
-            section_3d: None,
-            dimensions: None,
-            relations: None,
-            saved_section: None,
-            offset: 0,
-        });
-
-    assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| schema_feature_definition(
-            ctx,
-            &scan,
-            &CadIr::empty(),
-            &crate::decode::source_carriers::SourceUnitCarriers::default(),
-            5,
-            Some(SchemaClass::DatumPlane),
-            "Datum Plane"
-        ))
-        .expect("valid test fixture"),
-        IrFeatureDefinition::Operation(IrFeatureOperation::DatumPlane {
-            frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
-                Point3::new(3.0, 4.0, 5.0),
-                Vector3::new(0.0, 0.0, 1.0),
-                Vector3::new(1.0, 0.0, 0.0)
-            )
-            .expect("valid test fixture"),
-        })
-    );
-}
-
-#[test]
-fn coordinate_system_feature_uses_its_unique_complete_local_system() {
-    let mut scan = crate::test_support::empty_container_scan();
-    scan.features
-        .definitions
-        .push(crate::feature::definitions::FeatureDefinition {
-            identity: crate::feature::definitions::DefinitionIdentity::Parsed {
-                schema_id: std::num::NonZeroU32::new(7),
-                owner_feature_id: Some(7),
-            },
-            body: Vec::new(),
-            parameter_frames: vec![
-                crate::feature::definitions::FeatureParameterFrame {
-                    kind: crate::feature::definitions::FeatureParameterFrameKind::LocalSystem,
-                    body: Vec::new(),
-                    decoded_values: Some(finite_local_system([
-                        0.0, 2.0, 0.0, -3.0, 0.0, 0.0, 0.0, 0.0, 4.0, 5.0, 6.0, 7.0,
-                    ])),
-                    offset: 1,
-                },
-                crate::feature::definitions::FeatureParameterFrame {
-                    kind: crate::feature::definitions::FeatureParameterFrameKind::LocalSystem,
-                    body: vec![0xff],
-                    decoded_values: None,
-                    offset: 2,
-                },
-            ],
-            outlines: Vec::new(),
-            variables: None,
-            segments: None,
-            trim_entities: None,
-            trim_vertices: None,
-            order_table: None,
-            section_3d: None,
-            dimensions: None,
-            relations: None,
-            saved_section: None,
-            offset: 0,
-        });
-
-    assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| schema_feature_definition(
-            ctx,
-            &scan,
-            &CadIr::empty(),
-            &crate::decode::source_carriers::SourceUnitCarriers::default(),
-            7,
-            Some(SchemaClass::CoordinateSystem),
-            "PRT_CSYS_DEF"
-        ))
-        .expect("valid test fixture"),
-        IrFeatureDefinition::Operation(IrFeatureOperation::DatumCoordinateSystem {
-            frame: cadmpeg_ir::features::FeatureCoordinateFrame::new(
-                Point3::new(5.0, 6.0, 7.0),
-                Vector3::new(0.0, 1.0, 0.0),
-                Vector3::new(-1.0, 0.0, 0.0),
-                Vector3::new(0.0, 0.0, 1.0)
-            )
-            .expect("valid test fixture")
-        })
-    );
-}
-
-#[test]
-fn coordinate_system_feature_rejects_a_reflected_local_system() {
-    let mut scan = crate::test_support::empty_container_scan();
-    scan.features
-        .definitions
-        .push(crate::feature::definitions::FeatureDefinition {
-            identity: crate::feature::definitions::DefinitionIdentity::Parsed {
-                schema_id: std::num::NonZeroU32::new(7),
-                owner_feature_id: Some(7),
-            },
-            body: Vec::new(),
-            parameter_frames: vec![crate::feature::definitions::FeatureParameterFrame {
-                kind: crate::feature::definitions::FeatureParameterFrameKind::LocalSystem,
-                body: Vec::new(),
-                decoded_values: Some(finite_local_system([
-                    1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, -1.0, 5.0, 6.0, 7.0,
-                ])),
-                offset: 1,
-            }],
-            outlines: Vec::new(),
-            variables: None,
-            segments: None,
-            trim_entities: None,
-            trim_vertices: None,
-            order_table: None,
-            section_3d: None,
-            dimensions: None,
-            relations: None,
-            saved_section: None,
-            offset: 0,
-        });
-
-    assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| schema_feature_definition(
-            ctx,
-            &scan,
-            &CadIr::empty(),
-            &crate::decode::source_carriers::SourceUnitCarriers::default(),
-            7,
-            Some(SchemaClass::CoordinateSystem),
-            "PRT_CSYS_DEF"
-        ))
-        .expect("valid test fixture"),
-        IrFeatureDefinition::Operation(IrFeatureOperation::Unresolved {
-            family: UnresolvedFamily::DatumCoordinateSystem
-        })
-    );
-}
-
-#[test]
-fn coordinate_system_feature_rejects_a_local_system_outside_the_record_tolerance() {
-    let mut scan = crate::test_support::empty_container_scan();
-    scan.features
-        .definitions
-        .push(crate::feature::definitions::FeatureDefinition {
-            identity: crate::feature::definitions::DefinitionIdentity::Parsed {
-                schema_id: std::num::NonZeroU32::new(7),
-                owner_feature_id: Some(7),
-            },
-            body: Vec::new(),
-            parameter_frames: vec![crate::feature::definitions::FeatureParameterFrame {
-                kind: crate::feature::definitions::FeatureParameterFrameKind::LocalSystem,
-                body: Vec::new(),
-                decoded_values: Some(finite_local_system([
-                    1.0, 0.0, 0.0, 1.0e-10, 1.0, 0.0, 0.0, 0.0, 1.0, 5.0, 6.0, 7.0,
-                ])),
-                offset: 1,
-            }],
-            outlines: Vec::new(),
-            variables: None,
-            segments: None,
-            trim_entities: None,
-            trim_vertices: None,
-            order_table: None,
-            section_3d: None,
-            dimensions: None,
-            relations: None,
-            saved_section: None,
-            offset: 0,
-        });
-
-    // The normalized columns reach the IR frame constructor as unit vectors whose largest
-    // pairwise dot is 1.0e-10, and that constructor admits them.
-    assert!(cadmpeg_ir::features::FeatureCoordinateFrame::new(
-        Point3::new(5.0, 6.0, 7.0),
-        Vector3::new(1.0, 0.0, 0.0),
-        Vector3::new(1.0e-10, 1.0, 0.0),
-        Vector3::new(0.0, 0.0, 1.0)
-    )
-    .is_some());
-    // The record is written to a tighter bound, so the feature stays unresolved.
-    assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| schema_feature_definition(
-            ctx,
-            &scan,
-            &CadIr::empty(),
-            &crate::decode::source_carriers::SourceUnitCarriers::default(),
-            7,
-            Some(SchemaClass::CoordinateSystem),
-            "PRT_CSYS_DEF"
-        ))
-        .expect("valid test fixture"),
-        IrFeatureDefinition::Operation(IrFeatureOperation::Unresolved {
-            family: UnresolvedFamily::DatumCoordinateSystem
-        })
-    );
-}
-
-#[test]
 fn only_body_evidence_or_a_new_body_sweep_establishes_prior_material() {
     let feature = |definition, outputs: Vec<cadmpeg_ir::ids::BodyId>| Feature {
         id: IrFeatureId::mint("creo:model:feature#1".to_string()).expect("identity grammar"),
@@ -1900,7 +1653,10 @@ fn only_body_evidence_or_a_new_body_sweep_establishes_prior_material() {
         }),
         Vec::new(),
     ));
-    assert!(!preceding_features_establish_body(&ir));
+    assert!(
+        !crate::decode::with_test_decode_ctx(|ctx| preceding_features_establish_body(ctx, &ir))
+            .expect("admitted test lookup")
+    );
 
     ir.model.features[0].evaluation.set_outputs(
         cadmpeg_ir::features::DistinctMembers::try_from(
@@ -1909,7 +1665,10 @@ fn only_body_evidence_or_a_new_body_sweep_establishes_prior_material() {
         )
         .expect("distinct output fixture"),
     );
-    assert!(preceding_features_establish_body(&ir));
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| preceding_features_establish_body(ctx, &ir))
+            .expect("admitted test lookup")
+    );
 
     ir.model.features[0] = feature(
         IrFeatureDefinition::Operation(IrFeatureOperation::Extrude {
@@ -1934,9 +1693,15 @@ fn only_body_evidence_or_a_new_body_sweep_establishes_prior_material() {
         }),
         Vec::new(),
     );
-    assert!(preceding_features_establish_body(&ir));
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| preceding_features_establish_body(ctx, &ir))
+            .expect("admitted test lookup")
+    );
     ir.model.features[0].suppressed = Some(true);
-    assert!(!preceding_features_establish_body(&ir));
+    assert!(
+        !crate::decode::with_test_decode_ctx(|ctx| preceding_features_establish_body(ctx, &ir))
+            .expect("admitted test lookup")
+    );
     ir.model.features[0].suppressed = Some(false);
     ir.model.features[0].evaluation.edit(|definition, _| {
         let IrFeatureDefinition::Operation(IrFeatureOperation::Extrude { op, .. }) = definition
@@ -1945,7 +1710,10 @@ fn only_body_evidence_or_a_new_body_sweep_establishes_prior_material() {
         };
         *op = BooleanOp::Join;
     });
-    assert!(!preceding_features_establish_body(&ir));
+    assert!(
+        !crate::decode::with_test_decode_ctx(|ctx| preceding_features_establish_body(ctx, &ir))
+            .expect("admitted test lookup")
+    );
 }
 
 #[test]
@@ -1978,15 +1746,30 @@ fn current_feature_state_controls_recipe_and_parent_projection() {
     assert_ne!(states[0].recipe.resolved(), states[1].recipe.resolved());
     assert_ne!(states[0].parent_feature_id(), states[1].parent_feature_id());
     assert_eq!(
-        current_feature_recipe(std::slice::from_ref(&current), 6),
+        crate::decode::with_test_decode_ctx(|ctx| current_feature_recipe(
+            ctx,
+            std::slice::from_ref(&current),
+            6
+        ))
+        .expect("recipe lookup admission"),
         Some(crate::feature::operations::FeatureRecipe::ProtrudeRevolve)
     );
     assert_eq!(
-        current_feature_recipe_parent(std::slice::from_ref(&current), 6),
+        crate::decode::with_test_decode_ctx(|ctx| current_feature_recipe_parent(
+            ctx,
+            std::slice::from_ref(&current),
+            6
+        ))
+        .expect("recipe lookup admission"),
         Some(5)
     );
     assert_eq!(
-        current_additive_feature_recipe(std::slice::from_ref(&current), 6),
+        crate::decode::with_test_decode_ctx(|ctx| current_additive_feature_recipe(
+            ctx,
+            std::slice::from_ref(&current),
+            6
+        ))
+        .expect("recipe lookup admission"),
         Some(crate::feature::operations::FeatureRecipeKind::Revolve)
     );
     let mut cut = current;
@@ -1994,7 +1777,12 @@ fn current_feature_state_controls_recipe_and_parent_projection() {
         crate::feature::operations::FeatureRecipe::CutRevolve,
     );
     assert_eq!(
-        current_additive_feature_recipe(std::slice::from_ref(&cut), 6),
+        crate::decode::with_test_decode_ctx(|ctx| current_additive_feature_recipe(
+            ctx,
+            std::slice::from_ref(&cut),
+            6
+        ))
+        .expect("recipe lookup admission"),
         None
     );
 }

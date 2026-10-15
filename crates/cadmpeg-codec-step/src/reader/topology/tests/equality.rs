@@ -1,0 +1,128 @@
+// SPDX-License-Identifier: Apache-2.0
+
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::CodecError;
+use cadmpeg_ir::geometry::{
+    ProceduralSurface, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
+};
+use cadmpeg_ir::ids::{ProceduralSurfaceId, SurfaceId};
+use cadmpeg_ir::CadIr;
+
+#[test]
+fn topology_subtype_partial_search_preserves_refusal() {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=FACE();ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner).unwrap();
+    let record = exchange.records().get(&1).unwrap();
+    // One partial visit costs one unit; the fixed chain and FACE literal cost none.
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "STEP topology subtype partial traversal",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy).unwrap();
+            let error = super::super::most_specific(&ctx, record, &["FACE"]);
+            if let Err(CodecError::ResourceLimit(limit)) = &error {
+                assert_eq!(ctx.resource_refusal(), Some(*limit));
+            }
+            error
+        },
+    );
+    let CodecError::ResourceLimit(refusal) = error else {
+        panic!("subtype scan must preserve its resource refusal");
+    };
+    assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
+    assert_eq!(refusal.operation, "STEP topology subtype partial traversal");
+}
+
+#[test]
+fn procedural_surface_owner_lookup_preserves_refusal() {
+    let mut ir = CadIr::empty();
+    let id = SurfaceId::try_from("step:data:surface#1").unwrap();
+    let construction = ProceduralSurfaceId::try_from("step:data:construction#2").unwrap();
+    ir.model.surfaces.push(Surface {
+        id: id.clone(),
+        geometry: SurfaceGeometry::Procedural {
+            construction: construction.clone(),
+            cache: None,
+        },
+        source_object: None,
+    });
+    ir.model.procedural_surfaces.push(ProceduralSurface::new(
+        construction,
+        ProceduralSurfaceDefinition::CurveBounded {
+            support: id.clone(),
+            boundaries: Vec::new(),
+            boundary_pcurves: Vec::new(),
+            implicit_outer: false,
+        },
+        None,
+    ));
+    let index_ctx = cadmpeg_test_support::service_decode_context();
+    let index = super::super::PcurveSelectionIndex::build(&ir, &index_ctx).unwrap();
+    // The one-entry owner map costs one 19-unit key comparison.
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "STEP procedural surface owner lookup",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+            let result = super::super::surface_selection_parameter_domains(
+                &index,
+                &id,
+                &ir.model.surfaces[0].geometry,
+                &ctx,
+            );
+            if let Err(CodecError::ResourceLimit(limit)) = &result {
+                assert_eq!(ctx.resource_refusal(), Some(*limit));
+            }
+            result
+        },
+    );
+    let CodecError::ResourceLimit(refusal) = error else {
+        panic!("owner lookup must preserve its resource refusal");
+    };
+    assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
+    assert_eq!(refusal.operation, "STEP procedural surface owner lookup");
+}
+
+#[test]
+fn procedural_surface_owner_index_excludes_shared_constructions() {
+    for count in [2, 3] {
+        let mut ir = CadIr::empty();
+        let construction = ProceduralSurfaceId::try_from("step:data:construction#2").unwrap();
+        let first = SurfaceId::try_from("step:data:surface#1").unwrap();
+        let ids = [
+            first.clone(),
+            SurfaceId::try_from("step:data:surface#3").unwrap(),
+            SurfaceId::try_from("step:data:surface#4").unwrap(),
+        ];
+        for id in &ids[..count] {
+            ir.model.surfaces.push(Surface {
+                id: id.clone(),
+                geometry: SurfaceGeometry::Procedural {
+                    construction: construction.clone(),
+                    cache: None,
+                },
+                source_object: None,
+            });
+        }
+        ir.model.procedural_surfaces.push(ProceduralSurface::new(
+            construction,
+            ProceduralSurfaceDefinition::CurveBounded {
+                support: first,
+                boundaries: Vec::new(),
+                boundary_pcurves: Vec::new(),
+                implicit_outer: false,
+            },
+            None,
+        ));
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let index = super::super::PcurveSelectionIndex::build(&ir, &ctx).unwrap();
+        assert!(index.owned_procedurals.is_empty());
+    }
+}

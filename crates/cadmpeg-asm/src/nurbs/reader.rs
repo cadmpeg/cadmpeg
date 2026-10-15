@@ -3,7 +3,8 @@
 
 use crate::kernel_header::RefWidth;
 use crate::sab::{int_le_at, vec3_le_at};
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation, View};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::nurbs::{NurbsPoleGrid, NurbsPoles3, WeightedPole3};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::NonZeroReal;
@@ -90,43 +91,6 @@ impl ReadPoles3 {
             Self::Rational(points) => Some(NurbsPoleGrid::Rational {
                 rows: transpose(&points, u_count, v_count)?,
             }),
-        }
-    }
-
-    pub(super) fn into_counted_transposed_grid(
-        self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        u_count: usize,
-        v_count: usize,
-    ) -> Option<Result<NurbsPoleGrid, cadmpeg_core::CodecError>> {
-        fn transpose<T: Clone>(
-            ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-            flat: &[T],
-            u_count: usize,
-            v_count: usize,
-        ) -> Option<Result<Vec<Vec<T>>, cadmpeg_core::CodecError>> {
-            (flat.len() == u_count.checked_mul(v_count)?).then_some(())?;
-            let mut rows = match ctx.collection_vec(u_count, "ASM NURBS grid rows") {
-                Ok(rows) => rows,
-                Err(error) => return Some(Err(error)),
-            };
-            for u in 0..u_count {
-                let mut row = match ctx.collection_vec(v_count, "ASM NURBS grid row poles") {
-                    Ok(row) => row,
-                    Err(error) => return Some(Err(error)),
-                };
-                for v in 0..v_count {
-                    row.push(flat.get(v.checked_mul(u_count)?.checked_add(u)?)?.clone());
-                }
-                rows.push(row);
-            }
-            Some(Ok(rows))
-        }
-        match self {
-            Self::Polynomial(points) => transpose(ctx, &points, u_count, v_count)
-                .map(|result| result.map(|rows| NurbsPoleGrid::Polynomial { rows })),
-            Self::Rational(points) => transpose(ctx, &points, u_count, v_count)
-                .map(|result| result.map(|rows| NurbsPoleGrid::Rational { rows })),
         }
     }
 }
@@ -219,29 +183,18 @@ pub(super) fn marker_positions(b: &[u8]) -> Vec<usize> {
     out
 }
 
-/// Positions of the `nubs`/`nurbs` markers `b` itself owns, in order: those
-/// outside every construction nested within `b`. A leading `0x0f` is `b`'s own
-/// scope opening and is not counted as nesting.
-///
-/// A scope's members and the members of the constructions it nests are
-/// indistinguishable to a raw byte scan, so a scan that ignores nesting reports
-/// a nested support's cache as the scope's own.
-///
-/// A `0x10` with no open scope is a malformed stream and is refused: pinning
-/// the depth at zero would make every later marker read as one `b` owns.
-fn owned_marker_positions(b: &[u8], int_width: RefWidth) -> Option<Vec<usize>> {
-    let (out, balanced) = walk_owned_markers(b, int_width);
-    balanced.then_some(out)
-}
-
 impl crate::nurbs::subtypes::SubtypeScope<'_> {
     /// Byte offsets of the B-spline markers the scope itself owns, relative to
     /// the scope's own start.
     ///
-    /// Total: the unbalanced stream that [`owned_marker_positions`] refuses is
-    /// a state this type cannot hold.
-    pub(super) fn owned_marker_positions(&self, int_width: RefWidth) -> Vec<usize> {
-        walk_owned_markers(self.bytes(), int_width).0
+    /// The caller uses the scope's framing integer width. In that width,
+    /// the scope's opening and closing delimiters balance.
+    pub(super) fn owned_marker_positions(
+        &self,
+        ctx: &DecodeContext<'_>,
+        int_width: RefWidth,
+    ) -> Result<Vec<usize>, CodecError> {
+        Ok(walk_owned_markers(ctx, self.bytes(), int_width)?.0)
     }
 }
 
@@ -249,7 +202,11 @@ impl crate::nurbs::subtypes::SubtypeScope<'_> {
 ///
 /// The second element is `false` when the walk met a `0x10` that no `0x0f` in
 /// `b` matches. A balanced scope always answers `true`.
-fn walk_owned_markers(b: &[u8], int_width: RefWidth) -> (Vec<usize>, bool) {
+fn walk_owned_markers(
+    ctx: &DecodeContext<'_>,
+    b: &[u8],
+    int_width: RefWidth,
+) -> Result<(Vec<usize>, bool), CodecError> {
     let mut out = Vec::new();
     let mut depth = 0usize;
     // The scope's own leading `0x0f` is skipped, so the close that matches it
@@ -257,27 +214,28 @@ fn walk_owned_markers(b: &[u8], int_width: RefWidth) -> (Vec<usize>, bool) {
     let mut outer = usize::from(b.first() == Some(&0x0f));
     let mut pos = outer;
     while pos < b.len() {
+        ctx.charge_work(1, "scan ASM owned marker token")?;
         match b[pos] {
             0x0f => depth += 1,
             0x10 => match depth.checked_sub(1) {
                 Some(next) => depth = next,
                 None => match outer.checked_sub(1) {
                     Some(next) => outer = next,
-                    None => return (out, false),
+                    None => return Ok((out, false)),
                 },
             },
             _ => {
                 if depth == 0 && marker_at(b, pos).is_some() {
-                    out.push(pos);
+                    ctx.push_vec(&mut out, pos, "ASM owned byte spline markers")?;
                 }
             }
         }
         match crate::nurbs::subtypes::next_token(b, pos, int_width) {
             Some(next) => pos = next,
-            None => return (out, false),
+            None => return Ok((out, false)),
         }
     }
-    (out, depth == 0 && outer == 0)
+    Ok((out, depth == 0 && outer == 0))
 }
 
 /// Positions of the B-spline markers owned by a complete record's unique
@@ -287,27 +245,102 @@ fn walk_owned_markers(b: &[u8], int_width: RefWidth) -> (Vec<usize>, bool) {
 /// construction. Enter every non-reference outer scope and admit its markers
 /// only when exactly one such scope owns markers. Multiple cache-bearing outer
 /// scopes are ambiguous and therefore not writable.
-pub(super) fn construction_marker_positions(b: &[u8], int_width: RefWidth) -> Option<Vec<usize>> {
-    let candidates = crate::nurbs::subtypes::owned_subtype_defs(b, int_width)?
-        .into_iter()
-        .filter(|(_, name)| *name != b"ref")
-        .filter_map(|(start, _)| {
-            let scope = crate::nurbs::subtypes::subtype_span(b, start, int_width)?;
-            let positions = scope
-                .owned_marker_positions(int_width)
-                .into_iter()
-                .map(|position| start + position)
-                .collect::<Vec<_>>();
-            (!positions.is_empty()).then_some(positions)
+pub(super) fn construction_marker_positions(
+    ctx: &DecodeContext<'_>,
+    b: &[u8],
+    int_width: RefWidth,
+) -> Result<Option<Vec<usize>>, CodecError> {
+    let mut fallback = Some(ctx.temporary_vec(0, "ASM fallback byte spline markers")?);
+    let mut current = ctx.temporary_vec(0, "ASM construction byte spline markers")?;
+    let mut candidate = None;
+    let mut candidates = 0usize;
+    let mut depth = 0usize;
+    let mut construction = false;
+    let mut current_has_marker = false;
+    let mut leading_scope = b.first() == Some(&0x0f);
+    let mut pos = 0usize;
+    let mut complete = true;
+    while pos < b.len() {
+        ctx.charge_work(1, "scan ASM construction marker token")?;
+        match b[pos] {
+            0x0f => {
+                if depth == 0 {
+                    current.0.clear();
+                    current_has_marker = false;
+                    construction = if matches!(b.get(pos + 1), Some(0x0d | 0x0e)) {
+                        b.get(pos + 2)
+                            .and_then(|length| b.get(pos + 3..pos + 3 + usize::from(*length)))
+                            .is_some_and(|name| name != b"ref")
+                    } else {
+                        false
+                    };
+                }
+                depth += 1;
+            }
+            0x10 => {
+                let Some(next) = depth.checked_sub(1) else {
+                    return Ok(None);
+                };
+                depth = next;
+                if depth == 0 {
+                    leading_scope = false;
+                    if construction && current_has_marker {
+                        candidates += 1;
+                        fallback = None;
+                        candidate = if candidates == 1 {
+                            Some(std::mem::replace(
+                                &mut current,
+                                ctx.temporary_vec(0, "ASM construction byte spline markers")?,
+                            ))
+                        } else {
+                            None
+                        };
+                    }
+                    construction = false;
+                }
+            }
+            _ if marker_at(b, pos).is_some() => {
+                if !construction && depth == usize::from(leading_scope) {
+                    if let Some((markers, storage)) = &mut fallback {
+                        ctx.push_scoped_vec(
+                            storage,
+                            markers,
+                            pos,
+                            "ASM fallback byte spline markers",
+                        )?;
+                    }
+                }
+                if depth == 1 && construction {
+                    current_has_marker = true;
+                    if candidates == 0 {
+                        ctx.push_scoped_vec(
+                            &mut current.1,
+                            &mut current.0,
+                            pos,
+                            "ASM construction byte spline markers",
+                        )?;
+                    }
+                }
+            }
+            _ => {}
+        }
+        let Some(next) = crate::nurbs::subtypes::next_token(b, pos, int_width) else {
+            complete = false;
+            break;
+        };
+        pos = next;
+    }
+    let selected = match candidates {
+        0 if complete && depth == 0 => fallback,
+        0 => None,
+        1 => candidate,
+        _ => return Ok(Some(Vec::new())),
+    };
+    selected
+        .map(|(positions, _storage)| {
+            ctx.collect_retained_vec(positions, "retain ASM construction markers")
         })
-        .collect::<Vec<_>>();
-    if candidates.is_empty() {
-        return owned_marker_positions(b, int_width);
-    }
-    if candidates.len() != 1 {
-        return Some(Vec::new());
-    }
-    candidates.into_iter().next()
+        .transpose()
 }
 
 /// Bounds for the shared ASM NURBS knot expansion check.
@@ -345,6 +378,21 @@ pub(super) fn checked_knot_layout(
         if expanded_len > MAX_EXPANDED_NURBS_KNOTS {
             return None;
         }
+    }
+    finish_knot_layout(sum, expanded_len, i64::try_from(degree).ok()?)
+}
+
+/// Check counts gathered while the knot pairs were read.
+pub(super) fn finish_knot_layout(
+    sum: usize,
+    expanded_len: usize,
+    degree: i64,
+) -> Option<KnotExpansionLayout> {
+    let degree = usize::try_from(degree)
+        .ok()
+        .filter(|degree| (1..=MAX_NURBS_DEGREE).contains(degree))?;
+    if expanded_len > MAX_EXPANDED_NURBS_KNOTS {
+        return None;
     }
     let n_poles = sum.checked_sub(degree - 1)?;
     if !(2..=MAX_NURBS_POLES).contains(&n_poles) {
@@ -491,23 +539,38 @@ pub(super) fn normalized(value: [f64; 3]) -> Option<cadmpeg_ir::units::UnitVecto
     )?)
 }
 
-pub(super) fn take_native_ident(bytes: &[u8], position: &mut usize) -> Option<String> {
+pub(super) fn take_native_ident<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    bytes: &[u8],
+    position: &mut usize,
+) -> Option<Result<(String, ScopedReservation<'ctx>), CodecError>> {
     if !matches!(bytes.get(*position), Some(0x0d | 0x0e)) {
         return None;
     }
     let length = usize::from(*bytes.get(*position + 1)?);
     let start = *position + 2;
     let end = start.checked_add(length)?;
-    let value = String::from_utf8(bytes.get(start..end)?.to_vec()).ok()?;
+    let text = match ctx.validate_utf8(bytes.get(start..end)?, "ASM native identifier UTF-8") {
+        Ok(Ok(text)) => text,
+        Ok(Err(_)) => return None,
+        Err(error) => return Some(Err(error)),
+    };
+    let value = match ctx.with_scoped_storage("ASM native identifier text", || {
+        ctx.copy_retained_text(text, "ASM native identifier text")
+    }) {
+        Ok(value) => value,
+        Err(error) => return Some(Err(error)),
+    };
     *position = end;
-    Some(value)
+    Some(Ok(value))
 }
 
-pub(super) fn take_native_string(
+pub(super) fn take_native_string<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     bytes: &[u8],
     position: &mut usize,
     int_width: RefWidth,
-) -> Option<String> {
+) -> Option<Result<(String, ScopedReservation<'ctx>), CodecError>> {
     let (length, header) = match *bytes.get(*position)? {
         0x07 => (usize::from(*bytes.get(*position + 1)?), 2),
         0x08 => (usize::from(View::u16_le_at(bytes, *position + 1)?), 3),
@@ -521,9 +584,19 @@ pub(super) fn take_native_string(
     };
     let start = *position + header;
     let end = start.checked_add(length)?;
-    let value = String::from_utf8(bytes.get(start..end)?.to_vec()).ok()?;
+    let text = match ctx.validate_utf8(bytes.get(start..end)?, "ASM native string UTF-8") {
+        Ok(Ok(text)) => text,
+        Ok(Err(_)) => return None,
+        Err(error) => return Some(Err(error)),
+    };
+    let value = match ctx.with_scoped_storage("ASM native string text", || {
+        ctx.copy_retained_text(text, "ASM native string text")
+    }) {
+        Ok(value) => value,
+        Err(error) => return Some(Err(error)),
+    };
     *position = end;
-    Some(value)
+    Some(Ok(value))
 }
 
 pub(super) fn take_range_value(bytes: &[u8], position: &mut usize) -> Option<f64> {
@@ -567,21 +640,140 @@ pub(super) fn take_native_vec3(bytes: &[u8], position: &mut usize, tag: u8) -> O
 
 #[cfg(test)]
 mod marker_ownership_tests {
-    use super::{owned_marker_positions, NUBS_MARKER};
+
+    use super::{walk_owned_markers, NUBS_MARKER};
     use crate::kernel_header::RefWidth;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    fn owned_marker_positions(
+        ctx: &DecodeContext<'_>,
+        b: &[u8],
+        int_width: RefWidth,
+    ) -> Result<Option<Vec<usize>>, CodecError> {
+        let (out, balanced) = walk_owned_markers(ctx, b, int_width)?;
+        Ok(balanced.then_some(out))
+    }
+
+    #[test]
+    fn ambiguous_byte_caches_do_not_materialize_later_marker_lists() {
+        let mut bytes = vec![0x0f, 0x0d, 1, b'x'];
+        bytes.extend_from_slice(NUBS_MARKER);
+        bytes.push(0x10);
+        bytes.extend_from_within(..);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 1;
+        policy.limits.max_retained_bytes = 0;
+        let ctx = DecodeContext::new(&arena, &policy, false);
+        assert_eq!(
+            super::construction_marker_positions(&ctx, &bytes, RefWidth::Four).unwrap(),
+            Some(Vec::new())
+        );
+    }
+
+    #[test]
+    fn construction_markers_preserve_fallback_ambiguity_and_malformed_boundaries() {
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let mut fallback = vec![0x0f, 0x0d, 1, b'x', 0x10];
+        fallback.extend_from_slice(NUBS_MARKER);
+        assert_eq!(
+            super::construction_marker_positions(&ctx, &fallback, RefWidth::Four).unwrap(),
+            Some(vec![5])
+        );
+        let mut cache = vec![0x0f, 0x0d, 1, b'x'];
+        cache.extend_from_slice(NUBS_MARKER);
+        cache.push(0x10);
+        assert_eq!(
+            super::construction_marker_positions(&ctx, &cache, RefWidth::Four).unwrap(),
+            Some(vec![4])
+        );
+        let mut incomplete = cache.clone();
+        incomplete.extend([0x0f, 0x0d, 1, b'y', 0x06]);
+        assert_eq!(
+            super::construction_marker_positions(&ctx, &incomplete, RefWidth::Four).unwrap(),
+            Some(vec![4])
+        );
+        let mut ambiguous = cache.clone();
+        ambiguous.extend_from_slice(&cache);
+        assert_eq!(
+            super::construction_marker_positions(&ctx, &ambiguous, RefWidth::Four).unwrap(),
+            Some(vec![])
+        );
+        cache.push(0x10);
+        assert_eq!(
+            super::construction_marker_positions(&ctx, &cache, RefWidth::Four).unwrap(),
+            None
+        );
+        assert_eq!(
+            super::construction_marker_positions(&ctx, &[0x0f, 0x06], RefWidth::Four).unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn byte_marker_output_growth_refuses_its_collection_boundary() {
+        let limit = crate::test_support::resource_limit_at(
+            NUBS_MARKER,
+            ResourceDimension::CollectionItems,
+            "ASM owned byte spline markers",
+            |ctx| owned_marker_positions(ctx, NUBS_MARKER, RefWidth::Four),
+        );
+        assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+        assert_eq!(limit.operation, "ASM owned byte spline markers");
+    }
 
     #[test]
     fn raw_marker_walk_refuses_unclosed_own_and_nested_scopes() {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("empty test input fits input limit");
         let mut bytes = vec![0x0f];
         bytes.extend_from_slice(NUBS_MARKER);
-        assert_eq!(owned_marker_positions(&bytes, RefWidth::Four), None);
+        assert_eq!(
+            owned_marker_positions(&ctx, &bytes, RefWidth::Four).unwrap(),
+            None
+        );
         bytes.push(0x10);
         assert_eq!(
-            owned_marker_positions(&bytes, RefWidth::Four),
+            owned_marker_positions(&ctx, &bytes, RefWidth::Four).unwrap(),
             Some(vec![1])
         );
         bytes.push(0x0f);
-        assert_eq!(owned_marker_positions(&bytes, RefWidth::Four), None);
+        assert_eq!(
+            owned_marker_positions(&ctx, &bytes, RefWidth::Four).unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn owned_marker_walk_refuses_unadmitted_work_before_first_token() {
+        let bytes = [0x0f, 0x10];
+        let limit = crate::test_support::resource_limit_at(
+            &bytes,
+            ResourceDimension::WorkUnits,
+            "scan ASM owned marker token",
+            |ctx| owned_marker_positions(ctx, &bytes, RefWidth::Four),
+        );
+        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(limit.operation, "scan ASM owned marker token");
+    }
+
+    #[test]
+    fn owned_byte_markers_are_free_for_64_empty_walks() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        policy.limits.max_collection_items = 0;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        for _ in 0..64 {
+            let (markers, balanced) = walk_owned_markers(&ctx, &[], RefWidth::Four).unwrap();
+            assert!(markers.is_empty());
+            assert!(balanced);
+        }
+        ctx.finish_session().unwrap();
     }
 }
 
@@ -591,28 +783,6 @@ mod string_width_tests {
     use crate::kernel_header::RefWidth;
     use cadmpeg_ir::geometry::nurbs::NurbsPoleGrid;
     use cadmpeg_ir::math::Point3;
-
-    #[test]
-    fn token_surface_grid_rows_refuse_collection_limit() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-        use cadmpeg_core::CodecError;
-
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 5;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let points = (0..4)
-            .map(|index| Point3::new(f64::from(index), 0.0, 0.0))
-            .collect();
-        let error = ReadPoles3::Polynomial(points)
-            .into_counted_transposed_grid(&ctx, 2, 2)
-            .expect("valid grid")
-            .expect_err("two rows and four poles need six items");
-        let CodecError::ResourceLimit(limit) = error else {
-            panic!("expected collection refusal: {error:?}");
-        };
-        assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-    }
 
     /// A `0x09` string whose length prefix is the stream integer width.
     fn long_string_bytes(payload: &str, int_width: RefWidth) -> Vec<u8> {
@@ -628,12 +798,14 @@ mod string_width_tests {
 
     #[test]
     fn long_string_length_prefix_is_the_stream_int_width() {
+        let ctx = cadmpeg_test_support::service_decode_context();
         for int_width in [RefWidth::Four, RefWidth::Eight] {
             let bytes = long_string_bytes("#TS0200\ndegree 3", int_width);
             let mut position = 0;
-            let value = take_native_string(&bytes, &mut position, int_width)
+            let value = take_native_string(&ctx, &bytes, &mut position, int_width)
                 .unwrap_or_else(|| panic!("string at width {int_width}"));
-            assert_eq!(value, "#TS0200\ndegree 3");
+            let value = value.unwrap_or_else(|error| panic!("string admission: {error:?}"));
+            assert_eq!(value.0, "#TS0200\ndegree 3");
             assert_eq!(position, bytes.len());
         }
     }
@@ -643,10 +815,124 @@ mod string_width_tests {
         // A width-8 stream read at width 4 starts four bytes early; the
         // leading NUL bytes make the mismatch visible instead of parsing as
         // the intended payload.
+        let ctx = cadmpeg_test_support::service_decode_context();
         let bytes = long_string_bytes("#TS0200\ndegree 3", RefWidth::Eight);
         let mut position = 0;
-        let value = take_native_string(&bytes, &mut position, RefWidth::Four);
-        assert_ne!(value.as_deref(), Some("#TS0200\ndegree 3"));
+        let value = match take_native_string(&ctx, &bytes, &mut position, RefWidth::Four) {
+            None => None,
+            Some(Ok(value)) => Some(value.0 == "#TS0200\ndegree 3"),
+            Some(Err(error)) => panic!("string admission: {error:?}"),
+        };
+        assert_ne!(value, Some(true));
+    }
+
+    #[test]
+    fn native_ident_refuses_work_before_utf8_validation() {
+        use cadmpeg_core::decode::ResourceDimension;
+
+        let bytes = [0x0d, 1, b'x'];
+        let mut position = 0;
+        let limit = crate::test_support::resource_limit_at(
+            &bytes,
+            ResourceDimension::WorkUnits,
+            "ASM native identifier UTF-8",
+            |ctx| {
+                position = 0;
+                super::take_native_ident(ctx, &bytes, &mut position)
+                    .expect("identifier")
+                    .map(|(text, _storage)| text)
+            },
+        );
+        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(limit.operation, "ASM native identifier UTF-8");
+        assert_eq!(limit.used, 0);
+        assert_eq!(limit.additional, 1);
+        assert_eq!(position, 0);
+    }
+
+    #[test]
+    fn native_ident_refuses_retained_copy_after_validation() {
+        use cadmpeg_core::decode::ResourceDimension;
+
+        let bytes = [0x0d, 1, b'x'];
+        let mut position = 0;
+        let limit = crate::test_support::resource_limit_at(
+            &bytes,
+            ResourceDimension::MaterializedBytes,
+            "ASM native identifier text",
+            |ctx| {
+                position = 0;
+                super::take_native_ident(ctx, &bytes, &mut position)
+                    .expect("identifier")
+                    .map(|(text, _storage)| text)
+            },
+        );
+        assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
+        assert_eq!(limit.operation, "ASM native identifier text");
+        assert_eq!(limit.used, 0);
+        assert_eq!(limit.additional, 1);
+        assert_eq!(position, 0);
+    }
+
+    #[test]
+    fn native_string_refuses_work_before_utf8_validation() {
+        use cadmpeg_core::decode::ResourceDimension;
+
+        let bytes = [0x07, 1, b'x'];
+        let mut position = 0;
+        let limit = crate::test_support::resource_limit_at(
+            &bytes,
+            ResourceDimension::WorkUnits,
+            "ASM native string UTF-8",
+            |ctx| {
+                position = 0;
+                take_native_string(ctx, &bytes, &mut position, RefWidth::Four)
+                    .expect("string")
+                    .map(|(text, _storage)| text)
+            },
+        );
+        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(limit.operation, "ASM native string UTF-8");
+        assert_eq!(limit.used, 0);
+        assert_eq!(limit.additional, 1);
+        assert_eq!(position, 0);
+    }
+
+    #[test]
+    fn native_string_refuses_retained_copy_after_validation() {
+        use cadmpeg_core::decode::ResourceDimension;
+
+        let bytes = [0x07, 1, b'x'];
+        let mut position = 0;
+        let limit = crate::test_support::resource_limit_at(
+            &bytes,
+            ResourceDimension::MaterializedBytes,
+            "ASM native string text",
+            |ctx| {
+                position = 0;
+                take_native_string(ctx, &bytes, &mut position, RefWidth::Four)
+                    .expect("string")
+                    .map(|(text, _storage)| text)
+            },
+        );
+        assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
+        assert_eq!(limit.operation, "ASM native string text");
+        assert_eq!(limit.used, 0);
+        assert_eq!(limit.additional, 1);
+        assert_eq!(position, 0);
+    }
+
+    #[test]
+    fn invalid_native_text_remains_syntax_absence_without_advancing() {
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let ident = [0x0d, 1, 0xff];
+        let mut position = 0;
+        assert!(super::take_native_ident(&ctx, &ident, &mut position).is_none());
+        assert_eq!(position, 0);
+
+        let string = [0x07, 1, 0xff];
+        assert!(take_native_string(&ctx, &string, &mut position, RefWidth::Four).is_none());
+        assert_eq!(position, 0);
     }
 
     /// The reader states one row per pole, so a weight lane that is shorter

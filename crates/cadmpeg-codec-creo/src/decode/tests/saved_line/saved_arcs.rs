@@ -51,7 +51,8 @@ fn saved_arc_joins_through_order_table() {
                 internal_id: 3,
                 bitmask: 0,
                 offset: 10,
-            }],
+            }]
+            .into(),
             offset: 8,
         }),
         section_3d: None,
@@ -78,7 +79,8 @@ fn saved_arc_joins_through_order_table() {
     };
 
     assert_eq!(
-        saved_section_arc(&definition, &segment),
+        crate::decode::with_test_decode_ctx(|ctx| saved_section_arc(ctx, &definition, &segment))
+            .expect("admitted saved section geometry"),
         Some(crate::decode::sketch::geometry::SavedSectionArc {
             center: cadmpeg_ir::units::FinitePoint2::new(cadmpeg_ir::math::Point2::new(0.0, 0.0))
                 .expect("finite center fixture"),
@@ -88,8 +90,13 @@ fn saved_arc_joins_through_order_table() {
         })
     );
     assert_eq!(
-        saved_section_segment_point_coordinates(&definition, &segment)
-            .map(std::iter::Iterator::collect::<Vec<_>>),
+        crate::decode::with_test_decode_ctx(|ctx| saved_section_segment_point_coordinates(
+            ctx,
+            &definition,
+            &segment
+        ))
+        .expect("admitted saved section geometry")
+        .map(|points| points.into_iter().flatten().collect::<Vec<_>>()),
         Some(vec![(7, [0.0, -2.0]), (9, [-2.0, 0.0]), (8, [0.0, 0.0]),])
     );
     let mut witness_definition = definition.clone();
@@ -184,7 +191,15 @@ fn saved_arc_joins_through_order_table() {
             bitmask: 0,
             offset: 11,
         });
-    assert_eq!(saved_section_arc(&duplicate_order_row, &segment), None);
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| saved_section_arc(
+            ctx,
+            &duplicate_order_row,
+            &segment
+        ))
+        .expect("admitted saved section geometry"),
+        None
+    );
     let mut duplicate_saved_arc = definition.clone();
     let duplicate = duplicate_saved_arc
         .saved_section
@@ -198,7 +213,15 @@ fn saved_arc_joins_through_order_table() {
         .expect("saved section")
         .entities
         .push(duplicate);
-    assert_eq!(saved_section_arc(&duplicate_saved_arc, &segment), None);
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| saved_section_arc(
+            ctx,
+            &duplicate_saved_arc,
+            &segment
+        ))
+        .expect("admitted saved section geometry"),
+        None
+    );
 
     let segment_table = crate::feature::definitions::FeatureSegmentTable {
         declared_count: 2,
@@ -233,9 +256,20 @@ fn saved_arc_joins_through_order_table() {
         .expect("saved section")
         .entities
         .insert(0, prototype);
-    assert!(saved_section_arc(&elided_prototype, &segment).is_some());
+    assert!(crate::decode::with_test_decode_ctx(|ctx| saved_section_arc(
+        ctx,
+        &elided_prototype,
+        &segment
+    ))
+    .expect("admitted saved section geometry")
+    .is_some());
     assert_eq!(
-        semantic_saved_section_entities(&elided_prototype).count(),
+        crate::decode::with_test_decode_ctx(|ctx| semantic_saved_section_entities(
+            ctx,
+            &elided_prototype
+        )
+        .map(|(entities, _storage)| entities.len()))
+        .expect("admitted semantic entities"),
         1
     );
 
@@ -261,7 +295,12 @@ fn saved_arc_joins_through_order_table() {
         arc.offset = 18;
     }
     assert_eq!(
-        semantic_saved_section_entities(&complete_elided_prototype).count(),
+        crate::decode::with_test_decode_ctx(|ctx| semantic_saved_section_entities(
+            ctx,
+            &complete_elided_prototype
+        )
+        .map(|(entities, _storage)| entities.len()))
+        .expect("admitted semantic entities"),
         1
     );
 
@@ -281,7 +320,13 @@ fn saved_arc_joins_through_order_table() {
     {
         arc.offset = 18;
     }
-    assert!(saved_section_arc(&unique_at_table_origin, &segment).is_some());
+    assert!(crate::decode::with_test_decode_ctx(|ctx| saved_section_arc(
+        ctx,
+        &unique_at_table_origin,
+        &segment
+    ))
+    .expect("admitted saved section geometry")
+    .is_some());
 
     let mut trimmed = definition;
     trimmed.segments = Some(crate::feature::definitions::FeatureSegmentTable {
@@ -370,7 +415,11 @@ fn saved_arc_joins_through_order_table() {
         .cloned()
         .collect::<Vec<_>>()[0];
     assert_eq!(
-        saved_section_arc_carrier(&trimmed, segment).map(SectionArcCarrier::raw),
+        crate::decode::with_test_decode_ctx(|ctx| saved_section_arc_carrier(
+            ctx, &trimmed, segment
+        ))
+        .expect("admitted saved section geometry")
+        .map(SectionArcCarrier::raw),
         Some(([0.0, 0.0], 2.0))
     );
     if let crate::feature::definitions::FeatureSavedEntity::Arc(arc) = &mut trimmed
@@ -416,7 +465,11 @@ fn saved_arc_joins_through_order_table() {
         .ordinary()
         .cloned()
         .collect::<Vec<_>>()[0];
-    assert!(saved_section_arc(&trimmed, segment).is_none());
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| saved_section_arc(ctx, &trimmed, segment))
+            .expect("admitted saved section geometry")
+            .is_none()
+    );
     assert_eq!(
         section_segment_intersection_carrier(
             &trimmed,

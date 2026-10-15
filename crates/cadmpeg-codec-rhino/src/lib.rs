@@ -147,11 +147,11 @@ impl CodecBackend for RhinoCodec {
         prefix: cadmpeg_core::decode::View<'_>,
     ) -> Result<Confidence, cadmpeg_core::CodecError> {
         let prefix = prefix.window();
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(prefix.len()),
+        if ctx.any_by(
+            prefix.windows(MAGIC.len()),
+            |window| Ok(window == MAGIC),
             "detect input",
-        )?;
-        if prefix.windows(MAGIC.len()).any(|window| window == MAGIC) {
+        )? {
             Ok(Confidence::High)
         } else {
             Ok(Confidence::No)

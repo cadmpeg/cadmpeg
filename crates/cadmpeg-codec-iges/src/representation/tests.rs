@@ -70,7 +70,7 @@ fn representation_classification_fills_its_prefix_across_short_reads() {
     };
 
     assert_eq!(
-        crate::representation::classify(&mut reader).unwrap(),
+        crate::test_support::with_service_context(&[], |ctx| crate::representation::classify(&mut reader, ctx)).unwrap(),
         Some(crate::representation::Representation::FixedAscii)
     );
     assert_eq!(reader.stream_position().unwrap(), 0);
@@ -236,4 +236,19 @@ fn detection_refuses_a_start_card_with_no_readable_sequence() {
             .to_string(),
         "not the expected format: unrecognized IGES representation"
     );
+}
+
+#[test]
+fn representation_prefix_refuses_work_before_read() {
+    let bytes = point_file();
+    let mut reader = Cursor::new(bytes);
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let error = crate::test_support::with_policy_context(&[], &policy, |ctx| {
+        crate::representation::classify(&mut reader, ctx)
+    }).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+        && limit.operation == "iges representation prefix traversal"));
+    assert_eq!(reader.position(), 0);
 }

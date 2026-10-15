@@ -9,13 +9,13 @@ use crate::card::{CardScan, Section};
 use crate::directory::DirectoryEntry;
 use crate::loss::IgesLossCode;
 use crate::parameter::ParameterRecord;
-use cadmpeg_core::decode::{refuse_local_limit, u64_from_index, DecodeContext};
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::SourceProvenance;
 use serde::Serialize;
 use std::cell::RefCell;
-use std::collections::{btree_map::Entry, BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet};
 
 /// The largest sequence address representable by an IGES pointer constant.
 const MAX_POINTER_SEQUENCE: i64 = 9_999_999;
@@ -83,8 +83,13 @@ fn classify(
             Resolution::EvenSequence(target.map(|entry| entry.sequence))
         }
         (Some(_), None) => Resolution::Dangling,
-        (Some(_), Some(entry)) if !accepts(entry) => Resolution::WrongType(entry.sequence),
-        (Some(sequence), Some(_)) => Resolution::Resolved(sequence),
+        (Some(sequence), Some(entry)) => {
+            if accepts(entry) {
+                Resolution::Resolved(sequence)
+            } else {
+                Resolution::WrongType(entry.sequence)
+            }
+        }
     }
 }
 
@@ -165,13 +170,17 @@ impl Serialize for ReferenceEdge {
 }
 
 impl ReferenceEdge {
-    pub(crate) fn copy_for_native(&self, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
+    /// Copy expectation children into scratch storage for native serialization.
+    pub(crate) fn copy_for_native(
+        &self,
+        ctx: &DecodeContext<'_>,
+        storage: &mut ScopedReservation<'_>,
+    ) -> Result<Self, CodecError> {
         let expected = match &self.expected {
             ReferenceExpectation::Named(label) => ReferenceExpectation::Named(*label),
             ReferenceExpectation::Type { entity_type, forms } => {
-                let mut copied_forms =
-                    ctx.collection_vec(forms.len(), "iges native reference forms")?;
-                copied_forms.extend_from_slice(forms);
+                let copied_forms = storage
+                    .with_storage(|| ctx.copy_slice(forms, "iges native reference forms"))?;
                 ReferenceExpectation::Type {
                     entity_type: *entity_type,
                     forms: copied_forms,
@@ -182,9 +191,8 @@ impl ReferenceEdge {
                 second,
                 rest,
             } => {
-                let mut copied_rest =
-                    ctx.collection_vec(rest.len(), "iges native reference types")?;
-                copied_rest.extend_from_slice(rest);
+                let copied_rest =
+                    storage.with_storage(|| ctx.copy_slice(rest, "iges native reference types"))?;
                 ReferenceExpectation::AnyOf {
                     first: *first,
                     second: *second,
@@ -223,35 +231,25 @@ struct Candidate {
     target_sequence: Option<u32>,
 }
 
-pub(crate) struct ParameterResolver<'a, 'ctx> {
-    ctx: &'a DecodeContext<'ctx>,
-    directory: BTreeMap<u32, &'a DirectoryEntry>,
-    edges: RefCell<BTreeMap<u32, Vec<ReferenceEdge>>>,
-    _directory_storage: cadmpeg_core::decode::ScopedReservation<'a>,
+pub(crate) struct ParameterResolver<'directory, 'ctx, 'arena> {
+    ctx: &'ctx DecodeContext<'arena>,
+    directory: &'directory [DirectoryEntry],
+    edges: RefCell<BTreeMap<u32, (Vec<ReferenceEdge>, ScopedReservation<'ctx>)>>,
+    group_storage: RefCell<ScopedReservation<'ctx>>,
+    storage: RefCell<ScopedReservation<'ctx>>,
 }
 
-impl<'a, 'ctx> ParameterResolver<'a, 'ctx> {
+impl<'directory, 'ctx, 'arena> ParameterResolver<'directory, 'ctx, 'arena> {
     pub(crate) fn new(
-        directory: &'a [DirectoryEntry],
-        ctx: &'a DecodeContext<'ctx>,
+        directory: &'directory [DirectoryEntry],
+        ctx: &'ctx DecodeContext<'arena>,
     ) -> Result<Self, CodecError> {
-        let mut directory_storage = ctx.reserve_scoped(0, "IGES resolver directory storage")?;
-        let mut index = BTreeMap::new();
-        for entry in directory {
-            directory_storage.with_storage(|| {
-                ctx.insert_btree_map(
-                    &mut index,
-                    entry.sequence,
-                    entry,
-                    "iges parameter resolver directory index",
-                )
-            })?;
-        }
         Ok(Self {
             ctx,
-            directory: index,
+            directory,
+            storage: RefCell::new(ctx.reserve_scoped(0, "IGES parameter reference edges")?),
+            group_storage: RefCell::new(ctx.reserve_scoped(0, "IGES parameter reference groups")?),
             edges: RefCell::new(BTreeMap::new()),
-            _directory_storage: directory_storage,
         })
     }
 
@@ -312,25 +310,45 @@ impl<'a, 'ctx> ParameterResolver<'a, 'ctx> {
         expected: ReferenceExpectation,
         accepts: impl FnOnce(&DirectoryEntry) -> bool,
     ) -> Result<Option<u32>, CodecError> {
-        let target = target_sequence.and_then(|sequence| self.directory.get(&sequence).copied());
+        let target = match target_sequence {
+            Some(sequence) => {
+                crate::directory::entry_by_sequence(self.directory, sequence, self.ctx)?
+            }
+            None => None,
+        };
         let resolution = classify(target_sequence, target, accepts);
         let mut graph = self.edges.borrow_mut();
-        self.ctx
-            .admit_btree_entry(&graph, &source, "iges parameter resolver edge groups")?;
-        let edges = match graph.entry(source) {
-            Entry::Vacant(slot) => slot.insert(Vec::new()),
-            Entry::Occupied(slot) => slot.into_mut(),
-        };
-        self.ctx
-            .reserve_vec(edges, 1, "iges parameter resolver edges")?;
-        edges.push(ReferenceEdge {
+        let edge = ReferenceEdge {
             origin: ReferenceOrigin::Parameter {
                 index: parameter_index,
             },
             raw_pointer,
             resolution,
             expected,
-        });
+        };
+        if let Some((edges, edge_storage)) = self.ctx.get_mut_btree_map(
+            &mut graph,
+            &source,
+            "iges parameter resolver edge groups",
+        )? {
+            self.ctx
+                .reserve_scoped_vec(edge_storage, edges, 1, "iges parameter resolver edges")?;
+            edges.push(edge);
+        } else {
+            let edge_storage;
+            let (mut edges, result_edge_storage) =
+                self.ctx.temporary_vec(1, "iges parameter resolver edges")?;
+            edge_storage = result_edge_storage;
+            edges.push(edge);
+            self.group_storage.borrow_mut().with_storage(|| {
+                self.ctx.insert_btree_map(
+                    &mut graph,
+                    source,
+                    (edges, edge_storage),
+                    "iges parameter resolver edge groups",
+                )
+            })?;
+        }
         Ok(match resolution {
             Resolution::Resolved(sequence) => Some(sequence),
             _ => None,
@@ -348,17 +366,25 @@ impl<'a, 'ctx> ParameterResolver<'a, 'ctx> {
         if raw_pointer == 0 {
             return Ok(None);
         }
-        let mut expected_forms = self
-            .ctx
-            .collection_vec(forms.len(), "iges parameter resolver expected forms")?;
-        expected_forms.extend_from_slice(forms);
+        let expected_forms = self.storage.borrow_mut().with_storage(|| {
+            self.ctx
+                .copy_slice(forms, "iges parameter resolver expected forms")
+        })?;
         let expected = ReferenceExpectation::Type {
             entity_type,
             forms: expected_forms,
         };
-        self.resolve(source, parameter_index, raw_pointer, expected, |target| {
-            target.entity_type == entity_type && (forms.is_empty() || forms.contains(&target.form))
-        })
+        self.resolve_sequence(
+            source,
+            parameter_index,
+            raw_pointer,
+            positive_pointer_sequence(raw_pointer),
+            expected,
+            |target| {
+                target.entity_type == entity_type
+                    && (forms.is_empty() || forms.contains(&target.form))
+            },
+        )
     }
 
     pub(crate) fn resolve_negative_type(
@@ -372,17 +398,25 @@ impl<'a, 'ctx> ParameterResolver<'a, 'ctx> {
         if raw_pointer == 0 {
             return Ok(None);
         }
-        let mut expected_forms = self
-            .ctx
-            .collection_vec(forms.len(), "iges parameter resolver expected forms")?;
-        expected_forms.extend_from_slice(forms);
+        let expected_forms = self.storage.borrow_mut().with_storage(|| {
+            self.ctx
+                .copy_slice(forms, "iges parameter resolver expected forms")
+        })?;
         let expected = ReferenceExpectation::Type {
             entity_type,
             forms: expected_forms,
         };
-        self.resolve_negative(source, parameter_index, raw_pointer, expected, |target| {
-            target.entity_type == entity_type && (forms.is_empty() || forms.contains(&target.form))
-        })
+        self.resolve_sequence(
+            source,
+            parameter_index,
+            raw_pointer,
+            negative_pointer_sequence(raw_pointer),
+            expected,
+            |target| {
+                target.entity_type == entity_type
+                    && (forms.is_empty() || forms.contains(&target.form))
+            },
+        )
     }
 
     pub(crate) fn resolve_any_of(
@@ -397,10 +431,10 @@ impl<'a, 'ctx> ParameterResolver<'a, 'ctx> {
             return Ok(None);
         }
         let (first, second, rest) = types;
-        let mut expected_rest = self
-            .ctx
-            .collection_vec(rest.len(), "iges parameter resolver expected types")?;
-        expected_rest.extend_from_slice(rest);
+        let expected_rest = self.storage.borrow_mut().with_storage(|| {
+            self.ctx
+                .copy_slice(rest, "iges parameter resolver expected types")
+        })?;
         self.resolve(
             source,
             parameter_index,
@@ -429,28 +463,57 @@ impl<'a, 'ctx> ParameterResolver<'a, 'ctx> {
         )
     }
 
+    /// Move the recorded edges into the graph and return their live storage reservation.
     pub(crate) fn append_to(
         self,
         graph: &mut BTreeMap<u32, Vec<ReferenceEdge>>,
-    ) -> Result<(), CodecError> {
-        for (source, mut edges) in self.edges.into_inner() {
-            self.ctx
-                .admit_btree_entry(graph, &source, "iges parameter resolver graph groups")?;
-            match graph.entry(source) {
-                Entry::Vacant(slot) => {
-                    slot.insert(edges);
+    ) -> Result<ScopedReservation<'ctx>, CodecError> {
+        let mut storage = self.storage.into_inner();
+        let mut sources = self.edges.into_inner().into_iter();
+        while sources.len() != 0 {
+            let Some((source, result)) = self
+                .ctx
+                .next_charged(&mut sources, "iges parameter resolver graph sources")?
+            else {
+                break;
+            };
+            let edge_storage;
+            let (mut edges, result_edge_storage) = result;
+            edge_storage = result_edge_storage;
+            match self.ctx.get_mut_btree_map(
+                graph,
+                &source,
+                "iges parameter resolver graph groups",
+            )? {
+                Some(target) if target.is_empty() => {
+                    *target = edges;
+                    storage.with_storage(|| edge_storage.commit())?;
                 }
-                Entry::Occupied(mut slot) => {
-                    self.ctx.reserve_vec(
-                        slot.get_mut(),
-                        edges.len(),
-                        "iges appended parameter reference edges",
-                    )?;
-                    slot.get_mut().append(&mut edges);
+                Some(target) => {
+                    storage.with_storage(|| {
+                        self.ctx.append_vec(
+                            target,
+                            &mut edges,
+                            "iges appended parameter reference edges",
+                        )
+                    })?;
+                    drop(edges);
+                    drop(edge_storage);
+                }
+                None => {
+                    storage.with_storage(|| {
+                        self.ctx.insert_btree_map(
+                            graph,
+                            source,
+                            edges,
+                            "iges parameter resolver graph groups",
+                        )
+                    })?;
+                    storage.with_storage(|| edge_storage.commit())?;
                 }
             }
         }
-        Ok(())
+        Ok(storage)
     }
 }
 
@@ -514,7 +577,11 @@ fn expected(
         ReferenceKind::Structure => match source.entity_type {
             422 if matches!(source.form, 0..=1) => ReferenceExpectation::Type {
                 entity_type: 322,
-                forms: expected_forms(ctx, &[0])?,
+                forms: {
+                    let mut forms = ctx.collection_vec(1, "iges reference expected forms")?;
+                    forms.push(0);
+                    forms
+                },
             },
             402 if matches!(source.form, 5001..=9999) => {
                 ReferenceExpectation::Named(ExpectationLabel::Type302MatchingForm)
@@ -534,7 +601,11 @@ fn expected(
         },
         ReferenceKind::Level => ReferenceExpectation::Type {
             entity_type: 406,
-            forms: expected_forms(ctx, &[1])?,
+            forms: {
+                let mut forms = ctx.collection_vec(1, "iges reference expected forms")?;
+                forms.push(1);
+                forms
+            },
         },
         ReferenceKind::View => {
             ReferenceExpectation::Named(ExpectationLabel::Type410OrType402Form3419)
@@ -545,19 +616,17 @@ fn expected(
         },
         ReferenceKind::LabelDisplay => ReferenceExpectation::Type {
             entity_type: 402,
-            forms: expected_forms(ctx, &[5])?,
+            forms: {
+                let mut forms = ctx.collection_vec(1, "iges reference expected forms")?;
+                forms.push(5);
+                forms
+            },
         },
         ReferenceKind::Color => ReferenceExpectation::Type {
             entity_type: 314,
             forms: Vec::new(),
         },
     })
-}
-
-fn expected_forms(ctx: &DecodeContext<'_>, forms: &[i64]) -> Result<Vec<i64>, CodecError> {
-    let mut copied = ctx.collection_vec(forms.len(), "iges reference expected forms")?;
-    copied.extend_from_slice(forms);
-    Ok(copied)
 }
 
 fn accepts(kind: ReferenceKind, source: &DirectoryEntry, target: &DirectoryEntry) -> bool {
@@ -590,7 +659,14 @@ fn cyclic_transform_nodes(
 ) -> Result<BTreeSet<u32>, CodecError> {
     let mut index_storage = ctx.reserve_scoped(0, "IGES transform cycle indices")?;
     let mut next = BTreeMap::new();
-    for (source, values) in edges {
+    let mut sources = edges.iter();
+    while sources.len() != 0 {
+        let Some((source, values)) =
+            ctx.next_charged(&mut sources, "iges transform cycle sources")?
+        else {
+            break;
+        };
+        // Directory graphs have at most seven reference kinds per source.
         if let Some(target) = values
             .iter()
             .find_map(|edge| edge.resolved_target_sequence_for(ReferenceKind::Transform))
@@ -607,22 +683,36 @@ fn cyclic_transform_nodes(
     }
     let mut cyclic = BTreeSet::new();
     let mut completed = BTreeSet::new();
-    let mut active = BTreeMap::<u32, usize>::new();
-    for start in next.keys().copied() {
+    let mut starts = next.iter();
+    while starts.len() != 0 {
+        let Some((start, _)) = ctx.next_charged(&mut starts, "iges transform cycle starts")? else {
+            break;
+        };
+        let mut path_storage = ctx.reserve_scoped(0, "IGES transform cycle path")?;
         let mut path = Vec::new();
-        let mut current = start;
-        loop {
-            ctx.charge_work(1, "iges transform reference cycle walk")?;
-            if completed.contains(&current) {
+        let mut active = BTreeMap::<u32, usize>::new();
+        let mut successor = Some(*start);
+        let mut steps = std::iter::repeat(());
+        while let Some(current) = successor {
+            ctx.next_charged(&mut steps, "iges transform reference cycle walk")?;
+            if ctx.contains_btree_set(&completed, &current, "iges completed transform lookup")? {
                 break;
             }
-            if let Some(position) = active.get(&current).copied() {
-                for node in path[position..].iter().copied() {
-                    ctx.insert_btree_set(&mut cyclic, node, "iges cyclic transform references")?;
+            if let Some(position) = ctx
+                .get_btree_map(&active, &current, "iges active transform lookup")?
+                .copied()
+            {
+                let mut nodes = path[position..].iter();
+                while nodes.len() != 0 {
+                    let Some(node) = ctx.next_charged(&mut nodes, "iges cyclic transform nodes")?
+                    else {
+                        break;
+                    };
+                    ctx.insert_btree_set(&mut cyclic, *node, "iges cyclic transform references")?;
                 }
                 break;
             }
-            index_storage.with_storage(|| {
+            path_storage.with_storage(|| {
                 ctx.insert_btree_map(
                     &mut active,
                     current,
@@ -630,16 +720,22 @@ fn cyclic_transform_nodes(
                     "iges active transform reference walk",
                 )
             })?;
-            index_storage
-                .with_storage(|| ctx.reserve_vec(&mut path, 1, "iges transform reference path"))?;
+            ctx.reserve_scoped_vec(
+                &mut path_storage,
+                &mut path,
+                1,
+                "iges transform reference path",
+            )?;
             path.push(current);
-            let Some(target) = next.get(&current).copied() else {
+            successor = ctx
+                .get_btree_map(&next, &current, "iges transform successor lookup")?
+                .copied();
+        }
+        let mut nodes = path.into_iter();
+        while nodes.len() != 0 {
+            let Some(node) = ctx.next_charged(&mut nodes, "iges completed transform path")? else {
                 break;
             };
-            current = target;
-        }
-        for node in path {
-            active.remove(&node);
             index_storage.with_storage(|| {
                 ctx.insert_btree_set(&mut completed, node, "iges completed transform references")
             })?;
@@ -648,86 +744,119 @@ fn cyclic_transform_nodes(
     Ok(cyclic)
 }
 
-pub(crate) fn build(
+/// Build scratch reference edges and return their live storage reservation.
+pub(crate) fn build<'ctx>(
     directory: &[DirectoryEntry],
-    ctx: &DecodeContext<'_>,
-) -> Result<BTreeMap<u32, Vec<ReferenceEdge>>, CodecError> {
-    let mut index = BTreeMap::new();
-    for entry in directory {
-        ctx.insert_btree_map(
-            &mut index,
-            entry.sequence,
-            entry,
-            "iges reference directory index",
-        )?;
-    }
-    let mut graph = BTreeMap::new();
-    for entry in directory {
-        let mut edges = Vec::new();
-        for candidate in candidates(entry) {
-            let target = candidate
-                .target_sequence
-                .and_then(|value| index.get(&value).copied());
-            let resolution = classify(candidate.target_sequence, target, |value| {
-                accepts(candidate.kind, entry, value)
-            });
-            let expected = expected(candidate.kind, entry, ctx)?;
-            ctx.reserve_vec(&mut edges, 1, "iges directory reference edges")?;
-            edges.push(ReferenceEdge {
-                origin: ReferenceOrigin::Directory(candidate.kind),
-                raw_pointer: candidate.raw_pointer,
-                resolution,
-                expected,
-            });
+    ctx: &'ctx DecodeContext<'_>,
+) -> Result<(BTreeMap<u32, Vec<ReferenceEdge>>, ScopedReservation<'ctx>), CodecError> {
+    ctx.with_scoped_storage("IGES Directory reference graph", || {
+        let mut graph = BTreeMap::new();
+        let mut sources = directory.iter();
+        while sources.len() != 0 {
+            let Some(entry) = ctx.next_charged(&mut sources, "iges directory reference sources")?
+            else {
+                break;
+            };
+            let mut edges = Vec::new();
+            for candidate in candidates(entry) {
+                let target = match candidate.target_sequence {
+                    Some(sequence) => {
+                        crate::directory::entry_by_sequence(directory, sequence, ctx)?
+                    }
+                    None => None,
+                };
+                let resolution = classify(candidate.target_sequence, target, |value| {
+                    accepts(candidate.kind, entry, value)
+                });
+                let expected = expected(candidate.kind, entry, ctx)?;
+                ctx.reserve_vec(&mut edges, 1, "iges directory reference edges")?;
+                edges.push(ReferenceEdge {
+                    origin: ReferenceOrigin::Directory(candidate.kind),
+                    raw_pointer: candidate.raw_pointer,
+                    resolution,
+                    expected,
+                });
+            }
+            ctx.insert_btree_map(
+                &mut graph,
+                entry.sequence,
+                edges,
+                "iges directory reference graph",
+            )?;
         }
-        ctx.insert_btree_map(
-            &mut graph,
-            entry.sequence,
-            edges,
-            "iges directory reference graph",
-        )?;
-    }
-    let cyclic = cyclic_transform_nodes(&graph, ctx)?;
-    for source in cyclic {
-        if let Some(edge) = graph.get_mut(&source).and_then(|edges| {
-            edges
-                .iter_mut()
-                .find(|edge| edge.origin == ReferenceOrigin::Directory(ReferenceKind::Transform))
-        }) {
-            if let Resolution::Resolved(sequence) = edge.resolution {
-                edge.resolution = Resolution::Cyclic(sequence);
+        let _cycle_storage;
+        let (cyclic, result_cycle_storage) = ctx
+            .with_scoped_storage("IGES cyclic transform nodes", || {
+                cyclic_transform_nodes(&graph, ctx)
+            })?;
+        _cycle_storage = result_cycle_storage;
+        let mut sources = cyclic.into_iter();
+        while sources.len() != 0 {
+            let Some(source) = ctx.next_charged(&mut sources, "iges cyclic transform sources")?
+            else {
+                break;
+            };
+            let edge = match ctx.get_mut_btree_map(
+                &mut graph,
+                &source,
+                "iges cyclic transform source lookup",
+            )? {
+                Some(edges) => edges.iter_mut().find(|edge| {
+                    edge.origin == ReferenceOrigin::Directory(ReferenceKind::Transform)
+                }),
+                None => None,
+            };
+            if let Some(edge) = edge {
+                if let Resolution::Resolved(sequence) = edge.resolution {
+                    edge.resolution = Resolution::Cyclic(sequence);
+                }
             }
         }
-    }
-    Ok(graph)
+        Ok(graph)
+    })
 }
 
 pub(crate) fn resolved_structure_sequence(
     graph: &BTreeMap<u32, Vec<ReferenceEdge>>,
     source: u32,
-) -> Option<u32> {
-    graph
-        .get(&source)?
-        .iter()
-        .find_map(|edge| edge.resolved_target_sequence_for(ReferenceKind::Structure))
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<u32>, CodecError> {
+    let Some(edges) =
+        ctx.get_btree_map(graph, &source, "iges structure reference source lookup")?
+    else {
+        return Ok(None);
+    };
+    ctx.find_map(
+        edges,
+        |edge| Ok(edge.resolved_target_sequence_for(ReferenceKind::Structure)),
+        "iges structure reference search",
+    )
 }
 
-pub(crate) fn summary_notes(
+pub(crate) fn summary_notes<'ctx>(
     graph: &BTreeMap<u32, Vec<ReferenceEdge>>,
-    ctx: &DecodeContext<'_>,
-) -> Result<Vec<String>, CodecError> {
+    ctx: &'ctx DecodeContext<'_>,
+) -> Result<(Vec<String>, ScopedReservation<'ctx>), CodecError> {
     let mut counts = [0_usize; 6];
-    for edge in graph.values().flatten() {
-        let index = match edge.resolution {
-            Resolution::Cyclic(_) => 0,
-            Resolution::Dangling => 1,
-            Resolution::EvenSequence(_) => 2,
-            Resolution::OutOfRange => 3,
-            Resolution::Resolved(_) => 4,
-            Resolution::WrongType(_) => 5,
+    let mut sources = graph.iter();
+    while sources.len() != 0 {
+        let Some((_, edges)) = ctx.next_charged(&mut sources, "iges reference summary sources")?
+        else {
+            break;
         };
-        counts[index] += 1;
+        for edge in ctx.admit_iter(edges, "iges reference summary edges")? {
+            let index = match edge.resolution {
+                Resolution::Cyclic(_) => 0,
+                Resolution::Dangling => 1,
+                Resolution::EvenSequence(_) => 2,
+                Resolution::OutOfRange => 3,
+                Resolution::Resolved(_) => 4,
+                Resolution::WrongType(_) => 5,
+            };
+            counts[index] += 1;
+        }
     }
+    let mut storage = ctx.reserve_scoped(0, "iges reference summary notes")?;
     let mut notes = Vec::new();
     for (resolution, count) in [
         "cyclic",
@@ -741,79 +870,65 @@ pub(crate) fn summary_notes(
     .zip(counts)
     .filter(|(_, count)| *count > 0)
     {
-        ctx.push_formatted_retained(
-            &mut notes,
+        ctx.reserve_scoped_vec(&mut storage, &mut notes, 1, "iges reference summary notes")?;
+        notes.push(ctx.format_retained(
             format_args!("references.{resolution}={count}"),
-            "iges reference summary notes",
             "iges reference summary text",
-        )?;
+        )?);
     }
-    Ok(notes)
+    Ok((notes, storage))
 }
 
-pub(crate) fn losses(
+pub(crate) fn losses<'ctx>(
     graph: &BTreeMap<u32, Vec<ReferenceEdge>>,
     scan: &CardScan<'_>,
     parameters: &[ParameterRecord],
-    ctx: &DecodeContext<'_>,
-) -> Result<Vec<LossNote>, CodecError> {
-    let scan_work = u64_from_index(scan.lines.len())
-        .checked_mul(2)
-        .ok_or_else(|| refuse_local_limit("iges graph loss offset scans", u64::MAX, 1))?;
-    ctx.charge_work(scan_work, "iges graph loss offset scans")?;
-    let mut index_storage = ctx.reserve_scoped(0, "IGES graph loss indices")?;
-    let mut directory_offsets = BTreeMap::new();
-    for (sequence, line) in scan.section(Section::Directory) {
-        index_storage.with_storage(|| {
-            ctx.insert_btree_map(
-                &mut directory_offsets,
-                sequence,
-                line.offset,
-                "iges graph loss directory offsets",
-            )
-        })?;
-    }
-    let mut parameter_lines = BTreeMap::new();
-    for (sequence, line) in scan.section(Section::Parameter) {
-        index_storage.with_storage(|| {
-            ctx.insert_btree_map(
-                &mut parameter_lines,
-                sequence,
-                line.offset,
-                "iges graph loss parameter offsets",
-            )
-        })?;
-    }
-    let mut records = BTreeMap::new();
-    ctx.charge_work(
-        u64_from_index(parameters.len()),
-        "iges graph loss record index",
-    )?;
-    for record in parameters {
-        index_storage.with_storage(|| {
-            ctx.insert_btree_map(
-                &mut records,
-                record.directory_sequence,
-                record,
-                "iges graph loss parameter records",
-            )
-        })?;
-    }
+    ctx: &'ctx DecodeContext<'_>,
+) -> Result<(Vec<LossNote>, ScopedReservation<'ctx>), CodecError> {
+    // A card's sequence is its position in its section, so a section slice
+    // answers an offset lookup by index.
+    let directory_cards = scan.section(Section::Directory);
+    let parameter_cards = scan.section(Section::Parameter);
+    let card_offset = |cards: &[crate::card::Card<'_>], sequence: u32| {
+        let index = usize::try_from(sequence).ok()?.checked_sub(1)?;
+        cards.get(index).map(|card| card.line.offset)
+    };
+    let mut loss_storage = ctx.reserve_scoped(0, "iges graph loss notes")?;
     let mut losses = Vec::new();
-    for (source, edges) in graph {
-        ctx.charge_work(u64_from_index(edges.len()), "iges graph loss edge scan")?;
-        for edge in edges
-            .iter()
-            .filter(|edge| !matches!(edge.resolution, Resolution::Resolved(_)))
-        {
-            ctx.reserve_vec(&mut losses, 1, "iges graph loss notes")?;
+    let mut sources = graph.iter();
+    while sources.len() != 0 {
+        let Some((source, edges)) = ctx.next_charged(&mut sources, "iges graph loss sources")?
+        else {
+            break;
+        };
+        let mut parameter_record = None;
+        let mut edges = edges.iter();
+        while edges.len() != 0 {
+            let Some(edge) = ctx.next_charged(&mut edges, "iges graph loss edge scan")? else {
+                break;
+            };
+            if matches!(edge.resolution, Resolution::Resolved(_)) {
+                continue;
+            }
+            ctx.reserve_scoped_vec(&mut loss_storage, &mut losses, 1, "iges graph loss notes")?;
+            let record = match edge.origin.parameter_index() {
+                Some(_) => match parameter_record {
+                    Some(record) => record,
+                    None => {
+                        let record =
+                            crate::parameter::record_by_sequence(parameters, *source, ctx)?;
+                        parameter_record = Some(record);
+                        record
+                    }
+                },
+                None => None,
+            };
             let parameter_location = edge.origin.parameter_index().and_then(|index| {
-                let record = records.get(source)?;
+                let record = record?;
                 let span = record.tokens().get(index)?.span.start;
                 let card = u32::try_from(span / 64).ok()?;
                 let sequence = record.line_range.start.checked_add(card)?;
-                let offset = parameter_lines
-                    .get(&sequence)?
+                let offset = card_offset(parameter_cards, sequence)?
                     .checked_add(cadmpeg_core::decode::u64_from_index(span % 64))?;
                 Some((offset, index))
             });
@@ -826,9 +941,7 @@ pub(crate) fn losses(
                     )?,
                 ))
             } else {
-                directory_offsets
-                    .get(source)
-                    .copied()
+                card_offset(directory_cards, *source)
                     .map(|offset| {
                         ctx.format_retained(format_args!("D{source}"), "iges graph loss tag")
                             .map(|tag| (offset, tag))
@@ -862,7 +975,7 @@ pub(crate) fn losses(
             losses.push(note);
         }
     }
-    Ok(losses)
+    Ok((losses, loss_storage))
 }
 
 #[cfg(test)]

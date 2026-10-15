@@ -5,7 +5,7 @@ use super::{read_finite, Uuid};
 use crate::chunks::{BoundedReader, FramingError};
 
 #[test]
-fn canonical_json_sorts_nested_keys_and_refuses_collection_limit() {
+fn canonical_json_sorts_nested_keys() {
     #[derive(serde::Serialize)]
     struct Nested {
         z: u32,
@@ -24,29 +24,18 @@ fn canonical_json_sorts_nested_keys_and_refuses_collection_limit() {
     let text = super::admitted_canonical_json(&service, &value, "Rhino canonical JSON")
         .expect("service policy admits JSON");
     assert_eq!(text, r#"{"a":3,"z":{"a":1,"z":2}}"#);
-
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 3;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root fits");
-    let refusal = super::admitted_canonical_json(&ctx, &value, "Rhino canonical JSON")
-        .expect_err("four JSON map entries exceed three collection items");
-    assert!(
-        matches!(refusal, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "Rhino canonical JSON")
-    );
 }
 
 /// A non-finite value is refused at its own first byte, not after the read.
 #[test]
 fn read_finite_refuses_a_nonfinite_value_at_its_first_byte() {
+    let ctx = cadmpeg_test_support::service_decode_context();
     let mut bytes = vec![0xa5, 0xa5, 0xa5];
     let value_offset = bytes.len();
     bytes.extend(f64::NAN.to_le_bytes());
     bytes.extend(1.5_f64.to_le_bytes());
     let mut reader = BoundedReader::new(&bytes, 3, bytes.len()).expect("bounded reader");
-    let error = read_finite(&mut reader, "witness").expect_err("nonfinite value");
+    let error = read_finite(&ctx, &mut reader, "witness").expect_err("nonfinite value");
     assert_eq!(
         error,
         FramingError::structural(value_offset, "witness is not finite")
@@ -54,7 +43,7 @@ fn read_finite_refuses_a_nonfinite_value_at_its_first_byte() {
 
     let mut reader = BoundedReader::new(&bytes, 11, bytes.len()).expect("bounded reader");
     assert_eq!(
-        read_finite(&mut reader, "witness"),
+        read_finite(&ctx, &mut reader, "witness"),
         Ok(crate::test_support::finite(1.5))
     );
 }
@@ -107,4 +96,81 @@ fn scaled_coordinate_refuses_nonfinite_inputs_and_overflowing_products() {
 
     let huge = crate::test_support::millimeter_scale(f64::MAX);
     assert_eq!(super::scaled_coordinate(f64::MAX, huge), None);
+}
+
+#[test]
+fn loss_message_retained_bytes_are_charged_once() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    // Seven bytes hold one retained loss message.
+    policy.limits.max_retained_bytes = 7;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("context");
+    let note = super::admitted_loss(
+        &ctx,
+        crate::loss::RhinoLossCode::IntegrityFailure,
+        format_args!("warning"),
+        "test loss message",
+    )
+    .expect("one message fits");
+    assert_eq!(note.message, "warning");
+    let error = ctx
+        .charge_retained(1, "test next message byte")
+        .expect_err("message fills the retained limit");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes && limit.used == 7 && limit.additional == 1)
+    );
+}
+
+#[test]
+fn canonical_json_preserves_ordinary_raw_value_named_keys() {
+    let value = serde_json::json!({
+        "$serde_json::private::RawValue": "not-json",
+        "nested": {"$serde_json::private::RawValue": "[0]"},
+    });
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let text = super::admitted_canonical_json(&ctx, &value, "canonical raw-named key")
+        .expect("the keys are ordinary object keys");
+    assert_eq!(
+        text,
+        r#"{"$serde_json::private::RawValue":"not-json","nested":{"$serde_json::private::RawValue":"[0]"}}"#
+    );
+}
+
+#[test]
+fn canonical_json_keeps_the_last_duplicate_key() {
+    struct DuplicateKeys;
+    impl serde::Serialize for DuplicateKeys {
+        fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+            use serde::ser::SerializeMap;
+            let mut map = serializer.serialize_map(Some(3))?;
+            map.serialize_entry("z", &9)?;
+            map.serialize_entry("a", &1)?;
+            map.serialize_entry("a", &2)?;
+            map.end()
+        }
+    }
+    let ctx = cadmpeg_test_support::service_decode_context();
+    assert_eq!(
+        super::admitted_canonical_json(&ctx, &DuplicateKeys, "duplicate JSON").unwrap(),
+        r#"{"a":2,"z":9}"#
+    );
+}
+
+#[test]
+fn fixed_finite_field_error_requires_no_work_units() {
+    let data = f64::NAN.to_le_bytes();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&data, &arena, &policy).unwrap();
+    let mut reader = BoundedReader::new(&data, 0, data.len()).unwrap();
+    let error = read_finite(&ctx, &mut reader, "plot weight").unwrap_err();
+    assert!(
+        matches!(error, FramingError::Structural { offset: 0, message }
+        if message == "plot weight is not finite")
+    );
+    assert_eq!(ctx.resource_refusal(), None);
+    ctx.finish_session().unwrap();
 }

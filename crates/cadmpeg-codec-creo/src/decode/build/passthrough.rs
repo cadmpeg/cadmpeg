@@ -30,11 +30,13 @@ pub(super) fn preserve_passthrough_sections(
     annotations: &mut AnnotationBuilder,
 ) -> Result<Vec<UnknownRecord>, CodecError> {
     let mut unknowns = Vec::new();
-    for section in scan.framing.sections.iter().filter(|section| {
-        section.role() == SectionRole::PsbGeometry || section.role() == SectionRole::Thumbnail
-    }) {
+    let mut sections = scan.framing.sections.iter();
+    while let Some(section) = ctx.next_charged(&mut sections, "creo passthrough sections")? {
+        if section.role() != SectionRole::PsbGeometry && section.role() != SectionRole::Thumbnail {
+            continue;
+        }
         let Some(section_bytes) = container::section_region(&scan.framing.data, section) else {
-            return Err(CodecError::malformed(ctx.format_retained(
+            return Err(CodecError::Malformed(ctx.format_retained(
                 format_args!(
                     "creo section `{}` declares the region {}..{}, past the scanned file length {}",
                     section.name(),
@@ -46,7 +48,7 @@ pub(super) fn preserve_passthrough_sections(
             )?));
         };
         let payload_start = section
-            .raw_name
+            .raw_name()
             .len()
             .checked_add(2)
             .ok_or_else(|| CodecError::malformed("section payload start exceeds usize"))?;
@@ -55,13 +57,14 @@ pub(super) fn preserve_passthrough_sections(
             .is_some_and(|payload| payload.starts_with(container::UNIX_COMPRESS_MAGIC));
         let (bytes, offset, tag, exactness) = if section.role() == SectionRole::Thumbnail {
             if raw_is_compressed {
-                let Some(expanded) = container::expanded_section_for(scan, section) else {
+                let Some(expanded) = container::expanded_section_for(ctx, scan, section)? else {
                     continue;
                 };
-                let Some(marker_offset) = expanded
-                    .data
-                    .windows(3)
-                    .position(|window| window == container::JPEG_MAGIC)
+                let Some(marker_offset) = ctx.find_bytes(
+                    &expanded.data,
+                    container::JPEG_MAGIC,
+                    "creo compressed thumbnail marker search",
+                )?
                 else {
                     continue;
                 };
@@ -72,9 +75,11 @@ pub(super) fn preserve_passthrough_sections(
                     Exactness::Derived,
                 )
             } else {
-                let Some(marker_offset) = section_bytes
-                    .windows(3)
-                    .position(|window| window == container::JPEG_MAGIC)
+                let Some(marker_offset) = ctx.find_bytes(
+                    section_bytes,
+                    container::JPEG_MAGIC,
+                    "creo thumbnail marker search",
+                )?
                 else {
                     continue;
                 };
@@ -123,12 +128,18 @@ pub(super) fn preserve_passthrough_sections(
     Ok(unknowns)
 }
 
-fn legacy_source_stream<'a>(scan: &'a ContainerScan<'_>, offset: usize) -> &'a str {
-    scan.framing
-        .sections
-        .iter()
-        .find(|section| section.contains(offset))
-        .map_or("legacy_ascii", |section| section.name())
+fn legacy_source_stream<'a>(
+    ctx: &DecodeContext<'_>,
+    scan: &'a ContainerScan<'_>,
+    offset: usize,
+) -> Result<&'a str, CodecError> {
+    Ok(ctx
+        .find_by(
+            &scan.framing.sections,
+            |section| Ok(section.contains(offset)),
+            "creo legacy source stream sections",
+        )?
+        .map_or("legacy_ascii", |section| section.name()))
 }
 
 fn emit_legacy_value_arena<K: crate::legacy::LegacyCode>(
@@ -148,7 +159,7 @@ where
             ctx,
             annotations,
             record.id(),
-            legacy_source_stream(scan, record.offset),
+            legacy_source_stream(ctx, scan, record.offset)?,
             cadmpeg_core::decode::u64_from_index(record.offset),
             tag,
             Exactness::ByteExact,
@@ -177,7 +188,7 @@ pub(super) fn emit_legacy_arenas(
                 ctx,
                 annotations,
                 record.id(),
-                legacy_source_stream(scan, record.offset),
+                legacy_source_stream(ctx, scan, record.offset)?,
                 cadmpeg_core::decode::u64_from_index(record.offset),
                 "legacy_type_0_object",
                 Exactness::ByteExact,
@@ -287,7 +298,7 @@ pub(super) fn emit_legacy_arenas(
                     ctx,
                     annotations,
                     record.id(),
-                    legacy_source_stream(scan, record.offset),
+                    legacy_source_stream(ctx, scan, record.offset)?,
                     cadmpeg_core::decode::u64_from_index(record.offset),
                     "legacy_configuration_driver_table",
                     Exactness::ByteExact,
@@ -301,26 +312,93 @@ pub(super) fn emit_legacy_arenas(
 
 #[cfg(test)]
 mod tests {
-    use super::preserve_passthrough_sections;
+    use super::{legacy_source_stream, preserve_passthrough_sections};
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    #[test]
+    fn passthrough_sections_refuse_work_limit() {
+        let mut scan = crate::test_support::empty_container_scan();
+        scan.framing.sections.push(
+            crate::container::Section::scan_for_test(
+                "ND:0:VisibGeom:0".to_owned(),
+                0,
+                48,
+                None,
+                &[0u8; 48],
+            )
+            .expect("section extent")
+            .section,
+        );
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        let error =
+            preserve_passthrough_sections(&ctx, &scan, &mut cadmpeg_ir::AnnotationBuilder::new())
+                .expect_err("section traversal exceeds work limit");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::WorkUnits
+                && resource.operation == "creo passthrough sections")
+        );
+    }
+
+    #[test]
+    fn passthrough_legacy_source_stream_refuses_work_limit() {
+        let mut scan = crate::test_support::empty_container_scan();
+        scan.framing.sections.push(
+            crate::container::Section::scan_for_test(
+                "ND:0:VisibGeom:0".to_owned(),
+                0,
+                48,
+                None,
+                &[0u8; 48],
+            )
+            .expect("section extent")
+            .section,
+        );
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        let error =
+            legacy_source_stream(&ctx, &scan, 1).expect_err("source search exceeds work limit");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::WorkUnits
+                && resource.operation == "creo legacy source stream sections")
+        );
+        crate::decode::with_test_decode_ctx(|ctx| {
+            assert_eq!(legacy_source_stream(ctx, &scan, 1)?, "VisibGeom");
+            assert_eq!(legacy_source_stream(ctx, &scan, 49)?, "legacy_ascii");
+            Ok::<(), cadmpeg_core::CodecError>(())
+        })
+        .expect("service source searches admitted");
+    }
 
     #[test]
     fn passthrough_unknown_record_refuses_collection_limit() {
         let mut scan = crate::test_support::empty_container_scan();
         scan.framing.data = vec![0u8; 48].into();
         scan.framing.sections.push(
-            crate::container::Section::scan("ND:0:VisibGeom:0".to_owned(), 0, 48, None, &[0u8; 48])
-                .expect("section extent")
-                .section,
+            crate::container::Section::scan_for_test(
+                "ND:0:VisibGeom:0".to_owned(),
+                0,
+                48,
+                None,
+                &[0u8; 48],
+            )
+            .expect("section extent")
+            .section,
         );
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        // Each feature annotation owns handles, provenance, and exactness nodes.
-        policy.limits.max_collection_items = 3;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let error =
-            preserve_passthrough_sections(&ctx, &scan, &mut cadmpeg_ir::AnnotationBuilder::new())
-                .expect_err("fourth collection item is the unknown record");
+        let error = crate::test_support::last_refusal_at(
+            &[],
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            "creo passthrough unknown records",
+            |ctx| {
+                preserve_passthrough_sections(ctx, &scan, &mut cadmpeg_ir::AnnotationBuilder::new())
+            },
+        );
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.operation == "creo passthrough unknown records")
@@ -335,7 +413,7 @@ mod tests {
 
     #[test]
     fn passthrough_section_bounds_error_refuses_retained_limit() {
-        let section = crate::container::Section::scan(
+        let section = crate::container::Section::scan_for_test(
             "ND:0:VisibGeom:0".to_owned(),
             32,
             48,
@@ -371,5 +449,50 @@ mod tests {
             Ok::<(), cadmpeg_core::CodecError>(())
         })
         .expect("service error text admitted");
+    }
+
+    #[test]
+    fn passthrough_bounds_refusal_admits_only_the_first_visited_section() {
+        use cadmpeg_core::decode::ResourceDimension;
+        use cadmpeg_core::CodecError;
+        let section = crate::container::Section::scan_for_test(
+            "ND:0:VisibGeom:0".to_owned(),
+            32,
+            48,
+            None,
+            &[0u8; 48],
+        )
+        .expect("section extent")
+        .section;
+        let mut scan = crate::test_support::empty_container_scan();
+        scan.framing.data = vec![0u8; 16].into();
+        scan.framing.sections = vec![section.clone(), section];
+        let error = crate::test_support::last_refusal_at(
+            &[],
+            ResourceDimension::WorkUnits,
+            "creo passthrough sections",
+            |ctx| match preserve_passthrough_sections(
+                ctx,
+                &scan,
+                &mut cadmpeg_ir::AnnotationBuilder::new(),
+            ) {
+                Err(error @ CodecError::ResourceLimit(_)) => Err(error),
+                result => Ok(result),
+            },
+        );
+        assert!(
+            matches!(error, CodecError::ResourceLimit(resource) if resource.operation == "creo passthrough sections" && resource.additional == 1)
+        );
+        crate::decode::with_test_decode_ctx(|ctx| {
+            let error = preserve_passthrough_sections(
+                ctx,
+                &scan,
+                &mut cadmpeg_ir::AnnotationBuilder::new(),
+            )
+            .expect_err("the first section is outside the source extent");
+            assert!(
+                matches!(error, CodecError::Malformed(message) if message.contains("VisibGeom"))
+            );
+        });
     }
 }

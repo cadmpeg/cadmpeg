@@ -380,14 +380,14 @@ fn native_relation_symbols_and_candidates_refuse_nested_limits() {
         [(0, "#1_".to_string()), (6, "#2_".to_string())]
     );
 
-    let candidate = crate::native::CatiaEntityReference::resolved_or_unresolved(
-        10,
-        Some("entity-10".to_string()),
-        Some("param".to_string()),
-    );
+    let candidate = crate::native::CatiaParameterBinding {
+        entity_id: 10,
+        entity: "entity-10",
+        class_name: Some("param"),
+    };
     let bindings = std::collections::HashMap::from([(
-        "graph".to_string(),
-        std::collections::HashMap::from([("#1_".to_string(), vec![candidate])]),
+        "graph",
+        std::collections::HashMap::from([("#1_", vec![candidate])]),
     )]);
     let refused = crate::test_support::with_collection_limit(1, |ctx| {
         crate::native::relation_parameter_dependencies(ctx, "#1_", "graph", &bindings)
@@ -422,23 +422,21 @@ fn native_resolved_input_refuses_entity_set_limit() {
             Some("param".to_string()),
         )],
     }];
-    let refused = crate::test_support::with_collection_limit(0, |ctx| {
+    // One signature index entry, one group slot and one dependency slot.
+    let refused = crate::test_support::with_collection_limit(3, |ctx| {
         crate::native::resolved_relation_program_inputs(ctx, &signature, &dependencies)
     });
     assert!(
         matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.operation == "catia_native_input_entity_ids")
     );
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_work_units = 1;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root fits work limit");
     let work_refusal =
-        crate::native::resolved_relation_program_inputs(&ctx, &signature, &dependencies);
+        crate::test_support::with_work_refusal("catia_native_input_signature_checks", |ctx| {
+            crate::native::resolved_relation_program_inputs(ctx, &signature, &dependencies)
+        });
     assert!(
         matches!(work_refusal, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_native_input_matching")
+        if limit.operation == "catia_native_input_signature_checks")
     );
     let service = crate::test_support::with_service_context(|ctx| {
         crate::native::resolved_relation_program_inputs(ctx, &signature, &dependencies)
@@ -450,20 +448,24 @@ fn native_resolved_input_refuses_entity_set_limit() {
 
 #[test]
 fn native_entity_reference_refuses_retained_copy() {
-    let entities =
-        std::collections::HashMap::from([(("graph".to_string(), 10_u32), "entity-10".to_string())]);
-    let classes =
-        std::collections::HashMap::from([(("graph".to_string(), 10_u32), "param".to_string())]);
-    let terminal_nulls = std::collections::HashMap::new();
+    use std::collections::HashMap;
+    let entities = HashMap::from([("graph", HashMap::from([(10_u32, "entity-10")]))]);
+    let classes = HashMap::from([("graph", HashMap::from([(10_u32, "param")]))]);
+    let maxima = HashMap::new();
+    let references = crate::native::CatiaEntityReferenceIndex {
+        entities: &entities,
+        classes: &classes,
+        maxima: &maxima,
+    };
     let refused = crate::test_support::with_retained_limit(0, |ctx| {
-        crate::native::entity_reference(ctx, "graph", 10, &entities, &classes, &terminal_nulls)
+        crate::native::entity_reference(ctx, "graph", 10, &references)
     });
     assert!(
         matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.operation == "catia_native_reference_entity")
     );
     let service = crate::test_support::with_service_context(|ctx| {
-        crate::native::entity_reference(ctx, "graph", 10, &entities, &classes, &terminal_nulls)
+        crate::native::entity_reference(ctx, "graph", 10, &references)
     })
     .expect("service profile admits entity reference");
     assert_eq!(service.entity(), Some("entity-10"));
@@ -513,6 +515,7 @@ fn complete_relation_program_inputs_transfer_typed_parameters() {
             &mut annotations,
             &crate::decode::ModelingGraphScope::Unscoped,
         )
+        .map(crate::formula::FormulaTransfer::detached)
     })
     .expect("valid exactness fields");
     let [parameter] = ir.model.parameters.as_slice() else {
@@ -554,6 +557,7 @@ fn complete_relation_program_inputs_transfer_typed_parameters() {
             &mut Annotations::default(),
             &crate::decode::ModelingGraphScope::Unscoped,
         )
+        .map(crate::formula::FormulaTransfer::detached)
     })
     .expect("valid exactness fields");
     let [empty_binding_parameter] = empty_binding_ir.model.parameters.as_slice() else {
@@ -592,6 +596,7 @@ fn complete_relation_program_inputs_transfer_typed_parameters() {
             &mut Annotations::default(),
             &crate::decode::ModelingGraphScope::Unscoped,
         )
+        .map(crate::formula::FormulaTransfer::detached)
     })
     .expect("valid exactness fields");
     assert_eq!(conflicting_transfer.relation_program_parameter_count, 0);
@@ -645,6 +650,7 @@ fn complete_relation_program_output_transfers_a_typed_result() {
             &mut annotations,
             &crate::decode::ModelingGraphScope::Unscoped,
         )
+        .map(crate::formula::FormulaTransfer::detached)
     })
     .expect("valid exactness fields");
     let [input, output] = ir.model.parameters.as_slice() else {
@@ -690,6 +696,7 @@ fn complete_relation_program_output_transfers_a_typed_result() {
             &mut Annotations::default(),
             &crate::decode::ModelingGraphScope::Unscoped,
         )
+        .map(crate::formula::FormulaTransfer::detached)
     })
     .expect("valid exactness fields");
     let [ambiguous_input] = ambiguous_ir.model.parameters.as_slice() else {
@@ -743,6 +750,7 @@ fn relation_program_output_refuses_unadmitted_input_and_output_rows() {
                 &mut Annotations::default(),
                 &crate::decode::ModelingGraphScope::Unscoped,
             )
+            .map(crate::formula::FormulaTransfer::detached)
         });
         match result {
             Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => {
