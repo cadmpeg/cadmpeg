@@ -47,7 +47,7 @@ pub(super) fn resolve_sweep_surface<'ctx>(
     ctx: &'ctx DecodeContext<'_>,
     carriers: CarrierView<'_, '_>,
     tables: &topology::Tables,
-    face: &WalkedFace,
+    face: &WalkedFace<'_>,
     refusal: &mut RefusalSink<'_, 'ctx>,
 ) -> Result<Option<SweepSurfaceResolution>, cadmpeg_core::CodecError> {
     let Some(construction) = carriers.sweep(ctx, face.surface_attr)? else {
@@ -207,7 +207,7 @@ pub(super) struct FaceEdges {
 /// Procedural surface resolution reads these indexes lazily. Analytic faces
 /// do not traverse the source faces for procedural support lookup.
 pub(super) struct ProceduralSupportIndexes<'source, 'ctx> {
-    faces: &'source [WalkedFace],
+    faces: &'source [WalkedFace<'source>],
     loop_set: &'source BTreeSet<u16>,
     tables: &'source topology::Tables,
     emitted: Option<BTreeMap<u16, u16>>,
@@ -218,7 +218,7 @@ pub(super) struct ProceduralSupportIndexes<'source, 'ctx> {
 impl<'source, 'ctx> ProceduralSupportIndexes<'source, 'ctx> {
     pub(super) fn new(
         ctx: &'ctx DecodeContext<'_>,
-        faces: &'source [WalkedFace],
+        faces: &'source [WalkedFace<'source>],
         loop_set: &'source BTreeSet<u16>,
         tables: &'source topology::Tables,
     ) -> Result<Self, cadmpeg_core::CodecError> {
