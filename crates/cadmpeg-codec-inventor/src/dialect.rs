@@ -579,22 +579,6 @@ fn kernel_layer(
     family: KernelFamily,
     header: &cadmpeg_asm::kernel_header::BinaryHeader,
 ) -> Result<DialectMatch, CodecError> {
-    if let Some(major) = header.metadata.save_format_major() {
-        ctx.charge_collection_items(1, "collect Inventor kernel declaration")?;
-        ctx.charge_formatted_retained(
-            format_args!("{major}"),
-            "retain Inventor kernel save major",
-        )?;
-    }
-    if let Some(minor) = header.metadata.save_format_minor() {
-        ctx.charge_collection_items(1, "collect Inventor kernel declaration")?;
-        ctx.charge_formatted_retained(
-            format_args!("{minor}"),
-            "retain Inventor kernel save minor",
-        )?;
-    }
-    ctx.charge_collection_items(1, "collect Inventor kernel declaration")?;
-    ctx.charge_retained(1, "retain Inventor kernel reference width")?;
     let header = match family {
         KernelFamily::Asm => cadmpeg_asm::dialect::KernelHeaderRef::Asm(header),
         KernelFamily::Acis => cadmpeg_asm::dialect::KernelHeaderRef::Acis(header),
