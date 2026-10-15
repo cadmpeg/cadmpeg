@@ -3923,7 +3923,7 @@ fn materialize_indexed_candidate(candidate: IndexedCandidate<'_>) -> IndexedSect
 /// the budget is exhausted the remaining candidates are skipped.
 pub(crate) fn indexed_sections<'a>(
     bytes: &'a [u8],
-    budget: &WorkBudget<'_>,
+    budget: &WorkBudget,
 ) -> Result<Vec<IndexedSection<'a>>, CodecError> {
     let mut candidates = Vec::new();
     let mut seen_record_starts = BTreeSet::new();

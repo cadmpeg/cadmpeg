@@ -50,12 +50,8 @@ pub fn resource_refusal_at(
     let error = crate::refusal::resource_limit_at_nth(dimension, operation, skip, |cap| {
         match dimension {
             ResourceDimension::RetainedBytes => options.policy.limits.max_retained_bytes = cap,
-            ResourceDimension::CollectionItems => options.policy.limits.max_collection_items = cap,
-            ResourceDimension::WorkUnits => options.policy.limits.max_work_units = cap,
+            ResourceDimension::Entities => options.policy.limits.max_entities = cap,
             ResourceDimension::RecursionDepth => options.policy.limits.max_recursion_depth = cap,
-            ResourceDimension::MaterializedBytes => {
-                options.policy.limits.max_materialized_bytes = cap;
-            }
             _ => panic!("unsupported codec test dimension"),
         }
         codec

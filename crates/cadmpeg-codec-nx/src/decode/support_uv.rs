@@ -89,7 +89,7 @@ pub(super) fn support_uv_completion_budget_limit(chart_count: usize) -> usize {
         })
 }
 
-type SupportUvBudget<'a> = WorkBudget<'a>;
+type SupportUvBudget<'a> = WorkBudget;
 
 pub(super) fn support_uv_budget_exhausted(budget: &SupportUvBudget<'_>) -> bool {
     budget.exhausted() || budget.remaining() == 0

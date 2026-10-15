@@ -5900,7 +5900,7 @@ fn attach_standard_topology(
             |selected_edge_faces: &[[usize; 2]],
              selected_supports: &[crate::families::standard::records::StandardCurveSupport],
              selected_edge_classes: &[usize],
-             solve_budget: &WorkBudget<'_>|
+             solve_budget: &WorkBudget|
              -> Result<mesh_quotient::MeshCandidateSolve, cadmpeg_core::CodecError> {
                 // FBB-only rows are complete boundary runs. Their global
                 // handle quotient is the incidence source.
@@ -8218,7 +8218,7 @@ fn invariant_face_carrier_bindings(
     ctx: &DecodeContext<'_>,
     face_edges: &[Vec<(usize, Vec<usize>)>],
     owner_count: usize,
-    budget: Option<&WorkBudget<'_>>,
+    budget: Option<&WorkBudget>,
 ) -> Result<Option<Vec<Option<usize>>>, cadmpeg_core::CodecError> {
     let mut normalized = Vec::new();
     for edges in face_edges {
@@ -8428,7 +8428,7 @@ fn bind_standard_a5_owner_surfaces(
     annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
     source: StandardConsolidatedSource<'_>,
     face_bounds: &[Option<crate::families::standard::records::StandardFaceBounds>],
-    budget: &WorkBudget<'_>,
+    budget: &WorkBudget,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<usize, cadmpeg_core::CodecError> {
     let StandardConsolidatedSource { data, records } = source;

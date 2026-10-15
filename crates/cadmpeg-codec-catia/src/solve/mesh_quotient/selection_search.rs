@@ -315,7 +315,7 @@ impl MeshSelectionSearch<'_, '_> {
         &self,
         quotient: &mut MeshQuotient,
         changed_edges: Option<&HashSet<usize>>,
-        budget: &WorkBudget<'_>,
+        budget: &WorkBudget,
     ) -> Result<bool, CodecError> {
         let mut queue = VecDeque::new();
         let mut queued = HashSet::new();
@@ -549,7 +549,7 @@ impl MeshSelectionSearch<'_, '_> {
         &self,
         quotient: &MeshQuotient,
         changed_edges: &HashSet<usize>,
-        propagation_budget: &WorkBudget<'_>,
+        propagation_budget: &WorkBudget,
     ) -> Result<Option<MeshQuotient>, CodecError> {
         let mut measured = quotient.clone();
         if !self.has_exact_singleton_endpoint_domains()
@@ -595,8 +595,8 @@ impl MeshSelectionSearch<'_, '_> {
     pub(super) fn search_with_budget(
         &mut self,
         quotient: &MeshQuotient,
-        budget: &WorkBudget<'_>,
-        propagation_budget: &WorkBudget<'_>,
+        budget: &WorkBudget,
+        propagation_budget: &WorkBudget,
     ) -> Result<(), CodecError> {
         self.search_from_state(quotient, false, budget, propagation_budget)
     }
@@ -605,7 +605,7 @@ impl MeshSelectionSearch<'_, '_> {
         &self,
         measured: &MeshQuotient,
         face: usize,
-        budget: Option<&WorkBudget<'_>>,
+        budget: Option<&WorkBudget>,
     ) -> Result<Vec<MeshFixedDirectionOption>, CodecError> {
         let Some(direction_options) = self
             .fixed_face_directions
@@ -668,7 +668,7 @@ impl MeshSelectionSearch<'_, '_> {
     pub(super) fn search_fixed_direction_with_budget(
         &mut self,
         quotient: &MeshQuotient,
-        budget: &WorkBudget<'_>,
+        budget: &WorkBudget,
     ) -> Result<(), CodecError> {
         if self.should_stop() {
             return Ok(());
@@ -879,8 +879,8 @@ impl MeshSelectionSearch<'_, '_> {
         &mut self,
         quotient: &MeshQuotient,
         prepared: bool,
-        budget: &WorkBudget<'_>,
-        propagation_budget: &WorkBudget<'_>,
+        budget: &WorkBudget,
+        propagation_budget: &WorkBudget,
     ) -> Result<(), CodecError> {
         if self.should_stop() {
             return Ok(());
@@ -902,8 +902,8 @@ impl MeshSelectionSearch<'_, '_> {
         &mut self,
         quotient: &MeshQuotient,
         prepared: bool,
-        budget: &WorkBudget<'_>,
-        propagation_budget: &WorkBudget<'_>,
+        budget: &WorkBudget,
+        propagation_budget: &WorkBudget,
     ) -> Result<(), CodecError> {
         let mut measured = quotient.clone();
         if !prepared {
@@ -1652,7 +1652,7 @@ pub(super) fn resolve_mesh_selection_from_quotient(
     vertex_points: &[[f64; 3]],
     edge_candidates: &[Vec<[usize; 2]>],
     port_identities: &[[u32; 2]],
-    budget: &WorkBudget<'_>,
+    budget: &WorkBudget,
 ) -> Result<Option<MeshEndpointResolve>, CodecError> {
     let Some(port_count) = edge_candidates.len().checked_mul(2) else {
         return Ok(None);
@@ -1739,7 +1739,7 @@ fn reduced_distinct_matching(
     ctx: &DecodeContext<'_>,
     domains: &[Vec<usize>],
     point_count: usize,
-    budget: &WorkBudget<'_>,
+    budget: &WorkBudget,
     excluded: Option<(usize, usize)>,
 ) -> Result<Option<DistinctAssignment>, CodecError> {
     let mut assignment = ctx.alloc_filled(domains.len(), None, "catia_reduced_matching")?;
