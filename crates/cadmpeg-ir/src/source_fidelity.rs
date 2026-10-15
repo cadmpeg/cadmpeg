@@ -417,7 +417,7 @@ impl SourceFidelity {
         Ok(())
     }
 
-    /// Stores source bytes and native references within the decode budget.
+    /// Stores source bytes and native references.
     /// Both destinations are committed after all admission succeeds.
     pub fn attach_native_unknown_records(
         &mut self,

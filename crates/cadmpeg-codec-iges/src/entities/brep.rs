@@ -266,9 +266,9 @@ fn surface_point_or_refusal(
 // projection needs exactly what was just computed, from the same unmutated
 // `ir` with the same arguments, so returning it keeps each pcurve resolved
 // once instead of twice. The per-use interleave in the loop body is
-// load-bearing — `pcurve_geometry` can fuse the decode budget, so a later
-// use's geometry must not be resolved once an earlier use's evaluation has
-// already failed.
+// load-bearing — `pcurve_geometry` can refuse a decode session limit, which
+// fuses the session, so a later use's geometry must not be resolved once an
+// earlier use's evaluation has already failed.
 /// One resolved pcurve use: its geometry and the parameter range it covers.
 type ResolvedPcurveUses = Vec<(PcurveGeometry, [f64; 2])>;
 

@@ -98,7 +98,8 @@ pub struct LossCount {
 /// Conversion failure between codec-owned typed records and generic records.
 #[derive(Debug, thiserror::Error)]
 pub enum NativeConvertError {
-    /// The caller's decode budget refused native record storage.
+    /// The decode context refused a native record: a session limit, or a
+    /// tree it could not parse.
     #[error(transparent)]
     Resource(#[from] cadmpeg_core::CodecError),
     /// A serialized typed record has no string `id` field.
@@ -756,7 +757,7 @@ impl NativeNamespace {
         self.arena_as_collection_for_decode(&ctx, name)
     }
 
-    /// Admits a typed collection using the caller's decode budget.
+    /// Admits a typed collection under the caller's decode session limits.
     pub fn arena_as_collection_for_decode<T, C>(
         &self,
         ctx: &DecodeContext<'_>,
@@ -815,7 +816,7 @@ impl NativeNamespace {
             })
     }
 
-    /// Reads typed records lazily using the caller's decode budget.
+    /// Reads typed records lazily under the caller's decode session limits.
     pub fn arena_iter_as_for_decode<'a, T: DeserializeOwned + 'a>(
         &'a self,
         ctx: &'a DecodeContext<'_>,

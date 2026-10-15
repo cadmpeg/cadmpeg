@@ -442,7 +442,8 @@ fn compound_stream(
     })
 }
 
-/// Scans an in-memory image while routing inflate through the decode budget.
+/// Scans an in-memory image, inflating through the decode context's
+/// decompressed-byte limit.
 pub(crate) fn scan<'a>(
     ctx: &DecodeContext<'_>,
     root: View<'a>,
