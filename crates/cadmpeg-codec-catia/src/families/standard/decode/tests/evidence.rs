@@ -24,7 +24,6 @@ use crate::families::standard::decode::standard_native_support_endpoint_pair;
 use crate::families::standard::decode::standard_object_evidence_from_streams;
 use crate::families::standard::decode::standard_plane_normals_from_face_frames;
 use crate::families::standard::decode::standard_shared_boundary_group_domains;
-use crate::families::standard::decode::standard_shared_nurbs_boundary_pair_options as charged_shared_nurbs_boundary_pair_options;
 use crate::families::standard::decode::standard_surface_evidence;
 use crate::families::standard::decode::StandardEdgeSupport;
 use crate::families::standard::decode::StandardSurfaceProcedure;
@@ -68,7 +67,9 @@ fn standard_shared_nurbs_boundary_pair_options(
     options: &[[usize; 2]],
 ) -> Option<Vec<[usize; 2]>> {
     crate::test_support::with_service_context(|ctx| {
-        charged_shared_nurbs_boundary_pair_options(ctx, left, right, points, options)
+        crate::families::standard::decode::standard_shared_nurbs_boundary_pair_options(
+            ctx, left, right, points, options,
+        )
     })
     .expect("service context admits NURBS boundary pairs")
 }

@@ -1,5 +1,4 @@
 use crate::families::standard::decode::edge_geometry::build_standard_edge_curve;
-use crate::families::standard::decode::edge_geometry::standard_pcurve_geometry as charged_standard_pcurve_geometry;
 use crate::families::standard::records::StandardCurveSupport;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::Curve;
@@ -26,7 +25,7 @@ fn standard_pcurve_geometry(
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Option<(cadmpeg_ir::geometry::pcurve::PcurveGeometry, [f64; 2])> {
     crate::test_support::with_service_context(|ctx| {
-        charged_standard_pcurve_geometry(
+        crate::families::standard::decode::edge_geometry::standard_pcurve_geometry(
             ctx,
             surface,
             support,

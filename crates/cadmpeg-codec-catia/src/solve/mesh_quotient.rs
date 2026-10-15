@@ -57,6 +57,7 @@ use crate::solve::incidence::{
     compact_boundary_domain_viable, deferred_boundary_assignment, deferred_boundary_cycle_matches,
     visit_incidence_endpoint_pair_solutions_with_coordinate_root_policy, CoordinateRootPolicy,
     IncidenceRejection, IncidenceSolve,
+    VisitIncidenceEndpointPairSolutionsWithCoordinateRootPolicyInputs,
 };
 use crate::solve::matching::{
     distinct_domain_matching_with_budget, domains_have_distinct_matching,
@@ -1799,7 +1800,19 @@ impl MeshQuotient {
     ) -> Result<CoordinateRootClosure, CodecError> {
         let ambiguous = Cell::new(false);
         let exhausted = Cell::new(false);
-        let result = coordinate_assignment::close_coordinate_roots_with_incidence(ctx, crate::solve::mesh_quotient::coordinate_assignment::CloseCoordinateRootsWithIncidenceInputs { quotient: self, point_count, edge_candidates, incidence, budget, component_search_budget, ambiguous: &ambiguous, exhausted: &exhausted })?;
+        let result = coordinate_assignment::close_coordinate_roots_with_incidence(
+            ctx,
+            coordinate_assignment::CloseCoordinateRootsWithIncidenceInputs {
+                quotient: self,
+                point_count,
+                edge_candidates,
+                incidence,
+                budget,
+                component_search_budget,
+                ambiguous: &ambiguous,
+                exhausted: &exhausted,
+            },
+        )?;
         Ok(match result {
             Some(assignment) => MeshSolve::Solved(assignment),
             None if exhausted.get() || budget.is_some_and(WorkBudget::exhausted) => {
@@ -4228,28 +4241,26 @@ pub(super) fn propagate_common_boundary_components(
     let face_keys = domains
         .iter()
         .enumerate()
-        .map(|(face, domain)| {
-            Ok::<_, CodecError>(match domain {
-                MeshFaceBoundaryDomain::Ordered(assignments) => {
-                    let mut direction_work = 0usize;
-                    for assignment in assignments {
-                        for boundary in &assignment.boundaries {
-                            let unresolved = boundary
-                                .iter()
-                                .filter(|use_| use_.reversed.is_none())
-                                .count();
-                            direction_work += unresolved;
-                        }
+        .map(|(face, domain)| match domain {
+            MeshFaceBoundaryDomain::Ordered(assignments) => {
+                let mut direction_work = 0usize;
+                for assignment in assignments {
+                    for boundary in &assignment.boundaries {
+                        let unresolved = boundary
+                            .iter()
+                            .filter(|use_| use_.reversed.is_none())
+                            .count();
+                        direction_work += unresolved;
                     }
-                    (0, assignments.len(), direction_work, face)
                 }
-                MeshFaceBoundaryDomain::DeferredValidation(domain) => {
-                    (1, domain.missing_edges.len(), 0, face)
-                }
-                MeshFaceBoundaryDomain::UnorderedFullCycle(edges) => (2, edges.len(), 0, face),
-            })
+                (0, assignments.len(), direction_work, face)
+            }
+            MeshFaceBoundaryDomain::DeferredValidation(domain) => {
+                (1, domain.missing_edges.len(), 0, face)
+            }
+            MeshFaceBoundaryDomain::UnorderedFullCycle(edges) => (2, edges.len(), 0, face),
         })
-        .collect::<Result<Vec<_>, _>>()?;
+        .collect::<Vec<_>>();
     for (_, mut faces) in face_components {
         let mut ordered_faces = Vec::new();
         let mut selected_edges = HashSet::new();
@@ -6239,7 +6250,7 @@ where
         });
         if walk_endpoint_relation_domains(
             ctx,
-            crate::solve::mesh_quotient::WalkEndpointRelationDomainsInputs {
+            WalkEndpointRelationDomainsInputs {
                 domains: branch,
                 face_assignments,
                 assigned: assigned.clone(),
@@ -6584,7 +6595,7 @@ fn resolve_endpoint_configuration_relation_streaming(
     };
     walk_endpoint_relation_domains(
         ctx,
-        crate::solve::mesh_quotient::WalkEndpointRelationDomainsInputs {
+        WalkEndpointRelationDomainsInputs {
             domains,
             face_assignments: assignments,
             assigned: ctx.alloc_filled(
@@ -7010,7 +7021,7 @@ fn resolve_fixed_mesh_endpoint_pairs(
     }
     if let Some(resolved) = resolve_singleton_mesh_endpoint_candidates(
         ctx,
-        crate::solve::mesh_quotient::ResolveSingletonMeshEndpointCandidatesInputs {
+        ResolveSingletonMeshEndpointCandidatesInputs {
             edge_rows,
             vertex_points,
             edge_candidates,
@@ -7613,7 +7624,7 @@ fn resolve_singleton_mesh_endpoint_candidates(
     }
     if let Some(resolved) = resolve_singleton_mesh_selection(
         ctx,
-        crate::solve::mesh_quotient::selection_search::ResolveSingletonMeshSelectionInputs {
+        selection_search::ResolveSingletonMeshSelectionInputs {
             edge_rows,
             vertex_points,
             edge_candidates,
@@ -7632,7 +7643,7 @@ fn resolve_singleton_mesh_endpoint_candidates(
 
     resolve_singleton_mesh_selection(
         ctx,
-        crate::solve::mesh_quotient::selection_search::ResolveSingletonMeshSelectionInputs {
+        selection_search::ResolveSingletonMeshSelectionInputs {
             edge_rows,
             vertex_points,
             edge_candidates,
@@ -7741,7 +7752,7 @@ fn resolve_standard_mesh_endpoint_candidates(
     }
     if let Some(resolved) = resolve_singleton_mesh_endpoint_candidates(
         ctx,
-        crate::solve::mesh_quotient::ResolveSingletonMeshEndpointCandidatesInputs {
+        ResolveSingletonMeshEndpointCandidatesInputs {
             edge_rows,
             vertex_points,
             edge_candidates: &edge_candidates,
@@ -7827,7 +7838,7 @@ fn resolve_standard_mesh_endpoint_candidates(
     }
     let relation = resolve_endpoint_configuration_relation_streaming(
         ctx,
-        crate::solve::mesh_quotient::ResolveEndpointConfigurationRelationStreamingInputs {
+        ResolveEndpointConfigurationRelationStreamingInputs {
             assignments: &assignments,
             endpoint_configurations: &endpoint_configurations,
             edge_candidates: &edge_candidates,
@@ -8161,88 +8172,118 @@ where
     let mut incidence_ambiguity = None;
     let mut incidence_exhausted = false;
     let mut endpoint_resolution_memo = HashMap::<Vec<[usize; 2]>, MeshEndpointResolve>::new();
-    let pair_solutions = visit_incidence_endpoint_pair_solutions_with_coordinate_root_policy(ctx, crate::solve::incidence::VisitIncidenceEndpointPairSolutionsWithCoordinateRootPolicyInputs { edge_rows: &edge_rows, vertex_points: &vertex_points, edge_faces, edge_candidates: &completed_edge_candidates, face_count, mesh_assignments: Some(&mesh_domains), mesh_quotient: Some(&mesh_quotient), coordinate_root_policy: CoordinateRootPolicy::DeferToVisitor, partial_solution_valid: Some(MeshPartialEndpointConstraint {
-        active_edges: &constraint_edges,
-        coupled_edges: partial_constraint_edges,
-        assignment_order: AssignmentOrder::new(
-            Some(&assignment_predecessors),
-            assignment_dependencies,
-        ),
-        valid: &constrained_partial_solution_valid,
-    }), complete_solution_budget: Some(&endpoint_budget), solution_valid: &|pairs| {
-        let mut completed = Vec::new();
+    let pair_solutions = visit_incidence_endpoint_pair_solutions_with_coordinate_root_policy(
+        ctx,
+        VisitIncidenceEndpointPairSolutionsWithCoordinateRootPolicyInputs {
+            edge_rows: &edge_rows,
+            vertex_points: &vertex_points,
+            edge_faces,
+            edge_candidates: &completed_edge_candidates,
+            face_count,
+            mesh_assignments: Some(&mesh_domains),
+            mesh_quotient: Some(&mesh_quotient),
+            coordinate_root_policy: CoordinateRootPolicy::DeferToVisitor,
+            partial_solution_valid: Some(MeshPartialEndpointConstraint {
+                active_edges: &constraint_edges,
+                coupled_edges: partial_constraint_edges,
+                assignment_order: AssignmentOrder::new(
+                    Some(&assignment_predecessors),
+                    assignment_dependencies,
+                ),
+                valid: &constrained_partial_solution_valid,
+            }),
+            complete_solution_budget: Some(&endpoint_budget),
+            solution_valid: &|pairs| {
+                let mut completed = Vec::new();
 
-        completed.extend(pairs.iter().copied().map(Some));
-        Ok(constrained_complete_solution_valid(&completed))
-    }, visitor: &mut |pairs| -> Result<ControlFlow<()>, CodecError> {
-        let endpoint_resolution = if let Some(cached) = endpoint_resolution_memo.get(pairs) {
-            cached.clone()
-        } else {
-            let Some(oriented_pairs) = restore_unique_endpoint_pair_orientations(pairs, &completed_edge_candidates)
-            else {
-                return Ok(ControlFlow::Continue(()));
-            };
-            let mut singleton = Vec::new();
+                completed.extend(pairs.iter().copied().map(Some));
+                Ok(constrained_complete_solution_valid(&completed))
+            },
+            visitor: &mut |pairs| -> Result<ControlFlow<()>, CodecError> {
+                let endpoint_resolution = if let Some(cached) = endpoint_resolution_memo.get(pairs)
+                {
+                    cached.clone()
+                } else {
+                    let Some(oriented_pairs) = restore_unique_endpoint_pair_orientations(
+                        pairs,
+                        &completed_edge_candidates,
+                    ) else {
+                        return Ok(ControlFlow::Continue(()));
+                    };
+                    let mut singleton = Vec::new();
 
-            for &pair in &oriented_pairs {
-                singleton.push(vec![pair]);
-            }
-            let Some(mut mesh_assignments) =
-                materialize_boundary_domains(&mesh_domains, &oriented_pairs)?
-            else {
-                return Ok(ControlFlow::Continue(()));
-            };
-            deduplicate_mesh_quotient_assignments(&mut mesh_assignments);
-            // This child owns the incidence-to-endpoint relation phase. The
-            // complete materialization invoked by that relation takes its
-            // own MAX_MESH_CONSTRAINT_OPERATIONS child slice.
-            let endpoint_resolution_budget =
-                endpoint_budget.child_slice(MAX_MESH_TOPOLOGY_OPERATIONS);
-            let resolution = resolve_standard_mesh_endpoint_candidates(ctx, crate::solve::mesh_quotient::ResolveStandardMeshEndpointCandidatesInputs { edge_rows: &edge_rows, vertex_points: &vertex_points, edge_candidates: &singleton, assignments: mesh_assignments, port_identities: &port_identities, prepared_quotient: None, edge_direction_evidence: Some(edge_direction_evidence), budget: &endpoint_resolution_budget, partial_solution_valid: Some(&constrained_partial_solution_valid), complete_solution_valid: Some(&constrained_complete_solution_valid), candidate_gauge, priority_edges })?;
-            // Exhaustion is deterministic for this input and child budget.
-            // The parent budget only decreases, so retrying the same key
-            // cannot turn an exhausted materialization into a solution.
-            if endpoint_resolution_memo.len() < MAX_ENDPOINT_RESOLUTION_MEMO_ENTRIES {
-                let endpoint_key = pairs.to_vec();
-                let retained = resolution.clone();
-                endpoint_resolution_memo.insert(endpoint_key, retained);
-            }
-            resolution
-        };
-        let candidate = match endpoint_resolution {
-            MeshSolve::Solved((topology, assignment)) => (topology, assignment),
-            MeshSolve::Failed(MeshCandidateFailure::Rejected(())) => {
-                return Ok(ControlFlow::Continue(()))
-            }
-            MeshSolve::Failed(MeshCandidateFailure::Ambiguous(())) => {
-                incidence_ambiguity = Some(MeshCandidateAmbiguity::EndpointResolution);
-                return Ok(ControlFlow::Break(()));
-            }
-            MeshSolve::Failed(MeshCandidateFailure::Exhausted(())) => {
-                incidence_exhausted = true;
-                return Ok(ControlFlow::Break(()));
-            }
-        };
-        match &incidence_solution {
-            Some(stored) => {
-                if !mesh_candidates_equivalent(
-                    ctx,
-                    stored,
-                    &candidate,
-                    candidate_gauge,
-                )? {
-                    incidence_ambiguity =
-                        Some(MeshCandidateAmbiguity::DistinctTopologySolutions);
-                    return Ok(ControlFlow::Break(()));
+                    for &pair in &oriented_pairs {
+                        singleton.push(vec![pair]);
+                    }
+                    let Some(mut mesh_assignments) =
+                        materialize_boundary_domains(&mesh_domains, &oriented_pairs)?
+                    else {
+                        return Ok(ControlFlow::Continue(()));
+                    };
+                    deduplicate_mesh_quotient_assignments(&mut mesh_assignments);
+                    // This child owns the incidence-to-endpoint relation phase. The
+                    // complete materialization invoked by that relation takes its
+                    // own MAX_MESH_CONSTRAINT_OPERATIONS child slice.
+                    let endpoint_resolution_budget =
+                        endpoint_budget.child_slice(MAX_MESH_TOPOLOGY_OPERATIONS);
+                    let resolution = resolve_standard_mesh_endpoint_candidates(
+                        ctx,
+                        ResolveStandardMeshEndpointCandidatesInputs {
+                            edge_rows: &edge_rows,
+                            vertex_points: &vertex_points,
+                            edge_candidates: &singleton,
+                            assignments: mesh_assignments,
+                            port_identities: &port_identities,
+                            prepared_quotient: None,
+                            edge_direction_evidence: Some(edge_direction_evidence),
+                            budget: &endpoint_resolution_budget,
+                            partial_solution_valid: Some(&constrained_partial_solution_valid),
+                            complete_solution_valid: Some(&constrained_complete_solution_valid),
+                            candidate_gauge,
+                            priority_edges,
+                        },
+                    )?;
+                    // Exhaustion is deterministic for this input and child budget.
+                    // The parent budget only decreases, so retrying the same key
+                    // cannot turn an exhausted materialization into a solution.
+                    if endpoint_resolution_memo.len() < MAX_ENDPOINT_RESOLUTION_MEMO_ENTRIES {
+                        let endpoint_key = pairs.to_vec();
+                        let retained = resolution.clone();
+                        endpoint_resolution_memo.insert(endpoint_key, retained);
+                    }
+                    resolution
+                };
+                let candidate = match endpoint_resolution {
+                    MeshSolve::Solved((topology, assignment)) => (topology, assignment),
+                    MeshSolve::Failed(MeshCandidateFailure::Rejected(())) => {
+                        return Ok(ControlFlow::Continue(()))
+                    }
+                    MeshSolve::Failed(MeshCandidateFailure::Ambiguous(())) => {
+                        incidence_ambiguity = Some(MeshCandidateAmbiguity::EndpointResolution);
+                        return Ok(ControlFlow::Break(()));
+                    }
+                    MeshSolve::Failed(MeshCandidateFailure::Exhausted(())) => {
+                        incidence_exhausted = true;
+                        return Ok(ControlFlow::Break(()));
+                    }
+                };
+                match &incidence_solution {
+                    Some(stored) => {
+                        if !mesh_candidates_equivalent(ctx, stored, &candidate, candidate_gauge)? {
+                            incidence_ambiguity =
+                                Some(MeshCandidateAmbiguity::DistinctTopologySolutions);
+                            return Ok(ControlFlow::Break(()));
+                        }
+                        Ok(ControlFlow::Continue(()))
+                    }
+                    None => {
+                        incidence_solution = Some(candidate);
+                        Ok(ControlFlow::Continue(()))
+                    }
                 }
-                Ok(ControlFlow::Continue(()))
-            }
-            None => {
-                incidence_solution = Some(candidate);
-                Ok(ControlFlow::Continue(()))
-            }
-        }
-    } })?;
+            },
+        },
+    )?;
     if let Some(ambiguity) = incidence_ambiguity {
         return Ok(MeshSolve::Failed(MeshCandidateFailure::Ambiguous(
             ambiguity,
@@ -8297,7 +8338,7 @@ where
         }
         let resolution = resolve_standard_mesh_endpoint_candidates(
             ctx,
-            crate::solve::mesh_quotient::ResolveStandardMeshEndpointCandidatesInputs {
+            ResolveStandardMeshEndpointCandidatesInputs {
                 edge_rows: &edge_rows,
                 vertex_points: &vertex_points,
                 edge_candidates,
@@ -8705,7 +8746,7 @@ fn endpoint_configuration_relation_solves_cycle_orientation_globally() {
     let Some(MeshSolve::Solved((topology, point_assignment))) =
         resolve_endpoint_configuration_relation_streaming(
             &ctx,
-            crate::solve::mesh_quotient::ResolveEndpointConfigurationRelationStreamingInputs {
+            ResolveEndpointConfigurationRelationStreamingInputs {
                 assignments: &assignments,
                 endpoint_configurations: &endpoint_configurations,
                 edge_candidates: &edge_candidates,
@@ -8771,7 +8812,7 @@ fn fixed_endpoint_pairs_materialize_duplicate_boundary_assignments() {
     let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let result = resolve_endpoint_configuration_relation_streaming(
         &ctx,
-        crate::solve::mesh_quotient::ResolveEndpointConfigurationRelationStreamingInputs {
+        ResolveEndpointConfigurationRelationStreamingInputs {
             assignments: &assignments,
             endpoint_configurations: &endpoint_configurations,
             edge_candidates: &edge_candidates,
@@ -9449,7 +9490,7 @@ fn singleton_mesh_path_handles_many_independent_face_cycles() {
     let MeshSolve::Solved((topology, point_assignment)) =
         resolve_singleton_mesh_endpoint_candidates(
             &ctx,
-            crate::solve::mesh_quotient::ResolveSingletonMeshEndpointCandidatesInputs {
+            ResolveSingletonMeshEndpointCandidatesInputs {
                 edge_rows: &edge_rows,
                 vertex_points: &vertex_points,
                 edge_candidates: &edge_candidates,
@@ -9501,7 +9542,7 @@ fn singleton_mesh_path_filters_endpoint_incompatible_face_assignments() {
     let MeshSolve::Solved((topology, point_assignment)) =
         resolve_singleton_mesh_endpoint_candidates(
             &ctx,
-            crate::solve::mesh_quotient::ResolveSingletonMeshEndpointCandidatesInputs {
+            ResolveSingletonMeshEndpointCandidatesInputs {
                 edge_rows: &edge_rows,
                 vertex_points: &vertex_points,
                 edge_candidates: &edge_candidates,
@@ -9545,7 +9586,7 @@ fn singleton_mesh_path_handles_closed_endpoint_pairs() {
     let MeshSolve::Solved((topology, point_assignment)) =
         resolve_singleton_mesh_endpoint_candidates(
             &ctx,
-            crate::solve::mesh_quotient::ResolveSingletonMeshEndpointCandidatesInputs {
+            ResolveSingletonMeshEndpointCandidatesInputs {
                 edge_rows: &edge_rows,
                 vertex_points: &vertex_points,
                 edge_candidates: &edge_candidates,
@@ -10067,7 +10108,7 @@ fn endpoint_configuration_relation_result() {
         let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
         resolve_endpoint_configuration_relation_streaming(
             ctx,
-            crate::solve::mesh_quotient::ResolveEndpointConfigurationRelationStreamingInputs {
+            ResolveEndpointConfigurationRelationStreamingInputs {
                 assignments: &assignments,
                 endpoint_configurations: &configurations,
                 edge_candidates: &edge_candidates,
@@ -10128,7 +10169,7 @@ fn singleton_mesh_selection_result() {
         let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
         resolve_singleton_mesh_selection(
             ctx,
-            crate::solve::mesh_quotient::selection_search::ResolveSingletonMeshSelectionInputs {
+            selection_search::ResolveSingletonMeshSelectionInputs {
                 edge_rows: &edge_rows,
                 vertex_points: &vertex_points,
                 edge_candidates: &candidates,
@@ -10169,7 +10210,7 @@ fn general_mesh_search_result() {
         let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
         resolve_standard_mesh_endpoint_candidates(
             ctx,
-            crate::solve::mesh_quotient::ResolveStandardMeshEndpointCandidatesInputs {
+            ResolveStandardMeshEndpointCandidatesInputs {
                 edge_rows: &edge_rows,
                 vertex_points: &vertex_points,
                 edge_candidates: &candidates,
@@ -10368,7 +10409,7 @@ fn endpoint_relation_walk_result() {
         let mut memo = HashSet::new();
         walk_endpoint_relation_domains(
             ctx,
-            crate::solve::mesh_quotient::WalkEndpointRelationDomainsInputs {
+            WalkEndpointRelationDomainsInputs {
                 domains: vec![choices.clone()],
                 face_assignments: &assignments,
                 assigned: vec![None],

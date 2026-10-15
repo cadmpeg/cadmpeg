@@ -794,20 +794,18 @@ fn emit_extrusion_procedure(
             supports,
             cache_fit_tolerance,
         } => {
-            let make_side = |side: super::ResolvedExtrusionSupport| {
-                Ok::<_, cadmpeg_core::CodecError>(IntcurveSupportSide {
-                    surface: Some(surface_ids[&side.surface_object_id].clone()),
-                    pcurve: Some(SupportPcurve::new(
-                        side.pcurve,
-                        (side.pcurve_parameter_range
-                            != extrusion.directrix_parameter_range.endpoints())
-                        .then(|| DirectedParameterRange::new(side.pcurve_parameter_range).ok())
-                        .flatten(),
-                    )),
-                })
+            let make_side = |side: super::ResolvedExtrusionSupport| IntcurveSupportSide {
+                surface: Some(surface_ids[&side.surface_object_id].clone()),
+                pcurve: Some(SupportPcurve::new(
+                    side.pcurve,
+                    (side.pcurve_parameter_range
+                        != extrusion.directrix_parameter_range.endpoints())
+                    .then(|| DirectedParameterRange::new(side.pcurve_parameter_range).ok())
+                    .flatten(),
+                )),
             };
             let [first, second] = *supports;
-            let sides = [make_side(first)?, make_side(second)?];
+            let sides = [make_side(first), make_side(second)];
             annotate(
                 annotations,
                 &directrix_id,
