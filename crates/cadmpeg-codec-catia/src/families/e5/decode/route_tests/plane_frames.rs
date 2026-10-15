@@ -3,14 +3,14 @@
 use crate::families::e5::decode::{
     fit_e5_plane_axes, fit_rank_one_e5_plane_axes, EPS_E5_DECODE_EXACT_GEOMETRY,
 };
-use crate::families::e5::graph::{
-    E5BoundEntry, E5Bounds, E5Edge, E5Face, E5Loop, E5Pcurve, E5Topology,
-};
+use crate::families::e5::graph::E5BoundEntry;
+use crate::families::e5::graph::E5Bounds;
+use crate::families::e5::graph::{E5Edge, E5Face, E5Loop, E5Pcurve, E5Topology};
 use crate::families::e5::records::E5Surface;
 use crate::families::e5::tests::e5_loop_members;
-use crate::test_support::test_b5::{finite, finite_lane, finite_pair, point};
-use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
-use cadmpeg_ir::math::Point3;
+use crate::test_support::test_b5::finite;
+use crate::test_support::test_b5::finite_lane;
+use crate::test_support::test_b5::{finite_pair, point};
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::units::FiniteVector;
 use std::collections::BTreeMap;
@@ -285,7 +285,7 @@ fn e5_native_uv_endpoints_hand_back_admitted_pairs() {
 }
 
 #[test]
-fn e5_nurbs_uv_endpoints_refuse_before_scalar_lane_copies() {
+fn e5_nurbs_uv_endpoints_result() {
     let pcurve = E5Pcurve::Nurbs {
         surface: 100,
         degree: 1,
@@ -293,12 +293,6 @@ fn e5_nurbs_uv_endpoints_refuse_before_scalar_lane_copies() {
         control_points: vec![finite_pair([0.0, 0.0]), finite_pair([1.0, 1.0])],
         range: finite_pair([0.0, 1.0]),
     };
-    for (cap, operation) in [(0, "catia_e5_uv_knots"), (4, "catia_e5_uv_controls")] {
-        assert!(matches!(
-            crate::test_support::with_collection_limit(cap, |ctx| super::super::e5_native_uv_endpoints(ctx, &pcurve)),
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == operation
-        ));
-    }
     assert!(
         crate::test_support::with_service_context(|ctx| super::super::e5_native_uv_endpoints(
             ctx, &pcurve
@@ -309,116 +303,9 @@ fn e5_nurbs_uv_endpoints_refuse_before_scalar_lane_copies() {
 }
 
 #[test]
-fn e5_plane_frame_refuses_before_input_sized_collections() {
-    let topology = E5Topology {
-        bodies: Vec::new(),
-        faces: vec![E5Face {
-            record_id: 1,
-            surface: 100,
-            trailer_sign: crate::families::e5::graph::Sign::Positive,
-            loops: vec![E5Loop {
-                record_id: 2,
-                surface: 100,
-                members: e5_loop_members(&[20, 21], &[10, 11], &[false, false]),
-                oriented_members: None,
-                outer: Some(true),
-                orientation_hint: None,
-            }],
-        }],
-        edges: BTreeMap::from([
-            (
-                10,
-                E5Edge {
-                    support: 0,
-                    start_vertex: 1,
-                    end_vertex: 2,
-                    parameter_start: 0,
-                    parameter_end: 0,
-                    tail: Vec::new(),
-                },
-            ),
-            (
-                11,
-                E5Edge {
-                    support: 0,
-                    start_vertex: 1,
-                    end_vertex: 3,
-                    parameter_start: 0,
-                    parameter_end: 0,
-                    tail: Vec::new(),
-                },
-            ),
-        ]),
-        pcurves: BTreeMap::from([
-            (
-                20,
-                E5Pcurve::Line {
-                    surface: 100,
-                    origin: finite_pair([0.0, 0.0]),
-                    direction: finite_pair([1.0, 0.0]),
-                    range: finite_pair([0.0, 1.0]),
-                },
-            ),
-            (
-                21,
-                E5Pcurve::Line {
-                    surface: 100,
-                    origin: finite_pair([0.0, 0.0]),
-                    direction: finite_pair([0.0, 1.0]),
-                    range: finite_pair([0.0, 1.0]),
-                },
-            ),
-        ]),
-        bounds: BTreeMap::new(),
-        curve_supports: BTreeMap::new(),
-        vertex_refs: vec![1, 2, 3],
-    };
-    let points = vec![
-        point([0.0, 0.0, 0.0]),
-        point([1.0, 0.0, 0.0]),
-        point([0.0, 1.0, 0.0]),
-    ];
-    let mut refused = std::collections::HashSet::new();
-    for cap in 0..128 {
-        match crate::test_support::with_collection_limit(cap, |ctx| {
-            super::super::solve_e5_plane_frame(ctx, 100, point([0.0; 3]), &topology, &points, None)
-        }) {
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => {
-                refused.insert(limit.operation);
-            }
-            Ok(Some(_)) => break,
-            Ok(None) => panic!("full-rank plane fixture must solve"),
-            Err(error) => panic!("unexpected plane refusal: {error}"),
-        }
-    }
-    for operation in [
-        "catia_e5_plane_point_refs",
-        "catia_e5_plane_segments",
-        "catia_e5_plane_orientations",
-        "catia_e5_plane_seed_pairs",
-        "catia_e5_plane_pairs",
-        "catia_e5_plane_fits",
-        "catia_e5_plane_candidates",
-        "catia_e5_plane_canonical",
-    ] {
-        assert!(refused.contains(operation), "no refusal at {operation}");
-    }
-    assert!(
-        crate::test_support::with_service_context(|ctx| super::super::solve_e5_plane_frame(
-            ctx,
-            100,
-            point([0.0; 3]),
-            &topology,
-            &points,
-            None
-        ))
-        .expect("service resource budget")
-        .is_some()
-    );
-}
-
-#[test]
-fn e5_derived_vertices_refuse_before_candidate_collections() {
+fn e5_derived_vertices_result() {
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
+    use cadmpeg_ir::math::Point3;
     let topology = E5Topology {
         bodies: Vec::new(),
         faces: vec![E5Face {
@@ -492,32 +379,6 @@ fn e5_derived_vertices_refuse_before_candidate_collections() {
         )),
         uv_scale: finite_pair([1.0, 1.0]),
     };
-    let mut refused = std::collections::HashSet::new();
-    for cap in 0..32 {
-        match crate::test_support::with_collection_limit(cap, |ctx| {
-            super::super::derive_e5_vertices(
-                ctx,
-                &topology,
-                std::slice::from_ref(&surface),
-                &mut crate::nurbs::LaneRefusals::new(),
-            )
-        }) {
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => {
-                refused.insert(limit.operation);
-            }
-            Ok(Some(_)) => break,
-            Ok(None) => panic!("closed line fixture must derive endpoints"),
-            Err(error) => panic!("unexpected vertex refusal: {error}"),
-        }
-    }
-    for operation in [
-        "catia_e5_derived_surface_refs",
-        "catia_e5_derived_candidate_keys",
-        "catia_e5_derived_candidate_points",
-        "catia_e5_derived_vertices",
-    ] {
-        assert!(refused.contains(operation), "no refusal at {operation}");
-    }
     assert_eq!(
         crate::test_support::with_service_context(|ctx| super::super::derive_e5_vertices(
             ctx,

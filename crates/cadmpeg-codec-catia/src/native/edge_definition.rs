@@ -70,20 +70,17 @@ impl Serialize for CatiaConsolidatedEdgeDefinition {
 
 impl CatiaConsolidatedEdgeDefinition {
     pub(crate) fn from_source(
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         definition: crate::families::consolidated::records::ConsolidatedEdgeDefinition,
-    ) -> Result<Self, cadmpeg_core::CodecError> {
-        let data =
-            crate::families::consolidated::records::consolidated_edge_definition_data_charged(
-                ctx,
-                definition.class.into(),
-                &definition.frame.payload,
-            )?;
-        Ok(Self {
+    ) -> Self {
+        let data = crate::families::consolidated::records::consolidated_edge_definition_data(
+            definition.class.into(),
+            &definition.frame.payload,
+        );
+        Self {
             frame: definition.frame.into(),
             class: definition.class,
             data,
-        })
+        }
     }
     pub(crate) fn data(&self) -> Option<&ConsolidatedEdgeDefinitionData> {
         self.data.as_ref()
@@ -176,10 +173,7 @@ mod tests {
             .expect("checked frame"),
             class: ConsolidatedEdgeDefinitionClass::Class24,
         };
-        let value = crate::test_support::with_service_context(|ctx| {
-            CatiaConsolidatedEdgeDefinition::from_source(ctx, source)
-        })
-        .expect("admitted definition");
+        let value = CatiaConsolidatedEdgeDefinition::from_source(source);
         let data = value.data().expect("compact data");
         assert!(std::ptr::eq(data, value.data().expect("same data")));
         assert_eq!(
@@ -216,7 +210,7 @@ mod tests {
         };
         let arena_name = "edge_definitions";
         let json_len = serde_json::to_vec(&record).expect("definition JSON").len();
-        let limit = u64::try_from(json_len + arena_name.len() - 1).expect("small JSON");
+        let limit = u64::try_from(json_len - 1).expect("small JSON");
         let refused = crate::test_support::with_retained_limit(limit, |ctx| {
             let mut namespace = cadmpeg_ir::NativeNamespace::default();
             namespace.set_arena(ctx, arena_name, std::slice::from_ref(&record))
@@ -232,26 +226,16 @@ mod tests {
     }
 
     #[test]
-    fn native_edge_definition_scalar_lane_refuses_before_retention() {
+    fn native_edge_definition_scalar_lane_decodes() {
         let mut payload = vec![0x82, 0x05, 0xe7, 0x0a, 0x87, 0x0d];
         for value in [1.0_f64, 2.0, 1.0e-6, 3.0, 4.0, 1.0, 5.0, 1.0e-6] {
             payload.extend_from_slice(&value.to_le_bytes());
         }
-        let service = crate::test_support::with_service_context(|ctx| {
-            crate::families::consolidated::records::consolidated_edge_definition_data_charged(
-                ctx, 0x25, &payload,
-            )
-        })
-        .expect("service profile admits scalar lane");
-        assert!(service.is_some());
-        let limited = crate::test_support::with_collection_limit(0, |ctx| {
-            crate::families::consolidated::records::consolidated_edge_definition_data_charged(
-                ctx, 0x25, &payload,
-            )
-        });
         assert!(
-            matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_native_edge_definition_scalars")
+            crate::families::consolidated::records::consolidated_edge_definition_data(
+                0x25, &payload,
+            )
+            .is_some()
         );
     }
 

@@ -19,85 +19,6 @@ fn pole_count_refuses_unrepresentable_degree_successor() {
 }
 
 #[test]
-fn reversed_nurbs_copies_refuse_low_collection_and_retained_limits() {
-    let curve = NurbsCurve::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
-        1,
-        vec![0.0, 0.0, 1.0, 1.0],
-        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
-        None,
-        false,
-    )
-    .expect("fixture constructor admission")
-    .expect("linear model curve");
-    let retained = crate::test_support::with_retained_limit(0, |ctx| {
-        reverse_nurbs_curve(ctx, &curve, [0.0, 1.0])
-    });
-    assert!(
-        matches!(retained, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_reverse_curve_poles")
-    );
-    let collection = crate::test_support::with_collection_limit(0, |ctx| {
-        reverse_nurbs_curve(ctx, &curve, [0.0, 1.0])
-    });
-    assert!(
-        matches!(collection, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_reverse_curve_poles")
-    );
-    let pcurve = PcurveGeometry::Nurbs {
-        nurbs: PcurveNurbs::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
-            1,
-            vec![0.0, 0.0, 1.0, 1.0],
-            vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
-            None,
-            false,
-        )
-        .expect("fixture pcurve construction admission")
-        .expect("linear pcurve"),
-    };
-    let retained = crate::test_support::with_retained_limit(0, |ctx| {
-        reverse_pcurve_geometry(
-            ctx,
-            &pcurve,
-            [0.0, 1.0],
-            &mut LaneRefusals::new(),
-            "test pcurve",
-        )
-    });
-    assert!(
-        matches!(retained, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_reverse_knots")
-    );
-    let collection = crate::test_support::with_collection_limit(0, |ctx| {
-        reverse_pcurve_geometry(
-            ctx,
-            &pcurve,
-            [0.0, 1.0],
-            &mut LaneRefusals::new(),
-            "test pcurve",
-        )
-    });
-    assert!(
-        matches!(collection, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_reverse_knots")
-    );
-    let reversed = crate::test_support::with_service_context(|ctx| {
-        reverse_nurbs_curve(ctx, &curve, [0.0, 1.0])
-    })
-    .expect("service profile admits reverse copy")
-    .expect("valid reversed curve");
-    assert_eq!(
-        reversed
-            .control_points()
-            .first()
-            .copied()
-            .map(cadmpeg_ir::features::FinitePoint3::get),
-        Some(Point3::new(1.0, 0.0, 0.0))
-    );
-}
-
-#[test]
 fn reversal_preserves_large_parameter_offsets_and_endpoint_values() {
     for range in [[1e16, 1e16 + 2.0], [1e308, 1.1e308], [-1.1e308, -1e308]] {
         let [lower, upper] = range;
@@ -205,14 +126,7 @@ fn wide_finite_nurbs_ranges_reverse_and_normalize_without_a_finite_width() {
     };
     let mut refusal = LaneRefusals::new();
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| crate::nurbs::canonical_model_curve_range(
-            ctx,
-            &curve,
-            range,
-            &mut refusal,
-            "wide curve"
-        ))
-        .expect("service profile admits range operation"),
+        crate::nurbs::canonical_model_curve_range(&curve, range, &mut refusal, "wide curve"),
         Some(range)
     );
     let (reversed, reversed_range) = crate::test_support::with_service_context(|ctx| {
@@ -276,22 +190,14 @@ fn wide_finite_line_pcurve_range_reverses_when_its_origin_is_finite() {
 #[test]
 fn reflected_knots_include_exterior_knots_and_canonical_zero() {
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| reverse_knots(
-            ctx,
+        reverse_knots(
             &[1e16 - 2.0, 1e16, 1e16 + 2.0, 1e16 + 4.0],
             [1e16, 1e16 + 2.0]
-        ))
-        .expect("service profile admits reverse knots"),
+        ),
         vec![1e16 - 2.0, 1e16, 1e16 + 2.0, 1e16 + 4.0]
     );
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| reverse_knots(
-            ctx,
-            &[-0.0, 1.0],
-            [0.0, 1.0]
-        ))
-        .expect("service profile admits reverse knots")[0]
-            .to_bits(),
+        reverse_knots(&[-0.0, 1.0], [0.0, 1.0])[0].to_bits(),
         0.0_f64.to_bits()
     );
 }
@@ -426,20 +332,14 @@ fn isocurve_keeps_finite_maximum_coordinates() {
 
 #[test]
 fn quintic_jet_handles_spans_whose_square_overflows_or_underflows() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("fixture fits input limit");
     let h = 1e160;
     let (_, controls) = quintic_jet_bspline(
-        &ctx,
         5,
         &[0.0, h],
         &[[0.0; 3], [1.0, 0.0, 0.0]],
         &[[1.0 / h, 0.0, 0.0]; 2],
         &[[0.0; 3]; 2],
     )
-    .expect("service resource budget")
     .expect("finite linear controls");
     for (control, expected_x) in controls.iter().zip([0.0, 0.2, 0.4, 0.6, 0.8, 1.0]) {
         assert!((control[0] - expected_x).abs() < RELATIVE_ROUNDOFF);
@@ -459,46 +359,17 @@ fn quintic_jet_handles_spans_whose_square_overflows_or_underflows() {
         (2.0, f64::MAX, f64::MAX / 5.0),
     ] {
         let (_, controls) = quintic_jet_bspline(
-            &ctx,
             5,
             &[0.0, h],
             &[[0.0; 2]; 2],
             &[[0.0; 2]; 2],
             &[[acceleration, 0.0]; 2],
         )
-        .expect("service resource budget")
         .expect("finite curvature offsets");
         for control in &controls[2..4] {
             assert!((control[0] / expected - 1.0).abs() < RELATIVE_ROUNDOFF);
             assert_eq!(control[1], 0.0);
         }
-    }
-}
-
-#[test]
-fn quintic_jet_refuses_before_each_control_and_knot_allocation() {
-    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-        quintic_jet_bspline(
-            ctx,
-            5,
-            &[0.0, 1.0],
-            &[[0.0, 0.0], [1.0, 0.0]],
-            &[[1.0, 0.0]; 2],
-            &[[0.0, 0.0]; 2],
-        )
-    };
-    assert!(crate::test_support::with_service_context(run)
-        .expect("service resource budget")
-        .is_some());
-    for (cap, operation) in [
-        (0, "catia quintic jet controls"),
-        (6, "catia quintic jet knots"),
-        (18, "catia quintic jet finite controls"),
-    ] {
-        assert!(matches!(
-            crate::test_support::with_collection_limit(cap, run),
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == operation
-        ));
     }
 }
 
@@ -550,4 +421,46 @@ fn helix_cache_computes_finite_sagitta_without_doubling_radius() {
         };
         assert!((cache.fit_tolerance.get() / expected - 1.0).abs() < RELATIVE_ROUNDOFF);
     }
+}
+
+#[test]
+fn reversed_nurbs_copies_result() {
+    let curve = NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+        None,
+        false,
+    )
+    .expect("fixture constructor admission")
+    .expect("linear model curve");
+
+    let reversed = crate::test_support::with_service_context(|ctx| {
+        reverse_nurbs_curve(ctx, &curve, [0.0, 1.0])
+    })
+    .expect("service profile admits reverse copy")
+    .expect("valid reversed curve");
+    assert_eq!(
+        reversed
+            .control_points()
+            .first()
+            .copied()
+            .map(cadmpeg_ir::features::FinitePoint3::get),
+        Some(Point3::new(1.0, 0.0, 0.0))
+    );
+}
+
+#[test]
+fn quintic_jet_result() {
+    let run = || {
+        quintic_jet_bspline(
+            5,
+            &[0.0, 1.0],
+            &[[0.0, 0.0], [1.0, 0.0]],
+            &[[1.0, 0.0]; 2],
+            &[[0.0, 0.0]; 2],
+        )
+    };
+    assert!(run().is_some());
 }

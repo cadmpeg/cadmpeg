@@ -31,7 +31,7 @@ fn visualization_refuses_coordinate(coordinate: f64, axis: usize) -> bool {
         };
         let supports = vec![support; 4];
         let mut annotations = AnnotationBuilder::new();
-        let work_budget = ctx.work_budget(1_000_000);
+        let work_budget = cadmpeg_core::decode::WorkBudget::new(1_000_000);
         let mut diagnostics = StandardTopologyDiagnostics::default();
         let mut bound_limit_curve_count = 0;
         let mut refusal = crate::nurbs::LaneRefusals::new();
