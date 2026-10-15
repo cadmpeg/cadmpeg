@@ -15,51 +15,32 @@ type Error = canon::CanonError;
 const OPERATION: &str = "compare native record";
 const RAW_VALUE_STRUCT: &str = "$serde_json::private::RawValue";
 
-/// One stored JSON value, as its text, or the absence of one.
-#[derive(Clone, Copy)]
-enum Borrowed<'a> {
-    Text(&'a str),
-    Missing,
+/// States whether the stored text `actual` is the text `expected` renders to.
+fn renders<T: Serialize + ?Sized>(actual: Option<&str>, expected: &T) -> bool {
+    let Some(actual) = actual else {
+        return false;
+    };
+    let mut rest = SameText {
+        rest: actual.as_bytes(),
+    };
+    serde_json::to_writer(&mut rest, expected).is_ok() && rest.rest.is_empty()
 }
-impl<'a> Borrowed<'a> {
-    /// States whether this value is the text `expected`.
-    fn is(self, expected: &str) -> bool {
-        matches!(self, Self::Text(actual) if actual == expected)
-    }
-    /// States whether this value is the text `expected` renders to.
-    fn renders<T: Serialize + ?Sized>(self, expected: &T) -> bool {
-        let Self::Text(actual) = self else {
-            return false;
-        };
-        let mut rest = SameText {
-            rest: actual.as_bytes(),
-        };
-        serde_json::to_writer(&mut rest, expected).is_ok() && rest.rest.is_empty()
-    }
-    /// States whether this value and the text `expected` parse to equal
-    /// values.
-    fn parses_to(self, expected: &str) -> bool {
-        let Self::Text(actual) = self else {
-            return false;
-        };
-        replay::value(actual)
-            .is_ok_and(|actual| replay::value(expected).is_ok_and(|expected| actual == expected))
-    }
-    /// The members of this object, read in one scan, or `None` when this is
-    /// not an object.
-    fn members(self) -> Option<replay::MemberTexts<'a>> {
-        let Self::Text(json) = self else {
-            return None;
-        };
-        let mut members = Vec::new();
-        replay::members(json, &mut members).then_some(members)
-    }
-    fn elements(self) -> Option<replay::Elements<'a>> {
-        match self {
-            Self::Text(json) => replay::Elements::of(json),
-            Self::Missing => None,
-        }
-    }
+
+/// States whether the stored text `actual` and the text `expected` parse to
+/// equal values.
+fn parses_to(actual: Option<&str>, expected: &str) -> bool {
+    let Some(actual) = actual else {
+        return false;
+    };
+    replay::value(actual)
+        .is_ok_and(|actual| replay::value(expected).is_ok_and(|expected| actual == expected))
+}
+
+/// The members of the stored object `json`, read in one scan, or `None` when
+/// it is not an object.
+fn object_members(json: &str) -> Option<replay::MemberTexts<'_>> {
+    let mut members = Vec::new();
+    replay::members(json, &mut members).then_some(members)
 }
 
 /// Accepts written bytes while they continue the stored text.
@@ -89,7 +70,7 @@ pub(super) fn matches<T: Serialize + ?Sized>(
     expected
         .serialize(Matcher {
             ctx,
-            actual: Borrowed::Text(&actual.json),
+            actual: Some(&actual.json),
             remaining: MAX_NATIVE_NESTING_DEPTH + 1,
         })
         .map_err(|error| error.into_native(ctx))
@@ -98,7 +79,9 @@ pub(super) fn matches<T: Serialize + ?Sized>(
 #[derive(Clone, Copy)]
 struct Matcher<'a, 'arena> {
     ctx: &'a DecodeContext<'arena>,
-    actual: Borrowed<'a>,
+    /// The stored value's text, or `None` when the stored record has no value
+    /// at this place.
+    actual: Option<&'a str>,
     remaining: usize,
 }
 impl<'a, 'arena> Matcher<'a, 'arena> {
@@ -110,7 +93,7 @@ impl<'a, 'arena> Matcher<'a, 'arena> {
         }
         Ok(self.ctx.enter_nested(OPERATION)?)
     }
-    fn child(self, actual: Borrowed<'a>) -> Result<Self, Error> {
+    fn child(self, actual: Option<&'a str>) -> Result<Self, Error> {
         Ok(Self {
             actual,
             remaining: self
@@ -122,7 +105,7 @@ impl<'a, 'arena> Matcher<'a, 'arena> {
     }
     fn scalar(self, value: impl Serialize) -> Result<bool, Error> {
         let expected = canon::to_text(self.ctx, MAX_NATIVE_NESTING_DEPTH + 1, &value)?;
-        Ok(self.actual.is(&expected))
+        Ok(self.actual == Some(expected.as_str()))
     }
     fn sequence(
         self,
@@ -130,7 +113,7 @@ impl<'a, 'arena> Matcher<'a, 'arena> {
         parent_matches: bool,
     ) -> Result<Sequence<'a, 'arena>, Error> {
         let nested = self.container()?;
-        let actual = self.actual.elements();
+        let actual = self.actual.and_then(replay::Elements::of);
         Ok(Sequence {
             matcher: self,
             matched: parent_matches && actual.is_some(),
@@ -146,7 +129,7 @@ impl<'a, 'arena> Matcher<'a, 'arena> {
         parent_matches: bool,
     ) -> Result<Object<'a, 'arena>, Error> {
         let nested = self.container()?;
-        let members = self.actual.members();
+        let members = self.actual.and_then(object_members);
         Ok(Object {
             matcher: self,
             matched: parent_matches && members.is_some(),
@@ -161,10 +144,10 @@ impl<'a, 'arena> Matcher<'a, 'arena> {
     fn variant(self, variant: &'static str) -> Result<(Self, DepthGuard<'a>, bool), Error> {
         let outer = self.container()?;
 
-        let members = self.actual.members().unwrap_or_default();
+        let members = self.actual.and_then(object_members).unwrap_or_default();
         let payload = match members.as_slice() {
-            [(key, payload)] if key == variant => Borrowed::Text(payload),
-            _ => Borrowed::Missing,
+            [(key, payload)] if key == variant => Some(*payload),
+            _ => None,
         };
         Ok((self.child(payload)?, outer, members.len() == 1))
     }
@@ -204,7 +187,7 @@ impl<'a, 'arena> ser::Serializer for Matcher<'a, 'arena> {
         self.serialize_str(value.encode_utf8(&mut [0; 4]))
     }
     fn serialize_str(self, value: &str) -> Result<bool, Error> {
-        Ok(self.actual.renders(value))
+        Ok(renders(self.actual, value))
     }
     fn serialize_bytes(self, value: &[u8]) -> Result<bool, Error> {
         let mut sequence = self.sequence(None, true)?;
@@ -313,11 +296,7 @@ struct Sequence<'a, 'arena> {
 }
 impl Sequence<'_, '_> {
     fn element<T: Serialize + ?Sized>(&mut self, value: &T) -> Result<(), Error> {
-        let actual = self
-            .actual
-            .as_mut()
-            .and_then(Iterator::next)
-            .map_or(Borrowed::Missing, Borrowed::Text);
+        let actual = self.actual.as_mut().and_then(Iterator::next);
         self.matched &= value
             .serialize(self.matcher.child(actual)?)
             .map_err(|error| error.within(|| canon::Step::Index(self.index)))?;
@@ -370,7 +349,7 @@ impl Object<'_, '_> {
             let expected =
                 canon::to_text(self.matcher.ctx, self.matcher.remaining, &RawField(value))?;
 
-            self.matched &= self.matcher.actual.parses_to(&expected);
+            self.matched &= parses_to(self.matcher.actual, &expected);
             self.seen.insert(key);
             return Ok(());
         }
@@ -379,7 +358,7 @@ impl Object<'_, '_> {
         let actual = members
             .iter()
             .find(|(member, _)| *member == key)
-            .map_or(Borrowed::Missing, |(_, value)| Borrowed::Text(value));
+            .map(|(_, value)| *value);
         self.matched &= value
             .serialize(self.matcher.child(actual)?)
             .map_err(|error| error.within(|| canon::Step::Key(key.clone())))?;
