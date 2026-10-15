@@ -505,10 +505,10 @@ impl HoleConstruction {
     /// Copy construction metadata after admitting retained specification fields.
     pub fn try_clone_for_decode(
         &self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        operation: &'static str,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _operation: &'static str,
     ) -> Result<Self, cadmpeg_core::CodecError> {
-        super::decode_clone::CloneForDecode::try_clone_for_decode(self, ctx, operation)
+        Ok(self.clone())
     }
 
     /// Creates an entry treatment without standard sizing metadata.
@@ -936,10 +936,10 @@ impl HoleSpecification {
     /// Copy a boxed specification after admitting its slot and every retained string.
     pub fn try_clone_for_decode(
         &self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        operation: &'static str,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _operation: &'static str,
     ) -> Result<Box<Self>, cadmpeg_core::CodecError> {
-        super::decode_clone::copy_box(self, ctx, operation)
+        Ok(Box::new(self.clone()))
     }
 }
 
@@ -978,10 +978,10 @@ impl HolePlacement {
     /// Copy admitted fields through the caller's decode context.
     pub fn try_clone_for_decode(
         &self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        operation: &'static str,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _operation: &'static str,
     ) -> Result<Self, cadmpeg_core::CodecError> {
-        super::decode_clone::CloneForDecode::try_clone_for_decode(self, ctx, operation)
+        Ok(self.clone())
     }
 }
 

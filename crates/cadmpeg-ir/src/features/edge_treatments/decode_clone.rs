@@ -2,27 +2,23 @@
 //! Copy admitted feature fields under the caller decode resource policy.
 
 use super::{
-    ChamferGroup, ChamferSpec, FilletGroup, FullRoundFilletGroup, FullRoundSideSelection,
-    RadiusForm, RadiusSpec, VariableRadii, VariableRadius,
+    ChamferGroup, FilletGroup, FullRoundFilletGroup, FullRoundSideSelection, RadiusSpec,
+    VariableRadii, VariableRadius,
 };
 
-clone_record_for_decode!(ChamferGroup; { edges, spec });
+rewrite_record!(ChamferGroup, []; { edges, spec });
 
-clone_copy_for_decode!(ChamferSpec);
+rewrite_record!(FilletGroup, []; { edges, radius, tangency_weight });
 
-clone_record_for_decode!(FilletGroup; { edges, radius, tangency_weight });
+rewrite_record!(FullRoundFilletGroup, []; { center, side_one, side_two });
 
-clone_record_for_decode!(FullRoundFilletGroup; { center, side_one, side_two });
-
-clone_enum_for_decode!(FullRoundSideSelection; {
+rewrite_enum!(FullRoundSideSelection, []; {
     Automatic,
     Explicit(field0),
     Unresolved,
 });
 
-clone_copy_for_decode!(RadiusForm);
-
-clone_enum_for_decode!(RadiusSpec; {
+rewrite_enum!(RadiusSpec, []; {
     Unresolved { form },
     Constant { radius },
     Chordal { chord_length },
@@ -30,6 +26,6 @@ clone_enum_for_decode!(RadiusSpec; {
     Variable { points },
 });
 
-clone_record_for_decode!(VariableRadii; (field0));
+rewrite_record!(VariableRadii, []; (field0));
 
-clone_record_for_decode!(VariableRadius<P, L>, [P, L]; { parameter, radius });
+rewrite_record!(VariableRadius<P, L>, [P, L]; { parameter, radius });

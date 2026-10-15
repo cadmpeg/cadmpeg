@@ -31,44 +31,38 @@ pub(super) fn check_tessellations(
         Ok(())
     })?;
     for mesh in &ir.model.tessellations {
-        ctx.charge_work(1, "tessellation reference row")?;
         if let Some(body) = &mesh.body {
             if !bodies.contains(ctx, body.as_str())? {
                 super::record_finding(
-                    ctx,
                     findings,
                     Check::Tessellation,
                     Severity::Error,
                     Some(mesh.id.as_str()),
                     format_args!("references a missing tessellation body"),
-                )?;
+                );
             }
         }
         for face in &mesh.faces {
-            ctx.charge_work(1, "tessellation face reference")?;
             if !faces.contains(ctx, face.as_str())? {
                 super::record_finding(
-                    ctx,
                     findings,
                     Check::Tessellation,
                     Severity::Error,
                     Some(mesh.id.as_str()),
                     format_args!("references a missing tessellation face"),
-                )?;
+                );
                 break;
             }
         }
         for assignment in mesh.texture_assignments() {
-            ctx.charge_work(1, "tessellation texture reference")?;
             if !assets.contains(ctx, assignment.texture.as_str())? {
                 super::record_finding(
-                    ctx,
                     findings,
                     Check::Tessellation,
                     Severity::Error,
                     Some(mesh.id.as_str()),
                     format_args!("references a missing tessellation texture asset"),
-                )?;
+                );
                 break;
             }
         }

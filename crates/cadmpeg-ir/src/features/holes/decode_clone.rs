@@ -1,34 +1,21 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Copy admitted feature fields under the caller decode resource policy.
 
-use super::{
-    HoleBottom, HoleConstruction, HoleKind, HolePlacement, HoleProfileFilter, HoleShape,
-    HoleSpecification, HoleThreadDepth, ThreadHand,
-};
+use super::{HoleConstruction, HolePlacement, HoleShape, HoleSpecification};
 
-clone_copy_for_decode!(HoleBottom);
-
-clone_enum_for_decode!(HoleConstruction; {
+rewrite_enum!(HoleConstruction, []; {
     Form { kind, specification },
     NativeThread { major_diameter, thread_depth, pitch, drill_point_angle },
 });
 
-clone_copy_for_decode!(HoleKind);
-
-clone_enum_for_decode!(HolePlacement; {
+rewrite_enum!(HolePlacement, []; {
     Directed { position, direction },
     Axis { origin, axis },
 });
 
-clone_copy_for_decode!(HoleProfileFilter);
+rewrite_record!(HoleShape, []; { construction, exit_kind, diameter });
 
-clone_record_for_decode!(HoleShape; { construction, exit_kind, diameter });
-
-clone_enum_for_decode!(HoleSpecification; {
+rewrite_enum!(HoleSpecification, []; {
     Clearance { standard, designation, fit, modeled, cosmetic, hand, depth, clearance },
     Threaded { standard, designation, class, modeled, cosmetic, pitch, major_diameter, hand, depth, clearance },
 });
-
-clone_copy_for_decode!(HoleThreadDepth);
-
-clone_copy_for_decode!(ThreadHand);

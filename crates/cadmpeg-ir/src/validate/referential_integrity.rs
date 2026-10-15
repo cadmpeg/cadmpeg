@@ -19,27 +19,21 @@ pub(super) fn check_typed_references(
     macro_rules! check_arenas {
         ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
             $(for entity in &ir.model.$field {
-                ctx.charge_work(1, "typed reference entity scan")?;
                 let owner = entity.identity();
                 let walk = entity.visit_references(ctx, &mut |target| {
                     if index.contains(ctx, target)? { return Ok(()); }
                     for finding in findings.iter() {
-                        ctx.charge_work(1, "typed reference finding scan")?;
                         if finding.check != Check::ReferentialIntegrity { continue; }
-                        ctx.charge_work(cadmpeg_core::decode::u64_from_index(owner.len()), "compare typed reference finding owner")?;
                         if finding.entity.as_deref() != Some(owner) { continue; }
-                        ctx.charge_work(cadmpeg_core::decode::u64_from_index(finding.message.len()), "scan typed reference finding message")?;
-                        ctx.charge_work(cadmpeg_core::decode::u64_from_index(target.len()), "scan typed reference finding target")?;
                         if finding.message.contains(target) { return Ok(()); }
                     }
-                    record_finding(ctx, findings, Check::ReferentialIntegrity, Severity::Error,
-                        Some(owner), format_args!("unresolved typed reference {target}"))
+                    record_finding(findings, Check::ReferentialIntegrity, Severity::Error, Some(owner), format_args!("unresolved typed reference {target}"));
+                    Ok(())
                 });
                 match walk {
                     Ok(()) => {}
                     Err(error @ cadmpeg_core::CodecError::ResourceLimit(_)) => return Err(error),
-                    Err(error) => record_finding(ctx, findings, Check::ReferentialIntegrity, Severity::Error,
-                        Some(owner), format_args!("entity schema cannot state its typed references: {error}"))?,
+                    Err(error) => record_finding(findings, Check::ReferentialIntegrity, Severity::Error, Some(owner), format_args!("entity schema cannot state its typed references: {error}")),
                 }
             })*
         };
@@ -104,7 +98,7 @@ mod tests {
     }
 
     #[test]
-    fn typed_reference_validation_preserves_outer_resource_refusals() {
+    fn typed_reference_validation_propagates_depth_refusal() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
         use cadmpeg_core::CodecError;
         let mut ir = crate::CadIr::empty();
@@ -115,34 +109,21 @@ mod tests {
         });
         let source = cadmpeg_test_support::service_decode_context();
         let identities = super::BorrowedIdentities::build(&source, |_| Ok(())).unwrap();
-        for dimension in [
-            ResourceDimension::WorkUnits,
-            ResourceDimension::RecursionDepth,
-            ResourceDimension::CollectionItems,
-            ResourceDimension::RetainedBytes,
-        ] {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            match dimension {
-                ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
-                ResourceDimension::RecursionDepth => policy.limits.max_recursion_depth = 0,
-                ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
-                ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = 0,
-                _ => unreachable!(),
-            }
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let mut findings = Vec::new();
-            let Err(CodecError::ResourceLimit(limit)) =
-                check_typed_references(&ctx, &ir, &identities, &mut findings)
-            else {
-                panic!("typed reference validation must refuse");
-            };
-            assert_eq!(limit.dimension, dimension);
-            assert!(findings.is_empty());
-            assert!(
-                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
-            );
-        }
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_recursion_depth = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut findings = Vec::new();
+        let Err(CodecError::ResourceLimit(limit)) =
+            check_typed_references(&ctx, &ir, &identities, &mut findings)
+        else {
+            panic!("typed reference validation must refuse");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::RecursionDepth);
+        assert!(findings.is_empty());
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
+        );
     }
 
     #[test]
@@ -167,8 +148,7 @@ mod tests {
         let source = cadmpeg_test_support::service_decode_context();
         let identities = super::BorrowedIdentities::build(&source, |_| Ok(())).unwrap();
         let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_materialized_bytes = 0;
+        let policy = DecodePolicy::service();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut findings = Vec::new();
         check_typed_references(&ctx, &ir, &identities, &mut findings).unwrap();
