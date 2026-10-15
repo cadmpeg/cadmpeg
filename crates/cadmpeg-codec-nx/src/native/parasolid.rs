@@ -1126,10 +1126,6 @@ fn deltas_event_id(
     }
 }
 
-fn sort_deltas_events<T>(events: &mut [T], id: impl Fn(&T) -> &str) {
-    events.sort_by(|left, right| id(left).cmp(id(right)));
-}
-
 /// Retain deltas events from censuses produced by the shared decode substrate.
 ///
 /// The function consumes the census vector after semantic construction has
@@ -1474,37 +1470,49 @@ pub(super) fn parasolid_deltas_events_with_censuses(
                 });
         }
     }
-    sort_deltas_events(&mut events.transmit_headers, |value| value.id.as_str());
-    sort_deltas_events(&mut events.terminal_null_references, |value| {
-        value.id.as_str()
-    });
-    sort_deltas_events(&mut events.records, |value| value.id.as_str());
-    sort_deltas_events(&mut events.tombstones, |value| value.id.as_str());
-    sort_deltas_events(&mut events.body_revisions, |value| value.id.as_str());
-    sort_deltas_events(&mut events.term_use_numeric_tails, |value| {
-        value.id.as_str()
-    });
-    sort_deltas_events(&mut events.tagged_reference_lanes, |value| {
-        value.id.as_str()
-    });
-    sort_deltas_events(&mut events.reference_type_maps, |value| value.id.as_str());
-    sort_deltas_events(&mut events.reference_state_packets, |value| {
-        value.id.as_str()
-    });
-    sort_deltas_events(&mut events.schema_reference_preambles, |value| {
-        value.id.as_str()
-    });
-    sort_deltas_events(&mut events.reference_marker_packets, |value| {
-        value.id.as_str()
-    });
-    sort_deltas_events(&mut events.type_150_state_packets, |value| {
-        value.id.as_str()
-    });
-    sort_deltas_events(&mut events.inline_schema_declarations, |value| {
-        value.id.as_str()
-    });
-    sort_deltas_events(&mut events.inline_body_states, |value| value.id.as_str());
-    sort_deltas_events(&mut events.residual_spans, |value| value.id.as_str());
+    events
+        .transmit_headers
+        .sort_by(|left, right| left.id.cmp(&right.id));
+    events
+        .terminal_null_references
+        .sort_by(|left, right| left.id.cmp(&right.id));
+    events.records.sort_by(|left, right| left.id.cmp(&right.id));
+    events
+        .tombstones
+        .sort_by(|left, right| left.id.cmp(&right.id));
+    events
+        .body_revisions
+        .sort_by(|left, right| left.id.cmp(&right.id));
+    events
+        .term_use_numeric_tails
+        .sort_by(|left, right| left.id.cmp(&right.id));
+    events
+        .tagged_reference_lanes
+        .sort_by(|left, right| left.id.cmp(&right.id));
+    events
+        .reference_type_maps
+        .sort_by(|left, right| left.id.cmp(&right.id));
+    events
+        .reference_state_packets
+        .sort_by(|left, right| left.id.cmp(&right.id));
+    events
+        .schema_reference_preambles
+        .sort_by(|left, right| left.id.cmp(&right.id));
+    events
+        .reference_marker_packets
+        .sort_by(|left, right| left.id.cmp(&right.id));
+    events
+        .type_150_state_packets
+        .sort_by(|left, right| left.id.cmp(&right.id));
+    events
+        .inline_schema_declarations
+        .sort_by(|left, right| left.id.cmp(&right.id));
+    events
+        .inline_body_states
+        .sort_by(|left, right| left.id.cmp(&right.id));
+    events
+        .residual_spans
+        .sort_by(|left, right| left.id.cmp(&right.id));
     Ok(events)
 }
 
@@ -1536,7 +1544,7 @@ fn push_deltas_residual_span(
 /// record view. It owns the stream loop, the `nx:s{ordinal}:{ID_STEM}#{xmt}`
 /// identity, and the sort by identity; each family supplies only its cached row
 /// slice and its record constructor.
-trait ParasolidStreamRecords {
+pub(super) trait ParasolidStreamRecords {
     /// Cached row type read from the stream's record [`StreamView`].
     type Row: Copy;
     /// Emitted native record type.
@@ -1569,7 +1577,7 @@ fn parasolid_offset_record_id(
 /// Run the cached-view record skeleton for one family: map every cached row of
 /// every stream to a record, then sort by identity. Non-Parasolid streams hold
 /// empty views, so no per-stream guard is needed.
-fn per_parasolid_stream<P: ParasolidStreamRecords>(
+pub(super) fn per_parasolid_stream<P: ParasolidStreamRecords>(
     parsed: &ParsedStreams,
 ) -> Result<Vec<P::Record>, CodecError> {
     let mut records = Vec::new();
@@ -1647,13 +1655,6 @@ pub(super) struct ParasolidOffsetSurfaceRecord {
     pub(super) inflated_offset: u64,
 }
 
-/// Decode complete typed source records for Parasolid offset surfaces.
-pub(super) fn parasolid_offset_surface_records(
-    parsed: &ParsedStreams,
-) -> Result<Vec<ParasolidOffsetSurfaceRecord>, CodecError> {
-    per_parasolid_stream::<ParasolidOffsetSurfaceRecord>(parsed)
-}
-
 impl ParasolidStreamRecords for ParasolidOffsetSurfaceRecord {
     type Row = crate::topology::OffsetSurface;
     type Record = ParasolidOffsetSurfaceRecord;
@@ -1695,13 +1696,6 @@ pub(super) struct ParasolidTrimmedCurveRecord {
     pub(super) inflated_offset: u64,
 }
 
-/// Decode complete typed source records for Parasolid trimmed curves.
-pub(super) fn parasolid_trimmed_curve_records(
-    parsed: &ParsedStreams,
-) -> Result<Vec<ParasolidTrimmedCurveRecord>, CodecError> {
-    per_parasolid_stream::<ParasolidTrimmedCurveRecord>(parsed)
-}
-
 impl ParasolidStreamRecords for ParasolidTrimmedCurveRecord {
     type Row = crate::topology::TrimmedCurve;
     type Record = ParasolidTrimmedCurveRecord;
@@ -1739,13 +1733,6 @@ pub(super) struct ParasolidSurfaceCurveRecord {
     state: crate::topology::surface_curve_state::SurfaceCurveState,
     /// Record tag offset in the inflated stream.
     pub(super) inflated_offset: u64,
-}
-
-/// Decode complete typed source records for Parasolid surface curves.
-pub(super) fn parasolid_surface_curve_records(
-    parsed: &ParsedStreams,
-) -> Result<Vec<ParasolidSurfaceCurveRecord>, CodecError> {
-    per_parasolid_stream::<ParasolidSurfaceCurveRecord>(parsed)
 }
 
 impl ParasolidStreamRecords for ParasolidSurfaceCurveRecord {
@@ -2116,13 +2103,6 @@ pub(super) struct ParasolidIntersectionRecord {
     pub(super) delta_twin: bool,
     /// Record tag offset in the inflated stream.
     pub(super) inflated_offset: u64,
-}
-
-/// Decode complete typed source records for retained intersection constructions.
-pub(super) fn parasolid_intersection_records(
-    parsed: &ParsedStreams<'_>,
-) -> Result<Vec<ParasolidIntersectionRecord>, CodecError> {
-    per_parasolid_stream::<ParasolidIntersectionRecord>(parsed)
 }
 
 impl ParasolidStreamRecords for ParasolidIntersectionRecord {
@@ -3032,17 +3012,24 @@ impl From<ParasolidTopologyAttributeClassUse> for ParasolidTopologyAttributeClas
 }
 
 /// Retain named attribute-class declarations from all Parasolid streams.
+///
+/// Also returns the ordinals of the streams whose definition scan reached its
+/// work bound and contributed no definitions.
 pub(super) fn parasolid_attribute_definitions(
     streams: &[Stream],
-) -> Result<Vec<ParasolidAttributeDefinition>, CodecError> {
+) -> Result<(Vec<ParasolidAttributeDefinition>, Vec<u32>), CodecError> {
     let mut records = Vec::new();
+    let mut bounded_streams = Vec::new();
     for (stream_ordinal, stream) in streams.iter().enumerate() {
         if !stream.kind().is_parasolid() {
             continue;
         }
         let ordinal = u32::try_from(stream_ordinal)
             .map_err(|_| CodecError::malformed("NX stream ordinal exceeds u32"))?;
-        let scanned = crate::parasolid::attribute_definitions(&stream.inflated).records;
+        let Some(scanned) = crate::parasolid::attribute_definitions(&stream.inflated) else {
+            bounded_streams.push(ordinal);
+            continue;
+        };
         for definition in scanned {
             let name = definition.name.as_str().to_owned();
             let name = crate::printable_string::PrintableString::new(name)
@@ -3071,7 +3058,7 @@ pub(super) fn parasolid_attribute_definitions(
             });
         }
     }
-    Ok(records)
+    Ok((records, bounded_streams))
 }
 
 /// Decode every counted type-99 attribute field-name record.
@@ -3085,7 +3072,7 @@ pub(super) fn parasolid_field_names_records(
         }
         let ordinal = u32::try_from(stream_ordinal)
             .map_err(|_| CodecError::malformed("NX stream ordinal exceeds u32"))?;
-        let scanned = crate::parasolid::field_names_records(&stream.inflated).records;
+        let scanned = crate::parasolid::field_names_records(&stream.inflated);
         for record in scanned {
             let id = parasolid_offset_record_id(
                 stream_ordinal,
@@ -3189,13 +3176,6 @@ pub(super) fn parasolid_attribute_field_names(
     }
     relations.sort_by(|first, second| first.id.cmp(&second.id));
     Ok(relations)
-}
-
-/// Retain complete typed rolling-ball blend records from all Parasolid streams.
-pub(super) fn parasolid_blend_surface_records(
-    parsed: &ParsedStreams,
-) -> Result<Vec<ParasolidBlendSurfaceRecord>, CodecError> {
-    per_parasolid_stream::<ParasolidBlendSurfaceRecord>(parsed)
 }
 
 impl ParasolidStreamRecords for ParasolidBlendSurfaceRecord {
@@ -3304,7 +3284,7 @@ pub(super) fn parasolid_entity_51_records(
         }
         let ordinal = u32::try_from(stream_ordinal)
             .map_err(|_| CodecError::malformed("NX stream ordinal exceeds u32"))?;
-        let scanned = crate::parasolid::entity_51_records(&stream.inflated).records;
+        let scanned = crate::parasolid::entity_51_records(&stream.inflated);
         for record in scanned {
             let id = parasolid_offset_record_id(
                 stream_ordinal,
@@ -3574,10 +3554,6 @@ fn entity_51_use_id(
     )
 }
 
-fn sort_entity_51_uses<T>(uses: &mut [T], id: impl Fn(&T) -> &str) {
-    uses.sort_by(|left, right| id(left).cmp(id(right)));
-}
-
 pub(super) fn parasolid_entity_51_numeric_uses(
     entities: &[ParasolidEntity51Record],
     integers: &[ParasolidEntity52IntegerRecord],
@@ -3628,7 +3604,7 @@ pub(super) fn parasolid_entity_51_numeric_uses(
             });
         }
     }
-    sort_entity_51_uses(&mut uses, |value| &value.id);
+    uses.sort_by(|left, right| left.id.cmp(&right.id));
     uses
 }
 
@@ -3666,7 +3642,7 @@ pub(super) fn parasolid_entity_51_string_uses(
             });
         }
     }
-    sort_entity_51_uses(&mut uses, |value| &value.id);
+    uses.sort_by(|left, right| left.id.cmp(&right.id));
     uses
 }
 
@@ -3745,7 +3721,7 @@ pub(super) fn parasolid_entity_51_structured_uses(
             });
         }
     }
-    sort_entity_51_uses(&mut uses, |value| &value.id);
+    uses.sort_by(|left, right| left.id.cmp(&right.id));
     uses
 }
 

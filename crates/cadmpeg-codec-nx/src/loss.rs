@@ -121,6 +121,9 @@ loss_codes! {
     TopologyFaceLoopUnresolved => ("topology.face-loop-unresolved", Warning, TopologyNotTransferred),
     /// A semantic annotation order is past the stated annotation order width.
     SemanticAnnotationOrderUnstatable => ("annotation.semantic-order-unstatable", Warning, MetadataNotTransferred),
+    /// A record search reached its local work bound and skipped the records
+    /// it was locating.
+    SourceScanBounded => ("source.scan-bounded", Warning, ObjectRecordsUntransferred),
 }
 
 impl NxLossCode {
@@ -148,9 +151,6 @@ impl NxLossCode {
         LossNote::new(self.kind(), message).with_severity(self.severity())
     }
 }
-
-/// No-op left for its caller in `native/attach.rs`; delete both together.
-pub(crate) fn charge_loss_code(_code: NxLossCode) {}
 
 #[cfg(test)]
 mod tests {
@@ -196,6 +196,7 @@ mod tests {
                 "topology.loop-ring-unresolved",
                 "topology.face-loop-unresolved",
                 "annotation.semantic-order-unstatable",
+                "source.scan-bounded",
             ]
         );
     }

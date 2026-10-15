@@ -14,7 +14,7 @@ use std::num::NonZeroU32;
 
 use cadmpeg_container::compression::inflate_zlib_member;
 use cadmpeg_core::bytes::{contains, find};
-use cadmpeg_core::decode::{ByteRange, DecodeContext, ExpandSpec, View};
+use cadmpeg_core::decode::{ByteRange, DecodeContext, ExpandSpec, View, WorkBudget};
 use cadmpeg_core::CodecError;
 
 pub(crate) mod attribute_action;
@@ -303,9 +303,7 @@ fn group_by_xmt<T>(records: Vec<T>, xmt: impl Fn(&T) -> u32) -> BTreeMap<u32, Ve
 
 fn referenced_value_xmts(bytes: &[u8], multiplicity: ValueMultiplicity) -> BTreeSet<u32> {
     let mut referenced = BTreeSet::new();
-    let entities = group_by_xmt(scan_entity_51_records(bytes), |record| {
-        u32::from(record.xmt)
-    });
+    let entities = group_by_xmt(entity_51_records(bytes), |record| u32::from(record.xmt));
     for records in entities.into_values() {
         if multiplicity == ValueMultiplicity::UniqueSnapshot && records.len() != 1 {
             continue;
@@ -314,10 +312,10 @@ fn referenced_value_xmts(bytes: &[u8], multiplicity: ValueMultiplicity) -> BTree
             referenced.extend(record.trailing_references.into_values());
         }
     }
-    let field_names = group_by_xmt(scan_field_names_records(bytes), |record| {
-        u32::from(record.xmt)
-    });
-    let definitions = group_by_xmt(scan_attribute_definitions(bytes), |record| {
+    let field_names = group_by_xmt(field_names_records(bytes), |record| u32::from(record.xmt));
+    // A bounded definition scan references no field-name lists; the native
+    // attribute-definition extraction reports the skip for the same stream.
+    let definitions = group_by_xmt(attribute_definitions(bytes).unwrap_or_default(), |record| {
         u32::from(record.xmt)
     });
     let mut referenced_lists = BTreeSet::new();
@@ -350,18 +348,8 @@ fn referenced_value_xmts(bytes: &[u8], multiplicity: ValueMultiplicity) -> BTree
     referenced
 }
 
-pub(crate) struct AttributeScan<T> {
-    pub(crate) records: Vec<T>,
-}
-
 /// Decode counted type-99 attribute field-name records.
-pub(crate) fn field_names_records(bytes: &[u8]) -> AttributeScan<FieldNamesRecord> {
-    AttributeScan {
-        records: scan_field_names_records(bytes),
-    }
-}
-
-fn scan_field_names_records(bytes: &[u8]) -> Vec<FieldNamesRecord> {
+pub(crate) fn field_names_records(bytes: &[u8]) -> Vec<FieldNamesRecord> {
     let mut records = Vec::new();
     let mut offset = 0;
     while offset < bytes.len() {
@@ -399,13 +387,7 @@ fn field_names_record_at(bytes: &[u8], offset: usize) -> Option<FieldNamesRecord
 }
 
 /// Decode framed type-81 entity/attribute-list records.
-pub(crate) fn entity_51_records(bytes: &[u8]) -> AttributeScan<Entity51Record> {
-    AttributeScan {
-        records: scan_entity_51_records(bytes),
-    }
-}
-
-fn scan_entity_51_records(bytes: &[u8]) -> Vec<Entity51Record> {
+pub(crate) fn entity_51_records(bytes: &[u8]) -> Vec<Entity51Record> {
     let mut records = Vec::new();
     let mut offset = 0;
     while offset < bytes.len() {
@@ -536,7 +518,17 @@ struct AttributeIdentifier<'a> {
     name: PrintableString<&'a str>,
 }
 
-fn attribute_identifiers(bytes: &[u8]) -> BTreeMap<u32, Option<AttributeIdentifier<'_>>> {
+/// Name and field-code bytes one attribute-definition scan may validate.
+/// Candidate records overlap, so an unbounded scan is quadratic in the stream.
+/// The records NX writes are validated once each.
+const MAX_ATTRIBUTE_DEFINITION_SCAN_WORK: usize = 1 << 26;
+
+/// Index type-79 identifiers by XMT; a repeated XMT indexes no identifier.
+/// Returns `None` when `budget` runs out.
+fn attribute_identifiers<'a>(
+    bytes: &'a [u8],
+    budget: &WorkBudget<'_>,
+) -> Option<BTreeMap<u32, Option<AttributeIdentifier<'a>>>> {
     let mut index = BTreeMap::new();
     for offset in 0..bytes.len() {
         let candidate = (|| {
@@ -550,12 +542,18 @@ fn attribute_identifiers(bytes: &[u8]) -> BTreeMap<u32, Option<AttributeIdentifi
             let xmt = NonNullXmt::try_from(read_xmt(bytes, &mut at)?).ok()?;
             let name_end = at.checked_add(name_len)?;
             let name_bytes = bytes.get(at..name_end)?;
+            if !budget.charge_by(name_len) {
+                return None;
+            }
             Some(AttributeIdentifier {
                 offset,
                 xmt,
                 name: PrintableString::new(std::str::from_utf8(name_bytes).ok()?).ok()?,
             })
         })();
+        if budget.exhausted() {
+            return None;
+        }
         if let Some(identifier) = candidate {
             match index.entry(u32::from(identifier.xmt)) {
                 std::collections::btree_map::Entry::Vacant(entry) => {
@@ -567,18 +565,15 @@ fn attribute_identifiers(bytes: &[u8]) -> BTreeMap<u32, Option<AttributeIdentifi
             }
         }
     }
-    index
+    Some(index)
 }
 
-/// Decode complete type-80 attribute definitions and resolve their type-79 identifiers.
-pub(crate) fn attribute_definitions(bytes: &[u8]) -> AttributeScan<AttributeDefinition<'_>> {
-    AttributeScan {
-        records: scan_attribute_definitions(bytes),
-    }
-}
-
-fn scan_attribute_definitions(bytes: &[u8]) -> Vec<AttributeDefinition<'_>> {
-    let identifiers = attribute_identifiers(bytes);
+/// Decode complete type-80 attribute definitions and resolve their type-79
+/// identifiers. Returns `None` when the scan reaches
+/// [`MAX_ATTRIBUTE_DEFINITION_SCAN_WORK`]; the stream then has no definitions.
+pub(crate) fn attribute_definitions(bytes: &[u8]) -> Option<Vec<AttributeDefinition<'_>>> {
+    let budget = WorkBudget::new(MAX_ATTRIBUTE_DEFINITION_SCAN_WORK);
+    let identifiers = attribute_identifiers(bytes, &budget)?;
     let mut records = Vec::new();
     for offset in 0..bytes.len() {
         let candidate = (|| {
@@ -612,6 +607,9 @@ fn scan_attribute_definitions(bytes: &[u8]) -> Vec<AttributeDefinition<'_>> {
                     if flag_count == 14 && !attribute_definition_boundary(bytes, field_codes_end) {
                         return None;
                     }
+                    if !budget.charge_by(field_codes.len()) {
+                        return None;
+                    }
                     field_codes
                         .iter()
                         .try_for_each(|code| AttributeField::try_from(*code).map(|_| ()).ok())?;
@@ -635,11 +633,14 @@ fn scan_attribute_definitions(bytes: &[u8]) -> Vec<AttributeDefinition<'_>> {
                 field_codes: fields,
             })
         })();
+        if budget.exhausted() {
+            return None;
+        }
         if let Some(record) = candidate {
             records.push(record);
         }
     }
-    records
+    Some(records)
 }
 
 fn attribute_definition_boundary(bytes: &[u8], offset: usize) -> bool {

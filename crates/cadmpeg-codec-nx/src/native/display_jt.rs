@@ -5717,6 +5717,20 @@ fn display_jt_tessellation_rows(
                 shape_element.object_id,
                 (path.node_path.len() != 1).then_some(node_path.as_str()),
             )?;
+            // Each node path emits its own copy of the mesh lanes.
+            let lane_bytes = vertices.len() * std::mem::size_of::<FinitePoint3>()
+                + triangles.len() * std::mem::size_of::<[u32; 3]>()
+                + normal_vectors.as_ref().map_or(0, |normals| {
+                    normals.len() * std::mem::size_of::<FiniteVector3>()
+                })
+                + channels
+                    .iter()
+                    .map(|channel| channel.data().len())
+                    .sum::<usize>();
+            ctx.retain_bytes(
+                cadmpeg_core::decode::u64_from_index(lane_bytes),
+                "retain NX JT tessellation",
+            )?;
             let mesh = match cadmpeg_ir::tessellation::TessellationMesh::from_checked_list_lanes(
                 vertices,
                 triangles,

@@ -868,6 +868,64 @@ fn decode_refuses_opaque_container_copy_when_retained_budget_is_exhausted() {
 }
 
 #[test]
+fn decode_refuses_jpeg_preview_asset_copy_when_retained_budget_is_exhausted() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let preview = [
+        0xff, 0xd8, 0xff, 0xe0, 0x00, 0x04, 0x00, 0x00, 0xff, 0xc0, 0x00, 0x11, 0x08, 0x00, 0xb9,
+        0x00, 0xf7, 0x03, 0x01, 0x11, 0x00, 0x02, 0x11, 0x00, 0x03, 0x11, 0x00, 0xff, 0xd9,
+    ];
+    let file = prt_with_named_payloads(&[("/Root/images/preview", preview.to_vec())]);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes,
+        "retain NX JPEG preview asset",
+        |cap| {
+            let mut options = DecodeOptions::default();
+            options.policy.limits.max_retained_bytes = cap;
+            NxCodec
+                .decode(&mut Cursor::new(&file), &options)
+                .map_err(|error| match error {
+                    cadmpeg_ir::DecodeFailure::Codec(error) => error,
+                    error => panic!("unexpected decode refusal: {error}"),
+                })
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "retain NX JPEG preview asset"
+    ));
+}
+
+#[test]
+fn decode_refuses_indexed_object_model_record_copy_when_retained_budget_is_exhausted() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let file = crate::test_support::test_prt::prt_with_indexed_om_section();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes,
+        "retain NX indexed object-model record",
+        |cap| {
+            let mut options = DecodeOptions::default();
+            options.policy.limits.max_retained_bytes = cap;
+            NxCodec
+                .decode(&mut Cursor::new(&file), &options)
+                .map_err(|error| match error {
+                    cadmpeg_ir::DecodeFailure::Codec(error) => error,
+                    error => panic!("unexpected decode refusal: {error}"),
+                })
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "retain NX indexed object-model record"
+    ));
+}
+
+#[test]
 fn decode_refuses_invalid_preview_copy_when_retained_budget_is_exhausted() {
     use cadmpeg_core::decode::ResourceDimension;
 

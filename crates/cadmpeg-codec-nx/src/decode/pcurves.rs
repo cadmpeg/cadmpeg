@@ -3104,11 +3104,13 @@ pub(super) const MAX_COMPLETION_TRANSFER_SAMPLES: usize = 65_536;
 
 pub(super) fn completion_transfer_budget_limit(chart_count: usize) -> usize {
     chart_count
-        .saturating_mul(COMPLETION_TRANSFER_SAMPLES_PER_CHART)
-        .clamp(
-            MIN_COMPLETION_TRANSFER_SAMPLES,
-            MAX_COMPLETION_TRANSFER_SAMPLES,
-        )
+        .checked_mul(COMPLETION_TRANSFER_SAMPLES_PER_CHART)
+        .map_or(MAX_COMPLETION_TRANSFER_SAMPLES, |samples| {
+            samples.clamp(
+                MIN_COMPLETION_TRANSFER_SAMPLES,
+                MAX_COMPLETION_TRANSFER_SAMPLES,
+            )
+        })
 }
 
 /// Total inverse-surface samples admitted while completing exact-boundary
@@ -4857,7 +4859,7 @@ mod tests {
     }
 
     #[test]
-    fn completion_transfer_count_saturates_at_the_model_ceiling() {
+    fn completion_transfer_count_overflow_caps_at_the_model_ceiling() {
         assert_eq!(
             super::completion_transfer_budget_limit(usize::MAX),
             super::MAX_COMPLETION_TRANSFER_SAMPLES
