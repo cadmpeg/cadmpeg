@@ -23,7 +23,7 @@ fn distance(
     }
 }
 
-/// A NewBody distance Extrude without indexed parameters whose fixed lanes
+/// A new-body distance Extrude without indexed parameters whose fixed lanes
 /// are `fixed`.
 fn fixed_extrude(
     extent: DesignExtrudeExtent,
