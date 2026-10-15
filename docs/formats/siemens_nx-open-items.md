@@ -850,11 +850,11 @@ assigns control geometry, continuity, or terminal semantics.
 
 **Question.** Which serialized fields define the selected faces, thread standard, pitch, handedness, axial extent, and physical or cosmetic result mode of `THREADS` and `DETAILED_THREAD` operations?
 
-**Known.** `siemens_nx.md` §7.1 defines a `THREADS` or `DETAILED_THREAD` record with a body-write frame as a body-affecting thread construction. The operation carries input blocks and a body-write frame, but no neutral output or admitted field assigns the thread construction roles. A record without the body-write frame remains native because its label does not assign a body result.
+**Known.** `siemens_nx.md` §7.1 "The `THREADS` and `DETAILED_THREAD` complete cores select" defines the complete native frame, inline text fields, reference columns, body-write association and inherited state lanes. The construction roles are not assigned by these storage boundaries.
 
 **Need.** We must identify the selected cylindrical faces, thread designation, pitch, handedness, axial extent, and physical or cosmetic result mode to construct a complete neutral thread operation and bind its result body.
 
-**Conflict.** The operation label and body-write relation identify a body-affecting thread family, but the bounded payload and object-index lanes do not assign unique face-selection, thread-law, or result-mode roles.
+**Conflict.** File-level thread-law bundles do not establish operation-to-law ownership. Numeric namespace equality does not establish selected faces. A continuation selected as `UGS::OM::OptTagValues` after a terminal object has no complete admitted grammar.
 
 ### OM-54. Body-writing `SPHERE` construction roles
 
@@ -870,21 +870,11 @@ assigns control geometry, continuity, or terminal semantics.
 
 **Question.** Which serialized fields define the selected faces and healing policy of a body-writing `DELETE FACE` operation?
 
-**Known.** `siemens_nx.md` §7.1 defines a `DELETE FACE` record with a body-write frame as a body-affecting face-deletion construction. The label and body-write frame establish the family, but the operation's face selection and healing policy remain unresolved.
+**Known.** `siemens_nx.md` §7.1 "The `DELETE FACE` complete core selects" defines the owning parameter and manager classes, scalar and packed lanes, body-write association and both counted inherited-state branches. The base class is `UGS::FEATURE_PARMS`; it is not `UGS::OM::Set`.
 
 **Need.** We must identify the selected faces and healing policy to construct a complete neutral delete-face operation.
 
 **Conflict.** The label and body-write relation identify the family, but the admitted object-index and payload lanes do not assign a unique face selection or healing-policy value. Encoding a default healing value would invent operation state.
-
-### OM-56. Body-writing `BREP` result-body relation
-
-**Question.** Which serialized relation binds a body-writing `BREP` result topology to the model body output required by `StoredGeometry`?
-
-**Known.** `siemens_nx.md` §7.1 defines `BREP` as direct stored boundary-representation geometry. A body-write frame and feature-result topology establish the body-affecting family and retain the result topology, but the result topology's body identity does not uniquely resolve to a model-body output in the admitted segment-body namespace.
-
-**Need.** We must bind the BREP result to its model body before projecting `StoredGeometry`.
-
-**Conflict.** The body-write body identity and result-topology identity are present, but no unique model-body relation is admitted. Treating the identity as a current body would assign an output without a body record.
 
 ### OM-57. `MIRROR_FACE` construction roles
 

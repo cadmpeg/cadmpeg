@@ -3,6 +3,7 @@ use super::{core_for_decode, OperationCore};
 use crate::om::operation_record::OperationPayload;
 use cadmpeg_ir::native::bytes::NativeBytes;
 
+mod direct_and_threads;
 mod primitives;
 
 fn inherited() -> Vec<u8> {

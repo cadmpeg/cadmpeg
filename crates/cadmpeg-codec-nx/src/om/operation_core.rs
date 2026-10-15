@@ -3,7 +3,9 @@
 
 mod copy_face;
 mod curve_mesh;
+mod delete_face;
 mod frames;
+mod thread;
 
 use super::move_face::{CoreView as MoveFaceView, MoveFaceCore};
 use super::operation_record::OperationPayload;
@@ -15,6 +17,9 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "bytes", rename_all = "snake_case")]
 pub(crate) enum OperationCore {
+    DeleteFace(#[serde(deserialize_with = "deserialize_delete_face")] NativeBytes<Vec<u8>>),
+    Threads(#[serde(deserialize_with = "deserialize_threads")] NativeBytes<Vec<u8>>),
+    DetailedThread(#[serde(deserialize_with = "deserialize_detailed_thread")] NativeBytes<Vec<u8>>),
     MoveFace(MoveFaceCore),
     CurveMesh(#[serde(deserialize_with = "deserialize_curve_mesh")] NativeBytes<Vec<u8>>),
     CopyFace(#[serde(deserialize_with = "deserialize_copy_face")] NativeBytes<Vec<u8>>),
@@ -55,6 +60,33 @@ fn deserialize_sphere<'de, D: serde::Deserializer<'de>>(
     deserialize_frame(d, frames::Family::Sphere)
 }
 
+fn deserialize_delete_face<'de, D: serde::Deserializer<'de>>(
+    d: D,
+) -> Result<NativeBytes<Vec<u8>>, D::Error> {
+    let bytes = NativeBytes::<Vec<u8>>::deserialize(d)?;
+    delete_face::read(&bytes)
+        .ok_or_else(|| serde::de::Error::custom("core: invalid complete delete_face frame"))?;
+    Ok(bytes)
+}
+
+fn deserialize_threads<'de, D: serde::Deserializer<'de>>(
+    d: D,
+) -> Result<NativeBytes<Vec<u8>>, D::Error> {
+    let bytes = NativeBytes::<Vec<u8>>::deserialize(d)?;
+    thread::read(&bytes, thread::Family::Threads)
+        .ok_or_else(|| serde::de::Error::custom("core: invalid complete threads frame"))?;
+    Ok(bytes)
+}
+
+fn deserialize_detailed_thread<'de, D: serde::Deserializer<'de>>(
+    d: D,
+) -> Result<NativeBytes<Vec<u8>>, D::Error> {
+    let bytes = NativeBytes::<Vec<u8>>::deserialize(d)?;
+    thread::read(&bytes, thread::Family::DetailedThread)
+        .ok_or_else(|| serde::de::Error::custom("core: invalid complete detailed_thread frame"))?;
+    Ok(bytes)
+}
+
 fn deserialize_copy_face<'de, D: serde::Deserializer<'de>>(
     d: D,
 ) -> Result<NativeBytes<Vec<u8>>, D::Error> {
@@ -77,7 +109,10 @@ impl OperationCore {
     pub(crate) fn as_bytes(&self) -> &[u8] {
         match self {
             Self::MoveFace(core) => core.as_bytes(),
-            Self::Cylinder(bytes)
+            Self::Threads(bytes)
+            | Self::DetailedThread(bytes)
+            | Self::DeleteFace(bytes)
+            | Self::Cylinder(bytes)
             | Self::Cone(bytes)
             | Self::Sphere(bytes)
             | Self::MoveObject(bytes)
@@ -98,6 +133,9 @@ impl OperationCore {
 
 pub(crate) enum CoreView<'a> {
     MoveFace(MoveFaceView<'a>),
+    DeleteFace(&'a [u8]),
+    Threads(&'a [u8]),
+    DetailedThread(&'a [u8]),
     CopyFace(&'a [u8]),
     CurveMesh(&'a [u8]),
     Cylinder(&'a [u8]),
@@ -109,7 +147,10 @@ impl CoreView<'_> {
     pub(crate) fn byte_len(&self) -> usize {
         match self {
             Self::MoveFace(core) => core.byte_len,
-            Self::Cylinder(bytes)
+            Self::Threads(bytes)
+            | Self::DetailedThread(bytes)
+            | Self::DeleteFace(bytes)
+            | Self::Cylinder(bytes)
             | Self::Cone(bytes)
             | Self::Sphere(bytes)
             | Self::MoveObject(bytes)
@@ -120,6 +161,16 @@ impl CoreView<'_> {
     pub(crate) fn retain(&self, ctx: &DecodeContext<'_>) -> Result<OperationCore, CodecError> {
         match self {
             Self::MoveFace(core) => Ok(OperationCore::MoveFace(core.retain(ctx)?)),
+            Self::DeleteFace(bytes) => Ok(OperationCore::DeleteFace(
+                ctx.copy_slice(bytes, "NX bounded delete_face core")?.into(),
+            )),
+            Self::Threads(bytes) => Ok(OperationCore::Threads(
+                ctx.copy_slice(bytes, "NX bounded threads core")?.into(),
+            )),
+            Self::DetailedThread(bytes) => Ok(OperationCore::DetailedThread(
+                ctx.copy_slice(bytes, "NX bounded detailed_thread core")?
+                    .into(),
+            )),
             Self::CurveMesh(bytes) => Ok(OperationCore::CurveMesh(
                 ctx.copy_slice(bytes, "NX bounded curve-mesh core")?.into(),
             )),
@@ -148,6 +199,12 @@ pub(crate) fn core_for_decode<'a>(
     record: OperationPayload<'a>,
     classes: &[super::TypeDefinition<'_>],
 ) -> Result<Option<CoreView<'a>>, CodecError> {
+    let selects = |selector: u8, expected: &str| {
+        selector
+            .checked_sub(1)
+            .and_then(|i| classes.get(usize::from(i)))
+            .is_some_and(|class| class.name == expected)
+    };
     if record.name() == "MOVE_FACE" {
         return super::move_face::core_for_decode(ctx, record, classes)
             .map(|core| core.map(CoreView::MoveFace));
@@ -157,22 +214,54 @@ pub(crate) fn core_for_decode<'a>(
             u64_from_index(record.payload().len()),
             "NX complete profile or face-copy core",
         )?;
-        let selects = |selectors: &[u8], expected: &[&str]| {
-            selectors.iter().zip(expected).all(|(selector, expected)| {
-                classes
-                    .get(usize::from(*selector) - 1)
-                    .is_some_and(|class| class.name == *expected)
-            })
-        };
         return Ok(if record.name() == "COPY_FACE" {
             copy_face::read(record.payload())
-                .filter(|s| selects(s, &copy_face::CLASSES))
+                .filter(|s| {
+                    s.iter()
+                        .zip(copy_face::CLASSES)
+                        .all(|(s, name)| selects(*s, name))
+                })
                 .map(|_| CoreView::CopyFace(record.payload()))
         } else {
             curve_mesh::read(record.payload())
-                .filter(|s| selects(s, &curve_mesh::CLASSES))
+                .filter(|s| {
+                    s.iter()
+                        .zip(curve_mesh::CLASSES)
+                        .all(|(s, name)| selects(*s, name))
+                })
                 .map(|_| CoreView::CurveMesh(record.payload()))
         });
+    }
+    if matches!(record.name(), "DELETE FACE" | "THREADS" | "DETAILED_THREAD") {
+        ctx.charge_work(
+            u64_from_index(record.payload().len()),
+            "NX complete direct or thread core",
+        )?;
+        if record.name() == "DELETE FACE" {
+            return Ok(delete_face::read(record.payload())
+                .filter(|s| {
+                    s.iter()
+                        .zip(delete_face::CLASSES)
+                        .all(|(s, name)| selects(*s, name))
+                })
+                .map(|_| CoreView::DeleteFace(record.payload())));
+        }
+        let family = if record.name() == "THREADS" {
+            thread::Family::Threads
+        } else {
+            thread::Family::DetailedThread
+        };
+        return Ok(thread::read(record.payload(), family)
+            .filter(|s| {
+                selects(s[0], thread::OWNER) && selects(s[1], super::body_write::BODY_IMAGE_CLASS)
+            })
+            .map(|_| {
+                if record.name() == "THREADS" {
+                    CoreView::Threads(record.payload())
+                } else {
+                    CoreView::DetailedThread(record.payload())
+                }
+            }));
     }
     let (family, owner) = match record.name() {
         "CYLINDER" => (frames::Family::Cylinder, "UGS::CYLINDER_PARMS"),
@@ -190,12 +279,6 @@ pub(crate) fn core_for_decode<'a>(
     )?;
     let Some(frame) = frames::read(record.payload(), family) else {
         return Ok(None);
-    };
-    let selects = |selector: u8, expected: &str| {
-        selector
-            .checked_sub(1)
-            .and_then(|i| classes.get(usize::from(i)))
-            .is_some_and(|class| class.name == expected)
     };
     if !selects(frame.owner, owner)
         || !selects(frame.endpoint, super::body_write::BODY_IMAGE_CLASS)

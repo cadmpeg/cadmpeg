@@ -2879,20 +2879,41 @@ fn attach_feature_operations(
         &mut conflicting_body_output_writes,
         &identity_candidates,
     )?;
-    let mut mesh_body_ids = BTreeMap::new();
+    let (body_id_labels, _body_id_label_storage) = ctx.unique_index(
+        labels.iter().map(|label| (label.id.as_str(), label)),
+        |key| Ok(cadmpeg_core::decode::u64_from_index(key.len())),
+        "NX body_id unique operation labels",
+    )?;
+    let mut operation_body_ids = BTreeMap::new();
     let mut body_id_candidates = BTreeMap::new();
-    let mut body_id_reservation = ctx.reserve_scoped(0, "NX mesh body_id output index")?;
+    let mut body_id_reservation = ctx.reserve_scoped(0, "NX operation body_id output index")?;
     for record in operation_records {
-        ctx.charge_work(1, "NX mesh operation core selection")?;
-        if !matches!(
+        ctx.charge_work(1, "NX operation body_id contract selection")?;
+        let encoding = if matches!(
             record.core,
             Some(crate::om::operation_core::OperationCore::CurveMesh(_))
         ) {
-            continue;
-        }
+            super::parasolid::body_id::BodyIdEncoding::CurveMeshIgnored
+        } else {
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(record.operation_label.len()),
+                "NX BREP body_id label lookup",
+            )?;
+            let Some(owner) = body_id_labels
+                .get(record.operation_label.as_str())
+                .copied()
+                .flatten()
+            else {
+                continue;
+            };
+            if owner.value != "BREP" {
+                continue;
+            }
+            super::parasolid::body_id::BodyIdEncoding::BrepInteger
+        };
         ctx.charge_work(
             cadmpeg_core::decode::u64_from_index(operation_records.len()),
-            "NX mesh operation record ownership",
+            "NX operation body_id record ownership",
         )?;
         if operation_records
             .iter()
@@ -2904,7 +2925,7 @@ fn attach_feature_operations(
         }
         ctx.charge_work(
             cadmpeg_core::decode::u64_from_index(operation_body_writes.len()),
-            "NX mesh body write ownership",
+            "NX operation body_id write ownership",
         )?;
         for write in operation_body_writes
             .iter()
@@ -2913,6 +2934,7 @@ fn attach_feature_operations(
             let Some(matched) = super::parasolid::body_id::resolve(
                 ctx,
                 write.frame.body_identity(),
+                encoding,
                 &model.parasolid.attribute_definitions,
                 &model.parasolid.entity_51_records,
                 &model.parasolid.entity_52_integer_records,
@@ -2947,10 +2969,10 @@ fn attach_feature_operations(
             }
             body_id_reservation.with_storage(|| {
                 ctx.insert_btree_map(
-                    &mut mesh_body_ids,
+                    &mut operation_body_ids,
                     write.id.as_str(),
                     matched,
-                    "NX mesh body_id evidence index",
+                    "NX operation body_id evidence index",
                 )
             })?;
         }
@@ -3483,7 +3505,7 @@ fn attach_feature_operations(
                 format_args!("body_write.{ordinal}.body_image_object_index"),
                 format_args!("{}", write.frame.body_image().value()),
             )?;
-            if let Some(matched) = mesh_body_ids.get(write.id.as_str()) {
+            if let Some(matched) = operation_body_ids.get(write.id.as_str()) {
                 for (field, value) in [
                     ("definition", matched.definition),
                     ("attribute_record", matched.entity),

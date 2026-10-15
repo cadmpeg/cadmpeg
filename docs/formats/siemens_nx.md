@@ -2561,6 +2561,63 @@ stream without decoded body topology supplies no neutral output; an unrelated
 plain stream cannot substitute for it. Authored curve networks, mesh directions,
 continuity, and result preference remain unresolved.
 
+The `THREADS` and `DETAILED_THREAD` complete cores select `UGS::THD_PARMS`
+in the owning class registry. After the selector and `00 00 01 00 00 01 03`,
+two compact feature tokens precede five payload-index columns. Their lengths
+are 1, 1, 3, 6 and 6; columns 1–4 start with `01 02`, `01 03`, `01 07` and
+`01 07`. Four inline text fields precede a payload-index token and the inline
+text `Cut`. An inline string is `03, count:u8, printable_ascii[count-2], 00`,
+with count at least 2; bare `00` is an empty field. Three nullable payload
+references follow `ff`; a null reference is `ff`. Another `ff`, ten state
+bytes, nine `ff` bytes and four zero bytes precede the body-write frame.
+The result association is `00 00 00 0b 00, payload_index, 02 02,
+relation_object, 01 00 00 00 00 00`. Its next byte is either `00` or the
+start of `01 02, body_identity:u8, relation_object, 97 75`.
+
+The inherited thread suffix starts with `0d 01 02 01 00 00 00`, a feature
+token and `01 01 01 01 02`. One three-byte state tuple repeats exactly.
+`01 00 00 ff 00 ff, state:u8, c0 1f ff ff 01 00 00` precedes two feature
+tokens and `01 03 02 01`. The family byte is 2 for `THREADS` and 1 for
+`DETAILED_THREAD`. The next lane is either `03 00 00 01 00 00 00` or
+`03 00 01 00 00 00`. Two identically encoded local feature ordinals and
+one terminal feature token precede the final `00`. A complete retained core
+ends at that byte. The body-write endpoint selects `UGS::CM_BREF_DATA`.
+
+The `DELETE FACE` complete core selects `UGS::ModlDirect::DeleteFaceParms`.
+Its one-based base-class chain is `UGS::FEATURE_PARMS`, `UGS::OM::SubObject`,
+then `UGS::OM::MethodicObject`. After `00 00 01 00`, one scalar, `03` and
+a payload-index token precede a `UGS::ModlDirect::Constrain::ManagerOptions`
+selector and a second scalar. Each scalar is a one-byte zero or an ordinary
+finite shifted binary64 atom. The manager suffix is
+`03 50 44 00 00 01 46 85 1a 01 8f ff 01 01 02 04 02 01 02 01 00 00 00 00`.
+A payload-index token and two zeros precede two lanes, each `01 08` followed
+by seven operation relation-index tokens. `01`, a payload-index token,
+`ff 01 01 01 00 00 01 00`, nine `ff` bytes and four zeros precede the
+body-write frame. Its endpoint selects `UGS::CM_BREF_DATA`. The following
+association is `00 00 00 0b 00 f0 01 02 02, relation_object, 01` and six zeros.
+
+The inherited Delete Face suffix starts with `10 01 02 01`. Its branch is
+`00 00 00` or `01 02 11 00, feature_index, 01 01 00 00`. A journal feature
+token and `02 01 01 01` precede a count of at least 2 and that many three-byte
+state tuples. The first and last tuples match. The suffix then contains
+`01 00 00 ff 1e c0 1f ff ff 01 00 00`, two feature tokens and
+`01 03 01 01 01 01 00 01 00 00 00`. Two identically encoded local ordinals,
+a terminal feature token and `00` finish the complete core.
+
+A `BREP` body-write identity also resolves through a named Parasolid `body_id`
+attribute whose declared field is one integer, code 1, and whose type is 9000.
+This representation stores the nonzero body-write identity minus one. It
+requires one same-stream definition of the name, one uniquely identified
+instance, exactly one trailing reference and one uniquely identified type-82
+record with exactly one matching scalar integer. The instance's first leading
+reference selects the owning body XMT. Duplicate matches across streams remain
+unresolved. This declared-integer representation is distinct from the mesh
+ignored-field exact-identity representation. Only the exact decoded body in
+the selected stream supplies an output. A BREP feature with resolved outputs
+projects `StoredGeometry`; a referenced body without decoded topology supplies
+no output. Conflicting body-image, identity, GROUP/partition or attribute
+witnesses reject their shared result selection.
+
 A body-writing `CONE` operation identifies a body-affecting conical primitive.
 Its dimensions and placement remain unresolved until the serialized
 construction roles establish a complete primitive. A complete create core
@@ -2671,7 +2728,8 @@ Its selected faces and motion law remain unresolved until a serialized
 relation establishes the complete construction.
 
 The native operation record retains a complete core as `core`, with `kind`
-equal to `move_face`, `cylinder`, `cone`, `sphere`, or `move_object`, and
+equal to `move_face`, `copy_face`, `curve_mesh`, `delete_face`, `threads`,
+`detailed_thread`, `cylinder`, `cone`, `sphere`, or `move_object`, and
 `bytes` equal to its exact hexadecimal bytes. Wire admission replays the
 complete family grammar,
 requires the core length to equal the payload length, and checks its SHA-256

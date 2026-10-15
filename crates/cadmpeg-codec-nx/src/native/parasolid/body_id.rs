@@ -15,16 +15,31 @@ pub(in crate::native) struct BodyIdMatch<'a> {
     pub(in crate::native) value_record: &'a str,
 }
 
+/// The operation family fixes the declared field and identity convention.
+#[derive(Clone, Copy)]
+pub(in crate::native) enum BodyIdEncoding {
+    CurveMeshIgnored,
+    BrepInteger,
+}
+
 /// Duplicate definitions, instances, values, or matching streams are unresolved.
-/// Code zero stays an ignored extension; the integer family comes from the
-/// referenced storage record, not an invented declared-field interpretation.
 pub(in crate::native) fn resolve<'a>(
     ctx: &DecodeContext<'_>,
     identity: u8,
+    encoding: BodyIdEncoding,
     definitions: &'a [ParasolidAttributeDefinition],
     entities: &'a [ParasolidEntity51Record],
     integers: &'a [ParasolidEntity52IntegerRecord],
 ) -> Result<Option<BodyIdMatch<'a>>, CodecError> {
+    let (field, value) = match encoding {
+        BodyIdEncoding::CurveMeshIgnored => (super::AttributeField::Ignored, u32::from(identity)),
+        BodyIdEncoding::BrepInteger => {
+            let Some(value) = identity.checked_sub(1) else {
+                return Ok(None);
+            };
+            (super::AttributeField::Integer, u32::from(value))
+        }
+    };
     let mut found = None;
     for definition in definitions {
         ctx.charge_work(1, "NX named body_id definition")?;
@@ -44,7 +59,8 @@ pub(in crate::native) fn resolve<'a>(
             })
             .count()
             != 1
-            || definition.field_codes.as_slice() != [super::AttributeField::Ignored]
+            || definition.field_codes.as_slice() != [field]
+            || (matches!(encoding, BodyIdEncoding::BrepInteger) && definition.type_id.get() != 9000)
         {
             continue;
         }
@@ -89,10 +105,10 @@ pub(in crate::native) fn resolve<'a>(
         if storage.next().is_some() {
             continue;
         }
-        let [value] = integer.values.as_slice() else {
+        let [stored] = integer.values.as_slice() else {
             continue;
         };
-        if *value != u32::from(identity) {
+        if *stored != value {
             continue;
         }
         let body_xmt = entity.leading_references[0];
