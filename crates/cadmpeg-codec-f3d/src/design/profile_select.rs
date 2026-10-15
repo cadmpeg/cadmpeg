@@ -223,7 +223,7 @@ pub(crate) fn bind_sweep_sketch_selections(
                                     (candidates.next(), candidates.next())
                                 {
                                     let sketch =
-                                        crate::design::identity::neutral_sketch_id(ctx, placement)?;
+                                        crate::design::identity::neutral_sketch_id(placement)?;
                                     if sketches.iter().any(|candidate| candidate.id == sketch) {
                                         section.set_referenced_profile((sketch).into());
                                     }
@@ -267,8 +267,7 @@ pub(crate) fn bind_sweep_sketch_selections(
                                 if matching_placements.next().is_some() {
                                     return Ok(None);
                                 }
-                                let sketch =
-                                    crate::design::identity::neutral_sketch_id(ctx, placement)?;
+                                let sketch = crate::design::identity::neutral_sketch_id(placement)?;
                                 if !sketches.iter().any(|candidate| candidate.id == sketch) {
                                     return Ok(None);
                                 }
@@ -284,7 +283,6 @@ pub(crate) fn bind_sweep_sketch_selections(
                                     return Ok(None);
                                 }
                                 let selected = crate::design::identity::neutral_sketch_curve_id(
-                                    ctx,
                                     &sketch,
                                     curve.primary_id.get(),
                                     curve.secondary_id,
@@ -472,28 +470,12 @@ pub(crate) fn bind_extrude_profile_selections(
                         native_stream(&group.id) == native_stream(&scope.id)
                             && group.scope_record_index == scope.record_index
                     }) {
-                        (resolution.ctx).push_vec(
-                            &mut matching_groups,
-                            group,
-                            "f3d extrude matching selection group",
-                        )?;
+                        matching_groups.push(group);
                     }
-                    resolution.ctx.stable_sort_by(
-                        &mut matching_groups[..],
-                        |left, right| {
-                            let left_key = {
-                                let group = left;
-                                group.scope_reference_ordinal
-                            };
-                            let right_key = {
-                                let group = right;
-                                group.scope_reference_ordinal
-                            };
-                            left_key.cmp(&right_key)
-                        },
-                        |_| 0,
-                        "sort f3d design profile_select 1",
-                    )?;
+                    matching_groups.sort_by(|left, right| {
+                        left.scope_reference_ordinal
+                            .cmp(&right.scope_reference_ordinal)
+                    });
                     let FeatureDefinition::Operation(FeatureOperation::Extrude { profile, .. }) =
                         definition
                     else {
@@ -559,11 +541,7 @@ pub(crate) fn bind_extrude_profile_selections(
                                     scope.history_state_id(),
                                     effective_previous_history_state_id,
                                 )?;
-                                (scoped_resolution.ctx).push_vec(
-                                    &mut selections,
-                                    selection,
-                                    "f3d spatial profile selection",
-                                )?;
+                                selections.push(selection);
                             }
                             let mut indices = Vec::new();
                             let mut all_resolved = true;
@@ -573,11 +551,7 @@ pub(crate) fn bind_extrude_profile_selections(
                                     break;
                                 };
                                 if !indices.contains(index) {
-                                    (resolution.ctx).push_vec(
-                                        &mut indices,
-                                        *index,
-                                        "f3d spatial extrude profile index",
-                                    )?;
+                                    indices.push(*index);
                                 }
                             }
                             if all_resolved {
@@ -592,24 +566,14 @@ pub(crate) fn bind_extrude_profile_selections(
                                 )? {
                                     Ok(profile) => profile,
                                     Err(_) => ProfileRef::Planar(PlanarProfileRef::Native(
-                                        (resolution.ctx).copy_retained_text(
-                                            &scope.id,
-                                            "f3d spatial extrude fallback scope id",
-                                        )?,
+                                        scope.id.clone(),
                                     )),
                                 };
                             } else {
                                 let mut group_ids = Vec::new();
                                 for group in &matching_groups {
-                                    let id = (resolution.ctx).copy_retained_text(
-                                        &group.id,
-                                        "f3d spatial extrude selection group id",
-                                    )?;
-                                    (resolution.ctx).push_vec(
-                                        &mut group_ids,
-                                        id,
-                                        "f3d spatial extrude selection group",
-                                    )?;
+                                    let id = group.id.clone();
+                                    group_ids.push(id);
                                 }
                                 let sketch_id = spatial_sketch.id.try_clone_for_decode(
                                     resolution.ctx,
@@ -622,10 +586,7 @@ pub(crate) fn bind_extrude_profile_selections(
                                 )? {
                                     Ok(profile) => profile,
                                     Err(_) => ProfileRef::Planar(PlanarProfileRef::Native(
-                                        (resolution.ctx).copy_retained_text(
-                                            &scope.id,
-                                            "f3d spatial extrude fallback scope id",
-                                        )?,
+                                        scope.id.clone(),
                                     )),
                                 };
                             }
@@ -635,10 +596,7 @@ pub(crate) fn bind_extrude_profile_selections(
                             [group] => &group.id,
                             _ => &scope.id,
                         };
-                        *profile = ProfileRef::Planar(PlanarProfileRef::Native(
-                            (resolution.ctx)
-                                .copy_retained_text(id, "f3d extrude unresolved selection id")?,
-                        ));
+                        *profile = ProfileRef::Planar(PlanarProfileRef::Native(id.to_owned()));
                         break 'feature_edit;
                     };
                     if let (Some(profile_operand), Some(stream)) =
@@ -650,7 +608,6 @@ pub(crate) fn bind_extrude_profile_selections(
                             sketch,
                             curve_resolution.curve_identities,
                             curve_resolution.sketch_entities,
-                            resolution.ctx,
                         )? {
                             let sketch_id = (sketch_id)
                                 .try_clone_for_decode(resolution.ctx, "f3d profile sketch id")?;
@@ -660,12 +617,7 @@ pub(crate) fn bind_extrude_profile_selections(
                                 resolution.ctx,
                             )? {
                                 Ok(profile) => profile,
-                                Err(_) => {
-                                    PlanarProfileRef::Native((resolution.ctx).copy_retained_text(
-                                        &scope.id,
-                                        "f3d extrude profile fallback scope id",
-                                    )?)
-                                }
+                                Err(_) => PlanarProfileRef::Native(scope.id.clone()),
                             });
                             break 'feature_edit;
                         }
@@ -684,11 +636,7 @@ pub(crate) fn bind_extrude_profile_selections(
                             scope.history_state_id(),
                             effective_previous_history_state_id,
                         )?;
-                        (resolution.ctx).push_vec(
-                            &mut selections,
-                            selection,
-                            "f3d extrude resolved selection",
-                        )?;
+                        selections.push(selection);
                     }
                     *profile = if let Some(merged) =
                         merge_resolved_profile_selections(sketch_id, &selections, resolution.ctx)?
@@ -697,13 +645,8 @@ pub(crate) fn bind_extrude_profile_selections(
                     } else {
                         let mut group_ids = Vec::new();
                         for group in &matching_groups {
-                            let id = (resolution.ctx)
-                                .copy_retained_text(&group.id, "f3d extrude fallback group id")?;
-                            (resolution.ctx).push_vec(
-                                &mut group_ids,
-                                id,
-                                "f3d extrude fallback group",
-                            )?;
+                            let id = group.id.clone();
+                            group_ids.push(id);
                         }
                         let sketch_id = (sketch_id)
                             .try_clone_for_decode(resolution.ctx, "f3d profile sketch id")?;
@@ -713,12 +656,7 @@ pub(crate) fn bind_extrude_profile_selections(
                             resolution.ctx,
                         )? {
                             Ok(profile) => profile,
-                            Err(_) => {
-                                PlanarProfileRef::Native((resolution.ctx).copy_retained_text(
-                                    &scope.id,
-                                    "f3d extrude fallback scope id",
-                                )?)
-                            }
+                            Err(_) => PlanarProfileRef::Native(scope.id.clone()),
                         };
                         ProfileRef::Planar(fallback)
                     };
@@ -772,11 +710,7 @@ fn resolve_entity_selection_profile(
                     return Ok(None);
                 };
                 if !selected_profiles.contains(&profile_index) {
-                    ctx.push_vec(
-                        &mut selected_profiles,
-                        profile_index,
-                        "f3d entity path selected planar profile",
-                    )?;
+                    selected_profiles.push(profile_index);
                 }
             }
             if has_unprofiled_entity {
@@ -815,11 +749,7 @@ fn resolve_entity_selection_profile(
                     return Ok(None);
                 };
                 if !profiles.contains(&index) {
-                    ctx.push_vec(
-                        &mut profiles,
-                        index,
-                        "f3d entity path selected spatial profile",
-                    )?;
+                    profiles.push(index);
                 }
             }
             if profiles.is_empty() {
@@ -867,32 +797,9 @@ fn historical_face_profile_selection(
             native_stream(&member.id) == Some(stream)
                 && member.group_record_index == group.record_index
         }) {
-            ctx.push_vec(
-                &mut group_members,
-                member,
-                "f3d historical profile group member",
-            )?;
+            group_members.push(member);
         }
-        ctx.stable_sort_by(
-            &mut group_members[..],
-            |left, right| {
-                let left_key = {
-                    let member = left;
-                    {
-                        member.group_member_ordinal
-                    }
-                };
-                let right_key = {
-                    let member = right;
-                    {
-                        member.group_member_ordinal
-                    }
-                };
-                left_key.cmp(&right_key)
-            },
-            |_| 0,
-            "sort f3d design profile_select 2",
-        )?;
+        group_members.sort_by_key(|left| left.group_member_ordinal);
         if group_members.len() != group.members().len()
             || group_members
                 .iter()
@@ -919,7 +826,7 @@ fn historical_face_profile_selection(
                     (None, entity_ref)
                 }
             };
-            let member_faces = historical_profile_face_candidates(kind, entity_ref, topology, ctx)?;
+            let member_faces = historical_profile_face_candidates(kind, entity_ref, topology)?;
             if member_faces.is_empty() {
                 return Ok(None);
             }
@@ -942,11 +849,7 @@ fn historical_face_profile_selection(
             return Ok(None);
         }
         if !selected_faces.contains(&face) {
-            ctx.push_vec(
-                &mut selected_faces,
-                face,
-                "f3d historical profile selected face",
-            )?;
+            selected_faces.push(face);
         }
     }
     if selected_faces.is_empty() {
@@ -956,20 +859,18 @@ fn historical_face_profile_selection(
     let mut face_ids = Vec::new();
     for face in selected_faces {
         let id = crate::design::identity::history_input_face_id(
-            ctx,
-            &crate::design::identity::history_input_prefix(ctx, feature_key, previous_state_id)?,
+            &crate::design::identity::history_input_prefix(feature_key, previous_state_id)?,
             face,
-            "f3d historical face identifier",
         )?;
-        ctx.push_vec(&mut face_ids, id, "f3d historical profile face id")?;
+        face_ids.push(id);
     }
     let mut group_ids = Vec::new();
     for group in groups {
-        let id = ctx.copy_retained_text(&group.id, "f3d historical profile group id")?;
-        ctx.push_vec(&mut group_ids, id, "f3d historical profile group id entry")?;
+        let id = group.id.clone();
+        group_ids.push(id);
     }
     Ok(PlanarProfileRef::historical_faces(
-        crate::design::identity::feature_input_topology_id(ctx, feature_id, previous_state_id)?,
+        crate::design::identity::feature_input_topology_id(feature_id, previous_state_id)?,
         face_ids,
         group_ids,
         ctx,
@@ -981,7 +882,6 @@ fn historical_profile_face_candidates(
     kind: Option<crate::records::topology::body_recipe::AsmHistoricalEntityKind>,
     entity_ref: i64,
     topology: &crate::history_records::AsmHistoricalTopology,
-    ctx: &DecodeContext<'_>,
 ) -> Result<HashSet<i64>, CodecError> {
     use crate::records::topology::body_recipe::AsmHistoricalEntityKind;
 
@@ -1006,13 +906,9 @@ fn historical_profile_face_candidates(
             .iter()
             .filter(|relation| relation.member_refs.contains(&loop_ref))
         {
-            ctx.insert_hash_set(
-                &mut faces,
-                relation.owner_ref,
-                "f3d historical loop face candidate",
-            )?;
+            faces.insert(relation.owner_ref);
         }
-        Ok::<_, CodecError>(faces)
+        faces
     };
     let coedge_faces = |coedge_ref| {
         let mut faces = HashSet::new();
@@ -1021,8 +917,8 @@ fn historical_profile_face_candidates(
             .iter()
             .filter(|coedge| coedge.coedge == coedge_ref)
         {
-            for face in loop_faces(coedge.owner_loop)? {
-                ctx.insert_hash_set(&mut faces, face, "f3d historical coedge face candidate")?;
+            for face in loop_faces(coedge.owner_loop) {
+                faces.insert(face);
             }
         }
         Ok::<_, CodecError>(faces)
@@ -1034,8 +930,8 @@ fn historical_profile_face_candidates(
             .iter()
             .filter(|coedge| coedge.edge == edge_ref)
         {
-            for face in loop_faces(coedge.owner_loop)? {
-                ctx.insert_hash_set(&mut faces, face, "f3d historical edge face candidate")?;
+            for face in loop_faces(coedge.owner_loop) {
+                faces.insert(face);
             }
         }
         Ok::<_, CodecError>(faces)
@@ -1045,26 +941,22 @@ fn historical_profile_face_candidates(
         match kind {
             AsmHistoricalEntityKind::Face => {
                 if topology.faces.contains(&entity_ref) {
-                    ctx.insert_hash_set(
-                        &mut faces,
-                        entity_ref,
-                        "f3d historical profile face candidate",
-                    )?;
+                    faces.insert(entity_ref);
                 }
             }
             AsmHistoricalEntityKind::Loop => {
-                for face in loop_faces(entity_ref)? {
-                    ctx.insert_hash_set(&mut faces, face, "f3d historical profile face candidate")?;
+                for face in loop_faces(entity_ref) {
+                    faces.insert(face);
                 }
             }
             AsmHistoricalEntityKind::Coedge => {
                 for face in coedge_faces(entity_ref)? {
-                    ctx.insert_hash_set(&mut faces, face, "f3d historical profile face candidate")?;
+                    faces.insert(face);
                 }
             }
             AsmHistoricalEntityKind::Edge => {
                 for face in edge_faces(entity_ref)? {
-                    ctx.insert_hash_set(&mut faces, face, "f3d historical profile face candidate")?;
+                    faces.insert(face);
                 }
             }
             AsmHistoricalEntityKind::Pcurve => {
@@ -1074,11 +966,7 @@ fn historical_profile_face_candidates(
                     .filter(|binding| binding.carrier == Some(entity_ref))
                 {
                     for face in coedge_faces(binding.entity)? {
-                        ctx.insert_hash_set(
-                            &mut faces,
-                            face,
-                            "f3d historical profile face candidate",
-                        )?;
+                        faces.insert(face);
                     }
                 }
             }
@@ -1089,11 +977,7 @@ fn historical_profile_face_candidates(
                     .filter(|binding| binding.carrier == Some(entity_ref))
                 {
                     for face in edge_faces(binding.entity)? {
-                        ctx.insert_hash_set(
-                            &mut faces,
-                            face,
-                            "f3d historical profile face candidate",
-                        )?;
+                        faces.insert(face);
                     }
                 }
             }
@@ -1104,11 +988,7 @@ fn historical_profile_face_candidates(
                     .filter(|edge| edge.start_vertex == entity_ref || edge.end_vertex == entity_ref)
                 {
                     for face in edge_faces(edge.edge)? {
-                        ctx.insert_hash_set(
-                            &mut faces,
-                            face,
-                            "f3d historical profile face candidate",
-                        )?;
+                        faces.insert(face);
                     }
                 }
             }
@@ -1119,21 +999,13 @@ fn historical_profile_face_candidates(
                     .iter()
                     .filter(|binding| binding.carrier == entity_ref)
                 {
-                    ctx.insert_hash_set(
-                        &mut vertices,
-                        binding.entity,
-                        "f3d historical point vertex candidate",
-                    )?;
+                    vertices.insert(binding.entity);
                 }
                 for edge in topology.edge_vertices.iter().filter(|edge| {
                     vertices.contains(&edge.start_vertex) || vertices.contains(&edge.end_vertex)
                 }) {
                     for face in edge_faces(edge.edge)? {
-                        ctx.insert_hash_set(
-                            &mut faces,
-                            face,
-                            "f3d historical profile face candidate",
-                        )?;
+                        faces.insert(face);
                     }
                 }
             }
@@ -1143,11 +1015,7 @@ fn historical_profile_face_candidates(
                     .iter()
                     .filter(|binding| binding.carrier == entity_ref)
                 {
-                    ctx.insert_hash_set(
-                        &mut faces,
-                        binding.entity,
-                        "f3d historical profile face candidate",
-                    )?;
+                    faces.insert(binding.entity);
                 }
             }
             AsmHistoricalEntityKind::Body
@@ -1181,7 +1049,7 @@ fn merge_resolved_profile_selections(
             }) if selected == sketch && regions.is_empty() => {
                 for profile in selected_profiles.as_slice().iter().copied() {
                     if !profiles.contains(&profile) {
-                        ctx.push_vec(&mut profiles, profile, "f3d merged selected profile")?;
+                        profiles.push(profile);
                     }
                 }
             }
@@ -1192,7 +1060,7 @@ fn merge_resolved_profile_selections(
                 for region in selected_regions.as_slice() {
                     if !regions.contains(region) {
                         let copied = copy_profile_region(region, ctx)?;
-                        ctx.push_vec(&mut regions, copied, "f3d merged selected region")?;
+                        regions.push(copied);
                     }
                 }
             }
@@ -1232,7 +1100,7 @@ fn copy_bound_profile(
             let sketch = (sketch).try_clone_for_decode(ctx, "f3d profile spatial sketch id")?;
             let mut indices = Vec::new();
             for index in profiles.as_slice() {
-                ctx.push_vec(&mut indices, *index, "f3d bound spatial profile index")?;
+                indices.push(*index);
             }
             ProfileRef::spatial_sketch_profiles(sketch, indices, ctx)?
                 .map_err(CodecError::malformed)
@@ -1241,8 +1109,8 @@ fn copy_bound_profile(
             let sketch = (sketch).try_clone_for_decode(ctx, "f3d profile spatial sketch id")?;
             let mut ids = Vec::new();
             for selection in selections.as_slice() {
-                let id = ctx.copy_retained_text(selection, "f3d bound spatial selection id")?;
-                ctx.push_vec(&mut ids, id, "f3d bound spatial selection")?;
+                let id = selection.to_owned();
+                ids.push(id);
             }
             ProfileRef::spatial_sketch_selection(sketch, ids, ctx)?.map_err(CodecError::malformed)
         }
@@ -1259,9 +1127,7 @@ fn copy_bound_planar_profile(
         PlanarProfileRef::Sketch(sketch) => Ok(PlanarProfileRef::Sketch(
             (sketch).try_clone_for_decode(ctx, "f3d profile sketch id")?,
         )),
-        PlanarProfileRef::Native(id) => Ok(PlanarProfileRef::Native(
-            ctx.copy_retained_text(id, "f3d bound native profile id")?,
-        )),
+        PlanarProfileRef::Native(id) => Ok(PlanarProfileRef::Native(id.to_owned())),
         _ => Err(CodecError::malformed(
             "bound planar profile has unsupported resolved form",
         )),
@@ -1280,7 +1146,7 @@ fn copy_bound_path(
             let mut ids = Vec::new();
             for curve in curves.as_slice() {
                 let id = (curve).try_clone_for_decode(ctx, "f3d bound planar curve id")?;
-                ctx.push_vec(&mut ids, id, "f3d bound planar path curve")?;
+                ids.push(id);
             }
             PathRef::sketch_curves(sketch, ids, ctx)?.map_err(CodecError::malformed)
         }
@@ -1289,7 +1155,7 @@ fn copy_bound_path(
             let mut ids = Vec::new();
             for curve in curves.as_slice() {
                 let id = (curve).try_clone_for_decode(ctx, "f3d bound spatial curve id")?;
-                ctx.push_vec(&mut ids, id, "f3d bound spatial path curve")?;
+                ids.push(id);
             }
             PathRef::spatial_sketch_curves(sketch, ids, ctx)?.map_err(CodecError::malformed)
         }
@@ -1323,7 +1189,7 @@ fn copy_profile_region(
         SketchProfileRegion::Loops { loops } => {
             let mut holes = Vec::new();
             for hole in loops.holes().iter().copied() {
-                ctx.push_vec(&mut holes, hole, "f3d merged region hole")?;
+                holes.push(hole);
             }
             SketchProfileRegion::loops(loops.outer(), holes, ctx)?.map_err(CodecError::malformed)
         }
@@ -1334,17 +1200,17 @@ fn copy_profile_region(
             let mut outer = Vec::new();
             for boundary in outer_boundary.as_slice() {
                 let copied = copy_profile_boundary_use(boundary, ctx)?;
-                ctx.push_vec(&mut outer, copied, "f3d merged region outer boundary")?;
+                outer.push(copied);
             }
             let mut holes = Vec::new();
             for ring in hole_boundaries {
                 let mut copied_ring = Vec::new();
                 for boundary in ring.as_slice() {
                     let copied = copy_profile_boundary_use(boundary, ctx)?;
-                    ctx.push_vec(&mut copied_ring, copied, "f3d merged region hole boundary")?;
+                    copied_ring.push(copied);
                 }
                 let copied_ring = copied_ring.try_into().map_err(CodecError::malformed)?;
-                ctx.push_vec(&mut holes, copied_ring, "f3d merged region hole ring")?;
+                holes.push(copied_ring);
             }
             Ok(SketchProfileRegion::Trimmed {
                 outer_boundary: outer.try_into().map_err(CodecError::malformed)?,
@@ -1370,32 +1236,9 @@ pub(super) fn resolved_extrude_profile_selection(
         native_stream(&member.id) == native_stream(&group.id)
             && member.group_record_index == group.record_index
     }) {
-        (resolution.ctx).push_vec(
-            &mut selection_members,
-            member,
-            "f3d extrude selection member",
-        )?;
+        selection_members.push(member);
     }
-    resolution.ctx.stable_sort_by(
-        &mut selection_members[..],
-        |left, right| {
-            let left_key = {
-                let member = left;
-                {
-                    member.group_member_ordinal
-                }
-            };
-            let right_key = {
-                let member = right;
-                {
-                    member.group_member_ordinal
-                }
-            };
-            left_key.cmp(&right_key)
-        },
-        |_| 0,
-        "sort f3d design profile_select 3",
-    )?;
+    selection_members.sort_by_key(|left| left.group_member_ordinal);
     let exact_member_run = selection_members.len() == group.members().len()
         && selection_members
             .iter()
@@ -1420,7 +1263,6 @@ pub(super) fn resolved_extrude_profile_selection(
                 break;
             };
             let entity = crate::design::identity::neutral_sketch_curve_id(
-                resolution.ctx,
                 sketch_id,
                 *primary_id,
                 *secondary_id,
@@ -1443,11 +1285,7 @@ pub(super) fn resolved_extrude_profile_selection(
                 break;
             };
             if !selected.contains(&profile_index) {
-                (resolution.ctx).push_vec(
-                    &mut selected,
-                    profile_index,
-                    "f3d extrude selected profile",
-                )?;
+                selected.push(profile_index);
             }
         }
         if complete && !selected.is_empty() {
@@ -1483,9 +1321,7 @@ pub(super) fn resolved_extrude_profile_selection(
             resolution.ctx,
         )? {
             Ok(profile) => profile,
-            Err(_) => PlanarProfileRef::Native(
-                (resolution.ctx).copy_retained_text(&group.id, "f3d extrude fallback group id")?,
-            ),
+            Err(_) => PlanarProfileRef::Native(group.id.clone()),
         },
         Some(ResolvedProfileSelection::Regions(regions)) => {
             match PlanarProfileRef::sketch_regions(
@@ -1493,27 +1329,19 @@ pub(super) fn resolved_extrude_profile_selection(
                 regions,
             ) {
                 Ok(profile) => profile,
-                Err(_) => PlanarProfileRef::Native(
-                    (resolution.ctx)
-                        .copy_retained_text(&group.id, "f3d extrude fallback group id")?,
-                ),
+                Err(_) => PlanarProfileRef::Native(group.id.clone()),
             }
         }
         None => {
-            let id =
-                (resolution.ctx).copy_retained_text(&group.id, "f3d extrude selection group id")?;
-            let mut ids = Vec::new();
-            (resolution.ctx).push_vec(&mut ids, id, "f3d extrude selection group")?;
+            let id = group.id.clone();
+            let ids = vec![id];
             match PlanarProfileRef::sketch_selection(
                 (sketch_id).try_clone_for_decode(resolution.ctx, "f3d profile sketch id")?,
                 ids,
                 resolution.ctx,
             )? {
                 Ok(profile) => profile,
-                Err(_) => PlanarProfileRef::Native(
-                    (resolution.ctx)
-                        .copy_retained_text(&group.id, "f3d extrude fallback group id")?,
-                ),
+                Err(_) => PlanarProfileRef::Native(group.id.clone()),
             }
         }
     };
@@ -1561,7 +1389,7 @@ fn transition_profile_selection(
     let tolerance = resolution.linear_tolerance;
     let mut inserted_selections = Vec::new();
     for face in inserted_faces {
-        let selection = match historical_face_points(*face, topology, resolution.ctx)? {
+        let selection = match historical_face_points(*face, topology) {
             Some(points) => selection_containing_points(
                 sketch,
                 entities,
@@ -1572,11 +1400,7 @@ fn transition_profile_selection(
             )?,
             None => None,
         };
-        (resolution.ctx).push_vec(
-            &mut inserted_selections,
-            selection,
-            "f3d transition inserted selection",
-        )?;
+        inserted_selections.push(selection);
     }
     let inserted = transition_inserted_profile_selection(
         sketch,
@@ -1597,13 +1421,8 @@ fn transition_profile_selection(
             *face,
             tolerance,
             resolution.angular_tolerance,
-            resolution.ctx,
-        )?;
-        (resolution.ctx).push_vec(
-            &mut cylindrical_selections,
-            selection,
-            "f3d transition cylindrical selection",
-        )?;
+        );
+        cylindrical_selections.push(selection);
     }
     if let Some(selection) = unique_resolved_selection(cylindrical_selections) {
         return Ok(Some(selection));
@@ -1621,12 +1440,11 @@ fn transition_profile_selection(
     let deleted = &geometric!(state.transition.as_ref()).topology.faces.deleted;
     let faces = geometric!(unique_multi_face_deleted_carrier_family(
         deleted,
-        previous_topology,
-        resolution.ctx,
-    )?);
+        previous_topology
+    ));
     let mut selections = Vec::new();
     for face in faces {
-        let selection = match historical_face_points(face, previous_topology, resolution.ctx)? {
+        let selection = match historical_face_points(face, previous_topology) {
             Some(points) => selection_containing_points(
                 sketch,
                 entities,
@@ -1637,13 +1455,9 @@ fn transition_profile_selection(
             )?,
             None => None,
         };
-        (resolution.ctx).push_vec(
-            &mut selections,
-            selection,
-            "f3d transition deleted selection",
-        )?;
+        selections.push(selection);
     }
-    ordered_unique_profile_selections(selections, resolution.ctx)
+    Ok(ordered_unique_profile_selections(selections))
 }
 
 fn inserted_cylindrical_profile_selection(
@@ -1653,66 +1467,49 @@ fn inserted_cylindrical_profile_selection(
     face: i64,
     linear_tolerance: f64,
     angular_tolerance: f64,
-    ctx: &DecodeContext<'_>,
-) -> Result<Option<ResolvedProfileSelection>, CodecError> {
+) -> Option<ResolvedProfileSelection> {
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
     let mut carriers = topology
         .face_surfaces
         .iter()
         .filter(|binding| binding.entity == face);
-    let Some(carrier) = carriers.next().map(|binding| binding.carrier) else {
-        return Ok(None);
-    };
+    let carrier = carriers.next().map(|binding| binding.carrier)?;
     if carriers.next().is_some() {
-        return Ok(None);
+        return None;
     }
     let mut cylinders = topology
         .surface_cylinders
         .iter()
         .filter(|cylinder| cylinder.surface == carrier);
-    let Some(cylinder) = cylinders.next() else {
-        return Ok(None);
-    };
+    let cylinder = cylinders.next()?;
     if cylinders.next().is_some() || !cylinder.radius.is_finite() || cylinder.radius <= 0.0 {
-        return Ok(None);
+        return None;
     }
-    let Some((sketch_origin, sketch_normal, _)) = sketch.resolved_placement() else {
-        return Ok(None);
-    };
+    let (sketch_origin, sketch_normal, _) = sketch.resolved_placement()?;
     let alignment = cylinder.axis.x * sketch_normal.x
         + cylinder.axis.y * sketch_normal.y
         + cylinder.axis.z * sketch_normal.z;
     if alignment.abs() < angular_tolerance.cos() {
-        return Ok(None);
+        return None;
     }
     let offset = (sketch_origin.x - cylinder.origin.x) * sketch_normal.x
         + (sketch_origin.y - cylinder.origin.y) * sketch_normal.y
         + (sketch_origin.z - cylinder.origin.z) * sketch_normal.z;
     let parameter = offset / alignment;
-    let Some(center) = project_to_sketch(
+    let center = project_to_sketch(
         sketch,
         Point3::new(
             cylinder.origin.x + parameter * cylinder.axis.x,
             cylinder.origin.y + parameter * cylinder.axis.y,
             cylinder.origin.z + parameter * cylinder.axis.z,
         ),
-    ) else {
-        return Ok(None);
-    };
-    let Some(points) = historical_face_points(face, topology, ctx)? else {
-        return Ok(None);
-    };
+    )?;
+    let points = historical_face_points(face, topology)?;
     let mut projected = Vec::new();
     for point in &points {
-        let Some(point) = project_to_sketch(sketch, *point) else {
-            return Ok(None);
-        };
-        ctx.push_vec(
-            &mut projected,
-            point,
-            "f3d cylindrical profile projected point",
-        )?;
+        let point = project_to_sketch(sketch, *point)?;
+        projected.push(point);
     }
     let mut matches = sketch
         .profiles
@@ -1743,13 +1540,11 @@ fn inserted_cylindrical_profile_selection(
                 }))
             .then(|| u32::try_from(index).ok())?
         });
-    let Some(profile) = matches.next() else {
-        return Ok(None);
-    };
-    Ok(matches
+    let profile = matches.next()?;
+    matches
         .next()
         .is_none()
-        .then(|| ResolvedProfileSelection::Loops(vec![profile])))
+        .then(|| ResolvedProfileSelection::Loops(vec![profile]))
 }
 
 fn resolved_spatial_extrude_profile_selection(
@@ -1772,32 +1567,9 @@ fn resolved_spatial_extrude_profile_selection(
         native_stream(&member.id) == native_stream(&group.id)
             && member.group_record_index == group.record_index
     }) {
-        (resolution.ctx).push_vec(
-            &mut group_members,
-            member,
-            "f3d spatial profile group member",
-        )?;
+        group_members.push(member);
     }
-    resolution.ctx.stable_sort_by(
-        &mut group_members[..],
-        |left, right| {
-            let left_key = {
-                let member = left;
-                {
-                    member.group_member_ordinal
-                }
-            };
-            let right_key = {
-                let member = right;
-                {
-                    member.group_member_ordinal
-                }
-            };
-            left_key.cmp(&right_key)
-        },
-        |_| 0,
-        "sort f3d design profile_select 4",
-    )?;
+    group_members.sort_by_key(|left| left.group_member_ordinal);
     let exact_member_run = group_members.len() == group.members().len()
         && group_members
             .iter()
@@ -1818,7 +1590,6 @@ fn resolved_spatial_extrude_profile_selection(
                 return Ok(ExactSelection::Unavailable);
             };
             let entity = crate::design::identity::neutral_spatial_sketch_curve_id(
-                resolution.ctx,
                 &sketch.id,
                 *primary_id,
                 *secondary_id,
@@ -1859,7 +1630,6 @@ fn resolved_spatial_extrude_profile_selection(
                     state_id,
                     previous_state_id,
                     resolution.linear_tolerance,
-                    resolution.ctx,
                 )?
             } else {
                 None
@@ -1876,7 +1646,6 @@ fn transition_spatial_profile_selection(
     state_id: i64,
     previous_state_id: i64,
     linear_tolerance: f64,
-    ctx: &DecodeContext<'_>,
 ) -> Result<Option<u32>, CodecError> {
     let mut states = histories
         .iter()
@@ -1905,20 +1674,15 @@ fn transition_spatial_profile_selection(
      -> Result<Option<u32>, CodecError> {
         let mut indices = Vec::new();
         for face in faces {
-            if let Some(points) = historical_face_points(*face, topology, ctx)? {
-                if let Some(index) = spatial_polyline_profile_containing_points(
-                    sketch, entities, &points, tolerance, ctx,
-                )? {
-                    ctx.push_vec(&mut indices, index, "f3d spatial transition profile index")?;
+            if let Some(points) = historical_face_points(*face, topology) {
+                if let Some(index) =
+                    spatial_polyline_profile_containing_points(sketch, entities, &points, tolerance)
+                {
+                    indices.push(index);
                 }
             }
         }
-        ctx.sort_unstable_by(
-            &mut indices,
-            Ord::cmp,
-            |_| 0,
-            "sort f3d spatial transition profile indices",
-        )?;
+        indices.sort_unstable_by(Ord::cmp);
         indices.dedup();
         Ok((indices.len() == 1).then(|| indices[0]))
     };
@@ -1949,8 +1713,7 @@ fn spatial_polyline_profile_containing_points(
     entities: &[cadmpeg_ir::sketches::SpatialSketchEntity],
     points: &[Point3],
     tolerance: f64,
-    ctx: &DecodeContext<'_>,
-) -> Result<Option<u32>, CodecError> {
+) -> Option<u32> {
     let mut selected = None;
     for (index, profile) in sketch.profiles.iter().enumerate() {
         let mut offsets = points.iter().map(|point| {
@@ -1973,23 +1736,20 @@ fn spatial_polyline_profile_containing_points(
         };
         let mut polygon = Vec::new();
         for use_ in profile.boundary() {
-            let Some(entity) = entities
+            let entity = entities
                 .iter()
-                .find(|entity| entity.sketch == sketch.id && entity.id() == &use_.entity)
-            else {
-                return Ok(None);
-            };
+                .find(|entity| entity.sketch == sketch.id && entity.id() == &use_.entity)?;
             let cadmpeg_ir::sketches::SpatialSketchGeometryDefinition::Line { start, end } =
                 entity.geometry.definition()
             else {
-                return Ok(None);
+                return None;
             };
             let point = project(if use_.reversed {
                 end.get()
             } else {
                 start.get()
             });
-            ctx.push_vec(&mut polygon, point, "f3d spatial profile polygon point")?;
+            polygon.push(point);
         }
         if polygon.len() >= 3
             && points.iter().all(|point| {
@@ -2002,63 +1762,44 @@ fn spatial_polyline_profile_containing_points(
             })
         {
             let Ok(index) = u32::try_from(index) else {
-                return Ok(None);
+                return None;
             };
             if selected.replace(index).is_some() {
-                return Ok(None);
+                return None;
             }
         }
     }
-    Ok(selected)
+    selected
 }
 
 fn unique_multi_face_deleted_carrier_family(
     deleted_faces: &[i64],
     topology: &crate::history_records::AsmHistoricalTopology,
-    ctx: &DecodeContext<'_>,
-) -> Result<Option<Vec<i64>>, CodecError> {
+) -> Option<Vec<i64>> {
     let mut seen = HashSet::new();
     let mut families = HashMap::<i64, Vec<i64>>::new();
     for face in deleted_faces.iter().copied() {
         if seen.contains(&face) {
-            return Ok(None);
-        }
-        {
-            ctx.reserve_set(&mut seen, 1, "f3d deleted face uniqueness index")?;
+            return None;
         }
         seen.insert(face);
         let mut bindings = topology
             .face_surfaces
             .iter()
             .filter(|binding| binding.entity == face);
-        let Some(carrier) = bindings.next().map(|binding| binding.carrier) else {
-            return Ok(None);
-        };
+        let carrier = bindings.next().map(|binding| binding.carrier)?;
         if bindings.next().is_some() {
-            return Ok(None);
+            return None;
         }
-        ctx.push_hash_group(
-            &mut families,
-            carrier,
-            face,
-            "f3d deleted carrier family index",
-            "f3d deleted carrier family face",
-        )?;
+        families.entry(carrier).or_default().push(face);
     }
     let mut candidates = families.into_values().filter(|faces| faces.len() > 1);
-    let Some(mut faces) = candidates.next() else {
-        return Ok(None);
-    };
+    let mut faces = candidates.next()?;
     if candidates.next().is_some() {
-        return Ok(None);
+        return None;
     }
-    ctx.sort_unstable_by(
-        &mut faces,
-        Ord::cmp,
-        |_| 0,
-        "sort f3d deleted carrier family faces",
-    )?;
-    Ok(Some(faces))
+    faces.sort_unstable_by(Ord::cmp);
+    Some(faces)
 }
 
 fn unique_resolved_selection<T: PartialEq>(
@@ -2112,7 +1853,7 @@ fn transition_inserted_profile_selection(
             let ResolvedProfileSelection::Loops(selected) = selection else { continue; };
             for profile in selected.iter().copied() {
                 if !loops.contains(&profile) {
-                    ctx.push_vec(&mut loops, profile, "f3d inserted transition profile loop")?;
+                    loops.push(profile);
                 }
             }
         }
@@ -2164,83 +1905,56 @@ fn transition_inserted_profile_selection(
     }
     let mut owned_holes = Vec::new();
     for hole in holes.iter().copied() {
-        ctx.push_vec(
-            &mut owned_holes,
-            hole,
-            "f3d inserted transition region hole",
-        )?;
+        owned_holes.push(hole);
     }
     let Some(region) = SketchProfileRegion::loops(outer, owned_holes, ctx)?.ok() else {
         return Ok(None);
     };
-    let mut output = Vec::new();
-    ctx.push_vec(&mut output, region, "f3d inserted transition region")?;
+    let output = vec![region];
     Ok(Some(ResolvedProfileSelection::Regions(output)))
 }
 
 pub(super) fn historical_face_points(
     face: i64,
     topology: &crate::history_records::AsmHistoricalTopology,
-    ctx: &DecodeContext<'_>,
-) -> Result<Option<Vec<Point3>>, CodecError> {
-    let Some(loops) = topology
+) -> Option<Vec<Point3>> {
+    let loops = topology
         .face_loops
         .iter()
-        .find(|relation| relation.owner_ref == face)
-    else {
-        return Ok(None);
-    };
+        .find(|relation| relation.owner_ref == face)?;
     let mut positions = Vec::new();
     for loop_ref in &loops.member_refs {
-        let Some(coedges) = topology
+        let coedges = topology
             .loop_coedges
             .iter()
-            .find(|relation| relation.owner_ref == *loop_ref)
-        else {
-            return Ok(None);
-        };
+            .find(|relation| relation.owner_ref == *loop_ref)?;
         for coedge_ref in &coedges.member_refs {
-            let Some(coedge) = topology
+            let coedge = topology
                 .coedge_topology
                 .iter()
-                .find(|coedge| coedge.coedge == *coedge_ref)
-            else {
-                return Ok(None);
-            };
-            let Some(edge) = topology
+                .find(|coedge| coedge.coedge == *coedge_ref)?;
+            let edge = topology
                 .edge_vertices
                 .iter()
-                .find(|edge| edge.edge == coedge.edge)
-            else {
-                return Ok(None);
-            };
+                .find(|edge| edge.edge == coedge.edge)?;
             for vertex_ref in [edge.start_vertex, edge.end_vertex] {
-                let Some(point_ref) = topology
+                let point_ref = topology
                     .vertex_points
                     .iter()
                     .find(|binding| binding.entity == vertex_ref)
-                    .map(|binding| binding.carrier)
-                else {
-                    return Ok(None);
-                };
-                let Some(position) = topology
+                    .map(|binding| binding.carrier)?;
+                let position = topology
                     .point_positions
                     .iter()
                     .find(|point| point.point == point_ref)
-                    .map(|point| point.position)
-                else {
-                    return Ok(None);
-                };
+                    .map(|point| point.position)?;
                 if !positions.contains(&position) {
-                    {
-                        ctx.reserve_vec(&mut positions, 1, "f3d historical face point")?;
-                    }
                     positions.push(position);
                 }
             }
         }
     }
-    Ok((positions.len() >= 3).then_some(positions))
+    (positions.len() >= 3).then_some(positions)
 }
 
 fn historical_selection_regions(
@@ -2260,9 +1974,6 @@ fn historical_selection_regions(
         if let Some(previous) = states.get_mut(&state.state_id) {
             *previous = None;
         } else {
-            {
-                ctx.reserve_map(&mut states, 1, "f3d historical selection state index")?;
-            }
             states.insert(state.state_id, Some(state));
         }
     }
@@ -2273,11 +1984,7 @@ fn historical_selection_regions(
     if let Some(binding) = first_member.historical.as_ref() {
         for state_id in binding.state_ids.iter().copied() {
             if !state_ids.contains(&state_id) {
-                ctx.push_vec(
-                    &mut state_ids,
-                    state_id,
-                    "f3d historical selection state id",
-                )?;
+                state_ids.push(state_id);
             }
         }
     }
@@ -2289,12 +1996,7 @@ fn historical_selection_regions(
                 .is_some_and(|binding| binding.state_ids.contains(state_id))
         });
     }
-    ctx.sort_unstable_by(
-        &mut state_ids,
-        Ord::cmp,
-        |_| 0,
-        "sort f3d historical selection states",
-    )?;
+    state_ids.sort_unstable_by(Ord::cmp);
     let mut previous_member_points: Option<Vec<Vec<Point3>>> = None;
     let mut state_selection = None;
     let mut conflicting_state_selections = false;
@@ -2309,14 +2011,12 @@ fn historical_selection_regions(
         let mut member_points = Vec::new();
         let mut complete = true;
         for member in members {
-            let points = match historical_member_points_in_state(member, topology, ctx)? {
+            let points = match historical_member_points_in_state(member, topology) {
                 Some(points) => Some(points),
                 None => {
-                    if let Some(point) =
-                        resolved_selection_member_point(ctx, member, sketch, entities)?
+                    if let Some(point) = resolved_selection_member_point(member, sketch, entities)?
                     {
-                        let mut points = Vec::new();
-                        ctx.push_vec(&mut points, point, "f3d historical fallback member point")?;
+                        let points = vec![point];
                         Some(points)
                     } else {
                         None
@@ -2327,11 +2027,7 @@ fn historical_selection_regions(
                 complete = false;
                 break;
             };
-            ctx.push_vec(
-                &mut member_points,
-                points,
-                "f3d historical selection member points",
-            )?;
+            member_points.push(points);
         }
         if !complete {
             continue;
@@ -2370,17 +2066,12 @@ fn historical_selection_regions(
     let mut member_points = Vec::new();
     let mut complete = true;
     for member in members {
-        let Some(point) = resolved_selection_member_point(ctx, member, sketch, entities)? else {
+        let Some(point) = resolved_selection_member_point(member, sketch, entities)? else {
             complete = false;
             break;
         };
-        let mut points = Vec::new();
-        ctx.push_vec(&mut points, point, "f3d resolved fallback member point")?;
-        ctx.push_vec(
-            &mut member_points,
-            points,
-            "f3d resolved fallback member points",
-        )?;
+        let points = vec![point];
+        member_points.push(points);
     }
     if complete {
         if let Some(selection) = selection_for_member_points(
@@ -2397,28 +2088,24 @@ fn historical_selection_regions(
     }
     let mut selections = Vec::new();
     for member in members {
-        let selection =
-            if let Some(point) = resolved_selection_member_point(ctx, member, sketch, entities)? {
-                selection_containing_points(
-                    sketch,
-                    entities,
-                    std::slice::from_ref(&point),
-                    tolerance,
-                    arrangement_budget,
-                    ctx,
-                )?
-            } else {
-                resolved_selection_member_profiles(member, sketch, ctx)?
-                    .map(ResolvedProfileSelection::Loops)
-            };
-        ctx.push_vec(
-            &mut selections,
-            selection,
-            "f3d historical fallback selection",
-        )?;
+        let selection = if let Some(point) =
+            resolved_selection_member_point(member, sketch, entities)?
+        {
+            selection_containing_points(
+                sketch,
+                entities,
+                std::slice::from_ref(&point),
+                tolerance,
+                arrangement_budget,
+                ctx,
+            )?
+        } else {
+            resolved_selection_member_profiles(member, sketch)?.map(ResolvedProfileSelection::Loops)
+        };
+        selections.push(selection);
     }
     if ordered_selection_has_value(&selections) {
-        return ordered_unique_profile_selections(selections, ctx);
+        return Ok(ordered_unique_profile_selections(selections));
     }
     region_with_boundary_selection_members(members, sketch, &selections, ctx)
 }
@@ -2446,11 +2133,7 @@ fn selection_for_member_points(
 ) -> Result<Option<ResolvedProfileSelection>, CodecError> {
     let mut all_points = Vec::new();
     for point in member_points.iter().flatten().copied() {
-        ctx.push_vec(
-            &mut all_points,
-            point,
-            "f3d historical combined member point",
-        )?;
+        all_points.push(point);
     }
     if let Some(selection) = selection_containing_points(
         sketch,
@@ -2472,14 +2155,10 @@ fn selection_for_member_points(
             arrangement_budget,
             ctx,
         )?;
-        ctx.push_vec(
-            &mut selections,
-            selection,
-            "f3d historical member selection",
-        )?;
+        selections.push(selection);
     }
     if ordered_selection_has_value(&selections) {
-        return ordered_unique_profile_selections(selections, ctx);
+        return Ok(ordered_unique_profile_selections(selections));
     }
     region_with_boundary_selection_members(members, sketch, &selections, ctx)
 }
@@ -2516,14 +2195,12 @@ fn region_with_boundary_selection_members(
                         .iter()
                         .all(|profile| *profile == loops.outer() || loops.holes().contains(profile))
             }
-            None => {
-                resolved_selection_member_profiles(member, sketch, ctx)?.is_some_and(|profiles| {
-                    !profiles.is_empty()
-                        && profiles.iter().all(|profile| {
-                            *profile == loops.outer() || loops.holes().contains(profile)
-                        })
-                })
-            }
+            None => resolved_selection_member_profiles(member, sketch)?.is_some_and(|profiles| {
+                !profiles.is_empty()
+                    && profiles
+                        .iter()
+                        .all(|profile| *profile == loops.outer() || loops.holes().contains(profile))
+            }),
         };
         if !matches {
             return Ok(None);
@@ -2531,24 +2208,18 @@ fn region_with_boundary_selection_members(
     }
     let mut owned_holes = Vec::new();
     for hole in loops.holes().iter().copied() {
-        ctx.push_vec(
-            &mut owned_holes,
-            hole,
-            "f3d historical boundary region hole",
-        )?;
+        owned_holes.push(hole);
     }
     let Some(region) = SketchProfileRegion::loops(loops.outer(), owned_holes, ctx)?.ok() else {
         return Ok(None);
     };
-    let mut selected = Vec::new();
-    ctx.push_vec(&mut selected, region, "f3d historical boundary region")?;
+    let selected = vec![region];
     Ok(Some(ResolvedProfileSelection::Regions(selected)))
 }
 
 fn resolved_selection_member_profiles(
     member: &DesignExtrudeSelectionMember,
     sketch: &cadmpeg_ir::sketches::Sketch,
-    ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<u32>>, CodecError> {
     let Some(geometry) = member.resolved_geometry.as_ref() else {
         return Ok(None);
@@ -2561,26 +2232,21 @@ fn resolved_selection_member_profiles(
     else {
         return Ok(None);
     };
-    let entity = crate::design::identity::neutral_sketch_curve_id(
-        ctx,
-        &sketch.id,
-        *primary_id,
-        *secondary_id,
-    )?;
+    let entity =
+        crate::design::identity::neutral_sketch_curve_id(&sketch.id, *primary_id, *secondary_id)?;
     let mut profiles = Vec::new();
     for (index, profile) in sketch.profiles.iter().enumerate() {
         if profile.iter().any(|use_| use_.entity == entity) {
             let Ok(index) = u32::try_from(index) else {
                 return Ok(None);
             };
-            ctx.push_vec(&mut profiles, index, "f3d resolved member profile")?;
+            profiles.push(index);
         }
     }
     Ok(Some(profiles))
 }
 
 fn resolved_selection_member_point(
-    ctx: &DecodeContext<'_>,
     member: &DesignExtrudeSelectionMember,
     sketch: &cadmpeg_ir::sketches::Sketch,
     entities: &[cadmpeg_ir::sketches::SketchEntity],
@@ -2595,10 +2261,8 @@ fn resolved_selection_member_point(
         return Ok(None);
     };
     let entity_id = persistent_id.map_or_else(
-        || crate::design::identity::neutral_sketch_record_id(ctx, &sketch.id, *record_index),
-        |persistent_id| {
-            crate::design::identity::neutral_sketch_point_id(ctx, &sketch.id, persistent_id)
-        },
+        || crate::design::identity::neutral_sketch_record_id(&sketch.id, *record_index),
+        |persistent_id| crate::design::identity::neutral_sketch_point_id(&sketch.id, persistent_id),
     )?;
     let SketchGeometryDefinition::Point { position } = or_none!(entities
         .iter()
@@ -2635,38 +2299,35 @@ fn ordered_selection_has_value(selections: &[Option<ResolvedProfileSelection>]) 
 
 fn ordered_unique_profile_selections(
     matches: impl IntoIterator<Item = Option<ResolvedProfileSelection>>,
-    ctx: &DecodeContext<'_>,
-) -> Result<Option<ResolvedProfileSelection>, CodecError> {
+) -> Option<ResolvedProfileSelection> {
     let mut loops = Vec::new();
     let mut regions = Vec::new();
     for selection in matches {
-        let Some(selection) = selection else {
-            return Ok(None);
-        };
+        let selection = selection?;
         match selection {
             ResolvedProfileSelection::Loops(selected) if regions.is_empty() => {
                 for loop_index in selected {
                     if !loops.contains(&loop_index) {
-                        ctx.push_vec(&mut loops, loop_index, "f3d ordered selected profile")?;
+                        loops.push(loop_index);
                     }
                 }
             }
             ResolvedProfileSelection::Regions(selected) if loops.is_empty() => {
                 for region in selected {
                     if !regions.contains(&region) {
-                        ctx.push_vec(&mut regions, region, "f3d ordered selected region")?;
+                        regions.push(region);
                     }
                 }
             }
-            _ => return Ok(None),
+            _ => return None,
         }
     }
     if !loops.is_empty() {
-        Ok(Some(ResolvedProfileSelection::Loops(loops)))
+        Some(ResolvedProfileSelection::Loops(loops))
     } else if !regions.is_empty() {
-        Ok(Some(ResolvedProfileSelection::Regions(regions)))
+        Some(ResolvedProfileSelection::Regions(regions))
     } else {
-        Ok(None)
+        None
     }
 }
 
@@ -2683,11 +2344,7 @@ fn selection_containing_points(
         let Some(point) = project_to_sketch(sketch, *point) else {
             return Ok(None);
         };
-        ctx.push_vec(
-            &mut projected,
-            point,
-            "f3d historical projected selection point",
-        )?;
+        projected.push(point);
     }
     let mut boundaries = Vec::new();
     for (index, profile) in sketch.profiles.iter().enumerate() {
@@ -2713,12 +2370,11 @@ fn selection_containing_points(
             let Some(index) = u32::try_from(index).ok() else {
                 return Ok(None);
             };
-            ctx.push_vec(&mut boundaries, index, "f3d historical boundary profile")?;
+            boundaries.push(index);
         }
     }
     if let [profile] = boundaries.as_slice() {
-        let mut loops = Vec::new();
-        ctx.push_vec(&mut loops, *profile, "f3d historical selected profile")?;
+        let loops = vec![*profile];
         return Ok(Some(ResolvedProfileSelection::Loops(loops)));
     }
     if let Some(region) = arrangement_region_containing_points(
@@ -2729,12 +2385,7 @@ fn selection_containing_points(
         arrangement_budget,
         ctx,
     )? {
-        let mut regions = Vec::new();
-        ctx.push_vec(
-            &mut regions,
-            region,
-            "f3d historical selected arrangement region",
-        )?;
+        let regions = vec![region];
         return Ok(Some(ResolvedProfileSelection::Regions(regions)));
     }
     if !boundaries.is_empty() {
@@ -2743,12 +2394,7 @@ fn selection_containing_points(
     let Some(region) = region_containing_points(sketch, entities, points, tolerance, ctx)? else {
         return Ok(None);
     };
-    let mut regions = Vec::new();
-    ctx.push_vec(
-        &mut regions,
-        region,
-        "f3d historical selected geometric region",
-    )?;
+    let regions = vec![region];
     Ok(Some(ResolvedProfileSelection::Regions(regions)))
 }
 
@@ -2818,11 +2464,7 @@ fn resolve_entity_selection_path(
         .enumerate()
     {
         let ordinal = available!(u32::try_from(ordinal).ok());
-        if !ctx.insert_hash_set(
-            &mut member_records,
-            record_index,
-            "f3d entity path member record",
-        )? {
+        if !member_records.insert(record_index) {
             return Ok(None);
         }
         let mut matches = resolution.operands.iter().filter(|operand| {
@@ -2858,11 +2500,7 @@ fn resolve_entity_selection_path(
         } else {
             context_id = Some(operand.context_id.as_str());
         }
-        ctx.push_vec(
-            &mut selected_identities,
-            secondary,
-            "f3d entity path selected identity",
-        )?;
+        selected_identities.push(secondary);
     }
     let primary_identity = available!(primary_identity);
     let mut matching_placements = resolution.placements.iter().filter(|placement| {
@@ -2892,17 +2530,13 @@ fn resolve_entity_selection_path(
             return Ok(None);
         }
         let identity = (curve.primary_id.get(), curve.secondary_id);
-        if !ctx.insert_hash_set(
-            &mut selected_curve_identities,
-            identity,
-            "f3d entity path curve identity",
-        )? {
+        if !selected_curve_identities.insert(identity) {
             return Ok(None);
         }
-        ctx.push_vec(&mut curve_ids, identity, "f3d entity path curve pair")?;
+        curve_ids.push(identity);
     }
 
-    let spatial_sketch = crate::design::identity::neutral_spatial_sketch_id(ctx, placement)?;
+    let spatial_sketch = crate::design::identity::neutral_spatial_sketch_id(placement)?;
     if resolution
         .spatial_sketches
         .iter()
@@ -2911,12 +2545,11 @@ fn resolve_entity_selection_path(
         let mut selections = HashSet::new();
         for (primary, secondary) in &curve_ids {
             let id = crate::design::identity::neutral_spatial_sketch_curve_id(
-                ctx,
                 &spatial_sketch,
                 *primary,
                 *secondary,
             )?;
-            ctx.insert_hash_set(&mut selections, id, "f3d entity path spatial curve index")?;
+            selections.insert(id);
         }
         if selections.len() != curve_ids.len()
             || selections.iter().any(|curve| {
@@ -2931,18 +2564,17 @@ fn resolve_entity_selection_path(
         let mut curves = Vec::new();
         for (primary, secondary) in curve_ids {
             let id = crate::design::identity::neutral_spatial_sketch_curve_id(
-                ctx,
                 &spatial_sketch,
                 primary,
                 secondary,
             )?;
-            ctx.push_vec(&mut curves, id, "f3d entity path spatial output curve")?;
+            curves.push(id);
         }
         let sketch = spatial_sketch.try_clone_for_decode(ctx, "f3d profile spatial sketch id")?;
         return Ok(PathRef::spatial_sketch_curves(sketch, curves, ctx)?.ok());
     }
 
-    let sketch = crate::design::identity::neutral_sketch_id(ctx, placement)?;
+    let sketch = crate::design::identity::neutral_sketch_id(placement)?;
     if !resolution
         .sketches
         .iter()
@@ -2952,9 +2584,8 @@ fn resolve_entity_selection_path(
     }
     let mut curves = Vec::new();
     for (primary, secondary) in curve_ids {
-        let id =
-            crate::design::identity::neutral_sketch_curve_id(ctx, &sketch, primary, secondary)?;
-        ctx.push_vec(&mut curves, id, "f3d entity path planar output curve")?;
+        let id = crate::design::identity::neutral_sketch_curve_id(&sketch, primary, secondary)?;
+        curves.push(id);
     }
     if curves.iter().any(|curve| {
         !resolution.sketch_entities.iter().any(|entity| {
@@ -2989,7 +2620,6 @@ fn resolved_loft_entity_selection_path(
 }
 
 fn spatial_profile_member_entity<'a>(
-    ctx: &DecodeContext<'_>,
     stream: &str,
     owner_reference: u32,
     member: &DesignSketchProfileRegionMember,
@@ -3007,7 +2637,6 @@ fn spatial_profile_member_entity<'a>(
         return Ok(None);
     }
     let entity_id = crate::design::identity::neutral_spatial_sketch_curve_id(
-        ctx,
         &spatial_sketch.id,
         curve.primary_id.get(),
         curve.secondary_id,
@@ -3020,7 +2649,6 @@ fn spatial_profile_member_entity<'a>(
 }
 
 fn sketch_profile_member_entity<'a>(
-    ctx: &DecodeContext<'_>,
     stream: &str,
     owner_reference: u32,
     member: &DesignSketchProfileRegionMember,
@@ -3038,7 +2666,6 @@ fn sketch_profile_member_entity<'a>(
         return Ok(None);
     }
     let entity_id = crate::design::identity::neutral_sketch_curve_id(
-        ctx,
         &sketch.id,
         curve.primary_id.get(),
         curve.secondary_id,
@@ -3059,7 +2686,6 @@ fn resolved_sketch_profile_regions(
     sketch: &cadmpeg_ir::sketches::Sketch,
     curve_identities: &[SketchCurveIdentity],
     sketch_entities: &[cadmpeg_ir::sketches::SketchEntity],
-    ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<u32>>, CodecError> {
     let Some(selection) = profile.region_selection.as_ref() else {
         return Ok(None);
@@ -3073,7 +2699,6 @@ fn resolved_sketch_profile_regions(
             return Ok(None);
         };
         let Some(first) = sketch_profile_member_entity(
-            ctx,
             stream,
             owner_reference,
             first_member,
@@ -3097,7 +2722,6 @@ fn resolved_sketch_profile_regions(
         }
         for member in &region.members[1..] {
             let Some(entity) = sketch_profile_member_entity(
-                ctx,
                 stream,
                 owner_reference,
                 member,
@@ -3118,11 +2742,7 @@ fn resolved_sketch_profile_regions(
         if resolved.contains(&profile_index) {
             return Ok(None);
         }
-        ctx.push_vec(
-            &mut resolved,
-            profile_index,
-            "f3d selected planar sketch profile region",
-        )?;
+        resolved.push(profile_index);
     }
     Ok((!resolved.is_empty()).then_some(resolved))
 }
@@ -3180,7 +2800,6 @@ fn resolved_spatial_sketch_profile_regions(
     profile: &DesignSketchProfileOperand,
     spatial_sketch: &cadmpeg_ir::sketches::SpatialSketch,
     resolution: &SketchProfileResolution<'_>,
-    ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<u32>>, CodecError> {
     let Some(selection) = profile.region_selection.as_ref() else {
         if spatial_sketch.profiles.is_empty() {
@@ -3191,11 +2810,7 @@ fn resolved_spatial_sketch_profile_regions(
             let Ok(index) = u32::try_from(index) else {
                 return Ok(None);
             };
-            ctx.push_vec(
-                &mut profiles,
-                index,
-                "f3d all spatial sketch profile regions",
-            )?;
+            profiles.push(index);
         }
         return Ok(Some(profiles));
     };
@@ -3208,7 +2823,6 @@ fn resolved_spatial_sketch_profile_regions(
             return Ok(None);
         };
         let Some(first) = spatial_profile_member_entity(
-            ctx,
             stream,
             owner_reference,
             first_member,
@@ -3238,7 +2852,6 @@ fn resolved_spatial_sketch_profile_regions(
         }
         for member in &region.members[1..] {
             let Some(entity) = spatial_profile_member_entity(
-                ctx,
                 stream,
                 owner_reference,
                 member,
@@ -3282,11 +2895,7 @@ fn resolved_spatial_sketch_profile_regions(
         if resolved.contains(&profile_index) {
             return Ok(None);
         }
-        ctx.push_vec(
-            &mut resolved,
-            profile_index,
-            "f3d selected spatial sketch profile region",
-        )?;
+        resolved.push(profile_index);
     }
     Ok((!resolved.is_empty()).then_some(resolved))
 }
@@ -3324,13 +2933,7 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
         let Some(stream) = native_stream(&header.id) else {
             continue;
         };
-        ctx.insert_hash_map(
-            &mut header_index,
-            (stream, header.record_index),
-            header,
-            "f3d loft header index",
-        )
-        .map(|_| ())?;
+        header_index.insert((stream, header.record_index), header);
     }
     let mut resolved_profiles = HashMap::new();
     for group in groups.iter().filter(|group| {
@@ -3351,15 +2954,12 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
             continue;
         };
         let Some(profile) = parse_sketch_profile(
-            ctx,
             bytes,
             stream,
             group.scope_reference_ordinal,
             header,
             resolution.entities,
-        )
-        .transpose()?
-        else {
+        ) else {
             continue;
         };
         let mut matches = resolution.placements.iter().filter(|placement| {
@@ -3371,7 +2971,7 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
         if matches.next().is_some() {
             continue;
         }
-        let spatial_sketch_id = crate::design::identity::neutral_spatial_sketch_id(ctx, placement)?;
+        let spatial_sketch_id = crate::design::identity::neutral_spatial_sketch_id(placement)?;
         let resolved = if let Some(spatial_sketch) = resolution
             .spatial_sketches
             .iter()
@@ -3384,26 +2984,20 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
                 &profile,
                 spatial_sketch,
                 resolution,
-                ctx,
             )? {
                 match ProfileRef::spatial_sketch_profiles(id, profiles, ctx)? {
                     Ok(profile) => profile,
-                    Err(_) => ProfileRef::Planar(PlanarProfileRef::Native(
-                        ctx.copy_retained_text(&group.id, "f3d loft native profile id")?,
-                    )),
+                    Err(_) => ProfileRef::Planar(PlanarProfileRef::Native(group.id.clone())),
                 }
             } else {
-                let group_id =
-                    ctx.copy_retained_text(&group.id, "f3d loft spatial selection id")?;
+                let group_id = group.id.clone();
                 match ProfileRef::spatial_sketch_selection(id, vec![group_id], ctx)? {
                     Ok(profile) => profile,
-                    Err(_) => ProfileRef::Planar(PlanarProfileRef::Native(
-                        ctx.copy_retained_text(&group.id, "f3d loft native profile id")?,
-                    )),
+                    Err(_) => ProfileRef::Planar(PlanarProfileRef::Native(group.id.clone())),
                 }
             }
         } else {
-            let sketch = crate::design::identity::neutral_sketch_id(ctx, placement)?;
+            let sketch = crate::design::identity::neutral_sketch_id(placement)?;
             if !resolution
                 .sketches
                 .iter()
@@ -3413,13 +3007,7 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
             }
             ProfileRef::Planar(PlanarProfileRef::Sketch(sketch))
         };
-        ctx.insert_hash_map(
-            &mut resolved_profiles,
-            group.id.as_str(),
-            resolved,
-            "f3d loft resolved profile index",
-        )
-        .map(|_| ())?;
+        resolved_profiles.insert(group.id.as_str(), resolved);
     }
     let mut resolved_entity_paths = HashMap::new();
     for group in groups.iter().filter(|group| {
@@ -3429,13 +3017,7 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
         ) && !group.members().is_empty()
     }) {
         if let Some(path) = resolved_loft_entity_selection_path(group, resolution, ctx)? {
-            ctx.insert_hash_map(
-                &mut resolved_entity_paths,
-                group.id.as_str(),
-                path,
-                "f3d loft resolved path index",
-            )
-            .map(|_| ())?;
+            resolved_entity_paths.insert(group.id.as_str(), path);
         }
     }
     for group in groups
@@ -3471,7 +3053,7 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
         if matching_placements.next().is_some() {
             continue;
         }
-        let spatial_sketch_id = crate::design::identity::neutral_spatial_sketch_id(ctx, placement)?;
+        let spatial_sketch_id = crate::design::identity::neutral_spatial_sketch_id(placement)?;
         let Some(spatial_sketch) = resolution
             .spatial_sketches
             .iter()
@@ -3494,7 +3076,6 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
             continue;
         }
         let entity = crate::design::identity::neutral_spatial_sketch_curve_id(
-            ctx,
             &spatial_sketch_id,
             curve.primary_id.get(),
             curve.secondary_id,
@@ -3504,23 +3085,14 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
         let resolved = if let Some(profile) = profile {
             ProfileRef::spatial_sketch_profiles(id, vec![profile], ctx)?
         } else {
-            let operand_id =
-                ctx.copy_retained_text(&operand.id, "f3d loft entity selection operand id")?;
+            let operand_id = operand.id.clone();
             ProfileRef::spatial_sketch_selection(id, vec![operand_id], ctx)?
         };
         let resolved = match resolved {
             Ok(profile) => profile,
-            Err(_) => ProfileRef::Planar(PlanarProfileRef::Native(
-                ctx.copy_retained_text(&group.id, "f3d loft native profile id")?,
-            )),
+            Err(_) => ProfileRef::Planar(PlanarProfileRef::Native(group.id.clone())),
         };
-        ctx.insert_hash_map(
-            &mut resolved_profiles,
-            group.id.as_str(),
-            resolved,
-            "f3d loft resolved profile index",
-        )
-        .map(|_| ())?;
+        resolved_profiles.insert(group.id.as_str(), resolved);
     }
     for feature in features.iter_mut() {
         let mut edit_result = Ok(());

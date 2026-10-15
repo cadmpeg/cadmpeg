@@ -397,6 +397,8 @@ pub(crate) struct DesignRectangularPatternConstruction {
     /// Exact serialized instance sequence when one pattern direction is active.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     instances: Option<DesignRectangularPatternInstances>,
+    /// The instance search stopped at a local cap, so `instances` is absent.
+    instance_search_capped: bool,
 }
 
 #[cfg(test)]
@@ -416,6 +418,7 @@ impl Clone for DesignRectangularPatternConstruction {
             owner_record_indices: self.owner_record_indices,
             value_offsets: self.value_offsets,
             instances: self.instances.clone(),
+            instance_search_capped: self.instance_search_capped,
         }
     }
 }
@@ -430,6 +433,8 @@ struct DesignRectangularPatternConstructionRef<'a> {
     value_offsets: [u64; 4],
     #[serde(skip_serializing_if = "Option::is_none")]
     instances: Option<&'a DesignRectangularPatternInstances>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    instance_search_capped: bool,
 }
 
 impl Serialize for DesignRectangularPatternConstruction {
@@ -442,6 +447,7 @@ impl Serialize for DesignRectangularPatternConstruction {
             owner_record_indices: self.owner_record_indices,
             value_offsets: self.value_offsets,
             instances: self.instances.as_ref(),
+            instance_search_capped: self.instance_search_capped,
         }
         .serialize(serializer)
     }
@@ -468,6 +474,9 @@ pub(crate) struct DesignRectangularPatternConstructionWire {
         deserialize_with = "deserialize_instances"
     )]
     pub(crate) instances: Option<DesignRectangularPatternInstances>,
+    /// The instance search stopped at a local cap, so `instances` is absent.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub(crate) instance_search_capped: bool,
 }
 
 impl TryFrom<DesignRectangularPatternConstructionWire> for DesignRectangularPatternConstruction {
@@ -492,8 +501,12 @@ impl TryFrom<DesignRectangularPatternConstructionWire> for DesignRectangularPatt
             owner_record_indices: wire.owner_record_indices,
             value_offsets: wire.value_offsets,
             instances: None,
+            instance_search_capped: false,
         };
         record.try_set_instances(wire.instances)?;
+        if wire.instance_search_capped {
+            record.mark_instance_search_capped()?;
+        }
         Ok(record)
     }
 }
@@ -509,6 +522,7 @@ impl From<DesignRectangularPatternConstruction> for DesignRectangularPatternCons
             owner_record_indices: value.owner_record_indices,
             value_offsets: value.value_offsets,
             instances: value.instances,
+            instance_search_capped: value.instance_search_capped,
         }
     }
 }
@@ -516,6 +530,20 @@ impl From<DesignRectangularPatternConstruction> for DesignRectangularPatternCons
 impl DesignRectangularPatternConstruction {
     pub(crate) fn instances(&self) -> Option<&DesignRectangularPatternInstances> {
         self.instances.as_ref()
+    }
+
+    /// Whether the instance search stopped at a local cap.
+    pub(crate) fn instance_search_capped(&self) -> bool {
+        self.instance_search_capped
+    }
+
+    /// Record that the instance search stopped at a local cap.
+    pub(crate) fn mark_instance_search_capped(&mut self) -> Result<(), &'static str> {
+        if self.instances.is_some() {
+            return Err("a capped instance search leaves no instances");
+        }
+        self.instance_search_capped = true;
+        Ok(())
     }
 
     pub(crate) fn try_set_instances(
@@ -865,6 +893,7 @@ mod tests {
             owner_record_indices: [1, 2, 3, 4],
             value_offsets: [10, 20, 30, 40],
             instances,
+            instance_search_capped: false,
         }
     }
 
@@ -1022,6 +1051,27 @@ mod tests {
             frame(3),
             frame(4),
         ]));
+        assert!(DesignRectangularPatternConstruction::try_from(wire).is_err());
+    }
+
+    #[test]
+    fn rectangular_pattern_capped_instance_search_round_trips_without_instances() {
+        let uncapped = construction(None);
+        assert!(serde_json::to_value(&uncapped)
+            .unwrap()
+            .get("instance_search_capped")
+            .is_none());
+        let mut wire = DesignRectangularPatternConstructionWire::from(uncapped);
+        wire.instance_search_capped = true;
+        let record = DesignRectangularPatternConstruction::try_from(wire.clone()).unwrap();
+        assert!(record.instance_search_capped());
+        let value = serde_json::to_value(&record).unwrap();
+        assert_eq!(value["instance_search_capped"], true);
+        assert_eq!(
+            serde_json::from_value::<DesignRectangularPatternConstruction>(value).unwrap(),
+            record
+        );
+        wire.instances = Some(components());
         assert!(DesignRectangularPatternConstruction::try_from(wire).is_err());
     }
 }

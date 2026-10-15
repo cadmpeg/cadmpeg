@@ -1,5 +1,4 @@
 use super::{dimension_null_locus_wire, dimensions::DesignDimensionLocusPair};
-use cadmpeg_core::decode::DecodeContext;
 use serde::{Deserialize, Serialize};
 use std::ops::Deref;
 
@@ -80,14 +79,10 @@ impl TryFrom<Vec<dimension_null_locus_wire::Entry>> for DesignDimensionNullLocus
 }
 
 impl DesignDimensionNullLocusPairs {
-    pub(crate) fn from_entries_charged(
-        ctx: &DecodeContext<'_>,
+    pub(crate) fn from_entries(
         entries: Vec<dimension_null_locus_wire::Entry>,
     ) -> Result<Self, cadmpeg_ir::NativeConvertError> {
-        let mut pairs = ctx.collection_vec(entries.len(), "load F3D null locus pairs")?;
-        for entry in entries {
-            pairs.push(entry.0);
-        }
+        let pairs = entries.into_iter().map(|entry| entry.0).collect::<Vec<_>>();
         Self::try_from(pairs).map_err(cadmpeg_ir::NativeConvertError::InvalidCollection)
     }
 }

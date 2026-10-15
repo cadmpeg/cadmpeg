@@ -8,7 +8,7 @@ use crate::records::feature::base_feature::DesignBaseFeatureEntry;
 use crate::records::feature::base_feature::DesignLegacyBaseFeatureBody;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::identity::Located;
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 
 use super::shared_frames::marked_record_reference;
@@ -109,7 +109,6 @@ fn exact_base_feature_scope_tail(
 }
 
 fn exact_base_feature_legacy_body_based_on_faces(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     scope: &DesignParameterScope,
 ) -> Result<Option<DesignBaseFeatureConstruction>, CodecError> {
@@ -119,15 +118,16 @@ fn exact_base_feature_legacy_body_based_on_faces(
     let Ok(start) = usize::try_from(scope.byte_offset()) else {
         return Ok(None);
     };
-    match View::u32_le_at(bytes, start + class_452_compact::BODY_COUNT) {
-        Some(1) => exact_base_feature_legacy_compact(ctx, bytes, scope, start),
-        Some(2) => exact_base_feature_legacy_expanded(ctx, bytes, scope, start),
-        _ => Ok(None),
-    }
+    Ok(
+        match View::u32_le_at(bytes, start + class_452_compact::BODY_COUNT) {
+            Some(1) => exact_base_feature_legacy_compact(bytes, scope, start)?,
+            Some(2) => exact_base_feature_legacy_expanded(bytes, scope, start)?,
+            _ => None,
+        },
+    )
 }
 
 fn exact_base_feature_legacy_compact(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     scope: &DesignParameterScope,
     start: usize,
@@ -221,7 +221,6 @@ fn exact_base_feature_legacy_compact(
             return None;
         }
         let (envelope_guid, guid_end) = match fixed_relaxed_guid_text(
-            ctx,
             bytes,
             start + class_452_compact::ENVELOPE_GUID_CODE_UNIT_COUNT,
         ) {
@@ -293,7 +292,6 @@ fn exact_base_feature_legacy_compact(
 }
 
 fn exact_base_feature_legacy_expanded(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     scope: &DesignParameterScope,
     start: usize,
@@ -397,7 +395,6 @@ fn exact_base_feature_legacy_expanded(
             return None;
         }
         let (envelope_guid, guid_end) = match fixed_relaxed_guid_text(
-            ctx,
             bytes,
             start + class_452_expanded::ENVELOPE_GUID_CODE_UNIT_COUNT,
         ) {
@@ -489,7 +486,6 @@ fn exact_base_feature_legacy_expanded(
 }
 
 fn exact_base_feature_direct_body_based_on_faces(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     scope: &DesignParameterScope,
 ) -> Result<Option<DesignBaseFeatureConstruction>, CodecError> {
@@ -613,7 +609,6 @@ fn exact_base_feature_direct_body_based_on_faces(
             return None;
         }
         let (envelope_guid, guid_end) = match fixed_relaxed_guid_text(
-            ctx,
             bytes,
             start + class_377::ENVELOPE_GUID_CODE_UNIT_COUNT,
         ) {
@@ -711,7 +706,6 @@ fn read_base_feature_entry_at(
 }
 
 pub(super) fn exact_base_feature_construction(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     scope: &DesignParameterScope,
 ) -> Result<Option<DesignBaseFeatureConstruction>, CodecError> {
@@ -721,13 +715,13 @@ pub(super) fn exact_base_feature_construction(
     if scope.kind() != scope::DesignFeatureKind::BaseFeature {
         return Ok(None);
     }
-    if let Some(snapshot) = exact_base_feature_body_snapshot(ctx, bytes, scope)? {
+    if let Some(snapshot) = exact_base_feature_body_snapshot(bytes, scope)? {
         return Ok(Some(snapshot));
     }
-    if let Some(value) = exact_base_feature_legacy_body_based_on_faces(ctx, bytes, scope)? {
+    if let Some(value) = exact_base_feature_legacy_body_based_on_faces(bytes, scope)? {
         return Ok(Some(value));
     }
-    if let Some(value) = exact_base_feature_direct_body_based_on_faces(ctx, bytes, scope)? {
+    if let Some(value) = exact_base_feature_direct_body_based_on_faces(bytes, scope)? {
         return Ok(Some(value));
     }
     (|| {
@@ -923,17 +917,11 @@ pub(super) fn exact_base_feature_construction(
             return None;
         }
         let mut cursor = start + result_body::LEN;
-        let mut entities = match ctx.collection_vec(body_count, "f3d BaseFeature entities") {
-            Ok(rows) => rows,
-            Err(error) => return Some(Err(error)),
-        };
+        let mut entities = Vec::new();
         for _ in 0..body_count {
             entities.push(read_base_feature_entry_at(bytes, &mut cursor)?);
         }
-        let mut references = match ctx.collection_vec(body_count, "f3d BaseFeature references") {
-            Ok(rows) => rows,
-            Err(error) => return Some(Err(error)),
-        };
+        let mut references = Vec::new();
         for _ in 0..body_count {
             let entry = read_base_feature_entry_at(bytes, &mut cursor)?;
             references.push(DesignBaseFeatureEntry {
@@ -987,11 +975,7 @@ pub(super) fn exact_base_feature_construction(
             }
             cursor += 4;
         }
-        let mut repeated_reference_fields =
-            match ctx.collection_vec(body_count, "f3d BaseFeature repeated reference fields") {
-                Ok(rows) => rows,
-                Err(error) => return Some(Err(error)),
-            };
+        let mut repeated_reference_fields = Vec::new();
         for ordinal in 0..body_count {
             let expected = if compact {
                 u32::try_from(entities[ordinal].value).ok()?
@@ -1034,13 +1018,7 @@ pub(super) fn exact_base_feature_construction(
         }
         cursor += 4;
         let mut first = None;
-        let mut rest = match ctx.collection_vec(
-            body_count.checked_sub(1)?,
-            "f3d BaseFeature remaining result bodies",
-        ) {
-            Ok(rows) => rows,
-            Err(error) => return Some(Err(error)),
-        };
+        let mut rest = Vec::new();
         for ((entity, reference), field) in entities
             .into_iter()
             .zip(references)
@@ -1088,7 +1066,6 @@ pub(super) fn exact_base_feature_construction(
 }
 
 fn exact_base_feature_body_snapshot(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     scope: &DesignParameterScope,
 ) -> Result<Option<DesignBaseFeatureConstruction>, CodecError> {
@@ -1118,10 +1095,7 @@ fn exact_base_feature_body_snapshot(
             return None;
         }
         let mut cursor = start + snapshot::LEN;
-        let mut bodies = match ctx.collection_vec(body_count, "f3d BaseFeature snapshot bodies") {
-            Ok(rows) => rows,
-            Err(error) => return Some(Err(error)),
-        };
+        let mut bodies = Vec::new();
         for _ in 0..body_count {
             if bytes.get(cursor) != Some(&1) {
                 return None;
@@ -1155,14 +1129,14 @@ fn exact_base_feature_body_snapshot(
             snapshot_compact_preamble::LEN
         };
         let first_guid_offset = cursor + snapshot_guid::GUID_UTF16;
-        let (first_guid, after_first_guid) = match fixed_relaxed_guid_text(ctx, bytes, cursor) {
+        let (first_guid, after_first_guid) = match fixed_relaxed_guid_text(bytes, cursor) {
             Ok(Some(value)) => value,
             Ok(None) => return None,
             Err(error) => return Some(Err(error)),
         };
         let second_guid_offset = after_first_guid + snapshot_guid::GUID_UTF16;
         let (second_guid, after_second_guid) =
-            match fixed_relaxed_guid_text(ctx, bytes, after_first_guid) {
+            match fixed_relaxed_guid_text(bytes, after_first_guid) {
                 Ok(Some(value)) => value,
                 Ok(None) => return None,
                 Err(error) => return Some(Err(error)),
@@ -1220,12 +1194,11 @@ fn exact_base_feature_body_snapshot(
         }
         let third_guid_at = after_guids + snapshot_tail::LEN;
         let third_guid_offset = third_guid_at + snapshot_guid::GUID_UTF16;
-        let (third_guid, after_third_guid) =
-            match fixed_relaxed_guid_text(ctx, bytes, third_guid_at) {
-                Ok(Some(value)) => value,
-                Ok(None) => return None,
-                Err(error) => return Some(Err(error)),
-            };
+        let (third_guid, after_third_guid) = match fixed_relaxed_guid_text(bytes, third_guid_at) {
+            Ok(Some(value)) => value,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
         let reference_count_at = after_third_guid.checked_add(snapshot_scope::REFERENCE_COUNT)?;
         let reference_marker = after_third_guid.checked_add(snapshot_scope::REFERENCE_MARKER)?;
         let state_at = after_third_guid.checked_add(snapshot_scope::HISTORY_STATE_ID)?;

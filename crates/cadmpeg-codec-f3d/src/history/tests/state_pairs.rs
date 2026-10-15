@@ -11,7 +11,6 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
-mod limits;
 mod treatment;
 
 use crate::history::bind_scope_histories;
@@ -53,84 +52,6 @@ use crate::history_records::AsmHistory;
 use crate::history_records::AsmHistoryRecord;
 use crate::records::topology::body_recipe::AsmHistoricalEntityKind;
 use std::collections::{BTreeSet, HashMap, HashSet};
-
-fn scoped_history_with_limits(
-    max_items: u64,
-    max_retained_bytes: u64,
-) -> Result<HashMap<String, String>, cadmpeg_core::CodecError> {
-    let mut scope = crate::records::feature::scope::DesignParameterScope::empty(
-        "f3d:native:scope#1",
-        crate::records::feature::scope::DesignFeatureKind::BaseFlange,
-        1,
-    );
-    scope
-        .try_edit(|draft| draft.history_state_id = Some(1))
-        .unwrap();
-    let history = AsmHistory {
-        id: "f3d:history".into(),
-        byte_offset: 0,
-        preamble: None,
-        record_table_binding_budget_exceeded: false,
-        states: vec![AsmDeltaState {
-            id: "f3d:history:state#1".into(),
-            parent: "f3d:history".into(),
-            byte_offset: 0,
-            state_id: 1,
-            version_flag: 1,
-            state_flag: 0,
-            previous_ref: None,
-            next_ref: None,
-            node_index: 1,
-            partner_ref: None,
-            owner_ref: 0,
-            bulletin_boards: Vec::new(),
-            records: Vec::new(),
-            entity_versions: Vec::new(),
-            topology_cache: crate::history_records::AsmTopologyCache::Complete(
-                AsmHistoricalTopology::default(),
-            ),
-            transition: None,
-        }],
-    };
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = max_items;
-    policy.limits.max_retained_bytes = max_retained_bytes;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    bind_scope_histories(&ctx, &[scope], &[], &[], &[history])
-}
-
-#[test]
-fn scope_history_candidate_refuses_collection_limit() {
-    let error = scoped_history_with_limits(0, u64::MAX).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D matching scope histories")
-    );
-}
-
-#[test]
-fn scope_history_binding_refuses_collection_limit() {
-    let error = scoped_history_with_limits(2, u64::MAX).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index F3D scope history bindings")
-    );
-}
-
-#[test]
-fn scope_history_identity_refuses_retained_limit() {
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-        "copy F3D bound scope identity",
-        |cap| scoped_history_with_limits(u64::MAX, cap).map(|_| ()),
-    );
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "copy F3D bound scope identity")
-    );
-}
 
 #[test]
 fn state_pairs_are_resolved_within_one_reachable_history() {
@@ -279,16 +200,8 @@ fn ambiguous_scope_histories_use_exact_result_body_sources() {
     })
     .unwrap();
     let scopes = vec![scope.clone(), next_scope];
-    let bindings = crate::test_support::with_decode_context(|decode_ctx| {
-        bind_scope_histories(
-            decode_ctx,
-            &scopes,
-            std::slice::from_ref(&binding),
-            &[],
-            &histories,
-        )
-    })
-    .unwrap();
+    let bindings =
+        { bind_scope_histories(&scopes, std::slice::from_ref(&binding), &[], &histories) };
     assert_eq!(bindings[&scope.id], histories[1].id);
     assert_eq!(
         bound_scope_history(&scope.id, &bindings, &histories)
@@ -343,16 +256,8 @@ fn ambiguous_scope_histories_use_exact_result_body_sources() {
         },
     )
     .unwrap();
-    let bindings = crate::test_support::with_decode_context(|decode_ctx| {
-        bind_scope_histories(
-            decode_ctx,
-            &scopes,
-            &[],
-            std::slice::from_ref(&operand),
-            &histories,
-        )
-    })
-    .unwrap();
+    let bindings =
+        { bind_scope_histories(&scopes, &[], std::slice::from_ref(&operand), &histories) };
     assert_eq!(bindings[&scope.id], histories[1].id);
 }
 
@@ -435,10 +340,7 @@ fn state_pairs_use_raw_next_links_before_transitions_are_derived() {
         })
         .unwrap();
     let scopes = vec![root, successor];
-    let bindings = crate::test_support::with_decode_context(|decode_ctx| {
-        bind_scope_histories(decode_ctx, &scopes, &[], &[], &histories)
-    })
-    .unwrap();
+    let bindings = bind_scope_histories(&scopes, &[], &[], &histories);
     assert_eq!(bindings.len(), 2);
     assert_eq!(bindings["f3d:native:scope#1"], "history");
     assert_eq!(bindings["f3d:native:scope#2"], "history");
@@ -510,32 +412,24 @@ fn circular_pattern_face_uses_unique_rigid_surface_radius() {
         cadmpeg_ir::ids::FaceId::mint(crate::ids::brep_entity_id(22)).expect("identity grammar"),
     ];
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            resolve_pattern_face_by_surface_radius(
-                decode_ctx,
-                &candidates,
-                &preceding,
-                &result,
-                &HashSet::from([11, 12]),
-            )
-        })
-        .unwrap(),
+        resolve_pattern_face_by_surface_radius(
+            &candidates,
+            &preceding,
+            &result,
+            &HashSet::from([11, 12]),
+        ),
         Some(11)
     );
 
     let mut ambiguous = preceding;
     ambiguous.surface_radii[1].radius = 2.5;
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            resolve_pattern_face_by_surface_radius(
-                decode_ctx,
-                &candidates,
-                &ambiguous,
-                &result,
-                &HashSet::from([11, 12]),
-            )
-        })
-        .unwrap(),
+        resolve_pattern_face_by_surface_radius(
+            &candidates,
+            &ambiguous,
+            &result,
+            &HashSet::from([11, 12]),
+        ),
         None
     );
 }
@@ -555,22 +449,13 @@ fn historical_edge_axis_uses_the_state_specific_curve_carrier() {
         ..AsmHistoricalTopology::default()
     };
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| historical_edge_axis(
-            decode_ctx, 7, &topology
-        ))
-        .unwrap(),
+        historical_edge_axis(7, &topology),
         Some((
             cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
             cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
         ))
     );
-    assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| historical_edge_axis(
-            decode_ctx, 8, &topology
-        ))
-        .unwrap(),
-        None
-    );
+    assert_eq!(historical_edge_axis(8, &topology), None);
 }
 
 #[test]
@@ -613,13 +498,7 @@ fn historical_edge_axis_uses_a_unique_incident_surface_axis() {
         cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
         cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
     ));
-    assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| historical_edge_axis(
-            decode_ctx, 7, &topology
-        ))
-        .unwrap(),
-        expected
-    );
+    assert_eq!(historical_edge_axis(7, &topology), expected);
 
     topology.face_surfaces.push(AsmHistoricalCarrierBinding {
         entity: 11,
@@ -630,13 +509,7 @@ fn historical_edge_axis_uses_a_unique_incident_surface_axis() {
         cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
         cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
     ));
-    assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| historical_edge_axis(
-            decode_ctx, 7, &topology
-        ))
-        .unwrap(),
-        None
-    );
+    assert_eq!(historical_edge_axis(7, &topology), None);
 
     topology.face_surfaces.pop();
     topology
@@ -665,13 +538,7 @@ fn historical_edge_axis_uses_a_unique_incident_surface_axis() {
         entity: 12,
         carrier: 42,
     });
-    assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| historical_edge_axis(
-            decode_ctx, 7, &topology
-        ))
-        .unwrap(),
-        None
-    );
+    assert_eq!(historical_edge_axis(7, &topology), None);
 }
 
 #[test]
@@ -720,16 +587,12 @@ fn historical_pattern_face_axis_uses_one_analytic_surface_carrier() {
         }],
     };
     assert_eq!(
-        raw_axes(
-            crate::test_support::with_decode_context(|decode_ctx| {
-                historical_pattern_identity_axes_for_selection(
-                    decode_ctx,
-                    Some((AsmHistoricalEntityKind::Face, 11, &[1])),
-                    &history,
-                )
-            })
-            .unwrap()
-        ),
+        raw_axes({
+            historical_pattern_identity_axes_for_selection(
+                Some((AsmHistoricalEntityKind::Face, 11, &[1])),
+                &history,
+            )
+        }),
         vec![(origin, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0))]
     );
 
@@ -744,16 +607,12 @@ fn historical_pattern_face_axis_uses_one_analytic_surface_carrier() {
         normal: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 2.0),
     }];
     assert_eq!(
-        raw_axes(
-            crate::test_support::with_decode_context(|decode_ctx| {
-                historical_pattern_identity_axes_for_selection(
-                    decode_ctx,
-                    Some((AsmHistoricalEntityKind::Face, 11, &[1])),
-                    &planar_history,
-                )
-            })
-            .unwrap()
-        ),
+        raw_axes({
+            historical_pattern_identity_axes_for_selection(
+                Some((AsmHistoricalEntityKind::Face, 11, &[1])),
+                &planar_history,
+            )
+        }),
         vec![(origin, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0))]
     );
 
@@ -769,14 +628,12 @@ fn historical_pattern_face_axis_uses_one_analytic_surface_carrier() {
         }],
         ..history.clone()
     };
-    assert!(crate::test_support::with_decode_context(|decode_ctx| {
+    assert!({
         historical_pattern_identity_axes_for_selection(
-            decode_ctx,
             Some((AsmHistoricalEntityKind::Face, 11, &[1])),
             &ambiguous_history,
         )
-    })
-    .unwrap()
+    }
     .is_empty());
 
     let mut missing_carrier = history.clone();
@@ -789,39 +646,26 @@ fn historical_pattern_face_axis_uses_one_analytic_surface_carrier() {
         }),
         ..history.states[0].clone()
     });
-    assert!(crate::test_support::with_decode_context(|decode_ctx| {
+    assert!({
         historical_pattern_identity_axes_for_selection(
-            decode_ctx,
             Some((AsmHistoricalEntityKind::Face, 11, &[1, 2])),
             &missing_carrier,
         )
-    })
-    .unwrap()
+    }
     .is_empty());
-    let identities = crate::test_support::with_decode_context(|decode_ctx| {
-        HistoricalIdentityIndex::build(decode_ctx, std::slice::from_ref(&missing_carrier), [11])
-    })
-    .unwrap();
+    let identities = HistoricalIdentityIndex::build(std::slice::from_ref(&missing_carrier), [11]);
     assert_eq!(
-        raw_axes(
-            crate::test_support::with_decode_context(
-                |decode_ctx| historical_pattern_identity_axes(
-                    decode_ctx,
-                    11,
-                    &identities,
-                    &missing_carrier,
-                    Some(1)
-                )
-            )
-            .unwrap()
-        ),
+        raw_axes(historical_pattern_identity_axes(
+            11,
+            &identities,
+            &missing_carrier,
+            Some(1)
+        )),
         vec![(origin, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0))]
     );
-    assert!(crate::test_support::with_decode_context(|decode_ctx| {
-        historical_pattern_identity_axes(decode_ctx, 11, &identities, &missing_carrier, None)
-    })
-    .unwrap()
-    .is_empty());
+    assert!(
+        { historical_pattern_identity_axes(11, &identities, &missing_carrier, None) }.is_empty()
+    );
 }
 
 #[test]
@@ -927,33 +771,15 @@ fn historical_identity_edge_requires_unique_incidence() {
         ..Default::default()
     };
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| historical_identity_edge(
-            decode_ctx,
-            AsmHistoricalEntityKind::Coedge,
-            17,
-            &topology
-        ))
-        .unwrap(),
+        historical_identity_edge(AsmHistoricalEntityKind::Coedge, 17, &topology),
         Some(7)
     );
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| historical_identity_edge(
-            decode_ctx,
-            AsmHistoricalEntityKind::Curve,
-            27,
-            &topology
-        ))
-        .unwrap(),
+        historical_identity_edge(AsmHistoricalEntityKind::Curve, 27, &topology),
         Some(7)
     );
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| historical_identity_edge(
-            decode_ctx,
-            AsmHistoricalEntityKind::Pcurve,
-            37,
-            &topology
-        ))
-        .unwrap(),
+        historical_identity_edge(AsmHistoricalEntityKind::Pcurve, 37, &topology),
         Some(7)
     );
     topology.edge_curves.push(
@@ -963,13 +789,7 @@ fn historical_identity_edge_requires_unique_incidence() {
         },
     );
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| historical_identity_edge(
-            decode_ctx,
-            AsmHistoricalEntityKind::Curve,
-            27,
-            &topology
-        ))
-        .unwrap(),
+        historical_identity_edge(AsmHistoricalEntityKind::Curve, 27, &topology),
         None
     );
 }
@@ -1113,24 +933,8 @@ fn bound_state_pair_keeps_repeated_numeric_ids_in_one_history() {
 
 #[test]
 fn boundary_edge_change_partition_preserves_boundary_order() {
-    assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| boundary_edges_in_changes(
-            decode_ctx,
-            &[8, 3, 5, 2],
-            &[2, 8]
-        ))
-        .unwrap(),
-        [8, 2]
-    );
-    assert!(
-        crate::test_support::with_decode_context(|decode_ctx| boundary_edges_in_changes(
-            decode_ctx,
-            &[8, 3],
-            &[1, 2]
-        ))
-        .unwrap()
-        .is_empty()
-    );
+    assert_eq!(boundary_edges_in_changes(&[8, 3, 5, 2], &[2, 8]), [8, 2]);
+    assert!(boundary_edges_in_changes(&[8, 3], &[1, 2]).is_empty());
 }
 
 #[test]
@@ -1161,28 +965,13 @@ fn result_face_support_maps_only_to_one_preceding_owner() {
         ..AsmHistoricalTopology::default()
     };
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| preceding_support_face_slots(
-            decode_ctx,
-            &result_faces,
-            &result,
-            &preceding
-        ))
-        .unwrap(),
+        preceding_support_face_slots(&result_faces, &result, &preceding),
         [4]
     );
 
     let mut ambiguous = preceding.clone();
     ambiguous.face_surfaces[1].carrier = 20;
-    assert!(
-        crate::test_support::with_decode_context(|decode_ctx| preceding_support_face_slots(
-            decode_ctx,
-            &result_faces,
-            &result,
-            &ambiguous
-        ))
-        .unwrap()
-        .is_empty()
-    );
+    assert!(preceding_support_face_slots(&result_faces, &result, &ambiguous).is_empty());
 
     let mut ambiguous_result = result.clone();
     ambiguous_result
@@ -1191,16 +980,7 @@ fn result_face_support_maps_only_to_one_preceding_owner() {
             entity: 40,
             carrier: 21,
         });
-    assert!(
-        crate::test_support::with_decode_context(|decode_ctx| preceding_support_face_slots(
-            decode_ctx,
-            &result_faces,
-            &ambiguous_result,
-            &preceding
-        ))
-        .unwrap()
-        .is_empty()
-    );
+    assert!(preceding_support_face_slots(&result_faces, &ambiguous_result, &preceding).is_empty());
 }
 
 #[test]
@@ -1256,15 +1036,13 @@ fn active_face_support_retains_invariant_preceding_owners() {
     };
     let changed_faces = HashSet::from([5]);
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| historical_face_support_contexts(
-            decode_ctx,
+        historical_face_support_contexts(
             &[FaceId::mint("f3d:brep:entity#40").expect("identity grammar")],
             &history,
             &preceding,
             &changed_faces,
             &mut crate::history::topology_cache::TopologyQueryCache::default()
-        ))
-        .unwrap(),
+        ),
         [
             crate::records::topology::historical_context::DesignHistoricalFaceSupportContext {
                 active_face_slot: 40,
@@ -1279,15 +1057,13 @@ fn active_face_support_retains_invariant_preceding_owners() {
     let mut variant = history;
     variant.states[1].topology_mut().unwrap().face_surfaces[0].carrier = 21;
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| historical_face_support_contexts(
-            decode_ctx,
+        historical_face_support_contexts(
             &[FaceId::mint("f3d:brep:entity#4").expect("identity grammar")],
             &variant,
             &preceding,
             &changed_faces,
             &mut crate::history::topology_cache::TopologyQueryCache::default()
-        ))
-        .unwrap(),
+        ),
         [
             crate::records::topology::historical_context::DesignHistoricalFaceSupportContext {
                 active_face_slot: 4,
@@ -1298,25 +1074,23 @@ fn active_face_support_retains_invariant_preceding_owners() {
             }
         ]
     );
-    assert!(crate::test_support::with_decode_context(|decode_ctx| {
+    assert!({
         historical_face_support_contexts(
-            decode_ctx,
             &[FaceId::mint("f3d:brep:entity#40").expect("identity grammar")],
             &variant,
             &preceding,
             &changed_faces,
             &mut crate::history::topology_cache::TopologyQueryCache::default(),
         )
-    })
-    .unwrap()
+    }
     .is_empty());
 }
 
 #[test]
 fn topology_changes_span_only_complete_acyclic_state_chains() {
-    let preceding = limits::change_state(1);
-    let mut intermediate = limits::change_state(2);
-    let mut result = limits::change_state(3);
+    let preceding = change_state(1);
+    let mut intermediate = change_state(2);
+    let mut result = change_state(3);
     let mut first = AsmHistoricalTransition {
         previous_state_id: Some(1),
         records: AsmHistoricalEntityDelta::default(),
@@ -1340,39 +1114,21 @@ fn topology_changes_span_only_complete_acyclic_state_chains() {
     ]);
 
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| face_changes_across_state_chain(
-            decode_ctx, &result, 1, &states
-        ))
-        .unwrap(),
+        face_changes_across_state_chain(&result, 1, &states),
         Some(HashSet::from([10, 11]))
     );
     let incomplete = HashMap::from([(1, Some(&preceding)), (3, Some(&result))]);
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| face_changes_across_state_chain(
-            decode_ctx,
-            &result,
-            1,
-            &incomplete
-        ))
-        .unwrap(),
+        face_changes_across_state_chain(&result, 1, &incomplete),
         None
     );
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| edge_changes_across_state_chain(
-            decode_ctx, &result, 1, &states
-        ))
-        .unwrap()
-        .map(|changes| (changes.deleted, changes.updated)),
+        edge_changes_across_state_chain(&result, 1, &states)
+            .map(|changes| (changes.deleted, changes.updated)),
         Some((HashSet::from([21]), HashSet::from([20])))
     );
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| edge_changes_across_state_chain(
-            decode_ctx,
-            &result,
-            1,
-            &incomplete
-        ))
-        .unwrap(),
+        edge_changes_across_state_chain(&result, 1, &incomplete),
         None
     );
     let mut cyclic_intermediate = intermediate.clone();
@@ -1386,20 +1142,8 @@ fn topology_changes_span_only_complete_acyclic_state_chains() {
         (2, Some(&cyclic_intermediate)),
         (3, Some(&result)),
     ]);
-    assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| face_changes_across_state_chain(
-            decode_ctx, &result, 1, &cyclic
-        ))
-        .unwrap(),
-        None
-    );
-    assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| edge_changes_across_state_chain(
-            decode_ctx, &result, 1, &cyclic
-        ))
-        .unwrap(),
-        None
-    );
+    assert_eq!(face_changes_across_state_chain(&result, 1, &cyclic), None);
+    assert_eq!(edge_changes_across_state_chain(&result, 1, &cyclic), None);
 }
 
 #[test]
@@ -1484,8 +1228,7 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
         });
     }
 
-    let ctx = cadmpeg_test_support::service_decode_context();
-    let topology = historical_topology(&ctx, &brep)
+    let topology = historical_topology(&brep)
         .expect("topology budget")
         .expect("stable historical topology");
     assert_eq!(topology.body_regions[0].member_refs, [2]);
@@ -1496,10 +1239,7 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
     assert_eq!(topology.coedge_topology[0].edge, 7);
     assert_eq!(topology.coedge_topology[0].radial_next, 6);
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| historical_edge_context(
-            decode_ctx, 7, &topology
-        ))
-        .unwrap(),
+        historical_edge_context(7, &topology),
         crate::records::topology::historical_context::DesignHistoricalEdgeContext {
             edge_slot: 7,
             incident_loops: vec![
@@ -1583,10 +1323,7 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
             ],
         },
     ];
-    let selectors = crate::test_support::with_decode_context(|decode_ctx| {
-        recipe_selector_candidates(decode_ctx, Some(&structure), &contexts)
-    })
-    .unwrap();
+    let selectors = recipe_selector_candidates(Some(&structure), &contexts);
     assert_eq!(selectors.len(), 2);
     assert_eq!(selectors[0].selector, 1);
     assert_eq!(selectors[0].boundary_count_matching_edge_slots, [8]);
@@ -1636,23 +1373,11 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
     assert_eq!(topology.coedge_pcurves[0].carrier, None);
     assert_eq!(topology.vertex_points[0].carrier, 28);
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| bodies_intersecting(
-            decode_ctx,
-            &topology,
-            &BTreeSet::from([20])
-        ))
-        .unwrap()
-        .unwrap(),
+        bodies_intersecting(&topology, &BTreeSet::from([20])).unwrap(),
         BTreeSet::from([1])
     );
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| bodies_intersecting(
-            decode_ctx,
-            &topology,
-            &BTreeSet::from([28])
-        ))
-        .unwrap()
-        .unwrap(),
+        bodies_intersecting(&topology, &BTreeSet::from([28])).unwrap(),
         BTreeSet::from([1])
     );
     assert_eq!(
@@ -1807,7 +1532,7 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
                 }
             })
             .collect();
-        match crate::test_support::with_decode_context(|decode_ctx| historical_loop_boundary(decode_ctx, coedges, &crate::history::loop_index::LoopIndex::new(decode_ctx, topology)?, &crate::history::topology_cache::endpoint_index(decode_ctx, topology)?)).unwrap() {
+        match historical_loop_boundary(coedges, &crate::history::loop_index::LoopIndex::new(topology), &crate::history::topology_cache::endpoint_index(topology)) {
             crate::records::topology::historical_context::DesignHistoricalLoopBoundary::Vertices(rows) => Some(
                 rows.into_iter()
                     .map(|row| row.vertex_slot)
@@ -1836,3 +1561,26 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
 }
 
 mod identity;
+
+fn change_state(state_id: i64) -> crate::history_records::AsmDeltaState {
+    AsmDeltaState {
+        id: format!("state-{state_id}"),
+        parent: "history".into(),
+        byte_offset: 0,
+        state_id,
+        version_flag: 1,
+        state_flag: 0,
+        previous_ref: None,
+        next_ref: None,
+        node_index: state_id,
+        partner_ref: None,
+        owner_ref: 0,
+        bulletin_boards: Vec::new(),
+        records: Vec::new(),
+        entity_versions: Vec::new(),
+        topology_cache: crate::history_records::AsmTopologyCache::Complete(
+            crate::history_records::AsmHistoricalTopology::default(),
+        ),
+        transition: None,
+    }
+}

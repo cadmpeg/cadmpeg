@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::design::decode::sketch::decode_reference_list;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
 fn reference_list_bytes() -> Vec<u8> {
     let mut bytes = Vec::new();
@@ -19,31 +18,9 @@ fn reference_list_bytes() -> Vec<u8> {
 }
 
 #[test]
-fn sketch_header_reference_run_refuses_collection_limit() {
-    let bytes = reference_list_bytes();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 1;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = decode_reference_list(&ctx, &bytes, 0)
-        .err()
-        .expect("collection limit must refuse counted references");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
-        if failure.dimension == ResourceDimension::CollectionItems
-            && failure.operation == "f3d sketch header references")
-    );
-}
-
-#[test]
 fn sketch_header_reference_run_preserves_count_and_offsets() {
     let bytes = reference_list_bytes();
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::default();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let list = decode_reference_list(&ctx, &bytes, 0)
-        .expect("reference run admission")
-        .expect("two references");
+    let list = decode_reference_list(&bytes, 0).expect("two references");
     assert_eq!(list.record_reference.value, Some(31));
     assert_eq!(
         list.references

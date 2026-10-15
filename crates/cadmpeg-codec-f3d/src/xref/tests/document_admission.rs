@@ -8,13 +8,11 @@ use crate::test_support::assembly_test::{f3d_without_brep, XREF_ROLE};
 
 use crate::F3dCodec;
 
-use super::{occurrence_record, repeated_target_occurrence_record};
+use super::occurrence_record;
 #[test]
 fn typed_placement_admission_rejects_shape_collision() {
     let bytes = occurrence_record("role", 10, &[2, 3], None);
-    let records =
-        super::super::indexed_records(&cadmpeg_test_support::service_decode_context(), &bytes)
-            .unwrap();
+    let records = super::super::indexed_records(&bytes);
     let no_registered_placements = HashSet::new();
     assert!(super::super::occurrence_placements_filtered(
         &bytes,
@@ -88,32 +86,4 @@ fn part_without_brep_keeps_blocking_losses() {
         .losses
         .iter()
         .any(|loss| loss.severity == cadmpeg_ir::report::Severity::Blocking));
-}
-
-#[test]
-fn repeated_target_component_insert_preserves_caller_refusal() {
-    let role = "aaaabbbb-cccc-dddd-eeee-ffff00001111";
-    let bytes = repeated_target_occurrence_record(role, 10, 1, None);
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    crate::test_support::with_decode_policy(&policy, |ctx| {
-        let error = super::super::repeated_target_component_insert(
-            ctx,
-            &bytes,
-            0,
-            bytes.len(),
-            10,
-            [
-                [1.0, 0.0, 0.0, 0.0],
-                [0.0, 1.0, 0.0, 0.0],
-                [0.0, 0.0, 1.0, 0.0],
-                [0.0, 0.0, 0.0, 1.0],
-            ],
-        )
-        .unwrap_err();
-        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
-            panic!("placement must preserve the resource refusal");
-        };
-        assert_eq!(Some(limit), ctx.resource_refusal());
-    });
 }

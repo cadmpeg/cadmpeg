@@ -9,8 +9,6 @@ use crate::records::mesh::DesignRelaxedGuidText;
 use crate::records::recipes::ConstructionRecipeKind;
 use crate::records::references::DesignClassTag;
 use crate::records::sketch_placement::SketchPlacementMatrix;
-use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
 use serde::ser::{SerializeSeq, SerializeStruct};
 use serde::{Deserialize, Serialize};
@@ -1359,27 +1357,15 @@ impl DesignAssemblyOperandPath {
     pub(crate) fn identity_guids(&self) -> &[Located<DesignRelaxedGuidText>] {
         &self.identity_guids
     }
-    pub(crate) fn try_append(
-        self,
-        continuation: Self,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<Option<Self>, CodecError> {
+    pub(crate) fn try_append(self, continuation: Self) -> Option<Self> {
         if self.class_tag.as_str() != "330" || continuation.class_tag.as_str() != "330" {
-            return Ok(None);
+            return None;
         }
         let mut occurrences = self.occurrence_guids;
-        ctx.extend_vec(
-            &mut occurrences,
-            continuation.occurrence_guids,
-            "f3d assembly path appended occurrences",
-        )?;
+        occurrences.extend(continuation.occurrence_guids);
         let mut identities = self.identity_guids;
-        ctx.extend_vec(
-            &mut identities,
-            continuation.identity_guids,
-            "f3d assembly path appended identities",
-        )?;
-        Ok(Self::try_new(
+        identities.extend(continuation.identity_guids);
+        Self::try_new(
             self.link,
             self.record_index,
             self.class_tag,
@@ -1387,7 +1373,7 @@ impl DesignAssemblyOperandPath {
             occurrences,
             identities,
         )
-        .ok())
+        .ok()
     }
 }
 

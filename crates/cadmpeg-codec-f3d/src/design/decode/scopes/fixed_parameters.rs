@@ -21,9 +21,7 @@ use crate::records::feature::fixed_parameters::DesignFixedFilletParameters;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::parameters::DesignParameter;
 use crate::records::parameters::DesignParameterOwner;
-use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::decode::View;
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::{NonZeroReal, PositiveReal};
 
 pub(super) fn exact_fixed_extrude_parameters(
@@ -186,23 +184,21 @@ fn exact_embedded_extrude_distance(
 }
 
 pub(super) fn exact_fixed_fillet_parameters(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
-) -> Result<Option<DesignFixedFilletParameters>, CodecError> {
+) -> Option<DesignFixedFilletParameters> {
     use crate::records::feature::fixed_parameters::{
         DesignFixedFilletIntermediate, DesignFixedFilletLaw, DesignFixedFilletScalar,
     };
     if design_feature_family(&scope.kind()) != Some(DesignFeatureFamily::Fillet) {
-        return Ok(None);
+        return None;
     }
     let mut lanes = Vec::new();
     for record_index in scope.reference_members().values() {
         if let Some(scalar) = exact_fixed_scalar(bytes, records, *record_index)
             .filter(|scalar| scalar.owner_record_index == Some(scope.record_index))
         {
-            ctx.reserve_vec(&mut lanes, 1, "f3d fixed Fillet scalar lanes")?;
             lanes.push((*record_index, scalar));
         }
     }
@@ -212,7 +208,7 @@ pub(super) fn exact_fixed_fillet_parameters(
             .enumerate()
             .any(|(ordinal, (_, scalar))| usize::from(scalar.ordinal) != ordinal)
     {
-        return Ok(None);
+        return None;
     }
 
     let scalar = |(record_index, scalar): &(u32, FixedScalarFrame)| DesignFixedFilletScalar {
@@ -224,56 +220,36 @@ pub(super) fn exact_fixed_fillet_parameters(
         DesignFixedFilletGroup::try_new(tangency_lane.map(scalar), law).ok()
     };
     let mut groups = Vec::new();
-    let group_count = if lanes.len() == 1 || !lanes.len().is_multiple_of(2) {
-        1
-    } else {
-        lanes.len() / 2
-    };
-
-    ctx.reserve_vec(&mut groups, group_count, "f3d fixed Fillet groups")?;
     if lanes.len() == 1 {
-        let Some(value) = group(None, DesignFixedFilletLaw::Constant(scalar(&lanes[0]))) else {
-            return Ok(None);
-        };
+        let value = group(None, DesignFixedFilletLaw::Constant(scalar(&lanes[0])))?;
         groups.push(value);
     } else if lanes.len() % 2 == 0 {
         for pair in lanes.chunks_exact(2) {
-            let Some(value) = group(
+            let value = group(
                 Some(&pair[0]),
                 DesignFixedFilletLaw::Constant(scalar(&pair[1])),
-            ) else {
-                return Ok(None);
-            };
+            )?;
             groups.push(value);
         }
     } else {
-        let intermediate_count = (lanes.len() - 3) / 2;
-
         let mut intermediate = Vec::new();
-        ctx.reserve_vec(
-            &mut intermediate,
-            intermediate_count,
-            "f3d fixed Fillet intermediate rows",
-        )?;
         for pair in lanes[3..].chunks_exact(2) {
             intermediate.push(DesignFixedFilletIntermediate {
                 radius: scalar(&pair[0]),
                 parameter: scalar(&pair[1]),
             });
         }
-        let Some(value) = group(
+        let value = group(
             Some(&lanes[0]),
             DesignFixedFilletLaw::Variable {
                 start: scalar(&lanes[1]),
                 end: scalar(&lanes[2]),
                 intermediate,
             },
-        ) else {
-            return Ok(None);
-        };
+        )?;
         groups.push(value);
     }
-    Ok(Some(DesignFixedFilletParameters { groups }))
+    Some(DesignFixedFilletParameters { groups })
 }
 
 pub(super) fn exact_fixed_chamfer_parameters(

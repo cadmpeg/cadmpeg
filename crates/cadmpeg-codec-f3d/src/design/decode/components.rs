@@ -1,16 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode fixed local component-occurrence carriers.
 
-use crate::bytes::lp_utf16_bounded_charged;
+use crate::bytes::lp_utf16_bounded;
 use cadmpeg_core::container::ContainerRole;
 
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
-use std::fmt::Write;
 
 use crate::bytes::lp_ascii_filtered_view;
 use crate::container::ContainerScan;
-use crate::design::decode::sketch::{native_scope_charged, next_indexed_record_offset};
+use crate::design::decode::sketch::next_indexed_record_offset;
 
 use crate::records::feature::assembly_features::DesignComponentOccurrence;
 
@@ -19,7 +18,6 @@ const PLACED_FRAME_LENGTH: usize = 357;
 
 /// Decode exact local component-occurrence records from every Design bulk stream.
 pub(crate) fn decode_component_occurrences(
-    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
 ) -> Result<Vec<DesignComponentOccurrence>, CodecError> {
     let mut occurrences = Vec::new();
@@ -29,15 +27,11 @@ pub(crate) fn decode_component_occurrences(
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
-        let scope = native_scope_charged(ctx, &entry.name)?;
+        let scope = crate::ids::native_scope(&entry.name);
         let mut at = 0;
         while let Some(start) = next_indexed_record_offset(bytes, at) {
-            if let Some(occurrence) = exact_component_occurrence(ctx, bytes, start, &scope)? {
-                ctx.push_vec(
-                    &mut occurrences,
-                    occurrence,
-                    "f3d decoded component occurrence",
-                )?;
+            if let Some(occurrence) = exact_component_occurrence(bytes, start, &scope) {
+                occurrences.push(occurrence);
             }
             let Some(next_at) = start.checked_add(1) else {
                 break;
@@ -45,12 +39,7 @@ pub(crate) fn decode_component_occurrences(
             at = next_at;
         }
     }
-    ctx.stable_sort_by(
-        &mut occurrences[..],
-        |a, b| a.id.cmp(&b.id),
-        |value| value.id.as_str().len(),
-        "sort f3d design components 1",
-    )?;
+    occurrences.sort_by(|a, b| a.id.cmp(&b.id));
     occurrences.dedup_by(|left, right| left.id == right.id);
     Ok(occurrences)
 }
@@ -58,11 +47,10 @@ pub(crate) fn decode_component_occurrences(
 /// Decode one fixed component-occurrence carrier. The class tag is a per-file
 /// dynamic value, so the fixed frame identifies the carrier.
 fn exact_component_occurrence(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     stream: &str,
-) -> Result<Option<DesignComponentOccurrence>, CodecError> {
+) -> Option<DesignComponentOccurrence> {
     const SUFFIX: &str = ":design-component-occurrence#";
 
     let parsed = (|| {
@@ -135,51 +123,23 @@ fn exact_component_occurrence(
             placement,
         ))
     })();
-    let Some((class_tag, record_index, byte_offset, component_record_index, placement)) = parsed
-    else {
-        return Ok(None);
-    };
-    let Some((component_guid, after_component)) =
-        lp_utf16_bounded_charged(ctx, bytes, start + 44, 36..=36, "f3d Design UTF-16 text")?
-    else {
-        return Ok(None);
-    };
-    let Some((occurrence_guid, after_occurrence)) =
-        lp_utf16_bounded_charged(ctx, bytes, start + 120, 36..=36, "f3d Design UTF-16 text")?
-    else {
-        return Ok(None);
-    };
+    let (class_tag, record_index, byte_offset, component_record_index, placement) = parsed?;
+    let (component_guid, after_component) = lp_utf16_bounded(bytes, start + 44, 36..=36)?;
+    let (occurrence_guid, after_occurrence) = lp_utf16_bounded(bytes, start + 120, 36..=36)?;
     if after_component != start + 120 || after_occurrence != start + 196 {
-        return Ok(None);
+        return None;
     }
     let Ok(component_guid) = crate::records::mesh::DesignRelaxedGuidText::try_from(component_guid)
     else {
-        return Ok(None);
+        return None;
     };
     let Ok(occurrence_guid) =
         crate::records::mesh::DesignRelaxedGuidText::try_from(occurrence_guid)
     else {
-        return Ok(None);
+        return None;
     };
-    let mut digits = 1usize;
-    let mut remaining = start;
-    while remaining >= 10 {
-        digits += 1;
-        remaining /= 10;
-    }
-
-    let id_bytes = stream
-        .len()
-        .checked_add(SUFFIX.len())
-        .and_then(|length| length.checked_add(digits))
-        .ok_or_else(|| ctx.refuse_codec_limit("f3d component occurrence id length", 0, 1))?;
-
-    let mut id = ctx.retained_string(id_bytes, "f3d component occurrence id")?;
-    id.push_str(stream);
-    id.push_str(SUFFIX);
-    write!(&mut id, "{start}")
-        .map_err(|_| ctx.refuse_codec_limit("f3d component occurrence id formatting", 0, 1))?;
-    Ok(DesignComponentOccurrence::try_new(
+    let id = format!("{stream}{SUFFIX}{start}");
+    DesignComponentOccurrence::try_new(
         crate::records::feature::assembly_features::DesignComponentOccurrenceDraft {
             id,
             class_tag,
@@ -191,7 +151,7 @@ fn exact_component_occurrence(
             placement,
         },
     )
-    .ok())
+    .ok()
 }
 
 #[cfg(test)]
@@ -200,7 +160,6 @@ mod tests {
 
     use super::exact_component_occurrence;
     use crate::test_support::indexed_header;
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     const COMPONENT: &str = "a989beb9-467b-4afa-9e90-a9329a2ca258";
     const OCCURRENCE: &str = "f2371d14-7339-4f5c-82a1-50ec8fca5597";
@@ -230,15 +189,11 @@ mod tests {
 
     #[test]
     fn fixed_component_occurrence_frames_distinguish_seed_and_generated_placements() {
-        let arena = DecodeArena::new();
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default()).unwrap();
         let mut seed = common(229, 1);
         seed[208] = 1;
         seed[218] = 1;
         indexed_header(&mut seed, *b"333", 21);
-        let seed = exact_component_occurrence(&ctx, &seed, 0, "f3d:Design/BulkStream.dat")
-            .unwrap()
+        let seed = exact_component_occurrence(&seed, 0, "f3d:Design/BulkStream.dat")
             .expect("seed occurrence");
         assert_eq!(seed.component_guid.as_str(), COMPONENT);
         assert_eq!(seed.occurrence_guid.as_str(), OCCURRENCE);
@@ -257,10 +212,8 @@ mod tests {
         }
         generated[346] = 1;
         indexed_header(&mut generated, *b"325", 21);
-        let generated =
-            exact_component_occurrence(&ctx, &generated, 0, "f3d:Design/BulkStream.dat")
-                .unwrap()
-                .expect("generated occurrence");
+        let generated = exact_component_occurrence(&generated, 0, "f3d:Design/BulkStream.dat")
+            .expect("generated occurrence");
         assert_eq!(generated.occurrence_ordinal(), 2);
         assert_eq!(
             generated.transform().map(|frame| frame.value),
@@ -273,8 +226,7 @@ mod tests {
         legacy[208] = 1;
         legacy[218] = 1;
         indexed_header(&mut legacy, *b"333", 21);
-        let legacy = exact_component_occurrence(&ctx, &legacy, 0, "f3d:Design/BulkStream.dat")
-            .unwrap()
+        let legacy = exact_component_occurrence(&legacy, 0, "f3d:Design/BulkStream.dat")
             .expect("legacy occurrence");
         assert_eq!(legacy.component_guid.as_str(), COMPONENT);
         assert_eq!(legacy.occurrence_guid.as_str(), OCCURRENCE);
@@ -288,8 +240,7 @@ mod tests {
         legacy_placed[346] = 1;
         indexed_header(&mut legacy_placed, *b"325", 21);
         let legacy_placed =
-            exact_component_occurrence(&ctx, &legacy_placed, 0, "f3d:Design/BulkStream.dat")
-                .unwrap()
+            exact_component_occurrence(&legacy_placed, 0, "f3d:Design/BulkStream.dat")
                 .expect("legacy placed occurrence");
         assert_eq!(legacy_placed.occurrence_ordinal(), 1);
         assert_eq!(
@@ -306,10 +257,8 @@ mod tests {
         }
         dynamic_tag[346] = 1;
         indexed_header(&mut dynamic_tag, *b"325", 21);
-        let dynamic_tag =
-            exact_component_occurrence(&ctx, &dynamic_tag, 0, "f3d:Design/BulkStream.dat")
-                .unwrap()
-                .expect("dynamic-tag placed occurrence");
+        let dynamic_tag = exact_component_occurrence(&dynamic_tag, 0, "f3d:Design/BulkStream.dat")
+            .expect("dynamic-tag placed occurrence");
         assert_eq!(dynamic_tag.class_tag.as_str(), "336");
         assert_eq!(dynamic_tag.occurrence_ordinal(), 1);
         assert_eq!(
@@ -324,82 +273,6 @@ mod tests {
         }
         placed_seed[346] = 1;
         indexed_header(&mut placed_seed, *b"325", 21);
-        assert!(
-            exact_component_occurrence(&ctx, &placed_seed, 0, "f3d:Design/BulkStream.dat")
-                .unwrap()
-                .is_none()
-        );
-    }
-
-    #[test]
-    fn component_occurrence_id_refuses_retained_limit() {
-        let mut seed = common(229, 1);
-        seed[208] = 1;
-        seed[218] = 1;
-        indexed_header(&mut seed, *b"333", 21);
-        let stream = "f3d:synthetic";
-        let id_bytes = stream.len() + ":design-component-occurrence#".len() + 1;
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_retained_bytes = u64::try_from(72 + id_bytes - 1).unwrap();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = exact_component_occurrence(&ctx, &seed, 0, stream)
-            .expect_err("one native occurrence ID exceeds the retained-byte limit");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "f3d component occurrence id")
-        );
-    }
-
-    #[test]
-    fn component_occurrence_guid_text_refuses_each_retained_limit() {
-        let mut seed = common(229, 1);
-        seed[208] = 1;
-        seed[218] = 1;
-        indexed_header(&mut seed, *b"333", 21);
-        for limit in [35, 71] {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::default();
-            policy.limits.max_retained_bytes = limit;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let error = exact_component_occurrence(&ctx, &seed, 0, "f3d:synthetic")
-                .err()
-                .unwrap();
-            assert!(
-                matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
-                if refusal.dimension == ResourceDimension::RetainedBytes
-                    && refusal.operation == "f3d Design UTF-16 text")
-            );
-        }
-    }
-
-    #[test]
-    fn decoded_component_occurrence_refuses_collection_limit() {
-        let mut seed = common(229, 1);
-        seed[208] = 1;
-        seed[218] = 1;
-        indexed_header(&mut seed, *b"333", 21);
-        let arena = DecodeArena::new();
-        let (parse_ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default()).unwrap();
-        let occurrence = exact_component_occurrence(&parse_ctx, &seed, 0, "f3d:synthetic")
-            .unwrap()
-            .expect("valid fixed component occurrence");
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = ctx
-            .push_vec(
-                &mut Vec::new(),
-                occurrence,
-                "f3d decoded component occurrence",
-            )
-            .expect_err("one decoded occurrence needs one collection item");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "f3d decoded component occurrence")
-        );
+        assert!(exact_component_occurrence(&placed_seed, 0, "f3d:Design/BulkStream.dat").is_none());
     }
 }

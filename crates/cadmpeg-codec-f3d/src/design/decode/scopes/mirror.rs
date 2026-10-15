@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact mirror scopes and mirror construction binding.
 
-use crate::bytes::lp_utf16_bounded_charged;
-use cadmpeg_core::decode::u64_from_index;
+use crate::bytes::lp_utf16_bounded;
 
 use super::shared_frames::marked_record_reference;
 use crate::container::ContainerScan;
@@ -255,9 +254,6 @@ pub(crate) fn bind_mirror_constructions(
             continue;
         };
         let key = (stream, header.record_index);
-        if !headers_by_record.contains_key(&key) {
-            ctx.reserve_map(&mut headers_by_record, 1, "f3d Mirror record headers")?;
-        }
         headers_by_record.insert(key, header);
     }
     let mut record_offset_index: HashMap<String, IndexedRecordOffsets> = HashMap::new();
@@ -268,9 +264,7 @@ pub(crate) fn bind_mirror_constructions(
         let Some(stream) = native_stream(&scopes[index].id) else {
             continue;
         };
-        let (_stream_reservation, stream) = ctx
-            .format_scoped(format_args!("{stream}"), "f3d scoped stream identity")
-            .map(|(text, reservation)| (reservation, text))?;
+        let stream = stream.to_owned();
         let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, &stream)
         else {
             continue;
@@ -311,7 +305,7 @@ pub(crate) fn bind_mirror_constructions(
         let Some(plane_header) = headers_by_record.get(&(stream.as_str(), *plane_member)) else {
             continue;
         };
-        let work_plane = compact_feature_reference(ctx, bytes, plane_header)?.and_then(
+        let work_plane = compact_feature_reference(bytes, plane_header).and_then(
             |(plane_reference, plane_reference_offset)| {
                 plane_reference
                     .checked_add(1)
@@ -327,8 +321,7 @@ pub(crate) fn bind_mirror_constructions(
             },
         );
         let face_recipe = {
-            let records =
-                cached_owned_record_offsets(ctx, &mut record_offset_index, &stream, bytes)?;
+            let records = cached_owned_record_offsets(&mut record_offset_index, &stream, bytes);
             parse_face_operand(
                 ctx,
                 bytes,
@@ -355,13 +348,11 @@ pub(crate) fn bind_mirror_constructions(
                     None,
                 )
             } else if crate::design::decode::operands::parse_entity_selection_operand(
-                ctx,
                 bytes,
                 plane_group,
                 0,
                 plane_header,
             )
-            .transpose()?
             .is_some()
                 || face_recipe
             {
@@ -373,26 +364,20 @@ pub(crate) fn bind_mirror_constructions(
             _ if seed_group.role() != DesignOperandRole::BODIES_B => None,
             [crate::records::identity::Located { value: member, .. }] => {
                 match headers_by_record.get(&(stream.as_str(), *member)) {
-                    Some(header) => compact_feature_reference(ctx, bytes, header)?.filter(
-                        |(record_index, _)| {
+                    Some(header) => {
+                        compact_feature_reference(bytes, header).filter(|(record_index, _)| {
                             scopes.iter().any(|scope| {
                                 native_stream(&scope.id) == Some(stream.as_str())
                                     && scope.record_index == *record_index
                             })
-                        },
-                    ),
+                        })
+                    }
                     None => None,
                 }
             }
             _ => None,
         };
-        ctx.charge_work(
-            u64_from_index(owners.len())
-                .checked_mul(2)
-                .ok_or_else(|| ctx.refuse_codec_limit("f3d Mirror owner search work", 0, 1))?,
-            "f3d Mirror owner search",
-        )?;
-        let records = cached_owned_record_offsets(ctx, &mut record_offset_index, &stream, bytes)?;
+        let records = cached_owned_record_offsets(&mut record_offset_index, &stream, bytes);
         let count = unique_match(owners.iter().filter(|owner| {
             native_stream(owner.id()) == Some(stream.as_str())
                 && owner.scope_record_index() == scope_record_index
@@ -480,45 +465,26 @@ fn borrowed_ascii_tag(bytes: &[u8], at: usize) -> Option<(&[u8], usize)> {
     raw.iter().all(u8::is_ascii_graphic).then_some((raw, end))
 }
 
-fn compact_feature_reference(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    bytes: &[u8],
-    header: &DesignRecordHeader,
-) -> Result<Option<(u32, u64)>, CodecError> {
-    let Some(start) = usize::try_from(header.byte_offset).ok() else {
-        return Ok(None);
-    };
+fn compact_feature_reference(bytes: &[u8], header: &DesignRecordHeader) -> Option<(u32, u64)> {
+    let start = usize::try_from(header.byte_offset).ok()?;
     if bytes.get(start + 11..start + 21) != Some(&[0; 10][..])
         || bytes.get(start + 21) != Some(&1)
         || View::u32_le_at(bytes, start + 22) != header.record_index.checked_add(3)
         || bytes.get(start + 26..start + 32) != Some(&[0; 6][..])
         || View::u32_le_at(bytes, start + 32) != Some(1)
     {
-        return Ok(None);
+        return None;
     }
-    let Some((asset_id, after_asset_id)) =
-        lp_utf16_bounded_charged(ctx, bytes, start + 36, 1..=256, "f3d Design UTF-16 text")?
-    else {
-        return Ok(None);
-    };
-    let Some((context_id, after_context_id)) = lp_utf16_bounded_charged(
-        ctx,
-        bytes,
-        after_asset_id,
-        1..=256,
-        "f3d Design UTF-16 text",
-    )?
-    else {
-        return Ok(None);
-    };
+    let (asset_id, after_asset_id) = lp_utf16_bounded(bytes, start + 36, 1..=256)?;
+    let (context_id, after_context_id) = lp_utf16_bounded(bytes, after_asset_id, 1..=256)?;
     if !crate::bytes::is_guid_relaxed(&asset_id)
         || !crate::bytes::is_guid_relaxed(&context_id)
         || View::u32_le_at(bytes, after_context_id) != Some(2)
         || bytes.get(after_context_id + 4..after_context_id + 8) != Some(&[0; 4][..])
     {
-        return Ok(None);
+        return None;
     }
-    Ok((|| {
+    (|| {
         let paired_at = next_indexed_record_offset(bytes, after_context_id + 8)?;
         let nested_one_at = next_indexed_record_offset(bytes, paired_at + 11)?;
         let nested_two_at = next_indexed_record_offset(bytes, nested_one_at + 11)?;
@@ -546,7 +512,7 @@ fn compact_feature_reference(
             View::u32_le_at(bytes, identity_at + 21)?,
             u64::try_from(identity_at + 21).ok()?,
         ))
-    })())
+    })()
 }
 
 #[cfg(test)]

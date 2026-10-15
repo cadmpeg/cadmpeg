@@ -3,7 +3,6 @@
 use super::{exact_assembly_operand_path, exact_assembly_operand_path_envelope};
 use crate::records::feature::assembly::DesignAssemblyOperandPathLink;
 use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
 const GUID: &str = "11111111-1111-1111-1111-111111111111";
 
@@ -36,30 +35,10 @@ fn path_bytes() -> Vec<u8> {
     bytes
 }
 
-fn context(arena: &DecodeArena, collection_limit: u64) -> DecodeContext<'_> {
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = collection_limit;
-    DecodeContext::from_root_bytes(&[], arena, &policy)
-        .unwrap()
-        .0
-}
-
 #[test]
-fn assembly_path_occurrences_refuse_collection_limit() {
+fn assembly_path_keeps_one_occurrence() {
     let bytes = path_bytes();
-    let arena = DecodeArena::new();
-    let ctx = context(&arena, 0);
-    let error =
-        exact_assembly_operand_path(&ctx, &bytes, 0, 65, bytes.len(), path_link()).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
-        if failure.dimension == ResourceDimension::CollectionItems
-            && failure.operation == "f3d assembly path occurrences")
-    );
-
-    let arena = DecodeArena::new();
-    let ctx = context(&arena, 1);
-    let path = exact_assembly_operand_path(&ctx, &bytes, 0, 65, bytes.len(), path_link())
+    let path = exact_assembly_operand_path(&bytes, 0, 65, bytes.len(), path_link())
         .unwrap()
         .unwrap();
     assert_eq!(path.occurrence_guids().len(), 1);
@@ -100,25 +79,14 @@ fn envelope_bytes(scope_record_index: u32) -> Vec<u8> {
 }
 
 #[test]
-fn assembly_path_spans_refuse_collection_limit() {
+fn assembly_path_span_keeps_its_record_index() {
     let scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#0",
         DesignFeatureKind::Assemble,
         10,
     );
     let bytes = envelope_bytes(scope.record_index);
-    let arena = DecodeArena::new();
-    let ctx = context(&arena, 0);
-    let error = exact_assembly_operand_path_envelope(&ctx, &bytes, &scope, 64, 0, 0).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
-        if failure.dimension == ResourceDimension::CollectionItems
-            && failure.operation == "f3d assembly path spans")
-    );
-
-    let arena = DecodeArena::new();
-    let ctx = context(&arena, 2);
-    let path = exact_assembly_operand_path_envelope(&ctx, &bytes, &scope, 64, 0, 0)
+    let path = exact_assembly_operand_path_envelope(&bytes, &scope, 64, 0, 0)
         .unwrap()
         .unwrap();
     assert_eq!(path.record_index, 65);

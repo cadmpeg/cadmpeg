@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact thread construction scopes and thread payloads.
 
-use crate::bytes::lp_utf16_bounded_charged;
+use crate::bytes::lp_utf16_bounded;
 use crate::layout::thread_compact_construction_tail as thread_compact_tail;
 use crate::layout::thread_compact_legacy_construction_tail as thread_compact_legacy_tail;
 use crate::layout::thread_owner_marked_scope_prefix as thread_owner;
@@ -13,46 +13,26 @@ use crate::records::feature::scope::DesignParameterScope;
 use crate::records::feature::thread;
 use crate::records::feature::thread::DesignThreadConstruction;
 use crate::records::feature::thread::DesignThreadForm;
-use cadmpeg_core::decode::{DecodeContext, View};
-use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::View;
 
 pub(super) fn exact_thread_construction(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     scope: &DesignParameterScope,
-) -> Result<Option<DesignThreadConstruction>, CodecError> {
-    let Some(start) = usize::try_from(scope.byte_offset()).ok() else {
-        return Ok(None);
-    };
+) -> Option<DesignThreadConstruction> {
+    let start = usize::try_from(scope.byte_offset()).ok()?;
     if scope.kind() != scope::DesignFeatureKind::Thread
         || scope.reference_members().len() < 2
         || !scope.reference_members().len().is_multiple_of(2)
     {
-        return Ok(None);
+        return None;
     }
-    let Some((prefix_form, designation_delta)) = bytes.get(start..).and_then(exact_thread_prefix)
-    else {
-        return Ok(None);
-    };
-    let Some(designation_at) = start.checked_add(designation_delta) else {
-        return Ok(None);
-    };
-    let count = match prefix_form {
-        ThreadPrefix::Standard => 1,
-        ThreadPrefix::Compact => scope.reference_members().len() / 2,
-    };
+    let (prefix_form, designation_delta) = bytes.get(start..).and_then(exact_thread_prefix)?;
+    let designation_at = start.checked_add(designation_delta)?;
 
     let mut face_group_record_indices = Vec::new();
-    ctx.reserve_vec(
-        &mut face_group_record_indices,
-        count,
-        "f3d Thread face groups",
-    )?;
     match prefix_form {
         ThreadPrefix::Standard => {
-            let Some(first) = scope.reference_members().values().next() else {
-                return Ok(None);
-            };
+            let first = scope.reference_members().values().next()?;
             face_group_record_indices.push(*first);
         }
         ThreadPrefix::Compact => {
@@ -60,16 +40,12 @@ pub(super) fn exact_thread_construction(
                 .extend(scope.reference_members().values().step_by(2).copied());
         }
     }
-    let Some(construction) = parse_thread_payload(
-        ctx,
+    let construction = parse_thread_payload(
         bytes,
         designation_at,
         prefix_form,
         face_group_record_indices,
-    )?
-    else {
-        return Ok(None);
-    };
+    )?;
     let class_pair_is_valid = match construction.form {
         DesignThreadForm::StandardLegacy => {
             scope.class_tag.as_str() == "334" && scope.paired_class_tag.as_str() == "262"
@@ -80,9 +56,9 @@ pub(super) fn exact_thread_construction(
         DesignThreadForm::Standard | DesignThreadForm::Compact(_) => true,
     };
     if !class_pair_is_valid {
-        return Ok(None);
+        return None;
     }
-    Ok(Some(construction))
+    Some(construction)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -133,38 +109,15 @@ fn thread_form(bytes: &[u8], marker_at: usize, token_at: usize) -> Option<Thread
 }
 
 pub(super) fn parse_thread_payload(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     designation_at: usize,
     expected_form: ThreadPrefix,
     face_group_record_indices: Vec<u32>,
-) -> Result<Option<DesignThreadConstruction>, CodecError> {
-    let Some((designation, after_designation)) = lp_utf16_bounded_charged(
-        ctx,
-        bytes,
-        designation_at,
-        1..=128,
-        "f3d Design UTF-16 text",
-    )?
-    else {
-        return Ok(None);
-    };
-    let Some((nominal_size_text, after_nominal)) = lp_utf16_bounded_charged(
-        ctx,
-        bytes,
-        after_designation,
-        1..=64,
-        "f3d Design UTF-16 text",
-    )?
-    else {
-        return Ok(None);
-    };
-    let Some((profile, after_profile)) =
-        lp_utf16_bounded_charged(ctx, bytes, after_nominal, 1..=256, "f3d Design UTF-16 text")?
-    else {
-        return Ok(None);
-    };
-    Ok((|| {
+) -> Option<DesignThreadConstruction> {
+    let (designation, after_designation) = lp_utf16_bounded(bytes, designation_at, 1..=128)?;
+    let (nominal_size_text, after_nominal) = lp_utf16_bounded(bytes, after_designation, 1..=64)?;
+    let (profile, after_profile) = lp_utf16_bounded(bytes, after_nominal, 1..=256)?;
+    (|| {
         let (pitch_marker, trailer_kind) =
             match (expected_form, bytes.get(after_profile..after_profile + 5)?) {
                 (ThreadPrefix::Standard, [0, 1, 0, 0, 0]) => (1, ThreadTrailerKind::Standard),
@@ -235,7 +188,7 @@ pub(super) fn parse_thread_payload(
                 pitch_diameter,
             )?,
         })
-    })())
+    })()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

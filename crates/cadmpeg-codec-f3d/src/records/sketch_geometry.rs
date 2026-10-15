@@ -3,13 +3,10 @@
 
 use cadmpeg_ir::native::bytes::NativeBytes;
 
-use super::admission::RecordAdmission;
 use super::references::DesignClassTag;
 use super::serde_column::SliceColumn;
-use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
-use cadmpeg_ir::geometry::nurbs::knots_nondecreasing;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::scalar::{
     Angle, FiniteReal, NonNegativeLength, NonNegativeReal, PositiveLength, PositiveReal,
@@ -883,20 +880,6 @@ impl SketchPointCompanion {
         }
         Ok(())
     }
-
-    fn validate_charged(&self, ctx: &DecodeContext<'_>) -> Result<(), CodecError> {
-        let operation = "index F3D sketch point incident curves";
-        let mut unique = std::collections::HashSet::new();
-        for curve in &self.incident_curves {
-            ctx.reserve_set(&mut unique, 1, operation)?;
-            if !unique.insert(curve) {
-                return Err(CodecError::Malformed(
-                    "sketch point companion.incident_curves must be distinct".into(),
-                ));
-            }
-        }
-        Ok(())
-    }
 }
 
 /// Borrowed companion payload with the prefix derived for older point forms.
@@ -1079,22 +1062,6 @@ impl TryFrom<SketchPointDraft> for SketchPoint {
 }
 
 impl SketchPoint {
-    pub(crate) fn try_from_charged(
-        ctx: &DecodeContext<'_>,
-        draft: SketchPointDraft,
-    ) -> Result<Self, CodecError> {
-        let coordinates = FinitePoint2::new(draft.coordinates).ok_or_else(|| {
-            CodecError::Malformed("sketch point coordinates must be finite".into())
-        })?;
-        let record_form = draft
-            .record_form
-            .clone()
-            .try_checked()
-            .map_err(CodecError::Malformed)?;
-        draft.companion.validate_charged(ctx)?;
-        Ok(Self::from_validated(draft, coordinates, record_form))
-    }
-
     fn from_validated(
         draft: SketchPointDraft,
         coordinates: FinitePoint2,
@@ -1589,6 +1556,11 @@ pub(crate) struct SketchSurfaceGeometry {
     pub(crate) control_points: Vec<Vec<FinitePoint3>>,
 }
 
+/// Whether adjacent knots never decrease. A NaN pair fails this predicate.
+fn knots_nondecreasing(knots: &[f64]) -> bool {
+    knots.windows(2).all(|pair| pair[0] <= pair[1])
+}
+
 #[derive(Debug)]
 pub(crate) enum SketchGeometryError {
     Invalid(&'static str),
@@ -1634,26 +1606,17 @@ impl SketchSurfaceGeometry {
                     .collect::<Result<Vec<_>, String>>()
             })
             .collect::<Result<Vec<_>, String>>()?;
-        Self::from_checked_parts(
-            RecordAdmission::Admitted,
-            u_degree,
-            v_degree,
-            u_knots,
-            v_knots,
-            control_points,
-        )
-        .map_err(|error| error.to_string())
+        Self::from_checked_parts(u_degree, v_degree, u_knots, v_knots, control_points)
+            .map_err(|error| error.to_string())
     }
 
     pub(crate) fn from_checked_parts(
-        admission: RecordAdmission<'_, '_>,
         u_degree: u32,
         v_degree: u32,
         u_knots: Vec<f64>,
         v_knots: Vec<f64>,
         control_points: Vec<Vec<FinitePoint3>>,
     ) -> Result<Self, SketchGeometryError> {
-        admission.work(0, "f3d sketch surface validation")?;
         let u_degree = std::num::NonZeroU32::new(u_degree).ok_or("surface u_degree is zero")?;
         let v_degree = std::num::NonZeroU32::new(v_degree).ok_or("surface v_degree is zero")?;
         let row_count = control_points.len();
@@ -1665,7 +1628,6 @@ impl SketchSurfaceGeometry {
             return Err("surface control grid must be nonempty and rectangular".into());
         }
         for row in &control_points {
-            admission.work(1, "f3d sketch surface row shape")?;
             if row.len() != column_count {
                 return Err("surface control grid must be nonempty and rectangular".into());
             }
@@ -1687,23 +1649,15 @@ impl SketchSurfaceGeometry {
         if u_knots.len() != expected_u_knots || v_knots.len() != expected_v_knots {
             return Err("surface knot counts disagree with degrees and grid".into());
         }
-        if !knots_nondecreasing(&u_knots, |count| {
-            admission.work(count, "f3d sketch surface knot order")
-        })? || !knots_nondecreasing(&v_knots, |count| {
-            admission.work(count, "f3d sketch surface knot order")
-        })? {
+        if !knots_nondecreasing(&u_knots) || !knots_nondecreasing(&v_knots) {
             return Err("surface knots must be nondecreasing".into());
         }
-        let mut finite_u_knots =
-            admission.collection_vec(u_knots.len(), "f3d sketch surface u knots")?;
+        let mut finite_u_knots = Vec::new();
         for value in u_knots {
-            admission.work(1, "f3d sketch surface knot finiteness")?;
             finite_u_knots.push(FiniteReal::new(value).ok_or("surface u knot is not finite")?);
         }
-        let mut finite_v_knots =
-            admission.collection_vec(v_knots.len(), "f3d sketch surface v knots")?;
+        let mut finite_v_knots = Vec::new();
         for value in v_knots {
-            admission.work(1, "f3d sketch surface knot finiteness")?;
             finite_v_knots.push(FiniteReal::new(value).ok_or("surface v knot is not finite")?);
         }
         Ok(Self {
@@ -2139,24 +2093,16 @@ impl SketchNurbsGeometry {
         }
         let fit_tolerance = NonNegativeLength::new(fit_tolerance)
             .ok_or("sketch NURBS fit_tolerance must be finite and nonnegative")?;
-        Self::from_checked_parts(
-            RecordAdmission::Admitted,
-            degree,
-            fit_tolerance,
-            knots,
-            poles,
-        )
-        .map_err(|error| error.to_string())
+        Self::from_checked_parts(degree, fit_tolerance, knots, poles)
+            .map_err(|error| error.to_string())
     }
 
     pub(crate) fn from_checked_parts(
-        admission: RecordAdmission<'_, '_>,
         degree: u32,
         fit_tolerance: NonNegativeLength,
         knots: Vec<f64>,
         poles: SketchNurbsPoles,
     ) -> Result<Self, SketchGeometryError> {
-        admission.work(0, "f3d sketch NURBS validation")?;
         if knots.len() > 100_000 || poles.point_count() > 100_000 || poles.weights().len() > 100_000
         {
             return Err("sketch NURBS lane count exceeds source limit".into());
@@ -2169,13 +2115,10 @@ impl SketchNurbsGeometry {
         if knots.len() != expected_knots {
             return Err("sketch NURBS knot count must equal control points + degree + 1".into());
         }
-        if !knots_nondecreasing(&knots, |count| {
-            admission.work(count, "f3d sketch NURBS knot order")
-        })? {
+        if !knots_nondecreasing(&knots) {
             return Err("sketch NURBS knots must be nondecreasing".into());
         }
         for knot in &knots {
-            admission.work(1, "f3d sketch NURBS knot finiteness")?;
             if !knot.is_finite() {
                 return Err("sketch NURBS knot is not finite".into());
             }
@@ -2200,8 +2143,8 @@ impl SketchNurbsGeometry {
         &self.knots
     }
 
-    pub(crate) fn knots_copy(&self, ctx: &DecodeContext<'_>) -> Result<Vec<f64>, CodecError> {
-        ctx.copy_slice(&self.knots, "copy F3D sketch NURBS knots")
+    pub(crate) fn knots_copy(&self) -> Vec<f64> {
+        self.knots.clone()
     }
 
     pub(crate) fn knot_count(&self) -> usize {
@@ -2476,156 +2419,44 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn sketch_geometry_constructors_preserve_resource_refusals_and_standard_values() {
-        use super::{
-            RecordAdmission, SketchGeometryError, SketchNurbsGeometry, SketchNurbsPoles,
-            SketchSurfaceGeometry,
-        };
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-        use cadmpeg_core::CodecError;
+    fn sketch_geometry_constructors_preserve_standard_values() {
+        use super::{SketchNurbsGeometry, SketchNurbsPoles, SketchSurfaceGeometry};
         use cadmpeg_ir::features::FinitePoint3;
         use cadmpeg_ir::math::Point3;
         use cadmpeg_ir::scalar::NonNegativeLength;
 
         let point = FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap();
-        for allowance in 0..=16 {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = allowance;
-            policy.limits.max_retained_bytes = 64;
-            policy.limits.max_collection_items = 8;
-            policy.limits.max_recursion_depth = 0;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let result = SketchSurfaceGeometry::from_checked_parts(
-                RecordAdmission::Charged(&ctx),
-                1,
-                1,
-                vec![0.0, 0.0, 1.0, 1.0],
-                vec![0.0, 0.0, 1.0, 1.0],
-                vec![vec![point; 2]; 2],
-            );
-            if allowance < 16 {
-                let Err(SketchGeometryError::Resource(CodecError::ResourceLimit(original))) =
-                    result
-                else {
-                    panic!("each surface visit must be admitted");
-                };
-                assert_eq!(original.dimension, ResourceDimension::WorkUnits);
-                assert_eq!(original.used, allowance);
-                assert_eq!(original.additional, 1);
-                assert!(
-                    matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == original)
-                );
-            } else {
-                let surface = result.unwrap();
-                assert_eq!(
-                    surface,
-                    SketchSurfaceGeometry::from_parts(
-                        1,
-                        1,
-                        vec![0.0, 0.0, 1.0, 1.0],
-                        vec![0.0, 0.0, 1.0, 1.0],
-                        vec![vec![point.get(); 2]; 2]
-                    )
-                    .unwrap()
-                );
-                ctx.finish_session().unwrap();
-            }
-        }
-        for (dimension, retained, items) in [
-            (ResourceDimension::RetainedBytes, 63, 8),
-            (ResourceDimension::CollectionItems, 64, 7),
-        ] {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = retained;
-            policy.limits.max_collection_items = items;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let result = SketchSurfaceGeometry::from_checked_parts(
-                RecordAdmission::Charged(&ctx),
-                1,
-                1,
-                vec![0.0, 0.0, 1.0, 1.0],
-                vec![0.0, 0.0, 1.0, 1.0],
-                vec![vec![point; 2]; 2],
-            );
-            let Err(SketchGeometryError::Resource(CodecError::ResourceLimit(original))) = result
-            else {
-                panic!("finite knot storage must be admitted");
-            };
-            assert_eq!(original.dimension, dimension);
-            assert!(
-                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == original)
-            );
-        }
-        for allowance in 0..=7 {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = allowance;
-            policy.limits.max_retained_bytes = 0;
-            policy.limits.max_collection_items = 0;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let knots = vec![0.0, 0.0, 1.0, 1.0];
-            let poles = SketchNurbsPoles::Polynomial(vec![point; 2]);
-            let result = SketchNurbsGeometry::from_checked_parts(
-                RecordAdmission::Charged(&ctx),
-                1,
-                NonNegativeLength::new(0.0).unwrap(),
-                knots.clone(),
-                poles.clone(),
-            );
-            if allowance < 7 {
-                let Err(SketchGeometryError::Resource(CodecError::ResourceLimit(original))) =
-                    result
-                else {
-                    panic!("each curve visit must be admitted");
-                };
-                assert_eq!(original.used, allowance);
-                assert_eq!(original.additional, 1);
-                assert!(
-                    matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == original)
-                );
-            } else {
-                assert_eq!(
-                    result.unwrap(),
-                    SketchNurbsGeometry::from_parts(1, 0.0, 8, knots, poles).unwrap()
-                );
-                ctx.finish_session().unwrap();
-            }
-        }
-    }
-
-    #[test]
-    fn sketch_point_companion_index_refuses_collection_limit() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-
-        let point: SketchPoint = serde_json::from_value(native_point_wire(&json!({
-            "kind": "version11", "padded_paired_reference": false,
-            "companion_prefix_present_zero": false
-        })))
+        let surface = SketchSurfaceGeometry::from_checked_parts(
+            1,
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![vec![point; 2]; 2],
+        )
         .unwrap();
-        let draft = super::SketchPointDraft {
-            id: point.id,
-            record_index: point.record_index,
-            owner_reference: point.owner_reference,
-            class_tag: point.class_tag,
-            byte_offset: point.byte_offset,
-            coordinate_offset: point.coordinate_offset,
-            record_form: point.record_form.into_raw(),
-            companion: point.companion,
-            paired_reference: point.paired_reference,
-            coordinates: point.coordinates.get(),
-        };
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 1;
-        let ctx = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        assert_eq!(
+            surface,
+            SketchSurfaceGeometry::from_parts(
+                1,
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![vec![point.get(); 2]; 2]
+            )
             .unwrap()
-            .0;
-        let error = SketchPoint::try_from_charged(&ctx, draft).unwrap_err();
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "index F3D sketch point incident curves")
+        );
+        let knots = vec![0.0, 0.0, 1.0, 1.0];
+        let poles = SketchNurbsPoles::Polynomial(vec![point; 2]);
+        let curve = SketchNurbsGeometry::from_checked_parts(
+            1,
+            NonNegativeLength::new(0.0).unwrap(),
+            knots.clone(),
+            poles.clone(),
+        )
+        .unwrap();
+        assert_eq!(
+            curve,
+            SketchNurbsGeometry::from_parts(1, 0.0, 8, knots, poles).unwrap()
         );
     }
 
@@ -2797,25 +2628,6 @@ mod tests {
                 serde_json::to_vec(&owned).unwrap()
             );
         }
-    }
-
-    #[test]
-    fn sketch_nurbs_knot_copy_refuses_collection_limit() {
-        let geometry: SketchCurveGeometry = serde_json::from_value(native_nurbs_wire(&[])).unwrap();
-        let SketchCurveGeometry::Nurbs { geometry, .. } = geometry else {
-            panic!("fixture must contain a NURBS curve");
-        };
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_collection_items = 3;
-        let ctx = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .unwrap()
-            .0;
-        let error = geometry.knots_copy(&ctx).unwrap_err();
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref refusal)
-            if refusal.operation == "copy F3D sketch NURBS knots")
-        );
     }
 
     #[test]

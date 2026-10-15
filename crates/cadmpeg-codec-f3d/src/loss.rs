@@ -40,6 +40,8 @@ pub(crate) enum F3dLossCode {
     DrawingDocumentOmitted,
     /// ASM history binding work exceeded the decoder safety budget.
     HistoryBindingBudgetExceeded,
+    /// A Design recipe side-sequence search exceeded its local work cap.
+    RecipeSideSearchBudgetExceeded,
     /// An ASM history span stays opaque because record framing failed.
     HistoryRecordFramingFailed,
     /// Design body-map pairs do not resolve to a body in the named BREP blob.
@@ -108,6 +110,8 @@ pub(crate) enum F3dLossCode {
     FeatureEdgeOperandUnresolved,
     /// Edge-treatment selections are unresolved because source edges were lost.
     FeatureEdgeSelectionLost,
+    /// A rectangular-pattern instance search stopped at a local cap.
+    FeaturePatternInstanceSearchCapped,
     /// Design-referenced BREP blobs could not be decoded.
     BrepBlobUndecoded,
     /// A mesh geometry container decoded without a complete Design body join.
@@ -204,6 +208,7 @@ impl F3dLossCode {
         Self::ActComponentLinkUnresolved,
         Self::DrawingDocumentOmitted,
         Self::HistoryBindingBudgetExceeded,
+        Self::RecipeSideSearchBudgetExceeded,
         Self::HistoryRecordFramingFailed,
         Self::DesignBodyBindingUnresolved,
         Self::ReferenceImageNativeRetained,
@@ -238,6 +243,7 @@ impl F3dLossCode {
         Self::FeatureEdgeSelectionNative,
         Self::FeatureEdgeOperandUnresolved,
         Self::FeatureEdgeSelectionLost,
+        Self::FeaturePatternInstanceSearchCapped,
         Self::BrepBlobUndecoded,
         Self::MeshContainerUnjoined,
         Self::MeshContainerUndecoded,
@@ -297,6 +303,7 @@ impl F3dLossCode {
             Self::ActComponentLinkUnresolved => "assembly.act-component-link-unresolved",
             Self::DrawingDocumentOmitted => "drawing.document-omitted",
             Self::HistoryBindingBudgetExceeded => "history.binding-budget-exceeded",
+            Self::RecipeSideSearchBudgetExceeded => "feature.recipe-search-budget-exceeded",
             Self::HistoryRecordFramingFailed => "history.record-framing-failed",
             Self::DesignBodyBindingUnresolved => "design.body-binding-unresolved",
             Self::ReferenceImageNativeRetained => "appearance.reference-image-native",
@@ -333,6 +340,7 @@ impl F3dLossCode {
             Self::FeatureEdgeSelectionNative => "feature.edge-selection-native",
             Self::FeatureEdgeOperandUnresolved => "feature.edge-operand-unresolved",
             Self::FeatureEdgeSelectionLost => "feature.edge-selection-lost",
+            Self::FeaturePatternInstanceSearchCapped => "feature.pattern-instance-search-capped",
             Self::BrepBlobUndecoded => "geometry.brep-blob-undecoded",
             Self::MeshContainerUnjoined => "mesh.container-unjoined",
             Self::MeshContainerUndecoded => "mesh.container-undecoded",
@@ -388,6 +396,7 @@ impl F3dLossCode {
             | Self::NurbsCurveCarrier
             | Self::MeshSurfaceSentinel => Severity::Info,
             Self::HistoryBindingBudgetExceeded
+            | Self::RecipeSideSearchBudgetExceeded
             | Self::HistoryRecordFramingFailed
             | Self::MeshContainerUndecoded
             | Self::MissingGeometryStream
@@ -438,6 +447,7 @@ impl F3dLossCode {
             | Self::FeatureEdgeSelectionNative
             | Self::FeatureEdgeOperandUnresolved
             | Self::FeatureEdgeSelectionLost
+            | Self::FeaturePatternInstanceSearchCapped
             | Self::BrepBlobUndecoded
             | Self::MeshContainerUnjoined
             | Self::MeshContainerMissing
@@ -490,6 +500,7 @@ impl F3dLossCode {
             | Self::XrefPlacementUndecoded
             | Self::XrefPlacementSuperseded => LossTaxonomy::AssemblyComponentsExternal,
             Self::HistoryBindingBudgetExceeded
+            | Self::RecipeSideSearchBudgetExceeded
             | Self::FeatureDefinitionIncomplete
             | Self::FeatureScopeUnprojected
             | Self::FeatureScopePayloadUninterpreted
@@ -517,7 +528,8 @@ impl F3dLossCode {
             | Self::FeatureFaceOperandUnresolved
             | Self::FeatureEdgeSelectionNative
             | Self::FeatureEdgeOperandUnresolved
-            | Self::FeatureEdgeSelectionLost => LossTaxonomy::FeatureHistoryRetained,
+            | Self::FeatureEdgeSelectionLost
+            | Self::FeaturePatternInstanceSearchCapped => LossTaxonomy::FeatureHistoryRetained,
             Self::MaterialDistanceUnitUntyped => LossTaxonomy::MaterialNotTransferred,
             Self::DesignBodyBindingUnresolved
             | Self::FaceSurfaceReferenceDangling
@@ -600,6 +612,7 @@ mod tests {
                 "assembly.act-component-link-unresolved",
                 "drawing.document-omitted",
                 "history.binding-budget-exceeded",
+                "feature.recipe-search-budget-exceeded",
                 "history.record-framing-failed",
                 "design.body-binding-unresolved",
                 "appearance.reference-image-native",
@@ -634,6 +647,7 @@ mod tests {
                 "feature.edge-selection-native",
                 "feature.edge-operand-unresolved",
                 "feature.edge-selection-lost",
+                "feature.pattern-instance-search-capped",
                 "geometry.brep-blob-undecoded",
                 "mesh.container-unjoined",
                 "mesh.container-undecoded",

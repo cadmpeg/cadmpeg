@@ -34,17 +34,8 @@ macro_rules! propagate_resource {
 
 /// Read `count` control points in the marker-selected form, scaling positions to
 /// millimetres. Token-space counterpart of [`read_control_points`].
-fn control_points(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    cur: &mut Cur<'_>,
-    count: usize,
-    marker: BsplineMarker,
-) -> Option<Result<ReadPoles3, cadmpeg_core::CodecError>> {
-    let mut poles = propagate_resource!(ReadPoles3::with_counted_capacity(
-        ctx,
-        count,
-        marker.rational(),
-    ));
+fn control_points(cur: &mut Cur<'_>, count: usize, marker: BsplineMarker) -> Option<ReadPoles3> {
+    let mut poles = ReadPoles3::empty(marker.rational());
     for _ in 0..count {
         let mut comps = [0.0f64; 4];
         for comp in comps.iter_mut().take(marker.cp_dims()) {
@@ -59,7 +50,7 @@ fn control_points(
             comps[3],
         )?;
     }
-    Some(Ok(poles))
+    Some(poles)
 }
 
 /// Decode a surface `nubs`/`nurbs` block at token `marker_pos`, returning the
@@ -93,18 +84,8 @@ pub(super) fn surface_block(
         return None;
     }
 
-    let (u_knots, n_poles_u) = propagate_resource!(knots(
-        ctx,
-        &mut cur,
-        usize::try_from(n_uniq_u).ok()?,
-        degree_u
-    )?);
-    let (v_knots, n_poles_v) = propagate_resource!(knots(
-        ctx,
-        &mut cur,
-        usize::try_from(n_uniq_v).ok()?,
-        degree_v
-    )?);
+    let (u_knots, n_poles_u) = knots(&mut cur, usize::try_from(n_uniq_u).ok()?, degree_u)?;
+    let (v_knots, n_poles_v) = knots(&mut cur, usize::try_from(n_uniq_v).ok()?, degree_v)?;
     // A larger cached grid is not recovered; the surface keeps its native
     // carrier, as in the binary path.
     let pole_count = n_poles_u.checked_mul(n_poles_v)?;
@@ -114,8 +95,8 @@ pub(super) fn surface_block(
 
     // Grid is stored v-major (v outer, u inner); transpose to the IR's u-major
     // order where index `u * v_count + v` is pole `(u, v)`.
-    let poles = propagate_resource!(control_points(ctx, &mut cur, pole_count, marker)?);
-    let grid = propagate_resource!(poles.into_counted_transposed_grid(ctx, n_poles_u, n_poles_v)?);
+    let poles = control_points(&mut cur, pole_count, marker)?;
+    let grid = poles.into_counted_transposed_grid(n_poles_u, n_poles_v)?;
     let surface = propagate_resource!(NurbsSurface::new(
         ctx,
         NurbsSurfaceAxis::new(
@@ -155,9 +136,8 @@ pub(super) fn curve_block(
     if n_uniq < 1 {
         return None;
     }
-    let (knot_vector, n_poles) =
-        propagate_resource!(knots(ctx, &mut cur, usize::try_from(n_uniq).ok()?, degree)?);
-    let poles = propagate_resource!(control_points(ctx, &mut cur, n_poles, marker)?);
+    let (knot_vector, n_poles) = knots(&mut cur, usize::try_from(n_uniq).ok()?, degree)?;
+    let poles = control_points(&mut cur, n_poles, marker)?;
 
     let curve = propagate_resource!(NurbsCurve::new(
         ctx,
@@ -178,8 +158,8 @@ pub(super) fn surface_cache(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     toks: &[Token],
 ) -> Option<Result<NurbsSurface, cadmpeg_core::CodecError>> {
-    let scope = propagate_resource!(toks::cache_scope(ctx, toks)?);
-    let positions = propagate_resource!(toks::owned_marker_positions(ctx, scope)?);
+    let scope = toks::cache_scope(toks)?;
+    let positions = toks::owned_marker_positions(scope)?;
     let compound = scope.iter().any(|token| {
         matches!(token, Token::Ident(name) | Token::SubIdent(name) if name == "comp_spl_sur")
     });
@@ -206,21 +186,16 @@ pub(super) fn owned_surface_cache(
         if crate::nurbs::blend::VARIABLE_BLEND_NAMES.contains(&name.as_str()))
     {
         let _depth = propagate_resource!(ctx.enter_nested("admit ASM variable-blend cache"));
-        let mut admission =
-            propagate_resource!(ctx.reserve_scoped(0, "ASM variable-blend cache admission"));
-        let cache_marker = propagate_resource!(admission.with_storage(|| {
-            crate::nurbs::blend::var_blend_spl_sur(ctx, tokens, table)
+        let cache_marker =
+            propagate_resource!(crate::nurbs::blend::var_blend_spl_sur(ctx, tokens, table)
                 .transpose()
-                .map(|decoded| decoded.and_then(|decoded| decoded.current_cache_marker))
-        }));
+                .map(|decoded| decoded.and_then(|decoded| decoded.current_cache_marker)));
         return surface_block(ctx, tokens, cache_marker?)
             .map(|result| result.map(|(surface, _)| surface));
     }
-    propagate_resource!(scope.owned_marker_positions(ctx))
-        .into_iter()
-        .find_map(|pos| {
-            surface_block(ctx, tokens, pos).map(|result| result.map(|(surface, _)| surface))
-        })
+    scope.owned_marker_positions().into_iter().find_map(|pos| {
+        surface_block(ctx, tokens, pos).map(|result| result.map(|(surface, _)| surface))
+    })
 }
 
 /// Decode the 3D curve cache of a procedural curve record from its payload
@@ -230,8 +205,8 @@ pub(super) fn curve_cache(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     toks: &[Token],
 ) -> Option<Result<NurbsCurve, cadmpeg_core::CodecError>> {
-    let scope = propagate_resource!(toks::cache_scope(ctx, toks)?);
-    propagate_resource!(toks::owned_marker_positions(ctx, scope)?)
+    let scope = toks::cache_scope(toks)?;
+    toks::owned_marker_positions(scope)?
         .into_iter()
         .find_map(|pos| curve_block(ctx, scope, pos).map(|result| result.map(|(curve, _)| curve)))
 }
@@ -243,7 +218,8 @@ pub(super) fn owned_curve_cache(
     scope: toks::SubtypeScope<'_>,
 ) -> Option<Result<NurbsCurve, cadmpeg_core::CodecError>> {
     let tokens = scope.tokens();
-    propagate_resource!(scope.owned_marker_positions(ctx))
+    scope
+        .owned_marker_positions()
         .into_iter()
         .find_map(|pos| curve_block(ctx, tokens, pos).map(|result| result.map(|(curve, _)| curve)))
 }
@@ -275,15 +251,14 @@ where
     ) -> Result<CacheLookup<T>, cadmpeg_core::CodecError>,
 {
     let mut seen = std::collections::HashSet::new();
-    let mut pending = propagate_resource!(ctx.collection_vec(1, "ASM subtype search stack"));
+    let mut pending = Vec::new();
     pending.push(toks::subtype_refs(toks));
     while let Some(references) = pending.last_mut() {
         let Some(index) = references.next() else {
             pending.pop();
             continue;
         };
-        if !propagate_resource!(ctx.insert_hash_set(&mut seen, index, "ASM subtype search visited"))
-        {
+        if !seen.insert(index) {
             continue;
         }
         // The doc states what the index means. `docs/formats/asm.md`: "A named
@@ -302,11 +277,7 @@ where
             CacheLookup::Rejected => return None,
             CacheLookup::Missing => {}
         }
-        propagate_resource!(ctx.push_vec(
-            &mut pending,
-            toks::subtype_refs(target.tokens()),
-            "ASM subtype search stack"
-        ));
+        pending.push(toks::subtype_refs(target.tokens()));
     }
     None
 }
@@ -317,10 +288,9 @@ pub fn surface_cache_resolving_refs(
     toks: &[Token],
     table: &toks::SubtypeTable,
 ) -> Option<Result<NurbsSurface, cadmpeg_core::CodecError>> {
-    if let Some(start) =
-        toks::find_owned_subtype_marker(ctx, toks, crate::nurbs::blend::VARIABLE_BLEND_NAMES)
+    if let Some((start, _)) =
+        toks::find_owned_subtype_marker(toks, crate::nurbs::blend::VARIABLE_BLEND_NAMES)
     {
-        let (start, _) = propagate_resource!(start);
         return owned_surface_cache(ctx, toks::subtype_span(toks, start)?, Some(table));
     }
     surface_cache(ctx, toks).or_else(|| {
@@ -704,7 +674,7 @@ fn decode_unique_cache<T>(
 
 #[cfg(test)]
 mod tests {
-    use super::cache_from_subtype_refs;
+
     use crate::nurbs::toks::SubtypeTable;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
@@ -747,7 +717,7 @@ mod tests {
             offset: 0,
             len: 0,
         };
-        let table = SubtypeTable::from_records(&ctx, &[record]).unwrap();
+        let table = SubtypeTable::from_records(&[record]);
         for reference in [
             vec![
                 Token::SubtypeOpen,
@@ -923,10 +893,8 @@ mod tests {
     fn knot_counts_without_complete_source_fields_do_not_allocate() {
         use crate::sab::Token;
         let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        policy.limits.max_work_units = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
         let curve = [
             Token::Ident("nubs".into()),
             Token::Long(1),
@@ -959,36 +927,6 @@ mod tests {
             assert!(
                 super::decode_curve_block(&knot_block_bytes(&truncated, width), 0, width).is_none()
             );
-        }
-    }
-
-    #[test]
-    fn complete_knot_tables_preserve_work_and_collection_refusals() {
-        use crate::sab::Token;
-        for dimension in [
-            ResourceDimension::WorkUnits,
-            ResourceDimension::CollectionItems,
-        ] {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            match dimension {
-                ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
-                ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
-                _ => unreachable!(),
-            }
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let tokens = [
-                Token::Double(0.0),
-                Token::Long(1),
-                Token::Double(1.0),
-                Token::Long(1),
-            ];
-            let mut cur = crate::nurbs::toks::Cur::at(&tokens, 0);
-            let error = super::knots(&ctx, &mut cur, 2, 1).unwrap().unwrap_err();
-            let CodecError::ResourceLimit(limit) = error else {
-                panic!("resource refusal required")
-            };
-            assert_eq!(limit.dimension, dimension);
         }
     }
 
@@ -1187,7 +1125,7 @@ mod tests {
                         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_))
                     ));
                 }
-                let table = SubtypeTable::from_records(&ctx, &records).unwrap();
+                let table = SubtypeTable::from_records(&records);
                 for reference in [
                     vec![
                         Token::SubtypeOpen,
@@ -1251,7 +1189,7 @@ mod tests {
                 let arena = DecodeArena::new();
                 let (ctx, _) =
                     DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-                let table = SubtypeTable::from_records(&ctx, &records).unwrap();
+                let table = SubtypeTable::from_records(&records);
                 assert!(
                     crate::nurbs::proc_surface::procedural_surface_resolving_refs(
                         &ctx, &owner, &table
@@ -1301,7 +1239,7 @@ mod tests {
                 let arena = DecodeArena::new();
                 let (ctx, _) =
                     DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-                let table = SubtypeTable::from_records(&ctx, &records).unwrap();
+                let table = SubtypeTable::from_records(&records);
                 assert!(
                     crate::nurbs::proc_surface::procedural_surface_resolving_refs(
                         &ctx, &tokens, &table,
@@ -1363,7 +1301,7 @@ mod tests {
                 let arena = DecodeArena::new();
                 let (ctx, _) =
                     DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-                let table = SubtypeTable::from_records(&ctx, &records).unwrap();
+                let table = SubtypeTable::from_records(&records);
                 assert_eq!(
                     crate::nurbs::proc_surface::procedural_surface_resolving_refs(
                         &ctx, &owner, &table
@@ -1427,8 +1365,7 @@ mod tests {
             offset: 0,
             len: 0,
         }];
-        let service = cadmpeg_test_support::service_decode_context();
-        let table = SubtypeTable::from_records(&service, &records).unwrap();
+        let table = SubtypeTable::from_records(&records);
         let scope = table.span(0).unwrap();
         let mut policy = DecodePolicy::service();
         policy.limits.max_recursion_depth = 2;
@@ -1442,44 +1379,5 @@ mod tests {
         };
         assert_eq!(limit.dimension, ResourceDimension::RecursionDepth);
         assert_eq!(limit.operation, "admit ASM variable-blend cache");
-    }
-
-    #[test]
-    fn subtype_search_stack_refuses_collection_limit() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let table = SubtypeTable::from_records(&ctx, &[]).unwrap();
-        let error = cache_from_subtype_refs::<(), _>(&ctx, &[], &table, |_, _| {
-            Ok(super::CacheLookup::Missing)
-        })
-        .expect("stack allocation must refuse")
-        .expect_err("stack allocation must refuse");
-        let CodecError::ResourceLimit(limit) = error else {
-            panic!("expected collection refusal: {error:?}");
-        };
-        assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-    }
-
-    #[test]
-    fn subtype_search_visited_refuses_collection_limit() {
-        use crate::sab::Token;
-
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 1;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let table = SubtypeTable::from_records(&ctx, &[]).unwrap();
-        let tokens = [Token::SubtypeOpen, Token::Long(0), Token::SubtypeClose];
-        let error = cache_from_subtype_refs::<(), _>(&ctx, &tokens, &table, |_, _| {
-            Ok(super::CacheLookup::Missing)
-        })
-        .expect("visited allocation must refuse")
-        .expect_err("visited allocation must refuse");
-        let CodecError::ResourceLimit(limit) = error else {
-            panic!("expected collection refusal: {error:?}");
-        };
-        assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
     }
 }
