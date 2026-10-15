@@ -109,15 +109,13 @@ macro_rules! native_record {
         impl cadmpeg_ir::schema::rewrite::typed::RewriteIdentities for $name {
             fn visit_identity_references(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, visitor: &mut dyn FnMut(&str) -> Result<(), cadmpeg_core::CodecError>) -> Result<(), cadmpeg_core::CodecError> {
                 let _depth = ctx.enter_nested("walk ASM native references")?;
-                ctx.charge_work(1, "walk ASM native references")?;
-                self.source_namespace.visit(ctx, $kind, self.record_index, visitor)?;
+                self.source_namespace.visit($kind, self.record_index, visitor)?;
                 cadmpeg_ir::schema::rewrite::typed::RewriteIdentities::visit_identity_references(&self.$entity, ctx, visitor)?;
                 $(cadmpeg_ir::schema::rewrite::typed::RewriteIdentities::visit_identity_references(&self.$field, ctx, visitor)?;)*
                 Ok(())
             }
             fn rewrite_identities<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(mut self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_, F>) -> Result<Self, cadmpeg_core::CodecError> {
                 let _depth = ctx.enter_nested("rewrite ASM native fields")?;
-                ctx.charge_work(1, "rewrite ASM native fields")?;
                 self.source_namespace = self.source_namespace.rewrite(ctx, $kind, self.record_index, map)?;
                 self.$entity = cadmpeg_ir::schema::rewrite::typed::RewriteIdentities::rewrite_identities(self.$entity, ctx, map)?;
                 $(self.$field = cadmpeg_ir::schema::rewrite::typed::RewriteIdentities::rewrite_identities(self.$field, ctx, map)?;)*

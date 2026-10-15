@@ -2,7 +2,6 @@
 #![allow(clippy::unwrap_used)]
 
 use cadmpeg_asm::asm_header;
-use cadmpeg_test_support::service_decode_context;
 
 use crate::test_support::smbh_blocks_test::{
     generated_curve_block, generated_pcurve_block, generated_rational_pcurve_block,
@@ -18,9 +17,7 @@ use crate::test_support::tokens_test::{
 pub(crate) fn synthetic_geometry_with_procedural_curve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
-        .expect("history scan")
-        .unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
@@ -57,9 +54,7 @@ pub(crate) fn synthetic_geometry_with_procedural_curve_smbh() -> Vec<u8> {
 pub(crate) fn synthetic_geometry_with_helix_curve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
-        .expect("history scan")
-        .unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
@@ -111,9 +106,7 @@ pub(crate) fn synthetic_geometry_with_helix_curve_smbh() -> Vec<u8> {
 pub(crate) fn synthetic_geometry_with_cacheless_helix_curve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_with_helix_curve_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
-        .expect("history scan")
-        .unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
@@ -135,9 +128,7 @@ pub(crate) fn synthetic_geometry_with_cacheless_helix_curve_smbh() -> Vec<u8> {
 pub(crate) fn synthetic_geometry_with_law_curve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
-        .expect("history scan")
-        .unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
@@ -259,9 +250,7 @@ pub(crate) fn stamped_law_curve_subtype(primary_name: &str, raw_name: &str) -> V
 pub(crate) fn synthetic_geometry_with_stamped_law_curve_smbh(subtype: &[u8]) -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
-        .expect("history scan")
-        .unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
@@ -298,9 +287,7 @@ pub(crate) fn synthetic_geometry_with_stamped_law_curve_smbh(subtype: &[u8]) -> 
 pub(crate) fn synthetic_geometry_with_vector_offset_curve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
-        .expect("history scan")
-        .unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
@@ -351,9 +338,7 @@ pub(crate) fn synthetic_geometry_with_vector_offset_curve_smbh() -> Vec<u8> {
 pub(crate) fn synthetic_geometry_with_subset_curve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
-        .expect("history scan")
-        .unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
@@ -397,9 +382,7 @@ pub(crate) fn synthetic_geometry_with_subset_curve_smbh() -> Vec<u8> {
 pub(crate) fn synthetic_geometry_with_exact_curve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
-        .expect("history scan")
-        .unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
@@ -464,9 +447,7 @@ pub(crate) fn with_legacy_subtype(mut bytes: Vec<u8>, modern: &str, legacy: &str
 pub(crate) fn synthetic_geometry_with_compound_curve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
-        .expect("history scan")
-        .unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
@@ -517,9 +498,7 @@ pub(crate) fn synthetic_geometry_with_compound_curve_smbh() -> Vec<u8> {
 pub(crate) fn synthetic_geometry_with_two_sided_offset_curve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
-        .expect("history scan")
-        .unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
@@ -574,9 +553,7 @@ pub(crate) fn synthetic_geometry_with_two_sided_offset_curve_smbh() -> Vec<u8> {
 pub(crate) fn synthetic_geometry_with_embedded_offset_supports_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
-        .expect("history scan")
-        .unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
@@ -631,9 +608,7 @@ pub(crate) fn synthetic_geometry_with_embedded_offset_supports_smbh() -> Vec<u8>
 pub(crate) fn synthetic_geometry_with_analytic_offset_supports_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
-        .expect("history scan")
-        .unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
@@ -891,9 +866,7 @@ pub(crate) fn synthetic_geometry_with_spring_smbh() -> Vec<u8> {
 pub(crate) fn synthetic_geometry_with_null_support_spring_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
-        .expect("history scan")
-        .unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
@@ -972,9 +945,7 @@ pub(crate) fn synthetic_geometry_with_cache_first_curve_smbh(
 ) -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
-        .expect("history scan")
-        .unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,

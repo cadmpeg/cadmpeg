@@ -316,8 +316,7 @@ End-of-ACIS-data\n", if version < 107 { "" } else { "$-1 " });
             )
             .unwrap();
             assert_eq!(brep.stats.nurbs_surfaces, 1, "save format {version}");
-            let table =
-                crate::nurbs::toks::SubtypeTable::from_records(ctx, &parsed.records).unwrap();
+            let table = crate::nurbs::toks::SubtypeTable::from_records(&parsed.records);
             let decoded = crate::nurbs::proc_curve::procedural_curve_resolving_refs(
                 ctx,
                 &parsed.records[5].tokens,
