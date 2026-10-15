@@ -259,12 +259,11 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
         },
     ];
     let mut bound = references[0].clone();
-    crate::test_support::with_decode_context(|ctx| {
+    {
         crate::design::decode::dimension_frames::bind_recipe_reference_candidates_charged(
-            ctx, &mut bound, &tags, None,
-        )
-        .expect("recipe references");
-    });
+            &mut bound, &tags, None,
+        );
+    };
     assert_eq!(
         bound.candidate_faces,
         [FaceId::mint("test:model:face#face-b").expect("identity grammar")]
@@ -303,15 +302,13 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
             ordinal: 0,
         },
     ];
-    crate::test_support::with_decode_context(|ctx| {
+    {
         crate::design::decode::dimension_frames::bind_recipe_reference_candidates_charged(
-            ctx,
             &mut bound,
             &stream_tags,
             Some("f3d:xref/A/occurrence-0/Asset/Design1/BulkStream.dat:dimension-recipe#1"),
-        )
-        .expect("recipe references");
-    });
+        );
+    };
     assert_eq!(
         bound.candidate_faces,
         [FaceId::mint("test:model:face#face-a").expect("identity grammar")]

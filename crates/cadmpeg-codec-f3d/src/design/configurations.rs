@@ -297,13 +297,10 @@ pub(crate) fn bind_configuration_suppressed_features(
                 return true;
             }
             let projected = (|| -> Result<_, CodecError> {
-                let id = feature
-                    .id
-                    .try_clone_for_decode(ctx, "f3d configuration suppressed feature id")?;
+                let id = feature.id.clone();
                 let mut dependencies = cadmpeg_ir::features::DistinctMembers::default();
                 for dependency in &feature.dependencies {
-                    let copied = dependency
-                        .try_clone_for_decode(ctx, "f3d configuration suppressed dependency id")?;
+                    let copied = dependency.clone();
                     dependencies.insert(ctx, copied, "f3d configuration suppressed dependency")?;
                 }
                 Ok((
@@ -311,10 +308,7 @@ pub(crate) fn bind_configuration_suppressed_features(
                     cadmpeg_ir::features::ConfigurationFeatureState {
                         evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Suppressed {},
                         dependencies,
-                        definition: feature
-                            .evaluation
-                            .definition()
-                            .try_clone_for_decode(ctx, "f3d configuration suppressed definition")?,
+                        definition: feature.evaluation.definition().clone(),
                     },
                 ))
             })();

@@ -207,12 +207,9 @@ impl MergeSession<'_, '_> {
                 ctx: self.ctx,
                 occurrence: &occurrence,
             };
-            parent_ir.model.extend_rewritten(
-                self.ctx,
-                component_ir.model,
-                &mut scope,
-                "F3Z rewritten model arenas",
-            )?;
+            parent_ir
+                .model
+                .extend_rewritten(component_ir.model, &mut scope)?;
             reparent_component_roots(
                 &mut parent_ir.model.occurrences[occurrence_start..],
                 &crate::ids::neutral_xref_occurrence_id(
@@ -226,10 +223,7 @@ impl MergeSession<'_, '_> {
                 component_ir.native,
                 &occurrence,
             )?;
-            parent_fidelity.append(
-                self.ctx,
-                rescope_fidelity(self.ctx, component_fidelity, &occurrence)?,
-            )?;
+            parent_fidelity.append(rescope_fidelity(component_fidelity, &occurrence)?)?;
             merged += descendants + 1;
             if component_report.transfer.geometry_transferred() {
                 parent_report.transfer = cadmpeg_ir::report::decode::DecodeTransfer::full(true);
@@ -310,20 +304,15 @@ fn append_feature_history(parent: &Model, component: &mut Model) -> Result<(), C
 }
 
 fn rescope_fidelity(
-    ctx: &DecodeContext<'_>,
     source: SourceFidelity,
     occurrence: &str,
 ) -> Result<SourceFidelity, CodecError> {
     let (mut annotations, records) = source.into_parts();
     annotations
-        .map_ids(
-            ctx,
-            |id| match rescope(id, occurrence) {
-                Some(id) => Ok(id),
-                None => Ok(id.to_string()),
-            },
-            "index remapped annotation identities",
-        )?
+        .map_ids(|id| match rescope(id, occurrence) {
+            Some(id) => Ok(id),
+            None => Ok(id.to_string()),
+        })?
         .map_err(CodecError::from)?;
     // The occurrence is one owner component. Escape its separators so two
     // different occurrences cannot share an owner by shifting a path boundary.
@@ -338,14 +327,8 @@ fn rescope_fidelity(
         let stream =
             cadmpeg_ir::StreamName::try_from(format!("{}{}", owner.as_str(), provenance.stream()))
                 .map_err(CodecError::malformed)?;
-        let stream = StreamHandle::new(ctx, stream, "allocate annotation stream handle")?;
-        builder.note(
-            ctx,
-            &id,
-            &stream,
-            provenance.offset,
-            provenance.tag.as_deref(),
-        )?;
+        let stream = StreamHandle::new(stream);
+        builder.note(&id, &stream, provenance.offset, provenance.tag.as_deref());
     }
     let mut rescoped = SourceFidelity::with_annotations(builder.build());
     for (id, record) in records {
@@ -450,15 +433,12 @@ impl EntityRewrite for OccurrenceScope<'_, '_> {
         &mut self,
         entity: T,
     ) -> Result<T, CodecError> {
-        cadmpeg_ir::schema::rewrite::identities(
-            self.ctx,
-            "rewrite F3Z model identity",
-            entity,
-            |id: &str| match rescope(id, self.occurrence) {
+        cadmpeg_ir::schema::rewrite::identities(self.ctx, entity, |id: &str| {
+            match rescope(id, self.occurrence) {
                 Some(rewritten) => Ok(rewritten),
                 None => Ok(id.to_owned()),
-            },
-        )
+            }
+        })
     }
 }
 

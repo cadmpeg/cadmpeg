@@ -88,7 +88,7 @@ pub(crate) fn project_decal_images(
             .iter()
             .flat_map(|reference| reference.candidate_faces.iter())
         {
-            faces.push(face.try_clone_for_decode(ctx, "f3d Decal face identifier")?);
+            faces.push(face.clone());
         }
         faces.sort_by(|a, b| a.as_str().cmp(b.as_str()));
         faces.dedup();
@@ -102,9 +102,7 @@ pub(crate) fn project_decal_images(
         let Some(feature) = features.iter_mut().find(|feature| feature.id == feature_id) else {
             continue;
         };
-        let asset_id = asset
-            .id
-            .try_clone_for_decode(ctx, "f3d image feature asset identifier")?;
+        let asset_id = asset.id.clone();
         feature
             .evaluation
             .set_definition(FeatureDefinition::Operation(FeatureOperation::Decal {

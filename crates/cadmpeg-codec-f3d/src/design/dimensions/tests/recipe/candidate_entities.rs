@@ -25,18 +25,16 @@ fn recipe_linear_dimension_candidates_resolve_unique_vertical_distance() {
         point("synthetic:test:id#unrelated", 10.0, 10.0),
     ];
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| crate::design::dimensions::recipe_linear_dimension_candidates(decode_ctx, &entities, &sketch, 2.0, &parameter, 0.0)).unwrap().as_slice(),
+        crate::design::dimensions::recipe_linear_dimension_candidates(&entities, &sketch, 2.0, &parameter, 0.0).unwrap().as_slice(),
         [SketchConstraintDefinitionInput::VerticalDistance { first, second, parameter: actual }]
             if *first == cadmpeg_ir::sketches::SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#first").unwrap())
                 && *second == cadmpeg_ir::sketches::SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#second").unwrap())
                 && *actual == parameter
     ));
     entities.push(point("synthetic:test:id#ambiguous", 10.0, 8.0));
-    let candidates = crate::test_support::with_decode_context(|decode_ctx| {
-        crate::design::dimensions::recipe_linear_dimension_candidates(
-            decode_ctx, &entities, &sketch, 2.0, &parameter, 0.0,
-        )
-    })
+    let candidates = crate::design::dimensions::recipe_linear_dimension_candidates(
+        &entities, &sketch, 2.0, &parameter, 0.0,
+    )
     .unwrap();
     assert_eq!(candidates.len(), 2);
 }

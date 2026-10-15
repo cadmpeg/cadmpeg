@@ -387,23 +387,19 @@ fn generated_f3d_rewrites_rolling_ball_support_cache() {
         panic!("expected NURBS blend support")
     };
     nurbs
-        .try_map_control_points(
-            |index, pole| {
-                let mut pole = pole.get();
-                if index == 1 {
-                    pole.x = 6.0;
-                    pole.z = 4.0;
-                }
-                cadmpeg_ir::features::FinitePoint3::new(pole).ok_or_else(|| {
-                    cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
-                        "control_points contains a non-finite point".into(),
-                    )
-                })
-            },
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .expect("pole edit admission")
-        .unwrap();
+        .try_map_control_points(|index, pole| {
+            let mut pole = pole.get();
+            if index == 1 {
+                pole.x = 6.0;
+                pole.z = 4.0;
+            }
+            cadmpeg_ir::features::FinitePoint3::new(pole).ok_or_else(|| {
+                cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                    "control_points contains a non-finite point".into(),
+                )
+            })
+        })
+        .expect("pole edit admission");
     edit::replace(nurbs, |previous| {
         let mut knots = previous.u_knots().to_vec();
         {

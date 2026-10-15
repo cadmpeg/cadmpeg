@@ -66,14 +66,11 @@ fn copy_act_channels(channels: Option<&BTreeMap<String, String>>) -> BTreeMap<St
 }
 
 fn named_act_channels(
-    ctx: &DecodeContext<'_>,
     owner: std::fmt::Arguments<'_>,
     channels: Option<&BTreeMap<String, String>>,
 ) -> Result<BTreeMap<cadmpeg_core::text::NonBlankString, String>, CodecError> {
     let copied = copy_act_channels(channels);
-    Ok(cadmpeg_core::text::named_entries_for_decode(
-        ctx, owner, copied,
-    )?)
+    Ok(cadmpeg_core::text::named_entries(owner, copied)?)
 }
 
 fn lp_ascii_printable(bytes: &[u8], at: usize) -> Result<Option<(String, usize)>, CodecError> {
@@ -624,12 +621,12 @@ pub(crate) fn decode_with_body_bindings<'a>(
                 .iter()
                 .map(|appearance| appearance.id.as_str())
                 .collect::<std::collections::HashSet<_>>();
-            let mut fixed = decode_fixed_logical_records(ctx, record_frames.frames())?;
+            let mut fixed = decode_fixed_logical_records(record_frames.frames())?;
             fixed.retain(|appearance| !decoded_ids.contains(appearance.id.as_str()));
             decoded.append(&mut fixed);
             decoded
         } else {
-            decode_fixed_logical_records(ctx, record_frames.frames())?
+            decode_fixed_logical_records(record_frames.frames())?
         };
         for appearance in &mut appearances {
             if let Some(name) = appearance.name.as_deref() {
@@ -705,7 +702,6 @@ pub(crate) fn decode_with_body_bindings<'a>(
         }
     }
     let mut bindings = bind_bodies(
-        ctx,
         &out,
         &assignments,
         &act_channels,
@@ -727,19 +723,13 @@ pub(crate) fn decode_with_body_bindings<'a>(
                 over.entity_suffix,
                 &over.visual_guid,
             )?,
-            target: AppearanceTarget::Body(
-                over.body
-                    .try_clone_for_decode(ctx, "copy F3D material body ID")?,
-            ),
-            appearance: appearance
-                .id
-                .try_clone_for_decode(ctx, "copy F3D material appearance ID")?,
+            target: AppearanceTarget::Body(over.body.clone()),
+            appearance: appearance.id.clone(),
             source_entity_id: None,
             object_type: (object_types.get(&over.entity_suffix).map(String::as_str))
                 .map(std::borrow::ToOwned::to_owned),
             visible: None,
             channels: named_act_channels(
-                ctx,
                 format_args!(
                     "f3d:appearance:body#{}:{}",
                     over.entity_suffix, over.visual_guid
@@ -834,8 +824,7 @@ fn appearances_from_schema_records(
             schema: Some(record.schema.clone()),
             category: None,
             base_color,
-            properties: cadmpeg_core::text::named_entries_for_decode(
-                ctx,
+            properties: cadmpeg_core::text::named_entries(
                 format_args!("f3d:design:appearance#{}", record.guid),
                 properties,
             )?,
@@ -1029,7 +1018,6 @@ fn decode_body_appearance_overrides(
                 continue;
             };
             let Some(body) = resolved_body_for_map_pair(
-                ctx,
                 body_bindings,
                 &crate::ids::native_design_body_binding_id(&entry.name, map_pair.asm_key_offset),
                 map_pair.asm_key,
@@ -1466,7 +1454,6 @@ fn body_node_candidate(
 }
 
 fn bind_bodies(
-    ctx: &DecodeContext<'_>,
     appearances: &[Appearance],
     assignments: &[DesignMaterialAssignment],
     act_channels: &std::collections::HashMap<u64, BTreeMap<String, String>>,
@@ -1476,7 +1463,6 @@ fn bind_bodies(
     let mut out = Vec::new();
     for assignment in assignments {
         let Some(body) = resolved_body_for_map_pair(
-            ctx,
             body_bindings,
             &assignment.id,
             assignment.asm_body_key,
@@ -1496,9 +1482,7 @@ fn bind_bodies(
                 &assignment.visual_guid,
             )?,
             target: AppearanceTarget::Body(body),
-            appearance: appearance
-                .id
-                .try_clone_for_decode(ctx, "copy F3D material appearance ID")?,
+            appearance: appearance.id.clone(),
             source_entity_id: Some(assignment.entity_id.as_str().to_owned()),
             object_type: (object_types
                 .get(&assignment.entity_id.suffix())
@@ -1506,7 +1490,6 @@ fn bind_bodies(
             .map(std::borrow::ToOwned::to_owned),
             visible: None,
             channels: named_act_channels(
-                ctx,
                 format_args!(
                     "f3d:appearance:binding#{}:{}",
                     assignment.entity_id.as_str(),
@@ -1588,7 +1571,6 @@ fn unique_appearance<'a>(
 ///
 /// ASM keys are local to the pair's BREP basename.
 fn resolved_body_for_map_pair(
-    ctx: &DecodeContext<'_>,
     body_bindings: &[DesignBodyBinding],
     owner_id: &str,
     asm_body_key: u64,
@@ -1616,11 +1598,7 @@ fn resolved_body_for_map_pair(
             "F3D material owner {owner_id} matches multiple exact body-map pairs"
         )));
     }
-    binding
-        .body
-        .as_ref()
-        .map(|body| (body).try_clone_for_decode(ctx, "copy F3D material body ID"))
-        .transpose()
+    Ok(binding.body.clone())
 }
 
 fn decode_design_object_types(
@@ -1980,12 +1958,11 @@ fn nested_entry<'a>(
 /// Decode the fixed source-less layouts emitted by [`encode_protein`]. Native
 /// Protein assets package schemas and use the schema-driven path instead.
 fn decode_fixed_logical_records(
-    ctx: &DecodeContext<'_>,
     frames: &[cadmpeg_protein::framing::RecordFrame],
 ) -> Result<Vec<Appearance>, CodecError> {
     let mut appearances = Vec::new();
     for frame in frames {
-        if let Some(appearance) = decode_fixed_record(ctx, frame.bytes())? {
+        if let Some(appearance) = decode_fixed_record(frame.bytes())? {
             appearances.push(appearance);
         }
     }
@@ -2001,10 +1978,7 @@ fn decode_fixed_logical_records(
 /// reads. That covers the `interior_model` subtypes with no fixed layout here,
 /// `PrismLayeredSchema` and `PrismWoodSchema`, whose colour offset must not be
 /// assumed from the opaque, metal, or transparent layouts.
-fn decode_fixed_record(
-    ctx: &DecodeContext<'_>,
-    record: &[u8],
-) -> Result<Option<Appearance>, CodecError> {
+fn decode_fixed_record(record: &[u8]) -> Result<Option<Appearance>, CodecError> {
     let mut position = RECORD_MARKER.len();
     let Some(schema) = take_lp_utf8(record, &mut position) else {
         return Ok(None);
@@ -2057,8 +2031,7 @@ fn decode_fixed_record(
     } else if schema == "PrismTransparentSchema" {
         fixed_scalar(&mut properties, "refraction_index", record, position + 169);
     }
-    let properties = cadmpeg_core::text::named_entries_for_decode(
-        ctx,
+    let properties = cadmpeg_core::text::named_entries(
         format_args!("f3d:design:appearance#{guid}"),
         properties,
     )?;

@@ -513,22 +513,18 @@ fn decode_transfers_embedded_tolerant_coedge_use_curves() {
         panic!("embedded use curve must be NURBS")
     };
     nurbs
-        .try_map_control_points(
-            |index, point| {
-                let mut point = point.get();
-                if index == 0 {
-                    point.x += 1.0;
-                }
-                cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
-                    cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
-                        "control_points contains a non-finite point".into(),
-                    )
-                })
-            },
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .expect("pole edit admission")
-        .unwrap();
+        .try_map_control_points(|index, point| {
+            let mut point = point.get();
+            if index == 0 {
+                point.x += 1.0;
+            }
+            cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                    "control_points contains a non-finite point".into(),
+                )
+            })
+        })
+        .expect("pole edit admission");
     let expected = nurbs.clone();
     let mut preserved = Vec::new();
     crate::test_support::plan_inherited_write(&edited, decoded.source_fidelity(), &mut preserved)

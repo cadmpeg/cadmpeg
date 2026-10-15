@@ -53,11 +53,7 @@ fn hole_without_face_operand_falls_back_to_scope_face() {
         (1, &parameters[1]),
         (2, &parameters[2]),
     ];
-    let definition = crate::test_support::with_decode_context(|decode_ctx| {
-        project_hole(decode_ctx, &scope, &indexed, &[])
-    })
-    .unwrap()
-    .unwrap();
+    let definition = project_hole(&scope, &indexed, &[]).unwrap().unwrap();
     assert!(matches!(
         definition,
         FeatureDefinition::Operation(FeatureOperation::Hole {

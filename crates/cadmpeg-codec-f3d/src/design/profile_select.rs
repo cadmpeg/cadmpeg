@@ -53,7 +53,7 @@ pub(crate) struct ExtrudeProfileResolution<'a> {
     pub(crate) scope_histories: &'a HashMap<String, String>,
     pub(crate) linear_tolerance: f64,
     pub(crate) angular_tolerance: f64,
-    pub(crate) arrangement_budget: &'a WorkBudget<'a>,
+    pub(crate) arrangement_budget: &'a WorkBudget,
     pub(crate) ctx: &'a DecodeContext<'a>,
 }
 
@@ -64,7 +64,7 @@ pub(in crate::design) struct ScopedExtrudeProfileResolution<'a> {
     histories: &'a [crate::history_records::AsmHistory],
     linear_tolerance: f64,
     angular_tolerance: f64,
-    arrangement_budget: &'a WorkBudget<'a>,
+    arrangement_budget: &'a WorkBudget,
     ctx: &'a DecodeContext<'a>,
 }
 
@@ -555,10 +555,7 @@ pub(crate) fn bind_extrude_profile_selections(
                                 }
                             }
                             if all_resolved {
-                                let sketch_id = spatial_sketch.id.try_clone_for_decode(
-                                    resolution.ctx,
-                                    "f3d profile spatial sketch id",
-                                )?;
+                                let sketch_id = spatial_sketch.id.clone();
                                 *profile = match ProfileRef::spatial_sketch_profiles(
                                     sketch_id,
                                     indices,
@@ -575,10 +572,7 @@ pub(crate) fn bind_extrude_profile_selections(
                                     let id = group.id.clone();
                                     group_ids.push(id);
                                 }
-                                let sketch_id = spatial_sketch.id.try_clone_for_decode(
-                                    resolution.ctx,
-                                    "f3d profile spatial sketch id",
-                                )?;
+                                let sketch_id = spatial_sketch.id.clone();
                                 *profile = match ProfileRef::spatial_sketch_selection(
                                     sketch_id,
                                     group_ids,
@@ -609,8 +603,7 @@ pub(crate) fn bind_extrude_profile_selections(
                             curve_resolution.curve_identities,
                             curve_resolution.sketch_entities,
                         )? {
-                            let sketch_id = (sketch_id)
-                                .try_clone_for_decode(resolution.ctx, "f3d profile sketch id")?;
+                            let sketch_id = (sketch_id).clone();
                             *profile = ProfileRef::Planar(match PlanarProfileRef::sketch_profiles(
                                 sketch_id,
                                 profiles,
@@ -648,8 +641,7 @@ pub(crate) fn bind_extrude_profile_selections(
                             let id = group.id.clone();
                             group_ids.push(id);
                         }
-                        let sketch_id = (sketch_id)
-                            .try_clone_for_decode(resolution.ctx, "f3d profile sketch id")?;
+                        let sketch_id = (sketch_id).clone();
                         let fallback = match PlanarProfileRef::sketch_selection(
                             sketch_id,
                             group_ids,
@@ -1068,18 +1060,9 @@ fn merge_resolved_profile_selections(
         }
     }
     let selected = if !profiles.is_empty() {
-        PlanarProfileRef::sketch_profiles(
-            (sketch).try_clone_for_decode(ctx, "f3d profile sketch id")?,
-            profiles,
-            ctx,
-        )?
-        .ok()
+        PlanarProfileRef::sketch_profiles((sketch).clone(), profiles, ctx)?.ok()
     } else if !regions.is_empty() {
-        PlanarProfileRef::sketch_regions(
-            (sketch).try_clone_for_decode(ctx, "f3d profile sketch id")?,
-            regions,
-        )
-        .ok()
+        PlanarProfileRef::sketch_regions((sketch).clone(), regions).ok()
     } else {
         return Ok(None);
     };
@@ -1093,11 +1076,9 @@ fn copy_bound_profile(
     use cadmpeg_ir::features::ProfileRef;
 
     match profile {
-        ProfileRef::Planar(planar) => {
-            Ok(ProfileRef::Planar(copy_bound_planar_profile(planar, ctx)?))
-        }
+        ProfileRef::Planar(planar) => Ok(ProfileRef::Planar(copy_bound_planar_profile(planar)?)),
         ProfileRef::SpatialSketchProfiles { sketch, profiles } => {
-            let sketch = (sketch).try_clone_for_decode(ctx, "f3d profile spatial sketch id")?;
+            let sketch = (sketch).clone();
             let mut indices = Vec::new();
             for index in profiles.as_slice() {
                 indices.push(*index);
@@ -1106,7 +1087,7 @@ fn copy_bound_profile(
                 .map_err(CodecError::malformed)
         }
         ProfileRef::SpatialSketchSelection { sketch, selections } => {
-            let sketch = (sketch).try_clone_for_decode(ctx, "f3d profile spatial sketch id")?;
+            let sketch = (sketch).clone();
             let mut ids = Vec::new();
             for selection in selections.as_slice() {
                 let id = selection.to_owned();
@@ -1119,14 +1100,11 @@ fn copy_bound_profile(
 
 fn copy_bound_planar_profile(
     profile: &cadmpeg_ir::features::PlanarProfileRef,
-    ctx: &DecodeContext<'_>,
 ) -> Result<cadmpeg_ir::features::PlanarProfileRef, CodecError> {
     use cadmpeg_ir::features::PlanarProfileRef;
 
     match profile {
-        PlanarProfileRef::Sketch(sketch) => Ok(PlanarProfileRef::Sketch(
-            (sketch).try_clone_for_decode(ctx, "f3d profile sketch id")?,
-        )),
+        PlanarProfileRef::Sketch(sketch) => Ok(PlanarProfileRef::Sketch((sketch).clone())),
         PlanarProfileRef::Native(id) => Ok(PlanarProfileRef::Native(id.to_owned())),
         _ => Err(CodecError::malformed(
             "bound planar profile has unsupported resolved form",
@@ -1142,19 +1120,19 @@ fn copy_bound_path(
 
     match path {
         PathRef::SketchCurves { sketch, curves } => {
-            let sketch = (sketch).try_clone_for_decode(ctx, "f3d profile sketch id")?;
+            let sketch = (sketch).clone();
             let mut ids = Vec::new();
             for curve in curves.as_slice() {
-                let id = (curve).try_clone_for_decode(ctx, "f3d bound planar curve id")?;
+                let id = (curve).clone();
                 ids.push(id);
             }
             PathRef::sketch_curves(sketch, ids, ctx)?.map_err(CodecError::malformed)
         }
         PathRef::SpatialSketchCurves { sketch, curves } => {
-            let sketch = (sketch).try_clone_for_decode(ctx, "f3d profile spatial sketch id")?;
+            let sketch = (sketch).clone();
             let mut ids = Vec::new();
             for curve in curves.as_slice() {
-                let id = (curve).try_clone_for_decode(ctx, "f3d bound spatial curve id")?;
+                let id = (curve).clone();
                 ids.push(id);
             }
             PathRef::spatial_sketch_curves(sketch, ids, ctx)?.map_err(CodecError::malformed)
@@ -1167,16 +1145,13 @@ fn copy_bound_path(
 
 fn copy_profile_boundary_use(
     boundary: &cadmpeg_ir::features::SketchProfileBoundaryUse,
-    ctx: &DecodeContext<'_>,
-) -> Result<cadmpeg_ir::features::SketchProfileBoundaryUse, CodecError> {
-    let entity = boundary
-        .entity
-        .try_clone_for_decode(ctx, "f3d merged region boundary entity id")?;
-    Ok(cadmpeg_ir::features::SketchProfileBoundaryUse {
+) -> cadmpeg_ir::features::SketchProfileBoundaryUse {
+    let entity = boundary.entity.clone();
+    cadmpeg_ir::features::SketchProfileBoundaryUse {
         entity,
         parameter_range: boundary.parameter_range,
         reversed: boundary.reversed,
-    })
+    }
 }
 
 fn copy_profile_region(
@@ -1199,14 +1174,14 @@ fn copy_profile_region(
         } => {
             let mut outer = Vec::new();
             for boundary in outer_boundary.as_slice() {
-                let copied = copy_profile_boundary_use(boundary, ctx)?;
+                let copied = copy_profile_boundary_use(boundary);
                 outer.push(copied);
             }
             let mut holes = Vec::new();
             for ring in hole_boundaries {
                 let mut copied_ring = Vec::new();
                 for boundary in ring.as_slice() {
-                    let copied = copy_profile_boundary_use(boundary, ctx)?;
+                    let copied = copy_profile_boundary_use(boundary);
                     copied_ring.push(copied);
                 }
                 let copied_ring = copied_ring.try_into().map_err(CodecError::malformed)?;
@@ -1315,19 +1290,15 @@ pub(super) fn resolved_extrude_profile_selection(
         resolved_profiles = Some(ResolvedProfileSelection::Loops(vec![0]));
     }
     let profile = match resolved_profiles {
-        Some(ResolvedProfileSelection::Loops(profiles)) => match PlanarProfileRef::sketch_profiles(
-            (sketch_id).try_clone_for_decode(resolution.ctx, "f3d profile sketch id")?,
-            profiles,
-            resolution.ctx,
-        )? {
-            Ok(profile) => profile,
-            Err(_) => PlanarProfileRef::Native(group.id.clone()),
-        },
+        Some(ResolvedProfileSelection::Loops(profiles)) => {
+            match PlanarProfileRef::sketch_profiles((sketch_id).clone(), profiles, resolution.ctx)?
+            {
+                Ok(profile) => profile,
+                Err(_) => PlanarProfileRef::Native(group.id.clone()),
+            }
+        }
         Some(ResolvedProfileSelection::Regions(regions)) => {
-            match PlanarProfileRef::sketch_regions(
-                (sketch_id).try_clone_for_decode(resolution.ctx, "f3d profile sketch id")?,
-                regions,
-            ) {
+            match PlanarProfileRef::sketch_regions((sketch_id).clone(), regions) {
                 Ok(profile) => profile,
                 Err(_) => PlanarProfileRef::Native(group.id.clone()),
             }
@@ -1335,11 +1306,7 @@ pub(super) fn resolved_extrude_profile_selection(
         None => {
             let id = group.id.clone();
             let ids = vec![id];
-            match PlanarProfileRef::sketch_selection(
-                (sketch_id).try_clone_for_decode(resolution.ctx, "f3d profile sketch id")?,
-                ids,
-                resolution.ctx,
-            )? {
+            match PlanarProfileRef::sketch_selection((sketch_id).clone(), ids, resolution.ctx)? {
                 Ok(profile) => profile,
                 Err(_) => PlanarProfileRef::Native(group.id.clone()),
             }
@@ -1963,7 +1930,7 @@ fn historical_selection_regions(
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     histories: &[crate::history_records::AsmHistory],
     linear_tolerance: f64,
-    arrangement_budget: &WorkBudget<'_>,
+    arrangement_budget: &WorkBudget,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<ResolvedProfileSelection>, CodecError> {
     // The document linear tolerance is admitted at or above the analytic floor
@@ -2128,7 +2095,7 @@ fn selection_for_member_points(
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     member_points: &[Vec<Point3>],
     tolerance: f64,
-    arrangement_budget: &WorkBudget<'_>,
+    arrangement_budget: &WorkBudget,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<ResolvedProfileSelection>, CodecError> {
     let mut all_points = Vec::new();
@@ -2336,7 +2303,7 @@ fn selection_containing_points(
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     points: &[Point3],
     tolerance: f64,
-    arrangement_budget: &WorkBudget<'_>,
+    arrangement_budget: &WorkBudget,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<ResolvedProfileSelection>, CodecError> {
     let mut projected = Vec::new();
@@ -2570,7 +2537,7 @@ fn resolve_entity_selection_path(
             )?;
             curves.push(id);
         }
-        let sketch = spatial_sketch.try_clone_for_decode(ctx, "f3d profile spatial sketch id")?;
+        let sketch = spatial_sketch.clone();
         return Ok(PathRef::spatial_sketch_curves(sketch, curves, ctx)?.ok());
     }
 
@@ -2977,8 +2944,7 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
             .iter()
             .find(|sketch| sketch.id == spatial_sketch_id)
         {
-            let id =
-                spatial_sketch_id.try_clone_for_decode(ctx, "f3d profile spatial sketch id")?;
+            let id = spatial_sketch_id.clone();
             if let Some(profiles) = resolved_spatial_sketch_profile_regions(
                 stream,
                 &profile,
@@ -3081,7 +3047,7 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
             curve.secondary_id,
         )?;
         let profile = spatial_profile_containing_entity(spatial_sketch, &entity);
-        let id = spatial_sketch_id.try_clone_for_decode(ctx, "f3d profile spatial sketch id")?;
+        let id = spatial_sketch_id.clone();
         let resolved = if let Some(profile) = profile {
             ProfileRef::spatial_sketch_profiles(id, vec![profile], ctx)?
         } else {
@@ -3155,7 +3121,7 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
                 else {
                     return Ok(());
                 };
-                construction.set_profile(Some(copy_bound_planar_profile(profile, ctx)?));
+                construction.set_profile(Some(copy_bound_planar_profile(profile)?));
                 Ok(())
             })();
         });

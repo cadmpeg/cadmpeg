@@ -34,11 +34,9 @@ fn recipe_linear_dimension_candidates_include_extension_points() {
         point("synthetic:test:id#off-carrier-horizontal", 2.0, 3.0),
         point("synthetic:test:id#off-carrier-vertical", 4.0, 2.0),
     ];
-    let candidates = crate::test_support::with_decode_context(|decode_ctx| {
-        crate::design::dimensions::recipe_linear_dimension_candidates(
-            decode_ctx, &entities, &sketch, 2.0, &parameter, 0.0,
-        )
-    })
+    let candidates = crate::design::dimensions::recipe_linear_dimension_candidates(
+        &entities, &sketch, 2.0, &parameter, 0.0,
+    )
     .unwrap();
     assert!(candidates.len() > 2);
 }

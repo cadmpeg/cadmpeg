@@ -92,7 +92,7 @@ fn explicit_bounded_face_group_uses_only_its_owned_candidate_lane() {
         .expect("legacy Draft face group");
 
         assert_eq!(
-            resolved_explicit_bounded_face_group(decode_ctx, &group, &[operand.clone()])
+            resolved_explicit_bounded_face_group(&group, &[operand.clone()])
                 .expect("projection resource budget"),
             Some(cadmpeg_ir::features::FaceSelection::Resolved {
                 faces: vec![face(10), face(20)],
@@ -138,7 +138,7 @@ fn explicit_bounded_face_group_uses_only_its_owned_candidate_lane() {
         operand.resolved_active_face =
             Some(FaceId::mint("f3d:brep/legacy/brep:entity#30").expect("identity grammar"));
         assert_eq!(
-            resolved_face_group(decode_ctx, &group, std::slice::from_ref(&operand))
+            resolved_face_group(&group, std::slice::from_ref(&operand))
                 .expect("projection resource budget"),
             Some(cadmpeg_ir::features::FaceSelection::Resolved {
                 faces: vec![
@@ -150,7 +150,7 @@ fn explicit_bounded_face_group_uses_only_its_owned_candidate_lane() {
         operand.resolved_active_face = None;
         operand.preceding_candidate_faces = vec![face(10), face(20)];
         assert_eq!(
-            resolved_face_group(decode_ctx, &group, std::slice::from_ref(&operand))
+            resolved_face_group(&group, std::slice::from_ref(&operand))
                 .expect("projection resource budget"),
             None
         );
@@ -164,13 +164,12 @@ fn explicit_bounded_face_group_uses_only_its_owned_candidate_lane() {
         ];
         operand.candidate_faces = vec![face(10), face(20)];
         assert_eq!(
-            legacy_face_recipe_reference_candidates(decode_ctx, &operand, 201)
-                .expect("projection resource budget"),
+            legacy_face_recipe_reference_candidates(&operand, 201),
             Some(vec![face(10), face(20)])
         );
         operand.candidate_faces.clear();
         assert_eq!(
-            resolved_explicit_bounded_face_group(decode_ctx, &group, &[operand.clone()])
+            resolved_explicit_bounded_face_group(&group, &[operand.clone()])
                 .expect("projection resource budget"),
             Some(cadmpeg_ir::features::FaceSelection::Resolved {
                 faces: vec![face(10), face(20)],
@@ -178,23 +177,16 @@ fn explicit_bounded_face_group_uses_only_its_owned_candidate_lane() {
             })
         );
         assert_eq!(
-            legacy_face_recipe_reference_candidates(decode_ctx, &operand, 201)
-                .expect("projection resource budget"),
+            legacy_face_recipe_reference_candidates(&operand, 201),
             Some(vec![face(10), face(20)])
         );
-        assert!(
-            legacy_face_recipe_reference_candidates(decode_ctx, &operand, 999)
-                .expect("projection resource budget")
-                .is_none()
-        );
+        assert!(legacy_face_recipe_reference_candidates(&operand, 999).is_none());
         operand.recipe_references.remove(0);
         operand.recipe_references[0]
             .alternate_selector_faces
             .push(face(30));
-        assert!(
-            resolved_explicit_bounded_face_group(decode_ctx, &group, &[operand])
-                .expect("projection resource budget")
-                .is_none()
-        );
+        assert!(resolved_explicit_bounded_face_group(&group, &[operand])
+            .expect("projection resource budget")
+            .is_none());
     });
 }

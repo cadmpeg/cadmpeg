@@ -134,7 +134,7 @@ pub(crate) fn project_sketch_constraints(
             let Some(sketch) = sketches.get(&(scope, relation.owner_reference)) else {
                 return Ok(None);
             };
-            let sketch = (sketch).try_clone_for_decode(ctx, "f3d sketch constraint sketch id")?;
+            let sketch = (sketch).clone();
             let mut input_entities = Vec::new();
             for member in relation.members().iter() {
                 if let Some(entity) = projected.get(&(scope, member.reference.record_index())) {
@@ -161,19 +161,14 @@ pub(crate) fn project_sketch_constraints(
                 };
                 match loci {
                     Some(loci) => Some(loci),
-                    None => exact_atomic_constraint(kind, &semantic_entities, ctx)?,
+                    None => exact_atomic_constraint(kind, &semantic_entities)?,
                 }
             } else {
                 None
             };
             if definition.is_none() {
-                definition = exact_rectangular_pattern(
-                    relation,
-                    scope,
-                    parameters,
-                    &semantic_entities,
-                    ctx,
-                )?;
+                definition =
+                    exact_rectangular_pattern(relation, scope, parameters, &semantic_entities)?;
             }
             if definition.is_none() {
                 definition = exact_circular_pattern(
@@ -182,17 +177,16 @@ pub(crate) fn project_sketch_constraints(
                     parameters,
                     &input_entities,
                     &semantic_entities,
-                    ctx,
                 )?;
             }
             let definition = if definition.is_some() {
                 definition
             } else {
-                exact_offset_constraint(ctx, relation, scope, &projected).transpose()?
+                exact_offset_constraint(relation, scope, &projected).transpose()?
             };
             let definition = match definition {
                 Some(definition) => Some(definition),
-                None => exact_text_relation(relation, scope, &projected, ctx)?,
+                None => exact_text_relation(relation, scope, &projected)?,
             };
             let definition = if let Some(definition) = definition {
                 definition
@@ -217,8 +211,7 @@ pub(crate) fn project_sketch_constraints(
                     .chain(return_indices)
                 {
                     if let Some(entity) = projected.get(&(scope, record_index)) {
-                        let id = (entity.id())
-                            .try_clone_for_decode(ctx, "f3d sketch constraint native entity id")?;
+                        let id = (entity.id()).clone();
                         native_entities.push(id);
                     }
                 }
@@ -310,7 +303,6 @@ fn exact_rectangular_pattern(
     scope: &str,
     parameters: &[DesignParameter],
     entities: &[&cadmpeg_ir::sketches::SketchEntity],
-    ctx: &DecodeContext<'_>,
 ) -> Result<Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput>, CodecError> {
     use crate::records::sketch_relations::SketchPatternDefinition;
     use cadmpeg_ir::sketches::SketchConstraintDefinitionInput as Definition;
@@ -388,12 +380,11 @@ fn exact_rectangular_pattern(
     if dot.abs() > EPS_CONSTRAINTS_EXACT_RECTANGULAR_PATTERN_E9 {
         return Ok(None);
     }
-    let Some(directions) = rectangular_pattern_directions(&source, distance_form, ctx)? else {
+    let Some(directions) = rectangular_pattern_directions(&source, distance_form)? else {
         return Ok(None);
     };
     let counts = source.each_ref().map(|direction| direction.count);
-    let Some(rows) = exact_rectangular_pattern_instances(&directions, counts, entities, ctx)?
-    else {
+    let Some(rows) = exact_rectangular_pattern_instances(&directions, counts, entities) else {
         return Ok(None);
     };
     Ok(
@@ -405,7 +396,6 @@ fn exact_rectangular_pattern(
 fn rectangular_pattern_directions(
     source: &[RectangularPatternSourceDirection; 2],
     distance_form: RectangularPatternDistanceForm,
-    ctx: &DecodeContext<'_>,
 ) -> Result<Option<[cadmpeg_ir::sketches::SketchPatternDirection; 2]>, CodecError> {
     let make = |source: &RectangularPatternSourceDirection| -> Result<Option<_>, CodecError> {
         let spacing = match distance_form {
@@ -423,12 +413,7 @@ fn rectangular_pattern_directions(
         }
         let distance = source
             .distance_parameter
-            .as_ref()
-            .map(|parameter| {
-                (parameter)
-                    .try_clone_for_decode(ctx, "f3d rectangular pattern distance parameter id")
-            })
-            .transpose()?
+            .clone()
             .map(|parameter| match distance_form {
                 RectangularPatternDistanceForm::AdjacentSpacing => {
                     cadmpeg_ir::sketches::SketchPatternDistance::Spacing { parameter }
@@ -437,13 +422,7 @@ fn rectangular_pattern_directions(
                     cadmpeg_ir::sketches::SketchPatternDistance::Span { parameter }
                 }
             });
-        let count_parameter = source
-            .count_parameter
-            .as_ref()
-            .map(|parameter| {
-                (parameter).try_clone_for_decode(ctx, "f3d rectangular pattern count parameter id")
-            })
-            .transpose()?;
+        let count_parameter = source.count_parameter.clone();
         Ok(cadmpeg_ir::sketches::SketchPatternDirection::new(
             source.direction,
             match cadmpeg_ir::scalar::Length::new(spacing) {
@@ -467,39 +446,34 @@ fn exact_rectangular_pattern_instances(
     directions: &[cadmpeg_ir::sketches::SketchPatternDirection; 2],
     counts: [u32; 2],
     entities: &[&cadmpeg_ir::sketches::SketchEntity],
-    ctx: &DecodeContext<'_>,
-) -> Result<Option<Vec<Vec<cadmpeg_ir::sketches::SketchPatternInstance>>>, CodecError> {
+) -> Option<Vec<Vec<cadmpeg_ir::sketches::SketchPatternInstance>>> {
     let instance_count = usize::try_from(counts[0]).ok().and_then(|first| {
         usize::try_from(counts[1])
             .ok()
             .and_then(|second| first.checked_mul(second))
     });
-    let Some(instance_count) = instance_count else {
-        return Ok(None);
-    };
+    let instance_count = instance_count?;
     if instance_count == 0 || !entities.len().is_multiple_of(instance_count) {
-        return Ok(None);
+        return None;
     }
     let entity_count = entities.len() / instance_count;
-    let Some(seed) = entities.get(..entity_count) else {
-        return Ok(None);
-    };
+    let seed = entities.get(..entity_count)?;
     if seed.is_empty() {
-        return Ok(None);
+        return None;
     }
     let Ok(column_count) = usize::try_from(counts[1]) else {
-        return Ok(None);
+        return None;
     };
     let mut rows = Vec::new();
     for (position, instance) in entities.chunks_exact(entity_count).enumerate() {
         let expected = [
             match u32::try_from(position / column_count) {
                 Ok(value) => value,
-                Err(_) => return Ok(None),
+                Err(_) => return None,
             },
             match u32::try_from(position % column_count) {
                 Ok(value) => value,
-                Err(_) => return Ok(None),
+                Err(_) => return None,
             },
         ];
         let mut matched = false;
@@ -528,39 +502,35 @@ fn exact_rectangular_pattern_instances(
                     )
                 }) {
                     if matched || indices != expected {
-                        return Ok(None);
+                        return None;
                     }
                     matched = true;
                 }
             }
         }
         if !matched {
-            return Ok(None);
+            return None;
         }
         let mut entity_ids = Vec::new();
         for entity in instance {
-            let id = (entity.id())
-                .try_clone_for_decode(ctx, "f3d rectangular pattern instance entity id")?;
+            let id = (entity.id()).clone();
             entity_ids.push(id);
         }
         if position % column_count == 0 {
             rows.push(Vec::new());
         }
-        let Some(row) = rows.last_mut() else {
-            return Ok(None);
-        };
+        let row = rows.last_mut()?;
         row.push(cadmpeg_ir::sketches::SketchPatternInstance {
             entities: entity_ids,
         });
     }
-    Ok(Some(rows))
+    Some(rows)
 }
 
 fn exact_text_relation(
     relation: &SketchRelation,
     scope: &str,
     projected: &HashMap<(&str, u32), &cadmpeg_ir::sketches::SketchEntity>,
-    ctx: &DecodeContext<'_>,
 ) -> Result<Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput>, CodecError> {
     use crate::records::sketch_relations::SketchPatternDefinition;
     use cadmpeg_ir::sketches::{
@@ -616,16 +586,14 @@ fn exact_text_relation(
                 {
                     return Ok(None);
                 }
-                let id = (entity.id())
-                    .try_clone_for_decode(ctx, "f3d sketch constraint text frame entity id")?;
+                let id = (entity.id()).clone();
                 frame.push(id);
             }
             if frame.is_empty() {
                 return Ok(None);
             }
             Some(Definition::TextFrame {
-                text: (text.id())
-                    .try_clone_for_decode(ctx, "f3d sketch constraint text frame text id")?,
+                text: (text.id()).clone(),
                 frame,
             })
         }
@@ -682,10 +650,8 @@ fn exact_text_relation(
                 glyphs.push(glyph);
             }
             Some(Definition::TextPath {
-                text: (text.id())
-                    .try_clone_for_decode(ctx, "f3d sketch constraint text path text id")?,
-                path: (path.id())
-                    .try_clone_for_decode(ctx, "f3d sketch constraint text path curve id")?,
+                text: (text.id()).clone(),
+                path: (path.id()).clone(),
                 glyph_transforms: glyphs,
             })
         }
@@ -699,7 +665,6 @@ fn exact_circular_pattern(
     parameters: &[DesignParameter],
     members: &[&cadmpeg_ir::sketches::SketchEntity],
     returned: &[&cadmpeg_ir::sketches::SketchEntity],
-    ctx: &DecodeContext<'_>,
 ) -> Result<Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput>, CodecError> {
     use crate::records::sketch_relations::SketchPatternDefinition;
     use cadmpeg_ir::sketches::{
@@ -817,8 +782,7 @@ fn exact_circular_pattern(
                 };
                 let mut entity_ids = Vec::new();
                 for entity in instance {
-                    let id = (entity.id())
-                        .try_clone_for_decode(ctx, "f3d circular pattern instance entity id")?;
+                    let id = (entity.id()).clone();
                     entity_ids.push(id);
                 }
                 instances.push(SketchCircularPatternInstance {
@@ -829,12 +793,10 @@ fn exact_circular_pattern(
             if valid {
                 let mut seed_entities = Vec::new();
                 for entity in seed {
-                    let id = (entity.id())
-                        .try_clone_for_decode(ctx, "f3d circular pattern seed entity id")?;
+                    let id = (entity.id()).clone();
                     seed_entities.push(id);
                 }
-                let center =
-                    (center.id()).try_clone_for_decode(ctx, "f3d circular pattern center id")?;
+                let center = (center.id()).clone();
                 candidates.push((center, seed_entities, instances));
             }
         }

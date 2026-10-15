@@ -813,25 +813,22 @@ fn terminal_edge_recipe_faces_use_exact_then_alternate_references() {
         }
     };
     assert_eq!(
-        crate::test_support::with_decode_context(
-            |decode_ctx| terminal_edge_recipe_reference_faces(
-                decode_ctx,
-                &[
-                    reference(
-                        vec![FaceId::mint("test:model:face#face-c").expect("identity grammar")],
-                        vec![FaceId::mint("test:model:face#ignored").expect("identity grammar")],
-                    ),
-                    reference(
-                        Vec::new(),
-                        vec![FaceId::mint("test:model:face#face-d").expect("identity grammar")]
-                    ),
-                    reference(
-                        vec![FaceId::mint("test:model:face#face-a").expect("identity grammar")],
-                        Vec::new()
-                    ),
-                ],
-                None
-            )
+        terminal_edge_recipe_reference_faces(
+            &[
+                reference(
+                    vec![FaceId::mint("test:model:face#face-c").expect("identity grammar")],
+                    vec![FaceId::mint("test:model:face#ignored").expect("identity grammar")],
+                ),
+                reference(
+                    Vec::new(),
+                    vec![FaceId::mint("test:model:face#face-d").expect("identity grammar")]
+                ),
+                reference(
+                    vec![FaceId::mint("test:model:face#face-a").expect("identity grammar")],
+                    Vec::new()
+                ),
+            ],
+            None
         )
         .unwrap(),
         vec![
@@ -840,26 +837,23 @@ fn terminal_edge_recipe_faces_use_exact_then_alternate_references() {
             vec![FaceId::mint("test:model:face#face-a").expect("identity grammar")],
         ]
     );
-    let reference_faces = crate::test_support::with_decode_context(|decode_ctx| {
-        terminal_edge_recipe_reference_faces(
-            decode_ctx,
-            &[
-                reference(
-                    vec![FaceId::mint("test:model:face#face-c").expect("identity grammar")],
-                    vec![FaceId::mint("test:model:face#ignored").expect("identity grammar")],
-                ),
-                reference(
-                    Vec::new(),
-                    vec![FaceId::mint("test:model:face#face-d").expect("identity grammar")],
-                ),
-                reference(
-                    vec![FaceId::mint("test:model:face#face-e").expect("identity grammar")],
-                    Vec::new(),
-                ),
-            ],
-            Some(&[std::num::NonZeroU32::new(2).unwrap()]),
-        )
-    })
+    let reference_faces = terminal_edge_recipe_reference_faces(
+        &[
+            reference(
+                vec![FaceId::mint("test:model:face#face-c").expect("identity grammar")],
+                vec![FaceId::mint("test:model:face#ignored").expect("identity grammar")],
+            ),
+            reference(
+                Vec::new(),
+                vec![FaceId::mint("test:model:face#face-d").expect("identity grammar")],
+            ),
+            reference(
+                vec![FaceId::mint("test:model:face#face-e").expect("identity grammar")],
+                Vec::new(),
+            ),
+        ],
+        Some(&[std::num::NonZeroU32::new(2).unwrap()]),
+    )
     .unwrap();
     assert_eq!(
         reference_faces,
@@ -868,15 +862,13 @@ fn terminal_edge_recipe_faces_use_exact_then_alternate_references() {
         ]]
     );
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| terminal_edge_recipe_faces(
-            decode_ctx,
+        terminal_edge_recipe_faces(
             &[
                 FaceId::mint("test:model:face#face-b").expect("identity grammar"),
                 FaceId::mint("test:model:face#face-a").expect("identity grammar")
             ],
             &reference_faces
-        ))
-        .unwrap(),
+        ),
         vec![
             FaceId::mint("test:model:face#face-a").expect("identity grammar"),
             FaceId::mint("test:model:face#face-b").expect("identity grammar"),
@@ -1194,12 +1186,10 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
         face: FaceId::mint(id(4)).expect("identity grammar"),
         boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
             cadmpeg_ir::topology::LoopRing::new(
-                &cadmpeg_test_support::service_decode_context(),
                 vec![CoedgeId::mint(id(6)).expect("identity grammar")],
                 Vec::new(),
             )
-            .expect("fixture ring admission")
-            .expect("valid loop ring"),
+            .expect("fixture ring admission"),
         ),
     });
     brep.coedges.push(Coedge {
@@ -1381,16 +1371,14 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
         BTreeSet::from([1])
     );
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| faces_in_topology(
-            decode_ctx,
+        faces_in_topology(
             &[
                 FaceId::mint(id(4)).expect("identity grammar"),
                 FaceId::mint(id(99)).expect("identity grammar"),
                 FaceId::mint("test:model:face#foreign").expect("identity grammar")
             ],
             &topology
-        ))
-        .unwrap(),
+        ),
         [FaceId::mint(id(4)).expect("identity grammar")]
     );
     let mut reference = crate::records::dimensions::DesignRecipeReference {
@@ -1405,24 +1393,20 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
         alternate_selector_faces: Vec::new(),
         alternate_selector_edges: Vec::new(),
     };
-    let context = crate::test_support::with_decode_context(|decode_ctx| {
-        edge_recipe_reference_context(
-            decode_ctx,
-            2,
-            &reference,
-            EdgeBoundaryContext {
-                topology: &topology,
-                boundary_edges: &[7, 99],
-            },
-            EdgeBoundaryContext {
-                topology: &topology,
-                boundary_edges: &[7, 98],
-            },
-            &HashSet::from([7]),
-            &mut crate::history::topology_cache::TopologyQueryCache::default(),
-        )
-    })
-    .unwrap();
+    let context = edge_recipe_reference_context(
+        2,
+        &reference,
+        EdgeBoundaryContext {
+            topology: &topology,
+            boundary_edges: &[7, 99],
+        },
+        EdgeBoundaryContext {
+            topology: &topology,
+            boundary_edges: &[7, 98],
+        },
+        &HashSet::from([7]),
+        &mut crate::history::topology_cache::TopologyQueryCache::default(),
+    );
     assert_eq!(context.reference_ordinal, 2);
     assert_eq!(
         context.result_faces,
@@ -1454,24 +1438,20 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
     assert_eq!(context.changed_reference_edge_slots, [7]);
     reference.candidate_faces.clear();
     reference.alternate_selector_faces = vec![FaceId::mint(id(4)).expect("identity grammar")];
-    let alternate_context = crate::test_support::with_decode_context(|decode_ctx| {
-        edge_recipe_reference_context(
-            decode_ctx,
-            2,
-            &reference,
-            EdgeBoundaryContext {
-                topology: &topology,
-                boundary_edges: &[7, 99],
-            },
-            EdgeBoundaryContext {
-                topology: &topology,
-                boundary_edges: &[7, 98],
-            },
-            &HashSet::from([7]),
-            &mut crate::history::topology_cache::TopologyQueryCache::default(),
-        )
-    })
-    .unwrap();
+    let alternate_context = edge_recipe_reference_context(
+        2,
+        &reference,
+        EdgeBoundaryContext {
+            topology: &topology,
+            boundary_edges: &[7, 99],
+        },
+        EdgeBoundaryContext {
+            topology: &topology,
+            boundary_edges: &[7, 98],
+        },
+        &HashSet::from([7]),
+        &mut crate::history::topology_cache::TopologyQueryCache::default(),
+    );
     assert_eq!(
         alternate_context.result_faces,
         [FaceId::mint(id(4)).expect("identity grammar")]
@@ -1481,24 +1461,20 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
         [FaceId::mint(id(4)).expect("identity grammar")]
     );
     assert_eq!(alternate_context.changed_reference_edge_slots, [7]);
-    let support_only_context = crate::test_support::with_decode_context(|decode_ctx| {
-        edge_recipe_reference_context(
-            decode_ctx,
-            2,
-            &reference,
-            EdgeBoundaryContext {
-                topology: &topology,
-                boundary_edges: &[99],
-            },
-            EdgeBoundaryContext {
-                topology: &topology,
-                boundary_edges: &[98],
-            },
-            &HashSet::from([7]),
-            &mut crate::history::topology_cache::TopologyQueryCache::default(),
-        )
-    })
-    .unwrap();
+    let support_only_context = edge_recipe_reference_context(
+        2,
+        &reference,
+        EdgeBoundaryContext {
+            topology: &topology,
+            boundary_edges: &[99],
+        },
+        EdgeBoundaryContext {
+            topology: &topology,
+            boundary_edges: &[98],
+        },
+        &HashSet::from([7]),
+        &mut crate::history::topology_cache::TopologyQueryCache::default(),
+    );
     assert!(support_only_context.shared_edge_slots.is_empty());
     assert_eq!(support_only_context.changed_reference_edge_slots, [7]);
     let cyclic = AsmHistoricalTopology {

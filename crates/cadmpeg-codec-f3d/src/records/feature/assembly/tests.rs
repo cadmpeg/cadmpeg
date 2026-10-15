@@ -1130,13 +1130,11 @@ fn native_legacy_alignment_wire_rewrite_matches_the_typed_selection_walk() {
             id.strip_prefix("f3d:model:").unwrap()
         ))
     };
-    let expected =
-        cadmpeg_ir::schema::rewrite::identities(&ctx, "test typed alignment", alignment, remap)
-            .unwrap();
-    let mut identities = IdentityMap::new(&ctx, "test native alignment", remap).unwrap();
+    let expected = cadmpeg_ir::schema::rewrite::identities(&ctx, alignment, remap).unwrap();
+    let mut identities = IdentityMap::new(remap);
     super::DesignAssemblyAlignment::rewrite_native_value(&ctx, &mut value, &mut identities)
         .unwrap();
-    identities.finish(&ctx).unwrap();
+    identities.finish().unwrap();
     assert_eq!(value, serde_json::to_value(expected).unwrap());
     for operand in value["legacy_operand_carriers"].as_array().unwrap() {
         assert_eq!(
