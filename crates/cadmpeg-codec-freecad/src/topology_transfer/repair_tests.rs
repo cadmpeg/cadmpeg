@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::collections::BTreeSet;
+use std::mem::{align_of, size_of};
 
 use super::{
     connected_components, pcurve_geometry, transfer, Builder, GeometryIndexes, PcurveGeometryError,
@@ -138,9 +139,8 @@ fn absent_topology_consumers_skip_populated_owner_and_geometry_indexes() {
                 let original = ir.clone();
                 let mut losses = Vec::new();
                 let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None);
-                let occurrences =
-                    transfer(ctx, &mut ir, payloads, &[property()], &mut losses, false)
-                        .expect("no topology index has a consumer");
+                let occurrences = transfer(ctx, &mut ir, payloads, &[property()], &mut losses, &[])
+                    .expect("no topology index has a consumer");
                 assert!(occurrences.records.is_empty());
                 assert!(losses.is_empty());
                 assert_eq!(ir, original);
@@ -568,6 +568,38 @@ fn connected_components_fanout_preserves_members_and_releases_scratch() {
     let mut connectivity = vec![BTreeSet::from(["a".to_owned(), "b".to_owned()])];
     connectivity.extend((0..FANOUT).map(|_| BTreeSet::from(["a".to_owned()])));
     connectivity.extend((0..FANOUT).map(|_| BTreeSet::from(["b".to_owned()])));
+    with_limits(u64::MAX, u64::MAX, |ctx| {
+        // Two keys fit one B-tree root: eleven key/value lanes, sixteen
+        // pointer slots and two alignment pads.
+        type Group<'a> = super::ScopedData<'a, Vec<usize>>;
+        let alignment = align_of::<&String>()
+            .max(align_of::<Group<'_>>())
+            .max(align_of::<usize>());
+        let tree = 11 * (size_of::<&String>() + size_of::<Group<'_>>())
+            + 16 * size_of::<usize>()
+            + 2 * alignment;
+        let fixed = connectivity.len() * size_of::<bool>() + tree;
+        // Only the second candidate buffer survives the largest stack move:
+        // 128 candidates, 256 new stack slots and 128 old stack slots.
+        let traversal_peak = fixed + (128 + 256 + 128) * size_of::<usize>();
+        let _probe = RefusalProbe::arm(
+            ResourceDimension::MaterializedBytes,
+            "FreeCAD connected-component stack",
+            None,
+        );
+        drop(
+            ctx.reserve_scoped(
+                cadmpeg_core::decode::u64_from_index(traversal_peak),
+                "test connectivity traversal peak",
+            )
+            .expect("analytically bounded traversal peak"),
+        );
+        assert_eq!(
+            connected_components(ctx, &connectivity).expect("candidate buffer released"),
+            vec![(0..connectivity.len()).collect::<Vec<_>>()]
+        );
+        assert_eq!(ctx.resource_refusal(), None);
+    });
     with_limits(u64::MAX, MATERIALIZED_CAP, |ctx| {
         assert_eq!(
             connected_components(ctx, &connectivity).expect("connected fanout"),
