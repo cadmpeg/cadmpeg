@@ -66,14 +66,6 @@ impl From<DesignClassTag> for String {
 }
 
 impl DesignClassTag {
-    pub(crate) fn try_clone_for_decode(
-        &self,
-        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        _operation: &'static str,
-    ) -> Result<Self, cadmpeg_core::CodecError> {
-        Ok(Self(self.0.clone()))
-    }
-
     /// Numeric value of the three-digit tag.
     pub(crate) fn code(&self) -> u32 {
         self.0

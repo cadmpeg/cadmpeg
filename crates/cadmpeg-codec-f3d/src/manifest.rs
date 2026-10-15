@@ -4,7 +4,7 @@
 
 use std::collections::BTreeSet;
 
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 
 use crate::bytes::is_guid_hyphenated;
@@ -258,10 +258,7 @@ impl<'a> Cursor<'a> {
 /// do not control folder ownership. A
 /// failed attempt remains a structural error and names the declared version
 /// alongside the failed layout diagnosis.
-pub(crate) fn parse_top_level(
-    ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-) -> Result<TopLevelManifest, CodecError> {
+pub(crate) fn parse_top_level(bytes: &[u8]) -> Result<TopLevelManifest, CodecError> {
     let parsed = (|| {
         if bytes.len() > MAX_TOP_LEVEL_MANIFEST_BYTES {
             return Err(parse_malformed(
@@ -302,8 +299,8 @@ pub(crate) fn parse_top_level(
         }
         let asset_folder_bases = asset_folder_bases
             .into_iter()
-            .map(|base| base.to_retained(ctx, "retain F3D manifest UTF-16"))
-            .collect::<Result<Vec<_>, _>>()?;
+            .map(|base| base.to_string())
+            .collect::<Vec<_>>();
         Ok(TopLevelManifest {
             version,
             asset_folder_bases,

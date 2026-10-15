@@ -17,14 +17,7 @@ use crate::test_support::manifest_test::write_synthetic_manifests;
 use crate::test_support::streams_test::design_metastream_with_records;
 use crate::test_support::zip_test::with_scan;
 
-fn decode_component_naming_spaces(
-    scan: &crate::container::ContainerScan<'_>,
-) -> Result<Vec<crate::records::recipes::DesignComponentNamingSpace>, cadmpeg_core::CodecError> {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-    super::decode_component_naming_spaces(&ctx, scan)
-}
+use super::decode_component_naming_spaces;
 
 #[test]
 fn bulk_metadata_reuses_the_parsed_type_table() {
@@ -49,9 +42,8 @@ fn bulk_metadata_reuses_the_parsed_type_table() {
     zip.write_all(&meta).unwrap();
     let bytes = zip.finish().unwrap().into_inner();
     with_scan(&bytes, |scan| {
-        let ctx = cadmpeg_test_support::service_decode_context();
-        let first = super::metadata_for_bulk_stream(&ctx, scan, bulk_name)?.unwrap();
-        let second = super::metadata_for_bulk_stream(&ctx, scan, bulk_name)?.unwrap();
+        let first = super::metadata_for_bulk_stream(scan, bulk_name)?.unwrap();
+        let second = super::metadata_for_bulk_stream(scan, bulk_name)?.unwrap();
         assert!(std::rc::Rc::ptr_eq(&first, &second));
         assert_eq!(first.types.len(), 1);
         assert_eq!(
@@ -69,8 +61,6 @@ fn bulk_metadata_reuses_the_parsed_type_table() {
 
 #[test]
 fn design_type_copy_refuses_table_entities_module_and_id_limits() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-
     let meta_name = "FusionAssetName[Active]/Design1/MetaStream.dat";
     let meta = design_metastream_with_records(
         &[(
@@ -91,9 +81,7 @@ fn design_type_copy_refuses_table_entities_module_and_id_limits() {
     zip.start_file(meta_name, stored).unwrap();
     zip.write_all(&meta).unwrap();
     let archive = zip.finish().unwrap().into_inner();
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    let types = with_scan(&archive, |scan| super::decode_types(&ctx, scan)).unwrap();
+    let types = with_scan(&archive, |scan| super::decode_types(scan)).unwrap();
     assert_eq!(types.len(), 1);
     assert_eq!(types[0].module, "Component");
     assert_eq!(
@@ -148,11 +136,9 @@ fn design_primary_frames_charge_registration_and_frame_storage() {
         records: vec![crate::design::test_support::primary_record(42, 0)],
         secondary_records: Vec::new(),
     };
-    crate::design::test_support::with_test_decode_context(|ctx| {
-        let frames = super::design_primary_frames(ctx, &bytes, &meta).unwrap();
-        assert_eq!(frames.len(), 1);
-        assert_eq!(frames[0].entity_id, 42);
-    });
+    let frames = super::design_primary_frames(&bytes, &meta).unwrap();
+    assert_eq!(frames.len(), 1);
+    assert_eq!(frames[0].entity_id, 42);
 }
 
 #[test]
@@ -172,16 +158,13 @@ fn typed_primary_frames_charge_all_collections() {
         records: vec![crate::design::test_support::primary_record(42, 0)],
         secondary_records: Vec::new(),
     };
-    crate::design::test_support::with_test_decode_context(|ctx| {
-        let frames = super::typed_primary_frames(ctx, &bytes, &meta, type_guid, "test").unwrap();
-        assert_eq!(frames.len(), 1);
-        assert_eq!(frames[0].entity_id, 42);
-    });
+    let frames = super::typed_primary_frames(&bytes, &meta, type_guid, "test").unwrap();
+    assert_eq!(frames.len(), 1);
+    assert_eq!(frames[0].entity_id, 42);
 }
 
 #[test]
 fn feature_timeline_item_limit_refuses_before_counted_vector_allocation() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use std::collections::HashMap;
 
     let mut bulk = Vec::new();
@@ -198,11 +181,7 @@ fn feature_timeline_item_limit_refuses_before_counted_vector_allocation() {
         }
     }
     let frame = 0..bulk.len();
-    let arena = DecodeArena::new();
-    let (service, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let admitted = super::parse_feature_timeline_record(
-        &service,
         &bulk,
         "Design/BulkStream.dat",
         frame,
@@ -225,7 +204,6 @@ fn feature_timeline_item_limit_refuses_before_counted_vector_allocation() {
 
 #[test]
 fn feature_timeline_id_refuses_prefix_and_suffix_limits() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use std::collections::HashMap;
 
     let stream = "Fusion% Asset:Name[Active]/Design1/BulkStream.dat";
@@ -237,10 +215,7 @@ fn feature_timeline_id_refuses_prefix_and_suffix_limits() {
     bulk.extend_from_slice(&17_u64.to_le_bytes());
     bulk.extend_from_slice(&[0, 0]);
     bulk.extend_from_slice(&0_u32.to_le_bytes());
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let timeline = super::parse_feature_timeline_record(
-        &ctx,
         &bulk,
         stream,
         0..bulk.len(),
@@ -256,8 +231,6 @@ fn feature_timeline_id_refuses_prefix_and_suffix_limits() {
 
 #[test]
 fn timeline_collection_growth_refuses_at_map_child_and_output() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-
     let mut bulk = Vec::new();
     lp_ascii(&mut bulk, "256");
     bulk.extend_from_slice(&35_u64.to_le_bytes());
@@ -295,9 +268,7 @@ fn timeline_collection_growth_refuses_at_map_child_and_output() {
         .unwrap();
     zip.write_all(&meta).unwrap();
     let archive = zip.finish().unwrap().into_inner();
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    let admitted = with_scan(&archive, |scan| super::decode_feature_timelines(&ctx, scan)).unwrap();
+    let admitted = with_scan(&archive, |scan| super::decode_feature_timelines(scan)).unwrap();
     assert_eq!(admitted.len(), 1);
     assert_eq!(admitted[0].record_index.get(), 35);
 }
@@ -421,8 +392,6 @@ fn component_naming_space_binds_component_entity_to_context_uuid() {
 
 #[test]
 fn component_naming_space_refuses_each_collection_and_id_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-
     let bulk_name = "FusionAssetName[Active]/Design1/BulkStream.dat";
     let context_uuid = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
     let meta = design_metastream_with_records(
@@ -448,12 +417,7 @@ fn component_naming_space_refuses_each_collection_and_id_limit() {
         .unwrap();
     zip.write_all(&meta).unwrap();
     let archive = zip.finish().unwrap().into_inner();
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    let spaces = with_scan(&archive, |scan| {
-        super::decode_component_naming_spaces(&ctx, scan)
-    })
-    .unwrap();
+    let spaces = with_scan(&archive, |scan| super::decode_component_naming_spaces(scan)).unwrap();
     assert_eq!(spaces.len(), 1);
     assert_eq!(spaces[0].context_uuid.as_str(), context_uuid);
     assert_eq!(
@@ -511,10 +475,7 @@ fn design_feature_timeline_versions_share_variable_width_local_references() {
             &[(35, 0)],
         );
         let decoded = with_scan(&archive(&meta, &bulk), |scan| {
-            crate::design::decode::meta::decode_feature_timelines(
-                &cadmpeg_test_support::service_decode_context(),
-                scan,
-            )
+            crate::design::decode::meta::decode_feature_timelines(scan)
         })
         .expect("exact feature timeline");
         let [timeline] = decoded.as_slice() else {
@@ -550,10 +511,7 @@ fn design_feature_timeline_versions_share_variable_width_local_references() {
             .expect("fixture offset fits address space");
         duplicate[second_offset..second_offset + 8].copy_from_slice(&101_u64.to_le_bytes());
         let error = with_scan(&archive(&meta, &duplicate), |scan| {
-            crate::design::decode::meta::decode_feature_timelines(
-                &cadmpeg_test_support::service_decode_context(),
-                scan,
-            )
+            crate::design::decode::meta::decode_feature_timelines(scan)
         })
         .expect_err("duplicate timeline items must be rejected");
         assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
@@ -565,10 +523,7 @@ fn design_feature_timeline_versions_share_variable_width_local_references() {
             .expect("inline type GUID");
         mismatched_inline_type[inline_type_at] = b'2';
         let error = with_scan(&archive(&meta, &mismatched_inline_type), |scan| {
-            crate::design::decode::meta::decode_feature_timelines(
-                &cadmpeg_test_support::service_decode_context(),
-                scan,
-            )
+            crate::design::decode::meta::decode_feature_timelines(scan)
         })
         .expect_err("an inline type GUID must match the target registration");
         assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
@@ -585,10 +540,7 @@ fn design_feature_timeline_versions_share_variable_width_local_references() {
         &[(35, 0)],
     );
     let error = with_scan(&archive(&unsupported_meta, &bulk), |scan| {
-        crate::design::decode::meta::decode_feature_timelines(
-            &cadmpeg_test_support::service_decode_context(),
-            scan,
-        )
+        crate::design::decode::meta::decode_feature_timelines(scan)
     })
     .expect_err("an unsupported timeline version must not use a known frame speculatively");
     assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
@@ -611,10 +563,7 @@ fn design_feature_timeline_versions_share_variable_width_local_references() {
             &[(35, 0)],
         );
         let error = with_scan(&archive(&incompatible_meta, &bulk), |scan| {
-            crate::design::decode::meta::decode_feature_timelines(
-                &cadmpeg_test_support::service_decode_context(),
-                scan,
-            )
+            crate::design::decode::meta::decode_feature_timelines(scan)
         })
         .expect_err("incompatible timeline registration metadata must be rejected");
         assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));

@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Construct input-derived identities.
 
-use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use std::fmt::{self, Write};
 
@@ -77,7 +76,6 @@ where
 }
 
 pub(super) fn neutral_feature_id(
-    _ctx: &DecodeContext<'_>,
     scope: &crate::records::feature::scope::DesignParameterScope,
 ) -> Result<cadmpeg_ir::features::FeatureId, CodecError> {
     let operation = "f3d feature identifier";

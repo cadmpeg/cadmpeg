@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode fixed local component-occurrence carriers.
 
-use crate::bytes::lp_utf16_bounded_charged;
+use crate::bytes::lp_utf16_bounded;
 use cadmpeg_core::container::ContainerRole;
 
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 
 use crate::bytes::lp_ascii_filtered_view;
@@ -18,7 +18,6 @@ const PLACED_FRAME_LENGTH: usize = 357;
 
 /// Decode exact local component-occurrence records from every Design bulk stream.
 pub(crate) fn decode_component_occurrences(
-    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
 ) -> Result<Vec<DesignComponentOccurrence>, CodecError> {
     let mut occurrences = Vec::new();
@@ -31,7 +30,7 @@ pub(crate) fn decode_component_occurrences(
         let scope = crate::ids::native_scope(&entry.name);
         let mut at = 0;
         while let Some(start) = next_indexed_record_offset(bytes, at) {
-            if let Some(occurrence) = exact_component_occurrence(ctx, bytes, start, &scope)? {
+            if let Some(occurrence) = exact_component_occurrence(bytes, start, &scope)? {
                 occurrences.push(occurrence);
             }
             let Some(next_at) = start.checked_add(1) else {
@@ -48,7 +47,6 @@ pub(crate) fn decode_component_occurrences(
 /// Decode one fixed component-occurrence carrier. The class tag is a per-file
 /// dynamic value, so the fixed frame identifies the carrier.
 fn exact_component_occurrence(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     stream: &str,
@@ -129,13 +127,11 @@ fn exact_component_occurrence(
     else {
         return Ok(None);
     };
-    let Some((component_guid, after_component)) =
-        lp_utf16_bounded_charged(ctx, bytes, start + 44, 36..=36, "f3d Design UTF-16 text")?
+    let Some((component_guid, after_component)) = lp_utf16_bounded(bytes, start + 44, 36..=36)
     else {
         return Ok(None);
     };
-    let Some((occurrence_guid, after_occurrence)) =
-        lp_utf16_bounded_charged(ctx, bytes, start + 120, 36..=36, "f3d Design UTF-16 text")?
+    let Some((occurrence_guid, after_occurrence)) = lp_utf16_bounded(bytes, start + 120, 36..=36)
     else {
         return Ok(None);
     };
@@ -173,7 +169,6 @@ mod tests {
 
     use super::exact_component_occurrence;
     use crate::test_support::indexed_header;
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
     const COMPONENT: &str = "a989beb9-467b-4afa-9e90-a9329a2ca258";
     const OCCURRENCE: &str = "f2371d14-7339-4f5c-82a1-50ec8fca5597";
@@ -203,14 +198,11 @@ mod tests {
 
     #[test]
     fn fixed_component_occurrence_frames_distinguish_seed_and_generated_placements() {
-        let arena = DecodeArena::new();
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default()).unwrap();
         let mut seed = common(229, 1);
         seed[208] = 1;
         seed[218] = 1;
         indexed_header(&mut seed, *b"333", 21);
-        let seed = exact_component_occurrence(&ctx, &seed, 0, "f3d:Design/BulkStream.dat")
+        let seed = exact_component_occurrence(&seed, 0, "f3d:Design/BulkStream.dat")
             .unwrap()
             .expect("seed occurrence");
         assert_eq!(seed.component_guid.as_str(), COMPONENT);
@@ -230,10 +222,9 @@ mod tests {
         }
         generated[346] = 1;
         indexed_header(&mut generated, *b"325", 21);
-        let generated =
-            exact_component_occurrence(&ctx, &generated, 0, "f3d:Design/BulkStream.dat")
-                .unwrap()
-                .expect("generated occurrence");
+        let generated = exact_component_occurrence(&generated, 0, "f3d:Design/BulkStream.dat")
+            .unwrap()
+            .expect("generated occurrence");
         assert_eq!(generated.occurrence_ordinal(), 2);
         assert_eq!(
             generated.transform().map(|frame| frame.value),
@@ -246,7 +237,7 @@ mod tests {
         legacy[208] = 1;
         legacy[218] = 1;
         indexed_header(&mut legacy, *b"333", 21);
-        let legacy = exact_component_occurrence(&ctx, &legacy, 0, "f3d:Design/BulkStream.dat")
+        let legacy = exact_component_occurrence(&legacy, 0, "f3d:Design/BulkStream.dat")
             .unwrap()
             .expect("legacy occurrence");
         assert_eq!(legacy.component_guid.as_str(), COMPONENT);
@@ -261,7 +252,7 @@ mod tests {
         legacy_placed[346] = 1;
         indexed_header(&mut legacy_placed, *b"325", 21);
         let legacy_placed =
-            exact_component_occurrence(&ctx, &legacy_placed, 0, "f3d:Design/BulkStream.dat")
+            exact_component_occurrence(&legacy_placed, 0, "f3d:Design/BulkStream.dat")
                 .unwrap()
                 .expect("legacy placed occurrence");
         assert_eq!(legacy_placed.occurrence_ordinal(), 1);
@@ -279,10 +270,9 @@ mod tests {
         }
         dynamic_tag[346] = 1;
         indexed_header(&mut dynamic_tag, *b"325", 21);
-        let dynamic_tag =
-            exact_component_occurrence(&ctx, &dynamic_tag, 0, "f3d:Design/BulkStream.dat")
-                .unwrap()
-                .expect("dynamic-tag placed occurrence");
+        let dynamic_tag = exact_component_occurrence(&dynamic_tag, 0, "f3d:Design/BulkStream.dat")
+            .unwrap()
+            .expect("dynamic-tag placed occurrence");
         assert_eq!(dynamic_tag.class_tag.as_str(), "336");
         assert_eq!(dynamic_tag.occurrence_ordinal(), 1);
         assert_eq!(
@@ -298,7 +288,7 @@ mod tests {
         placed_seed[346] = 1;
         indexed_header(&mut placed_seed, *b"325", 21);
         assert!(
-            exact_component_occurrence(&ctx, &placed_seed, 0, "f3d:Design/BulkStream.dat")
+            exact_component_occurrence(&placed_seed, 0, "f3d:Design/BulkStream.dat")
                 .unwrap()
                 .is_none()
         );

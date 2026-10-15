@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Admitted configuration documents and their authored variant order.
 
-use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize, Serializer};
@@ -421,7 +420,6 @@ pub(crate) enum DesignConfigurationKind {
 
 impl DesignConfiguration {
     pub(crate) fn try_new_charged(
-        _ctx: &DecodeContext<'_>,
         entry_name: String,
         kind: DesignConfigurationKind,
         variant_order: Vec<String>,

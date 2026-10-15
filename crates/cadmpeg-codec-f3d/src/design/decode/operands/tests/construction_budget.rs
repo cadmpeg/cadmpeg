@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
 use crate::design::decode::operands::{
     parse_construction_operand_group, ConstructionOperandGroupParse, RecordFrame,
@@ -61,12 +60,9 @@ fn incomplete_construction_candidates_are_not_complete_groups() {
     false_count.extend_from_slice(&1_000_000u32.to_le_bytes());
     false_count.resize(false_count.len() + 1_000_000, 0xe5);
     candidates.push(false_count);
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::default();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
     for bytes in candidates {
         assert!(matches!(
-            parse_construction_operand_group(&ctx, &bytes, &scope, 0, &header),
+            parse_construction_operand_group(&bytes, &scope, 0, &header),
             ConstructionOperandGroupParse::NotAGroup | ConstructionOperandGroupParse::Unclosed
         ));
     }
@@ -75,9 +71,6 @@ fn incomplete_construction_candidates_are_not_complete_groups() {
 #[test]
 fn complete_construction_group_retains_each_reference_and_offset() {
     let bytes = complete_group_bytes(true, true, true);
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::default();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
     let scope = DesignParameterScope::empty("f3d:test:scope#12", DesignFeatureKind::Extrude, 12);
     let header = RecordFrame {
         record_index: 100,
@@ -85,7 +78,7 @@ fn complete_construction_group_retains_each_reference_and_offset() {
         byte_offset: 0,
     };
     let ConstructionOperandGroupParse::Complete(group) =
-        parse_construction_operand_group(&ctx, &bytes, &scope, 0, &header)
+        parse_construction_operand_group(&bytes, &scope, 0, &header)
     else {
         panic!("complete group must decode");
     };

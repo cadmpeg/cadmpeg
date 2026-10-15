@@ -8,11 +8,10 @@ use crate::records::feature::body_ops;
 use crate::records::feature::body_ops::DesignCopyPasteBodiesOperation;
 use crate::records::feature::scope;
 use crate::records::feature::scope::DesignParameterScope;
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 
 pub(super) fn exact_copy_paste_bodies_operation(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
@@ -106,7 +105,6 @@ pub(super) fn exact_copy_paste_bodies_operation(
             });
         }
         Some(DesignCopyPasteBodiesOperation::try_new_charged(
-            ctx,
             bodies,
             body_ops::CopyPasteRecordLocation {
                 record_index: body_group_record_index,

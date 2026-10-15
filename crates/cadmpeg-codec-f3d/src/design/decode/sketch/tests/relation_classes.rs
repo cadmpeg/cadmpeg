@@ -13,7 +13,6 @@ use crate::test_support::push_reference_u64;
 fn sketch_relation_assembly_refuses_collection_and_retained_limits() {
     use crate::records::decal::DesignRecordHeader;
     use crate::records::sketch_relations::SketchRelationDefinition;
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
     let record = relation_record(&[(300, 0)], &[], 201, 1, &[300]);
     let header = DesignRecordHeader {
@@ -26,12 +25,8 @@ fn sketch_relation_assembly_refuses_collection_and_retained_limits() {
         .expect("plain relation parse");
     let definition =
         SketchRelationDefinition::new(parsed.state, None).expect("plain relation definition");
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::default();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut admitted = Vec::new();
     admit_sketch_relation(
-        &ctx,
         &mut admitted,
         "BulkStream.dat",
         &header,

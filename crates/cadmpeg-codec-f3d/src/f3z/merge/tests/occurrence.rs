@@ -76,7 +76,7 @@ fn component_feature_history_refuses_an_exhausted_ordinal_domain() {
     let mut component = Model::default();
     component.features = vec![feature("f3d:test:feature#component", 0)];
 
-    let error = { append_feature_history(&parent, &mut component) }.unwrap_err();
+    let error = append_feature_history(&parent, &mut component).unwrap_err();
 
     assert!(error
         .to_string()
@@ -290,15 +290,12 @@ fn occurrence_merge_remaps_and_retains_native_records() {
 #[test]
 fn occurrence_configuration_survives_document_and_typed_native_admission() {
     use crate::records::configuration::{DesignConfiguration, DesignConfigurationKind};
-    let configuration = crate::test_support::with_decode_context(|ctx| {
-        DesignConfiguration::try_new_charged(
-            ctx,
-            "Design/table.dsgcfg".into(),
-            DesignConfigurationKind::Table,
-            Vec::new(),
-            serde_json::Map::new(),
-        )
-    })
+    let configuration = DesignConfiguration::try_new_charged(
+        "Design/table.dsgcfg".into(),
+        DesignConfigurationKind::Table,
+        Vec::new(),
+        serde_json::Map::new(),
+    )
     .unwrap();
     let mut component = Native::default();
     component
@@ -350,15 +347,12 @@ fn occurrence_merge_scopes_admitted_native_references_and_preserves_configuratio
     .as_object()
     .expect("object configuration payload")
     .clone();
-    let configuration = crate::test_support::with_decode_context(|ctx| {
-        DesignConfiguration::try_new_charged(
-            ctx,
-            "Design/table.dsgcfg".into(),
-            DesignConfigurationKind::Table,
-            Vec::new(),
-            configuration_payload.clone(),
-        )
-    })
+    let configuration = DesignConfiguration::try_new_charged(
+        "Design/table.dsgcfg".into(),
+        DesignConfigurationKind::Table,
+        Vec::new(),
+        configuration_payload.clone(),
+    )
     .expect("admitted configuration payload");
     let visibility = BodyVisibility::try_from(crate::records::bodies::BodyVisibilityWire {
         id: "f3d:Design/BulkStream.dat:body-visibility#3".into(),

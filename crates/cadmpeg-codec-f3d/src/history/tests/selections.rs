@@ -814,7 +814,7 @@ fn historical_transition_separates_membership_and_revision_changes() {
         },
     );
 
-    let transition = { historical_transition(&current, Some(&previous)).unwrap() };
+    let transition = historical_transition(&current, Some(&previous)).unwrap();
     assert_eq!(transition.previous_state_id, Some(10));
     assert_eq!(transition.topology.bodies.inserted, [2]);
     assert_eq!(transition.topology.bodies.updated, [1]);
@@ -1433,14 +1433,10 @@ fn grouped_face_reference_selects_one_changed_topology_face() {
     }))
     .expect("grouped face operand");
     *operand.recipe_prefix_bytes = prefix;
-    operand.recipe_references = crate::test_support::with_decode_context(|ctx| {
-        crate::design::decode::dimension_frames::decode_recipe_references_charged(
-            ctx,
-            &operand.recipe_prefix_bytes,
-            0,
-        )
-        .expect("recipe references")
-    });
+    operand.recipe_references = crate::design::decode::dimension_frames::decode_recipe_references(
+        &operand.recipe_prefix_bytes,
+        0,
+    );
     let topology = AsmHistoricalTopology {
         faces: vec![10, 20],
         ..AsmHistoricalTopology::default()

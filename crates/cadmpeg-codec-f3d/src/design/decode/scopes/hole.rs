@@ -13,7 +13,7 @@ use crate::records::feature::hole::DesignHoleConstruction;
 use crate::records::feature::hole::DesignHoleFaceSelection;
 use crate::records::feature::scope;
 use crate::records::feature::scope::DesignParameterScope;
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
 use std::collections::HashMap;
@@ -51,7 +51,6 @@ const EPS_HOLE_DIRECTION_NORM: f64 = 1.0e-12;
 /// before the paired header. The type GUID and version select the layout; the
 /// dynamic class tag does not.
 pub(in crate::design::decode) fn exact_hole_construction(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
@@ -62,11 +61,10 @@ pub(in crate::design::decode) fn exact_hole_construction(
         if &scope.kind() != required_scope_kind {
             return None;
         }
-        let face_selection =
-            match exact_hole_face_selection(ctx, bytes, records, scope, stream_types) {
-                Ok(face_selection) => face_selection,
-                Err(error) => return Some(Err(error)),
-            };
+        let face_selection = match exact_hole_face_selection(bytes, records, scope, stream_types) {
+            Ok(face_selection) => face_selection,
+            Err(error) => return Some(Err(error)),
+        };
         let mut candidate = None;
         for record_index in scope.reference_members().values() {
             let Some((type_guid, version)) = stream_types.get(&u64::from(*record_index)) else {
@@ -116,7 +114,6 @@ pub(in crate::design::decode) fn exact_hole_construction(
 }
 
 fn exact_hole_face_selection(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
@@ -144,7 +141,6 @@ fn exact_hole_face_selection(
                 return Ok(None);
             };
             let Some(frame) = parse_entity_selection_frame(
-                ctx,
                 bytes,
                 *record_index,
                 start_offset,

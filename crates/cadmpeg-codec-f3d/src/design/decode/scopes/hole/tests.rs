@@ -19,7 +19,6 @@ fn exact_hole_construction(
     stream_types: &HashMap<u64, (&str, u32)>,
 ) -> Option<crate::records::feature::hole::DesignHoleConstruction> {
     exact_hole_construction_with_ctx(
-        &cadmpeg_test_support::service_decode_context(),
         bytes,
         records,
         scope,
@@ -41,9 +40,7 @@ fn hole_carrier_reads_borrowed_as_built_scope() {
         .unwrap();
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     let types = HashMap::from([(55_u64, (HOLE_POINT_DATA_TYPE_GUID, 4))]);
-    let ctx = cadmpeg_test_support::service_decode_context();
     let construction = exact_hole_construction_with_ctx(
-        &ctx,
         &bytes,
         &records,
         &scope,
@@ -53,12 +50,11 @@ fn hole_carrier_reads_borrowed_as_built_scope() {
     .unwrap();
     assert_eq!(construction.unwrap().point_record_index, 55);
     assert!(exact_hole_construction_with_ctx(
-        &ctx,
         &bytes,
         &records,
         &scope,
         &types,
-        &crate::records::feature::scope::DesignFeatureKind::Hole,
+        &crate::records::feature::scope::DesignFeatureKind::Hole
     )
     .unwrap()
     .is_none());
@@ -311,12 +307,7 @@ fn hole_face_selection_reads_the_direct_persistent_identity_envelope() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let selection = exact_hole_face_selection(
-        &ctx,
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &scope,

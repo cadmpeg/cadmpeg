@@ -10,9 +10,7 @@ fn tested_component_insert_construction(
     records: &crate::design::decode::sketch::IndexedRecordOffsets,
     scope: &DesignParameterScope,
 ) -> Option<crate::records::feature::assembly_features::DesignComponentInsertConstruction> {
-    crate::design::test_support::with_test_decode_context(|ctx| {
-        exact_component_insert_construction(ctx, bytes, records, scope).unwrap()
-    })
+    exact_component_insert_construction(bytes, records, scope).unwrap()
 }
 
 #[test]

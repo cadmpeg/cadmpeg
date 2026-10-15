@@ -779,16 +779,7 @@ fn encode_sketch_nurbs(
 }
 
 fn encode_sketch_text(out: &mut Vec<u8>, text: &SketchText) -> Result<(), CodecError> {
-    let decode_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &text.raw_bytes,
-        &decode_arena,
-        &cadmpeg_core::decode::DecodePolicy::default(),
-    )?;
-    let decode_ctx = &decode_ctx;
-
     let decoded = crate::design::decode::sketch::decode_sketch_text_record(
-        decode_ctx,
         &text.raw_bytes,
         "Design/BulkStream.dat",
         text.class_tag.clone(),

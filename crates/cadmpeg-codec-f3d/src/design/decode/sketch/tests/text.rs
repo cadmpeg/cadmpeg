@@ -7,37 +7,11 @@ use cadmpeg_ir::math::Point2;
 
 const EPS_TEXT_ROTATION: f64 = 1.0e-12;
 
-fn decode_sketch_points_from_stream(
-    bytes: &[u8],
-    meta: &crate::metastream::MetaStream,
-    stream: &str,
-) -> Result<Vec<crate::records::sketch_geometry::SketchPoint>, cadmpeg_core::CodecError> {
-    crate::design::test_support::with_test_decode_context(|ctx| {
-        crate::design::decode::sketch::decode_sketch_points_from_stream(ctx, bytes, meta, stream)
-    })
-}
+use crate::design::decode::sketch::decode_sketch_points_from_stream;
 
-fn decode_sketch_texts_from_stream(
-    bytes: &[u8],
-    meta: &crate::metastream::MetaStream,
-    stream: &str,
-) -> Result<Vec<crate::records::sketch_geometry::SketchText>, cadmpeg_core::CodecError> {
-    crate::design::test_support::with_test_decode_context(|ctx| {
-        crate::design::decode::sketch::decode_sketch_texts_from_stream(ctx, bytes, meta, stream)
-    })
-}
+use crate::design::decode::sketch::decode_sketch_texts_from_stream;
 
-fn decode_sketch_curve_identities_from_stream(
-    bytes: &[u8],
-    meta: &crate::metastream::MetaStream,
-    stream: &str,
-) -> Result<Vec<crate::records::sketch_geometry::SketchCurveIdentity>, cadmpeg_core::CodecError> {
-    crate::design::test_support::with_test_decode_context(|ctx| {
-        crate::design::decode::sketch::decode_sketch_curve_identities_from_stream(
-            ctx, bytes, meta, stream,
-        )
-    })
-}
+use crate::design::decode::sketch::decode_sketch_curve_identities_from_stream;
 
 #[test]
 fn native_sketch_text_refuses_zero_height() {
@@ -137,7 +111,6 @@ fn sketch_text_output_refuses_collection_limit() {
     use crate::metastream::{MetaStream, RecordIndexEntry};
     use crate::records::entity_header::{BaseTypeGuid, SegmentTypeData};
     use crate::records::identity::{Located, ReferenceRun};
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
     let bytes = indexed_sketch_text_record(1);
     let types = (0..32)
@@ -174,12 +147,8 @@ fn sketch_text_output_refuses_collection_limit() {
         }],
         secondary_records: Vec::new(),
     };
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::service();
-    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
     assert_eq!(
         crate::design::decode::sketch::decode_sketch_texts_from_stream(
-            &ctx,
             &bytes,
             &meta,
             "Design/BulkStream.dat"
@@ -970,17 +939,14 @@ fn decode_sketch_text_at(
     bytes: &[u8],
     class_version: u32,
 ) -> Option<crate::records::sketch_geometry::SketchText> {
-    crate::test_support::with_decode_context(|decode_ctx| {
-        crate::design::decode::sketch::decode_sketch_text_record(
-            decode_ctx,
-            bytes,
-            "Design/BulkStream.dat",
-            crate::records::references::DesignClassTag::try_from("329".to_owned()).unwrap(),
-            class_version,
-            304,
-            7,
-        )
-    })
+    crate::design::decode::sketch::decode_sketch_text_record(
+        bytes,
+        "Design/BulkStream.dat",
+        crate::records::references::DesignClassTag::try_from("329".to_owned()).unwrap(),
+        class_version,
+        304,
+        7,
+    )
     .unwrap()
 }
 

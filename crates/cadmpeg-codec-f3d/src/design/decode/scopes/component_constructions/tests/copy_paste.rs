@@ -90,11 +90,10 @@ fn copy_paste_matrices_keep_their_source_locations() {
             ),
         ];
         let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
-        let operation = crate::test_support::with_decode_context(|ctx| {
-            exact_copy_paste_component_operation(ctx, &bytes, &records, &scope, &occurrences)
-        })
-        .unwrap()
-        .unwrap();
+        let operation =
+            { exact_copy_paste_component_operation(&bytes, &records, &scope, &occurrences) }
+                .unwrap()
+                .unwrap();
         assert_eq!(operation.source_transform, source);
         assert_eq!(operation.copied_transform, copied);
         assert_eq!(

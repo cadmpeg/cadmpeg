@@ -34,7 +34,7 @@ fn design_projection_gaps(
     ir: &cadmpeg_ir::document::CadIr,
     native: &F3dNative,
 ) -> super::super::DesignProjectionGaps {
-    with_test_ctx(|ctx| super::super::design_projection_gaps(ctx, ir, native).unwrap())
+    super::super::design_projection_gaps(ir, native).unwrap()
 }
 
 #[test]
@@ -76,11 +76,7 @@ fn active_face_substitutions_have_a_distinct_loss_note() {
         transfer_ledger: Default::default(),
     };
 
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    report_design_projection_gaps(&ctx, &mut report, &ir, &native).unwrap();
+    report_design_projection_gaps(&mut report, &ir, &native).unwrap();
 
     let loss = report
         .losses

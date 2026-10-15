@@ -4,7 +4,6 @@
 use crate::records::identity::Located;
 use crate::records::references::DesignClassTag;
 use crate::records::serde_column::SliceColumn;
-use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
 use serde::{Deserialize, Serialize};
@@ -218,7 +217,6 @@ pub(crate) struct CopyPasteRecordLocation {
 
 impl DesignCopyPasteBodiesOperation {
     pub(crate) fn try_new_charged(
-        _ctx: &DecodeContext<'_>,
         bodies: Vec<DesignCopiedBody>,
         body_group: CopyPasteRecordLocation,
         relation: CopyPasteRecordLocation,

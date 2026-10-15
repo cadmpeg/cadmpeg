@@ -9,7 +9,6 @@ use super::exact_surface_trim_operation;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::test_support::indexed_header;
 use crate::test_support::lp_utf16;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use std::io::{Cursor, Write};
 use zip::CompressionMethod;
 
@@ -84,12 +83,7 @@ fn surface_trim_output_refuses_identifier_and_collection_limits() {
     zip.write_all(&bytes).unwrap();
     let archive = zip.finish().unwrap().into_inner();
     crate::test_support::zip_test::with_scan(&archive, |scan| {
-        let operations = super::decode_surface_trim_operations(
-            &cadmpeg_test_support::service_decode_context(),
-            scan,
-            &[scope.clone()],
-        )
-        .unwrap();
+        let operations = super::decode_surface_trim_operations(scan, &[scope.clone()]).unwrap();
         assert_eq!(operations.len(), 1);
         assert_eq!(
             operations[0].id,
@@ -105,10 +99,7 @@ fn surface_trim_output_refuses_identifier_and_collection_limits() {
 #[test]
 fn surface_trim_decodes_selection_chain_and_cell_table() {
     let (bytes, scope) = surface_trim_selection_and_cell_table();
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default()).unwrap();
     let operation = exact_surface_trim_operation(
-        &ctx,
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &scope,
@@ -152,8 +143,6 @@ fn surface_trim_decodes_selection_chain_and_cell_table() {
 #[test]
 fn surface_trim_rejects_cell_ordinal_outside_partition() {
     let (mut bytes, scope) = surface_trim_selection_and_cell_table();
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default()).unwrap();
     let table_start = bytes
         .windows(11)
         .position(|window| window == [3, 0, 0, 0, b'3', b'2', b'5', 0x31, 3, 0, 0])
@@ -166,7 +155,6 @@ fn surface_trim_rejects_cell_ordinal_outside_partition() {
     );
     bytes[ordinal..ordinal + 8].copy_from_slice(&6u64.to_le_bytes());
     assert!(exact_surface_trim_operation(
-        &ctx,
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &scope
@@ -178,8 +166,6 @@ fn surface_trim_rejects_cell_ordinal_outside_partition() {
 #[test]
 fn surface_trim_rejects_nonzero_cell_table_tail() {
     let (mut bytes, scope) = surface_trim_selection_and_cell_table();
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default()).unwrap();
     let table_start = bytes
         .windows(11)
         .position(|window| window == [3, 0, 0, 0, b'3', b'2', b'5', 0x31, 3, 0, 0])
@@ -187,7 +173,6 @@ fn surface_trim_rejects_nonzero_cell_table_tail() {
     let tail_zero = table_start + 67;
     bytes[tail_zero] = 1;
     assert!(exact_surface_trim_operation(
-        &ctx,
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &scope

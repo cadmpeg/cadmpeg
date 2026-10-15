@@ -14,7 +14,7 @@ use cadmpeg_core::container::ContainerRole;
 use crate::container::ContainerScan;
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::layout::indexed_design_record_header as indexed_header;
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 
 /// An indexed-record header: `u32 3`, three class-tag digits, `u32 index`.
@@ -150,11 +150,8 @@ fn collection_counts(bytes: &[u8]) -> impl Iterator<Item = usize> + '_ {
 /// the five stored length unit names is rejected: the search is a byte-window
 /// scan, and the closed name set is what separates the collection from a window
 /// that merely reads like one.
-fn decode_modeling_length_unit(
-    ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-) -> Result<Option<String>, CodecError> {
-    let offsets = IndexedRecordOffsets::build(ctx, bytes)?;
+fn decode_modeling_length_unit(bytes: &[u8]) -> Result<Option<String>, CodecError> {
+    let offsets = IndexedRecordOffsets::build(bytes)?;
     let payloads = |record_index: u32| {
         offsets
             .offsets(record_index)
@@ -196,7 +193,6 @@ fn decode_modeling_length_unit(
 /// An entry whose bytes cannot be read is skipped rather than failing the
 /// decode: the unit is presentation metadata, and no geometry depends on it.
 pub(crate) fn decode_document_length_unit(
-    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
 ) -> Result<Option<String>, CodecError> {
     for entry in scan
@@ -205,7 +201,7 @@ pub(crate) fn decode_document_length_unit(
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         if let Ok(bytes) = scan.entry_bytes(&entry.name) {
-            if let Some(unit) = decode_modeling_length_unit(ctx, bytes)? {
+            if let Some(unit) = decode_modeling_length_unit(bytes)? {
                 return Ok(Some(unit));
             }
         }
@@ -222,9 +218,7 @@ pub(crate) mod tests {
     use crate::test_support::{lp_ascii, lp_utf16};
 
     fn decode_modeling_length_unit(bytes: &[u8]) -> Option<String> {
-        crate::design::test_support::with_test_decode_context(|ctx| {
-            super::decode_modeling_length_unit(ctx, bytes).unwrap()
-        })
+        super::decode_modeling_length_unit(bytes).unwrap()
     }
 
     /// The six systems in collection order.

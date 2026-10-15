@@ -6,18 +6,9 @@ use super::{
 use crate::design::decode::scopes::axial_assembly::bind_axial_assembly_operand_targets;
 use crate::records::feature::assembly::DesignAssemblyAxialOperandTarget;
 use crate::records::feature::scope::DesignParameterScope;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-
-fn axial_binding_context(arena: &DecodeArena) -> DecodeContext<'_> {
-    DecodeContext::from_root_bytes(&[], arena, &DecodePolicy::default())
-        .unwrap()
-        .0
-}
 
 #[test]
 fn axial_assembly_selectors_bind_component_insert_occurrences_exactly() {
-    let arena = DecodeArena::new();
-    let ctx = axial_binding_context(&arena);
     let first_transform = crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY.rows();
     let mut second_transform =
         crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY.rows();
@@ -77,7 +68,6 @@ fn axial_assembly_selectors_bind_component_insert_occurrences_exactly() {
     let unresolved_scopes = scopes.clone();
 
     bind_axial_assembly_operand_targets(
-        &ctx,
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &mut scopes,
@@ -150,7 +140,6 @@ fn axial_assembly_selectors_bind_component_insert_occurrences_exactly() {
     mismatched[mismatch_at..mismatch_at + 8].copy_from_slice(&7_002_u64.to_le_bytes());
     let mut mismatched_scopes = unresolved_scopes;
     bind_axial_assembly_operand_targets(
-        &ctx,
         &mismatched,
         &crate::design::test_support::indexed_record_offsets_for_test(&mismatched),
         &mut mismatched_scopes,
@@ -175,8 +164,6 @@ fn axial_assembly_selectors_bind_component_insert_occurrences_exactly() {
 
 #[test]
 fn axial_assembly_selector_binds_a_document_root_joint_origin() {
-    let arena = DecodeArena::new();
-    let ctx = axial_binding_context(&arena);
     let first_transform = crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY.rows();
     let mut second_transform =
         crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY.rows();
@@ -223,7 +210,6 @@ fn axial_assembly_selector_binds_a_document_root_joint_origin() {
     let mut scopes = vec![assembly, axial_test_component_scope(200, role), origin];
 
     bind_axial_assembly_operand_targets(
-        &ctx,
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &mut scopes,

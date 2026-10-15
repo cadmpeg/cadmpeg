@@ -15,7 +15,6 @@ fn generated_copy_paste_bodies_scope_matches_operation_layout() {
         .collect::<Vec<_>>();
     assert_eq!(headers.len(), 1);
     let scope = crate::design::decode::scopes::parameter_scope::parse_parameter_scope(
-        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         &records,
         headers[0].record_index,
@@ -37,14 +36,9 @@ fn generated_copy_paste_bodies_scope_matches_operation_layout() {
         [1_500, 1_600]
     );
     assert_eq!(scope.frame_length(), 225);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let ctx = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-        .expect("operation decode context")
-        .0;
     let operation =
         crate::design::decode::scopes::copy_paste_bodies::exact_copy_paste_bodies_operation(
-            &ctx, &bytes, &records, &scope,
+            &bytes, &records, &scope,
         )
         .expect("operation decode resources")
         .expect("CopyPasteBodies operation");

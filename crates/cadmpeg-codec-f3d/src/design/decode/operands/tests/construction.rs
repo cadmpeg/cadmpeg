@@ -27,20 +27,7 @@ use cadmpeg_ir::features::FeatureDefinition;
 use cadmpeg_ir::features::FeatureOperation;
 use cadmpeg_ir::ids::FaceId;
 
-fn parse_construction_operand_group(
-    bytes: &[u8],
-    scope: &DesignParameterScope,
-    ordinal: u32,
-    header: &RecordFrame,
-) -> ConstructionOperandGroupParse {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("test context");
-    crate::design::decode::operands::parse_construction_operand_group(
-        &ctx, bytes, scope, ordinal, header,
-    )
-}
+use crate::design::decode::operands::parse_construction_operand_group;
 
 #[test]
 fn localized_edge_treatment_group_retention_is_language_independent() {

@@ -371,7 +371,6 @@ pub(crate) fn neutral_component_insert_occurrence_id(
 /// Neutral assembly-joint key projected from one Design parameter scope.
 #[cfg(test)]
 pub(crate) fn neutral_assembly_joint_id(
-    _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scope: &crate::records::feature::scope::DesignParameterScope,
 ) -> Result<cadmpeg_ir::products::JointId, cadmpeg_core::CodecError> {
     struct JointKey<'a> {
@@ -1343,23 +1342,6 @@ mod tests {
             assert!(super::native_scope_matches(&xref, entry));
             assert!(!super::native_scope_matches(&format!("{xref}extra"), entry));
         }
-    }
-
-    #[test]
-    fn neutral_assembly_joint_id_charged_matches_context_free_bytes() {
-        let ctx = cadmpeg_test_support::service_decode_context();
-        let scope = crate::records::feature::scope::DesignParameterScope::empty(
-            "f3d:Design/BulkStream.dat:design-parameter-scope#7",
-            crate::records::feature::scope::DesignFeatureKind::Assemble,
-            7,
-        );
-        assert_eq!(
-            super::neutral_assembly_joint_id(&ctx, &scope).unwrap(),
-            crate::test_support::with_decode_context(|ctx| super::neutral_assembly_joint_id(
-                ctx, &scope
-            ))
-            .unwrap(),
-        );
     }
 
     #[test]

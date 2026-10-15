@@ -1252,7 +1252,6 @@ fn validate_feature_timelines(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<
     }
 
     let scope_history = crate::design::feature_project::ScopeHistoryGraph::new(
-        ctx.decode,
         &native.design_parameter_scopes,
         &native.design_body_bindings,
         &native.design_body_recipe_operands,
@@ -4002,12 +4001,10 @@ fn valid_vertex_recipe(
     let native = ctx.native;
     let header = ctx.records_by_index.get(&(native_stream, record_index));
     let recipe = ctx.recipes_by_id.get(vertex.recipe_id.as_str());
-    let mut expected_references =
-        design::decode::dimension_frames::decode_recipe_references_charged(
-            ctx.decode,
-            &vertex.recipe_prefix_bytes,
-            vertex.recipe_prefix_offset(),
-        )?;
+    let mut expected_references = design::decode::dimension_frames::decode_recipe_references(
+        &vertex.recipe_prefix_bytes,
+        vertex.recipe_prefix_offset(),
+    );
     for reference in &mut expected_references {
         design::decode::dimension_frames::bind_recipe_reference_candidates_charged(
             ctx.decode,
@@ -4096,7 +4093,7 @@ fn validate_component_occurrences(
     let mut record_indices = HashSet::new();
     for occurrence in &ctx.native.design_component_occurrences {
         let stream = design_stream(&occurrence.id);
-        let key = { format!("{}", LowerAscii(occurrence.occurrence_guid.as_str())) };
+        let key = format!("{}", LowerAscii(occurrence.occurrence_guid.as_str()));
         let unique_identity = identities.insert((stream, key));
         let unique_record = record_indices.insert((stream, occurrence.record_index));
         // A class-256 carrier stores a placed frame only after its first
@@ -5842,7 +5839,6 @@ fn validate_body_recipe_operands<'a>(
     let recipes_by_id = &ctx.recipes_by_id;
     let mut expected_operands = reload_native_arena(decode, ctx.ir, "design_body_recipe_operands")?;
     if let Err(error) = design::decode::operands::bind_body_recipe_operand_candidates(
-        ctx.decode,
         &mut expected_operands,
         &native.construction_recipes,
         &native.persistent_subentity_tags,
@@ -6466,12 +6462,10 @@ fn validate_edge_operands<'a>(
             ),
             None => Vec::new(),
         };
-        let mut expected_references =
-            design::decode::dimension_frames::decode_recipe_references_charged(
-                ctx.decode,
-                &operand.recipe_prefix_bytes,
-                operand.recipe_prefix_offset(),
-            )?;
+        let mut expected_references = design::decode::dimension_frames::decode_recipe_references(
+            &operand.recipe_prefix_bytes,
+            operand.recipe_prefix_offset(),
+        );
         if !historical_candidates_retained {
             for reference in &mut expected_references {
                 design::decode::dimension_frames::bind_recipe_reference_candidates_charged(
@@ -6745,12 +6739,10 @@ fn validate_face_operands<'a>(
             .collect::<Vec<_>>();
         expected_faces.sort_by(|left, right| left.as_str().cmp(right.as_str()));
         expected_faces.dedup();
-        let mut expected_references =
-            design::decode::dimension_frames::decode_recipe_references_charged(
-                ctx.decode,
-                &operand.recipe_prefix_bytes,
-                operand.recipe_prefix_offset(),
-            )?;
+        let mut expected_references = design::decode::dimension_frames::decode_recipe_references(
+            &operand.recipe_prefix_bytes,
+            operand.recipe_prefix_offset(),
+        );
         if !historical_candidates_retained {
             for reference in &mut expected_references {
                 design::decode::dimension_frames::bind_recipe_reference_candidates_charged(
@@ -7459,12 +7451,10 @@ fn validate_dimension_recipe_records<'a>(
         let program_end = u64_from_index(record.program.len())
             .checked_mul(4)
             .and_then(|length| record.program_offset.checked_add(length));
-        let mut decoded_references =
-            design::decode::dimension_frames::decode_recipe_references_charged(
-                ctx.decode,
-                &record.prefix_bytes,
-                record.prefix_offset,
-            )?;
+        let mut decoded_references = design::decode::dimension_frames::decode_recipe_references(
+            &record.prefix_bytes,
+            record.prefix_offset,
+        );
         for reference in &mut decoded_references {
             design::decode::dimension_frames::bind_recipe_reference_candidates_charged(
                 ctx.decode,
@@ -8030,7 +8020,7 @@ fn validate_parameters(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
     for parameter in &native.design_parameters {
         let native_stream = design_stream(&parameter.id);
         if !parameter_indices.insert((native_stream, parameter.record_index)) {
-            let id = { parameter.id.clone() };
+            let id = parameter.id.clone();
             push_constant_finding(
                 findings,
                 Check::NativeLinks,

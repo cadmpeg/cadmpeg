@@ -7,10 +7,10 @@ use cadmpeg_core::container::ContainerRole;
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 
-use crate::bytes::{is_guid_hyphenated, lp_ascii_strict_charged, lp_utf16_bounded_charged};
+use crate::bytes::{is_guid_hyphenated, lp_ascii_strict_charged, lp_utf16_bounded};
 use crate::container::ContainerScan;
 use crate::metastream::MetaStream;
 use crate::records::{
@@ -139,10 +139,7 @@ fn sibling_meta_name(stream: &str) -> Option<String> {
     Some(format!("{prefix}MetaStream.dat"))
 }
 
-pub(crate) fn decode(
-    ctx: &DecodeContext<'_>,
-    scan: &ContainerScan<'_>,
-) -> Result<DecodedAct, CodecError> {
+pub(crate) fn decode(scan: &ContainerScan<'_>) -> Result<DecodedAct, CodecError> {
     let mut entities = Vec::new();
     let mut guids = Vec::new();
     let mut registry_channels = Vec::new();
@@ -173,8 +170,7 @@ pub(crate) fn decode(
                     entry.name
                 ))
             })?;
-        let meta =
-            crate::metastream::parse(ctx, scan.entry_bytes(&meta_entry.name)?, &meta_entry.name)?;
+        let meta = crate::metastream::parse(scan.entry_bytes(&meta_entry.name)?, &meta_entry.name)?;
         let frames = decode_record_frames(bytes, &meta, &entry.name)?;
         let table_frames = frames
             .iter()
@@ -191,7 +187,7 @@ pub(crate) fn decode(
             guids: stream_guids,
             references: stream_table_references,
             registry_channels: stream_registry_channels,
-        } = decode_table(ctx, bytes, table_frame, *table_payload, &entry.name)?;
+        } = decode_table(bytes, table_frame, *table_payload, &entry.name)?;
         let mut frame_indices = BTreeSet::new();
         for frame in &frames {
             frame_indices.insert(frame.record_index);
@@ -207,13 +203,13 @@ pub(crate) fn decode(
         }
         let mut groups = Vec::new();
         for frame in &frames {
-            if let Some(group) = decode_channel_group(ctx, bytes, frame, &entry.name)? {
+            if let Some(group) = decode_channel_group(bytes, frame, &entry.name)? {
                 groups.push(group);
             }
         }
         let mut links = Vec::new();
         for frame in &frames {
-            if let Some(link) = decode_component_link(ctx, bytes, frame, &entry.name)? {
+            if let Some(link) = decode_component_link(bytes, frame, &entry.name)? {
                 links.push(link);
             }
         }
@@ -291,7 +287,6 @@ struct DecodedTable {
 }
 
 fn decode_table(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     frame: &RecordFrame,
     payload: usize,
@@ -331,16 +326,10 @@ fn decode_table(
         }
         let record_index =
             View::u32_le_at(bytes, index_offset).ok_or_else(|| malformed("entry index"))?;
-        let (entity_id, end) = lp_utf16_bounded_charged(
-            ctx,
-            bytes,
-            entity_length_offset,
-            1..=1024,
-            "retain F3D UTF-16 string",
-        )?
-        .filter(|(_, end)| *end <= frame.end)
-        .filter(|(entity_id, _)| is_entity_key(entity_id))
-        .ok_or_else(|| malformed("entity key"))?;
+        let (entity_id, end) = lp_utf16_bounded(bytes, entity_length_offset, 1..=1024)
+            .filter(|(_, end)| *end <= frame.end)
+            .filter(|(entity_id, _)| is_entity_key(entity_id))
+            .ok_or_else(|| malformed("entity key"))?;
         entries.push(TableEntry {
             record_index,
             row: ActTableRow::new(u64_from_index(index_offset)).map_err(CodecError::malformed)?,
@@ -350,9 +339,8 @@ fn decode_table(
     }
 
     let mut guids = Vec::new();
-    while let Some((guid, end)) =
-        lp_utf16_bounded_charged(ctx, bytes, cursor, 36..=36, "retain F3D UTF-16 string")?
-            .filter(|(guid, end)| *end <= frame.end && is_guid_hyphenated(guid))
+    while let Some((guid, end)) = lp_utf16_bounded(bytes, cursor, 36..=36)
+        .filter(|(guid, end)| *end <= frame.end && is_guid_hyphenated(guid))
     {
         let byte_offset = cursor;
         let ordinal = u32::try_from(guids.len()).map_err(|_| malformed("GUID ordinal"))?;
@@ -424,10 +412,9 @@ fn decode_table(
             return Err(malformed("duplicate channel-registry name"));
         }
         registry_names.insert(name.clone());
-        let (guid, end) =
-            lp_utf16_bounded_charged(ctx, bytes, after_name, 36..=36, "retain F3D UTF-16 string")?
-                .filter(|(guid, end)| *end <= frame.end && is_guid_hyphenated(guid))
-                .ok_or_else(|| malformed("channel-registry GUID"))?;
+        let (guid, end) = lp_utf16_bounded(bytes, after_name, 36..=36)
+            .filter(|(guid, end)| *end <= frame.end && is_guid_hyphenated(guid))
+            .ok_or_else(|| malformed("channel-registry GUID"))?;
         registry_channels.push(
             ActRegistryChannel::new(
                 crate::ids::native_scoped_id_charged(stream, "act-registry-channel", byte_offset)?,
@@ -523,7 +510,6 @@ fn merge_entities(
 }
 
 fn decode_channel_group(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     frame: &RecordFrame,
     stream: &str,
@@ -552,9 +538,8 @@ fn decode_channel_group(
         else {
             return Ok(None);
         };
-        let Some((guid, after_guid)) =
-            lp_utf16_bounded_charged(ctx, bytes, after_name, 36..=36, "retain F3D UTF-16 string")?
-                .filter(|(guid, after)| *after <= frame.end && is_guid_hyphenated(guid))
+        let Some((guid, after_guid)) = lp_utf16_bounded(bytes, after_name, 36..=36)
+            .filter(|(guid, after)| *after <= frame.end && is_guid_hyphenated(guid))
         else {
             return Ok(None);
         };
@@ -575,9 +560,8 @@ fn decode_channel_group(
         }
         cursor = after_guid;
     }
-    let (entity_id, end) = if let Some((entity_id, end)) =
-        lp_utf16_bounded_charged(ctx, bytes, cursor, 1..=1024, "retain F3D UTF-16 string")?
-            .filter(|(entity_id, end)| *end <= frame.end && is_entity_key(entity_id))
+    let (entity_id, end) = if let Some((entity_id, end)) = lp_utf16_bounded(bytes, cursor, 1..=1024)
+        .filter(|(entity_id, end)| *end <= frame.end && is_entity_key(entity_id))
     {
         (
             Some(Located {
@@ -614,7 +598,6 @@ enum ComponentLink {
 }
 
 fn decode_component_link(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     frame: &RecordFrame,
     stream: &str,
@@ -633,13 +616,7 @@ fn decode_component_link(
     }
     let (instance_root_record, next) = some!(marker_ref(bytes, cursor, 6, frame.end));
     cursor = next;
-    let (entity_id, next) = some!(lp_utf16_bounded_charged(
-        ctx,
-        bytes,
-        cursor,
-        1..=1024,
-        "retain F3D UTF-16 string"
-    )?);
+    let (entity_id, next) = some!(lp_utf16_bounded(bytes, cursor, 1..=1024));
     if next > frame.end || !is_entity_key(&entity_id) {
         return Ok(None);
     }
@@ -648,13 +625,7 @@ fn decode_component_link(
     cursor = next;
     let (registry_flag, next) = some!(marker_ref(bytes, cursor, 0, frame.end));
     cursor = next;
-    let (display_name, next) = some!(lp_utf16_bounded_charged(
-        ctx,
-        bytes,
-        cursor,
-        0..=1024,
-        "retain F3D UTF-16 string"
-    )?);
+    let (display_name, next) = some!(lp_utf16_bounded(bytes, cursor, 0..=1024));
     if next > frame.end {
         return Ok(None);
     }
@@ -849,14 +820,9 @@ mod tests {
             class_tag: "261".to_owned().try_into().unwrap(),
         };
 
-        let group = decode_channel_group(
-            &cadmpeg_test_support::service_decode_context(),
-            &bytes,
-            &frame,
-            "synthetic",
-        )
-        .expect("well-framed group")
-        .expect("zero padding belongs to the group frame");
+        let group = decode_channel_group(&bytes, &frame, "synthetic")
+            .expect("well-framed group")
+            .expect("zero padding belongs to the group frame");
         assert_eq!(group.record_index, 7);
         assert_eq!(
             group.entity_id.as_ref().map(|id| id.value.as_str()),
@@ -872,28 +838,18 @@ mod tests {
             payload_offset: frame.payload_offset,
             class_tag: frame.class_tag.clone(),
         };
-        let keyless = decode_channel_group(
-            &cadmpeg_test_support::service_decode_context(),
-            &bytes,
-            &keyless_frame,
-            "synthetic",
-        )
-        .expect("well-framed keyless group")
-        .expect("table-keyed group");
+        let keyless = decode_channel_group(&bytes, &keyless_frame, "synthetic")
+            .expect("well-framed keyless group")
+            .expect("table-keyed group");
         assert!(keyless.entity_id.is_none());
 
         let class_tail = b"\0synthetic-class-tail\x01";
         bytes.truncate(tail_at);
         bytes.extend_from_slice(class_tail);
         frame.end = bytes.len();
-        let group = decode_channel_group(
-            &cadmpeg_test_support::service_decode_context(),
-            &bytes,
-            &frame,
-            "synthetic",
-        )
-        .expect("well-framed group with a class tail")
-        .expect("class tail follows the complete channel grammar");
+        let group = decode_channel_group(&bytes, &frame, "synthetic")
+            .expect("well-framed group with a class tail")
+            .expect("class tail follows the complete channel grammar");
         let tail = group.class_tail.as_ref().unwrap();
         assert_eq!(tail.bytes(), class_tail);
         assert_eq!(tail.offset(), u64_from_index(tail_at));

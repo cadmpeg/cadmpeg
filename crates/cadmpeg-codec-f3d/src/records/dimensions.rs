@@ -3,8 +3,7 @@
 
 use cadmpeg_ir::native::bytes::NativeBytes;
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
-use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::u64_from_index;
 
 use super::identity::Located;
 use super::recipes::ConstructionRecipeKind;
@@ -93,43 +92,6 @@ pub(crate) struct DesignRecipeReference {
     /// different native selector, before a historical state supersedes them.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) alternate_selector_edges: Vec<EdgeId>,
-}
-
-impl DesignRecipeReference {
-    pub(crate) fn try_clone_for_decode(
-        &self,
-        ctx: &DecodeContext<'_>,
-        operation: &'static str,
-    ) -> Result<Self, CodecError> {
-        Ok(Self {
-            selector: self.selector,
-            selector_offset: self.selector_offset,
-            token: self.token.clone(),
-            token_offset: self.token_offset,
-            design_reference: self.design_reference,
-            design_reference_offset: self.design_reference_offset,
-            candidate_faces: self
-                .candidate_faces
-                .iter()
-                .map(|id| id.try_clone_for_decode(ctx, operation))
-                .collect::<Result<Vec<_>, _>>()?,
-            candidate_edges: self
-                .candidate_edges
-                .iter()
-                .map(|id| id.try_clone_for_decode(ctx, operation))
-                .collect::<Result<Vec<_>, _>>()?,
-            alternate_selector_faces: self
-                .alternate_selector_faces
-                .iter()
-                .map(|id| id.try_clone_for_decode(ctx, operation))
-                .collect::<Result<Vec<_>, _>>()?,
-            alternate_selector_edges: self
-                .alternate_selector_edges
-                .iter()
-                .map(|id| id.try_clone_for_decode(ctx, operation))
-                .collect::<Result<Vec<_>, _>>()?,
-        })
-    }
 }
 
 /// Paired-locus frame nested under a dimensional parameter companion.
@@ -698,7 +660,6 @@ pub(crate) struct DesignDimensionAnnotationFrameDraft {
 impl DesignDimensionAnnotationFrame {
     /// Admit an annotation frame using the source decode budget.
     pub(crate) fn try_new_charged(
-        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         draft: DesignDimensionAnnotationFrameDraft,
     ) -> Result<Self, cadmpeg_core::CodecError> {
         Self::try_new_inner(draft).map_err(cadmpeg_core::CodecError::malformed)

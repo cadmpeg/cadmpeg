@@ -810,7 +810,6 @@ fn coil_scope_discriminators_use_the_fixed_scope_prologue() {
     };
 
     let scope = parse_parameter_scope(
-        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         header.record_index,
@@ -876,7 +875,6 @@ fn compact_coil_scope_uses_its_own_closed_discriminators() {
     };
 
     let scope = parse_parameter_scope(
-        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         header.record_index,
@@ -914,7 +912,6 @@ fn compact_coil_scope_uses_its_own_closed_discriminators() {
             bytes[92..96].copy_from_slice(&placement_code.to_le_bytes());
             bytes[107..111].copy_from_slice(&section_code.to_le_bytes());
             let parsed = parse_parameter_scope(
-                &cadmpeg_test_support::service_decode_context(),
                 &bytes,
                 &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
                 header.record_index,
@@ -930,7 +927,6 @@ fn compact_coil_scope_uses_its_own_closed_discriminators() {
 
     bytes[20..24].copy_from_slice(&2u32.to_le_bytes());
     let unsupported = parse_parameter_scope(
-        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         header.record_index,
@@ -980,7 +976,6 @@ fn compact_coil_new_body_scope_accepts_unlinked_state_trailer() {
     };
 
     let scope = parse_parameter_scope(
-        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         header.record_index,
@@ -1058,7 +1053,6 @@ fn long_coil_scope_discriminators_use_the_ten_reference_envelope() {
             byte_offset: 0,
         };
         parse_parameter_scope(
-            &cadmpeg_test_support::service_decode_context(),
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             header.record_index,

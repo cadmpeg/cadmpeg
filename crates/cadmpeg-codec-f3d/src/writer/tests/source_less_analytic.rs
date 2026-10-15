@@ -106,23 +106,17 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
             serde_json::json!({"parameters":{"width":"12 mm"},"suppressed":[]});
         let mut order = configuration.variant_order();
         order.push("Narrow".into());
-        *configuration = crate::test_support::with_decode_context(|ctx| {
-            crate::records::configuration::DesignConfiguration::try_new_charged(
-                ctx,
-                configuration.entry_name().clone(),
-                configuration.kind(),
-                order,
-                payload,
-            )
-        })
+        *configuration = crate::records::configuration::DesignConfiguration::try_new_charged(
+            configuration.entry_name().clone(),
+            configuration.kind(),
+            order,
+            payload,
+        )
         .unwrap();
     });
-    retained.model.configurations = crate::test_support::with_decode_context(|decode_ctx| {
-        crate::design::configurations::project_configurations(
-            decode_ctx,
-            &f3d_native(&retained).design_configurations,
-        )
-    })
+    retained.model.configurations = crate::design::configurations::project_configurations(
+        &f3d_native(&retained).design_configurations,
+    )
     .expect("edited configuration order");
     let expected_retained = f3d_native(&retained).design_configurations;
     let mut retained_bytes = Vec::new();

@@ -318,13 +318,12 @@ impl<'a> ContainerScan<'a> {
     /// The parse of one `MetaStream` entry, computed at most once per scan.
     pub(crate) fn parsed_metastream(
         &self,
-        ctx: &DecodeContext<'_>,
         name: &str,
     ) -> Result<std::rc::Rc<crate::metastream::MetaStream>, CodecError> {
         if let Some(cached) = self.metastream_cache.borrow().get(name) {
             return Ok(std::rc::Rc::clone(cached));
         }
-        let parsed = crate::metastream::parse(ctx, self.entry_bytes(name)?, name)?;
+        let parsed = crate::metastream::parse(self.entry_bytes(name)?, name)?;
         let mut cache = self.metastream_cache.borrow_mut();
 
         let key = name.to_owned();
@@ -563,7 +562,7 @@ pub(crate) fn scan<'a>(
     let root_document_members = root_f3d_members(&inflated_entries);
     let mut manifest_diagnostics = Vec::new();
     let kind = if let Some(top_level_manifest) = inflated_entries.get("Manifest.dat") {
-        let top_level_manifest = manifest::parse_top_level(ctx, top_level_manifest.window())?;
+        let top_level_manifest = manifest::parse_top_level(top_level_manifest.window())?;
         let matched = F3dDialect::classify_document(top_level_manifest.declared_version());
         let design_asset_folder = manifest::resolve_design_folder(
             &top_level_manifest,

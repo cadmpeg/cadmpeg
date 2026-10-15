@@ -53,7 +53,6 @@ fn parameter_scope_parses_named_tail_with_empty_label() {
     };
 
     let scope = parse_parameter_scope(
-        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         header.record_index,
