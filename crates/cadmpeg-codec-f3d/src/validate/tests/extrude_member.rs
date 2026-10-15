@@ -8,7 +8,7 @@ fn native(valid: bool) -> crate::native::F3dNative {
             DesignExtrudeSelectionMember, DesignExtrudeSelectionMemberDraft,
         },
     };
-    let mut native = super::extrude_group_limits::native(valid, false);
+    let mut native = super::extrude_group::native(valid, false);
     native.design_extrude_selection_members.push(
         DesignExtrudeSelectionMember::try_new(DesignExtrudeSelectionMemberDraft {
             id: "f3d:Design/BulkStream.dat:extrude-selection-member#10".into(),

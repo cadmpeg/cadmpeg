@@ -48,7 +48,7 @@ fn annotation_placement() -> crate::records::sketch_placement::DesignSketchPlace
 }
 
 #[test]
-fn charged_sketch_annotation_ids_preserve_identity_text() {
+fn sketch_annotation_ids_preserve_identity_text() {
     let placement = annotation_placement();
     assert_eq!(
         crate::design::identity::neutral_sketch_id(&placement).unwrap(),

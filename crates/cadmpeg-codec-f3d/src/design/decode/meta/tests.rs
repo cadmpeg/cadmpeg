@@ -60,7 +60,7 @@ fn bulk_metadata_reuses_the_parsed_type_table() {
 }
 
 #[test]
-fn design_type_copy_refuses_table_entities_module_and_id_limits() {
+fn design_type_copy_keeps_table_entities_module_and_id() {
     let meta_name = "FusionAssetName[Active]/Design1/MetaStream.dat";
     let meta = design_metastream_with_records(
         &[(
@@ -121,7 +121,7 @@ fn stream_type_indexes_refuse_limits_and_match_escaped_scope() {
 }
 
 #[test]
-fn design_primary_frames_charge_registration_and_frame_storage() {
+fn design_primary_frames_index_one_registered_frame() {
     let mut bytes = Vec::new();
     lp_ascii(&mut bytes, "256");
     bytes.extend_from_slice(&42_u32.to_le_bytes());
@@ -142,7 +142,7 @@ fn design_primary_frames_charge_registration_and_frame_storage() {
 }
 
 #[test]
-fn typed_primary_frames_charge_all_collections() {
+fn typed_primary_frames_index_one_typed_frame() {
     let mut bytes = Vec::new();
     lp_ascii(&mut bytes, "256");
     bytes.extend_from_slice(&42_u32.to_le_bytes());
@@ -164,7 +164,7 @@ fn typed_primary_frames_charge_all_collections() {
 }
 
 #[test]
-fn feature_timeline_item_limit_refuses_before_counted_vector_allocation() {
+fn feature_timeline_items_follow_the_counted_vector() {
     use std::collections::HashMap;
 
     let mut bulk = Vec::new();
@@ -202,7 +202,7 @@ fn feature_timeline_item_limit_refuses_before_counted_vector_allocation() {
 }
 
 #[test]
-fn feature_timeline_id_refuses_prefix_and_suffix_limits() {
+fn feature_timeline_id_escapes_its_stream_scope() {
     use std::collections::HashMap;
 
     let stream = "Fusion% Asset:Name[Active]/Design1/BulkStream.dat";
@@ -228,7 +228,7 @@ fn feature_timeline_id_refuses_prefix_and_suffix_limits() {
 }
 
 #[test]
-fn timeline_collection_growth_refuses_at_map_child_and_output() {
+fn feature_timelines_decode_one_timeline_record() {
     let mut bulk = Vec::new();
     lp_ascii(&mut bulk, "256");
     bulk.extend_from_slice(&35_u64.to_le_bytes());
@@ -389,7 +389,7 @@ fn component_naming_space_binds_component_entity_to_context_uuid() {
 }
 
 #[test]
-fn component_naming_space_refuses_each_collection_and_id_limit() {
+fn component_naming_space_keeps_context_and_id() {
     let bulk_name = "FusionAssetName[Active]/Design1/BulkStream.dat";
     let context_uuid = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
     let meta = design_metastream_with_records(

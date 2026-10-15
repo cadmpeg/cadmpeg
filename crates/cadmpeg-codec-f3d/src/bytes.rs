@@ -470,7 +470,7 @@ mod tests {
     }
 
     #[test]
-    fn charged_reference_keeps_link_name_and_cursor() {
+    fn owned_reference_keeps_link_name_and_cursor() {
         let mut bytes = crate::test_support::cross_document_reference(7, "link");
         *bytes.last_mut().unwrap() = 1;
         crate::test_support::lp_utf16(&mut bytes, "11111111-2222-3333-4444-555555555555");

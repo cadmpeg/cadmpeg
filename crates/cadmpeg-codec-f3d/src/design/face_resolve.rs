@@ -2652,7 +2652,7 @@ pub(super) fn sketch_curve_is_spatial(curve: &SketchCurveIdentity) -> bool {
 
 #[cfg(test)]
 mod tests {
-    mod candidate_limits;
+    mod candidate_lanes;
     mod extrude;
 
     use super::{

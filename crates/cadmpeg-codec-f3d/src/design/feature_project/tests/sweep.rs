@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::extrude_limits::{profile_group, scope};
+use super::extrude_fallbacks::{profile_group, scope};
 use crate::design::feature_project::project_fixed_sweep;
 use crate::records::feature::extrude::DesignExtrudeOperation;
 use crate::records::feature::path_features::DesignSweepConstruction;

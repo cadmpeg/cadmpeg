@@ -11,7 +11,7 @@ fn native(valid: bool) -> crate::native::F3dNative {
             DesignIdentityWrapper,
         },
     };
-    let mut native = super::construction_group_limits::native(valid, false);
+    let mut native = super::construction_group::native(valid, false);
     native.design_construction_operand_groups[0].frame =
         DesignConstructionOperandGroupFrame::try_from(DesignConstructionOperandGroupFrameDraft {
             member_count_offset: 1_021,

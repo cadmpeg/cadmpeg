@@ -1640,7 +1640,7 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
     }
 
     #[test]
-    fn tsm_charged_source_identity_matches_composed_identity() {
+    fn tsm_source_identity_matches_composed_identity() {
         let actual = super::subd_id("synthetic.tsm", "synthetic").unwrap();
         assert_eq!(actual, crate::ids::subd_id("synthetic").unwrap());
     }

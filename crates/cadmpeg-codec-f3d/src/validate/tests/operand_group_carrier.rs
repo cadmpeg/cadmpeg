@@ -9,7 +9,7 @@ fn native(trailing_only: bool) -> crate::native::F3dNative {
             DesignConstructionOperandGroupFrame, DesignConstructionOperandGroupFrameDraft,
         },
     };
-    let mut native = super::construction_group_limits::native(false, false);
+    let mut native = super::construction_group::native(false, false);
     if trailing_only {
         let mut member = native.design_construction_operand_groups[0].clone();
         member.id = "f3d:Design/BulkStream.dat:design-construction-operand-group#101".into();

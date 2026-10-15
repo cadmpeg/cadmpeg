@@ -1296,7 +1296,7 @@ fn numerical_ranges_rectangular_pattern_accepts_finite_large_extent() {
 }
 
 #[test]
-fn circular_pattern_historical_wrappers_refuse_collection_limit() {
+fn circular_pattern_historical_wrappers_resolve_an_edge_axis() {
     use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScopeDraft};
     let scope = DesignParameterScope::try_new(
         DesignParameterScopeDraft {
@@ -1427,7 +1427,7 @@ fn rectangular_instance_fixture() -> (
 }
 
 #[test]
-fn rectangular_pattern_local_search_ceilings_refuse() {
+fn rectangular_pattern_local_search_ceilings_cap_the_search() {
     let (bytes, records, scope, construction) = rectangular_instance_fixture();
     let mut wire =
         crate::records::feature::patterns::DesignRectangularPatternConstructionWire::from(
@@ -1516,7 +1516,7 @@ fn rectangular_pattern_run_search_stops_at_its_work_cap() {
 }
 
 #[test]
-fn rectangular_pattern_aggregate_search_span_refuses() {
+fn rectangular_pattern_aggregate_search_span_caps_the_search() {
     const INSTANCE_COUNT: u32 = 17;
     const RECORD_SPAN: usize = 1_048_576;
     let (_, _, mut scope, construction) = rectangular_instance_fixture();

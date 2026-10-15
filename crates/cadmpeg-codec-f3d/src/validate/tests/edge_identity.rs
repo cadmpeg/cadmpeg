@@ -6,7 +6,7 @@ fn native(valid: bool) -> crate::native::F3dNative {
         feature::scope::{DesignFeatureKind, DesignParameterScope},
         references::DesignClassTag,
     };
-    let mut native = super::operand_group_carrier_limits::native_with_identity();
+    let mut native = super::operand_group_carrier::native_with_identity();
     if valid {
         native
             .design_parameter_scopes

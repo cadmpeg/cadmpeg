@@ -222,8 +222,8 @@ fn curve_type_versions_select_only_their_settled_grammars() {
 }
 
 #[test]
-fn line_start_overflow_diagnostic_refuses_retained_limit() {
-    assert_line_diagnostic_limit(
+fn line_start_overflow_is_malformed() {
+    assert_line_overflow_malformed(
         [
             f64::MAX,
             0.0,
@@ -243,8 +243,8 @@ fn line_start_overflow_diagnostic_refuses_retained_limit() {
 }
 
 #[test]
-fn line_end_overflow_diagnostic_refuses_retained_limit() {
-    assert_line_diagnostic_limit(
+fn line_end_overflow_is_malformed() {
+    assert_line_overflow_malformed(
         [
             0.0,
             0.0,
@@ -264,8 +264,8 @@ fn line_end_overflow_diagnostic_refuses_retained_limit() {
 }
 
 #[test]
-fn line_displacement_overflow_diagnostic_refuses_retained_limit() {
-    assert_line_diagnostic_limit(
+fn line_displacement_overflow_is_malformed() {
+    assert_line_overflow_malformed(
         [
             -1.0e307, 0.0, 0.0, 2.0e307, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
         ],
@@ -273,7 +273,7 @@ fn line_displacement_overflow_diagnostic_refuses_retained_limit() {
     );
 }
 
-fn assert_line_diagnostic_limit(values: [f64; 12], expected: &str) {
+fn assert_line_overflow_malformed(values: [f64; 12], expected: &str) {
     assert!(matches!(
         crate::design::decode::sketch::decode_line_components(
             &values,
@@ -285,8 +285,8 @@ fn assert_line_diagnostic_limit(values: [f64; 12], expected: &str) {
 }
 
 #[test]
-fn arc_center_overflow_diagnostic_refuses_retained_limit() {
-    assert_arc_diagnostic_limit([
+fn arc_center_overflow_is_malformed() {
+    assert_arc_overflow_malformed([
         f64::MAX,
         0.0,
         0.0,
@@ -303,8 +303,8 @@ fn arc_center_overflow_diagnostic_refuses_retained_limit() {
 }
 
 #[test]
-fn arc_radius_overflow_diagnostic_refuses_retained_limit() {
-    assert_arc_diagnostic_limit([
+fn arc_radius_overflow_is_malformed() {
+    assert_arc_overflow_malformed([
         0.0,
         0.0,
         0.0,
@@ -320,7 +320,7 @@ fn arc_radius_overflow_diagnostic_refuses_retained_limit() {
     ]);
 }
 
-fn assert_arc_diagnostic_limit(values: [f64; 12]) {
+fn assert_arc_overflow_malformed(values: [f64; 12]) {
     let payload = analytic_payload(values);
     let expected = "F3D sketch arc at byte 17 overflows millimetres";
     assert!(matches!(decode_circular_arc(&payload, 17),

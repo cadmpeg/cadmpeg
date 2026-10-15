@@ -107,7 +107,7 @@ fn indexed_textex_tag_sketch_text_record_decodes_frame_and_path_types() {
 }
 
 #[test]
-fn sketch_text_output_refuses_collection_limit() {
+fn sketch_text_stream_decodes_its_text_records() {
     use crate::metastream::{MetaStream, RecordIndexEntry};
     use crate::records::entity_header::{BaseTypeGuid, SegmentTypeData};
     use crate::records::identity::{Located, ReferenceRun};

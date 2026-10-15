@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Admission limits for projected feature input topology.
+//! Projected feature input topology.
 
 use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation, UnresolvedFamily};
 
