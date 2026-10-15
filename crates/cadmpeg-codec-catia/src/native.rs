@@ -5703,11 +5703,7 @@ fn relation_program_instance(
             return None;
         };
 
-    let selected_expression = relation_expressions
-        .iter()
-        .find_map(|((graph, id), expression)| {
-            (graph == &object.parent && *id == program_entity_id).then_some(expression)
-        });
+    let selected_expression = relation_expressions.get(&(object.parent.clone(), program_entity_id));
     let parameter_dependencies = if let Some(expression) = selected_expression {
         relation_parameter_dependencies(&expression.source, &object.parent, parameter_bindings)
     } else {
@@ -5771,14 +5767,10 @@ fn entity_reference(
         return CatiaEntityReference::Null { entity_id };
     }
 
-    let entity = entities.iter().find_map(|((graph, id), entity)| {
-        (graph == graph_id && *id == entity_id).then_some(entity)
-    });
-    match entity {
+    let key = (graph_id.to_owned(), entity_id);
+    match entities.get(&key) {
         Some(entity) => {
-            let class_name = entity_classes.iter().find_map(|((graph, id), class_name)| {
-                (graph == graph_id && *id == entity_id).then_some(class_name)
-            });
+            let class_name = entity_classes.get(&key);
             CatiaEntityReference::Resolved {
                 entity_id,
                 entity: entity.to_owned(),
@@ -6264,9 +6256,7 @@ fn semantic_entity_indices(
             return Err(CodecError::malformed("CATIA parameter binding disappeared"));
         };
 
-        let class_name = entity_classes.iter().find_map(|((graph, id), class_name)| {
-            (graph == &entity.object_graph && *id == entity.entity_id).then_some(class_name)
-        });
+        let class_name = entity_classes.get(&(entity.object_graph.clone(), entity.entity_id));
         let reference = CatiaEntityReference::Resolved {
             entity_id: entity.entity_id,
             entity: entity.id.clone(),
