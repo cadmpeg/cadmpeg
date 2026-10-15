@@ -1768,6 +1768,7 @@ fn revision_loft_profile_data(
             let crate::nurbs::proc_curve::EmbeddedSurfaceWithBounds {
                 surface,
                 bounds: support_bounds,
+                ..
             } = match optional_embedded_surface_with_bounds(ctx, cur, table)? {
                 Ok(surface) => surface,
                 Err(error) => return Some(Err(error)),
@@ -3420,6 +3421,7 @@ fn taper_spl_sur(
         let crate::nurbs::proc_curve::EmbeddedSurfaceWithBounds {
             surface: support,
             bounds: support_bounds,
+            ..
         } = match optional_embedded_surface_with_bounds(ctx, &mut cur, table)? {
             Ok(support) => support,
             Err(error) => return Some(Err(error)),
@@ -3663,6 +3665,7 @@ fn off_spl_sur(
         let crate::nurbs::proc_curve::EmbeddedSurfaceWithBounds {
             surface: support,
             bounds: support_bounds,
+            ..
         } = match optional_embedded_surface_with_bounds(ctx, &mut cur, table)? {
             Ok(support) => support,
             Err(error) => return Some(Err(error)),
@@ -4274,9 +4277,10 @@ fn defm_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
     let (support, revision_form_head) = if matches!(cur.peek(), Some(Token::Long(_))) {
         let revision = PositiveI64::new(cur.take_long()?)?;
         (revision.get() == 22_506).then_some(())?;
-        let crate::nurbs::proc_curve::EmbeddedSurfaceWithRanges {
+        let crate::nurbs::proc_curve::EmbeddedSupport {
             surface: support,
             ranges,
+            ..
         } = embedded_surface_with_ranges(&mut cur)?;
         let support_bounds = [ranges[0][0], ranges[0][1], ranges[1][0], ranges[1][1]];
         (support, Some((revision, support_bounds)))
