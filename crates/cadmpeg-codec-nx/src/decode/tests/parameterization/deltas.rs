@@ -151,7 +151,7 @@ fn decode_preserves_partition_edge_topology_over_deltas_history() {
     );
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -178,7 +178,7 @@ fn decode_preserves_partition_face_and_vertex_topology_over_deltas_history() {
     );
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -200,7 +200,7 @@ fn decode_preserves_partition_loop_topology_over_deltas_history() {
     assert_eq!(result.ir().model.coedges.len(), 1);
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -222,7 +222,7 @@ fn decode_preserves_partition_shell_topology_over_deltas_history() {
     assert_eq!(result.ir().model.faces.len(), 1);
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -242,7 +242,7 @@ fn decode_preserves_partition_fin_topology_over_deltas_history() {
     );
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -265,7 +265,7 @@ fn decode_replaces_partition_line_from_status_framed_deltas() {
     assert_eq!(direction, Vector3::new(0.0, 1.0, 0.0));
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -295,7 +295,7 @@ fn decode_replaces_partition_plane_from_status_framed_deltas() {
     );
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -336,7 +336,7 @@ fn decode_replaces_partition_offset_surface_from_status_framed_deltas() {
     );
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -370,7 +370,7 @@ fn decode_replaces_partition_blend_surface_from_status_framed_deltas() {
     );
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -401,7 +401,7 @@ fn decode_replaces_partition_trimmed_curve_from_status_framed_deltas() {
     );
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -431,7 +431,7 @@ fn decode_replaces_partition_surface_curve_from_status_framed_deltas() {
     );
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -459,7 +459,7 @@ fn decode_replaces_partition_circle_from_status_framed_deltas() {
     ));
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -489,7 +489,7 @@ fn decode_replaces_partition_ellipse_from_status_framed_deltas() {
     ));
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -517,7 +517,7 @@ fn decode_replaces_partition_cylinder_from_status_framed_deltas() {
     ));
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -549,7 +549,7 @@ fn decode_replaces_partition_cone_from_status_framed_deltas() {
     ));
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -577,7 +577,7 @@ fn decode_replaces_partition_sphere_from_status_framed_deltas() {
     ));
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -607,7 +607,7 @@ fn decode_replaces_partition_torus_from_status_framed_deltas() {
     ));
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }

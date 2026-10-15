@@ -213,7 +213,7 @@ fn decode_preserves_offset_status_without_assigning_parameter_sense() {
             ));
             assert!(
                 cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-                    .expect("resource allocation did not fail")
+                    .expect("validate the neutral model")
                     .is_ok()
             );
         }
@@ -247,7 +247,7 @@ fn decode_resolves_surface_curve_to_its_basis_curve() {
     );
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -315,7 +315,7 @@ fn decode_emits_rolling_ball_blend_surface() {
     );
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -372,7 +372,7 @@ fn decode_preserves_intersection_curve_as_connected_carrier() {
     }));
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -415,7 +415,7 @@ fn decode_preserves_deltas_intersection_data_curve() {
     );
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -534,7 +534,7 @@ fn decode_emits_charted_surface_intersection_construction() {
             && loss.message.contains("surface-intersection record(s)")
     }));
     let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
@@ -601,7 +601,7 @@ fn decode_resolves_trimmed_edge_to_its_basis_curve_and_range() {
     assert_eq!(records[0].state.parameters(), [0.000_25, 0.000_75]);
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }

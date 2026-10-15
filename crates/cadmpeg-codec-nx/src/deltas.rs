@@ -3158,7 +3158,7 @@ mod type_45_record_tests {
         let record_end = bytes.len();
         bytes.extend_from_slice(&[0xde, 0xad, 0xbe, 0xef]);
 
-        let parsed = consume_type_45(&bytes, 0).expect("resource limit admits test record");
+        let parsed = consume_type_45(&bytes, 0).expect("consume the type 45 record");
 
         assert_eq!(parsed.end, record_end);
         assert_eq!(parsed.canonical_bytes, bytes[..record_end]);
