@@ -56,7 +56,7 @@ fn numerical_0922b_pcurve_knot_units() {
             Point3::new(0.3, 0., 0.),
             &seeds,
         )
-        .expect("resource allocation did not fail")
+        .expect("compute the pcurve surface closest")
         .unwrap();
         println!("STEP d{d:e}, result{r:?}, x={}", r.1 / d);
         assert!(r.0 < 1e-14);
@@ -196,7 +196,7 @@ fn pcurve_locus_accepts_a_wide_finite_line_parameter_interval() {
         },
         ctx
     ))
-    .expect("resource allocation did not fail"));
+    .expect("compute the pcurve locus witness"));
 }
 
 #[test]
@@ -242,7 +242,7 @@ fn pcurve_locus_finds_an_interior_curve_branch_near_the_float_limit() {
             &[midpoint],
             COINCIDENCE_TOLERANCE,
         )
-        .expect("resource allocation did not fail")
+        .expect("compute the curve parameter near point")
         .is_some());
     }
     let (exchange, _) = crate::test_support::with_service_context(
@@ -281,7 +281,7 @@ fn pcurve_locus_finds_an_interior_curve_branch_near_the_float_limit() {
         },
         ctx
     ))
-    .expect("resource allocation did not fail"));
+    .expect("compute the pcurve locus witness"));
 }
 
 #[test]
@@ -307,7 +307,7 @@ fn numerical_0922b_pcurve_retains_finite_seed_when_step_overflows() {
             Point3::new(1e200, 0., 0.),
             0.
         )
-        .expect("resource allocation did not fail"),
+        .expect("compute the mapped pcurve closest"),
         Some((1e200, 0.))
     );
 }
@@ -349,7 +349,7 @@ fn a_declared_pcurve_fit_with_an_overflowing_end_is_measured_at_its_finite_end()
             Point3::new(0., 0., 0.),
             Point3::new(7., 7., 7.),
         )
-        .expect("resource allocation did not fail"),
+        .expect("compute the pcurve declared endpoint fit directed"),
         Some(0.)
     );
 }
@@ -385,7 +385,7 @@ fn the_mapped_pcurve_search_halves_a_step_whose_point_overflows() {
         target,
         1e152,
     )
-    .expect("resource allocation did not fail")
+    .expect("compute the mapped pcurve closest")
     .unwrap();
     assert!(
         (parameter / target_parameter - 1.).abs() < 1e-6,
@@ -433,7 +433,7 @@ fn a_declared_pcurve_fit_with_an_overflowing_placed_end_misses_by_an_infinite_di
             Point3::new(0., 0., 0.),
             Point3::new(7., 7., 7.),
         )
-        .expect("resource allocation did not fail"),
+        .expect("compute the pcurve declared endpoint fit directed"),
         Some(f64::INFINITY)
     );
 }
@@ -461,7 +461,7 @@ fn a_declared_pcurve_fit_with_an_overflowing_line_end_is_measured_at_its_finite_
             Point3::new(0., 0., 0.),
             Point3::new(7., 7., 7.),
         )
-        .expect("resource allocation did not fail"),
+        .expect("compute the pcurve declared endpoint fit directed"),
         Some(0.)
     );
 }

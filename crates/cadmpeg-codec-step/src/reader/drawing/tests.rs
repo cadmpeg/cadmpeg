@@ -79,7 +79,7 @@ fn drawing_graph_transfers_pages_revisions_views_and_opaque_items() {
         .any(|target| { target.local_target() == Some("step:drawing:presentation_view#4") }));
 
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
     assert!(result
         .ir()
@@ -231,7 +231,7 @@ fn drawing_associations_preserve_shape_aspects_and_placeholders() {
             || loss.code == StepLossCode::DraughtingAssociatedItemUntyped.kind()
     }));
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
     assert!(result
         .ir()
