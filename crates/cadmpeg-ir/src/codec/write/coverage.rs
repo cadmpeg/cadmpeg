@@ -17,12 +17,23 @@ use super::loss::ExportLossCode;
 pub enum ArenaDisposition {
     /// The payload represents every record of the arena.
     Written,
-    /// The backend refuses the arena or charges its own specific export loss
-    /// for every record it does not represent.
+    /// The payload may represent some records of the arena; the backend refuses
+    /// the arena or charges its own specific export loss for every record it
+    /// does not represent.
     Reported,
+    /// The payload represents no record of the arena; the backend charges its
+    /// own specific export loss when the arena is non-empty, or refuses it.
+    Dropped,
     /// The payload does not represent the arena; the wrapper charges a loss
     /// when it is non-empty.
     Omitted,
+}
+
+impl ArenaDisposition {
+    /// Whether the payload may carry a record of the arena.
+    pub const fn carries(self) -> bool {
+        matches!(self, Self::Written | Self::Reported)
+    }
 }
 
 /// Which model arenas a payload carries.
@@ -37,6 +48,14 @@ pub enum ArenaCoverage {
 }
 
 impl ArenaCoverage {
+    /// Whether the payload may carry a record of this model arena.
+    pub fn carries(&self, kind: EntityKind) -> bool {
+        match self {
+            Self::Complete => true,
+            Self::Declared(dispositions) => dispositions.carries(kind),
+        }
+    }
+
     /// One loss per non-empty arena this coverage omits.
     pub(super) fn omission_losses(&self, model: &Model, format: &str) -> Vec<LossNote> {
         match self {
@@ -65,6 +84,13 @@ macro_rules! declare_arena_dispositions {
         }
 
         impl ArenaDispositions {
+            /// Whether the payload may carry a record of this model arena.
+            pub fn carries(&self, kind: EntityKind) -> bool {
+                [$(self.$field),*]
+                    .get(kind.index())
+                    .is_none_or(|disposition| disposition.carries())
+            }
+
             fn omission_losses(&self, model: &Model, format: &str) -> Vec<LossNote> {
                 let mut losses = Vec::new();
                 $(
