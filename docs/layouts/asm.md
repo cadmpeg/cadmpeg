@@ -249,13 +249,14 @@ The record terminates immediately after the position and carries no trailing ref
 
 Spec §6.2 · layout: ordered slots (no stated byte offsets) · size: not stated
 
-Total record size is not stated. Evaluation `S(u,v) = origin + u·u_dir + v·v_dir`, `v_dir = normal × u_dir`.
+Total record size is not stated. Evaluation `S(u,v) = origin + u·u_dir + v·v_dir`; `v_dir = normal × u_dir` for `forward_v` and its negation for `reverse_v`.
 
 | # | Slot | Type | Endian | Src | Meaning |
 | -: | ---- | ---- | ------ | --- | ------- |
 | 0 | `origin` | `sab_position` | little | spec | **`plane`**: origin (`0x13`) |
 | 1 | `normal` | `sab_vector3d` | little | spec | unit normal (`0x14`) |
 | 2 | `u_dir` | `sab_vector3d` | little | spec | unit UV-reference direction (`0x14`) |
+| 3 | `v_sense` | `sab_logical` | little | spec | v-sense logical (`FALSE` = `forward_v`, `TRUE` = `reverse_v`) |
 
 ## `cone_surface`
 

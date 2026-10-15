@@ -752,7 +752,7 @@ name = "plane_surface"
 kind = "slot"
 section = "6.2"
 anchor = "**`plane`**: origin (`0x13`) + unit normal (`0x14`) + unit UV-reference direction (`0x14`)"
-note = "Total record size is not stated. Evaluation `S(u,v) = origin + u·u_dir + v·v_dir`, `v_dir = normal × u_dir`."
+note = "Total record size is not stated. Evaluation `S(u,v) = origin + u·u_dir + v·v_dir`; `v_dir = normal × u_dir` for `forward_v` and its negation for `reverse_v`."
 
 [[record.field]]
 name = "origin"
@@ -771,6 +771,12 @@ name = "u_dir"
 type = "sab_vector3d"
 source = "spec"
 anchor = "unit UV-reference direction (`0x14`)"
+
+[[record.field]]
+name = "v_sense"
+type = "sab_logical"
+source = "spec"
+anchor = "v-sense logical (`FALSE` = `forward_v`, `TRUE` = `reverse_v`)"
 
 [[record]]
 name = "cone_surface"
