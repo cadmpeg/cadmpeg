@@ -108,6 +108,7 @@ pub(super) fn placement_transform(
 pub(super) fn infer_edge_parameter_ranges(
     ir: &mut CadIr,
     ctx: &DecodeContext<'_>,
+    losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
     let mut needed = false;
     for edge in &ir.model.edges {
@@ -121,6 +122,7 @@ pub(super) fn infer_edge_parameter_ranges(
         return Ok(());
     }
     let model_index = cadmpeg_ir::index::ModelIndex::build(ir, ctx)?;
+    let tolerance = model_index.ir().tolerances.linear.get();
     let mut inferred = Vec::new();
     for (edge_index, edge) in ir.model.edges.iter().enumerate() {
         ctx.charge_work(1, "step_parameter_inference_scan")?;
@@ -152,35 +154,69 @@ pub(super) fn infer_edge_parameter_ranges(
         let Some(solved) = geometry.solved() else {
             continue;
         };
+        let (start, end) = (start.position().get(), end.position().get());
+        // The parameter a conic inversion returns is exact for any vertex off
+        // the axis, so admit the offset the parameter cannot reduce rather than
+        // reject the parameter for carrying it. `None` leaves the document
+        // tolerance in force, which is every non-conic carrier and the axial
+        // degeneracy where no angle exists.
+        let start_offset = conic_irreducible_offset(solved, start);
+        let end_offset = conic_irreducible_offset(solved, end);
         let start_seed = curve_endpoint_seed(solved, false, 0.0);
-        let Some(start_parameter) = cadmpeg_ir::eval::model_curve_parameter_near_point_in_index(
-            ctx,
-            &model_index,
-            curve,
-            start.position().get(),
-            start_seed,
-        )?
+        let Some(start_parameter) =
+            cadmpeg_ir::eval::model_curve_parameter_near_point_in_index_with_tolerance(
+                ctx,
+                &model_index,
+                curve,
+                start,
+                start_seed,
+                tolerance + start_offset.unwrap_or(0.0),
+            )?
         else {
             continue;
         };
         let end_seed = curve_endpoint_seed(solved, true, start_parameter.get());
-        let Some(end_parameter) = cadmpeg_ir::eval::model_curve_parameter_near_point_in_index(
-            ctx,
-            &model_index,
-            curve,
-            end.position().get(),
-            end_seed,
-        )?
+        let Some(end_parameter) =
+            cadmpeg_ir::eval::model_curve_parameter_near_point_in_index_with_tolerance(
+                ctx,
+                &model_index,
+                curve,
+                end,
+                end_seed,
+                tolerance + end_offset.unwrap_or(0.0),
+            )?
         else {
             continue;
         };
-        if let Some(range) = edge_parameter_range(solved, start_parameter, end_parameter) {
+        let Some(range) = edge_parameter_range(solved, start_parameter, end_parameter) else {
+            continue;
+        };
+        // Report only what the document's own accuracy does not already cover:
+        // ordinary rounding is not a finding, and every accepted edge in a
+        // healthy file sits orders below this.
+        let worst = start_offset
+            .into_iter()
+            .chain(end_offset)
+            .fold(0.0f64, f64::max);
+        if worst > tolerance {
             ctx.push_vec(
-                &mut inferred,
-                (edge_index, range),
-                "step_parameter_inference_ranges",
+                losses,
+                StepLossCode::EdgeVertexOffCarrier.note(format!(
+                    "edge {}: a vertex lies {worst:.6e} off its circular carrier, \
+                     {:.0}x the document's stated accuracy of {tolerance:.6e}; the arc's \
+                     parameter range was derived from the carrier's own closed form, which \
+                     the offset cannot change, and the vertex was transferred as authored",
+                    edge.id,
+                    worst / tolerance
+                )),
+                "step_geometry_losses",
             )?;
         }
+        ctx.push_vec(
+            &mut inferred,
+            (edge_index, range),
+            "step_parameter_inference_ranges",
+        )?;
     }
     drop(model_index);
 
@@ -195,6 +231,49 @@ pub(super) fn infer_edge_parameter_ranges(
         }
     }
     Ok(())
+}
+
+/// The part of a vertex's distance to a circular carrier that NO parameter can
+/// remove, or `None` where the document tolerance must stand.
+///
+/// The inversion takes a circle's parameter from the vertex's in-plane
+/// components alone -- `atan2` of its projections on the reference and
+/// transverse directions -- so the axial offset and the radial error survive
+/// every choice of parameter. Validating the total 3D distance therefore
+/// rejects a parameter that is exact, for a defect the parameter cannot repair,
+/// and the whole body is lost downstream when it does. Returning the
+/// irreducible part lets the caller admit exactly that much and no more: the
+/// bound is MEASURED off the vertex rather than chosen, so there is no
+/// threshold here to tune or to justify.
+///
+/// `None` for every non-circular carrier, leaving their admission untouched,
+/// and `None` on the axis, where the in-plane projection vanishes and `atan2`
+/// returns a defined value that means nothing -- the one conic case the
+/// distance check was right to refuse, and it stays refused.
+///
+/// A degenerate circle (non-positive or non-finite radius, a frame that is not
+/// orthonormal) is unrepresentable: `CircleCurve`'s fields are checked types.
+fn conic_irreducible_offset(geometry: &SolvedCurveGeometry, point: Point3) -> Option<f64> {
+    let SolvedCurveGeometry::Circle(circle) = geometry else {
+        return None;
+    };
+    let frame = circle.frame();
+    let radius = circle.radius().get();
+    // Mirrors the inversion's own frame: `transverse = axis x reference`, and
+    // the three components are raw dot products against them.
+    let axis = *frame.axis().as_raw();
+    let reference = *frame.reference().as_raw();
+    let transverse = axis.cross(reference);
+    let delta = point.vector_from(circle.center().get());
+    let along_reference = delta.dot(reference);
+    let along_transverse = delta.dot(transverse);
+    let along_axis = delta.dot(axis);
+    let in_plane = along_reference.hypot(along_transverse);
+    if !in_plane.is_finite() || in_plane <= 0.0 {
+        return None;
+    }
+    let offset = (in_plane - radius).hypot(along_axis);
+    offset.is_finite().then_some(offset)
 }
 
 fn curve_endpoint_seed(geometry: &SolvedCurveGeometry, upper: bool, fallback: f64) -> f64 {
