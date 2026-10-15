@@ -7,6 +7,7 @@ use crate::nurbs::proc_surface::{
     DecodedProceduralSurfaceDefinition, EmbeddedRollingBall, EmbeddedScaledCompoundLoftShape,
 };
 use crate::nurbs::reader::LEN_TO_MM;
+use crate::nurbs::support_chart::{cone_axis_reversed, cone_is_circular_cylinder};
 use crate::sab::{Record, Token};
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::geometry::analytic::{
@@ -135,7 +136,7 @@ fn decode_surface_carrier(rec: &Record, c: &Carrier) -> Option<(SolvedSurfaceGeo
             let radius = norm3(major) * LEN_TO_MM;
             (radius > f64::EPSILON).then_some(())?;
             let ref_direction = direction(major)?;
-            if sine.abs() <= f64::EPSILON && ratio == 1.0 {
+            if cone_is_circular_cylinder(sine, ratio) {
                 Some((
                     SolvedSurfaceGeometry::Cylinder(CylinderSurface::new(
                         FinitePoint3::new(scale_point(origin))?,
@@ -149,7 +150,7 @@ fn decode_surface_carrier(rec: &Record, c: &Carrier) -> Option<(SolvedSurfaceGeo
                 // slope shrinks it, so the axis flips to compensate. The
                 // outward normal is invariant under the flip; the inward
                 // normal of a negative `cosine` folds into the face sense.
-                let axis = if sine * cosine < 0.0 {
+                let axis = if cone_axis_reversed(sine, cosine, ratio) {
                     axis.reversed()
                 } else {
                     axis
