@@ -290,8 +290,18 @@ fn providers_without_payloads_add_no_primitive_arena_work() {
                 text.as_bytes(),
                 "FCStd presentation provider sources",
                 |ctx| {
-                    super::super::transfer_schema_one(ctx, &ir, text, &xml, None, None, &sources)
-                        .map(|_| ())
+                    super::super::transfer_schema_one(
+                        ctx,
+                        &ir,
+                        text,
+                        &xml,
+                        None,
+                        &sources,
+                        &mut ctx
+                            .reserve_scoped(0, "test GUI diagnostics")
+                            .expect("owner"),
+                    )
+                    .map(|_| ())
                 },
             );
             let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
@@ -301,7 +311,15 @@ fn providers_without_payloads_add_no_primitive_arena_work() {
             if index == 1 {
                 crate::test_support::with_service_context(text.as_bytes(), |ctx| {
                     let (graph, plan) = super::super::transfer_schema_one(
-                        ctx, &ir, text, &xml, None, None, &sources,
+                        ctx,
+                        &ir,
+                        text,
+                        &xml,
+                        None,
+                        &sources,
+                        &mut ctx
+                            .reserve_scoped(0, "test GUI diagnostics")
+                            .expect("owner"),
                     )
                     .expect("provider without shape payloads");
                     assert_eq!(graph.providers.len(), 1);
@@ -428,8 +446,18 @@ fn zero_provider_transfer_does_not_visit_source_arenas() {
             text.as_bytes(),
             "FCStd GUI document records",
             |ctx| {
-                super::super::transfer_schema_one(ctx, ir, text, &xml, Some("1"), Some(1), sources)
-                    .map(|_| ())
+                super::super::transfer_schema_one(
+                    ctx,
+                    ir,
+                    text,
+                    &xml,
+                    Some("1"),
+                    sources,
+                    &mut ctx
+                        .reserve_scoped(0, "test GUI diagnostics")
+                        .expect("owner"),
+                )
+                .map(|_| ())
             },
         );
         let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
@@ -448,8 +476,10 @@ fn zero_provider_transfer_does_not_visit_source_arenas() {
             text,
             &xml,
             Some("1"),
-            Some(1),
             &populated_sources,
+            &mut ctx
+                .reserve_scoped(0, "test GUI diagnostics")
+                .expect("owner"),
         )
         .expect("zero-provider GUI transfer");
         assert_eq!(graph.documents.len(), 1);
