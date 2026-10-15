@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact derived-instance, component-insert, copy-paste-component and component-pattern occurrence scopes.
 
-use crate::bytes::{lp_utf16_bounded_charged, lp_utf16_bounded_scoped};
+use crate::bytes::lp_utf16_bounded;
 use cadmpeg_core::decode::u64_from_index;
 
 use super::shared_frames::marked_record_reference;
@@ -32,11 +32,10 @@ use crate::records::feature::patterns;
 use crate::records::feature::patterns::DesignRectangularPatternInstances;
 use crate::records::feature::scope;
 use crate::records::feature::scope::DesignParameterScope;
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 
 pub(super) fn exact_derived_instance_construction(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
@@ -47,19 +46,6 @@ pub(super) fn exact_derived_instance_construction(
         scope::DesignFeatureKind::DerivedInstance | scope::DesignFeatureKind::CopyPaste
     ) {
         return Ok(None);
-    }
-    ctx.charge_work(
-        u64_from_index(occurrences.len()),
-        "scan F3D construction occurrences",
-    )?;
-    for occurrence in occurrences {
-        let work = u64_from_index(occurrence.id.len())
-            .checked_mul(4)
-            .and_then(|value| value.checked_add(80))
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit("F3D occurrence scan work overflow", u64::MAX - 1, u64::MAX)
-            })?;
-        ctx.charge_work(work, "scan F3D construction occurrences")?;
     }
     let parsed = (|| {
         if scope.kind() != scope::DesignFeatureKind::DerivedInstance
@@ -148,41 +134,25 @@ pub(super) fn exact_derived_instance_construction(
             return None;
         }
         let transform_offset = u64::try_from(transform_offset).ok()?;
-        Some((|| {
-            Ok(DesignDerivedInstanceConstruction {
-                reference_record_index,
-                relation_record_index,
-                carrier_record_index,
-                component_guid: carrier
-                    .component_guid
-                    .try_clone_for_decode(ctx, "retain F3D construction GUID")?,
-                occurrence_guid: carrier
-                    .occurrence_guid
-                    .try_clone_for_decode(ctx, "retain F3D construction GUID")?,
-                transform,
-                transform_offset,
-            })
-        })())
+        Some(Ok(DesignDerivedInstanceConstruction {
+            reference_record_index,
+            relation_record_index,
+            carrier_record_index,
+            component_guid: carrier.component_guid.clone(),
+            occurrence_guid: carrier.occurrence_guid.clone(),
+            transform,
+            transform_offset,
+        }))
     })();
     parsed.transpose()
 }
 
 pub(super) fn exact_component_insert_construction(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
 ) -> Result<Option<DesignComponentInsertConstruction>, CodecError> {
     let parsed = (|| {
-        macro_rules! admitted {
-            ($value:expr) => {
-                match $value {
-                    Ok(value) => value,
-                    Err(error) => return Some(Err(error)),
-                }
-            };
-        }
-
         let start = usize::try_from(scope.byte_offset()).ok()?;
         let relation_record_index = *scope.reference_members().values().next()?;
         if scope.kind() != scope::DesignFeatureKind::ComponentInsert
@@ -322,9 +292,6 @@ pub(super) fn exact_component_insert_construction(
                 .filter(|at| **at < relation_at)
             {
                 for at in carrier_at + 11..relation_at {
-                    if let Err(error) = ctx.charge_work(76, "scan F3D component insert role") {
-                        return Some(Err(error));
-                    }
                     let Some(after_role) = fixed_guid_end(bytes, at) else {
                         continue;
                     };
@@ -334,30 +301,8 @@ pub(super) fn exact_component_insert_construction(
                         continue;
                     }
                     for transform_at in carrier_at + 11..at {
-                        if let Err(error) =
-                            ctx.charge_work(128, "match F3D component insert matrix")
-                        {
-                            return Some(Err(error));
-                        }
                         if rigid_transform_at(bytes, transform_at) == Some(transform) {
-                            if let Err(error) = ctx.reserve_vec(
-                                &mut placements,
-                                1,
-                                "f3d component insert placements",
-                            ) {
-                                return Some(Err(error));
-                            }
-                            let role = match lp_utf16_bounded_charged(
-                                ctx,
-                                bytes,
-                                at,
-                                36..=36,
-                                "f3d Design UTF-16 text",
-                            ) {
-                                Ok(Some((role, _))) => role,
-                                Ok(None) => return None,
-                                Err(error) => return Some(Err(error)),
-                            };
+                            let role = lp_utf16_bounded(bytes, at, 36..=36)?.0;
                             placements.push((role, at + 4, Some(transform_at)));
                         }
                     }
@@ -374,13 +319,10 @@ pub(super) fn exact_component_insert_construction(
                     relation_record_index,
                     scope.record_index,
                 )?;
-            let role = admitted!(role.to_retained(ctx, "retain F3D UTF-16 string"));
+            let role = role.to_string();
             (
                 carrier_record_index,
-                admitted!(ctx.collect_vec(
-                    [(role, role_offset, None)],
-                    "f3d component insert placements"
-                )),
+                [(role, role_offset, None)].into_iter().collect::<Vec<_>>(),
             )
         } else {
             if relation_at >= start
@@ -400,23 +342,15 @@ pub(super) fn exact_component_insert_construction(
             let carrier_at =
                 unique_indexed_record_before(records, carrier_record_index, relation_at)?;
             if scope.class_tag.as_str() == "283" && scope.paired_class_tag.as_str() == "262" {
-                let (role, role_offset) = match exact_component_insert_carrier_334(
-                    ctx,
+                let (role, role_offset) = exact_component_insert_carrier_334(
                     bytes,
                     carrier_at,
                     relation_at,
                     carrier_record_index,
-                ) {
-                    Ok(Some(value)) => value,
-                    Ok(None) => return None,
-                    Err(error) => return Some(Err(error)),
-                };
+                )?;
                 (
                     carrier_record_index,
-                    admitted!(ctx.collect_vec(
-                        [(role, role_offset, None)],
-                        "f3d component insert placements"
-                    )),
+                    [(role, role_offset, None)].into_iter().collect::<Vec<_>>(),
                 )
             } else if scope.class_tag.as_str() == "296" && scope.paired_class_tag.as_str() == "263"
             {
@@ -426,13 +360,10 @@ pub(super) fn exact_component_insert_construction(
                     relation_at,
                     carrier_record_index,
                 )?;
-                let role = admitted!(role.to_retained(ctx, "retain F3D UTF-16 string"));
+                let role = role.to_string();
                 (
                     carrier_record_index,
-                    admitted!(ctx.collect_vec(
-                        [(role, role_offset, None)],
-                        "f3d component insert placements"
-                    )),
+                    [(role, role_offset, None)].into_iter().collect::<Vec<_>>(),
                 )
             } else if scope.class_tag.as_str() == "410" && scope.paired_class_tag.as_str() == "261"
             {
@@ -442,13 +373,10 @@ pub(super) fn exact_component_insert_construction(
                     relation_at,
                     carrier_record_index,
                 )?;
-                let role = admitted!(role.to_retained(ctx, "retain F3D UTF-16 string"));
+                let role = role.to_string();
                 (
                     carrier_record_index,
-                    admitted!(ctx.collect_vec(
-                        [(role, role_offset, None)],
-                        "f3d component insert placements"
-                    )),
+                    [(role, role_offset, None)].into_iter().collect::<Vec<_>>(),
                 )
             } else if scope.class_tag.as_str() == "434" && scope.paired_class_tag.as_str() == "266"
             {
@@ -458,19 +386,15 @@ pub(super) fn exact_component_insert_construction(
                     relation_at,
                     carrier_record_index,
                 )?;
-                let role = admitted!(role.to_retained(ctx, "retain F3D UTF-16 string"));
+                let role = role.to_string();
                 (
                     carrier_record_index,
-                    admitted!(ctx.collect_vec(
-                        [(role, role_offset, None)],
-                        "f3d component insert placements"
-                    )),
+                    [(role, role_offset, None)].into_iter().collect::<Vec<_>>(),
                 )
             } else if scope.class_tag.as_str() == "414" && scope.paired_class_tag.as_str() == "264"
             {
                 let (role, role_offset, carrier_transform_offset) =
                     match crate::xref::repeated_target_component_insert(
-                        ctx,
                         bytes,
                         carrier_at,
                         relation_at,
@@ -483,10 +407,9 @@ pub(super) fn exact_component_insert_construction(
                     };
                 (
                     carrier_record_index,
-                    admitted!(ctx.collect_vec(
-                        [(role, role_offset, carrier_transform_offset)],
-                        "f3d component insert placements"
-                    )),
+                    [(role, role_offset, carrier_transform_offset)]
+                        .into_iter()
+                        .collect::<Vec<_>>(),
                 )
             } else {
                 let mut placements = Vec::new();
@@ -499,46 +422,20 @@ pub(super) fn exact_component_insert_construction(
                     }
                     let transform_at = after_role.checked_add(2)?;
                     if rigid_transform_at(bytes, transform_at) == Some(transform) {
-                        let role = match lp_utf16_bounded_charged(
-                            ctx,
-                            bytes,
-                            at,
-                            36..=38,
-                            "f3d Design UTF-16 text",
-                        ) {
-                            Ok(Some((role, _))) => role,
-                            Ok(None) => return None,
-                            Err(error) => return Some(Err(error)),
-                        };
+                        let role = lp_utf16_bounded(bytes, at, 36..=38)?.0;
 
-                        if let Err(error) =
-                            ctx.reserve_vec(&mut placements, 1, "f3d component insert placements")
-                        {
-                            return Some(Err(error));
-                        }
                         placements.push((role, at + 4, Some(transform_at)));
                     }
                 }
                 if scope.frame_length() == 381 {
-                    let legacy = match legacy_component_insert_placements(
-                        ctx,
+                    let legacy = legacy_component_insert_placements(
                         bytes,
                         carrier_at,
                         relation_at,
                         carrier_record_index,
                         transform,
-                    ) {
-                        Ok(value) => value,
-                        Err(error) => return Some(Err(error)),
-                    };
+                    );
 
-                    if let Err(error) = ctx.reserve_vec(
-                        &mut placements,
-                        legacy.len(),
-                        "f3d component insert merged placements",
-                    ) {
-                        return Some(Err(error));
-                    }
                     placements.extend(legacy);
                 }
                 (carrier_record_index, placements)
@@ -681,12 +578,11 @@ fn exact_component_insert_class_426_relation<'a>(
 }
 
 fn exact_component_insert_carrier_334(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     carrier_at: usize,
     relation_at: usize,
     carrier_record_index: u32,
-) -> Result<Option<(String, usize)>, CodecError> {
+) -> Option<(String, usize)> {
     let parsed = (|| {
         let (class_tag, after_tag) =
             lp_ascii_filtered_view(bytes, carrier_at, 3..=3, u8::is_ascii_digit)?;
@@ -704,14 +600,9 @@ fn exact_component_insert_carrier_334(
         let role_start = carrier_at + component_carrier_334::NEUTRON_ROLE;
         Some(role_start)
     })();
-    let Some(role_start) = parsed else {
-        return Ok(None);
-    };
-    let Some((role, role_end)) = direct_utf16_role_until_tail(ctx, bytes, role_start, relation_at)?
-    else {
-        return Ok(None);
-    };
-    Ok((|| {
+    let role_start = parsed?;
+    let (role, role_end) = direct_utf16_role_until_tail(bytes, role_start, relation_at)?;
+    (|| {
         if !crate::bytes::is_guid_prefix(&role)
             || role.as_bytes().get(36) != Some(&b'_')
             || !role.get(37..)?.starts_with("urn:")
@@ -724,17 +615,16 @@ fn exact_component_insert_carrier_334(
         }
         fixed_guid_end(bytes, role_end + COMPONENT_CARRIER_ROLE_TAIL_BYTES)?;
         Some((role, role_start))
-    })())
+    })()
 }
 
 const COMPONENT_CARRIER_ROLE_TAIL_BYTES: usize = 10;
 
 fn direct_utf16_role_until_tail(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     limit: usize,
-) -> Result<Option<(String, usize)>, CodecError> {
+) -> Option<(String, usize)> {
     let end = (|| {
         let mut at = start;
         while at.checked_add(COMPONENT_CARRIER_ROLE_TAIL_BYTES)? <= limit {
@@ -753,22 +643,15 @@ fn direct_utf16_role_until_tail(
         }
         None
     })();
-    let Some(end) = end else {
-        return Ok(None);
-    };
-    let count = (end - start) / 2;
+    let end = end?;
 
-    let mut role = ctx.retained_string(count, "f3d component carrier role text")?;
+    let mut role = String::new();
     for at in (start..end).step_by(2) {
-        let Some(unit) = View::u16_le_at(bytes, at) else {
-            return Ok(None);
-        };
-        let Some(byte) = u8::try_from(unit).ok() else {
-            return Ok(None);
-        };
+        let unit = View::u16_le_at(bytes, at)?;
+        let byte = u8::try_from(unit).ok()?;
         role.push(char::from(byte));
     }
-    Ok(Some((role, end)))
+    Some((role, end))
 }
 
 fn exact_component_insert_scope_283_262_257(
@@ -991,27 +874,25 @@ fn exact_component_insert_scope_414_264_389(
 }
 
 fn legacy_component_insert_placements(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     carrier_at: usize,
     relation_at: usize,
     carrier_record_index: u32,
     transform: crate::records::sketch_placement::SketchPlacementMatrix,
-) -> Result<Vec<(String, usize, Option<usize>)>, CodecError> {
+) -> Vec<(String, usize, Option<usize>)> {
     let Some((class_tag, after_tag)) =
         lp_ascii_filtered_view(bytes, carrier_at, 3..=3, u8::is_ascii_digit)
     else {
-        return Ok(Vec::new());
+        return Vec::new();
     };
     if class_tag != "288"
         || after_tag != carrier_at + 7
         || View::u32_le_at(bytes, after_tag) != Some(carrier_record_index)
     {
-        return Ok(Vec::new());
+        return Vec::new();
     }
     let mut placements = Vec::new();
     for first_at in carrier_at + 11..relation_at {
-        ctx.charge_work(152, "scan F3D legacy component insert role")?;
         let Some(role_at) = fixed_guid_end(bytes, first_at) else {
             continue;
         };
@@ -1026,14 +907,8 @@ fn legacy_component_insert_placements(
         let Some(after_asset_guid) = fixed_guid_end(bytes, after_role + 14) else {
             continue;
         };
-        let Some((asset_identity, after_asset_identity, _asset_reservation)) =
-            lp_utf16_bounded_scoped(
-                ctx,
-                bytes,
-                after_asset_guid + 1,
-                37..=256,
-                "f3d Design temporary UTF-16 text",
-            )?
+        let Some((asset_identity, after_asset_identity)) =
+            lp_utf16_bounded(bytes, after_asset_guid + 1, 37..=256)
         else {
             continue;
         };
@@ -1049,14 +924,8 @@ fn legacy_component_insert_placements(
         }
         let carrier_transform_at = after_asset_identity + 1;
         let after_transform = carrier_transform_at + 16 * 8;
-        let Some((repeated_identity, after_repeated_identity, _repeated_reservation)) =
-            lp_utf16_bounded_scoped(
-                ctx,
-                bytes,
-                after_transform + 4,
-                37..=256,
-                "f3d Design temporary UTF-16 text",
-            )?
+        let Some((repeated_identity, after_repeated_identity)) =
+            lp_utf16_bounded(bytes, after_transform + 4, 37..=256)
         else {
             continue;
         };
@@ -1066,20 +935,16 @@ fn legacy_component_insert_placements(
             && bytes.get(after_repeated_identity..relation_at)
                 == Some(&[0, 1, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0])
         {
-            ctx.reserve_vec(&mut placements, 1, "f3d legacy component insert placements")?;
-            let Some((role, _)) =
-                lp_utf16_bounded_charged(ctx, bytes, role_at, 36..=36, "f3d Design UTF-16 text")?
-            else {
+            let Some((role, _)) = lp_utf16_bounded(bytes, role_at, 36..=36) else {
                 continue;
             };
             placements.push((role, role_at + 4, Some(carrier_transform_at)));
         }
     }
-    Ok(placements)
+    placements
 }
 
 pub(super) fn exact_copy_paste_component_operation(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
@@ -1090,19 +955,6 @@ pub(super) fn exact_copy_paste_component_operation(
         scope::DesignFeatureKind::DerivedInstance | scope::DesignFeatureKind::CopyPaste
     ) {
         return Ok(None);
-    }
-    ctx.charge_work(
-        u64_from_index(occurrences.len()),
-        "scan F3D construction occurrences",
-    )?;
-    for occurrence in occurrences {
-        let work = u64_from_index(occurrence.id.len())
-            .checked_mul(4)
-            .and_then(|value| value.checked_add(80))
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit("F3D occurrence scan work overflow", u64::MAX - 1, u64::MAX)
-            })?;
-        ctx.charge_work(work, "scan F3D construction occurrences")?;
     }
     let parsed = (|| {
         let stream = native_stream(&scope.id)?;
@@ -1160,32 +1012,23 @@ pub(super) fn exact_copy_paste_component_operation(
         if source_candidates.next().is_some() {
             return None;
         }
-        Some((|| {
-            Ok(DesignCopyPasteComponentOperation {
-                relation_record_index,
-                source_occurrence_record_index: source.record_index,
-                copied_occurrence_record_index,
-                component_guid: copied
-                    .component_guid
-                    .try_clone_for_decode(ctx, "retain F3D construction GUID")?,
-                source_occurrence_guid: source
-                    .occurrence_guid
-                    .try_clone_for_decode(ctx, "retain F3D construction GUID")?,
-                copied_occurrence_guid: copied
-                    .occurrence_guid
-                    .try_clone_for_decode(ctx, "retain F3D construction GUID")?,
-                source_transform,
-                source_transform_offset: u64_from_index(source_transform_offset),
-                copied_transform,
-                copied_transform_offset: u64_from_index(copied_transform_offset),
-            })
-        })())
+        Some(Ok(DesignCopyPasteComponentOperation {
+            relation_record_index,
+            source_occurrence_record_index: source.record_index,
+            copied_occurrence_record_index,
+            component_guid: copied.component_guid.clone(),
+            source_occurrence_guid: source.occurrence_guid.clone(),
+            copied_occurrence_guid: copied.occurrence_guid.clone(),
+            source_transform,
+            source_transform_offset: u64_from_index(source_transform_offset),
+            copied_transform,
+            copied_transform_offset: u64_from_index(copied_transform_offset),
+        }))
     })();
     parsed.transpose()
 }
 
 pub(super) fn bind_component_pattern_occurrences(
-    ctx: &DecodeContext<'_>,
     scope: &mut DesignParameterScope,
     occurrences: &[DesignComponentOccurrence],
 ) -> Result<(), CodecError> {
@@ -1204,15 +1047,9 @@ pub(super) fn bind_component_pattern_occurrences(
         let expected_ordinal = u32::try_from(ordinal)
             .ok()
             .and_then(|value| value.checked_add(1))
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit(
-                    "F3D pattern occurrence ordinal overflow",
-                    u64::from(u32::MAX),
-                    u64_from_index(ordinal),
-                )
-            })?;
+            .ok_or_else(|| CodecError::malformed("F3D pattern occurrence ordinal exceeds u32"))?;
         let Some(candidate) =
-            unique_pattern_occurrence(ctx, stream, frame, expected_ordinal, occurrences)?
+            unique_pattern_occurrence(stream, frame, expected_ordinal, occurrences)
         else {
             return Ok(());
         };
@@ -1231,18 +1068,6 @@ pub(super) fn bind_component_pattern_occurrences(
     let Some(component_guid) = component_guid else {
         return Ok(());
     };
-    ctx.charge_work(
-        u64_from_index(occurrences.len()),
-        "scan F3D pattern seed occurrences",
-    )?;
-    for occurrence in occurrences {
-        let work = u64_from_index(occurrence.id.len())
-            .checked_add(80)
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit("F3D pattern seed work overflow", u64::MAX - 1, u64::MAX)
-            })?;
-        ctx.charge_work(work, "scan F3D pattern seed occurrences")?;
-    }
     let mut seed_candidates = occurrences.iter().filter(|occurrence| {
         native_stream(&occurrence.id) == Some(stream)
             && occurrence.byte_offset() < byte_offset
@@ -1269,39 +1094,21 @@ pub(super) fn bind_component_pattern_occurrences(
         let expected_ordinal = u32::try_from(ordinal)
             .ok()
             .and_then(|value| value.checked_add(1))
+            .ok_or_else(|| CodecError::malformed("F3D pattern occurrence ordinal exceeds u32"))?;
+        let candidate = unique_pattern_occurrence(stream, frame, expected_ordinal, occurrences)
             .ok_or_else(|| {
-                ctx.refuse_codec_limit(
-                    "F3D pattern occurrence ordinal overflow",
-                    u64::from(u32::MAX),
-                    u64_from_index(ordinal),
-                )
+                CodecError::malformed("F3D pattern occurrence changed during binding")
             })?;
-        let candidate =
-            unique_pattern_occurrence(ctx, stream, frame, expected_ordinal, occurrences)?
-                .ok_or_else(|| {
-                    CodecError::malformed("F3D pattern occurrence changed during binding")
-                })?;
-        ctx.reserve_vec(
-            &mut generated,
-            1,
-            "f3d component pattern generated instances",
-        )?;
         generated.push(patterns::DesignPatternComponentInstance {
             instance: *frame,
-            occurrence_guid: candidate
-                .occurrence_guid
-                .try_clone_for_decode(ctx, "retain F3D pattern GUID")?,
+            occurrence_guid: candidate.occurrence_guid.clone(),
         });
     }
     let bound = DesignRectangularPatternInstances::Components {
-        component_guid: seed
-            .component_guid
-            .try_clone_for_decode(ctx, "retain F3D pattern GUID")?,
+        component_guid: seed.component_guid.clone(),
         seed: patterns::DesignPatternComponentInstance {
             instance: seed_frame,
-            occurrence_guid: seed
-                .occurrence_guid
-                .try_clone_for_decode(ctx, "retain F3D pattern GUID")?,
+            occurrence_guid: seed.occurrence_guid.clone(),
         },
         generated,
     };
@@ -1314,33 +1121,22 @@ pub(super) fn bind_component_pattern_occurrences(
 }
 
 fn unique_pattern_occurrence<'a>(
-    ctx: &DecodeContext<'_>,
     stream: &str,
     frame: &patterns::DesignPatternInstance,
     ordinal: u32,
     occurrences: &'a [DesignComponentOccurrence],
-) -> Result<Option<&'a DesignComponentOccurrence>, CodecError> {
-    ctx.charge_work(
-        u64_from_index(occurrences.len()),
-        "scan F3D pattern occurrences",
-    )?;
-    for occurrence in occurrences {
-        ctx.charge_work(
-            u64_from_index(occurrence.id.len()),
-            "scan F3D pattern occurrences",
-        )?;
-    }
+) -> Option<&'a DesignComponentOccurrence> {
     let mut candidates = occurrences.iter().filter(|occurrence| {
         native_stream(&occurrence.id) == Some(stream)
             && occurrence.transform().map(|frame| frame.offset) == Some(frame.transform.offset)
             && occurrence.occurrence_ordinal() == ordinal
     });
     let candidate = candidates.next();
-    Ok(if candidates.next().is_some() {
+    if candidates.next().is_some() {
         None
     } else {
         candidate
-    })
+    }
 }
 
 fn unique_indexed_record_before(

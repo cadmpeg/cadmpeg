@@ -36,12 +36,10 @@ fn historical_radii_replace_each_carrier_once_and_keep_last_blend() {
     }
     brep.procedural_surfaces.push(blend(0, 3.0));
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    // Admit one 1,000-row sort and linear carrier scans, including the sort's byte cost.
-    policy.limits.max_work_units = 2_000_000;
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let topology = historical_topology(&ctx, &brep).unwrap().unwrap();
+    let topology = historical_topology(&brep).unwrap().unwrap();
     assert_eq!(topology.surface_radii.len(), 1_000);
     assert_eq!(topology.surface_radii[0].surface, 0);
     assert_eq!(topology.surface_radii[0].radius, 3.0);
@@ -79,7 +77,7 @@ fn historical_coedge_neighbors_follow_ring_order() {
             use_curve: None,
         });
     }
-    let topology = historical_topology(&ctx, &brep).unwrap().unwrap();
+    let topology = historical_topology(&brep).unwrap().unwrap();
     assert_eq!(topology.coedge_topology.len(), 100);
     for (ordinal, coedge) in topology.coedge_topology.iter().enumerate() {
         let ordinal = i64::try_from(ordinal).unwrap();

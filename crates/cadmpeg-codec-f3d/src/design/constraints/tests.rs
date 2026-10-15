@@ -1,4 +1,3 @@
-use cadmpeg_core::decode::ResourceDimension;
 // SPDX-License-Identifier: Apache-2.0
 
 use super::{
@@ -11,8 +10,6 @@ use crate::records::{
         SketchPatternDefinition, SketchRelation, SketchRelationMember, SketchRelationReturnMember,
     },
 };
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::pcurve::PcurveNurbs;
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{
@@ -20,10 +17,6 @@ use cadmpeg_ir::sketches::{
     SketchId,
 };
 use cadmpeg_test_support::wire;
-
-mod circular_allocation;
-mod rectangular_allocation;
-mod text_allocation;
 
 #[test]
 fn translated_nurbs_match_borrowed_rational_poles() {
@@ -94,221 +87,6 @@ fn rotated_nurbs_match_borrowed_rational_poles() {
         Point2::new(0.0, 0.0),
         std::f64::consts::FRAC_PI_2
     ));
-}
-
-#[test]
-fn constraint_index_refuses_each_collection_growth() {
-    for operation in [
-        "f3d sketch constraint placement index",
-        "f3d sketch constraint native record key",
-        "f3d sketch constraint projected entity index",
-        "f3d sketch constraint point reference index",
-        "f3d sketch constraint curve reference index",
-        "f3d sketch constraint text reference index",
-    ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let mut index = std::collections::HashMap::new();
-        assert!(matches!(
-            ctx.insert_hash_map(&mut index, "input-key", 1, operation).map(|_| ()),
-            Err(CodecError::ResourceLimit(limit)) if limit.operation == operation
-        ));
-        assert!(index.is_empty());
-    }
-}
-
-fn projected_constraint_fixture() -> (
-    crate::records::sketch_placement::DesignSketchPlacement,
-    crate::records::sketch_geometry::SketchPoint,
-    crate::records::sketch_geometry::SketchPoint,
-    SketchRelation,
-    cadmpeg_ir::sketches::SketchEntity,
-) {
-    use crate::records::identity::DesignEntityId;
-    use crate::records::references::DesignClassTag;
-    use crate::records::sketch_geometry::{
-        SketchPointClosure, SketchPointCompanion, SketchPointDraft, SketchPointRecordForm,
-    };
-    use crate::records::sketch_placement::{
-        DesignSketchFrame, DesignSketchFrameForm, DesignSketchPlacement,
-    };
-    use crate::records::sketch_relations::{SketchRelationDefinition, SketchRelationDraft};
-
-    let placement = DesignSketchPlacement {
-        frame: DesignSketchFrame::new(0, DesignSketchFrameForm::ScopeCompact).unwrap(),
-        id: "f3d:test:design-sketch-placement#0".to_owned(),
-        scope_record_index: Some(10),
-        entity_id: DesignEntityId::try_from("test_100".to_owned()).unwrap(),
-        visibility: None,
-        class_tag: DesignClassTag::try_from("356".to_owned()).unwrap(),
-        record_index: 11,
-        paired_class_tag: DesignClassTag::try_from("259".to_owned()).unwrap(),
-    };
-    let make_point = |id: &str, record_index| {
-        crate::records::sketch_geometry::SketchPoint::try_from(SketchPointDraft {
-            id: id.to_owned(),
-            record_index,
-            owner_reference: None,
-            class_tag: DesignClassTag::try_from("301".to_owned()).unwrap(),
-            byte_offset: 0,
-            coordinate_offset: 89,
-            companion: SketchPointCompanion {
-                incident_curves: Vec::new(),
-            },
-            record_form: SketchPointRecordForm::version11(
-                u64::from(record_index),
-                SketchPointClosure::Selector0State0,
-                None,
-                0.0,
-            ),
-            paired_reference: 0,
-            coordinates: Point2::new(1.0, 2.0),
-        })
-        .unwrap()
-    };
-    let point = make_point("f3d:test:sketch-point#0", 20);
-    let unprojected_point = make_point("f3d:test:sketch-point#1", 21);
-    let relation = SketchRelation::try_new(SketchRelationDraft {
-        id: "f3d:test:sketch-relation#30".to_owned(),
-        record_index: 30,
-        class_tag: DesignClassTag::try_from("302".to_owned()).unwrap(),
-        byte_offset: 0,
-        state_offset: 0,
-        owner_reference: 100,
-        owner_entity_id: None,
-        auxiliary_references: crate::records::identity::ReferenceRun::located(vec![
-            crate::records::identity::Located {
-                value: 21,
-                offset: 0,
-            },
-        ]),
-        rectangular_counted_reference_count: None,
-        members: vec![SketchRelationMember::from_index(20)]
-            .try_into()
-            .unwrap(),
-        owner_reference_offset: 0,
-        definition: SketchRelationDefinition::new(0x1_0000_0040, None).unwrap(),
-        entity_genesis: None,
-        return_members: vec![SketchRelationReturnMember::from_index(20)]
-            .try_into()
-            .unwrap(),
-        raw_bytes: vec![0; 160],
-    })
-    .unwrap();
-    let mut entity = cadmpeg_ir::sketches::SketchEntity::new(
-        SketchEntityId::mint("synthetic:test:id#projected-point").unwrap(),
-        crate::ids::neutral_sketch_id(&placement),
-        SketchGeometry::try_from(SketchGeometryDefinition::Point {
-            position: Point2::new(1.0, 2.0),
-        })
-        .unwrap(),
-    );
-    entity.native_ref = Some(point.id.clone());
-    (placement, point, unprojected_point, relation, entity)
-}
-
-fn assert_projected_constraint_refusal(operation: &'static str) {
-    let (placement, point, unprojected_point, relation, entity) = projected_constraint_fixture();
-    let placements = [placement];
-    let points = [point, unprojected_point];
-    let relations = [relation];
-    let entities = [entity];
-    for limit in 0..64 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match super::project_sketch_constraints(
-            &ctx,
-            &placements,
-            &[],
-            (&points, &[], &[]),
-            &relations,
-            &entities,
-        ) {
-            Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
-            Err(CodecError::ResourceLimit(_)) => {}
-            other => panic!("expected collection refusal at {operation}: {other:?}"),
-        }
-    }
-    panic!("no refusal at {operation}");
-}
-
-fn assert_projected_constraint_retained_refusal(operation: &'static str) {
-    let (placement, point, unprojected_point, relation, entity) = projected_constraint_fixture();
-    let placements = [placement];
-    let points = [point, unprojected_point];
-    let relations = [relation];
-    let entities = [entity];
-    {
-        let error = cadmpeg_test_support::refusal::resource_limit_at(
-            ResourceDimension::RetainedBytes,
-            operation,
-            |cap| {
-                let arena = DecodeArena::new();
-                let mut policy = DecodePolicy::default();
-                policy.limits.max_retained_bytes = cap;
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-                super::project_sketch_constraints(
-                    &ctx,
-                    &placements,
-                    &[],
-                    (&points, &[], &[]),
-                    &relations,
-                    &entities,
-                )
-            },
-        );
-        assert!(matches!(error, CodecError::ResourceLimit(failure)
-            if failure.operation == operation && failure.dimension == (ResourceDimension::RetainedBytes)));
-    }
-}
-
-#[test]
-fn projected_constraint_refuses_sketch_id_copy() {
-    assert_projected_constraint_retained_refusal("f3d sketch constraint sketch id");
-}
-
-#[test]
-fn projected_constraint_refuses_native_entity_id_copy() {
-    assert_projected_constraint_retained_refusal("f3d sketch constraint native entity id");
-}
-
-#[test]
-fn projected_constraint_refuses_operand_native_reference_copy() {
-    assert_projected_constraint_retained_refusal("f3d sketch constraint operand native reference");
-}
-
-#[test]
-fn projected_constraint_refuses_relation_native_reference_copy() {
-    assert_projected_constraint_retained_refusal("f3d sketch constraint native reference");
-}
-
-#[test]
-fn projected_constraint_refuses_input_entity_growth() {
-    assert_projected_constraint_refusal("f3d sketch constraint input entity");
-}
-
-#[test]
-fn projected_constraint_refuses_semantic_entity_growth() {
-    assert_projected_constraint_refusal("f3d sketch constraint semantic entity");
-}
-
-#[test]
-fn projected_constraint_refuses_native_entity_growth() {
-    assert_projected_constraint_refusal("f3d sketch constraint native entity");
-}
-
-#[test]
-fn projected_constraint_refuses_native_operand_growth() {
-    assert_projected_constraint_refusal("f3d sketch constraint native operand");
-}
-
-#[test]
-fn projected_constraint_refuses_output_growth() {
-    assert_projected_constraint_refusal("f3d projected sketch constraint");
 }
 
 #[test]

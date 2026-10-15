@@ -259,33 +259,6 @@ fn surface_stitch_fixture() -> StitchFixture {
 }
 
 #[test]
-fn surface_stitch_group_collection_refuses_limit() {
-    let mut fixture = surface_stitch_fixture();
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let result = bind_feature_face_selections(
-        &ctx,
-        std::slice::from_mut(&mut fixture.feature),
-        &mut fixture.input_topologies,
-        crate::history::FeatureFaceSelectionInputs {
-            scopes: std::slice::from_ref(&fixture.scope),
-            groups: &fixture.groups,
-            operands: &[],
-            entity_operands: &fixture.operands,
-            body_recipe_operands: &[],
-            histories: std::slice::from_ref(&fixture.history),
-        },
-    );
-    assert!(matches!(
-        result,
-        Err(cadmpeg_core::CodecError::ResourceLimit { .. })
-    ));
-}
-
-#[test]
 fn surface_stitch_binds_all_unique_entity_face_candidates() {
     use crate::records::topology::{
         body_recipe::AsmHistoricalEntityKind, entity_selection::DesignEntitySelectionFaceCandidate,

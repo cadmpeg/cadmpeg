@@ -34,7 +34,7 @@ fn feature_timeline_native_retained_limit_refuses_before_record_clone() {
 
     let record = timeline();
     let arena_name = "design_feature_timelines";
-    let needed = serde_json::to_vec(&record).unwrap().len() + arena_name.len();
+    let needed = serde_json::to_vec(&record).unwrap().len();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = u64::try_from(needed).unwrap() - 1;
@@ -80,7 +80,7 @@ fn entity_header_native_retained_limit_refuses_before_record_clone() {
 
     let record = header();
     let arena_name = "design_entity_headers";
-    let needed = serde_json::to_vec(&record).unwrap().len() + arena_name.len();
+    let needed = serde_json::to_vec(&record).unwrap().len();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = u64::try_from(needed).unwrap() - 1;
@@ -136,7 +136,7 @@ fn segment_type_native_retained_limit_refuses_before_record_clone() {
         r#", "base_type_guid":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee","base_type_guid_offset":44"#,
     );
     let arena_name = "design_types";
-    let needed = serde_json::to_vec(&entry).unwrap().len() + arena_name.len();
+    let needed = serde_json::to_vec(&entry).unwrap().len();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = u64::try_from(needed).unwrap() - 1;

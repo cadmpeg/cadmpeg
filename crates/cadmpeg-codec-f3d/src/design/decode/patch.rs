@@ -5,8 +5,7 @@
 use super::sketch::IndexedRecordOffsets;
 use crate::design::decode::scopes::shared_frames::marked_record_reference;
 use crate::records::feature::surface_ops::{DesignPatchContinuity, DesignSurfacePatchBoundary};
-use cadmpeg_core::decode::{DecodeContext, View};
-use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::View;
 
 /// Payload offset of the record's class level, past the indexed header of a
 /// record whose display name is empty.
@@ -20,11 +19,10 @@ const PAYLOAD: usize = 19;
 /// offered to the record grammar and only the members it closes are kept. The
 /// single-group path form carries no settings record and therefore yields none.
 pub(super) fn surface_patch_boundaries(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     reference_members: &[u32],
-) -> Result<Vec<DesignSurfacePatchBoundary>, CodecError> {
+) -> Vec<DesignSurfacePatchBoundary> {
     let mut boundaries = Vec::new();
     for (ordinal, record_index) in reference_members.iter().enumerate() {
         let Some(mut boundary) = records
@@ -38,11 +36,9 @@ pub(super) fn surface_patch_boundaries(
         };
         boundary.scope_reference_ordinal = ordinal;
         boundary.record_index = *record_index;
-
-        ctx.reserve_vec(&mut boundaries, 1, "f3d SurfacePatch boundaries")?;
         boundaries.push(boundary);
     }
-    Ok(boundaries)
+    boundaries
 }
 
 /// One boundary-settings record read at the indexed header offset `at`.

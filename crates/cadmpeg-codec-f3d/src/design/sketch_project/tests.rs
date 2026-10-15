@@ -1410,4 +1410,4 @@ fn surface_only_owner_preserves_planar_and_spatial_projection_policies() {
 
 const EPS_CONTAINMENT_DISTANCE: f64 = 1.0e-9;
 
-mod projection_limits;
+mod spline_projection;

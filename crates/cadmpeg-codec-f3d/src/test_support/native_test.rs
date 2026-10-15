@@ -19,11 +19,20 @@ pub(crate) fn assert_borrowed_native_retained_limit<T: Serialize>(
 ) {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
-    let needed =
-        arena_name.len() + 4 * std::mem::size_of::<cadmpeg_ir::NativeRecord>() + "id".len();
     let arena = DecodeArena::new();
+    let (service, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let mut stored = cadmpeg_ir::NativeNamespace::default();
+    stored
+        .set_arena(&service, arena_name, std::slice::from_ref(record))
+        .unwrap();
+    assert_eq!(stored.arenas()[arena_name].len(), 1);
+
+    // The stored text is the record's only retained charge, so a ceiling one
+    // byte below its length refuses the record.
+    let text = serde_json::to_string(&stored.arenas()[arena_name][0]).unwrap();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = u64::try_from(needed).unwrap() - 1;
+    policy.limits.max_retained_bytes = u64::try_from(text.len()).unwrap() - 1;
     let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     reset_clone_count();
@@ -37,13 +46,6 @@ pub(crate) fn assert_borrowed_native_retained_limit<T: Serialize>(
             if limit.dimension == ResourceDimension::RetainedBytes
                 && limit.operation == "serialize native record"
     ));
-
-    let (service, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    namespace
-        .set_arena(&service, arena_name, std::slice::from_ref(record))
-        .unwrap();
-    assert_eq!(namespace.arenas()[arena_name].len(), 1);
 }
 
 pub(crate) trait TestEncode {

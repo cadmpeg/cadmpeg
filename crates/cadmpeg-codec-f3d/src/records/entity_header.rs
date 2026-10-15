@@ -4,7 +4,6 @@
 #[cfg(test)]
 use cadmpeg_core::decode::u64_from_index;
 
-use super::admission::RecordAdmission;
 use super::identity::{DesignEntityId, Located, NativeRecordId, ReferenceRun};
 use super::mesh::DesignRelaxedGuidText;
 use super::references::DesignClassTag;
@@ -355,37 +354,14 @@ pub(crate) struct DesignTimelineFrame {
     items: Vec<Located<u64>>,
 }
 
-/// Why a timeline frame was not admitted.
-#[derive(Debug)]
-pub(crate) enum DesignTimelineFrameError {
-    Invalid(String),
-    Resource(cadmpeg_core::CodecError),
-}
-
-impl From<&'static str> for DesignTimelineFrameError {
-    fn from(message: &'static str) -> Self {
-        Self::Invalid(message.into())
-    }
-}
-
-impl From<DesignTimelineFrameError> for String {
-    fn from(error: DesignTimelineFrameError) -> Self {
-        match error {
-            DesignTimelineFrameError::Invalid(message) => message,
-            DesignTimelineFrameError::Resource(error) => error.to_string(),
-        }
-    }
-}
-
 impl DesignTimelineFrame {
     pub(crate) fn new(
-        admission: RecordAdmission<'_, '_>,
         byte_offset: u64,
         frame_length: u64,
         context_record_index_offset: u64,
         item_count_offset: u64,
         items: Vec<Located<u64>>,
-    ) -> Result<Self, DesignTimelineFrameError> {
+    ) -> Result<Self, String> {
         let end = byte_offset
             .checked_add(frame_length)
             .ok_or("timeline.frame_length overflows byte_offset")?;
@@ -424,15 +400,7 @@ impl DesignTimelineFrame {
         // The offset check above leaves `items` in ascending offset order.
         let mut seen = std::collections::BTreeMap::new();
         for item in &items {
-            let repeated = admission
-                .insert_btree_map(
-                    &mut seen,
-                    item.value,
-                    true,
-                    "index F3D timeline item record indices",
-                )
-                .map_err(DesignTimelineFrameError::Resource)?
-                .is_some();
+            let repeated = seen.insert(item.value, true).is_some();
             if item.value == 0 || repeated {
                 return Err("timeline.item_record_indices must be nonzero and unique".into());
             }
@@ -467,7 +435,6 @@ impl DesignTimelineFrame {
             })
             .collect::<Vec<_>>();
         Self::new(
-            RecordAdmission::Admitted,
             byte_offset,
             34 + u64_from_index(items.len()) * 11,
             byte_offset + 20,
@@ -652,7 +619,6 @@ impl TryFrom<DesignFeatureTimelineWire> for DesignFeatureTimeline {
         Self::try_new(
             wire.id,
             DesignTimelineFrame::new(
-                RecordAdmission::Admitted,
                 wire.byte_offset,
                 wire.frame_length,
                 wire.context_record_index_offset,
