@@ -5993,6 +5993,9 @@ fn native_support_pcurve_for_range(
                 cone_surface.radius().get() / LEN_TO_MM,
             )
         }
+        SurfaceGeometry::Solved(
+            SolvedSurfaceGeometry::Sphere(_) | SolvedSurfaceGeometry::Torus(_),
+        ) => Some(NativeChart::LatitudeFirst { reverse_v: false }),
         _ => return Ok(native.into_owned()),
     };
     let chart = chart.ok_or_else(|| {
@@ -6079,11 +6082,13 @@ mod pcurve_chart_tests {
     }
 
     /// The native pcurve chart of each support `native_embedded_surface`
-    /// writes: plane lengths in centimetres and cone `(axial / (direction cos
-    /// r), azimuth)`.
+    /// writes: plane lengths in centimetres, cone `(axial / (direction cos
+    /// r), azimuth)`, and sphere and torus latitude first.
     #[test]
     fn writer_native_support_pcurves_follow_the_native_charts() {
-        use cadmpeg_ir::geometry::analytic::{ConeSurface, CylinderSurface, PlaneSurface};
+        use cadmpeg_ir::geometry::analytic::{
+            ConeSurface, CylinderSurface, PlaneSurface, SphereSurface, TorusSurface,
+        };
         let origin = Point3::new(0.0, 0.0, 0.0);
         let axis = Vector3::new(0.0, 0.0, 1.0);
         let reference = Vector3::new(1.0, 0.0, 0.0);
@@ -6113,6 +6118,18 @@ mod pcurve_chart_tests {
                     CylinderSurface::try_new(origin, axis, reference, 12.0).unwrap(),
                 )),
                 neutral.map(|p| Point2::new(p.v / 12.0, p.u)),
+            ),
+            (
+                solved(SolvedSurfaceGeometry::Sphere(
+                    SphereSurface::try_new(origin, axis, reference, 12.0).unwrap(),
+                )),
+                neutral.map(|p| Point2::new(p.v, p.u)),
+            ),
+            (
+                solved(SolvedSurfaceGeometry::Torus(
+                    TorusSurface::try_new(origin, axis, reference, 12.0, 3.0).unwrap(),
+                )),
+                neutral.map(|p| Point2::new(p.v, p.u)),
             ),
         ];
         for half_angle in [0.5_f64, -0.5] {

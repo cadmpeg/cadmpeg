@@ -288,12 +288,13 @@ A negative radius identifies an inward-facing, concave feature; the sign is part
 | 1 | `radius` | `sab_f64` | little | spec | **signed** radius (f64) |
 | 2 | `dir1_equator` | `subrecord` | little | spec | Token tag not stated. |
 | 3 | `dir2_polar_axis` | `subrecord` | little | spec | Token tag not stated. |
+| 4 | `v_sense` | `sab_logical` | little | spec | dir2 (polar axis), v-sense logical |
 
 ## `torus_surface`
 
 Spec §6.2 · layout: ordered slots (no stated byte offsets) · size: 142 B
 
-The 142-byte form ends at the range flag `0x0b`. A `0x0a` range flag selects the 160-byte variant, which appends start and end angles. `minor < 0` with `|minor| ≤ |major|` describes an apple/lemon torus.
+The 142-byte form stores four absent parameter bounds. The 160-byte form stores two present bounds. `minor < 0` with `|minor| ≤ |major|` describes an apple/lemon torus.
 
 | # | Slot | Type | Endian | Src | Meaning |
 | -: | ---- | ---- | ------ | --- | ------- |
@@ -302,7 +303,7 @@ The 142-byte form ends at the range flag `0x0b`. A `0x0a` range flag selects the
 | 2 | `major_radius` | `sab_f64` | little | spec | `major_radius` (f64) |
 | 3 | `minor_radius` | `sab_f64` | little | spec | **signed** `minor_radius` (f64) |
 | 4 | `ref_direction` | `sab_vector3d` | little | spec | Token tag not stated; typed here as the vector token used by the other frame directions. |
-| 5 | `range_flag` | `sab_logical` | little | spec | then a range flag (`0x0b` = full 142-B variant; `0x0a` = 160-B variant with start/end angles) |
+| 5 | `v_sense` | `sab_logical` | little | spec | then the v-sense logical and four optional parameter bounds |
 
 ## `straight_curve`
 

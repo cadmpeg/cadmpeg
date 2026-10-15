@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Native pcurve charts of analytic support carriers ([spec §6.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/asm.md#62-analytic-surface-byte-layouts)).
 //!
-//! A pcurve on a `plane` or `cone` stores its control points in that
-//! carrier's native parameterization. [`NativeChart`] is that
+//! A pcurve on a `plane`, `cone`, `sphere`, or `torus` stores its control
+//! points in that carrier's native parameterization. [`NativeChart`] is that
 //! parameterization in the carrier's own frame. [`SupportChart`] converts a
 //! decoded pcurve to the neutral chart of
 //! [`cadmpeg_ir::geometry::SurfaceGeometry`].
@@ -15,8 +15,9 @@ use cadmpeg_ir::math::Point2;
 
 /// The native pcurve chart of an analytic carrier in the carrier's own frame.
 ///
-/// Frame coordinates are `(u, v)` document lengths on a plane and `(azimuth,
-/// axial distance)` on a cone.
+/// Frame coordinates are `(u, v)` document lengths on a plane, `(azimuth,
+/// axial distance)` on a cone, and `(longitude, latitude)` on a sphere or
+/// torus.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum NativeChart {
     /// Native lengths along `u_dir` and along `normal × u_dir`; `reverse_v`
@@ -30,6 +31,12 @@ pub enum NativeChart {
         /// Nonzero document-length axial distance per unit of the first
         /// coordinate.
         axial_scale: f64,
+    },
+    /// Latitude first and longitude about the axis from the reference
+    /// direction second; `reverse_v` negates the longitude.
+    LatitudeFirst {
+        /// The surface v-sense slot.
+        reverse_v: bool,
     },
 }
 
@@ -53,6 +60,9 @@ impl NativeChart {
                 native.v * sense_sign(reverse_v) * LEN_TO_MM,
             ),
             Self::Cone { axial_scale } => Point2::new(native.v, native.u * axial_scale),
+            Self::LatitudeFirst { reverse_v } => {
+                Point2::new(native.v * sense_sign(reverse_v), native.u)
+            }
         }
     }
 
@@ -65,6 +75,9 @@ impl NativeChart {
                 frame.v * sense_sign(reverse_v) / LEN_TO_MM,
             ),
             Self::Cone { axial_scale } => Point2::new(frame.v / axial_scale, frame.u),
+            Self::LatitudeFirst { reverse_v } => {
+                Point2::new(frame.v, frame.u * sense_sign(reverse_v))
+            }
         }
     }
 }
@@ -112,6 +125,25 @@ impl SupportChart {
                 let cosine = cur.take_f64()?;
                 let u_scale = cur.take_f64()?;
                 Some(Self::Native(NativeChart::cone(sine, cosine, u_scale)?))
+            }
+            "sphere" => {
+                cur.take_position()?;
+                cur.take_f64()?;
+                cur.take_vector3()?;
+                cur.take_vector3()?;
+                Some(Self::Native(NativeChart::LatitudeFirst {
+                    reverse_v: cur.take_bool()?,
+                }))
+            }
+            "torus" => {
+                cur.take_position()?;
+                cur.take_vector3()?;
+                cur.take_f64()?;
+                cur.take_f64()?;
+                cur.take_vector3()?;
+                Some(Self::Native(NativeChart::LatitudeFirst {
+                    reverse_v: cur.take_bool()?,
+                }))
             }
             _ => Some(Self::Canonical),
         }
