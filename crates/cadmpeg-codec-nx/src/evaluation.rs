@@ -804,10 +804,18 @@ fn suppression_is_body_census_invariant(
             || feature_completeness::output_free_local_body_construction(feature));
     let output_free_combine = feature.evaluation.outputs().is_empty()
         && matches!(
-            feature.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Combine { operands,  .. }) if matches!((operands.target(), operands.tools(),), (target, tools,) if complete_local_or_native_body_selection(target)
+            feature.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Combine { operands,  .. }) if matches!(
+                (operands.target(), operands.tools(),),
+                (target, tools,) if complete_local_or_native_body_selection(target)
                     && complete_local_or_native_body_selection(tools)));
     let local_tool_combine = matches!(
-        feature.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Combine { operands,  .. }) if matches!((operands.target(), operands.tools(),), (target, tools,) if local_tool_combine_is_census_invariant(feature, target, tools, bodies)));
+    feature.evaluation.definition(),
+    FeatureDefinition::Operation(FeatureOperation::Combine { operands,  .. })
+        if matches!(
+            (operands.target(), operands.tools(),),
+            (target, tools,)
+                if local_tool_combine_is_census_invariant(feature, target, tools, bodies)
+        ));
     let output_free_boolean_construction = output_free_local_body_construction(feature)
         && matches!(
             feature.evaluation.definition(),

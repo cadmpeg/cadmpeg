@@ -81,9 +81,13 @@ fn native_occurrence_admission_preserves_caller_resource_refusals() {
         |policy| policy.limits.max_recursion_depth = 0,
         |ctx| {
             let error = crate::NxCodec::validate_native(ctx, &ir).unwrap_err();
-            assert!(
-                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RecursionDepth && Some(limit) == ctx.resource_refusal())
-            );
+            assert!(matches!(
+                error,
+                cadmpeg_core::CodecError::ResourceLimit(limit)
+                    if limit.dimension
+                    == cadmpeg_core::decode::ResourceDimension::RecursionDepth
+                    && Some(limit) == ctx.resource_refusal()
+            ));
         },
     );
 }
