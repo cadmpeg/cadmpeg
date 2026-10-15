@@ -22,6 +22,7 @@ use crate::source_fidelity::SourceFidelity;
 use cadmpeg_core::target::TargetCatalog;
 use cadmpeg_core::CodecError;
 
+mod carried;
 mod coverage;
 mod loss;
 pub mod target;
