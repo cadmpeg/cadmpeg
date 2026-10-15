@@ -1419,14 +1419,11 @@ impl F3dNative {
             let mut relations = Vec::new();
 
             for wire in wires {
-                relations.push(SketchRelation::from_wire_charged(wire).map_err(
-                    |error| match error {
-                        cadmpeg_core::CodecError::ResourceLimit(_) => {
-                            cadmpeg_ir::NativeConvertError::Resource(error)
-                        }
-                        _ => cadmpeg_ir::NativeConvertError::InvalidCollection(error.to_string()),
-                    },
-                )?);
+                relations.push(SketchRelation::try_from(wire).map_err(|error| {
+                    cadmpeg_ir::NativeConvertError::InvalidCollection(
+                        cadmpeg_core::CodecError::Malformed(error.to_string()).to_string(),
+                    )
+                })?);
             }
             relations
         };

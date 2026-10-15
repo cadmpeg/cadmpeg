@@ -290,7 +290,7 @@ fn occurrence_merge_remaps_and_retains_native_records() {
 #[test]
 fn occurrence_configuration_survives_document_and_typed_native_admission() {
     use crate::records::configuration::{DesignConfiguration, DesignConfigurationKind};
-    let configuration = DesignConfiguration::try_new_charged(
+    let configuration = DesignConfiguration::try_new(
         "Design/table.dsgcfg".into(),
         DesignConfigurationKind::Table,
         Vec::new(),
@@ -347,7 +347,7 @@ fn occurrence_merge_scopes_admitted_native_references_and_preserves_configuratio
     .as_object()
     .expect("object configuration payload")
     .clone();
-    let configuration = DesignConfiguration::try_new_charged(
+    let configuration = DesignConfiguration::try_new(
         "Design/table.dsgcfg".into(),
         DesignConfigurationKind::Table,
         Vec::new(),

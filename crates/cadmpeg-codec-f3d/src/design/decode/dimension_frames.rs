@@ -1571,7 +1571,7 @@ fn parse_dimension_annotation_frame(
         owner_reference,
         owner_reference_offset: u64_from_index(paired_byte_offset + 20),
     };
-    match DesignDimensionAnnotationFrame::try_new_charged(draft) {
+    match DesignDimensionAnnotationFrame::try_new(draft) {
         Ok(frame) => Some(Ok(frame)),
         Err(error @ CodecError::ResourceLimit(_)) => Some(Err(error)),
         Err(_) => None,

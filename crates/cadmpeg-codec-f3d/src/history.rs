@@ -154,11 +154,8 @@ pub(crate) fn decode(
         .windows(PREAMBLE.len())
         .position(|window| window == PREAMBLE);
     let history_offset = preamble_offset.unwrap_or(0);
-    let history_id = crate::ids::native_scoped_id_charged(
-        stream,
-        "asm-history",
-        format_args!("{history_offset:010}"),
-    )?;
+    let history_id =
+        crate::ids::native_scoped_id(stream, "asm-history", format_args!("{history_offset:010}"));
     let mut delta_offsets = Vec::new();
     let mut search = 0usize;
     while let Some(relative) = bytes[search..]
@@ -172,11 +169,8 @@ pub(crate) fn decode(
     }
     let mut states = Vec::new();
     for (ordinal, &offset) in delta_offsets.iter().enumerate() {
-        let state_record_id = crate::ids::native_scoped_id_charged(
-            stream,
-            "asm-delta-state",
-            format_args!("{offset:010}"),
-        )?;
+        let state_record_id =
+            crate::ids::native_scoped_id(stream, "asm-delta-state", format_args!("{offset:010}"));
         let mut position = offset + DELTA.len();
         let Some((
             state_id,
@@ -206,7 +200,7 @@ pub(crate) fn decode(
             continue;
         }
         let Some((bulletin_boards, body_end)) =
-            decode_bulletin_boards(bytes, position + 1, stream, offset, &state_record_id, width)?
+            decode_bulletin_boards(bytes, position + 1, stream, offset, &state_record_id, width)
         else {
             return Ok(None);
         };
@@ -1834,7 +1828,7 @@ fn combine_external_local_tools(
         let Some(identity) = tool.external_identity.as_ref() else {
             return Ok(None);
         };
-        let id = crate::ids::neutral_combine_external_body_id_charged(identity);
+        let id = crate::ids::neutral_combine_external_body_id(identity);
 
         if bodies.iter().any(|body| body == &id) {
             return Ok(None);
@@ -7616,53 +7610,41 @@ fn decode_bulletin_boards(
     state_offset: usize,
     state_id: &str,
     width: RefWidth,
-) -> Result<Option<(Vec<AsmBulletinBoard>, usize)>, cadmpeg_core::CodecError> {
+) -> Option<(Vec<AsmBulletinBoard>, usize)> {
     if bytes.get(position) == Some(&0x11) {
-        return Ok(Some((Vec::new(), position)));
+        return Some((Vec::new(), position));
     }
     let mut boards = Vec::new();
     loop {
         let board_offset = position;
-        let Some(present) = take_int(bytes, &mut position, 0x04, width) else {
-            return Ok(None);
-        };
+        let present = take_int(bytes, &mut position, 0x04, width)?;
         if present == 0 {
             break;
         }
-        let Some(owner_ref) = take_int(bytes, &mut position, 0x0c, width) else {
-            return Ok(None);
-        };
-        let Some(number) = take_int(bytes, &mut position, 0x04, width) else {
-            return Ok(None);
-        };
-        let board_id = crate::ids::native_scoped_id_charged(
+        let owner_ref = take_int(bytes, &mut position, 0x0c, width)?;
+        let number = take_int(bytes, &mut position, 0x04, width)?;
+        let board_id = crate::ids::native_scoped_id(
             stream,
             "asm-bulletin-board",
             format_args!("{state_offset:010}:{:06}", boards.len()),
-        )?;
+        );
         let mut changes = Vec::new();
         loop {
             let change_offset = position;
-            let Some(present) = take_int(bytes, &mut position, 0x04, width) else {
-                return Ok(None);
-            };
+            let present = take_int(bytes, &mut position, 0x04, width)?;
             if present == 0 {
                 break;
             }
-            let Some(old) = take_int(bytes, &mut position, 0x0c, width) else {
-                return Ok(None);
-            };
-            let Some(new) = take_int(bytes, &mut position, 0x0c, width) else {
-                return Ok(None);
-            };
+            let old = take_int(bytes, &mut position, 0x0c, width)?;
+            let new = take_int(bytes, &mut position, 0x0c, width)?;
             let kind = match (old >= 0, new >= 0) {
                 (false, true) => AsmEntityChangeKind::Insert { new },
                 (true, false) => AsmEntityChangeKind::Delete { old },
                 (true, true) => AsmEntityChangeKind::Update { old, new },
-                (false, false) => return Ok(None),
+                (false, false) => return None,
             };
 
-            let change_id = crate::ids::native_scoped_id_charged(
+            let change_id = crate::ids::native_scoped_id(
                 stream,
                 "asm-entity-change",
                 format_args!(
@@ -7670,7 +7652,7 @@ fn decode_bulletin_boards(
                     boards.len(),
                     changes.len()
                 ),
-            )?;
+            );
             let parent = board_id.clone();
             changes.push(AsmEntityChange {
                 id: change_id,
@@ -7690,7 +7672,7 @@ fn decode_bulletin_boards(
             changes,
         });
     }
-    Ok(Some((boards, position)))
+    Some((boards, position))
 }
 
 fn decode_history_records(
@@ -7734,11 +7716,11 @@ fn decode_history_records(
                 })?;
                 let raw_bytes = source.to_vec();
 
-                let id = crate::ids::native_scoped_id_charged(
+                let id = crate::ids::native_scoped_id(
                     stream,
                     "asm-history-record",
                     format_args!("{:010}", record.offset),
-                )?;
+                );
                 let parent = state_id.to_owned();
                 decoded.push(AsmHistoryRecord {
                     id,
@@ -7762,11 +7744,11 @@ fn decode_history_records(
         Err(error) => {
             let raw_bytes = bytes[start..limit].to_vec();
             let mut decoded = Vec::new();
-            let id = crate::ids::native_scoped_id_charged(
+            let id = crate::ids::native_scoped_id(
                 stream,
                 "asm-history-record",
                 format_args!("{start:010}"),
-            )?;
+            );
             let parent = state_id.to_owned();
             let error = format!("{error}");
             decoded.push(AsmHistoryRecord {

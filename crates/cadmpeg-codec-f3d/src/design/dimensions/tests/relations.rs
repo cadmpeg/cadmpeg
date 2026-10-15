@@ -686,7 +686,7 @@ fn single_curve_annotation_projects_parameterized_offset() {
         },
     )
     .unwrap();
-    let frame = DesignDimensionAnnotationFrame::try_new_charged(
+    let frame = DesignDimensionAnnotationFrame::try_new(
         crate::records::dimensions::DesignDimensionAnnotationFrameDraft {
             id: format!("{stream}:design-dimension-annotation-frame#14"),
             companion_record_index: Some(15),
@@ -764,7 +764,7 @@ fn single_curve_annotation_projects_parameterized_offset() {
             && actual_parameter == parameter_id
     ));
 
-    let explicit_frame = DesignDimensionAnnotationFrame::try_new_charged(
+    let explicit_frame = DesignDimensionAnnotationFrame::try_new(
         crate::records::dimensions::DesignDimensionAnnotationFrameDraft {
             operands: vec![
                 DesignDimensionAnnotationOperand {

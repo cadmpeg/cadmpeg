@@ -92,7 +92,7 @@ pub(super) fn neutral_feature_id(
     ))
 }
 
-pub(super) fn neutral_parameter_id(
+pub(crate) fn neutral_parameter_id(
     parameter: &crate::records::parameters::DesignParameter,
 ) -> Result<cadmpeg_ir::features::ParameterId, CodecError> {
     let operation = "f3d parameter identifier";
@@ -105,7 +105,7 @@ pub(super) fn neutral_parameter_id(
     ))
 }
 
-pub(super) fn neutral_sketch_id(
+pub(crate) fn neutral_sketch_id(
     placement: &crate::records::sketch_placement::DesignSketchPlacement,
 ) -> Result<cadmpeg_ir::sketches::SketchId, CodecError> {
     let stream = crate::ids::native_stream(&placement.id).unwrap_or(crate::ids::DEFAULT_STREAM);
@@ -116,7 +116,7 @@ pub(super) fn neutral_sketch_id(
     ))
 }
 
-pub(super) fn neutral_spatial_sketch_id(
+pub(crate) fn neutral_spatial_sketch_id(
     placement: &crate::records::sketch_placement::DesignSketchPlacement,
 ) -> Result<cadmpeg_ir::sketches::SpatialSketchId, CodecError> {
     let stream = crate::ids::native_stream(&placement.id).unwrap_or(crate::ids::DEFAULT_STREAM);
@@ -222,7 +222,7 @@ pub(super) fn neutral_spatial_sketch_curve_id(
     ))
 }
 
-pub(super) fn neutral_sketch_constraint_id(
+pub(crate) fn neutral_sketch_constraint_id(
     native_ref: &str,
     record: u32,
 ) -> Result<cadmpeg_ir::sketches::SketchConstraintId, CodecError> {

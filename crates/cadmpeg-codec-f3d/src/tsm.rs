@@ -180,7 +180,7 @@ fn malformed(name: &str, message: impl std::fmt::Display) -> CodecError {
     CodecError::malformed(format_args!("T-spline cage {name}: {message}"))
 }
 
-fn subd_id_charged(name: &str, source_key: &str) -> Result<cadmpeg_ir::ids::SubdId, CodecError> {
+fn subd_id(name: &str, source_key: &str) -> Result<cadmpeg_ir::ids::SubdId, CodecError> {
     let key_text = source_key.to_owned();
     let key = cadmpeg_ir::ids::IdentityKey::try_new(key_text)
         .map_err(|error| malformed(name, format_args!("invalid subd identity: {error}")))?;
@@ -1587,7 +1587,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
         .unwrap_or(name);
     Ok(ParsedCage {
         surface: SubdSurface {
-            id: subd_id_charged(name, source_key)?,
+            id: subd_id(name, source_key)?,
             scheme: SubdScheme::CatmullClark,
             source_object: Some(SourceObjectAssociation {
                 geometry_role: None,
@@ -1641,7 +1641,7 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
 
     #[test]
     fn tsm_charged_source_identity_matches_composed_identity() {
-        let actual = super::subd_id_charged("synthetic.tsm", "synthetic").unwrap();
+        let actual = super::subd_id("synthetic.tsm", "synthetic").unwrap();
         assert_eq!(actual, crate::ids::subd_id("synthetic").unwrap());
     }
 

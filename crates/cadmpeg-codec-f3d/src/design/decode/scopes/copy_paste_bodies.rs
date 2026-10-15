@@ -104,7 +104,7 @@ pub(super) fn exact_copy_paste_bodies_operation(
                 },
             });
         }
-        Some(DesignCopyPasteBodiesOperation::try_new_charged(
+        Some(DesignCopyPasteBodiesOperation::try_new(
             bodies,
             body_ops::CopyPasteRecordLocation {
                 record_index: body_group_record_index,

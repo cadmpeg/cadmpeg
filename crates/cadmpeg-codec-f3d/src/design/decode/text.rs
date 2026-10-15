@@ -192,10 +192,9 @@ mod tests {
             for bounds in [0..=2000, 3..=3] {
                 let predicates: [fn(&u8) -> bool; 2] = [u8::is_ascii_graphic, u8::is_ascii_digit];
                 for allowed in predicates {
-                    let original = crate::bytes::lp_ascii_strict_charged(&bytes, 0, bounds.clone())
+                    let original = crate::bytes::lp_ascii_strict(&bytes, 0, bounds.clone())
                         .filter(|(text, _)| text.as_bytes().iter().all(allowed));
-                    let borrowed = lp_ascii_filtered_view(&bytes, 0, bounds.clone(), allowed)
-                        .map(|(value, end)| (value.to_owned(), end));
+                    let borrowed = lp_ascii_filtered_view(&bytes, 0, bounds.clone(), allowed);
                     assert_eq!(borrowed, original);
                     bytes.pop();
                     assert_eq!(

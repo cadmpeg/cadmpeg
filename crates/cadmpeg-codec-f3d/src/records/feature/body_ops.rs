@@ -216,7 +216,7 @@ pub(crate) struct CopyPasteRecordLocation {
 }
 
 impl DesignCopyPasteBodiesOperation {
-    pub(crate) fn try_new_charged(
+    pub(crate) fn try_new(
         bodies: Vec<DesignCopiedBody>,
         body_group: CopyPasteRecordLocation,
         relation: CopyPasteRecordLocation,

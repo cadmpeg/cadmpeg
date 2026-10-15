@@ -84,15 +84,6 @@ pub(crate) fn lp_ascii_strict(
     Some((std::str::from_utf8(raw).ok()?, end))
 }
 
-/// Read a bounded strict-UTF-8 string and copy it.
-pub(crate) fn lp_ascii_strict_charged(
-    bytes: &[u8],
-    at: usize,
-    bounds: RangeInclusive<usize>,
-) -> Option<(String, usize)> {
-    lp_ascii_strict(bytes, at, bounds).map(|(text, end)| (text.to_owned(), end))
-}
-
 /// Read an ASCII-only length-prefixed field without copying its contents.
 pub(crate) fn lp_ascii_filtered_view(
     bytes: &[u8],
@@ -237,7 +228,7 @@ impl Reference<String, String> {
 }
 
 /// Take one reference and copy the text it keeps.
-pub(crate) fn take_reference_charged(
+pub(crate) fn take_owned_reference(
     bytes: &[u8],
     at: &mut usize,
 ) -> Option<Reference<String, String>> {
@@ -485,7 +476,7 @@ mod tests {
         crate::test_support::lp_utf16(&mut bytes, "11111111-2222-3333-4444-555555555555");
         crate::test_support::lp_utf16(&mut bytes, "urn:version:discarded");
         let mut at = 0;
-        let reference = super::take_reference_charged(&bytes, &mut at).unwrap();
+        let reference = super::take_owned_reference(&bytes, &mut at).unwrap();
         assert_eq!(reference.link_name(), Some("link"));
         assert_eq!(reference.target(), Some(7));
         assert_eq!(at, bytes.len());
@@ -496,7 +487,7 @@ mod tests {
         crate::test_support::lp_utf16(&mut cross_segment, "11111111-2222-3333-4444-555555555555");
         cross_segment.push(1);
         let mut at = 0;
-        let reference = super::take_reference_charged(&cross_segment, &mut at).unwrap();
+        let reference = super::take_owned_reference(&cross_segment, &mut at).unwrap();
         assert!(matches!(
             reference,
             super::Reference::CrossSegment {

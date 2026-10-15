@@ -6,7 +6,7 @@ use cadmpeg_core::decode::u64_from_index;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 
-use crate::bytes::{is_guid_hyphenated, lp_ascii_strict_charged, lp_utf16_bounded};
+use crate::bytes::{is_guid_hyphenated, lp_ascii_strict, lp_utf16_bounded};
 use crate::records::entity_header::SegmentTypeData;
 
 /// Serializer magic that selects the modern `MetaStream` header group.
@@ -177,12 +177,12 @@ impl From<CodecError> for ParseIssue {
     }
 }
 
-fn lp_graphic_charged(
+fn lp_graphic(
     bytes: &[u8],
     at: usize,
     bounds: std::ops::RangeInclusive<usize>,
-) -> Option<(String, usize)> {
-    lp_ascii_strict_charged(bytes, at, bounds)
+) -> Option<(&str, usize)> {
+    lp_ascii_strict(bytes, at, bounds)
         .filter(|(value, _)| value.as_bytes().iter().all(u8::is_ascii_graphic))
 }
 
@@ -302,11 +302,7 @@ fn take_version_context(bytes: &[u8], at: &mut usize) -> Result<(), ParseIssue> 
 }
 
 fn parse_segment_header(bytes: &[u8]) -> Result<(u32, usize), ParseIssue> {
-    let (_, at) = require(
-        lp_graphic_charged(bytes, 0, 1..=256),
-        "short segment type name",
-        0,
-    )?;
+    let (_, at) = require(lp_graphic(bytes, 0, 1..=256), "short segment type name", 0)?;
     let at = require(at.checked_add(4), "segment id", at)?;
     let (_, at) = require(lp_utf16_bounded(bytes, at, 0..=256), "asset GUID", at)?;
     let magic = require(View::u32_le_at(bytes, at), "serializer magic", at)?;
@@ -350,12 +346,8 @@ fn parse_inner(bytes: &[u8]) -> Result<MetaStream, ParseIssue> {
     // magic and its magic-gated integer group, full segment type name, add-in
     // name, and the segment type code.
     let (_, at) = parse_segment_header(bytes)?;
-    let (_, at) = require(
-        lp_graphic_charged(bytes, at, 1..=256),
-        "full segment type name",
-        at,
-    )?;
-    let (_, at) = require(lp_graphic_charged(bytes, at, 0..=256), "add-in name", at)?;
+    let (_, at) = require(lp_graphic(bytes, at, 1..=256), "full segment type name", at)?;
+    let (_, at) = require(lp_graphic(bytes, at, 0..=256), "add-in name", at)?;
     let mut at = require(at.checked_add(8), "segment type code", at)?;
     require(bytes.get(..at), "segment type code", at.min(bytes.len()))?;
 
@@ -368,8 +360,8 @@ fn parse_inner(bytes: &[u8]) -> Result<MetaStream, ParseIssue> {
         let entry_at = at;
         let type_guid_offset = require(at.checked_add(4), "type GUID", at)?;
         let (type_guid, next) = require(
-            lp_graphic_charged(bytes, at, 1..=256).and_then(|(guid, next)| {
-                crate::records::mesh::DesignRelaxedGuidText::try_from(guid)
+            lp_graphic(bytes, at, 1..=256).and_then(|(guid, next)| {
+                crate::records::mesh::DesignRelaxedGuidText::try_from(guid.to_owned())
                     .ok()
                     .map(|guid| (guid, next))
             }),
@@ -379,11 +371,11 @@ fn parse_inner(bytes: &[u8]) -> Result<MetaStream, ParseIssue> {
         at = next;
         let base_type_guid_offset = require(at.checked_add(4), "base type GUID", at)?;
         let (base_type_guid, next) = require(
-            lp_graphic_charged(bytes, at, 0..=256).and_then(|(guid, next)| {
+            lp_graphic(bytes, at, 0..=256).and_then(|(guid, next)| {
                 if guid.is_empty() {
                     Some((None, next))
                 } else {
-                    crate::records::mesh::DesignRelaxedGuidText::try_from(guid)
+                    crate::records::mesh::DesignRelaxedGuidText::try_from(guid.to_owned())
                         .ok()
                         .map(|guid| (Some(guid), next))
                 }
@@ -395,7 +387,7 @@ fn parse_inner(bytes: &[u8]) -> Result<MetaStream, ParseIssue> {
         let version_offset = at;
         let version = require(View::u32_le_at(bytes, at), "type version", at)?;
         at = require(at.checked_add(4), "type version", at)?;
-        let (module, next) = require(lp_graphic_charged(bytes, at, 0..=256), "type module", at)?;
+        let (module, next) = require(lp_graphic(bytes, at, 0..=256), "type module", at)?;
         at = next;
         let id_count = usize::try_from(require(
             View::u32_le_at(bytes, at),
@@ -453,7 +445,7 @@ fn parse_inner(bytes: &[u8]) -> Result<MetaStream, ParseIssue> {
             ),
             version,
             version_offset: u64_from_index(version_offset),
-            module,
+            module: module.to_owned(),
             entities: crate::records::identity::ReferenceRun::located(entity_rows),
         });
     }
@@ -491,8 +483,7 @@ fn parse_inner(bytes: &[u8]) -> Result<MetaStream, ParseIssue> {
             let properties = require(View::u32_le_at(bytes, at), "property count", at)?;
             at = require(at.checked_add(4), "property count", at)?;
             for _ in 0..properties {
-                let (_, next) =
-                    require(lp_graphic_charged(bytes, at, 0..=256), "property name", at)?;
+                let (_, next) = require(lp_graphic(bytes, at, 0..=256), "property name", at)?;
                 at = require(next.checked_add(4), "property value", next)?;
                 require(bytes.get(..at), "property value", at.min(bytes.len()))?;
             }

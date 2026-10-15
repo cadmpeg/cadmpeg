@@ -106,7 +106,7 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
             serde_json::json!({"parameters":{"width":"12 mm"},"suppressed":[]});
         let mut order = configuration.variant_order();
         order.push("Narrow".into());
-        *configuration = crate::records::configuration::DesignConfiguration::try_new_charged(
+        *configuration = crate::records::configuration::DesignConfiguration::try_new(
             configuration.entry_name().clone(),
             configuration.kind(),
             order,

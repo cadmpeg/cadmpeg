@@ -124,7 +124,7 @@ fn draft(base: u64) -> Draft {
 #[test]
 fn annotation_frame_preserves_nulls_duplicate_geometry_and_return_order() {
     let original = draft(100);
-    let frame = Frame::try_new_charged(original.clone())
+    let frame = Frame::try_new(original.clone())
         .map_err(|error| error.to_string())
         .unwrap();
     assert_eq!(frame.clone().into_draft(), original);
@@ -145,7 +145,7 @@ fn annotation_frame_preserves_nulls_duplicate_geometry_and_return_order() {
         operand.geometry_record_index = None;
     }
     all_null.return_members.clear();
-    assert!(Frame::try_new_charged(all_null)
+    assert!(Frame::try_new(all_null)
         .map_err(|error| error.to_string())
         .is_ok());
 }
@@ -155,7 +155,7 @@ fn annotation_frame_borrowed_wire_matches_owned_wire_bytes() {
     for companion in [None, Some(1)] {
         let mut input = draft(100);
         input.companion_record_index = companion;
-        let frame = Frame::try_new_charged(input)
+        let frame = Frame::try_new(input)
             .map_err(|error| error.to_string())
             .unwrap();
         let owned = super::DesignDimensionAnnotationFrameWire::from(frame.clone());
@@ -173,7 +173,7 @@ fn annotation_frame_native_retained_limit_refuses_before_clone() {
         id: &'static str,
         value: &'a Frame,
     }
-    let frame = Frame::try_new_charged(draft(100))
+    let frame = Frame::try_new(draft(100))
         .map_err(|error| error.to_string())
         .unwrap();
     let record = NestedRecord {
@@ -190,7 +190,7 @@ fn annotation_frame_native_retained_limit_refuses_before_clone() {
 
 #[test]
 fn annotation_frame_rejects_stale_offsets_and_changed_multisets() {
-    let frame = Frame::try_new_charged(draft(100))
+    let frame = Frame::try_new(draft(100))
         .map_err(|error| error.to_string())
         .unwrap();
     let wire = serde_json::to_value(&frame).unwrap();
@@ -229,7 +229,7 @@ fn annotation_frame_rejects_stale_offsets_and_changed_multisets() {
         .contains("return_members"));
     let mut empty = draft(100);
     empty.operands.clear();
-    assert!(Frame::try_new_charged(empty)
+    assert!(Frame::try_new(empty)
         .map_err(|error| error.to_string())
         .unwrap_err()
         .contains("operands"));
@@ -239,7 +239,7 @@ fn annotation_frame_rejects_stale_offsets_and_changed_multisets() {
 fn annotation_frame_rejects_unrepresentable_extents() {
     let valid = draft(u64::MAX - 320);
     assert_eq!(
-        Frame::try_new_charged(valid.clone())
+        Frame::try_new(valid.clone())
             .map_err(|error| error.to_string())
             .unwrap()
             .owner_reference_offset(),
@@ -247,13 +247,13 @@ fn annotation_frame_rejects_unrepresentable_extents() {
     );
     let mut overflow = valid;
     overflow.frame_length += 1;
-    assert!(Frame::try_new_charged(overflow)
+    assert!(Frame::try_new(overflow)
         .map_err(|error| error.to_string())
         .unwrap_err()
         .contains("owner_reference_offset"));
     let mut overflow = draft(0);
     overflow.byte_offset = u64::MAX;
-    assert!(Frame::try_new_charged(overflow)
+    assert!(Frame::try_new(overflow)
         .map_err(|error| error.to_string())
         .unwrap_err()
         .contains("annotation_byte_offset"));

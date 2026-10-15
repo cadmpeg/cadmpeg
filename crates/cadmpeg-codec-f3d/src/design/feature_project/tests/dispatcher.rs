@@ -743,7 +743,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         copy_paste_bodies.payload_mut()
     {
         *slot = Some(
-            DesignCopyPasteBodiesOperation::try_new_charged(
+            DesignCopyPasteBodiesOperation::try_new(
                 vec![crate::records::feature::body_ops::DesignCopiedBody {
                     operand: crate::records::identity::Located {
                         value: 502,

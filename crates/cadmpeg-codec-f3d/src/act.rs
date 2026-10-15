@@ -10,7 +10,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 
-use crate::bytes::{is_guid_hyphenated, lp_ascii_strict_charged, lp_utf16_bounded};
+use crate::bytes::{is_guid_hyphenated, lp_ascii_strict, lp_utf16_bounded};
 use crate::container::ContainerScan;
 use crate::metastream::MetaStream;
 use crate::records::{
@@ -92,8 +92,12 @@ fn decode_record_frames(
                     "duplicate F3D ACT primary record index {expected_index}: {stream}"
                 )));
             }
-            let (class_tag, after_tag) = lp_ascii_strict_charged(bytes, start, 3..=3)
-                .and_then(|(tag, after)| DesignClassTag::try_from(tag).ok().map(|tag| (tag, after)))
+            let (class_tag, after_tag) = lp_ascii_strict(bytes, start, 3..=3)
+                .and_then(|(tag, after)| {
+                    DesignClassTag::try_from(tag.to_owned())
+                        .ok()
+                        .map(|tag| (tag, after))
+                })
                 .ok_or_else(|| {
                     CodecError::malformed(format_args!(
                         "F3D ACT record lacks a dynamic class tag: {stream}@{start}"
@@ -346,7 +350,7 @@ fn decode_table(
         let ordinal = u32::try_from(guids.len()).map_err(|_| malformed("GUID ordinal"))?;
         guids.push(
             ActGuid::new(
-                crate::ids::native_scoped_id_charged(stream, "act-guid", byte_offset)?,
+                crate::ids::native_scoped_id(stream, "act-guid", byte_offset),
                 u64_from_index(byte_offset),
                 ordinal,
                 guid,
@@ -377,7 +381,7 @@ fn decode_table(
             marker_ref(bytes, cursor, 6, frame.end).ok_or_else(|| malformed("table reference"))?;
         table_references.push(
             ActTableReference::new(
-                crate::ids::native_scoped_id_charged(stream, "act-table-reference", byte_offset)?,
+                crate::ids::native_scoped_id(stream, "act-table-reference", byte_offset),
                 u32::try_from(ordinal).map_err(|_| malformed("table-reference ordinal"))?,
                 u64_from_index(byte_offset),
                 target_record,
@@ -405,22 +409,21 @@ fn decode_table(
     let mut registry_channels = Vec::new();
     for ordinal in 0..registry_count {
         let byte_offset = cursor;
-        let (name, after_name) = lp_ascii_strict_charged(bytes, cursor, 1..=128)
+        let (name, after_name) = lp_ascii_strict(bytes, cursor, 1..=128)
             .filter(|(name, end)| *end <= frame.end && name.is_ascii())
             .ok_or_else(|| malformed("channel-registry name"))?;
-        if registry_names.contains(&name) {
+        if !registry_names.insert(name) {
             return Err(malformed("duplicate channel-registry name"));
         }
-        registry_names.insert(name.clone());
         let (guid, end) = lp_utf16_bounded(bytes, after_name, 36..=36)
             .filter(|(guid, end)| *end <= frame.end && is_guid_hyphenated(guid))
             .ok_or_else(|| malformed("channel-registry GUID"))?;
         registry_channels.push(
             ActRegistryChannel::new(
-                crate::ids::native_scoped_id_charged(stream, "act-registry-channel", byte_offset)?,
+                crate::ids::native_scoped_id(stream, "act-registry-channel", byte_offset),
                 u32::try_from(ordinal).map_err(|_| malformed("channel-registry ordinal"))?,
                 u64_from_index(byte_offset),
-                name,
+                name.to_owned(),
                 guid,
             )
             .map_err(|_| malformed("channel-registry entry"))?,
@@ -492,7 +495,7 @@ fn merge_entities(
         )
         .map_err(CodecError::malformed)?;
         let entity = ActEntity::try_new(
-            crate::ids::native_scoped_id_charged(stream, "act-entity", record_index)?,
+            crate::ids::native_scoped_id(stream, "act-entity", record_index),
             record_index,
             entity_id,
             row,
@@ -533,7 +536,7 @@ fn decode_channel_group(
     let mut cursor = count_offset + 4;
     let mut channels = BTreeMap::new();
     for _ in 0..count {
-        let Some((name, after_name)) = lp_ascii_strict_charged(bytes, cursor, 1..=128)
+        let Some((name, after_name)) = lp_ascii_strict(bytes, cursor, 1..=128)
             .filter(|(name, after)| *after <= frame.end && name.is_ascii())
         else {
             return Ok(None);
@@ -545,7 +548,7 @@ fn decode_channel_group(
         };
         if channels
             .insert(
-                name.clone(),
+                name.to_owned(),
                 Located {
                     value: guid.try_into().map_err(CodecError::malformed)?,
                     offset: u64_from_index(after_name + 4),
@@ -662,7 +665,7 @@ fn decode_component_link(
     .ok();
     let layout = some!(layout);
     Ok(Some(ComponentLink::Root(some!(ActRootComponent::try_new(
-        crate::ids::native_scoped_id_charged(stream, "act-root-component", frame.start)?,
+        crate::ids::native_scoped_id(stream, "act-root-component", frame.start),
         frame.record_index,
         frame.class_tag.clone(),
         instance_root_record,
