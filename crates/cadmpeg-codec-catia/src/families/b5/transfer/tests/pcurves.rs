@@ -10,6 +10,7 @@ use crate::families::b5::transfer::{
 };
 const EPS_PCURVE_RESIDUAL_INCREMENT: f64 = 1.0e-9;
 
+use super::super::edges::merge_curve_plan;
 use super::super::faces::{orient_loop_members, ownership_plan};
 use super::super::pcurves::{
     cylinder_point, neutral_pcurve_point, oriented_line_plan, sphere_great_circle_geometry,
@@ -27,15 +28,6 @@ use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::AnnotationBuilder;
 use std::collections::{BTreeMap, HashMap, HashSet};
-
-fn merge_curve_plan(
-    plans: &mut HashMap<u32, CurvePlan>,
-    conflicts: &mut HashSet<u32>,
-    edge: u32,
-    candidate: CurvePlan,
-) {
-    super::super::edges::merge_curve_plan(plans, conflicts, edge, candidate);
-}
 
 fn oriented_nurbs_range(
     geometry: &CurveGeometry,

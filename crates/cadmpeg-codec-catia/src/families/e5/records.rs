@@ -932,10 +932,6 @@ mod tests {
         assert!(e5_torus(&bytes, 0).is_none());
     }
 
-    fn decoded_jets(bytes: &[u8]) -> Vec<super::E5RollingBallJet> {
-        e5_rolling_ball_jets(bytes)
-    }
-
     fn assert_close(actual: f64, expected: f64) {
         assert!((actual - expected).abs() <= TEST_F64_TOLERANCE);
     }
@@ -966,7 +962,7 @@ mod tests {
     fn d8_record_decodes_the_quintic_rolling_ball_jet() {
         let bytes = crate::test_support::test_e5::e5_d8_rolling_ball_stream();
 
-        let jets = decoded_jets(&bytes);
+        let jets = e5_rolling_ball_jets(&bytes);
         assert_eq!(jets.len(), 1);
         let jet = &jets[0];
         assert_eq!(jet.record_id, 42);
@@ -1014,7 +1010,7 @@ mod tests {
         let mut payload = crate::test_support::test_e5::e5_d8_rolling_ball_stream();
         let last = payload.len() - 3;
         payload[last] = 0;
-        assert!(decoded_jets(&payload).is_empty());
+        assert!(e5_rolling_ball_jets(&payload).is_empty());
     }
 
     fn nurbs_surface_payload(mode: u16) -> Vec<u8> {

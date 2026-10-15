@@ -1453,18 +1453,15 @@ pub(crate) fn parse_range_interval(
 #[cfg(test)]
 mod tests {
     use super::{
-        parse_definition_schema_selectors, parse_numeric_pair, parse_range_interval, value_packets,
-        DefinitionSchemaSelector, EntityBody, EntityIdentityCandidate, EntityRecord,
-        EntityRecordCandidates, EntityRecordLayout, EntityValuePacket, NumericPacketItem,
-        NumericPair, NumericPairSlot, PathCount, RangeInterval, RangeIntervalPrefix,
-        RangeIntervalSlot, ReferenceSignature, ReferenceSignatureInstruction,
-        ReferenceSignaturePrefix, ReferenceSignatureSymbol, ReferenceSignatureWire,
+        parse_definition_schema_selectors, parse_numeric_pair, parse_range_interval,
+        parse_reference_signature, unique_monotone_run, value_packets, DefinitionSchemaSelector,
+        EntityBody, EntityIdentityCandidate, EntityRecord, EntityRecordCandidates,
+        EntityRecordLayout, EntityValuePacket, NumericPacketItem, NumericPair, NumericPairSlot,
+        PathCount, RangeInterval, RangeIntervalPrefix, RangeIntervalSlot, ReferenceSignature,
+        ReferenceSignatureInstruction, ReferenceSignaturePrefix, ReferenceSignatureSymbol,
+        ReferenceSignatureWire,
     };
     use crate::value_block;
-
-    fn parse_reference_signature(payload: &[u8]) -> Option<ReferenceSignature> {
-        super::parse_reference_signature(payload)
-    }
 
     fn parse_runs(data: &[u8]) -> Vec<Vec<EntityRecord>> {
         let arena = cadmpeg_core::decode::DecodeArena::new();
@@ -1475,12 +1472,6 @@ mod tests {
         )
         .expect("entity-table fixture fits the service profile");
         super::parse_runs(&ctx, data).expect("entity-table fixture fits resource limits")
-    }
-
-    fn unique_monotone_run(
-        records: &[EntityRecordCandidates],
-    ) -> Option<Vec<EntityIdentityCandidate>> {
-        super::unique_monotone_run(records)
     }
 
     #[test]
