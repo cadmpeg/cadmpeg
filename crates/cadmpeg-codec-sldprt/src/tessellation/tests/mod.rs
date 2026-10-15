@@ -368,7 +368,6 @@ fn test_nurbs_surface() -> NurbsSurface {
         })
         .collect();
     NurbsSurface::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
             2,
             vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
@@ -382,7 +381,6 @@ fn test_nurbs_surface() -> NurbsSurface {
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(control_points, None),
         false,
     )
-    .expect("fixture constructor admission")
     .expect("valid test NURBS surface")
 }
 

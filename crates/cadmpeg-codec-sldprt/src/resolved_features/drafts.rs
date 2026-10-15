@@ -693,7 +693,6 @@ mod tests {
             references: Vec::new(),
             sketch_entities: Vec::new(),
         };
-        let arena = cadmpeg_core::decode::DecodeArena::new();
         let neutral = draft_plane_reference_at(&lane.native_payload, object_start, class_offset)
             .expect("neutral-plane record");
         assert_eq!(
@@ -752,14 +751,7 @@ mod tests {
             ),
             native_ref: Some("draft".into()),
         }];
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &lane.native_payload,
-            &arena,
-            &cadmpeg_core::decode::DecodePolicy::service(),
-        )
-        .expect("test decode context");
         super::super::projections::project_draft_operands(
-            &ctx,
             &mut projected,
             std::slice::from_ref(&history),
             std::slice::from_ref(&lane),
@@ -798,7 +790,6 @@ mod tests {
                 cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0)).unwrap();
         });
         super::super::projections::project_draft_operands(
-            &ctx,
             &mut projected,
             &[history],
             std::slice::from_ref(&lane),

@@ -1328,11 +1328,7 @@ fn project_extrusion(
     if let Err(error) = ctx.charge_entities(1, "project Inventor feature") {
         return Some(Err(error));
     }
-    let profile = match PlanarProfileRef::sketch_selection(sketch_id, selections, ctx) {
-        Ok(Ok(profile)) => profile,
-        Ok(Err(_)) => return None,
-        Err(limit) => return Some(Err(limit.into())),
-    };
+    let profile = PlanarProfileRef::sketch_selection(sketch_id, selections).ok()?;
     let feature = Feature {
         id: feature_id,
         ordinal: u64::from(label.index),
@@ -1703,18 +1699,9 @@ fn feature_result(
     if bodies.is_empty() {
         return None;
     }
-    let members = match cadmpeg_ir::features::FeatureResultMembers::new(
-        bodies,
-        Vec::new(),
-        Vec::new(),
-        Vec::new(),
-        ctx,
-        "precheck distinct Inventor feature result bodies",
-    ) {
-        Ok(Ok(members)) => members,
-        Ok(Err(_)) => return None,
-        Err(limit) => return Some(Err(limit.into())),
-    };
+    let members =
+        cadmpeg_ir::features::FeatureResultMembers::new(bodies, Vec::new(), Vec::new(), Vec::new())
+            .ok()?;
     if let Err(error) = ctx.charge_entities(1, "project Inventor feature result topology") {
         return Some(Err(error));
     }

@@ -2593,7 +2593,6 @@ impl<'a> F3dDecodeSession<'a> {
             &self.native.asm_histories,
         );
         self.ir.model.feature_input_topologies = crate::history::project_feature_input_topologies(
-            ctx,
             &self.ir.model.features,
             &self.native.design_parameter_scopes,
             &self.native.asm_histories,
@@ -2601,7 +2600,6 @@ impl<'a> F3dDecodeSession<'a> {
             &scope_histories,
         )?;
         crate::history::bind_feature_outputs(
-            ctx,
             &mut self.ir.model.features,
             &self.native.design_parameter_scopes,
             &self.native.asm_histories,
@@ -2609,7 +2607,6 @@ impl<'a> F3dDecodeSession<'a> {
         )?;
         crate::history::bind_sweep_result_modes(&mut self.ir.model.features, &self.ir.model.bodies);
         crate::history::bind_feature_body_selections(
-            ctx,
             &mut self.ir.model.features,
             &crate::history::FeatureBodySelectionInputs {
                 scopes: &self.native.design_parameter_scopes,
@@ -2624,7 +2621,6 @@ impl<'a> F3dDecodeSession<'a> {
             },
         )?;
         crate::history::bind_feature_face_selections(
-            self.ctx,
             &mut self.ir.model.features,
             &mut self.ir.model.feature_input_topologies,
             crate::history::FeatureFaceSelectionInputs {
@@ -2637,7 +2633,6 @@ impl<'a> F3dDecodeSession<'a> {
             },
         )?;
         crate::history::bind_feature_path_selections(
-            self.ctx,
             &mut self.ir.model.features,
             &self.native.design_parameter_scopes,
             &self.native.design_construction_operand_groups,
@@ -2695,7 +2690,6 @@ impl<'a> F3dDecodeSession<'a> {
                 spatial_sketches: &self.ir.model.spatial_sketches,
                 spatial_sketch_entities: &self.ir.model.spatial_sketch_entities,
             },
-            ctx,
         )?;
         crate::design::profile_select::bind_split_face_sketch_selections(
             &mut self.ir.model.features,
@@ -2710,7 +2704,6 @@ impl<'a> F3dDecodeSession<'a> {
                 spatial_sketches: &self.ir.model.spatial_sketches,
                 spatial_sketch_entities: &self.ir.model.spatial_sketch_entities,
             },
-            ctx,
         )?;
         crate::design::profile_select::bind_surface_trim_sketch_selections(
             &mut self.ir.model.features,
@@ -2725,10 +2718,8 @@ impl<'a> F3dDecodeSession<'a> {
                 spatial_sketches: &self.ir.model.spatial_sketches,
                 spatial_sketch_entities: &self.ir.model.spatial_sketch_entities,
             },
-            ctx,
         )?;
         crate::design::profile_select::bind_loft_and_revolve_sketch_selections(
-            ctx,
             scan,
             &self.native.design_construction_operand_groups,
             &self.native.design_record_headers,
@@ -2747,7 +2738,6 @@ impl<'a> F3dDecodeSession<'a> {
             &mut self.ir.model.features,
         )?;
         crate::design::feature_project::bind_sketch_feature_geometry(
-            self.ctx,
             &mut self.ir.model.features,
             &self.native.design_parameter_scopes,
             &self.native.design_sketch_placements,
@@ -2884,17 +2874,15 @@ impl<'a> F3dDecodeSession<'a> {
             .spatial_sketch_constraints
             .sort_by(|a, b| a.id.cmp(&b.id));
         crate::history::face_admission::admit_feature_input_faces(
-            ctx,
             &mut self.ir.model.features,
             &self.ir.model.feature_input_topologies,
             &self.ir.model.faces,
             &mut self.report.losses,
         )?;
         crate::design::configurations::bind_configuration_suppressed_features(
-            ctx,
             &mut self.ir.model.configurations,
             &self.ir.model.features,
-        )?;
+        );
         Ok(())
     }
 

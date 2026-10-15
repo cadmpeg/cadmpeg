@@ -351,7 +351,6 @@ mod tests {
     fn nurbs_pcurve_leaf() -> PcurveGeometry {
         PcurveGeometry::Nurbs {
             nurbs: crate::geometry::pcurve::PcurveNurbs::from_lanes(
-                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![
@@ -361,7 +360,6 @@ mod tests {
                 None,
                 false,
             )
-            .expect("fixture pcurve construction admission")
             .unwrap(),
         }
     }
@@ -499,11 +497,7 @@ mod tests {
             ordinal,
             name: None,
             suppressed: Some(false),
-            dependencies: crate::features::DistinctMembers::try_from(
-                dependencies,
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .unwrap(),
+            dependencies: crate::features::DistinctMembers::try_from(dependencies).unwrap(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,

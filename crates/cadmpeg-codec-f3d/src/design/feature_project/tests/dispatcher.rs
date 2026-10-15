@@ -977,23 +977,10 @@ fn loft_path_preserves_complete_historical_edge_selection() {
     assert_eq!(
         crate::design::feature_project::loft_path_from_edge_selection(
             "group",
-            EdgeSelection::historical(
-                state.clone(),
-                vec![edge.clone()],
-                "selection".into(),
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .expect("selection storage is admitted")
-            .unwrap(),
+            EdgeSelection::historical(state.clone(), vec![edge.clone()], "selection".into(),)
+                .unwrap(),
         ),
-        PathRef::historical_edges(
-            state.clone(),
-            vec![edge.clone()],
-            "selection".into(),
-            &cadmpeg_test_support::service_decode_context()
-        )
-        .expect("selection storage is admitted")
-        .unwrap()
+        PathRef::historical_edges(state.clone(), vec![edge.clone()], "selection".into(),).unwrap()
     );
     assert_eq!(
         crate::design::feature_project::loft_path_from_edge_selection(
@@ -1003,9 +990,7 @@ fn loft_path_preserves_complete_historical_edge_selection() {
                 vec![edge],
                 vec!["operand".into()],
                 "selection".into(),
-                &cadmpeg_test_support::service_decode_context(),
             )
-            .expect("selection storage is admitted")
             .unwrap(),
         ),
         PathRef::Native("group".into())
@@ -1132,10 +1117,7 @@ fn merged_direct_edges_keep_source_order_and_native_fallback() {
         EdgeSelection::Edges(vec![second.clone()]),
     ];
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            crate::design::feature_project::merge_edge_selections(decode_ctx, &scope, &selections)
-        })
-        .expect("unlimited merge"),
+        crate::design::feature_project::merge_edge_selections(&scope, &selections),
         EdgeSelection::Resolved {
             edges: vec![first.clone(), second],
             native: scope.id.clone(),
@@ -1146,10 +1128,7 @@ fn merged_direct_edges_keep_source_order_and_native_fallback() {
         EdgeSelection::Edges(vec![first]),
     ];
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            crate::design::feature_project::merge_edge_selections(decode_ctx, &scope, &duplicate)
-        })
-        .expect("unlimited duplicate scan"),
+        crate::design::feature_project::merge_edge_selections(&scope, &duplicate),
         EdgeSelection::Native(scope.id)
     );
 }

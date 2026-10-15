@@ -173,7 +173,6 @@ fn display_relation_synthesis_preserves_reference_parameter() {
 
 #[test]
 fn compact_surface_projection_binds_generated_thread_face_alias() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use cadmpeg_ir::features::{DatumPlaneReference, FaceSelection, GeneratedFaceRef};
     use cadmpeg_ir::scalar::Length;
 
@@ -208,11 +207,7 @@ fn compact_surface_projection_binds_generated_thread_face_alias() {
             },
         ));
     let mut features = [thread, plane];
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-        .expect("test context");
-    project_compact_surface_selections(&ctx, &mut features, &[], &[])
-        .expect("face alias projection");
+    project_compact_surface_selections(&mut features, &[], &[]).expect("face alias projection");
     assert!(matches!(features[1].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
             reference: Some(DatumPlaneReference::Face {
@@ -284,14 +279,8 @@ fn compact_body_projection_fixture() -> (cadmpeg_ir::features::Feature, FeatureI
 
 #[test]
 fn compact_body_projection_preserves_selection_and_retention_mode() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-
     let (mut feature, lane) = compact_body_projection_fixture();
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-        .expect("test context");
-    project_compact_body_selections(&ctx, std::slice::from_mut(&mut feature), &[lane])
-        .expect("body projection");
+    project_compact_body_selections(std::slice::from_mut(&mut feature), &[lane]);
     assert!(matches!(feature.evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::DeleteBody {
             bodies: BodySelection::Local { bodies, native },
@@ -301,15 +290,9 @@ fn compact_body_projection_preserves_selection_and_retention_mode() {
 
 #[test]
 fn compact_body_projection_keeps_duplicate_selection_unresolved() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-
     let (mut feature, mut lane) = compact_body_projection_fixture();
     lane.body_selections[0].local_body_ids = vec![3, 3];
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-        .expect("test context");
-    project_compact_body_selections(&ctx, std::slice::from_mut(&mut feature), &[lane])
-        .expect("duplicate is a semantic no-match");
+    project_compact_body_selections(std::slice::from_mut(&mut feature), &[lane]);
     assert!(matches!(
         feature.evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::DeleteBody {
@@ -360,7 +343,6 @@ fn surface_selection_set_preserves_order_and_deduplicates_native_paths() {
 
 #[test]
 fn draft_face_selection_preserves_native_path_order_and_deduplicates() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use std::collections::HashMap;
 
     let path = |local_id| {
@@ -371,18 +353,13 @@ fn draft_face_selection_preserves_native_path_order_and_deduplicates() {
         }]
     };
     let paths = [path(7), path(7), path(9)];
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-        .expect("test context");
     let selection = draft_face_selection(
-        &ctx,
         &paths,
         "consumer",
         &[],
         &HashMap::new(),
         &mut cadmpeg_ir::features::DistinctMembers::default(),
-    )
-    .expect("draft native path selection");
+    );
     assert_eq!(selection, cadmpeg_ir::features::FaceSelection::Native(
         "sldprt:feature-input:draft-surface-vectors:sldprt:feature-input:surface-component-ids:7;sldprt:feature-input:surface-component-ids:9".into()
     ));

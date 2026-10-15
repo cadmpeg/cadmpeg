@@ -178,9 +178,7 @@ pub(crate) fn enrich_history_semantic(
     )?;
     crate::pmi::enrich_history_parameters(histories, pmi_dimensions);
     apply_evaluated_parameters(ctx, histories)?;
-    crate::resolved_features::reference_geometry::enrich_history_reference_axes(
-        ctx, histories, lanes,
-    )?;
+    crate::resolved_features::reference_geometry::enrich_history_reference_axes(histories, lanes);
     crate::resolved_features::axes::enrich_history_revolution_inputs(histories, lanes);
     Ok(())
 }
@@ -197,26 +195,24 @@ pub(crate) fn project_compact_and_generated(
     projection: &[FeatureHistory],
     lanes: &[crate::records::FeatureInputLane],
 ) -> Result<(), cadmpeg_core::CodecError> {
-    crate::resolved_features::projections::project_compact_body_selections(ctx, features, lanes)?;
+    crate::resolved_features::projections::project_compact_body_selections(features, lanes);
     crate::resolved_features::terminations::project_compact_combine_paths(
-        ctx, features, projection, lanes,
+        features, projection, lanes,
     )?;
     crate::resolved_features::projections::project_compact_edge_selections(
-        ctx, features, projection, lanes,
+        features, projection, lanes,
     )?;
     crate::resolved_features::projections::project_compact_surface_selections(
-        ctx, features, projection, lanes,
+        features, projection, lanes,
     )?;
-    crate::resolved_features::projections::project_draft_operands(
-        ctx, features, projection, lanes,
-    )?;
+    crate::resolved_features::projections::project_draft_operands(features, projection, lanes)?;
     crate::resolved_features::terminations::project_surface_sweep_profiles(
-        ctx, features, projection, lanes,
-    )?;
+        features, projection, lanes,
+    );
     crate::resolved_features::holes::project_helix_axes(ctx, features, projection, lanes)?;
     crate::resolved_features::component_paths::project_adjacent_extrusion_profiles(
-        ctx, features, projection, lanes,
-    )?;
+        features, projection, lanes,
+    );
 
     Ok(())
 }
@@ -292,9 +288,8 @@ pub(crate) fn project_configuration_design_states(
             pmi_dimensions,
             HistoryEnrichment::Write,
         )?;
-        let mut features = project_features(ctx, &projection)?;
+        let mut features = project_features(&projection)?;
         crate::resolved_features::bindings::bind_pattern_inputs(
-            ctx,
             &mut features,
             &projection,
             scoped_lanes,
@@ -331,11 +326,10 @@ pub(crate) fn project_configuration_design_states(
             &resolved_base_features,
         )?;
         crate::resolved_features::bindings::bind_sweep_adjacent_profiles(
-            ctx,
             &mut features,
             histories,
             scoped_lanes,
-        )?;
+        );
         restore_configuration_tree_node_definitions(&mut features, &ir.model.features);
         let mut feature_states = BTreeMap::new();
         for mut feature in features {
@@ -376,7 +370,6 @@ pub(crate) fn project_configuration_design_states(
 /// Project edge operands carried only by supplemental config-object lanes into
 /// the matching configuration-local feature snapshots.
 pub(crate) fn project_configuration_supplemental_edge_selections(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut cadmpeg_ir::CadIr,
     lanes: &[crate::records::FeatureInputLane],
 ) -> Result<(), cadmpeg_core::CodecError> {
@@ -405,7 +398,6 @@ pub(crate) fn project_configuration_supplemental_edge_selections(
             apply_configuration_state(feature, state);
         }
         crate::resolved_features::projections::project_compact_edge_selections(
-            ctx,
             &mut features,
             &[],
             std::slice::from_ref(lane),
@@ -425,7 +417,6 @@ pub(crate) fn project_configuration_supplemental_edge_selections(
 
 /// Resolve topology operands in configuration-local feature snapshots.
 pub(crate) fn bind_configuration_topology_selections(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut cadmpeg_ir::CadIr,
     histories: &[FeatureHistory],
     lanes: &[crate::records::FeatureInputLane],
@@ -451,7 +442,6 @@ pub(crate) fn bind_configuration_topology_selections(
                 face_identities,
             };
             crate::history::selections::bind_topology_selections(
-                ctx,
                 &mut features,
                 histories,
                 &topology_selection_inputs,
@@ -628,13 +618,12 @@ pub(crate) fn project_configuration_sketch_states(
                 histories,
                 scoped_lanes,
             );
-            bind_unique_sketch_feature(ctx, &mut features, &ir.model.sketches, histories)?;
+            bind_unique_sketch_feature(&mut features, &ir.model.sketches, histories);
             crate::resolved_features::component_paths::project_dissected_sketches(
-                ctx,
                 &mut features,
                 &ir.model.sketches,
                 histories,
-            )?;
+            );
             crate::resolved_features::axes::bind_profile_revolution_axes(
                 &mut features,
                 histories,
@@ -643,23 +632,20 @@ pub(crate) fn project_configuration_sketch_states(
                 &surfaces,
             );
             crate::resolved_features::bindings::bind_pattern_inputs(
-                ctx,
                 &mut features,
                 histories,
                 scoped_lanes,
             )?;
             crate::resolved_features::component_paths::project_adjacent_extrusion_profiles(
-                ctx,
                 &mut features,
                 histories,
                 scoped_lanes,
-            )?;
+            );
             crate::resolved_features::bindings::bind_sweep_adjacent_profiles(
-                ctx,
                 &mut features,
                 histories,
                 scoped_lanes,
-            )?;
+            );
             crate::resolved_features::dimensions::project_dimensioned_sketch_geometry(
                 &mut ir.model.sketch_entities,
                 &ir.model.sketches,
@@ -719,7 +705,6 @@ pub(crate) fn project_configuration_sketch_states(
                 scoped_lanes,
             )?;
             crate::resolved_features::holes::project_hole_position_sketches(
-                ctx,
                 &mut features,
                 &ir.model.sketches,
                 &ir.model.sketch_entities,
@@ -808,7 +793,7 @@ pub(crate) fn project_configuration_sketch_states(
                     ..
                 }) = &state.definition
                 {
-                    insert_configuration_dependency(ctx, &mut state.dependencies, reference)?;
+                    state.dependencies.insert(reference.clone());
                 }
             }
         }
@@ -1093,18 +1078,6 @@ fn copy_configuration_plane_reference(reference: &DatumPlaneReference) -> DatumP
     }
 }
 
-fn insert_configuration_dependency(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    dependencies: &mut cadmpeg_ir::features::DistinctMembers<FeatureId>,
-    feature: &FeatureId,
-) -> Result<(), cadmpeg_core::CodecError> {
-    const OPERATION: &str = "retain SLDPRT configuration datum dependency";
-    if !dependencies.contains(feature) {
-        dependencies.insert(ctx, feature.clone(), OPERATION)?;
-    }
-    Ok(())
-}
-
 fn inherit_configuration_reference_plane_definition(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     id: &FeatureId,
@@ -1144,7 +1117,7 @@ fn inherit_configuration_reference_plane_definition(
     }
     let replacement = copy_configuration_plane_reference(base_reference);
     if let DatumPlaneReference::Feature { feature } = &replacement {
-        insert_configuration_dependency(ctx, dependencies, feature)?;
+        dependencies.insert(feature.clone());
     }
     if let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane { reference, .. }) =
         definition

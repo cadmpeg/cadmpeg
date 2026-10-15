@@ -126,14 +126,12 @@ pub(super) fn standard_pcurve_geometry(
             ordered_range([range[0], unwrap_angle(range[1], range[0])])
         };
         let Some(geometry) = rational_pcurve_arc(
-            ctx,
             [center_uv.u, center_uv.v],
             radius,
             range,
             refusal,
             "standard arc pcurve derived from its support",
-        )?
-        else {
+        ) else {
             return Ok(None);
         };
         return Ok(Some((geometry, range)));
@@ -1033,13 +1031,11 @@ pub(super) fn standard_oriented_native_support_pcurves(
             endpoint_pair[0], endpoint_pair[1]
         );
     let Some(first) = crate::nurbs::reverse_pcurve_geometry(
-        ctx,
         &native.pcurves[0],
         native.parameter_range,
         refusal,
         &first_label,
-    )?
-    else {
+    ) else {
         return Ok(None);
     };
     let second_label = format!(
@@ -1047,13 +1043,11 @@ pub(super) fn standard_oriented_native_support_pcurves(
             endpoint_pair[0], endpoint_pair[1]
         );
     let Some(second) = crate::nurbs::reverse_pcurve_geometry(
-        ctx,
         &native.pcurves[1],
         native.parameter_range,
         refusal,
         &second_label,
-    )?
-    else {
+    ) else {
         return Ok(None);
     };
     Ok(Some([first, second]))

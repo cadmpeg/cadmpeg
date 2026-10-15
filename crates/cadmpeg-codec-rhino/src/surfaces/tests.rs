@@ -3,8 +3,9 @@
 #![allow(clippy::disallowed_methods)]
 
 use super::{
-    map_parameter, periodic_knots, read_plane_surface_with_parameterization, reconstruct_knots,
-    DecodedSurface, TypedSurface, CLIPPING_PLANE_SURFACE,
+    map_parameter, periodic_knots, read_nurbs_curve, read_nurbs_curve_2d, read_nurbs_surface,
+    read_plane_surface_with_parameterization, reconstruct_knots, DecodedSurface, TypedSurface,
+    CLIPPING_PLANE_SURFACE,
 };
 use crate::chunks::{ArchiveVersion, BoundedReader, FramingError};
 use crate::curves::GeometryError;
@@ -57,24 +58,6 @@ fn read_poles(
     GeometryError,
 > {
     super::read_poles(reader, count, rational, dimension, scale)
-}
-
-fn read_nurbs_curve(
-    reader: &mut BoundedReader<'_>,
-    scale: MillimeterScale,
-) -> Result<NurbsCurve, GeometryError> {
-    with_test_context(|ctx| super::read_nurbs_curve(ctx, reader, scale))
-}
-
-fn read_nurbs_curve_2d(reader: &mut BoundedReader<'_>) -> Result<NurbsCurve, GeometryError> {
-    with_test_context(|ctx| super::read_nurbs_curve_2d(ctx, reader))
-}
-
-fn read_nurbs_surface(
-    reader: &mut BoundedReader<'_>,
-    scale: MillimeterScale,
-) -> Result<cadmpeg_ir::geometry::nurbs::NurbsSurface, GeometryError> {
-    with_test_context(|ctx| super::read_nurbs_surface(ctx, reader, scale))
 }
 
 fn sum_nurbs(
@@ -307,14 +290,12 @@ fn plane_payload(version: u8, bad_frame: bool, bad_range: bool) -> Vec<u8> {
 
 fn test_curve(points: Vec<Point3>, weights: Option<Vec<f64>>, domain: [f64; 2]) -> NurbsCurve {
     NurbsCurve::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![domain[0], domain[0], domain[1], domain[1]],
         points,
         weights,
         false,
     )
-    .expect("fixture constructor admission")
     .expect("valid test curve")
 }
 
@@ -593,13 +574,8 @@ fn checked_source_knots_reconstruct_without_scalar_readmission() {
             .as_slice(),
         stored
     );
-    let reconstructed = super::reconstruct_checked_knots(
-        &cadmpeg_test_support::service_decode_context(),
-        &checked,
-        3,
-        6,
-    )
-    .expect("reconstructed checked knot vector");
+    let reconstructed = super::reconstruct_checked_knots(&checked, 3, 6)
+        .expect("reconstructed checked knot vector");
     let expected = reconstruct_knots(&stored, 3, 6).expect("raw reference reconstruction");
     assert_eq!(reconstructed.as_slice(), expected.as_slice());
 }
@@ -827,7 +803,6 @@ fn sum_surface_preserves_asymmetric_domains_and_u_major_order() {
         [2.0, 5.0],
     );
     let second = NurbsCurve::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         2,
         vec![7.0, 7.0, 7.0, 9.0, 9.0, 9.0],
         vec![
@@ -838,7 +813,6 @@ fn sum_surface_preserves_asymmetric_domains_and_u_major_order() {
         None,
         false,
     )
-    .expect("fixture constructor admission")
     .expect("valid test curve");
     let surface =
         sum_nurbs(&first, &second, Vector3::new(0.5, 1.5, 2.5), 0).expect("required invariant");
@@ -897,7 +871,6 @@ fn sum_surface_multiplies_each_rational_weight_pair() {
 #[test]
 fn extrusion_tensor_preserves_rational_profile_knots_weights_and_transpose() {
     let start = NurbsCurve::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         2,
         vec![2.0, 2.0, 2.0, 5.0, 5.0, 5.0],
         vec![
@@ -908,7 +881,6 @@ fn extrusion_tensor_preserves_rational_profile_knots_weights_and_transpose() {
         Some(vec![1.0, 0.5, 1.0]),
         false,
     )
-    .expect("fixture constructor admission")
     .expect("valid test curve");
     let mut end = start.clone();
     end.try_map_control_points(|_, point| {
@@ -922,7 +894,6 @@ fn extrusion_tensor_preserves_rational_profile_knots_weights_and_transpose() {
     })
     .expect("valid test curve edit");
     let plain = super::extrusion_nurbs(
-        &cadmpeg_test_support::service_decode_context(),
         &start,
         &end,
         cadmpeg_ir::units::FiniteVector::new([10.0, 20.0]).expect("finite path domain"),
@@ -942,7 +913,6 @@ fn extrusion_tensor_preserves_rational_profile_knots_weights_and_transpose() {
         end.control_points()[1]
     );
     let transposed = super::extrusion_nurbs(
-        &cadmpeg_test_support::service_decode_context(),
         &start,
         &end,
         cadmpeg_ir::units::FiniteVector::new([10.0, 20.0]).expect("finite path domain"),

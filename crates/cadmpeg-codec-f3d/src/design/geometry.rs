@@ -1524,8 +1524,7 @@ pub(super) fn region_containing_points(
         return Ok(SketchProfileRegion::loops(
             geometric!(u32::try_from(*outer).ok()),
             converted_holes,
-            ctx,
-        )?
+        )
         .ok());
     }
     if incidences.iter().any(|incident| !incident.is_empty()) {
@@ -1559,10 +1558,7 @@ pub(super) fn region_containing_points(
         let hole = geometric!(u32::try_from(hole).ok());
         converted_holes.push(hole);
     }
-    Ok(
-        SketchProfileRegion::loops(geometric!(u32::try_from(outer).ok()), converted_holes, ctx)?
-            .ok(),
-    )
+    Ok(SketchProfileRegion::loops(geometric!(u32::try_from(outer).ok()), converted_holes).ok())
 }
 
 /// Return true when every selected closed profile bounds a disjoint region.

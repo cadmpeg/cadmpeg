@@ -647,37 +647,27 @@ struct SweepSurfaceResolution {
 }
 
 fn resolve_sweep_surface(
-    ctx: &DecodeContext<'_>,
     carriers: &CarrierIndex,
     tables: &topology::Tables,
     face: &WalkedFace,
     refusal: &mut crate::lane_refusal::LaneRefusals,
-) -> Result<Option<SweepSurfaceResolution>, cadmpeg_core::CodecError> {
-    let Some(construction) = carriers.sweep(face.surface_attr) else {
-        return Ok(None);
-    };
-    let Some(profile) = carriers.curve(construction.profile_attr) else {
-        return Ok(None);
-    };
+) -> Option<SweepSurfaceResolution> {
+    let construction = carriers.sweep(face.surface_attr)?;
+    let profile = carriers.curve(construction.profile_attr)?;
     let record = format!(
         "sldprt sweep construction at byte {} for surface attr {}",
         construction.offset, face.surface_attr
     );
-    let Some(curve) = sweep::profile_nurbs(ctx, &profile.carrier().geometry, &record, refusal)?
-    else {
-        return Ok(None);
-    };
+    let curve = sweep::profile_nurbs(&profile.carrier().geometry, &record, refusal)?;
     let profile_derived = matches!(profile, IndexedCurve::Derived(_));
     match &construction.kind {
-        SweepKind::Spun { base, axis } => Ok(sweep::spun_nurbs(
-            ctx, &curve, *base, *axis, &record, refusal,
-        )?
-        .map(|surface| SweepSurfaceResolution {
-            geometry: SolvedSurfaceGeometry::Nurbs(surface),
-            offset: construction.offset,
-            tag: "00_44",
-            exactness: profile_derived.then_some(Exactness::Derived),
-        })),
+        SweepKind::Spun { base, axis } => sweep::spun_nurbs(&curve, *base, *axis, &record, refusal)
+            .map(|surface| SweepSurfaceResolution {
+                geometry: SolvedSurfaceGeometry::Nurbs(surface),
+                offset: construction.offset,
+                tag: "00_44",
+                exactness: profile_derived.then_some(Exactness::Derived),
+            }),
         SweepKind::Swept { direction } => {
             let unit_direction = *direction;
             let direction = direction.as_raw();
@@ -710,7 +700,7 @@ fn resolve_sweep_surface(
                 }
             }
             if point_lo > point_hi {
-                return Ok(None);
+                return None;
             }
             let mut pole_lo = f64::INFINITY;
             let mut pole_hi = f64::NEG_INFINITY;
@@ -737,21 +727,20 @@ fn resolve_sweep_surface(
                 EPS_SWEEP_EXTENT_ABSOLUTE_MM,
                 (v_end - v_start) * EPS_SWEEP_EXTENT_RELATIVE,
             );
-            Ok(sweep::swept_nurbs(
-                ctx,
+            sweep::swept_nurbs(
                 &curve,
                 unit_direction,
                 v_start - pad,
                 v_end + pad,
                 &record,
                 refusal,
-            )?
+            )
             .map(|surface| SweepSurfaceResolution {
                 geometry: SolvedSurfaceGeometry::Nurbs(surface),
                 offset: construction.offset,
                 tag: "00_43",
                 exactness: Some(Exactness::Derived),
-            }))
+            })
         }
     }
 }
@@ -2279,7 +2268,7 @@ fn decode_graph(
                     exactness,
                 }) = {
                     let mut sweep_refusal = crate::lane_refusal::LaneRefusals::new();
-                    let resolved = resolve_sweep_surface(ctx, carriers, t, f, &mut sweep_refusal)?;
+                    let resolved = resolve_sweep_surface(carriers, t, f, &mut sweep_refusal);
                     for record in sweep_refusal.take_records() {
                         let note = crate::loss::spline_lane_refusal(format_args!(
                             "swept surface for face attr {}: {record}",
@@ -3275,13 +3264,12 @@ fn derive_cylindrical_pcurves(
                     None
                 };
                 let polar = match PolarPcurveNurbs::from_checked_lanes(
-                    ctx,
                     nurbs.degree(),
                     knots,
                     poles,
                     weights,
                     nurbs.periodic(),
-                )? {
+                ) {
                     Ok(polar) => polar,
                     Err(error) => {
                         let note = crate::loss::spline_lane_refusal(format_args!(
@@ -4205,7 +4193,7 @@ fn derive_nurbs_isoparametric_pcurves(
                             lane_refusals.note(
                                 format_args!("isoparametric pcurve for edge {}", edge.id.as_str()),
                                 &error,
-                            )?;
+                            );
                             continue;
                         }
                         Err(NurbsPcurveFailure::Resource(limit)) => return Err(limit),
@@ -4643,7 +4631,7 @@ fn intersection_support_pcurve(
         let mut knots = Vec::new();
         knots.extend_from_slice(knots_source);
         let nurbs =
-            match PcurveNurbs::from_lanes(ctx, 1, knots, control_points, None, false)? {
+            match PcurveNurbs::from_lanes(1, knots, control_points, None, false) {
                 Ok(nurbs) => nurbs,
                 Err(error) => {
                     refusal.note(
@@ -4651,7 +4639,7 @@ fn intersection_support_pcurve(
                             "sldprt intersection support pcurve for surface attr {surface_attr}"
                         ),
                         &error,
-                    )?;
+                    );
                     return Ok(None);
                 }
             };
@@ -4686,12 +4674,7 @@ enum NurbsPcurveFailure {
 
 impl From<cadmpeg_ir::geometry::nurbs::NurbsError> for NurbsPcurveFailure {
     fn from(error: cadmpeg_ir::geometry::nurbs::NurbsError) -> Self {
-        match error {
-            cadmpeg_ir::geometry::nurbs::NurbsError::ResourceLimit(limit) => {
-                Self::Resource(limit.into())
-            }
-            error => Self::Carrier(error),
-        }
+        Self::Carrier(error)
     }
 }
 
@@ -5260,23 +5243,22 @@ fn clamp_nurbs_curve_to_domain_lanes(
 }
 
 fn clamp_nurbs_curve_to_domain(
-    ctx: &DecodeContext<'_>,
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
     domain: [f64; 2],
-) -> Result<Option<cadmpeg_ir::geometry::nurbs::NurbsCurve>, NurbsPcurveFailure> {
+) -> Result<Option<cadmpeg_ir::geometry::nurbs::NurbsCurve>, cadmpeg_ir::geometry::nurbs::NurbsError>
+{
     let Some((segment_knots, control_points, weights)) =
         clamp_nurbs_curve_to_domain_lanes(curve, domain)
     else {
         return Ok(None);
     };
     Ok(Some(cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
-        ctx,
         curve.degree(),
         segment_knots,
         control_points,
         weights,
         false,
-    )??))
+    )?))
 }
 
 fn extended_nurbs_isocurve_axis_candidate(
@@ -5389,7 +5371,7 @@ fn extended_nurbs_isocurve_axis_candidate(
     let clamped = if unique_fixed_values.is_empty() {
         None
     } else {
-        clamp_nurbs_curve_to_domain(ctx, curve, varying_domain)?
+        clamp_nurbs_curve_to_domain(curve, varying_domain)?
     };
     let Some(clamped) = clamped else {
         return Ok(InverseResolution::NoMatch);
@@ -5678,7 +5660,7 @@ fn nurbs_degree_one_cache_pcurve(
     };
     let mut knots = Vec::new();
     knots.extend_from_slice(curve.knots());
-    let nurbs = PcurveNurbs::from_lanes(ctx, 1, knots, control_points, None, false)??;
+    let nurbs = PcurveNurbs::from_lanes(1, knots, control_points, None, false)?;
     Ok(Some((PcurveGeometry::Nurbs { nurbs }, fit_tolerance)))
 }
 
@@ -6694,14 +6676,12 @@ mod tests {
         weights: Option<Vec<f64>>,
     ) -> cadmpeg_ir::geometry::nurbs::NurbsCurve {
         cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             degree,
             knots,
             control_points,
             weights,
             false,
         )
-        .expect("fixture constructor admission")
         .expect("valid test NURBS curve")
     }
 
@@ -6718,7 +6698,6 @@ mod tests {
         weights: Option<Vec<f64>>,
     ) -> cadmpeg_ir::geometry::nurbs::NurbsSurface {
         cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(u_degree, u_knots, false),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(v_degree, v_knots, false),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
@@ -6735,7 +6714,6 @@ mod tests {
             ),
             false,
         )
-        .expect("fixture constructor admission")
         .expect("valid test NURBS surface")
     }
 
@@ -7843,7 +7821,7 @@ mod tests {
         assert!(origin.v.abs() < 1e-12);
         assert!(direction.u.abs() < 1e-12);
         assert!((direction.v - 1.0).abs() < 1e-12);
-        let clamped = super::clamp_nurbs_curve_to_domain(&ctx, &curve, [0.0, 1.0])
+        let clamped = super::clamp_nurbs_curve_to_domain(&curve, [0.0, 1.0])
             .expect("the clamped lanes are a curve")
             .expect("clamped segment");
         let expected = cadmpeg_ir::eval::nurbs_surface_isocurve(
@@ -7907,7 +7885,7 @@ mod tests {
                                 && (direction.v - 1.0).abs() <= f64::EPSILON * 64.0
                         })
         );
-        let clamped = super::clamp_nurbs_curve_to_domain(&ctx, &curve, [0.0, 1.0])
+        let clamped = super::clamp_nurbs_curve_to_domain(&curve, [0.0, 1.0])
             .expect("the clamped lanes are a curve")
             .expect("clamped quadratic segment");
         let expected = cadmpeg_ir::eval::nurbs_surface_isocurve(
@@ -7968,7 +7946,7 @@ mod tests {
                                 && (direction.v - 1.0).abs() <= f64::EPSILON * 64.0
                         })
         );
-        let clamped = super::clamp_nurbs_curve_to_domain(&ctx, &curve, [0.0, 1.0])
+        let clamped = super::clamp_nurbs_curve_to_domain(&curve, [0.0, 1.0])
             .expect("the clamped lanes are a curve")
             .expect("clamped rational segment");
         let expected = cadmpeg_ir::eval::nurbs_surface_isocurve(

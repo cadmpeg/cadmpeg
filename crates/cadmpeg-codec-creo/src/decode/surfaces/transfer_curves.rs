@@ -208,33 +208,32 @@ enum NurbsBoundaryKind {
 /// Boundary curve of an extrusion surface against a plane, with the
 /// section-generator fallback.
 ///
-/// The sink is drained before the fallback runs, so the fallback's own `?`
-/// never sits between a refusal and the report that names it. A refused lane
+/// The sink is drained before the fallback runs, so the fallback's own
+/// refusals never mix with the records of the first attempt. A refused lane
 /// that the fallback covers costs the model nothing and states no loss. A
 /// refused lane that leaves the curve-topology row without a carrier is a loss
 /// note naming the row and the surface that stated the lane.
 fn extrusion_plane_boundary_curve(
-    ctx: &DecodeContext<'_>,
     nurbs: &NurbsSurface,
     surface_id: u32,
     curve_row_id: u32,
     plane: PlaneEquation,
     refusal: &mut crate::lane_refusal::LaneRefusals,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-) -> Result<Option<(CurveGeometry, NurbsBoundaryKind)>, CodecError> {
-    if let Some(geometry) = nurbs_plane_boundary_curve(ctx, nurbs, surface_id, plane, refusal)? {
-        return Ok(Some((geometry, NurbsBoundaryKind::ExtrusionPlane)));
+) -> Option<(CurveGeometry, NurbsBoundaryKind)> {
+    if let Some(geometry) = nurbs_plane_boundary_curve(nurbs, surface_id, plane, refusal) {
+        return Some((geometry, NurbsBoundaryKind::ExtrusionPlane));
     }
     let refused = refusal.take_records();
     let mut fallback_losses = Vec::new();
     let fallback =
-        cubic_extrusion_plane_generator_curve(ctx, nurbs, surface_id, plane, &mut fallback_losses)?
+        cubic_extrusion_plane_generator_curve(nurbs, surface_id, plane, &mut fallback_losses)
             .map(|geometry| (geometry, NurbsBoundaryKind::ExtrusionPlaneSectionGenerator));
     if fallback.is_none() {
         append_boundary_fallback_losses(losses, fallback_losses);
         note_boundary_lane_records(curve_row_id, &refused, losses);
     }
-    Ok(fallback)
+    fallback
 }
 
 fn append_boundary_fallback_losses(
@@ -328,9 +327,7 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
                     origin: [origin.x, origin.y, origin.z],
                     normal: [normal.x, normal.y, normal.z],
                 };
-                extrusion_plane_boundary_curve(
-                    ctx, nurbs, first.id, row.id, plane, refusal, losses,
-                )?
+                extrusion_plane_boundary_curve(nurbs, first.id, row.id, plane, refusal, losses)
             }
             (
                 crate::surface::SurfaceKind::Plane,
@@ -344,9 +341,7 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
                     origin: [origin.x, origin.y, origin.z],
                     normal: [normal.x, normal.y, normal.z],
                 };
-                extrusion_plane_boundary_curve(
-                    ctx, nurbs, second.id, row.id, plane, refusal, losses,
-                )?
+                extrusion_plane_boundary_curve(nurbs, second.id, row.id, plane, refusal, losses)
             }
             (
                 crate::surface::SurfaceKind::Extrusion(_),
@@ -354,13 +349,12 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(first_nurbs)),
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(second_nurbs)),
             ) => shared_extrusion_generator_curve(
-                ctx,
                 first_nurbs,
                 first.id,
                 second_nurbs,
                 second.id,
                 refusal,
-            )?
+            )
             .map(|geometry| (geometry, NurbsBoundaryKind::SharedExtrusionGenerator)),
             _ => None,
         };
@@ -696,7 +690,6 @@ mod tests {
             id: SurfaceId::mint("creo:visibgeom:surface#1".to_string()).expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
                 NurbsSurface::from_lanes(
-                    &cadmpeg_test_support::service_decode_context(),
                     cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                         1,
                         vec![0.0, 0.0, 1.0, 1.0],
@@ -716,7 +709,6 @@ mod tests {
                     ),
                     false,
                 )
-                .expect("fixture constructor admission")
                 .expect("valid test surface"),
             )),
             source_object: None,

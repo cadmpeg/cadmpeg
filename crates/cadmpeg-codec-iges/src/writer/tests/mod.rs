@@ -793,14 +793,8 @@ fn reversed_hyperbola_uses_an_equivalent_reflected_conic_frame() {
         .expect("end evaluates")
         .get(),
     };
-    let entity = oriented_curve_entity(
-        &cadmpeg_test_support::service_decode_context(),
-        &geometry,
-        &span,
-        Sense::Reversed,
-        IgesVersion::V5_3,
-    )
-    .expect("a bounded hyperbola can be reversed exactly");
+    let entity = oriented_curve_entity(&geometry, &span, Sense::Reversed, IgesVersion::V5_3)
+        .expect("a bounded hyperbola can be reversed exactly");
     assert_eq!((entity.type_code, entity.form), (104, 2));
     assert_eq!(
         entity
@@ -940,7 +934,6 @@ fn generated_full_circle_has_lexically_identical_endpoints() {
         .expect("valid CircleCurve fixture"),
     ));
     let entity = curve_entity(
-        &cadmpeg_test_support::service_decode_context(),
         geometry.solved().expect("solved carrier"),
         None,
         IgesVersion::V5_3,
@@ -971,7 +964,6 @@ fn generated_circle_refuses_a_zero_length_edge_span() {
         end: Point3::new(0.0, 0.0, 0.0),
     };
     let Err(error) = curve_entity(
-        &cadmpeg_test_support::service_decode_context(),
         geometry.solved().expect("solved carrier"),
         Some(&span),
         IgesVersion::V5_3,
@@ -1164,7 +1156,6 @@ fn unrepresentable_conic_coefficients_are_not_implemented() {
     .expect("the IR admits finite ordered positive ellipse radii");
     assert!(matches!(
         curve_entity(
-            &cadmpeg_test_support::service_decode_context(),
             &SolvedCurveGeometry::Ellipse(ellipse),
             None,
             IgesVersion::V5_3
@@ -1176,18 +1167,15 @@ fn unrepresentable_conic_coefficients_are_not_implemented() {
 #[test]
 fn negative_nurbs_weights_are_not_implemented() {
     let curve = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
         Some(vec![1.0, -1.0]),
         false,
     )
-    .expect("fixture constructor admission")
     .expect("the IR admits finite nonzero signed NURBS weights");
     assert!(matches!(
         curve_entity(
-            &cadmpeg_test_support::service_decode_context(),
             &SolvedCurveGeometry::Nurbs(curve),
             Some(&CurveSpan {
                 range: cadmpeg_ir::units::FiniteVector::new([0.0, 1.0]).expect("finite test range"),
@@ -1202,7 +1190,6 @@ fn negative_nurbs_weights_are_not_implemented() {
     let axis =
         || cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false);
     let surface = cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         axis(),
         axis(),
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
@@ -1214,7 +1201,6 @@ fn negative_nurbs_weights_are_not_implemented() {
         ),
         false,
     )
-    .expect("fixture constructor admission")
     .expect("the IR admits finite nonzero signed NURBS weights");
     assert!(matches!(
         surface_entities(
@@ -1232,7 +1218,6 @@ fn empty_nurbs_surface_domain_is_not_implemented() {
     let axis =
         || cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 0.0, 0.0], false);
     let surface = cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         axis(),
         axis(),
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
@@ -1244,7 +1229,6 @@ fn empty_nurbs_surface_domain_is_not_implemented() {
         ),
         false,
     )
-    .expect("fixture constructor admission")
     .expect("the IR admits a nondecreasing knot vector with an empty active domain");
     assert!(matches!(
         surface_entities(
@@ -1287,7 +1271,6 @@ fn hyperbola_endpoint_overflow_is_not_implemented() {
     };
     assert!(matches!(
         curve_entity(
-            &cadmpeg_test_support::service_decode_context(),
             &SolvedCurveGeometry::Hyperbola(hyperbola),
             Some(&span),
             IgesVersion::V5_3
@@ -1312,7 +1295,6 @@ fn parabola_endpoint_overflow_is_not_implemented() {
     };
     assert!(matches!(
         curve_entity(
-            &cadmpeg_test_support::service_decode_context(),
             &SolvedCurveGeometry::Parabola(parabola),
             Some(&span),
             IgesVersion::V5_3
@@ -1348,12 +1330,7 @@ fn zero_conic_parameter_span_is_not_implemented() {
         SolvedCurveGeometry::Hyperbola(hyperbola),
     ] {
         assert!(matches!(
-            curve_entity(
-                &cadmpeg_test_support::service_decode_context(),
-                &geometry,
-                Some(&span),
-                IgesVersion::V5_3
-            ),
+            curve_entity(&geometry, Some(&span), IgesVersion::V5_3),
             Err(CodecError::NotImplemented(_))
         ));
     }
@@ -1375,16 +1352,10 @@ fn decreasing_polyline_parameters_are_not_implemented() {
     ]
     .try_into()
     .expect("nonempty polyline samples");
-    let polyline = PolylineCurve::new(
-        PolylineSamples::Parameterized { vertices },
-        0.0,
-        &cadmpeg_test_support::service_decode_context(),
-    )
-    .expect("polyline construction admission")
-    .expect("the IR admits finite strictly decreasing polyline parameters");
+    let polyline = PolylineCurve::new(PolylineSamples::Parameterized { vertices }, 0.0)
+        .expect("the IR admits finite strictly decreasing polyline parameters");
     assert!(matches!(
         curve_entity(
-            &cadmpeg_test_support::service_decode_context(),
             &SolvedCurveGeometry::Polyline(polyline),
             Some(&CurveSpan {
                 range: cadmpeg_ir::units::FiniteVector::new([0.0, 1.0]).expect("finite test range"),
@@ -1416,7 +1387,6 @@ fn parabola_coefficient_that_overflows_is_not_implemented() {
         end: Point3::new(0.0, 0.0, 0.0),
     };
     let written = curve_entity(
-        &cadmpeg_test_support::service_decode_context(),
         &SolvedCurveGeometry::Parabola(parabola),
         Some(&span),
         IgesVersion::V5_3,

@@ -734,7 +734,6 @@ fn targeted_surface_resolution_rejects_conflicting_exact_carriers() {
         1,
         Some(B5Surface::Nurbs(
             NurbsSurface::from_lanes(
-                &cadmpeg_test_support::service_decode_context(),
                 cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
@@ -754,7 +753,6 @@ fn targeted_surface_resolution_rejects_conflicting_exact_carriers() {
                 ),
                 false,
             )
-            .expect("fixture constructor admission")
             .expect("valid bilinear NURBS"),
         )),
     )]);

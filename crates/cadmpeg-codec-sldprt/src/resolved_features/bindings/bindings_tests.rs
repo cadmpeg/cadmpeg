@@ -29,16 +29,7 @@ fn bind_pattern_inputs_test(
     histories: &[FeatureHistory],
     lanes: &[FeatureInputLane],
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let bytes = lanes
-        .first()
-        .map_or(&[][..], |lane| lane.native_payload.as_slice());
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        bytes,
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )?;
-    bind_pattern_inputs(&ctx, features, histories, lanes)
+    bind_pattern_inputs(features, histories, lanes)
 }
 
 #[test]
@@ -632,10 +623,10 @@ fn circular_pattern_axis_binds_from_unique_temporary_axis() {
         ordinal: 0,
         name: Some("CirPattern1".into()),
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::try_from(
-            vec![FeatureId::mint("synthetic:test:id#seed").expect("identity grammar")],
-            &cadmpeg_test_support::service_decode_context(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::try_from(vec![FeatureId::mint(
+            "synthetic:test:id#seed",
         )
+        .expect("identity grammar")])
         .unwrap(),
         source_properties: BTreeMap::new(),
         source_tag: None,

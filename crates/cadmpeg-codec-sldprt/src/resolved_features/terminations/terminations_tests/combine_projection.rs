@@ -2,7 +2,6 @@
 
 use super::super::{project_compact_combine_paths, COMPACT_EDGE_VECTOR_MARKER};
 use super::{Feature, FeatureHistory, FeatureInputLane, FeatureSource};
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::features::{
     BodySelection, BooleanKind, CombineOperands, FeatureDefinition, FeatureEvaluation, FeatureId,
     FeatureOperation, SketchFeatureBinding,
@@ -100,22 +99,15 @@ fn combine_projection_binds_generated_target_and_tool_bodies() {
                 operands: CombineOperands::new(
                     BodySelection::Unresolved,
                     BodySelection::Unresolved,
-                    &cadmpeg_test_support::service_decode_context(),
                 )
-                .expect("operand admission")
                 .unwrap(),
                 op: BooleanKind::Join,
                 keep_tools: false,
             }),
         ),
     ];
-    let arena = DecodeArena::new();
-    let (service, _) =
-        DecodeContext::from_root_bytes(&lane.native_payload, &arena, &DecodePolicy::service())
-            .unwrap();
     let mut admitted = features.clone();
     project_compact_combine_paths(
-        &service,
         &mut admitted,
         std::slice::from_ref(&history),
         std::slice::from_ref(&lane),

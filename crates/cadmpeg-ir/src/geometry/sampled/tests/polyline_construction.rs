@@ -42,37 +42,32 @@ fn checked(parameters: Option<[f64; 3]>) -> PolylineSamples<FiniteReal, FinitePo
 
 #[test]
 fn polyline_construction_preserves_diagnostic_order() {
-    let ctx = cadmpeg_test_support::service_decode_context();
     let mut samples = raw(Some([f64::INFINITY, 0., 0.]));
     let PolylineSamples::Parameterized { vertices } = &mut samples else {
         panic!("parameterized fixture");
     };
     vertices[0].point.x = f64::INFINITY;
     assert_eq!(
-        PolylineCurve::new(samples, -1., &ctx)
-            .expect("admission")
+        PolylineCurve::new(samples, -1.)
             .expect_err("points precede deflection")
             .to_string(),
         "points must be finite"
     );
     assert_eq!(
-        PolylineCurve::new(raw(Some([f64::INFINITY, 0., 0.])), -1., &ctx)
-            .expect("admission")
+        PolylineCurve::new(raw(Some([f64::INFINITY, 0., 0.])), -1.)
             .expect_err("deflection precedes parameters")
             .to_string(),
         "chordal_deflection must be finite and non-negative"
     );
     assert_eq!(
-        PolylineCurve::new(raw(Some([f64::INFINITY, 0., 0.])), 0., &ctx)
-            .expect("admission")
+        PolylineCurve::new(raw(Some([f64::INFINITY, 0., 0.])), 0.)
             .expect_err("nonfinite parameter")
             .to_string(),
         "parameters must be finite and strictly monotonic"
     );
     let ctx = cadmpeg_test_support::service_decode_context();
     assert_eq!(
-        PolylineCurve::from_checked_samples(checked(Some([0., 0., 0.])), -1., &ctx)
-            .expect("no parameter scan before deflection")
+        PolylineCurve::from_checked_samples(checked(Some([0., 0., 0.])), -1.)
             .expect_err("negative deflection")
             .to_string(),
         "chordal_deflection must be finite and non-negative"
@@ -82,11 +77,8 @@ fn polyline_construction_preserves_diagnostic_order() {
 
 #[test]
 fn polyline_construction_accepts_both_lanes_and_either_parameter_direction() {
-    let ctx = cadmpeg_test_support::service_decode_context();
     for parameters in [None, Some([0., 1., 2.]), Some([2., 1., 0.])] {
-        let curve = PolylineCurve::new(raw(parameters), 0.25, &ctx)
-            .expect("construction admission")
-            .expect("valid");
+        let curve = PolylineCurve::new(raw(parameters), 0.25).expect("valid");
         assert_eq!(
             serde_json::from_str::<PolylineCurve>(&serde_json::to_string(&curve).expect("wire"))
                 .expect("context-free serde"),
@@ -97,7 +89,6 @@ fn polyline_construction_accepts_both_lanes_and_either_parameter_direction() {
 
 #[test]
 fn checked_polyline_construction_moves_sample_rows() {
-    let ctx = cadmpeg_test_support::service_decode_context();
     for parameters in [None, Some([0., 1., 2.]), Some([2., 1., 0.])] {
         let curve = match checked(parameters) {
             PolylineSamples::Unparameterized { points } => {
@@ -105,9 +96,7 @@ fn checked_polyline_construction_moves_sample_rows() {
                 let curve = PolylineCurve::from_checked_samples(
                     PolylineSamples::Unparameterized { points },
                     0.25,
-                    &ctx,
                 )
-                .expect("construction admission")
                 .expect("valid");
                 let PolylineSamples::Unparameterized { points } = &curve.samples else {
                     panic!("same sample lane");
@@ -120,9 +109,7 @@ fn checked_polyline_construction_moves_sample_rows() {
                 let curve = PolylineCurve::from_checked_samples(
                     PolylineSamples::Parameterized { vertices },
                     0.25,
-                    &ctx,
                 )
-                .expect("construction admission")
                 .expect("valid");
                 let PolylineSamples::Parameterized { vertices } = &curve.samples else {
                     panic!("same sample lane");

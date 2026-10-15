@@ -56,11 +56,7 @@ fn control_points(cur: &mut Cur<'_>, count: usize, marker: BsplineMarker) -> Opt
 /// Decode a surface `nubs`/`nurbs` block at token `marker_pos`, returning the
 /// surface and the token index just past the block. Token-space counterpart of
 /// [`decode_surface_block`].
-pub(super) fn surface_block(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    toks: &[Token],
-    marker_pos: usize,
-) -> Option<Result<(NurbsSurface, usize), cadmpeg_core::CodecError>> {
+pub(super) fn surface_block(toks: &[Token], marker_pos: usize) -> Option<(NurbsSurface, usize)> {
     let marker = toks::marker_at(toks, marker_pos)?;
     let mut cur = Cur::at(toks, marker_pos + 1);
 
@@ -97,8 +93,7 @@ pub(super) fn surface_block(
     // order where index `u * v_count + v` is pole `(u, v)`.
     let poles = control_points(&mut cur, pole_count, marker)?;
     let grid = poles.into_counted_transposed_grid(n_poles_u, n_poles_v)?;
-    let surface = propagate_resource!(NurbsSurface::new(
-        ctx,
+    let surface = NurbsSurface::new(
         NurbsSurfaceAxis::new(
             u32::try_from(degree_u).ok()?,
             u_knots,
@@ -111,19 +106,15 @@ pub(super) fn surface_block(
         ),
         grid,
         false,
-    ))
+    )
     .ok()?;
-    Some(Ok((surface, cur.pos())))
+    Some((surface, cur.pos()))
 }
 
 /// Decode a curve `nubs`/`nurbs` block at token `marker_pos`, returning the
 /// curve and the token index just past the block. Token-space counterpart of
 /// [`decode_curve_block`].
-pub(super) fn curve_block(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    toks: &[Token],
-    marker_pos: usize,
-) -> Option<Result<(NurbsCurve, usize), cadmpeg_core::CodecError>> {
+pub(super) fn curve_block(toks: &[Token], marker_pos: usize) -> Option<(NurbsCurve, usize)> {
     let marker = toks::marker_at(toks, marker_pos)?;
     let mut cur = Cur::at(toks, marker_pos + 1);
 
@@ -139,38 +130,35 @@ pub(super) fn curve_block(
     let (knot_vector, n_poles) = knots(&mut cur, usize::try_from(n_uniq).ok()?, degree)?;
     let poles = control_points(&mut cur, n_poles, marker)?;
 
-    let curve = propagate_resource!(NurbsCurve::new(
-        ctx,
+    let curve = NurbsCurve::new(
         u32::try_from(degree).ok()?,
         knot_vector,
         poles.into_lane(),
         is_periodic(closure),
-    ))
+    )
     .ok()?;
-    Some(Ok((curve, cur.pos())))
+    Some((curve, cur.pos()))
 }
 
 /// Decode the face-surface cache of a spline surface record from its payload
 /// tokens: the LAST valid surface block (the final `setSurfaceShape` cache;
 /// earlier blocks are support surfaces or 2D pcurves), except in a
 /// `comp_spl_sur` compound, whose own cache comes first.
-pub(super) fn surface_cache(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    toks: &[Token],
-) -> Option<Result<NurbsSurface, cadmpeg_core::CodecError>> {
+pub(super) fn surface_cache(toks: &[Token]) -> Option<NurbsSurface> {
     let scope = toks::cache_scope(toks)?;
     let positions = toks::owned_marker_positions(scope)?;
     let compound = scope.iter().any(|token| {
         matches!(token, Token::Ident(name) | Token::SubIdent(name) if name == "comp_spl_sur")
     });
     if compound {
-        positions.into_iter().find_map(|pos| {
-            surface_block(ctx, scope, pos).map(|result| result.map(|(surface, _)| surface))
-        })
+        positions
+            .into_iter()
+            .find_map(|pos| surface_block(scope, pos).map(|(surface, _)| surface))
     } else {
-        positions.into_iter().rev().find_map(|pos| {
-            surface_block(ctx, scope, pos).map(|result| result.map(|(surface, _)| surface))
-        })
+        positions
+            .into_iter()
+            .rev()
+            .find_map(|pos| surface_block(scope, pos).map(|(surface, _)| surface))
     }
 }
 
@@ -190,38 +178,32 @@ pub(super) fn owned_surface_cache(
             propagate_resource!(crate::nurbs::blend::var_blend_spl_sur(ctx, tokens, table)
                 .transpose()
                 .map(|decoded| decoded.and_then(|decoded| decoded.current_cache_marker)));
-        return surface_block(ctx, tokens, cache_marker?)
-            .map(|result| result.map(|(surface, _)| surface));
+        return surface_block(tokens, cache_marker?).map(|(surface, _)| Ok(surface));
     }
-    scope.owned_marker_positions().into_iter().find_map(|pos| {
-        surface_block(ctx, tokens, pos).map(|result| result.map(|(surface, _)| surface))
-    })
+    scope
+        .owned_marker_positions()
+        .into_iter()
+        .find_map(|pos| surface_block(tokens, pos).map(|(surface, _)| Ok(surface)))
 }
 
 /// Decode the 3D curve cache of a procedural curve record from its payload
 /// tokens: the FIRST valid curve block (surface and 2D pcurve blocks do not
 /// parse as a 3D curve block).
-pub(super) fn curve_cache(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    toks: &[Token],
-) -> Option<Result<NurbsCurve, cadmpeg_core::CodecError>> {
+pub(super) fn curve_cache(toks: &[Token]) -> Option<NurbsCurve> {
     let scope = toks::cache_scope(toks)?;
     toks::owned_marker_positions(scope)?
         .into_iter()
-        .find_map(|pos| curve_block(ctx, scope, pos).map(|result| result.map(|(curve, _)| curve)))
+        .find_map(|pos| curve_block(scope, pos).map(|(curve, _)| curve))
 }
 
 /// Decode the 3D curve cache a subtype scope itself owns: the first curve
 /// block outside every construction the scope nests.
-pub(super) fn owned_curve_cache(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    scope: toks::SubtypeScope<'_>,
-) -> Option<Result<NurbsCurve, cadmpeg_core::CodecError>> {
+pub(super) fn owned_curve_cache(scope: toks::SubtypeScope<'_>) -> Option<NurbsCurve> {
     let tokens = scope.tokens();
     scope
         .owned_marker_positions()
         .into_iter()
-        .find_map(|pos| curve_block(ctx, tokens, pos).map(|result| result.map(|(curve, _)| curve)))
+        .find_map(|pos| curve_block(tokens, pos).map(|(curve, _)| curve))
 }
 
 /// A scope either supplies a cache, allows a reference search, or rejects
@@ -238,18 +220,11 @@ enum CacheLookup<T> {
 /// [`toks::SubtypeTable::span`] answers with the balanced scope the reference
 /// names, so `decode_scope` reads a proven scope and needs no walk of its own
 /// to establish one.
-fn cache_from_subtype_refs<T, D>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+fn cache_from_subtype_refs<T, E>(
     toks: &[Token],
     table: &toks::SubtypeTable,
-    decode_scope: D,
-) -> Option<Result<T, cadmpeg_core::CodecError>>
-where
-    D: Fn(
-        &cadmpeg_core::decode::DecodeContext<'_>,
-        toks::SubtypeScope<'_>,
-    ) -> Result<CacheLookup<T>, cadmpeg_core::CodecError>,
-{
+    decode_scope: impl Fn(toks::SubtypeScope<'_>) -> Result<CacheLookup<T>, E>,
+) -> Option<Result<T, E>> {
     let mut seen = std::collections::HashSet::new();
     let mut pending = Vec::new();
     pending.push(toks::subtype_refs(toks));
@@ -272,10 +247,11 @@ where
         // the stream rather than skipping the reference and reading the one
         // behind it.
         let target = table.span(index)?;
-        match propagate_resource!(decode_scope(ctx, target)) {
-            CacheLookup::Found(decoded) => return Some(Ok(decoded)),
-            CacheLookup::Rejected => return None,
-            CacheLookup::Missing => {}
+        match decode_scope(target) {
+            Ok(CacheLookup::Found(decoded)) => return Some(Ok(decoded)),
+            Ok(CacheLookup::Rejected) => return None,
+            Ok(CacheLookup::Missing) => {}
+            Err(error) => return Some(Err(error)),
         }
         pending.push(toks::subtype_refs(target.tokens()));
     }
@@ -293,8 +269,8 @@ pub fn surface_cache_resolving_refs(
     {
         return owned_surface_cache(ctx, toks::subtype_span(toks, start)?, Some(table));
     }
-    surface_cache(ctx, toks).or_else(|| {
-        cache_from_subtype_refs(ctx, toks, table, |ctx, scope| {
+    surface_cache(toks).map(Ok).or_else(|| {
+        cache_from_subtype_refs(toks, table, |scope| {
             if matches!(scope.interior().first(), Some(Token::Ident(name) | Token::SubIdent(name))
                 if crate::nurbs::blend::VARIABLE_BLEND_NAMES.contains(&name.as_str()))
             {
@@ -302,9 +278,7 @@ pub fn surface_cache_resolving_refs(
                     .transpose()
                     .map(|cache| cache.map_or(CacheLookup::Rejected, CacheLookup::Found))
             } else {
-                surface_cache(ctx, scope.tokens())
-                    .transpose()
-                    .map(|cache| cache.map_or(CacheLookup::Missing, CacheLookup::Found))
+                Ok(surface_cache(scope.tokens()).map_or(CacheLookup::Missing, CacheLookup::Found))
             }
         })
     })
@@ -333,31 +307,31 @@ pub(super) fn owned_surface_cache_resolving_refs(
 
 /// Decode a curve cache, following subtype-table references.
 pub fn curve_cache_resolving_refs(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     toks: &[Token],
     table: &toks::SubtypeTable,
-) -> Option<Result<NurbsCurve, cadmpeg_core::CodecError>> {
-    curve_cache(ctx, toks).or_else(|| {
-        cache_from_subtype_refs(ctx, toks, table, |ctx, scope| {
-            curve_cache(ctx, scope.tokens())
-                .transpose()
-                .map(|cache| cache.map_or(CacheLookup::Missing, CacheLookup::Found))
-        })
+) -> Option<NurbsCurve> {
+    curve_cache(toks).or_else(|| {
+        let Ok(curve) = cache_from_subtype_refs(toks, table, |scope| {
+            Ok::<_, std::convert::Infallible>(
+                curve_cache(scope.tokens()).map_or(CacheLookup::Missing, CacheLookup::Found),
+            )
+        })?;
+        Some(curve)
     })
 }
 
 /// [`owned_curve_cache`], following subtype-table references.
 pub(super) fn owned_curve_cache_resolving_refs(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scope: toks::SubtypeScope<'_>,
     table: &toks::SubtypeTable,
-) -> Option<Result<NurbsCurve, cadmpeg_core::CodecError>> {
-    owned_curve_cache(ctx, scope).or_else(|| {
-        cache_from_subtype_refs(ctx, scope.tokens(), table, |ctx, scope| {
-            owned_curve_cache(ctx, scope)
-                .transpose()
-                .map(|cache| cache.map_or(CacheLookup::Missing, CacheLookup::Found))
-        })
+) -> Option<NurbsCurve> {
+    owned_curve_cache(scope).or_else(|| {
+        let Ok(curve) = cache_from_subtype_refs(scope.tokens(), table, |scope| {
+            Ok::<_, std::convert::Infallible>(
+                owned_curve_cache(scope).map_or(CacheLookup::Missing, CacheLookup::Found),
+            )
+        })?;
+        Some(curve)
     })
 }
 
@@ -401,11 +375,6 @@ pub(super) fn decode_surface_block(
     int_width: RefWidth,
 ) -> Option<SurfacePatchLayout> {
     // Byte-addressed patch inspection uses an independent desktop writer policy.
-    let writer_arena = cadmpeg_core::decode::DecodeArena::new();
-    let writer_policy = cadmpeg_core::decode::DecodePolicy::desktop();
-    let (writer_ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &writer_arena, &writer_policy)
-            .ok()?;
     let marker = marker_at(b, marker_pos)?;
     let mut pos = marker_pos + marker.byte_len();
 
@@ -458,7 +427,6 @@ pub(super) fn decode_surface_block(
     let poles = read_control_points(b, &mut pos, n_poles_u * n_poles_v, marker)?;
     let grid = poles.into_transposed_grid(n_poles_u, n_poles_v)?;
     let surface = NurbsSurface::new(
-        &writer_ctx,
         NurbsSurfaceAxis::new(
             u32::try_from(degree_u).ok()?,
             u_knots,
@@ -472,7 +440,6 @@ pub(super) fn decode_surface_block(
         grid,
         false,
     )
-    .ok()?
     .ok()?;
     Some(SurfacePatchLayout {
         surface,
@@ -543,11 +510,6 @@ pub(super) fn decode_curve_block(
     int_width: RefWidth,
 ) -> Option<CurvePatchLayout> {
     // Byte-addressed patch inspection uses an independent desktop writer policy.
-    let writer_arena = cadmpeg_core::decode::DecodeArena::new();
-    let writer_policy = cadmpeg_core::decode::DecodePolicy::desktop();
-    let (writer_ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &writer_arena, &writer_policy)
-            .ok()?;
     let marker = marker_at(b, marker_pos)?;
     let mut pos = marker_pos + marker.byte_len();
 
@@ -573,13 +535,11 @@ pub(super) fn decode_curve_block(
     let poles = read_control_points(b, &mut pos, n_poles, marker)?;
 
     let curve = NurbsCurve::new(
-        &writer_ctx,
         u32::try_from(degree).ok()?,
         knots,
         poles.into_lane(),
         is_periodic(closure),
     )
-    .ok()?
     .ok()?;
     Some(CurvePatchLayout {
         curve,
@@ -747,9 +707,6 @@ mod tests {
     #[test]
     fn cached_nurbs_recovery_admits_large_knot_tables() {
         use crate::sab::Token;
-        let arena = DecodeArena::new();
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("root");
         let mut curve = vec![
             Token::Ident("nubs".into()),
             Token::Long(1),
@@ -766,7 +723,7 @@ mod tests {
                 Token::Double(0.0),
             ]);
         }
-        let (decoded, end) = super::curve_block(&ctx, &curve, 0).unwrap().unwrap();
+        let (decoded, end) = super::curve_block(&curve, 0).unwrap();
         assert_eq!(decoded.control_points().len(), 1_001);
         assert_eq!(decoded.knots().len(), 1_003);
         assert_eq!(end, curve.len());
@@ -805,10 +762,7 @@ mod tests {
                 ]);
             }
         }
-        let arena = DecodeArena::new();
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("root");
-        let (decoded, end) = super::surface_block(&ctx, &surface, 0).unwrap().unwrap();
+        let (decoded, end) = super::surface_block(&surface, 0).unwrap();
         assert_eq!(decoded.poles().len(), 2_002);
         assert_eq!(decoded.v_knots().len(), 1_003);
         assert_eq!(end, surface.len());
@@ -848,7 +802,7 @@ mod tests {
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("root");
         assert!(
-            super::surface_block(&ctx, &grid, 0).is_none(),
+            super::surface_block(&grid, 0).is_none(),
             "a grid past the pole ceiling is not recovered"
         );
         assert!(ctx.resource_refusal().is_none());
@@ -892,9 +846,6 @@ mod tests {
     #[test]
     fn knot_counts_without_complete_source_fields_do_not_allocate() {
         use crate::sab::Token;
-        let arena = DecodeArena::new();
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
         let curve = [
             Token::Ident("nubs".into()),
             Token::Long(1),
@@ -903,7 +854,7 @@ mod tests {
             Token::Double(0.0),
             Token::Long(1),
         ];
-        assert!(super::curve_block(&ctx, &curve, 0).is_none());
+        assert!(super::curve_block(&curve, 0).is_none());
         let surface = [
             Token::Ident("nubs".into()),
             Token::Long(1),
@@ -917,7 +868,7 @@ mod tests {
             Token::Double(0.0),
             Token::Long(1),
         ];
-        assert!(super::surface_block(&ctx, &surface, 0).is_none());
+        assert!(super::surface_block(&surface, 0).is_none());
         for width in [
             crate::kernel_header::RefWidth::Four,
             crate::kernel_header::RefWidth::Eight,

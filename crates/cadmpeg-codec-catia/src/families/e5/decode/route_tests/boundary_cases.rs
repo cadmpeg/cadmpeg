@@ -282,10 +282,6 @@ fn e5_plane_circle_boundary_lifts_to_world_circle_carrier() {
 
 #[test]
 fn e5_plane_jet_boundary_lifts_control_net_affinely() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("fixture fits input limit");
     let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
         cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
             Point3::new(1.0, 2.0, 3.0),
@@ -307,7 +303,6 @@ fn e5_plane_jet_boundary_lifts_control_net_affinely() {
         [0.0, 1.0],
     );
     let pcurve = quintic_jet_pcurve(
-        &ctx,
         5,
         &[0.0, 1.0],
         &points,
@@ -315,7 +310,6 @@ fn e5_plane_jet_boundary_lifts_control_net_affinely() {
         &mut crate::nurbs::LaneRefusals::new(),
         "test record",
     )
-    .expect("service resource budget")
     .expect("quintic pcurve");
     let (curve, range) = crate::test_support::with_service_context(|ctx| {
         e5_boundary_curve(
@@ -365,14 +359,12 @@ fn e5_plane_jet_boundary_rejects_nonfinite_world_poles() {
     };
     let pcurve = PcurveGeometry::Nurbs {
         nurbs: PcurveNurbs::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point2::new(large, 0.0), Point2::new(large, 1.0)],
             None,
             false,
         )
-        .expect("fixture pcurve construction admission")
         .expect("valid finite pcurve carrier"),
     };
     assert!(
@@ -548,7 +540,6 @@ fn e5_nurbs_pcurve_evaluates_on_nurbs_surface() {
         record_id: 7,
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
             NurbsSurface::from_lanes(
-                &cadmpeg_test_support::service_decode_context(),
                 cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
@@ -568,7 +559,6 @@ fn e5_nurbs_pcurve_evaluates_on_nurbs_surface() {
                 ),
                 false,
             )
-            .expect("fixture constructor admission")
             .expect("valid planar NURBS surface"),
         )),
         uv_scale: finite_pair([1.0, 1.0]),
@@ -923,47 +913,35 @@ fn e5_boundary_nurbs_lift_result() {
     )
     .expect("valid plane fixture");
     let nurbs = PcurveNurbs::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![Point2::new(0.0, 0.0), Point2::new(1.0, 2.0)],
         None,
         false,
     )
-    .expect("fixture pcurve construction admission")
     .expect("valid pcurve fixture");
-    let lifted = crate::test_support::with_service_context(|ctx| {
-        super::super::e5_lift_plane_nurbs(
-            ctx,
-            &plane,
-            &nurbs,
-            17,
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-    })
-    .expect("service profile admits lifted pcurve")
+    let lifted = super::super::e5_lift_plane_nurbs(
+        &plane,
+        &nurbs,
+        17,
+        &mut crate::nurbs::LaneRefusals::new(),
+    )
     .expect("valid lifted NURBS");
     assert_eq!(lifted.pole_count(), 2);
     let rational = PcurveNurbs::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![Point2::new(0.0, 0.0), Point2::new(1.0, 2.0)],
         Some(vec![1.0, 2.0]),
         false,
     )
-    .expect("fixture pcurve construction admission")
     .expect("valid rational pcurve fixture");
-    let lifted = crate::test_support::with_service_context(|ctx| {
-        super::super::e5_lift_plane_nurbs(
-            ctx,
-            &plane,
-            &rational,
-            18,
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-    })
-    .expect("service profile admits rational lift")
+    let lifted = super::super::e5_lift_plane_nurbs(
+        &plane,
+        &rational,
+        18,
+        &mut crate::nurbs::LaneRefusals::new(),
+    )
     .expect("valid rational NURBS");
     assert_eq!(lifted.pole_rows().weights(), Some(vec![1.0, 2.0]));
 }

@@ -20,14 +20,12 @@ fn with_depth<T>(depth: u64, run: impl FnOnce(&DecodeContext<'_>) -> T) -> T {
 fn nurbs(x: f64, rational: bool) -> PcurveGeometry {
     PcurveGeometry::Nurbs {
         nurbs: PcurveNurbs::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point2::new(x, 1.0); 2],
             rational.then(|| vec![1.0, 2.0]),
             false,
         )
-        .expect("fixture pcurve construction admission")
         .expect("curve"),
     }
 }

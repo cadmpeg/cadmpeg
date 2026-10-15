@@ -4,7 +4,6 @@
 use super::project_feature_model;
 use crate::history::tests::feature;
 use crate::records::{FeatureContent, FeatureHistory};
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use std::collections::BTreeMap;
 
 fn history() -> FeatureHistory {
@@ -26,10 +25,7 @@ fn feature_content_projection_keeps_repeated_text() {
     history.features[0]
         .content
         .push(FeatureContent::Text("source text".into()));
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::service();
-    let (ctx, _) = DecodeContext::from_root_bytes(b"content", &arena, &policy).unwrap();
-    let projection = project_feature_model(&ctx, &[history]).unwrap();
+    let projection = project_feature_model(&[history]).unwrap();
     assert_eq!(projection.features[0].source_content.len(), 2);
     assert_eq!(
         projection.features[0].source_content[0],

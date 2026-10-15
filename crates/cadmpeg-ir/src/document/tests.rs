@@ -55,7 +55,6 @@ fn procedural_surface_attachment_moves_the_solved_knot_storage() {
     let procedural_id =
         ProceduralSurfaceId::mint("test:model:surface-construction#move-cache").unwrap();
     let carrier = NurbsSurface::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         NurbsSurfaceLanes::new(
@@ -67,7 +66,6 @@ fn procedural_surface_attachment_moves_the_solved_knot_storage() {
         ),
         false,
     )
-    .expect("fixture constructor admission")
     .unwrap();
     let original_knot_storage = carrier.u_knots().as_ptr();
     let mut model = Model::default();
@@ -102,14 +100,12 @@ fn procedural_curve_attachment_moves_the_solved_knot_storage() {
     let procedural_id =
         ProceduralCurveId::mint("test:model:curve-construction#move-cache").unwrap();
     let carrier = NurbsCurve::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
         None,
         false,
     )
-    .expect("fixture constructor admission")
     .unwrap();
     let original_knot_storage = carrier.knots().as_ptr();
     let mut model = Model::default();
@@ -264,7 +260,6 @@ fn feature_parent_wire_is_derived_from_its_single_owner() {
                 children: crate::features::TreeChildren::new(
                     vec![child_id.clone()],
                     Some(child_id.clone()),
-                    &cadmpeg_test_support::service_decode_context(),
                 )
                 .unwrap(),
             }),
@@ -405,12 +400,8 @@ fn feature_parent_wire_rejects_disagreement_with_tree_children() {
                 evaluation: crate::features::FeatureEvaluation::from_definition(
                     FeatureDefinition::Operation(FeatureOperation::TreeNode {
                         role: FeatureTreeNodeRole::History,
-                        children: crate::features::TreeChildren::new(
-                            vec![child_id.clone()],
-                            None,
-                            &cadmpeg_test_support::service_decode_context(),
-                        )
-                        .unwrap(),
+                        children: crate::features::TreeChildren::new(vec![child_id.clone()], None)
+                            .unwrap(),
                     }),
                 ),
                 native_ref: None,

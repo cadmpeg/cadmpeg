@@ -145,38 +145,24 @@ pub(super) struct SketchPlaneFrame {
 }
 
 pub(super) fn project_edge(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     edge: &cadmpeg_ir::topology::Edge,
     vertices: &HashMap<&cadmpeg_ir::ids::VertexId, &cadmpeg_ir::ids::PointId>,
     points: &HashMap<&cadmpeg_ir::ids::PointId, Point3>,
     curves: &HashMap<&cadmpeg_ir::ids::CurveId, &CurveGeometry>,
     frame: SketchPlaneFrame,
     refusal: &mut crate::lane_refusal::LaneRefusals,
-) -> Result<Option<SketchGeometry>, cadmpeg_core::CodecError> {
+) -> Option<SketchGeometry> {
     let SketchPlaneFrame {
         origin,
         u_axis,
         v_axis,
     } = frame;
-    let Some(start_id) = vertices.get(&edge.start) else {
-        return Ok(None);
-    };
-    let Some(start_point) = points.get(start_id) else {
-        return Ok(None);
-    };
+    let start_point = points.get(vertices.get(&edge.start)?)?;
     let start = project_point(*start_point, origin, u_axis, v_axis);
-    let Some(end_id) = vertices.get(&edge.end) else {
-        return Ok(None);
-    };
-    let Some(end_point) = points.get(end_id) else {
-        return Ok(None);
-    };
+    let end_point = points.get(vertices.get(&edge.end)?)?;
     let end = project_point(*end_point, origin, u_axis, v_axis);
     let line = || SketchGeometry::try_from(SketchGeometryDefinition::Line { start, end }).ok();
-    let Some(tolerance) = EdgeProjectionTolerance::of(edge) else {
-        return Ok(None);
-    };
-    let tolerance = tolerance.get();
+    let tolerance = EdgeProjectionTolerance::of(edge)?.get();
     if let Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs))) =
         edge.curve().and_then(|id| curves.get(id).copied())
     {
@@ -205,20 +191,19 @@ pub(super) fn project_edge(
             }
         };
         return match cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_checked_lanes(
-            ctx,
             nurbs.degree(),
             knots,
             projected,
             weights,
             nurbs.periodic(),
-        )? {
-            Ok(nurbs) => Ok(Some(SketchGeometry::nurbs(nurbs))),
+        ) {
+            Ok(nurbs) => Some(SketchGeometry::nurbs(nurbs)),
             Err(error) => {
                 refusal.note(
                     format_args!("sldprt projected sketch edge {}", edge.id),
                     &error,
-                )?;
-                Ok(None)
+                );
+                None
             }
         };
     }
@@ -347,7 +332,7 @@ pub(super) fn project_edge(
         Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(_))) | None => line(),
         Some(_) => native,
     })();
-    Ok(projected)
+    projected
 }
 
 fn circle_contains_point(

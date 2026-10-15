@@ -193,7 +193,6 @@ fn rational_nurbs_curve_round_trips_homogeneous_poles() {
         id: cadmpeg_ir::ids::CurveId::mint("rhino:test:curve#nurbs").expect("identity grammar"),
         geometry: cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
             cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
-                &cadmpeg_test_support::service_decode_context(),
                 2,
                 vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
                 vec![
@@ -204,7 +203,6 @@ fn rational_nurbs_curve_round_trips_homogeneous_poles() {
                 Some(vec![1.0, 0.5, 1.0]),
                 false,
             )
-            .expect("fixture constructor admission")
             .expect("valid rational curve"),
         )),
         source_object: None,
@@ -229,7 +227,6 @@ fn rational_nurbs_curve_round_trips_homogeneous_poles() {
 #[test]
 fn reversed_unclamped_nurbs_knots_are_native_canonical() {
     let mut curve = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         2,
         vec![-3.0, 0.0, 1.0, 5.0, 8.0, 9.0, 10.0, 11.0, 14.0],
         (0..6)
@@ -238,7 +235,6 @@ fn reversed_unclamped_nurbs_knots_are_native_canonical() {
         None,
         false,
     )
-    .expect("fixture constructor admission")
     .expect("valid unclamped curve");
     canonicalize_native_curve_knots(&mut curve, "reversed")
         .expect("reflected stored knots reconstruct");
@@ -270,7 +266,6 @@ fn free_plane_and_rational_nurbs_surface_round_trip() {
         id: cadmpeg_ir::ids::SurfaceId::mint("rhino:test:surface#nurbs").expect("identity grammar"),
         geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
             cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes(
-                &cadmpeg_test_support::service_decode_context(),
                 cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
@@ -291,7 +286,6 @@ fn free_plane_and_rational_nurbs_surface_round_trip() {
                 ),
                 false,
             )
-            .expect("fixture constructor admission")
             .expect("valid rational surface"),
         )),
         source_object: None,
@@ -773,7 +767,6 @@ fn noncanonical_nurbs_periodicity_is_rejected_atomically() {
         id: cadmpeg_ir::ids::CurveId::mint("cadir:model:curve#periodic").expect("identity grammar"),
         geometry: cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
             cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
-                &cadmpeg_test_support::service_decode_context(),
                 2,
                 vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
                 vec![
@@ -784,7 +777,6 @@ fn noncanonical_nurbs_periodicity_is_rejected_atomically() {
                 None,
                 true,
             )
-            .expect("fixture constructor admission")
             .expect("valid periodic fixture"),
         )),
         source_object: None,

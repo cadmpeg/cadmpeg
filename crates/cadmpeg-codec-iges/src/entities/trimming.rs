@@ -480,7 +480,7 @@ pub(super) fn pcurve_geometry(
             PcurveNurbsPoles::Rational { points: mapped }
         }
     };
-    let parameter_curve = PcurveNurbs::new(ctx, degree, knots, poles, periodic)??;
+    let parameter_curve = PcurveNurbs::new(degree, knots, poles, periodic)?;
     Ok(Some((
         PcurveGeometry::Nurbs {
             nurbs: parameter_curve,

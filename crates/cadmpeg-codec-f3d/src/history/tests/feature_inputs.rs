@@ -74,9 +74,7 @@ fn input_fixture() -> (
 
 fn project() -> Result<Vec<cadmpeg_ir::features::FeatureInputTopology>, cadmpeg_core::CodecError> {
     let (feature, scope, history) = input_fixture();
-    let ctx = cadmpeg_test_support::service_decode_context();
     super::super::project_feature_input_topologies(
-        &ctx,
         std::slice::from_ref(&feature),
         std::slice::from_ref(&scope),
         std::slice::from_ref(&history),
@@ -120,10 +118,8 @@ fn input_topology_uses_scope_binding_when_global_state_numbers_repeat() {
         },
     );
     let histories = [history, other];
-    let ctx = cadmpeg_test_support::service_decode_context();
     let project = |bindings: &std::collections::HashMap<String, String>| {
         super::super::project_feature_input_topologies(
-            &ctx,
             std::slice::from_ref(&feature),
             std::slice::from_ref(&scope),
             &histories,
@@ -148,7 +144,6 @@ fn input_topology_uses_scope_binding_when_global_state_numbers_repeat() {
         std::collections::HashMap::from([(scope.id.clone(), "f3d:missing:history#0".into())]);
     assert!(project(&bindings).is_empty());
     assert!(super::super::project_feature_input_topologies(
-        &ctx,
         std::slice::from_ref(&feature),
         std::slice::from_ref(&scope),
         &histories[..1],

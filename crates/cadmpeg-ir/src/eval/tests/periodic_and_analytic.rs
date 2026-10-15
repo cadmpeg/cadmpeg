@@ -15,7 +15,6 @@ use crate::validate::validate_neutral;
 #[test]
 fn periodic_nurbs_parameters_preserve_phase_and_wrap_for_evaluation() {
     let nurbs = crate::geometry::nurbs::NurbsCurve::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, 1.0, 2.0, 2.0],
         vec![
@@ -26,7 +25,6 @@ fn periodic_nurbs_parameters_preserve_phase_and_wrap_for_evaluation() {
         None,
         true,
     )
-    .expect("fixture constructor admission")
     .unwrap();
     let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs.clone()));
     assert_eq!(
@@ -84,13 +82,11 @@ fn periodic_nurbs_parameters_preserve_phase_and_wrap_for_evaluation() {
         let replacement = false;
         edit::replace(nurbs, |previous| {
             crate::geometry::nurbs::NurbsCurve::new(
-                &cadmpeg_test_support::service_decode_context(),
                 previous.degree(),
                 previous.knots().to_vec(),
                 previous.pole_rows().clone(),
                 replacement,
             )
-            .expect("fixture final NURBS admission")
         })
         .unwrap();
     };
@@ -109,7 +105,6 @@ fn rational_quadratic_arc_evaluates_on_the_circle() {
     // Quarter circle of radius 5 as a rational quadratic Bezier.
     let weight = 0.5_f64.sqrt();
     let curve = crate::geometry::nurbs::NurbsCurve::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         2,
         vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
         vec![
@@ -120,7 +115,6 @@ fn rational_quadratic_arc_evaluates_on_the_circle() {
         Some(vec![1.0, weight, 1.0]),
         false,
     )
-    .expect("fixture constructor admission")
     .unwrap();
     let point = crate::eval::decode::nurbs_curve_point_at(
         crate::eval::admission::EvaluationAdmission::Standard,
@@ -135,14 +129,12 @@ fn rational_quadratic_arc_evaluates_on_the_circle() {
 #[test]
 fn point_evaluation_borrows_only_indexed_nurbs_and_polyline_rows() {
     let curve = crate::geometry::nurbs::NurbsCurve::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
         Some(vec![1.0, 2.0]),
         false,
     )
-    .expect("fixture constructor admission")
     .unwrap();
     assert_eq!(
         curve
@@ -170,9 +162,7 @@ fn point_evaluation_borrows_only_indexed_nurbs_and_polyline_rows() {
                 .unwrap(),
         },
         0.01,
-        &cadmpeg_test_support::service_decode_context(),
     )
-    .expect("polyline construction admission")
     .unwrap();
     assert_eq!(
         polyline.point_at(1).map(crate::features::FinitePoint3::get),
@@ -359,9 +349,7 @@ fn polyline_carriers_evaluate_in_both_parameter_directions() {
                     .expect("nonempty polyline fixture"),
             },
             0.01,
-            &cadmpeg_test_support::service_decode_context(),
         )
-        .expect("polyline construction admission")
         .unwrap(),
     ));
     assert_eq!(
@@ -386,9 +374,7 @@ fn polyline_carriers_evaluate_in_both_parameter_directions() {
                     .expect("nonempty polyline fixture"),
             },
             0.01,
-            &cadmpeg_test_support::service_decode_context(),
         )
-        .expect("polyline construction admission")
         .unwrap(),
     ));
     assert_eq!(

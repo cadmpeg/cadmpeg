@@ -93,7 +93,7 @@ pub(in crate::families) fn try_decode_e5(
     };
     let stream = &scan.data[stream_range];
     let circles = crate::families::e5::records::e5_circles(stream);
-    let mut surfaces = crate::families::e5::records::e5_surfaces(ctx, stream, refusal)?;
+    let mut surfaces = crate::families::e5::records::e5_surfaces(stream, refusal)?;
     let rolling_ball_jets = crate::families::e5::records::e5_rolling_ball_jets(stream);
     (|| -> Option<Result<FamilyOutput, cadmpeg_core::CodecError>> {
         macro_rules! admitted {
@@ -1361,9 +1361,8 @@ fn plan_e5_boundary<'a>(
                         "e5 boundary pcurve of loop record {} member {member_index}",
                         loop_.record_id
                     );
-                    let Some(reversed) = crate::nurbs::reverse_pcurve_geometry(
-                        ctx, &geometry, range, refusal, &record,
-                    )?
+                    let Some(reversed) =
+                        crate::nurbs::reverse_pcurve_geometry(&geometry, range, refusal, &record)
                     else {
                         return Ok(None);
                     };
@@ -1386,13 +1385,11 @@ fn plan_e5_boundary<'a>(
                             loop_.record_id
                         );
                         let Some(reversed_curve) = crate::nurbs::reverse_curve_geometry(
-                            ctx,
                             &curve,
                             curve_range,
                             refusal,
                             &record,
-                        )?
-                        else {
+                        ) else {
                             return Ok(None);
                         };
                         (curve, curve_range) = reversed_curve;
@@ -1510,13 +1507,8 @@ fn plan_e5_boundary<'a>(
             };
             if reversed {
                 let record = format!("e5 boundary curve of edge {edge_ref} pcurve {pcurve_ref}");
-                let Some(reversed_curve) = crate::nurbs::reverse_curve_geometry(
-                    ctx,
-                    &curve,
-                    curve_range,
-                    refusal,
-                    &record,
-                )?
+                let Some(reversed_curve) =
+                    crate::nurbs::reverse_curve_geometry(&curve, curve_range, refusal, &record)
                 else {
                     continue;
                 };
@@ -1525,7 +1517,7 @@ fn plan_e5_boundary<'a>(
             let pcurve = if reversed {
                 let record = format!("e5 boundary pcurve of edge {edge_ref} pcurve {pcurve_ref}");
                 let Some(reversed) =
-                    crate::nurbs::reverse_pcurve_geometry(ctx, &geometry, range, refusal, &record)?
+                    crate::nurbs::reverse_pcurve_geometry(&geometry, range, refusal, &record)
                 else {
                     continue;
                 };
@@ -2401,14 +2393,12 @@ fn e5_pcurve_on_surface(
                 return Ok(None);
             }
             let Some(geometry) = rational_pcurve_arc(
-                ctx,
                 center,
                 radius,
                 angular_range,
                 refusal,
                 "e5 arc pcurve record",
-            )?
-            else {
+            ) else {
                 return Ok(None);
             };
             {
@@ -2485,7 +2475,6 @@ fn e5_pcurve_on_surface(
                 return Ok(None);
             }
             let Some(geometry) = quintic_jet_pcurve(
-                ctx,
                 crate::families::e5::graph::E5Pcurve::JET_DEGREE,
                 &knots,
                 &points,
@@ -2495,8 +2484,7 @@ fn e5_pcurve_on_surface(
                     "e5 quintic-jet pcurve on surface record {} at byte {}",
                     decoded_surface.record_id, decoded_surface.pos
                 ),
-            )?
-            else {
+            ) else {
                 return Ok(None);
             };
             let (Some(first), Some(last)) = (points.first(), points.last()) else {
@@ -2546,7 +2534,7 @@ fn e5_pcurve_on_surface(
                 return Ok(None);
             }
             let Some(nurbs) = crate::nurbs::note_refusal(
-                PcurveNurbs::from_lanes(ctx, *degree, knot_values, scaled_points, None, false)?,
+                PcurveNurbs::from_lanes(*degree, knot_values, scaled_points, None, false),
                 refusal,
                 format_args!(
                     "e5 NURBS pcurve on surface record {} at byte {}",
@@ -2595,12 +2583,11 @@ fn e5_pcurve_on_surface(
 }
 
 fn e5_lift_plane_nurbs(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     plane: &cadmpeg_ir::geometry::analytic::PlaneSurface,
     nurbs: &PcurveNurbs,
     surface_record_id: u32,
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> Result<Option<NurbsCurve>, cadmpeg_core::CodecError> {
+) -> Option<NurbsCurve> {
     use cadmpeg_ir::geometry::nurbs::{NurbsPoles3, WeightedPole3};
     use cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles;
 
@@ -2609,7 +2596,7 @@ fn e5_lift_plane_nurbs(
     let u_axis = plane.frame().reference().as_raw();
     let v_axis = (*normal).cross(*u_axis);
     if !v_axis.is_finite() {
-        return Ok(None);
+        return None;
     }
     let lift = |point: FinitePoint2| {
         let point = point.get();
@@ -2621,13 +2608,15 @@ fn e5_lift_plane_nurbs(
     };
     let poles = match nurbs.pole_rows() {
         PcurveNurbsPoles::Polynomial { points } => {
-            let Some(points) = points.iter().copied().map(lift).collect::<Option<Vec<_>>>() else {
-                return Ok(None);
-            };
+            let points = points
+                .iter()
+                .copied()
+                .map(lift)
+                .collect::<Option<Vec<_>>>()?;
             NurbsPoles3::Polynomial { points }
         }
         PcurveNurbsPoles::Rational { points } => {
-            let Some(points) = points
+            let points = points
                 .iter()
                 .map(|pole| {
                     Some(WeightedPole3 {
@@ -2635,21 +2624,18 @@ fn e5_lift_plane_nurbs(
                         weight: pole.weight,
                     })
                 })
-                .collect::<Option<Vec<_>>>()
-            else {
-                return Ok(None);
-            };
+                .collect::<Option<Vec<_>>>()?;
             NurbsPoles3::Rational { points }
         }
     };
     let knots = nurbs.knots().clone();
-    Ok(crate::nurbs::note_refusal(
-        NurbsCurve::new(ctx, nurbs.degree(), knots, poles, nurbs.periodic())?,
+    crate::nurbs::note_refusal(
+        NurbsCurve::new(nurbs.degree(), knots, poles, nurbs.periodic()),
         refusal,
         format_args!(
             "e5 boundary curve lifted from the pcurve on surface record {surface_record_id}"
         ),
-    ))
+    )
 }
 
 fn e5_boundary_curve(
@@ -2704,17 +2690,12 @@ fn e5_boundary_curve(
             PcurveGeometry::Nurbs { nurbs },
         ) = (surface, native_pcurve, pcurve)
         {
-            let nurbs = match e5_lift_plane_nurbs(
-                ctx,
+            let nurbs = e5_lift_plane_nurbs(
                 plane_surface,
                 nurbs,
                 native_pcurve.surface_record_id(),
                 refusal,
-            ) {
-                Ok(Some(nurbs)) => nurbs,
-                Ok(None) => return None,
-                Err(error) => return Some(Err(error)),
-            };
+            )?;
             return Some(Ok((
                 CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
                 range,
@@ -3332,7 +3313,7 @@ mod route_tests {
     mod ownership_limits;
     mod plane_frames;
 
-    use crate::assemble::quintic_jet_pcurve;
+    use crate::assemble::{quintic_jet_pcurve, rational_pcurve_arc};
     use crate::families::e5::decode::{
         e5_boundary_curve, e5_circle_carriers_have_same_ordered_sweep, e5_native_uv_endpoints,
         e5_occurrence_intersection_context, e5_ownership_plan, e5_pcurve_on_surface,
@@ -3362,19 +3343,6 @@ mod route_tests {
 
     use crate::test_support::test_b5::{finite, finite_lane, finite_pair, point, positive};
     use std::collections::{BTreeMap, HashMap};
-
-    fn rational_pcurve_arc(
-        center: [f64; 2],
-        radius: f64,
-        range: [f64; 2],
-        refusal: &mut crate::nurbs::LaneRefusals,
-        record: &str,
-    ) -> Option<PcurveGeometry> {
-        crate::test_support::with_service_context(|ctx| {
-            crate::assemble::rational_pcurve_arc(ctx, center, radius, range, refusal, record)
-        })
-        .expect("service budget admits rational arc")
-    }
 
     fn fixture_pcurve_on_surface(
         pcurve: &E5Pcurve,

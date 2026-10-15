@@ -161,7 +161,6 @@ fn fitted_nurbs_offsets_validate_from_clamped_endpoint_frames() {
             sketch.clone(),
             SketchGeometry::nurbs(
                 crate::geometry::pcurve::PcurveNurbs::from_lanes(
-                    &cadmpeg_test_support::service_decode_context(),
                     2,
                     vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
                     vec![
@@ -172,7 +171,6 @@ fn fitted_nurbs_offsets_validate_from_clamped_endpoint_frames() {
                     None,
                     false,
                 )
-                .expect("fixture pcurve construction admission")
                 .unwrap(),
             ),
         ),
@@ -181,7 +179,6 @@ fn fitted_nurbs_offsets_validate_from_clamped_endpoint_frames() {
             sketch.clone(),
             SketchGeometry::nurbs(
                 crate::geometry::pcurve::PcurveNurbs::from_lanes(
-                    &cadmpeg_test_support::service_decode_context(),
                     3,
                     vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
                     vec![
@@ -193,7 +190,6 @@ fn fitted_nurbs_offsets_validate_from_clamped_endpoint_frames() {
                     None,
                     false,
                 )
-                .expect("fixture pcurve construction admission")
                 .unwrap(),
             ),
         ),
@@ -879,15 +875,7 @@ fn sketch_profile_subselections_are_bounds_checked() {
     ir.model.features.push(feature(
         "invalid-profile-index",
         1,
-        ProfileRef::Planar(
-            PlanarProfileRef::sketch_profiles(
-                sketch_id.clone(),
-                vec![0],
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .expect("profile membership admission")
-            .unwrap(),
-        ),
+        ProfileRef::Planar(PlanarProfileRef::sketch_profiles(sketch_id.clone(), vec![0]).unwrap()),
     ));
     ir.model.features.push(feature(
         "invalid-region",
@@ -895,13 +883,7 @@ fn sketch_profile_subselections_are_bounds_checked() {
         ProfileRef::Planar(
             PlanarProfileRef::sketch_regions(
                 sketch_id.clone(),
-                vec![SketchProfileRegion::loops(
-                    0,
-                    Vec::new(),
-                    &cadmpeg_test_support::service_decode_context(),
-                )
-                .expect("fixture loop-region admission")
-                .unwrap()],
+                vec![SketchProfileRegion::loops(0, Vec::new()).unwrap()],
             )
             .unwrap(),
         ),
@@ -911,13 +893,7 @@ fn sketch_profile_subselections_are_bounds_checked() {
         "repeated-profile-entity",
         3,
         ProfileRef::Planar(
-            PlanarProfileRef::sketch_entities(
-                sketch_id.clone(),
-                vec![selected_entity],
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .expect("profile membership admission")
-            .unwrap(),
+            PlanarProfileRef::sketch_entities(sketch_id.clone(), vec![selected_entity]).unwrap(),
         ),
     ));
 
@@ -1095,14 +1071,12 @@ mod admission;
 fn spatial_sketch_endpoint_helper_preserves_session_depth_refusal() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     let curve = crate::geometry::nurbs::NurbsCurve::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
         None,
         false,
     )
-    .expect("constructor admission")
     .expect("valid curve");
     let geometry = crate::sketches::SpatialSketchGeometry::try_from(
         crate::sketches::SpatialSketchGeometryDefinition::Nurbs {

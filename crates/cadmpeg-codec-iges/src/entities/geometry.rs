@@ -2171,7 +2171,7 @@ pub(crate) fn project_geometry(
         let domain_start = finite_knots[degree_usize];
         let domain_end = finite_knots[control_count];
         let raw_knots = finite_knots.into_iter().map(FiniteReal::get).collect();
-        let Ok(knots) = KnotVector::new(ctx, raw_knots)? else {
+        let Ok(knots) = KnotVector::new(raw_knots) else {
             super::push_geometry_loss(
                 &mut losses,
                 entry,
@@ -2384,24 +2384,18 @@ pub(crate) fn project_geometry(
         };
         // IGES PROP4 is informational; neutral evaluation uses the
         // serialized active carrier without periodic parameter wrapping.
-        let nurbs = match NurbsCurve::from_checked_lanes(
-            ctx,
-            degree,
-            knots,
-            control_points,
-            weights,
-            false,
-        )? {
-            Ok(nurbs) => nurbs,
-            Err(error) => {
-                super::push_geometry_loss(
-                    &mut losses,
-                    entry,
-                    format_args!("spline cardinalities are inconsistent: {error}"),
-                );
-                continue;
-            }
-        };
+        let nurbs =
+            match NurbsCurve::from_checked_lanes(degree, knots, control_points, weights, false) {
+                Ok(nurbs) => nurbs,
+                Err(error) => {
+                    super::push_geometry_loss(
+                        &mut losses,
+                        entry,
+                        format_args!("spline cardinalities are inconsistent: {error}"),
+                    );
+                    continue;
+                }
+            };
         let Some(start) = finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
             cadmpeg_ir::eval::decode::nurbs_curve_point_at(ctx, &nurbs, parameter_range[0].get()),
         )?)?

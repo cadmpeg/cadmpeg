@@ -25,27 +25,22 @@ fn construction_rejects_invalid_knots_and_non_finite_poles() {
         let mut knots = curve().knots().to_vec();
         knots[1] = invalid;
         assert!(NurbsCurve::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             1,
             knots.clone(),
             curve().pole_rows().raw_points(),
             None,
-            false
+            false,
         )
-        .expect("fixture constructor admission")
         .is_err());
         assert!(PcurveNurbs::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             1,
             knots.clone(),
             pcurve().pole_rows().raw_points(),
             None,
-            false
+            false,
         )
-        .expect("fixture pcurve construction admission")
         .is_err());
         assert!(PolarPcurveNurbs::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             1,
             knots,
             vec![
@@ -56,35 +51,22 @@ fn construction_rejects_invalid_knots_and_non_finite_poles() {
                 2
             ],
             None,
-            false
+            false,
         )
-        .expect("fixture pcurve construction admission")
         .is_err());
 
         let mut points = curve().pole_rows().raw_points();
         points[1].z = invalid;
-        assert!(NurbsCurve::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
-            1,
-            curve().knots().to_vec(),
-            points,
-            None,
-            false
-        )
-        .expect("fixture constructor admission")
-        .is_err());
+        assert!(NurbsCurve::from_lanes(1, curve().knots().to_vec(), points, None, false,).is_err());
         assert!(PcurveNurbs::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             1,
             pcurve().knots().to_vec(),
             vec![Point2::new(0.0, invalid); 2],
             None,
-            false
+            false,
         )
-        .expect("fixture pcurve construction admission")
         .is_err());
         assert!(PolarPcurveNurbs::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             1,
             polar().knots().to_vec(),
             vec![
@@ -95,22 +77,19 @@ fn construction_rejects_invalid_knots_and_non_finite_poles() {
                 2
             ],
             None,
-            false
+            false,
         )
-        .expect("fixture pcurve construction admission")
         .is_err());
 
         let source = surface();
         let mut points = source.pole_grid().raw_points();
         points[0][1].x = invalid;
         assert!(NurbsSurface::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             crate::geometry::nurbs::NurbsSurfaceAxis::new(1, source.u_knots().to_vec(), false),
             crate::geometry::nurbs::NurbsSurfaceAxis::new(1, source.v_knots().to_vec(), false),
             crate::geometry::nurbs::NurbsSurfaceLanes::new(points, None),
-            false
+            false,
         )
-        .expect("fixture constructor admission")
         .is_err());
     }
 
@@ -128,48 +107,28 @@ fn curve_weights(
     curve: &NurbsCurve,
     weights: Vec<f64>,
 ) -> Result<NurbsPoles3, crate::geometry::nurbs::NurbsError> {
-    NurbsPoles3::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
-        curve.pole_rows().raw_points(),
-        Some(weights),
-    )
-    .expect("fixture pole pairing admission")
+    NurbsPoles3::from_lanes(curve.pole_rows().raw_points(), Some(weights))
 }
 
 fn surface_weights(
     surface: &NurbsSurface,
     weights: Vec<Vec<f64>>,
 ) -> Result<NurbsPoleGrid, crate::geometry::nurbs::NurbsError> {
-    NurbsPoleGrid::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
-        surface.pole_grid().raw_points(),
-        Some(weights),
-    )
-    .expect("fixture pole pairing admission")
+    NurbsPoleGrid::from_lanes(surface.pole_grid().raw_points(), Some(weights))
 }
 
 fn pcurve_weights(
     pcurve: &PcurveNurbs,
     weights: Vec<f64>,
 ) -> Result<PcurveNurbsPoles, crate::geometry::nurbs::NurbsError> {
-    PcurveNurbsPoles::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
-        pcurve.pole_rows().raw_points(),
-        Some(weights),
-    )
-    .expect("fixture pcurve construction admission")
+    PcurveNurbsPoles::from_lanes(pcurve.pole_rows().raw_points(), Some(weights))
 }
 
 fn polar_weights(
     polar: &PolarPcurveNurbs,
     weights: Vec<f64>,
 ) -> Result<PolarNurbsPoles, crate::geometry::nurbs::NurbsError> {
-    PolarNurbsPoles::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
-        polar.pole_rows().to_raw().poles(),
-        Some(weights),
-    )
-    .expect("fixture pcurve construction admission")
+    PolarNurbsPoles::from_lanes(polar.pole_rows().to_raw().poles(), Some(weights))
 }
 
 #[test]
@@ -182,13 +141,11 @@ fn weight_rules_admit_a_signed_nonzero_weight_in_every_nurbs_carrier() {
         let replacement = curve_weights(&curve, vec![1e-200, -1e-200]).unwrap();
         edit::replace(&mut curve, |previous| {
             crate::geometry::nurbs::NurbsCurve::new(
-                &cadmpeg_test_support::service_decode_context(),
                 previous.degree(),
                 previous.knots().to_vec(),
                 replacement,
                 previous.periodic(),
             )
-            .expect("fixture final NURBS admission")
         })
     }
     .unwrap();
@@ -196,7 +153,6 @@ fn weight_rules_admit_a_signed_nonzero_weight_in_every_nurbs_carrier() {
         let replacement = surface_weights(&surface, vec![vec![-1e-200; 2]; 2]).unwrap();
         edit::replace(&mut surface, |previous| {
             crate::geometry::nurbs::NurbsSurface::new(
-                &cadmpeg_test_support::service_decode_context(),
                 crate::geometry::nurbs::NurbsSurfaceAxis::new(
                     previous.u_degree(),
                     previous.u_knots().to_vec(),
@@ -210,7 +166,6 @@ fn weight_rules_admit_a_signed_nonzero_weight_in_every_nurbs_carrier() {
                 replacement,
                 previous.normal_reversed(),
             )
-            .expect("fixture final NURBS admission")
         })
     }
     .unwrap();
@@ -218,13 +173,11 @@ fn weight_rules_admit_a_signed_nonzero_weight_in_every_nurbs_carrier() {
         let replacement = pcurve_weights(&pcurve, vec![1e-200, -1e-200]).unwrap();
         edit::replace(&mut pcurve, |previous| {
             crate::geometry::pcurve::PcurveNurbs::new(
-                &cadmpeg_test_support::service_decode_context(),
                 previous.degree(),
                 previous.knots().to_vec(),
                 replacement,
                 previous.periodic(),
             )
-            .expect("fixture pcurve construction admission")
         })
     }
     .unwrap();
@@ -232,13 +185,11 @@ fn weight_rules_admit_a_signed_nonzero_weight_in_every_nurbs_carrier() {
         let replacement = polar_weights(&polar, vec![1e-200, -1e-200]).unwrap();
         edit::replace(&mut polar, |previous| {
             crate::geometry::pcurve::PolarPcurveNurbs::new(
-                &cadmpeg_test_support::service_decode_context(),
                 previous.degree(),
                 previous.knots().to_vec(),
                 replacement,
                 previous.periodic(),
             )
-            .expect("fixture pcurve construction admission")
         })
     }
     .unwrap();
@@ -291,13 +242,7 @@ fn weight_rules_admit_a_signed_nonzero_weight_in_every_nurbs_carrier() {
 fn failed_numeric_edits_preserve_the_whole_carrier() {
     let mut curve = curve();
     let original = curve.clone();
-    assert!(curve
-        .edit_knots(
-            &cadmpeg_test_support::service_decode_context(),
-            <[f64]>::reverse
-        )
-        .expect("knot edit admission")
-        .is_err());
+    assert!(curve.edit_knots(<[f64]>::reverse,).is_err());
     assert!(curve
         .try_map_control_points(|_, point| {
             let mut mapped = point.get();
@@ -315,7 +260,6 @@ fn failed_numeric_edits_preserve_the_whole_carrier() {
         let mut knots = previous.u_knots().to_vec();
         (<[f64]>::reverse)(&mut knots);
         crate::geometry::nurbs::NurbsSurface::new(
-            &cadmpeg_test_support::service_decode_context(),
             crate::geometry::nurbs::NurbsSurfaceAxis::new(
                 previous.u_degree(),
                 knots,
@@ -329,7 +273,6 @@ fn failed_numeric_edits_preserve_the_whole_carrier() {
             previous.pole_grid().clone(),
             previous.normal_reversed(),
         )
-        .expect("fixture final NURBS admission")
     })
     .is_err());
     assert!(edit::replace(&mut surface, |previous| {
@@ -339,7 +282,6 @@ fn failed_numeric_edits_preserve_the_whole_carrier() {
             knots[1] = f64::NAN;
         };
         crate::geometry::nurbs::NurbsSurface::new(
-            &cadmpeg_test_support::service_decode_context(),
             crate::geometry::nurbs::NurbsSurfaceAxis::new(
                 previous.u_degree(),
                 previous.u_knots().to_vec(),
@@ -353,7 +295,6 @@ fn failed_numeric_edits_preserve_the_whole_carrier() {
             previous.pole_grid().clone(),
             previous.normal_reversed(),
         )
-        .expect("fixture final NURBS admission")
     })
     .is_err());
     assert!(surface
@@ -373,13 +314,11 @@ fn failed_numeric_edits_preserve_the_whole_carrier() {
         let mut knots = previous.knots().to_vec();
         (<[f64]>::reverse)(&mut knots);
         crate::geometry::pcurve::PcurveNurbs::new(
-            &cadmpeg_test_support::service_decode_context(),
             previous.degree(),
             knots,
             previous.pole_rows().clone(),
             previous.periodic(),
         )
-        .expect("fixture pcurve construction admission")
     })
     .is_err());
     assert!(pcurve
@@ -398,14 +337,12 @@ fn failed_numeric_edits_preserve_the_whole_carrier() {
         let mut knots = previous.knots().to_vec();
         (<[f64]>::reverse)(&mut knots);
         crate::geometry::pcurve::PolarPcurveNurbs::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             previous.degree(),
             knots,
             previous.pole_rows().to_raw().poles(),
             previous.pole_rows().weights(),
             previous.periodic(),
         )
-        .expect("fixture pcurve construction admission")
     })
     .is_err());
     assert!(edit::replace(&mut polar, |previous| {
@@ -414,14 +351,12 @@ fn failed_numeric_edits_preserve_the_whole_carrier() {
             pole.radial.v = f64::INFINITY;
         }
         PolarPcurveNurbs::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             previous.degree(),
             previous.knots().to_vec(),
             poles,
             previous.pole_rows().weights(),
             previous.periodic(),
         )
-        .expect("fixture pcurve construction admission")
     })
     .is_err());
     assert!(edit::replace(&mut polar, |previous| {
@@ -430,14 +365,12 @@ fn failed_numeric_edits_preserve_the_whole_carrier() {
             pole.axial = f64::NAN;
         }
         PolarPcurveNurbs::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             previous.degree(),
             previous.knots().to_vec(),
             poles,
             previous.pole_rows().weights(),
             previous.periodic(),
         )
-        .expect("fixture pcurve construction admission")
     })
     .is_err());
     assert!(polar_weights(&polar, vec![1.0, 0.0]).is_err());
@@ -540,70 +473,59 @@ fn pole_maps_visit_both_passes_refuse_a_late_pole_atomically_and_compose() {
     check!(curve(), curve().pole_count());
     check!(surface(), surface().u_count() * surface().v_count());
     check!(pcurve(), pcurve().pole_rows().count());
-    let ctx = cadmpeg_test_support::service_decode_context();
     check!(
         NurbsCurve::from_lanes(
-            &ctx,
             1,
             vec![0., 0., 1., 1.],
             vec![Point3::new(1., 2., 3.); 2],
             None,
-            false
+            false,
         )
-        .expect("admission")
         .expect("curve"),
         2
     );
     check!(
         NurbsSurface::from_checked_lanes(
-            &ctx,
             crate::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0., 0., 1., 1.], false),
             crate::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0., 0., 1., 1.], false),
             crate::geometry::nurbs::NurbsSurfaceLanes::new(
                 vec![vec![Point3::new(1., 2., 3.); 2]; 2],
                 None
             ),
-            false
+            false,
         )
-        .expect("admission")
         .expect("surface"),
         4
     );
     check!(
         PcurveNurbs::from_lanes(
-            &ctx,
             1,
             vec![0., 0., 1., 1.],
             vec![Point2::new(1., 2.); 2],
             None,
-            false
+            false,
         )
-        .expect("admission")
         .expect("pcurve"),
         2
     );
     check!(
         crate::geometry::nurbs::BsplineSurface::new(
-            &ctx,
             1,
             1,
             vec![0., 0., 1., 1.],
             vec![0., 0., 1., 1.],
-            vec![vec![Point3::new(1., 2., 3.); 2]; 2]
+            vec![vec![Point3::new(1., 2., 3.); 2]; 2],
         )
-        .expect("admission")
         .expect("B-spline"),
         4
     );
     let spatial_curve = NurbsCurve::from_lanes(
-        &ctx,
         1,
         vec![0., 0., 1., 1.],
         vec![Point3::new(1., 2., 3.); 2],
         Some(vec![2., 1.]),
         false,
     )
-    .expect("admission")
     .expect("positive-weight curve");
     check!(
         crate::sketches::SpatialSketchNurbsCurve::try_from(spatial_curve).expect("spatial curve"),

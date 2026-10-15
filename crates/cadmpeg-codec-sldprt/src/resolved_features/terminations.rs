@@ -815,13 +815,11 @@ fn component_local_ids(components: &[FeatureInputComponentPathEntry]) -> String 
 
 /// Bind reference-curve cross sections consumed by surface sweeps.
 pub(crate) fn project_surface_sweep_profiles(
-    ctx: &DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     use cadmpeg_ir::features::{GeneratedCurveRef, PlanarProfileRef};
-    const OPERATION: &str = "project SLDPRT surface sweep profile";
     let mut history_features = Vec::new();
     for feature in histories.iter().flat_map(|history| &history.features) {
         history_features.push(feature);
@@ -1007,11 +1005,10 @@ pub(crate) fn project_surface_sweep_profiles(
         });
         for dependency in dependencies {
             if dependency != feature.id && !feature.dependencies.contains(&dependency) {
-                feature.dependencies.insert(ctx, dependency, OPERATION)?;
+                feature.dependencies.insert(dependency);
             }
         }
     }
-    Ok(())
 }
 
 #[cfg(test)]
@@ -1082,13 +1079,11 @@ fn compact_body_null_slot_at(payload: &[u8], end: usize) -> bool {
 }
 
 pub(crate) fn project_compact_combine_paths(
-    ctx: &DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) -> Result<(), cadmpeg_core::CodecError> {
     use cadmpeg_ir::features::{BodySelection, CombineOperands, GeneratedBodyRef};
-    const OPERATION: &str = "project SLDPRT combine paths";
     struct Projection {
         target: BodySelection,
         tools: BodySelection,
@@ -1151,7 +1146,7 @@ pub(crate) fn project_compact_combine_paths(
             };
             let bodies = vec![body];
             let native = native.to_owned();
-            let Ok(selection) = BodySelection::generated(bodies, native, ctx)? else {
+            let Ok(selection) = BodySelection::generated(bodies, native) else {
                 return Ok(None);
             };
             Ok(Some((selection, components, owner)))
@@ -1229,10 +1224,10 @@ pub(crate) fn project_compact_combine_paths(
         }
         for dependency in projection.dependencies {
             if dependency != feature.id && !feature.dependencies.contains(&dependency) {
-                feature.dependencies.insert(ctx, dependency, OPERATION)?;
+                feature.dependencies.insert(dependency);
             }
         }
-        let operands = CombineOperands::new(projection.target, projection.tools, ctx)?
+        let operands = CombineOperands::new(projection.target, projection.tools)
             .map_err(cadmpeg_core::CodecError::malformed)?;
         feature.evaluation.edit(|definition, _| {
             if let FeatureDefinition::Operation(FeatureOperation::Combine {

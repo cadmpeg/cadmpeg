@@ -242,12 +242,11 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
         'probe: for profile in &profiles {
             let mut profile_caps = Vec::new();
             for entity in profile.entities() {
-                let Some(sketch_geometry) = entity.geometry().to_sketch(ctx)? else {
+                let Some(sketch_geometry) = entity.geometry().to_sketch() else {
                     unprojectable = true;
                     break 'probe;
                 };
                 if extrusion_brep_side_surface(
-                    ctx,
                     transform,
                     &sketch_geometry,
                     entity.reversed(),
@@ -266,7 +265,6 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     break 'probe;
                 }
                 match extrusion_cap_pcurve(
-                    ctx,
                     &sketch_geometry,
                     entity.reversed(),
                     entity.start(),
@@ -452,7 +450,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
             let mut vertical_edges = Vec::new();
             for (index, entity) in profile.iter().enumerate() {
                 let geometry = entity.geometry();
-                let Some(sketch_geometry) = geometry.to_sketch(ctx)? else {
+                let Some(sketch_geometry) = geometry.to_sketch() else {
                     continue;
                 };
                 let reversed = entity.reversed();
@@ -518,7 +516,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                         }
                         ProfileGeometry::Nurbs { .. } => {
                             let Some(nurbs) =
-                                oriented_sketch_nurbs_curve(ctx, &sketch_geometry, reversed)?
+                                oriented_sketch_nurbs_curve(&sketch_geometry, reversed)
                             else {
                                 continue;
                             };
@@ -570,7 +568,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                             oriented_arc_parameterization(reversed, 0.0, std::f64::consts::TAU).1,
                         ),
                         ProfileGeometry::Nurbs { .. } => {
-                            oriented_sketch_nurbs_curve(ctx, &sketch_geometry, reversed)?
+                            oriented_sketch_nurbs_curve(&sketch_geometry, reversed)
                                 .and_then(|nurbs| nurbs_intrinsic_parameter_range(&nurbs))
                                 .map(cadmpeg_ir::scalar::FiniteReal::raw_array)
                         }
@@ -747,7 +745,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
             let forward_sides = validated.area() > 0.0;
             for (index, entity) in profile.iter().enumerate() {
                 let geometry = entity.geometry();
-                let Some(sketch_geometry) = geometry.to_sketch(ctx)? else {
+                let Some(sketch_geometry) = geometry.to_sketch() else {
                     continue;
                 };
                 let start = entity.start();
@@ -761,7 +759,6 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                 let mut diagnostics =
                     crate::lane_refusal::LaneRefusalContext::new(&record, &mut refusal);
                 let surface_geometry = extrusion_brep_side_surface(
-                    ctx,
                     transform,
                     &sketch_geometry,
                     profile[index].reversed(),

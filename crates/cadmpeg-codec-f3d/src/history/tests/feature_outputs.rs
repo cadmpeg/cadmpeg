@@ -29,13 +29,10 @@ fn base_feature() -> cadmpeg_ir::features::Feature {
             FeatureDefinition::Operation(FeatureOperation::BaseFeature {
                 bodies: BodySelection::Native("native:scope".into()),
             }),
-            cadmpeg_ir::features::DistinctMembers::try_from(
-                vec![
-                    BodyId::mint("test:model:body#2").unwrap(),
-                    BodyId::mint("test:model:body#1").unwrap(),
-                ],
-                &cadmpeg_test_support::service_decode_context(),
-            )
+            cadmpeg_ir::features::DistinctMembers::try_from(vec![
+                BodyId::mint("test:model:body#2").unwrap(),
+                BodyId::mint("test:model:body#1").unwrap(),
+            ])
             .unwrap(),
         ),
         native_ref: Some("native:scope".into()),
@@ -120,9 +117,7 @@ fn output_binding_inputs() -> (
 fn feature_output_binding_preserves_base_feature_selection() {
     use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation};
     let (mut feature, scope, history, body) = output_binding_inputs();
-    let ctx = cadmpeg_test_support::service_decode_context();
     super::super::bind_feature_outputs(
-        &ctx,
         std::slice::from_mut(&mut feature),
         &[scope],
         &[history],

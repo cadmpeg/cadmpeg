@@ -19,14 +19,6 @@ pub(super) fn validate_configuration_projection(
     target: &CadIr,
     native: &F3dNative,
 ) -> Result<(), CodecError> {
-    let decode_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &decode_arena,
-        &cadmpeg_core::decode::DecodePolicy::default(),
-    )?;
-    let decode_ctx = &decode_ctx;
-
     let mut projected =
         crate::design::configurations::project_configurations(&native.design_configurations)?;
     crate::design::configurations::bind_configuration_parameter_overrides(
@@ -34,10 +26,9 @@ pub(super) fn validate_configuration_projection(
         &target.model.parameters,
     );
     crate::design::configurations::bind_configuration_suppressed_features(
-        decode_ctx,
         &mut projected,
         &target.model.features,
-    )?;
+    );
     if target.model.configurations != projected {
         return Err(CodecError::Malformed(
             "neutral F3D configurations must equal the projection of native configuration tables"

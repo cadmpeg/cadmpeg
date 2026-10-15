@@ -76,14 +76,12 @@ const EPS_SOURCE_BOUND_REPRESENTATION: f64 = 5.0e-7;
 fn pcurve_bounds_keep_a_wide_finite_knot_span() {
     let geometry = PcurveGeometry::Nurbs {
         nurbs: PcurveNurbs::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![-f64::MAX, -f64::MAX, f64::MAX, f64::MAX],
             vec![Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)],
             None,
             false,
         )
-        .expect("fixture pcurve construction admission")
         .unwrap(),
     };
     assert!(pcurve_within_declared_bounds(
@@ -98,14 +96,12 @@ fn pcurve_bounds_keep_a_wide_finite_knot_span() {
 fn pcurve_bounds_use_the_active_nurbs_subrange() {
     let geometry = PcurveGeometry::Nurbs {
         nurbs: PcurveNurbs::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
             None,
             false,
         )
-        .expect("fixture pcurve construction admission")
         .expect("valid test pcurve"),
     };
     let bounds = Some([Some(0.2), Some(0.8), None, None]);
@@ -128,7 +124,6 @@ fn pcurve_bounds_use_the_active_nurbs_subrange() {
 fn pcurve_bounds_handle_a_full_multiplicity_internal_knot() {
     let geometry = PcurveGeometry::Nurbs {
         nurbs: PcurveNurbs::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             2,
             vec![0.0, 0.0, 0.0, 0.5, 0.5, 0.5, 1.0, 1.0, 1.0],
             vec![
@@ -142,7 +137,6 @@ fn pcurve_bounds_handle_a_full_multiplicity_internal_knot() {
             None,
             false,
         )
-        .expect("fixture pcurve construction admission")
         .expect("valid test pcurve"),
     };
     let bounds = Some([Some(0.0), Some(1.0), None, None]);
@@ -165,14 +159,12 @@ fn pcurve_bounds_handle_a_full_multiplicity_internal_knot() {
 fn pcurve_bounds_keep_partial_domains_and_periodic_seams() {
     let geometry = PcurveGeometry::Nurbs {
         nurbs: PcurveNurbs::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point2::new(0.5, 0.3), Point2::new(0.5, 2.0)],
             None,
             false,
         )
-        .expect("fixture pcurve construction admission")
         .expect("valid test pcurve"),
     };
 

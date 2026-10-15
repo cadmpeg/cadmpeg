@@ -20,7 +20,6 @@ fn plane() -> SurfaceGeometry {
     knots.extend(vec![1.0; 17]);
     SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
         NurbsSurface::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             NurbsSurfaceAxis::new(DEGREE, knots.clone(), false),
             NurbsSurfaceAxis::new(DEGREE, knots, false),
             NurbsSurfaceLanes::new(
@@ -41,7 +40,6 @@ fn plane() -> SurfaceGeometry {
             ),
             false,
         )
-        .expect("fixture constructor admission")
         .expect("degree-16 plane"),
     ))
 }

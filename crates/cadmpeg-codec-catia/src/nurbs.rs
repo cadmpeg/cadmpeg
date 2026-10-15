@@ -164,14 +164,13 @@ pub(crate) fn note_refusal<T>(
 /// Other failures return `None` for unsupported geometry or a non-finite
 /// analytic reconstruction.
 pub(crate) fn reverse_pcurve_geometry(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     geometry: &PcurveGeometry,
     range: [f64; 2],
     refusal: &mut LaneRefusals,
     record: &str,
-) -> Result<Option<PcurveGeometry>, cadmpeg_core::CodecError> {
+) -> Option<PcurveGeometry> {
     if !readable_range(range, true, refusal, record) {
-        return Ok(None);
+        return None;
     }
     match geometry {
         PcurveGeometry::Line(line_pcurve) => {
@@ -181,16 +180,16 @@ pub(crate) fn reverse_pcurve_geometry(
                 range[1].mul_add(direction.u, range[0].mul_add(direction.u, origin.u)),
                 range[1].mul_add(direction.v, range[0].mul_add(direction.v, origin.v)),
             ));
-            Ok(origin.map(|origin| {
+            origin.map(|origin| {
                 PcurveGeometry::Line(cadmpeg_ir::geometry::pcurve::LinePcurve::new(
                     origin,
                     line_pcurve.direction().reversed(),
                 ))
-            }))
+            })
         }
         PcurveGeometry::Nurbs { nurbs } => {
             if !pcurve_weights_are_positive(nurbs) {
-                return Ok(None);
+                return None;
             }
             let reversed_knots = reverse_knots(nurbs.knots(), range);
             let mut poles = match nurbs.pole_rows() {
@@ -206,19 +205,16 @@ pub(crate) fn reverse_pcurve_geometry(
                 }
             };
             poles.reverse();
-            Ok(note_refusal(
-                match KnotVector::new(ctx, reversed_knots)? {
-                    Ok(knots) => {
-                        PcurveNurbs::new(ctx, nurbs.degree(), knots, poles, nurbs.periodic())?
-                    }
-                    Err(error) => Err(error),
-                },
+            note_refusal(
+                KnotVector::new(reversed_knots).and_then(|knots| {
+                    PcurveNurbs::new(nurbs.degree(), knots, poles, nurbs.periodic())
+                }),
                 refusal,
                 record,
             )
-            .map(|nurbs| PcurveGeometry::Nurbs { nurbs }))
+            .map(|nurbs| PcurveGeometry::Nurbs { nurbs })
         }
-        _ => Ok(None),
+        _ => None,
     }
 }
 
@@ -228,14 +224,13 @@ pub(crate) fn reverse_pcurve_geometry(
 /// as in [`reverse_pcurve_geometry`]. Unsupported geometry and non-finite
 /// analytic reconstructions return `None`.
 pub(crate) fn reverse_curve_geometry(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     geometry: &CurveGeometry,
     range: [f64; 2],
     refusal: &mut LaneRefusals,
     record: &str,
-) -> Result<Option<(CurveGeometry, [f64; 2])>, cadmpeg_core::CodecError> {
+) -> Option<(CurveGeometry, [f64; 2])> {
     if !readable_range(range, false, refusal, record) {
-        return Ok(None);
+        return None;
     }
     if matches!(
         geometry,
@@ -243,7 +238,7 @@ pub(crate) fn reverse_curve_geometry(
     ) && !(range[1] - range[0]).is_finite()
     {
         refusal.push_range(record, range);
-        return Ok(None);
+        return None;
     }
     match geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
@@ -251,7 +246,7 @@ pub(crate) fn reverse_curve_geometry(
             let direction = line_curve.direction();
             let length = range[1] - range[0];
             let origin = FinitePoint3::new(origin.translated(*direction.as_raw(), range[1]));
-            Ok(origin.map(|origin| {
+            origin.map(|origin| {
                 (
                     CurveGeometry::Solved(SolvedCurveGeometry::Line(
                         cadmpeg_ir::geometry::analytic::LineCurve::new(
@@ -261,7 +256,7 @@ pub(crate) fn reverse_curve_geometry(
                     )),
                     [0.0, length],
                 )
-            }))
+            })
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
             let axis = *circle_curve.frame().axis().as_raw();
@@ -273,7 +268,7 @@ pub(crate) fn reverse_curve_geometry(
             let frame = UnitVector3::new(reference).and_then(|reference| {
                 OrthonormalFrame3::from_units(circle_curve.frame().axis().reversed(), reference)
             });
-            Ok(frame.map(|frame| {
+            frame.map(|frame| {
                 (
                     CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                         cadmpeg_ir::geometry::analytic::CircleCurve::new(
@@ -284,20 +279,17 @@ pub(crate) fn reverse_curve_geometry(
                     )),
                     [0.0, sweep],
                 )
-            }))
+            })
         }
-        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => Ok(note_refusal(
-            reverse_nurbs_curve(ctx, nurbs, range)?,
-            refusal,
-            record,
-        )
-        .map(|curve| {
-            (
-                CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
-                range,
-            )
-        })),
-        _ => Ok(None),
+        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
+            note_refusal(reverse_nurbs_curve(nurbs, range), refusal, record).map(|curve| {
+                (
+                    CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
+                    range,
+                )
+            })
+        }
+        _ => None,
     }
 }
 
@@ -319,13 +311,12 @@ fn reverse_knots(knots: &[f64], [lower, upper]: [f64; 2]) -> Vec<f64> {
 
 /// Reverse a NURBS carrier in the stated parameter chart.
 pub(crate) fn reverse_nurbs_curve(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     curve: &NurbsCurve,
     range: [f64; 2],
-) -> Result<Result<NurbsCurve, NurbsError>, cadmpeg_core::CodecError> {
+) -> Result<NurbsCurve, NurbsError> {
     if !range.into_iter().all(f64::is_finite) || range[0] > range[1] {
         let message = "reversal range must be finite and ordered".to_owned();
-        return Ok(Err(NurbsError::Structure(message)));
+        return Err(NurbsError::Structure(message));
     }
     let mut poles = match curve.pole_rows() {
         cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { points } => {
@@ -340,11 +331,8 @@ pub(crate) fn reverse_nurbs_curve(
         }
     };
     poles.reverse();
-    let knots = match KnotVector::new(ctx, reverse_knots(curve.knots(), range))? {
-        Ok(knots) => knots,
-        Err(error) => return Ok(Err(error)),
-    };
-    NurbsCurve::new(ctx, curve.degree(), knots, poles, curve.periodic())
+    let knots = KnotVector::new(reverse_knots(curve.knots(), range))?;
+    NurbsCurve::new(curve.degree(), knots, poles, curve.periodic())
 }
 
 /// State one trim endpoint inside the carrier domain, or refuse it.
@@ -536,28 +524,27 @@ pub(crate) struct CircularHelixCache {
 
 /// Fit a circular helix with a bounded angle-parameterized polyline cache.
 ///
-/// `Ok(None)` states that the construction has no exact circular helix cache;
+/// `None` states that the construction has no exact circular helix cache;
 /// the curve still transfers. Source interval and IR lane refusals reach the
-/// sink. Resource refusals propagate to the decode caller.
+/// sink.
 pub(crate) fn circular_helix_cache(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     construction: &ProceduralCurveDefinition,
     requested_tolerance: PositiveReal,
     refusal: &mut LaneRefusals,
     record: &str,
-) -> Result<Option<CircularHelixCache>, cadmpeg_core::CodecError> {
+) -> Option<CircularHelixCache> {
     let requested_tolerance = requested_tolerance.get();
     let ProceduralCurveDefinition::Helix(helix_payload) = construction else {
-        return Ok(None);
+        return None;
     };
     let angle_range = helix_payload.angle_range();
     if !readable_range(angle_range.get(), true, refusal, record) {
-        return Ok(None);
+        return None;
     }
     let [angle_start, angle_end] = angle_range.get();
     if !(angle_end - angle_start).is_finite() {
         refusal.push_range(record, angle_range.get());
-        return Ok(None);
+        return None;
     }
     let major = helix_payload.major();
     let minor = helix_payload.minor();
@@ -587,7 +574,7 @@ pub(crate) fn circular_helix_cache(
         || (radius - minor_radius).abs() > EPS_HELIX_RADIUS * radius.max(minor_radius)
         || apex_factor.get() != 0.0
     {
-        return Ok(None);
+        return None;
     }
     let normalized_dot_major_minor = normalized_dot(major, minor);
     let normalized_dot_major_axis = normalized_dot(major, axis);
@@ -606,11 +593,11 @@ pub(crate) fn circular_helix_cache(
         || !normalized_dot_pitch_axis.is_finite()
         || normalized_dot_pitch_axis.abs() < 1.0 - EPS_HELIX_PITCH_ALIGNMENT
     {
-        return Ok(None);
+        return None;
     }
     let sweep = angle_range[1] - angle_range[0];
     if !sweep.is_finite() || sweep <= 0.0 {
-        return Ok(None);
+        return None;
     }
     let relative_tolerance = requested_tolerance / radius;
     // The step whose chord sagitta is the requested tolerance is
@@ -629,48 +616,36 @@ pub(crate) fn circular_helix_cache(
         2.0 * std::f64::consts::PI
     };
     if !max_step.is_finite() || max_step <= 0.0 {
-        return Ok(None);
+        return None;
     }
     // Both refusals above bound the quotient: `sweep` and `max_step` are each
     // finite and positive, so the quotient is positive and ceils to at least
     // one segment. No floor stands here.
     let segment_count = (sweep / max_step).ceil();
     if !segment_count.is_finite() || segment_count > crate::MAX_EXACT_ARC_SPANS {
-        return Ok(None);
+        return None;
     }
-    let Some(segment_count) = truncate_f64_to_usize(segment_count) else {
-        return Ok(None);
-    };
-    let step = sweep
-        / match f64_from_index(segment_count) {
-            Some(value) => value,
-            None => return Ok(None),
-        };
+    let segment_count = truncate_f64_to_usize(segment_count)?;
+    let step = sweep / f64_from_index(segment_count)?;
     let mut samples = Vec::new();
 
     for index in 0..=segment_count {
         let parameter = if index == segment_count {
             angle_range[1]
         } else {
-            angle_range[0]
-                + match f64_from_index(index) {
-                    Some(value) => value,
-                    None => return Ok(None),
-                } * step
+            angle_range[0] + f64_from_index(index)? * step
         };
         if !parameter.is_finite() {
-            return Ok(None);
+            return None;
         }
-        let Some(point) = circular_helix_point(construction, parameter) else {
-            return Ok(None);
-        };
+        let point = circular_helix_point(construction, parameter)?;
         samples.push((parameter, point));
     }
     if !samples
         .windows(2)
         .all(|pair| pair[0].0.is_finite() && pair[0].0 < pair[1].0)
     {
-        return Ok(None);
+        return None;
     }
     let sine = (step * 0.25).sin();
     let fit_tolerance = (radius * sine) * (2.0 * sine);
@@ -684,18 +659,17 @@ pub(crate) fn circular_helix_cache(
     let mut controls = Vec::new();
 
     controls.extend(samples.into_iter().map(|(_, point)| point));
-    let curve = match cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
-        ctx, 1, knots, controls, None, false,
-    )? {
-        Ok(curve) => curve,
-        Err(error) => return Ok(note_refusal(Err(error), refusal, record)),
-    };
-    Ok(FitTolerance::try_new(fit_tolerance)
+    let curve = note_refusal(
+        cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(1, knots, controls, None, false),
+        refusal,
+        record,
+    )?;
+    FitTolerance::try_new(fit_tolerance)
         .ok()
         .map(|fit_tolerance| CircularHelixCache {
             curve,
             fit_tolerance,
-        }))
+        })
 }
 
 fn circular_helix_point(construction: &ProceduralCurveDefinition, angle: f64) -> Option<Point3> {
@@ -836,14 +810,12 @@ mod tests {
     fn canonical_nurbs_range_clamps_rounding_at_the_domain_boundary() {
         let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
             NurbsCurve::from_lanes(
-                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
                 None,
                 false,
             )
-            .expect("fixture constructor admission")
             .unwrap(),
         ));
 
@@ -912,16 +884,12 @@ mod tests {
             .expect("valid LinePcurve fixture"),
         );
         let range = [5.0, 9.0];
-        let reversed = crate::test_support::with_service_context(|ctx| {
-            reverse_pcurve_geometry(
-                ctx,
-                &geometry,
-                range,
-                &mut crate::nurbs::LaneRefusals::new(),
-                "test record",
-            )
-        })
-        .expect("service profile admits range operation")
+        let reversed = reverse_pcurve_geometry(
+            &geometry,
+            range,
+            &mut crate::nurbs::LaneRefusals::new(),
+            "test record",
+        )
         .expect("reversible line");
         for (parameter, source_parameter) in [(5.0, 9.0), (9.0, 5.0)] {
             let actual = cadmpeg_ir::eval::decode::pcurve_uv(
@@ -962,16 +930,12 @@ mod tests {
             .expect("valid CircleCurve fixture"),
         ));
         for (geometry, range) in [(line, [5.0, 9.0]), (circle, [0.25, 2.0])] {
-            let (reversed, reversed_range) = crate::test_support::with_service_context(|ctx| {
-                reverse_curve_geometry(
-                    ctx,
-                    &geometry,
-                    range,
-                    &mut crate::nurbs::LaneRefusals::new(),
-                    "test record",
-                )
-            })
-            .expect("service profile admits range operation")
+            let (reversed, reversed_range) = reverse_curve_geometry(
+                &geometry,
+                range,
+                &mut crate::nurbs::LaneRefusals::new(),
+                "test record",
+            )
             .expect("reversible model curve");
             for (parameter, source_parameter) in
                 [(reversed_range[0], range[1]), (reversed_range[1], range[0])]
@@ -999,27 +963,21 @@ mod tests {
     fn reversed_nurbs_preserves_active_subrange() {
         let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
             NurbsCurve::from_lanes(
-                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
                 None,
                 false,
             )
-            .expect("fixture constructor admission")
             .unwrap(),
         ));
         let range = [0.2, 0.8];
-        let (reversed, reversed_range) = crate::test_support::with_service_context(|ctx| {
-            reverse_curve_geometry(
-                ctx,
-                &geometry,
-                range,
-                &mut crate::nurbs::LaneRefusals::new(),
-                "test record",
-            )
-        })
-        .expect("service profile admits range operation")
+        let (reversed, reversed_range) = reverse_curve_geometry(
+            &geometry,
+            range,
+            &mut crate::nurbs::LaneRefusals::new(),
+            "test record",
+        )
         .expect("reversible NURBS");
         for parameter in [range[0], 0.5, range[1]] {
             let actual = cadmpeg_ir::eval::decode::curve_point(
@@ -1094,7 +1052,6 @@ mod tests {
     fn surface_isocurve_preserves_tiny_weights_and_knot_domain() {
         let tiny = 1e-200;
         let surface = NurbsSurface::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                 1,
                 vec![0.0, 0.0, tiny, tiny],
@@ -1111,7 +1068,6 @@ mod tests {
             ),
             false,
         )
-        .expect("fixture constructor admission")
         .unwrap();
         let curve = cadmpeg_ir::eval::nurbs_surface_isocurve(
             cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
@@ -1134,7 +1090,6 @@ mod tests {
     fn surface_isocurve_rejects_nonfinite_output() {
         let surface = |control_points: Vec<Point3>, weights: Option<Vec<f64>>| {
             NurbsSurface::from_lanes(
-                &cadmpeg_test_support::service_decode_context(),
                 cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
@@ -1151,7 +1106,6 @@ mod tests {
                 ),
                 false,
             )
-            .expect("fixture constructor admission")
             .unwrap()
         };
         assert!(cadmpeg_ir::eval::nurbs_surface_isocurve(
@@ -1174,10 +1128,6 @@ mod tests {
 
     #[test]
     fn circular_helix_cache_preserves_exact_interval_endpoints() {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let policy = cadmpeg_core::decode::DecodePolicy::service();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
-            .expect("fixture fits input limit");
         let range = [0.125, 1.570_797_917_999_999_6];
         let definition = ProceduralCurveDefinition::Helix(
             cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
@@ -1196,13 +1146,11 @@ mod tests {
         );
 
         let cache = circular_helix_cache(
-            &ctx,
             &definition,
             PositiveReal::new(1.0e-4).expect("positive fixture tolerance"),
             &mut crate::nurbs::LaneRefusals::new(),
             "test record",
         )
-        .expect("service resource budget")
         .expect("valid helix");
         assert_eq!(cache.curve.knots()[1], range[0]);
         assert_eq!(cache.curve.knots()[cache.curve.knots().len() - 2], range[1]);
@@ -1218,10 +1166,6 @@ mod tests {
     /// This test states the value the whole-turn arm answers.
     #[test]
     fn a_relative_tolerance_at_or_past_the_diameter_states_the_whole_turn() {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let policy = cadmpeg_core::decode::DecodePolicy::service();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
-            .expect("fixture fits input limit");
         // The sweep is longer than a half turn and shorter than a whole one,
         // so a step of the whole turn states one segment and any shorter step
         // states more than one.
@@ -1245,13 +1189,11 @@ mod tests {
         // requested tolerance is the relative tolerance.
         let cache = |tolerance| {
             circular_helix_cache(
-                &ctx,
                 &definition,
                 PositiveReal::new(tolerance).expect("positive fixture tolerance"),
                 &mut crate::nurbs::LaneRefusals::new(),
                 "test record",
             )
-            .expect("service resource budget")
             .expect("a stated step")
         };
         let fine = cache(1.0e-4);
@@ -1269,10 +1211,6 @@ mod tests {
     #[test]
     fn circular_helix_frame_validation_is_scale_independent() {
         const SMALL_ADMITTED_HELIX_RADIUS: f64 = 1.0e-10;
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let policy = cadmpeg_core::decode::DecodePolicy::service();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
-            .expect("fixture fits input limit");
         let radius = SMALL_ADMITTED_HELIX_RADIUS;
         let definition = |minor| {
             ProceduralCurveDefinition::Helix(
@@ -1293,40 +1231,30 @@ mod tests {
         };
 
         assert!(circular_helix_cache(
-            &ctx,
             &definition(Vector3::new(0.0, radius, 0.0)),
             PositiveReal::new(1.0e-4).expect("positive fixture tolerance"),
             &mut crate::nurbs::LaneRefusals::new(),
             "test record"
         )
-        .expect("service resource budget")
         .is_some());
         assert!(circular_helix_cache(
-            &ctx,
             &definition(Vector3::new(0.0, 2.0 * radius, 0.0)),
             PositiveReal::new(1.0e-4).expect("positive fixture tolerance"),
             &mut crate::nurbs::LaneRefusals::new(),
             "test record"
         )
-        .expect("service resource budget")
         .is_none());
         assert!(circular_helix_cache(
-            &ctx,
             &definition(Vector3::new(radius, 0.0, 0.0)),
             PositiveReal::new(1.0e-4).expect("positive fixture tolerance"),
             &mut crate::nurbs::LaneRefusals::new(),
             "test record"
         )
-        .expect("service resource budget")
         .is_none());
     }
 
     #[test]
     fn circular_helix_cache_rejects_invalid_frame_and_output() {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let policy = cadmpeg_core::decode::DecodePolicy::service();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
-            .expect("fixture fits input limit");
         let definition = ProceduralCurveDefinition::Helix(
             cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
                 [0.0, 1.0],
@@ -1365,13 +1293,11 @@ mod tests {
             .expect("valid HelixCurveConstruction fixture");
         }
         assert!(circular_helix_cache(
-            &ctx,
             &non_axial_pitch,
             PositiveReal::new(1.0e-4).expect("positive fixture tolerance"),
             &mut crate::nurbs::LaneRefusals::new(),
             "test record"
         )
-        .expect("service resource budget")
         .is_none());
 
         let overflowing_points = ProceduralCurveDefinition::Helix(
@@ -1390,13 +1316,11 @@ mod tests {
             .expect("valid HelixCurveConstruction fixture"),
         );
         assert!(circular_helix_cache(
-            &ctx,
             &overflowing_points,
             PositiveReal::new(f64::MAX).expect("positive fixture tolerance"),
             &mut crate::nurbs::LaneRefusals::new(),
             "test record"
         )
-        .expect("service resource budget")
         .is_none());
     }
 
@@ -1431,17 +1355,13 @@ mod tests {
             )
             .unwrap(),
         );
-        assert!(
-            crate::test_support::with_service_context(|ctx| reverse_pcurve_geometry(
-                ctx,
-                &pcurve_line,
-                [f64::MAX / 2.0, f64::MAX],
-                &mut crate::nurbs::LaneRefusals::new(),
-                "test record"
-            ))
-            .expect("service profile admits range operation")
-            .is_none()
-        );
+        assert!(reverse_pcurve_geometry(
+            &pcurve_line,
+            [f64::MAX / 2.0, f64::MAX],
+            &mut crate::nurbs::LaneRefusals::new(),
+            "test record"
+        )
+        .is_none());
 
         let model_line = CurveGeometry::Solved(SolvedCurveGeometry::Line(
             cadmpeg_ir::geometry::analytic::LineCurve::try_new(
@@ -1450,41 +1370,31 @@ mod tests {
             )
             .unwrap(),
         ));
-        assert!(
-            crate::test_support::with_service_context(|ctx| reverse_curve_geometry(
-                ctx,
-                &model_line,
-                [0.0, f64::MAX],
-                &mut crate::nurbs::LaneRefusals::new(),
-                "test record"
-            ))
-            .expect("service profile admits range operation")
-            .is_none()
-        );
+        assert!(reverse_curve_geometry(
+            &model_line,
+            [0.0, f64::MAX],
+            &mut crate::nurbs::LaneRefusals::new(),
+            "test record"
+        )
+        .is_none());
 
         let pcurve_nurbs = PcurveGeometry::Nurbs {
             nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
-                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![-f64::MAX, 0.0, 1.0, 1.0],
                 vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
                 None,
                 false,
             )
-            .expect("fixture pcurve construction admission")
             .unwrap(),
         };
-        assert!(
-            crate::test_support::with_service_context(|ctx| reverse_pcurve_geometry(
-                ctx,
-                &pcurve_nurbs,
-                [0.0, f64::MAX],
-                &mut crate::nurbs::LaneRefusals::new(),
-                "test record"
-            ))
-            .expect("service profile admits range operation")
-            .is_none()
-        );
+        assert!(reverse_pcurve_geometry(
+            &pcurve_nurbs,
+            [0.0, f64::MAX],
+            &mut crate::nurbs::LaneRefusals::new(),
+            "test record"
+        )
+        .is_none());
     }
 
     #[test]
@@ -1492,14 +1402,12 @@ mod tests {
         let mut refusal = LaneRefusals::new();
         let short_weight_lane = || {
             PcurveNurbs::from_lanes(
-                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
                 Some(vec![1.0]),
                 false,
             )
-            .expect("fixture pcurve construction admission")
         };
         let first = super::note_refusal(
             short_weight_lane(),
@@ -1547,14 +1455,7 @@ mod tests {
         );
         let mut refusal = LaneRefusals::new();
         assert_eq!(
-            crate::test_support::with_service_context(|ctx| reverse_pcurve_geometry(
-                ctx,
-                &geometry,
-                [9.0, 5.0],
-                &mut refusal,
-                "e5 pcurve at byte 64"
-            ))
-            .expect("service profile admits range operation"),
+            reverse_pcurve_geometry(&geometry, [9.0, 5.0], &mut refusal, "e5 pcurve at byte 64"),
             None,
             "a range that does not increase is refused"
         );
@@ -1573,8 +1474,7 @@ mod tests {
 
         let mut refusal = LaneRefusals::new();
         assert_eq!(
-            crate::test_support::with_service_context(|ctx| reverse_curve_geometry(
-                ctx,
+            reverse_curve_geometry(
                 &CurveGeometry::Solved(SolvedCurveGeometry::Line(
                     cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                         Point3::new(0.0, 0.0, 0.0),
@@ -1586,9 +1486,8 @@ mod tests {
                 )),
                 [f64::NAN, 1.0],
                 &mut refusal,
-                "e5 curve at byte 128",
-            ))
-            .expect("service profile admits range operation"),
+                "e5 curve at byte 128"
+            ),
             None,
             "a non-finite range bound is refused"
         );
@@ -1633,18 +1532,12 @@ mod tests {
             .expect("valid helix fixture"),
         );
         let tolerance = PositiveReal::new(2.0).expect("positive fixture tolerance");
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let policy = cadmpeg_core::decode::DecodePolicy::service();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
-            .expect("fixture fits input limit");
         assert!(circular_helix_cache(
-            &ctx,
             &definition,
             tolerance,
             &mut LaneRefusals::new(),
             "test record"
         )
-        .expect("service resource budget")
         .is_some());
     }
 

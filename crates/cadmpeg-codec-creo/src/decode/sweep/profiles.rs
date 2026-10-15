@@ -53,7 +53,7 @@ fn sketch_geometry_endpoints(
             Some([seam, seam])
         }
         SketchGeometryDefinition::Nurbs { .. } => {
-            let Some(nurbs) = sketch_nurbs_curve(ctx, geometry)? else {
+            let Some(nurbs) = sketch_nurbs_curve(geometry) else {
                 return Ok(None);
             };
             let Some(range) = nurbs_intrinsic_parameter_range(&nurbs) else {
@@ -225,7 +225,6 @@ pub(in super::super) fn line_pcurve(start: [f64; 2], end: [f64; 2]) -> Option<Pc
 }
 
 pub(in super::super) fn circular_pcurve(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     center: [f64; 2],
     radius: f64,
     start_angle: f64,
@@ -301,7 +300,7 @@ pub(in super::super) fn circular_pcurve(
     }
     knots.extend([1.0; 3]);
     let mut weighted = Vec::new();
-    let nurbs = (|| -> Result<Result<cadmpeg_ir::geometry::pcurve::PcurveNurbs, cadmpeg_ir::geometry::nurbs::NurbsError>, cadmpeg_core::CodecError> {
+    let nurbs = (|| -> Result<cadmpeg_ir::geometry::pcurve::PcurveNurbs, cadmpeg_ir::geometry::nurbs::NurbsError> {
         use cadmpeg_ir::geometry::nurbs::KnotVector;
         use cadmpeg_ir::geometry::pcurve::{PcurveNurbsPoles, WeightedPole2};
         use cadmpeg_ir::scalar::NonZeroReal;
@@ -309,39 +308,36 @@ pub(in super::super) fn circular_pcurve(
 
         for (index, &weight) in weights.iter().enumerate() {
             if NonZeroReal::new(weight).is_none() {
-                return Ok(Err(cadmpeg_ir::geometry::nurbs::NurbsError::UnusableWeight {
+                return Err(cadmpeg_ir::geometry::nurbs::NurbsError::UnusableWeight {
                     field: "pcurve poles".to_owned(),
                     index,
                     weight,
-                }));
+                });
             }
         }
         for (index, (point, weight)) in control_points.into_iter().zip(weights).enumerate() {
             let Some(point) = FinitePoint2::new(point) else {
-                return Ok(Err(cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                return Err(cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
                     "control_points contains a non-finite point".to_owned(),
-                )));
+                ));
             };
             let Some(admitted_weight) = NonZeroReal::new(weight) else {
-                return Ok(Err(cadmpeg_ir::geometry::nurbs::NurbsError::UnusableWeight {
+                return Err(cadmpeg_ir::geometry::nurbs::NurbsError::UnusableWeight {
                     field: "pcurve poles".to_owned(),
                     index,
                     weight,
-                }));
+                });
             };
             weighted.push(WeightedPole2 { point, weight: admitted_weight });
         }
-        let knots = match KnotVector::new(ctx, knots)? {
-            Ok(knots) => knots,
-            Err(error) => return Ok(Err(error)),
-        };
-        cadmpeg_ir::geometry::pcurve::PcurveNurbs::new(ctx,
+        let knots = KnotVector::new(knots)?;
+        cadmpeg_ir::geometry::pcurve::PcurveNurbs::new(
             2,
             knots,
             PcurveNurbsPoles::Rational { points: weighted },
             false,
         )
-    })()?;
+    })();
     match nurbs {
         Ok(nurbs) => Ok(Some(PcurveGeometry::Nurbs { nurbs })),
         Err(error) => {
@@ -355,7 +351,6 @@ pub(in super::super) fn circular_pcurve(
 }
 
 pub(in super::super) fn extrusion_cap_pcurve(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     geometry: &SketchGeometry,
     reversed: bool,
     start: [f64; 2],
@@ -382,7 +377,6 @@ pub(in super::super) fn extrusion_cap_pcurve(
             };
             let [start_angle, end_angle] = if reversed { [end, start] } else { [start, end] };
             circular_pcurve(
-                ctx,
                 [center.u, center.v],
                 radius.get(),
                 start_angle,
@@ -394,7 +388,6 @@ pub(in super::super) fn extrusion_cap_pcurve(
         SketchGeometryDefinition::Circle { center, radius } => {
             let [start_angle, end_angle] = oriented_full_turn_angles(reversed);
             circular_pcurve(
-                ctx,
                 [center.u, center.v],
                 radius.get(),
                 start_angle,
@@ -404,7 +397,7 @@ pub(in super::super) fn extrusion_cap_pcurve(
             )
         }
         SketchGeometryDefinition::Nurbs { .. } => {
-            sketch_nurbs_pcurve(ctx, geometry, reversed, record, refusal)
+            Ok(sketch_nurbs_pcurve(geometry, reversed, record, refusal))
         }
         _ => Ok(line_pcurve(start, end)),
     }
@@ -476,7 +469,7 @@ pub(in super::super) fn extrusion_profile_signed_area(
         let end = entity.end();
         let contribution = match geometry {
             ProfileGeometry::Nurbs { .. } => {
-                let Some(sketch) = geometry.to_sketch(ctx)? else {
+                let Some(sketch) = geometry.to_sketch() else {
                     return Ok(None);
                 };
                 let Some(area) = nurbs_profile_signed_area_twice(ctx, &sketch, *reversed)? else {
@@ -574,11 +567,8 @@ impl ProfileGeometry {
         })
     }
 
-    pub(super) fn to_sketch(
-        &self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ) -> Result<Option<SketchGeometry>, cadmpeg_core::CodecError> {
-        Ok(SketchGeometry::try_from(match self {
+    pub(super) fn to_sketch(&self) -> Option<SketchGeometry> {
+        SketchGeometry::try_from(match self {
             Self::Line { start, end } => SketchGeometryDefinition::Line {
                 start: *start,
                 end: *end,
@@ -599,10 +589,10 @@ impl ProfileGeometry {
                 radius: *radius,
             },
             Self::Nurbs { curve } => SketchGeometryDefinition::Nurbs {
-                curve: super::nurbs::copy_pcurve_nurbs(ctx, curve)?,
+                curve: curve.clone(),
             },
         })
-        .ok())
+        .ok()
     }
 }
 
@@ -1222,10 +1212,10 @@ fn profile_nurbs_polyline(
     segment: &ProfileEntity,
     tolerance: f64,
 ) -> Result<Option<Vec<[f64; 2]>>, cadmpeg_core::CodecError> {
-    let Some(sketch) = segment.geometry.to_sketch(ctx)? else {
+    let Some(sketch) = segment.geometry.to_sketch() else {
         return Ok(None);
     };
-    let Some(nurbs) = oriented_sketch_nurbs_curve(ctx, &sketch, segment.reversed)? else {
+    let Some(nurbs) = oriented_sketch_nurbs_curve(&sketch, segment.reversed) else {
         return Ok(None);
     };
     nurbs_profile_polyline(ctx, &nurbs, tolerance)
@@ -1236,7 +1226,7 @@ fn nurbs_profile_signed_area_twice(
     geometry: &SketchGeometry,
     reversed: bool,
 ) -> Result<Option<f64>, cadmpeg_core::CodecError> {
-    let Some(nurbs) = oriented_sketch_nurbs_curve(ctx, geometry, reversed)? else {
+    let Some(nurbs) = oriented_sketch_nurbs_curve(geometry, reversed) else {
         return Ok(None);
     };
     let Some(range) = nurbs_intrinsic_parameter_range(&nurbs) else {
