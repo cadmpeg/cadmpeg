@@ -13,7 +13,7 @@ use crate::solve::missing_edge::MeshFaceBoundaryDomain;
 use crate::solve::incidence::join_incidence_components_by_coupling;
 
 #[test]
-fn face_configuration_mask_result() {
+fn setting_a_mask_bit_allocates_the_mask_for_a_new_key() {
     use std::collections::HashMap;
     let mut masks = HashMap::<usize, Vec<u64>>::new();
     crate::test_support::with_service_context(|ctx| {
@@ -32,7 +32,7 @@ fn face_configuration_mask_result() {
 }
 
 #[test]
-fn face_configuration_support_result() {
+fn face_configuration_support_accepts_agreeing_shared_edge_pairs() {
     use cadmpeg_core::decode::DecodeContext;
     use cadmpeg_core::decode::WorkBudget;
     let fixture = || {
@@ -49,7 +49,7 @@ fn face_configuration_support_result() {
 }
 
 #[test]
-fn face_configuration_singleton_result() {
+fn face_singleton_support_accepts_agreeing_shared_edge_pairs() {
     use cadmpeg_core::decode::DecodeContext;
     use cadmpeg_core::decode::WorkBudget;
     let fixture = || {
@@ -70,7 +70,7 @@ fn face_configuration_singleton_result() {
 }
 
 #[test]
-fn incidence_degree_adjustment_result() {
+fn assigning_an_edge_pair_raises_both_point_degrees_on_both_faces() {
     use std::collections::BTreeMap;
     let mut degrees = vec![BTreeMap::new(), BTreeMap::new()];
     let undo = super::super::adjust_incidence_degrees(&mut degrees, &[[0, 1]], 0, [2, 3]);
@@ -80,7 +80,7 @@ fn incidence_degree_adjustment_result() {
 }
 
 #[test]
-fn deferred_cycle_assignment_result() {
+fn deferred_boundary_cycle_matches_its_exact_edge_uses() {
     use std::collections::HashSet;
     let use_ = |edge, start| MeshBoundaryEdgeCandidate {
         edge,
@@ -99,7 +99,7 @@ fn deferred_cycle_assignment_result() {
 }
 
 #[test]
-fn partial_orientability_result() {
+fn partial_assignment_on_a_face_triangle_is_orientable() {
     use cadmpeg_core::decode::DecodeContext;
     use cadmpeg_core::decode::WorkBudget;
     let edge_faces = [[0, 1], [1, 2], [2, 0]];
@@ -118,7 +118,7 @@ fn partial_orientability_result() {
 }
 
 #[test]
-fn incidence_component_graph_result() {
+fn incidence_components_group_edges_whose_choices_share_points() {
     use std::collections::HashSet;
     use std::sync::Arc;
     let choices = [
@@ -159,7 +159,7 @@ fn incidence_component_graph_result() {
 }
 
 #[test]
-fn incidence_component_coupling_result() {
+fn coupled_edges_join_their_incidence_components() {
     let components = vec![vec![0, 2], vec![1], vec![3, 5], vec![4]];
     let active = [true, false, false, true, false, false];
     let expected = vec![vec![0, 2, 3, 5], vec![1], vec![4]];
@@ -172,7 +172,7 @@ fn incidence_component_coupling_result() {
 }
 
 #[test]
-fn boundary_component_graph_result() {
+fn common_boundary_propagation_succeeds_for_a_single_ordered_face() {
     use cadmpeg_core::decode::DecodeContext;
     use std::collections::HashSet;
     let domains = [MeshFaceBoundaryDomain::Ordered(vec![
@@ -210,7 +210,7 @@ fn boundary_component_graph_result() {
 }
 
 #[test]
-fn unordered_cycle_search_result() {
+fn unordered_cycle_search_closes_a_triangle() {
     use cadmpeg_core::decode::DecodeContext;
     use cadmpeg_core::decode::WorkBudget;
     use std::collections::HashSet;

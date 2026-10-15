@@ -1894,7 +1894,7 @@ fn relation_state_memo_applies_one_row_mapping_to_assigned_and_domains() {
 mod work_tests;
 
 #[test]
-fn mesh_gauge_reversed_coedges_result() {
+fn single_coedge_boundary_keeps_its_coedge() {
     let topology = || StandardTopologyDraft {
         faces: vec![crate::families::standard::topology::FaceTopologyDraft {
             boundaries: vec![crate::families::standard::topology::BoundaryDraft {
@@ -1916,7 +1916,7 @@ fn mesh_gauge_reversed_coedges_result() {
 }
 
 #[test]
-fn mesh_edge_gauge_rows_result() {
+fn edge_row_gauge_canonicalizes_a_two_edge_loop() {
     use crate::families::standard::topology::{BoundaryDraft, FaceTopologyDraft};
 
     let topology = StandardTopologyDraft {
@@ -1968,7 +1968,7 @@ fn mesh_edge_gauge_rows_result() {
 }
 
 #[test]
-fn complete_endpoint_pair_gauge_result() {
+fn single_edge_complete_endpoint_pair_canonicalizes_unchanged() {
     let rows = [{
         assert!(EdgeRow::new(1, Vec::new(), EdgeBoundaryLayout::CompleteBoundaryRun).is_none());
         EdgeRow::new(1, vec![0, 0], EdgeBoundaryLayout::CompleteBoundaryRun)
@@ -1991,7 +1991,7 @@ fn complete_endpoint_pair_gauge_result() {
 }
 
 #[test]
-fn endpoint_relation_gauge_result() {
+fn endpoint_relation_state_canonicalizes_under_a_swap_gauge() {
     let candidates = [vec![[0, 1]]];
     let coordinate_gauge = MeshCoordinateGauge {
         components: vec![vec![vec![0, 1], vec![1, 0]]],
@@ -2020,7 +2020,7 @@ fn endpoint_relation_gauge_result() {
 }
 
 #[test]
-fn mesh_coordinate_gauge_result() {
+fn coordinate_gauge_has_components_for_two_parallel_lines() {
     let edge_rows = [
         EdgeRow::new(2, vec![10, 11], EdgeBoundaryLayout::CompleteBoundaryRun)
             .expect("admitted edge row"),
@@ -2049,7 +2049,7 @@ fn mesh_coordinate_gauge_result() {
 }
 
 #[test]
-fn mesh_candidate_canonicalization_result() {
+fn mesh_candidate_with_coordinate_gauge_is_equivalent_to_itself() {
     let edge_rows = vec![{
         assert!(EdgeRow::new(1, vec![10], EdgeBoundaryLayout::CompleteBoundaryRun).is_none());
         EdgeRow::new(1, vec![10, 10], EdgeBoundaryLayout::CompleteBoundaryRun)

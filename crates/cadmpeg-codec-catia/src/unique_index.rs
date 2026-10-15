@@ -58,7 +58,7 @@ mod tests {
     }
 
     #[test]
-    fn unique_index_result() {
+    fn unique_key_returns_its_value() {
         let admitted = UniqueIndex::collect([("one", 1)]);
         assert_eq!(admitted.get("one"), Some(&1));
     }

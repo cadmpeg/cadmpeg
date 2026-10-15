@@ -1427,7 +1427,7 @@ fn the_minimal_parsed_entity_frame_is_the_empty_nested_body() {
 }
 
 #[test]
-fn definition_selection_result() {
+fn derived_definition_schema_selections_match_decoded_record() {
     let records = [object_graph_record(&[0x04, 0x01, 0x81, 0x81], &[0xfe])];
     let mut bytes =
         entity_table_record_with_definition_and_value(1, &[0, 0, 0x32, 4, 0, 0, 0], &[]);
@@ -1450,7 +1450,7 @@ fn definition_selection_result() {
 }
 
 #[test]
-fn reference_signature_cohort_result() {
+fn entities_sharing_a_reference_signature_form_one_cohort() {
     let value = [
         0x32, 3, 0, 0, 0, 0x82, 0xe8, 0xe0, 0x0a, 0x37, 0x85, 0x81, b'2', b'(', b'E', b')', 0xfe,
         0x32, 4, 0, 0, 0, 0x82, 0xe9, 0xe0, 0x17, 0x08, 0x37, 0xfe, 0xfe, 0xfe,
@@ -1476,7 +1476,7 @@ fn reference_signature_cohort_result() {
 }
 
 #[test]
-fn native_entity_value_field_view_result() {
+fn schema_selector_value_reads_as_one_selector_field() {
     let value = [0x32, 4, 0, 0, 0];
     let records = [object_graph_record(&[0x04, 0x01, 0x81, 0x81], &[0xfe])];
     let mut bytes = entity_table_record_with_value(1, &value);
@@ -1495,7 +1495,7 @@ fn native_entity_value_field_view_result() {
 }
 
 #[test]
-fn entity_value_selection_result() {
+fn derived_entity_value_selections_match_decoded_record() {
     let native =
         crate::native::CatiaNative::decode(&standard_catpart_with_entity_value_schema_selection());
     let record = &native.entity_records[0];
@@ -1507,7 +1507,7 @@ fn entity_value_selection_result() {
 }
 
 #[test]
-fn repeated_reference_selection_result() {
+fn derived_repeated_reference_selection_matches_decoded_record() {
     let native = crate::native::CatiaNative::decode(
         &standard_catpart_with_repeated_reference_schema_selection(),
     );
@@ -1519,7 +1519,7 @@ fn repeated_reference_selection_result() {
 }
 
 #[test]
-fn native_value_productions_result() {
+fn derived_scalar_value_production_matches_decoded_entity() {
     let scalar_suffix = [0x85, 0x96, 0x82, 0x6a, 0xe7, 0x81, 0x52];
     let native =
         crate::native::CatiaNative::decode(&standard_catpart_with_parameter_value(&scalar_suffix));
@@ -1537,7 +1537,7 @@ fn native_value_productions_result() {
 }
 
 #[test]
-fn native_definition_value_and_chain_result() {
+fn definition_value_and_chain_value_decode_with_matching_production() {
     let definition = [0x00, 0x08, 0x32, 4, 0, 0, 0];
     let definition_native =
         crate::native::CatiaNative::decode(&standard_catpart_with_definition_value(

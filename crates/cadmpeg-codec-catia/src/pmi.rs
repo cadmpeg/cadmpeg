@@ -440,7 +440,7 @@ mod tests {
     }
 
     #[test]
-    fn pmi_duplicate_search_result() {
+    fn one_thread_diameter_record_adds_one_pmi_entry() {
         let native = CatiaNative {
             entity_records: vec![range_only_entity("DiameterThread")],
             ..CatiaNative::default()
@@ -461,7 +461,7 @@ mod tests {
     }
 
     #[test]
-    fn pmi_dimension_identity_result() {
+    fn transferred_dimension_id_names_its_entity_record() {
         let native = CatiaNative {
             entity_records: vec![range_only_entity("DiameterThread")],
             ..CatiaNative::default()

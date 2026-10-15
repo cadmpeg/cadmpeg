@@ -2,7 +2,7 @@
 //! Resource admission for zero-entity native records.
 
 #[test]
-fn native_zero_entity_records_result() {
+fn zero_entity_scan_finds_one_a9_record() {
     let bytes = [0xa9, 0x03, 0x00, 0x00, 0, 0, 0, 0, 0, 0, 0, 0];
     let run = || super::super::zero_entity_records(&bytes, 0..bytes.len());
 
@@ -10,7 +10,7 @@ fn native_zero_entity_records_result() {
 }
 
 #[test]
-fn native_zero_entity_pair_ids_result() {
+fn zero_entity_endpoint_pairs_get_ordinal_ids_and_record_refs() {
     use cadmpeg_ir::features::FinitePoint3;
     use cadmpeg_ir::math::Point3;
     let point = FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).expect("finite point");

@@ -888,7 +888,7 @@ fn constraint_range_requires_an_exact_role_and_framing_pair() {
 }
 
 #[test]
-fn native_constraint_and_range_values_result() {
+fn constraint_ranges_decode_and_range_intervals_rederive_identically() {
     let mut constraint_suffix = vec![0x84, 0x96, 0x82, 0xc1, 0xe6];
     constraint_suffix.extend_from_slice(&128.0_f64.to_bits().to_le_bytes());
     let constraint_native = crate::native::CatiaNative::decode(

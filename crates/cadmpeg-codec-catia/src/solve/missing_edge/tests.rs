@@ -372,7 +372,7 @@ fn repeated_handle_index_preserves_face_order() {
 }
 
 #[test]
-fn counted_port_identity_maps_and_pairs_result() {
+fn standard_and_fbb_quads_count_four_edge_ports() {
     let fixtures = [
         (
             crate::test_support::test_topology::standard_quad_topology_stream(),
@@ -398,7 +398,7 @@ fn counted_port_identity_maps_and_pairs_result() {
 }
 
 #[test]
-fn edge_run_face_collection_result() {
+fn edge_runs_resolve_a_consistent_edge_face_pair() {
     let run = MeshEdgeRun {
         edge: 0,
         face: 1,
@@ -415,7 +415,7 @@ fn edge_run_face_collection_result() {
 }
 
 #[test]
-fn edge_port_queue_result() {
+fn edge_port_propagation_keeps_a_seeded_point_pair() {
     let ports = [[10, 11]];
     let pairs = [Some([0, 1])];
     catia_test_context!(service_ctx);
@@ -427,7 +427,7 @@ fn edge_port_queue_result() {
 }
 
 #[test]
-fn ordered_port_seed_result() {
+fn ordered_seed_matching_the_pair_propagates_unchanged() {
     let ports = [[10, 11]];
     let pairs = [Some([0, 1])];
     let ordered = [Some([0, 1])];
@@ -441,7 +441,7 @@ fn ordered_port_seed_result() {
 }
 
 #[test]
-fn partial_port_projection_result() {
+fn partial_port_propagation_returns_the_given_pairs() {
     let ports = [Some([10, 11]), None];
     let pairs = [Some([0, 1]), Some([2, 3])];
     let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
@@ -454,7 +454,7 @@ fn partial_port_projection_result() {
 }
 
 #[test]
-fn edge_port_solution_result() {
+fn single_port_candidate_binds_to_its_edge() {
     let ports = [[10, 11]];
     let candidates = [vec![[0, 1]]];
     catia_test_context!(service_ctx);
@@ -466,7 +466,7 @@ fn edge_port_solution_result() {
 }
 
 #[test]
-fn visualization_endpoint_bindings_result() {
+fn raw_and_compressed_visualization_tables_bind_the_same_endpoints() {
     let points = [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]];
     let rows = [row(&[0, 1])];
     let raw = raw_visualization_table(1, &points);
@@ -487,7 +487,7 @@ fn visualization_endpoint_bindings_result() {
 }
 
 #[test]
-fn repeated_handle_candidates_result() {
+fn repeated_handle_row_selects_the_second_sharing_face() {
     let rows = vec![row(&[10, 11])];
     let faces = vec![handles(&[10, 11]), handles(&[10, 11])];
     catia_test_context!(service_ctx);
@@ -499,7 +499,7 @@ fn repeated_handle_candidates_result() {
 }
 
 #[test]
-fn repeated_face_refinement_result() {
+fn repeated_face_refinement_accepts_any_single_allowed_face() {
     for allowed_face in [vec![2usize], vec![3usize]] {
         let run = || {
             let mut allowed = [allowed_face.clone()];
@@ -510,7 +510,7 @@ fn repeated_face_refinement_result() {
 }
 
 #[test]
-fn endpoint_degree_closure_result() {
+fn endpoint_degree_closure_closes_a_three_edge_cycle() {
     let edge_faces = [[0, 1], [0, 0], [0, 1]];
     let allowed = [Vec::new(), vec![1], Vec::new()];
     let endpoint_pairs = [[0, 1], [1, 2], [2, 0]];
@@ -527,7 +527,7 @@ fn endpoint_degree_closure_result() {
 }
 
 #[test]
-fn duplicate_face_assignment_result() {
+fn duplicate_face_assignment_picks_the_one_passing_face() {
     let serialized = [[0usize, 0]];
     let allowed = [vec![0usize, 1]];
     let run =
@@ -536,7 +536,7 @@ fn duplicate_face_assignment_result() {
 }
 
 #[test]
-fn mesh_edge_run_materialization_result() {
+fn standard_quad_materializes_four_mesh_edge_runs() {
     let bytes = crate::test_support::test_topology::standard_quad_topology_stream();
     let run =
         |ctx: &cadmpeg_core::decode::DecodeContext<'_>| super::standard_mesh_edge_runs(ctx, &bytes);

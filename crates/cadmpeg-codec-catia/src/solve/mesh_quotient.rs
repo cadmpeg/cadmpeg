@@ -6956,7 +6956,7 @@ mod face_domain_support_tests {
     }
 
     #[test]
-    fn ordered_boundary_copy_result() {
+    fn ordered_boundary_domain_materializes_without_endpoint_pairs() {
         let domains = [MeshFaceBoundaryDomain::Ordered(vec![
             MeshFaceBoundaryAssignment {
                 boundaries: vec![vec![MeshBoundaryEdgeCandidate {
@@ -6973,7 +6973,7 @@ mod face_domain_support_tests {
     }
 
     #[test]
-    fn unordered_boundary_copy_result() {
+    fn unordered_cycle_domain_materializes_with_closing_pairs() {
         let domains = [MeshFaceBoundaryDomain::UnorderedFullCycle(vec![0, 1, 2])];
         let pairs = [[0, 1], [1, 2], [2, 0]];
         assert!(materialize_boundary_domains(&domains, &pairs)
@@ -9901,7 +9901,7 @@ mod pair_support_tests {
 }
 
 #[test]
-fn arc_consistency_result() {
+fn arc_consistency_rejects_a_root_without_supporting_pairs() {
     let run = |ctx: &DecodeContext<'_>| {
         let mut domains = vec![vec![2, 3], vec![1, 2]];
         enforce_edge_arc_consistency(
@@ -9918,7 +9918,7 @@ fn arc_consistency_result() {
 }
 
 #[test]
-fn arc_consistency_from_result() {
+fn arc_consistency_from_initial_edges_rejects_unsupported_roots() {
     let run = |ctx: &DecodeContext<'_>| {
         let mut domains = vec![vec![2, 3], vec![1, 2]];
         enforce_edge_arc_consistency_from(
@@ -9935,7 +9935,7 @@ fn arc_consistency_from_result() {
 }
 
 #[test]
-fn sparse_membership_result() {
+fn sparse_membership_rejects_points_outside_the_candidate_pairs() {
     let run = || {
         let mut domains = vec![vec![2, 3], vec![1, 2]];
         enforce_sparse_endpoint_membership(&mut domains, &[[0, 1]], &[0], &[vec![[0, 1]]], None)
@@ -9945,7 +9945,7 @@ fn sparse_membership_result() {
 
 #[cfg(test)]
 #[test]
-fn initial_quotient_points_result() {
+fn initial_quotient_requires_candidate_points_below_point_count() {
     let candidates = [vec![[0, 1]]];
     let identities = [[10, 11]];
     assert!(initial_mesh_quotient(&candidates, 1, &identities)
@@ -9958,7 +9958,7 @@ fn initial_quotient_points_result() {
 
 #[cfg(test)]
 #[test]
-fn initial_quotient_union_and_merge_result() {
+fn initial_quotient_merges_ports_with_a_shared_identity() {
     let candidates = [vec![[0, 1]], vec![[0, 1]]];
     let identities = [[10, 11], [10, 12]];
     assert!(initial_mesh_quotient(&candidates, 2, &identities)
@@ -9967,7 +9967,7 @@ fn initial_quotient_union_and_merge_result() {
 }
 
 #[test]
-fn edge_class_ordered_pairs_result() {
+fn same_class_edges_with_equal_choices_are_ordered_as_one_pair() {
     let choices = vec![vec![[0, 1], [1, 2]], vec![[0, 1], [1, 2]]];
     assert_eq!(
         crate::test_support::with_service_context(|ctx| edge_class_search_constraint(
@@ -9983,7 +9983,7 @@ fn edge_class_ordered_pairs_result() {
 }
 
 #[test]
-fn changed_quotient_edges_result() {
+fn merging_an_edges_endpoints_reports_that_edge_as_changed() {
     let points = Arc::new(HashSet::from([0]));
     let left = MeshQuotient::new(vec![Arc::clone(&points), Arc::clone(&points)]);
     let mut right = left.clone();
@@ -9995,7 +9995,7 @@ fn changed_quotient_edges_result() {
 }
 
 #[test]
-fn relation_coordinate_candidates_result() {
+fn relation_choice_on_an_unknown_edge_yields_no_coordinate_candidates() {
     let domains = [vec![MeshEndpointRelationChoice {
         id: 0,
         selection: MeshEndpointRelationSelection::Enumerated {
@@ -10008,7 +10008,7 @@ fn relation_coordinate_candidates_result() {
 }
 
 #[test]
-fn endpoint_configuration_helpers_result() {
+fn endpoint_configuration_helpers_refuse_missing_or_duplicate_edges() {
     let use_edge = |edge| MeshBoundaryEdgeCandidate {
         edge,
         start: 0,
@@ -10036,7 +10036,7 @@ fn endpoint_configuration_helpers_result() {
 }
 
 #[test]
-fn face_domain_solution_copy_result() {
+fn concrete_face_assignment_returns_the_solved_topology() {
     let assignments = [vec![[0, 0]]];
     let run = |ctx: &DecodeContext<'_>| {
         let budget = WorkBudget::new(MAX_MESH_TOPOLOGY_OPERATIONS);
@@ -10067,7 +10067,7 @@ fn face_domain_solution_copy_result() {
 }
 
 #[test]
-fn endpoint_configuration_relation_result() {
+fn endpoint_configuration_relation_solves_a_triangle_face() {
     let edge_rows = (0..3)
         .map(|_| {
             assert!(EdgeRow::new(1, Vec::new(), EdgeBoundaryLayout::CompleteBoundaryRun).is_none());
@@ -10131,7 +10131,7 @@ fn endpoint_configuration_relation_result() {
 }
 
 #[test]
-fn singleton_mesh_selection_result() {
+fn singleton_mesh_selection_solves_a_triangle_face() {
     let edge_rows = (0..3)
         .map(|_| {
             assert!(EdgeRow::new(1, Vec::new(), EdgeBoundaryLayout::CompleteBoundaryRun).is_none());
@@ -10188,7 +10188,7 @@ fn singleton_mesh_selection_result() {
 }
 
 #[test]
-fn general_mesh_search_result() {
+fn endpoint_candidate_search_accepts_self_loop_edges() {
     let edge_rows = (0..2)
         .map(|_| {
             assert!(EdgeRow::new(1, Vec::new(), EdgeBoundaryLayout::CompleteBoundaryRun).is_none());
@@ -10230,7 +10230,7 @@ fn general_mesh_search_result() {
 }
 
 #[test]
-fn fixed_mesh_search_result() {
+fn fixed_endpoint_pairs_accept_a_self_loop_face() {
     let edge_rows = (0..2)
         .map(|_| {
             assert!(EdgeRow::new(1, Vec::new(), EdgeBoundaryLayout::CompleteBoundaryRun).is_none());
@@ -10267,7 +10267,7 @@ fn fixed_mesh_search_result() {
 }
 
 #[test]
-fn fixed_mesh_direction_overflow_result() {
+fn fixed_endpoint_pairs_survive_direction_enumeration_overflow() {
     const BOUNDARY_COUNT: usize = 13;
     let edge_count = BOUNDARY_COUNT * 2 + 1;
     let edge_rows = (0..edge_count)
@@ -10326,7 +10326,7 @@ fn fixed_mesh_direction_overflow_result() {
 }
 
 #[test]
-fn endpoint_relation_face_choices_result() {
+fn face_choices_refuse_configurations_on_an_unknown_edge() {
     let assignment = MeshFaceBoundaryAssignment {
         boundaries: vec![vec![MeshBoundaryEdgeCandidate {
             edge: 0,
@@ -10345,7 +10345,7 @@ fn endpoint_relation_face_choices_result() {
 }
 
 #[test]
-fn endpoint_relation_support_masks_result() {
+fn endpoint_relation_constraints_build_with_and_without_optional_edges() {
     let make_domains = |optional_edge: bool| {
         let choice = |id, edge_pairs| MeshEndpointRelationChoice {
             id,
@@ -10373,7 +10373,7 @@ fn endpoint_relation_support_masks_result() {
 }
 
 #[test]
-fn endpoint_relation_walk_result() {
+fn endpoint_relation_walk_fails_when_the_evaluator_accepts_nothing() {
     let choices = vec![
         MeshEndpointRelationChoice {
             id: 0,
@@ -10430,7 +10430,7 @@ fn endpoint_relation_walk_result() {
 }
 
 #[test]
-fn endpoint_relation_active_masks_result() {
+fn endpoint_relation_propagation_keeps_matching_shared_edge_choices() {
     let choice = MeshEndpointRelationChoice {
         id: 0,
         selection: MeshEndpointRelationSelection::Enumerated {
@@ -10456,7 +10456,7 @@ fn endpoint_relation_active_masks_result() {
 }
 
 #[test]
-fn endpoint_relation_dirty_faces_result() {
+fn endpoint_relation_propagation_rejects_an_empty_face_domain() {
     let choice = MeshEndpointRelationChoice {
         id: 0,
         selection: MeshEndpointRelationSelection::Enumerated {
@@ -10486,7 +10486,7 @@ fn endpoint_relation_dirty_faces_result() {
 }
 
 #[test]
-fn face_endpoint_configurations_result() {
+fn face_endpoint_configurations_combine_two_self_loop_boundaries() {
     let assignment = MeshFaceBoundaryAssignment {
         boundaries: vec![
             vec![MeshBoundaryEdgeCandidate {
@@ -10517,7 +10517,7 @@ fn face_endpoint_configurations_result() {
 }
 
 #[test]
-fn endpoint_configuration_directions_result() {
+fn two_edge_cycle_has_one_endpoint_direction_assignment() {
     let assignment = MeshFaceBoundaryAssignment {
         boundaries: vec![vec![
             MeshBoundaryEdgeCandidate {
@@ -10544,7 +10544,7 @@ fn endpoint_configuration_directions_result() {
 }
 
 #[test]
-fn endpoint_cycle_viability_result() {
+fn two_edge_endpoint_cycle_is_viable() {
     let assignment = MeshFaceBoundaryAssignment {
         boundaries: vec![vec![
             MeshBoundaryEdgeCandidate {
@@ -10569,7 +10569,7 @@ fn endpoint_cycle_viability_result() {
 }
 
 #[test]
-fn coordinate_root_closure_result() {
+fn coordinate_root_closure_solves_a_merged_two_point_quotient() {
     let edge_candidates = vec![vec![[0, 1]], vec![[0, 1]]];
     let edge_faces = [[0, 1], [0, 1]];
     let boundary = MeshFaceBoundaryAssignment {
@@ -10622,7 +10622,7 @@ fn coordinate_root_closure_result() {
 }
 
 #[test]
-fn coordinate_closure_result() {
+fn coordinate_root_closure_rejects_out_of_range_root_points() {
     let make_quotient = || {
         MeshQuotient::new(vec![
             Arc::new(HashSet::from([9])),
@@ -10640,7 +10640,7 @@ fn coordinate_closure_result() {
 }
 
 #[test]
-fn coordinate_coverage_matching_result() {
+fn coverage_matching_fails_when_a_point_has_no_root() {
     use cadmpeg_core::decode::DecodeArena;
     use cadmpeg_core::decode::DecodePolicy;
     let domains = [vec![0]];
@@ -10656,7 +10656,7 @@ fn coordinate_coverage_matching_result() {
 }
 
 #[test]
-fn coordinate_root_preparation_result() {
+fn coordinate_root_preparation_admits_two_roots_on_one_edge() {
     let candidates = [vec![[0, 1]]];
     let make_quotient = || {
         let domain = Arc::new(HashSet::from([0, 1]));
@@ -10670,7 +10670,7 @@ fn coordinate_root_preparation_result() {
 }
 
 #[test]
-fn local_coordinate_refinement_result() {
+fn candidate_refinement_refuses_a_missing_coverage_matching() {
     use cadmpeg_core::decode::DecodeArena;
     use cadmpeg_core::decode::DecodePolicy;
     let domains = MeshCoordinateRootDomains {
@@ -10693,7 +10693,7 @@ fn local_coordinate_refinement_result() {
 }
 
 #[test]
-fn coordinate_refinement_result() {
+fn all_different_refinement_narrows_the_third_root_to_point_two() {
     let domains = MeshCoordinateRootDomains {
         domains: Arc::new(vec![vec![0, 1], vec![0, 1], vec![0, 1, 2]]),
         edges: Arc::new(vec![[0, 2]]),
@@ -10719,7 +10719,7 @@ fn coordinate_refinement_result() {
 }
 
 #[test]
-fn coordinate_root_copies_result() {
+fn candidate_refinement_keeps_domains_and_selects_an_edge_arc() {
     let domains = MeshCoordinateRootDomains {
         domains: Arc::new(vec![vec![0], vec![1]]),
         edges: Arc::new(vec![[0, 1]]),
@@ -10748,7 +10748,7 @@ fn coordinate_root_copies_result() {
 
 #[cfg(test)]
 #[test]
-fn singleton_direction_growth_result() {
+fn self_loop_singleton_boundary_takes_the_forward_direction() {
     let boundary = [MeshBoundaryEdgeCandidate {
         edge: 0,
         start: 0,
@@ -10764,7 +10764,7 @@ fn singleton_direction_growth_result() {
 
 #[cfg(test)]
 #[test]
-fn singleton_cycle_signature_result() {
+fn singleton_coordinate_cycle_lists_its_one_edge() {
     let assignment = MeshFaceBoundaryAssignment {
         boundaries: vec![vec![MeshBoundaryEdgeCandidate {
             edge: 0,

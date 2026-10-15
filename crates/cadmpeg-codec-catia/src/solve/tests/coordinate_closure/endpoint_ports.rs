@@ -404,7 +404,7 @@ fn distinct_coordinate_bijections_remain_ambiguous() {
 }
 
 #[test]
-fn duplicate_face_visitor_result() {
+fn duplicate_face_visitor_completes_when_the_callback_accepts() {
     let serialized = [[0usize, 0]];
     let allowed = [vec![0usize, 1]];
     let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {

@@ -1437,7 +1437,7 @@ fn decode_rejects_a_formula_with_ambiguous_input_binding() {
 }
 
 #[test]
-fn formula_unscoped_entity_index_result() {
+fn unresolved_graph_scope_transfers_no_formula_parameters() {
     let bytes = standard_catpart_with_typed_formula_inputs(
         4,
         false,
@@ -1463,7 +1463,7 @@ fn formula_unscoped_entity_index_result() {
 }
 
 #[test]
-fn definition_chain_history_id_result() {
+fn boolean_definition_chain_yields_a_parameter_candidate() {
     let bytes = crate::test_support::test_formula::standard_catpart_with_definition_chain_type(
         "Boolean",
         &[0x84, 0x88, 0x82, 0x32, 4, 0, 0, 0, 0x81],
@@ -1483,7 +1483,7 @@ fn definition_chain_history_id_result() {
 }
 
 #[test]
-fn typed_parameter_history_id_result() {
+fn typed_length_parameter_yields_a_parameter_candidate() {
     let bytes = standard_catpart_with_typed_formula_inputs(
         4,
         false,
@@ -1507,7 +1507,7 @@ fn typed_parameter_history_id_result() {
 }
 
 #[test]
-fn typed_parameter_name_and_native_ref_result() {
+fn typed_parameter_candidate_carries_source_name_and_entity_ref() {
     let bytes = standard_catpart_with_typed_formula_inputs(
         4,
         false,

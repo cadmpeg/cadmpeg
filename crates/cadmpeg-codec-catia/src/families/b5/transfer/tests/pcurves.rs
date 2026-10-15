@@ -1692,7 +1692,7 @@ fn affine_cylinder_pcurve_preserves_exact_helix_construction() {
 }
 
 #[test]
-fn nurbs_isocurve_result() {
+fn bilinear_surface_lifts_a_constant_u_pcurve_to_its_isocurve() {
     use cadmpeg_ir::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
     let pcurve = B5Pcurve {
         object_id: 1,

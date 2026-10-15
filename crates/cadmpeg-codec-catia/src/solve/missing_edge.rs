@@ -4425,7 +4425,7 @@ mod tests;
 
 #[cfg(test)]
 #[test]
-fn mesh_edge_ports_result() {
+fn mesh_edge_ports_map_local_ports_to_vertex_indices() {
     let analysis = StandardMeshAnalysis {
         edge_rows: vec![{
             assert!(EdgeRow::new(
@@ -4461,7 +4461,7 @@ fn mesh_edge_ports_result() {
 
 #[cfg(test)]
 #[test]
-fn mesh_edge_occurrences_result() {
+fn mesh_edge_occurrences_match_a_row_wrapping_its_face_cycle() {
     let rows = [{
         assert!(EdgeRow::new(
             0,

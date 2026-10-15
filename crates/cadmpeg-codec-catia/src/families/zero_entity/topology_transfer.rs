@@ -1478,7 +1478,7 @@ mod tests {
     }
 
     #[test]
-    fn closed_topology_face_ids_result() {
+    fn face_without_support_curve_ids_transfers_no_topology() {
         use cadmpeg_core::decode::DecodeArena;
         use cadmpeg_core::decode::DecodeContext;
         use cadmpeg_core::decode::DecodePolicy;
@@ -1532,7 +1532,7 @@ mod tests {
     }
 
     #[test]
-    fn closed_topology_face_identity_result() {
+    fn missing_support_curve_ids_leave_the_face_untransferred() {
         use cadmpeg_core::decode::DecodeContext;
         let points = [
             Point3::new(0.0, 0.0, 0.0),

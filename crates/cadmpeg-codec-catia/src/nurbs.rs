@@ -798,7 +798,7 @@ pub(crate) fn pole_count(multiplicities: &[u32], degree: u32) -> Option<u32> {
 
 #[cfg(test)]
 mod tests {
-    mod numerical_limits;
+    mod floating_point_extremes;
 
     use cadmpeg_ir::geometry::{
         nurbs::{NurbsCurve, NurbsSurface},
@@ -1513,7 +1513,7 @@ mod tests {
     }
 
     #[test]
-    fn quintic_jet_control_workspace_result() {
+    fn quintic_jet_builds_a_bspline_for_a_straight_two_site_jet() {
         let run = || {
             quintic_jet_bspline(
                 5,
@@ -1527,7 +1527,7 @@ mod tests {
     }
 
     #[test]
-    fn circular_helix_cache_result() {
+    fn circular_helix_cache_builds_a_unit_pitch_helix() {
         let definition = ProceduralCurveDefinition::Helix(
             cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
                 [0.0, 1.0],
@@ -1554,7 +1554,7 @@ mod tests {
     }
 
     #[test]
-    fn annotation_collision_note_result() {
+    fn annotation_collision_states_one_note_with_its_message() {
         let collision = cadmpeg_ir::annotations::AnnotationIdentityCollision {
             id: "catia:test:curve#duplicate".to_string(),
         };
@@ -1566,7 +1566,7 @@ mod tests {
     }
 
     #[test]
-    fn solver_refusal_note_result() {
+    fn solver_refusal_note_names_the_record_and_reason() {
         let mut refusal = LaneRefusals::new();
         refusal.push_solver("a5 record", "jet does not close");
         let notes = refusal.take_notes();

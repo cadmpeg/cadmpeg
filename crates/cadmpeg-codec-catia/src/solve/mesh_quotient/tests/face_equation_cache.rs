@@ -90,7 +90,7 @@ fn face_equation_cache_ignores_unrelated_quotient_components() {
 }
 
 #[test]
-fn face_equation_projection_and_cache_result() {
+fn forced_face_equations_propagate_for_a_two_edge_loop() {
     use cadmpeg_core::decode::DecodeContext;
 
     let assignments = vec![vec![MeshFaceBoundaryAssignment {

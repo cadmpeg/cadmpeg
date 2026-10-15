@@ -445,7 +445,7 @@ mod tests {
     }
 
     #[test]
-    fn native_vertex_identities_result() {
+    fn decoded_vertex_identities_match_recomputation_from_edge_nodes() {
         let native = CatiaNative::decode(&a5_native_edge_run_stream(6, 139, 142));
         assert!(!native.consolidated_edge_nodes.is_empty());
         let service = super::consolidated_vertex_identities(&native.consolidated_edge_nodes);

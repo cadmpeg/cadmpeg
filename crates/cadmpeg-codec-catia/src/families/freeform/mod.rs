@@ -4564,7 +4564,7 @@ mod tests {
     mod rechart_cases;
 
     #[test]
-    fn consolidated_jet_pcurve_workspace_result() {
+    fn identity_chart_jet_pcurve_lowers_to_a_pcurve() {
         use crate::wire::records::{ConsolidatedPcurve, ConsolidatedPcurveSite};
         let site = |knot, u| ConsolidatedPcurveSite {
             knot: cadmpeg_ir::scalar::FiniteReal::new(knot).expect("finite knot"),
@@ -4594,7 +4594,7 @@ mod tests {
     }
 
     #[test]
-    fn consolidated_line_profile_result() {
+    fn b2_line_profile_stream_yields_one_line_profile() {
         let bytes = crate::test_support::test_b2::b2_line_profile_stream();
         let records = crate::wire::records::consolidated_records(&bytes);
         let service = consolidated_line_profiles(&bytes, &records)
@@ -4603,7 +4603,7 @@ mod tests {
     }
 
     #[test]
-    fn freeform_surface_pool_result() {
+    fn a5_surface_pool_appends_one_surface() {
         let bytes = crate::test_support::test_a5a8::a5_surface_stream();
         let records = crate::wire::records::consolidated_records(&bytes);
         let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
@@ -4629,7 +4629,7 @@ mod tests {
     }
 
     #[test]
-    fn a5_guide_scratch_points_result() {
+    fn a5_guide_curve_pool_appends_one_curve() {
         let bytes = crate::test_support::test_a5a8::a5_guide_curve_stream();
         let records = crate::wire::records::consolidated_records(&bytes);
         let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
@@ -4655,7 +4655,7 @@ mod tests {
     }
 
     #[test]
-    fn equivalent_surface_rechart_result() {
+    fn rechart_between_identical_surfaces_copies_the_pcurve() {
         let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None });
         let pcurve = PcurveGeometry::Nurbs {
             nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
@@ -4673,7 +4673,7 @@ mod tests {
     }
 
     #[test]
-    fn standard_carrier_tag_index_result() {
+    fn carrier_index_lists_an_unknown_geometry_tag_without_a_surface_id() {
         let mut ir = CadIr::empty();
         ir.model.surfaces.push(Surface {
             id: SurfaceId::mint("catia:test:surface#tagged".to_owned()).expect("identity grammar"),
@@ -4688,7 +4688,7 @@ mod tests {
     }
 
     #[test]
-    fn consolidated_revolution_directrix_id_result() {
+    fn b2_revolution_stream_resolves_one_revolution() {
         let bytes = crate::test_support::test_b2::b2_resolved_revolution_stream();
         let records = crate::wire::records::consolidated_records(&bytes);
         let resolved =
@@ -4697,7 +4697,7 @@ mod tests {
     }
 
     #[test]
-    fn consolidated_line_profile_identity_result() {
+    fn line_profile_curve_gets_the_consolidated_line_profile_id() {
         let bytes = crate::test_support::test_b2::b2_line_profile_stream();
         let records = crate::wire::records::consolidated_records(&bytes);
         let service = consolidated_line_profiles(&bytes, &records).expect("service budget");

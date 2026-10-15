@@ -231,7 +231,7 @@ fn relation_program_output_selects_only_the_framing_specific_paramout_slot() {
 }
 
 #[test]
-fn relation_program_output_wire_result() {
+fn relation_program_output_entity_serializes_its_class_name() {
     let native = crate::native::CatiaNative::decode(
         &standard_catpart_with_relation_program_instance_class(1, 1, 1, 2, "paramout"),
     );
@@ -1183,7 +1183,7 @@ fn native_load_validates_relation_program_instances() {
 }
 
 #[test]
-fn native_relation_symbols_and_candidates_result() {
+fn relation_symbols_and_dependencies_bind_parameter_candidates() {
     let service_symbols = crate::native::relation_symbols("#1_ + #2_");
     assert_eq!(
         service_symbols,
@@ -1204,7 +1204,7 @@ fn native_relation_symbols_and_candidates_result() {
 }
 
 #[test]
-fn native_resolved_input_result() {
+fn resolved_relation_input_binds_the_dependency_entity() {
     let signature = crate::native::CatiaRelationTypeSignature {
         inputs: vec![crate::native::CatiaRelationTypeInput {
             parameter: "#1_".to_string(),
@@ -1228,7 +1228,7 @@ fn native_resolved_input_result() {
 }
 
 #[test]
-fn native_entity_reference_result() {
+fn entity_reference_resolves_entity_and_class_name() {
     let entities =
         std::collections::HashMap::from([(("graph".to_string(), 10_u32), "entity-10".to_string())]);
     let classes =

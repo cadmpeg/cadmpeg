@@ -122,7 +122,7 @@ fn catalog_parser_reads_exact_inclusive_length_dictionary() {
 }
 
 #[test]
-fn catalog_entries_result() {
+fn catalog_prefix_stream_parses_as_one_catalog() {
     let bytes = catalog_stream(&PREFIX);
 
     assert_eq!(parse(&bytes).len(), 1);

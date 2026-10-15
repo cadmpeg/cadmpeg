@@ -3295,9 +3295,9 @@ fn e5_ownership_plan(
 
 #[cfg(test)]
 mod route_tests {
+    mod body_ownership;
     mod loop_admission;
     mod occurrence_ranges;
-    mod ownership_limits;
     mod plane_frames;
 
     use crate::assemble::{quintic_jet_pcurve, rational_pcurve_arc};
@@ -4503,7 +4503,7 @@ mod route_tests {
     mod boundary_cases;
 
     #[test]
-    fn e5_unused_surface_stash_result() {
+    fn unreferenced_e5_surface_moves_to_the_unused_list() {
         let topology = E5Topology {
             bodies: Vec::new(),
             faces: Vec::new(),
@@ -4548,7 +4548,7 @@ mod route_tests {
     }
 
     #[test]
-    fn e5_jet_pcurve_result() {
+    fn e5_jet_pcurve_lowers_onto_a_plane() {
         let surface = E5Surface {
             pos: 0,
             record_id: 7,
