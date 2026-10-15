@@ -67,6 +67,14 @@ pub(crate) fn admit_construction_records(
     namespace: &cadmpeg_ir::native::NativeNamespace,
 ) -> Result<(), cadmpeg_ir::native::NativeConvertError> {
     for record in namespace
+        .arena_iter_as_for_decode::<features::operation_record::FeatureOperationRecord>(
+            ctx,
+            "feature_operation_records",
+        )
+    {
+        record?;
+    }
+    for record in namespace
         .arena_iter_as_for_decode::<features::named_target::FeatureConstructionNamedTarget>(
             ctx,
             "feature_construction_named_targets",

@@ -3576,12 +3576,14 @@ fn visit_feature_history_operation_records(
 ) -> Result<(), CodecError> {
     visit_feature_history_sections(ctx, container, |section, key, entry_offset| {
         for (ordinal, record) in section.operation_records_with_label_ordinals(ctx)? {
-            let record = if let Some(core) =
-                crate::om::move_face::core_for_decode(ctx, record.payload_view(), &section.types)?
-            {
+            let record = if let Some(core) = crate::om::operation_core::core_for_decode(
+                ctx,
+                record.payload_view(),
+                &section.types,
+            )? {
                 record
-                    .bound_payload(core.byte_len)
-                    .ok_or_else(|| ctx.refuse_codec_limit("NX move-face core bound", 0, 1))?
+                    .bound_payload(core.byte_len())
+                    .ok_or_else(|| ctx.refuse_codec_limit("NX operation core bound", 0, 1))?
             } else {
                 record
             };
@@ -4094,7 +4096,7 @@ pub(super) fn feature_operation_records(
                     )?,
                     stable_identity,
                     span,
-                    move_face_core: crate::om::move_face::core_for_decode(
+                    core: crate::om::operation_core::core_for_decode(
                         ctx,
                         record.payload_view(),
                         &section.types,
@@ -4256,11 +4258,13 @@ pub(super) fn feature_operation_body_writes(
                 return;
             }
             let decoded = match (|| {
-                if let Some(core) = crate::om::move_face::core_for_decode(
-                    ctx,
-                    record.payload_view(),
-                    &section.types,
-                )? {
+                if let Some(crate::om::operation_core::CoreView::MoveFace(core)) =
+                    crate::om::operation_core::core_for_decode(
+                        ctx,
+                        record.payload_view(),
+                        &section.types,
+                    )?
+                {
                     core.writes(ctx, record.payload_offset())
                 } else {
                     crate::om::operation_body_write_frames(ctx, record.payload_view())

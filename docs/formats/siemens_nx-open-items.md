@@ -788,23 +788,23 @@ assigns control geometry, continuity, or terminal semantics.
 
 ### OM-47. `CYLINDER` construction roles
 
-**Question.** Which serialized fields define the radius, height, placement, angular bounds, and Boolean mode of a `CYLINDER` operation?
+**Question.** Which logical relations bind a cylinder's dimension expressions and authored placement to its operation?
 
-**Known.** `siemens_nx.md` §7.1 "The `CYLINDER` operation label identifies" defines the body-affecting cylinder primitive. A resolved body-write frame identifies a body-affecting result. The operation can retain object-index values, but the neutral dimensions, placement, angular bounds, and Boolean mode remain unresolved.
+**Known.** `siemens_nx.md` §7.1 "The `CYLINDER` operation label identifies" defines the complete native core, six signed or quarter-scaled scalar slots, nine payload references, result association, and create/unite/subtract mode. The mode is retained as `cylinder.boolean_mode`. Full-cylinder output carriers establish a result radius and can establish an untrimmed cap span. A result direction does not establish an authored axis.
 
-**Need.** We must identify the primitive dimensions, local frame, angular interval, and material-combination mode to construct a complete neutral cylinder and bind its result body.
+**Need.** Reconstruct the logical rows selected by the payload references and establish unique operation-to-dimension and operation-to-placement relations.
 
-**Conflict.** The operation label and body-write relation identify the primitive family, but the object-index slots and bounded payload do not assign a unique dimension, placement, angular-bound, or Boolean-mode role.
+**Conflict.** Payload references can select physical column fragments. Header indices, fixed-table words, and inline expression declaration values belong to distinct namespaces and do not supply a generic dimension join. A direction-like scalar triple can disagree with the output cylinder axis. Later trimming can remove the cap pair needed to recover an original height from the result.
 
 ### OM-48. `MOVE_OBJECT` construction roles
 
-**Question.** Which serialized fields define the selected objects, translation, rotation, and copy count of a `MOVE_OBJECT` operation?
+**Question.** Which logical motion relations establish selected objects, authored translation and rotation, move/copy mode, and copy count?
 
-**Known.** `siemens_nx.md` §7.1 "The `MOVE_OBJECT` operation label identifies" defines the body-affecting object-motion construction. A body-write frame identifies a body-affecting result. All observed records retain null operation object-index slots, and no admitted field assigns a motion role.
+**Known.** `siemens_nx.md` §7.1 "The `MOVE_OBJECT` operation label identifies" defines the complete core, scoped `MotionOptions` reference, result body write, and null-terminal boundary. The reference can select a physical fragment whose boundary splits a scalar or row. Result lineage can establish a same-body dependency between operations. Analytic carrier matching can establish a net rigid transform.
 
-**Need.** We must identify the selected object set, translation vector, rotation axis and angle, and copy count to construct a complete neutral object-motion operation and bind its result body.
+**Need.** Reconstruct logical motion rows across storage fragments, bind the selected objects and authored parameters to each operation, and distinguish move from copy through serialized fields.
 
-**Conflict.** The operation label and body-write relation identify the family, but the null object-index slots and bounded payload do not assign a unique object selection or motion law.
+**Conflict.** A net half-turn can be decomposed into rotation about an offset axis or rotation about a global axis plus translation. Multiple operations can share one matched source/result transform. A degree expression equal to the net angle has no operation binding by that equality. A null terminal excludes the following `MethodicObject` lane. An API default or invariant control byte does not establish serialized copy mode or count.
 
 ### OM-49. `COPY_FACE` construction roles
 

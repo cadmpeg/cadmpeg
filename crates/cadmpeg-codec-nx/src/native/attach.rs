@@ -6722,6 +6722,13 @@ fn operation_source_properties(
     }
 
     insert_operation_source_property(ctx, properties, "operation_record", &record.id)?;
+    if let Some(mode) = record
+        .core
+        .as_ref()
+        .and_then(crate::om::operation_core::OperationCore::cylinder_boolean_mode)
+    {
+        insert_operation_source_property(ctx, properties, "cylinder.boolean_mode", mode)?;
+    }
     let contiguous_common_frames = common_frames
         .iter()
         .filter(|frame| frame.operation_record == record.id)

@@ -1,14 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Complete native face-motion cores and ordered result lists, without authored roles.
 
-use super::body_write::{BodyWriteFrame, BodyWriteIndex, BODY_IMAGE_CLASS};
+use super::body_write::{BodyWriteFrame, BODY_IMAGE_CLASS};
+use super::core_reader::Reader;
 use super::operation_record::OperationPayload;
-use super::reference_index::{FeatureReferenceToken, PayloadIndexToken};
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::native::bytes::NativeBytes;
 use serde::{Deserialize, Serialize};
-use std::num::NonZeroU8;
 
 const CLASSES: [&str; 3] = [
     "UGS::ModlDirectDB::AdmMoveFaceParms",
@@ -28,11 +27,9 @@ fn deserialize_core<'de, D: serde::Deserializer<'de>>(
 ) -> Result<NativeBytes<Vec<u8>>, D::Error> {
     let bytes = NativeBytes::<Vec<u8>>::deserialize(d)?;
     let view = CoreView::parse(&bytes)
-        .ok_or_else(|| serde::de::Error::custom("move_face_core: invalid complete core"))?;
+        .ok_or_else(|| serde::de::Error::custom("core: invalid complete core"))?;
     if view.byte_len != bytes.len() {
-        return Err(serde::de::Error::custom(
-            "move_face_core: bytes after terminal frame",
-        ));
+        return Err(serde::de::Error::custom("core: bytes after terminal frame"));
     }
     Ok(bytes)
 }
@@ -40,49 +37,6 @@ fn deserialize_core<'de, D: serde::Deserializer<'de>>(
 impl MoveFaceCore {
     pub(crate) fn as_bytes(&self) -> &[u8] {
         &self.0
-    }
-}
-
-struct Reader<'a> {
-    bytes: &'a [u8],
-    at: usize,
-}
-impl<'a> Reader<'a> {
-    fn take(&mut self, n: usize) -> Option<&'a [u8]> {
-        let end = self.at.checked_add(n)?;
-        let bytes = self.bytes.get(self.at..end)?;
-        self.at = end;
-        Some(bytes)
-    }
-    fn byte(&mut self) -> Option<u8> {
-        self.take(1)?.first().copied()
-    }
-    fn fixed(&mut self, expected: &[u8]) -> Option<()> {
-        (self.take(expected.len())? == expected).then_some(())
-    }
-    fn feature(&mut self) -> Option<FeatureReferenceToken> {
-        let token = FeatureReferenceToken::read(self.bytes.get(self.at..)?)?;
-        self.at += token.raw().len();
-        Some(token)
-    }
-    fn payload(&mut self) -> Option<PayloadIndexToken> {
-        let token = PayloadIndexToken::read(self.bytes.get(self.at..)?)?;
-        self.at += token.raw().len();
-        Some(token)
-    }
-    fn body(&mut self) -> Option<BodyWriteIndex> {
-        let token = BodyWriteIndex::read(self.bytes.get(self.at..)?)?;
-        self.at += token.raw().len();
-        Some(token)
-    }
-    fn image(&mut self) -> Option<(NonZeroU8, BodyWriteIndex, usize)> {
-        let class = NonZeroU8::new(self.byte()?)?;
-        let offset = self.at;
-        let image = self.body()?;
-        self.fixed(b"\xff\0\0\0\x0b\0\xf0\x01\x02\x02")?;
-        self.feature()?;
-        self.fixed(b"\x01")?;
-        Some((class, image, offset))
     }
 }
 

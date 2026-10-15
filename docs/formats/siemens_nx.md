@@ -227,8 +227,8 @@ they do not create multiple operation-expression relations.
 The fixed marker begins an operation record. Without a complete family-specific
 boundary, the record extends through the byte before the next validated
 operation marker; the final record extends through the feature-history
-record-area boundary. The complete `MOVE_FACE` core below supplies such a
-boundary and excludes a following registry-selected object lane. The four object-index slots are part
+record-area boundary. The complete `MOVE_FACE`, `CYLINDER`, and `MOVE_OBJECT` cores below supply
+family-specific boundaries and exclude following registry-selected object lanes. The four object-index slots are part
 of the header. A complete `03` label frame after those slots labels the record.
 A validated header without that frame is an unlabeled operation record and
 still bounds both adjacent records. Its payload begins after the fourth header
@@ -2591,15 +2591,57 @@ identifies result topology and does not establish the authored face selection.
 Its selected faces and motion law remain unresolved until a serialized
 relation establishes the complete construction.
 
+The native operation record retains a complete core as `core`, with `kind`
+equal to `move_face`, `cylinder`, or `move_object`, and `bytes` equal to its
+exact hexadecimal bytes. Wire admission replays the complete family grammar,
+requires the core length to equal the payload length, and checks its SHA-256
+against the payload digest. Native model checking admits these records through
+the same wire validator. A core ends the operation record; following lanes are
+excluded from both record and payload digests.
+
 The `MOVE_OBJECT` operation label identifies a body-affecting object-motion
-construction. Its selected objects, translation, rotation, and copy count remain
-unresolved until the serialized construction roles establish a complete
-operation.
+construction. Its complete core starts with a selector for
+`UGS::ModlFeature::MoveObjectParms`, `00 00 01 00`, a selector for
+`UGS::Modl::MotionOptions`, one canonical payload reference, `ff 02`, nine
+`ff` bytes, and four zero bytes. Selectors are nonzero one-based ordinals in
+the owning registry. The motion reference addresses the selected offset store;
+a column block is a physical fragment, not a complete typed motion object.
+One nested body-write frame follows; its endpoint class selects
+`UGS::CM_BREF_DATA`. Then come `00 00 00 0b 00 f0 01 02 02`, one feature
+reference, `01`, and six zero bytes. The inherited frame has the same journal,
+duplicated triplet, local control, two references, and nine state bytes as
+`MOVE_FACE`. The terminal frame repeats one feature reference byte-for-byte,
+then contains either a feature reference and zero, or the null byte `ff`
+without a zero. A following lane is admitted only after a null terminal and
+begins with a selector for `UGS::OM::MethodicObject`; it is outside the core.
+The core assigns no selected-object, translation, rotation, move/copy, or
+copy-count field.
 
 The `CYLINDER` operation label identifies a body-affecting cylinder primitive.
-Its radius, height, placement, angular bounds, and Boolean mode remain
-unresolved until the serialized construction roles establish a complete
-primitive.
+Its complete core starts with a selector for `UGS::CYLINDER_PARMS`,
+`00 00 01 00`, one control byte, six scalar atoms, and nine canonical payload
+references. Scalar bytes `00`, `80`, `01`, and `81` represent positive zero,
+negative zero, positive one, and negative one. Other atoms use the shifted
+binary32 or binary64 grammar above, with the decoded value scaled by `1/4`.
+The scalar frame ends with `ff 01 00`, nine `ff` bytes, and four zero bytes.
+One nested body-write frame follows and selects `UGS::CM_BREF_DATA` in the
+owning registry. The result association is `00 00 00 0b 00 f0 01 02`,
+`kind:u8`, one feature reference, and `01`. Kind `01` has six zero separator
+bytes. Kind `02` has five zero bytes and a secondary relation
+`01 02, body_identity:u8, group_node:relation_object, 97 75`.
+
+The cylinder inherited frame begins `0d 01 02 01 00 00 00`, one journal
+feature reference, `01 01 01 01 02`, two byte-identical three-byte triplets,
+`01 00 00 ff 00 ff`, one local control byte, and
+`c0 1f ff ff 01 00 00 81 73 80 b4 01 03 02 01 02`.
+The next three bytes assign Boolean mode: `02 00 00` is create and requires
+association kind `01`; `02 00 01` is unite and `03 00 00` is subtract, both
+requiring kind `02`. Then come `01 00 00 00`, one feature reference repeated
+byte-for-byte, a nullable feature reference, and zero. The complete core
+has no trailing bytes. The mode is retained as source property
+`cylinder.boolean_mode`. The six scalar slots retain their exact encoding;
+they do not bind dimension expressions, an authored origin, or an authored
+axis. The native references do not by themselves establish those roles.
 
 **Persistent-handle identity.** `e0 + handle:u32 BE` values are persistent handles forming a cross-stream bridge (RMFastLoad ↔ UG_PART OM ↔ EXTREFSTREAM). Equal handle values group their ordered distinct bounded OM records, offset-store control blocks, and indexed EXTREFSTREAM records under one native handle identity. A second family is a four-byte big-endian word whose high nibble is `0xC` and low 28 bits are the reference value. In an externally bounded object record, that second token is a typed reference only when it immediately follows one complete `e0 + handle:u32 BE` token; an unpaired high-nibble-`c` word remains field data. Both tokens remain within the same record and form one `(e0-handle, c-ref)` pair.
 
