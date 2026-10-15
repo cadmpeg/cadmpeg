@@ -39,14 +39,19 @@ fn coaxial_cone_components_respect_axis_orientation_and_coincidence() {
     );
     let candidates = coaxial_cones_section_candidates(first, second);
     assert_eq!(candidates.len(), 2);
-    assert!(
-        matches!(select_unique_curve_candidate(candidates, [[6.0, 0.0, 4.0], [0.0, 6.0, 4.0]]), Some((CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)), "coaxial_cones_circle"))
-                if {
-                    let center = circle_curve.center().get();
-        let radius = circle_curve.radius().get();
-                    (center.z - 4.0).abs() < EPS_COAXIAL_CIRCLE && (radius - 6.0).abs() < EPS_COAXIAL_CIRCLE
-                })
-    );
+    assert!(matches!(
+        select_unique_curve_candidate(candidates, [[6.0, 0.0, 4.0], [0.0, 6.0, 4.0]]),
+        Some(
+            (
+                CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)),
+                "coaxial_cones_circle"
+            )
+        )
+            if {
+                let center = circle_curve.center().get();
+    let radius = circle_curve.radius().get();
+                (center.z - 4.0).abs() < EPS_COAXIAL_CIRCLE && (radius - 6.0).abs() < EPS_COAXIAL_CIRCLE
+            }));
     let tangent_plane = CarrierEquation::Plane(PlaneEquation {
         origin: [10.0, 0.0, 0.0],
         normal: [1.0, 0.0, 1.0],

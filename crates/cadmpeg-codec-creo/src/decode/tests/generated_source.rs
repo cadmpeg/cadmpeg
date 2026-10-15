@@ -891,7 +891,12 @@ fn class_911_simple_drilled_recipe_transfers_dimension_tuple() {
                     drill_point_angle: angle,
                 },
                 ..
-            }, Some(actual_diameter),) if ((FiniteReal::new(angle.get())).zip(FiniteReal::new(drill_point_angle)).is_some_and(|(first, second)| approximately_equal(first, second))) && actual_diameter.get() == 8.4 && actual_length.get() == 25.0)));
+            }, Some(actual_diameter),)
+                if ((FiniteReal::new(angle.get()))
+                    .zip(FiniteReal::new(drill_point_angle))
+                    .is_some_and(|(first, second)| approximately_equal(first, second)))
+                    && actual_diameter.get() == 8.4
+                    && actual_length.get() == 25.0)));
 
     let compact_entry =
         |entity_id, class_id, source_entity_id| crate::feature::entity::FeatureEntityTableEntry {
@@ -921,7 +926,18 @@ fn class_911_simple_drilled_recipe_transfers_dimension_tuple() {
         .rows
         .push(surface_row(24, 9, crate::surface::SurfaceKind::Cylinder));
     assert!(matches!(
-        crate::decode::with_test_decode_ctx(|ctx| schema_feature_definition(ctx, &scan, &CadIr::empty(), &crate::decode::source_carriers::SourceUnitCarriers::default(), 9, Some(SchemaClass::Hole), "Hole")).expect("valid test fixture"), IrFeatureDefinition::Operation(IrFeatureOperation::Hole {
+        crate::decode::with_test_decode_ctx(|ctx| schema_feature_definition(
+            ctx,
+            &scan,
+            &CadIr::empty(),
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            9,
+            Some(SchemaClass::Hole),
+            "Hole",
+        ))
+        .expect("valid test fixture"),
+        IrFeatureDefinition::Operation(
+            IrFeatureOperation::Hole {
             shape,
 
             extent: None,

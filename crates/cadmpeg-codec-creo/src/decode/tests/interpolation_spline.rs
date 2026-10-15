@@ -610,7 +610,17 @@ fn class_942_schema_state_precedes_surface_body_tree_fallback() {
         });
 
     assert!(matches!(
-        crate::decode::with_test_decode_ctx(|ctx| schema_feature_definition(ctx, &scan, &CadIr::empty(), &crate::decode::source_carriers::SourceUnitCarriers::default(), 942, Some(SchemaClass::Surface), "Surface")).expect("valid test fixture"),
+        crate::decode::with_test_decode_ctx(
+            |ctx| schema_feature_definition(
+                ctx,
+                &scan,
+                &CadIr::empty(),
+                &crate::decode::source_carriers::SourceUnitCarriers::default(),
+                942,
+                Some(SchemaClass::Surface),
+                "Surface"
+            )
+        ).expect("valid test fixture"),
         IrFeatureDefinition::Operation(IrFeatureOperation::Native { kind, .. }) if kind.as_str() == "Surface"
     ));
 }
@@ -706,7 +716,17 @@ fn class_942_sheet_extrusion_uses_linear_cap_extent_evaluation() {
     ir.model.surfaces.extend([plane(31, 2.0), plane(32, 8.0)]);
 
     assert!(matches!(
-        crate::decode::with_test_decode_ctx(|ctx| schema_feature_definition(ctx, &scan, &ir, &crate::decode::source_carriers::SourceUnitCarriers::default(), 942, Some(SchemaClass::Surface), "Surface")).expect("valid test fixture"),
+        crate::decode::with_test_decode_ctx(
+            |ctx| schema_feature_definition(
+                ctx,
+                &scan,
+                &ir,
+                &crate::decode::source_carriers::SourceUnitCarriers::default(),
+                942,
+                Some(SchemaClass::Surface),
+                "Surface"
+            )
+        ).expect("valid test fixture"),
         IrFeatureDefinition::Operation(IrFeatureOperation::Extrude {
             direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
                 vector: direction,
@@ -1098,7 +1118,16 @@ fn feature_profile_definition_uses_unique_transform_or_unique_owner() {
     let mut ir = CadIr::empty();
     for kind in ["Revolve", "Revolve 2"] {
         assert!(matches!(
-            crate::decode::with_test_decode_ctx(|ctx| named_feature_definition(ctx, &scan, &ir, &crate::decode::source_carriers::SourceUnitCarriers::default(), 822, kind)),
+            crate::decode::with_test_decode_ctx(
+                |ctx| named_feature_definition(
+                    ctx,
+                    &scan,
+                    &ir,
+                    &crate::decode::source_carriers::SourceUnitCarriers::default(),
+                    822,
+                    kind
+                )
+            ),
             Ok(Some(IrFeatureDefinition::Operation(IrFeatureOperation::Revolve {
                 ref construction,
                 op: BooleanOp::Unresolved,
@@ -1116,7 +1145,16 @@ fn feature_profile_definition_uses_unique_transform_or_unique_owner() {
             offset: 1,
         });
     assert!(matches!(
-        crate::decode::with_test_decode_ctx(|ctx| named_feature_definition(ctx, &scan, &ir, &crate::decode::source_carriers::SourceUnitCarriers::default(), 822, "Revolve")),
+        crate::decode::with_test_decode_ctx(
+            |ctx| named_feature_definition(
+                ctx,
+                &scan,
+                &ir,
+                &crate::decode::source_carriers::SourceUnitCarriers::default(),
+                822,
+                "Revolve"
+            )
+        ),
         Ok(Some(IrFeatureDefinition::Operation(IrFeatureOperation::Revolve {
             ref construction,
             ..

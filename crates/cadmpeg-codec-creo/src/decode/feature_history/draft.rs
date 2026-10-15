@@ -459,11 +459,17 @@ pub(in super::super) fn schema_feature_definition(
                     && stepped_form.is_none()
                     && stepped_dimensions.is_none()
                     && diameter.as_ref().is_none_or(|diameter| {
-                        (FiniteReal::new(diameter.get())).zip(FiniteReal::new(*drilled_diameter)).is_some_and(|(first, second)| approximately_equal(first, second))
+                        (FiniteReal::new(diameter.get()))
+                            .zip(FiniteReal::new(*drilled_diameter))
+                            .is_some_and(|(first, second)| approximately_equal(first, second))
                     })
                     && extent.as_ref().is_none_or(|extent| {
                         matches!(extent, LinearTermination::Blind { length }
-                        if (FiniteReal::new(length.get())).zip(FiniteReal::new(*drilled_depth)).is_some_and(|(first, second)| approximately_equal(first, second)))
+                        if (FiniteReal::new(length.get())).zip(
+                            FiniteReal::new(*drilled_depth)
+                        ).is_some_and(
+                            |(first, second)| approximately_equal(first, second)
+                        ))
                     })
             });
         let drilled_axis = if drilled_placement.is_none() {
