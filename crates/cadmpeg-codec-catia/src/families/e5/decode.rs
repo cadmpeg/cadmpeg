@@ -1595,7 +1595,7 @@ fn plan_e5_boundary<'a>(
         let support_range = support.range.map(FiniteReal::get);
         let solved_range = cache.as_ref().map_or(support_range, |(_, range)| *range);
         let Some(context) =
-            e5_support_occurrence_intersection_context(support_range, solved_range, sides)?
+            e5_support_occurrence_intersection_context(support_range, solved_range, sides)
         else {
             if let [side] = sides.as_slice() {
                 if let std::collections::btree_map::Entry::Vacant(e) =
@@ -2842,19 +2842,19 @@ fn e5_support_occurrence_intersection_context(
     support_range: [f64; 2],
     solved_range: [f64; 2],
     sides: &[E5OccurrenceIntersectionSide],
-) -> Result<Option<IntcurveSupportContext>, cadmpeg_core::CodecError> {
+) -> Option<IntcurveSupportContext> {
     let [left, right] = sides else {
-        return Ok(None);
+        return None;
     };
     if left.surface == right.surface {
-        return Ok(None);
+        return None;
     }
     if !e5_parameter_range_is_valid(support_range)
         || !e5_parameter_range_is_valid(solved_range)
         || !e5_parameter_range_is_valid(left.pcurve_range)
         || !e5_parameter_range_is_valid(right.pcurve_range)
     {
-        return Ok(None);
+        return None;
     }
     let sides = [left, right].map(|side| IntcurveSupportSide {
         surface: Some(side.surface.clone()),
@@ -2863,10 +2863,7 @@ fn e5_support_occurrence_intersection_context(
             DirectedParameterRange::new(side.pcurve_range).ok(),
         )),
     });
-    Ok(
-        IntcurveSupportContext::try_new(sides, solved_range, std::array::from_fn(|_| Vec::new()))
-            .ok(),
-    )
+    IntcurveSupportContext::try_new(sides, solved_range, std::array::from_fn(|_| Vec::new())).ok()
 }
 
 fn e5_occurrence_intersection_cache<'a>(
