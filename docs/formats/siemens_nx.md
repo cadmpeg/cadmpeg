@@ -1359,7 +1359,18 @@ A FIN-carried SP_CURVE is a serialized terminal-branch witness when its original
 | 3/4 | `0x29` term_use start / end endpoint                                                       |
 | 5   | `0x00cc` values-array (support UV parameters)                                              |
 
-For the `0x5a` delta twin the layout is fixed (primary = ref[0], bridge = ref[1]); for type-38 the primary/bridge assignment follows the `0x00cc` marker (marker-2 → primary ref[0]; marker-3 → primary ref[1]).
+Both type-38 and one-byte `0x5a` constructions use the `0x00cc` marker to
+associate values with the original serialized support slots. Marker 2 stores
+one `(u,v)` lane for reference 0. Marker 3 stores one `(u,v)` lane for reference
+1 and makes that support primary. Marker 4 stores `(u0,v0,u1,v1)` tuples for
+references 0 and 1 in that order and preserves support order. Normalizing a
+marker-3 construction changes the support association, not the scalar order
+within its values array. The opposite reference can name a type-59 bridge to
+the second surface.
+
+Without one unique values array, the construction retains its serialized
+reference order. Missing or repeated arrays do not supply a selector.
+Sentinel-bearing or unevaluable lanes do not establish a validated pcurve.
 
 When exactly one serialized support is null, an edge using the construction
 supplies the missing support if its incident face surfaces contain exactly one

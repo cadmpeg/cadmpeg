@@ -857,23 +857,65 @@ fn intersection_chart_accepts_finite_model_coordinates_without_magnitude_bound()
 }
 
 #[test]
-fn intersection_support_order_follows_type_38_values_marker() {
-    let mut stream = two_support_charted_intersection_curve_stream();
-    let uv = stream
-        .windows(8)
-        .position(|window| window == [0, 204, 0, 0, 0, 8, 0, 23])
-        .expect("support UV record");
-    stream[uv + 8] = 3;
-
-    let scan = crate::test_support::with_decode_context(|ctx| {
-        crate::intersection::scan(ctx, &stream, crate::intersection::ChartPointLayout::Xyz3)
-    })
-    .unwrap();
-    let [curve] = scan.curves.as_slice() else {
-        panic!("one charted intersection");
-    };
-    assert_eq!(u32::from(curve.primary_support), 13);
-    assert_eq!(curve.secondary_support.map(u32::from), Some(6));
+fn intersection_support_order_follows_values_marker_in_both_construction_forms() {
+    for delta_twin in [false, true] {
+        for (marker, duplicate, present, primary) in [
+            (2, false, true, 6),
+            (3, false, true, 13),
+            (4, false, true, 6),
+            (3, true, true, 6),
+            (3, false, false, 6),
+        ] {
+            let mut stream = two_support_charted_intersection_curve_stream();
+            let uv = stream
+                .windows(8)
+                .position(|window| window == [0, 204, 0, 0, 0, 8, 0, 23])
+                .expect("support UV record");
+            if marker != 4 {
+                stream[uv + 2..uv + 6].copy_from_slice(&4u32.to_be_bytes());
+                stream.drain(uv + 41..uv + 73);
+                for (index, value) in [0.0, 0.0, 0.01, 0.0].into_iter().enumerate() {
+                    put_f64(&mut stream, uv + 9 + index * 8, value);
+                }
+            }
+            stream[uv + 8] = marker;
+            if duplicate {
+                let repeated = stream[uv..uv + 41].to_vec();
+                stream.extend(repeated);
+            }
+            let construction = stream
+                .windows(4)
+                .position(|window| window == [0, 38, 0, 12])
+                .expect("construction record");
+            if !present {
+                put_ref(&mut stream, construction + 29, 1);
+            }
+            if delta_twin {
+                stream.splice(
+                    construction..construction + 2,
+                    crate::topology::TYPE_38_SCHEMA_HEADER.iter().copied(),
+                );
+            }
+            let scan = crate::test_support::with_decode_context(|ctx| {
+                super::scan(ctx, &stream, super::ChartPointLayout::Xyz3)
+            })
+            .unwrap();
+            let [curve] = scan.curves.as_slice() else {
+                panic!("one charted intersection: {delta_twin}, {marker}, {duplicate}, {present}");
+            };
+            assert_eq!(u32::from(curve.primary_support), primary);
+            assert_eq!(
+                curve.secondary_support.map(u32::from),
+                Some(if primary == 6 { 13 } else { 6 })
+            );
+            assert_eq!(scan.rejected, super::RejectionCounts::default());
+            assert_eq!(curve.support_uv[0].is_some(), present && !duplicate);
+            assert_eq!(
+                curve.support_uv[1].is_some(),
+                present && !duplicate && marker == 4
+            );
+        }
+    }
 }
 
 #[test]

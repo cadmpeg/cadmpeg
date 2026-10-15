@@ -818,22 +818,16 @@ fn construction_supports(
     bridges: &BTreeMap<u32, u32>,
     graph: &topology::Graph,
 ) -> Option<(NonNullXmt, Option<NonNullXmt>)> {
-    let (primary, bridge) = if construction.delta_twin {
-        (construction.references[0], construction.references[1])
-    } else {
-        // A present marker-3 values array explicitly reverses the serialized
-        // support order. Without that array, retain the type-38 references'
-        // order; no alternate order was serialized.
-        match construction.references[5]
-            .and_then(|target| uv.get(&u32::from(target)))
-            .map(SupportUvValues::packing)
-        {
-            Some(SupportUvPacking::Form3) => {
-                (construction.references[1], construction.references[0])
-            }
-            Some(SupportUvPacking::Form2 | SupportUvPacking::Form4) | None => {
-                (construction.references[0], construction.references[1])
-            }
+    // Both construction forms preserve the same serialized support slots.
+    // A single marker-3 lane selects original slot 1 as primary; marker 4
+    // and an absent unique values array preserve the serialized order.
+    let (primary, bridge) = match construction.references[5]
+        .and_then(|target| uv.get(&u32::from(target)))
+        .map(SupportUvValues::packing)
+    {
+        Some(SupportUvPacking::Form3) => (construction.references[1], construction.references[0]),
+        Some(SupportUvPacking::Form2 | SupportUvPacking::Form4) | None => {
+            (construction.references[0], construction.references[1])
         }
     };
     let primary = u32::from(primary?);
