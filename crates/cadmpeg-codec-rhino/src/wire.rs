@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Archive-wide wire primitives and checked numeric conversions.
 
-use std::cell::RefCell;
 use std::fmt;
 use std::hash::Hash;
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -16,7 +15,7 @@ use crate::curves::GeometryError;
 use crate::layout::uuid_wire_form as uuid_wire;
 use crate::settings::MillimeterScale;
 
-/// Admits both the formatted source text and the loss note's retained copy.
+/// Formats the loss note's retained message through the decode context.
 pub(crate) fn admitted_loss(
     ctx: &DecodeContext<'_>,
     code: crate::loss::RhinoLossCode,
@@ -24,8 +23,7 @@ pub(crate) fn admitted_loss(
     operation: &'static str,
 ) -> Result<cadmpeg_ir::report::loss::LossNote, CodecError> {
     let message = ctx.format_retained(arguments, operation)?;
-    ctx.charge_retained(u64_from_index(message.len()), operation)?;
-    Ok(code.note(&message))
+    Ok(code.note(message))
 }
 
 /// Serializes retained JSON after measuring and admitting its exact bytes.
@@ -51,16 +49,28 @@ pub(crate) fn admitted_json(
     }
 
     let mut count = ByteCount(0);
-    serde_json::to_writer(&mut count, value)
-        .map_err(|error| CodecError::malformed(error.to_string()))?;
+    serde_json::to_writer(&mut count, value).or_else(|error| {
+        Err(CodecError::malformed(ctx.format_retained(
+            format_args!("{error}"),
+            "Rhino admitted_json text",
+        )?))
+    })?;
     let mut bytes = ctx.collection_vec(count.0, operation)?;
-    serde_json::to_writer(&mut bytes, value)
-        .map_err(|error| CodecError::malformed(error.to_string()))?;
-    String::from_utf8(bytes).map_err(|error| CodecError::malformed(error.to_string()))
+    serde_json::to_writer(&mut bytes, value).or_else(|error| {
+        Err(CodecError::malformed(ctx.format_retained(
+            format_args!("{error}"),
+            "Rhino admitted_json text",
+        )?))
+    })?;
+    String::from_utf8(bytes).or_else(|error| {
+        Err(CodecError::malformed(ctx.format_retained(
+            format_args!("{error}"),
+            "Rhino admitted_json text",
+        )?))
+    })
 }
 
-/// Preserves the sorted object-key order of `serde_json::Value` without building
-/// an uncharged intermediate tree.
+/// Preserves sorted object keys, including ordinary raw-value-named keys.
 pub(crate) fn admitted_canonical_json(
     ctx: &DecodeContext<'_>,
     value: &impl serde::Serialize,
@@ -80,57 +90,42 @@ pub(crate) fn admitted_canonical_json(
         }
     }
     let mut count = ByteCount(0);
-    serde_json::to_writer(&mut count, value)
-        .map_err(|error| CodecError::malformed(error.to_string()))?;
-    let (mut raw, _temporary) = ctx.temporary_vec(count.0, operation)?;
-    serde_json::to_writer(&mut raw, value)
-        .map_err(|error| CodecError::malformed(error.to_string()))?;
-    let scratch_bytes = count
-        .0
-        .checked_mul(2)
-        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?
-        .max(8);
-    let _scratch = ctx.reserve_scoped(u64_from_index(scratch_bytes), operation)?;
-    let (canonical, _tree) = ctx.with_scoped_storage(operation, || {
-        let failure = RefCell::new(None);
-        let seed = CanonicalSeed {
-            ctx,
-            operation,
-            failure: &failure,
-        };
-        let mut decoder = serde_json::Deserializer::from_slice(&raw);
-        let canonical =
-            serde::de::DeserializeSeed::deserialize(seed, &mut decoder).map_err(|error| {
-                match failure.into_inner() {
-                    Some(refusal) => refusal,
-                    None => CodecError::malformed(error.to_string()),
-                }
-            })?;
-        decoder
-            .end()
-            .map_err(|error| CodecError::malformed(error.to_string()))?;
-        Ok::<_, CodecError>(canonical)
+    serde_json::to_writer(&mut count, value).or_else(|error| {
+        Err(CodecError::malformed(ctx.format_retained(
+            format_args!("{error}"),
+            "Rhino admitted_canonical_json text",
+        )?))
     })?;
+    let (raw_buffer, _temporary) = ctx.temporary_vec(count.0, operation)?;
+    let mut raw = raw_buffer;
+    serde_json::to_writer(&mut raw, value).or_else(|error| {
+        Err(CodecError::malformed(ctx.format_retained(
+            format_args!("{error}"),
+            "Rhino admitted_canonical_json text",
+        )?))
+    })?;
+    let mut decoder = serde_json::Deserializer::from_slice(&raw);
+    let canonical = serde::de::DeserializeSeed::deserialize(CanonicalSeed, &mut decoder)
+        .map_err(|error| CodecError::malformed(error.to_string()))?;
+    decoder
+        .end()
+        .map_err(|error| CodecError::malformed(error.to_string()))?;
     admitted_json(ctx, &canonical, operation)
 }
 
 #[derive(Clone, Copy)]
-struct CanonicalSeed<'a, 'b> {
-    ctx: &'a DecodeContext<'a>,
-    operation: &'static str,
-    failure: &'b RefCell<Option<CodecError>>,
-}
+struct CanonicalSeed;
 
-impl<'de> serde::de::DeserializeSeed<'de> for CanonicalSeed<'_, '_> {
+impl<'de> serde::de::DeserializeSeed<'de> for CanonicalSeed {
     type Value = serde_json::Value;
     fn deserialize<D: serde::Deserializer<'de>>(self, decoder: D) -> Result<Self::Value, D::Error> {
-        decoder.deserialize_any(CanonicalVisitor(self))
+        decoder.deserialize_any(CanonicalVisitor)
     }
 }
 
-struct CanonicalVisitor<'a, 'b>(CanonicalSeed<'a, 'b>);
+struct CanonicalVisitor;
 
-impl<'de> serde::de::Visitor<'de> for CanonicalVisitor<'_, '_> {
+impl<'de> serde::de::Visitor<'de> for CanonicalVisitor {
     type Value = serde_json::Value;
     fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         formatter.write_str("a JSON value")
@@ -155,15 +150,10 @@ impl<'de> serde::de::Visitor<'de> for CanonicalVisitor<'_, '_> {
         Ok(serde_json::Value::Null)
     }
     fn visit_some<D: serde::Deserializer<'de>>(self, decoder: D) -> Result<Self::Value, D::Error> {
-        serde::de::DeserializeSeed::deserialize(self.0, decoder)
+        serde::de::DeserializeSeed::deserialize(CanonicalSeed, decoder)
     }
     fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Self::Value, E> {
-        let copy = self
-            .0
-            .ctx
-            .copy_retained_text(value, self.0.operation)
-            .map_err(|error| self.0.fail(error))?;
-        Ok(serde_json::Value::String(copy))
+        Ok(serde_json::Value::String(value.to_owned()))
     }
     fn visit_string<E: serde::de::Error>(self, value: String) -> Result<Self::Value, E> {
         Ok(serde_json::Value::String(value))
@@ -173,72 +163,19 @@ impl<'de> serde::de::Visitor<'de> for CanonicalVisitor<'_, '_> {
         mut sequence: A,
     ) -> Result<Self::Value, A::Error> {
         let mut values = Vec::new();
-        while let Some(value) = sequence.next_element_seed(self.0)? {
-            self.0
-                .ctx
-                .reserve_vec(&mut values, 1, self.0.operation)
-                .map_err(|error| self.0.fail(error))?;
+        while let Some(value) = sequence.next_element_seed(CanonicalSeed)? {
             values.push(value);
         }
         Ok(serde_json::Value::Array(values))
     }
     fn visit_map<A: serde::de::MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
         let mut values = serde_json::Map::new();
-        while let Some(key) = map.next_key_seed(CanonicalKeySeed(self.0))? {
-            self.0
-                .ctx
-                .charge_collection_items(1, self.0.operation)
-                .map_err(|error| self.0.fail(error))?;
-            if !values.contains_key(&key) {
-                self.0
-                    .ctx
-                    .admit_btree_node_storage::<String, serde_json::Value>(
-                        values.len(),
-                        self.0.operation,
-                    )
-                    .map_err(|error| self.0.fail(error))?;
-            }
-            let value = map.next_value_seed(self.0)?;
+        while let Some(key) = map.next_key::<String>()? {
+            let value = map.next_value_seed(CanonicalSeed)?;
             // discarded-value: canonical objects keep the last value for duplicate keys.
             let _ = values.insert(key, value);
         }
         Ok(serde_json::Value::Object(values))
-    }
-}
-
-struct CanonicalKeySeed<'a, 'b>(CanonicalSeed<'a, 'b>);
-
-impl<'de> serde::de::DeserializeSeed<'de> for CanonicalKeySeed<'_, '_> {
-    type Value = String;
-    fn deserialize<D: serde::Deserializer<'de>>(self, decoder: D) -> Result<Self::Value, D::Error> {
-        decoder.deserialize_string(CanonicalKeyVisitor(self.0))
-    }
-}
-
-struct CanonicalKeyVisitor<'a, 'b>(CanonicalSeed<'a, 'b>);
-
-impl serde::de::Visitor<'_> for CanonicalKeyVisitor<'_, '_> {
-    type Value = String;
-    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        formatter.write_str("a JSON object key")
-    }
-    fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Self::Value, E> {
-        let copy = self
-            .0
-            .ctx
-            .copy_retained_text(value, self.0.operation)
-            .map_err(|error| self.0.fail(error))?;
-        Ok(copy)
-    }
-    fn visit_string<E: serde::de::Error>(self, value: String) -> Result<Self::Value, E> {
-        Ok(value)
-    }
-}
-
-impl CanonicalSeed<'_, '_> {
-    fn fail<E: serde::de::Error>(&self, error: CodecError) -> E {
-        *self.failure.borrow_mut() = Some(error);
-        E::custom("JSON allocation refused")
     }
 }
 
@@ -350,20 +287,38 @@ pub(crate) fn flag_i32(reader: &mut BoundedReader<'_>) -> Result<bool, FramingEr
 
 /// Admits a finite `f64` and refuses a non-finite one at `offset`, the first
 /// byte of the value.
-pub(crate) fn finite(offset: usize, value: f64, label: &str) -> Result<FiniteReal, FramingError> {
-    FiniteReal::new(value)
-        .ok_or_else(|| FramingError::structural(offset, format!("{label} is not finite")))
+pub(crate) fn finite(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    offset: usize,
+    value: f64,
+    label: &str,
+) -> Result<FiniteReal, FramingError> {
+    FiniteReal::new(value).map_or_else(
+        || {
+            let mut message = String::new();
+            ctx.try_reserve_retained_text(
+                &mut message,
+                label.len() + " is not finite".len(),
+                "Rhino finite text",
+            )?;
+            message.push_str(label);
+            message.push_str(" is not finite");
+            Err(FramingError::structural(offset, message))
+        },
+        Ok,
+    )
 }
 
 /// Reads one `f64` and admits it finite, refusing a non-finite value at the
 /// value's first byte.
 pub(crate) fn read_finite(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     reader: &mut BoundedReader<'_>,
     label: &str,
 ) -> Result<FiniteReal, FramingError> {
     let offset = reader.position();
     let value = reader.f64()?;
-    finite(offset, value, label)
+    finite(ctx, offset, value, label)
 }
 
 /// Converts archive vector components to the model vector type.

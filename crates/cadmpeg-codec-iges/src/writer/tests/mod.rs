@@ -322,14 +322,12 @@ fn generated_global_uses_fixed_profile_and_emitted_coordinate_bound() {
     assert_eq!(global.native_file_name(), Some(WRITER_NATIVE_FILE_NAME));
     assert_eq!(global.units_name(), Some(WRITER_UNITS_NAME));
     assert_eq!(
-        global
-            .declared_version()
+        global.declared_version()
             .and_then(crate::version::VersionFlag::verified_version),
         Some(IgesVersion::V5_3)
     );
     assert!(
-        (global
-            .length_context()
+        (global.length_context()
             .expect("generated Global resolves a millimetre length factor")
             .minimum_resolution_mm()
             - 0.01)
@@ -339,8 +337,8 @@ fn generated_global_uses_fixed_profile_and_emitted_coordinate_bound() {
 
     let global_text = scan
         .section(crate::card::Section::Global)
-        .map(|(_, line)| line)
-        .flat_map(|line| line.payload.iter().take(72).copied())
+        .iter()
+        .flat_map(|card| card.line.payload.iter().take(72).copied())
         .collect::<Vec<_>>();
     let global_text = String::from_utf8(global_text)
         .expect("generated Global record is ASCII")
@@ -365,18 +363,20 @@ fn generated_global_matches_the_4_0_and_5_0_field_contracts() {
         let (global, losses) =
             crate::test_support::parse_global(&scan).expect("versioned Global parses");
         assert_eq!(
-            global
-                .declared_version()
+            global.declared_version()
                 .and_then(crate::version::VersionFlag::verified_version),
             Some(version)
         );
-        assert_eq!(global.version_name(), name);
+        assert_eq!(
+            global.version_name(),
+            name
+        );
         assert!(losses.is_empty(), "{name}: {losses:#?}");
 
         let global_text = scan
             .section(crate::card::Section::Global)
-            .map(|(_, line)| line)
-            .flat_map(|line| line.payload.iter().take(72).copied())
+            .iter()
+            .flat_map(|card| card.line.payload.iter().take(72).copied())
             .collect::<Vec<_>>();
         let global_text = String::from_utf8(global_text)
             .expect("Global is ASCII")
@@ -419,8 +419,7 @@ fn encode_uses_neutral_linear_tolerance_as_global_floor() {
         crate::test_support::parse_global(&scan).expect("neutral tolerance floor Global parses");
 
     assert_eq!(
-        global
-            .length_context()
+        global.length_context()
             .expect("generated Global resolves a millimetre length factor")
             .minimum_resolution_mm(),
         2.5
@@ -454,8 +453,7 @@ fn encode_reports_when_source_resolution_is_raised_for_geometry() {
         crate::test_support::parse_global(&scan).expect("source resolution output Global parses");
 
     assert_eq!(
-        global
-            .length_context()
+        global.length_context()
             .expect("generated Global resolves a millimetre length factor")
             .minimum_resolution_mm(),
         0.01

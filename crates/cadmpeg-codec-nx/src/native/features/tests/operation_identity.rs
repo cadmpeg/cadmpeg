@@ -1458,7 +1458,7 @@ operation_frame_limit_tests!(
 );
 
 #[test]
-fn common_frame_route_admits_zero_scoped_storage() {
+fn common_frame_route_refuses_scoped_parser_storage() {
     let file = operation_frame_fixture();
     let container =
         crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, &file))
@@ -1469,13 +1469,27 @@ fn common_frame_route_admits_zero_scoped_storage() {
         let baseline = feature_operation_common_frames(history_ctx, &history)
             .expect("admitted operation common frames");
         assert_eq!(baseline.len(), 1);
-        let admitted = crate::test_support::with_decode_context_over(
+        let error = crate::test_support::resource_refusal_at(
             container.data.as_ref(),
-            |policy| policy.limits.max_materialized_bytes = 0,
+            cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+            "nx common frames",
             |ctx| feature_operation_common_frames(ctx, &history),
+        );
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+            panic!("common-frame parser must refuse its scoped allocation");
+        };
+        assert!(limit.additional > 0);
+        let bytes = limit.used + limit.additional;
+        crate::test_support::with_decode_context_over(
+            container.data.as_ref(),
+            |policy| policy.limits.max_materialized_bytes = bytes,
+            |ctx| {
+                assert_eq!(feature_operation_common_frames(ctx, &history)?, baseline);
+                let _released = ctx.reserve_scoped(bytes, "test common frame parser release")?;
+                Ok::<_, cadmpeg_core::CodecError>(())
+            },
         )
-        .expect("common-frame route needs no scoped storage");
-        assert_eq!(admitted, baseline);
+        .expect("common-frame parser storage is released");
     });
 }
 

@@ -1,6 +1,6 @@
 //! Immutable standard topology with closed cycles and owned-table references.
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{FinitePoint3, NonEmptyMembers};
 
@@ -16,21 +16,20 @@ impl Boundary {
         ctx: &DecodeContext<'_>,
         coedges: NonEmptyMembers<CoedgeUse>,
     ) -> Result<Option<Self>, CodecError> {
-        ctx.charge_work(
-            u64_from_index(coedges.len()),
-            "catia_closed_boundary_admission",
-        )?;
         let Some(first) = coedges.first() else {
             return Ok(None);
         };
         let mut next_start = first.start_vertex;
-        for coedge in &coedges {
-            if coedge.start_vertex != next_start {
-                return Ok(None);
-            }
-            next_start = coedge.end_vertex;
-        }
-        if next_start != first.start_vertex {
+        let adjacent = ctx.all_by(
+            coedges.as_slice(),
+            |coedge| {
+                let adjacent = coedge.start_vertex == next_start;
+                next_start = coedge.end_vertex;
+                Ok(adjacent)
+            },
+            "catia_closed_boundary_admission",
+        )?;
+        if !adjacent || next_start != first.start_vertex {
             return Ok(None);
         }
         Ok(Some(Self { coedges }))
@@ -73,7 +72,6 @@ impl StandardTopology {
         } = draft;
         let Some(vertex_points) = ctx.collect_fallible_options(
             vertex_points.into_iter().map(|[x, y, z]| {
-                ctx.charge_work(3, "catia_topology_coordinate_admission")?;
                 Ok::<_, CodecError>(FinitePoint3::new(cadmpeg_ir::math::Point3::new(x, y, z)))
             }),
             "catia_admitted_topology_points",
@@ -82,21 +80,27 @@ impl StandardTopology {
             return Ok(None);
         };
         let mut faces = Vec::new();
-        for face in draft_faces {
+        let mut draft_faces = draft_faces.into_iter();
+        while let Some(face) =
+            ctx.next_charged(&mut draft_faces, "catia_admitted_topology_faces")?
+        {
             let mut boundaries = Vec::new();
-            for boundary in face.boundaries {
+            let mut draft_boundaries = face.boundaries.into_iter();
+            while let Some(boundary) =
+                ctx.next_charged(&mut draft_boundaries, "catia_admitted_topology_boundaries")?
+            {
                 let Some(boundary) = Boundary::new(ctx, boundary.coedges)? else {
                     return Ok(None);
                 };
-                ctx.charge_work(
-                    u64_from_index(boundary.coedges().len()),
+                if ctx.any_by(
+                    boundary.coedges(),
+                    |coedge| {
+                        Ok(coedge.edge_row >= edge_rows.len()
+                            || coedge.start_vertex >= logical_vertex_count
+                            || coedge.end_vertex >= logical_vertex_count)
+                    },
                     "catia_topology_reference_admission",
-                )?;
-                if boundary.coedges().iter().any(|coedge| {
-                    coedge.edge_row >= edge_rows.len()
-                        || coedge.start_vertex >= logical_vertex_count
-                        || coedge.end_vertex >= logical_vertex_count
-                }) {
+                )? {
                     return Ok(None);
                 }
                 ctx.push_vec(
@@ -190,6 +194,34 @@ mod tests {
                 valid.faces()[0].boundaries()[0].coedges()[0],
                 coedge(0, 0, 0)
             );
+        });
+    }
+
+    #[test]
+    fn topology_admission_stops_before_unvisited_faces_and_boundaries() {
+        crate::test_support::with_work_limit(64, |ctx| {
+            let mut invalid = draft(coedge(1, 0, 0));
+            for _ in 0..1024 {
+                invalid.faces.push(super::super::FaceTopologyDraft {
+                    boundaries: vec![
+                        super::super::BoundaryDraft::new(vec![coedge(0, 0, 0)]).expect("boundary")
+                    ],
+                });
+            }
+            assert!(StandardTopology::new(ctx, invalid)
+                .expect("first face is visited")
+                .is_none());
+        });
+        crate::test_support::with_work_limit(64, |ctx| {
+            let mut invalid = draft(coedge(1, 0, 0));
+            for _ in 0..1024 {
+                invalid.faces[0].boundaries.push(
+                    super::super::BoundaryDraft::new(vec![coedge(0, 0, 0)]).expect("boundary"),
+                );
+            }
+            assert!(StandardTopology::new(ctx, invalid)
+                .expect("first boundary is visited")
+                .is_none());
         });
     }
 

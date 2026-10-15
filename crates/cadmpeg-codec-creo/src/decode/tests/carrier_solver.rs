@@ -181,15 +181,16 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
             radius,
         })
     };
-    assert!(matches!(carrier_intersection_curve(
-            parallel_cylinder([0.0, 0.0, 0.0], 2.0),
-            parallel_cylinder([5.0, 0.0, 0.0], 3.0),
-        ), Some((CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)), "parallel_cylinder_tangent_line"))
-                if {
-                    let origin = line_curve.origin().get();
-    let direction = *line_curve.direction().as_raw();
-                    origin.x == 2.0 && direction.z == 1.0
-                }));
+    assert!(
+        matches!(carrier_intersection_curve(parallel_cylinder([0.0, 0.0, 0.0], 2.0),
+                parallel_cylinder([5.0, 0.0, 0.0], 3.0),
+            ), Some((CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)), "parallel_cylinder_tangent_line"))
+                    if {
+                        let origin = line_curve.origin().get();
+        let direction = *line_curve.direction().as_raw();
+                        origin.x == 2.0 && direction.z == 1.0
+                    })
+    );
     assert_eq!(
         crate::decode::with_test_decode_ctx(|ctx| solve_carriers(
             ctx,
@@ -202,14 +203,15 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         .expect("test carrier solve"),
         Some([2.0, 0.0, 3.0])
     );
-    assert!(matches!(carrier_intersection_curve(
-        parallel_cylinder([0.0, 0.0, 0.0], 5.0),
-        parallel_cylinder([3.0, 0.0, 0.0], 2.0),
-    ), Some((CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)), "parallel_cylinder_tangent_line"))
-            if {
-                let origin = line_curve.origin().get();
-                origin.x == 5.0
-            }));
+    assert!(
+        matches!(carrier_intersection_curve(parallel_cylinder([0.0, 0.0, 0.0], 5.0),
+            parallel_cylinder([3.0, 0.0, 0.0], 2.0),
+        ), Some((CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)), "parallel_cylinder_tangent_line"))
+                if {
+                    let origin = line_curve.origin().get();
+                    origin.x == 5.0
+                })
+    );
     assert!(carrier_intersection_curve(
         parallel_cylinder([0.0, 0.0, 0.0], 3.0),
         parallel_cylinder([4.0, 0.0, 0.0], 3.0),
@@ -718,7 +720,10 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         offset: 0,
     };
     assert_eq!(
-        fc14_held_coordinate(std::slice::from_ref(&held_coordinates), 77),
+        crate::decode::with_test_decode_ctx(|ctx| {
+            fc14_held_coordinate(ctx, Some(&held_coordinates))
+        })
+        .expect("admitted FC14 coordinate scan"),
         Some(1.0)
     );
     assert!(matches!(select_fc14_axis_coordinate_candidate(
@@ -733,7 +738,13 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
     let mut mixed_coordinates = held_coordinates;
     mixed_coordinates.tokens[3].value_mm = -1.0;
     mixed_coordinates.tokens[3].raw[1] = 1;
-    assert_eq!(fc14_held_coordinate(&[mixed_coordinates], 77), None);
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| {
+            fc14_held_coordinate(ctx, Some(&mixed_coordinates))
+        })
+        .expect("admitted FC14 coordinate scan"),
+        None
+    );
     assert_eq!(
         select_fc14_axis_coordinate_candidate(
             coaxial_cone_cylinder_circle_candidates(cone, coaxial_cone_cylinder),

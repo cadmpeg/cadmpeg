@@ -89,7 +89,7 @@ fn service_feature_plane_equations(
             feature_id,
         )
         .map(|result| {
-            result.map(|planes| {
+            result.map(|(planes, _plane_storage)| {
                 planes
                     .into_iter()
                     .map(|plane| (plane.origin, plane.normal))
@@ -106,6 +106,7 @@ fn service_feature_outline_planes(
 ) -> Option<Vec<crate::decode::sweep::planes::FeatureOutlinePlane>> {
     crate::decode::with_test_decode_ctx(|ctx| {
         crate::decode::sweep::planes::feature_outline_planes(ctx, scan, feature_id)
+            .map(|result| result.map(|(planes, _plane_storage)| planes))
     })
     .expect("service resources")
 }
@@ -141,7 +142,7 @@ fn generated_surface_face_refs_with_service(
         generated_surface_face_refs(
             ctx,
             source_ids,
-            rows,
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
             result_surface_ids,
             available_features,
         )
@@ -186,7 +187,7 @@ fn native_feature_dependency_ids_with_service(
             operations,
             entity_tables,
             replay,
-            surface_rows,
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(surface_rows.to_vec()),
             (feature_id, prototype_dependencies),
         )
     })
@@ -207,7 +208,12 @@ fn feature_output_surface_dependencies_with_service(
     feature_id: u32,
 ) -> Vec<u32> {
     crate::decode::with_test_decode_ctx(|ctx| {
-        feature_output_surface_dependencies(ctx, tables, rows, feature_id)
+        feature_output_surface_dependencies(
+            ctx,
+            tables,
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
+            feature_id,
+        )
     })
     .expect("service profile admits output surface dependencies")
 }
@@ -414,7 +420,10 @@ fn linear_plane_extent_requires_complete_generated_plane_evidence() {
             917
         )
         .and_then(|planes| {
-            extrusion_extent_and_direction([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], planes)
+            crate::decode::with_test_decode_ctx(|ctx| {
+                extrusion_extent_and_direction(ctx, [0.0, 0.0, 0.0], [0.0, 0.0, 1.0], planes)
+            })
+            .expect("service resources")
         }),
         Some((
             ExtrudeExtent::OneSided {
@@ -882,7 +891,10 @@ fn surface_merge_quilt_roster_links_every_unique_generator() {
         [97, 175, 312]
     );
     assert_eq!(
-        surface_merge_quilt_ids(&[], std::slice::from_ref(&replay), 416),
+        crate::decode::with_test_decode_ctx(|ctx| {
+            surface_merge_quilt_ids(ctx, &[], std::slice::from_ref(&replay), 416)
+        })
+        .expect("service profile admits surface merge quilt records"),
         Some([103, 192, 329].as_slice())
     );
     let wrong_class = crate::feature::entity::FeatureEntityTable::new(
@@ -1043,7 +1055,8 @@ fn surface_merge_quilts_resolve_through_unique_generated_surface_outputs() {
         table(144, 67, vec![entry(150, 200, Some(144), 31)], 30),
         table(144, 100, vec![entry(150, 145, None, 41)], 40),
     ];
-    scan.surfaces.rows = vec![row(98, 97), row(145, 144)];
+    scan.surfaces.rows =
+        crate::surface::unique_rows::UniqueIdRows::from_rows(vec![row(98, 97), row(145, 144)]);
     scan.features
         .surface_merge_replay_affected_ids
         .push(replay(416, vec![103, 150], 100));
@@ -1508,7 +1521,10 @@ fn geometry_signal_excludes_opaque_carriers() {
         source_object: None,
     });
 
-    assert!(!has_transferred_geometry(&ir));
+    assert!(
+        !crate::decode::with_test_decode_ctx(|ctx| has_transferred_geometry(ctx, &ir))
+            .expect("geometry signal resources")
+    );
 
     let _attached = ir.model.add_procedural_surface(
         &cadmpeg_ir::document::admission::StandardAdmission,
@@ -1530,7 +1546,10 @@ fn geometry_signal_excludes_opaque_carriers() {
         ),
     );
 
-    assert!(has_transferred_geometry(&ir));
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| has_transferred_geometry(ctx, &ir))
+            .expect("geometry signal resources")
+    );
 }
 
 #[test]

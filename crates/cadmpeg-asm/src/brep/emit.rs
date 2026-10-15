@@ -95,6 +95,7 @@ where
 fn append_source_id<T>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     sources: &mut Vec<(i64, T)>,
+    storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     record_index: i64,
     id: &str,
     operation: &'static str,
@@ -102,7 +103,7 @@ fn append_source_id<T>(
 where
     T: TryFrom<String, Error = cadmpeg_ir::ids::IdentityError>,
 {
-    ctx.reserve_vec(sources, 1, operation)?;
+    storage.with_storage(|| ctx.reserve_vec(sources, 1, operation))?;
     let copied = ctx.copy_retained_text(id, operation)?;
     sources.push((
         record_index,
@@ -123,7 +124,13 @@ fn map_law_formula(
         EmbeddedLawFormula::Null => Ok(cadmpeg_ir::geometry::LawFormula::Null {}),
         EmbeddedLawFormula::Named { name, variables } => {
             let mut mapped = ctx.collection_vec(variables.len(), "ASM law formula variables")?;
-            for (index, expression) in variables.into_iter().enumerate() {
+            let mut source_values = IntoIterator::into_iter(variables).enumerate();
+            while source_values.len() != 0 {
+                let Some((index, expression)) =
+                    ctx.next_charged(&mut source_values, "ASM procedural members")?
+                else {
+                    break;
+                };
                 mapped.push(map(index, expression)?);
             }
             Ok(cadmpeg_ir::geometry::LawFormula::Named {
@@ -141,15 +148,15 @@ use super::attributes::{
 };
 use super::geometry::{
     coedge_pcurve_ref, collect_carrier, double_at, is_asm_stream_delimiter, is_coedge_record,
-    is_edge_record, is_known_record_head, is_vertex_record, norm3, pcurve_inline_tail_flags,
-    pcurve_parameter_range, record_reversed, reverse_curve_geometry, scale_point, sense_at,
-    tolerant_coedge_extension, vertex_point_ref,
+    is_edge_record, is_known_record_head, is_vertex_record, norm3, pcurve_tail_metadata,
+    record_reversed, reverse_curve_geometry, scale_point, sense_at, tolerant_coedge_extension,
+    vertex_point_ref,
 };
 use super::topology::{
     loop_chain, region_chain, ring_coedges, shell_chain, shell_faces, subshell_ancestor_shells,
 };
 use super::{id, inherited_attribute_target, AsmBrep, Carriers, Reachable, WireShellTopology};
-const EPS_EMIT_EMIT_EDGES_E9: f64 = 1.0e-9;
+const EPS_CONIC_PERIOD: f64 = 1.0e-9;
 
 /// Emit a kept surface carrier and, when present, its procedural-surface
 /// construction and nested support carriers.
@@ -158,10 +165,15 @@ fn emit_carrier_surface(
     out: &mut AsmBrep,
     r: &Record,
     i: i64,
-    carriers: &mut Carriers,
+    carrier_scratch: (
+        &mut Carriers,
+        &mut cadmpeg_core::decode::ScopedReservation<'_>,
+        super::DecodePurpose,
+    ),
     reach: &Reachable,
     format: IdFormat,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    let (carriers, scratch, purpose) = carrier_scratch;
     let Carriers {
         surface_geo,
         procedural_surface_defs,
@@ -173,8 +185,7 @@ fn emit_carrier_surface(
         cached_unknown_procedural_surfaces,
         ..
     } = reach;
-    // A record index appears at most once in `records`; a duplicate
-    // would have consumed the entry already, so skip rather than panic.
+    // Each carrier is consumed at its first source record.
     let Some(geometry) = surface_geo.remove(&i) else {
         return Ok(());
     };
@@ -625,23 +636,39 @@ fn emit_carrier_surface(
                 format,
             )?,
         };
-        for surface in &out.surfaces[support_start..] {
-            append_source_id(
-                ctx,
-                procedural_support_sources,
-                i,
-                surface.id.as_str(),
-                "ASM procedural support sources",
-            )?;
-        }
-        for curve in &out.curves[curve_start..] {
-            append_source_id(
-                ctx,
-                procedural_curve_child_sources,
-                i,
-                curve.id.as_str(),
-                "ASM procedural curve child sources",
-            )?;
+        if purpose == super::DecodePurpose::Model {
+            let mut source_values = IntoIterator::into_iter(&out.surfaces[support_start..]);
+            while source_values.len() != 0 {
+                let Some(surface) =
+                    ctx.next_charged(&mut source_values, "ASM support surface sources")?
+                else {
+                    break;
+                };
+                append_source_id(
+                    ctx,
+                    procedural_support_sources,
+                    scratch,
+                    i,
+                    surface.id.as_str(),
+                    "ASM procedural support sources",
+                )?;
+            }
+            let mut source_values = IntoIterator::into_iter(&out.curves[curve_start..]);
+            while source_values.len() != 0 {
+                let Some(curve) =
+                    ctx.next_charged(&mut source_values, "ASM child curve sources")?
+                else {
+                    break;
+                };
+                append_source_id(
+                    ctx,
+                    procedural_curve_child_sources,
+                    scratch,
+                    i,
+                    curve.id.as_str(),
+                    "ASM procedural curve child sources",
+                )?;
+            }
         }
         let cache_fit_tolerance = match cache {
             ProceduralSurfaceCache::Legacy(tolerance) => tolerance,
@@ -659,7 +686,7 @@ fn emit_carrier_surface(
         let surface = ProceduralSurface::new(
             brep_id!(format, ProceduralSurfaceId, "procedural_surface", i),
             definition,
-            nurbs::proc_curve::record_trailing_surface_bounds(&r.tokens)
+            nurbs::proc_curve::record_trailing_surface_bounds(ctx, &r.tokens)?
                 .map(cadmpeg_ir::geometry::RecordBounds::try_from)
                 .transpose()
                 .map_err(cadmpeg_core::CodecError::malformed)?,
@@ -690,8 +717,7 @@ fn emit_carrier_surface(
     Ok(())
 }
 
-/// Emit a kept 3D curve carrier (with its `:reversed` clone when shared) and
-/// any procedural-curve construction and nested support carriers.
+/// Emit a deformable surface construction and its support carriers.
 fn emit_deformable_surface(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
 
@@ -899,11 +925,11 @@ fn emit_loft_member_form(
 
     out: &mut AsmBrep,
     data: LoftProfileData,
-    support_id: SurfaceId,
+    support_id: impl FnOnce() -> Result<SurfaceId, cadmpeg_core::CodecError>,
 ) -> Result<cadmpeg_ir::geometry::LoftMemberForm, cadmpeg_core::CodecError> {
     match data {
         LoftProfileData::Classic(data) => {
-            let (type_code, data) = emit_classic_loft_data(ctx, out, data, support_id)?;
+            let (type_code, data) = emit_classic_loft_data(ctx, out, data, support_id()?)?;
             Ok(cadmpeg_ir::geometry::LoftMemberForm::Support {
                 type_code,
                 surface: Some(data.surface),
@@ -928,6 +954,7 @@ fn emit_loft_member_form(
         } => {
             let surface = surface
                 .map(|geometry| -> Result<_, cadmpeg_core::CodecError> {
+                    let support_id = support_id()?;
                     charged_push!(
                         ctx,
                         out.surfaces,
@@ -938,7 +965,7 @@ fn emit_loft_member_form(
                             source_object: None,
                         }
                     );
-                    support_id.try_clone_for_decode(ctx, "ASM emitted identity copy")
+                    Ok(support_id)
                 })
                 .transpose()?;
             Ok(cadmpeg_ir::geometry::LoftMemberForm::Support {
@@ -974,7 +1001,7 @@ fn emit_loft_path_curve(
 
     out: &mut AsmBrep,
     layout: EmbeddedLoftPathLayout,
-    id: CurveId,
+    id: impl FnOnce() -> Result<CurveId, cadmpeg_core::CodecError>,
 ) -> Result<Option<LoftPathCurve>, cadmpeg_core::CodecError> {
     let (geometry, endpoints) = match layout {
         EmbeddedLoftPathLayout::Legacy(curve) => (curve, None),
@@ -983,6 +1010,7 @@ fn emit_loft_path_curve(
             (curve.geometry, Some(curve.endpoints))
         }
     };
+    let id = id()?;
     charged_push!(
         ctx,
         out.curves,
@@ -1027,25 +1055,23 @@ fn emit_loft_surface(
                                         )
                                     );
                                     let endpoints = member.data.endpoints();
-                                    let form = emit_loft_member_form(
-                                        ctx,
-                                        out,
-                                        member.data,
-                                        brep_id!(
-                                            format,
-                                            SurfaceId,
-                                            "procedural_surface",
-                                            brep_key!(
-                                                i,
-                                                ":loft:",
-                                                section_index,
-                                                ":",
-                                                entry_index,
-                                                ":support:",
-                                                member_index
-                                            )
-                                        ),
-                                    )?;
+                                    let form =
+                                        emit_loft_member_form(ctx, out, member.data, || {
+                                            Ok(brep_id!(
+                                                format,
+                                                SurfaceId,
+                                                "procedural_surface",
+                                                brep_key!(
+                                                    i,
+                                                    ":loft:",
+                                                    section_index,
+                                                    ":",
+                                                    entry_index,
+                                                    ":support:",
+                                                    member_index
+                                                )
+                                            ))
+                                        })?;
                                     charged_push!(
                                         ctx,
                                         out.curves,
@@ -1072,17 +1098,14 @@ fn emit_loft_surface(
                         ),
                         "ASM loft profile members",
                     )?;
-                    let path_curve = emit_loft_path_curve(
-                        ctx,
-                        out,
-                        entry.path.layout,
-                        brep_id!(
+                    let path_curve = emit_loft_path_curve(ctx, out, entry.path.layout, || {
+                        Ok(brep_id!(
                             format,
                             CurveId,
                             "procedural_surface",
                             brep_key!(i, ":loft:", section_index, ":", entry_index, ":path")
-                        ),
-                    )?;
+                        ))
+                    })?;
                     let auxiliaries = ctx.try_collect_vec(
                         entry.path.auxiliaries.into_iter().enumerate().map(
                             |(auxiliary_index, geometry)| -> Result<_, cadmpeg_core::CodecError> {
@@ -1330,10 +1353,10 @@ fn emit_compound_loft_surface(
     };
     let mut scale_index = 0;
     let scales = (*embedded.scales).map(|scale| {
-        let name = brep_key!("scale", scale_index);
+        let index = scale_index;
         scale_index += 1;
         scale
-            .map(|scale| map_scale(&mut *out, name, scale))
+            .map(|scale| map_scale(&mut *out, brep_key!("scale", index), scale))
             .transpose()
     });
     let [first, second, third, fourth] = scales;
@@ -1619,10 +1642,10 @@ fn emit_scaled_compound_loft_surface(
     };
     let mut scale_index = 0;
     let scales = (*embedded.scales).map(|scale| {
-        let name = brep_key!("scale", scale_index);
+        let index = scale_index;
         scale_index += 1;
         scale
-            .map(|scale| map_scale(&mut *out, name, scale))
+            .map(|scale| map_scale(&mut *out, brep_key!("scale", index), scale))
             .transpose()
     });
     let [first, second, third] = scales;
@@ -1876,8 +1899,15 @@ fn map_law_expression(
         },
         EmbeddedLawExpression::Algebraic { operator, operands } => {
             let mut mapped = ctx.collection_vec(operands.len(), "ASM law expression operands")?;
-            for (index, operand) in operands.into_iter().enumerate() {
+            let mut source_values = IntoIterator::into_iter(operands).enumerate();
+            while source_values.len() != 0 {
+                let Some((index, operand)) =
+                    ctx.next_charged(&mut source_values, "ASM procedural members")?
+                else {
+                    break;
+                };
                 mapped.push({
+                    let _depth = ctx.enter_nested("ASM law expression operand")?;
                     let mut path_copy_storage =
                         ctx.reserve_scoped(0, "ASM temporary identity key")?;
                     let path_copy = path_copy_storage.with_storage(|| {
@@ -2168,26 +2198,24 @@ fn emit_net_surface(
                                         )
                                     );
                                     let endpoints = member.data.endpoints();
-                                    let form = emit_loft_member_form(
-                                        ctx,
-                                        out,
-                                        member.data,
-                                        brep_id!(
-                                            format,
-                                            SurfaceId,
-                                            "procedural_surface",
-                                            brep_key!(
-                                                i,
-                                                ":net:",
-                                                section_index,
-                                                ":",
-                                                entry_index,
-                                                ":member:",
-                                                member_index,
-                                                ":surface"
-                                            )
-                                        ),
-                                    )?;
+                                    let form =
+                                        emit_loft_member_form(ctx, out, member.data, || {
+                                            Ok(brep_id!(
+                                                format,
+                                                SurfaceId,
+                                                "procedural_surface",
+                                                brep_key!(
+                                                    i,
+                                                    ":net:",
+                                                    section_index,
+                                                    ":",
+                                                    entry_index,
+                                                    ":member:",
+                                                    member_index,
+                                                    ":surface"
+                                                )
+                                            ))
+                                        })?;
                                     charged_push!(
                                         ctx,
                                         out.curves,
@@ -2214,17 +2242,14 @@ fn emit_net_surface(
                         ),
                         "ASM net surface profile members",
                     )?;
-                    let path = emit_loft_path_curve(
-                        ctx,
-                        out,
-                        entry.path.layout,
-                        brep_id!(
+                    let path = emit_loft_path_curve(ctx, out, entry.path.layout, || {
+                        Ok(brep_id!(
                             format,
                             CurveId,
                             "procedural_surface",
                             brep_key!(i, ":net:", section_index, ":", entry_index, ":path")
-                        ),
-                    )?;
+                        ))
+                    })?;
                     let auxiliaries = ctx.try_collect_vec(
                         entry.path.auxiliaries.into_iter().enumerate().map(
                             |(index, geometry)| -> Result<_, cadmpeg_core::CodecError> {
@@ -2818,64 +2843,85 @@ fn emit_rolling_ball_side(
 
     out: &mut AsmBrep,
     format: IdFormat,
-    prefix: cadmpeg_ir::ids::IdentityKey,
+    prefix: impl FnOnce() -> Result<cadmpeg_ir::ids::IdentityKey, cadmpeg_core::CodecError>,
     side: RollingBallSide<SurfaceGeometry, CurveGeometry, PcurveNurbs>,
 ) -> Result<RollingBallSide, cadmpeg_core::CodecError> {
-    let surface = side
-        .surface
-        .map(|support| -> Result<_, cadmpeg_core::CodecError> {
-            let id = {
-                let mut copied_storage = ctx.reserve_scoped(0, "ASM temporary identity key")?;
-                copied_storage.with_storage(|| {
-                    Ok::<_, cadmpeg_core::CodecError>(brep_id!(
+    let (surface, curve) = match (side.surface, side.curve) {
+        (None, None) => (None, None),
+        (surface, curve) => {
+            let prefix = prefix()?;
+            let (surface, curve) = match (surface, curve) {
+                (Some(surface), Some(curve)) => {
+                    let id = {
+                        let mut copied_storage =
+                            ctx.reserve_scoped(0, "ASM temporary identity key")?;
+                        copied_storage.with_storage(|| {
+                            Ok::<_, cadmpeg_core::CodecError>(brep_id!(
+                                format,
+                                SurfaceId,
+                                "procedural_surface",
+                                prefix
+                                    .try_clone_for_decode(ctx, "ASM temporary identity key")?
+                                    .then(cadmpeg_ir::identity_key!(":surface"))
+                            ))
+                        })
+                    }?;
+                    (Some((surface, id)), Some((curve, prefix)))
+                }
+                (Some(surface), None) => {
+                    let id = brep_id!(
                         format,
                         SurfaceId,
                         "procedural_surface",
-                        prefix
-                            .try_clone_for_decode(ctx, "ASM temporary identity key")?
-                            .then(cadmpeg_ir::identity_key!(":surface"))
-                    ))
+                        prefix.then(cadmpeg_ir::identity_key!(":surface"))
+                    );
+                    (Some((surface, id)), None)
+                }
+                (None, curve) => (None, curve.map(|curve| (curve, prefix))),
+            };
+            let surface = surface
+                .map(|(support, id)| -> Result<_, cadmpeg_core::CodecError> {
+                    charged_push!(
+                        ctx,
+                        out.surfaces,
+                        Surface {
+                            id: id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
+                            geometry: support.surface,
+                            source_object: None,
+                        }
+                    );
+                    Ok(RollingBallSupportSurface {
+                        surface: id,
+                        parameter_ranges: support.parameter_ranges,
+                    })
                 })
-            }?;
-            charged_push!(
-                ctx,
-                out.surfaces,
-                Surface {
-                    id: id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
-                    geometry: support.surface,
-                    source_object: None,
-                }
-            );
-            Ok(RollingBallSupportSurface {
-                surface: id,
-                parameter_ranges: support.parameter_ranges,
-            })
-        })
-        .transpose()?;
-    let curve = side
-        .curve
-        .map(|support| -> Result<_, cadmpeg_core::CodecError> {
-            let id = brep_id!(
-                format,
-                CurveId,
-                "procedural_surface",
-                prefix.then(cadmpeg_ir::identity_key!(":curve"))
-            );
-            charged_push!(
-                ctx,
-                out.curves,
-                Curve {
-                    id: id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
-                    geometry: support.curve,
-                    source_object: None,
-                }
-            );
-            Ok(RollingBallSupportCurve {
-                curve: id,
-                parameter_range: support.parameter_range,
-            })
-        })
-        .transpose()?;
+                .transpose()?;
+            let curve = curve
+                .map(|(support, prefix)| -> Result<_, cadmpeg_core::CodecError> {
+                    let id = brep_id!(
+                        format,
+                        CurveId,
+                        "procedural_surface",
+                        prefix.then(cadmpeg_ir::identity_key!(":curve"))
+                    );
+                    charged_push!(
+                        ctx,
+                        out.curves,
+                        Curve {
+                            id: id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
+                            geometry: support.curve,
+                            source_object: None,
+                        }
+                    );
+                    Ok(RollingBallSupportCurve {
+                        curve: id,
+                        parameter_range: support.parameter_range,
+                    })
+                })
+                .transpose()?;
+            (surface, curve)
+        }
+    };
     Ok(RollingBallSide {
         support_kind: side.support_kind,
         surface,
@@ -2904,14 +2950,20 @@ fn emit_variable_blend_surface(
 ) -> Result<ProceduralSurfaceDefinition, cadmpeg_core::CodecError> {
     let [first_side, second_side] = *construction.sides;
     let sides = [
-        {
-            let prefix = brep_key!(i, ":variable_side0");
-            emit_rolling_ball_side(ctx, out, format, prefix, first_side)?
-        },
-        {
-            let prefix = brep_key!(i, ":variable_side1");
-            emit_rolling_ball_side(ctx, out, format, prefix, second_side)?
-        },
+        emit_rolling_ball_side(
+            ctx,
+            out,
+            format,
+            || Ok(brep_key!(i, ":variable_side0")),
+            first_side,
+        )?,
+        emit_rolling_ball_side(
+            ctx,
+            out,
+            format,
+            || Ok(brep_key!(i, ":variable_side1")),
+            second_side,
+        )?,
     ];
     let mut add_curve = |suffix: cadmpeg_ir::ids::IdentityKey,
                          geometry: CurveGeometry|
@@ -2994,7 +3046,7 @@ fn emit_revision_compound_loft_surface(
     format: IdFormat,
 ) -> Result<ProceduralSurfaceDefinition, cadmpeg_core::CodecError> {
     let convert_profile =
-        |scope: cadmpeg_ir::ids::IdentityKey,
+        |scope: &cadmpeg_ir::ids::IdentityKey,
          profile: Vec<EmbeddedLoftProfileMember>,
          out: &mut AsmBrep|
          -> Result<Vec<cadmpeg_ir::geometry::LoftProfileMember>, cadmpeg_core::CodecError> {
@@ -3038,7 +3090,7 @@ fn emit_revision_compound_loft_surface(
                                     id: curve,
                                     endpoints: member.data.endpoints(),
                                 },
-                                form: emit_loft_member_form(ctx, out, member.data, {
+                                form: emit_loft_member_form(ctx, out, member.data, || {
                                     let mut copied_storage =
                                         ctx.reserve_scoped(0, "ASM temporary identity key")?;
                                     copied_storage.with_storage(|| {
@@ -3056,7 +3108,7 @@ fn emit_revision_compound_loft_surface(
                                             )
                                         ))
                                     })
-                                }?)?,
+                                })?,
                             }
                         })
                     },
@@ -3068,7 +3120,7 @@ fn emit_revision_compound_loft_surface(
                         path: EmbeddedLoftPath,
                         out: &mut AsmBrep|
      -> Result<cadmpeg_ir::geometry::LoftPath, cadmpeg_core::CodecError> {
-        let curve = emit_loft_path_curve(ctx, out, path.layout, {
+        let curve = emit_loft_path_curve(ctx, out, path.layout, || {
             let mut copied_storage = ctx.reserve_scoped(0, "ASM temporary identity key")?;
             copied_storage.with_storage(|| {
                 Ok::<_, cadmpeg_core::CodecError>(brep_id!(
@@ -3081,7 +3133,7 @@ fn emit_revision_compound_loft_surface(
                     )
                 ))
             })
-        }?)?;
+        })?;
         let auxiliaries = ctx.try_collect_vec(
             path.auxiliaries.into_iter().enumerate().map(
                 |(auxiliary_index, geometry)| -> Result<_, cadmpeg_core::CodecError> {
@@ -3129,10 +3181,7 @@ fn emit_revision_compound_loft_surface(
         })
     };
     let base = brep_key!(i, ":cloft:base");
-    let mut base_copy_storage = ctx.reserve_scoped(0, "ASM profile scope identity")?;
-    let base_copy = base_copy_storage
-        .with_storage(|| base.try_clone_for_decode(ctx, "ASM profile scope identity"))?;
-    let base_profile = convert_profile(base_copy, construction.base_profile, &mut *out)?;
+    let base_profile = convert_profile(&base, construction.base_profile, &mut *out)?;
     let base_path = convert_path(base, construction.base_path, &mut *out)?;
     let entries: Vec<_> = ctx.try_collect_vec(
         construction
@@ -3141,14 +3190,9 @@ fn emit_revision_compound_loft_surface(
             .enumerate()
             .map(|(entry_index, entry)| {
                 let scope = brep_key!(i, ":cloft:", entry_index);
-                let mut profile_scope_storage =
-                    ctx.reserve_scoped(0, "ASM profile scope identity")?;
-                let profile_scope = profile_scope_storage.with_storage(|| {
-                    scope.try_clone_for_decode(ctx, "ASM profile scope identity")
-                })?;
                 Ok::<_, cadmpeg_core::CodecError>(cadmpeg_ir::geometry::LoftSectionEntry {
                     parameter: entry.parameter,
-                    profile: convert_profile(profile_scope, entry.profile, &mut *out)?,
+                    profile: convert_profile(&scope, entry.profile, &mut *out)?,
                     path: convert_path(scope, entry.path, &mut *out)?,
                 })
             }),
@@ -3244,14 +3288,20 @@ fn emit_revision_g2_blend_surface(
 ) -> Result<ProceduralSurfaceDefinition, cadmpeg_core::CodecError> {
     let [first_side, second_side] = *construction.sides;
     let sides = [
-        {
-            let prefix = brep_key!(i, ":g2_side0");
-            emit_rolling_ball_side(ctx, out, format, prefix, first_side)?
-        },
-        {
-            let prefix = brep_key!(i, ":g2_side1");
-            emit_rolling_ball_side(ctx, out, format, prefix, second_side)?
-        },
+        emit_rolling_ball_side(
+            ctx,
+            out,
+            format,
+            || Ok(brep_key!(i, ":g2_side0")),
+            first_side,
+        )?,
+        emit_rolling_ball_side(
+            ctx,
+            out,
+            format,
+            || Ok(brep_key!(i, ":g2_side1")),
+            second_side,
+        )?,
     ];
     let center_id = brep_id!(
         format,
@@ -3307,8 +3357,13 @@ fn emit_vertex_blend_surface(
         construction.boundaries.len(),
         "ASM emitted vertex blend boundaries",
     )?;
-    for (boundary_index, boundary) in construction.boundaries.into_iter().enumerate() {
-        let prefix = brep_key!(i, ":vertex_boundary", boundary_index);
+    let mut source_values = IntoIterator::into_iter(construction.boundaries).enumerate();
+    while source_values.len() != 0 {
+        let Some((boundary_index, boundary)) =
+            ctx.next_charged(&mut source_values, "ASM procedural members")?
+        else {
+            break;
+        };
         let geometry = match boundary.geometry {
             EmbeddedVertexBlendBoundaryGeometry::Circle {
                 curve,
@@ -3317,19 +3372,13 @@ fn emit_vertex_blend_surface(
                 parameters,
                 sense,
             } => {
-                let id = {
-                    let mut copied_storage = ctx.reserve_scoped(0, "ASM temporary identity key")?;
-                    copied_storage.with_storage(|| {
-                        Ok::<_, cadmpeg_core::CodecError>(brep_id!(
-                            format,
-                            CurveId,
-                            "procedural_surface",
-                            prefix
-                                .try_clone_for_decode(ctx, "ASM temporary identity key")?
-                                .then(cadmpeg_ir::identity_key!(":curve"))
-                        ))
-                    })
-                }?;
+                let prefix = brep_key!(i, ":vertex_boundary", boundary_index);
+                let id = brep_id!(
+                    format,
+                    CurveId,
+                    "procedural_surface",
+                    prefix.then(cadmpeg_ir::identity_key!(":curve"))
+                );
                 charged_push!(
                     ctx,
                     out.curves,
@@ -3357,19 +3406,13 @@ fn emit_vertex_blend_surface(
                 sense,
                 fit_tolerance,
             } => {
-                let id = {
-                    let mut copied_storage = ctx.reserve_scoped(0, "ASM temporary identity key")?;
-                    copied_storage.with_storage(|| {
-                        Ok::<_, cadmpeg_core::CodecError>(brep_id!(
-                            format,
-                            SurfaceId,
-                            "procedural_surface",
-                            prefix
-                                .try_clone_for_decode(ctx, "ASM temporary identity key")?
-                                .then(cadmpeg_ir::identity_key!(":surface"))
-                        ))
-                    })
-                }?;
+                let prefix = brep_key!(i, ":vertex_boundary", boundary_index);
+                let id = brep_id!(
+                    format,
+                    SurfaceId,
+                    "procedural_surface",
+                    prefix.then(cadmpeg_ir::identity_key!(":surface"))
+                );
                 charged_push!(
                     ctx,
                     out.surfaces,
@@ -3393,6 +3436,7 @@ fn emit_vertex_blend_surface(
                 curve,
                 curve_endpoints,
             } => {
+                let prefix = brep_key!(i, ":vertex_boundary", boundary_index);
                 let id = brep_id!(
                     format,
                     CurveId,
@@ -3511,14 +3555,20 @@ fn emit_blend_surface(
             Ok({
                 let [first_native, second_native] = *native.sides;
                 let resolved_sides = [
-                    {
-                        let prefix = brep_key!(i, ":native_side0");
-                        emit_rolling_ball_side(ctx, out, format, prefix, first_native)?
-                    },
-                    {
-                        let prefix = brep_key!(i, ":native_side1");
-                        emit_rolling_ball_side(ctx, out, format, prefix, second_native)?
-                    },
+                    emit_rolling_ball_side(
+                        ctx,
+                        out,
+                        format,
+                        || Ok(brep_key!(i, ":native_side0")),
+                        first_native,
+                    )?,
+                    emit_rolling_ball_side(
+                        ctx,
+                        out,
+                        format,
+                        || Ok(brep_key!(i, ":native_side1")),
+                        second_native,
+                    )?,
                 ];
                 for (side_index, side) in resolved_sides.iter().enumerate() {
                     if resolved_supports[side_index].is_none() {
@@ -3697,6 +3747,12 @@ impl From<&'static str> for CarrierCurveError {
 impl From<cadmpeg_core::CodecError> for CarrierCurveError {
     fn from(error: cadmpeg_core::CodecError) -> Self {
         Self::Resource(error)
+    }
+}
+
+impl From<cadmpeg_core::decode::ResourceLimit> for CarrierCurveError {
+    fn from(error: cadmpeg_core::decode::ResourceLimit) -> Self {
+        Self::Resource(error.into())
     }
 }
 
@@ -4200,6 +4256,7 @@ fn emit_surface_curve_layout<F>(
     CarrierCurveError,
 > {
     use crate::nurbs::proc_curve::EmbeddedSurfaceCurveLayout;
+
     let (embedded, tail) = match layout {
         EmbeddedSurfaceCurveLayout::ContextFirst(context) => (context, None),
         EmbeddedSurfaceCurveLayout::CacheFirst { context, flags } => {
@@ -4267,6 +4324,7 @@ fn emit_surface_curve_family(
     solved_domain: Option<[f64; 2]>,
 ) -> Result<cadmpeg_ir::geometry::SurfaceCurveFamily, CarrierCurveError> {
     use crate::nurbs::proc_curve::EmbeddedSurfaceCurve;
+
     Ok(match family {
         EmbeddedSurfaceCurve::Blend(layout) => {
             let (context, tail) =
@@ -4625,8 +4683,6 @@ fn emit_law_curve(
     format: IdFormat,
     solved_domain: Option<[f64; 2]>,
 ) -> Result<cadmpeg_ir::geometry::ProceduralCurveDefinition, CarrierCurveError> {
-    let prefix = brep_key!(i, ":law");
-    let scope = LawExpressionScope::Curve(&prefix);
     let (parameter_range, version) = match embedded.layout {
         EmbeddedLawCurveLayout::Legacy(range) => (range, None),
         EmbeddedLawCurveLayout::Version {
@@ -4645,6 +4701,8 @@ fn emit_law_curve(
             )
         }
     };
+    let prefix = brep_key!(i, ":law");
+    let scope = LawExpressionScope::Curve(&prefix);
     let [first, second] = embedded.surfaces;
     let mut emit_support =
         |side, slot: crate::nurbs::proc_curve::SupportSlot| -> Result<_, CarrierCurveError> {
@@ -4720,16 +4778,25 @@ pub(super) fn emit_carrier_records(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     out: &mut AsmBrep,
     records: &[Record],
-    carriers: &mut Carriers,
+    carrier_scratch: (
+        &mut Carriers,
+        &mut cadmpeg_core::decode::ScopedReservation<'_>,
+        super::DecodePurpose,
+    ),
     reach: &Reachable,
     senses: CurveSenseRefs<'_>,
     format: IdFormat,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    let (carriers, scratch, purpose) = carrier_scratch;
     let CurveSenseRefs {
         reversed_curve_refs,
         forward_curve_refs,
     } = senses;
-    for r in records {
+    let mut source_values = IntoIterator::into_iter(records);
+    while source_values.len() != 0 {
+        let Some(r) = ctx.next_charged(&mut source_values, "ASM emitted record pass")? else {
+            break;
+        };
         let i = i64::try_from(r.index).map_err(|_| {
             ctx.refuse_codec_limit(
                 "ASM record index",
@@ -4739,7 +4806,7 @@ pub(super) fn emit_carrier_records(
         })?;
         match r.head() {
             _ if reach.surfaces.contains(&i) => {
-                emit_carrier_surface(ctx, out, r, i, carriers, reach, format)?;
+                emit_carrier_surface(ctx, out, r, i, (carriers, scratch, purpose), reach, format)?;
             }
             _ if reach.unknown_surface_records.contains(&i) => {
                 // Topology-known face on an undecoded surface: emit an opaque
@@ -4787,7 +4854,11 @@ pub(super) fn emit_pcurves(
         pcurves: kept_pcurves,
         ..
     } = reach;
-    for r in records {
+    let mut source_values = IntoIterator::into_iter(records);
+    while source_values.len() != 0 {
+        let Some(r) = ctx.next_charged(&mut source_values, "ASM emitted record pass")? else {
+            break;
+        };
         let i = i64::try_from(r.index).map_err(|_| {
             ctx.refuse_codec_limit(
                 "ASM record index",
@@ -4796,17 +4867,18 @@ pub(super) fn emit_pcurves(
             )
         })?;
         if kept_pcurves.contains(&i) {
-            if let Some(geometry) = pcurve_geo.remove(&super::PcurveRecordIndex(i)) {
+            if let Some((geometry, storage)) = pcurve_geo.remove(&super::PcurveRecordIndex(i)) {
                 let wrapper_reversed = match r.chunk(4) {
                     Some(Token::True) if matches!(r.chunk(3), Some(Token::Long(0))) => Some(true),
                     Some(Token::False) if matches!(r.chunk(3), Some(Token::Long(0))) => Some(false),
                     _ => None,
                 };
-                let native_tail_flags = pcurve_inline_tail_flags(r);
-                let parameter_range = pcurve_parameter_range(r);
+                let tail = pcurve_tail_metadata(ctx, r)?;
+                let native_tail_flags = tail.flags;
+                let parameter_range = tail.parameter_range;
                 let fit_tolerance = match (r.chunk(3), r.chunk(4)) {
                     (Some(Token::Long(0)), Some(Token::True | Token::False)) => {
-                        nurbs::toks::payload_subtype_toks(r, 5, "exp_par_cur")
+                        nurbs::toks::payload_subtype_toks(ctx, r, 5, "exp_par_cur")?
                             .and_then(|scope| nurbs::pcurve::pcurve_fit_tolerance(ctx, scope))
                     }
                     _ => None,
@@ -4849,15 +4921,16 @@ pub(super) fn emit_pcurves(
                         PcurveMetadata::general(wrapper_reversed, parameter_range, fit_tolerance)
                     }
                 };
-                charged_push!(
-                    ctx,
-                    out.pcurves,
-                    Pcurve {
-                        id: <PcurveId>::from(id(format, i)),
-                        geometry,
-                        metadata,
-                    }
-                );
+                ctx.reserve_vec(&mut out.pcurves, 1, "out.pcurves")?;
+                let geometry = match storage {
+                    Some(storage) => storage.commit_value(geometry)?,
+                    None => geometry,
+                };
+                out.pcurves.push(Pcurve {
+                    id: <PcurveId>::from(id(format, i)),
+                    geometry,
+                    metadata,
+                });
             }
         }
     }
@@ -4877,7 +4950,11 @@ pub(super) fn emit_points(
         points: kept_points,
         ..
     } = reach;
-    for r in records {
+    let mut source_values = IntoIterator::into_iter(records);
+    while source_values.len() != 0 {
+        let Some(r) = ctx.next_charged(&mut source_values, "ASM emitted record pass")? else {
+            break;
+        };
         let i = i64::try_from(r.index).map_err(|_| {
             ctx.refuse_codec_limit(
                 "ASM record index",
@@ -4918,7 +4995,11 @@ pub(super) fn emit_vertices(
         points: kept_points,
         ..
     } = reach;
-    for r in records {
+    let mut source_values = IntoIterator::into_iter(records);
+    while source_values.len() != 0 {
+        let Some(r) = ctx.next_charged(&mut source_values, "ASM emitted record pass")? else {
+            break;
+        };
         let i = i64::try_from(r.index).map_err(|_| {
             ctx.refuse_codec_limit(
                 "ASM record index",
@@ -5081,7 +5162,11 @@ pub(super) fn emit_edges(
             CurveId::from(id(format, c))
         }
     };
-    for r in records {
+    let mut source_values = IntoIterator::into_iter(records);
+    while source_values.len() != 0 {
+        let Some(r) = ctx.next_charged(&mut source_values, "ASM emitted record pass")? else {
+            break;
+        };
         let i = i64::try_from(r.index).map_err(|_| {
             ctx.refuse_codec_limit(
                 "ASM record index",
@@ -5109,11 +5194,11 @@ pub(super) fn emit_edges(
                             // so the range still anchors on the edge's
                             // vertices.
                             let sweep = b - a;
-                            let full_period = (sweep.abs() - std::f64::consts::TAU).abs()
-                                < EPS_EMIT_EMIT_EDGES_E9;
+                            let full_period =
+                                (sweep.abs() - std::f64::consts::TAU).abs() < EPS_CONIC_PERIOD;
                             if !full_period {
                                 a = a.rem_euclid(std::f64::consts::TAU);
-                                if std::f64::consts::TAU - a < EPS_EMIT_EMIT_EDGES_E9 {
+                                if std::f64::consts::TAU - a < EPS_CONIC_PERIOD {
                                     a = 0.0;
                                 }
                                 b = a + sweep;
@@ -5267,7 +5352,11 @@ pub(super) fn emit_coedges(
         pcurves: kept_pcurves,
         ..
     } = reach;
-    for r in records {
+    let mut source_values = IntoIterator::into_iter(records);
+    while source_values.len() != 0 {
+        let Some(r) = ctx.next_charged(&mut source_values, "ASM emitted record pass")? else {
+            break;
+        };
         let i = i64::try_from(r.index).map_err(|_| {
             ctx.refuse_codec_limit(
                 "ASM record index",
@@ -5293,7 +5382,7 @@ pub(super) fn emit_coedges(
                 match (r.chunk(11), r.chunk(12)) {
                     (Some(Token::Double(start)), Some(Token::Double(end))) => {
                         let extension = match save_format_major {
-                            Some(major) if major > 219 => tolerant_coedge_extension(r),
+                            Some(major) if major > 219 => tolerant_coedge_extension(ctx, r)?,
                             Some(215..=219) => match r.chunk(13) {
                                 Some(Token::Ref(target)) => {
                                     Some(TolerantCoedgeExtension::Reference {
@@ -5432,7 +5521,11 @@ pub(super) fn emit_loops(
         coedges: kept_coedges,
         ..
     } = reach;
-    for r in records {
+    let mut source_values = IntoIterator::into_iter(records);
+    while source_values.len() != 0 {
+        let Some(r) = ctx.next_charged(&mut source_values, "ASM emitted record pass")? else {
+            break;
+        };
         let i = i64::try_from(r.index).map_err(|_| {
             ctx.refuse_codec_limit(
                 "ASM record index",
@@ -5478,10 +5571,16 @@ pub(super) fn emit_faces(
         loops: kept_loops,
         ..
     } = reach;
-    let subshell_shells = subshell_ancestor_shells(ctx, records, by_index)?;
-    let attribute_color = |entity: &Record| attribute_chain_color(entity, by_index);
+    let mut subshell_storage = ctx.reserve_scoped(0, "ASM subshell owner storage")?;
+    let subshell_shells =
+        subshell_storage.with_storage(|| subshell_ancestor_shells(ctx, records, by_index))?;
+    let attribute_color = |entity: &Record| attribute_chain_color(ctx, entity, by_index);
     let attribute_name = |entity: &Record| attribute_chain_name(ctx, entity, by_index);
-    for r in records {
+    let mut source_values = IntoIterator::into_iter(records);
+    while source_values.len() != 0 {
+        let Some(r) = ctx.next_charged(&mut source_values, "ASM emitted record pass")? else {
+            break;
+        };
         let i = i64::try_from(r.index).map_err(|_| {
             ctx.refuse_codec_limit(
                 "ASM record index",
@@ -5502,10 +5601,11 @@ pub(super) fn emit_faces(
             // self-consistent.
             let native_sense = sense_at(r, 8);
             let mut sense = native_sense;
-            let carrier_flipped = by_index
-                .get(&surface)
-                .is_some_and(|surf| surf.head() == "spline" && record_reversed(surf))
-                ^ inward_normal_surfaces.contains(&surface);
+            let carrier_reversed = match by_index.get(&surface) {
+                Some(surf) if surf.head() == "spline" => record_reversed(ctx, surf)?,
+                _ => false,
+            };
+            let carrier_flipped = carrier_reversed ^ inward_normal_surfaces.contains(&surface);
             if carrier_flipped {
                 sense = match sense {
                     Sense::Forward => Sense::Reversed,
@@ -5525,7 +5625,7 @@ pub(super) fn emit_faces(
                     sense,
                     loops: cadmpeg_ir::topology::FaceLoops::unspecified(loops),
                     name: attribute_name(r)?,
-                    color: attribute_color(r),
+                    color: attribute_color(r)?,
                     tolerance: None,
                 }
             );
@@ -5581,8 +5681,8 @@ pub(super) fn emit_faces(
 /// Source records and decode settings for emitting shell containers.
 #[derive(Clone, Copy)]
 pub(super) struct ContainerInputs<'a, 'record> {
-    pub(super) records: &'record [Record],
-    pub(super) by_index: &'a HashMap<i64, &'record Record>,
+    pub(super) records: &'record [Record<'record>],
+    pub(super) by_index: &'a HashMap<i64, &'record Record<'record>>,
     pub(super) reach: &'a Reachable,
     pub(super) wire: &'a WireShellTopology,
     pub(super) stream: &'a str,
@@ -5612,9 +5712,13 @@ pub(super) fn emit_containers(
         free_vertices_by_shell,
         saved_free_edges,
     } = wire;
-    let attribute_color = |entity: &Record| attribute_chain_color(entity, by_index);
+    let attribute_color = |entity: &Record| attribute_chain_color(ctx, entity, by_index);
     let attribute_name = |entity: &Record| attribute_chain_name(ctx, entity, by_index);
-    for r in records {
+    let mut source_values = IntoIterator::into_iter(records);
+    while source_values.len() != 0 {
+        let Some(r) = ctx.next_charged(&mut source_values, "ASM emitted record pass")? else {
+            break;
+        };
         let i = i64::try_from(r.index).map_err(|_| {
             ctx.refuse_codec_limit(
                 "ASM record index",
@@ -5636,16 +5740,16 @@ pub(super) fn emit_containers(
                         ctx.collect_vec(
                             wire_edges_by_shell
                                 .get(&i)
-                                .into_iter()
-                                .flatten()
+                                .map_or(&[][..], Vec::as_slice)
+                                .iter()
                                 .map(|edge| EdgeId::from(id(format, *edge))),
                             "ASM shell wire edges"
                         )?,
                         ctx.collect_vec(
                             free_vertices_by_shell
                                 .get(&i)
-                                .into_iter()
-                                .flatten()
+                                .map_or(&[][..], Vec::as_slice)
+                                .iter()
                                 .map(|vertex| VertexId::from(id(format, *vertex))),
                             "ASM shell free vertices"
                         )?,
@@ -5694,26 +5798,39 @@ pub(super) fn emit_containers(
                                     )
                                 )
                             )?,
-                            source_brep: stream
-                                .rsplit('/')
-                                .next()
-                                .map(|name| {
-                                    ctx.copy_retained_text(name, "ASM body source stream")
-                                })
-                                .transpose()?,
+                            source_brep: Some(
+                                ctx.copy_retained_text(
+                                    ctx.rsplit_once(stream, "/", "ASM body source stream name")?
+                                        .map_or(stream, |(_, name)| name),
+                                    "ASM body source stream",
+                                )?
+                            ),
                             asm_body_key: u64::try_from(*key).ok(),
                         }
                     );
                 }
                 let transform_record = r.ref_at(5).and_then(|reference| by_index.get(&reference));
                 if let Some(transform) = transform_record {
-                    let mut flags = transform.tokens.iter().filter_map(|token| match token {
-                        Token::True => Some(true),
-                        Token::False => Some(false),
-                        _ => None,
-                    });
+                    let mut tokens = transform.tokens.iter();
+                    let mut flags = [None; 4];
+                    for flag in &mut flags {
+                        *flag = ctx.find_map(
+                            &mut tokens,
+                            |token| {
+                                Ok(match token {
+                                    Token::True => Some(true),
+                                    Token::False => Some(false),
+                                    _ => None,
+                                })
+                            },
+                            "ASM transform hint tokens",
+                        )?;
+                        if flag.is_none() {
+                            break;
+                        }
+                    }
                     if let (Some(rotation), Some(reflection), Some(shear), None) =
-                        (flags.next(), flags.next(), flags.next(), flags.next())
+                        (flags[0], flags[1], flags[2], flags[3])
                     {
                         charged_push!(
                             ctx,
@@ -5746,9 +5863,11 @@ pub(super) fn emit_containers(
                         kind: cadmpeg_ir::topology::BodyKind::Solid,
                         regions,
                         transform: transform_record
-                            .and_then(|transform| decode_transform(transform, header_scale)),
+                            .map(|transform| decode_transform(ctx, transform, header_scale))
+                            .transpose()?
+                            .flatten(),
                         name: attribute_name(r)?,
-                        color: attribute_color(r),
+                        color: attribute_color(r)?,
                         visible: None,
                     }
                 );
@@ -5756,7 +5875,11 @@ pub(super) fn emit_containers(
             _ => {}
         }
     }
-    for &edge in saved_free_edges {
+    let mut source_values = IntoIterator::into_iter(saved_free_edges);
+    while source_values.len() != 0 {
+        let Some(&edge) = ctx.next_charged(&mut source_values, "ASM saved edge containers")? else {
+            break;
+        };
         let body_id = brep_id!(format, BodyId, "saved-edge-body", edge);
         let region_id = brep_id!(format, RegionId, "saved-edge-region", edge);
         let shell_id = brep_id!(format, ShellId, "saved-edge-shell", edge);
@@ -5766,7 +5889,10 @@ pub(super) fn emit_containers(
             Body {
                 id: body_id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                 kind: cadmpeg_ir::topology::BodyKind::Wire,
-                regions: vec![region_id.try_clone_for_decode(ctx, "ASM emitted identity copy")?],
+                regions: ctx.collect_vec(
+                    [region_id.try_clone_for_decode(ctx, "ASM emitted identity copy")?],
+                    "ASM saved edge body regions",
+                )?,
                 transform: None,
                 name: None,
                 color: None,
@@ -5779,13 +5905,26 @@ pub(super) fn emit_containers(
             Region {
                 id: region_id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                 body: body_id,
-                shells: vec![shell_id.try_clone_for_decode(ctx, "ASM emitted identity copy")?],
+                shells: ctx.collect_vec(
+                    [shell_id.try_clone_for_decode(ctx, "ASM emitted identity copy")?],
+                    "ASM saved edge region shells",
+                )?,
             }
         );
         charged_push!(
             ctx,
             out.shells,
-            Shell::with_wire_edge(shell_id, region_id, <EdgeId>::from(id(format, edge)),)
+            Shell::new(
+                shell_id,
+                region_id,
+                Vec::new(),
+                ctx.collect_vec(
+                    [EdgeId::from(id(format, edge))],
+                    "ASM saved edge shell wires"
+                )?,
+                Vec::new(),
+            )
+            .map_err(cadmpeg_core::CodecError::malformed)?
         );
     }
     Ok(())
@@ -5801,6 +5940,7 @@ pub(super) fn emit_attributes(
     by_index: &HashMap<i64, &Record>,
     reach: &Reachable,
     format: IdFormat,
+    scratch: &mut cadmpeg_core::decode::ScopedReservation<'_>,
 ) -> Result<HashSet<i64>, cadmpeg_core::CodecError> {
     let Reachable {
         faces: kept_faces,
@@ -5811,8 +5951,65 @@ pub(super) fn emit_attributes(
         ..
     } = reach;
     let mut emitted_attributes = HashSet::new();
+    let mut target_storage = ctx.reserve_scoped(0, "ASM attribute target storage")?;
     let mut attribute_targets = HashMap::new();
-    for record in records {
+    let mut inherited_targets = HashMap::new();
+    let mut body_ids = HashSet::new();
+    let mut source_values = out.bodies.iter();
+    while !source_values.as_slice().is_empty() {
+        let Some(entity) = ctx.next_charged(&mut source_values, "ASM attribute body ids")? else {
+            break;
+        };
+        target_storage.with_storage(|| {
+            ctx.insert_hash_set(
+                &mut body_ids,
+                entity.id.as_str(),
+                "ASM attribute body index",
+            )
+        })?;
+    }
+    let mut shell_ids = HashSet::new();
+    let mut source_values = out.shells.iter();
+    while !source_values.as_slice().is_empty() {
+        let Some(entity) = ctx.next_charged(&mut source_values, "ASM attribute shell ids")? else {
+            break;
+        };
+        target_storage.with_storage(|| {
+            ctx.insert_hash_set(
+                &mut shell_ids,
+                entity.id.as_str(),
+                "ASM attribute shell index",
+            )
+        })?;
+    }
+    let mut region_bodies = HashMap::new();
+    let mut source_values = IntoIterator::into_iter(&out.regions);
+    while source_values.len() != 0 {
+        let Some(region) = ctx.next_charged(&mut source_values, "ASM attribute region owners")?
+        else {
+            break;
+        };
+        if !ctx.contains_key_hash_map(
+            &region_bodies,
+            region.id.as_str(),
+            "ASM attribute region index",
+        )? {
+            target_storage.with_storage(|| {
+                ctx.insert_hash_map(
+                    &mut region_bodies,
+                    region.id.as_str(),
+                    &region.body,
+                    "ASM attribute region index",
+                )
+            })?;
+        }
+    }
+    let mut source_values = IntoIterator::into_iter(records);
+    while source_values.len() != 0 {
+        let Some(record) = ctx.next_charged(&mut source_values, "ASM attribute record pass")?
+        else {
+            break;
+        };
         let index = i64::try_from(record.index).map_err(|_| {
             ctx.refuse_codec_limit(
                 "ASM record index",
@@ -5820,63 +6017,66 @@ pub(super) fn emit_attributes(
                 cadmpeg_core::decode::u64_from_index(record.index),
             )
         })?;
-        let target = match record.head() {
-            "body"
-                if out
-                    .bodies
-                    .iter()
-                    .any(|entity| entity.id.as_str() == id(format, index).as_str()) =>
-            {
-                Some(AttributeTarget::Body(BodyId::from(id(format, index))))
-            }
-            "shell"
-                if out
-                    .shells
-                    .iter()
-                    .any(|entity| entity.id.as_str() == id(format, index).as_str()) =>
-            {
-                Some(AttributeTarget::Shell(ShellId::from(id(format, index))))
-            }
-            // ASM-227 names a region's topological owner `lump`, while
-            // ASM-231 names the same record `region`. The neutral model has
-            // no region-level attribute target, so retain these attributes on
-            // their owning body after the region graph has been emitted.
-            "region" | "lump" => out
-                .regions
-                .iter()
-                .find(|entity| entity.id.as_str() == id(format, index).as_str())
-                .map(|entity| {
-                    entity
-                        .body
-                        .try_clone_for_decode(ctx, "ASM region attribute owner")
-                        .map(AttributeTarget::Body)
-                })
-                .transpose()?,
-            "face" if kept_faces.contains(&index) => {
-                Some(AttributeTarget::Face(FaceId::from(id(format, index))))
-            }
-            "loop" if kept_loops.contains(&index) => {
-                Some(AttributeTarget::Loop(LoopId::from(id(format, index))))
-            }
-            "coedge" | "tcoedge" if kept_coedges.contains(&index) => {
-                Some(AttributeTarget::Coedge(<CoedgeId>::from(id(format, index))))
-            }
-            "edge" | "tedge" if kept_edges.contains(&index) => {
-                Some(AttributeTarget::Edge(<EdgeId>::from(id(format, index))))
-            }
-            "vertex" | "tvertex" if kept_vertices.contains(&index) => {
-                Some(AttributeTarget::Vertex(<VertexId>::from(id(format, index))))
-            }
-            _ => None,
-        };
+        let target = target_storage.with_storage(|| {
+            Ok::<_, cadmpeg_core::CodecError>(match record.head() {
+                "body"
+                    if ctx.contains_hash_set(
+                        &body_ids,
+                        id(format, index).as_str(),
+                        "ASM attribute body lookup",
+                    )? =>
+                {
+                    Some(AttributeTarget::Body(BodyId::from(id(format, index))))
+                }
+                "shell"
+                    if ctx.contains_hash_set(
+                        &shell_ids,
+                        id(format, index).as_str(),
+                        "ASM attribute shell lookup",
+                    )? =>
+                {
+                    Some(AttributeTarget::Shell(ShellId::from(id(format, index))))
+                }
+                // Region attributes use the body that owns the emitted region.
+                "region" | "lump" => ctx
+                    .get_hash_map(
+                        &region_bodies,
+                        id(format, index).as_str(),
+                        "ASM attribute region lookup",
+                    )?
+                    .map(|body| {
+                        body.try_clone_for_decode(ctx, "ASM region attribute owner")
+                            .map(AttributeTarget::Body)
+                    })
+                    .transpose()?,
+                "face" if kept_faces.contains(&index) => {
+                    Some(AttributeTarget::Face(FaceId::from(id(format, index))))
+                }
+                "loop" if kept_loops.contains(&index) => {
+                    Some(AttributeTarget::Loop(LoopId::from(id(format, index))))
+                }
+                "coedge" | "tcoedge" if kept_coedges.contains(&index) => {
+                    Some(AttributeTarget::Coedge(<CoedgeId>::from(id(format, index))))
+                }
+                "edge" | "tedge" if kept_edges.contains(&index) => {
+                    Some(AttributeTarget::Edge(<EdgeId>::from(id(format, index))))
+                }
+                "vertex" | "tvertex" if kept_vertices.contains(&index) => {
+                    Some(AttributeTarget::Vertex(<VertexId>::from(id(format, index))))
+                }
+                _ => None,
+            })
+        })?;
         if let Some(target) = target {
-            ctx.admit_hash_map_entry(&mut attribute_targets, &index, "ASM attribute targets")?;
+            target_storage.with_storage(|| {
+                ctx.admit_hash_map_entry(&mut attribute_targets, &index, "ASM attribute targets")
+            })?;
             collect_attributes(
                 ctx,
                 record,
                 &target,
                 by_index,
-                &mut emitted_attributes,
+                (&mut emitted_attributes, scratch),
                 &mut out.attributes,
                 format,
             )?;
@@ -5884,7 +6084,12 @@ pub(super) fn emit_attributes(
         }
     }
 
-    for record in records {
+    let mut source_values = IntoIterator::into_iter(records);
+    while source_values.len() != 0 {
+        let Some(record) = ctx.next_charged(&mut source_values, "ASM attribute record pass")?
+        else {
+            break;
+        };
         let index = i64::try_from(record.index).map_err(|_| {
             ctx.refuse_codec_limit(
                 "ASM record index",
@@ -5896,9 +6101,22 @@ pub(super) fn emit_attributes(
             continue;
         }
         if let Some(target) = attribute_owner(record)
-            .and_then(|owner| inherited_attribute_target(owner, by_index, &attribute_targets))
+            .map(|owner| {
+                inherited_attribute_target(
+                    ctx,
+                    owner,
+                    by_index,
+                    &attribute_targets,
+                    &mut inherited_targets,
+                    &mut target_storage,
+                )
+            })
+            .transpose()?
+            .flatten()
         {
-            ctx.insert_hash_set(&mut emitted_attributes, index, "ASM emitted attributes")?;
+            scratch.with_storage(|| {
+                ctx.insert_hash_set(&mut emitted_attributes, index, "ASM emitted attributes")
+            })?;
             charged_push!(
                 ctx,
                 out.attributes,
@@ -5924,7 +6142,11 @@ pub(super) fn emit_passthrough_unknowns(
         cached_unknown_procedural_surfaces,
         ..
     } = reach;
-    for r in records {
+    let mut source_values = IntoIterator::into_iter(records);
+    while source_values.len() != 0 {
+        let Some(r) = ctx.next_charged(&mut source_values, "ASM emitted record pass")? else {
+            break;
+        };
         let i = i64::try_from(r.index).map_err(|_| {
             ctx.refuse_codec_limit(
                 "ASM record index",
@@ -5977,23 +6199,43 @@ pub(super) fn count_other_records(
         ..
     } = reach;
     // Count remaining record kinds we neither emitted nor preserved.
-    let kept_transforms: HashSet<i64> = ctx.collect_hash_set(
-        records
-            .iter()
-            .filter(|record| record.head() == "body")
-            .filter_map(|record| record.ref_at(5)),
-        "ASM retained transform references",
-    )?;
-    let pcurve_intcurves: HashSet<i64> = ctx.collect_hash_set(
-        records
-            .iter()
-            .filter(|record| {
-                i64::try_from(record.index).is_ok_and(|index| kept_pcurves.contains(&index))
-            })
-            .filter_map(|record| record.ref_at(4)),
-        "ASM pcurve intcurve references",
-    )?;
-    for r in records {
+    let mut reference_storage = ctx.reserve_scoped(0, "ASM record reference indices")?;
+    let mut kept_transforms = HashSet::new();
+    let mut pcurve_intcurves = HashSet::new();
+    let mut source_values = records.iter();
+    while !source_values.as_slice().is_empty() {
+        let Some(record) = ctx.next_charged(&mut source_values, "ASM record reference scan")?
+        else {
+            break;
+        };
+        if record.head() == "body" {
+            if let Some(reference) = record.ref_at(5) {
+                reference_storage.with_storage(|| {
+                    ctx.insert_hash_set(
+                        &mut kept_transforms,
+                        reference,
+                        "ASM retained transform references",
+                    )
+                })?;
+            }
+        }
+        if i64::try_from(record.index).is_ok_and(|index| kept_pcurves.contains(&index)) {
+            if let Some(reference) = record.ref_at(4) {
+                reference_storage.with_storage(|| {
+                    ctx.insert_hash_set(
+                        &mut pcurve_intcurves,
+                        reference,
+                        "ASM pcurve intcurve references",
+                    )
+                })?;
+            }
+        }
+    }
+    let mut source_values = IntoIterator::into_iter(records);
+    while source_values.len() != 0 {
+        let Some(r) = ctx.next_charged(&mut source_values, "ASM emitted record pass")? else {
+            break;
+        };
         let i = i64::try_from(r.index).map_err(|_| {
             ctx.refuse_codec_limit(
                 "ASM record index",

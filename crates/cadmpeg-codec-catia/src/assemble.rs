@@ -6,7 +6,6 @@
 //! vector/range helpers, and the metadata/geometry/container report builders.
 
 use cadmpeg_core::convert::{f64_from_index, truncate_f64_to_usize};
-use cadmpeg_core::decode::u64_from_index;
 
 use cadmpeg_core::dialect::DialectMatch;
 use cadmpeg_ir::codec::DecodeBody;
@@ -112,161 +111,225 @@ fn unresolved_carrier_ids<'a>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &'a CadIr,
 ) -> Result<(Vec<&'a str>, Vec<&'a str>), cadmpeg_core::CodecError> {
-    let mut resolved_curves = ctx.collect_hash_set(
-        ir.model
-            .curves
-            .iter()
-            .filter(|curve| {
-                !matches!(
-                    curve.geometry,
-                    CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
-                        | CurveGeometry::Procedural { .. }
+    let mut storage = ctx.reserve_scoped(0, "catia_carrier_resolution_indexes")?;
+    // The kind bit keeps curve and surface identity namespaces independent.
+    let mut resolved = std::collections::HashSet::<(bool, &str)>::new();
+    let mut frontier = std::collections::VecDeque::new();
+    let mut curve_owners = crate::unique_index::UniqueIndex::new();
+    let mut surface_owners = crate::unique_index::UniqueIndex::new();
+    for curve in ctx.admit_iter(&ir.model.curves, "catia_carrier_curve_visits")? {
+        if let Some(construction) = curve.geometry.procedural_construction() {
+            storage.with_storage(|| {
+                curve_owners.insert(
+                    ctx,
+                    construction.as_str(),
+                    curve.id.as_str(),
+                    "catia_carrier_owner_index",
                 )
-            })
-            .map(|curve| curve.id.as_str()),
-        "catia_resolved_curve_ids",
-    )?;
-    let mut resolved_surfaces = ctx.collect_hash_set(
-        ir.model
-            .surfaces
-            .iter()
-            .filter(|surface| {
-                !matches!(
-                    surface.geometry,
-                    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
-                        | SurfaceGeometry::Procedural { .. }
-                )
-            })
-            .map(|surface| surface.id.as_str()),
-        "catia_resolved_surface_ids",
-    )?;
-    loop {
-        let work = ir
-            .model
-            .procedural_surfaces
-            .len()
-            .checked_add(ir.model.procedural_curves.len())
-            .map(u64_from_index)
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit("catia_carrier_resolution_work", u64::MAX, u64::MAX)
             })?;
-        ctx.charge_work(work, "catia_carrier_resolution_work")?;
-        let mut changed = false;
-        for procedural in &ir.model.procedural_surfaces {
-            let resolved = match procedural.definition() {
-                ProceduralSurfaceDefinition::Exact(..)
-                | ProceduralSurfaceDefinition::Helix { .. }
-                | ProceduralSurfaceDefinition::RollingBallJet(_) => true,
-                ProceduralSurfaceDefinition::Offset(definition_payload) => {
-                    let support = definition_payload.support();
-                    {
-                        resolved_surfaces.contains(support.as_str())
-                    }
-                }
-                ProceduralSurfaceDefinition::Revolution(definition_payload) => {
-                    let directrix = definition_payload.directrix();
-                    {
-                        resolved_curves.contains(directrix.as_str())
-                    }
-                }
-                ProceduralSurfaceDefinition::Extrusion(definition_payload) => {
-                    let directrix = definition_payload.directrix();
-                    {
-                        resolved_curves.contains(directrix.as_str())
-                    }
-                }
-                ProceduralSurfaceDefinition::LinearSweep(definition_payload) => {
-                    resolved_curves.contains(definition_payload.directrix().as_str())
-                }
-                _ => false,
-            };
-            if resolved {
-                if let Some(owner) = ir.model.procedural_surface_owner(&procedural.id) {
-                    changed |= ctx.insert_hash_set(
-                        &mut resolved_surfaces,
-                        owner.as_str(),
-                        "catia_resolved_surface_ids",
-                    )?;
-                }
-            }
-        }
-        for procedural in &ir.model.procedural_curves {
-            let resolved = match procedural.definition() {
-                ProceduralCurveDefinition::Exact { .. } | ProceduralCurveDefinition::Helix(_) => {
-                    true
-                }
-                ProceduralCurveDefinition::Intersection { context, .. } => {
-                    context.sides().iter().all(|side| {
-                        side.surface
-                            .as_ref()
-                            .is_some_and(|surface| resolved_surfaces.contains(surface.as_str()))
-                    })
-                }
-                ProceduralCurveDefinition::SurfaceCurve { family } => {
-                    let (has_side, all_resolved) = family
-                        .context()
-                        .sides()
-                        .iter()
-                        .filter_map(|side| side.surface.as_ref().zip(side.pcurve.as_ref()))
-                        .fold((false, true), |(_, all_resolved), (surface, _)| {
-                            (
-                                true,
-                                all_resolved && resolved_surfaces.contains(surface.as_str()),
-                            )
-                        });
-                    has_side && all_resolved
-                }
-                _ => false,
-            };
-            if resolved {
-                if let Some(owner) = ir.model.procedural_curve_owner(&procedural.id) {
-                    changed |= ctx.insert_hash_set(
-                        &mut resolved_curves,
-                        owner.as_str(),
-                        "catia_resolved_curve_ids",
-                    )?;
-                }
-            }
-        }
-        if !changed {
-            break;
+        } else if !matches!(
+            curve.geometry,
+            CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
+        ) {
+            storage.with_storage(|| {
+                ctx.push_back(
+                    &mut frontier,
+                    (false, curve.id.as_str()),
+                    "catia_carrier_frontier",
+                )
+            })?;
         }
     }
-    let curves = ctx.collect_vec(
-        ir.model
-            .curves
-            .iter()
-            .filter(|curve| {
-                matches!(
-                    curve.geometry,
-                    CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
-                        | CurveGeometry::Procedural { .. }
-                ) && !resolved_curves.contains(curve.id.as_str())
-            })
-            .map(|curve| curve.id.as_str())
-            .chain(
-                ir.model
-                    .edges
-                    .iter()
-                    .filter(|edge| edge.curve().is_none())
-                    .map(|edge| edge.id.as_str()),
-            ),
-        "catia_unresolved_curve_ids",
-    )?;
-    let surfaces = ctx.collect_vec(
-        ir.model
-            .surfaces
-            .iter()
-            .filter(|surface| {
-                matches!(
-                    surface.geometry,
-                    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
-                        | SurfaceGeometry::Procedural { .. }
-                ) && !resolved_surfaces.contains(surface.id.as_str())
-            })
-            .map(|surface| surface.id.as_str()),
-        "catia_unresolved_surface_ids",
-    )?;
+    for surface in ctx.admit_iter(&ir.model.surfaces, "catia_carrier_surface_visits")? {
+        if let Some(construction) = surface.geometry.procedural_construction() {
+            storage.with_storage(|| {
+                surface_owners.insert(
+                    ctx,
+                    construction.as_str(),
+                    surface.id.as_str(),
+                    "catia_carrier_owner_index",
+                )
+            })?;
+        } else if !matches!(
+            surface.geometry,
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
+        ) {
+            storage.with_storage(|| {
+                ctx.push_back(
+                    &mut frontier,
+                    (true, surface.id.as_str()),
+                    "catia_carrier_frontier",
+                )
+            })?;
+        }
+    }
+    let mut plans = Vec::new();
+    for procedural in ctx.admit_iter(
+        &ir.model.procedural_surfaces,
+        "catia_carrier_surface_constructions",
+    )? {
+        let Some(owner) = surface_owners
+            .get(ctx, procedural.id.as_str(), "catia_carrier_owner_lookup")?
+            .copied()
+        else {
+            continue;
+        };
+        let supports = match procedural.definition() {
+            ProceduralSurfaceDefinition::Exact(..)
+            | ProceduralSurfaceDefinition::Helix { .. }
+            | ProceduralSurfaceDefinition::RollingBallJet(_) => [None, None],
+            ProceduralSurfaceDefinition::Offset(payload) => {
+                [Some((true, payload.support().as_str())), None]
+            }
+            ProceduralSurfaceDefinition::Revolution(payload) => {
+                [Some((false, payload.directrix().as_str())), None]
+            }
+            ProceduralSurfaceDefinition::Extrusion(payload) => {
+                [Some((false, payload.directrix().as_str())), None]
+            }
+            ProceduralSurfaceDefinition::LinearSweep(payload) => {
+                [Some((false, payload.directrix().as_str())), None]
+            }
+            _ => continue,
+        };
+        ctx.push_scoped_vec(
+            &mut storage,
+            &mut plans,
+            ((true, owner), supports),
+            "catia_carrier_plans",
+        )?;
+    }
+    for procedural in ctx.admit_iter(
+        &ir.model.procedural_curves,
+        "catia_carrier_curve_constructions",
+    )? {
+        let Some(owner) = curve_owners
+            .get(ctx, procedural.id.as_str(), "catia_carrier_owner_lookup")?
+            .copied()
+        else {
+            continue;
+        };
+        let supports = match procedural.definition() {
+            ProceduralCurveDefinition::Exact { .. } | ProceduralCurveDefinition::Helix(_) => {
+                [None, None]
+            }
+            ProceduralCurveDefinition::Intersection { context, .. } => {
+                let [left, right] = context.sides();
+                let Some((left, right)) = left.surface.as_ref().zip(right.surface.as_ref()) else {
+                    continue;
+                };
+                [Some((true, left.as_str())), Some((true, right.as_str()))]
+            }
+            ProceduralCurveDefinition::SurfaceCurve { family } => {
+                let supports = family.context().sides().each_ref().map(|side| {
+                    side.surface
+                        .as_ref()
+                        .zip(side.pcurve.as_ref())
+                        .map(|(surface, _)| (true, surface.as_str()))
+                });
+                if supports == [None, None] {
+                    continue;
+                }
+                supports
+            }
+            _ => continue,
+        };
+        ctx.push_scoped_vec(
+            &mut storage,
+            &mut plans,
+            ((false, owner), supports),
+            "catia_carrier_plans",
+        )?;
+    }
+    let mut reverse = std::collections::HashMap::new();
+    let mut pending = Vec::new();
+    for (owner, supports) in ctx.admit_iter(plans, "catia_carrier_plan_visits")? {
+        let index = pending.len();
+        let mut remaining = 0usize;
+        for support in supports.into_iter().flatten() {
+            remaining += 1;
+            storage.with_storage(|| {
+                ctx.push_hash_group(
+                    &mut reverse,
+                    support,
+                    index,
+                    "catia_carrier_support_index",
+                    "catia_carrier_support_dependents",
+                )
+            })?;
+        }
+        ctx.push_scoped_vec(
+            &mut storage,
+            &mut pending,
+            (owner, remaining),
+            "catia_carrier_pending",
+        )?;
+        if remaining == 0 {
+            storage
+                .with_storage(|| ctx.push_back(&mut frontier, owner, "catia_carrier_frontier"))?;
+        }
+    }
+    while let Some(carrier) = ctx.next_charged(
+        &mut std::iter::from_fn(|| frontier.pop_front()),
+        "catia_carrier_resolution_work",
+    )? {
+        if !storage.with_storage(|| {
+            ctx.insert_hash_set(&mut resolved, carrier, "catia_resolved_carrier_ids")
+        })? {
+            continue;
+        }
+        let Some(dependents) =
+            ctx.get_hash_map(&reverse, &carrier, "catia_carrier_support_lookup")?
+        else {
+            continue;
+        };
+        for index in ctx.admit_iter(dependents, "catia_carrier_dependent_visits")? {
+            let (owner, remaining) = &mut pending[*index];
+            *remaining -= 1;
+            if *remaining == 0 {
+                storage.with_storage(|| {
+                    ctx.push_back(&mut frontier, *owner, "catia_carrier_frontier")
+                })?;
+            }
+        }
+    }
+    let mut curves = Vec::new();
+    for curve in ctx.admit_iter(&ir.model.curves, "catia_unresolved_curve_visits")? {
+        if matches!(
+            curve.geometry,
+            CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
+                | CurveGeometry::Procedural { .. }
+        ) && !ctx.contains_hash_set(
+            &resolved,
+            &(false, curve.id.as_str()),
+            "catia_carrier_support_lookup",
+        )? {
+            ctx.push_vec(&mut curves, curve.id.as_str(), "catia_unresolved_curve_ids")?;
+        }
+    }
+    for edge in ctx.admit_iter(&ir.model.edges, "catia_unresolved_edge_visits")? {
+        if edge.curve().is_none() {
+            ctx.push_vec(&mut curves, edge.id.as_str(), "catia_unresolved_curve_ids")?;
+        }
+    }
+    let mut surfaces = Vec::new();
+    for surface in ctx.admit_iter(&ir.model.surfaces, "catia_unresolved_surface_visits")? {
+        if matches!(
+            surface.geometry,
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
+                | SurfaceGeometry::Procedural { .. }
+        ) && !ctx.contains_hash_set(
+            &resolved,
+            &(true, surface.id.as_str()),
+            "catia_carrier_support_lookup",
+        )? {
+            ctx.push_vec(
+                &mut surfaces,
+                surface.id.as_str(),
+                "catia_unresolved_surface_ids",
+            )?;
+        }
+    }
     Ok((curves, surfaces))
 }
 
@@ -274,7 +337,10 @@ fn unresolved_carrier_ids<'a>(
 #[cfg(test)]
 fn unresolved_carrier_counts(ir: &CadIr) -> (usize, usize) {
     crate::test_support::with_service_context(|ctx| {
-        let (curves, surfaces) = unresolved_carrier_ids(ctx, ir)?;
+        let ((curves, surfaces), _storage) = ctx
+            .with_scoped_storage("catia_unresolved_carrier_ids", || {
+                unresolved_carrier_ids(ctx, ir)
+            })?;
         Ok::<_, cadmpeg_core::CodecError>((curves.len(), surfaces.len()))
     })
     .expect("service budget admits carrier count fixture")
@@ -307,7 +373,10 @@ pub(crate) fn insert_unresolved_carrier_loss(
     ir: &CadIr,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let (unresolved_curves, unresolved_surfaces) = unresolved_carrier_ids(ctx, ir)?;
+    let ((unresolved_curves, unresolved_surfaces), _storage) = ctx
+        .with_scoped_storage("catia_unresolved_carrier_ids", || {
+            unresolved_carrier_ids(ctx, ir)
+        })?;
     if unresolved_curves.is_empty() && unresolved_surfaces.is_empty() {
         return Ok(());
     }
@@ -323,8 +392,7 @@ pub(crate) fn insert_unresolved_carrier_loss(
         statement,
         "catia_unresolved_carrier_note",
     )?;
-    ctx.reserve_vec(losses, 1, "catia_unresolved_carrier_loss")?;
-    losses.insert(0, note);
+    ctx.insert_vec(losses, 0, note, "catia_unresolved_carrier_loss")?;
     Ok(())
 }
 
@@ -562,7 +630,10 @@ pub(crate) fn source_meta(
         format_args!("{}", scan.previews.len()),
         "catia_source_meta_attribute",
     )?;
-    for (index, preview) in scan.previews.iter().enumerate() {
+    for (index, preview) in ctx
+        .admit_iter(&scan.previews, "catia_source_preview_visits")?
+        .enumerate()
+    {
         resource::source_attribute(
             ctx,
             &mut attributes,
@@ -592,7 +663,10 @@ pub(crate) fn source_meta(
         format_args!("{}", scan.external_references.len()),
         "catia_source_meta_attribute",
     )?;
-    for (index, reference) in scan.external_references.iter().enumerate() {
+    for (index, reference) in ctx
+        .admit_iter(&scan.external_references, "catia_source_reference_visits")?
+        .enumerate()
+    {
         resource::source_attribute(
             ctx,
             &mut attributes,
@@ -608,7 +682,10 @@ pub(crate) fn source_meta(
         format_args!("{}", scan.finjpl_segments.len()),
         "catia_source_meta_attribute",
     )?;
-    for (index, segment) in scan.finjpl_segments.iter().enumerate() {
+    for (index, segment) in ctx
+        .admit_iter(&scan.finjpl_segments, "catia_source_segment_visits")?
+        .enumerate()
+    {
         if let Some(name) = &segment.name {
             resource::source_attribute(
                 ctx,
@@ -814,7 +891,11 @@ pub(crate) fn build_metadata_fallback(
         scan.variant.id(),
         Exactness::Unknown,
     )?;
-    unknowns.push(UnknownRecord::retained(id, 0, bytes, Vec::new()));
+    ctx.push_vec(
+        &mut unknowns,
+        UnknownRecord::retained(id, 0, bytes, Vec::new()),
+        "catia_retained_source_records",
+    )?;
     Ok((ir, annotations.build(), unknowns))
 }
 
@@ -843,7 +924,11 @@ pub(crate) fn preserve_raw_payload(
         scan.variant.id(),
         Exactness::Unknown,
     )?;
-    unknowns.push(UnknownRecord::retained(id, 0, bytes, Vec::new()));
+    ctx.push_vec(
+        unknowns,
+        UnknownRecord::retained(id, 0, bytes, Vec::new()),
+        "catia_retained_source_records",
+    )?;
     Ok(unknowns.len() - 1)
 }
 
@@ -857,13 +942,13 @@ pub(crate) fn link_payload_carriers(
     annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut links = Vec::new();
-    for id in ir
+    let mut carrier_ids = ir
         .model
         .surfaces
         .iter()
         .map(|surface| surface.id.as_str())
-        .chain(ir.model.curves.iter().map(|curve| curve.id.as_str()))
-    {
+        .chain(ir.model.curves.iter().map(|curve| curve.id.as_str()));
+    while let Some(id) = ctx.next_charged(&mut carrier_ids, "catia_payload_link_visits")? {
         let id = ctx.copy_retained_text(id, "catia_payload_link_id")?;
         ctx.push_vec(&mut links, id, "catia_payload_links")?;
     }
@@ -871,13 +956,7 @@ pub(crate) fn link_payload_carriers(
         return Ok(());
     }
     *payload.links_mut() = links;
-    resource::derived_annotation(
-        ctx,
-        annotations,
-        payload.id().as_str(),
-        "links",
-        "catia_payload_links_annotation",
-    )?;
+    resource::derived_annotation(ctx, annotations, payload.id().as_str(), "links")?;
     Ok(())
 }
 
@@ -977,24 +1056,28 @@ pub(crate) fn rational_pcurve_arc(
     else {
         return Ok(None);
     };
-    ctx.charge_work(u64_from_index(segment_count), "catia_rational_arc_segments")?;
     let step = span
         / match f64_from_index(segment_count) {
             Some(value) => value,
             None => return Ok(None),
         };
+    let mut input_storage = ctx.reserve_scoped(0, "catia_rational_arc_input")?;
     let mut control_points = Vec::new();
-    ctx.reserve_vec(
-        &mut control_points,
-        control_count,
-        "catia_rational_arc_controls",
-    )?;
+    input_storage.with_storage(|| {
+        ctx.reserve_capacity(
+            &mut control_points,
+            control_count,
+            "catia_rational_arc_controls",
+        )
+    })?;
     let mut weights = Vec::new();
-    ctx.reserve_vec(&mut weights, control_count, "catia_rational_arc_weights")?;
+    input_storage.with_storage(|| {
+        ctx.reserve_capacity(&mut weights, control_count, "catia_rational_arc_weights")
+    })?;
+    let mut knot_storage = ctx.reserve_scoped(0, "catia_rational_arc_retained_knots")?;
     let mut knots = Vec::new();
-    ctx.reserve_vec(&mut knots, knot_count, "catia_rational_arc_knots")?;
-    knots.extend([range[0]; 3]);
-    for index in 0..segment_count {
+    let mut spans = 0..segment_count;
+    while let Some(index) = ctx.next_charged(&mut spans, "catia_rational_arc_segments")? {
         let start = range[0]
             + match f64_from_index(index) {
                 Some(value) => value,
@@ -1007,44 +1090,87 @@ pub(crate) fn rational_pcurve_arc(
             return Ok(None);
         }
         if index == 0 {
-            control_points.push(Point2::new(
-                center[0] + radius * start.cos(),
-                center[1] + radius * start.sin(),
-            ));
-            weights.push(1.0);
+            input_storage.with_storage(|| {
+                ctx.push_vec(
+                    &mut control_points,
+                    Point2::new(
+                        center[0] + radius * start.cos(),
+                        center[1] + radius * start.sin(),
+                    ),
+                    "catia_rational_arc_controls",
+                )
+            })?;
+            input_storage
+                .with_storage(|| ctx.push_vec(&mut weights, 1.0, "catia_rational_arc_weights"))?;
+            knot_storage.with_storage(|| {
+                ctx.reserve_vec(&mut knots, knot_count, "catia_rational_arc_knots")
+            })?;
+            knots.extend([range[0]; 3]);
         }
-        control_points.push(Point2::new(
-            center[0] + radius / middle_weight * middle.cos(),
-            center[1] + radius / middle_weight * middle.sin(),
-        ));
-        control_points.push(Point2::new(
-            center[0] + radius * end.cos(),
-            center[1] + radius * end.sin(),
-        ));
+        input_storage.with_storage(|| {
+            ctx.push_vec(
+                &mut control_points,
+                Point2::new(
+                    center[0] + radius / middle_weight * middle.cos(),
+                    center[1] + radius / middle_weight * middle.sin(),
+                ),
+                "catia_rational_arc_controls",
+            )
+        })?;
+        input_storage.with_storage(|| {
+            ctx.push_vec(
+                &mut control_points,
+                Point2::new(
+                    center[0] + radius * end.cos(),
+                    center[1] + radius * end.sin(),
+                ),
+                "catia_rational_arc_controls",
+            )
+        })?;
+        input_storage
+            .with_storage(|| ctx.reserve_vec(&mut weights, 2, "catia_rational_arc_weights"))?;
         weights.extend([middle_weight, 1.0]);
         if index + 1 < segment_count {
             knots.extend([end; 2]);
         }
     }
     knots.extend([range[1]; 3]);
-    if !knots.iter().copied().all(f64::is_finite)
-        || !control_points
-            .iter()
-            .copied()
-            .all(|point| point.is_finite())
-        || !weights.iter().copied().all(f64::is_finite)
-    {
+    if !ctx.all_by(
+        &knots,
+        |value| Ok(value.is_finite()),
+        "catia_rational_arc_knot_finiteness",
+    )? || !ctx.all_by(
+        &control_points,
+        |point| Ok(point.is_finite()),
+        "catia_rational_arc_point_finiteness",
+    )? || !ctx.all_by(
+        &weights,
+        |value| Ok(value.is_finite()),
+        "catia_rational_arc_weight_finiteness",
+    )? {
         return Ok(None);
     }
-    match cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
-        ctx,
-        2,
-        knots,
-        control_points,
-        Some(weights),
-        false,
-    )? {
-        Ok(nurbs) => Ok(Some(PcurveGeometry::Nurbs { nurbs })),
+    let (result, output_storage) = ctx.with_scoped_storage("catia_rational_arc_output", || {
+        cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+            ctx,
+            2,
+            knots,
+            control_points,
+            Some(weights),
+            false,
+        )
+    })?;
+    drop(input_storage);
+    match result {
+        Ok(nurbs) => {
+            let mut owner = (
+                PcurveGeometry::Nurbs { nurbs },
+                knot_storage,
+                output_storage,
+            );
+            owner.1.absorb(&mut owner.2)?;
+            Ok(Some(owner.1.commit_value(owner.0)?))
+        }
         Err(error) => crate::nurbs::note_refusal(ctx, Err(error), refusal, record),
     }
 }
@@ -1058,37 +1184,34 @@ pub(crate) fn quintic_jet_pcurve(
     refusal: &mut crate::nurbs::LaneRefusals,
     record: impl std::fmt::Display,
 ) -> Result<Option<PcurveGeometry>, cadmpeg_core::CodecError> {
-    let Some((full_knots, controls)) =
-        crate::nurbs::quintic_jet_bspline(ctx, degree, knots, points, first, second)?
-    else {
+    let (jet, jet_storage) = ctx.with_scoped_storage("catia_quintic_pcurve_jet", || {
+        crate::nurbs::quintic_jet_bspline(ctx, degree, knots, points, first, second, |point| {
+            FinitePoint2::new(Point2::new(point[0], point[1]))
+        })
+    })?;
+    let Some((full_knots, control_points)) = jet else {
         return Ok(None);
     };
-    let mut control_points = Vec::new();
-    ctx.reserve_vec(
-        &mut control_points,
-        controls.len(),
-        "catia quintic pcurve points",
-    )?;
-    control_points.extend(
-        controls
-            .into_iter()
-            .map(|point| Point2::new(point[0], point[1])),
-    );
-    match cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+    let result = cadmpeg_ir::geometry::pcurve::PcurveNurbs::new(
         ctx,
         degree,
         full_knots,
-        control_points,
-        None,
+        cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Polynomial {
+            points: control_points,
+        },
         false,
-    )? {
-        Ok(nurbs) => Ok(Some(PcurveGeometry::Nurbs { nurbs })),
+    )?;
+    match result {
+        Ok(nurbs) => Ok(Some(
+            jet_storage.commit_value(PcurveGeometry::Nurbs { nurbs })?,
+        )),
         Err(error) => crate::nurbs::note_refusal(ctx, Err(error), refusal, record),
     }
 }
 
 #[cfg(test)]
 mod route_tests {
+    mod pcurve_owners;
     use crate::assemble::{
         circle_parameter_range_from_surface_branch, neutral_model_is_admissible, source_meta,
         unresolved_carrier_counts,
@@ -1819,5 +1942,117 @@ mod route_tests {
             );
         });
         assert_eq!(unresolved_carrier_counts(&ir), (0, 0));
+    }
+    #[test]
+    fn carrier_frontier_resolves_reverse_offset_chains_and_rejects_cycles_and_ambiguous_owners() {
+        let mut ir = CadIr::empty();
+        let mut support = SurfaceId::mint("catia:test:surface#root").expect("identity");
+        let mut root = ProceduralSurface::new(
+            ProceduralSurfaceId::mint("catia:test:construction#root").expect("identity"),
+            ProceduralSurfaceDefinition::Unknown {
+                record: None,
+                cache: None,
+            },
+            None,
+        );
+        root.edit_definition(|definition| {
+            *definition = ProceduralSurfaceDefinition::Exact(
+                cadmpeg_ir::geometry::surface_payloads::ExactSurfacePayload::try_new(
+                    cadmpeg_ir::geometry::ExactSpline::Legacy {
+                        ranges: [[0.0, 1.0], [0.0, 1.0]],
+                        extension: 0,
+                        cache: None,
+                    },
+                )
+                .expect("exact surface"),
+            );
+        });
+        ir.model.surfaces.push(Surface {
+            id: support.clone(),
+            geometry: SurfaceGeometry::Procedural {
+                construction: root.id.clone(),
+                cache: None,
+            },
+            source_object: None,
+        });
+        ir.model.procedural_surfaces.push(root);
+        for index in 0..512 {
+            let owner = SurfaceId::mint(format!("catia:test:surface#{index}")).expect("identity");
+            let construction =
+                ProceduralSurfaceId::mint(format!("catia:test:construction#{index}"))
+                    .expect("identity");
+            let offset =
+                cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
+                    support,
+                    2.0,
+                    Some(1),
+                    Some(1),
+                    false,
+                    cadmpeg_ir::geometry::OffsetExtension::Legacy {
+                        flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
+                        cache: None,
+                    },
+                )
+                .expect("offset");
+            ir.model.surfaces.push(Surface {
+                id: owner.clone(),
+                geometry: SurfaceGeometry::Procedural {
+                    construction: construction.clone(),
+                    cache: None,
+                },
+                source_object: None,
+            });
+            ir.model.procedural_surfaces.push(ProceduralSurface::new(
+                construction,
+                ProceduralSurfaceDefinition::Offset(offset),
+                None,
+            ));
+            support = owner;
+        }
+        ir.model.procedural_surfaces.reverse();
+        let resolved = crate::test_support::with_work_limit(1_000_000, |ctx| {
+            super::unresolved_carrier_ids(ctx, &ir)
+        })
+        .expect("each support edge is processed once");
+        assert_eq!(resolved, (Vec::new(), Vec::new()));
+        // A duplicate construction owner tombstones the root and blocks the chain.
+        let mut duplicate = ir.model.surfaces[0].clone();
+        duplicate.id = SurfaceId::mint("catia:test:surface#duplicate").expect("identity");
+        ir.model.surfaces.push(duplicate);
+        let unresolved = crate::test_support::with_service_context(|ctx| {
+            super::unresolved_carrier_ids(ctx, &ir)
+        })
+        .expect("ambiguous root");
+        assert!(unresolved.0.is_empty());
+        assert_eq!(unresolved.1.len(), 514);
+        ir.model.surfaces.pop();
+        let root_id = ir.model.surfaces[0].id.clone();
+        let root = ir
+            .model
+            .procedural_surfaces
+            .last_mut()
+            .expect("root construction");
+        let offset = cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
+            support,
+            2.0,
+            Some(1),
+            Some(1),
+            false,
+            cadmpeg_ir::geometry::OffsetExtension::Legacy {
+                flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
+                cache: None,
+            },
+        )
+        .expect("cyclic offset");
+        root.edit_definition(|definition| {
+            *definition = ProceduralSurfaceDefinition::Offset(offset);
+        });
+        let unresolved = crate::test_support::with_service_context(|ctx| {
+            super::unresolved_carrier_ids(ctx, &ir)
+        })
+        .expect("carrier cycle terminates");
+        assert!(unresolved.0.is_empty());
+        assert_eq!(unresolved.1.len(), 513);
+        assert_eq!(unresolved.1[0], root_id.as_str());
     }
 }

@@ -90,7 +90,7 @@ fn loop_admission_refuses_before_seen_set_and_member_plan_growth() {
     let source = loop_record(&[1, 0]);
     for (cap, operation) in [
         (0, "catia_e5_loop_plan_seen"),
-        (1, "catia_e5_loop_plan_members"),
+        (2, "catia_e5_loop_plan_members"),
     ] {
         assert!(matches!(
             crate::test_support::with_collection_limit(cap, |ctx| E5LoopPlan::admit(ctx, &source)),
@@ -101,5 +101,16 @@ fn loop_admission_refuses_before_seen_set_and_member_plan_growth() {
         crate::test_support::with_service_context(|ctx| E5LoopPlan::admit(ctx, &source))
             .expect("service resource budget")
             .is_some()
+    );
+}
+
+#[test]
+fn loop_admission_charges_coedge_identity_construction() {
+    let source = loop_record(&[1, 0]);
+    assert!(
+        matches!(crate::test_support::with_work_refusal("catia_e5_loop_plan_coedge_id", |ctx| {
+        E5LoopPlan::admit(ctx, &source)
+    }), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_e5_loop_plan_coedge_id")
     );
 }

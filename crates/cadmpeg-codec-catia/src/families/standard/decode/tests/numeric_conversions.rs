@@ -39,6 +39,7 @@ fn visualization_refuses_coordinate(coordinate: f64, axis: usize) -> bool {
         let result = attach_standard_topology(
             ctx,
             AttachStandardTopologyInputs {
+                storage: None,
                 ir: &mut ir,
                 annotations: &mut annotations,
                 bindings: &[],

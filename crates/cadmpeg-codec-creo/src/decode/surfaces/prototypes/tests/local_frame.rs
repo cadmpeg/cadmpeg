@@ -4,9 +4,9 @@ use crate::surface::{
 };
 
 fn record(values: [f64; 12]) -> SurfacePrototypeRecord {
-    SurfacePrototypeRecord {
-        family: SurfacePrototypeFamily::Torus(crate::surface::TorusLabel::Torus),
-        parameters: vec![SurfaceNamedParameter {
+    SurfacePrototypeRecord::new_for_test(
+        SurfacePrototypeFamily::Torus(crate::surface::TorusLabel::Torus),
+        vec![SurfaceNamedParameter {
             name: "local_sys".to_string(),
             value: SurfaceNamedValue::ScalarArray({
                 let mut array = crate::surface::arrays::DimensionedScalars::empty(4, 3)
@@ -20,29 +20,8 @@ fn record(values: [f64; 12]) -> SurfacePrototypeRecord {
             offset: 0,
             value_offset: 0,
         }],
-        offset: 0,
-    }
-}
-
-fn tabulated_cylinder_record(values: Vec<Option<f64>>) -> SurfacePrototypeRecord {
-    SurfacePrototypeRecord {
-        family: SurfacePrototypeFamily::Extrusion(
-            crate::surface::ExtrusionLabel::TabulatedCylinder,
-        ),
-        parameters: vec![SurfaceNamedParameter {
-            name: "local_sys".to_string(),
-            value: SurfaceNamedValue::ScalarArray({
-                let mut array = crate::surface::arrays::DimensionedScalars::empty(4, 3)
-                    .expect("valid scalar array");
-                array.fill_values(values).expect("matching scalar extent");
-                array
-            }),
-            body: Vec::new(),
-            offset: 0,
-            value_offset: 0,
-        }],
-        offset: 0,
-    }
+        0,
+    )
 }
 
 #[test]
@@ -64,13 +43,32 @@ fn rejects_ambiguous_support_candidates() {
     assert_eq!(prototype_local_frame(&record), None);
 }
 
+fn tabulated_cylinder_record(values: Vec<Option<f64>>) -> SurfacePrototypeRecord {
+    SurfacePrototypeRecord::new_for_test(
+        SurfacePrototypeFamily::Extrusion(crate::surface::ExtrusionLabel::TabulatedCylinder),
+        vec![SurfaceNamedParameter {
+            name: "local_sys".to_string(),
+            value: SurfaceNamedValue::ScalarArray({
+                let mut array = crate::surface::arrays::DimensionedScalars::empty(4, 3)
+                    .expect("valid scalar array");
+                array.fill_values(values).expect("matching scalar extent");
+                array
+            }),
+            body: Vec::new(),
+            offset: 0,
+            value_offset: 0,
+        }],
+        0,
+    )
+}
+
 #[test]
 fn tabulated_cylinder_uses_complete_local_system_origin() {
     let mut values = vec![Some(0.0); 12];
     values[9..12].copy_from_slice(&[Some(-4.0), Some(2.5), Some(8.0)]);
 
     assert_eq!(
-        tabulated_cylinder_record(values).tabulated_cylinder_chart_origin(),
+        super::super::prototype_tabulated_chart_origin(&tabulated_cylinder_record(values)),
         Some([-4.0, 2.5, 8.0])
     );
 }
@@ -81,7 +79,7 @@ fn tabulated_cylinder_uses_compact_local_system_chart_origin() {
     values.extend([Some(-12.25), Some(-7.5), Some(0.0), None, None]);
 
     assert_eq!(
-        tabulated_cylinder_record(values).tabulated_cylinder_chart_origin(),
+        super::super::prototype_tabulated_chart_origin(&tabulated_cylinder_record(values)),
         Some([-12.25, -7.5, 0.0])
     );
 }
@@ -92,7 +90,7 @@ fn tabulated_cylinder_chart_origin_rejects_other_local_system_shapes() {
     values.extend([Some(-12.25), Some(-7.5), None, None, None]);
 
     assert_eq!(
-        tabulated_cylinder_record(values).tabulated_cylinder_chart_origin(),
+        super::super::prototype_tabulated_chart_origin(&tabulated_cylinder_record(values)),
         None
     );
 }

@@ -4,49 +4,61 @@
 use super::super::uniqueness::unique_feature_definition_for_transform;
 use crate::container::ContainerScan;
 use crate::feature::schema::SchemaClass;
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{AngularTermination, RevolveExtent};
 #[cfg(test)]
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 
 pub(in super::super) fn feature_recipe(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     feature_id: u32,
-) -> Option<crate::feature::operations::FeatureRecipeKind> {
-    current_feature_recipe(&scan.features.operations, feature_id)
-        .map(crate::feature::operations::FeatureRecipe::kind)
-}
-
-pub(in super::super) fn feature_recipe_effect(
-    scan: &ContainerScan,
-    feature_id: u32,
-) -> Option<crate::feature::operations::FeatureRecipeEffect> {
-    current_feature_recipe(&scan.features.operations, feature_id)
-        .map(crate::feature::operations::FeatureRecipe::effect)
+) -> Result<Option<crate::feature::operations::FeatureRecipeKind>, CodecError> {
+    Ok(
+        current_feature_recipe(ctx, &scan.features.operations, feature_id)?
+            .map(crate::feature::operations::FeatureRecipe::kind),
+    )
 }
 
 pub(in super::super) fn feature_section_sweep_semantics_conflict(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     feature_id: u32,
-) -> bool {
-    current_feature_operation(&scan.features.operations, feature_id).is_some_and(|operation| {
-        operation.recipe.is_conflicting()
-            || (operation.display_state_conflict
-                && matches!(
-                    operation.recipe,
-                    crate::feature::operations::RecipeResolution::None
-                )
-                && operation.kind == crate::feature::operations::OperationKind::Native)
-    })
+) -> Result<bool, CodecError> {
+    let Some(operation) = current_feature_operation(ctx, &scan.features.operations, feature_id)?
+    else {
+        return Ok(false);
+    };
+    if operation.recipe.is_conflicting() {
+        return Ok(true);
+    }
+    if !operation.display_state_conflict
+        || !matches!(
+            operation.recipe,
+            crate::feature::operations::RecipeResolution::None
+        )
+    {
+        return Ok(false);
+    }
+    Ok(matches!(
+        operation.kind,
+        crate::feature::operations::OperationKind::Native
+    ))
 }
 
 pub(in super::super) fn current_additive_feature_recipe(
+    ctx: &DecodeContext<'_>,
     operations: &[crate::feature::operations::FeatureOperation],
     feature_id: u32,
-) -> Option<crate::feature::operations::FeatureRecipeKind> {
-    let recipe = current_feature_recipe(operations, feature_id)?;
-    (recipe.effect() == crate::feature::operations::FeatureRecipeEffect::Protrude)
-        .then(|| recipe.kind())
+) -> Result<Option<crate::feature::operations::FeatureRecipeKind>, CodecError> {
+    Ok(
+        current_feature_recipe(ctx, operations, feature_id)?.and_then(|recipe| {
+            (recipe.effect() == crate::feature::operations::FeatureRecipeEffect::Protrude)
+                .then(|| recipe.kind())
+        }),
+    )
 }
 
 #[cfg(test)]
@@ -74,14 +86,33 @@ pub(in super::super) fn feature_is_first_material_operation(
     scan: &ContainerScan,
     feature_id: u32,
 ) -> Result<bool, cadmpeg_core::CodecError> {
+    let (unique_operations, _operation_storage) = ctx.unique_index(
+        scan.features
+            .operations
+            .iter()
+            .map(|row| (row.feature_id, row)),
+        "creo first material identity rows",
+    )?;
+    if unique_operations
+        .get(&feature_id)
+        .is_none_or(Option::is_none)
+    {
+        return Ok(false);
+    }
+    let mut transforms_by_feature = None;
     let mut target_offset = None;
     let mut earliest_other_offset: Option<usize> = None;
-    for operation in &scan.features.operations {
+    for operation in ctx.admit_iter(
+        &scan.features.operations,
+        "creo first material operation rows",
+    )? {
         let candidate = operation.feature_id;
-        let Some(operation) = current_feature_operation(&scan.features.operations, candidate)
-        else {
+        if unique_operations
+            .get(&candidate)
+            .is_none_or(Option::is_none)
+        {
             continue;
-        };
+        }
         let recipe_is_material = operation.recipe.resolved().is_some_and(|recipe| {
             matches!(
                 recipe.effect(),
@@ -91,23 +122,32 @@ pub(in super::super) fn feature_is_first_material_operation(
         });
         if !recipe_is_material
             && !matches!(
-                feature_schema_class(scan, candidate),
+                feature_schema_class_with_operation(ctx, scan, candidate, Some(operation))?,
                 Some(SchemaClass::Cut | SchemaClass::Protrusion)
             )
         {
             continue;
         }
-        let mut transforms = scan
-            .features
-            .section_transforms
-            .iter()
-            .filter(|transform| transform.feature_id == Some(candidate));
-        let Some(transform) = transforms.next() else {
+        if transforms_by_feature.is_none() {
+            transforms_by_feature = Some(
+                ctx.unique_index(
+                    ctx.admit_iter(
+                        &scan.features.section_transforms,
+                        "creo first material section transforms",
+                    )?
+                    .filter_map(|row| row.feature_id.map(|id| (id, row))),
+                    "creo first material transform identities",
+                )?,
+            );
+        }
+        let Some(transform) = transforms_by_feature
+            .as_ref()
+            .and_then(|(transforms, _storage)| transforms.get(&candidate))
+            .copied()
+            .flatten()
+        else {
             continue;
         };
-        if transforms.next().is_some() {
-            continue;
-        }
         let Some(definition) =
             unique_feature_definition_for_transform(ctx, &scan.features.definitions, transform)?
         else {
@@ -129,75 +169,139 @@ pub(in super::super) fn feature_is_first_material_operation(
 }
 
 pub(in super::super) fn current_feature_recipe(
+    ctx: &DecodeContext<'_>,
     operations: &[crate::feature::operations::FeatureOperation],
     feature_id: u32,
-) -> Option<crate::feature::operations::FeatureRecipe> {
-    current_feature_operation(operations, feature_id)?
-        .recipe
-        .resolved()
+) -> Result<Option<crate::feature::operations::FeatureRecipe>, CodecError> {
+    Ok(current_feature_operation(ctx, operations, feature_id)?
+        .and_then(|operation| operation.recipe.resolved()))
 }
 
 pub(in super::super) fn current_feature_recipe_parent(
+    ctx: &DecodeContext<'_>,
     operations: &[crate::feature::operations::FeatureOperation],
     feature_id: u32,
-) -> Option<u32> {
-    let operation = current_feature_operation(operations, feature_id)?;
-    operation.recipe.resolved()?;
-    operation.parent_feature_id()
+) -> Result<Option<u32>, CodecError> {
+    Ok(
+        current_feature_operation(ctx, operations, feature_id)?.and_then(|operation| {
+            operation.recipe.resolved()?;
+            operation.parent_feature_id()
+        }),
+    )
 }
 
-pub(in super::super) fn current_feature_operation(
-    operations: &[crate::feature::operations::FeatureOperation],
+pub(in super::super) fn current_feature_operation<'operations>(
+    ctx: &DecodeContext<'_>,
+    operations: &'operations [crate::feature::operations::FeatureOperation],
     feature_id: u32,
-) -> Option<&crate::feature::operations::FeatureOperation> {
-    let mut matches = operations
-        .iter()
-        .filter(|operation| operation.feature_id == feature_id);
-    let operation = matches.next()?;
-    matches.next().is_none().then_some(operation)
+) -> Result<Option<&'operations crate::feature::operations::FeatureOperation>, CodecError> {
+    let mut selected = None;
+    let mut operations = operations.iter();
+    while operations.len() != 0 {
+        let Some(operation) =
+            ctx.next_charged(&mut operations, "creo current feature operation rows")?
+        else {
+            break;
+        };
+        if operation.feature_id == feature_id {
+            if selected.is_some() {
+                return Ok(None);
+            }
+            selected = Some(operation);
+        }
+    }
+    Ok(selected)
 }
 
 pub(in super::super) fn feature_schema_class(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     feature_id: u32,
-) -> Option<SchemaClass> {
+) -> Result<Option<SchemaClass>, cadmpeg_core::CodecError> {
+    let operation = current_feature_operation(ctx, &scan.features.operations, feature_id)?;
+    feature_schema_class_with_operation(ctx, scan, feature_id, operation)
+}
+
+fn feature_schema_class_with_operation(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan,
+    feature_id: u32,
+    operation: Option<&crate::feature::operations::FeatureOperation>,
+) -> Result<Option<SchemaClass>, CodecError> {
     resolved_feature_schema_class_from_classes(
-        &scan.features.operations,
-        scan.features
-            .rows
-            .iter()
-            .chain(scan.features.depdb_recipe_rows.iter())
-            .filter(|row| row.feature_id == feature_id)
-            .filter_map(|row| row.root_schema_class),
-        feature_id,
+        operation,
+        |visit_class| {
+            for (rows, operation) in [
+                (&scan.features.rows, "creo feature schema rows"),
+                (
+                    &scan.features.depdb_recipe_rows,
+                    "creo feature depdb schema rows",
+                ),
+            ] {
+                if rows.is_empty() {
+                    continue;
+                }
+                let mut rows = rows.iter();
+                while rows.len() != 0 {
+                    let Some(row) = ctx.next_charged(&mut rows, operation)? else {
+                        break;
+                    };
+                    if row.feature_id != feature_id {
+                        continue;
+                    }
+                    let Some(schema_class) = row.root_schema_class else {
+                        continue;
+                    };
+                    if matches!(visit_class(schema_class)?, std::ops::ControlFlow::Break(())) {
+                        return Ok(());
+                    }
+                }
+            }
+            Ok(())
+        },
+        || {
+            let mut rounds = scan.features.legacy_rounds.iter();
+            while rounds.len() != 0 {
+                let Some(round) = ctx.next_charged(&mut rounds, "creo legacy round schema rows")?
+                else {
+                    break;
+                };
+                if round.feature_id == feature_id {
+                    return Ok(true);
+                }
+            }
+            Ok(false)
+        },
     )
-    .or_else(|| {
-        scan.features
-            .legacy_rounds
-            .iter()
-            .any(|round| round.feature_id == feature_id)
-            .then_some(SchemaClass::Round)
-    })
 }
 
 pub(in super::super) fn resolved_feature_schema_class_from_classes(
-    operations: &[crate::feature::operations::FeatureOperation],
-    classes: impl IntoIterator<Item = SchemaClass>,
-    feature_id: u32,
-) -> Option<SchemaClass> {
-    if let Some(schema_class) = current_feature_operation(operations, feature_id)
-        .and_then(crate::feature::operations::FeatureOperation::root_schema_class)
+    operation: Option<&crate::feature::operations::FeatureOperation>,
+    visit_classes: impl FnOnce(
+        &mut dyn FnMut(SchemaClass) -> Result<std::ops::ControlFlow<()>, cadmpeg_core::CodecError>,
+    ) -> Result<(), cadmpeg_core::CodecError>,
+    has_legacy_round: impl FnOnce() -> Result<bool, cadmpeg_core::CodecError>,
+) -> Result<Option<SchemaClass>, cadmpeg_core::CodecError> {
+    if let Some(schema_class) =
+        operation.and_then(crate::feature::operations::FeatureOperation::root_schema_class)
     {
-        return Some(schema_class);
+        return Ok(Some(schema_class));
     }
     let mut selected = None;
-    for schema_class in classes {
+    let mut conflict = false;
+    let mut visit_class = |schema_class| {
         if selected.is_some_and(|previous| previous != schema_class) {
-            return None;
+            conflict = true;
+            return Ok(std::ops::ControlFlow::Break(()));
         }
         selected = Some(schema_class);
+        Ok(std::ops::ControlFlow::Continue(()))
+    };
+    visit_classes(&mut visit_class)?;
+    if !conflict && selected.is_some() {
+        return Ok(selected);
     }
-    selected
+    Ok(has_legacy_round()?.then_some(SchemaClass::Round))
 }
 
 pub(in super::super) fn feature_row_schema_classes(
@@ -206,11 +310,12 @@ pub(in super::super) fn feature_row_schema_classes(
     feature_id: u32,
 ) -> Result<BTreeSet<SchemaClass>, cadmpeg_core::CodecError> {
     let mut classes = BTreeSet::new();
-    for row in scan
-        .features
-        .rows
-        .iter()
-        .chain(scan.features.depdb_recipe_rows.iter())
+    for row in ctx
+        .admit_iter(&scan.features.rows, "creo feature schema class rows")?
+        .chain(ctx.admit_iter(
+            &scan.features.depdb_recipe_rows,
+            "creo depdb feature schema class rows",
+        )?)
     {
         if row.feature_id == feature_id {
             if let Some(schema_class) = row.root_schema_class {
@@ -231,7 +336,10 @@ pub(in super::super) fn row_feature_schema_classes(
     feature_id: u32,
 ) -> Result<BTreeSet<SchemaClass>, cadmpeg_core::CodecError> {
     let mut classes = BTreeSet::new();
-    for row in rows.iter().filter(|row| row.feature_id == feature_id) {
+    for row in ctx
+        .admit_iter(rows, "creo row feature schema classes")?
+        .filter(|row| row.feature_id == feature_id)
+    {
         if let Some(schema_class) = row.root_schema_class {
             ctx.insert_btree_set(&mut classes, schema_class, "creo row schema class nodes")?;
         }
@@ -240,25 +348,36 @@ pub(in super::super) fn row_feature_schema_classes(
 }
 
 pub(in super::super) fn feature_revolution_extent(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     feature_id: u32,
-) -> Option<RevolveExtent> {
-    unique_feature_revolution_extent(&scan.features.revolution_extents, feature_id).map(|_| {
-        RevolveExtent::OneSided {
-            termination: AngularTermination::Angle {
-                angle: cadmpeg_ir::scalar::PositiveAngle::FULL_TURN,
-            },
-        }
-    })
+) -> Result<Option<RevolveExtent>, cadmpeg_core::CodecError> {
+    let extent =
+        unique_feature_revolution_extent(ctx, &scan.features.revolution_extents, feature_id)?;
+    Ok(extent.map(|_| RevolveExtent::OneSided {
+        termination: AngularTermination::Angle {
+            angle: cadmpeg_ir::scalar::PositiveAngle::FULL_TURN,
+        },
+    }))
 }
 
-pub(in super::super) fn unique_feature_revolution_extent(
-    records: &[crate::feature::rows::FeatureRevolutionExtent],
+pub(in super::super) fn unique_feature_revolution_extent<'records>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    records: &'records [crate::feature::rows::FeatureRevolutionExtent],
     feature_id: u32,
-) -> Option<&crate::feature::rows::FeatureRevolutionExtent> {
-    records
-        .iter()
-        .find(|record| record.feature_id == feature_id)
+) -> Result<Option<&'records crate::feature::rows::FeatureRevolutionExtent>, cadmpeg_core::CodecError>
+{
+    let mut records = records.iter();
+    while records.len() != 0 {
+        let Some(record) = ctx.next_charged(&mut records, "creo feature revolution extent rows")?
+        else {
+            break;
+        };
+        if record.feature_id == feature_id {
+            return Ok(Some(record));
+        }
+    }
+    Ok(None)
 }
 
 #[cfg(test)]

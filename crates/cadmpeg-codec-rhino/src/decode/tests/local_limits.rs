@@ -171,49 +171,29 @@ fn instance_path_segment_refuses_scoped_storage_before_formatting() {
         1,
         POINT_CLASS,
     )]);
-    let record_storage =
-        u64::try_from(std::mem::size_of::<cadmpeg_ir::unknown::UnknownRecord>()).unwrap();
-    // Four buckets of (UUID, positions) pairs: bucket storage, alignment
-    // padding (15), one control byte per bucket and 16 trailing control bytes.
-    let candidate_table =
-        u64::try_from(4 * std::mem::size_of::<(crate::wire::Uuid, Vec<usize>)>() + 15 + 4 + 16)
-            .expect("candidate table layout");
-    // Scoped storage the transaction holds once it is built.
-    let settled = candidate_table
-        + u64::try_from(
-            4 * std::mem::size_of::<usize>()
-                + 8 * std::mem::size_of::<Option<super::super::GeometryOutcome>>(),
-        )
-        .expect("transaction lookup layout")
-        + record_storage;
-    // While the candidate table is filled, a second reservation of its size is
-    // held beside the charged table, so the limit must admit two tables.
-    let limit = (2 * candidate_table).max(settled);
-    // The object's identity does not resolve to its own record, so its path
-    // segment is the record position and offset; leave one byte too few.
-    let segment_bytes =
-        u64::try_from(format!("record-{:06}-offset-{}", 0, scan.objects[0].range().start).len())
-            .expect("segment length");
-    let scratch_bytes = limit - settled - (segment_bytes - 1);
-    with_transaction_limits(&scan, 100, None, Some(limit), |expand| {
-        let context = DecodeContext::new(&scan, expand).expect("transaction");
-        let mut scratch = expand
-            .ctx()
-            .reserve_scoped(scratch_bytes, "Rhino instance traversal scratch")
-            .expect("scratch fits beside the settled transaction");
-        let error = context
-            .reference_segment(
-                0,
-                scan.objects[0].identity().expect("identity"),
-                &mut scratch,
-            )
-            .expect_err("path segment needs scoped storage");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
-            if refusal.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
-                && refusal.operation == "Rhino instance path segment")
-        );
-    });
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        "Rhino instance path segment",
+        |cap| {
+            with_transaction_limits(&scan, 100, None, Some(cap), |expand| {
+                let context = DecodeContext::new(&scan, expand)?;
+                // One KiB of live traversal scratch keeps the segment boundary above setup's peak.
+                let mut scratch = expand
+                    .ctx()
+                    .reserve_scoped(1024, "Rhino instance traversal scratch")?;
+                context.reference_segment(
+                    0,
+                    scan.objects[0].identity().expect("identity"),
+                    &mut scratch,
+                )
+            })
+        },
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+        if refusal.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
+            && refusal.operation == "Rhino instance path segment")
+    );
 }
 
 #[test]
@@ -249,7 +229,8 @@ fn transformed_instance_links_refuse_scoped_slots_before_copy() {
                 cadmpeg_ir::transform::Transform::identity(),
                 &mut scratch,
             )
-            .expect_err("link slot needs scoped storage");
+            .err()
+            .expect("link slot needs scoped storage");
         assert!(
             matches!(error, super::ReferenceFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(refusal))
             if refusal.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
@@ -293,7 +274,8 @@ fn transformed_instance_identity_refuses_scoped_text_before_copy() {
                 cadmpeg_ir::transform::Transform::identity(),
                 &mut scratch,
             )
-            .expect_err("identity needs storage beyond its slot");
+            .err()
+            .expect("identity needs storage beyond its slot");
         assert!(
             matches!(error, super::ReferenceFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(refusal))
             if refusal.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
@@ -327,7 +309,8 @@ fn transformed_instance_annotation_ids_refuse_scoped_slots_before_copy() {
                 cadmpeg_ir::transform::Transform::identity(),
                 &mut scratch,
             )
-            .expect_err("annotation identity slot needs scoped storage");
+            .err()
+            .expect("annotation identity slot needs scoped storage");
         assert!(
             matches!(error, super::ReferenceFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(refusal))
             if refusal.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes

@@ -44,10 +44,13 @@ pub fn scalar(
     data: &[u8],
 ) -> Result<(), cadmpeg_core::CodecError> {
     let cache = ScalarCache::from_section_checked(ctx, data)?;
-    let mut offset = 0usize;
-    while offset < data.len() {
+    let mut offsets = 0usize..data.len();
+    while !offsets.is_empty() {
+        let Some(offset) = ctx.next_charged(&mut offsets, "creo fuzz scalar traversal")? else {
+            break;
+        };
         match decode_in_lane(data, offset, &cache) {
-            Some((_, next)) if next > offset => offset = next,
+            Some((_, next)) if next > offset => offsets.start = next,
             _ => break,
         }
     }
@@ -61,8 +64,13 @@ pub fn compact_int(data: &[u8]) {
 }
 
 /// Exercise Creo PSB token stream parsing.
-pub fn psb_tokens(data: &[u8]) {
-    let _probe = crate::psb::tokens(data).count();
+pub fn psb_tokens(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    data: &[u8],
+) -> Result<(), cadmpeg_core::CodecError> {
+    let _probe =
+        crate::psb::tokens(ctx, data).try_fold(0usize, |count, token| token.map(|_| count + 1))?;
+    Ok(())
 }
 
 /// Exercise Creo short-form float decoding.
@@ -80,7 +88,13 @@ pub fn container_scan(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let _probe = crate::container::scan_bytes(ctx, data)?;
+    let scan_owned_storage = ctx.with_scoped_storage("creo container scan storage", || {
+        crate::container::scan_bytes(ctx, data)
+    })?;
+    let scan_storage = scan_owned_storage.1;
+    let scan = scan_owned_storage.0;
+    drop(scan);
+    drop(scan_storage);
     Ok(())
 }
 
@@ -97,7 +111,8 @@ mod tests {
         crate::decode::with_test_decode_ctx(|ctx| super::scalar(ctx, &[]))
             .expect("scalar fuzz wrapper");
         super::compact_int(&[]);
-        super::psb_tokens(&[]);
+        crate::decode::with_test_decode_ctx(|ctx| super::psb_tokens(ctx, &[]))
+            .expect("PSB token fuzz wrapper");
         super::short_form_float(&[]);
         let _probe = crate::decode::with_test_decode_ctx(|ctx| super::container_scan(ctx, &[]));
     }
@@ -114,7 +129,8 @@ mod tests {
         crate::decode::with_test_decode_ctx(|ctx| super::scalar(ctx, &data))
             .expect("scalar fuzz wrapper");
         super::compact_int(&data);
-        super::psb_tokens(&data);
+        crate::decode::with_test_decode_ctx(|ctx| super::psb_tokens(ctx, &data))
+            .expect("PSB token fuzz wrapper");
         super::short_form_float(&data);
         crate::decode::with_test_decode_ctx(|ctx| super::container_scan(ctx, &data))
             .expect("container fuzz wrapper");
@@ -157,5 +173,67 @@ mod tests {
                 && refusal.limit == refusal.used
                 && refusal.additional > 0)
         );
+    }
+    #[test]
+    fn scalar_probe_admits_each_visited_value() {
+        let data = [0x00, 0x00];
+        crate::test_support::assert_work_boundaries(&["creo fuzz scalar traversal"], |ctx| {
+            super::scalar(ctx, &data)
+        });
+    }
+
+    #[test]
+    fn scalar_probe_empty_range_uses_zero_work() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+        super::scalar(&ctx, &[]).expect("empty scalar probe does no work");
+        assert_eq!(ctx.resource_refusal(), None);
+    }
+
+    #[test]
+    fn scalar_probe_releases_cache_backing_before_return() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+        const CAP: u64 = 16 * 1024;
+        let data = [0x46, 0, 0, 0, 0, 0, 0, 0];
+        for scoped in [false, true] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = CAP;
+            policy.limits.max_materialized_bytes = CAP;
+            let (ctx, _) = DecodeContext::from_root_bytes(&data, &arena, &policy).expect("root");
+            let output_storage = if scoped {
+                Some(
+                    ctx.with_scoped_storage("scalar probe parent", || super::scalar(&ctx, &data))
+                        .expect("scoped probe")
+                        .1,
+                )
+            } else {
+                super::scalar(&ctx, &data).expect("probe");
+                None
+            };
+            let refusal = if scoped {
+                ctx.reserve_scoped_limit(CAP + 1, "after scalar probe")
+                    .expect_err("empty live output")
+            } else {
+                ctx.charge_retained_limit(CAP + 1, "after scalar probe")
+                    .expect_err("empty retained output")
+            };
+            assert_eq!(
+                refusal.dimension,
+                if scoped {
+                    ResourceDimension::MaterializedBytes
+                } else {
+                    ResourceDimension::RetainedBytes
+                }
+            );
+            assert_eq!((refusal.used, refusal.additional), (0, CAP + 1));
+            drop(output_storage);
+        }
     }
 }

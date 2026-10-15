@@ -2,7 +2,6 @@ use crate::families::b5::graph::B5Graph;
 use crate::families::b5::graph::B5Profile;
 use crate::families::b5::graph::B5Surface;
 use crate::families::standard::decode::attach_free_vertices;
-use crate::families::standard::decode::copy_standard_extrusion_definition;
 use crate::families::standard::decode::edge_geometry::analytic_surface_uv;
 use crate::families::standard::decode::edge_geometry::build_standard_edge_curve;
 use crate::families::standard::decode::edge_geometry::circle_axis_from_endpoints;
@@ -10,23 +9,22 @@ use crate::families::standard::decode::edge_geometry::circular_range_choices_hav
 use crate::families::standard::decode::edge_geometry::circular_ranges_are_nonoverlapping_or_coincident;
 use crate::families::standard::decode::edge_geometry::native_support_circle_param_range;
 use crate::families::standard::decode::edge_geometry::point_on_surface;
+use crate::families::standard::decode::edge_geometry::resolve_standard_limit_curve_binding;
 use crate::families::standard::decode::edge_geometry::standard_circle_param_range;
+use crate::families::standard::decode::edge_geometry::standard_limit_curve_bindings;
+use crate::families::standard::decode::edge_geometry::standard_limit_curve_point_parameter;
+use crate::families::standard::decode::edge_geometry::standard_line_pair_solution_is_simple;
+use crate::families::standard::decode::edge_geometry::standard_line_pair_solution_is_simple_cached;
 use crate::families::standard::decode::edge_geometry::standard_oriented_native_support_pcurves;
+use crate::families::standard::decode::edge_geometry::standard_shared_nurbs_boundary_pair_options as charged_shared_nurbs_boundary_pair_options;
 use crate::families::standard::decode::refine_repeated_face_domains_by_geometry_and_bounds;
 use crate::families::standard::decode::resolve_standard_endpoint_pairs;
-use crate::families::standard::decode::resolve_standard_limit_curve_binding;
 use crate::families::standard::decode::retry_rejected_mesh_solution;
 use crate::families::standard::decode::standard_edge_identity_is_admitted;
-use crate::families::standard::decode::standard_extrusion_support_id;
-use crate::families::standard::decode::standard_limit_curve_bindings;
-use crate::families::standard::decode::standard_limit_curve_point_parameter;
-use crate::families::standard::decode::standard_line_pair_solution_is_simple;
-use crate::families::standard::decode::standard_line_pair_solution_is_simple_cached;
 use crate::families::standard::decode::standard_native_support_endpoint_pair;
 use crate::families::standard::decode::standard_object_evidence_from_streams;
 use crate::families::standard::decode::standard_plane_normals_from_face_frames;
 use crate::families::standard::decode::standard_shared_boundary_group_domains as charged_shared_boundary_group_domains;
-use crate::families::standard::decode::standard_shared_nurbs_boundary_pair_options as charged_shared_nurbs_boundary_pair_options;
 use crate::families::standard::decode::standard_surface_evidence;
 use crate::families::standard::decode::StandardEdgeSupport;
 use crate::families::standard::decode::StandardSurfaceProcedure;
@@ -62,101 +60,6 @@ use std::cell::Cell;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::collections::HashSet;
-
-#[test]
-fn standard_evidence_store_refuses_each_collection_before_retaining_geometry() {
-    use crate::families::standard::decode::{StandardEvidenceStore, StandardSurfaceEvidence};
-
-    let build = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-        let mut store = StandardEvidenceStore::default();
-        store.add(
-            ctx,
-            17,
-            StandardSurfaceEvidence::Geometry(SurfaceGeometry::Solved(
-                SolvedSurfaceGeometry::Unknown { record: None },
-            )),
-        )?;
-        store.into_outputs(ctx, &HashSet::new())
-    };
-    for (limit, operation) in [
-        (0, "catia_standard_evidence_records"),
-        (1, "catia_standard_surface_candidates"),
-        (2, "catia_standard_surface_candidate_evidence"),
-        (3, "catia_standard_procedure_validity"),
-        (4, "catia_standard_surface_geometries"),
-    ] {
-        assert!(
-            matches!(
-                crate::test_support::with_collection_limit(limit, build),
-                Err(cadmpeg_core::CodecError::ResourceLimit(error)) if error.operation == operation
-            ),
-            "missing admission at {operation}"
-        );
-    }
-    let (geometries, procedures) =
-        crate::test_support::with_service_context(build).expect("service context admits evidence");
-    assert_eq!(geometries.len(), 1);
-    assert!(matches!(
-        geometries.get(&17),
-        Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
-            record: None
-        }))
-    ));
-    assert!(procedures.is_empty());
-}
-
-#[test]
-fn standard_population_object_copy_refuses_retained_limit() {
-    let stream = b5_closed_triangle_stream();
-    let mut cap = 0;
-    let mut reached = false;
-    for _ in 0..128 {
-        let refusal = crate::test_support::with_retained_limit(cap, |ctx| {
-            standard_object_evidence_from_streams(
-                ctx,
-                [stream.clone()],
-                &HashSet::new(),
-                &HashSet::new(),
-                &mut crate::nurbs::LaneRefusals::new(),
-            )
-        });
-        match refusal {
-            Err(cadmpeg_core::CodecError::ResourceLimit(error))
-                if error.operation == "catia_standard_population_object_bytes" =>
-            {
-                reached = true;
-                break;
-            }
-            Err(cadmpeg_core::CodecError::ResourceLimit(error)) => {
-                cap = error
-                    .used
-                    .checked_add(error.additional)
-                    .expect("bounded fixture");
-            }
-            Ok(_) => panic!("population copy admitted before its limit"),
-            Err(error) => panic!("unexpected population copy refusal: {error}"),
-        }
-    }
-    assert!(reached, "population copy limit was not reached");
-}
-
-#[test]
-fn standard_object_record_scan_refuses_caller_collection_limit() {
-    let stream = b5_closed_triangle_stream();
-    let refused = crate::test_support::with_collection_limit(0, |ctx| {
-        standard_object_evidence_from_streams(
-            ctx,
-            [stream],
-            &HashSet::new(),
-            &HashSet::new(),
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-    });
-    assert!(
-        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_record_source_ranges")
-    );
-}
 
 fn standard_shared_boundary_group_domains(
     supports: &[StandardCurveSupport],
@@ -206,13 +109,17 @@ fn repeated_face_domain_geometry_and_bounds_keep_only_a_unique_winner() {
     ];
     let mut allowed_faces = vec![vec![1, 2]];
 
-    refine_repeated_face_domains_by_geometry_and_bounds(
-        &edge_faces,
-        &mut allowed_faces,
-        Some(&face_bounds),
-        None,
-        &[],
-    );
+    crate::test_support::with_service_context(|ctx| {
+        refine_repeated_face_domains_by_geometry_and_bounds(
+            ctx,
+            &edge_faces,
+            &mut allowed_faces,
+            Some(&face_bounds),
+            None,
+            &[],
+        )
+    })
+    .expect("service resource budget");
     assert_eq!(allowed_faces, vec![vec![1]]);
 
     let face_bounds = [
@@ -221,13 +128,17 @@ fn repeated_face_domain_geometry_and_bounds_keep_only_a_unique_winner() {
         Some(bounds([0.0, 0.0, 0.0], [1.0, 1.0, 1.0])),
     ];
     let mut tied = vec![vec![1, 2]];
-    refine_repeated_face_domains_by_geometry_and_bounds(
-        &edge_faces,
-        &mut tied,
-        Some(&face_bounds),
-        None,
-        &[],
-    );
+    crate::test_support::with_service_context(|ctx| {
+        refine_repeated_face_domains_by_geometry_and_bounds(
+            ctx,
+            &edge_faces,
+            &mut tied,
+            Some(&face_bounds),
+            None,
+            &[],
+        )
+    })
+    .expect("service resource budget");
     assert_eq!(tied, vec![vec![1, 2]]);
 
     let face_bounds = [
@@ -236,13 +147,17 @@ fn repeated_face_domain_geometry_and_bounds_keep_only_a_unique_winner() {
         None,
     ];
     let mut incomplete = vec![vec![1, 2]];
-    refine_repeated_face_domains_by_geometry_and_bounds(
-        &edge_faces,
-        &mut incomplete,
-        Some(&face_bounds),
-        None,
-        &[],
-    );
+    crate::test_support::with_service_context(|ctx| {
+        refine_repeated_face_domains_by_geometry_and_bounds(
+            ctx,
+            &edge_faces,
+            &mut incomplete,
+            Some(&face_bounds),
+            None,
+            &[],
+        )
+    })
+    .expect("service resource budget");
     assert_eq!(incomplete, vec![vec![1, 2]]);
 }
 
@@ -278,13 +193,17 @@ fn repeated_circle_face_domain_prefers_a_distinct_carrier_before_bounds() {
     let edge_geometries = [super::checked_circle(Point3::new(0.0, 0.0, 0.0), 1.0)];
     let mut allowed_faces = vec![vec![1, 2]];
 
-    refine_repeated_face_domains_by_geometry_and_bounds(
-        &edge_faces,
-        &mut allowed_faces,
-        Some(&face_bounds),
-        Some(&face_geometries.iter().collect::<Vec<_>>()),
-        &edge_geometries.iter().collect::<Vec<_>>(),
-    );
+    crate::test_support::with_service_context(|ctx| {
+        refine_repeated_face_domains_by_geometry_and_bounds(
+            ctx,
+            &edge_faces,
+            &mut allowed_faces,
+            Some(&face_bounds),
+            Some(&face_geometries.iter().collect::<Vec<_>>()),
+            &edge_geometries.iter().collect::<Vec<_>>(),
+        )
+    })
+    .expect("service resource budget");
     assert_eq!(allowed_faces, vec![vec![1]]);
 }
 
@@ -333,10 +252,11 @@ fn targeted_face_surface_evidence_follows_an_analytic_offset() {
     let evidence = crate::test_support::with_service_context(|ctx| {
         standard_object_evidence_from_streams(
             ctx,
-            [stream.clone(), stream.clone()],
-            &HashSet::from([10]),
+            &[stream.clone(), stream.clone()],
+            &std::collections::BTreeSet::from([10]),
             &HashSet::new(),
             &mut crate::nurbs::LaneRefusals::new(),
+            &mut crate::families::standard::decode::LimitCurveIndex::new(ctx).expect("empty index"),
         )
     })
     .expect("service resource budget");
@@ -354,10 +274,11 @@ fn targeted_face_surface_evidence_follows_an_analytic_offset() {
     let evidence = crate::test_support::with_service_context(|ctx| {
         standard_object_evidence_from_streams(
             ctx,
-            [stream, conflicting],
-            &HashSet::from([10]),
+            &[stream, conflicting],
+            &std::collections::BTreeSet::from([10]),
             &HashSet::new(),
             &mut crate::nurbs::LaneRefusals::new(),
+            &mut crate::families::standard::decode::LimitCurveIndex::new(ctx).expect("empty index"),
         )
     })
     .expect("service resource budget");
@@ -393,11 +314,15 @@ fn targeted_surface_evidence_retains_revolution_construction() {
         parameter_incidences: BTreeMap::new(),
         edges: BTreeMap::new(),
         vertex_incidence_links: BTreeMap::new(),
-        vertices: crate::families::b5::graph::vertex_refs::B5Vertices::try_new(
-            Vec::new(),
-            Vec::new(),
-            BTreeMap::new(),
-        )
+        vertices: crate::test_support::with_service_context(|ctx| {
+            crate::families::b5::graph::vertex_refs::B5Vertices::try_new(
+                ctx,
+                Vec::new(),
+                Vec::new(),
+                BTreeMap::new(),
+            )
+        })
+        .expect("service vertex admission budget")
         .expect("valid vertex bindings"),
         edge_parameter_incidences: BTreeMap::new(),
         vertex_tolerances: BTreeMap::new(),
@@ -475,10 +400,11 @@ fn object_evidence_exports_revolution_cache_and_construction() {
     let evidence = crate::test_support::with_service_context(|ctx| {
         standard_object_evidence_from_streams(
             ctx,
-            [stream],
-            &HashSet::from([120]),
+            &[stream],
+            &std::collections::BTreeSet::from([120]),
             &HashSet::new(),
             &mut crate::nurbs::LaneRefusals::new(),
+            &mut crate::families::standard::decode::LimitCurveIndex::new(ctx).expect("empty index"),
         )
     })
     .expect("service resource budget");
@@ -690,24 +616,29 @@ fn non_collinear_circle_endpoints_determine_the_carrier_plane() {
 #[test]
 fn circular_face_intervals_allow_seams_but_reject_crossing_boundaries() {
     let tau = std::f64::consts::TAU;
-    assert!(circular_ranges_are_nonoverlapping_or_coincident(&[
-        [0.0, 1.0],
-        [1.0, 3.0],
-        [3.0, tau],
-    ]));
-    assert!(circular_ranges_are_nonoverlapping_or_coincident(&[
-        [0.0, std::f64::consts::PI],
-        [0.0, std::f64::consts::PI],
-        [std::f64::consts::PI, tau],
-    ]));
-    assert!(!circular_ranges_are_nonoverlapping_or_coincident(&[
-        [0.0, 4.0],
-        [2.0, 5.0],
-    ]));
-    assert!(circular_ranges_are_nonoverlapping_or_coincident(&[
-        [5.0, 7.0],
-        [7.0 - tau, 5.0],
-    ]));
+    assert!(crate::test_support::with_service_context(|ctx| {
+        circular_ranges_are_nonoverlapping_or_coincident(ctx, &[[0.0, 1.0], [1.0, 3.0], [3.0, tau]])
+    })
+    .expect("service resource budget"));
+    assert!(crate::test_support::with_service_context(|ctx| {
+        circular_ranges_are_nonoverlapping_or_coincident(
+            ctx,
+            &[
+                [0.0, std::f64::consts::PI],
+                [0.0, std::f64::consts::PI],
+                [std::f64::consts::PI, tau],
+            ],
+        )
+    })
+    .expect("service resource budget"));
+    assert!(!crate::test_support::with_service_context(|ctx| {
+        circular_ranges_are_nonoverlapping_or_coincident(ctx, &[[0.0, 4.0], [2.0, 5.0]])
+    })
+    .expect("service resource budget"));
+    assert!(crate::test_support::with_service_context(|ctx| {
+        circular_ranges_are_nonoverlapping_or_coincident(ctx, &[[5.0, 7.0], [7.0 - tau, 5.0]])
+    })
+    .expect("service resource budget"));
 }
 
 #[test]
@@ -728,15 +659,24 @@ fn circular_face_interval_choices_select_disjoint_arc_branches() {
         vec![[0.0, 3.0], [3.0, tau]],
     ];
 
-    assert!(circular_range_choices_have_simple_selection(&simple));
-    assert!(!circular_range_choices_have_simple_selection(&crossing));
+    assert!(crate::test_support::with_service_context(|ctx| {
+        circular_range_choices_have_simple_selection(ctx, &simple)
+    })
+    .expect("service resource budget"));
+    assert!(!crate::test_support::with_service_context(|ctx| {
+        circular_range_choices_have_simple_selection(ctx, &crossing)
+    })
+    .expect("service resource budget"));
 }
 
 #[test]
 fn circular_face_interval_budget_cannot_admit_an_unproved_selection() {
     let mut choices = vec![vec![[0.0, 1.0], [2.0, 3.0]]; 12];
     choices.push(vec![[0.5, 2.5]]);
-    assert!(!circular_range_choices_have_simple_selection(&choices));
+    assert!(!crate::test_support::with_service_context(|ctx| {
+        circular_range_choices_have_simple_selection(ctx, &choices)
+    })
+    .expect("service resource budget"));
 }
 
 #[test]
@@ -1089,7 +1029,7 @@ fn standard_plane_normals_require_signed_face_frame_vectors() {
 }
 
 #[test]
-fn plane_normal_candidate_and_result_maps_refuse_before_growth() {
+fn plane_normal_map_refuses_before_growth() {
     let records = [StandardSurfaceRecord::Analytic(SurfacePrefix {
         pos: 0,
         target: 10,
@@ -1103,18 +1043,13 @@ fn plane_normal_candidate_and_result_maps_refuse_before_growth() {
     })
     .expect("service resource budget");
     assert_eq!(normals.len(), 1);
-    for (cap, operation) in [
-        (0, "catia_plane_normal_candidates"),
-        (1, "catia_plane_normals"),
-    ] {
-        assert!(matches!(
-            crate::test_support::with_collection_limit(cap, |ctx| {
-                standard_plane_normals_from_face_frames(ctx, &records, &frames)
-            }),
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == operation
-        ));
-    }
+    assert!(matches!(
+        crate::test_support::with_collection_limit(0, |ctx| {
+            standard_plane_normals_from_face_frames(ctx, &records, &frames)
+        }),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_plane_normals"
+    ));
 }
 
 #[test]
@@ -1179,6 +1114,12 @@ fn standard_spline_uses_identity_bound_native_support_pcurves() {
         build_standard_edge_curve(
             ctx,
             crate::families::standard::decode::edge_geometry::BuildStandardEdgeCurveInputs {
+                support_storage: None,
+                native_surfaces:
+                    &mut crate::families::standard::decode::edge_geometry::NativeSurfaceIndex::new(
+                        admission.context(),
+                    )
+                    .expect("index reservation"),
                 ir: &mut ir,
                 annotations: &mut AnnotationBuilder::new(),
                 bindings: &[],
@@ -1627,7 +1568,7 @@ fn limit_curve_binding_retains_correlated_edge_candidates() {
         "catia_limit_curve_point_rows",
         "catia_limit_curve_point_parameters",
         "catia_limit_curve_edge_rows",
-        "catia_limit_curve_candidates",
+        "catia_limit_curve_point_queries",
         "catia_limit_curve_geometry_copy",
         "catia_limit_curve_edge_bindings",
     ] {
@@ -1650,6 +1591,12 @@ fn limit_curve_binding_retains_correlated_edge_candidates() {
         build_standard_edge_curve(
             ctx,
             crate::families::standard::decode::edge_geometry::BuildStandardEdgeCurveInputs {
+                support_storage: None,
+                native_surfaces:
+                    &mut crate::families::standard::decode::edge_geometry::NativeSurfaceIndex::new(
+                        admission.context(),
+                    )
+                    .expect("index reservation"),
                 ir: &mut ir,
                 annotations: &mut AnnotationBuilder::new(),
                 bindings: &bindings,
@@ -1684,15 +1631,21 @@ fn limit_curve_binding_retains_correlated_edge_candidates() {
     })
     .expect("service budget");
     assert_eq!(duplicated, vec![vec![*binding], vec![*binding]]);
-    let reversed = resolve_standard_limit_curve_binding(limit_candidates, [1, 0])
-        .expect("the solved endpoint pair selects the limit curve");
+    let reversed = crate::test_support::with_service_context(|ctx| {
+        resolve_standard_limit_curve_binding(ctx, limit_candidates, [1, 0])
+    })
+    .expect("service budget")
+    .expect("the solved endpoint pair selects the limit curve");
     assert_eq!(reversed.points, [1, 0]);
     assert_eq!(
         reversed.parameter_range,
         [binding.parameter_range[1], binding.parameter_range[0]]
     );
     assert_eq!(
-        resolve_standard_limit_curve_binding(&[*binding, *binding], [0, 1]),
+        crate::test_support::with_service_context(|ctx| {
+            resolve_standard_limit_curve_binding(ctx, &[*binding, *binding], [0, 1])
+        })
+        .expect("service budget"),
         None
     );
 }
@@ -1730,6 +1683,12 @@ fn standard_edge_limit_curve_copy_refuses_collection_limit() {
         build_standard_edge_curve(
             ctx,
             crate::families::standard::decode::edge_geometry::BuildStandardEdgeCurveInputs {
+                support_storage: None,
+                native_surfaces:
+                    &mut crate::families::standard::decode::edge_geometry::NativeSurfaceIndex::new(
+                        admission.context(),
+                    )
+                    .expect("index reservation"),
                 ir: &mut limited_ir,
                 annotations: &mut AnnotationBuilder::new(),
                 bindings: &[],
@@ -1753,6 +1712,12 @@ fn standard_edge_limit_curve_copy_refuses_collection_limit() {
         build_standard_edge_curve(
             ctx,
             crate::families::standard::decode::edge_geometry::BuildStandardEdgeCurveInputs {
+                support_storage: None,
+                native_surfaces:
+                    &mut crate::families::standard::decode::edge_geometry::NativeSurfaceIndex::new(
+                        admission.context(),
+                    )
+                    .expect("index reservation"),
                 ir: &mut ir,
                 annotations: &mut AnnotationBuilder::new(),
                 bindings: &[],
@@ -1798,6 +1763,12 @@ fn standard_line_edge_uses_distance_parameterization() {
         build_standard_edge_curve(
             ctx,
             crate::families::standard::decode::edge_geometry::BuildStandardEdgeCurveInputs {
+                support_storage: None,
+                native_surfaces:
+                    &mut crate::families::standard::decode::edge_geometry::NativeSurfaceIndex::new(
+                        admission.context(),
+                    )
+                    .expect("index reservation"),
                 ir: &mut ir,
                 annotations: &mut AnnotationBuilder::new(),
                 bindings: &[],
@@ -1841,6 +1812,12 @@ fn standard_line_edge_accepts_a_finite_nonzero_distance() {
         build_standard_edge_curve(
             ctx,
             crate::families::standard::decode::edge_geometry::BuildStandardEdgeCurveInputs {
+                support_storage: None,
+                native_surfaces:
+                    &mut crate::families::standard::decode::edge_geometry::NativeSurfaceIndex::new(
+                        admission.context(),
+                    )
+                    .expect("index reservation"),
                 ir: &mut ir,
                 annotations: &mut AnnotationBuilder::new(),
                 bindings: &[],
@@ -1921,7 +1898,7 @@ mod surface_intersections;
 #[test]
 fn line_pair_constraint_rejects_pairs_beyond_edge_roles() {
     let constraint = crate::test_support::with_service_context(|ctx| {
-        super::super::StandardLinePairConstraint::new(ctx, &[], &[], &[])
+        super::super::edge_geometry::StandardLinePairConstraint::new(ctx, &[], &[], &[])
     })
     .expect("service budget admits line constraint");
     assert!(constraint.edge_pairs(&[None]).is_none());
@@ -1930,3 +1907,5 @@ fn line_pair_constraint_rejects_pairs_beyond_edge_roles() {
 mod overflowing_support;
 
 mod circle_ranges;
+
+mod work_admission;

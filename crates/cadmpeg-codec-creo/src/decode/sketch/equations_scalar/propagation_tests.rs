@@ -22,6 +22,25 @@ use crate::feature::definitions::ScalarLane;
 use crate::feature::definitions::VariableType;
 use std::collections::{BTreeMap, BTreeSet};
 
+mod admission_visits;
+
+#[test]
+fn scalar_component_loops_refuse_before_graph_visits() {
+    let first = (VariableType::Result, 10);
+    let second = (VariableType::Result, 11);
+    let adjacency = BTreeMap::from([
+        (first, BTreeSet::from([second])),
+        (second, BTreeSet::from([first])),
+    ]);
+    crate::test_support::assert_work_boundaries(
+        &[
+            "creo scalar adjacency nodes",
+            "creo scalar equality graph visits",
+        ],
+        |ctx| super::scalar_equality_components(ctx, &adjacency),
+    );
+}
+
 #[test]
 fn overflowing_midpoint_rhs_is_not_admitted_to_solver() {
     let result = (VariableType::Dimension, 0);
@@ -819,4 +838,54 @@ fn radius_dimensions_accept_radius_values_proved_by_equality() {
         .expect("section_equation_radius_dimensions admitted")
         .is_empty()
     );
+}
+
+#[test]
+fn function_ten_rejects_conflicting_auxiliary_equalities() {
+    let variables = definition(
+        &[],
+        vec![
+            row(1, 1, Some(0.0)),
+            row(1, 2, Some(1.0)),
+            row(1, 3, Some(0.5)),
+            row(7, 10, Some(0.0)),
+            row(2, 1, Some(2.0)),
+            row(2, 2, Some(2.0)),
+            row(7, 11, Some(0.0)),
+        ],
+    )
+    .variables
+    .expect("variables");
+    let equation = crate::feature::definitions::FeatureEquation {
+        equation_id: 1,
+        function_id: 10,
+        explicit_argument_count: Some(7),
+        arguments: (0..7).map(Some).collect(),
+        arguments_body: Vec::new(),
+        auxiliary_body: Vec::new(),
+        body: Vec::new(),
+        offset: 0,
+    };
+    let points = BTreeMap::from([
+        (1, [Some(0.0), Some(2.0)]),
+        (2, [Some(1.0), Some(2.0)]),
+        (3, [Some(0.5), None]),
+    ]);
+    for auxiliary in [10, 11] {
+        for equality in [Ok(None), Ok(Some(0.0)), Err(())] {
+            let equalities = BTreeMap::from([((VariableType::Auxiliary, auxiliary), equality)]);
+            let actual = crate::decode::with_test_decode_ctx(|ctx| {
+                super::section_equation_function_ten_axis_alignment(
+                    ctx,
+                    &equation,
+                    &variables,
+                    &BTreeSet::new(),
+                    &equalities,
+                    &points,
+                )
+            })
+            .expect("function ten admission");
+            assert_eq!(actual, equality.is_ok().then_some((3, 1, SectionAxis::V)));
+        }
+    }
 }

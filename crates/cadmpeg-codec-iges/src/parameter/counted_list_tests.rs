@@ -17,6 +17,7 @@ fn integer_record(values: &[i64], parameter_end: usize) -> ParameterRecord {
             .collect(),
         parameter_end,
         comment: Vec::new(),
+        double_precision_reals: Vec::new(),
     }
 }
 

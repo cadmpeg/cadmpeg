@@ -54,8 +54,11 @@ fn incompatible_exact_feature_candidates_on_one_object_remain_unresolved() {
     let transfer = crate::test_support::with_service_context(|ctx| {
         crate::design_feature::transfer_design_features(
             ctx,
+            &mut ctx
+                .reserve_scoped(0, "catia_test_transfer_membership")
+                .expect("membership workspace"),
             &mut ir,
-            &native,
+            &crate::design_feature::DesignFeatureSources::new(ctx, &native)?,
             &crate::decode::ModelingGraphScope::Unscoped,
         )
     })
@@ -153,8 +156,11 @@ fn parameter_owner_follows_one_exact_child_design_object() {
     let transfer = crate::test_support::with_service_context(|ctx| {
         crate::design_feature::transfer_design_features(
             ctx,
+            &mut ctx
+                .reserve_scoped(0, "catia_test_transfer_membership")
+                .expect("membership workspace"),
             &mut ir,
-            &native,
+            &crate::design_feature::DesignFeatureSources::new(ctx, &native)?,
             &crate::decode::ModelingGraphScope::Unscoped,
         )
     })
@@ -179,7 +185,11 @@ fn parameter_owner_follows_one_exact_child_design_object() {
         });
 
     crate::test_support::with_service_context(|ctx| {
-        transfer.assign_parameter_owners(ctx, &mut ir, &native)
+        transfer.assign_parameter_owners(
+            ctx,
+            &mut ir,
+            &crate::design_feature::DesignFeatureSources::new(ctx, &native)?,
+        )
     })
     .unwrap();
 
@@ -224,8 +234,11 @@ fn complete_standalone_principal_plane_declarations_transfer_one_history_node() 
         let transfer = crate::test_support::with_service_context(|ctx| {
             crate::design_feature::transfer_design_features(
                 ctx,
+                &mut ctx
+                    .reserve_scoped(0, "catia_test_transfer_membership")
+                    .expect("membership workspace"),
                 &mut ir,
-                &native,
+                &crate::design_feature::DesignFeatureSources::new(ctx, &native)?,
                 &crate::decode::ModelingGraphScope::Unscoped,
             )
         })
@@ -251,8 +264,11 @@ fn complete_standalone_principal_plane_declarations_transfer_one_history_node() 
         let excluded = crate::test_support::with_service_context(|ctx| {
             crate::design_feature::transfer_design_features(
                 ctx,
+                &mut ctx
+                    .reserve_scoped(0, "catia_test_transfer_membership")
+                    .expect("membership workspace"),
                 &mut excluded_ir,
-                &native,
+                &crate::design_feature::DesignFeatureSources::new(ctx, &native)?,
                 &crate::decode::ModelingGraphScope::Unresolved,
             )
         })
@@ -292,8 +308,11 @@ fn principal_plane_history_identity_admission_precedes_transfer() {
         let result = crate::test_support::with_service_context(|ctx| {
             transfer_design_features(
                 ctx,
+                &mut ctx
+                    .reserve_scoped(0, "catia_test_transfer_membership")
+                    .expect("membership workspace"),
                 &mut ir,
-                &native,
+                &crate::design_feature::DesignFeatureSources::new(ctx, &native)?,
                 &crate::decode::ModelingGraphScope::Unscoped,
             )
         });
@@ -354,8 +373,11 @@ fn mixed_or_payload_bearing_principal_plane_fields_do_not_transfer() {
         let transfer = crate::test_support::with_service_context(|ctx| {
             crate::design_feature::transfer_design_features(
                 ctx,
+                &mut ctx
+                    .reserve_scoped(0, "catia_test_transfer_membership")
+                    .expect("membership workspace"),
                 &mut ir,
-                &native,
+                &crate::design_feature::DesignFeatureSources::new(ctx, &native)?,
                 &crate::decode::ModelingGraphScope::Unscoped,
             )
         })

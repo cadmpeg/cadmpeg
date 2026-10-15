@@ -12,7 +12,7 @@ pub fn frame(
     start: usize,
     limit: usize,
     width: RefWidth,
-) -> Result<Vec<Record>, StreamError> {
+) -> Result<Vec<Record<'static>>, StreamError> {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service())
         .map_err(|error| StreamError {
@@ -20,8 +20,9 @@ pub fn frame(
             offset: start,
             reason: format!("fixture exceeds the service input limit: {error}"),
         })?;
-    match crate::sab::frame(&ctx, bytes, start, limit, width, None) {
-        Ok(records) => Ok(records),
+    let outcome = crate::sab::frame(&ctx, bytes, start, limit, width, None);
+    match outcome {
+        Ok(records) => Ok(records.into_iter().map(Record::into_fixture).collect()),
         Err(
             StreamFailure::Parse(error)
             | StreamFailure::Malformed(error)
@@ -49,7 +50,7 @@ pub fn frame_history(
     start: usize,
     limit: usize,
     width: RefWidth,
-) -> Result<Vec<Record>, StreamError> {
+) -> Result<Vec<Record<'static>>, StreamError> {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service())
         .map_err(|error| StreamError {
@@ -57,8 +58,9 @@ pub fn frame_history(
             offset: start,
             reason: format!("fixture exceeds the service input limit: {error}"),
         })?;
-    match crate::sab::frame_history(&ctx, bytes, start, limit, width, None) {
-        Ok(records) => Ok(records),
+    let outcome = crate::sab::frame_history(&ctx, bytes, start, limit, width, None);
+    match outcome {
+        Ok(records) => Ok(records.into_iter().map(Record::into_fixture).collect()),
         Err(
             StreamFailure::Parse(error)
             | StreamFailure::Malformed(error)
@@ -82,11 +84,12 @@ pub fn frame_history(
 
 /// Byte offsets of payload tokens with `tag` inside one framed record.
 pub fn payload_token_offsets(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     record: &Record,
     ref_width: RefWidth,
     tag: u8,
-) -> Result<Vec<usize>, StreamError> {
+) -> Result<Vec<usize>, StreamFailure> {
     let end = record
         .offset
         .checked_add(record.len)
@@ -103,10 +106,15 @@ pub fn payload_token_offsets(
     let mut position = record.offset;
     let mut offsets = Vec::new();
     while position < end {
+        ctx.charge_work(1, "scan ASM fixture payload token")
+            .map_err(StreamFailure::from_operation)?;
         let token_offset = position;
-        let (token, next) = lex(bytes, position, ref_width)?;
+        let (token, next) = lex(ctx, bytes, position, ref_width)
+            .map_err(StreamFailure::from_operation)?
+            .map_err(StreamFailure::from)?;
         if bytes[token_offset] == tag && matches!(&token, Lexed::Value(_) | Lexed::Str(_)) {
-            offsets.push(token_offset);
+            ctx.push_vec(&mut offsets, token_offset, "ASM fixture payload offsets")
+                .map_err(StreamFailure::from_operation)?;
         }
         position = next;
         if matches!(&token, Lexed::Terminator) {
@@ -114,4 +122,22 @@ pub fn payload_token_offsets(
         }
     }
     Ok(offsets)
+}
+
+/// Build an indexed record fixture with the service decode policy.
+///
+/// # Errors
+///
+/// Returns the decode error when the fixture exceeds the service policy.
+pub fn record(
+    index: usize,
+    name: String,
+    tokens: std::sync::Arc<[crate::sab::Token]>,
+    offset: usize,
+    len: usize,
+) -> Result<Record<'static>, cadmpeg_core::CodecError> {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())?;
+    let record = Record::new(&ctx, index, name, tokens, offset, len)?;
+    Ok(record.into_fixture())
 }

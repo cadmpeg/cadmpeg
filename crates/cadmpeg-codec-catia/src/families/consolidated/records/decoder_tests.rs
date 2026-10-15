@@ -937,8 +937,13 @@ fn width_coded_endpoint_distances_resolve_forward_class18_records() {
             .collect::<Vec<_>>(),
         [0x5e, 0x05, 0x18, 0x18]
     );
-    let nodes = crate::families::b2::records::b2_edge_nodes_from_records(&bytes, &records)
-        .collect::<Vec<_>>();
+    let nodes = crate::test_support::with_service_context(|ctx| {
+        ctx.collect_vec(
+            crate::families::b2::records::b2_edge_nodes_from_records(ctx, &bytes, &records)?,
+            "catia_test_b2_edge_nodes",
+        )
+    })
+    .expect("service context admits edge nodes");
     assert_eq!(nodes.len(), 1);
     assert_eq!([nodes[0].start_vertex_ref, nodes[0].end_vertex_ref], [2, 3]);
     let endpoints = parsed_compact_edge_endpoints(&bytes, &records);
@@ -1078,7 +1083,7 @@ fn fixed_owner_boundary_indexes_and_nested_targets_refuse_collection_limits() {
         "catia_owner_boundary_endpoints",
         "catia_owner_boundary_face_nodes",
         "catia_owner_boundary_record_indices",
-        "catia_owner_boundary_record_sources",
+        "catia_consolidated_run_starts",
         "catia_owner_boundary_target_entries",
         "catia_owner_boundary_target_groups",
         "catia_owner_boundary_cycles",
@@ -1211,7 +1216,7 @@ fn consolidated_edge_definition_decodes_class25_scalar_layouts() {
     };
     assert_eq!(run.descriptor.record_id, 0x1234);
     assert_eq!(
-        cadmpeg_ir::scalar::FiniteReal::raw_lane(&run.descriptor.values),
+        cadmpeg_ir::scalar::FiniteReal::raw_lane(run.descriptor.values.as_slice()),
         [3.0, 7.0]
     );
     let native = crate::native::CatiaNative::decode(&described);
@@ -1413,7 +1418,6 @@ fn class25_edge_descriptor_and_runs_refuse_collection_limits() {
     for operation in [
         "catia_class25_edge_descriptors",
         "catia_class25_edge_use_runs",
-        "catia_class25_edge_descriptor_values",
         "catia_class25_edge_runs",
     ] {
         assert!(refused.contains(operation), "{operation} did not refuse");
@@ -1634,3 +1638,5 @@ fn unsegmented_scalar_deserialization_rejects_arity_outside_its_grammar() {
         }
     }
 }
+
+mod work_admission;

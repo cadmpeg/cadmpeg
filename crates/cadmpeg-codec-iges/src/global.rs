@@ -4,18 +4,18 @@
 use crate::card::{CardScan, Section};
 use crate::loss::IgesLossCode;
 use crate::version::{DialectRecovery, UnverifiedDialectRecovery, VersionFlag};
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{FiniteReal, NonNegativeReal, PositiveReal};
 
-#[derive(Debug, Clone, PartialEq)]
-enum Value {
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Value<'bytes> {
     Omitted,
-    String(Vec<u8>),
-    Malformed(Vec<u8>),
+    String(&'bytes [u8]),
+    Malformed(&'bytes [u8]),
     ForbiddenString,
-    Atom(Vec<u8>),
+    Atom(&'bytes [u8]),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -39,6 +39,16 @@ enum Supplied<T> {
     Absent,
     Value(T),
     Malformed,
+}
+
+impl<T> Supplied<T> {
+    fn map<U>(self, map: impl FnOnce(T) -> U) -> Supplied<U> {
+        match self {
+            Self::Absent => Supplied::Absent,
+            Self::Value(value) => Supplied::Value(map(value)),
+            Self::Malformed => Supplied::Malformed,
+        }
+    }
 }
 
 impl<T: Copy> Supplied<T> {
@@ -66,7 +76,7 @@ impl VersionDeclaration {
         }
     }
 
-    const fn effective_version(&self) -> VersionFlag {
+    fn effective_version(&self) -> VersionFlag {
         match self {
             Self::Exact(version) => *version,
             Self::Unreadable(_) => VersionFlag::V2_0,
@@ -126,10 +136,10 @@ enum SuppliedReal {
 
 /// Global field boundaries recovered from the card stream, with no values resolved.
 #[derive(Debug)]
-struct RawGlobal {
+struct RawGlobal<'bytes> {
     parameter_delimiter: u8,
     record_delimiter: u8,
-    values: Vec<Value>,
+    values: [Value<'bytes>; 26],
     field_count: usize,
 }
 
@@ -400,17 +410,30 @@ fn malformed(message: impl Into<String>) -> CodecError {
     crate::error::malformed(format!("IGES Global: {}", message.into()))
 }
 
-fn layout_hollerith(bytes: &[u8], start: usize) -> Result<Option<(usize, usize)>, CodecError> {
-    let mut cursor = start;
-    while bytes.get(cursor).is_some_and(u8::is_ascii_digit) {
-        cursor += 1;
-    }
+fn layout_hollerith(
+    bytes: &[u8],
+    start: usize,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<(usize, usize)>, CodecError> {
+    let Some(remaining) = bytes.get(start..) else {
+        return Ok(None);
+    };
+    let cursor = start
+        + ctx
+            .position_by(
+                remaining,
+                |byte| Ok(!byte.is_ascii_digit()),
+                "iges global layout Hollerith digits",
+            )?
+            .unwrap_or(bytes.len() - start);
     if cursor == start || !matches!(bytes.get(cursor), Some(b'H' | b'h')) {
         return Ok(None);
     }
-    let count = std::str::from_utf8(&bytes[start..cursor])
-        .map_err(|_| malformed("Hollerith count is not ASCII"))?
-        .parse::<usize>()
+    let count_text = ctx
+        .validate_utf8(&bytes[start..cursor], "iges global layout Hollerith count")?
+        .map_err(|_| malformed("Hollerith count is not ASCII"))?;
+    let count = ctx
+        .parse_text::<usize>(count_text, "iges global layout Hollerith number")?
         .map_err(|_| malformed("Hollerith count is out of range"))?;
     let payload_start = cursor
         .checked_add(1)
@@ -437,7 +460,7 @@ pub(crate) fn layout_global_cards(
     let (parameter_delimiter, mut cursor) = if bytes.first() == Some(&b',') {
         (b',', 1)
     } else {
-        let Some((header_end, payload_end)) = layout_hollerith(bytes, 0)? else {
+        let Some((header_end, payload_end)) = layout_hollerith(bytes, 0, ctx)? else {
             return Err(malformed("parameter delimiter is not a Hollerith string"));
         };
         let payload = bytes
@@ -459,7 +482,7 @@ pub(crate) fn layout_global_cards(
         cursor += 1;
         b';'
     } else {
-        let Some((header_end, payload_end)) = layout_hollerith(bytes, cursor)? else {
+        let Some((header_end, payload_end)) = layout_hollerith(bytes, cursor, ctx)? else {
             return Err(malformed("record delimiter is not a Hollerith string"));
         };
         let payload = bytes
@@ -482,18 +505,21 @@ pub(crate) fn layout_global_cards(
     let mut fields =
         field_storage.with_storage(|| ctx.collection_vec(1, "iges global layout fields"))?;
     fields.push(0..cursor);
+    let mut field_steps = std::iter::repeat(());
     while cursor < bytes.len() {
+        ctx.next_charged(&mut field_steps, "iges global layout fields")?;
         let start = cursor;
         let mut end = cursor;
-        if let Some((_, payload_end)) = layout_hollerith(bytes, cursor)? {
+        if let Some((_, payload_end)) = layout_hollerith(bytes, cursor, ctx)? {
             end = payload_end;
         }
-        while end < bytes.len()
-            && bytes[end] != parameter_delimiter
-            && bytes[end] != record_delimiter
-        {
-            end += 1;
-        }
+        end += ctx
+            .position_by(
+                &bytes[end..],
+                |byte| Ok(*byte == parameter_delimiter || *byte == record_delimiter),
+                "iges global layout field bytes",
+            )?
+            .unwrap_or(bytes.len() - end);
         let is_record = bytes
             .get(end)
             .ok_or_else(|| malformed("Global record delimiter is missing"))?
@@ -510,17 +536,26 @@ pub(crate) fn layout_global_cards(
 
     let mut cards = Vec::new();
     let mut card = ctx.vector_storage(72, "iges global layout card bytes")?;
-    for field in fields.iter().map(|range| &bytes[range.clone()]) {
-        let leading = field
-            .iter()
-            .position(|byte| !byte.is_ascii_whitespace())
+    let mut field_spans = fields.iter();
+    while field_spans.len() != 0 {
+        let Some(range) = ctx.next_charged(&mut field_spans, "iges global layout field spans")?
+        else {
+            break;
+        };
+        let field = &bytes[range.clone()];
+        let leading = ctx
+            .position_by(
+                field,
+                |byte| Ok(!byte.is_ascii_whitespace()),
+                "iges global layout leading spaces",
+            )?
             .unwrap_or(field.len());
         let header_end = if leading < field.len() {
-            layout_hollerith(field, leading)?.map(|(header_end, _)| header_end)
+            layout_hollerith(field, leading, ctx)?.map(|(header_end, _)| header_end)
         } else {
             None
         };
-        let minimum = header_end.map_or(field.len(), |end| leading + end);
+        let minimum = header_end.unwrap_or(field.len());
         if minimum > 72 {
             return Err(malformed("Global field exceeds one card"));
         }
@@ -530,7 +565,13 @@ pub(crate) fn layout_global_cards(
             cards.push(std::mem::take(&mut card));
             card = ctx.vector_storage(72, "iges global layout card bytes")?;
         }
-        for byte in field.iter().copied() {
+        let mut source_values = IntoIterator::into_iter(field).copied();
+        while source_values.len() != 0 {
+            let Some(byte) =
+                ctx.next_charged(&mut source_values, "iges global layout field copy")?
+            else {
+                break;
+            };
             if card.len() == 72 {
                 ctx.reserve_vec(&mut cards, 1, "iges global layout cards")?;
                 cards.push(std::mem::take(&mut card));
@@ -561,17 +602,30 @@ fn source_span_crosses_card(start: usize, end: usize) -> bool {
     end > start && start / 72 != (end - 1) / 72
 }
 
-fn hollerith(bytes: &[u8], start: usize) -> Result<Option<(&[u8], usize)>, CodecError> {
-    let mut cursor = start;
-    while bytes.get(cursor).is_some_and(u8::is_ascii_digit) {
-        cursor += 1;
-    }
+fn hollerith<'bytes>(
+    bytes: &'bytes [u8],
+    start: usize,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<(&'bytes [u8], usize)>, CodecError> {
+    let Some(remaining) = bytes.get(start..) else {
+        return Ok(None);
+    };
+    let cursor = start
+        + ctx
+            .position_by(
+                remaining,
+                |byte| Ok(!byte.is_ascii_digit()),
+                "iges global Hollerith digits",
+            )?
+            .unwrap_or(bytes.len() - start);
     if cursor == start || !matches!(bytes.get(cursor), Some(b'H' | b'h')) {
         return Ok(None);
     }
-    let count = std::str::from_utf8(&bytes[start..cursor])
-        .map_err(|_| malformed("Hollerith count is not ASCII"))?
-        .parse::<usize>()
+    let count_text = ctx
+        .validate_utf8(&bytes[start..cursor], "iges global Hollerith count")?
+        .map_err(|_| malformed("Hollerith count is not ASCII"))?;
+    let count = ctx
+        .parse_text::<usize>(count_text, "iges global Hollerith number")?
         .map_err(|_| malformed("Hollerith count is out of range"))?;
     let payload_start = cursor
         .checked_add(1)
@@ -585,11 +639,11 @@ fn hollerith(bytes: &[u8], start: usize) -> Result<Option<(&[u8], usize)>, Codec
     Ok(Some((payload, payload_end)))
 }
 
-fn first_delimiter(bytes: &[u8]) -> Result<(u8, usize), CodecError> {
+fn first_delimiter(bytes: &[u8], ctx: &DecodeContext<'_>) -> Result<(u8, usize), CodecError> {
     if bytes.first() == Some(&b',') {
         return Ok((b',', 1));
     }
-    let Some((payload, cursor)) = hollerith(bytes, 0)? else {
+    let Some((payload, cursor)) = hollerith(bytes, 0, ctx)? else {
         return Err(malformed("parameter delimiter is not a Hollerith string"));
     };
     if source_span_crosses_card(0, cursor - payload.len()) {
@@ -609,22 +663,25 @@ fn first_delimiter(bytes: &[u8]) -> Result<(u8, usize), CodecError> {
     Ok((delimiter, cursor + 1))
 }
 
-fn delimited_value(
-    bytes: &[u8],
+fn delimited_value<'bytes>(
+    bytes: &'bytes [u8],
     start: usize,
     parameter_delimiter: u8,
     record_delimiter: Option<u8>,
     retain: bool,
     ctx: &DecodeContext<'_>,
-) -> Result<(Value, usize, bool), CodecError> {
+) -> Result<(Value<'bytes>, usize, bool), CodecError> {
     let remaining = bytes
         .len()
         .checked_sub(start)
         .ok_or_else(|| CodecError::malformed("IGES Global value offset exceeds input"))?;
     let value_start = start
-        + bytes[start..]
-            .iter()
-            .position(|byte| *byte != b' ')
+        + ctx
+            .position_by(
+                &bytes[start..],
+                |byte| Ok(*byte != b' '),
+                "iges global value leading spaces",
+            )?
             .unwrap_or(remaining);
     if bytes.get(value_start) == Some(&parameter_delimiter) {
         return Ok((Value::Omitted, value_start + 1, false));
@@ -633,43 +690,30 @@ fn delimited_value(
         return Ok((Value::Omitted, value_start + 1, true));
     }
     let (value, end, allow_padding_after) =
-        if let Some((payload, end)) = hollerith(bytes, value_start)? {
+        if let Some((payload, end)) = hollerith(bytes, value_start, ctx)? {
             if !retain {
                 (Value::Omitted, end, true)
             } else if source_span_crosses_card(value_start, end - payload.len()) {
-                (
-                    Value::Malformed(ctx.copy_retained(payload, "iges_global_value")?),
-                    end,
-                    true,
-                )
+                (Value::Malformed(payload), end, true)
             } else {
-                (
-                    Value::String(ctx.copy_retained(payload, "iges_global_value")?),
-                    end,
-                    true,
-                )
+                (Value::String(payload), end, true)
             }
         } else {
-            let end = bytes[value_start..]
-                .iter()
-                .position(|byte| *byte == parameter_delimiter || record_delimiter == Some(*byte))
+            let end = ctx
+                .position_by(
+                    &bytes[value_start..],
+                    |byte| Ok(*byte == parameter_delimiter || record_delimiter == Some(*byte)),
+                    "iges global atom delimiter",
+                )?
                 .and_then(|relative| value_start.checked_add(relative))
                 .ok_or_else(|| malformed("record delimiter is missing"))?;
             let atom = &bytes[value_start..end];
-            if !retain || atom.iter().all(|byte| *byte == b' ') {
+            if !retain {
                 (Value::Omitted, end, false)
             } else if source_span_crosses_card(value_start, end + 1) {
-                (
-                    Value::Malformed(ctx.copy_retained(atom, "iges_global_value")?),
-                    end,
-                    false,
-                )
+                (Value::Malformed(atom), end, false)
             } else {
-                (
-                    Value::Atom(ctx.copy_retained(atom, "iges_global_value")?),
-                    end,
-                    false,
-                )
+                (Value::Atom(atom), end, false)
             }
         };
     let separator_start = if allow_padding_after {
@@ -677,9 +721,12 @@ fn delimited_value(
             .len()
             .checked_sub(end)
             .ok_or_else(|| CodecError::malformed("IGES Global separator exceeds input"))?;
-        end + bytes[end..]
-            .iter()
-            .position(|byte| *byte != b' ')
+        end + ctx
+            .position_by(
+                &bytes[end..],
+                |byte| Ok(*byte != b' '),
+                "iges global value trailing spaces",
+            )?
             .unwrap_or(remaining)
     } else {
         end
@@ -695,27 +742,35 @@ fn delimited_value(
     }
 }
 
-fn global_bytes(scan: &CardScan<'_>, ctx: &DecodeContext<'_>) -> Result<Vec<u8>, CodecError> {
-    let card_count = scan.section(Section::Global).count();
-    let length = card_count
+fn global_bytes<'ctx>(
+    scan: &CardScan<'_>,
+    ctx: &'ctx DecodeContext<'_>,
+) -> Result<(Vec<u8>, ScopedReservation<'ctx>), CodecError> {
+    let cards = scan.section(Section::Global);
+    let length = cards
+        .len()
         .checked_mul(72)
         .ok_or_else(|| CodecError::NotImplemented("IGES Global stream exceeds usize".into()))?;
-    let mut bytes = ctx.vector_storage(length, "iges_global_stream")?;
+    let storage;
+    let (mut bytes, result_storage) = ctx.scoped_vector_storage(length, "iges_global_stream")?;
+    storage = result_storage;
 
-    for (_, line) in scan.section(Section::Global) {
-        bytes.extend_from_slice(&line.payload[..72]);
+    for card in ctx.admit_iter(cards, "iges_global_stream")? {
+        bytes.extend_from_slice(&card.line.payload[..72]);
     }
-    Ok(bytes)
+    Ok((bytes, storage))
 }
 
-fn parse_raw(scan: &CardScan, ctx: &DecodeContext<'_>) -> Result<RawGlobal, CodecError> {
-    let bytes = global_bytes(scan, ctx)?;
+fn parse_raw<'bytes>(
+    bytes: &'bytes [u8],
+    ctx: &DecodeContext<'_>,
+) -> Result<RawGlobal<'bytes>, CodecError> {
     if bytes.is_empty() {
         return Err(malformed("section is missing"));
     }
-    let (parameter_delimiter, mut cursor) = first_delimiter(&bytes)?;
+    let (parameter_delimiter, mut cursor) = first_delimiter(bytes, ctx)?;
     let (record_value, next, _) =
-        delimited_value(&bytes, cursor, parameter_delimiter, None, true, ctx)?;
+        delimited_value(bytes, cursor, parameter_delimiter, None, true, ctx)?;
     cursor = next;
     let record_delimiter = match &record_value {
         Value::Omitted => b';',
@@ -737,18 +792,14 @@ fn parse_raw(scan: &CardScan, ctx: &DecodeContext<'_>) -> Result<RawGlobal, Code
         }
     }
 
-    let mut values = ctx.collect_indexed_vec(26, "iges_global_fields", |_| Ok(Value::Omitted))?;
-    values[0] = Value::String(ctx.copy_retained(&[parameter_delimiter], "iges_global_value")?);
-    values[1] = if let Value::String(value) = record_value {
-        Value::String(value)
-    } else {
-        Value::String(ctx.copy_retained(&[record_delimiter], "iges_global_value")?)
-    };
+    let mut values = [Value::Omitted; 26];
     let mut field_count = 2_usize;
+    let mut field_steps = std::iter::repeat(());
     loop {
+        ctx.next_charged(&mut field_steps, "iges global fields")?;
         let retain = field_count < values.len();
         let (value, next, ended) = delimited_value(
-            &bytes,
+            bytes,
             cursor,
             parameter_delimiter,
             Some(record_delimiter),
@@ -774,12 +825,23 @@ fn parse_raw(scan: &CardScan, ctx: &DecodeContext<'_>) -> Result<RawGlobal, Code
     })
 }
 
+type ResolvedGlobalWithStorage<'ctx> = (
+    ResolvedGlobal,
+    (Vec<LossNote>, ScopedReservation<'ctx>),
+    ScopedReservation<'ctx>,
+);
+
 /// Recover the Global field boundaries, then resolve every field once.
-pub(crate) fn parse(
+/// Keep both returned reservations alive with their Global values.
+pub(crate) fn parse<'ctx>(
     scan: &CardScan,
-    ctx: &DecodeContext<'_>,
-) -> Result<(ResolvedGlobal, Vec<LossNote>), CodecError> {
-    resolve(parse_raw(scan, ctx)?, ctx)
+    ctx: &'ctx DecodeContext<'_>,
+) -> Result<ResolvedGlobalWithStorage<'ctx>, CodecError> {
+    let _stream_storage;
+    let (bytes, result_stream_storage) = global_bytes(scan, ctx)?;
+    _stream_storage = result_stream_storage;
+    let raw = parse_raw(&bytes, ctx)?;
+    resolve(&raw, ctx)
 }
 
 fn date_value_is_valid(bytes: &[u8], accepts_four_digit_date: bool) -> bool {
@@ -796,21 +858,30 @@ fn date_value_is_valid(bytes: &[u8], accepts_four_digit_date: bool) -> bool {
     {
         return false;
     }
-    let number = |start: usize, end: usize| {
-        std::str::from_utf8(&bytes[start..end])
-            .ok()
-            .and_then(|value| value.parse::<u32>().ok())
-    };
+    let number =
+        |start: usize| 10 * u32::from(bytes[start] - b'0') + u32::from(bytes[start + 1] - b'0');
     let (month_start, day_start, hour_start, minute_start, second_start) = if dot == 6 {
         (2, 4, 7, 9, 11)
     } else {
         (4, 6, 9, 11, 13)
     };
-    number(month_start, month_start + 2).is_some_and(|month| (1..=12).contains(&month))
-        && number(day_start, day_start + 2).is_some_and(|day| (1..=31).contains(&day))
-        && number(hour_start, hour_start + 2).is_some_and(|hour| hour < 24)
-        && number(minute_start, minute_start + 2).is_some_and(|minute| minute < 60)
-        && number(second_start, second_start + 2).is_some_and(|second| second < 60)
+    let month = number(month_start);
+    if !(1..=12).contains(&month) {
+        return false;
+    }
+    let day = number(day_start);
+    if !(1..=31).contains(&day) {
+        return false;
+    }
+    let hour = number(hour_start);
+    if hour >= 24 {
+        return false;
+    }
+    let minute = number(minute_start);
+    if minute >= 60 {
+        return false;
+    }
+    number(second_start) < 60
 }
 
 fn delegated_unit_factor_mm(name: &str) -> Option<f64> {
@@ -876,35 +947,67 @@ const fn enumerated_unit_name(flag: i64) -> Option<&'static str> {
     }
 }
 
-struct Resolution<'ctx, 'arena> {
+struct Resolution<'ctx, 'arena, 'bytes> {
     ctx: &'ctx DecodeContext<'arena>,
-    values: Vec<Value>,
+    values: [Value<'bytes>; 26],
     losses: Vec<LossNote>,
+    loss_storage: ScopedReservation<'ctx>,
 }
 
-fn numeric_text(bytes: &[u8]) -> Option<&str> {
-    let first = bytes.iter().position(|byte| *byte != b' ')?;
+fn numeric_text<'bytes>(
+    bytes: &'bytes [u8],
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<&'bytes str>, CodecError> {
+    let Some(first) = ctx.position_by(
+        bytes,
+        |byte| Ok(*byte != b' '),
+        "iges global numeric leading spaces",
+    )?
+    else {
+        return Ok(None);
+    };
     let text = &bytes[first..];
-    (!text.iter().any(u8::is_ascii_whitespace))
-        .then(|| std::str::from_utf8(text).ok())
-        .flatten()
+    if ctx.any_by(
+        text,
+        |byte| Ok(byte.is_ascii_whitespace()),
+        "iges global numeric whitespace",
+    )? {
+        return Ok(None);
+    }
+    Ok(ctx.validate_utf8(text, "iges global numeric text")?.ok())
 }
 
 fn parse_real_text(text: &str, ctx: &DecodeContext<'_>) -> Result<Option<FiniteReal>, CodecError> {
-    if !text.bytes().any(|byte| matches!(byte, b'D' | b'd')) {
-        return Ok(text.parse::<f64>().ok().and_then(FiniteReal::new));
+    if !ctx.any_by(
+        text.bytes(),
+        |byte| Ok(matches!(byte, b'D' | b'd')),
+        "iges global numeric exponent",
+    )? {
+        return Ok(ctx
+            .parse_text::<f64>(text, "iges global numeric real")?
+            .ok()
+            .and_then(FiniteReal::new));
     }
-    let (mut normalized, _reservation) =
+    let _reservation;
+    let (mut normalized, result_reservation) =
         ctx.scoped_vector_storage(text.len(), "iges global numeric text")?;
-    normalized.extend_from_slice(text.as_bytes());
-    for byte in &mut normalized {
-        if matches!(byte, b'D' | b'd') {
-            *byte = b'E';
-        }
+    _reservation = result_reservation;
+    for byte in ctx
+        .admit_iter(text.as_bytes(), "iges global exponent normalization")?
+        .copied()
+    {
+        normalized.push(if matches!(byte, b'D' | b'd') {
+            b'E'
+        } else {
+            byte
+        });
     }
-    Ok(std::str::from_utf8(&normalized)
+    let Ok(text) = ctx.validate_utf8(&normalized, "iges global numeric text")? else {
+        return Ok(None);
+    };
+    Ok(ctx
+        .parse_text::<f64>(text, "iges global numeric real")?
         .ok()
-        .and_then(|value| value.parse::<f64>().ok())
         .and_then(FiniteReal::new))
 }
 
@@ -915,32 +1018,34 @@ fn recovered_real_text(
     let Some(prefix) = text.strip_suffix('.') else {
         return Ok(None);
     };
-    if !prefix
-        .bytes()
-        .any(|byte| matches!(byte, b'E' | b'e' | b'D' | b'd'))
-    {
+    if !ctx.any_by(
+        prefix.bytes(),
+        |byte| Ok(matches!(byte, b'E' | b'e' | b'D' | b'd')),
+        "iges global recovered exponent",
+    )? {
         return Ok(None);
     }
     parse_real_text(prefix, ctx)
 }
 
-impl Resolution<'_, '_> {
-    fn apply_string_policy(&mut self, global_table: GlobalTable) {
+impl Resolution<'_, '_, '_> {
+    fn apply_string_policy(&mut self, global_table: GlobalTable) -> Result<(), CodecError> {
         for value in &mut self.values {
             let Value::String(bytes) = value else {
                 continue;
             };
-            if bytes
-                .iter()
-                .copied()
-                .any(|byte| global_table.string_byte_is_forbidden(byte))
-            {
+            if self.ctx.any_by(
+                bytes.iter(),
+                |byte| Ok(global_table.string_byte_is_forbidden(*byte)),
+                "iges global string policy",
+            )? {
                 *value = Value::ForbiddenString;
             }
         }
+        Ok(())
     }
 
-    fn value(&self, index: usize) -> &Value {
+    fn value(&self, index: usize) -> &Value<'_> {
         self.values.get(index).unwrap_or(&Value::Omitted)
     }
 
@@ -952,8 +1057,17 @@ impl Resolution<'_, '_> {
         consequence: &str,
     ) -> Result<(), CodecError> {
         let note = global_loss_note(self.ctx, code, index, defect, consequence)?;
-        self.ctx
-            .reserve_vec(&mut self.losses, 1, "iges global loss notes")?;
+        self.push_loss(note)?;
+        Ok(())
+    }
+
+    fn push_loss(&mut self, note: LossNote) -> Result<(), CodecError> {
+        self.ctx.reserve_scoped_vec(
+            &mut self.loss_storage,
+            &mut self.losses,
+            1,
+            "iges global loss notes",
+        )?;
         self.losses.push(note);
         Ok(())
     }
@@ -970,15 +1084,18 @@ impl Resolution<'_, '_> {
         }
     }
 
-    fn supplied_string(&self, index: usize) -> Result<Supplied<String>, CodecError> {
+    fn supplied_string(&self, index: usize) -> Result<Supplied<&str>, CodecError> {
         match self.value(index) {
             Value::Omitted => Ok(Supplied::Absent),
-            Value::String(bytes) if bytes.is_empty() => Ok(Supplied::Absent),
+            Value::String([]) => Ok(Supplied::Absent),
             Value::String(bytes) => {
-                let copy = self
+                let Ok(value) = self
                     .ctx
-                    .copy_retained(bytes, "iges global supplied string")?;
-                Ok(String::from_utf8(copy).map_or(Supplied::Malformed, Supplied::Value))
+                    .validate_utf8(bytes, "iges global supplied string")?
+                else {
+                    return Ok(Supplied::Malformed);
+                };
+                Ok(Supplied::Value(value))
             }
             Value::Malformed(_) | Value::ForbiddenString | Value::Atom(_) => {
                 Ok(Supplied::Malformed)
@@ -990,34 +1107,42 @@ impl Resolution<'_, '_> {
         &self,
         index: usize,
         global_table: GlobalTable,
-    ) -> Result<Supplied<String>, CodecError> {
+    ) -> Result<Supplied<&str>, CodecError> {
         Ok(match self.supplied_string(index)? {
-            Supplied::Value(text)
-                if date_value_is_valid(text.as_bytes(), global_table.accepts_four_digit_date()) =>
-            {
-                Supplied::Value(text)
+            Supplied::Value(text) => {
+                if date_value_is_valid(text.as_bytes(), global_table.accepts_four_digit_date()) {
+                    Supplied::Value(text)
+                } else {
+                    Supplied::Malformed
+                }
             }
-            Supplied::Value(_) => Supplied::Malformed,
             Supplied::Absent => Supplied::Absent,
             Supplied::Malformed => Supplied::Malformed,
         })
     }
 
-    fn supplied_integer(&self, index: usize) -> Supplied<i64> {
-        match self.value(index) {
+    fn supplied_integer(&self, index: usize) -> Result<Supplied<i64>, CodecError> {
+        Ok(match self.value(index) {
             Value::Omitted => Supplied::Absent,
-            Value::Atom(bytes) => numeric_text(bytes)
-                .and_then(|text| text.parse::<i64>().ok())
-                .map_or(Supplied::Malformed, Supplied::Value),
+            Value::Atom(bytes) => {
+                let value = match numeric_text(bytes, self.ctx)? {
+                    Some(text) => self
+                        .ctx
+                        .parse_text::<i64>(text, "iges global integer value")?
+                        .ok(),
+                    None => None,
+                };
+                value.map_or(Supplied::Malformed, Supplied::Value)
+            }
             Value::String(_) | Value::Malformed(_) | Value::ForbiddenString => Supplied::Malformed,
-        }
+        })
     }
 
     fn supplied_real(&self, index: usize) -> Result<SuppliedReal, CodecError> {
         match self.value(index) {
             Value::Omitted => Ok(SuppliedReal::Absent),
             Value::Atom(bytes) => {
-                let Some(text) = numeric_text(bytes) else {
+                let Some(text) = numeric_text(bytes, self.ctx)? else {
                     return Ok(SuppliedReal::Malformed);
                 };
                 if let Some(value) = parse_real_text(text, self.ctx)? {
@@ -1035,11 +1160,15 @@ impl Resolution<'_, '_> {
     }
 
     fn charge_recovered_real(&mut self, index: usize, value: f64) -> Result<(), CodecError> {
-        let source = self.declaration_text(index)?;
+        let _source_storage;
+        let (source, result_source_storage) = self
+            .ctx
+            .with_scoped_storage("IGES recovered Global declaration", || {
+                self.declaration_text(index)
+            })?;
+        _source_storage = result_source_storage;
         let note = recovered_real_loss_note(self.ctx, index, &source, value)?;
-        self.ctx
-            .reserve_vec(&mut self.losses, 1, "iges global loss notes")?;
-        self.losses.push(note);
+        self.push_loss(note)?;
         Ok(())
     }
 
@@ -1069,25 +1198,37 @@ impl Resolution<'_, '_> {
     }
 
     /// The supplied integer, with a value the field does not admit read as malformed.
-    fn admitted_integer(&self, index: usize, admits: fn(i64) -> bool) -> Supplied<i64> {
-        match self.supplied_integer(index) {
+    fn admitted_integer(
+        &self,
+        index: usize,
+        admits: fn(i64) -> bool,
+    ) -> Result<Supplied<i64>, CodecError> {
+        Ok(match self.supplied_integer(index)? {
             Supplied::Value(value) if admits(value) => Supplied::Value(value),
             Supplied::Absent => Supplied::Absent,
             Supplied::Malformed | Supplied::Value(_) => Supplied::Malformed,
-        }
+        })
     }
 
     fn metadata_string(
         &mut self,
         index: usize,
         global_table: GlobalTable,
+        storage: &mut ScopedReservation<'_>,
     ) -> Result<Option<String>, CodecError> {
         let supplied = self.supplied_string(index)?;
-        self.charge_metadata(index, &supplied, global_table)?;
-        Ok(match supplied {
-            Supplied::Value(text) => Some(text),
-            Supplied::Absent | Supplied::Malformed => None,
-        })
+        let text = supplied
+            .value()
+            .map(|text| {
+                storage.with_storage(|| {
+                    self.ctx
+                        .copy_retained_text(text, "iges global supplied string")
+                })
+            })
+            .transpose()?;
+        let status = supplied.map(|_| ());
+        self.charge_metadata(index, &status, global_table)?;
+        Ok(text)
     }
 
     /// Charges a metadata string field whose value the model does not carry.
@@ -1096,13 +1237,13 @@ impl Resolution<'_, '_> {
         index: usize,
         global_table: GlobalTable,
     ) -> Result<(), CodecError> {
-        let supplied = self.supplied_string(index)?;
+        let supplied = self.supplied_string(index)?.map(|_| ());
         self.charge_metadata(index, &supplied, global_table)?;
         Ok(())
     }
 
     fn metadata_date(&mut self, index: usize, global_table: GlobalTable) -> Result<(), CodecError> {
-        let supplied = self.supplied_date(index, global_table)?;
+        let supplied = self.supplied_date(index, global_table)?.map(|_| ());
         self.charge_metadata(index, &supplied, global_table)?;
         Ok(())
     }
@@ -1124,7 +1265,7 @@ impl Resolution<'_, '_> {
         global_table: GlobalTable,
         admits: fn(i64) -> bool,
     ) -> Result<Supplied<i64>, CodecError> {
-        let supplied = self.admitted_integer(index, admits);
+        let supplied = self.admitted_integer(index, admits)?;
         self.charge_metadata(index, &supplied, global_table)?;
         Ok(supplied)
     }
@@ -1136,16 +1277,14 @@ impl Resolution<'_, '_> {
         global_table: GlobalTable,
         admits: fn(i64) -> bool,
     ) -> Result<(), CodecError> {
-        let supplied = self.admitted_integer(index, admits);
+        let supplied = self.admitted_integer(index, admits)?;
         self.charge_metadata(index, &supplied, global_table)
     }
 
     /// Charges the maximum-coordinate field.
     ///
-    /// The coordinate is not carried into the model, so the charge the
-    /// absent and malformed arms state is the whole effect and there is no
-    /// value for a caller to take. The arms are the ones the reading kept;
-    /// only the values they answered are gone.
+    /// The coordinate is not carried into the model. An unusable declaration
+    /// adds a loss; a recovered numeric spelling adds its recovery loss.
     fn charge_maximum_coordinate(&mut self, global_table: GlobalTable) -> Result<(), CodecError> {
         match self.supplied_real(FIELD_MAXIMUM_COORDINATE)? {
             SuppliedReal::Absent if global_table == GlobalTable::V5_0 => {}
@@ -1175,7 +1314,16 @@ impl Resolution<'_, '_> {
     }
 
     fn significance(&mut self, index: usize) -> Result<Supplied<u32>, CodecError> {
-        let defect = match self.supplied_integer(index) {
+        let supplied = self.supplied_integer(index)?;
+        self.significance_from_supplied(index, supplied)
+    }
+
+    fn significance_from_supplied(
+        &mut self,
+        index: usize,
+        supplied: Supplied<i64>,
+    ) -> Result<Supplied<u32>, CodecError> {
+        let defect = match supplied {
             Supplied::Absent => Defect::Absent,
             Supplied::Value(value) => match u32::try_from(value).ok().filter(|value| *value > 0) {
                 Some(value) => return Ok(Supplied::Value(value)),
@@ -1254,7 +1402,7 @@ impl Resolution<'_, '_> {
         &mut self,
         global_table: GlobalTable,
     ) -> Result<Option<LineWeightScale>, CodecError> {
-        let supplied_gradations = self.supplied_integer(FIELD_LINE_WEIGHT_GRADATIONS);
+        let supplied_gradations = self.supplied_integer(FIELD_LINE_WEIGHT_GRADATIONS)?;
         let gradations_was_supplied = !matches!(&supplied_gradations, Supplied::Absent);
         let (gradations, gradations_defect) = match supplied_gradations {
             Supplied::Absent if matches!(global_table, GlobalTable::V4_0) => {
@@ -1322,6 +1470,7 @@ impl Resolution<'_, '_> {
     fn length_unit(
         &mut self,
         global_table: GlobalTable,
+        storage: &mut ScopedReservation<'_>,
     ) -> Result<(Option<String>, Option<PositiveReal>), CodecError> {
         let (scale, scale_defect) = match self.supplied_real(FIELD_MODEL_SCALE)? {
             SuppliedReal::Absent => (global_table.default_model_scale(), None),
@@ -1338,7 +1487,7 @@ impl Resolution<'_, '_> {
             },
             SuppliedReal::Malformed => (None, Some(Defect::Malformed)),
         };
-        let (units_flag, flag_defect) = match self.supplied_integer(FIELD_UNITS_FLAG) {
+        let (units_flag, flag_defect) = match self.supplied_integer(FIELD_UNITS_FLAG)? {
             Supplied::Absent => (global_table.default_units_flag(), None),
             Supplied::Value(value) if (1..=11).contains(&value) => (Some(value), None),
             Supplied::Value(_) | Supplied::Malformed => (None, Some(Defect::Malformed)),
@@ -1346,20 +1495,28 @@ impl Resolution<'_, '_> {
         let (units_name, unit_mm, name_defect) = if units_flag == Some(3) {
             match self.supplied_string(FIELD_UNITS_NAME)? {
                 Supplied::Absent => (None, None, Some(Defect::Absent)),
-                Supplied::Value(name) => match delegated_unit_factor_mm(&name) {
-                    Some(factor) => (Some(name), Some(factor), None),
-                    None => (Some(name), None, Some(Defect::Malformed)),
-                },
+                Supplied::Value(name) => {
+                    let factor = delegated_unit_factor_mm(name);
+                    let name = storage.with_storage(|| {
+                        self.ctx
+                            .copy_retained_text(name, "iges global supplied string")
+                    })?;
+                    (
+                        Some(name),
+                        factor,
+                        factor.is_none().then_some(Defect::Malformed),
+                    )
+                }
                 Supplied::Malformed => (None, None, Some(Defect::Malformed)),
             }
         } else {
             let name = match self.supplied_string(FIELD_UNITS_NAME)? {
                 Supplied::Absent if global_table.defaults_units_name() => {
                     match units_flag.and_then(enumerated_unit_name) {
-                        Some(name) => Some(self.ctx.format_retained(
-                            format_args!("{name}"),
-                            "iges global default units name",
-                        )?),
+                        Some(name) => Some(storage.with_storage(|| {
+                            self.ctx
+                                .copy_retained_text(name, "iges global default units name")
+                        })?),
                         None => None,
                     }
                 }
@@ -1373,7 +1530,10 @@ impl Resolution<'_, '_> {
                     None
                 }
                 Supplied::Absent => None,
-                Supplied::Value(name) => Some(name),
+                Supplied::Value(name) => Some(storage.with_storage(|| {
+                    self.ctx
+                        .copy_retained_text(name, "iges global supplied string")
+                })?),
                 Supplied::Malformed => {
                     self.charge(
                         IgesLossCode::GlobalMetadataFieldUnusable,
@@ -1418,9 +1578,7 @@ impl Resolution<'_, '_> {
                         IgesLossCode::GlobalLengthUnitUnresolved,
                         message,
                     )?;
-                    self.ctx
-                        .reserve_vec(&mut self.losses, 1, "iges global loss notes")?;
-                    self.losses.push(note);
+                    self.push_loss(note)?;
                 }
             }
         }
@@ -1428,49 +1586,53 @@ impl Resolution<'_, '_> {
     }
 }
 
-fn resolve(
-    raw: RawGlobal,
-    ctx: &DecodeContext<'_>,
-) -> Result<(ResolvedGlobal, Vec<LossNote>), CodecError> {
+fn resolve<'ctx>(
+    raw: &RawGlobal<'_>,
+    ctx: &'ctx DecodeContext<'_>,
+) -> Result<ResolvedGlobalWithStorage<'ctx>, CodecError> {
+    let mut storage = ctx.reserve_scoped(0, "IGES resolved Global text")?;
     let RawGlobal {
         parameter_delimiter,
         record_delimiter,
         values,
         field_count,
-    } = raw;
+    } = *raw;
+    let loss_storage = ctx.reserve_scoped(0, "iges global loss notes")?;
     let mut resolution = Resolution {
         ctx,
         values,
         losses: Vec::new(),
+        loss_storage,
     };
 
-    let declaration = match resolution.supplied_integer(FIELD_VERSION_FLAG) {
+    let declaration = match resolution.supplied_integer(FIELD_VERSION_FLAG)? {
         Supplied::Absent => VersionDeclaration::Exact(VersionFlag::V2_0),
         Supplied::Value(value) => match VersionFlag::exact(value) {
             Some(version) => VersionDeclaration::Exact(version),
             None => VersionDeclaration::Clamped(value),
         },
-        Supplied::Malformed => {
-            VersionDeclaration::Unreadable(resolution.declaration_text(FIELD_VERSION_FLAG)?)
-        }
+        Supplied::Malformed => VersionDeclaration::Unreadable(
+            storage.with_storage(|| resolution.declaration_text(FIELD_VERSION_FLAG))?,
+        ),
     };
     let effective_version = declaration.effective_version();
     let global_table = effective_version.global_table();
-    resolution.apply_string_policy(global_table);
+    resolution.apply_string_policy(global_table)?;
     let global_field_count = global_table.global_field_count();
 
     if field_count > global_field_count {
         let message = ctx.format_retained(format_args!(
                 "IGES Global record has {field_count} fields; IGES {} Table 1 defines {global_field_count} and the decoder ignored the rest",
                 effective_version.name(),
-            ), "iges global framing loss message")?;
+        ), "iges global framing loss message")?;
         let note = admitted_global_loss(ctx, IgesLossCode::GlobalNoncanonicalFraming, message)?;
-        ctx.reserve_vec(&mut resolution.losses, 1, "iges global loss notes")?;
-        resolution.losses.push(note);
+        resolution.push_loss(note)?;
     }
 
-    let sender_product = resolution.metadata_string(FIELD_SENDER_PRODUCT, global_table)?;
-    let native_file_name = resolution.metadata_string(FIELD_FILE_NAME, global_table)?;
+    let sender_product =
+        resolution.metadata_string(FIELD_SENDER_PRODUCT, global_table, &mut storage)?;
+    let native_file_name =
+        resolution.metadata_string(FIELD_FILE_NAME, global_table, &mut storage)?;
     resolution.charge_metadata_string(FIELD_NATIVE_SYSTEM, global_table)?;
     resolution.charge_metadata_string(FIELD_PREPROCESSOR_VERSION, global_table)?;
     let integer_bits = resolution
@@ -1481,12 +1643,13 @@ fn resolve(
     let single_significance = resolution.significance(FIELD_SINGLE_SIGNIFICANCE)?.value();
     let double_magnitude =
         resolution.metadata_integer_declaration(FIELD_DOUBLE_MAGNITUDE, global_table, |_| true)?;
-    let double_significance = if global_table == GlobalTable::V5_0
-        && matches!(
-            resolution.supplied_integer(FIELD_DOUBLE_SIGNIFICANCE),
+    let double_significance = if global_table == GlobalTable::V5_0 {
+        let supplied = resolution.supplied_integer(FIELD_DOUBLE_SIGNIFICANCE)?;
+        if matches!(supplied, Supplied::Absent) {
             Supplied::Absent
-        ) {
-        Supplied::Absent
+        } else {
+            resolution.significance_from_supplied(FIELD_DOUBLE_SIGNIFICANCE, supplied)?
+        }
     } else {
         resolution.significance(FIELD_DOUBLE_SIGNIFICANCE)?
     };
@@ -1494,10 +1657,9 @@ fn resolve(
         Supplied::Absent if global_table.defaults_receiver_product_to_sender() => sender_product
             .as_deref()
             .map(|value| {
-                ctx.format_retained(
-                    format_args!("{value}"),
-                    "iges global default receiver product",
-                )
+                storage.with_storage(|| {
+                    ctx.copy_retained_text(value, "iges global default receiver product")
+                })
             })
             .transpose()?,
         Supplied::Absent if global_table.field_requires_value(FIELD_RECEIVER_PRODUCT) => {
@@ -1510,7 +1672,10 @@ fn resolve(
             None
         }
         Supplied::Absent => None,
-        Supplied::Value(value) => Some(value),
+        Supplied::Value(value) => Some(
+            storage
+                .with_storage(|| ctx.copy_retained_text(value, "iges global supplied string"))?,
+        ),
         Supplied::Malformed => {
             resolution.charge(
                 IgesLossCode::GlobalMetadataFieldUnusable,
@@ -1521,7 +1686,7 @@ fn resolve(
             None
         }
     };
-    let (units_name, length_factor_mm) = resolution.length_unit(global_table)?;
+    let (units_name, length_factor_mm) = resolution.length_unit(global_table, &mut storage)?;
     let line_weight_scale = resolution.line_weight_scale(global_table)?;
     resolution.metadata_date(FIELD_GENERATION_DATE, global_table)?;
     let minimum_resolution = resolution.minimum_resolution(global_table)?;
@@ -1557,7 +1722,12 @@ fn resolve(
         line_weight_scale,
         declaration,
     };
-    Ok((resolved, resolution.losses))
+    let Resolution {
+        losses,
+        loss_storage,
+        ..
+    } = resolution;
+    Ok((resolved, (losses, loss_storage), storage))
 }
 
 impl ResolvedGlobal {
@@ -1638,13 +1808,15 @@ impl ResolvedGlobal {
         self.declaration.effective_version().global_table()
     }
 
-    pub(crate) fn conditional_double_precision_losses(
+    pub(crate) fn conditional_double_precision_losses<'ctx>(
         &self,
         uses_double_precision: bool,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<Vec<LossNote>, CodecError> {
-        if self.global_table() != GlobalTable::V5_0 || !uses_double_precision {
-            return Ok(Vec::new());
+        ctx: &'ctx DecodeContext<'_>,
+    ) -> Result<(Vec<LossNote>, ScopedReservation<'ctx>), CodecError> {
+        let mut storage = ctx.reserve_scoped(0, "iges global conditional loss notes")?;
+        let global_table = self.global_table();
+        if global_table != GlobalTable::V5_0 || !uses_double_precision {
+            return Ok((Vec::new(), storage));
         }
         let mut losses = Vec::new();
         if matches!(self.numeric.double_magnitude, Supplied::Absent) {
@@ -1655,7 +1827,12 @@ impl ResolvedGlobal {
                 Defect::Absent,
                 METADATA_CONSEQUENCE,
             )?;
-            ctx.reserve_vec(&mut losses, 1, "iges global conditional loss notes")?;
+            ctx.reserve_scoped_vec(
+                &mut storage,
+                &mut losses,
+                1,
+                "iges global conditional loss notes",
+            )?;
             losses.push(note);
         }
         if matches!(self.numeric.double_significance, Supplied::Absent) {
@@ -1666,10 +1843,15 @@ impl ResolvedGlobal {
                 Defect::Absent,
                 SIGNIFICANCE_CONSEQUENCE,
             )?;
-            ctx.reserve_vec(&mut losses, 1, "iges global conditional loss notes")?;
+            ctx.reserve_scoped_vec(
+                &mut storage,
+                &mut losses,
+                1,
+                "iges global conditional loss notes",
+            )?;
             losses.push(note);
         }
-        Ok(losses)
+        Ok((losses, storage))
     }
 
     /// Inspection notes for this Global section.
@@ -1678,80 +1860,77 @@ impl ResolvedGlobal {
     /// effective Global table was not verified for the source declaration. In
     /// that case, retain the declared flag and label the effective version as
     /// recovery rather than presenting it as the document's verified version.
-    pub(crate) fn summary_notes(&self, ctx: &DecodeContext<'_>) -> Result<Vec<String>, CodecError> {
+    pub(crate) fn summary_notes<'ctx>(
+        &self,
+        ctx: &'ctx DecodeContext<'_>,
+    ) -> Result<(Vec<String>, ScopedReservation<'ctx>), CodecError> {
+        let effective_version = self.declaration.effective_version();
+        let global_table = effective_version.global_table();
+        let version_name = effective_version.name();
+        let mut storage = ctx.reserve_scoped(0, "iges global summary notes")?;
         let mut notes = Vec::new();
-        ctx.push_formatted_retained(
-            &mut notes,
+        ctx.reserve_scoped_vec(&mut storage, &mut notes, 1, "iges global summary notes")?;
+        notes.push(ctx.format_retained(
             format_args!(
                 "parameter_delimiter={}",
                 char::from(self.parameter_delimiter)
             ),
-            "iges global summary notes",
             "iges global summary text",
-        )?;
-        ctx.push_formatted_retained(
-            &mut notes,
+        )?);
+        ctx.reserve_scoped_vec(&mut storage, &mut notes, 1, "iges global summary notes")?;
+        notes.push(ctx.format_retained(
             format_args!("record_delimiter={}", char::from(self.record_delimiter)),
-            "iges global summary notes",
             "iges global summary text",
-        )?;
+        )?);
         if let Some(product) = self.sender_product() {
-            ctx.push_formatted_retained(
-                &mut notes,
+            ctx.reserve_scoped_vec(&mut storage, &mut notes, 1, "iges global summary notes")?;
+            notes.push(ctx.format_retained(
                 format_args!("sender_product={product}"),
-                "iges global summary notes",
                 "iges global summary text",
-            )?;
+            )?);
         }
-        if self.global_table() == GlobalTable::V5_0 {
+        if global_table == GlobalTable::V5_0 {
             if let Some(product) = self.receiver_product() {
-                ctx.push_formatted_retained(
-                    &mut notes,
+                ctx.reserve_scoped_vec(&mut storage, &mut notes, 1, "iges global summary notes")?;
+                notes.push(ctx.format_retained(
                     format_args!("receiver_product={product}"),
-                    "iges global summary notes",
                     "iges global summary text",
-                )?;
+                )?);
             }
         }
         if let Some(units) = self.units_name() {
-            ctx.push_formatted_retained(
-                &mut notes,
-                format_args!("units={units}"),
-                "iges global summary notes",
-                "iges global summary text",
-            )?;
+            ctx.reserve_scoped_vec(&mut storage, &mut notes, 1, "iges global summary notes")?;
+            notes.push(
+                ctx.format_retained(format_args!("units={units}"), "iges global summary text")?,
+            );
         }
         if matches!(self.dialect_recovery(), DialectRecovery::Verified) {
-            ctx.push_formatted_retained(
-                &mut notes,
-                format_args!("iges_version={}", self.version_name()),
-                "iges global summary notes",
+            ctx.reserve_scoped_vec(&mut storage, &mut notes, 1, "iges global summary notes")?;
+            notes.push(ctx.format_retained(
+                format_args!("iges_version={version_name}"),
                 "iges global summary text",
-            )?;
+            )?);
         } else {
-            ctx.push_formatted_retained(
-                &mut notes,
+            ctx.reserve_scoped_vec(&mut storage, &mut notes, 1, "iges global summary notes")?;
+            notes.push(ctx.format_retained(
                 format_args!("iges_version=unverified"),
-                "iges global summary notes",
                 "iges global summary text",
-            )?;
-            ctx.push_formatted_retained(
-                &mut notes,
+            )?);
+            ctx.reserve_scoped_vec(&mut storage, &mut notes, 1, "iges global summary notes")?;
+            notes.push(ctx.format_retained(
                 format_args!(
                     "iges_declared_version_flag={}",
                     self.declaration.declared_flag()
                 ),
-                "iges global summary notes",
                 "iges global summary text",
-            )?;
-            ctx.push_formatted_retained(
-                &mut notes,
-                format_args!("iges_effective_version={}", self.version_name()),
-                "iges global summary notes",
+            )?);
+            ctx.reserve_scoped_vec(&mut storage, &mut notes, 1, "iges global summary notes")?;
+            notes.push(ctx.format_retained(
+                format_args!("iges_effective_version={version_name}"),
                 "iges global summary text",
-            )?;
+            )?);
         }
-        Ok(notes)
+        Ok((notes, storage))
     }
 }
 

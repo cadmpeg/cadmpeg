@@ -294,12 +294,7 @@ fn identity_index_charged<'a>(
     identities: &'a [CatiaConsolidatedVertexIdentity],
 ) -> Result<HashMap<IdentityKey<'a>, &'a str>, cadmpeg_core::CodecError> {
     let mut index = HashMap::new();
-    for identity in identities {
-        let work = identity
-            .allocation_owner
-            .as_deref()
-            .map_or(1, |owner| cadmpeg_core::decode::u64_from_index(owner.len()));
-        ctx.charge_work(work, "catia_native_edge_wire_index")?;
+    for identity in ctx.admit_iter(identities, "catia_native_edge_wire_identity_visits")? {
         let key = if let Some(record) = identity.endpoint_record {
             IdentityKey::EndpointRecord(record)
         } else {
@@ -329,11 +324,10 @@ fn joined_vertex_charged<'a>(
         return Ok("");
     }
     let key = node_identity_key(node, endpoint);
-    let work = node.allocation.as_ref().map_or(1, |(owner, _)| {
-        cadmpeg_core::decode::u64_from_index(owner.len())
-    });
-    ctx.charge_work(work, "catia_native_edge_wire_lookup")?;
-    Ok(index.get(&key).copied().unwrap_or(""))
+    Ok(ctx
+        .get_hash_map(index, &key, "catia_native_edge_wire_lookup")?
+        .copied()
+        .unwrap_or(""))
 }
 
 pub(super) fn edge_node_wires_charged(
@@ -343,25 +337,24 @@ pub(super) fn edge_node_wires_charged(
 ) -> Result<Vec<CatiaConsolidatedEdgeNodeWire>, cadmpeg_core::CodecError> {
     let mut index_storage = ctx.reserve_scoped(0, "CATIA edge wire identity lookup")?;
     let index = index_storage.with_storage(|| identity_index_charged(ctx, identities))?;
-    let mut wires = Vec::new();
-    for node in nodes {
-        let vertices = [
-            ctx.copy_retained_text(
-                joined_vertex_charged(ctx, &node, 0, &index)?,
-                "catia_native_edge_wire_vertex_id",
-            )?,
-            ctx.copy_retained_text(
-                joined_vertex_charged(ctx, &node, 1, &index)?,
-                "catia_native_edge_wire_vertex_id",
-            )?,
-        ];
-        ctx.push_vec(
-            &mut wires,
-            CatiaConsolidatedEdgeNodeWire::from_node(node, vertices),
-            "catia_native_edge_wires",
-        )?;
-    }
-    Ok(wires)
+    ctx.try_collect_vec(
+        nodes
+            .into_iter()
+            .map(|node| -> Result<_, cadmpeg_core::CodecError> {
+                let vertices = [
+                    ctx.copy_retained_text(
+                        joined_vertex_charged(ctx, &node, 0, &index)?,
+                        "catia_native_edge_wire_vertex_id",
+                    )?,
+                    ctx.copy_retained_text(
+                        joined_vertex_charged(ctx, &node, 1, &index)?,
+                        "catia_native_edge_wire_vertex_id",
+                    )?,
+                ];
+                Ok(CatiaConsolidatedEdgeNodeWire::from_node(node, vertices))
+            }),
+        "catia_native_edge_wires",
+    )
 }
 
 pub(super) fn load_edge_nodes(
@@ -399,18 +392,32 @@ pub(super) fn consolidated_vertex_identities(
     let mut identities = Vec::<CatiaConsolidatedVertexIdentity>::new();
     let mut identity_storage = ctx.reserve_scoped(0, "CATIA vertex identity lookup")?;
     let mut identity_indices = HashMap::<IdentityKey, usize>::new();
-    for node in nodes {
+    let mut reference_members = std::collections::HashSet::new();
+    for node in ctx.admit_iter(nodes, "catia_native_vertex_identity_nodes")? {
         if node.endpoint_records.is_none() && node.uses.is_none() {
             continue;
         }
         for (endpoint, identity) in node.vertex_refs.into_iter().enumerate() {
             let endpoint_record = node.endpoint_records.map(|records| records[endpoint]);
             let key = node_identity_key(node, endpoint);
-            let work = node.allocation.as_ref().map_or(1, |(owner, _)| {
-                cadmpeg_core::decode::u64_from_index(owner.len())
-            });
-            ctx.charge_work(work, "catia_native_vertex_identity_lookup")?;
-            let index = if let Some(&index) = identity_indices.get(&key) {
+            let index = if let Some(&index) = ctx.get_hash_map(
+                &identity_indices,
+                &key,
+                "catia_native_vertex_identity_lookup",
+            )? {
+                if identity_storage.with_storage(|| {
+                    ctx.insert_hash_set(
+                        &mut reference_members,
+                        (index, identity),
+                        "catia_native_vertex_identity_reference_checks",
+                    )
+                })? {
+                    ctx.push_vec(
+                        &mut identities[index].reference_values,
+                        identity,
+                        "catia_native_vertex_identity_references",
+                    )?;
+                }
                 index
             } else {
                 let index = identities.len();
@@ -452,17 +459,25 @@ pub(super) fn consolidated_vertex_identities(
                         "catia_native_vertex_identity_index",
                     )
                 })?;
+                identity_storage.with_storage(|| {
+                    ctx.insert_hash_set(
+                        &mut reference_members,
+                        (index, identity),
+                        "catia_native_vertex_identity_reference_checks",
+                    )
+                })?;
                 index
             };
             let vertex = &mut identities[index];
-            if !vertex.reference_values.contains(&identity) {
-                ctx.push_vec(
-                    &mut vertex.reference_values,
-                    identity,
-                    "catia_native_vertex_identity_references",
-                )?;
-            }
-            if vertex.incident_edge_nodes.last() != Some(&node.id) {
+            let repeated_edge = match vertex.incident_edge_nodes.last() {
+                Some(last) => ctx.equal_bytes(
+                    last.as_bytes(),
+                    node.id.as_bytes(),
+                    "catia_native_vertex_incident_edge_checks",
+                )?,
+                None => false,
+            };
+            if !repeated_edge {
                 let edge_id =
                     ctx.copy_retained_text(&node.id, "catia_native_vertex_incident_edge_id")?;
                 ctx.push_vec(

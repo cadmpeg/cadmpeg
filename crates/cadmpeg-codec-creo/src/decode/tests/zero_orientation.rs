@@ -171,7 +171,8 @@ fn zero_orientation_arc_runs_clockwise_from_first_endpoint() {
         radius,
         start_angle,
         end_angle,
-    }) = section_arc_geometry(&points, &segment)
+    }) = crate::decode::with_test_decode_ctx(|ctx| section_arc_geometry(ctx, &points, &segment))
+        .expect("zero-orientation arc fits service limits")
         .map(cadmpeg_ir::sketches::SketchGeometry::into_definition)
     else {
         panic!("complete arc");
@@ -257,10 +258,14 @@ fn profile_chain_follows_trim_vertex_incidence() {
     )
     .is_empty());
     assert_eq!(
-        trim_segment_id(
-            &incomplete,
-            &incomplete.trim_entities.as_ref().expect("trim table").rows[0],
-        ),
+        crate::decode::with_test_decode_ctx(|ctx| {
+            trim_segment_id(
+                ctx,
+                &incomplete,
+                &incomplete.trim_entities.as_ref().expect("trim table").rows[0],
+            )
+        })
+        .expect("test trim-segment resources"),
         None
     );
 
@@ -425,7 +430,11 @@ fn multi_incident_trim_vertex_requires_one_agreeing_pairwise_intersection() {
         line([-1.0, -1.0], [1.0, 1.0]),
     ];
     assert_eq!(
-        intersect_incident_section_carriers(&concurrent),
+        crate::decode::with_test_decode_ctx(|ctx| intersect_incident_section_carriers(
+            ctx,
+            &concurrent
+        ))
+        .expect("concurrent carrier scan admitted"),
         Some([0.0, 0.0])
     );
 
@@ -434,7 +443,14 @@ fn multi_incident_trim_vertex_requires_one_agreeing_pairwise_intersection() {
         line([0.0, -1.0], [0.0, 1.0]),
         line([-1.0, 2.0], [2.0, -1.0]),
     ];
-    assert_eq!(intersect_incident_section_carriers(&inconsistent), None);
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| intersect_incident_section_carriers(
+            ctx,
+            &inconsistent
+        ))
+        .expect("inconsistent carrier scan admitted"),
+        None
+    );
 }
 
 #[test]
@@ -1136,17 +1152,13 @@ fn saved_spline_collocation_interpolates_points_and_endpoint_derivatives() {
         let point = nurbs.control_points().iter().enumerate().fold(
             [0.0; 3],
             |mut point, (index, control)| {
-                let basis = crate::decode::with_test_decode_ctx(|ctx| {
-                    bspline_basis(
-                        ctx,
-                        index,
-                        usize::try_from(nurbs.degree()).expect("fixture index fits usize"),
-                        parameter,
-                        nurbs.knots(),
-                        nurbs.control_points().len(),
-                    )
-                })
-                .expect("service basis")
+                let basis = bspline_basis(
+                    index,
+                    usize::try_from(nurbs.degree()).expect("fixture index fits usize"),
+                    parameter,
+                    nurbs.knots(),
+                    nurbs.control_points().len(),
+                )
                 .expect("valid basis");
                 point[0] += basis * control.x;
                 point[1] += basis * control.y;
@@ -1161,17 +1173,13 @@ fn saved_spline_collocation_interpolates_points_and_endpoint_derivatives() {
         let derivative = nurbs.control_points().iter().enumerate().fold(
             [0.0; 3],
             |mut derivative, (index, control)| {
-                let basis = crate::decode::with_test_decode_ctx(|ctx| {
-                    bspline_basis_derivative(
-                        ctx,
-                        index,
-                        usize::try_from(nurbs.degree()).expect("fixture index fits usize"),
-                        parameter,
-                        nurbs.knots(),
-                        nurbs.control_points().len(),
-                    )
-                })
-                .expect("service basis")
+                let basis = bspline_basis_derivative(
+                    index,
+                    usize::try_from(nurbs.degree()).expect("fixture index fits usize"),
+                    parameter,
+                    nurbs.knots(),
+                    nurbs.control_points().len(),
+                )
                 .expect("valid basis");
                 derivative[0] += basis * control.x;
                 derivative[1] += basis * control.y;
@@ -1229,7 +1237,8 @@ fn saved_spline_collocation_interpolates_points_and_endpoint_derivatives() {
                 internal_id: 7,
                 bitmask: 0,
                 offset: 30,
-            }],
+            }]
+            .into(),
             offset: 30,
         }),
         section_3d: None,
@@ -1435,7 +1444,10 @@ fn nonplanar_saved_spline_places_as_model_curve() {
 #[test]
 fn transferred_geometry_is_derived_from_ir_arenas() {
     let mut ir = CadIr::empty();
-    assert!(!has_transferred_geometry(&ir));
+    assert!(
+        !crate::decode::with_test_decode_ctx(|ctx| has_transferred_geometry(ctx, &ir))
+            .expect("geometry signal resources")
+    );
 
     ir.model.points.push(Point::new(
         PointId::mint("test:model:entity#point".to_string()).expect("identity grammar"),
@@ -1443,7 +1455,10 @@ fn transferred_geometry_is_derived_from_ir_arenas() {
             .expect("a finite position is a point"),
         None,
     ));
-    assert!(has_transferred_geometry(&ir));
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| has_transferred_geometry(ctx, &ir))
+            .expect("geometry signal resources")
+    );
 }
 
 #[test]

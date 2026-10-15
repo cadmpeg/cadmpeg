@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{admit_constraint_row, available_parameter_ids, emitted_entity_views};
+use super::{available_parameter_ids, emitted_entity_views};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::ParameterId;
 use cadmpeg_ir::sketches::{
-    SketchConstraint, SketchConstraintDefinition, SketchConstraintDefinitionInput,
-    SketchConstraintId, SketchEntity, SketchEntityId, SketchGeometry, SketchId,
+    SketchConstraint, SketchConstraintDefinitionInput, SketchEntity, SketchEntityId,
+    SketchGeometry, SketchId,
 };
 use std::collections::BTreeSet;
 
@@ -96,9 +96,53 @@ fn empty_section_transfer_preserves_sketch_and_feature() {
 }
 
 #[test]
+fn empty_section_transfer_keeps_zero_family_coverage() {
+    use crate::coverage::SketchSegmentFamily;
+    let scan = empty_section_scan();
+    let coverage = crate::decode::with_test_decode_ctx(|ctx| {
+        super::transfer_sketches(
+            ctx,
+            &scan,
+            &mut cadmpeg_ir::document::CadIr::empty(),
+            &mut cadmpeg_ir::AnnotationBuilder::new(),
+            &mut Vec::new(),
+            &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+        )
+    })
+    .expect("empty section coverage");
+    assert_eq!(
+        coverage.families().collect::<Vec<_>>(),
+        vec![
+            (SketchSegmentFamily::Point, (0, 0)),
+            (SketchSegmentFamily::Circle, (0, 0)),
+            (SketchSegmentFamily::CenteredLine, (0, 0)),
+            (SketchSegmentFamily::ReferenceLine, (0, 0)),
+            (SketchSegmentFamily::BoundedCurve, (0, 0)),
+            (SketchSegmentFamily::Conic, (0, 0)),
+            (SketchSegmentFamily::Opaque, (0, 0)),
+        ]
+    );
+}
+
+#[test]
 fn sketch_native_reference_refuses_below_retained_limit() {
     let sketch = SketchId::mint("creo:model:sketch#7").expect("valid sketch ID");
-    let need = cadmpeg_core::decode::u64_from_index("creo:featdefs:sketch#7".len());
+    let need = crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        None,
+        |cap| {
+            let trial_arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut trial_policy = cadmpeg_core::decode::DecodePolicy::service();
+            trial_policy.limits.max_retained_bytes = cap;
+            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                &[],
+                &trial_arena,
+                &trial_policy,
+            )
+            .expect("root");
+            crate::decode::sketch_ids::sketch_native_ref_admitted(&ctx, &sketch)
+        },
+    );
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = need - 1;
@@ -117,44 +161,89 @@ fn sketch_native_reference_refuses_below_retained_limit() {
     );
 }
 
-fn disabled_constraint() -> SketchConstraint {
-    SketchConstraint {
-        id: SketchConstraintId::mint("creo:model:sketch_constraint#1").expect("constraint id"),
-        sketch: SketchId::mint("creo:model:sketch#1").expect("sketch id"),
-        definition: SketchConstraintDefinition::try_from(
-            SketchConstraintDefinitionInput::Disabled {},
-        )
-        .expect("disabled constraint"),
-        name: None,
-        driving: None,
-        active: None,
-        virtual_space: None,
-        visible: None,
-        orientation: None,
-        label_distance: None,
-        label_position: None,
-        metadata: None,
-        native_ref: None,
-    }
+#[test]
+fn sketch_constraint_rows_refuse_before_growth() {
+    let run = |ctx: &DecodeContext<'_>| {
+        let (mut rows, mut slots) = ctx.temporary_vec(0, "test constraint staging")?;
+        let storage = ctx.reserve_scoped(0, "test disabled candidate")?;
+        let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+        let sketch = SketchId::mint("creo:model:sketch#1").expect("sketch");
+        let result = super::emit_verhor_constraint(
+            ctx,
+            (&mut annotations, &mut rows, &mut slots),
+            &BTreeSet::new(),
+            &sketch,
+            "7",
+            (SketchConstraintDefinitionInput::Disabled {}, storage),
+            0,
+        );
+        if result.is_err() {
+            assert!(rows.is_empty());
+        }
+        result?;
+        assert_eq!(rows.len(), 1);
+        assert!(matches!(
+            rows[0].definition.kind(),
+            SketchConstraintDefinitionInput::Disabled {}
+        ));
+        slots.commit_value(rows)
+    };
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::CollectionItems,
+        "creo sketch constraint rows",
+        run,
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems && resource.operation == "creo sketch constraint rows"
+        && resource.additional == 1));
 }
 
 #[test]
-fn sketch_constraint_rows_refuse_before_growth() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    let mut rows = Vec::new();
-    let error = admit_constraint_row(&ctx, &mut rows, disabled_constraint())
-        .expect_err("one row exceeds zero items");
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == "creo sketch constraint rows"));
-    assert!(rows.is_empty());
-    let service = DecodePolicy::service();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &service).expect("empty root");
-    admit_constraint_row(&ctx, &mut rows, disabled_constraint()).expect("service row admitted");
-    assert_eq!(rows.len(), 1);
+fn constraint_staging_backing_is_live_until_source_admission_finishes() {
+    for admitted in [false, true] {
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let (mut rows, mut slots) = ctx
+            .temporary_vec(0, "test constraint staging")
+            .expect("staging");
+        let storage = ctx
+            .reserve_scoped(0, "test disabled candidate")
+            .expect("candidate");
+        let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+        let sketch = SketchId::mint("creo:model:sketch#1").expect("sketch");
+        super::emit_verhor_constraint(
+            &ctx,
+            (&mut annotations, &mut rows, &mut slots),
+            &BTreeSet::new(),
+            &sketch,
+            "7",
+            (SketchConstraintDefinitionInput::Disabled {}, storage),
+            0,
+        )
+        .expect("emitted row");
+        let backing = u64::try_from(
+            rows.capacity() * std::mem::size_of::<cadmpeg_ir::sketches::SketchConstraint>(),
+        )
+        .expect("staging bytes");
+        let (expected, _live_storage) = if admitted {
+            let mut ir = cadmpeg_ir::CadIr::empty();
+            crate::decode::source_carriers::SourceUnitCarriers::default()
+                .admit_sketch_constraints(&ctx, &mut ir, rows)
+                .expect("source admission");
+            assert_eq!(ir.model.sketch_constraints.len(), 1);
+            drop(slots);
+            (0, None)
+        } else {
+            (backing, Some(slots))
+        };
+        let error = ctx
+            .reserve_scoped(u64::MAX, "test live constraint backing")
+            .expect_err("live storage probe");
+        assert!(matches!(error, CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::MaterializedBytes && resource.used == expected));
+    }
 }
 
 fn fixture() -> SketchEntity {
@@ -182,8 +271,16 @@ fn emitted_entity_views_refuse_each_tree_node() {
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo emitted sketch entity ID nodes"));
-    policy.limits.max_collection_items = 1;
-    let error = views_with_policy(&policy).expect_err("second node exceeds one item");
+    policy.limits.max_collection_items = crate::test_support::allocation_limit_at(
+        ResourceDimension::CollectionItems,
+        Some("creo emitted sketch geometry nodes"),
+        |cap| {
+            let mut trial = policy;
+            trial.limits.max_collection_items = cap;
+            views_with_policy(&trial)
+        },
+    );
+    let error = views_with_policy(&policy).expect_err("second node exceeds its boundary");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo emitted sketch geometry nodes"));
@@ -196,8 +293,15 @@ fn emitted_entity_views_refuse_each_tree_node() {
 #[test]
 fn emitted_entity_views_refuse_nested_identity_and_geometry_copies() {
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes =
-        cadmpeg_core::decode::u64_from_index("creo:model:sketch_entity#1".len()) - 1;
+    policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
+        ResourceDimension::RetainedBytes,
+        Some("creo emitted sketch entity IDs"),
+        |cap| {
+            let mut trial = policy;
+            trial.limits.max_retained_bytes = cap;
+            views_with_policy(&trial)
+        },
+    );
     let error = views_with_policy(&policy).expect_err("first identity copy exceeds cap");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RetainedBytes
@@ -234,7 +338,22 @@ fn available_parameter_ids_refuse_existing_node_and_identity_copy() {
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo available parameter ID nodes"));
     policy.limits.max_collection_items = DecodePolicy::service().limits.max_collection_items;
-    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(id.as_str().len()) - 1;
+    policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        Some("creo available parameter identities"),
+        |cap| {
+            let trial_arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut trial_policy = cadmpeg_core::decode::DecodePolicy::service();
+            trial_policy.limits.max_retained_bytes = cap;
+            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                &[],
+                &trial_arena,
+                &trial_policy,
+            )
+            .expect("root");
+            available_parameter_ids(&ctx, [&id], BTreeSet::new())
+        },
+    );
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     let error = available_parameter_ids(&ctx, [&id], BTreeSet::new())
         .expect_err("existing parameter identity exceeds cap");
@@ -265,6 +384,52 @@ fn available_parameter_ids_refuse_planned_tree_node() {
     })
     .expect("service IDs admitted");
     assert_eq!(ids, BTreeSet::from([id]));
+}
+
+#[test]
+fn available_parameter_ids_refuse_membership_work() {
+    let first = ParameterId::mint("creo:featdefs:parameter#first").expect("parameter ID");
+    let second = ParameterId::mint("creo:featdefs:parameter#second").expect("parameter ID");
+    let ids = crate::test_support::assert_work_boundaries(
+        &["creo available parameter ID membership"],
+        |ctx| available_parameter_ids(ctx, [&first, &second], BTreeSet::new()),
+    );
+    assert_eq!(ids, BTreeSet::from([first, second]));
+}
+
+#[test]
+fn constraint_entity_membership_refuses_work() {
+    let entity = SketchEntityId::mint("creo:model:sketch_entity#1").expect("entity ID");
+    let emitted = BTreeSet::from([entity.clone()]);
+    let mut definition = SketchConstraintDefinitionInput::Horizontal { entity };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let error = super::reconcile_constraint_entity_references(&ctx, &mut definition, &emitted)
+        .expect_err("entity membership exceeds zero work units");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::WorkUnits
+            && resource.operation == "creo constraint emitted entity membership"));
+}
+
+#[test]
+fn constraint_parameter_membership_refuses_work() {
+    let parameter = ParameterId::mint("creo:featdefs:parameter#1").expect("parameter ID");
+    let emitted = BTreeSet::from([parameter.clone()]);
+    let mut definition = SketchConstraintDefinitionInput::Radius {
+        entity: SketchEntityId::mint("creo:model:sketch_entity#1").expect("entity ID"),
+        parameter,
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let error = super::reconcile_constraint_parameter_reference(&ctx, &mut definition, &emitted)
+        .expect_err("parameter membership exceeds zero work units");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::WorkUnits
+            && resource.operation == "creo constraint parameter membership"));
 }
 
 macro_rules! map_node_test {
@@ -380,6 +545,149 @@ fn equation_scan() -> (crate::container::ContainerScan<'static>, usize) {
     (scan, row_start)
 }
 
+fn scalar_equality_equation_scan() -> crate::container::ContainerScan<'static> {
+    let mut scan = empty_section_scan();
+    let definition = &mut scan.features.definitions[0];
+    definition.offset = 1000;
+    definition.saved_section = None;
+    definition.body = vec![0; 20];
+    definition.body.extend_from_slice(
+        b"eqtn_arr\0\xf2\xf8\x02\xf7\x80\x9f\xfb\xe2\
+            \xe0\x01id\0\0\xf1\xf7\x80\x9f\xe2\
+            \x01\x05\xf8\x03\x00\x01\x02\xf6\xe2",
+    );
+    let row = |variable_type, key, value: Option<f64>| {
+        let value = value.map_or(
+            crate::feature::definitions::ScalarLane::DimensionDriven,
+            crate::feature::definitions::ScalarLane::Value,
+        );
+        crate::feature::definitions::FeatureVariableRow {
+            variable_type: crate::feature::definitions::VariableType::from(variable_type),
+            key,
+            value,
+            value_body: Vec::new(),
+            guess: value,
+            guess_body: Vec::new(),
+            known: Some(0),
+            homogeneity: Some(1),
+            uvar_id: None,
+            offset: 0,
+        }
+    };
+    definition.variables = Some(crate::feature::definitions::FeatureVariableTable {
+        declared_count: 3,
+        entity_ref: None,
+        rows: vec![
+            row(6, 10, Some(2.5)),
+            row(6, 11, Some(2.5)),
+            row(5, 20, Some(0.0)),
+        ],
+        offset: 0,
+    });
+    scan
+}
+
+fn scalar_equality_candidates(
+    scan: &crate::container::ContainerScan<'_>,
+) -> Vec<(SketchConstraint, usize)> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        let sketch = SketchId::mint("creo:model:sketch#source-admission")
+            .expect("valid source-admission sketch ID");
+        crate::decode::sketch_transfer::constraints::section_equation_function_five_scalar_equality_constraints(
+            ctx,
+            &scan.features.definitions[0],
+            &sketch,
+        )
+    })
+    .expect("function-five scalar-equality fixture is typed")
+}
+
+type ScalarEqualityTransfer = (Vec<(u32, u32)>, Vec<u64>);
+
+fn scalar_equality_transfer_result(
+    ctx: &DecodeContext<'_>,
+    scan: &crate::container::ContainerScan<'_>,
+) -> Result<ScalarEqualityTransfer, CodecError> {
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+    super::transfer_sketches(
+        ctx,
+        scan,
+        &mut ir,
+        &mut annotations,
+        &mut Vec::new(),
+        &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+    )?;
+    let scalar_equalities = ir
+        .model
+        .sketch_constraints
+        .iter()
+        .filter_map(|constraint| match constraint.definition.kind() {
+            SketchConstraintDefinitionInput::ScalarEquality { first, second } => {
+                Some((*first, *second))
+            }
+            _ => None,
+        })
+        .collect();
+    let equation_annotation_offsets = annotations
+        .build()
+        .provenance
+        .values()
+        .filter(|note| note.tag.as_deref() == Some("section_equation_constraint"))
+        .map(|note| note.offset)
+        .collect();
+    Ok((scalar_equalities, equation_annotation_offsets))
+}
+
+#[test]
+fn equation_offset_source_admission_refuses_work_and_emits_typed_scalar_equality() {
+    let scan = scalar_equality_equation_scan();
+    let typed_rows = scalar_equality_candidates(&scan);
+    assert_eq!(typed_rows.len(), 1, "fixture produces one typed row");
+    let source_offsets = typed_rows
+        .iter()
+        .map(|(_, offset)| *offset)
+        .collect::<BTreeSet<_>>();
+    assert_eq!(source_offsets.len(), 1, "typed source set is nonempty");
+    let expected_offset = cadmpeg_core::decode::u64_from_index(
+        1000 + *source_offsets
+            .iter()
+            .next()
+            .expect("one typed source offset"),
+    );
+    let (scalar_equalities, equation_annotation_offsets) =
+        crate::test_support::assert_work_boundaries(&["creo equation offset nodes"], |ctx| {
+            scalar_equality_transfer_result(ctx, &scan)
+        });
+    assert_eq!(scalar_equalities, vec![(10, 11)]);
+    assert_eq!(equation_annotation_offsets, vec![expected_offset]);
+}
+
+#[test]
+fn typed_equation_offset_source_admission_refuses_work_and_emits_typed_scalar_equality() {
+    let scan = scalar_equality_equation_scan();
+    let typed_rows = scalar_equality_candidates(&scan);
+    assert_eq!(typed_rows.len(), 1, "fixture produces one typed row");
+    let source_offsets = typed_rows
+        .iter()
+        .map(|(_, offset)| *offset)
+        .collect::<BTreeSet<_>>();
+    assert_eq!(source_offsets.len(), 1, "typed source set is nonempty");
+    let expected_offset = cadmpeg_core::decode::u64_from_index(
+        1000 + *source_offsets
+            .iter()
+            .next()
+            .expect("one typed source offset"),
+    );
+    let (scalar_equalities, equation_annotation_offsets) =
+        crate::test_support::assert_work_boundaries(
+            &["creo typed equation offset source"],
+            |ctx| scalar_equality_transfer_result(ctx, &scan),
+        );
+    assert_eq!(scalar_equalities, vec![(10, 11)]);
+    assert_eq!(equation_annotation_offsets, vec![expected_offset]);
+}
+
 #[test]
 fn equation_header_uses_definition_source_base() {
     let (scan, _) = equation_scan();
@@ -395,7 +703,8 @@ fn equation_header_uses_definition_source_base() {
 fn native_equation_row_uses_definition_source_base() {
     let (scan, row_start) = equation_scan();
     crate::decode::with_test_decode_ctx(|ctx| {
-        let records = crate::decode::records::sketch_records(ctx, &scan).expect("records");
+        let (records, _storage) =
+            crate::decode::records::sketch_records(ctx, &scan).expect("records");
         let record = serde_json::to_value(&records[0]).expect("native record");
         assert_eq!(record["equations"].as_array().expect("equations").len(), 1);
         assert_eq!(record["equations"][0]["offset"], 1000 + row_start);
@@ -443,5 +752,314 @@ fn definition_body_position_refuses_out_of_bounds_and_source_overflow() {
     assert!(matches!(
         definition.body_position(1).expect("body position").source(),
         Err(CodecError::Malformed(_))
+    ));
+}
+
+#[test]
+fn sketch_profile_entity_membership_refuses_work_and_preserves_resolved_chain() {
+    let mut scan = empty_section_scan();
+    let definition = &mut scan.features.definitions[0];
+    let variable =
+        |variable_type: crate::feature::definitions::VariableType, key: u32, value: f64| {
+            crate::feature::definitions::FeatureVariableRow {
+                variable_type,
+                key,
+                value: crate::feature::definitions::ScalarLane::Value(value),
+                value_body: Vec::new(),
+                guess: crate::feature::definitions::ScalarLane::Undefined,
+                guess_body: Vec::new(),
+                known: None,
+                homogeneity: None,
+                uvar_id: None,
+                offset: usize::try_from(key).expect("fixture index fits usize"),
+            }
+        };
+    definition.variables = Some(crate::feature::definitions::FeatureVariableTable {
+        declared_count: 6,
+        entity_ref: None,
+        rows: vec![
+            variable(crate::feature::definitions::VariableType::U, 1, 0.0),
+            variable(crate::feature::definitions::VariableType::V, 1, 0.0),
+            variable(crate::feature::definitions::VariableType::U, 2, 1.0),
+            variable(crate::feature::definitions::VariableType::V, 2, 0.0),
+            variable(crate::feature::definitions::VariableType::U, 3, 0.0),
+            variable(crate::feature::definitions::VariableType::V, 3, 1.0),
+        ],
+        offset: 0,
+    });
+    let segment =
+        |external_id: u32, point_ids: [u32; 2]| crate::feature::definitions::FeatureSegment {
+            kind: crate::feature::definitions::FeatureSegmentKind::Line(point_ids),
+            directions: [None; 3],
+            center_id: None,
+            arc_orientation: None,
+            vertical_horizontal: None,
+            radius_ref: None,
+            radius2_ref: None,
+            external_id,
+            body: Vec::new(),
+            offset: usize::try_from(external_id).expect("fixture index fits usize"),
+        };
+    definition.segments = Some(crate::feature::definitions::FeatureSegmentTable {
+        declared_count: 3,
+        has_elided_prototype: false,
+        entity_ref: None,
+        rows: [
+            segment(10, [1, 2]),
+            segment(11, [2, 3]),
+            segment(12, [3, 1]),
+        ]
+        .into_iter()
+        .map(crate::feature::segment_rows::SegmentRow::Ordinary)
+        .collect(),
+        offset: 0,
+    });
+
+    let service = crate::test_support::assert_work_boundaries(
+        &["creo sketch profile entity membership"],
+        |ctx| {
+            let mut output = cadmpeg_ir::document::CadIr::empty();
+            super::transfer_sketches(
+                ctx,
+                &scan,
+                &mut output,
+                &mut cadmpeg_ir::AnnotationBuilder::new(),
+                &mut Vec::new(),
+                &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+            )?;
+            Ok(output)
+        },
+    );
+    assert_eq!(service.model.sketches.len(), 1);
+    assert_eq!(service.model.sketch_entities.len(), 3);
+    let sketch = &service.model.sketches[0];
+    assert_eq!(sketch.profiles.len(), 1);
+    assert_eq!(sketch.profiles[0].len(), 3);
+    assert_eq!(
+        sketch.profiles[0]
+            .iter()
+            .map(|entity_use| (entity_use.entity.as_str(), entity_use.reversed))
+            .collect::<Vec<_>>(),
+        vec![
+            ("creo:featdefs:sketch_entity#7:10", false),
+            ("creo:featdefs:sketch_entity#7:11", false),
+            ("creo:featdefs:sketch_entity#7:12", false),
+        ]
+    );
+    assert!(service
+        .model
+        .sketch_entities
+        .iter()
+        .all(|entity| !entity.construction));
+}
+
+#[test]
+fn empty_dimension_rows_do_not_build_relation_join_indexes() {
+    use crate::feature::definitions::{
+        FeatureRelationTable, FeatureRelationTriple, FeatureSkamp, FeatureSkampItem,
+        FeatureSolverTableHeader, SolverSubtable,
+    };
+    let mut scan = empty_section_scan();
+    scan.features.definitions[0].relations = Some(FeatureRelationTable {
+        declared_count: 1,
+        entity_ref: None,
+        rows: Vec::new(),
+        skamps: Some(SolverSubtable::Declared {
+            header: FeatureSolverTableHeader {
+                declared_count: 1,
+                entity_ref: 0,
+                offset: 0,
+            },
+            rows: vec![FeatureSkamp {
+                id: 3,
+                kind: 99,
+                flags: 0,
+                status: 1,
+                items: vec![FeatureSkampItem {
+                    entity_id: 7,
+                    sense: 0,
+                }],
+                offset: 0,
+            }],
+        }),
+        triples: Some(SolverSubtable::Declared {
+            header: FeatureSolverTableHeader {
+                declared_count: 1,
+                entity_ref: 0,
+                offset: 0,
+            },
+            rows: vec![FeatureRelationTriple {
+                relation_id: Some(9),
+                equation_id: None,
+                skamp_id: Some(3),
+                offset: 0,
+            }],
+        }),
+        offset: 0,
+    });
+    let ir = crate::test_support::assert_refusal_order(ResourceDimension::WorkUnits, &[], |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let dimension_solver =
+            super::RelationIncidences::for_dimension_rows(&ctx, &scan.features.definitions[0]);
+        if let Err(CodecError::ResourceLimit(resource)) = &dimension_solver {
+            assert_ne!(resource.operation, "creo solver relation join rows");
+            assert_ne!(resource.operation, "creo solver relation identity rows");
+        }
+        assert!(dimension_solver
+            .expect("empty dimension route uses no work")
+            .is_none());
+        let mut ir = cadmpeg_ir::document::CadIr::empty();
+        super::transfer_sketches(
+            &ctx,
+            &scan,
+            &mut ir,
+            &mut cadmpeg_ir::AnnotationBuilder::new(),
+            &mut Vec::new(),
+            &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+        )
+        .map(|_| ir)
+    });
+    assert_eq!(ir.model.sketches.len(), 1);
+    assert_eq!(ir.model.features.len(), 1);
+    assert_eq!(ir.model.sketch_constraints.len(), 1);
+    assert!(matches!(
+        ir.model.sketch_constraints[0].definition.kind(),
+        SketchConstraintDefinitionInput::Native { .. }
+    ));
+}
+
+#[test]
+fn rejected_orientation_candidates_do_not_consume_retained_storage() {
+    let sketch = SketchId::mint("creo:model:sketch#1").expect("sketch");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let (mut constraints, mut slots) = ctx
+        .temporary_vec(0, "test orientation staging")
+        .expect("staging");
+    let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+    for _ in 0..16 {
+        let mut storage = ctx
+            .reserve_scoped(0, "test orientation candidate")
+            .expect("scope");
+        let entity = storage
+            .with_storage(|| crate::decode::sketch_ids::sketch_entity_id_admitted(&ctx, &sketch, 7))
+            .expect("identity")
+            .expect("valid identity");
+        super::emit_verhor_constraint(
+            &ctx,
+            (&mut annotations, &mut constraints, &mut slots),
+            &BTreeSet::new(),
+            &sketch,
+            "7",
+            (
+                SketchConstraintDefinitionInput::Vertical { entity },
+                storage,
+            ),
+            0,
+        )
+        .expect("rejected candidate releases storage");
+    }
+    assert!(constraints.is_empty());
+    assert_eq!(
+        ctx.copy_retained_text("x", "test surviving output")
+            .expect("discarded candidates retained no bytes"),
+        "x"
+    );
+    drop(slots);
+    ctx.finish_session().expect("active session");
+}
+
+#[test]
+fn duplicate_solver_only_entity_identity_is_not_retained() {
+    use crate::feature::definitions::{
+        FeatureOrderRow, FeatureOrderTable, FeatureRelationTable, FeatureSavedEntity,
+        FeatureSavedLine, FeatureSkamp, FeatureSkampItem, FeatureSolverTableHeader, SolverSubtable,
+    };
+    let mut scan = empty_section_scan();
+    let definition = &mut scan.features.definitions[0];
+    definition.order_table = Some(FeatureOrderTable {
+        declared_count: 1,
+        has_prototype: false,
+        entity_ref: None,
+        rows: vec![FeatureOrderRow {
+            external_id: 7,
+            internal_id: 3,
+            bitmask: 0,
+            offset: 0,
+        }]
+        .into(),
+        offset: 0,
+    });
+    definition
+        .saved_section
+        .as_mut()
+        .expect("saved section")
+        .entities = vec![FeatureSavedEntity::Line(FeatureSavedLine {
+        entity_id: 3,
+        references: Vec::new(),
+        attributes: Vec::new(),
+        endpoints: [[Some(0.0), Some(0.0), None], [Some(1.0), Some(0.0), None]],
+        body: Vec::new(),
+        offset: 0,
+    })];
+    definition.relations = Some(FeatureRelationTable {
+        declared_count: 0,
+        entity_ref: None,
+        rows: Vec::new(),
+        skamps: Some(SolverSubtable::Declared {
+            header: FeatureSolverTableHeader {
+                declared_count: 1,
+                entity_ref: 0,
+                offset: 0,
+            },
+            rows: vec![FeatureSkamp {
+                id: 3,
+                kind: 99,
+                flags: 0,
+                status: 1,
+                items: vec![FeatureSkampItem {
+                    entity_id: 7,
+                    sense: 0,
+                }],
+                offset: 0,
+            }],
+        }),
+        triples: None,
+        offset: 0,
+    });
+    let ir =
+        crate::test_support::assert_refusal_order(ResourceDimension::RetainedBytes, &[], |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            let mut ir = cadmpeg_ir::document::CadIr::empty();
+            let result = super::transfer_sketches(
+                &ctx,
+                &scan,
+                &mut ir,
+                &mut cadmpeg_ir::AnnotationBuilder::new(),
+                &mut Vec::new(),
+                &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+            );
+            if let Err(CodecError::ResourceLimit(resource)) = &result {
+                assert_ne!(resource.operation, "creo sketch entity identity");
+            }
+            result.map(|_| ir)
+        });
+    assert_eq!(ir.model.sketch_entities.len(), 1);
+    assert_eq!(
+        ir.model.sketch_entities[0].id().as_str(),
+        "creo:featdefs:sketch_entity#7:7"
+    );
+    assert_eq!(ir.model.sketch_constraints.len(), 1);
+    assert!(matches!(
+        ir.model.sketch_constraints[0].definition.kind(),
+        SketchConstraintDefinitionInput::Native { .. }
     ));
 }

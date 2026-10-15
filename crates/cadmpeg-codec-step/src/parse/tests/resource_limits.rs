@@ -12,7 +12,10 @@ use crate::parse::{
 use crate::test_support::{with_policy_context, with_service_context};
 
 fn assert_local_refusal(error: ResolveError, operation: &'static str) {
-    let parsed = error.into_parse_error(0).into_codec_error();
+    let parsed = with_service_context(b"", |_, ctx| {
+        error.into_parse_error(0).into_codec_error(ctx)
+    })
+    .expect("resource conversion");
     assert!(matches!(parsed, CodecError::ResourceLimit(refusal)
         if refusal.dimension == ResourceDimension::Codec(operation)
             && refusal.operation == operation));
@@ -26,7 +29,7 @@ fn parameter_local_depth_refuses_as_resource() {
         let mut policy = DecodePolicy::service();
         policy.limits.max_recursion_depth = 1024;
         with_policy_context(source.as_bytes(), &policy, |source, ctx| {
-            assert!(matches!(crate::parse::parse_with_context(source, ctx),
+            assert!(matches!(crate::parse::parse_retained(source, ctx),
                 Err(CodecError::ResourceLimit(refusal)) if refusal.operation == "step_parse_parameter_depth_limit"));
         });
     }).expect("fixture operation succeeds").join().expect("fixture operation succeeds");
@@ -45,7 +48,7 @@ fn anchor_local_depth_refuses_as_resource() {
             .expect("empty resolver scope fits")
             .resolve(
                 &Value::Integer(1),
-                &mut Vec::new(),
+                &mut std::collections::HashSet::new(),
                 &mut stack_storage,
                 10,
                 256,
@@ -191,7 +194,7 @@ fn unknown_record_rejects_non_finite_real_at_lex_admission() {
     const SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=UNKNOWN_ITEM(1.E9999);ENDSEC;END-ISO-10303-21;";
     with_service_context(SOURCE, |source, ctx| {
         assert!(
-            matches!(crate::parse::parse_with_context(source, ctx), Err(CodecError::Malformed(message))
+            matches!(crate::parse::parse_retained(source, ctx), Err(CodecError::Malformed(message))
             if message.contains("finite binary64 range"))
         );
     });

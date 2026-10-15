@@ -246,7 +246,7 @@ where
     T: Serialize,
     F: FnMut(&mut AnnotationBuilder, &T) -> Result<(), CodecError>,
 {
-    for record in records {
+    for record in ctx.admit_iter(records, "creo native annotation traversal")? {
         annotate_each(annotations, record)?;
     }
     store_arena(ctx, ir, key, records)
@@ -469,5 +469,22 @@ mod tests {
             assert_eq!(arena.as_str(), expected);
             assert!(seen.insert(arena.as_str()), "duplicate arena spelling");
         }
+    }
+
+    #[test]
+    fn empty_native_arena_is_free() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        let mut ir = cadmpeg_ir::document::CadIr::empty();
+        super::store_arena::<u32>(&ctx, &mut ir, CreoArena::ExpandedSections, &[])
+            .expect("empty arena performs no work");
+        assert!(ir.native.namespace("creo").is_none());
     }
 }

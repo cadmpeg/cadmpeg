@@ -16,6 +16,7 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
 
+mod ordering_storage;
 mod orientations;
 
 fn carrier_surface(id: u32, geometry: SurfaceGeometry) -> Surface {
@@ -56,21 +57,21 @@ fn carrier_row(id: u32, kind: crate::surface::SurfaceKind) -> crate::surface::Su
 fn placed_carrier_collection_error(
     scan: &crate::container::ContainerScan,
     ir: &CadIr,
-    limit: u64,
+    operation: &'static str,
 ) -> CodecError {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    match placed_carriers(
-        &ctx,
-        scan,
-        ir,
-        &crate::decode::source_carriers::SourceUnitCarriers::default(),
-    ) {
-        Ok(_) => panic!("one carrier collection exceeds limit"),
-        Err(error) => error,
-    }
+    crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::CollectionItems,
+        operation,
+        |ctx| {
+            placed_carriers(
+                ctx,
+                scan,
+                ir,
+                &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            )
+        },
+    )
 }
 
 fn assert_placed_carrier_refusal(error: &CodecError, operation: &'static str) {
@@ -95,32 +96,8 @@ fn placed_carriers_refuse_plane_carrier_node() {
             offset: 0,
         });
     assert_placed_carrier_refusal(
-        &placed_carrier_collection_error(&scan, &CadIr::empty(), 3),
+        &placed_carrier_collection_error(&scan, &CadIr::empty(), "creo placed carrier nodes"),
         "creo placed carrier nodes",
-    );
-}
-
-#[test]
-fn placed_carriers_refuse_row_id_node() {
-    let mut scan = crate::test_support::empty_container_scan();
-    scan.surfaces
-        .rows
-        .push(carrier_row(7, crate::surface::SurfaceKind::Plane));
-    assert_placed_carrier_refusal(
-        &placed_carrier_collection_error(&scan, &CadIr::empty(), 0),
-        "creo placed carrier row IDs",
-    );
-}
-
-#[test]
-fn placed_carriers_refuse_row_count_node() {
-    let mut scan = crate::test_support::empty_container_scan();
-    scan.surfaces
-        .rows
-        .push(carrier_row(7, crate::surface::SurfaceKind::Plane));
-    assert_placed_carrier_refusal(
-        &placed_carrier_collection_error(&scan, &CadIr::empty(), 1),
-        "creo placed carrier row counts",
     );
 }
 
@@ -135,7 +112,7 @@ fn rowless_cylinder_input() -> (crate::container::ContainerScan<'static>, CadIr)
 fn placed_carriers_refuse_rowless_group_node() {
     let (scan, ir) = rowless_cylinder_input();
     assert_placed_carrier_refusal(
-        &placed_carrier_collection_error(&scan, &ir, 0),
+        &placed_carrier_collection_error(&scan, &ir, "creo rowless carrier groups"),
         "creo rowless carrier groups",
     );
 }
@@ -144,7 +121,7 @@ fn placed_carriers_refuse_rowless_group_node() {
 fn placed_carriers_refuse_rowless_group_member() {
     let (scan, ir) = rowless_cylinder_input();
     assert_placed_carrier_refusal(
-        &placed_carrier_collection_error(&scan, &ir, 1),
+        &placed_carrier_collection_error(&scan, &ir, "creo rowless carrier members"),
         "creo rowless carrier members",
     );
 }
@@ -153,7 +130,7 @@ fn placed_carriers_refuse_rowless_group_member() {
 fn placed_carriers_refuse_rowless_carrier_node() {
     let (scan, ir) = rowless_cylinder_input();
     assert_placed_carrier_refusal(
-        &placed_carrier_collection_error(&scan, &ir, 2),
+        &placed_carrier_collection_error(&scan, &ir, "creo placed carrier nodes"),
         "creo placed carrier nodes",
     );
 }
@@ -198,43 +175,29 @@ fn topology_bound_curve_input() -> (crate::container::ContainerScan<'static>, Ca
     (scan, ir)
 }
 
-fn topology_bound_curve_collection_error(limit: u64) -> CodecError {
-    let (scan, mut ir) = topology_bound_curve_input();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    transfer_topology_bound_planes(
-        &ctx,
-        &scan,
-        &mut ir,
-        &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
-        &BTreeSet::new(),
-        &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+fn topology_bound_curve_collection_error(operation: &'static str) -> CodecError {
+    crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::CollectionItems,
+        operation,
+        |ctx| {
+            let (scan, mut ir) = topology_bound_curve_input();
+            transfer_topology_bound_planes(
+                ctx,
+                &scan,
+                &mut ir,
+                &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+                &BTreeSet::new(),
+                &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+            )
+        },
     )
-    .expect_err("topology-bound curve exceeds collection limit")
-}
-
-#[test]
-fn topology_bound_plane_refuses_unique_surface_count_node() {
-    assert_placed_carrier_refusal(
-        &topology_bound_curve_collection_error(9),
-        "creo unique-row count nodes",
-    );
-}
-
-#[test]
-fn topology_bound_plane_refuses_unique_surface_projection() {
-    assert_placed_carrier_refusal(
-        &topology_bound_curve_collection_error(10),
-        "creo unique-row projection",
-    );
 }
 
 #[test]
 fn topology_bound_plane_refuses_unique_curve_count_node() {
     assert_placed_carrier_refusal(
-        &topology_bound_curve_collection_error(11),
+        &topology_bound_curve_collection_error("creo unique-row count nodes"),
         "creo unique-row count nodes",
     );
 }
@@ -242,7 +205,7 @@ fn topology_bound_plane_refuses_unique_curve_count_node() {
 #[test]
 fn topology_bound_plane_refuses_unique_curve_projection() {
     assert_placed_carrier_refusal(
-        &topology_bound_curve_collection_error(12),
+        &topology_bound_curve_collection_error("creo unique-row projection"),
         "creo unique-row projection",
     );
 }
@@ -250,7 +213,7 @@ fn topology_bound_plane_refuses_unique_curve_projection() {
 #[test]
 fn topology_bound_plane_refuses_unique_curve_id_node() {
     assert_placed_carrier_refusal(
-        &topology_bound_curve_collection_error(13),
+        &topology_bound_curve_collection_error("creo topology-bound unique curve IDs"),
         "creo topology-bound unique curve IDs",
     );
 }
@@ -258,7 +221,7 @@ fn topology_bound_plane_refuses_unique_curve_id_node() {
 #[test]
 fn topology_bound_plane_refuses_boundary_curve_vector() {
     assert_placed_carrier_refusal(
-        &topology_bound_curve_collection_error(14),
+        &topology_bound_curve_collection_error("creo topology-bound boundary curves"),
         "creo topology-bound boundary curves",
     );
 }
@@ -266,7 +229,7 @@ fn topology_bound_plane_refuses_boundary_curve_vector() {
 #[test]
 fn topology_bound_plane_refuses_curve_plane_vector() {
     assert_placed_carrier_refusal(
-        &topology_bound_curve_collection_error(15),
+        &topology_bound_curve_collection_error("creo topology-bound curve planes"),
         "creo topology-bound curve planes",
     );
 }
@@ -289,6 +252,20 @@ fn topology_bound_plane_refuses_face_point_vector() {
         topology_bound_face_points(ctx, &solved_vertices, &vertex_faces, 5)
     })
     .expect("service face points");
+    assert_eq!(points, [[2.0, 3.0, 4.0]]);
+}
+
+#[test]
+fn topology_bound_face_point_lookup_refuses_work() {
+    let solved_vertices = BTreeMap::from([(1, [2.0, 3.0, 4.0])]);
+    let vertex_faces = BTreeMap::from([(
+        std::num::NonZeroU32::new(1).expect("one-based vertex fixture"),
+        BTreeSet::from([5]),
+    )]);
+    let points = crate::test_support::assert_work_boundaries(
+        &["creo topology-bound vertex face lookup"],
+        |ctx| topology_bound_face_points(ctx, &solved_vertices, &vertex_faces, 5),
+    );
     assert_eq!(points, [[2.0, 3.0, 4.0]]);
 }
 
@@ -667,7 +644,7 @@ fn loop_classifier_rejects_inner_edge_crossing_concave_outer() {
     );
 }
 
-fn planar_polygon_collection_error(limit: u64, two_loops: bool) -> CodecError {
+fn planar_polygon_collection_error(operation: &'static str, two_loops: bool) -> CodecError {
     let make_loop = |base: u32| {
         crate::test_support::closed_loop(
             std::num::NonZeroU32::new(5),
@@ -712,29 +689,34 @@ fn planar_polygon_collection_error(limit: u64, two_loops: bool) -> CodecError {
         origin: [0.0, 0.0, 0.0],
         normal: [0.0, 0.0, 1.0],
     };
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    let result = if two_loops {
-        super::ordered_planar_face_loops(
-            &ctx,
-            vec![&outer, &inner],
-            plane,
-            &incidence,
-            &solved_vertices,
-        )
-        .map(|_| ())
-    } else {
-        super::projected_loop_polygon(&ctx, &outer, plane, &incidence, &solved_vertices).map(|_| ())
-    };
-    result.expect_err("polygon collection exceeds limit")
+
+    crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::CollectionItems,
+        operation,
+        |ctx| {
+            let result = if two_loops {
+                super::ordered_planar_face_loops(
+                    ctx,
+                    vec![&outer, &inner],
+                    plane,
+                    &incidence,
+                    &solved_vertices,
+                )
+                .map(|_| ())
+            } else {
+                super::projected_loop_polygon(ctx, &outer, plane, &incidence, &solved_vertices)
+                    .map(|_| ())
+            };
+            result
+        },
+    )
 }
 
 #[test]
 fn projected_loop_polygon_refuses_point_collection() {
     assert_placed_carrier_refusal(
-        &planar_polygon_collection_error(0, false),
+        &planar_polygon_collection_error("creo projected loop polygon points", false),
         "creo projected loop polygon points",
     );
 }
@@ -742,7 +724,7 @@ fn projected_loop_polygon_refuses_point_collection() {
 #[test]
 fn ordered_planar_face_loops_refuses_polygon_collection() {
     assert_placed_carrier_refusal(
-        &planar_polygon_collection_error(6, true),
+        &planar_polygon_collection_error("creo projected loop polygons", true),
         "creo projected loop polygons",
     );
 }
@@ -794,6 +776,45 @@ fn parameter_loop_classifier_orders_unique_outer() {
         .expect("service parameter loop ordering")
         .is_none()
     );
+}
+
+fn ordered_parameter_loop_shift_work_refusal(operation: &'static str) {
+    let make_loop = |base: u32| {
+        crate::test_support::closed_loop(
+            std::num::NonZeroU32::new(5),
+            (0_u32..4)
+                .map(|index| crate::topology::HalfEdgeId {
+                    curve_id: base + index,
+                    side: crate::topology::Side::Zero,
+                })
+                .collect(),
+        )
+    };
+    let inner_left = make_loop(10);
+    let outer = make_loop(20);
+    let inner_right = make_loop(30);
+    let polygons = [
+        vec![[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]],
+        vec![[-10.0, -10.0], [10.0, -10.0], [10.0, 10.0], [-10.0, 10.0]],
+        vec![[2.0, 2.0], [3.0, 2.0], [3.0, 3.0], [2.0, 3.0]],
+    ];
+    let ordered = crate::test_support::assert_work_boundaries(&[operation], |ctx| {
+        super::ordered_parameter_face_loops(ctx, vec![&inner_left, &outer, &inner_right], &polygons)
+            .map(|ordered| {
+                ordered.map(|loops| {
+                    loops
+                        .into_iter()
+                        .map(|loop_| loop_.half_edges()[0].curve_id)
+                        .collect::<Vec<_>>()
+                })
+            })
+    });
+    assert_eq!(ordered, Some(vec![20, 10, 30]));
+}
+
+#[test]
+fn ordered_parameter_loop_remove_refuses_shift_work() {
+    ordered_parameter_loop_shift_work_refusal("creo ordered face loop rotation");
 }
 
 #[test]
@@ -856,7 +877,7 @@ fn topology_bound_plane_rejects_duplicate_model_curve_ids() {
 fn a_geometry_section_holds_every_offset_up_to_its_end_and_none_past_it() {
     let mut scan = crate::test_support::empty_container_scan();
     let section =
-        crate::container::Section::scan("VisibGeom".to_string(), 16, 48, None, &[0u8; 48])
+        crate::container::Section::scan_for_test("VisibGeom".to_string(), 16, 48, None, &[0u8; 48])
             .expect("section extent")
             .section;
     let end = section.end();
@@ -878,7 +899,7 @@ fn a_geometry_section_holds_every_offset_up_to_its_end_and_none_past_it() {
 fn geometry_section_record_refuses_retained_identity_limit() {
     let mut scan = crate::test_support::empty_container_scan();
     scan.framing.sections.push(
-        crate::container::Section::scan("VisibGeom".to_string(), 16, 48, None, &[0u8; 48])
+        crate::container::Section::scan_for_test("VisibGeom".to_string(), 16, 48, None, &[0u8; 48])
             .expect("section extent")
             .section,
     );
@@ -894,4 +915,5 @@ fn geometry_section_record_refuses_retained_identity_limit() {
             && resource.operation == "creo geometry section record identity"));
 }
 
+mod admission_visits;
 mod predicates;

@@ -414,3 +414,5 @@ fn projected_rendering_channels_refuse_collection_limit() {
             if refusal.operation == "Rhino projected rendering channels"
     ));
 }
+
+mod fallible_prefix;

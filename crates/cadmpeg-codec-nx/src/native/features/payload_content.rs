@@ -64,7 +64,7 @@ impl FeaturePayloadContent<Vec<FeaturePayloadBlock>> {
         I: IntoIterator<Item = String>,
         I::IntoIter: ExactSizeIterator,
     {
-        Self::build_from_source(ctx, ids, blocks, None)
+        Self::build_from_source::<_, false>(ctx, ids, blocks, None)
     }
 
     /// Consumes ids whose vector backing storage is held by `source_storage`.
@@ -76,10 +76,27 @@ impl FeaturePayloadContent<Vec<FeaturePayloadBlock>> {
         blocks: &BTreeMap<String, (&[u8], u64)>,
         source_storage: ScopedReservation<'_>,
     ) -> Result<Option<Self>, CodecError> {
-        Self::build_from_source(ctx, ids, blocks, Some(source_storage))
+        Self::build_from_source::<_, false>(ctx, ids, blocks, Some(source_storage))
     }
 
-    fn build_from_source<I>(
+    /// Consumes at most `MAX` ids whose backing storage is held by `source_storage`.
+    /// Row visits and length validation have a constant bound; block lookups,
+    /// hashing and storage keep their separate admission.
+    pub(super) fn from_scoped_source_bounded<const MAX: usize>(
+        ctx: &DecodeContext<'_>,
+        ids: Vec<String>,
+        blocks: &BTreeMap<String, (&[u8], u64)>,
+        source_storage: ScopedReservation<'_>,
+    ) -> Result<Option<Self>, CodecError> {
+        if ids.len() > MAX {
+            drop(ids);
+            drop(source_storage);
+            return Ok(None);
+        }
+        Self::build_from_source::<_, true>(ctx, ids, blocks, Some(source_storage))
+    }
+
+    fn build_from_source<I, const FIXED: bool>(
         ctx: &DecodeContext<'_>,
         ids: I,
         blocks: &BTreeMap<String, (&[u8], u64)>,
@@ -91,12 +108,17 @@ impl FeaturePayloadContent<Vec<FeaturePayloadBlock>> {
     {
         let mut storage = ctx.reserve_scoped(0, "NX feature payload blocks")?;
         let Some((rows, hash)) =
-            payload_blocks_from_source::<_, false>(ctx, ids, blocks, &mut storage, source_storage)?
+            payload_blocks_from_source::<_, FIXED>(ctx, ids, blocks, &mut storage, source_storage)?
         else {
             return Ok(None);
         };
-        validate_payload_lengths(ctx, &rows)?
-            .ok_or_else(|| ctx.refuse_codec_limit("count NX feature payload bytes", 0, 1))?;
+        let length = if FIXED {
+            validate_payload_lengths(&StandardAdmission, &rows)
+                .unwrap_or_else(|never| match never {})
+        } else {
+            validate_payload_lengths(ctx, &rows)?
+        };
+        length.ok_or_else(|| ctx.refuse_codec_limit("count NX feature payload bytes", 0, 1))?;
         let blocks = storage.commit_value(rows)?;
         let sha256 = cadmpeg_ir::hash::digest::Sha256Digest::from_bytes_for_decode(
             ctx,
@@ -453,7 +475,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::{FeaturePayloadBlock, FeaturePayloadContent};
-    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_core::decode::{u64_from_index, ResourceDimension};
     use cadmpeg_core::CodecError;
     use std::collections::BTreeMap;
 
@@ -690,6 +712,111 @@ mod tests {
                     content.sha256,
                     cadmpeg_ir::hash::digest::Sha256Digest::digest(b"abcabc"),
                 );
+                assert_eq!(ctx.resource_refusal(), None);
+                Ok::<_, CodecError>(())
+            },
+        )
+        .unwrap();
+    }
+
+    fn assert_bounded_vector_work<const MAX: usize>(count: usize) {
+        assert!(count <= MAX && MAX <= 19);
+        let blocks = BTreeMap::from([("a".to_owned(), (b"abc".as_slice(), 10))]);
+        let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+            let (ids, slots, mut text) = super::copy_block_ids(
+                ctx,
+                [Some("a"); MAX].into_iter().take(count),
+                "test bounded payload source ids",
+            )?
+            .unwrap();
+            let content = text
+                .with_storage(|| {
+                    FeaturePayloadContent::from_scoped_source_bounded::<MAX>(
+                        ctx, ids, &blocks, slots,
+                    )
+                })?
+                .unwrap();
+            text.commit_value(content)
+        };
+        let baseline = crate::test_support::with_decode_context(decode).unwrap();
+        assert_eq!(baseline.blocks().len(), count);
+        assert!(baseline.blocks().iter().all(|block| block.byte_len == 3));
+
+        // Each row copies one id byte, looks up one key byte, and hashes three bytes.
+        // Each vector moves its old capacity when it grows past 4, 8 or 16 slots.
+        let moved_slots = [4, 8, 16]
+            .into_iter()
+            .filter(|capacity| count > *capacity)
+            .sum::<usize>();
+        let work = u64_from_index(
+            5 * count
+                + moved_slots
+                    * (std::mem::size_of::<String>() + std::mem::size_of::<FeaturePayloadBlock>()),
+        );
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| policy.limits.max_work_units = work,
+            |ctx| {
+                assert_eq!(decode(ctx)?, baseline);
+                assert_eq!(ctx.resource_refusal(), None);
+                Ok::<_, CodecError>(())
+            },
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn payload_bounded_datum_plane_visits_are_constant_work() {
+        assert_bounded_vector_work::<2>(1);
+        assert_bounded_vector_work::<2>(2);
+    }
+
+    #[test]
+    fn payload_bounded_fset_visits_are_constant_work() {
+        assert_bounded_vector_work::<3>(2);
+        assert_bounded_vector_work::<3>(3);
+    }
+
+    #[test]
+    fn payload_bounded_projected_curve_visits_are_constant_work() {
+        assert_bounded_vector_work::<8>(3);
+        assert_bounded_vector_work::<8>(8);
+    }
+
+    #[test]
+    fn payload_bounded_pattern_visits_are_constant_work() {
+        assert_bounded_vector_work::<10>(9);
+        assert_bounded_vector_work::<10>(10);
+    }
+
+    #[test]
+    fn payload_bounded_block_visits_are_constant_work() {
+        assert_bounded_vector_work::<19>(19);
+    }
+
+    #[test]
+    fn payload_bounded_count_rejects_oversized_ids_before_lookup() {
+        let blocks = BTreeMap::from([("a".to_owned(), (b"abc".as_slice(), 10))]);
+        let bytes = u64_from_index(4 * std::mem::size_of::<String>() + 3);
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_work_units = 3;
+                policy.limits.max_materialized_bytes = bytes;
+            },
+            |ctx| {
+                let (ids, slots, text) = super::copy_block_ids(
+                    ctx,
+                    [Some("a"); 3].into_iter(),
+                    "test oversized payload source ids",
+                )?
+                .unwrap();
+                let content = FeaturePayloadContent::from_scoped_source_bounded::<2>(
+                    ctx, ids, &blocks, slots,
+                )?;
+                assert!(content.is_none());
+                drop(text);
+                let _released = ctx.reserve_scoped(bytes, "test oversized payload release")?;
                 assert_eq!(ctx.resource_refusal(), None);
                 Ok::<_, CodecError>(())
             },
