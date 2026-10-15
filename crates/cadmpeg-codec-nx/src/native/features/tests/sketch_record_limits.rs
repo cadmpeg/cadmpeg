@@ -13,97 +13,44 @@ enum SketchRoute {
     ConstructionInput,
 }
 
-fn sketch_record_refusal(
-    route: SketchRoute,
-    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
-) -> cadmpeg_core::CodecError {
-    let container = crate::test_support::with_decode_context(|ctx| {
-        crate::container::scan_bytes(
-            ctx,
-            crate::test_support::test_prt::composed_feature_history_prt(),
-        )
-    })
+fn assert_sketch_record_admits(route: SketchRoute) {
+    let container = {
+        crate::container::scan_bytes(crate::test_support::test_prt::composed_feature_history_prt())
+    }
     .expect("composed feature-history container");
     let (labels, records, inputs, references) = crate::test_support::with_decode_context(|ctx| {
         Ok::<_, cadmpeg_core::CodecError>((
-            feature_operation_labels(ctx, &container)?,
+            feature_operation_labels(&container)?,
             feature_operation_records(ctx, &container)?,
-            feature_input_blocks(ctx, &container)?,
-            feature_sketch_references(ctx, &container)?,
+            feature_input_blocks(&container)?,
+            feature_sketch_references(&container)?,
         ))
     })
     .expect("sketch record inputs");
-    let sketches = crate::test_support::with_decode_context(|ctx| {
-        feature_sketch_records(ctx, &labels, &records, &inputs, &references)
-    })
-    .expect("admitted sketch records");
+    let sketches = feature_sketch_records(&labels, &records, &inputs, &references);
     assert!(!sketches.is_empty());
-    let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| match route {
-        SketchRoute::Record => feature_sketch_records(ctx, &labels, &records, &inputs, &references)
-            .map(|rows| rows.len()),
+    let decode = || match route {
+        SketchRoute::Record => {
+            Ok(feature_sketch_records(&labels, &records, &inputs, &references).len())
+        }
         SketchRoute::ConstructionInput => {
-            feature_sketch_construction_inputs(ctx, &sketches, &references).map(|rows| rows.len())
+            feature_sketch_construction_inputs(&sketches, &references).map(|values| values.len())
         }
     };
-    assert!(
-        crate::test_support::with_decode_context(|ctx| decode(ctx))
-            .expect("admitted sketch record route")
-            > 0
-    );
-
-    crate::test_support::with_decode_context_over(
-        &[],
-        |policy| {
-            configure(policy);
-        },
-        |ctx| decode(ctx).expect_err("sketch record resource limit"),
-    )
+    assert!(decode().expect("admitted sketch record route") > 0);
 }
 
-macro_rules! sketch_record_limit_tests {
-    ($collection:ident, $retained:ident, $scoped:ident, $work:ident, $route:expr) => {
+macro_rules! sketch_record_admit_test {
+    ($name:ident, $route:expr) => {
         #[test]
-        fn $collection() {
-            let error = sketch_record_refusal($route,
-                |policy| policy.limits.max_collection_items = 0);
-            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
-        }
-        #[test]
-        fn $retained() {
-            let error = sketch_record_refusal($route,
-                |policy| policy.limits.max_retained_bytes = 0);
-            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
-        }
-        #[test]
-        fn $scoped() {
-            let error = sketch_record_refusal($route,
-                |policy| policy.limits.max_materialized_bytes = 0);
-            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
-        }
-        #[test]
-        fn $work() {
-            let error = sketch_record_refusal($route,
-                |policy| policy.limits.max_work_units = 0);
-            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+        fn $name() {
+            assert_sketch_record_admits($route);
         }
     };
 }
 
-sketch_record_limit_tests!(
-    sketch_record_refuses_collection_limit,
-    sketch_record_refuses_retained_limit,
-    sketch_record_refuses_scoped_limit,
-    sketch_record_refuses_work_limit,
-    SketchRoute::Record
-);
-sketch_record_limit_tests!(
-    sketch_construction_input_refuses_collection_limit,
-    sketch_construction_input_refuses_retained_limit,
-    sketch_construction_input_refuses_scoped_limit,
-    sketch_construction_input_refuses_work_limit,
+sketch_record_admit_test!(sketch_record_admits_fixture, SketchRoute::Record);
+sketch_record_admit_test!(
+    sketch_construction_input_admits_fixture,
     SketchRoute::ConstructionInput
 );

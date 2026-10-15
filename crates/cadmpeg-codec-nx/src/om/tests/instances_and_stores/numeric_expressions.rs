@@ -3,37 +3,27 @@ use crate::om::reference_value::{DirectReference, Tagged28};
 use crate::om::ExpressionUnit;
 
 fn evaluate_constant_expression_for_test(text: &str) -> Option<cadmpeg_ir::scalar::FiniteReal> {
-    crate::test_support::with_decode_context(|ctx| {
-        crate::om::evaluate_constant_expression(ctx, text)
-    })
-    .unwrap()
+    crate::om::evaluate_constant_expression(text)
 }
 
 fn expression_declaration_name_for_test(
     bytes: &[u8],
 ) -> Option<crate::om::ExpressionDeclarationName<'_>> {
-    crate::test_support::with_decode_context(|ctx| {
-        crate::om::expression_declaration_name(ctx, bytes)
-    })
-    .unwrap()
+    crate::om::expression_declaration_name(bytes)
 }
 
 fn references_for_test(
     bytes: &[u8],
     base_offset: usize,
 ) -> Vec<crate::om::LocatedReference<DirectReference>> {
-    crate::test_support::with_decode_context(|ctx| crate::om::references(ctx, bytes, base_offset))
-        .unwrap()
+    crate::om::references(bytes, base_offset)
 }
 
 fn record_references_for_test(
     bytes: &[u8],
     base_offset: usize,
 ) -> Vec<crate::om::LocatedReference<DirectReference>> {
-    crate::test_support::with_decode_context(|ctx| {
-        crate::om::record_references(ctx, bytes, base_offset)
-    })
-    .unwrap()
+    crate::om::record_references(bytes, base_offset)
 }
 
 fn counted_record_references_for_test(
@@ -41,42 +31,64 @@ fn counted_record_references_for_test(
     base_offset: usize,
     record_count: usize,
 ) -> Vec<crate::om::LocatedReference<u16>> {
-    crate::test_support::with_decode_context(|ctx| {
-        crate::om::counted_record_references(ctx, bytes, base_offset, record_count)
-    })
-    .unwrap()
+    crate::om::counted_record_references(bytes, base_offset, record_count)
 }
 
 #[test]
 fn om_numeric_expression_types_only_canonical_parameter_names() {
-    crate::test_support::with_decode_context(|ctx| {
-        for name in ["p12foo", "p12_", "p4294967296_radius"] {
-            let text = format!("(Number [mm]) {name}: 5; ");
-            let mut bytes = b"hostglobalvariables".to_vec();
-            bytes.extend_from_slice(&[
-                0x99,
-                0x04,
-                u8::try_from(text.len() + 2).expect("fixture value fits u8"),
-            ]);
-            bytes.extend_from_slice(text.as_bytes());
-            bytes.push(0);
+    for name in ["p12foo", "p12_", "p4294967296_radius"] {
+        let text = format!("(Number [mm]) {name}: 5; ");
+        let mut bytes = b"hostglobalvariables".to_vec();
+        bytes.extend_from_slice(&[
+            0x99,
+            0x04,
+            u8::try_from(text.len() + 2).expect("fixture value fits u8"),
+        ]);
+        bytes.extend_from_slice(text.as_bytes());
+        bytes.push(0);
 
-            let expressions = numeric_expressions(ctx, &bytes).unwrap();
-            assert_eq!(expressions.len(), 1);
-            assert_eq!(expressions[0].name.as_str(), name);
-            assert_eq!(expressions[0].name.index(), None);
-            assert_eq!(expressions[0].name.qualifier(), None);
-        }
-        assert!(expression_declaration_name_for_test(b"\x04\x08p12foo\0").is_none());
-        assert!(expression_declaration_name_for_test(b"\x04\x06p12_\0").is_none());
-    });
+        let expressions = numeric_expressions(&bytes);
+        assert_eq!(expressions.len(), 1);
+        assert_eq!(expressions[0].name.as_str(), name);
+        assert_eq!(expressions[0].name.index(), None);
+        assert_eq!(expressions[0].name.qualifier(), None);
+    }
+    assert!(expression_declaration_name_for_test(b"\x04\x08p12foo\0").is_none());
+    assert!(expression_declaration_name_for_test(b"\x04\x06p12_\0").is_none());
 }
 
 #[test]
 fn om_numeric_expression_evaluates_constant_arithmetic_formula() {
-    crate::test_support::with_decode_context(|ctx| {
-        let text = b"(Number [mm]) p9: (193.94 - 6) / 2 + 1.5e1; ";
-        let mut bytes = b"hostglobalvariables".to_vec();
+    let text = b"(Number [mm]) p9: (193.94 - 6) / 2 + 1.5e1; ";
+    let mut bytes = b"hostglobalvariables".to_vec();
+    bytes.extend_from_slice(&[
+        0x99,
+        0x04,
+        u8::try_from(text.len() + 2).expect("fixture value fits u8"),
+    ]);
+    bytes.extend_from_slice(text);
+    bytes.push(0);
+
+    let expressions = numeric_expressions(&bytes);
+    assert_eq!(expressions.len(), 1);
+    assert_eq!(expressions[0].expression, "(193.94 - 6) / 2 + 1.5e1");
+    assert_eq!(
+        expressions[0]
+            .constant_value()
+            .map(cadmpeg_ir::scalar::FiniteReal::get),
+        Some(108.97)
+    );
+}
+
+#[test]
+fn om_numeric_expression_accepts_inches_and_terminal_comments() {
+    let texts = [
+        b"(Number [in]) p1: 0.5; ".as_slice(),
+        b"(Number [in]) p2: p1 * 2; // Used By ...\n".as_slice(),
+        b"(Number [custom/unit]) p3: 4; ".as_slice(),
+    ];
+    let mut bytes = b"hostglobalvariables".to_vec();
+    for text in texts {
         bytes.extend_from_slice(&[
             0x99,
             0x04,
@@ -84,145 +96,30 @@ fn om_numeric_expression_evaluates_constant_arithmetic_formula() {
         ]);
         bytes.extend_from_slice(text);
         bytes.push(0);
+    }
 
-        let expressions = numeric_expressions(ctx, &bytes).unwrap();
-        assert_eq!(expressions.len(), 1);
-        assert_eq!(expressions[0].expression, "(193.94 - 6) / 2 + 1.5e1");
-        assert_eq!(
-            expressions[0]
-                .constant_value(ctx)
-                .unwrap()
-                .map(cadmpeg_ir::scalar::FiniteReal::get),
-            Some(108.97)
-        );
-    });
-}
+    let expressions = numeric_expressions(&bytes);
 
-#[test]
-fn om_numeric_expression_accepts_inches_and_terminal_comments() {
-    crate::test_support::with_decode_context(|ctx| {
-        let texts = [
-            b"(Number [in]) p1: 0.5; ".as_slice(),
-            b"(Number [in]) p2: p1 * 2; // Used By ...\n".as_slice(),
-            b"(Number [custom/unit]) p3: 4; ".as_slice(),
-        ];
-        let mut bytes = b"hostglobalvariables".to_vec();
-        for text in texts {
-            bytes.extend_from_slice(&[
-                0x99,
-                0x04,
-                u8::try_from(text.len() + 2).expect("fixture value fits u8"),
-            ]);
-            bytes.extend_from_slice(text);
-            bytes.push(0);
-        }
-
-        let expressions = numeric_expressions(ctx, &bytes).unwrap();
-
-        assert_eq!(expressions.len(), 3);
-        assert_eq!(expressions[0].unit, ExpressionUnit::Inch);
-        assert_eq!(expressions[0].expression, "0.5");
-        assert_eq!(
-            expressions[0]
-                .constant_value(ctx)
-                .unwrap()
-                .map(cadmpeg_ir::scalar::FiniteReal::get),
-            Some(0.5)
-        );
-        assert_eq!(expressions[1].expression, "p1 * 2");
-        assert_eq!(expressions[1].constant_value(ctx).unwrap(), None);
-        assert_eq!(
-            expressions[2].unit,
-            ExpressionUnit::Native("custom/unit".into())
-        );
-        assert_eq!(
-            expressions[2]
-                .constant_value(ctx)
-                .unwrap()
-                .map(cadmpeg_ir::scalar::FiniteReal::get),
-            Some(4.0)
-        );
-    });
-}
-
-#[test]
-fn om_numeric_expressions_refuse_collection_limit() {
-    let text = b"(Number [mm]) p1: 2; ";
-    let mut bytes = b"hostglobalvariables".to_vec();
-    bytes.extend_from_slice(&[
-        0x99,
-        0x04,
-        u8::try_from(text.len() + 2).expect("fixture value fits u8"),
-    ]);
-    bytes.extend_from_slice(text);
-    bytes.push(0);
-
-    crate::test_support::with_decode_context_over(
-        &bytes,
-        |policy| {
-            policy.limits.max_collection_items = 0;
-        },
-        |ctx| {
-            let error = numeric_expressions(ctx, &bytes).unwrap_err();
-            assert!(
-                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
-            );
-        },
+    assert_eq!(expressions.len(), 3);
+    assert_eq!(expressions[0].unit, ExpressionUnit::Inch);
+    assert_eq!(expressions[0].expression, "0.5");
+    assert_eq!(
+        expressions[0]
+            .constant_value()
+            .map(cadmpeg_ir::scalar::FiniteReal::get),
+        Some(0.5)
     );
-}
-
-#[test]
-fn om_numeric_expressions_refuse_retained_limit() {
-    let text = b"(Number [mm]) p1: 2; ";
-    let mut bytes = b"hostglobalvariables".to_vec();
-    bytes.extend_from_slice(&[
-        0x99,
-        0x04,
-        u8::try_from(text.len() + 2).expect("fixture value fits u8"),
-    ]);
-    bytes.extend_from_slice(text);
-    bytes.push(0);
-
-    crate::test_support::with_decode_context_over(
-        &bytes,
-        |policy| {
-            policy.limits.max_retained_bytes = 0;
-        },
-        |ctx| {
-            let error = numeric_expressions(ctx, &bytes).unwrap_err();
-            assert!(
-                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
-            );
-        },
+    assert_eq!(expressions[1].expression, "p1 * 2");
+    assert_eq!(expressions[1].constant_value(), None);
+    assert_eq!(
+        expressions[2].unit,
+        ExpressionUnit::Native("custom/unit".into())
     );
-}
-
-#[test]
-fn om_numeric_expressions_refuse_work_limit() {
-    let text = b"(Number [mm]) p1: 2; ";
-    let mut bytes = b"hostglobalvariables".to_vec();
-    bytes.extend_from_slice(&[
-        0x99,
-        0x04,
-        u8::try_from(text.len() + 2).expect("fixture value fits u8"),
-    ]);
-    bytes.extend_from_slice(text);
-    bytes.push(0);
-
-    crate::test_support::with_decode_context_over(
-        &bytes,
-        |policy| {
-            policy.limits.max_work_units = 0;
-        },
-        |ctx| {
-            let error = numeric_expressions(ctx, &bytes).unwrap_err();
-            assert!(
-                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
-            );
-        },
+    assert_eq!(
+        expressions[2]
+            .constant_value()
+            .map(cadmpeg_ir::scalar::FiniteReal::get),
+        Some(4.0)
     );
 }
 
@@ -265,9 +162,7 @@ fn om_numeric_expression_parser_handles_deep_nesting_without_recursion() {
 #[test]
 fn om_string_value_requires_marker_length_printability_and_terminator() {
     let bytes = b"\x66\x32\x03\x0cSKETCH_001\0\x66\x32\x03\x03A\0\x66\x32\x03\x03A\x01";
-    let values =
-        crate::test_support::with_decode_context(|ctx| crate::om::string_values(ctx, bytes, 100))
-            .unwrap();
+    let values = crate::om::string_values(bytes, 100);
     assert_eq!(values.len(), 2);
     assert_eq!(values[0].offset, 100);
     assert_eq!(values[0].value.as_str(), "SKETCH_001");
@@ -331,199 +226,23 @@ fn om_record_references_require_adjacent_persistent_tagged_pairs() {
 
 #[test]
 fn om_numeric_expression_table_is_independent_of_entity_indexing() {
-    crate::test_support::with_decode_context(|ctx| {
-        let bytes = b"hostglobalvariables\x99\x04P(Number [degrees]) p8_CircularPattern_pattern_Circular_Dir_offset_angle: 120; \x00";
-        let expressions = numeric_expressions(ctx, bytes).unwrap();
-        assert_eq!(expressions.len(), 1);
-        assert_eq!(expressions[0].object_id, None);
-        assert_eq!(
-            expressions[0].name.as_str(),
-            "p8_CircularPattern_pattern_Circular_Dir_offset_angle"
-        );
-        assert_eq!(expressions[0].name.index(), Some(8));
-        assert_eq!(
-            expressions[0].name.qualifier(),
-            Some("CircularPattern_pattern_Circular_Dir_offset_angle")
-        );
-        assert_eq!(
-            expressions[0]
-                .constant_value(ctx)
-                .unwrap()
-                .map(cadmpeg_ir::scalar::FiniteReal::get),
-            Some(120.0)
-        );
-    });
-}
-
-fn tagged_reference_refusal(
-    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
-) -> cadmpeg_core::CodecError {
-    let bytes = b"\xe0\x12\x34\x56\x78\xca\xbc\xde\xf0";
-
-    crate::test_support::with_decode_context_over(
-        bytes,
-        |policy| {
-            configure(policy);
-        },
-        |ctx| crate::om::references(ctx, bytes, 0).unwrap_err(),
-    )
-}
-
-fn counted_reference_refusal(
-    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
-) -> cadmpeg_core::CodecError {
-    let bytes = b"\x01\x03\x90\x00\x02\x90\x00\x04";
-
-    crate::test_support::with_decode_context_over(
-        bytes,
-        |policy| {
-            configure(policy);
-        },
-        |ctx| crate::om::counted_record_references(ctx, bytes, 0, 5).unwrap_err(),
-    )
-}
-
-#[test]
-fn tagged_references_refuse_collection_limit() {
-    let error = tagged_reference_refusal(|policy| policy.limits.max_collection_items = 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+    let bytes = b"hostglobalvariables\x99\x04P(Number [degrees]) p8_CircularPattern_pattern_Circular_Dir_offset_angle: 120; \x00";
+    let expressions = numeric_expressions(bytes);
+    assert_eq!(expressions.len(), 1);
+    assert_eq!(expressions[0].object_id, None);
+    assert_eq!(
+        expressions[0].name.as_str(),
+        "p8_CircularPattern_pattern_Circular_Dir_offset_angle"
     );
-}
-
-#[test]
-fn tagged_references_refuse_retained_limit() {
-    let error = tagged_reference_refusal(|policy| policy.limits.max_retained_bytes = 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+    assert_eq!(expressions[0].name.index(), Some(8));
+    assert_eq!(
+        expressions[0].name.qualifier(),
+        Some("CircularPattern_pattern_Circular_Dir_offset_angle")
     );
-}
-
-#[test]
-fn tagged_references_refuse_work_limit() {
-    let error = tagged_reference_refusal(|policy| policy.limits.max_work_units = 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
-    );
-}
-
-#[test]
-fn counted_references_refuse_collection_limit() {
-    let error = counted_reference_refusal(|policy| policy.limits.max_collection_items = 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
-    );
-}
-
-#[test]
-fn counted_references_refuse_retained_limit() {
-    let error = counted_reference_refusal(|policy| policy.limits.max_retained_bytes = 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
-    );
-}
-
-#[test]
-fn counted_references_refuse_work_limit() {
-    let error = counted_reference_refusal(|policy| policy.limits.max_work_units = 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
-    );
-}
-
-fn printable_string_refusal(
-    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
-) -> cadmpeg_core::CodecError {
-    let bytes = b"\x66\x32\x03\x03A\0";
-
-    crate::test_support::with_decode_context_over(
-        bytes,
-        |policy| {
-            configure(policy);
-        },
-        |ctx| crate::om::string_values(ctx, bytes, 0).unwrap_err(),
-    )
-}
-
-#[test]
-fn printable_strings_refuse_collection_limit() {
-    let error = printable_string_refusal(|policy| policy.limits.max_collection_items = 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
-    );
-}
-
-#[test]
-fn printable_strings_refuse_retained_limit() {
-    let error = printable_string_refusal(|policy| policy.limits.max_retained_bytes = 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
-    );
-}
-
-#[test]
-fn printable_strings_refuse_work_limit() {
-    let error = printable_string_refusal(|policy| policy.limits.max_work_units = 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
-    );
-}
-
-fn expression_stack_refusal(
-    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
-) -> cadmpeg_core::CodecError {
-    let bytes = b"(1 + 2) * 3";
-
-    crate::test_support::with_decode_context_over(
-        bytes,
-        |policy| {
-            configure(policy);
-        },
-        |ctx| {
-            crate::om::evaluate_constant_expression(ctx, std::str::from_utf8(bytes).unwrap())
-                .unwrap_err()
-        },
-    )
-}
-
-#[test]
-fn expression_stacks_refuse_collection_limit() {
-    let error = expression_stack_refusal(|policy| policy.limits.max_collection_items = 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
-    );
-}
-
-#[test]
-fn expression_stacks_refuse_scoped_limit() {
-    let error = expression_stack_refusal(|policy| policy.limits.max_materialized_bytes = 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
-    );
-}
-
-#[test]
-fn expression_stacks_refuse_work_limit() {
-    let error = expression_stack_refusal(|policy| policy.limits.max_work_units = 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
-    );
-}
-
-#[test]
-fn expression_declaration_propagates_expression_limit() {
-    let bytes = b"\x04\x04p1\0\x04\x052+2\0";
-
-    crate::test_support::with_decode_context_over(
-        bytes,
-        |policy| {
-            policy.limits.max_collection_items = 0;
-        },
-        |ctx| {
-            let error = crate::om::expression_declaration_name(ctx, bytes).unwrap_err();
-            assert!(
-                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
-            );
-        },
+    assert_eq!(
+        expressions[0]
+            .constant_value()
+            .map(cadmpeg_ir::scalar::FiniteReal::get),
+        Some(120.0)
     );
 }

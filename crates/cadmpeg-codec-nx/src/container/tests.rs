@@ -15,8 +15,7 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use cadmpeg_core::decode::{InspectOptions, ResourceDimension};
-use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::InspectOptions;
 
 use crate::container;
 use crate::container::{test_modern_layout, Container, ContainerLayout, DirEntry, Region};
@@ -25,8 +24,7 @@ use crate::NxCodec;
 #[test]
 fn ug_part_segment_index_uses_row_one_self_boundary() {
     let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", segment_index_payload())]);
-    let container =
-        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file)).unwrap();
+    let container = container::scan_bytes(file).unwrap();
     let (_, index) = container.segment_index().expect("segment index");
     assert_eq!(index.rows().count() * 12 + index.padding.len(), 28);
     assert_eq!(index.rows().count(), 2);
@@ -41,10 +39,7 @@ fn ug_part_segment_index_uses_row_one_self_boundary() {
 
 #[test]
 fn container_parses_header_and_directory() {
-    let c = crate::test_support::with_decode_context(|ctx| {
-        container::scan_bytes(ctx, single_part_prt())
-    })
-    .unwrap();
+    let c = container::scan_bytes(single_part_prt()).unwrap();
     assert_eq!(c.layout.version(), 0x06);
     let ContainerLayout::Modern {
         file_tag,
@@ -54,15 +49,9 @@ fn container_parses_header_and_directory() {
     else {
         panic!("SPLMSSTR input must have modern layout facts");
     };
-    assert_eq!(
-        crate::test_support::with_decode_context(|ctx| c.entry_count(ctx, Region::Header)).unwrap(),
-        1
-    );
+    assert_eq!(c.entry_count(Region::Header), 1);
     assert_eq!(file_tag, 0x33_22_11);
-    assert_eq!(
-        crate::test_support::with_decode_context(|ctx| c.entry_count(ctx, Region::Footer)).unwrap(),
-        0
-    );
+    assert_eq!(c.entry_count(Region::Footer), 0);
     assert_eq!(footer_fingerprint, [0; 4]);
     assert!(c
         .entries
@@ -71,43 +60,8 @@ fn container_parses_header_and_directory() {
 }
 
 #[test]
-fn legacy_scan_refuses_work_after_directory_traversal() {
+fn legacy_scan_admits_two_stream_directory() {
     let file = legacy_cfb_with_two_streams();
-
-    // Start with the same small policy and advance across the shared CFB charges.
-    let mut cap = 3;
-    let mut reached = false;
-    for _ in 0..256 {
-        let limit = crate::test_support::with_decode_context_over(
-            &file,
-            |policy| policy.limits.max_work_units = cap,
-            |ctx| {
-                let root = cadmpeg_core::decode::View::over_retained(&file);
-                let error = container::scan_legacy(ctx, root)
-                    .expect_err("the legacy NX scan must refuse before its next operation");
-                let CodecError::ResourceLimit(limit) = error else {
-                    panic!("expected a work refusal: {error}");
-                };
-                assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-                assert_eq!(limit.limit, cap);
-                limit
-            },
-        );
-        if limit.operation == "scan legacy NX directory" {
-            reached = true;
-            break;
-        }
-        let needed = limit
-            .used
-            .checked_add(limit.additional)
-            .expect("fixture work fits");
-        assert!(needed > cap);
-        cap = needed;
-    }
-    assert!(
-        reached,
-        "CFB admission must reach the legacy NX directory refusal"
-    );
     crate::test_support::with_decode_context_over(
         &file,
         |_| {},
@@ -143,36 +97,12 @@ fn container_bounded_entry_tail_stops_at_the_next_stream() {
         indexed_section_layouts: std::sync::OnceLock::new(),
         om_section_cache: std::sync::OnceLock::new(),
     };
-    assert_eq!(
-        crate::test_support::with_decode_context(|ctx| container.bounded_entry_bytes(ctx, 1, 2))
-            .unwrap(),
-        Some(&payload[1..3])
-    );
-    assert_eq!(
-        crate::test_support::with_decode_context(|ctx| container.bounded_entry_bytes(ctx, 1, 3))
-            .unwrap(),
-        None
-    );
-    assert_eq!(
-        crate::test_support::with_decode_context(|ctx| container.bounded_entry_bytes(ctx, 3, 3))
-            .unwrap(),
-        Some(&payload[3..6])
-    );
-    assert_eq!(
-        crate::test_support::with_decode_context(|ctx| container.bounded_entry_tail(ctx, 1))
-            .unwrap(),
-        Some(&payload[1..3])
-    );
-    assert_eq!(
-        crate::test_support::with_decode_context(|ctx| container.bounded_entry_tail(ctx, 4))
-            .unwrap(),
-        Some(&payload[4..6])
-    );
-    assert_eq!(
-        crate::test_support::with_decode_context(|ctx| container.bounded_entry_tail(ctx, 6))
-            .unwrap(),
-        None
-    );
+    assert_eq!(container.bounded_entry_bytes(1, 2), Some(&payload[1..3]));
+    assert_eq!(container.bounded_entry_bytes(1, 3), None);
+    assert_eq!(container.bounded_entry_bytes(3, 3), Some(&payload[3..6]));
+    assert_eq!(container.bounded_entry_tail(1), Some(&payload[1..3]));
+    assert_eq!(container.bounded_entry_tail(4), Some(&payload[4..6]));
+    assert_eq!(container.bounded_entry_tail(6), None);
 }
 
 #[test]
@@ -194,10 +124,8 @@ fn container_cached_operation_labels_preserve_section_materialization() {
         indexed_section_layouts: std::sync::OnceLock::new(),
         om_section_cache: std::sync::OnceLock::new(),
     };
-    let direct =
-        crate::test_support::with_decode_context(|ctx| crate::om::sections(ctx, &payload)).unwrap();
-    let cached =
-        crate::test_support::with_decode_context(|ctx| container.om_sections(ctx)).unwrap();
+    let direct = crate::om::sections(&payload).unwrap();
+    let cached = container.om_sections().unwrap();
     assert_eq!(cached.len(), direct.len());
     assert!(container.om_section_cache.get().is_some());
     for ((entry, section), expected) in cached.iter().zip(direct.iter()) {
@@ -205,18 +133,11 @@ fn container_cached_operation_labels_preserve_section_materialization() {
         assert_eq!(section, expected);
         assert_eq!(section.operation_labels(), expected.operation_labels());
         assert_eq!(
-            crate::test_support::with_decode_context(
-                |ctx| section.operation_records_with_label_ordinals(ctx)
-            )
-            .unwrap(),
-            crate::test_support::with_decode_context(
-                |ctx| expected.operation_records_with_label_ordinals(ctx)
-            )
-            .unwrap()
+            section.operation_records_with_label_ordinals(),
+            expected.operation_records_with_label_ordinals()
         );
     }
-    let repeated =
-        crate::test_support::with_decode_context(|ctx| container.om_sections(ctx)).unwrap();
+    let repeated = container.om_sections().unwrap();
     assert_eq!(repeated, cached);
     assert!(std::sync::Arc::ptr_eq(
         &cached[0].1.types,
@@ -247,18 +168,13 @@ fn container_caches_owned_section_layouts() {
         indexed_section_layouts: std::sync::OnceLock::new(),
         om_section_cache: std::sync::OnceLock::new(),
     };
-    let first = crate::test_support::with_decode_context(|ctx| container.om_sections(ctx)).unwrap();
-    let second =
-        crate::test_support::with_decode_context(|ctx| container.om_sections(ctx)).unwrap();
+    let first = container.om_sections().unwrap();
+    let second = container.om_sections().unwrap();
     assert_eq!(first.len(), 1);
     assert_eq!(second, first);
     assert_eq!(
         first[0].1,
-        crate::test_support::with_decode_context(|ctx| crate::om::sections(
-            ctx,
-            &container.data[17..]
-        ))
-        .unwrap()[0]
+        crate::om::sections(&container.data[17..]).unwrap()[0]
     );
     assert!(container.om_section_cache.get().is_some_and(|cache| {
         matches!(
@@ -269,76 +185,11 @@ fn container_caches_owned_section_layouts() {
 }
 
 #[test]
-fn framed_section_cache_reader_refuses_collection_limit() {
-    let payload = size_framed_om_section_with_repeated_operations(2);
-    let container = Container {
-        data: payload.as_slice().into(),
-        physical_size: cadmpeg_core::decode::u64_from_index(payload.len()),
-        layout: test_modern_layout(0),
-        entries: vec![DirEntry {
-            name: "/Root/om".into(),
-            region: Region::Header,
-            body: crate::container::DirEntryBody::File {
-                offset: 0,
-                len: cadmpeg_core::decode::u64_from_index(payload.len()),
-            },
-        }],
-        fastload_table: None,
-        indexed_section_layouts: std::sync::OnceLock::new(),
-        om_section_cache: std::sync::OnceLock::new(),
-    };
-    crate::test_support::with_decode_context(|ctx| container.om_sections(ctx)).unwrap();
-
-    crate::test_support::with_decode_context_over(
-        &payload,
-        |policy| {
-            policy.limits.max_collection_items = 0;
-        },
-        |ctx| {
-            let error = container
-                .om_sections(ctx)
-                .expect_err("one cached section exceeds zero items");
-            assert!(
-                matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "NX framed section readers")
-            );
-        },
-    );
-}
-
-#[test]
-fn indexed_section_cache_reader_refuses_collection_limit() {
-    let file = prt_with_indexed_om_section();
-    let container =
-        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file.as_slice()))
-            .unwrap();
-    crate::test_support::with_decode_context(|ctx| container.indexed_om_sections(ctx)).unwrap();
-
-    crate::test_support::with_decode_context_over(
-        &file,
-        |policy| {
-            policy.limits.max_collection_items = 0;
-        },
-        |ctx| {
-            let error = container
-                .indexed_om_sections(ctx)
-                .expect_err("one cached section exceeds zero items");
-            assert!(
-                matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "NX indexed section readers")
-            );
-        },
-    );
-}
-
-#[test]
 fn container_reuses_materialized_indexed_sections_for_borrowed_input() {
     let file = prt_with_indexed_om_section();
-    let container =
-        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file.as_slice()))
-            .unwrap();
-    let first =
-        crate::test_support::with_decode_context(|ctx| container.indexed_om_sections(ctx)).unwrap();
-    let second =
-        crate::test_support::with_decode_context(|ctx| container.indexed_om_sections(ctx)).unwrap();
+    let container = container::scan_bytes(file.as_slice()).unwrap();
+    let first = container.indexed_om_sections().unwrap();
+    let second = container.indexed_om_sections().unwrap();
     assert!(!first.is_empty());
     assert_eq!(first, second);
     assert!(std::sync::Arc::ptr_eq(
@@ -372,11 +223,8 @@ fn container_reuses_materialized_indexed_sections_for_borrowed_input() {
 fn container_reuses_borrowed_offset_store_block_index() {
     let section = offset_only_indexed_om_section_with_index_values();
     let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", section)]);
-    let container =
-        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file.as_slice()))
-            .unwrap();
-    let _ =
-        crate::test_support::with_decode_context(|ctx| container.indexed_om_sections(ctx)).unwrap();
+    let container = container::scan_bytes(file.as_slice()).unwrap();
+    let _ = container.indexed_om_sections().unwrap();
     let first = container
         .cached_offset_data_block_bytes()
         .expect("borrowed indexed sections cache their offset-store blocks");
@@ -398,19 +246,9 @@ fn container_counts_admitted_entries_in_each_region() {
     file.extend_from_slice(b"/Root/");
     file.extend_from_slice(&[0; 16]);
     file.extend_from_slice(&[0; 4]);
-    let container =
-        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file))
-            .expect("one entry in each counted region");
-    assert_eq!(
-        crate::test_support::with_decode_context(|ctx| container.entry_count(ctx, Region::Header))
-            .unwrap(),
-        1
-    );
-    assert_eq!(
-        crate::test_support::with_decode_context(|ctx| container.entry_count(ctx, Region::Footer))
-            .unwrap(),
-        1
-    );
+    let container = container::scan_bytes(file).expect("one entry in each counted region");
+    assert_eq!(container.entry_count(Region::Header), 1);
+    assert_eq!(container.entry_count(Region::Footer), 1);
     assert_eq!(container.entries.len(), 2);
 }
 
@@ -424,108 +262,16 @@ fn service_profile_admits_both_directory_regions() {
     file.extend_from_slice(&[0; 16]);
     file.extend_from_slice(&[0; 4]);
 
-    crate::test_support::with_decode_context_over(
-        &file,
-        |_| {},
-        |ctx| {
-            let container =
-                container::scan_bytes(ctx, file.as_slice()).expect("service directory admission");
-            assert_eq!(
-                crate::test_support::with_decode_context(
-                    |ctx| container.entry_count(ctx, Region::Header)
-                )
-                .unwrap(),
-                1
-            );
-            assert_eq!(
-                crate::test_support::with_decode_context(
-                    |ctx| container.entry_count(ctx, Region::Footer)
-                )
-                .unwrap(),
-                1
-            );
-        },
-    );
-}
-
-#[test]
-fn header_directory_refuses_collection_limit_before_entry_reserve() {
-    let file = single_part_prt();
-
-    crate::test_support::with_decode_context_over(
-        &file,
-        |policy| {
-            policy.limits.max_collection_items = 0;
-        },
-        |ctx| {
-            let error = container::scan_bytes(ctx, file.as_slice())
-                .expect_err("header entry needs one item");
-            let CodecError::ResourceLimit(limit) = error else {
-                panic!("directory must return a resource refusal: {error}");
-            };
-            assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-            assert_eq!(limit.operation, "admit NX directory entries");
-        },
-    );
-}
-
-#[test]
-fn footer_directory_refuses_collection_limit_before_entry_reserve() {
-    let mut file = single_part_prt();
-    file.truncate(file.len() - 8);
-    file.extend_from_slice(&1_u32.to_le_bytes());
-    file.extend_from_slice(&6_u32.to_le_bytes());
-    file.extend_from_slice(b"/Root/");
-    file.extend_from_slice(&[0; 16]);
-    file.extend_from_slice(&[0; 4]);
-
-    crate::test_support::with_decode_context_over(
-        &file,
-        |policy| {
-            policy.limits.max_collection_items = 1;
-        },
-        |ctx| {
-            let error = container::scan_bytes(ctx, file.as_slice())
-                .expect_err("footer entry needs second item");
-            let CodecError::ResourceLimit(limit) = error else {
-                panic!("directory must return a resource refusal: {error}");
-            };
-            assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-            assert_eq!(limit.operation, "admit NX directory entries");
-        },
-    );
-}
-
-#[test]
-fn header_directory_refuses_retained_name_limit_before_copy() {
-    let file = single_part_prt();
-
-    crate::test_support::with_decode_context_over(
-        &file,
-        |policy| {
-            policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
-                4 * std::mem::size_of::<DirEntry>() + "/Root/UG_PART/UG_PART".len() - 1,
-            );
-        },
-        |ctx| {
-            let error = container::scan_bytes(ctx, file.as_slice())
-                .expect_err("name copy needs one more byte");
-            let CodecError::ResourceLimit(limit) = error else {
-                panic!("directory name must return a resource refusal: {error}");
-            };
-            assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
-            assert_eq!(limit.operation, "retain NX directory name");
-        },
-    );
+    let container = container::scan_bytes(file.as_slice()).expect("service directory admission");
+    assert_eq!(container.entry_count(Region::Header), 1);
+    assert_eq!(container.entry_count(Region::Footer), 1);
 }
 
 #[test]
 fn container_rejects_incomplete_counted_directories() {
     let mut header = single_part_prt();
     header[0x1f..0x23].copy_from_slice(&2_u32.to_le_bytes());
-    assert!(
-        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, header)).is_err()
-    );
+    assert!(container::scan_bytes(header).is_err());
 
     let mut footer = single_part_prt();
     let footer_offset = usize::try_from(u64::from_le_bytes([
@@ -540,19 +286,14 @@ fn container_rejects_incomplete_counted_directories() {
     ]))
     .expect("synthetic footer offset");
     footer[footer_offset + 6..footer_offset + 10].copy_from_slice(&1_u32.to_le_bytes());
-    assert!(
-        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, footer)).is_err()
-    );
+    assert!(container::scan_bytes(footer).is_err());
 }
 
 #[test]
 fn container_rejects_trailing_or_overlapping_footer_data() {
     let mut trailing = single_part_prt();
     trailing.push(0);
-    assert!(
-        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, trailing))
-            .is_err()
-    );
+    assert!(container::scan_bytes(trailing).is_err());
 
     let mut overlap = single_part_prt();
     let name_len = usize::try_from(u32::from_le_bytes(
@@ -578,18 +319,14 @@ fn container_rejects_trailing_or_overlapping_footer_data() {
         0,
     ]);
     overlap[span + 8..span + 16].copy_from_slice(&(footer_offset - offset + 1).to_le_bytes());
-    assert!(
-        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, overlap))
-            .is_err()
-    );
+    assert!(container::scan_bytes(overlap).is_err());
 }
 
 #[test]
 fn container_rejects_footer_offset_beyond_the_file_image() {
     let mut bytes = single_part_prt();
     bytes[0x11..0x17].copy_from_slice(&[0xff; 6]);
-    let error = crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, bytes))
-        .expect_err("required invariant");
+    let error = container::scan_bytes(bytes).expect_err("required invariant");
     assert_eq!(
         error.to_string(),
         "malformed container: FOOTER offset exceeds the file image"
@@ -598,10 +335,7 @@ fn container_rejects_footer_offset_beyond_the_file_image() {
 
 #[test]
 fn container_reads_rmfastload_active_ids() {
-    let container = crate::test_support::with_decode_context(|ctx| {
-        container::scan_bytes(ctx, rmfastload_prt())
-    })
-    .unwrap();
+    let container = container::scan_bytes(rmfastload_prt()).unwrap();
     let (entry, table) = container
         .rmfastload_object_id_table()
         .expect("RMFastLoad object-id table");
@@ -630,79 +364,11 @@ fn container_reads_rmfastload_active_ids() {
 }
 
 #[test]
-fn fastload_id_table_refuses_collection_limit_before_reserve() {
-    let file = rmfastload_prt();
-
-    crate::test_support::with_decode_context_over(
-        &file,
-        |policy| {
-            policy.limits.max_collection_items = 50;
-        },
-        |ctx| {
-            let error = container::scan_bytes(ctx, file.as_slice())
-                .expect_err("fifty IDs need a second collection charge");
-            let CodecError::ResourceLimit(limit) = error else {
-                panic!("FastLoad IDs must return a resource refusal: {error}");
-            };
-            assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-            assert_eq!(limit.operation, "admit NX FastLoad object IDs");
-        },
-    );
-}
-
-#[test]
-fn fastload_candidate_scan_refuses_work_limit_before_reading_count() {
-    let file = rmfastload_prt();
-
-    crate::test_support::with_decode_context_over(
-        &file,
-        |policy| {
-            policy.limits.max_work_units = 0;
-        },
-        |ctx| {
-            let error = container::scan_bytes(ctx, file.as_slice())
-                .expect_err("candidate scan needs one work unit");
-            let CodecError::ResourceLimit(limit) = error else {
-                panic!("FastLoad scan must return a resource refusal: {error}");
-            };
-            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-            assert_eq!(limit.operation, "scan NX FastLoad table candidates");
-        },
-    );
-}
-
-#[test]
-fn fastload_id_table_refuses_retained_limit_before_reserve() {
-    let file = rmfastload_prt();
-
-    let directory_bytes = std::mem::size_of::<DirEntry>() + "/Root/FastLoad/RMFastLoad".len();
-
-    crate::test_support::with_decode_context_over(
-        &file,
-        |policy| {
-            policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
-                directory_bytes + 50 * std::mem::size_of::<u32>() - 1,
-            );
-        },
-        |ctx| {
-            let error = container::scan_bytes(ctx, file.as_slice())
-                .expect_err("ID copy needs one more byte");
-            let CodecError::ResourceLimit(limit) = error else {
-                panic!("FastLoad IDs must return a resource refusal: {error}");
-            };
-            assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
-            assert_eq!(limit.operation, "retain NX FastLoad object IDs");
-        },
-    );
-}
-
-#[test]
 fn container_reads_rmfastload_table_from_product_boundary_without_range_floor() {
     let mut payload = b"UGS::Solid::Topol".to_vec();
     append_rmfastload_table(&mut payload, [0, u32::MAX, 7]);
     let file = prt_with_named_payloads(&[("/Root/FastLoad/RMFastLoad", payload)]);
-    let container =
-        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file)).unwrap();
+    let container = container::scan_bytes(file).unwrap();
     let (_, table) = container
         .rmfastload_object_id_table()
         .expect("product-bounded RMFastLoad table");
@@ -720,10 +386,7 @@ fn fuzz_oom_splmsstr_header_is_rejected_without_count_allocation() {
         0x52, 0x20, 0x00, 0x00, 0x6f, 0x2f, 0xf9, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         0x04, 0x00, 0x04,
     ];
-    assert!(
-        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, bytes.to_vec()))
-            .is_err()
-    );
+    assert!(container::scan_bytes(bytes.to_vec()).is_err());
     let _ = cadmpeg_test_support::detection::confidence(&NxCodec, bytes);
     let _probe = NxCodec.inspect(&mut Cursor::new(bytes), &InspectOptions::default());
     let _probe = NxCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default());
@@ -735,8 +398,7 @@ fn container_bounds_rmfastload_table_at_its_first_product_record() {
     append_rmfastload_table(&mut payload, [1, 2, 3]);
     append_rmfastload_table(&mut payload, [4, 5]);
     let file = prt_with_named_payloads(&[("/Root/FastLoad/RMFastLoad", payload)]);
-    let container =
-        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file)).unwrap();
+    let container = container::scan_bytes(file).unwrap();
     let (_, table) = container
         .rmfastload_object_id_table()
         .expect("first product-bounded table");
@@ -746,11 +408,7 @@ fn container_bounds_rmfastload_table_at_its_first_product_record() {
 #[test]
 fn external_reference_string_table_is_end_anchored() {
     let table = b"prefix\x01\x02\x00\x00\x00\x09\x00child.prt\x0c\x00nested/b.prt";
-    let (_, strings) = crate::test_support::with_decode_context(|ctx| {
-        crate::container::parse_extref_string_table(ctx, table)
-    })
-    .expect("string table resources")
-    .expect("string table");
+    let (_, strings) = crate::container::parse_extref_string_table(table).expect("string table");
     assert_eq!(
         strings
             .into_iter()
@@ -761,104 +419,8 @@ fn external_reference_string_table_is_end_anchored() {
 
     let mut trailed = table.to_vec();
     trailed.push(0);
-    assert!(crate::test_support::with_decode_context(|ctx| {
-        crate::container::parse_extref_string_table(ctx, &trailed)
-    })
-    .expect("string table resources")
-    .is_none());
-    assert!(crate::test_support::with_decode_context(|ctx| {
-        crate::container::parse_extref_string_table(ctx, b"\x01\xff\xff\xff\xff")
-    })
-    .expect("string table resources")
-    .is_none());
-}
-
-#[test]
-fn external_reference_paths_refuse_collection_limit() {
-    let payload = b"prefix\x01\x01\x00\x00\x00\x09\x00child.prt";
-    let container = external_reference_path_container(payload);
-
-    crate::test_support::with_decode_context_over(
-        payload,
-        |policy| {
-            policy.limits.max_collection_items = 0;
-        },
-        |ctx| {
-            let error = container
-                .external_reference_paths(ctx)
-                .expect_err("one path exceeds zero collection items");
-            assert!(matches!(
-                error,
-                CodecError::ResourceLimit(limit)
-                    if limit.dimension == ResourceDimension::CollectionItems
-            ));
-        },
-    );
-}
-
-fn external_reference_path_container(payload: &[u8]) -> Container<'_> {
-    Container {
-        data: payload.into(),
-        physical_size: cadmpeg_core::decode::u64_from_index(payload.len()),
-        layout: ContainerLayout::LegacyCfb { version: 0 },
-        entries: vec![DirEntry {
-            name: "/Root/ExternalReferences".into(),
-            region: Region::Header,
-            body: crate::container::DirEntryBody::File {
-                offset: 0,
-                len: cadmpeg_core::decode::u64_from_index(payload.len()),
-            },
-        }],
-        fastload_table: None,
-        indexed_section_layouts: std::sync::OnceLock::new(),
-        om_section_cache: std::sync::OnceLock::new(),
-    }
-}
-
-#[test]
-fn external_reference_paths_refuse_retained_limit() {
-    let payload = b"prefix\x01\x01\x00\x00\x00\x09\x00child.prt";
-    let container = external_reference_path_container(payload);
-
-    crate::test_support::with_decode_context_over(
-        payload,
-        |policy| {
-            policy.limits.max_retained_bytes = 0;
-        },
-        |ctx| {
-            let error = container
-                .external_reference_paths(ctx)
-                .expect_err("one path exceeds zero retained bytes");
-            assert!(matches!(
-                error,
-                CodecError::ResourceLimit(limit)
-                    if limit.dimension == ResourceDimension::RetainedBytes
-            ));
-        },
-    );
-}
-
-#[test]
-fn external_reference_paths_refuse_work_limit() {
-    let payload = b"prefix\x01\x01\x00\x00\x00\x09\x00child.prt";
-    let container = external_reference_path_container(payload);
-
-    crate::test_support::with_decode_context_over(
-        payload,
-        |policy| {
-            policy.limits.max_work_units = 0;
-        },
-        |ctx| {
-            let error = container
-                .external_reference_paths(ctx)
-                .expect_err("one path exceeds zero work units");
-            assert!(matches!(
-                error,
-                CodecError::ResourceLimit(limit)
-                    if limit.dimension == ResourceDimension::WorkUnits
-            ));
-        },
-    );
+    assert!(crate::container::parse_extref_string_table(&trailed).is_none());
+    assert!(crate::container::parse_extref_string_table(b"\x01\xff\xff\xff\xff").is_none());
 }
 
 #[test]
@@ -887,15 +449,8 @@ fn external_reference_record_parser_accepts_sorted_repeated_handles() {
     payload.push(5);
     payload.extend_from_slice(b"\x01\x01\x00\x00\x00\x09\x00child.prt");
 
-    let records = crate::test_support::with_decode_context(|ctx| {
-        crate::container::parse_extref_records(ctx, &payload)
-    })
-    .expect("record resources");
-    let indexed = crate::test_support::with_decode_context(|ctx| {
-        crate::container::parse_extref_record_index(ctx, &payload)
-    })
-    .expect("index resources")
-    .expect("record index");
+    let records = crate::container::parse_extref_records(&payload);
+    let indexed = crate::container::parse_extref_record_index(&payload).expect("record index");
     assert_eq!(indexed.len(), 1);
     assert_eq!(indexed[0].record_id, 6);
     assert_eq!(indexed[0].offset, 41);
@@ -916,24 +471,17 @@ fn external_reference_record_parser_accepts_sorted_repeated_handles() {
         .rposition(|window| window == [0xe0, 0x20, 0x30, 0x40, 0x50])
         .expect("closing duplicate");
     payload[duplicate + 1] = 0x10;
-    assert!(crate::test_support::with_decode_context(|ctx| {
-        crate::container::parse_extref_records(ctx, &payload)
-    })
-    .expect("record resources")
-    .is_empty());
+    assert!(crate::container::parse_extref_records(&payload).is_empty());
     assert_eq!(
-        crate::test_support::with_decode_context(|ctx| {
-            crate::container::parse_extref_record_index(ctx, &payload)
-        })
-        .expect("index resources")
-        .expect("opaque indexed record")
-        .len(),
+        crate::container::parse_extref_record_index(&payload)
+            .expect("opaque indexed record")
+            .len(),
         1
     );
 }
 
 #[test]
-fn overlapping_extref_candidates_refuse_string_scan_work() {
+fn overlapping_extref_candidates_are_rejected() {
     let mut bytes = vec![b'A'; 32_775];
     for ordinal in 1..=127 {
         let marker = ordinal * 256;
@@ -943,123 +491,54 @@ fn overlapping_extref_candidates_refuse_string_scan_work() {
             .copy_from_slice(&u16::try_from(32_768 - marker).unwrap().to_le_bytes());
     }
     *bytes.last_mut().unwrap() = 0;
-    crate::test_support::with_decode_context_over(
-        &bytes,
-        |policy| policy.limits.max_work_units = 100_000,
-        |ctx| {
-            let error = super::locate_extref_string_table(ctx, &bytes).unwrap_err();
-            assert!(matches!(error, CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::WorkUnits
-                && matches!(limit.operation, "validate NX external reference UTF-8" | "validate NX external reference controls")));
-        },
-    );
-    crate::test_support::with_decode_context_over(
-        &bytes,
-        |_| {},
-        |ctx| {
-            assert_eq!(
-                super::locate_extref_string_table(ctx, &bytes).unwrap(),
-                None
-            );
-        },
+    assert_eq!(
+        super::locate_extref_string_table(&bytes),
+        super::ExtrefStringTableSearch::Absent
     );
 }
 
 #[test]
-fn bounded_entry_reads_refuse_directory_work() {
-    let file = single_part_prt();
-    let container =
-        crate::test_support::with_decode_context(|ctx| super::scan_bytes(ctx, file)).unwrap();
-    let (offset, len) = container.entries[0].file_span().unwrap();
-    for tail in [false, true] {
-        crate::test_support::with_decode_context_over(
-            &[],
-            |policy| policy.limits.max_work_units = 0,
-            |ctx| {
-                let error = if tail {
-                    container.bounded_entry_tail(ctx, offset)
-                } else {
-                    container.bounded_entry_bytes(ctx, offset, len)
-                }
-                .unwrap_err();
-                assert!(matches!(error, CodecError::ResourceLimit(limit)
-                if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "bound NX directory entry"));
-            },
-        );
+fn overlapping_extref_candidates_skip_the_search_at_its_work_bound() {
+    // Every eighth byte starts a one-entry table whose string runs to the
+    // payload end, so the candidates declare about 2^28 string bytes.
+    let mut bytes = vec![b'A'; 65_543];
+    for marker in (8..bytes.len() - 8).step_by(8) {
+        bytes[marker] = 1;
+        bytes[marker + 1..marker + 5].copy_from_slice(&1_u32.to_le_bytes());
+        let length = u16::try_from(bytes.len() - marker - 7).unwrap();
+        bytes[marker + 5..marker + 7].copy_from_slice(&length.to_le_bytes());
     }
-}
-
-#[test]
-fn directory_counts_refuse_exhausted_scan_work() {
-    let container =
-        crate::test_support::with_decode_context(|ctx| super::scan_bytes(ctx, single_part_prt()))
-            .unwrap();
-    crate::test_support::with_decode_context_over(
-        &[],
-        |policy| policy.limits.max_work_units = 0,
-        |ctx| {
-            let error = container.entry_count(ctx, Region::Header).unwrap_err();
-            assert!(matches!(error, CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "count NX directory entries"));
-        },
+    *bytes.last_mut().unwrap() = 0;
+    assert_eq!(
+        super::locate_extref_string_table(&bytes),
+        super::ExtrefStringTableSearch::Bounded
     );
+
+    let file = prt_with_named_payloads(&[("/Root/ExternalReferences", bytes)]);
+    let result = NxCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .unwrap();
+    let bounded = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == crate::loss::NxLossCode::SourceScanBounded.kind())
+        .collect::<Vec<_>>();
+    assert_eq!(bounded.len(), 1);
+    assert!(bounded[0].message.contains("/Root/ExternalReferences"));
+    assert!(result.ir().source.as_ref().is_some_and(|source| !source
+        .attributes
+        .keys()
+        .any(|key| key.as_str().starts_with("external_reference"))));
 }
 
 #[test]
-fn external_reference_routes_refuse_unadmitted_names() {
-    let container =
-        crate::test_support::with_decode_context(|ctx| super::scan_bytes(ctx, single_part_prt()))
-            .unwrap();
-    for route in 0..4 {
-        crate::test_support::with_decode_context_over(
-            &[],
-            |policy| policy.limits.max_work_units = 1,
-            |ctx| {
-                let error = match route {
-                    0 => container.has_external_references(ctx).err(),
-                    1 => container.external_reference_strings(ctx).err(),
-                    2 => container.external_reference_records(ctx).err(),
-                    _ => container.external_reference_indexed_records(ctx).err(),
-                }
-                .expect("name scan must refuse");
-                assert!(
-                    matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "scan NX external reference names")
-                );
-            },
-        );
-    }
-}
-
-#[test]
-fn external_reference_materialization_refuses_each_string_byte_pass() {
+fn external_reference_materialization_copies_each_string() {
     let text = "A".repeat(1000);
     let mut bytes = vec![1];
     bytes.extend(1u32.to_le_bytes());
     bytes.extend(1000u16.to_le_bytes());
     bytes.extend(text.as_bytes());
-    for (work_limit, operation) in [
-        (3504, "read NX external reference UTF-8"),
-        (4504, "nx external reference string"),
-    ] {
-        crate::test_support::with_decode_context_over(
-            &bytes,
-            |policy| policy.limits.max_work_units = work_limit,
-            |ctx| {
-                let error = super::parse_extref_string_table(ctx, &bytes).unwrap_err();
-                assert!(
-                    matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation)
-                );
-            },
-        );
-    }
-    crate::test_support::with_decode_context_over(
-        &bytes,
-        |_| {},
-        |ctx| {
-            let (_, values) = super::parse_extref_string_table(ctx, &bytes)
-                .unwrap()
-                .unwrap();
-            assert_eq!(values, [(7, text)]);
-        },
-    );
+    let (_, values) = super::parse_extref_string_table(&bytes).unwrap();
+    assert_eq!(values, [(7, text)]);
 }

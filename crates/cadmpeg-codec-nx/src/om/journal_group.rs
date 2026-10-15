@@ -3,8 +3,6 @@
 
 use super::nonempty::NonEmpty;
 use super::state_journal::JournalRow;
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
-use cadmpeg_core::CodecError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Header {
@@ -44,46 +42,32 @@ impl<O: Copy + From<u8> + std::ops::Sub<Output = O>> JournalGroup<O> {
 }
 
 impl JournalGroup<usize> {
-    pub(super) fn read(
-        ctx: &DecodeContext<'_>,
-        bytes: &[u8],
-        at: usize,
-        end: usize,
-        base: usize,
-    ) -> Result<Option<Self>, CodecError> {
-        let Some(tail) = bytes.get(at..end) else {
-            return Ok(None);
-        };
+    pub(super) fn read(bytes: &[u8], at: usize, end: usize, base: usize) -> Option<Self> {
+        let tail = bytes.get(at..end)?;
         let [0x04, a, b, 0x00, ..] = tail else {
-            return Ok(None);
+            return None;
         };
-        ctx.charge_work(u64_from_index(tail.len()), "scan NX state-journal group")?;
         let selector = [*a, *b];
         let header = if tail.get(4) == Some(&0) {
             Header::Padded
         } else {
             Header::Plain
         };
-        let Some(mut cursor) = at.checked_add(usize::from(header.byte_len())) else {
-            return Ok(None);
-        };
+        let mut cursor = at.checked_add(usize::from(header.byte_len()))?;
         let mut rows = Vec::new();
         while cursor < end {
             let Some(row) = JournalRow::read(bytes, cursor, end, base) else {
                 break;
             };
-            let Some(next) = cursor.checked_add(row.byte_len()) else {
-                return Ok(None);
-            };
+            let next = cursor.checked_add(row.byte_len())?;
             cursor = next;
-            ctx.reserve_vec(&mut rows, 1, "NX state-journal rows")?;
             rows.push(row);
         }
-        Ok(NonEmpty::from_admitted_vec(rows).map(|rows| Self {
+        NonEmpty::from_admitted_vec(rows).map(|rows| Self {
             selector,
             header,
             rows,
-        }))
+        })
     }
 
     pub(super) fn end_offset(&self) -> usize {
@@ -91,19 +75,14 @@ impl JournalGroup<usize> {
         last.offset() + last.byte_len()
     }
 
-    pub(crate) fn into_absolute(
-        self,
-        ctx: &DecodeContext<'_>,
-        base: u64,
-    ) -> Result<Option<JournalGroup>, CodecError> {
-        Ok(self
-            .rows
-            .try_map_charged(ctx, |row| row.into_absolute(base))?
+    pub(crate) fn into_absolute(self, base: u64) -> Option<JournalGroup> {
+        self.rows
+            .try_map(|row| row.into_absolute(base))
             .map(|rows| JournalGroup {
                 selector: self.selector,
                 header: self.header,
                 rows,
-            }))
+            })
     }
 }
 

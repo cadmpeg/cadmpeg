@@ -4,8 +4,6 @@ use crate::native::attach::expressions::attach_block_dimension_parameter_consume
 use crate::native::attach::expressions::attach_expression_parameters;
 use crate::native::attach::expressions::expression_parameter_id;
 use crate::native::attach::parameter_owner_dependencies;
-use cadmpeg_ir::features::{FeatureId, ParameterId};
-use std::collections::BTreeMap;
 
 #[test]
 fn nx_block_dimension_parameters_name_the_block_as_consumer() {
@@ -86,59 +84,6 @@ fn nx_block_dimension_parameters_name_the_block_as_consumer() {
             "nx:feature-history:feature#1-4"
         );
     }
-}
-
-fn parameter_owner_with_limit(
-    dimension: cadmpeg_core::decode::ResourceDimension,
-) -> Result<(), cadmpeg_core::CodecError> {
-    let adjust: fn(&mut cadmpeg_core::decode::DecodePolicy) = match dimension {
-        cadmpeg_core::decode::ResourceDimension::CollectionItems => |policy| {
-            policy.limits.max_collection_items = 0;
-        },
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes => |policy| {
-            policy.limits.max_retained_bytes = 0;
-        },
-        cadmpeg_core::decode::ResourceDimension::WorkUnits => |policy| {
-            policy.limits.max_work_units = 0;
-        },
-        _ => {
-            return Err(cadmpeg_core::CodecError::InvalidInput(
-                "unsupported parameter owner test limit".to_string(),
-            ))
-        }
-    };
-    crate::test_support::with_decode_context_over(&[], adjust, |ctx| {
-        let parameter = ParameterId::mint("nx:test:parameter#20").unwrap();
-        let owner = FeatureId::mint("nx:test:feature#1").unwrap();
-        let owners = BTreeMap::from([(parameter.clone(), Some(owner.clone()))]);
-        let dependencies = parameter_owner_dependencies(ctx, &owners, &[parameter])?;
-        assert_eq!(dependencies, [owner]);
-        Ok(())
-    })
-}
-
-#[test]
-fn parameter_owner_dependency_refuses_collection_limit() {
-    let dimension = cadmpeg_core::decode::ResourceDimension::CollectionItems;
-    assert!(
-        matches!(parameter_owner_with_limit(dimension), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == dimension)
-    );
-}
-
-#[test]
-fn parameter_owner_dependency_refuses_retained_limit() {
-    let dimension = cadmpeg_core::decode::ResourceDimension::RetainedBytes;
-    assert!(
-        matches!(parameter_owner_with_limit(dimension), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == dimension)
-    );
-}
-
-#[test]
-fn parameter_owner_dependency_refuses_work_limit() {
-    let dimension = cadmpeg_core::decode::ResourceDimension::WorkUnits;
-    assert!(
-        matches!(parameter_owner_with_limit(dimension), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == dimension)
-    );
 }
 
 #[test]

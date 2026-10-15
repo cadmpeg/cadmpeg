@@ -3,8 +3,7 @@
 
 use super::compact::NullableCompactIndex;
 use super::compact::{CompactIndexAtom, CountedIndexMembers, LocatedCompactIndex};
-use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
-use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::View;
 use std::ops::Add;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -81,12 +80,8 @@ impl DatumIndexLane<usize> {
 }
 
 /// Decode unique datum-plane index lanes ending at the logical payload boundary.
-pub(crate) fn scan(
-    ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-) -> Result<Vec<DatumIndexLane>, CodecError> {
+pub(crate) fn scan(bytes: &[u8]) -> Vec<DatumIndexLane> {
     let mut lanes = Vec::new();
-    ctx.charge_work(u64_from_index(bytes.len()), "scan NX datum index lanes")?;
     for start in bytes
         .len()
         .checked_sub(7)
@@ -100,7 +95,6 @@ pub(crate) fn scan(
         if declared_count < 2 {
             continue;
         }
-        ctx.charge_work(u64::from(declared_count), "scan NX datum index members")?;
         let mut scan_at = start + 2;
         let mut complete = true;
         for _ in 1..declared_count {
@@ -115,18 +109,16 @@ pub(crate) fn scan(
         if !complete || bytes.get(scan_at) != Some(&0x00) || scan_at + 5 != bytes.len() {
             continue;
         }
-        let member_count = usize::from(declared_count - 1);
-        let operation = "NX datum index members";
-        let mut indices = ctx.collection_vec(member_count, operation)?;
+        let mut indices = Vec::new();
         let mut at = start + 2;
-        for _ in 0..member_count {
+        for _ in 1..declared_count {
             let Some(token) = LocatedCompactIndex::read(&bytes[..scan_at], at) else {
                 break;
             };
             at += token.atom.raw().len();
             indices.push(token.atom);
         }
-        if indices.len() != member_count {
+        if indices.len() != usize::from(declared_count - 1) {
             continue;
         }
         let Some(indices) = CountedIndexMembers::new(indices).ok() else {
@@ -136,61 +128,15 @@ pub(crate) fn scan(
             continue;
         };
         if let Some(lane) = DatumIndexLane::<usize>::new(indices, trailer, start) {
-            ctx.reserve_vec(&mut lanes, 1, "NX datum index lanes")?;
             lanes.push(lane);
         }
     }
-    Ok(lanes)
+    lanes
 }
 
 #[cfg(test)]
 mod tests {
     use super::{scan, DatumIndexLane};
-
-    fn datum_index_limit_error(
-        adjust: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
-    ) -> cadmpeg_core::CodecError {
-        let bytes = [
-            0x80, 0xab, 0x01, 0x04, 0x81, 0x01, 0x01, 0x01, 0x00, 0x12, 0x34, 0x56, 0x78,
-        ];
-
-        crate::test_support::with_decode_context_over(&bytes, adjust, |ctx| {
-            scan(ctx, &bytes).expect_err("datum index resource refusal")
-        })
-    }
-
-    #[test]
-    fn om_datum_index_route_refuses_collection_limit() {
-        let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
-            policy.limits.max_collection_items = 0;
-        };
-        assert!(
-            matches!(datum_index_limit_error(adjust_policy), cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
-        );
-    }
-
-    #[test]
-    fn om_datum_index_route_refuses_retained_limit() {
-        let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
-            policy.limits.max_retained_bytes = 0;
-        };
-        assert!(
-            matches!(datum_index_limit_error(adjust_policy), cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
-        );
-    }
-
-    #[test]
-    fn om_datum_index_route_refuses_work_limit() {
-        let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
-            policy.limits.max_work_units = 0;
-        };
-        assert!(
-            matches!(datum_index_limit_error(adjust_policy), cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
-        );
-    }
 
     #[test]
     fn datum_terminal_positions_follow_mixed_token_widths_and_checked_extent() {
@@ -210,8 +156,7 @@ mod tests {
                 }
             }
             bytes.extend_from_slice(&[0, 0x12, 0x34, 0x56, 0x78]);
-            let lane = crate::test_support::with_decode_context(|ctx| scan(ctx, &bytes))
-                .unwrap()
+            let lane = scan(&bytes)
                 .into_iter()
                 .find(|lane| lane.offset() == 1)
                 .unwrap();
@@ -240,7 +185,7 @@ mod tests {
         let bytes = [
             0x80, 0xab, 0x01, 0x04, 0x81, 0x01, 0x01, 0x01, 0x00, 0x12, 0x34, 0x56, 0x78,
         ];
-        let lanes = crate::test_support::with_decode_context(|ctx| scan(ctx, &bytes)).unwrap();
+        let lanes = scan(&bytes);
         assert_eq!(lanes.len(), 1);
         assert_eq!(lanes[0].offset(), 2);
         assert_eq!(usize::from(lanes[0].declared_count()), 4);
@@ -262,10 +207,6 @@ mod tests {
 
         let mut trailing = bytes.to_vec();
         trailing.push(0);
-        assert!(
-            crate::test_support::with_decode_context(|ctx| scan(ctx, &trailing))
-                .unwrap()
-                .is_empty()
-        );
+        assert!(scan(&trailing).is_empty());
     }
 }
