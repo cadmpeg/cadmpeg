@@ -56,7 +56,7 @@ fn coaxial_cone_components_respect_axis_orientation_and_coincidence() {
         origin: [10.0, 0.0, 0.0],
         normal: [1.0, 0.0, 1.0],
     });
-    let vertex = crate::decode::with_test_decode_ctx(|ctx| {
+    let vertex = crate::decode::with_service_context(|ctx| {
         solve_carriers(ctx, &[first, second, tangent_plane])
     })
     .expect("test carrier solve")

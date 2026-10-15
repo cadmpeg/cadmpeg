@@ -1074,7 +1074,7 @@ mod tests {
             cadmpeg_core::text::NonBlankString::new("line").expect("valid kind"),
         );
         let mut entities = Vec::new();
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             push_section_entity(
                 ctx,
                 &mut entities,

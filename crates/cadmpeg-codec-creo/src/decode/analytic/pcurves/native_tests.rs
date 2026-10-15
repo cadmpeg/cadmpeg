@@ -154,7 +154,7 @@ fn maps_linear_pcurves_to_exact_analytic_carriers() {
             .expect("root");
             linear_pcurve_carrier(&ctx, &plane, [[1.0, 2.0], [3.0, 4.0]])
         })
-        .expect("evaluation resources"),
+        .expect("compute the linear pcurve carrier"),
         Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(_)))
     ));
     assert!(matches!(
@@ -168,7 +168,7 @@ fn maps_linear_pcurves_to_exact_analytic_carriers() {
             .expect("root");
             linear_pcurve_carrier(&ctx, &cylinder, [[1.0, 2.0], [1.0, 4.0]])
         })
-        .expect("evaluation resources"),
+        .expect("compute the linear pcurve carrier"),
         Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(_)))
     ));
     assert!(matches!(
@@ -182,7 +182,7 @@ fn maps_linear_pcurves_to_exact_analytic_carriers() {
                         &ctx, &cylinder, [[1.0, 2.0], [2.0, 2.0]]
                     )
             }
-        ).expect("evaluation resources"),
+        ).expect("compute the linear pcurve carrier"),
         Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)))
     if {
         let radius = circle_curve.radius().get();
@@ -199,7 +199,7 @@ fn maps_linear_pcurves_to_exact_analytic_carriers() {
             .expect("root");
             linear_pcurve_carrier(&ctx, &cone, [[1.0, 2.0], [1.0, 4.0]])
         })
-        .expect("evaluation resources"),
+        .expect("compute the linear pcurve carrier"),
         Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(_)))
     ));
     assert!(matches!(
@@ -213,7 +213,7 @@ fn maps_linear_pcurves_to_exact_analytic_carriers() {
                         &ctx, &cone, [[1.0, 2.0], [2.0, 2.0]]
                     )
             }
-        ).expect("evaluation resources"),
+        ).expect("compute the linear pcurve carrier"),
         Some(CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)))
             if {
                 let major_radius = ellipse_curve.major_radius().get();
@@ -230,7 +230,7 @@ fn maps_linear_pcurves_to_exact_analytic_carriers() {
         .expect("root");
         linear_pcurve_carrier(&ctx, &cylinder, [[1.0, 2.0], [2.0, 4.0]])
     })
-    .expect("evaluation resources")
+    .expect("compute the linear pcurve carrier")
     .is_none());
     assert!(matches!(
         (
@@ -243,7 +243,7 @@ fn maps_linear_pcurves_to_exact_analytic_carriers() {
                         &ctx, &sphere, [[1.0, 2.0], [1.0, 4.0]]
                     )
             }
-        ).expect("evaluation resources"),
+        ).expect("compute the linear pcurve carrier"),
         Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)))
     if {
         let radius = circle_curve.radius().get();
@@ -260,7 +260,7 @@ fn maps_linear_pcurves_to_exact_analytic_carriers() {
                         &ctx, &sphere, [[1.0, 0.25], [2.0, 0.25]]
                     )
             }
-        ).expect("evaluation resources"),
+        ).expect("compute the linear pcurve carrier"),
         Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)))
     if {
         let radius = circle_curve.radius().get();
@@ -288,7 +288,7 @@ fn maps_linear_pcurves_to_exact_analytic_carriers() {
                         &ctx, &torus, [[0.5, 0.0], [0.5, 1.0]]
                     )
             }
-        ).expect("evaluation resources"),
+        ).expect("compute the linear pcurve carrier"),
         Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)))
     if {
         let radius = circle_curve.radius().get();
@@ -305,7 +305,7 @@ fn maps_linear_pcurves_to_exact_analytic_carriers() {
                         &ctx, &torus, [[0.5, 0.0], [1.0, 0.0]]
                     )
             }
-        ).expect("evaluation resources"),
+        ).expect("compute the linear pcurve carrier"),
         Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)))
     if {
         let radius = circle_curve.radius().get();
@@ -440,7 +440,7 @@ fn boundary_nurbs_endpoint_witnesses_use_the_intrinsic_domain() {
     ));
     assert_eq!(
         nonperiodic_nurbs_endpoint_points(&evaluation_ctx, &geometry)
-            .expect("evaluation resources"),
+            .expect("compute the nonperiodic NURBS endpoint points"),
         Some([[0.0, 0.0, 0.0], [2.0, 0.0, 0.0]])
     );
 
@@ -463,7 +463,7 @@ fn boundary_nurbs_endpoint_witnesses_use_the_intrinsic_domain() {
         &evaluation_ctx,
         &CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(periodic))
     )
-    .expect("evaluation resources")
+    .expect("compute the nonperiodic NURBS endpoint points")
     .is_none());
 }
 
@@ -557,7 +557,7 @@ fn orients_uv_endpoints_by_the_coedge_traversal() {
             endpoints,
             [[5.0, 7.0, 3.0], [2.0, 4.0, 3.0]],
         )
-        .expect("evaluation resources"),
+        .expect("compute the oriented native pcurve endpoints"),
         Some([endpoints[1], endpoints[0]])
     );
 }
@@ -580,7 +580,7 @@ fn withholds_uv_endpoints_that_do_not_map_to_the_edge() {
             [[2.0, 4.0], [5.0, 7.0]],
             [[2.0, 4.0, 3.0], [9.0, 7.0, 3.0]],
         )
-        .expect("evaluation resources"),
+        .expect("compute the oriented native pcurve endpoints"),
         None
     );
 }
@@ -605,7 +605,7 @@ fn reconciles_agreeing_source_forms_and_rejects_competing_paths() {
             &[(endpoints, 20), ([endpoints[1], endpoints[0]], 10)],
             traversal,
         )
-        .expect("evaluation resources"),
+        .expect("compute the unique oriented native pcurve"),
         Some(OrientedNativePcurve {
             endpoints,
             offset: 10,
@@ -618,7 +618,7 @@ fn reconciles_agreeing_source_forms_and_rejects_competing_paths() {
             &[(endpoints, 20), ([[2.0, 4.0], [5.0, 8.0]], 10)],
             traversal,
         )
-        .expect("evaluation resources"),
+        .expect("compute the unique oriented native pcurve"),
         Some(OrientedNativePcurve {
             endpoints,
             offset: 20,
@@ -650,7 +650,7 @@ fn reconciles_agreeing_source_forms_and_rejects_competing_paths() {
             ],
             [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
         )
-        .expect("evaluation resources"),
+        .expect("compute the unique oriented native pcurve"),
         None
     );
 }

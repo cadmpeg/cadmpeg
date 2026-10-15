@@ -43,8 +43,8 @@ fn unsigned_value_fixture(
 
 #[test]
 fn unsigned_value_fixture_preserves_the_unique_distance_solution() {
-    let solved = crate::decode::with_test_decode_ctx(unsigned_value_fixture)
-        .expect("service profile admits the distance solution");
+    let solved = crate::decode::with_service_context(unsigned_value_fixture)
+        .expect("solve the unsigned distance");
     assert_eq!(solved, BTreeMap::from([((2, SectionAxis::U), 1.0)]));
 }
 
@@ -61,7 +61,7 @@ fn unsigned_distance_branches_resolve_only_a_fully_anchored_chain() {
             .map(|point| (point, point + 1, SectionAxis::U, 1.0))
             .collect::<Vec<_>>();
         let stored = BTreeMap::from([((1, SectionAxis::U), 0.0)]);
-        let solved = crate::decode::with_test_decode_ctx(|ctx| {
+        let solved = crate::decode::with_service_context(|ctx| {
             super::solve_unsigned_dimension_coordinates(ctx, &equations, &stored, &distances)
         })
         .expect("4096 sign choices share one system");

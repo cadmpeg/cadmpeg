@@ -279,7 +279,7 @@ fn expanded_section_above_the_local_ceiling_stays_compressed() {
         bytes,
     )
     .expect("section extent");
-    crate::decode::with_test_decode_ctx(|ctx| {
+    crate::decode::with_service_context(|ctx| {
         let mut losses = Vec::new();
         let expanded = super::expanded_sections(ctx, bytes, &[section], &mut losses)
             .expect("the expansion ceiling skips the section");

@@ -971,7 +971,7 @@ pub(crate) fn prototype_topology_rows(
 /// Decode bounded curve-from-equation expression programs.
 #[cfg(test)]
 pub(crate) fn expression_records(payload: &[u8]) -> Vec<CurveExpressionRecord> {
-    crate::decode::with_test_decode_ctx(|ctx| {
+    crate::decode::with_service_context(|ctx| {
         expression_records_with_model_name(ctx, payload, None)
     })
     .expect("test curve expression records")
@@ -7113,7 +7113,7 @@ fn curve_scalar_lane(
 /// `srf_array` identifiers are available.
 #[cfg(test)]
 fn parameter_records(payload: &[u8]) -> Vec<CurveParameterRecord> {
-    crate::decode::with_test_decode_ctx(|ctx| parameter_records_with_face_ids(ctx, payload, None))
+    crate::decode::with_service_context(|ctx| parameter_records_with_face_ids(ctx, payload, None))
         .expect("test curve parameter records")
 }
 

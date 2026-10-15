@@ -57,7 +57,7 @@ fn equation_function_six_derives_positive_point_distance() {
     };
 
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| resolved_section_scalar_values(
+        crate::decode::with_service_context(|ctx| resolved_section_scalar_values(
             ctx,
             &definition(None)
         ))
@@ -66,13 +66,13 @@ fn equation_function_six_derives_positive_point_distance() {
         Some(&5.0)
     );
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| resolved_section_radii(ctx, &definition(None)))
+        crate::decode::with_service_context(|ctx| resolved_section_radii(ctx, &definition(None)))
             .expect("test section solve")
             .get(&20),
         Some(&5.0)
     );
     assert!(
-        !crate::decode::with_test_decode_ctx(|ctx| resolved_section_scalar_values(
+        !crate::decode::with_service_context(|ctx| resolved_section_scalar_values(
             ctx,
             &definition(Some(6.0))
         ))
@@ -80,7 +80,7 @@ fn equation_function_six_derives_positive_point_distance() {
         .contains_key(&(crate::feature::definitions::VariableType::Radius, 20))
     );
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| resolved_section_radii(
+        crate::decode::with_service_context(|ctx| resolved_section_radii(
             ctx,
             &definition(Some(6.0))
         ))
@@ -100,7 +100,7 @@ fn equation_function_six_derives_positive_point_distance() {
         row.guess = crate::feature::definitions::ScalarLane::Undefined;
     }
     assert!(
-        !crate::decode::with_test_decode_ctx(|ctx| resolved_section_scalar_values(
+        !crate::decode::with_service_context(|ctx| resolved_section_scalar_values(
             ctx,
             &stored_without_coordinates
         ))
@@ -166,7 +166,7 @@ fn equation_function_forty_three_derives_unique_axis_distance_scalar() {
     };
 
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| resolved_section_scalar_values(
+        crate::decode::with_service_context(|ctx| resolved_section_scalar_values(
             ctx,
             &definition([0.0, 0.0], [3.0, 0.0], None)
         ))
@@ -175,7 +175,7 @@ fn equation_function_forty_three_derives_unique_axis_distance_scalar() {
         Some(&3.0)
     );
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| resolved_section_scalar_values(
+        crate::decode::with_service_context(|ctx| resolved_section_scalar_values(
             ctx,
             &definition([0.0, 0.0], [3.0, 4.0], Some(4.0))
         ))
@@ -184,7 +184,7 @@ fn equation_function_forty_three_derives_unique_axis_distance_scalar() {
         Some(&4.0)
     );
     assert!(
-        !crate::decode::with_test_decode_ctx(|ctx| resolved_section_scalar_values(
+        !crate::decode::with_service_context(|ctx| resolved_section_scalar_values(
             ctx,
             &definition([0.0, 0.0], [3.0, 4.0], None)
         ))
@@ -192,7 +192,7 @@ fn equation_function_forty_three_derives_unique_axis_distance_scalar() {
         .contains_key(&(crate::feature::definitions::VariableType::Dimension, 20))
     );
     assert!(
-        !crate::decode::with_test_decode_ctx(|ctx| resolved_section_scalar_values(
+        !crate::decode::with_service_context(|ctx| resolved_section_scalar_values(
             ctx,
             &definition([0.0, 0.0], [3.0, 4.0], Some(5.0))
         ))
@@ -200,7 +200,7 @@ fn equation_function_forty_three_derives_unique_axis_distance_scalar() {
         .contains_key(&(crate::feature::definitions::VariableType::Dimension, 20))
     );
     assert!(
-        !crate::decode::with_test_decode_ctx(|ctx| resolved_section_scalar_values(
+        !crate::decode::with_service_context(|ctx| resolved_section_scalar_values(
             ctx,
             &definition([0.0, 0.0], [3.0, 3.0], Some(3.0))
         ))
@@ -216,7 +216,7 @@ fn equation_function_forty_three_derives_unique_axis_distance_scalar() {
         .rows[5]
         .value = crate::feature::definitions::ScalarLane::Value(1.0);
     assert!(
-        !crate::decode::with_test_decode_ctx(|ctx| resolved_section_scalar_values(
+        !crate::decode::with_service_context(|ctx| resolved_section_scalar_values(
             ctx,
             &invalid_auxiliary
         ))
@@ -291,7 +291,7 @@ fn equation_function_three_solves_unique_unsigned_coordinate_distance() {
     };
 
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| resolved_section_coordinates(ctx, &definition))
+        crate::decode::with_service_context(|ctx| resolved_section_coordinates(ctx, &definition))
             .expect("test section solve")
             .get(&2),
         Some(&[Some(5.0), None])
@@ -302,7 +302,7 @@ fn equation_function_three_solves_unique_unsigned_coordinate_distance() {
     dimension_scalar.value = ScalarLane::DimensionDriven;
     dimension_scalar.guess = ScalarLane::DimensionDriven;
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| resolved_section_coordinates(
+        crate::decode::with_service_context(|ctx| resolved_section_coordinates(
             ctx,
             &dimension_driven
         ))
@@ -311,7 +311,7 @@ fn equation_function_three_solves_unique_unsigned_coordinate_distance() {
         Some(&[Some(5.0), None])
     );
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| resolved_section_scalar_values(
+        crate::decode::with_service_context(|ctx| resolved_section_scalar_values(
             ctx,
             &dimension_driven
         ))
@@ -325,7 +325,7 @@ fn equation_function_three_solves_unique_unsigned_coordinate_distance() {
     missing_scalar.value = ScalarLane::Undefined;
     missing_scalar.guess = ScalarLane::Undefined;
     assert!(
-        !crate::decode::with_test_decode_ctx(|ctx| resolved_section_scalar_values(
+        !crate::decode::with_service_context(|ctx| resolved_section_scalar_values(
             ctx,
             &missing_inline
         ))
@@ -377,7 +377,7 @@ fn equation_function_three_solves_unique_unsigned_coordinate_distance() {
         offset: 899,
     });
     assert!(
-        !crate::decode::with_test_decode_ctx(|ctx| resolved_section_coordinates(
+        !crate::decode::with_service_context(|ctx| resolved_section_coordinates(
             ctx,
             &disabled_equation
         ))
@@ -393,7 +393,7 @@ fn equation_function_three_solves_unique_unsigned_coordinate_distance() {
         .rows[0]
         .value = crate::feature::definitions::DimensionValue::Resolved(6.0);
     assert!(
-        !crate::decode::with_test_decode_ctx(|ctx| resolved_section_coordinates(ctx, &mismatched))
+        !crate::decode::with_service_context(|ctx| resolved_section_coordinates(ctx, &mismatched))
             .expect("test section solve")
             .contains_key(&2)
     );
@@ -455,7 +455,7 @@ fn equation_function_thirty_three_solves_unique_equal_line_length_coordinate() {
     };
 
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| resolved_section_coordinates(ctx, &definition))
+        crate::decode::with_service_context(|ctx| resolved_section_coordinates(ctx, &definition))
             .expect("test section solve")
             .get(&4),
         Some(&[Some(0.0), Some(4.0)])
@@ -465,7 +465,7 @@ fn equation_function_thirty_three_solves_unique_equal_line_length_coordinate() {
     ambiguous.variables.as_mut().expect("variables").rows[7].value =
         crate::feature::definitions::ScalarLane::Value(0.0);
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| resolved_section_coordinates(ctx, &ambiguous))
+        crate::decode::with_service_context(|ctx| resolved_section_coordinates(ctx, &ambiguous))
             .expect("test section solve")
             .get(&4),
         Some(&[None, Some(0.0)])
@@ -479,7 +479,7 @@ fn equation_function_thirty_three_solves_unique_equal_line_length_coordinate() {
         .rows[8]
         .value = crate::feature::definitions::ScalarLane::Value(1.0);
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| resolved_section_coordinates(
+        crate::decode::with_service_context(|ctx| resolved_section_coordinates(
             ctx,
             &nonzero_auxiliary
         ))

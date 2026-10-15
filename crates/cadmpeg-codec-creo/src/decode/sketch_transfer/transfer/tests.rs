@@ -43,7 +43,7 @@ fn empty_section_scan() -> crate::container::ContainerScan<'static> {
 fn empty_section_transfer_preserves_sketch_and_feature() {
     let scan = empty_section_scan();
     let mut ir = cadmpeg_ir::document::CadIr::empty();
-    crate::decode::with_test_decode_ctx(|ctx| {
+    crate::decode::with_service_context(|ctx| {
         super::transfer_sketches(
             ctx,
             &scan,
@@ -92,7 +92,7 @@ fn disabled_constraint() -> SketchConstraint {
 #[test]
 fn admit_constraint_row_appends_one_row() {
     let mut rows = Vec::new();
-    crate::decode::with_test_decode_ctx(|ctx| {
+    crate::decode::with_service_context(|ctx| {
         admit_constraint_row(ctx, &mut rows, disabled_constraint())
     })
     .expect("service row admitted");
@@ -156,7 +156,7 @@ fn equation_header_uses_definition_source_base() {
 #[test]
 fn native_equation_row_uses_definition_source_base() {
     let (scan, row_start) = equation_scan();
-    crate::decode::with_test_decode_ctx(|ctx| {
+    crate::decode::with_service_context(|ctx| {
         let records = crate::decode::records::sketch_records(ctx, &scan).expect("records");
         let record = serde_json::to_value(&records[0]).expect("native record");
         assert_eq!(record["equations"].as_array().expect("equations").len(), 1);
@@ -169,7 +169,7 @@ fn equation_annotation_uses_definition_source_base() {
     let (scan, row_start) = equation_scan();
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
-    crate::decode::with_test_decode_ctx(|ctx| {
+    crate::decode::with_service_context(|ctx| {
         super::transfer_sketches(
             ctx,
             &scan,

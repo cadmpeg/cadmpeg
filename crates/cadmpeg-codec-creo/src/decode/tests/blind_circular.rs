@@ -574,7 +574,7 @@ fn unique_parallel_round_supports_define_constant_radius() {
             ],
         )
     }
-    .expect("service profile admits slot midplanes");
+    .expect("compute the slot fillet cylinder");
     assert_eq!(cylinder.origin, [-8.5, -2.0, -6.5]);
     assert_eq!(cylinder.axis, [0.0, 1.0, 0.0]);
     assert_eq!(cylinder.radius, 0.5);
@@ -636,7 +636,7 @@ fn round_support_planes_define_radius_without_generated_surface_rows() {
     }
 
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| round_constant_radius(
+        crate::decode::with_service_context(|ctx| round_constant_radius(
             ctx,
             &scan,
             &ir,
@@ -751,7 +751,7 @@ fn mixed_round_families_reconcile_placed_cylinders_and_prototype_tori() {
     }
 
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| round_constant_radius(
+        crate::decode::with_service_context(|ctx| round_constant_radius(
             ctx,
             &scan,
             &ir,
@@ -781,7 +781,7 @@ fn mixed_round_families_reconcile_placed_cylinders_and_prototype_tori() {
         .expect("valid CylinderSurface fixture");
     }
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| round_constant_radius(
+        crate::decode::with_service_context(|ctx| round_constant_radius(
             ctx,
             &scan,
             &ir,
@@ -829,7 +829,7 @@ fn placed_cylinder_samples_identify_variable_radius_with_unresolved_siblings() {
     }
 
     assert!(matches!(
-        crate::decode::with_test_decode_ctx(
+        crate::decode::with_service_context(
             |ctx| schema_feature_definition(
                 ctx,
                 &scan,
@@ -976,7 +976,7 @@ fn unequal_round_samples_are_not_hidden_by_support_radius() {
         Some(0.5)
     );
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| round_constant_radius(
+        crate::decode::with_service_context(|ctx| round_constant_radius(
             ctx,
             &scan,
             &ir,
@@ -987,7 +987,7 @@ fn unequal_round_samples_are_not_hidden_by_support_radius() {
         None
     );
     assert!(matches!(
-        crate::decode::with_test_decode_ctx(
+        crate::decode::with_service_context(
             |ctx| schema_feature_definition(
                 ctx,
                 &scan,
@@ -1089,7 +1089,7 @@ fn unequal_placed_round_cylinders_are_not_hidden_by_support_radius() {
         Some(0.5)
     );
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| round_constant_radius(
+        crate::decode::with_service_context(|ctx| round_constant_radius(
             ctx,
             &scan,
             &ir,
@@ -1100,7 +1100,7 @@ fn unequal_placed_round_cylinders_are_not_hidden_by_support_radius() {
         None
     );
     assert!(matches!(
-        crate::decode::with_test_decode_ctx(
+        crate::decode::with_service_context(
             |ctx| schema_feature_definition(
                 ctx,
                 &scan,
@@ -1206,7 +1206,7 @@ fn unequal_mixed_round_cylinders_are_not_hidden_by_unresolved_torus() {
         Some(0.5)
     );
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| round_constant_radius(
+        crate::decode::with_service_context(|ctx| round_constant_radius(
             ctx,
             &scan,
             &ir,
@@ -1217,7 +1217,7 @@ fn unequal_mixed_round_cylinders_are_not_hidden_by_unresolved_torus() {
         None
     );
     assert!(matches!(
-        crate::decode::with_test_decode_ctx(
+        crate::decode::with_service_context(
             |ctx| schema_feature_definition(
                 ctx,
                 &scan,

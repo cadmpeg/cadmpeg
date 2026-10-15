@@ -77,7 +77,7 @@ fn spindle_torus_boundary_pcurve_retains_the_signed_ring_branch() {
         &"revolution boundary fixture",
         &mut crate::lane_refusal::LaneRefusals::new(),
     )
-    .expect("resource admission")
+    .expect("compute the revolution boundary pcurve")
     .expect("spindle boundary");
     for parameter in [0.0, 0.25, 0.5, 0.75, 1.0] {
         let uv = cadmpeg_ir::eval::decode::pcurve_uv(

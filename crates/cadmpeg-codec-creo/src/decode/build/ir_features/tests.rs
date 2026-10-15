@@ -69,7 +69,7 @@ fn feature_output_refresh_preserves_feature_order() {
     let scan = crate::test_support::empty_container_scan();
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.features.push(feature_for_output_refresh());
-    crate::decode::with_test_decode_ctx(|ctx| refresh_feature_outputs(ctx, &scan, &mut ir))
+    crate::decode::with_service_context(|ctx| refresh_feature_outputs(ctx, &scan, &mut ir))
         .expect("output update");
     assert_eq!(ir.model.features[0].ordinal, 3);
     assert!(ir.model.features[0].evaluation.outputs().is_empty());
@@ -103,7 +103,7 @@ fn native_operation_feature_records_native_kind() {
             state_offset: 0,
         });
     let mut ir = cadmpeg_ir::document::CadIr::empty();
-    crate::decode::with_test_decode_ctx(|ctx| {
+    crate::decode::with_service_context(|ctx| {
         emit_model_features(
             ctx,
             &scan,
@@ -127,7 +127,7 @@ fn native_row_feature_records_native_kind() {
     let mut scan = crate::test_support::empty_container_scan();
     scan.features.rows.push(one_feature_row());
     let mut ir = cadmpeg_ir::document::CadIr::empty();
-    crate::decode::with_test_decode_ctx(|ctx| {
+    crate::decode::with_service_context(|ctx| {
         emit_model_features(
             ctx,
             &scan,
@@ -151,7 +151,7 @@ fn native_row_feature_derives_name() {
     let mut scan = crate::test_support::empty_container_scan();
     scan.features.rows.push(one_feature_row());
     let mut ir = cadmpeg_ir::document::CadIr::empty();
-    crate::decode::with_test_decode_ctx(|ctx| {
+    crate::decode::with_service_context(|ctx| {
         emit_model_features(
             ctx,
             &scan,
@@ -187,7 +187,7 @@ fn stored_operation_feature_name_strips_prefix() {
             state_offset: 0,
         });
     let mut ir = cadmpeg_ir::document::CadIr::empty();
-    crate::decode::with_test_decode_ctx(|ctx| {
+    crate::decode::with_service_context(|ctx| {
         emit_model_features(
             ctx,
             &scan,
@@ -221,7 +221,7 @@ fn recipe_source_tag_names_recipe() {
             state_offset: 0,
         });
     let mut ir = cadmpeg_ir::document::CadIr::empty();
-    crate::decode::with_test_decode_ctx(|ctx| {
+    crate::decode::with_service_context(|ctx| {
         emit_model_features(
             ctx,
             &scan,

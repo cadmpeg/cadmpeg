@@ -123,7 +123,7 @@ fn sketch_entity_refuses_before_model_insertion() {
 
     let decoded = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
-        .expect("service profile admits the sketch");
+        .expect("decode the fixture");
     assert_eq!(decoded.ir().model.sketch_entities.len(), 2);
 }
 
@@ -146,7 +146,7 @@ fn sketch_constraint_refuses_before_model_insertion() {
 
     let decoded = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
-        .expect("service profile admits the sketch constraints");
+        .expect("decode the fixture");
     assert_eq!(decoded.ir().model.sketch_constraints.len(), 2);
 
     let mut exact = DecodeOptions::default();

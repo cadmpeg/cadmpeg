@@ -821,10 +821,10 @@ mod tests {
             });
             let sketch =
                 cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#1").expect("sketch");
-            let constraints = crate::decode::with_test_decode_ctx(|ctx| {
+            let constraints = crate::decode::with_service_context(|ctx| {
                 super::section_skamp_constraints_for_geometry(ctx, &definition, &sketch, None)
             })
-            .expect("service resources");
+            .expect("compute the section SKAMP constraints for geometry");
             assert_eq!(constraints.len(), 1);
             assert!(matches!(
                 constraints[0].0.definition.kind(),
@@ -848,7 +848,7 @@ mod tests {
         )]);
         for duplicate in [false, true] {
             let definition = make_definition(duplicate);
-            let constraints = crate::decode::with_test_decode_ctx(|ctx| {
+            let constraints = crate::decode::with_service_context(|ctx| {
                 super::section_skamp_constraints_for_geometry(
                     ctx,
                     &definition,
@@ -856,7 +856,7 @@ mod tests {
                     Some(&geometry),
                 )
             })
-            .expect("service resources");
+            .expect("compute the section SKAMP constraints for geometry");
             assert_eq!(constraints.len(), if duplicate { 2 } else { 1 });
         }
     }
@@ -917,7 +917,7 @@ mod tests {
             })
             .expect("valid point geometry"),
         )]);
-        let constraints = crate::decode::with_test_decode_ctx(|ctx| {
+        let constraints = crate::decode::with_service_context(|ctx| {
             super::section_skamp_constraints_for_geometry(
                 ctx,
                 &definition,
@@ -953,7 +953,7 @@ mod tests {
             })
             .expect("valid point geometry"),
         );
-        let constraints = crate::decode::with_test_decode_ctx(|ctx| {
+        let constraints = crate::decode::with_service_context(|ctx| {
             super::section_skamp_constraints_for_geometry(
                 ctx,
                 &definition,
@@ -1028,7 +1028,7 @@ mod tests {
                 .expect("point"),
             )
         }));
-        let constraints = crate::decode::with_test_decode_ctx(|ctx| {
+        let constraints = crate::decode::with_service_context(|ctx| {
             super::section_skamp_constraints_for_geometry(
                 ctx,
                 &definition,
@@ -1036,7 +1036,7 @@ mod tests {
                 Some(&geometry),
             )
         })
-        .expect("service resources");
+        .expect("compute the section SKAMP constraints for geometry");
         assert_eq!(constraints.len(), 1);
     }
 
@@ -1296,7 +1296,7 @@ mod tests {
         assert_eq!(native_kind, "creo:skamp:35");
         assert_eq!(entities, &vec![target.clone(), point.id().clone()]);
         let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-            .expect("resource allocation did not fail");
+            .expect("validate the neutral model");
         assert!(validation.is_ok(), "{validation:#?}");
     }
 
@@ -1363,7 +1363,7 @@ mod tests {
             &vec![reference_line.id().clone(), point.id().clone()]
         );
         let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-            .expect("resource allocation did not fail");
+            .expect("validate the neutral model");
         assert!(validation.is_ok(), "{validation:#?}");
     }
 
@@ -1496,7 +1496,7 @@ mod tests {
     /// The native kind of entity 42, after the document validates.
     fn native_kind_42(result: &cadmpeg_ir::codec::DecodeResult) -> &str {
         let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-            .expect("resource allocation did not fail");
+            .expect("validate the neutral model");
         assert!(validation.is_ok(), "{validation:#?}");
         let entity = result
             .ir()
@@ -1551,7 +1551,7 @@ mod tests {
         assert!(point.as_str().ends_with(":43"), "{point:?}");
         assert_eq!(entity, entity_42(&result));
         let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-            .expect("resource allocation did not fail");
+            .expect("validate the neutral model");
         assert!(validation.is_ok(), "{validation:#?}");
     }
 }

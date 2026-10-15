@@ -669,14 +669,14 @@ mod tests {
         for radius in [1e-6, 1.0] {
             let equal = arc_radius_definition([radius, radius]);
             assert_eq!(
-                crate::decode::with_test_decode_ctx(|ctx| resolved_section_radii(ctx, &equal))
+                crate::decode::with_service_context(|ctx| resolved_section_radii(ctx, &equal))
                     .expect("test section solve")
                     .get(&42),
                 Some(&radius)
             );
             let unequal = arc_radius_definition([radius, 1.0005 * radius]);
             assert!(
-                !crate::decode::with_test_decode_ctx(|ctx| resolved_section_radii(ctx, &unequal))
+                !crate::decode::with_service_context(|ctx| resolved_section_radii(ctx, &unequal))
                     .expect("test section solve")
                     .contains_key(&42)
             );
@@ -761,7 +761,7 @@ mod tests {
             offset: 0,
         });
         assert!(
-            crate::decode::with_test_decode_ctx(|ctx| resolved_section_radii(ctx, &definition))
+            crate::decode::with_service_context(|ctx| resolved_section_radii(ctx, &definition))
                 .expect("test section solve")
                 .is_empty()
         );
@@ -824,7 +824,7 @@ mod tests {
             offset: 0,
         });
         assert!(
-            crate::decode::with_test_decode_ctx(|ctx| resolved_section_radii(ctx, &definition))
+            crate::decode::with_service_context(|ctx| resolved_section_radii(ctx, &definition))
                 .expect("test section solve")
                 .is_empty()
         );
@@ -1048,7 +1048,7 @@ mod tests {
             .expect("segments")
             .is_complete());
         assert_eq!(
-            crate::decode::with_test_decode_ctx(|ctx| resolved_section_radii(ctx, &definition))
+            crate::decode::with_service_context(|ctx| resolved_section_radii(ctx, &definition))
                 .expect("test section solve"),
             std::collections::BTreeMap::from([(42, 3.0)])
         );

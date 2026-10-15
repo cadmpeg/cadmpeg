@@ -100,7 +100,7 @@ fn pcurve_vertex_case() -> (
 
 fn pcurve_vertex_result() -> Result<super::SolvedTopologicalVertices, CodecError> {
     let (scan, ir, carriers) = pcurve_vertex_case();
-    crate::decode::with_test_decode_ctx(|ctx| {
+    crate::decode::with_service_context(|ctx| {
         solve_topological_vertices(
             ctx,
             &scan,
@@ -150,7 +150,7 @@ fn analytic_vertex_result() -> Result<super::SolvedTopologicalVertices, CodecErr
             offset: 0,
         });
     ir.model.curves.push(make_curve(8, [0.0, 1.0, 0.0]));
-    crate::decode::with_test_decode_ctx(|ctx| {
+    crate::decode::with_service_context(|ctx| {
         solve_topological_vertices(
             ctx,
             &scan,
@@ -219,7 +219,7 @@ fn ambiguous_vertex_result() -> Result<super::SolvedTopologicalVertices, CodecEr
                 end_vertex_id: std::num::NonZeroU32::new(end_vertex_id),
             });
     }
-    crate::decode::with_test_decode_ctx(|ctx| {
+    crate::decode::with_service_context(|ctx| {
         solve_topological_vertices(
             ctx,
             &scan,
@@ -242,7 +242,7 @@ fn authoritative_vertex_result() -> Result<super::SolvedTopologicalVertices, Cod
             samples: vec![[[1.0, 2.0], [1.0, 2.0]], [[3.0, 4.0], [3.0, 4.0]]],
             offset: 0,
         });
-    crate::decode::with_test_decode_ctx(|ctx| {
+    crate::decode::with_service_context(|ctx| {
         solve_topological_vertices(
             ctx,
             &scan,
@@ -310,7 +310,7 @@ fn incident_lines_define_one_validated_vertex() {
     let third = line([1.0, 2.0, -5.0], [0.0, 0.0, 4.0]);
 
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| incident_analytic_vertex_domain(
+        crate::decode::with_service_context(|ctx| incident_analytic_vertex_domain(
             ctx,
             &[&first, &second, &third]
         ))
@@ -330,7 +330,7 @@ fn incident_lines_reject_skew_parallel_and_disagreeing_candidates() {
     assert_eq!(line_line_intersection(&x, &skew_y), None);
     assert_eq!(line_line_intersection(&x, &parallel), None);
     assert!(
-        crate::decode::with_test_decode_ctx(|ctx| incident_analytic_vertex_domain(
+        crate::decode::with_service_context(|ctx| incident_analytic_vertex_domain(
             ctx,
             &[&x, &crossing_y, &displaced_z]
         ))
@@ -446,12 +446,12 @@ fn conic_pair_candidates_cover_coplanar_and_transverse_planes() {
     let transverse = circle([0.0, 0.0, 0.0], [1.0, 0.0, 0.0], 2.0);
 
     assert!(
-        crate::decode::with_test_decode_ctx(|ctx| conic_conic_intersections(ctx, &first, &first))
+        crate::decode::with_service_context(|ctx| conic_conic_intersections(ctx, &first, &first))
             .expect("test carrier solve")
             .is_empty()
     );
     assert!(
-        crate::decode::with_test_decode_ctx(|ctx| conic_conic_intersections(
+        crate::decode::with_service_context(|ctx| conic_conic_intersections(
             ctx,
             &first,
             &circle([0.0, 0.0, 1.0], [0.0, 0.0, 1.0], 2.0),
@@ -460,18 +460,18 @@ fn conic_pair_candidates_cover_coplanar_and_transverse_planes() {
         .is_empty()
     );
     let secant_points =
-        crate::decode::with_test_decode_ctx(|ctx| conic_conic_intersections(ctx, &first, &secant))
+        crate::decode::with_service_context(|ctx| conic_conic_intersections(ctx, &first, &secant))
             .expect("test carrier solve");
     assert_eq!(secant_points.len(), 2);
     assert!(secant_points.iter().all(|point| {
         agree(*point, [1.0, 3.0_f64.sqrt(), 0.0]) || agree(*point, [1.0, -3.0_f64.sqrt(), 0.0])
     }));
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| conic_conic_intersections(ctx, &first, &tangent))
+        crate::decode::with_service_context(|ctx| conic_conic_intersections(ctx, &first, &tangent))
             .expect("test carrier solve"),
         [[2.0, 0.0, 0.0]]
     );
-    let transverse_points = crate::decode::with_test_decode_ctx(|ctx| {
+    let transverse_points = crate::decode::with_service_context(|ctx| {
         conic_conic_intersections(ctx, &first, &transverse)
     })
     .expect("test carrier solve");
@@ -491,7 +491,7 @@ fn conic_pair_candidates_cover_coplanar_and_transverse_planes() {
         .expect("valid EllipseCurve fixture"),
     ));
     let ellipse_points =
-        crate::decode::with_test_decode_ctx(|ctx| conic_conic_intersections(ctx, &first, &ellipse))
+        crate::decode::with_service_context(|ctx| conic_conic_intersections(ctx, &first, &ellipse))
             .expect("test carrier solve");
     assert_eq!(ellipse_points.len(), 2);
     assert!(ellipse_points
@@ -510,7 +510,7 @@ fn conic_pair_candidates_cover_coplanar_and_transverse_planes() {
         .expect("valid EllipseCurve fixture"),
     ));
     let larger_circle = circle([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 2.5);
-    let diagonal_points = crate::decode::with_test_decode_ctx(|ctx| {
+    let diagonal_points = crate::decode::with_service_context(|ctx| {
         conic_conic_intersections(ctx, &larger_circle, &diagonal_ellipse)
     })
     .expect("test carrier solve");
@@ -530,7 +530,7 @@ fn conic_pair_candidates_cover_coplanar_and_transverse_planes() {
         .expect("valid ParabolaCurve fixture"),
     ));
     let tangent_circle = circle([1.0, 0.0, 0.0], [0.0, 0.0, 1.0], 1.0);
-    let tangent_points = crate::decode::with_test_decode_ctx(|ctx| {
+    let tangent_points = crate::decode::with_service_context(|ctx| {
         conic_conic_intersections(ctx, &parabola, &tangent_circle)
     })
     .expect("test carrier solve");

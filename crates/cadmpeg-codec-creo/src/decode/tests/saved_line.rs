@@ -130,7 +130,7 @@ fn saved_line_joins_through_order_table() {
         BTreeSet::from([42])
     );
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| materialized_saved_section_external_ids(
+        crate::decode::with_service_context(|ctx| materialized_saved_section_external_ids(
             ctx,
             &definition,
             &mut crate::lane_refusal::LaneRefusals::new()
@@ -170,7 +170,7 @@ fn saved_line_joins_through_order_table() {
         offset: 38,
     });
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(
+        crate::decode::with_service_context(|ctx| resolved_section_points(
             ctx,
             &coordinate_definition
         ))
@@ -184,7 +184,7 @@ fn saved_line_joins_through_order_table() {
         .rows[0]
         .value = ScalarLane::Value(7.0);
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| resolved_section_coordinates(
+        crate::decode::with_service_context(|ctx| resolved_section_coordinates(
             ctx,
             &coordinate_definition
         ))
@@ -214,7 +214,7 @@ fn saved_line_joins_through_order_table() {
         BTreeSet::from([42])
     );
     assert!(
-        crate::decode::with_test_decode_ctx(|ctx| materialized_saved_section_external_ids(
+        crate::decode::with_service_context(|ctx| materialized_saved_section_external_ids(
             ctx,
             &incomplete,
             &mut crate::lane_refusal::LaneRefusals::new()
@@ -481,7 +481,7 @@ fn saved_line_joins_through_order_table() {
                 .expect("valid test fixture"),
         ]
     );
-    let dimension_constraints = crate::decode::with_test_decode_ctx(|ctx| {
+    let dimension_constraints = crate::decode::with_service_context(|ctx| {
         section_dimension_constraints(
             ctx,
             &constrained,
@@ -503,7 +503,7 @@ fn saved_line_joins_through_order_table() {
     );
     let mut native_join = constrained.clone();
     native_join.relations.as_mut().expect("relations").rows[0].relation_type = 99;
-    let native_join_constraints = crate::decode::with_test_decode_ctx(|ctx| {
+    let native_join_constraints = crate::decode::with_service_context(|ctx| {
         section_dimension_constraints(
             ctx,
             &native_join,
@@ -545,7 +545,7 @@ fn saved_line_joins_through_order_table() {
         .header_mut()
         .expect("triples header")
         .declared_count = 2;
-    let ambiguous_join_constraints = crate::decode::with_test_decode_ctx(|ctx| {
+    let ambiguous_join_constraints = crate::decode::with_service_context(|ctx| {
         section_dimension_constraints(
             ctx,
             &native_join,
@@ -682,7 +682,7 @@ fn saved_line_joins_through_order_table() {
         ),
     )]);
     assert!(matches!(
-        crate::decode::with_test_decode_ctx(|ctx| section_skamp_constraints_for_geometry(
+        crate::decode::with_service_context(|ctx| section_skamp_constraints_for_geometry(
             ctx,
             &solver_families,
             &SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture"),
@@ -705,7 +705,7 @@ fn saved_line_joins_through_order_table() {
     unary.kind = 2;
     unary.status = 1;
     assert!(matches!(
-        crate::decode::with_test_decode_ctx(|ctx| section_skamp_constraints_for_geometry(
+        crate::decode::with_service_context(|ctx| section_skamp_constraints_for_geometry(
             ctx,
             &solver_families,
             &SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture"),
@@ -769,7 +769,7 @@ fn saved_line_joins_through_order_table() {
             ),
         ),
     ]);
-    let solver_constraints = crate::decode::with_test_decode_ctx(|ctx| {
+    let solver_constraints = crate::decode::with_service_context(|ctx| {
         section_skamp_constraints_for_geometry(
             ctx,
             &solver_families,
@@ -1341,12 +1341,12 @@ fn saved_circle_defines_full_section_geometry_with_incomplete_segment_table() {
         Some(([2.0, -3.0], 4.5))
     );
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(ctx, &definition))
+        crate::decode::with_service_context(|ctx| resolved_section_points(ctx, &definition))
             .expect("test section solve"),
         BTreeMap::from([(11, [2.0, -3.0])])
     );
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| resolved_section_radii(ctx, &definition))
+        crate::decode::with_service_context(|ctx| resolved_section_radii(ctx, &definition))
             .expect("test section solve"),
         BTreeMap::from([(12, 4.5)])
     );
@@ -1370,14 +1370,14 @@ fn saved_circle_defines_full_section_geometry_with_incomplete_segment_table() {
             offset: 33,
         });
     assert!(
-        crate::decode::with_test_decode_ctx(|ctx| resolved_section_radii(ctx, &conflicting_radius))
+        crate::decode::with_service_context(|ctx| resolved_section_radii(ctx, &conflicting_radius))
             .expect("test section solve")
             .is_empty()
     );
     let mut conflicting = definition;
     conflicting.variables.as_mut().expect("variables").rows[0].value = ScalarLane::Value(3.0);
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| resolved_section_coordinates(ctx, &conflicting))
+        crate::decode::with_service_context(|ctx| resolved_section_coordinates(ctx, &conflicting))
             .expect("test section solve"),
         BTreeMap::from([(11, [Some(3.0), Some(-3.0)])])
     );
@@ -1387,7 +1387,7 @@ fn saved_circle_defines_full_section_geometry_with_incomplete_segment_table() {
     variables.rows.push(duplicate);
     variables.declared_count += 1;
     assert!(
-        crate::decode::with_test_decode_ctx(|ctx| resolved_section_coordinates(ctx, &conflicting))
+        crate::decode::with_service_context(|ctx| resolved_section_coordinates(ctx, &conflicting))
             .expect("test section solve")
             .is_empty()
     );
@@ -1436,7 +1436,7 @@ fn generated_saved_geometry_forms_closed_profiles() {
         ),
     ];
 
-    let profiles = crate::decode::with_test_decode_ctx(|ctx| {
+    let profiles = crate::decode::with_service_context(|ctx| {
         saved_profile_chains(
             ctx,
             &SketchId::mint("creo:model:sketch#917".to_string()).expect("valid test fixture"),

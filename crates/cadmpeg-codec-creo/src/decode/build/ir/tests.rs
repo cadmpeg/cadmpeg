@@ -41,7 +41,7 @@ fn display_tessellation_vertices_are_in_millimeters_at_ir_admission() {
     let scan = inch_strip(vec![[1.0, 0.0, 0.0], [0.0, 2.0, 0.0], [0.0, 0.0, 4.0]]);
     let mut ir = CadIr::empty();
     let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
-    crate::decode::with_test_decode_ctx(|ctx| {
+    crate::decode::with_service_context(|ctx| {
         transfer_display_tessellations(ctx, &scan, &mut ir, &mut annotations)
             .expect("display tessellation transfer");
     });
@@ -76,7 +76,7 @@ fn display_tessellation_vertex_overflow_refuses_unrepresentable_ir() {
     let scan = inch_strip(vec![[f64::MAX, 0.0, 0.0], [0.0, 2.0, 0.0], [0.0, 0.0, 4.0]]);
     let mut ir = CadIr::empty();
     let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
-    crate::decode::with_test_decode_ctx(|ctx| {
+    crate::decode::with_service_context(|ctx| {
         let error = transfer_display_tessellations(ctx, &scan, &mut ir, &mut annotations)
             .expect_err("scaled display vertex overflows");
         assert!(matches!(error, CodecError::NotImplemented(_)));
@@ -102,7 +102,7 @@ fn display_shaded_strip_keeps_vertex_normals() {
     )
     .expect("service");
     let mut ir = CadIr::empty();
-    crate::decode::with_test_decode_ctx(|ctx| {
+    crate::decode::with_service_context(|ctx| {
         transfer_display_tessellations(
             ctx,
             &shaded,
@@ -128,7 +128,7 @@ fn display_strip_short_lengths_and_overflow_are_rejected() {
     )
     .is_none());
     let overflow = inch_strip(vec![[f64::MAX, 0.0, 0.0], [0.0, 2.0, 0.0], [0.0, 0.0, 4.0]]);
-    let error = crate::decode::with_test_decode_ctx(|ctx| {
+    let error = crate::decode::with_service_context(|ctx| {
         transfer_display_tessellations(
             ctx,
             &overflow,
@@ -164,7 +164,7 @@ fn positional_plane_cross_overflow_refuses_at_ir_transfer() {
     });
     let mut ir = CadIr::empty();
     let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
-    crate::decode::with_test_decode_ctx(|ctx| {
+    crate::decode::with_service_context(|ctx| {
         let error = transfer_placed_plane_surfaces_into_ir(
             ctx,
             &scan,
@@ -194,7 +194,7 @@ fn positional_plane_missing_slots_remain_unplaced() {
     });
     let mut ir = CadIr::empty();
     let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
-    crate::decode::with_test_decode_ctx(|ctx| {
+    crate::decode::with_service_context(|ctx| {
         transfer_placed_plane_surfaces_into_ir(
             ctx,
             &scan,
@@ -228,7 +228,7 @@ fn placed_plane_origin_is_in_millimeters_at_ir_admission() {
     let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
     let scale = PositiveReal::new(25.4).expect("inch scale");
     let mut source_carriers = SourceUnitCarriers::new(Some(scale));
-    crate::decode::with_test_decode_ctx(|ctx| {
+    crate::decode::with_service_context(|ctx| {
         transfer_placed_plane_surfaces_into_ir(
             ctx,
             &scan,
@@ -245,7 +245,7 @@ fn placed_plane_origin_is_in_millimeters_at_ir_admission() {
         panic!("placed plane was not admitted");
     };
     assert_eq!(plane.origin().get(), Point3::new(25.4, 0.0, 0.0));
-    let carriers = crate::decode::with_test_decode_ctx(|ctx| {
+    let carriers = crate::decode::with_service_context(|ctx| {
         crate::decode::analytic::carriers::placed_carriers(ctx, &scan, &ir, &source_carriers)
     })
     .expect("service placed carriers");
@@ -284,7 +284,7 @@ fn placed_plane_stays_available_to_source_unit_carrier_analysis() {
     let mut ir = CadIr::empty();
     let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
     let mut source_carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
-    crate::decode::with_test_decode_ctx(|ctx| {
+    crate::decode::with_service_context(|ctx| {
         transfer_placed_plane_surfaces_into_ir(
             ctx,
             &scan,
@@ -294,7 +294,7 @@ fn placed_plane_stays_available_to_source_unit_carrier_analysis() {
         )
         .expect("placed plane transfer");
     });
-    let carriers = crate::decode::with_test_decode_ctx(|ctx| {
+    let carriers = crate::decode::with_service_context(|ctx| {
         crate::decode::analytic::carriers::placed_carriers(ctx, &scan, &ir, &source_carriers)
     })
     .expect("service placed carriers");
@@ -335,7 +335,7 @@ fn placed_plane_scaled_origin_overflow_refuses_unrepresentable_ir() {
     let mut ir = CadIr::empty();
     let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
     let mut source_carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
-    crate::decode::with_test_decode_ctx(|ctx| {
+    crate::decode::with_service_context(|ctx| {
         let error = transfer_placed_plane_surfaces_into_ir(
             ctx,
             &scan,
@@ -374,7 +374,7 @@ fn datum_plane_origin_is_in_millimeters_at_ir_admission() {
     let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
     let scale = PositiveReal::new(25.4).expect("inch scale");
     let mut source_carriers = SourceUnitCarriers::new(Some(scale));
-    crate::decode::with_test_decode_ctx(|ctx| {
+    crate::decode::with_service_context(|ctx| {
         transfer_datum_plane_surfaces(ctx, &scan, &mut ir, &mut annotations, &mut source_carriers)
             .expect("datum plane transfer");
     });
@@ -408,7 +408,7 @@ fn datum_plane_scaled_origin_overflow_refuses_unrepresentable_ir() {
     let mut ir = CadIr::empty();
     let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
     let mut source_carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
-    crate::decode::with_test_decode_ctx(|ctx| {
+    crate::decode::with_service_context(|ctx| {
         let error = transfer_datum_plane_surfaces(
             ctx,
             &scan,
@@ -438,7 +438,7 @@ fn reference_line_origin_is_in_millimeters_at_ir_admission() {
     );
     let mut ir = CadIr::empty();
     let mut carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
-    crate::decode::with_test_decode_ctx(|ctx| {
+    crate::decode::with_service_context(|ctx| {
         transfer_reference_lines(
             ctx,
             &scan,
@@ -482,7 +482,7 @@ fn reference_line_scaled_origin_overflow_refuses_before_ir_admission() {
     );
     let mut ir = CadIr::empty();
     let mut carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
-    crate::decode::with_test_decode_ctx(|ctx| {
+    crate::decode::with_service_context(|ctx| {
         let error = transfer_reference_lines(
             ctx,
             &scan,
@@ -520,7 +520,7 @@ fn reference_circle_radius_is_in_millimeters_at_ir_admission() {
     );
     let mut ir = CadIr::empty();
     let mut carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
-    crate::decode::with_test_decode_ctx(|ctx| {
+    crate::decode::with_service_context(|ctx| {
         transfer_reference_circles(
             ctx,
             &scan,
@@ -564,7 +564,7 @@ fn reference_ellipse_radii_are_in_millimeters_at_ir_admission() {
     );
     let mut ir = CadIr::empty();
     let mut carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
-    crate::decode::with_test_decode_ctx(|ctx| {
+    crate::decode::with_service_context(|ctx| {
         transfer_reference_ellipses(
             ctx,
             &scan,

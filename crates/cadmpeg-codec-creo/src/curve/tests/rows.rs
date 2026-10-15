@@ -34,7 +34,7 @@ use std::collections::BTreeSet;
 use std::num::NonZeroU32;
 
 fn expression_helix(record: &crate::curve::CurveExpressionRecord) -> Option<CurveExpressionHelix> {
-    crate::decode::with_test_decode_ctx(|ctx| crate::curve::expression_helix(ctx, record))
+    crate::decode::with_service_context(|ctx| crate::curve::expression_helix(ctx, record))
         .expect("service helix admission")
 }
 
@@ -520,7 +520,7 @@ fn retains_nonzero_reference_geometry_after_topology_references() {
         topology_rows_with_face_ids(&payload, Some(&face_ids))[0].faces,
         [std::num::NonZeroU32::new(10), std::num::NonZeroU32::new(11)]
     );
-    let parameters = crate::decode::with_test_decode_ctx(|ctx| {
+    let parameters = crate::decode::with_service_context(|ctx| {
         parameter_records_with_face_ids(ctx, &payload, Some(&face_ids))
     })
     .expect("curve parameter records");
@@ -575,7 +575,7 @@ fn face_namespace_resolves_ambiguous_reference_boundaries() {
         }]
     );
 
-    let parameters = crate::decode::with_test_decode_ctx(|ctx| {
+    let parameters = crate::decode::with_service_context(|ctx| {
         parameter_records_with_face_ids(ctx, &payload, Some(&face_ids))
     })
     .expect("curve parameter records");
@@ -680,7 +680,7 @@ fn final_curve_row_uses_the_next_array_boundary() {
 fn decodes_complete_depdb_one_sided_curve_array() {
     let payload = b"crv_array\0\xf2\xf8\x02crv_id\0\x06type\0\x08feat_id\0\x04topol_ref_data\0\x07\x08\x04\x01\xf6\xe4\xff\0\x09\x0a\0\xe1\xe0next_record\0";
 
-    let rows = crate::decode::with_test_decode_ctx(|ctx| depdb_cross_section_rows(ctx, payload))
+    let rows = crate::decode::with_service_context(|ctx| depdb_cross_section_rows(ctx, payload))
         .expect("DEPDB cross-section rows");
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].id, 7);

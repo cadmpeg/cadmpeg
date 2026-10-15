@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 #[test]
 fn relation_regex_preserves_service_match_and_invalid_pattern() {
     let values = BTreeMap::new();
-    let matched = crate::decode::with_test_decode_ctx(|ctx| {
+    let matched = crate::decode::with_service_context(|ctx| {
         crate::curve::parse_relation_expression::<CurveExpressionValue>(
             ctx,
             "string_pattern('abc','a.c')",
@@ -20,7 +20,7 @@ fn relation_regex_preserves_service_match_and_invalid_pattern() {
             cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite relation fixture")
         ))
     );
-    let invalid = crate::decode::with_test_decode_ctx(|ctx| {
+    let invalid = crate::decode::with_service_context(|ctx| {
         crate::curve::parse_relation_expression::<CurveExpressionValue>(
             ctx,
             "string_pattern('abc','[')",
@@ -52,7 +52,7 @@ fn relation_power_rejects_text_without_copying_the_invalid_operand() {
         None
     );
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| crate::curve::parse_relation_expression::<
+        crate::decode::with_service_context(|ctx| crate::curve::parse_relation_expression::<
             CurveExpressionValue,
         >(
             ctx,
@@ -95,7 +95,7 @@ fn relation_unit_symbols_match_ascii_case_insensitively() {
         ("1[\u{212a}]", None),
     ] {
         assert_eq!(
-            crate::decode::with_test_decode_ctx(
+            crate::decode::with_service_context(
                 |ctx| crate::curve::parse_relation_expression::<f64>(
                     ctx,
                     expression,
@@ -113,7 +113,7 @@ fn relation_unit_symbols_match_ascii_case_insensitively() {
 #[test]
 fn relation_itos_formats_a_negative_integer() {
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             crate::curve::parse_relation_expression::<CurveExpressionValue>(
                 ctx,
                 "itos(-1)",

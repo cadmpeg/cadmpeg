@@ -984,7 +984,7 @@ fn plane_local_system_close_validates_past_an_e0_numeric_byte() {
 
     assert_eq!(first_compound_close(&payload, 0, payload.len()), None);
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             plane_local_system_compound_close(ctx, &payload, 0, payload.len(), &cache)
         })
         .expect("local-system close fits service limits"),
@@ -1201,7 +1201,7 @@ fn spline_scalar_grid_parser_decodes_six_slots() {
         &payload,
         &mut crate::lane_refusal::LaneRefusals::new(),
     )
-    .expect("service profile admits six scalar slots");
+    .expect("parse the named prototype records");
     let SurfaceNamedValue::ScalarArray(array) = &records[0]
         .field("i_points")
         .expect("named scalar field")

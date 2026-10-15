@@ -96,7 +96,7 @@ fn one_dimension_transfer() -> (crate::container::ContainerScan<'static>, CadIr)
 #[test]
 fn dimension_transfer_records_parameter_for_external_id() {
     let (scan, mut ir) = one_dimension_transfer();
-    let (transferred, parameters) = crate::decode::with_test_decode_ctx(|ctx| {
+    let (transferred, parameters) = crate::decode::with_service_context(|ctx| {
         transfer_feature_dimensions(
             ctx,
             &scan,
@@ -267,7 +267,7 @@ fn dimension_transfer_rejects_duplicate_owner_feature_ids() {
         });
     }
 
-    let (transferred, _) = crate::decode::with_test_decode_ctx(|ctx| {
+    let (transferred, _) = crate::decode::with_service_context(|ctx| {
         transfer_feature_dimensions(
             ctx,
             &scan,

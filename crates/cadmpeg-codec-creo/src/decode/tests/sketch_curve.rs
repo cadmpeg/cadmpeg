@@ -40,7 +40,7 @@ fn section_segment_radius_constraints(
     sketch: &SketchId,
 ) -> Vec<(cadmpeg_ir::sketches::SketchConstraint, usize)> {
     ({ checked_section_segment_radius_constraints(definition, sketch) })
-        .expect("service profile admits segment radius constraints")
+        .expect("compute the checked section segment radius constraints")
 }
 
 fn section_segment_radius_constraints_for_emitted(
@@ -57,7 +57,7 @@ fn section_segment_radius_constraints_for_emitted(
             available_parameters,
         )
     })
-    .expect("service profile admits emitted segment radius constraints")
+    .expect("compute the checked section segment radius constraints for emitted")
 }
 
 #[test]
@@ -362,7 +362,7 @@ fn dimension_identity_includes_its_feature_definition() {
         .rows[0]
         .dimension_type = 3;
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| resolved_section_radii(ctx, &definition))
+        crate::decode::with_service_context(|ctx| resolved_section_radii(ctx, &definition))
             .expect("test section solve"),
         BTreeMap::from([(0, 5.0)])
     );
@@ -430,7 +430,7 @@ fn dimension_identity_includes_its_feature_definition() {
         .rows[0]
         .dimension_type = 4;
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| resolved_section_radii(ctx, &definition))
+        crate::decode::with_service_context(|ctx| resolved_section_radii(ctx, &definition))
             .expect("test section solve"),
         BTreeMap::from([(0, 2.5)])
     );
@@ -472,7 +472,7 @@ fn dimension_identity_includes_its_feature_definition() {
         .expect("segment table")
         .declared_count = 2;
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| resolved_section_radii(ctx, &definition))
+        crate::decode::with_service_context(|ctx| resolved_section_radii(ctx, &definition))
             .expect("test section solve"),
         BTreeMap::from([(0, 2.5)])
     );
@@ -500,7 +500,7 @@ fn dimension_identity_includes_its_feature_definition() {
         .rows[0]
         .dimension_type = 2;
     assert!(
-        crate::decode::with_test_decode_ctx(|ctx| resolved_section_radii(ctx, &definition))
+        crate::decode::with_service_context(|ctx| resolved_section_radii(ctx, &definition))
             .expect("test section solve")
             .is_empty()
     );
@@ -629,7 +629,7 @@ fn dimension_identity_includes_its_feature_definition() {
     assert_eq!(
         section_circle_geometry(
             &BTreeMap::from([(7, [1.0, 2.0])]),
-            &crate::decode::with_test_decode_ctx(|ctx| resolved_section_radii(ctx, &definition))
+            &crate::decode::with_service_context(|ctx| resolved_section_radii(ctx, &definition))
                 .expect("test section solve"),
             &definition
                 .segments
@@ -740,7 +740,7 @@ fn evaluated_sweep_bodies_are_feature_outputs() {
         visible: None,
     });
     assert_eq!(
-        evaluated_sweep_output_bodies(&ir, 40).expect("service profile admits output bodies"),
+        evaluated_sweep_output_bodies(&ir, 40).expect("compute the evaluated sweep output bodies"),
         vec![
             BodyId::mint("creo:feature:extrusion#40:body".to_string()).expect("identity grammar"),
             BodyId::mint("creo:feature:revolution#40:body".to_string()).expect("identity grammar"),

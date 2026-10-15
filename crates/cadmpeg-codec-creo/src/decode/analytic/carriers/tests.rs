@@ -142,7 +142,7 @@ fn placed_carriers_reject_duplicate_model_surface_ids() {
         .surfaces
         .extend([cylinder_surface(7, 2.0), cylinder_surface(7, 3.0)]);
 
-    assert!(!crate::decode::with_test_decode_ctx(|ctx| placed_carriers(
+    assert!(!crate::decode::with_service_context(|ctx| placed_carriers(
         ctx,
         &scan,
         &ir,
@@ -195,7 +195,7 @@ fn placed_carriers_prefers_unique_positional_cylinder_frame() {
         .expect("valid CylinderSurface fixture"),
     ));
 
-    let carriers = crate::decode::with_test_decode_ctx(|ctx| {
+    let carriers = crate::decode::with_service_context(|ctx| {
         placed_carriers(
             ctx,
             &scan,
@@ -260,7 +260,7 @@ fn placed_carriers_keeps_non_inline_class913_model_carrier() {
     let mut ir = CadIr::empty();
     ir.model.surfaces.push(cylinder_surface(7, 0.2));
 
-    let carriers = crate::decode::with_test_decode_ctx(|ctx| {
+    let carriers = crate::decode::with_service_context(|ctx| {
         placed_carriers(
             ctx,
             &scan,
@@ -318,7 +318,7 @@ fn duplicate_model_surface_ids_remove_native_carrier() {
         ),
     ]);
 
-    assert!(!crate::decode::with_test_decode_ctx(|ctx| placed_carriers(
+    assert!(!crate::decode::with_service_context(|ctx| placed_carriers(
         ctx,
         &scan,
         &ir,
@@ -334,7 +334,7 @@ fn placed_carriers_admits_unique_rowless_model_surface() {
     let mut ir = CadIr::empty();
     ir.model.surfaces.push(cylinder_surface(7, 2.0));
 
-    let carriers = crate::decode::with_test_decode_ctx(|ctx| {
+    let carriers = crate::decode::with_service_context(|ctx| {
         placed_carriers(
             ctx,
             &scan,
@@ -357,7 +357,7 @@ fn placed_carriers_rejects_duplicate_rowless_model_surface_ids() {
         .surfaces
         .extend([cylinder_surface(7, 2.0), cylinder_surface(7, 3.0)]);
 
-    assert!(!crate::decode::with_test_decode_ctx(|ctx| placed_carriers(
+    assert!(!crate::decode::with_service_context(|ctx| placed_carriers(
         ctx,
         &scan,
         &ir,
@@ -519,7 +519,7 @@ fn topology_bound_plane_rejects_duplicate_model_curve_ids() {
     ir.model.curves.extend([curve.clone(), curve]);
 
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| transfer_topology_bound_planes(
+        crate::decode::with_service_context(|ctx| transfer_topology_bound_planes(
             ctx,
             &scan,
             &mut ir,

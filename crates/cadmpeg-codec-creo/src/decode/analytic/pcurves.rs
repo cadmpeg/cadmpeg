@@ -238,7 +238,7 @@ pub(in crate::decode) fn mapped_pcurve_endpoints(
     faces: [u32; 2],
     endpoint_sets: [[[f64; 2]; 2]; 2],
 ) -> Result<Option<[[f64; 3]; 2]>, cadmpeg_core::CodecError> {
-    let mapped = crate::decode::with_test_decode_ctx(|ctx| {
+    let mapped = crate::decode::with_service_context(|ctx| {
         map_pcurve_paths(
             ctx,
             ir,
@@ -2314,7 +2314,7 @@ mod tests {
     #[test]
     fn pcurve_evidence_preserves_one_plane_path() {
         let (scan, ir) = one_plane_pcurve_fixture();
-        let (evidence, diagnostics) = crate::decode::with_test_decode_ctx(|ctx| {
+        let (evidence, diagnostics) = crate::decode::with_service_context(|ctx| {
             pcurve_edge_endpoint_evidence_with_carriers(
                 ctx,
                 &scan,
@@ -2336,7 +2336,7 @@ mod tests {
         let (scan, mut ir) = one_plane_pcurve_fixture();
         let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
         let mut source_carriers = crate::decode::source_carriers::SourceUnitCarriers::default();
-        let transferred = crate::decode::with_test_decode_ctx(|ctx| {
+        let transferred = crate::decode::with_service_context(|ctx| {
             transfer_analytic_pcurve_carriers(
                 ctx,
                 &scan,
@@ -2417,7 +2417,7 @@ mod tests {
             source_object: None,
         });
 
-        let mapped = crate::decode::with_test_decode_ctx(|ctx| {
+        let mapped = crate::decode::with_service_context(|ctx| {
             super::map_pcurve_paths(
                 ctx,
                 &ir,
@@ -2510,7 +2510,7 @@ mod tests {
                 &pcurve,
                 &crate::decode::source_carriers::SourceUnitCarriers::default()
             )
-            .expect("evaluation resources"),
+            .expect("compute the mapped two chart endpoint sets"),
             Some(TwoChartEndpointSets::Both([
                 [[-0.01, 0.25], [1.01, 0.75]],
                 [[-0.01, 0.25], [1.01, 0.75]],
@@ -2525,7 +2525,7 @@ mod tests {
             &pcurve,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
         )
-        .expect("evaluation resources");
+        .expect("map two chart endpoint sets");
         assert!(matches!(
             mapping,
             TwoChartMapping::Mapped {
@@ -2541,7 +2541,7 @@ mod tests {
             &pcurve,
             &crate::decode::source_carriers::SourceUnitCarriers::default()
         )
-        .expect("evaluation resources")
+        .expect("compute the mapped two chart endpoint sets")
         .is_none());
 
         pcurve.samples[1][1][0] = 0.5;
@@ -2618,7 +2618,7 @@ mod tests {
                 }),
             ),
         ]);
-        let (evidence, diagnostics) = crate::decode::with_test_decode_ctx(|ctx| {
+        let (evidence, diagnostics) = crate::decode::with_service_context(|ctx| {
             pcurve_edge_endpoint_evidence_with_carriers(
                 ctx,
                 &scan,
@@ -2719,7 +2719,7 @@ mod tests {
             },
         ]);
 
-        let (evidence, diagnostics) = crate::decode::with_test_decode_ctx(|ctx| {
+        let (evidence, diagnostics) = crate::decode::with_service_context(|ctx| {
             pcurve_edge_endpoint_evidence_with_diagnostics(
                 ctx,
                 &scan,
@@ -2815,7 +2815,7 @@ mod tests {
             source_object: None,
         });
 
-        let (evidence, diagnostics) = crate::decode::with_test_decode_ctx(|ctx| {
+        let (evidence, diagnostics) = crate::decode::with_service_context(|ctx| {
             pcurve_edge_endpoint_evidence_with_diagnostics(
                 ctx,
                 &scan,
@@ -2838,7 +2838,7 @@ mod tests {
         assert_eq!(diagnostics.complete_records, 0);
 
         let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
-        let transferred = crate::decode::with_test_decode_ctx(|ctx| {
+        let transferred = crate::decode::with_service_context(|ctx| {
             transfer_analytic_pcurve_carriers(
                 ctx,
                 &scan,
@@ -2899,7 +2899,7 @@ mod tests {
                     [[0.0, 0.0], [0.0, 1.0]],
                 )
             })
-            .expect("evaluation resources"),
+            .expect("compute the pcurve plane carrier status"),
             PcurveCarrierStatus::Validated,
         );
         assert_eq!(
@@ -2919,7 +2919,7 @@ mod tests {
                     [[0.0, 0.0], [1.0, 0.0]],
                 )
             })
-            .expect("evaluation resources"),
+            .expect("compute the pcurve plane carrier status"),
             PcurveCarrierStatus::Rejected,
         );
         assert_eq!(
@@ -2942,7 +2942,7 @@ mod tests {
                     [[0.0, 0.0], [0.0, 1.0]],
                 )
             })
-            .expect("evaluation resources"),
+            .expect("compute the pcurve plane carrier status"),
             PcurveCarrierStatus::Unknown(PcurveCarrierUnknownReason::ParallelPlanePair),
         );
     }
@@ -2998,7 +2998,7 @@ mod tests {
             },
         ]);
 
-        let (evidence, diagnostics) = crate::decode::with_test_decode_ctx(|ctx| {
+        let (evidence, diagnostics) = crate::decode::with_service_context(|ctx| {
             pcurve_edge_endpoint_evidence_with_diagnostics(
                 ctx,
                 &scan,
@@ -3051,7 +3051,7 @@ mod tests {
             .expect("root");
             support_cone_witness_matches(&ctx, &current, endpoints, plane)
         })
-        .expect("evaluation resources"));
+        .expect("check support cone witness matches"));
         assert!(({
             let arena = cadmpeg_core::decode::DecodeArena::new();
             let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
@@ -3062,7 +3062,7 @@ mod tests {
             .expect("root");
             support_cone_witness_matches(&ctx, &mirrored, endpoints, plane)
         })
-        .expect("evaluation resources"));
+        .expect("check support cone witness matches"));
         let perpendicular_endpoints = [[std::f64::consts::PI, 0.5]; 2];
         assert!(({
             let arena = cadmpeg_core::decode::DecodeArena::new();
@@ -3079,7 +3079,7 @@ mod tests {
                 perpendicular_plane,
             )
         })
-        .expect("evaluation resources"));
+        .expect("check support cone witness matches"));
         assert!(({
             let arena = cadmpeg_core::decode::DecodeArena::new();
             let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
@@ -3095,7 +3095,7 @@ mod tests {
                 perpendicular_plane,
             )
         })
-        .expect("evaluation resources"));
+        .expect("check support cone witness matches"));
     }
 
     #[test]
@@ -3215,7 +3215,7 @@ mod tests {
                 &pcurve,
                 &crate::decode::source_carriers::SourceUnitCarriers::default()
             )
-            .expect("evaluation resources"),
+            .expect("map two chart endpoint sets"),
             TwoChartMapping::Mapped {
                 endpoint_sets: Some(TwoChartEndpointSets::Both(_)),
                 missing_surface_paths: 0,
@@ -3229,7 +3229,7 @@ mod tests {
     fn a_pcurve_path_with_an_overflowing_endpoint_is_mapped() {
         let mut ir = CadIr::empty();
         ir.model.surfaces.push(overflowing_plane_surface(7));
-        let mapped = crate::decode::with_test_decode_ctx(|ctx| {
+        let mapped = crate::decode::with_service_context(|ctx| {
             super::map_pcurve_paths(
                 ctx,
                 &ir,
@@ -3282,7 +3282,7 @@ mod tests {
         ir.model
             .surfaces
             .extend([unit_plane_surface(10), overflowing_plane_surface(11)]);
-        let (evidence, diagnostics) = crate::decode::with_test_decode_ctx(|ctx| {
+        let (evidence, diagnostics) = crate::decode::with_service_context(|ctx| {
             pcurve_edge_endpoint_evidence_with_diagnostics(
                 ctx,
                 &scan,
@@ -3295,7 +3295,7 @@ mod tests {
         assert_eq!(diagnostics.unevaluable_paths, 0);
         assert!(!evidence.contains_key(&7));
         let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
-        let transferred = crate::decode::with_test_decode_ctx(|ctx| {
+        let transferred = crate::decode::with_service_context(|ctx| {
             transfer_analytic_pcurve_carriers(
                 ctx,
                 &scan,
@@ -3314,7 +3314,7 @@ mod tests {
             .surfaces
             .extend([unit_plane_surface(10), unit_plane_surface(11)]);
         scan.curves.pcurves[0].face_1_endpoints = [[1.0, 2.0], [3.0, 4.0]];
-        let transferred = crate::decode::with_test_decode_ctx(|ctx| {
+        let transferred = crate::decode::with_service_context(|ctx| {
             transfer_analytic_pcurve_carriers(
                 ctx,
                 &scan,
@@ -3355,7 +3355,7 @@ mod tests {
                 endpoints,
                 [[9.0, 9.0, 9.0], [0.0, 5.0, 0.0]]
             )
-            .expect("evaluation resources"),
+            .expect("compute the native pcurve midpoint"),
             None
         );
         assert_eq!(
@@ -3365,7 +3365,7 @@ mod tests {
                 endpoints,
                 [[9.0, 9.0, 9.0], [0.0, 5.0, 0.0]],
             )
-            .expect("evaluation resources"),
+            .expect("compute the oriented native pcurve endpoints"),
             None
         );
     }
@@ -3432,7 +3432,7 @@ mod tests {
                 &pcurve,
                 &crate::decode::source_carriers::SourceUnitCarriers::default()
             )
-            .expect("evaluation resources"),
+            .expect("map two chart endpoint sets"),
             TwoChartMapping::Mapped {
                 endpoint_sets: Some(TwoChartEndpointSets::Both(_)),
                 missing_surface_paths: 0,
@@ -3446,7 +3446,7 @@ mod tests {
     fn a_pcurve_path_with_an_overflowing_placed_endpoint_is_mapped() {
         let mut ir = CadIr::empty();
         ir.model.surfaces.push(overflowing_placed_plane_surface(7));
-        let mapped = crate::decode::with_test_decode_ctx(|ctx| {
+        let mapped = crate::decode::with_service_context(|ctx| {
             super::map_pcurve_paths(
                 ctx,
                 &ir,
@@ -3499,7 +3499,7 @@ mod tests {
         ir.model
             .surfaces
             .extend([unit_plane_surface(10), overflowing_placed_plane_surface(11)]);
-        let (evidence, diagnostics) = crate::decode::with_test_decode_ctx(|ctx| {
+        let (evidence, diagnostics) = crate::decode::with_service_context(|ctx| {
             pcurve_edge_endpoint_evidence_with_diagnostics(
                 ctx,
                 &scan,
@@ -3512,7 +3512,7 @@ mod tests {
         assert_eq!(diagnostics.unevaluable_paths, 0);
         assert!(!evidence.contains_key(&7));
         let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
-        let transferred = crate::decode::with_test_decode_ctx(|ctx| {
+        let transferred = crate::decode::with_service_context(|ctx| {
             transfer_analytic_pcurve_carriers(
                 ctx,
                 &scan,
@@ -3549,7 +3549,7 @@ mod tests {
                 endpoints,
                 [[9.0, 9.0, 9.0], [0.0, 5.0, 0.0]]
             )
-            .expect("evaluation resources"),
+            .expect("compute the native pcurve midpoint"),
             None
         );
         assert_eq!(
@@ -3559,7 +3559,7 @@ mod tests {
                 endpoints,
                 [[9.0, 9.0, 9.0], [0.0, 5.0, 0.0]],
             )
-            .expect("evaluation resources"),
+            .expect("compute the oriented native pcurve endpoints"),
             None
         );
     }

@@ -871,7 +871,7 @@ fn class_911_simple_drilled_recipe_transfers_dimension_tuple() {
         });
 
     assert!(matches!(
-        crate::decode::with_test_decode_ctx(|ctx| schema_feature_definition(ctx,
+        crate::decode::with_service_context(|ctx| schema_feature_definition(ctx,
             &scan,
             &CadIr::empty(),
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
@@ -926,7 +926,7 @@ fn class_911_simple_drilled_recipe_transfers_dimension_tuple() {
         .rows
         .push(surface_row(24, 9, crate::surface::SurfaceKind::Cylinder));
     assert!(matches!(
-        crate::decode::with_test_decode_ctx(|ctx| schema_feature_definition(
+        crate::decode::with_service_context(|ctx| schema_feature_definition(
             ctx,
             &scan,
             &CadIr::empty(),
