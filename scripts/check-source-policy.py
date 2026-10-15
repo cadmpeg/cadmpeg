@@ -506,7 +506,9 @@ def scan_saturating_arithmetic(path: Path, code: str) -> list[Finding]:
     return [Finding(
         "saturating_arithmetic", relative_path(path), code.count("\n", 0, match.start()) + 1,
         "Use checked arithmetic; on overflow return a structured malformed error or parse error in decode code, or a typed error elsewhere.",
-    ) for match in re.finditer(r"\bsaturating_\w+\s*(?:::\s*<[^;{}]*>)?\s*\(", code)]
+    ) for match in re.finditer(
+        r"\bsaturating_\w+\b(?=\s*(?:::\s*<[^;{}]*>)?\s*\()|(?<=::)saturating_\w+\b", code
+    )]
 
 
 def integer_limit_default(words: list[str]) -> bool:
