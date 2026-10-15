@@ -11,6 +11,16 @@ use crate::FcstdCodec;
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 
+/// Admit `bytes` as Document.xml and recover its persistence graph.
+fn parse(
+    bytes: &[u8],
+    schema_version: &str,
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+) -> Result<super::Graph, cadmpeg_core::CodecError> {
+    let xml = crate::container::admit_document(ctx, bytes)?;
+    super::parse_document(&xml, super::Vocabulary::from_declaration(schema_version)?)
+}
+
 #[test]
 fn persistence_extension_identity_joins_order_and_name() {
     let owner = "fcstd:native:object#Body";
@@ -37,7 +47,7 @@ fn persistence_link_diagnostics_become_unreadable_payloads() {
             "<Document SchemaVersion=\"4\"><Objects Count=\"1\"><Object name=\"A\" type=\"T\"/></Objects><ObjectData Count=\"1\"><Object name=\"A\"><Properties Count=\"1\">{property}</Properties></Object></ObjectData></Document>"
         );
         let graph = crate::test_support::with_service_context(document.as_bytes(), |ctx| {
-            super::parse(document.as_bytes(), "4", ctx)
+            parse(document.as_bytes(), "4", ctx)
         })
         .expect("bounded invalid link");
         assert!(matches!(
@@ -87,7 +97,7 @@ fn parse_document_graph(document: &str) -> Result<super::Graph, cadmpeg_core::Co
             }
             error => error,
         })?;
-    super::parse(document.as_bytes(), &schema_version, &ctx)
+    parse(document.as_bytes(), &schema_version, &ctx)
 }
 
 #[test]
