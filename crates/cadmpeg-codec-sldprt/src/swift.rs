@@ -1378,14 +1378,10 @@ fn read_related(
         let (Some(name), Some(class)) = (pstr(ctx, cursor)?, pstr(ctx, cursor)?) else {
             return Ok(None);
         };
-        let descriptor = (
-            ctx.format_retained(format_args!("{name}"), "copy SWIFT related name")?,
-            ctx.format_retained(format_args!("{class}"), "copy SWIFT related class")?,
-        );
         descriptors_storage.with_storage(|| {
             ctx.push_vec(
                 &mut descriptors,
-                descriptor,
+                (name, class),
                 "collect SWIFT related descriptors",
             )
         })?;
@@ -1411,7 +1407,7 @@ fn read_related(
             "bind SWIFT related class",
         )?;
         if !ctx.equal(
-            separator.map_or(class.as_str(), |offset| class.split_at(offset).0),
+            separator.map_or(class, |offset| class.split_at(offset).0),
             entity.class.as_str(),
             "bind SWIFT related class",
         )? {
@@ -1419,8 +1415,8 @@ fn read_related(
         }
         ctx.reserve_vec(&mut related, 1, "collect SWIFT related objects")?;
         related.push(RelatedObject {
-            name,
-            class,
+            name: ctx.copy_retained_text(name, "copy SWIFT related name")?,
+            class: ctx.copy_retained_text(class, "copy SWIFT related class")?,
             entity,
         });
     }
@@ -2677,29 +2673,30 @@ fn location_projection(
         "GdtCylinder" => axis_projection(ctx, feature, "NomCylinder", direction)?,
         "GdtCone" => axis_projection(ctx, feature, "NomCone", direction)?,
         "GdtCompoundHole" => {
-            let _projection_storage;
-            let projections;
-            (projections, _projection_storage) =
-                ctx.with_scoped_storage("SWIFT rotational projection workspace", || {
-                    let mut projections = Vec::new();
-                    let mut traversal = FeatureListTraversal::new(
-                        ctx,
-                        feature_index,
-                        "scan SWIFT rotational features",
-                        "track SWIFT rotational path",
-                        "collect SWIFT rotational projections",
-                        |feature| match short_class(ctx, &feature.class)? {
-                            "GdtCylinder" => {
-                                axis_projection(ctx, feature, "NomCylinder", direction)
-                            }
-                            "GdtCone" => axis_projection(ctx, feature, "NomCone", direction),
-                            _ => Ok(None),
-                        },
-                    )?;
-                    traversal.collect(id, 0, &mut projections)?;
-                    Ok::<_, CodecError>(projections)
-                })?;
-            unique_measurement(ctx, projections.iter().copied())?
+            let mut first: Option<FiniteReal> = None;
+            let mut traversal = FeatureListTraversal::new(
+                ctx,
+                feature_index,
+                "scan SWIFT rotational features",
+                "track SWIFT rotational path",
+                "collect SWIFT rotational projections",
+                |feature| match short_class(ctx, &feature.class)? {
+                    "GdtCylinder" => axis_projection(ctx, feature, "NomCylinder", direction),
+                    "GdtCone" => axis_projection(ctx, feature, "NomCone", direction),
+                    _ => Ok(None),
+                },
+            )?;
+            traversal
+                .visit(id, 0, &mut |value| {
+                    if let Some(first) = first {
+                        Ok(approximately_equal(value.get(), first.get()))
+                    } else {
+                        first = Some(value);
+                        Ok(true)
+                    }
+                })?
+                .then_some(first)
+                .flatten()
         }
         _ => None,
     })
@@ -2775,6 +2772,7 @@ fn axis_projection(
 }
 
 enum FeatureListConsumer<'out, T> {
+    #[cfg(test)]
     Collect(&'out mut Vec<T>),
     Visit(&'out mut dyn FnMut(T) -> Result<bool, CodecError>),
 }
@@ -2829,6 +2827,7 @@ where
         })
     }
 
+    #[cfg(test)]
     fn collect(
         &mut self,
         id: &'a str,
@@ -2861,6 +2860,7 @@ where
         consumer: &mut FeatureListConsumer<'_, T>,
     ) -> Result<FeatureListCompletion, CodecError> {
         const CACHE_LOOKUP: &str = "look up SWIFT feature traversal result";
+        #[cfg(test)]
         const CACHE_COPY: &str = "copy SWIFT feature traversal result";
         const CACHE_INSERT: &str = "cache SWIFT feature traversal result";
         let ctx = self.ctx;
@@ -2876,6 +2876,7 @@ where
         if depth != 0 {
             if let Some(cached) = ctx.get_btree_map(&self.completed, &(id, depth), CACHE_LOOKUP)? {
                 match consumer {
+                    #[cfg(test)]
                     FeatureListConsumer::Collect(output) => {
                         ctx.extend_from_slice(output, cached, self.result_operation)?;
                     }
@@ -2894,6 +2895,7 @@ where
         let (_, path_storage) = ctx.with_scoped_storage("SWIFT traversal path storage", || {
             ctx.insert_btree_set(&mut self.active, id, self.path_operation)
         })?;
+        #[cfg(test)]
         let first_value = match consumer {
             FeatureListConsumer::Collect(output) => output.len(),
             FeatureListConsumer::Visit(_) => 0,
@@ -2907,6 +2909,7 @@ where
                 if let Some(value) = (self.direct_value)(feature)? {
                     has_values = true;
                     match consumer {
+                        #[cfg(test)]
                         FeatureListConsumer::Collect(output) => {
                             ctx.reserve_vec(output, 1, self.result_operation)?;
                             output.push(value);
@@ -2958,6 +2961,7 @@ where
             }
             if cacheable && depth != 0 {
                 let cached_values = match consumer {
+                    #[cfg(test)]
                     FeatureListConsumer::Collect(output) => {
                         let values = output.get(first_value..).ok_or_else(|| {
                             CodecError::malformed("invalid SWIFT traversal result range")
@@ -4194,22 +4198,6 @@ fn vector<const N: usize>(
     } else {
         FiniteVector::new(components)
     })
-}
-
-fn unique_measurement<T: Copy + Into<f64>>(
-    ctx: &DecodeContext<'_>,
-    mut values: impl Iterator<Item = T>,
-) -> Result<Option<T>, CodecError> {
-    let Some(first) = ctx.next_charged(&mut values, "scan SWIFT unique measurements")? else {
-        return Ok(None);
-    };
-    Ok(ctx
-        .all_by(
-            values,
-            |value| Ok(approximately_equal(value.into(), first.into())),
-            "scan SWIFT unique measurements",
-        )?
-        .then_some(first))
 }
 
 fn diameters_equivalent(left: f64, right: f64) -> bool {

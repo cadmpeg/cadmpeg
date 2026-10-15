@@ -103,7 +103,9 @@ fn declared_slot_handle_reuses_selected_reference_and_class() {
         let mut probe = None;
         assert!(declared_slot_handle_dimension_center(
             &ctx,
-            &lanes,
+            || crate::resolved_features::relation_geometry::declared_entity_handle_owner(
+                &ctx, &lanes, &operand
+            ),
             "feature",
             &operand,
             |lane, _| {
@@ -129,27 +131,55 @@ fn declared_slot_handle_reuses_selected_reference_and_class() {
 }
 
 #[test]
-fn declared_slot_handle_rejects_offsets_before_name_comparison() {
-    use cadmpeg_core::decode::refusal_probe::RefusalProbe;
-    use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
+fn declared_slot_handle_requires_class_inside_owner_marker_interval() {
     let (mut lanes, operand) = handle_fixture();
-    lanes[0].classes[0].offset = 100;
-    lanes[0].classes[0].name = "unrelated".repeat(128);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = u64::MAX;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let operation = "match SLDPRT slot-handle class";
-    let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None);
-    assert!(
-        declared_slot_handle_dimension_center(&ctx, &lanes, "feature", &operand, |_, _| Ok(Some(
-            [0, 0]
-        )))
-        .unwrap()
-        .is_none()
-    );
-    let CodecError::ResourceLimit(limit) = ctx.charge_work(1, operation).unwrap_err() else {
-        panic!("ineligible offsets must not compare names");
+    let mut payload = vec![0; 40];
+    let reference = |index: u16| {
+        let [lo, hi] = index.to_le_bytes();
+        [0xe7, 0x88, lo, hi, 0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0]
     };
-    assert_eq!(limit.additional, 1);
+    payload[4..16].copy_from_slice(&reference(0));
+    payload[16..28].copy_from_slice(&reference(0));
+    lanes[0].native_payload = payload;
+    let mut marker =
+        SketchInputEntity::new("slot", "lane", 0, 30, SketchInputKind::from_handle_code(0));
+    marker.feature_ref = Some("feature".into());
+    lanes[0].sketch_entities[0] = marker;
+    lanes[0].sketch_entities[0] = lanes[0].sketch_entities[0].with_test_identity(None, Some(0));
+    let mut point = SketchInputEntity::new("center", "lane", 1, 32, SketchInputKind::Point);
+    point.feature_ref = Some("feature".into());
+    point = point.with_test_identity(None, Some(0));
+    point.coordinates_m = Some(cadmpeg_ir::units::FiniteVector::new([0.0, 0.0]).unwrap());
+    lanes[0].sketch_entities.push(point);
+    let mut other = SketchInputEntity::new("other-center", "lane", 2, 34, SketchInputKind::Point)
+        .with_test_identity(None, Some(1));
+    other.feature_ref = Some("feature".into());
+    other.coordinates_m = cadmpeg_ir::units::FiniteVector::new([0.001, 0.0]);
+    lanes[0].sketch_entities.push(other);
+    lanes[0].classes[0].offset = 3;
+    for outside in [None, Some(0), Some(30)] {
+        lanes[0].classes.truncate(2);
+        if let Some(offset) = outside {
+            let mut class = lanes[0].classes[0].clone();
+            class.id = "outside-slot-class".into();
+            class.offset = offset;
+            lanes[0].classes.push(class);
+        }
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let resolved = declared_slot_handle_dimension_center(
+            &ctx,
+            || {
+                crate::resolved_features::relation_geometry::declared_entity_handle_owner(
+                    &ctx, &lanes, &operand,
+                )
+            },
+            "feature",
+            &operand,
+            |_, _| Ok(Some([0, 1])),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(resolved.0.id(), "slot");
+        assert_eq!(resolved.1.id(), "center");
+    }
 }

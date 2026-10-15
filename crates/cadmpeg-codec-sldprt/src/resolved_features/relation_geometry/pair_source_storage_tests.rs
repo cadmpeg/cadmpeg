@@ -212,10 +212,19 @@ fn one_declared_circular_child_does_not_build_an_aggregate() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let operation = "sldprt declared entity handle pairs sort";
     let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None);
-    let (center, radius) =
-        super::declared_entity_handle_circular_marker(&ctx, &lanes, "feature", &operand, 5.0)
-            .unwrap()
-            .unwrap();
+    let (center, radius) = super::declared_entity_handle_circular_marker(
+        &ctx,
+        || {
+            crate::resolved_features::relation_geometry::declared_entity_handle_owner(
+                &ctx, &lanes, &operand,
+            )
+        },
+        "feature",
+        &operand,
+        5.0,
+    )
+    .unwrap()
+    .unwrap();
     assert!(std::ptr::eq(center, &raw const lanes[0].sketch_entities[0]));
     assert_eq!(radius, 5.0);
     let CodecError::ResourceLimit(limit) = ctx.charge_work(1, operation).unwrap_err() else {

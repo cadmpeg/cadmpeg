@@ -193,11 +193,7 @@ pub(super) fn linear_pattern_display_directions(
         };
         let record = |name: &&FeatureInputName| {
             Ok(name.object_id == Some(ObjectId::Absent)
-                && ctx.equal(
-                    name.value.as_str(),
-                    dimension_name,
-                    "compare SLDPRT linear pattern display name",
-                )?
+                && (name.value.as_str() == dimension_name)
                 && (u64_from_index(object_start)..u64_from_index(end)).contains(&name.offset))
         };
         let mut remaining = names.iter();
@@ -246,11 +242,7 @@ pub(super) fn typed_linear_pattern_dimensions(
         let declared = |class: &&crate::records::FeatureInputClass| {
             Ok(
                 (u64_from_index(object_start)..u64_from_index(object_end)).contains(&class.offset)
-                    && ctx.equal(
-                        class.name.as_str(),
-                        class_name,
-                        "compare SLDPRT linear pattern class name",
-                    )?,
+                    && (class.name.as_str() == class_name),
             )
         };
         let mut classes = lane.classes.iter();
@@ -2267,8 +2259,8 @@ fn curve_endpoint_points(
 /// Vectors are destroyed before their scoped backing lease.
 struct ProfileAxisPoints<'ctx> {
     bounding: Vec<[f64; 2]>,
-    endpoints: Vec<([f64; 2], bool)>,
-    _storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+    endpoints: Option<Vec<([f64; 2], bool)>>,
+    storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
 }
 
 impl<'ctx> ProfileAxisPoints<'ctx> {
@@ -2276,21 +2268,36 @@ impl<'ctx> ProfileAxisPoints<'ctx> {
         cache: &'cache mut Option<Self>,
         ctx: &'ctx DecodeContext<'_>,
         owned: &[&SketchInputEntity],
-        roster: &LaneMarkerIndex<'_, '_>,
         curve_endpoints: &BTreeSet<&str>,
-    ) -> Result<&'cache Self, CodecError> {
+    ) -> Result<&'cache mut Self, CodecError> {
         match cache {
             Some(points) => Ok(points),
             slot @ None => {
                 let mut storage = ctx.reserve_scoped(0, "hold SLDPRT profile axis points")?;
                 let bounding = profile_bounding_points(ctx, &mut storage, owned, curve_endpoints)?;
-                let endpoints = curve_endpoint_points(ctx, &mut storage, roster, curve_endpoints)?;
                 Ok(slot.insert(Self {
                     bounding,
-                    endpoints,
-                    _storage: storage,
+                    endpoints: None,
+                    storage,
                 }))
             }
+        }
+    }
+
+    fn endpoints(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        roster: &LaneMarkerIndex<'_, '_>,
+        curve_endpoints: &BTreeSet<&str>,
+    ) -> Result<&[([f64; 2], bool)], CodecError> {
+        match &mut self.endpoints {
+            Some(endpoints) => Ok(endpoints),
+            slot @ None => Ok(slot.insert(curve_endpoint_points(
+                ctx,
+                &mut self.storage,
+                roster,
+                curve_endpoints,
+            )?)),
         }
     }
 }
@@ -2327,14 +2334,17 @@ fn profile_roster_origin_axis_endpoints<'ctx>(
     {
         return Ok(None);
     }
-    let points = ProfileAxisPoints::get(points, ctx, owned, roster, curve_endpoints)?;
+    let points = ProfileAxisPoints::get(points, ctx, owned, curve_endpoints)?;
+    points.endpoints(ctx, roster, curve_endpoints)?;
     let bounding = &points.bounding;
-    let endpoint_points = &points.endpoints;
+    let endpoint_points = points.endpoints.as_deref().unwrap_or_default();
+    let mut candidate_storage = ctx.reserve_scoped(0, OPERATION)?;
     let mut candidates = Vec::new();
     for &(end, indexed) in ctx.admit_iter(endpoint_points, OPERATION)? {
         let endpoints = [[origin_u, origin_v], end];
         if indexed && bounded_profile_axis_coordinates(ctx, bounding, endpoints)? {
-            storage.with_storage(|| ctx.push_vec(&mut candidates, endpoints, OPERATION))?;
+            candidate_storage
+                .with_storage(|| ctx.push_vec(&mut candidates, endpoints, OPERATION))?;
         }
     }
     ctx.stable_sort_by_key(
@@ -2365,6 +2375,7 @@ fn profile_roster_origin_axis_endpoints<'ctx>(
             )
         })?;
     }
+    drop(candidate_storage);
     let incidence = |line: &[[f64; 2]; 2]| -> Result<usize, CodecError> {
         let mut count = 0usize;
         for &(point, indexed) in ctx.admit_iter(endpoint_points, OPERATION)? {
@@ -2394,14 +2405,13 @@ fn profile_roster_principal_axis_endpoints<'ctx>(
     points: &mut Option<ProfileAxisPoints<'ctx>>,
 ) -> Result<Option<[[f64; 2]; 2]>, CodecError> {
     const OPERATION: &str = "collect SLDPRT principal axis candidates";
-    let points = ProfileAxisPoints::get(points, ctx, owned, roster, curve_endpoints)?;
-    let bounding = &points.bounding;
-    let endpoint_points = &points.endpoints;
+    let points = ProfileAxisPoints::get(points, ctx, owned, curve_endpoints)?;
     let mut best: Option<(usize, [[f64; 2]; 2], bool)> = None;
     for axis in [[[0.0, 0.0], [1.0, 0.0]], [[0.0, 0.0], [0.0, 1.0]]] {
-        if !bounded_profile_axis_coordinates(ctx, bounding, axis)? {
+        if !bounded_profile_axis_coordinates(ctx, &points.bounding, axis)? {
             continue;
         }
+        let endpoint_points = points.endpoints(ctx, roster, curve_endpoints)?;
         let [axis_u, axis_v] = axis[1];
         let mut count = 0usize;
         for &([u, v], _) in ctx.admit_iter(endpoint_points, OPERATION)? {

@@ -3499,7 +3499,7 @@ pub(super) fn declared_entity_handle_owner<'a>(
 /// the slot's boundary roster alone.
 pub(super) fn declared_slot_handle_dimension_center<'a>(
     ctx: &DecodeContext<'_>,
-    lanes: &'a [FeatureInputLane],
+    owner: impl FnOnce() -> Result<DeclaredEntityHandleOwner<'a>, cadmpeg_core::CodecError>,
     feature: &str,
     operand: &FeatureInputOperand,
     slot_center_indices: impl FnOnce(
@@ -3513,7 +3513,7 @@ pub(super) fn declared_slot_handle_dimension_center<'a>(
     let DeclaredEntityHandleOwner::Unique {
         lane,
         class: entity_class,
-    } = declared_entity_handle_owner(ctx, lanes, operand)?
+    } = owner()?
     else {
         return Ok(None);
     };
@@ -3681,7 +3681,7 @@ pub(super) fn declared_slot_handle_dimension_center<'a>(
 /// carrier on its own.
 pub(super) fn declared_entity_handle_indexed_circle_dimension_center<'a>(
     ctx: &DecodeContext<'_>,
-    lanes: &'a [FeatureInputLane],
+    owner: impl FnOnce() -> Result<DeclaredEntityHandleOwner<'a>, cadmpeg_core::CodecError>,
     feature: &str,
     operand: &FeatureInputOperand,
     expected_radius: f64,
@@ -3693,9 +3693,7 @@ pub(super) fn declared_entity_handle_indexed_circle_dimension_center<'a>(
     {
         return Ok(None);
     }
-    let DeclaredEntityHandleOwner::Unique { lane, .. } =
-        declared_entity_handle_owner(ctx, lanes, operand)?
-    else {
+    let DeclaredEntityHandleOwner::Unique { lane, .. } = owner()? else {
         return Ok(None);
     };
     let mut markers_storage = ctx.reserve_scoped(0, DIMENSIONED_HANDLE_OPERATION)?;
@@ -3794,16 +3792,14 @@ fn point_dimension_marker_matches_operand(
 /// this explicit identity form.
 pub(super) fn declared_entity_handle_point_dimension_center<'a>(
     ctx: &DecodeContext<'_>,
-    lanes: &'a [FeatureInputLane],
+    owner: impl FnOnce() -> Result<DeclaredEntityHandleOwner<'a>, cadmpeg_core::CodecError>,
     feature: &str,
     operand: &FeatureInputOperand,
 ) -> Result<Option<&'a SketchInputEntity>, cadmpeg_core::CodecError> {
     if !matches!(operand.kind, FeatureInputOperandKind::Native(_)) {
         return Ok(None);
     }
-    let DeclaredEntityHandleOwner::Unique { lane, .. } =
-        declared_entity_handle_owner(ctx, lanes, operand)?
-    else {
+    let DeclaredEntityHandleOwner::Unique { lane, .. } = owner()? else {
         return Ok(None);
     };
     Ok(ctx
@@ -3925,7 +3921,7 @@ pub(super) fn direct_point_dimension_center<'a>(
 
 pub(super) fn declared_entity_handle_circular_marker<'a>(
     ctx: &DecodeContext<'_>,
-    lanes: &'a [FeatureInputLane],
+    owner: impl FnOnce() -> Result<DeclaredEntityHandleOwner<'a>, cadmpeg_core::CodecError>,
     feature: &str,
     operand: &FeatureInputOperand,
     expected_radius: f64,
@@ -3933,9 +3929,7 @@ pub(super) fn declared_entity_handle_circular_marker<'a>(
     if !expected_radius.is_finite() || expected_radius <= 0.0 {
         return Ok(None);
     }
-    let DeclaredEntityHandleOwner::Unique { lane, .. } =
-        declared_entity_handle_owner(ctx, lanes, operand)?
-    else {
+    let DeclaredEntityHandleOwner::Unique { lane, .. } = owner()? else {
         return Ok(None);
     };
     let child_pairs_scope = ctx
@@ -4050,15 +4044,12 @@ pub(super) fn declared_entity_handle_circular_marker<'a>(
     Ok(unique)
 }
 
-pub(super) fn declared_entity_handle_has_resolved_pair(
+pub(super) fn declared_entity_handle_has_resolved_pair<'a>(
     ctx: &DecodeContext<'_>,
-    lanes: &[FeatureInputLane],
+    owner: impl FnOnce() -> Result<DeclaredEntityHandleOwner<'a>, cadmpeg_core::CodecError>,
     feature: &str,
-    operand: &FeatureInputOperand,
 ) -> Result<bool, cadmpeg_core::CodecError> {
-    let DeclaredEntityHandleOwner::Unique { lane, .. } =
-        declared_entity_handle_owner(ctx, lanes, operand)?
-    else {
+    let DeclaredEntityHandleOwner::Unique { lane, .. } = owner()? else {
         return Ok(false);
     };
     let pairs_scope = ctx.with_scoped_storage("SLDPRT resolved entity-handle pairs", || {
@@ -4070,18 +4061,16 @@ pub(super) fn declared_entity_handle_has_resolved_pair(
 /// Test whether an explicit point reference is the radial member of a
 /// declared entity-handle pair. Radial identity cannot be reinterpreted as a
 /// center by the native point-identity fallback.
-pub(super) fn declared_entity_handle_point_is_declared_radial(
+pub(super) fn declared_entity_handle_point_is_declared_radial<'a>(
     ctx: &DecodeContext<'_>,
-    lanes: &[FeatureInputLane],
+    owner: impl FnOnce() -> Result<DeclaredEntityHandleOwner<'a>, cadmpeg_core::CodecError>,
     feature: &str,
     operand: &FeatureInputOperand,
 ) -> Result<bool, cadmpeg_core::CodecError> {
     let Some(entity_ref) = operand.entity_ref.as_deref() else {
         return Ok(false);
     };
-    let DeclaredEntityHandleOwner::Unique { lane, .. } =
-        declared_entity_handle_owner(ctx, lanes, operand)?
-    else {
+    let DeclaredEntityHandleOwner::Unique { lane, .. } = owner()? else {
         return Ok(false);
     };
     let pairs_scope = ctx.with_scoped_storage("SLDPRT declared radial identity pairs", || {

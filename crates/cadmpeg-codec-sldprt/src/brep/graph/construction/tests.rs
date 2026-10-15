@@ -31,15 +31,16 @@ fn support_walk_releases_membership_without_retained_output() {
 
 #[test]
 fn procedural_indexes_need_no_work_or_storage_without_a_consumer() {
-    let faces = vec![
-        crate::brep::graph::WalkedFace {
+    let setup = cadmpeg_test_support::service_decode_context();
+    let faces: Vec<_> = (0..100)
+        .map(|_| crate::brep::graph::WalkedFace {
             bridge_attr: 10,
             surface_attr: 100,
             sense: cadmpeg_ir::topology::Sense::Forward,
             loops: vec![(20, vec![30])],
-        };
-        100
-    ];
+            _storage: setup.reserve_scoped(0, "fixture walked face").unwrap(),
+        })
+        .collect();
     let loops = std::collections::BTreeSet::from([20]);
     let tables = crate::brep::topology::Tables::default();
     let mut policy = DecodePolicy::service();
@@ -56,11 +57,13 @@ fn procedural_indexes_need_no_work_or_storage_without_a_consumer() {
 fn lazy_support_indexes_preserve_minimum_bridge_and_grouped_faces() {
     use cadmpeg_core::decode::refusal_probe::RefusalProbe;
     use cadmpeg_core::decode::ResourceDimension;
+    let setup = cadmpeg_test_support::service_decode_context();
     let faces = [41, 12, 23].map(|bridge_attr| crate::brep::graph::WalkedFace {
         bridge_attr,
         surface_attr: 100,
         sense: cadmpeg_ir::topology::Sense::Forward,
         loops: vec![(20, vec![30])],
+        _storage: setup.reserve_scoped(0, "fixture walked face").unwrap(),
     });
     let loops = std::collections::BTreeSet::from([20]);
     let tables = crate::brep::topology::Tables::default();
@@ -133,6 +136,7 @@ fn face_edge_groups_borrow_one_cached_set_per_source_face() {
     use cadmpeg_core::decode::refusal_probe::RefusalProbe;
     use cadmpeg_core::decode::ResourceDimension;
     use std::collections::{BTreeMap, BTreeSet};
+    let setup = cadmpeg_test_support::service_decode_context();
     let faces = [
         (10, 100, vec![30, 31, 30]),
         (11, 100, vec![31]),
@@ -144,9 +148,9 @@ fn face_edge_groups_borrow_one_cached_set_per_source_face() {
             surface_attr,
             sense: cadmpeg_ir::topology::Sense::Forward,
             loops: vec![(20, ring)],
+            _storage: setup.reserve_scoped(0, "fixture walked face").unwrap(),
         },
     );
-    let setup = cadmpeg_test_support::service_decode_context();
     let mut tables = crate::brep::topology::Tables::default();
     for (attr, edge) in [(30, 70), (31, 71)] {
         tables
@@ -244,6 +248,7 @@ fn selected_published_blend_supports_skip_the_support_walk() {
         surface_attr: 181,
         sense: cadmpeg_ir::topology::Sense::Forward,
         loops: vec![(20, vec![30])],
+        _storage: setup.reserve_scoped(0, "fixture walked face").unwrap(),
     }];
     let loops = std::collections::BTreeSet::from([20]);
     let hidden = std::collections::BTreeSet::from([182]);

@@ -31,7 +31,7 @@ use super::typed_relations::{
 use super::{classes_within, sorted_classes};
 use crate::brep::feature_source::FeatureSourceId;
 use crate::classification::{native_object_class, NativeClassKind};
-use crate::history::classify::is_history_metadata_record;
+use crate::history::classify::MetadataIndex;
 use crate::history::literals::parse_positive_angle_rad;
 use crate::history::project::pattern::parse_count;
 use crate::records::{FeatureInputLane, SketchInputEntity, SketchInputKind, SketchInputLink};
@@ -59,8 +59,9 @@ pub(super) fn history_metadata_ids<'a>(
     const OPERATION: &str = "scan SLDPRT history metadata identities";
     let mut ids = HashSet::new();
     for history in ctx.admit_iter(histories, OPERATION)? {
+        let metadata = MetadataIndex::new(ctx, &history.features)?;
         for feature in ctx.admit_iter(&history.features, OPERATION)? {
-            if is_history_metadata_record(ctx, feature, &history.features)? {
+            if metadata.is_metadata(ctx, feature)? {
                 ctx.insert_hash_set(&mut ids, feature.id.as_str(), SCALAR_BINDING_INDEX)?;
             }
         }
@@ -229,28 +230,17 @@ pub(crate) fn bind_pattern_inputs(
 
     for lane in ctx.admit_iter(lanes, "scan SLDPRT pattern input lanes")? {
         let mut lane_storage = ctx.reserve_scoped(0, PATTERN_INPUTS)?;
-        let discovered_identities;
-        let generated_identities = if lane.generated_surface_identities.is_empty() {
-            discovered_identities =
-                lane_storage.with_storage(|| generated_surface_identities(ctx, lane))?;
-            &discovered_identities
-        } else {
-            &lane.generated_surface_identities
-        };
-        let line_refs = sorted_classes(
-            ctx,
-            &mut lane_storage,
-            lane,
-            "moLineRef_w",
-            "scan SLDPRT pattern line declarations",
-        )?;
+        let mut discovered_identities = None;
+        let mut line_refs = None;
         // `lanes::admit` compares every stored name offset with the offset
         // `object_names` read out of `native_payload`, so an admitted name
         // offset is an index of that payload. It is narrowed once here, where
         // that proof holds, and the objects below carry `usize` offsets.
         let mut starts = Vec::new();
-        for (offset, feature) in ctx.admit_iter(
-            lane_storage.with_storage(|| {
+        {
+            let objects_storage;
+            let objects;
+            (objects, objects_storage) = ctx.with_scoped_storage(PATTERN_INPUTS, || {
                 lane_feature_objects(
                     ctx,
                     history_features.iter().copied(),
@@ -258,18 +248,21 @@ pub(crate) fn bind_pattern_inputs(
                     lane,
                     "scan SLDPRT pattern input candidates",
                 )
-            })?,
-            "collect SLDPRT pattern input candidates",
-        )? {
-            if let Ok(offset) = usize::try_from(offset) {
-                lane_storage.with_storage(|| {
-                    ctx.push_vec(
-                        &mut starts,
-                        (offset, feature),
-                        "collect SLDPRT pattern input candidates",
-                    )
-                })?;
+            })?;
+            for (offset, feature) in
+                ctx.admit_iter(objects, "collect SLDPRT pattern input candidates")?
+            {
+                if let Ok(offset) = usize::try_from(offset) {
+                    lane_storage.with_storage(|| {
+                        ctx.push_vec(
+                            &mut starts,
+                            (offset, feature),
+                            "collect SLDPRT pattern input candidates",
+                        )
+                    })?;
+                }
             }
+            drop(objects_storage);
         }
         ctx.sort_unstable_by(
             &mut starts,
@@ -464,6 +457,17 @@ pub(crate) fn bind_pattern_inputs(
                 }
                 if needs_seed {
                     if let Some(pattern_source) = feature.source_value() {
+                        let generated_identities = if lane.generated_surface_identities.is_empty() {
+                            match &mut discovered_identities {
+                                Some(identities) => identities,
+                                slot @ None => slot
+                                    .insert(lane_storage.with_storage(|| {
+                                        generated_surface_identities(ctx, lane)
+                                    })?),
+                            }
+                        } else {
+                            &lane.generated_surface_identities
+                        };
                         let mut seed_storage = ctx.reserve_scoped(0, PATTERN_INPUTS)?;
                         let mut seeds = Vec::new();
                         for identity in ctx.admit_iter(
@@ -643,9 +647,19 @@ pub(crate) fn bind_pattern_inputs(
                 if !needs_direction {
                     continue;
                 }
+                let line_refs = match &mut line_refs {
+                    Some(classes) => classes,
+                    slot @ None => slot.insert(sorted_classes(
+                        ctx,
+                        &mut lane_storage,
+                        lane,
+                        "moLineRef_w",
+                        "scan SLDPRT pattern line declarations",
+                    )?),
+                };
                 let declarations = classes_within(
                     ctx,
-                    &line_refs,
+                    line_refs,
                     u64_from_index(start).checked_add(1).ok_or_else(|| {
                         ctx.refuse_codec_limit(DIRECTIONS, u64::MAX - 1, u64::MAX)
                     })?,
@@ -1911,6 +1925,8 @@ pub(crate) fn finalize_lane_bindings(
         }
     }
     drop(entities_by_feature);
+    drop(storage);
+    let mut storage = ctx.reserve_scoped(0, SCALAR_BINDING_INDEX)?;
     let mut scalar_owners = HashMap::new();
     for scalar in ctx.admit_iter(&lane.scalars, SCALAR_BINDING_INDEX)? {
         storage.with_storage(|| {
@@ -1935,6 +1951,7 @@ pub(crate) fn finalize_lane_bindings(
             .transpose()?;
     }
     drop(scalar_owners);
+    drop(storage);
     let _intervals_storage;
     let intervals;
     (intervals, _intervals_storage) = ctx
@@ -2170,7 +2187,7 @@ pub(super) fn bind_detached_legacy_sketch_objects(
     let limit = ctx
         .find_by(
             &lane.classes,
-            |class| ctx.equal(class.name.as_str(), "moFeatureDimHandle_c", OPERATION),
+            |class| Ok(class.name.as_str() == "moFeatureDimHandle_c"),
             "find SLDPRT feature dimension handle",
         )?
         .map_or_else(
@@ -2264,11 +2281,7 @@ pub(super) fn spatial_relation_manager_ranges_charged(
     let lists = sorted_classes(ctx, &mut storage, lane, "suObList", OPERATION)?;
     let mut ranges = Vec::new();
     for plane in ctx.admit_iter(&lane.classes, OPERATION)? {
-        if !ctx.equal(
-            plane.name.as_str(),
-            "sg3DPlaneHandle",
-            "compare SLDPRT spatial plane class name",
-        )? {
+        if plane.name.as_str() != "sg3DPlaneHandle" {
             continue;
         }
         // The last manager before the plane and the first list after it.

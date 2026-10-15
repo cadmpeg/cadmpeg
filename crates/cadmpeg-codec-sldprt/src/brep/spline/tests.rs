@@ -781,14 +781,6 @@ plain_surface_boundary!(
     "index Parasolid knot multiplicity counts"
 );
 plain_surface_boundary!(
-    parasolid_distinct_knots_refuse_before_copy,
-    "copy Parasolid distinct knots"
-);
-plain_surface_boundary!(
-    parasolid_knot_multiplicities_refuse_before_copy,
-    "copy Parasolid knot multiplicities"
-);
-plain_surface_boundary!(
     parasolid_surface_pole_rows_refuse_before_partition,
     "partition Parasolid surface pole rows"
 );
