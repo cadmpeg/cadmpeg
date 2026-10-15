@@ -238,23 +238,13 @@ pub(super) fn pcurve_block_with_end(
     if !(1..=1000).contains(&n_uniq) {
         return None;
     }
-    let (knots, n_poles) =
-        match toks::take_knot_table(ctx, &mut cur, usize::try_from(n_uniq).ok()?, degree)? {
-            Ok(knots) => knots,
-            Err(error) => return Some(Err(error)),
-        };
+    let (knots, n_poles) = toks::take_knot_table(&mut cur, usize::try_from(n_uniq).ok()?, degree)?;
     let mut points = Vec::new();
     let mut weighted = Vec::new();
     if rational {
-        weighted = match ctx.collection_vec(n_poles, "ASM rational pcurve poles") {
-            Ok(weighted) => weighted,
-            Err(error) => return Some(Err(error)),
-        };
+        weighted = Vec::new();
     } else {
-        points = match ctx.collection_vec(n_poles, "ASM polynomial pcurve poles") {
-            Ok(points) => points,
-            Err(error) => return Some(Err(error)),
-        };
+        points = Vec::new();
     }
     for _ in 0..n_poles {
         let u = cur.take_f64()?;
@@ -307,9 +297,7 @@ pub fn explicit_pcurve_cache(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scope: toks::SubtypeScope<'_>,
 ) -> Option<Result<PcurveNurbs, cadmpeg_core::CodecError>> {
-    let position = propagate_resource!(scope.owned_marker_positions(ctx))
-        .into_iter()
-        .next()?;
+    let position = scope.owned_marker_positions().into_iter().next()?;
     pcurve_block(ctx, scope.tokens(), position)
 }
 
@@ -338,7 +326,8 @@ pub fn pcurve_fit_tolerance(
     scope: toks::SubtypeScope<'_>,
 ) -> Option<Result<f64, cadmpeg_core::CodecError>> {
     let tokens = scope.tokens();
-    let (_, end) = match propagate_resource!(scope.owned_marker_positions(ctx))
+    let (_, end) = match scope
+        .owned_marker_positions()
         .into_iter()
         .rev()
         .find_map(|pos| pcurve_block_with_end(ctx, tokens, pos))?

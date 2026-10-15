@@ -20,181 +20,6 @@ fn ref_record(index: usize, name: &str, refs: &[i64]) -> Record {
     }
 }
 
-fn with_collection_limit<T>(
-    limit: u64,
-    f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T,
-) -> T {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    f(&ctx)
-}
-
-fn assert_collection_refusal(error: &cadmpeg_core::CodecError, operation: &str) {
-    use cadmpeg_core::decode::ResourceDimension;
-    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
-        panic!("expected resource refusal: {error:?}")
-    };
-    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-    assert_eq!(limit.operation, operation);
-}
-
-#[test]
-fn ring_coedges_refuses_collection_limit() {
-    let records = [
-        ref_record(0, "loop", &[-1, -1, -1, -1, 1]),
-        ref_record(1, "coedge", &[-1, -1, -1, 1]),
-    ];
-    let by_index = records
-        .iter()
-        .map(|record| {
-            (
-                i64::try_from(record.index).expect("test value fits"),
-                record,
-            )
-        })
-        .collect();
-    let error = with_collection_limit(1, |ctx| {
-        super::ring_coedges(
-            ctx,
-            &records[0],
-            &by_index,
-            &HashSet::from([1]),
-            crate::asm_format!("f3d"),
-        )
-        .unwrap_err()
-    });
-    assert_collection_refusal(&error, "ASM ring coedges");
-}
-
-#[test]
-fn loop_chain_refuses_collection_limit() {
-    let records = [
-        ref_record(0, "face", &[-1, -1, -1, -1, 1]),
-        ref_record(1, "loop", &[-1, -1, -1, -1]),
-    ];
-    let by_index = records
-        .iter()
-        .map(|record| {
-            (
-                i64::try_from(record.index).expect("test value fits"),
-                record,
-            )
-        })
-        .collect();
-    let error = with_collection_limit(1, |ctx| {
-        super::loop_chain(
-            ctx,
-            &records[0],
-            &by_index,
-            &HashSet::from([1]),
-            crate::asm_format!("f3d"),
-        )
-        .unwrap_err()
-    });
-    assert_collection_refusal(&error, "ASM face loops");
-}
-
-#[test]
-fn face_chain_refuses_collection_limit() {
-    let records = [
-        ref_record(0, "shell", &[-1, -1, -1, -1, -1, 1]),
-        ref_record(1, "face", &[-1, -1, -1, -1]),
-    ];
-    let by_index = records
-        .iter()
-        .map(|record| {
-            (
-                i64::try_from(record.index).expect("test value fits"),
-                record,
-            )
-        })
-        .collect();
-    let error = with_collection_limit(1, |ctx| {
-        super::shell_faces(
-            ctx,
-            &records[0],
-            &by_index,
-            &HashSet::from([1]),
-            crate::asm_format!("f3d"),
-        )
-        .unwrap_err()
-    });
-    assert_collection_refusal(&error, "ASM shell faces");
-}
-
-#[test]
-fn shell_wire_roots_refuses_collection_limit() {
-    let records = [
-        ref_record(0, "shell", &[-1, -1, -1, -1, -1, -1, 1]),
-        ref_record(1, "wire", &[]),
-    ];
-    let by_index = records
-        .iter()
-        .map(|record| {
-            (
-                i64::try_from(record.index).expect("test value fits"),
-                record,
-            )
-        })
-        .collect();
-    let error = with_collection_limit(0, |ctx| {
-        super::shell_wire_roots(ctx, &records[0], &by_index).unwrap_err()
-    });
-    assert_collection_refusal(&error, "ASM shell wire roots");
-}
-
-#[test]
-fn shell_chain_refuses_collection_limit() {
-    let records = [
-        ref_record(0, "region", &[-1, -1, -1, -1, 1]),
-        ref_record(1, "shell", &[-1, -1, -1, -1, -1, -1, -1, 0]),
-    ];
-    let by_index = records
-        .iter()
-        .map(|record| {
-            (
-                i64::try_from(record.index).expect("test value fits"),
-                record,
-            )
-        })
-        .collect();
-    let error = with_collection_limit(1, |ctx| {
-        super::shell_chain(
-            ctx,
-            &records[0],
-            &by_index,
-            &std::collections::HashSet::from([1]),
-            crate::asm_format!("f3d"),
-        )
-        .unwrap_err()
-    });
-    assert_collection_refusal(&error, "ASM region shells");
-}
-
-#[test]
-fn region_chain_refuses_collection_limit() {
-    let records = [
-        ref_record(0, "body", &[-1, -1, -1, 1]),
-        ref_record(1, "region", &[-1, -1, -1, -1, -1, 0]),
-    ];
-    let by_index = records
-        .iter()
-        .map(|record| {
-            (
-                i64::try_from(record.index).expect("test value fits"),
-                record,
-            )
-        })
-        .collect();
-    let error = with_collection_limit(1, |ctx| {
-        super::region_chain(ctx, &records[0], &by_index, crate::asm_format!("f3d")).unwrap_err()
-    });
-    assert_collection_refusal(&error, "ASM body regions");
-}
-
 #[test]
 fn chains_list_only_children_that_are_emitted() {
     let records = [
@@ -214,27 +39,23 @@ fn chains_list_only_children_that_are_emitted() {
         })
         .collect();
     let format = crate::asm_format!("f3d");
-    with_collection_limit(16, |ctx| {
-        let regions = super::region_chain(ctx, &records[0], &by_index, format).unwrap();
+    {
+        let regions = super::region_chain(&records[0], &by_index, format);
         assert_eq!(
             regions.len(),
             1,
             "a lump owned by another body ends the chain"
         );
         let shells = super::shell_chain(
-            ctx,
             &records[1],
             &by_index,
             &std::collections::HashSet::from([2]),
             format,
-        )
-        .unwrap();
+        );
         assert_eq!(shells.len(), 1, "a face record is not a shell");
         let missing = ref_record(5, "body", &[-1, -1, -1, 7]);
-        assert!(super::region_chain(ctx, &missing, &by_index, format)
-            .unwrap()
-            .is_empty());
-    });
+        assert!(super::region_chain(&missing, &by_index, format).is_empty());
+    };
 }
 
 fn ident(bytes: &mut Vec<u8>, name: &str) {
@@ -344,7 +165,7 @@ fn revision_sum_solved_cache_remains_a_nurbs_face_carrier() {
                     )
                 })
                 .collect();
-            let table = nurbs::toks::SubtypeTable::from_records(&asm_decode_ctx, &records).unwrap();
+            let table = nurbs::toks::SubtypeTable::from_records(&records);
             let decoded = nurbs::proc_surface::procedural_surface_resolving_refs(
                 &asm_decode_ctx,
                 &records[0].tokens,
@@ -438,7 +259,7 @@ fn history_pcurve_use_has_no_invented_parameter_interval() {
         .iter()
         .map(|r| (i64::try_from(r.index).expect("test value fits"), r))
         .collect();
-    let table = nurbs::toks::SubtypeTable::from_records(&asm_decode_ctx, &records).unwrap();
+    let table = nurbs::toks::SubtypeTable::from_records(&records);
     let mut carriers = Carriers::default();
     let mut reach = Reachable {
         faces: HashSet::from([0]),
@@ -474,82 +295,4 @@ fn history_pcurve_use_has_no_invented_parameter_interval() {
     assert_eq!(out.coedges.len(), 1);
     assert_eq!(out.coedges[0].pcurves.len(), 1);
     assert_eq!(out.coedges[0].pcurves[0].parameter_range, None);
-}
-
-#[test]
-fn model_pcurve_parameter_range_charges_collection_items() {
-    let records = [
-        ref_record(0, "face", &[-1, -1, -1, -1, 1]),
-        ref_record(1, "loop", &[-1, -1, -1, -1, 2]),
-        ref_record(2, "coedge", &[-1, -1, -1, 2, -1, -1, 3, -1, -1, 4]),
-        ref_record(3, "edge", &[-1; 9]),
-        Record {
-            index: 4,
-            name: "pcurve".into(),
-            tokens: vec![
-                Token::Ref(-1),
-                Token::Ref(-1),
-                Token::Ref(-1),
-                Token::Long(0),
-                Token::True,
-                Token::SubtypeOpen,
-                Token::Ident("exp_par_cur".into()),
-                Token::Ident("nubs".into()),
-                Token::Long(1),
-                Token::Enum(0),
-                Token::Long(2),
-                Token::Double(0.0),
-                Token::Long(1),
-                Token::Double(1.0),
-                Token::Long(1),
-                Token::Double(0.0),
-                Token::Double(0.0),
-                Token::Double(1.0),
-                Token::Double(0.0),
-                Token::SubtypeClose,
-            ]
-            .into(),
-            offset: 0,
-            len: 0,
-        },
-    ];
-    let by_index = records
-        .iter()
-        .map(|record| {
-            (
-                i64::try_from(record.index).expect("test value fits"),
-                record,
-            )
-        })
-        .collect();
-    cadmpeg_test_support::refusal::assert_charged(
-        cadmpeg_core::decode::ResourceDimension::CollectionItems,
-        "ASM topology pcurve_parameter_ranges",
-        || {
-            let arena = cadmpeg_core::decode::DecodeArena::new();
-            let policy = cadmpeg_core::decode::DecodePolicy::service();
-            let (ctx, _) =
-                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-            let ctx = &ctx;
-            let table = nurbs::toks::SubtypeTable::from_records(ctx, &records)?;
-            let mut out = AsmBrep::default();
-            let mut carriers = Carriers::default();
-            let mut reach = Reachable {
-                faces: HashSet::from([0]),
-                ..Reachable::default()
-            };
-            walk_reachable_topology(
-                TopologyContext {
-                    ctx,
-                    by_index: &by_index,
-                    token_table: &table,
-                    purpose: DecodePurpose::Model,
-                    format: crate::asm_format!("f3d"),
-                },
-                &mut out,
-                &mut carriers,
-                &mut reach,
-            )
-        },
-    );
 }

@@ -155,19 +155,13 @@ impl<'a> Cur<'a> {
     }
 
     /// Consume a `Long` count followed by that many `Double`s.
-    pub(super) fn take_float_array(
-        &mut self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ) -> Option<Result<Vec<f64>, cadmpeg_core::CodecError>> {
+    pub(super) fn take_float_array(&mut self) -> Option<Vec<f64>> {
         let mark = self.pos;
         let Some(count) = self.take_long().and_then(|c| usize::try_from(c).ok()) else {
             self.pos = mark;
             return None;
         };
-        let mut values = match ctx.collection_vec(count, "ASM counted float array") {
-            Ok(values) => values,
-            Err(error) => return Some(Err(error)),
-        };
+        let mut values = Vec::new();
         for _ in 0..count {
             let Some(value) = self.take_f64() else {
                 self.pos = mark;
@@ -175,7 +169,7 @@ impl<'a> Cur<'a> {
             };
             values.push(value);
         }
-        Some(Ok(values))
+        Some(values)
     }
 
     /// Consume an optional leading boolean, then one `Double`: the range-bound
@@ -221,55 +215,23 @@ impl<'a> Cur<'a> {
 /// Expansion adds one to each endpoint multiplicity. The pole count is
 /// `sum(mult) - (degree - 1)`.
 pub(super) fn take_knot_table(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     cur: &mut Cur<'_>,
     n: usize,
     degree: i64,
-) -> Option<Result<(Vec<f64>, usize), cadmpeg_core::CodecError>> {
+) -> Option<(Vec<f64>, usize)> {
     // Each typed pair comes from a complete double and integer field. The
     // retained token boundary provides enough fields for at least n pairs.
     if n > cur.rest().len() / 2 {
         return None;
     }
-    let Some(work) = cadmpeg_core::decode::u64_from_index(n).checked_mul(3) else {
-        return Some(Err(ctx.refuse_codec_limit(
-            "ASM unique knot work",
-            u64::MAX,
-            u64::MAX,
-        )));
-    };
-    if let Err(error) = ctx.charge_work(work, "read ASM unique knot pairs") {
-        return Some(Err(error));
-    }
-    let mut scratch = match ctx.reserve_scoped(0, "ASM knot expansion inputs") {
-        Ok(scratch) => scratch,
-        Err(error) => return Some(Err(error)),
-    };
-    let mut values = match scratch.with_storage(|| ctx.collection_vec(n, "ASM unique knot values"))
-    {
-        Ok(values) => values,
-        Err(error) => return Some(Err(error)),
-    };
-    let mut mults = match scratch.with_storage(|| ctx.collection_vec(n, "ASM knot multiplicities"))
-    {
-        Ok(mults) => mults,
-        Err(error) => return Some(Err(error)),
-    };
+    let mut values = Vec::new();
+    let mut mults = Vec::new();
     for _ in 0..n {
         values.push(cur.take_f64()?);
         mults.push(cur.take_long()?);
     }
     let expansion = checked_knot_layout(&mults, degree)?;
-    if let Err(error) = ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(expansion.expanded_len()),
-        "expand ASM knots",
-    ) {
-        return Some(Err(error));
-    }
-    let mut expanded = match ctx.collection_vec(expansion.expanded_len(), "ASM expanded knots") {
-        Ok(expanded) => expanded,
-        Err(error) => return Some(Err(error)),
-    };
+    let mut expanded = Vec::new();
     for (index, (value, multiplicity)) in values.iter().zip(&mults).enumerate() {
         let run_length = usize::try_from(*multiplicity).ok()?
             + usize::from(index == 0 || index + 1 == mults.len());
@@ -277,7 +239,7 @@ pub(super) fn take_knot_table(
             expanded.push(*value);
         }
     }
-    Some(Ok((expanded, expansion.n_poles)))
+    Some((expanded, expansion.n_poles))
 }
 
 /// The B-spline marker at token `pos`, if any.
@@ -296,15 +258,9 @@ pub(super) fn marker_at(toks: &[Token], pos: usize) -> Option<BsplineMarker> {
 /// A `SubtypeClose` with no open scope is a malformed token stream and is
 /// refused: pinning the depth at zero would make every later marker read as one
 /// this span owns.
-pub(super) fn owned_marker_positions(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    toks: &[Token],
-) -> Option<Result<Vec<usize>, cadmpeg_core::CodecError>> {
-    let (out, balanced) = match walk_owned_markers(ctx, toks) {
-        Ok(value) => value,
-        Err(error) => return Some(Err(error)),
-    };
-    balanced.then_some(Ok(out))
+pub(super) fn owned_marker_positions(toks: &[Token]) -> Option<Vec<usize>> {
+    let (out, balanced) = walk_owned_markers(toks);
+    balanced.then_some(out)
 }
 
 /// The owned-marker walk, with the balance it observed.
@@ -312,10 +268,7 @@ pub(super) fn owned_marker_positions(
 /// The second element is `false` when the walk met a `SubtypeClose` that no
 /// open in `toks` matches. A balanced stream always answers `true`, so a caller
 /// holding a [`SubtypeScope`] reads the first element alone.
-fn walk_owned_markers(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    toks: &[Token],
-) -> Result<(Vec<usize>, bool), cadmpeg_core::CodecError> {
+fn walk_owned_markers(toks: &[Token]) -> (Vec<usize>, bool) {
     let mut out = Vec::new();
     let mut depth = 0usize;
     // The span's own leading `SubtypeOpen` is skipped, so the close that
@@ -328,17 +281,17 @@ fn walk_owned_markers(
                 Some(next) => depth = next,
                 None => match outer.checked_sub(1) {
                     Some(next) => outer = next,
-                    None => return Ok((out, false)),
+                    None => return (out, false),
                 },
             },
             _ => {
                 if depth == 0 && marker_at(toks, pos).is_some() {
-                    ctx.push_vec(&mut out, pos, "ASM owned spline markers")?;
+                    out.push(pos);
                 }
             }
         }
     }
-    Ok((out, true))
+    (out, true)
 }
 
 /// Token indices and names of the subtype definitions `toks` itself owns: the
@@ -348,10 +301,7 @@ fn walk_owned_markers(
 ///
 /// A `SubtypeClose` with no open scope is a malformed token stream and is
 /// refused.
-pub(super) fn owned_subtype_defs<'a>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    toks: &'a [Token],
-) -> Option<Result<Vec<(usize, &'a str)>, cadmpeg_core::CodecError>> {
+pub(super) fn owned_subtype_defs(toks: &[Token]) -> Option<Vec<(usize, &str)>> {
     let mut owned = Vec::new();
     let mut depth = 0usize;
     for (pos, token) in toks.iter().enumerate() {
@@ -359,13 +309,7 @@ pub(super) fn owned_subtype_defs<'a>(
             Token::SubtypeOpen => {
                 if depth == 0 {
                     if let Some(Token::Ident(name) | Token::SubIdent(name)) = toks.get(pos + 1) {
-                        if let Err(error) = ctx.push_vec(
-                            &mut owned,
-                            (pos, name.as_str()),
-                            "ASM owned subtype definitions",
-                        ) {
-                            return Some(Err(error));
-                        }
+                        owned.push((pos, name.as_str()));
                     }
                 }
                 depth += 1;
@@ -374,7 +318,7 @@ pub(super) fn owned_subtype_defs<'a>(
             _ => {}
         }
     }
-    Some(Ok(owned))
+    Some(owned)
 }
 
 /// Token index of the first subtype definition `toks` owns whose name matches
@@ -385,50 +329,26 @@ pub(super) fn owned_subtype_defs<'a>(
 /// belong to their enclosing construction, so this function ignores matching
 /// markers in nested scopes.
 pub(super) fn find_owned_subtype_marker<'n>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     toks: &[Token],
     names: &[&'n str],
-) -> Option<Result<(usize, &'n str), cadmpeg_core::CodecError>> {
-    let mut owned_storage = match ctx.reserve_scoped(0, "ASM owned construction index") {
-        Ok(storage) => storage,
-        Err(error) => return Some(Err(error)),
-    };
-    let owned = match owned_storage.with_storage(|| owned_subtype_defs(ctx, toks).transpose()) {
-        Ok(Some(value)) => value,
-        Ok(None) => return None,
-        Err(error) => return Some(Err(error)),
-    };
+) -> Option<(usize, &'n str)> {
+    let owned = owned_subtype_defs(toks)?;
     names.iter().copied().find_map(|name| {
         owned
             .iter()
             .find(|(_, owned_name)| *owned_name == name)
-            .map(|(start, _)| Ok((*start, name)))
+            .map(|(start, _)| (*start, name))
     })
 }
 
 /// The construction `toks` is, under its modern name: the first subtype
 /// definition `toks` owns other than `ref`, canonicalized.
-pub fn owned_construction_subtype(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    toks: &[Token],
-) -> Option<Result<String, cadmpeg_core::CodecError>> {
-    let mut owned_storage = match ctx.reserve_scoped(0, "ASM owned construction index") {
-        Ok(storage) => storage,
-        Err(error) => return Some(Err(error)),
-    };
-    let owned = match owned_storage.with_storage(|| owned_subtype_defs(ctx, toks).transpose()) {
-        Ok(Some(value)) => value,
-        Ok(None) => return None,
-        Err(error) => return Some(Err(error)),
-    };
-    owned
+pub fn owned_construction_subtype(toks: &[Token]) -> Option<String> {
+    owned_subtype_defs(toks)?
         .into_iter()
         .map(|(_, name)| name)
         .find(|name| *name != "ref")
-        .map(|name| {
-            let name = canonical_intcurve_kind(name);
-            ctx.copy_retained_text(name, "ASM construction subtype name")
-        })
+        .map(|name| canonical_intcurve_kind(name).to_owned())
 }
 
 /// The token span that carries `toks`'s cache, or `None` when the record
@@ -477,43 +397,22 @@ pub fn owned_construction_subtype(
 ///
 /// A malformed token stream is refused, not worked around: `owned_subtype_defs`
 /// answers `None` rather than passing over the scope that stated it.
-pub(super) fn cache_scope<'a>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    toks: &'a [Token],
-) -> Option<Result<&'a [Token], cadmpeg_core::CodecError>> {
+pub(super) fn cache_scope(toks: &[Token]) -> Option<&[Token]> {
     let mut constructions = 0usize;
     let mut cache_bearing = Vec::new();
-    let mut owned_storage = match ctx.reserve_scoped(0, "ASM owned construction index") {
-        Ok(storage) => storage,
-        Err(error) => return Some(Err(error)),
-    };
-    let owned = match owned_storage.with_storage(|| owned_subtype_defs(ctx, toks).transpose()) {
-        Ok(Some(value)) => value,
-        Ok(None) => return None,
-        Err(error) => return Some(Err(error)),
-    };
+    let owned = owned_subtype_defs(toks)?;
     for (start, _) in owned.into_iter().filter(|(_, name)| *name != "ref") {
         constructions += 1;
         let Some(scope) = subtype_span(toks, start) else {
             continue;
         };
-        let markers = match scope.owned_marker_positions(ctx) {
-            Ok(value) => value,
-            Err(error) => return Some(Err(error)),
-        };
-        if !markers.is_empty() {
-            if let Err(error) = ctx.push_vec(
-                &mut cache_bearing,
-                scope.tokens(),
-                "ASM cache bearing scopes",
-            ) {
-                return Some(Err(error));
-            }
+        if !scope.owned_marker_positions().is_empty() {
+            cache_bearing.push(scope.tokens());
         }
     }
     match (cache_bearing.as_slice(), constructions) {
-        ([scope], _) => Some(Ok(scope)),
-        ([], 0) => Some(Ok(toks)),
+        ([scope], _) => Some(scope),
+        ([], 0) => Some(toks),
         _ => None,
     }
 }
@@ -528,11 +427,7 @@ fn canonical_intcurve_kind(name: &str) -> &str {
 /// Token index of the `intcurve` subtype definition `toks` owns, given the
 /// subtype's modern name. The legacy spelling of the same construction is
 /// accepted as a second candidate.
-pub(super) fn find_owned_intcurve_subtype(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    toks: &[Token],
-    modern: &str,
-) -> Option<Result<usize, cadmpeg_core::CodecError>> {
+pub(super) fn find_owned_intcurve_subtype(toks: &[Token], modern: &str) -> Option<usize> {
     if modern.is_empty() {
         return None;
     }
@@ -540,10 +435,10 @@ pub(super) fn find_owned_intcurve_subtype(
         .iter()
         .find_map(|(name, alias)| (*name == modern).then_some(*alias));
     let found = match legacy {
-        Some(legacy) => find_owned_subtype_marker(ctx, toks, &[modern, legacy]),
-        None => find_owned_subtype_marker(ctx, toks, &[modern]),
+        Some(legacy) => find_owned_subtype_marker(toks, &[modern, legacy]),
+        None => find_owned_subtype_marker(toks, &[modern]),
     };
-    found.map(|result| result.map(|(marker, _)| marker))
+    found.map(|(marker, _)| marker)
 }
 
 /// A balanced subtype scope in token space.
@@ -608,11 +503,8 @@ impl<'a> SubtypeScope<'a> {
     ///
     /// Total: the unbalanced stream that `owned_marker_positions` refuses is
     /// a state this type cannot hold.
-    pub fn owned_marker_positions(
-        &self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ) -> Result<Vec<usize>, cadmpeg_core::CodecError> {
-        Ok(walk_owned_markers(ctx, self.tokens)?.0)
+    pub fn owned_marker_positions(&self) -> Vec<usize> {
+        walk_owned_markers(self.tokens).0
     }
 }
 
@@ -719,10 +611,7 @@ pub struct SubtypeTable {
 
 impl SubtypeTable {
     /// Build the table over each framed record's payload tokens, in order.
-    pub fn from_records(
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        records: &[crate::sab::Record],
-    ) -> Result<Self, cadmpeg_core::CodecError> {
+    pub fn from_records(records: &[crate::sab::Record]) -> Self {
         let mut defs = Vec::new();
         for record in records {
             for (pos, token) in record.tokens.iter().enumerate() {
@@ -731,17 +620,16 @@ impl SubtypeTable {
                         record.tokens.get(pos + 1)
                     {
                         if name != "ref" {
-                            ctx.reserve_vec(&mut defs, 1, "index ASM subtype definitions")?;
                             defs.push((record.tokens.clone(), pos));
                         }
                     }
                 }
             }
         }
-        Ok(Self {
+        Self {
             defs,
             save_format_version: None,
-        })
+        }
     }
 
     /// Attach the stream's ASM save format version.
@@ -771,42 +659,26 @@ pub(crate) fn admit_subtype_references(
     table: &SubtypeTable,
 ) -> Result<(), cadmpeg_core::CodecError> {
     for record in records {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(record.tokens.len()),
-            "scan ASM subtype references",
-        )?;
         let mut visited = std::collections::HashSet::new();
         let mut pending = Vec::new();
-        let mut scratch = ctx.reserve_scoped(0, "walk ASM subtype references")?;
         let root = (subtype_refs(&record.tokens), None);
-        ctx.push_scoped_vec(&mut scratch, &mut pending, root, "walk ASM subtype stack")?;
+        pending.push(root);
         while let Some((references, _guard)) = pending.last_mut() {
             let Some(index) = references.next() else {
                 pending.pop();
                 continue;
             };
-            ctx.charge_work(1, "follow ASM subtype reference")?;
-            if visited.contains(&index) {
+
+            if !visited.insert(index) {
                 continue;
             }
-            let visited_slot_bytes =
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<usize>());
-            scratch.grow(visited_slot_bytes)?;
 
-            ctx.insert_hash_set(&mut visited, index, "visit ASM subtype reference")?;
-            let Some((tokens, _)) = table.defs.get(index) else {
-                continue;
-            };
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(tokens.len()),
-                "scan ASM subtype definition",
-            )?;
             let Some(target) = table.span(index) else {
                 continue;
             };
             let guard = ctx.enter_nested("follow ASM subtype reference")?;
             let frame = (subtype_refs(target.tokens()), Some(guard));
-            ctx.push_scoped_vec(&mut scratch, &mut pending, frame, "walk ASM subtype stack")?;
+            pending.push(frame);
         }
     }
     Ok(())
@@ -850,186 +722,22 @@ pub fn test_table(
     let record = crate::sab::Record {
         index: 0,
         name: String::new(),
-
         tokens: lex_test_span(bytes, ref_width)?,
         offset: 0,
         len: 0,
     };
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .map_err(|error| crate::stream_error::StreamError {
-            format: crate::stream_error::StreamFormat::Binary,
-            offset: 0,
-            reason: error.to_string(),
-        })?;
-    SubtypeTable::from_records(&ctx, &[record]).map_err(|error| crate::stream_error::StreamError {
-        format: crate::stream_error::StreamFormat::Binary,
-        offset: 0,
-        reason: error.to_string(),
-    })
+    Ok(SubtypeTable::from_records(&[record]))
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        cache_scope as cache_scope_ctx, lex_test_span, marker_at,
-        owned_construction_subtype as owned_construction_subtype_ctx,
-        owned_marker_positions as owned_marker_positions_ctx,
-        owned_subtype_defs as owned_subtype_defs_ctx, subtype_refs, subtype_span, test_table, Cur,
+        cache_scope, lex_test_span, marker_at, owned_construction_subtype, owned_marker_positions,
+        owned_subtype_defs, subtype_refs, subtype_span, test_table, Cur,
     };
     use crate::kernel_header::RefWidth;
     use crate::nurbs::reader::BsplineMarker;
     use crate::sab::Token;
-
-    fn with_ctx<T>(f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T) -> T {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let policy = cadmpeg_core::decode::DecodePolicy::service();
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        f(&ctx)
-    }
-
-    fn owned_subtype_defs(toks: &[Token]) -> Option<Vec<(usize, &str)>> {
-        with_ctx(|ctx| owned_subtype_defs_ctx(ctx, toks).transpose().unwrap())
-    }
-
-    fn owned_marker_positions(toks: &[Token]) -> Option<Vec<usize>> {
-        with_ctx(|ctx| owned_marker_positions_ctx(ctx, toks).transpose().unwrap())
-    }
-
-    fn owned_construction_subtype(toks: &[Token]) -> Option<String> {
-        with_ctx(|ctx| {
-            owned_construction_subtype_ctx(ctx, toks)
-                .transpose()
-                .unwrap()
-        })
-    }
-
-    #[test]
-    fn owned_construction_subtype_refuses_retained_string_limit() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-        use cadmpeg_core::CodecError;
-
-        let tokens = [
-            Token::SubtypeOpen,
-            Token::Ident("arbitrary".into()),
-            Token::SubtypeClose,
-        ];
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 8;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty test input fits input limit");
-        let error = owned_construction_subtype_ctx(&ctx, &tokens)
-            .expect("subtype exists")
-            .expect_err("subtype name exceeds retained limit");
-        let CodecError::ResourceLimit(refusal) = error else {
-            panic!("expected resource refusal, got {error:?}");
-        };
-        assert_eq!(refusal.dimension, ResourceDimension::RetainedBytes);
-        assert_eq!(refusal.operation, "ASM construction subtype name");
-    }
-
-    fn cache_scope(toks: &[Token]) -> Option<&[Token]> {
-        with_ctx(|ctx| cache_scope_ctx(ctx, toks).transpose().unwrap())
-    }
-
-    #[test]
-    fn owned_marker_vector_refuses_collection_limit() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-        use cadmpeg_core::CodecError;
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let tokens = [
-            Token::SubtypeOpen,
-            Token::Ident("nubs".into()),
-            Token::SubtypeClose,
-        ];
-        let error = owned_marker_positions_ctx(&ctx, &tokens)
-            .unwrap()
-            .unwrap_err();
-        let CodecError::ResourceLimit(limit) = error else {
-            panic!("expected resource refusal: {error:?}")
-        };
-        assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-        assert_eq!(limit.operation, "ASM owned spline markers");
-    }
-
-    #[test]
-    fn owned_subtype_vector_refuses_collection_limit() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-        use cadmpeg_core::CodecError;
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let tokens = [
-            Token::SubtypeOpen,
-            Token::Ident("exactcur".into()),
-            Token::SubtypeClose,
-        ];
-        let error = owned_subtype_defs_ctx(&ctx, &tokens).unwrap().unwrap_err();
-        let CodecError::ResourceLimit(limit) = error else {
-            panic!("expected resource refusal: {error:?}")
-        };
-        assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-        assert_eq!(limit.operation, "ASM owned subtype definitions");
-    }
-
-    #[test]
-    fn cache_bearing_vector_refuses_collection_limit() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-        use cadmpeg_core::CodecError;
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 2;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let tokens = [
-            Token::SubtypeOpen,
-            Token::Ident("exactcur".into()),
-            Token::Ident("nubs".into()),
-            Token::SubtypeClose,
-        ];
-        let error = cache_scope_ctx(&ctx, &tokens).unwrap().unwrap_err();
-        let CodecError::ResourceLimit(limit) = error else {
-            panic!("expected resource refusal: {error:?}")
-        };
-        assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-        assert_eq!(limit.operation, "ASM cache bearing scopes");
-    }
-
-    #[test]
-    fn subtype_table_vector_refuses_collection_limit() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-        use cadmpeg_core::CodecError;
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let record = crate::sab::Record {
-            index: 0,
-            name: "spline".into(),
-            tokens: vec![
-                Token::SubtypeOpen,
-                Token::Ident("exactcur".into()),
-                Token::SubtypeClose,
-            ]
-            .into(),
-            offset: 0,
-            len: 0,
-        };
-        let error = super::SubtypeTable::from_records(&ctx, &[record])
-            .err()
-            .expect("resource refusal");
-        let CodecError::ResourceLimit(limit) = error else {
-            panic!("expected resource refusal: {error:?}")
-        };
-        assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-        assert_eq!(limit.operation, "index ASM subtype definitions");
-    }
 
     #[test]
     fn subtype_reference_walk_refuses_depth_before_following_next_definition() {
@@ -1057,7 +765,7 @@ mod tests {
                 }
             })
             .collect();
-        let table = with_ctx(|ctx| super::SubtypeTable::from_records(ctx, &records).unwrap());
+        let table = super::SubtypeTable::from_records(&records);
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_recursion_depth = 1;
@@ -1075,44 +783,6 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).unwrap();
         super::admit_subtype_references(&ctx, &records, &table)
             .expect("service profile admits finite chain");
-    }
-
-    #[test]
-    fn subtype_reference_walk_refuses_work_before_following_reference() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-        use cadmpeg_core::CodecError;
-
-        let tokens: std::sync::Arc<[Token]> = vec![
-            Token::SubtypeOpen,
-            Token::Ident("node".into()),
-            Token::SubtypeOpen,
-            Token::Ident("ref".into()),
-            Token::Long(0),
-            Token::SubtypeClose,
-            Token::SubtypeClose,
-        ]
-        .into();
-        let record = crate::sab::Record {
-            index: 0,
-            name: "node".into(),
-            tokens,
-            offset: 0,
-            len: 0,
-        };
-        let records = [record];
-        let table = with_ctx(|ctx| super::SubtypeTable::from_records(ctx, &records).unwrap());
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units =
-            cadmpeg_core::decode::u64_from_index(records[0].tokens.len());
-        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).unwrap();
-        let error = super::admit_subtype_references(&ctx, &records, &table)
-            .expect_err("following the reference exceeds scan work");
-        let CodecError::ResourceLimit(limit) = error else {
-            panic!("expected resource refusal, got {error:?}");
-        };
-        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-        assert_eq!(limit.operation, "follow ASM subtype reference");
     }
 
     fn ident(name: &str) -> Token {
@@ -1158,44 +828,10 @@ mod tests {
 
     #[test]
     fn float_array_restores_position_on_a_truncated_body() {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[],
-            &arena,
-            &cadmpeg_core::decode::DecodePolicy::default(),
-        )
-        .expect("test decode context");
         let toks = [Token::Long(2), Token::Double(1.0), Token::True];
         let mut cur = Cur::at(&toks, 0);
-        assert_eq!(
-            cur.take_float_array(&ctx)
-                .transpose()
-                .expect("resource allocation"),
-            None
-        );
+        assert_eq!(cur.take_float_array(), None);
         assert_eq!(cur.pos(), 0);
-    }
-
-    #[test]
-    fn counted_float_array_refuses_collection_limit_before_reading_values() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-        use cadmpeg_core::CodecError;
-
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 1;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let toks = [Token::Long(2), Token::Double(1.0), Token::Double(2.0)];
-        let mut cur = Cur::at(&toks, 0);
-        let error = cur
-            .take_float_array(&ctx)
-            .expect("counted float array")
-            .expect_err("two floats exceed one item");
-        let CodecError::ResourceLimit(limit) = error else {
-            panic!("expected collection refusal: {error:?}");
-        };
-        assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-        assert_eq!(cur.pos(), 1);
     }
 
     #[test]
@@ -1273,7 +909,7 @@ mod tests {
             Token::SubtypeClose,
         ];
         let scope = subtype_span(&toks, 0).expect("balanced scope");
-        let owned: Vec<usize> = with_ctx(|ctx| scope.owned_marker_positions(ctx).unwrap());
+        let owned: Vec<usize> = scope.owned_marker_positions();
         assert_eq!(owned, vec![2, 9]);
         assert_eq!(scope.tokens(), &toks[..]);
     }
@@ -1315,10 +951,7 @@ mod tests {
             Token::SubtypeClose,
         ];
         let scope = subtype_span(&toks, 0).expect("balanced scope");
-        assert_eq!(
-            with_ctx(|ctx| scope.owned_marker_positions(ctx).unwrap()),
-            vec![6]
-        );
+        assert_eq!(scope.owned_marker_positions(), vec![6]);
         assert_eq!(scope.interior(), &toks[1..7]);
 
         // The slice after the scope's name token opens with the nested scope,
@@ -1432,7 +1065,7 @@ mod tests {
 
             let records = crate::test_support::sab::frame(&active, 0, active.len(), ref_width)
                 .expect("wide-string record frames at its declared width");
-            let table = with_ctx(|ctx| super::SubtypeTable::from_records(ctx, &records).unwrap());
+            let table = super::SubtypeTable::from_records(&records);
             assert_eq!(table.defs.len(), 1);
             assert!(matches!(table.span(0).expect("real definition").tokens(),
             [Token::SubtypeOpen, Token::Ident(name), Token::SubtypeClose] if name == "real_def"));
