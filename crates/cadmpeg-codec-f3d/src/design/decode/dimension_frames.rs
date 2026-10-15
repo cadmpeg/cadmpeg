@@ -31,7 +31,6 @@ use crate::records::{
     topology::edge_identity::DesignEdgeOperand,
 };
 use cadmpeg_core::decode::u64_from_index;
-use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use std::collections::{HashMap, HashSet};
@@ -695,24 +694,21 @@ fn recipe_reference_suffix(bytes: &[u8]) -> bool {
 
 /// Join dimension-recipe selector/reference pairs to active solved subentities.
 pub(crate) fn bind_dimension_recipe_reference_candidates(
-    ctx: &DecodeContext<'_>,
     records: &mut [DesignDimensionRecipeRecord],
     tags: &[PersistentSubentityTag],
-) -> Result<(), CodecError> {
+) {
     for record in records {
         for reference in &mut record.references {
-            bind_recipe_reference_candidates_charged(ctx, reference, tags, Some(&record.id))?;
+            bind_recipe_reference_candidates_charged(reference, tags, Some(&record.id));
         }
     }
-    Ok(())
 }
 
 pub(crate) fn bind_recipe_reference_candidates_charged(
-    ctx: &DecodeContext<'_>,
     reference: &mut crate::records::dimensions::DesignRecipeReference,
     tags: &[PersistentSubentityTag],
     owner_id: Option<&str>,
-) -> Result<(), CodecError> {
+) {
     use cadmpeg_ir::attributes::AttributeTarget;
 
     reference.candidate_faces.clear();
@@ -726,18 +722,14 @@ pub(crate) fn bind_recipe_reference_candidates_charged(
     }) {
         let matching_selector = tag.selector == reference.selector;
         match (&tag.target, matching_selector) {
-            (AttributeTarget::Face(face), true) => reference
-                .candidate_faces
-                .push(face.try_clone_for_decode(ctx, "f3d recipe reference candidate ID")?),
-            (AttributeTarget::Edge(edge), true) => reference
-                .candidate_edges
-                .push(edge.try_clone_for_decode(ctx, "f3d recipe reference candidate ID")?),
-            (AttributeTarget::Face(face), false) => reference
-                .alternate_selector_faces
-                .push(face.try_clone_for_decode(ctx, "f3d recipe reference candidate ID")?),
-            (AttributeTarget::Edge(edge), false) => reference
-                .alternate_selector_edges
-                .push(edge.try_clone_for_decode(ctx, "f3d recipe reference candidate ID")?),
+            (AttributeTarget::Face(face), true) => reference.candidate_faces.push(face.clone()),
+            (AttributeTarget::Edge(edge), true) => reference.candidate_edges.push(edge.clone()),
+            (AttributeTarget::Face(face), false) => {
+                reference.alternate_selector_faces.push(face.clone());
+            }
+            (AttributeTarget::Edge(edge), false) => {
+                reference.alternate_selector_edges.push(edge.clone());
+            }
             _ => {}
         }
     }
@@ -757,7 +749,6 @@ pub(crate) fn bind_recipe_reference_candidates_charged(
         .alternate_selector_edges
         .sort_by(|a, b| a.as_str().cmp(b.as_str()));
     reference.alternate_selector_edges.dedup();
-    Ok(())
 }
 
 /// Join dimension programs to byte-identical edge-recipe program tails.

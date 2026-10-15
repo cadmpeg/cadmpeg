@@ -404,16 +404,10 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         group.try_set_members(all_members).unwrap();
         let mut sketch = sketch;
         let second_profile_id = SketchEntityId::mint("synthetic:test:id#second-profile").unwrap();
-        sketch
-            .profiles
-            .push_single(
-                decode_ctx,
-                SketchEntityUse {
-                    entity: second_profile_id.clone(),
-                    reversed: false,
-                },
-            )
-            .unwrap();
+        sketch.profiles.push_single(SketchEntityUse {
+            entity: second_profile_id.clone(),
+            reversed: false,
+        });
         let point_entity = SketchEntity::new(
             neutral_sketch_point_id(&sketch_id, 587),
             sketch_id.clone(),

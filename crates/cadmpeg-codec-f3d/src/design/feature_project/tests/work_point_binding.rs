@@ -128,16 +128,12 @@ fn work_point_sketch_binding_preserves_planar_and_spatial_selections() {
     use cadmpeg_ir::features::{DatumPointConstruction, SketchPointSelection};
     let (scope, feature, planar, spatial) = fixture();
     let mut planar_features = [feature.clone()];
-    crate::test_support::with_decode_context(|decode_ctx| {
-        bind_work_point_sketch_point_constructions(
-            decode_ctx,
-            &mut planar_features,
-            std::slice::from_ref(&scope),
-            std::slice::from_ref(&planar),
-            &[],
-        )
-    })
-    .unwrap();
+    bind_work_point_sketch_point_constructions(
+        &mut planar_features,
+        std::slice::from_ref(&scope),
+        std::slice::from_ref(&planar),
+        &[],
+    );
     assert!(matches!(planar_features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::DatumPoint {
             construction: Some(construction), ..
@@ -146,16 +142,12 @@ fn work_point_sketch_binding_preserves_planar_and_spatial_selections() {
         } if sketch == &planar.sketch && point == planar.id()
             && native == "f3d:Design/BulkStream.dat:design-record#42")));
     let mut spatial_features = [feature];
-    crate::test_support::with_decode_context(|decode_ctx| {
-        bind_work_point_sketch_point_constructions(
-            decode_ctx,
-            &mut spatial_features,
-            std::slice::from_ref(&scope),
-            &[],
-            std::slice::from_ref(&spatial),
-        )
-    })
-    .unwrap();
+    bind_work_point_sketch_point_constructions(
+        &mut spatial_features,
+        std::slice::from_ref(&scope),
+        &[],
+        std::slice::from_ref(&spatial),
+    );
     assert!(matches!(spatial_features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::DatumPoint {
             construction: Some(construction), ..

@@ -1279,11 +1279,7 @@ fn generated_source_less_planar_polygon_plans_dynamic_record_indices() {
     coedges.push(coedge_id);
     let vertex_uses = source_less.model.loops[0].anchored_vertex_uses().to_vec();
     source_less.model.loops[0]
-        .replace_ring(
-            &cadmpeg_test_support::service_decode_context(),
-            coedges,
-            vertex_uses,
-        )
+        .replace_ring(coedges, vertex_uses)
         .expect("source-less fixture loop remains a valid ring");
 
     let mut encoded = Vec::new();
@@ -1699,13 +1695,8 @@ fn generated_source_less_closed_cylinder_band_keeps_compact_periodic_topology() 
             id: loops[index].clone(),
             face: face.clone(),
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-                cadmpeg_ir::topology::LoopRing::new(
-                    &cadmpeg_test_support::service_decode_context(),
-                    vec![coedges[index].clone()],
-                    Vec::new(),
-                )
-                .expect("fixture ring admission")
-                .expect("valid loop ring"),
+                cadmpeg_ir::topology::LoopRing::new(vec![coedges[index].clone()], Vec::new())
+                    .expect("fixture ring admission"),
             ),
         });
         source_less.model.coedges.push(Coedge {
@@ -1758,9 +1749,7 @@ fn generated_source_less_closed_cylinder_band_keeps_compact_periodic_topology() 
             None,
         ));
     }
-    source_less
-        .finalize(&cadmpeg_test_support::service_decode_context())
-        .expect("fixture ordering is admitted");
+    source_less.finalize();
 
     let mut encoded = Vec::new();
     F3dCodec

@@ -468,11 +468,7 @@ pub(crate) fn scan<'a>(
                 acis_header::parse(ctx, buf)?.map(KernelFraming::Acis)
             };
             let solved_record_limit = kernel.as_ref().and_then(KernelFraming::solved_record_limit);
-            let sha = cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
-                ctx,
-                buf,
-                "retain source digest",
-            )?;
+            let sha = cadmpeg_ir::hash::digest::Sha256Digest::digest(buf);
 
             attributes.insert("asm_magic".to_owned(), asm_magic_label(buf));
             if let Some(h) = kernel.as_ref().and_then(KernelFraming::asm_header) {

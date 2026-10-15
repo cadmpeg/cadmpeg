@@ -83,13 +83,9 @@ fn generic_tag_payload_accepts_both_equal_envelope_versions() {
             1,
             groups,
         );
+        assert_eq!(persistent_subentity_tags(&attribute).unwrap().len(), 1);
         assert_eq!(
-            with_context(|ctx| persistent_subentity_tags(ctx, &attribute).unwrap()).len(),
-            1
-        );
-        assert_eq!(
-            with_context(|ctx| persistent_subentity_tags(ctx, &attribute).unwrap())[0]
-                .design_references,
+            persistent_subentity_tags(&attribute).unwrap()[0].design_references,
             [302]
         );
     }
@@ -111,7 +107,7 @@ fn generic_tag_payload_rejects_mixed_or_unsupported_envelope_versions() {
             1,
             groups.clone(),
         );
-        assert!(with_context(|ctx| persistent_subentity_tags(ctx, &attribute).unwrap()).is_empty());
+        assert!(persistent_subentity_tags(&attribute).unwrap().is_empty());
     }
 }
 
@@ -128,7 +124,7 @@ fn generic_tag_payload_binds_modern_body_design_links() {
             AttributeValue::Integer(0),
         ],
     );
-    let links = with_context(|ctx| persistent_design_links(ctx, &attribute).unwrap());
+    let links = persistent_design_links(&attribute).unwrap();
     assert_eq!(links.len(), 1);
     assert_eq!(links[0].design_id.as_str(), "301");
     assert_eq!(links[0].design_reference, 1);
@@ -148,10 +144,7 @@ fn generic_tag_payload_binds_legacy_body_design_links() {
             AttributeValue::Integer(0),
         ],
     );
-    assert_eq!(
-        with_context(|ctx| persistent_design_links(ctx, &attribute).unwrap()).len(),
-        1
-    );
+    assert_eq!(persistent_design_links(&attribute).unwrap().len(), 1);
 }
 
 #[test]
@@ -472,19 +465,15 @@ fn body_selectors_use_ordinals_only_for_an_all_null_key_lane() {
         ..Brep::default()
     };
 
+    assert_eq!(brep.body_selectors().len(), 2);
     assert_eq!(
-        with_context(|ctx| brep.body_selectors(ctx).unwrap()).len(),
-        2
-    );
-    assert_eq!(
-        with_context(|ctx| brep.body_selectors(ctx).unwrap())
-            [&BodyId::mint("f3d:brep:entity#1").expect("identity grammar")],
+        brep.body_selectors()[&BodyId::mint("f3d:brep:entity#1").expect("identity grammar")],
         1
     );
 
     brep.asm.body_native_keys[1].asm_body_key = Some(7);
     assert_eq!(
-        with_context(|ctx| brep.body_selectors(ctx).unwrap()),
+        brep.body_selectors(),
         HashMap::from([(
             BodyId::mint("f3d:brep:entity#1").expect("identity grammar"),
             7
@@ -513,7 +502,7 @@ fn design_body_selectors_prefer_exact_keys_then_fall_back_to_ordinals() {
     };
 
     assert_eq!(
-        with_context(|ctx| brep.body_selectors_for(ctx, &HashSet::from([0])).unwrap()),
+        brep.body_selectors_for(&HashSet::from([0])).unwrap(),
         HashMap::from([(
             BodyId::mint("f3d:brep:entity#1").expect("identity grammar"),
             0
@@ -522,7 +511,7 @@ fn design_body_selectors_prefer_exact_keys_then_fall_back_to_ordinals() {
 
     brep.asm.body_native_keys = vec![native_key(0, 436)];
     assert_eq!(
-        with_context(|ctx| brep.body_selectors_for(ctx, &HashSet::from([0])).unwrap()),
+        brep.body_selectors_for(&HashSet::from([0])).unwrap(),
         HashMap::from([(
             BodyId::mint("f3d:brep:entity#0").expect("identity grammar"),
             0

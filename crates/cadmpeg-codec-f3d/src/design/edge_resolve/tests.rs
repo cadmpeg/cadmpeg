@@ -595,11 +595,7 @@ fn grouped_surface_patch_recipe_requires_agreeing_exact_references() {
     second.recipe_references = vec![recipe_reference(&[18]), recipe_reference(&[18])];
 
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| surface_patch_grouped_recipe_edges(
-            &[&first, &second],
-            decode_ctx
-        ))
-        .unwrap(),
+        surface_patch_grouped_recipe_edges(&[&first, &second]),
         SurfacePatchRecipeEdges::Resolved(vec![
             EdgeId::mint("f3d:test:edge#17").expect("identity grammar"),
             EdgeId::mint("f3d:test:edge#18").expect("identity grammar")
@@ -618,35 +614,19 @@ fn grouped_surface_patch_recipe_rejects_ambiguous_or_repeated_edges() {
     repeated.recipe_references = vec![recipe_reference(&[17])];
 
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| surface_patch_grouped_recipe_edges(
-            &[&ambiguous],
-            decode_ctx
-        ))
-        .unwrap(),
+        surface_patch_grouped_recipe_edges(&[&ambiguous]),
         SurfacePatchRecipeEdges::Inconclusive
     );
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| surface_patch_grouped_recipe_edges(
-            &[&contradictory],
-            decode_ctx
-        ))
-        .unwrap(),
+        surface_patch_grouped_recipe_edges(&[&contradictory]),
         SurfacePatchRecipeEdges::Inconclusive
     );
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| surface_patch_grouped_recipe_edges(
-            &[&absent, &contradictory],
-            decode_ctx
-        ))
-        .unwrap(),
+        surface_patch_grouped_recipe_edges(&[&absent, &contradictory]),
         SurfacePatchRecipeEdges::Inconclusive
     );
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| surface_patch_grouped_recipe_edges(
-            &[&repeated, &repeated],
-            decode_ctx
-        ))
-        .unwrap(),
+        surface_patch_grouped_recipe_edges(&[&repeated, &repeated]),
         SurfacePatchRecipeEdges::Inconclusive
     );
 }

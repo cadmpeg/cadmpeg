@@ -242,11 +242,8 @@ fn spatial_profile(
                 reversed: false,
             })
             .collect(),
-        &cadmpeg_test_support::service_decode_context(),
-        "spatial profile uniqueness",
     )
     .expect("fixture collection admission")
-    .unwrap()
 }
 
 #[test]
@@ -451,11 +448,8 @@ fn loft_spatial_profile_regions_collapse_coincident_curve_revisions() {
                 entity: entity_id(primary),
                 reversed: false,
             }],
-            &cadmpeg_test_support::service_decode_context(),
-            "spatial profile uniqueness",
         )
         .expect("fixture collection admission")
-        .unwrap()
     };
     let spatial_sketches = [SpatialSketch {
         id: sketch_id.clone(),

@@ -1298,13 +1298,12 @@ fn attribute_names(
         CodecError::malformed("paramesh attribute-name stream has no XML declaration")
     })?;
     let wrapped = format!("<Root>{body}</Root>");
-    let admitted_document =
+    let document =
         ctx.parse_xml(&wrapped, "parse paramesh XML tree")
             .map_err(|error| match error {
                 CodecError::ResourceLimit(_) => error,
                 _ => CodecError::malformed("paramesh attribute-name stream is not XML"),
             })?;
-    let document = admitted_document.document();
     let root = document.root_element();
     if root.tag_name().name() != "Root"
         || root.attributes().next().is_some()

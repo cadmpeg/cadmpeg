@@ -117,14 +117,13 @@ fn finalize_result(
     body: DecodeBody,
     source_fidelity: cadmpeg_ir::SourceFidelity,
 ) -> Result<Decoded, CodecError> {
-    ir.finalize(ctx)?;
+    ir.finalize();
     let hash = cadmpeg_ir::hash::document_local_sha256(
         ctx,
         &ir,
         Some(&source),
         "f3d",
         crate::ids::FILE_SOURCE_IMAGE_ID,
-        "record F3Z document digest",
     )?;
     source.attributes.insert(
         cadmpeg_core::nonblank_const!(cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE),

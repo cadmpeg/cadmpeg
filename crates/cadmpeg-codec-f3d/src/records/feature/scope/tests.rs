@@ -366,9 +366,7 @@ fn native_scope_field_rewrite_matches_the_typed_nested_vertex_walk() {
             id.strip_prefix("f3d:model:").unwrap()
         ))
     };
-    let expected =
-        cadmpeg_ir::schema::rewrite::identities(&ctx, "test typed walk", scope.clone(), remap)
-            .unwrap();
+    let expected = cadmpeg_ir::schema::rewrite::identities(&ctx, scope.clone(), remap).unwrap();
     let mut expected = serde_json::to_value(expected)
         .unwrap()
         .as_object()
@@ -392,9 +390,7 @@ fn native_scope_field_rewrite_matches_the_typed_nested_vertex_walk() {
         )
         .unwrap();
     let record = &native.arenas()["design_parameter_scopes"][0];
-    let expected =
-        cadmpeg_ir::schema::rewrite::identities(&ctx, "test typed plane walk", plane_scope, remap)
-            .unwrap();
+    let expected = cadmpeg_ir::schema::rewrite::identities(&ctx, plane_scope, remap).unwrap();
     let mut expected = serde_json::to_value(expected)
         .unwrap()
         .as_object()

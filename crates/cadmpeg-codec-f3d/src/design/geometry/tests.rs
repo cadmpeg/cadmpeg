@@ -42,7 +42,7 @@ fn subdivision_count_requires_positive_target_error() {
     assert_eq!(super::subdivision_count(100.0, 10.0), Some(10));
 }
 
-fn local_arrangement_budget() -> WorkBudget<'static> {
+fn local_arrangement_budget() -> WorkBudget {
     WorkBudget::new(MAX_ARRANGEMENT_WALK_WORK)
 }
 
@@ -237,13 +237,6 @@ fn empty_profile_table_arranges_face_around_open_sketch_branch() {
 
 #[test]
 fn historical_point_inside_unique_closed_line_profile_selects_region() {
-    let resource_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &resource_arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )
-    .unwrap();
     let sketch_id = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let mut entities = Vec::new();
     let mut profile = Vec::new();
@@ -332,16 +325,10 @@ fn historical_point_inside_unique_closed_line_profile_selects_region() {
 
     let mut incomplete = sketch.clone();
     let ellipse = SketchEntityId::mint("synthetic:test:id#unsupported-ellipse").unwrap();
-    incomplete
-        .profiles
-        .push_single(
-            &resource_ctx,
-            SketchEntityUse {
-                entity: ellipse.clone(),
-                reversed: false,
-            },
-        )
-        .unwrap();
+    incomplete.profiles.push_single(SketchEntityUse {
+        entity: ellipse.clone(),
+        reversed: false,
+    });
     entities.push(SketchEntity::new(
         ellipse,
         incomplete.id.clone(),
@@ -1447,11 +1434,7 @@ fn numerical_followup_profile_speed_bound_retains_common_weights() {
         )
         .expect("fixture pcurve construction admission")
         .unwrap();
-        assert_eq!(
-            super::nurbs_speed_bound(&cadmpeg_test_support::service_decode_context(), &curve)
-                .expect("speed bound admission"),
-            Some(1.0)
-        );
+        assert_eq!(super::nurbs_speed_bound(&curve), Some(1.0));
     }
 }
 
@@ -1479,10 +1462,8 @@ fn implicit_profile_unit_weights_match_explicit_units() {
     .expect("fixture pcurve construction admission")
     .expect("unit-weight pcurve");
     assert_eq!(
-        super::nurbs_speed_bound(&cadmpeg_test_support::service_decode_context(), &implicit)
-            .expect("speed bound admission"),
-        super::nurbs_speed_bound(&cadmpeg_test_support::service_decode_context(), &explicit)
-            .expect("speed bound admission")
+        super::nurbs_speed_bound(&implicit),
+        super::nurbs_speed_bound(&explicit)
     );
 }
 
@@ -1611,15 +1592,12 @@ fn numerical_0922b_large_line_split() {
             end: Point2::new(scale, 0.),
         })
         .unwrap();
-        let r = crate::test_support::with_decode_context(|decode_ctx| {
-            super::arrangement_split_parameters(
-                &line,
-                [0., 1.],
-                &[Point2::new(0.5 * scale, 0.)],
-                LARGE_LINE_TOLERANCE,
-                decode_ctx,
-            )
-        })
+        let r = super::arrangement_split_parameters(
+            &line,
+            [0., 1.],
+            &[Point2::new(0.5 * scale, 0.)],
+            LARGE_LINE_TOLERANCE,
+        )
         .unwrap()
         .unwrap();
         println!("Fusion split scale{scale:e}: {r:?}");

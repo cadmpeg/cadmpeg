@@ -102,17 +102,12 @@ fn form33_without_unique_body_proof_remains_unresolved() {
     let mut candidates =
         crate::history::body_candidates::BodyCandidates::new(&bodies, &regions, &shells, &[], &[]);
     for _ in 0..1_000 {
-        assert_eq!(candidates.external(&ctx, &operand, None).unwrap(), None);
+        assert_eq!(candidates.external(&operand, None), None);
     }
     ctx.finish_session().unwrap();
     assert_eq!(
         crate::history::body_candidates::BodyCandidates::new(&bodies, &regions, &shells, &[], &[])
-            .external(
-                &cadmpeg_test_support::service_decode_context(),
-                &operand,
-                None
-            )
-            .unwrap(),
+            .external(&operand, None),
         None
     );
 

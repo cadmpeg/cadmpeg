@@ -186,12 +186,7 @@ fn repeated_occurrence_merge_remaps_typed_graphs_disjointly() {
             occurrence: &occurrence,
         };
         merged
-            .extend_rewritten(
-                &ctx,
-                component.clone(),
-                &mut scope,
-                "append F3Z model entities",
-            )
+            .extend_rewritten(component.clone(), &mut scope)
             .expect("merge component arenas");
     }
 

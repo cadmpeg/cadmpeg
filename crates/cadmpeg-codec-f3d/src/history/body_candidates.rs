@@ -3,8 +3,6 @@
 use crate::records::recipes::{ConstructionRecipe, ConstructionRecipeKind};
 use crate::records::sketch_links::PersistentDesignLink;
 use crate::records::topology::body_recipe::DesignBodyRecipeOperand;
-use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::ids::{BodyId, FaceId};
 use cadmpeg_ir::topology::{Body, Region, Shell};
 use std::collections::{BTreeSet, HashMap};
@@ -95,17 +93,11 @@ impl<'a> BodyCandidates<'a> {
         }
         (any, contains)
     }
-    pub(super) fn linked(
-        &mut self,
-        ctx: &DecodeContext<'_>,
-        operand: &DesignBodyRecipeOperand,
-    ) -> Result<Option<BodyId>, CodecError> {
+    pub(super) fn linked(&mut self, operand: &DesignBodyRecipeOperand) -> Option<BodyId> {
         if self.recipes.is_empty() || self.links.is_empty() {
-            return Ok(None);
+            return None;
         }
-        let Some(stream) = crate::ids::native_stream(&operand.id) else {
-            return Ok(None);
-        };
+        let stream = crate::ids::native_stream(&operand.id)?;
         if self.linked.is_none() {
             let mut recipes = HashMap::new();
             for recipe in self.recipes {
@@ -156,58 +148,38 @@ impl<'a> BodyCandidates<'a> {
             }
             self.linked = Some(LinkIndex { recipes, selected });
         }
-        let Some(index) = self.linked.as_ref() else {
-            return Ok(None);
-        };
+        let index = self.linked.as_ref()?;
 
-        let Some(recipe) = index
+        let recipe = index
             .recipes
             .get(operand.recipe_id.as_str())
             .copied()
-            .flatten()
-        else {
-            return Ok(None);
-        };
+            .flatten()?;
         if crate::ids::native_stream(&recipe.id) != Some(stream) {
-            return Ok(None);
+            return None;
         }
-        let Some(design) = recipe.design.as_ref() else {
-            return Ok(None);
-        };
-        let Some(selector) = design.selector else {
-            return Ok(None);
-        };
+        let design = recipe.design.as_ref()?;
+        let selector = design.selector?;
 
-        let Some(body) = index
+        let body = index
             .selected
             .get(&(design.id.value.as_str(), i64::from(selector.value)))
             .copied()
-            .flatten()
-        else {
-            return Ok(None);
-        };
-        Ok(Some(body.try_clone_for_decode(
-            ctx,
-            "copy F3D persistent body link identity",
-        )?))
+            .flatten()?;
+        Some(body.clone())
     }
-    pub(super) fn direct(
-        &mut self,
-        ctx: &DecodeContext<'_>,
-        operand: &DesignBodyRecipeOperand,
-    ) -> Result<Option<BodyId>, CodecError> {
-        if let Some(body) = self.linked(ctx, operand)? {
+    pub(super) fn direct(&mut self, operand: &DesignBodyRecipeOperand) -> Option<BodyId> {
+        if let Some(body) = self.linked(operand) {
             let (any, contains) = self.face_body_candidates(operand, &body);
-            return Ok((!any || contains).then_some(body));
+            return (!any || contains).then_some(body);
         }
-        self.external(ctx, operand, None)
+        self.external(operand, None)
     }
     pub(super) fn external(
         &mut self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         operand: &crate::records::topology::body_recipe::DesignBodyRecipeOperand,
         current_history_source: Option<&str>,
-    ) -> Result<Option<cadmpeg_ir::ids::BodyId>, cadmpeg_core::CodecError> {
+    ) -> Option<cadmpeg_ir::ids::BodyId> {
         let index = self.external_index();
         let body_by_face = &index.body_by_face;
         let body_metadata = &index.metadata;
@@ -226,38 +198,36 @@ impl<'a> BodyCandidates<'a> {
                     continue;
                 }
                 if !reference_candidates.contains(body) {
-                    let id = body.try_clone_for_decode(ctx, "copy F3D external body candidate")?;
+                    let id = body.clone();
                     reference_candidates.insert(id);
                 }
             }
             if let Some(candidates) = &mut candidates {
                 if reference_candidates.is_empty() {
-                    return Ok(None);
+                    return None;
                 }
                 candidates.retain(|body| reference_candidates.contains(body));
             } else {
                 candidates = Some(reference_candidates);
             }
         }
-        let Some(mut candidates) = candidates else {
-            return Ok(None);
-        };
+        let mut candidates = candidates?;
         let mut displayed = BTreeSet::new();
         for body in candidates.iter().filter(|body| {
             body_metadata
                 .get(body)
                 .is_some_and(|body| body.visible == Some(true))
         }) {
-            let id = body.try_clone_for_decode(ctx, "copy F3D displayed external body")?;
+            let id = body.clone();
             displayed.insert(id);
         }
         if !displayed.is_empty() {
             candidates = displayed;
         }
         if candidates.len() == 1 {
-            Ok(candidates.into_iter().next())
+            candidates.into_iter().next()
         } else {
-            Ok(None)
+            None
         }
     }
 }

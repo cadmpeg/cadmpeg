@@ -1575,8 +1575,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
             },
             Some(edge_knot_intervals_ir[index]),
             [0.0, 0.0],
-            ctx,
-        )?
+        )
         .map_err(|error| malformed(name, error))?;
         edges.push(edge);
     }

@@ -85,7 +85,7 @@ fn insert_feature_dependency(
     if dependencies.contains(dependency) {
         return Ok(());
     }
-    let id = (dependency).try_clone_for_decode(ctx, "f3d feature dependency id")?;
+    let id = (dependency).clone();
     dependencies.insert(ctx, id, "f3d feature dependency")?;
     Ok(())
 }
@@ -814,7 +814,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 Some(DesignFeatureFamily::SurfaceOffset) => scope
                     .surface_offset_operation()
                     .map(|operation| {
-                        project_surface_offset(ctx, scope, operation, construction_groups, face_operands)
+                        project_surface_offset(scope, operation, construction_groups, face_operands)
                     })
                     .transpose()?
                     .flatten()
@@ -847,7 +847,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                         })
                     })
                 }
-                Some(DesignFeatureFamily::Hole) => project_hole(ctx, scope, &parameters, face_operands)?
+                Some(DesignFeatureFamily::Hole) => project_hole(scope, &parameters, face_operands)?
                     .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?,
                 Some(DesignFeatureFamily::Split) => {
                     project_split(ctx, scope, construction_groups, face_operands)?.unwrap_or_else(|| {
@@ -1141,7 +1141,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                             let bodies = match selection {
                                 cadmpeg_ir::features::BodySelection::Resolved { bodies, native } => {
                                     for body in bodies.as_slice() {
-                                        let id = (body).try_clone_for_decode(ctx, "f3d copied body output id")?;
+                                        let id = (body).clone();
                                         inserted_bodies.push(id);
                                     }
                                     cadmpeg_ir::features::InsertedBodies::Resolved { native }
@@ -1187,7 +1187,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
             };
             let outputs = inserted_bodies;
             Ok(Feature {
-                id: scope_ids[&(native_scope, scope.record_index)].try_clone_for_decode(ctx, "f3d projected feature id")?,
+                id: scope_ids[&(native_scope, scope.record_index)].clone(),
                 ordinal: source_ordinals[&(native_scope, scope.record_index)],
                 name: Some(format!("{} {}", scope.kind_name(), scope.feature_ordinal)),
                 suppressed: Some(
@@ -1352,7 +1352,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
             if let Some(candidate) = history_state_features.get_mut(&key) {
                 *candidate = None;
             } else {
-                let id = (feature_id).try_clone_for_decode(ctx, "f3d feature history state id")?;
+                let id = (feature_id).clone();
                 // discarded-value: the vacant-key check admits this state.
                 let _ = history_state_features.insert(key, Some(id));
             }
@@ -1430,9 +1430,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
             };
             Ok(NeutralParameter {
                 id: crate::design::identity::neutral_parameter_id(parameter)?,
-                owner: owner
-                    .map(|id| (id).try_clone_for_decode(ctx, "f3d projected parameter owner id"))
-                    .transpose()?,
+                owner: owner.cloned(),
                 ordinal: owner
                     .zip(native_owner)
                     .map_or(parameter.source_ordinal, |(_, owner)| owner.local_ordinal()),
@@ -1467,9 +1465,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
         let mut parameter_scopes = HashMap::new();
         for (source, parameter) in native.iter().zip(&parameters) {
             if let Some(stream) = native_stream(&source.id) {
-                let id = parameter
-                    .id
-                    .try_clone_for_decode(ctx, "f3d parameter scope index id")?;
+                let id = parameter.id.clone();
                 // discarded-value: duplicate parameter IDs keep the last source stream.
                 let _ = parameter_scopes.insert(id, stream);
             }
@@ -1481,33 +1477,23 @@ pub(crate) fn project_parameter_design_with_edge_identities(
         for parameter in &parameters {
             let scope = parameter_scopes[&parameter.id];
             if let Some(owner) = &parameter.owner {
-                let key = (
-                    scope,
-                    (owner).try_clone_for_decode(ctx, "f3d feature alias owner id")?,
-                    parameter.name.clone(),
-                );
+                let key = (scope, (owner).clone(), parameter.name.clone());
                 if let Some(candidate) = feature_aliases.get_mut(&key) {
                     *candidate = None;
                 } else {
-                    let value = parameter
-                        .id
-                        .try_clone_for_decode(ctx, "f3d feature alias parameter id")?;
+                    let value = parameter.id.clone();
                     // discarded-value: the vacant-key check admits this alias.
                     let _ = feature_aliases.insert(key, Some(value));
                 }
                 let key = (scope, parameter.name.clone());
-                let id = parameter
-                    .id
-                    .try_clone_for_decode(ctx, "f3d owned alias parameter id")?;
+                let id = parameter.id.clone();
                 owned_aliases.entry(key).or_default().push(id);
             } else {
                 let key = (scope, parameter.name.clone());
                 if let Some(candidate) = document_aliases.get_mut(&key) {
                     *candidate = None;
                 } else {
-                    let value = parameter
-                        .id
-                        .try_clone_for_decode(ctx, "f3d document alias parameter id")?;
+                    let value = parameter.id.clone();
                     // discarded-value: the vacant-key check admits this alias.
                     let _ = document_aliases.insert(key, Some(value));
                 }
@@ -1515,22 +1501,14 @@ pub(crate) fn project_parameter_design_with_edge_identities(
         }
         let mut parameter_owners = HashMap::new();
         for parameter in &parameters {
-            let key = parameter
-                .id
-                .try_clone_for_decode(ctx, "f3d parameter owner index id")?;
-            let owner = parameter
-                .owner
-                .as_ref()
-                .map(|id| (id).try_clone_for_decode(ctx, "f3d parameter owner index owner id"))
-                .transpose()?;
+            let key = parameter.id.clone();
+            let owner = parameter.owner.clone();
             // discarded-value: duplicate parameter IDs keep the last owner.
             let _ = parameter_owners.insert(key, owner);
         }
         let mut feature_order = HashMap::new();
         for feature in &features {
-            let id = feature
-                .id
-                .try_clone_for_decode(ctx, "f3d feature order index id")?;
+            let id = feature.id.clone();
             // discarded-value: duplicate feature IDs keep the last authored ordinal.
             let _ = feature_order.insert(id, feature.ordinal);
         }
@@ -1566,7 +1544,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 candidates.next().is_none().then_some(candidate)
             };
             let candidate = if let Some(owner) = &parameter.owner {
-                let owner_key = (owner).try_clone_for_decode(ctx, "f3d expression owner lookup")?;
+                let owner_key = (owner).clone();
                 let feature_identifier = alias_key.1.clone();
                 match feature_aliases.get(&(scope, owner_key, feature_identifier)) {
                     Some(None) => None,
@@ -1601,14 +1579,13 @@ pub(crate) fn project_parameter_design_with_edge_identities(
             {
                 continue;
             }
-            let dependency =
-                (candidate).try_clone_for_decode(ctx, "f3d parameter dependency id")?;
+            let dependency = candidate.clone();
             parameter
                 .dependencies
                 .insert(ctx, dependency, "f3d parameter dependency")?;
         }
     }
-    normalize_parameter_ordinals(ctx, &mut parameters, &parameter_owners)?;
+    normalize_parameter_ordinals(&mut parameters, &parameter_owners);
     for feature in &mut features {
         for parameter in parameters
             .iter()
@@ -1832,18 +1809,15 @@ fn project_work_point_construction(
             Err(_) => EdgeSelection::Native(operand.id.clone()),
         }))
     };
-    let plane = |input: &DesignWorkPointInput| -> Result<Option<DatumPlaneReference>, CodecError> {
+    let plane = |input: &DesignWorkPointInput| -> Option<DatumPlaneReference> {
         let Some(DesignWorkPointInputCarrier::WorkPlane { selection }) = input.carrier() else {
-            return Ok(None);
+            return None;
         };
         scope_ids
             .get(&(stream, selection.work_plane_scope_record_index))
-            .map(|feature| {
-                (feature)
-                    .try_clone_for_decode(ctx, "f3d WorkPoint plane feature id")
-                    .map(|feature| DatumPlaneReference::Feature { feature })
+            .map(|feature| DatumPlaneReference::Feature {
+                feature: feature.clone(),
             })
-            .transpose()
     };
 
     Ok(Some(match construction.rule.form() {
@@ -1858,9 +1832,9 @@ fn project_work_point_construction(
         DesignWorkPointRuleForm::ThreePlaneIntersection { inputs } => {
             DatumPointConstruction::ThreePlaneIntersection {
                 planes: Box::new([
-                    or_none!(plane(&inputs[0])?),
-                    or_none!(plane(&inputs[1])?),
-                    or_none!(plane(&inputs[2])?),
+                    or_none!(plane(&inputs[0])),
+                    or_none!(plane(&inputs[1])),
+                    or_none!(plane(&inputs[2])),
                 ]),
             }
         }
@@ -1869,7 +1843,7 @@ fn project_work_point_construction(
                 return Ok(None);
             };
             let vertex = match recipe.resolution {
-                None => VertexSelection::native(recipe.recipe_id.clone(), ctx)?
+                None => VertexSelection::native(recipe.recipe_id.clone())
                     .unwrap_or(VertexSelection::Unresolved),
                 Some(resolution) => {
                     let state_id = resolution.state_id;
@@ -1878,15 +1852,12 @@ fn project_work_point_construction(
                     let feature_key = crate::design::identity::identity_key(feature_id.as_str())?;
                     let prefix =
                         crate::design::identity::history_input_prefix(feature_key, state_id)?;
-                    match VertexSelection::historical(
+                    VertexSelection::historical(
                         crate::design::identity::feature_input_topology_id(&feature_id, state_id)?,
                         crate::design::identity::history_input_vertex_id(&prefix, vertex_slot)?,
                         recipe.recipe_id.clone(),
-                        ctx,
-                    )? {
-                        Ok(selection) => selection,
-                        Err(_) => VertexSelection::Unresolved,
-                    }
+                    )
+                    .unwrap_or(VertexSelection::Unresolved)
                 }
             };
             DatumPointConstruction::Vertex { vertex }
@@ -1894,7 +1865,7 @@ fn project_work_point_construction(
         DesignWorkPointRuleForm::EdgePlaneIntersection { inputs } => {
             DatumPointConstruction::EdgePlaneIntersection {
                 edge: or_none!(edge(&inputs[0])?),
-                plane: or_none!(plane(&inputs[1])?),
+                plane: or_none!(plane(&inputs[1])),
             }
         }
         DesignWorkPointRuleForm::DistanceOnEdge { input } => {
@@ -1958,14 +1929,12 @@ fn project_work_plane(
         -> Result<Option<VertexSelection>, CodecError> {
             let Some(resolution) = recipe.resolution else { return Ok(None); };
             let native = recipe.recipe_id.clone();
-            let selection = match VertexSelection::historical(
-                    crate::design::identity::feature_input_topology_id(&feature_id, state_id)?,
-                    crate::design::identity::history_input_vertex_id(&prefix, resolution.vertex_slot())?,
-                    native, ctx,
-                )? {
-                Ok(selection) => selection,
-                Err(_) => VertexSelection::Unresolved,
-            };
+            let selection = VertexSelection::historical(
+                crate::design::identity::feature_input_topology_id(&feature_id, state_id)?,
+                crate::design::identity::history_input_vertex_id(&prefix, resolution.vertex_slot())?,
+                native,
+            )
+            .unwrap_or(VertexSelection::Unresolved);
             Ok(Some(selection))
     };
     let [first, second, third] = construction.inputs();
@@ -2138,7 +2107,7 @@ fn project_fillet_arm(
     }
     assignments.sort_by_key(|left| left.group_ordinal);
     if !assignments.is_empty() {
-        let Some(assignments) = resolved_fillet_assignments(ctx, &assignments, parameters)? else {
+        let Some(assignments) = resolved_fillet_assignments(&assignments, parameters) else {
             return native_scope_definition(scope, parameters);
         };
         let mut groups = Vec::new();
@@ -2225,10 +2194,9 @@ struct ResolvedFilletAssignment<'a> {
 }
 
 fn resolved_fillet_assignments<'a>(
-    ctx: &DecodeContext<'_>,
     assignments: &[&'a DesignFilletRadiusGroup],
     parameters: &[(u32, &DesignParameter)],
-) -> Result<Option<Vec<ResolvedFilletAssignment<'a>>>, CodecError> {
+) -> Option<Vec<ResolvedFilletAssignment<'a>>> {
     use cadmpeg_ir::features::edge_treatments::RadiusSpec;
 
     let mut by_record = std::collections::BTreeMap::new();
@@ -2237,7 +2205,7 @@ fn resolved_fillet_assignments<'a>(
         let _ = by_record.insert(parameter.record_index, *parameter);
     }
     if by_record.len() != parameters.len() {
-        return Ok(None);
+        return None;
     }
     let mut assigned = Vec::new();
     for assignment in assignments {
@@ -2249,7 +2217,7 @@ fn resolved_fillet_assignments<'a>(
     }
     assigned.sort_unstable_by(Ord::cmp);
     if !assigned.iter().copied().eq(by_record.keys().copied()) {
-        return Ok(None);
+        return None;
     }
     let parameter = |record, kind| {
         by_record
@@ -2260,78 +2228,49 @@ fn resolved_fillet_assignments<'a>(
     let length = |record, kind| design_positive_length(parameter(record, kind)?);
     let mut resolved = Vec::new();
     for &assignment in assignments {
-        let Some(tangency_weight) = assignment
+        let tangency_weight = assignment
             .tangency_weight_parameter_record_index
             .map(|record| {
                 parameter(record, "TangencyWeight")
                     .map(crate::records::parameters::DesignParameter::evaluated_value)
             })
-            .map_or(Some(None), |value| value.map(Some))
-        else {
-            return Ok(None);
-        };
+            .map_or(Some(None), |value| value.map(Some))?;
         let radius = match &assignment.law {
             DesignFilletRadiusLaw::Constant {
                 radius_parameter_record_index,
             } => RadiusSpec::Constant {
-                radius: match length(*radius_parameter_record_index, "Radius") {
-                    Some(value) => value,
-                    None => return Ok(None),
-                },
+                radius: length(*radius_parameter_record_index, "Radius")?,
             },
             DesignFilletRadiusLaw::Chordal {
                 chord_length_parameter_record_index,
             } => RadiusSpec::Chordal {
-                chord_length: match length(*chord_length_parameter_record_index, "ChordLen") {
-                    Some(value) => value,
-                    None => return Ok(None),
-                },
+                chord_length: length(*chord_length_parameter_record_index, "ChordLen")?,
             },
             DesignFilletRadiusLaw::Asymmetric {
                 offset_one_parameter_record_index,
                 offset_two_parameter_record_index,
             } => RadiusSpec::Asymmetric {
-                offset_one: match length(*offset_one_parameter_record_index, "EdgeOffset1") {
-                    Some(value) => value,
-                    None => return Ok(None),
-                },
-                offset_two: match length(*offset_two_parameter_record_index, "EdgeOffset2") {
-                    Some(value) => value,
-                    None => return Ok(None),
-                },
+                offset_one: length(*offset_one_parameter_record_index, "EdgeOffset1")?,
+                offset_two: length(*offset_two_parameter_record_index, "EdgeOffset2")?,
             },
             DesignFilletRadiusLaw::Variable {
                 start_radius_parameter_record_index,
                 end_radius_parameter_record_index,
                 middle,
             } => {
-                let Some(start) = parameter(*start_radius_parameter_record_index, "StartRadius")
-                else {
-                    return Ok(None);
-                };
-                let Some(end) = parameter(*end_radius_parameter_record_index, "EndRadius") else {
-                    return Ok(None);
-                };
+                let start = parameter(*start_radius_parameter_record_index, "StartRadius")?;
+                let end = parameter(*end_radius_parameter_record_index, "EndRadius")?;
                 let mut controls = Vec::new();
                 controls.push((0, start));
                 controls.push((1, end));
                 for (ordinal, row) in middle.iter().enumerate() {
-                    let Some(ordinal) = u32::try_from(ordinal).ok() else {
-                        return Ok(None);
-                    };
-                    let Some(radius) = parameter(row.radius_parameter_record_index, "MidRadius")
-                    else {
-                        return Ok(None);
-                    };
-                    let Some(position) = parameter(row.parameter_record_index, "MidParams") else {
-                        return Ok(None);
-                    };
+                    let ordinal = u32::try_from(ordinal).ok()?;
+                    let radius = parameter(row.radius_parameter_record_index, "MidRadius")?;
+                    let position = parameter(row.parameter_record_index, "MidParams")?;
                     controls.push((ordinal, radius));
                     controls.push((ordinal, position));
                 }
-                let Some((points, _)) = variable_fillet_law(ctx, &controls)? else {
-                    return Ok(None);
-                };
+                let (points, _) = variable_fillet_law(&controls)?;
                 RadiusSpec::Variable { points }
             }
         };
@@ -2341,7 +2280,7 @@ fn resolved_fillet_assignments<'a>(
             tangency_weight,
         });
     }
-    Ok(Some(resolved))
+    Some(resolved)
 }
 
 fn project_thread_face_selection(
@@ -2407,7 +2346,7 @@ fn project_thread_face_selection(
         state.get_or_insert(group_state);
         for face in group_faces.as_slice() {
             if !faces.contains(face) {
-                let face = (face).try_clone_for_decode(ctx, "f3d Thread historical face id")?;
+                let face = (face).clone();
                 faces.push(face);
             }
         }
@@ -2526,7 +2465,7 @@ fn design_body_selection(
         if matches.any(|candidate| candidate != body) {
             return Ok(BodySelection::Native(scope.id.clone()));
         }
-        let body = (body).try_clone_for_decode(ctx, "f3d body selection body id")?;
+        let body = (body).clone();
         bodies.push(body);
     }
     if bodies.len() == expected_count {
@@ -2664,9 +2603,7 @@ pub(crate) fn bind_sketch_feature_geometry(
                         // The spatial carrier has no closed loop that can be represented
                         // by a profile index. Keep the exact profile frame as a native
                         // selection instead of retaining the provisional planar ID.
-                        let sketch_id = spatial
-                            .id
-                            .try_clone_for_decode(ctx, "f3d extrude spatial sketch id")?;
+                        let sketch_id = spatial.id.clone();
                         let selection = format!(
                             "{}{}{}",
                             stream,
@@ -2693,9 +2630,7 @@ pub(crate) fn bind_sketch_feature_geometry(
                         profiles.push(profile_index);
                     }
                     *profile = match ProfileRef::spatial_sketch_profiles(
-                        spatial
-                            .id
-                            .try_clone_for_decode(ctx, "f3d extrude spatial sketch id")?,
+                        spatial.id.clone(),
                         profiles,
                         ctx,
                     )? {
@@ -2722,9 +2657,7 @@ pub(crate) fn bind_sketch_feature_geometry(
                 _ => continue,
             };
             let key = sketch.to_owned();
-            let value = feature
-                .id
-                .try_clone_for_decode(ctx, "f3d sketch feature index id")?;
+            let value = feature.id.clone();
             // discarded-value: duplicate sketch bindings keep the last feature.
             let _ = index.insert(key, value);
         }
@@ -2873,21 +2806,17 @@ pub(crate) fn bind_sketch_feature_geometry(
 /// the neutral point identity depends on whether that record belongs to a
 /// planar or model-space sketch.
 pub(crate) fn bind_work_point_sketch_point_constructions(
-    ctx: &DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
     scopes: &[DesignParameterScope],
     sketch_entities: &[cadmpeg_ir::sketches::SketchEntity],
     spatial_sketch_entities: &[cadmpeg_ir::sketches::SpatialSketchEntity],
-) -> Result<(), CodecError> {
+) {
     use cadmpeg_ir::features::{
         DatumPointConstruction, FeatureDefinition, FeatureOperation, SketchPointSelection,
     };
 
     for feature in features.iter_mut() {
-        let mut edit_result = Ok(());
-        feature.evaluation.edit(|definition, _| {
-        edit_result = (|| -> Result<(), CodecError> {
-        'feature_edit: {
+        feature.evaluation.edit(|definition, _| 'feature_edit: {
             let Some(scope) = feature
                 .native_ref
                 .as_deref()
@@ -2928,8 +2857,8 @@ pub(crate) fn bind_work_point_sketch_point_constructions(
                 let native = format!("{}{}{}", stream, ":design-record#", u64::from(record_index));
                 *construction = Some(Box::new(DatumPointConstruction::SketchPoint {
                     point: SketchPointSelection::Planar {
-                        sketch: (entity.sketch).try_clone_for_decode(ctx, "f3d work point planar sketch id")?,
-                        point: (entity.id()).try_clone_for_decode(ctx, "f3d work point planar point id")?,
+                        sketch: (entity.sketch).clone(),
+                        point: (entity.id()).clone(),
                         native,
                     },
                 }));
@@ -2939,23 +2868,17 @@ pub(crate) fn bind_work_point_sketch_point_constructions(
                 let native = format!("{}{}{}", stream, ":design-record#", u64::from(record_index));
                 *construction = Some(Box::new(DatumPointConstruction::SketchPoint {
                     point: SketchPointSelection::Spatial {
-                        sketch: (entity.sketch).try_clone_for_decode(ctx, "f3d work point spatial sketch id")?,
-                        point: (entity.id()).try_clone_for_decode(ctx, "f3d work point spatial point id")?,
+                        sketch: (entity.sketch).clone(),
+                        point: (entity.id()).clone(),
                         native,
                     },
                 }));
             }
-        }
-        Ok(())
-        })();
         });
-        edit_result?;
     }
-    Ok(())
 }
 
 fn project_surface_offset(
-    ctx: &DecodeContext<'_>,
     scope: &DesignParameterScope,
     operation: &DesignSurfaceOffsetOperation,
     groups: &[DesignConstructionOperandGroup],
@@ -3009,13 +2932,13 @@ fn project_surface_offset(
         }
         let Some(FaceSelection::Resolved {
             faces: group_faces, ..
-        }) = resolved_face_group(ctx, group, face_operands)?
+        }) = resolved_face_group(group, face_operands)?
         else {
             return Ok(None);
         };
         for face in &group_faces {
             if !faces.contains(face) {
-                let face = (face).try_clone_for_decode(ctx, "f3d offset surface face id")?;
+                let face = (face).clone();
                 faces.push(face);
             }
         }
@@ -3308,7 +3231,7 @@ fn project_face_selection(
     if let Some(selection) = historical {
         return Ok(selection);
     }
-    match resolved_face_group(ctx, group, face_operands)? {
+    match resolved_face_group(group, face_operands)? {
         Some(selection) => Ok(selection),
         None => Ok(cadmpeg_ir::features::FaceSelection::Native(
             group.id.clone(),
@@ -3327,7 +3250,6 @@ fn project_draft_face_selection(
     if matches!(&selection, cadmpeg_ir::features::FaceSelection::Native(_)) {
         Ok(
             crate::design::face_resolve::resolved_explicit_bounded_face_group(
-                ctx,
                 group,
                 face_operands,
             )?
@@ -4386,7 +4308,7 @@ fn merge_edge_selections(
                 if resolved.contains(edge) {
                     return Ok(native());
                 }
-                let edge = (edge).try_clone_for_decode(ctx, "f3d merged direct edge id")?;
+                let edge = (edge).clone();
                 resolved.push(edge);
             }
         }
@@ -4400,7 +4322,7 @@ fn merge_edge_selections(
             matches!(selection,
             EdgeSelection::Historical { state: candidate, .. } if candidate == state)
         }) {
-            let state = (state).try_clone_for_decode(ctx, "f3d merged historical edge state id")?;
+            let state = (state).clone();
             let mut resolved = Vec::new();
             for selection in selections {
                 let EdgeSelection::Historical { edges, .. } = selection else {
@@ -4411,7 +4333,7 @@ fn merge_edge_selections(
                     if resolved.contains(edge) {
                         return Ok(native());
                     }
-                    let edge = (edge).try_clone_for_decode(ctx, "f3d merged historical edge id")?;
+                    let edge = (edge).clone();
                     resolved.push(edge);
                 }
             }
@@ -4581,10 +4503,9 @@ pub(crate) fn direct_face_selection(
 }
 
 fn normalize_parameter_ordinals(
-    ctx: &DecodeContext<'_>,
     parameters: &mut [cadmpeg_ir::features::DesignParameter],
     owners: &HashMap<cadmpeg_ir::features::ParameterId, Option<cadmpeg_ir::features::FeatureId>>,
-) -> Result<(), CodecError> {
+) {
     {
         use cadmpeg_ir::features::{FeatureId, ParameterId};
 
@@ -4593,11 +4514,7 @@ fn normalize_parameter_ordinals(
             if let Some(indices) = groups.get_mut(&parameter.owner) {
                 indices.push(index);
             } else {
-                let owner = parameter
-                    .owner
-                    .as_ref()
-                    .map(|id| (id).try_clone_for_decode(ctx, "f3d parameter owner ID"))
-                    .transpose()?;
+                let owner = parameter.owner.clone();
                 let indices = vec![index];
                 // discarded-value: a new owner group has no previous member list.
                 let _ = groups.insert(owner, indices);
@@ -4658,9 +4575,7 @@ fn normalize_parameter_ordinals(
                     if let Some((breaker, first, remaining)) = cycle {
                         let mut members = HashSet::new();
                         for index in std::iter::once(first).chain(remaining) {
-                            let id = parameters[index]
-                                .id
-                                .try_clone_for_decode(ctx, "f3d parameter cycle member ID")?;
+                            let id = parameters[index].id.clone();
                             // discarded-value: component indices are distinct.
                             let _ = members.insert(id);
                         }
@@ -4672,9 +4587,7 @@ fn normalize_parameter_ordinals(
                 }
                 for index in ready {
                     unresolved.remove(&index);
-                    let id = parameters[index]
-                        .id
-                        .try_clone_for_decode(ctx, "f3d parameter resolved ID")?;
+                    let id = parameters[index].id.clone();
                     // discarded-value: a parameter is resolved once.
                     let _ = resolved.insert(id);
                     order.push(index);
@@ -4684,7 +4597,6 @@ fn normalize_parameter_ordinals(
                 parameters[index].ordinal = ordinal;
             }
         }
-        Ok(())
     }
 }
 
@@ -4846,7 +4758,7 @@ fn project_variable_fillet(
     if groups.next().is_some() {
         return Ok(None);
     }
-    let (points, tangency_weight) = or_none!(variable_fillet_law(ctx, parameters)?);
+    let (points, tangency_weight) = or_none!(variable_fillet_law(parameters));
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::Fillet {
             groups: cadmpeg_ir::features::NonEmptyMembers::one(FilletGroup {
@@ -4872,15 +4784,11 @@ fn project_variable_fillet(
 }
 
 fn variable_fillet_law(
-    ctx: &DecodeContext<'_>,
     parameters: &[(u32, &DesignParameter)],
-) -> Result<
-    Option<(
-        cadmpeg_ir::features::edge_treatments::VariableRadii,
-        Option<cadmpeg_ir::scalar::FiniteReal>,
-    )>,
-    CodecError,
-> {
+) -> Option<(
+    cadmpeg_ir::features::edge_treatments::VariableRadii,
+    Option<cadmpeg_ir::scalar::FiniteReal>,
+)> {
     use cadmpeg_ir::features::edge_treatments::VariableRadius;
 
     let unique_parameter = |kind: &str| {
@@ -4890,12 +4798,8 @@ fn variable_fillet_law(
         let parameter = matches.next()?;
         matches.next().is_none().then_some(parameter)
     };
-    let Some(start) = unique_parameter("StartRadius").and_then(design_length) else {
-        return Ok(None);
-    };
-    let Some(end) = unique_parameter("EndRadius").and_then(design_length) else {
-        return Ok(None);
-    };
+    let start = unique_parameter("StartRadius").and_then(design_length)?;
+    let end = unique_parameter("EndRadius").and_then(design_length)?;
     let tangency_weight = {
         let mut matches = parameters.iter().filter_map(|(_, parameter)| {
             (parameter.source_kind() == "TangencyWeight").then_some(*parameter)
@@ -4903,8 +4807,8 @@ fn variable_fillet_law(
         match (matches.next(), matches.next()) {
             (None, None) => None,
             (Some(parameter), None) => Some(parameter.evaluated_value()),
-            (None, Some(_)) => return Ok(None),
-            (Some(_), Some(_)) => return Ok(None),
+            (None, Some(_)) => return None,
+            (Some(_), Some(_)) => return None,
         }
     };
     let mut middle_radii = Vec::new();
@@ -4926,7 +4830,7 @@ fn variable_fillet_law(
             )
         })
     {
-        return Ok(None);
+        return None;
     }
     let mut points = Vec::new();
     points.push(VariableRadius {
@@ -4934,9 +4838,7 @@ fn variable_fillet_law(
         radius: start,
     });
     for ((_, radius), (_, parameter)) in middle_radii.into_iter().zip(middle_parameters) {
-        let Some(radius) = design_length(radius) else {
-            return Ok(None);
-        };
+        let radius = design_length(radius)?;
         let parameter = parameter.evaluated_value().get();
         points.push(VariableRadius { parameter, radius });
     }
@@ -4944,11 +4846,9 @@ fn variable_fillet_law(
         parameter: 1.0,
         radius: end,
     });
-    Ok(
-        cadmpeg_ir::features::edge_treatments::VariableRadii::new(points, ctx)?
-            .ok()
-            .map(|points| (points, tangency_weight)),
-    )
+    cadmpeg_ir::features::edge_treatments::VariableRadii::new(points)
+        .ok()
+        .map(|points| (points, tangency_weight))
 }
 
 fn fillet_law_parameter_records(law: &DesignFilletRadiusLaw) -> impl Iterator<Item = u32> + '_ {
@@ -5930,7 +5830,7 @@ fn resolved_surface_patch_path(
             matches!(path,
             PathRef::HistoricalEdges { state: candidate, .. } if candidate == state)
         }) {
-            let state = (state).try_clone_for_decode(ctx, "f3d surface patch historical state")?;
+            let state = (state).clone();
             let mut edges = Vec::new();
             for path in &paths {
                 if let PathRef::HistoricalEdges {
@@ -5938,8 +5838,7 @@ fn resolved_surface_patch_path(
                 } = path
                 {
                     for edge in group_edges {
-                        let edge = (edge)
-                            .try_clone_for_decode(ctx, "f3d surface patch historical edge id")?;
+                        let edge = (edge).clone();
                         edges.push(edge);
                     }
                 }
@@ -5966,8 +5865,7 @@ fn resolved_surface_patch_path(
         for path in &paths {
             if let PathRef::Edges(group_edges) = path {
                 for edge in group_edges {
-                    let edge =
-                        (edge).try_clone_for_decode(ctx, "f3d surface patch direct edge id")?;
+                    let edge = (edge).clone();
                     edges.push(edge);
                 }
             }
@@ -7098,7 +6996,6 @@ fn project_boundary_fill(
 }
 
 fn project_hole(
-    ctx: &DecodeContext<'_>,
     scope: &DesignParameterScope,
     parameters: &[(u32, &DesignParameter)],
     face_operands: &[DesignFaceOperand],
@@ -7161,7 +7058,7 @@ fn project_hole(
             None,
         ),
     };
-    let face = match resolved_direct_face_selection(ctx, scope, face_operands)? {
+    let face = match resolved_direct_face_selection(scope, face_operands)? {
         Some(face) => face,
         None => FaceSelection::Native(scope.id.clone()),
     };
@@ -7704,7 +7601,7 @@ fn project_delete_face(
         face_operands,
     )?
     .map_or_else(
-        || resolved_face_group(ctx, group, face_operands),
+        || resolved_face_group(group, face_operands),
         |face| Ok(Some(face)),
     )?;
     let faces = match faces {
@@ -8003,7 +7900,7 @@ fn project_extrude(
             )? {
                 return Ok(selection);
             }
-            match resolved_face_group(ctx, group, face_operands)? {
+            match resolved_face_group(group, face_operands)? {
                 Some(selection) => Ok(selection),
                 None => Ok(FaceSelection::Native(group.id.clone())),
             }
@@ -8363,19 +8260,15 @@ pub(super) fn closed_spatial_sketch_profiles(
                 ..
             } => {
                 let boundary = vec![SpatialSketchEntityUse {
-                    entity: (entity.id())
-                        .try_clone_for_decode(ctx, "f3d spatial profile circle id")?,
+                    entity: (entity.id()).clone(),
                     reversed: false,
                 }];
-                let profile = SpatialSketchProfile::try_new(
+                if let Ok(profile) = SpatialSketchProfile::try_new(
                     center.get(),
                     *normal.as_raw(),
                     *reference_direction.as_raw(),
                     boundary,
-                    ctx,
-                    "f3d spatial profile boundary uniqueness",
-                )?;
-                if let Ok(profile) = profile {
+                ) {
                     profiles.push(profile);
                 }
             }
@@ -8468,20 +8361,11 @@ pub(super) fn closed_spatial_sketch_profiles(
         let mut boundary = Vec::new();
         for (index, reversed) in uses {
             boundary.push(SpatialSketchEntityUse {
-                entity: (edges[index].0.id())
-                    .try_clone_for_decode(ctx, "f3d spatial profile boundary id")?,
+                entity: (edges[index].0.id()).clone(),
                 reversed,
             });
         }
-        let profile = SpatialSketchProfile::try_new(
-            origin,
-            normal,
-            u_axis,
-            boundary,
-            ctx,
-            "f3d spatial profile boundary uniqueness",
-        )?;
-        if let Ok(profile) = profile {
+        if let Ok(profile) = SpatialSketchProfile::try_new(origin, normal, u_axis, boundary) {
             profiles.push(profile);
         }
     }

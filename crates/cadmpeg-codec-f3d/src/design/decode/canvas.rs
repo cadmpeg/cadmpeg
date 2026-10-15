@@ -64,9 +64,7 @@ pub(crate) fn project_canvas_images(
         let Some(asset) = embedded_image_asset(ctx, scan, image.asset_name())? else {
             continue;
         };
-        let asset_id = asset
-            .id
-            .try_clone_for_decode(ctx, "f3d image feature asset identifier")?;
+        let asset_id = asset.id.clone();
         if !assets
             .iter()
             .any(|candidate: &Asset| candidate.id == asset_id)

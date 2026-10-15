@@ -833,7 +833,7 @@ fn validate_loaded(
     validate_body_bindings(&ctx, &mut findings)?;
     validate_body_bounds(&ctx, &mut findings);
     validate_canvas_images(&ctx, &mut findings);
-    validate_decal_images(&ctx, &mut findings)?;
+    validate_decal_images(&ctx, &mut findings);
     validate_mesh_features(&ctx, &mut findings);
     validate_component_occurrences(&ctx, &mut findings);
     validate_configurations(&ctx, &mut findings);
@@ -883,7 +883,7 @@ fn validate_loaded(
     validate_sketch_placements(&ctx, &mut findings);
     validate_parameter_owners(&ctx, &mut findings);
     validate_parameter_companions(&ctx, &mut findings);
-    let dimension_recipe_ids = validate_dimension_recipe_records(&ctx, &mut findings)?;
+    let dimension_recipe_ids = validate_dimension_recipe_records(&ctx, &mut findings);
     validate_dimension_companion_recipes(&ctx, &mut findings, &dimension_recipe_ids);
     let locus_pair_companions = validate_dimension_locus_pairs(&ctx, &mut findings);
     validate_dimension_annotation_frames(&ctx, &mut findings);
@@ -1513,7 +1513,7 @@ fn validate_canvas_images(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
 }
 
 /// Validate Decal native and neutral object joins.
-fn validate_decal_images(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) -> Result<(), CodecError> {
+fn validate_decal_images(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
     const TARGET_ROLE: DesignOperandRole = DesignOperandRole::BODIES_A;
     let mut scope_bindings = HashSet::new();
     let mut asset_records = HashSet::new();
@@ -1551,25 +1551,24 @@ fn validate_decal_images(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) -> Resu
                         && operand.owner.group() == Some((group.record_index, 0))
                 })
         });
-        let projected = if image.mapping_mode
-            == crate::records::decal::DesignDecalMappingMode::FitToFaces
-        {
-            if let Some(operand) = operand {
-                let mut faces = (operand
-                    .references()
-                    .iter()
-                    .flat_map(|reference| reference.candidate_faces.iter()))
-                .map(|id| id.try_clone_for_decode(ctx.decode, "collect F3D Decal projected faces"))
-                .collect::<Result<Vec<_>, _>>()?;
-                faces.sort_by(|left, right| left.as_str().cmp(right.as_str()));
-                faces.dedup();
-                (!faces.is_empty()).then_some((operand, faces))
+        let projected =
+            if image.mapping_mode == crate::records::decal::DesignDecalMappingMode::FitToFaces {
+                if let Some(operand) = operand {
+                    let mut faces = (operand
+                        .references()
+                        .iter()
+                        .flat_map(|reference| reference.candidate_faces.iter()))
+                    .cloned()
+                    .collect::<Vec<_>>();
+                    faces.sort_by(|left, right| left.as_str().cmp(right.as_str()));
+                    faces.dedup();
+                    (!faces.is_empty()).then_some((operand, faces))
+                } else {
+                    None
+                }
             } else {
                 None
-            }
-        } else {
-            None
-        };
+            };
         let neutral_is_valid = projected.is_none_or(|(operand, expected_faces)| {
             scope.is_some_and(|scope| {
                 ctx.ir.model.features.iter().any(|feature| {
@@ -1625,7 +1624,6 @@ fn validate_decal_images(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) -> Resu
             );
         }
     }
-    Ok(())
 }
 
 /// Validate the ordered Design body-map binding entries and their pair runs.
@@ -2896,7 +2894,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
             inline || assembly_operand || single_operand_assembly
         });
         let work_point_link = valid_work_point_construction(ctx, scope, native_stream)?;
-        let work_plane_link = valid_work_plane_construction(ctx, scope, native_stream)?;
+        let work_plane_link = valid_work_plane_construction(ctx, scope, native_stream);
         let valid = match scope.extrude_prologue() {
             Some(records::feature::extrude::DesignExtrudePrologue::LegacyDistance {
                 prefix_zero_offset,
@@ -3887,7 +3885,7 @@ fn valid_work_point_construction(
                     records::feature::work_geometry::DesignWorkPointInputCarrier::VertexRecipe {
                         recipe: vertex,
                     },
-                ) => valid_vertex_recipe(ctx, scope, native_stream, input.record_index(), vertex)?,
+                ) => valid_vertex_recipe(ctx, scope, native_stream, input.record_index(), vertex),
                 Some(records::feature::work_geometry::DesignWorkPointInputCarrier::WorkPlane {
                     selection,
                 }) => {
@@ -3930,25 +3928,25 @@ fn valid_work_plane_construction(
     ctx: &Ctx,
     scope: &records::feature::scope::DesignParameterScope,
     native_stream: &str,
-) -> Result<bool, CodecError> {
+) -> bool {
     let Some(frame) = scope.work_plane_frame() else {
-        return Ok(true);
+        return true;
     };
     let Some(construction) = &frame.work_plane_construction else {
-        return Ok(true);
+        return true;
     };
     let placement_record_index = &construction.placement_record_index;
     let inputs = construction.inputs();
     let Some([placement, first, second, third, extra_offset]) =
         scope.reference_members().values_array()
     else {
-        return Ok(false);
+        return false;
     };
     let Some(placement_header) = ctx
         .records_by_index
         .get(&(native_stream, *placement_record_index))
     else {
-        return Ok(false);
+        return false;
     };
     let transform_offset = frame.work_plane_transform_offset;
     let Some(owner) = ctx.native.design_parameter_owners.iter().find(|owner| {
@@ -3957,10 +3955,10 @@ fn valid_work_plane_construction(
             && owner.scope_record_index() == scope.record_index
             && owner.evaluated_value().get() == 0.0
     }) else {
-        return Ok(false);
+        return false;
     };
 
-    Ok(placement == placement_record_index
+    placement == placement_record_index
         && [
             inputs[0].record_index(),
             inputs[1].record_index(),
@@ -3972,19 +3970,16 @@ fn valid_work_plane_construction(
             .and_then(|frame| frame.reference.as_ref())
             .is_some()
         && transform_offset > placement_header.byte_offset
-        && inputs.iter().try_fold(true, |valid, input| {
-            if !valid {
-                return Ok(false);
-            }
+        && inputs.iter().all(|input| {
             valid_vertex_recipe(ctx, scope, native_stream, input.record_index(), input)
-        })?
+        })
         && ctx.native.design_parameters.iter().any(|parameter| {
             design_stream(&parameter.id) == native_stream
                 && parameter.record_index == owner.parameter_record_index()
                 && parameter.owner_record_index() == Some(owner.record_index())
                 && parameter.source_kind() == "ExtraOffset"
                 && parameter.evaluated_value().get() == 0.0
-        }))
+        })
 }
 
 fn valid_vertex_recipe(
@@ -3993,7 +3988,7 @@ fn valid_vertex_recipe(
     native_stream: &str,
     record_index: u32,
     vertex: &records::feature::work_geometry::DesignVertexRecipe,
-) -> Result<bool, CodecError> {
+) -> bool {
     let native = ctx.native;
     let header = ctx.records_by_index.get(&(native_stream, record_index));
     let recipe = ctx.recipes_by_id.get(vertex.recipe_id.as_str());
@@ -4003,11 +3998,10 @@ fn valid_vertex_recipe(
     );
     for reference in &mut expected_references {
         design::decode::dimension_frames::bind_recipe_reference_candidates_charged(
-            ctx.decode,
             reference,
             &native.persistent_subentity_tags,
             Some(&scope.id),
-        )?;
+        );
     }
     let prefix_length = u64::try_from(vertex.recipe_prefix_bytes.len()).ok();
     let family_name_length = u64::try_from(design::construction_recipe_family_name_len(
@@ -4036,7 +4030,7 @@ fn valid_vertex_recipe(
             })
         }
     };
-    Ok(vertex.record_index() == record_index
+    vertex.record_index() == record_index
         && header.is_some_and(|header| {
             header.byte_offset == vertex.byte_offset() && header.class_tag == vertex.class_tag
         })
@@ -4069,7 +4063,7 @@ fn valid_vertex_recipe(
                     .recipe_program_offset
                     .checked_add(program_byte_length)
                     .is_some_and(|expected_offset| expected_offset == vertex.next_byte_offset())
-        }))
+        })
 }
 
 fn validate_component_occurrences(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
@@ -5837,7 +5831,6 @@ fn validate_body_recipe_operands<'a>(
         &native.design_parameter_scopes,
     );
     history::bind_body_recipe_operand_history_candidates(
-        decode,
         &mut expected_operands,
         &native.construction_recipes,
         &native.design_parameter_scopes,
@@ -6411,7 +6404,6 @@ fn validate_edge_operands<'a>(
         &native.asm_histories,
     );
     history::bind_edge_operand_history_candidates(
-        decode,
         &mut expected_edge_operands,
         &native.design_parameter_scopes,
         &native.construction_recipes,
@@ -6446,11 +6438,10 @@ fn validate_edge_operands<'a>(
         if !historical_candidates_retained {
             for reference in &mut expected_references {
                 design::decode::dimension_frames::bind_recipe_reference_candidates_charged(
-                    ctx.decode,
                     reference,
                     &native.persistent_subentity_tags,
                     Some(&operand.id),
-                )?;
+                );
             }
         }
         let expected_surface_patch_recipe_structure = scope
@@ -6541,11 +6532,10 @@ fn validate_edge_treatment_vertex_operands<'a>(
     for operand in &mut expected {
         for reference in &mut operand.recipe.recipe_references {
             design::decode::dimension_frames::bind_recipe_reference_candidates_charged(
-                ctx.decode,
                 reference,
                 &native.persistent_subentity_tags,
                 Some(&operand.id),
-            )?;
+            );
         }
     }
     let scope_histories = history::bind_scope_histories(
@@ -6721,11 +6711,10 @@ fn validate_face_operands<'a>(
         if !historical_candidates_retained {
             for reference in &mut expected_references {
                 design::decode::dimension_frames::bind_recipe_reference_candidates_charged(
-                    ctx.decode,
                     reference,
                     &native.persistent_subentity_tags,
                     Some(&operand.id),
-                )?;
+                );
             }
         }
         let recipe_design_reference = recipe
@@ -7385,7 +7374,7 @@ fn validate_parameter_companions(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>)
 fn validate_dimension_recipe_records<'a>(
     ctx: &Ctx<'a, '_>,
     findings: &mut Vec<Finding>,
-) -> Result<HashSet<(&'a str, &'a str)>, CodecError> {
+) -> HashSet<(&'a str, &'a str)> {
     let native = ctx.native;
     let parameters_by_index = &ctx.parameters_by_index;
     let owners_by_index = &ctx.owners_by_index;
@@ -7431,11 +7420,10 @@ fn validate_dimension_recipe_records<'a>(
         );
         for reference in &mut decoded_references {
             design::decode::dimension_frames::bind_recipe_reference_candidates_charged(
-                ctx.decode,
                 reference,
                 &native.persistent_subentity_tags,
                 Some(&record.id),
-            )?;
+            );
         }
         let references_match = decoded_references == record.references;
         let edge_operands_match =
@@ -7485,7 +7473,7 @@ fn validate_dimension_recipe_records<'a>(
             );
         }
     }
-    Ok(dimension_recipe_ids)
+    dimension_recipe_ids
 }
 
 /// Report dimension companions owning an unresolved construction recipe.

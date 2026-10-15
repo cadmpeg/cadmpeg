@@ -18,7 +18,7 @@ use crate::records::{
 };
 use cadmpeg_asm::brep::records::BodyNativeKey;
 use cadmpeg_core::bytes::find_from;
-use cadmpeg_core::decode::{bounded_len, index_from_u32, u64_from_index, DecodeContext, View};
+use cadmpeg_core::decode::{bounded_len, index_from_u32, u64_from_index, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::math::Point3;
@@ -1068,7 +1068,6 @@ fn is_brep_blob_basename(value: &str) -> bool {
 /// Decode every ordered Design BREP body-map pair and resolve each pair in its
 /// named blob's body-selector namespace.
 pub(crate) fn decode_design_body_bindings(
-    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     active_brep_entry: Option<&str>,
     body_keys: &[BodyNativeKey],
@@ -1122,9 +1121,7 @@ pub(crate) fn decode_design_body_bindings(
                         entity_suffix_offset: u64_from_index(binding.entity_suffix_offset()),
                         blob_name: record.blob_name.clone(),
                         blob_name_offset: u64_from_index(record.blob_name_offset),
-                        body: body
-                            .map(|id| (id).try_clone_for_decode(ctx, "copy F3D BREP body ID"))
-                            .transpose()?,
+                        body: body.cloned(),
                     })
                     .map_err(CodecError::Malformed)?;
 
@@ -1836,13 +1833,7 @@ mod tests {
             );
             let names = super::design_model_blob_names(scan).unwrap();
             assert_eq!(names, ["BREP.synthetic.smbh"]);
-            let bindings = super::decode_design_body_bindings(
-                &cadmpeg_test_support::service_decode_context(),
-                scan,
-                None,
-                &[],
-            )
-            .unwrap();
+            let bindings = super::decode_design_body_bindings(scan, None, &[]).unwrap();
             assert_eq!(bindings.len(), 1);
         });
     }

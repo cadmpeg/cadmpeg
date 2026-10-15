@@ -276,7 +276,7 @@ pub(super) fn bind_face_selection(
             return Ok(());
         }
 
-        let face = candidate.try_clone_for_decode(ctx, "copy F3D resolved face identity")?;
+        let face = candidate.clone();
         faces.push(face);
     }
     if !faces.is_empty() {
@@ -360,10 +360,9 @@ pub(super) fn bind_body_recipe_face_selection(
 }
 
 pub(super) fn faces_in_topology<'a>(
-    decode: &cadmpeg_core::decode::DecodeContext<'_>,
     candidates: impl IntoIterator<Item = &'a cadmpeg_ir::ids::FaceId>,
     topology: &AsmHistoricalTopology,
-) -> Result<Vec<cadmpeg_ir::ids::FaceId>, cadmpeg_core::CodecError> {
+) -> Vec<cadmpeg_ir::ids::FaceId> {
     let mut faces = HashSet::new();
     for face in &topology.faces {
         faces.insert(*face);
@@ -371,8 +370,8 @@ pub(super) fn faces_in_topology<'a>(
     candidates
         .into_iter()
         .filter(|face| stable_ref(face.as_str()).is_some_and(|slot| faces.contains(&slot)))
-        .map(|face| face.try_clone_for_decode(decode, "copy F3D historical face identity"))
-        .collect::<Result<Vec<_>, _>>()
+        .cloned()
+        .collect()
 }
 
 /// Topology families and states containing one requested stable ASM slot.

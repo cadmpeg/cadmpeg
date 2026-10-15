@@ -232,7 +232,7 @@ fn parse_component_reference_data(
             "{COMPONENT_REFERENCE_ENTRY} is not valid JSON: {error}"
         ))
     })?;
-    let (value, _reservation) = ctx
+    let value = ctx
         .parse_json_value(text, "parse F3D component reference JSON")
         .map_err(|error| {
             let CodecError::Malformed(error) = error else {
@@ -384,8 +384,8 @@ pub(crate) fn docstruct(
     let Ok(text) = std::str::from_utf8(payload) else {
         return Ok(None);
     };
-    let (_reservation, value) = match ctx.parse_json_value(text, "parse F3D properties JSON") {
-        Ok((value, reservation)) => (reservation, value),
+    let value = match ctx.parse_json_value(text, "parse F3D properties JSON") {
+        Ok(value) => value,
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         Err(_) => return Ok(None),
     };
