@@ -353,7 +353,6 @@ pub(crate) fn bind_mirror_constructions(
                 0,
                 plane_header,
             )
-            .transpose()?
             .is_some()
                 || face_recipe
             {

@@ -230,16 +230,12 @@ pub(super) fn exact_coil_placement(
         {
             return None;
         }
-        let persistent_frame = match parse_entity_selection_frame(
+        let persistent_frame = parse_entity_selection_frame(
             bytes,
             selection_record_index,
             u64::try_from(selection_start).ok()?,
             selection_class_tag,
-        ) {
-            Some(Ok(frame)) => Some(frame),
-            Some(Err(error)) => return Some(Err(error)),
-            None => None,
-        };
+        );
         let persistent_selection = persistent_frame.and_then(|selection| {
             Some(DesignCoilSelection::Persistent {
                 asset_id: selection.asset_id.try_into().ok()?,

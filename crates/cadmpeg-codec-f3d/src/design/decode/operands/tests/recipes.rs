@@ -67,7 +67,6 @@ fn parse_vertex_recipe(
     recipes: &[ConstructionRecipe],
 ) -> Option<crate::records::feature::work_geometry::DesignVertexRecipe> {
     crate::design::decode::operands::parse_vertex_recipe(bytes, records, stream, header, recipes)
-        .map(|result| result.expect("recipe allocation admitted"))
 }
 
 #[test]

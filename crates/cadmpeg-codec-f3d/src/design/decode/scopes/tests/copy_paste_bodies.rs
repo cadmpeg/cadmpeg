@@ -40,7 +40,6 @@ fn generated_copy_paste_bodies_scope_matches_operation_layout() {
         crate::design::decode::scopes::copy_paste_bodies::exact_copy_paste_bodies_operation(
             &bytes, &records, &scope,
         )
-        .expect("operation decode resources")
         .expect("CopyPasteBodies operation");
     assert_eq!(operation.body_group_record_index, 1_500);
     assert_eq!(operation.relation_record_index, 1_700);
