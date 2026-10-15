@@ -2386,8 +2386,11 @@ impl<'a> F3dDecodeSession<'a> {
     fn decode_design_graph(&mut self, path: &SessionPath) -> Result<(), CodecError> {
         let scan = self.scan;
         let ctx = self.ctx;
+        let mut binding_allowance = crate::history::history_binding_allowance(ctx.policy());
         for history_brep in container::history_breps(scan) {
-            if let Some(history) = decode_asm_history(ctx, scan, history_brep)? {
+            if let Some(history) =
+                decode_asm_history(ctx, scan, history_brep, &mut binding_allowance)?
+            {
                 self.native.asm_histories.push(history);
             }
         }
@@ -4446,6 +4449,7 @@ fn decode_asm_history(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     history_brep: &BrepFacts,
+    binding_allowance: &mut u64,
 ) -> Result<Option<crate::history_records::AsmHistory>, CodecError> {
     let width = history_brep
         .kernel
@@ -4455,7 +4459,7 @@ fn decode_asm_history(
             header.width
         });
     let bytes = scan.entry_bytes(&history_brep.name)?;
-    crate::history::decode(ctx, bytes, &history_brep.name, width)
+    crate::history::decode(ctx, bytes, &history_brep.name, width, binding_allowance)
 }
 
 fn collect_related_indices<'a>(

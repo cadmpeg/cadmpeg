@@ -78,28 +78,51 @@ fn state_records(states: &[AsmDeltaState]) -> u64 {
 }
 
 #[test]
-fn history_binding_skips_a_chain_past_its_state_record_bound() {
+fn history_binding_skips_a_chain_past_its_state_record_allowance() {
     let mut unbounded = insert_only_chain();
     assert_eq!(
-        bind_historical_entity_versions(&mut unbounded, u64::MAX).unwrap(),
+        bind_historical_entity_versions(&mut unbounded, &mut { u64::MAX }).unwrap(),
         TableBindingCost::Admitted
     );
     let entries = state_records(&unbounded);
     assert!(entries > 0);
 
+    let mut allowance = entries;
     let mut at_bound = insert_only_chain();
     assert_eq!(
-        bind_historical_entity_versions(&mut at_bound, entries).unwrap(),
+        bind_historical_entity_versions(&mut at_bound, &mut allowance).unwrap(),
         TableBindingCost::Admitted
     );
     assert_eq!(at_bound, unbounded);
+    assert_eq!(allowance, 0);
 
+    let mut allowance = entries - 1;
     let mut past_bound = insert_only_chain();
     assert_eq!(
-        bind_historical_entity_versions(&mut past_bound, entries - 1).unwrap(),
+        bind_historical_entity_versions(&mut past_bound, &mut allowance).unwrap(),
         TableBindingCost::Exceeded
     );
     assert!(past_bound
         .iter()
         .all(|state| state.entity_versions.is_empty()));
+    assert_eq!(allowance, entries - 1);
+}
+
+#[test]
+fn history_streams_of_one_decode_share_the_binding_allowance() {
+    let mut first = insert_only_chain();
+    let mut second = insert_only_chain();
+    let mut probe = insert_only_chain();
+    bind_historical_entity_versions(&mut probe, &mut { u64::MAX }).unwrap();
+    let mut allowance = 2 * state_records(&probe) - 1;
+
+    assert_eq!(
+        bind_historical_entity_versions(&mut first, &mut allowance).unwrap(),
+        TableBindingCost::Admitted
+    );
+    assert_eq!(
+        bind_historical_entity_versions(&mut second, &mut allowance).unwrap(),
+        TableBindingCost::Exceeded
+    );
+    assert!(second.iter().all(|state| state.entity_versions.is_empty()));
 }
