@@ -347,7 +347,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Note.** `crates/cadmpeg-codec-nx/src/intersection.rs:367-376` chains both forms, `crates/cadmpeg-codec-nx/src/native/parasolid.rs:1391-1414` emits both under one intersection-record identity stem, and `crates/cadmpeg-codec-nx/src/decode.rs:1317-1331` and `1468-1476` use last-write-wins maps keyed only by XMT. **Evidence:** the construction forms share the stream-local XMT key and no cross-form collision check exists. **Counter-evidence:** the format may guarantee that the forms are mutually exclusive or that their XMT namespaces cannot collide; no raw record establishes either rule. **Failure:** if both forms occur with one XMT, iteration order selects one chart and one carrier relation without rejecting the ambiguity. This issue was found in the hostile sweep.
 
 
-### PS-40. LIMIT and INTERSECTION field-presence selection
+### PS-41. LIMIT and INTERSECTION field-presence selection
 
 **Question.** Which schema declaration and field edits select the classic or extended LIMIT and INTERSECTION layouts?
 
