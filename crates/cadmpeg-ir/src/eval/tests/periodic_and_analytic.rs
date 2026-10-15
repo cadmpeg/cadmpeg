@@ -952,15 +952,12 @@ fn a_subset_whose_support_parameter_overflows_reports_the_support_evaluation() {
     // The u range runs down from 1e308 while its sense runs up, so the
     // support parameter at the far end of the span is 2e308.
     ir.model
-        .add_procedural_surface(&crate::document::admission::StandardAdmission,
-            &subset_id,
-            procedural_surface! {
+        .add_procedural_surface(&subset_id, procedural_surface! {
                 id: subset_construction,
                 definition: crate::geometry::ProceduralSurfaceDefinition::Subset(crate::geometry::surface_payloads::SubsetSurfaceConstruction::try_new(base_id, [[1.0e308, 0.0], [0.0, 1.0]], Some(true), None, None).unwrap()),
                 cache_fit_tolerance: None,
                 record_bounds: None,
-            },
-        ).unwrap()
+            })
         .expect("subset surface exists and has no procedural construction");
 
     let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);

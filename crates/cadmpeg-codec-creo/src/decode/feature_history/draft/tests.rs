@@ -43,9 +43,8 @@ fn hole_resolved_face_keeps_its_native_reference() {
     let scan = crate::test_support::empty_container_scan();
     let mut ir = CadIr::empty();
     ir.model.faces.push(resolved_hole_face());
-    let selection = crate::decode::with_test_decode_ctx(|ctx| {
+    let selection = ({
         hole_face_selection(
-            ctx,
             &scan,
             &ir,
             9,
@@ -71,9 +70,8 @@ fn hole_generated_face_keeps_its_native_reference() {
             "creo:model:feature#3",
         )
         .expect("identity grammar")]);
-    let selection = crate::decode::with_test_decode_ctx(|ctx| {
+    let selection = ({
         hole_face_selection(
-            ctx,
             &scan,
             &CadIr::empty(),
             9,
@@ -140,10 +138,8 @@ fn thicken_scan() -> crate::container::ContainerScan<'static> {
 #[test]
 fn thicken_fixture_generates_a_face() {
     let scan = thicken_scan();
-    let definition = crate::decode::with_test_decode_ctx(|ctx| {
-        thicken_feature_definition(ctx, &scan, &CadIr::empty(), 17)
-    })
-    .expect("generated thicken face");
+    let definition = ({ thicken_feature_definition(&scan, &CadIr::empty(), 17) })
+        .expect("generated thicken face");
     assert!(matches!(
         definition,
         IrFeatureDefinition::Operation(IrFeatureOperation::Thicken {

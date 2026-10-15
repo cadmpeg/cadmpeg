@@ -76,16 +76,7 @@ fn b5_edge_support_definition(
     &'static str,
     ProceduralCurveDefinition,
 )> {
-    crate::test_support::with_service_context(|ctx| {
-        charged_b5_edge_support_definition(
-            ctx,
-            supports,
-            surface_ids,
-            pcurves,
-            solved_parameter_range,
-        )
-    })
-    .expect("service resource budget")
+    charged_b5_edge_support_definition(supports, surface_ids, pcurves, solved_parameter_range)
 }
 
 fn transfer_vertex_tolerances(

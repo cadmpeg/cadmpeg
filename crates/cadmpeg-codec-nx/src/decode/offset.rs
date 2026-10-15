@@ -12,7 +12,6 @@ use super::nurbs_fit::fit_nurbs_surface_parameter;
 use super::support_uv::{linear_knots, missing_support_parameter};
 use crate::framing::node_kind::NodeKind;
 use crate::topology::{Graph, Node};
-use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::model_surface_partials_by_id;
@@ -49,7 +48,6 @@ const OFFSET_NEWTON_ITERATIONS: usize = 32;
 const MAX_OFFSET_FIT_CACHE_ENTRIES: usize = 4096;
 
 pub(super) fn saved_offset_carriers(
-    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     graph: &Graph,
     offsets: &[crate::topology::OffsetSurface],
@@ -150,13 +148,7 @@ pub(super) fn saved_offset_carriers(
             continue;
         };
         if candidate_owners.get(candidate).map(Vec::as_slice) == Some(&[offset][..]) {
-            result.insert(
-                offset,
-                (
-                    candidate.try_clone_for_decode(ctx, "nx saved offset surface identity")?,
-                    *fit,
-                ),
-            );
+            result.insert(offset, ((*candidate).clone(), *fit));
         }
     }
     Ok(result)
@@ -2556,8 +2548,7 @@ pub(super) fn intersection_side(
 ) -> Result<IntcurveSupportSide, cadmpeg_core::CodecError> {
     let surface = surface_xmt
         .and_then(|xmt| surfaces_by_xmt.get(&u32::from(xmt)))
-        .map(|surface| surface.try_clone_for_decode(ctx, "nx intersection support identity"))
-        .transpose()?;
+        .cloned();
     let lanes = if let (Some(surface_id), Some((uv, parameters))) = (&surface, uv) {
         let geometry = ir
             .model
@@ -2645,27 +2636,20 @@ pub(super) fn surface_parameters(surface: &SurfaceGeometry, uv: [f64; 2]) -> Opt
 }
 
 pub(super) fn normalize_pcurve_parameters(
-    ctx: &DecodeContext<'_>,
     pcurve: &mut PcurveGeometry,
     surface: &SurfaceGeometry,
-) -> Result<Option<()>, CodecError> {
+) -> Option<()> {
     match pcurve {
         PcurveGeometry::Line(line_pcurve) => {
             let origin = line_pcurve.origin().as_raw();
             let direction = line_pcurve.direction().as_raw();
             let end = Point2::new(origin.u + direction.u, origin.v + direction.v);
-            let Some(converted_origin) = surface_parameters(surface, [origin.u, origin.v]) else {
-                return Ok(None);
-            };
-            let Some(converted_end) = surface_parameters(surface, [end.u, end.v]) else {
-                return Ok(None);
-            };
-            let Some(converted_direction) = cadmpeg_ir::units::NonzeroPoint2::new(Point2::new(
+            let converted_origin = surface_parameters(surface, [origin.u, origin.v])?;
+            let converted_end = surface_parameters(surface, [end.u, end.v])?;
+            let converted_direction = cadmpeg_ir::units::NonzeroPoint2::new(Point2::new(
                 converted_end.u - converted_origin.u,
                 converted_end.v - converted_origin.v,
-            )) else {
-                return Ok(None);
-            };
+            ))?;
             *line_pcurve = cadmpeg_ir::geometry::pcurve::LinePcurve::new(
                 converted_origin,
                 converted_direction,
@@ -2675,21 +2659,17 @@ pub(super) fn normalize_pcurve_parameters(
             let mut converted = Vec::new();
             let count = nurbs.pole_rows().count();
             for ordinal in 0..count {
-                let Some(point) = nurbs.pole_rows().point_at(ordinal) else {
-                    return Ok(None);
-                };
-                let Some(position) = surface_parameters(surface, [point.u, point.v]) else {
-                    return Ok(None);
-                };
+                let point = nurbs.pole_rows().point_at(ordinal)?;
+                let position = surface_parameters(surface, [point.u, point.v])?;
                 converted.push(position);
             }
-            if !nurbs.replace_admitted_control_points(&converted, ctx)? {
-                return Ok(None);
+            if !nurbs.replace_admitted_control_points(&converted) {
+                return None;
             }
         }
         _ => {}
     }
-    Ok(Some(()))
+    Some(())
 }
 
 #[cfg(test)]
@@ -2797,11 +2777,9 @@ mod tests {
             )
             .expect("plane"),
         ));
-        let ctx = cadmpeg_test_support::service_decode_context();
         let mut edited = original.clone();
         assert_eq!(
-            super::normalize_pcurve_parameters(&ctx, &mut edited, &surface)
-                .expect("normalization admission"),
+            super::normalize_pcurve_parameters(&mut edited, &surface),
             Some(())
         );
         let PcurveGeometry::Nurbs { nurbs } = edited else {
@@ -2967,21 +2945,17 @@ mod tests {
             .expect("valid offset support");
             let mut candidate = support.clone();
             candidate
-                .try_map_control_points(
-                    |index, pole| {
-                        let mut pole = pole.get();
-                        if index == 4 {
-                            pole.z += 1.0;
-                        }
-                        cadmpeg_ir::features::FinitePoint3::new(pole).ok_or_else(|| {
-                            cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
-                                "control_points contains a non-finite point".into(),
-                            )
-                        })
-                    },
-                    &cadmpeg_test_support::service_decode_context(),
-                )
-                .expect("pole edit admission")
+                .try_map_control_points(|index, pole| {
+                    let mut pole = pole.get();
+                    if index == 4 {
+                        pole.z += 1.0;
+                    }
+                    cadmpeg_ir::features::FinitePoint3::new(pole).ok_or_else(|| {
+                        cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                            "control_points contains a non-finite point".into(),
+                        )
+                    })
+                })
                 .expect("finite offset-support test pole edit");
             let support = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(support));
             let candidate = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(candidate));
@@ -3210,19 +3184,15 @@ mod tests {
                 panic!("the test support is a NURBS plane");
             };
             support
-                .try_map_control_points(
-                    |_, point| {
-                        let mut point = point.get();
-                        point.z = -1.0;
-                        cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
-                            cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
-                                "control_points contains a non-finite point".into(),
-                            )
-                        })
-                    },
-                    &cadmpeg_test_support::service_decode_context(),
-                )
-                .expect("pole edit admission")
+                .try_map_control_points(|_, point| {
+                    let mut point = point.get();
+                    point.z = -1.0;
+                    cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                        cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                            "control_points contains a non-finite point".into(),
+                        )
+                    })
+                })
                 .expect("finite translated support");
             let index = cadmpeg_ir::index::ModelIndex::new_model_only(
                 &near_zero,

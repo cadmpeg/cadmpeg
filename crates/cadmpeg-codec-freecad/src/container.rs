@@ -104,10 +104,7 @@ pub(crate) struct UnreadableEntry {
 }
 
 /// Scan an archive through the session resource budget.
-pub(crate) fn scan<'a>(
-    ctx: &DecodeContext<'a>,
-    root: View<'a>,
-) -> Result<Scan<'a>, CodecError> {
+pub(crate) fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'a>, CodecError> {
     let archive = ArchiveSnapshot::new(ctx, root)?;
     if !archive
         .entries()

@@ -269,8 +269,7 @@ fn face_admission_diagnostics_bound_samples_and_record_counts() {
     assert_eq!(records[0].reason, "missing_loops");
     assert_eq!(records[5].face_id, 15);
     let mut coverage = cadmpeg_ir::report::decode::Coverage::default();
-    crate::decode::with_test_decode_ctx(|ctx| diagnostics.record_coverage(ctx, &mut coverage))
-        .expect("service coverage admitted");
+    (diagnostics.record_coverage(&mut coverage));
     assert_eq!(coverage["brep_candidate_face_count"], 6);
     assert_eq!(coverage["brep_admitted_face_count"], 1);
     assert_eq!(coverage["brep_emitted_face_count"], 1);
@@ -316,8 +315,7 @@ fn face_admission_diagnostics_report_missing_surface_carrier() {
         vec![42]
     );
     let mut coverage = cadmpeg_ir::report::decode::Coverage::default();
-    crate::decode::with_test_decode_ctx(|ctx| diagnostics.record_coverage(ctx, &mut coverage))
-        .expect("service coverage admitted");
+    (diagnostics.record_coverage(&mut coverage));
     assert_eq!(coverage["brep_rejected_face_count"], 1);
     assert_eq!(
         coverage["brep_rejected_face_missing_surface_carrier_count"],
@@ -333,8 +331,7 @@ fn brep_diagnostics_report_component_gate_inputs() {
         ..BrepTransferDiagnostics::default()
     };
     let mut coverage = cadmpeg_ir::report::decode::Coverage::default();
-    crate::decode::with_test_decode_ctx(|ctx| diagnostics.record_coverage(ctx, &mut coverage))
-        .expect("service coverage admitted");
+    (diagnostics.record_coverage(&mut coverage));
 
     assert_eq!(coverage["brep_admitted_component_count"], 3);
     assert_eq!(coverage["brep_selected_body_count"], 0);

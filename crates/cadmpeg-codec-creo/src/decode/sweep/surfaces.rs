@@ -316,11 +316,10 @@ pub(in super::super) fn transfer_saved_spline_curves(
             if ir.model.curves.iter().any(|curve| curve.id == curve_id) {
                 continue;
             }
-            let Some(placed) = placed_section_nurbs(ctx, transform, &nurbs)? else {
+            let Some(placed) = placed_section_nurbs(transform, &nurbs)? else {
                 continue;
             };
             annotate(
-                ctx,
                 annotations,
                 &curve_id,
                 "FeatDefs",
@@ -598,7 +597,6 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 continue;
             }
             annotate(
-                ctx,
                 annotations,
                 &id,
                 "FeatDefs",
@@ -665,7 +663,6 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 continue;
             }
             annotate(
-                ctx,
                 annotations,
                 &id,
                 "FeatDefs",
@@ -753,10 +750,10 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 }
                 continue;
             };
-            let Some(placed) = placed_section_nurbs(ctx, transform, &section_curve)? else {
+            let Some(placed) = placed_section_nurbs(transform, &section_curve)? else {
                 continue;
             };
-            let Some(directrix) = translated_nurbs_curve(ctx, &placed, lower_translation)? else {
+            let Some(directrix) = translated_nurbs_curve(&placed, lower_translation)? else {
                 continue;
             };
             let mut refusal = crate::lane_refusal::LaneRefusals::new();
@@ -790,7 +787,6 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
             )?;
             if !ir.model.curves.iter().any(|curve| curve.id == curve_id) {
                 annotate(
-                    ctx,
                     annotations,
                     &curve_id,
                     "FeatDefs",
@@ -804,8 +800,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                     ir,
                     Curve {
                         parameter_range: None,
-                        id: curve_id
-                            .try_clone_for_decode(ctx, "creo construction curve identity copy")?,
+                        id: curve_id.clone(),
                         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(directrix)),
                         source_object: Some(SourceObjectAssociation {
                             geometry_role: None,
@@ -834,7 +829,6 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 format_args!("{feature_id}:{internal_id}"),
             )?;
             annotate(
-                ctx,
                 annotations,
                 &surface_id,
                 "FeatDefs",
@@ -843,7 +837,6 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 Exactness::Derived,
             )?;
             annotate(
-                ctx,
                 annotations,
                 &procedural_id,
                 "FeatDefs",
@@ -856,8 +849,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 ctx,
                 ir,
                 Surface {
-                    id: surface_id
-                        .try_clone_for_decode(ctx, "creo construction surface identity copy")?,
+                    id: surface_id.clone(),
                     geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
                     source_object: Some(SourceObjectAssociation {
                         geometry_role: None,
@@ -884,7 +876,6 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 continue;
             };
             source_carriers.admit_procedural_surface(
-                ctx,
                 ir,
                 &surface_id,
                 cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(

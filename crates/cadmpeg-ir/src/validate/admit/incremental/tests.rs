@@ -63,9 +63,7 @@ fn shared_references_and_rejected_identities_keep_combined_admission_guarantees(
     session
         .try_admit_append(
             first,
-            annotations
-                .sparse_transaction(&ctx, "first annotations")
-                .unwrap(),
+            annotations.sparse_transaction(),
             crate::RHINO_DRAFT_CHECKS,
             |report, _| {
                 assert!(report.unwrap().is_ok());
@@ -122,9 +120,7 @@ fn shared_references_and_rejected_identities_keep_combined_admission_guarantees(
         let result = session
             .try_admit_append(
                 candidate,
-                annotations
-                    .sparse_transaction(&ctx, "vertex annotations")
-                    .unwrap(),
+                annotations.sparse_transaction(),
                 crate::RHINO_DRAFT_CHECKS,
                 |report, _| {
                     let report = report.unwrap();
@@ -161,9 +157,7 @@ fn source_link_mutation_is_checked_after_reusing_admitted_state() {
     session
         .try_admit_append(
             asset_candidate(0),
-            annotations
-                .sparse_transaction(&ctx, "first annotations")
-                .unwrap(),
+            annotations.sparse_transaction(),
             crate::RHINO_DRAFT_CHECKS,
             |report, _| {
                 assert!(report.unwrap().is_ok());
@@ -182,9 +176,7 @@ fn source_link_mutation_is_checked_after_reusing_admitted_state() {
     let result = session
         .try_admit_append(
             asset_candidate(1),
-            annotations
-                .sparse_transaction(&ctx, "next annotations")
-                .unwrap(),
+            annotations.sparse_transaction(),
             crate::RHINO_DRAFT_CHECKS,
             |report, _| {
                 assert!(report.is_err());
@@ -213,9 +205,7 @@ fn native_annotation_field_paths_use_complete_source_records() {
     for index in 0..2 {
         let mut candidate = asset_candidate(index);
         candidate.model.assets[0].native_ref = Some(String::from(source));
-        let mut changes = annotations
-            .sparse_transaction(&ctx, "source field annotations")
-            .unwrap();
+        let mut changes = annotations.sparse_transaction();
         changes
             .field_exactness(source, "links.0", crate::Exactness::Derived)
             .unwrap();
@@ -249,9 +239,7 @@ fn instance_admission_does_not_certify_annotations_for_the_draft_route() {
         .assets
         .extend(asset_candidate(0).model.assets);
     let mut builder = crate::AnnotationBuilder::new();
-    builder
-        .exactness(&ctx, "test:model:asset#missing", crate::Exactness::Derived)
-        .unwrap();
+    builder.exactness("test:model:asset#missing", crate::Exactness::Derived);
     let annotations = builder.build();
     assert!(session
         .admit_appended(&annotations, crate::RHINO_INSTANCE_CHECKS)
@@ -270,9 +258,7 @@ fn instance_admission_does_not_certify_annotations_for_the_draft_route() {
     let result = session
         .try_admit_append(
             asset_candidate(1),
-            annotations
-                .sparse_transaction(&ctx, "draft route annotations")
-                .unwrap(),
+            annotations.sparse_transaction(),
             crate::RHINO_DRAFT_CHECKS,
             |report, _| {
                 let report = report.unwrap();
@@ -293,14 +279,10 @@ fn sparse_deletion_replaces_invalid_base_annotations_in_combined_admission() {
     let ctx = cadmpeg_test_support::service_decode_context();
     let mut builder = crate::AnnotationBuilder::new();
     let missing = "test:model:asset#missing";
-    builder
-        .exactness(&ctx, missing, crate::Exactness::Derived)
-        .unwrap();
+    builder.exactness(missing, crate::Exactness::Derived);
     let mut annotations = builder.build();
-    let mut changes = annotations
-        .sparse_transaction(&ctx, "annotation deletion")
-        .unwrap();
-    changes.remove_entity(missing).unwrap();
+    let mut changes = annotations.sparse_transaction();
+    changes.remove_entity(missing);
     let mut session = CommitSession::new(CadIr::empty(), &ctx, Some("test")).unwrap();
     let prepared = session
         .try_admit_append(
@@ -309,7 +291,7 @@ fn sparse_deletion_replaces_invalid_base_annotations_in_combined_admission() {
             crate::RHINO_DRAFT_CHECKS,
             |report, changes| {
                 assert!(report.unwrap().is_ok());
-                Ok(Ok::<_, ()>(changes.prepare()?))
+                Ok(Ok::<_, ()>(changes.prepare()))
             },
         )
         .unwrap()
@@ -327,9 +309,7 @@ fn accounted_commit_does_not_hide_annotation_errors_from_the_next_candidate() {
     session
         .try_admit_append(
             asset_candidate(0),
-            annotations
-                .sparse_transaction(&ctx, "first annotations")
-                .unwrap(),
+            annotations.sparse_transaction(),
             crate::RHINO_DRAFT_CHECKS,
             |report, _| {
                 assert!(report.unwrap().is_ok());
@@ -340,17 +320,13 @@ fn accounted_commit_does_not_hide_annotation_errors_from_the_next_candidate() {
         .unwrap();
     let missing = "test:model:asset#missing";
     let mut draft = crate::draft::ModelDraft::new().with_accounting();
-    draft
-        .exactness(&ctx, missing, crate::Exactness::Derived)
-        .unwrap();
+    draft.exactness(missing, crate::Exactness::Derived);
     session.commit(draft, &mut annotations).unwrap().unwrap();
     let before = session.document().clone();
     let result = session
         .try_admit_append(
             asset_candidate(1),
-            annotations
-                .sparse_transaction(&ctx, "next annotations")
-                .unwrap(),
+            annotations.sparse_transaction(),
             crate::RHINO_DRAFT_CHECKS,
             |report, _| {
                 let report = report.unwrap();

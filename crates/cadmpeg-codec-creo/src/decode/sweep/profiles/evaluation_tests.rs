@@ -31,12 +31,9 @@ fn profile_sampling_evaluates_a_spline_beyond_the_inline_basis_window() {
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let mut evaluator = cadmpeg_ir::eval::decode::NurbsPointEvaluator::new(&nurbs);
     assert_eq!(
-        (|| {
-            let mut evaluator = cadmpeg_ir::eval::decode::NurbsPointEvaluator::new(&ctx, &nurbs)?;
-            super::nurbs_profile_point(&ctx, &mut evaluator, &nurbs, 0.5)
-        })()
-        .expect("service"),
+        super::nurbs_profile_point(&ctx, &mut evaluator, &nurbs, 0.5).expect("service"),
         Some([0.5, 0.0])
     );
 }

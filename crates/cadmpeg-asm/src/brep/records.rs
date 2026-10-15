@@ -116,7 +116,7 @@ macro_rules! native_record {
             }
             fn rewrite_identities<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(mut self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_, F>) -> Result<Self, cadmpeg_core::CodecError> {
                 let _depth = ctx.enter_nested("rewrite ASM native fields")?;
-                self.source_namespace = self.source_namespace.rewrite(ctx, $kind, self.record_index, map)?;
+                self.source_namespace = self.source_namespace.rewrite($kind, self.record_index, map)?;
                 self.$entity = cadmpeg_ir::schema::rewrite::typed::RewriteIdentities::rewrite_identities(self.$entity, ctx, map)?;
                 $(self.$field = cadmpeg_ir::schema::rewrite::typed::RewriteIdentities::rewrite_identities(self.$field, ctx, map)?;)*
                 Ok(self)

@@ -119,13 +119,7 @@ fn rejected_candidate_leaves_annotations_unchanged() {
     with_expand(&scan, |expand| {
         let mut context = DecodeContext::new(&scan, expand).unwrap();
         let mut annotations = AnnotationBuilder::new();
-        annotations
-            .exactness(
-                &cadmpeg_test_support::service_decode_context(),
-                "rhino:test:point#candidate",
-                Exactness::Derived,
-            )
-            .unwrap();
+        annotations.exactness("rhino:test:point#candidate", Exactness::Derived);
         context.annotations = annotations.build();
         let original = context.annotations.clone();
         let result = context.validate_candidate_fallible(|_, annotations| {

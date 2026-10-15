@@ -37,15 +37,8 @@ fn procedural_curve_attachment_moves_the_solved_carrier_into_the_cache() {
         );
         (model, owner, procedural)
     };
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("input admitted");
     let (mut model, owner, procedural) = build();
-    assert!(model
-        .add_procedural_curve(&ctx, &owner, procedural)
-        .expect("service budget admits construction copy")
-        .is_ok());
+    assert!(model.add_procedural_curve(&owner, procedural).is_ok());
     assert!(matches!(
         model.curves[0].geometry,
         CurveGeometry::Procedural {
@@ -85,7 +78,6 @@ fn procedural_surface_attachment_moves_the_solved_knot_storage() {
     });
     model
         .add_procedural_surface(
-            &crate::document::admission::StandardAdmission,
             &surface_id,
             ProceduralSurface::new(
                 procedural_id,
@@ -96,7 +88,6 @@ fn procedural_surface_attachment_moves_the_solved_knot_storage() {
                 None,
             ),
         )
-        .unwrap()
         .unwrap();
     let Some(SolvedSurfaceGeometry::Nurbs(cached)) = model.surfaces[0].geometry.solved_cache()
     else {
@@ -130,7 +121,6 @@ fn procedural_curve_attachment_moves_the_solved_knot_storage() {
     });
     model
         .add_procedural_curve(
-            &crate::document::admission::StandardAdmission,
             &curve_id,
             ProceduralCurve::new(
                 procedural_id,
@@ -141,7 +131,6 @@ fn procedural_curve_attachment_moves_the_solved_knot_storage() {
                 },
             ),
         )
-        .unwrap()
         .unwrap();
     let Some(SolvedCurveGeometry::Nurbs(cached)) = model.curves[0].geometry.solved_cache() else {
         panic!("expected the attached NURBS cache");
@@ -158,11 +147,8 @@ impl EntityRewrite for TypedIdentity<'_> {
         &mut self,
         entity: T,
     ) -> Result<T, Self::Error> {
-        let mut map = crate::schema::rewrite::typed::IdentityMap::new(
-            self.0,
-            "test identity rewrite",
-            |source: &str| Ok(source.to_owned()),
-        )?;
+        let mut map =
+            crate::schema::rewrite::typed::IdentityMap::new(|source: &str| Ok(source.to_owned()));
         entity.rewrite_identities(self.0, &mut map)
     }
 }
@@ -351,11 +337,7 @@ fn feature_parent_wire_is_derived_from_its_single_owner() {
         ..Model::default()
     };
     regeneration
-        .set_feature_regeneration_parent(
-            &cadmpeg_test_support::service_decode_context(),
-            &(child_id),
-            &(parent_id.clone()),
-        )
+        .set_feature_regeneration_parent(&(child_id), &(parent_id.clone()))
         .unwrap();
     let value = serde_json::to_value(&regeneration).unwrap();
     assert_eq!(
@@ -496,7 +478,6 @@ fn procedural_carrier_ownership_preserves_the_flat_cadir_wire() {
     });
     ir.model
         .add_procedural_surface(
-            &crate::document::admission::StandardAdmission,
             &surface,
             ProceduralSurface::new(
                 surface_construction,
@@ -507,7 +488,6 @@ fn procedural_carrier_ownership_preserves_the_flat_cadir_wire() {
                 None,
             ),
         )
-        .unwrap()
         .unwrap();
 
     let curve = CurveId::mint("test:model:curve#direct").expect("valid identity");
@@ -524,14 +504,12 @@ fn procedural_carrier_ownership_preserves_the_flat_cadir_wire() {
     });
     ir.model
         .add_procedural_curve(
-            &crate::document::admission::StandardAdmission,
             &curve,
             ProceduralCurve::new(
                 curve_construction,
                 ProceduralCurveDefinition::Exact { cache: None },
             ),
         )
-        .unwrap()
         .unwrap();
 
     let value = serde_json::to_value(&ir).unwrap();
@@ -547,12 +525,7 @@ fn procedural_carrier_ownership_preserves_the_flat_cadir_wire() {
     let mut rewritten = Model::default();
     let ctx = cadmpeg_test_support::service_decode_context();
     rewritten
-        .extend_rewritten(
-            &ctx,
-            ir.model,
-            &mut TypedIdentity(&ctx),
-            "test rewrite model",
-        )
+        .extend_rewritten(ir.model, &mut TypedIdentity(&ctx))
         .unwrap();
     assert!(rewritten.surfaces[0].geometry.solved_cache().is_some());
 }
@@ -575,7 +548,6 @@ fn procedural_surface_attachment_moves_solved_cache() {
         },
         None,
     );
-    let ctx = cadmpeg_test_support::service_decode_context();
     let mut cached = base.clone();
     cached.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
         record: Some(crate::ids::UnknownId::mint("test:model:unknown#1").unwrap()),
@@ -583,8 +555,7 @@ fn procedural_surface_attachment_moves_solved_cache() {
     let solved = cached.model.surfaces[0].geometry.clone();
     cached
         .model
-        .add_procedural_surface(&ctx, &owner, procedural.clone())
-        .unwrap()
+        .add_procedural_surface(&owner, procedural.clone())
         .unwrap();
     assert_eq!(cached.model.procedural_surfaces.len(), 1);
     assert_eq!(
@@ -594,16 +565,10 @@ fn procedural_surface_attachment_moves_solved_cache() {
     let mut attached = base.clone();
     attached
         .model
-        .add_procedural_surface(&ctx, &owner, procedural.clone())
-        .unwrap()
+        .add_procedural_surface(&owner, procedural.clone())
         .unwrap();
     base.model
-        .add_procedural_surface(
-            &crate::document::admission::StandardAdmission,
-            &owner,
-            procedural,
-        )
-        .unwrap()
+        .add_procedural_surface(&owner, procedural)
         .unwrap();
     assert_eq!(attached, base);
 }
@@ -625,7 +590,6 @@ fn procedural_curve_attachment_moves_solved_cache() {
         construction,
         ProceduralCurveDefinition::Exact { cache: None },
     );
-    let ctx = cadmpeg_test_support::service_decode_context();
     let mut cached = base.clone();
     cached.model.curves[0].geometry =
         CurveGeometry::Solved(crate::geometry::SolvedCurveGeometry::Unknown {
@@ -634,8 +598,7 @@ fn procedural_curve_attachment_moves_solved_cache() {
     let solved = cached.model.curves[0].geometry.clone();
     cached
         .model
-        .add_procedural_curve(&ctx, &owner, procedural.clone())
-        .unwrap()
+        .add_procedural_curve(&owner, procedural.clone())
         .unwrap();
     assert_eq!(cached.model.procedural_curves.len(), 1);
     assert_eq!(
@@ -645,17 +608,9 @@ fn procedural_curve_attachment_moves_solved_cache() {
     let mut attached = base.clone();
     attached
         .model
-        .add_procedural_curve(&ctx, &owner, procedural.clone())
-        .unwrap()
+        .add_procedural_curve(&owner, procedural.clone())
         .unwrap();
-    base.model
-        .add_procedural_curve(
-            &crate::document::admission::StandardAdmission,
-            &owner,
-            procedural,
-        )
-        .unwrap()
-        .unwrap();
+    base.model.add_procedural_curve(&owner, procedural).unwrap();
     assert_eq!(attached, base);
 }
 
@@ -908,11 +863,7 @@ fn parent_only_wire_preserves_regeneration_without_tree_membership() {
         ..Model::default()
     };
     model
-        .set_feature_regeneration_parent(
-            &cadmpeg_test_support::service_decode_context(),
-            &(child_id.clone()),
-            &(parent_id.clone()),
-        )
+        .set_feature_regeneration_parent(&(child_id.clone()), &(parent_id.clone()))
         .unwrap();
     assert_eq!(model.feature_tree_parent(&child_id), None);
     assert_eq!(model.feature_parent(&child_id), Some(&parent_id));
@@ -1030,12 +981,8 @@ fn geometry_snapshot_matches_filtered_model_wire_without_intermediate_tree() {
     });
     object.insert("kind".into(), serde_json::json!("brep"));
     assert_eq!(
-        serde_json::to_string(
-            &model
-                .geometry_snapshot(&cadmpeg_test_support::service_decode_context(), "brep")
-                .expect("snapshot admission")
-        )
-        .expect("snapshot serializes"),
+        serde_json::to_string(&model.geometry_snapshot("brep").expect("snapshot admission"))
+            .expect("snapshot serializes"),
         serde_json::to_string(&baseline).expect("baseline serializes"),
     );
 }
@@ -1057,13 +1004,12 @@ fn repeated_finalize_admits_thousands_of_sorted_long_identities() {
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    model.finalize(&ctx).unwrap();
-    model.finalize(&ctx).unwrap();
+    model.finalize();
+    model.finalize();
     assert_eq!(model, before);
     ctx.finish_session().unwrap();
     // Public-arena mutation must be observed on the next finalize call.
     model.curves.reverse();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    model.finalize(&ctx).unwrap();
+    model.finalize();
     assert_eq!(model, before);
 }

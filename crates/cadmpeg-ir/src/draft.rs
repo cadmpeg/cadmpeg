@@ -53,11 +53,8 @@ pub struct ModelCheckpoint {
 
 impl ModelCheckpoint {
     /// Capture a decoded model's arena lengths and feature-parent table.
-    pub fn capture(model: &Model, _ctx: &DecodeContext<'_>) -> Result<(Self, ()), CodecError> {
-        Ok((
-            Self::with_parents(model, model.feature_regeneration_parents.clone()),
-            (),
-        ))
+    pub fn capture(model: &Model) -> Self {
+        Self::with_parents(model, model.feature_regeneration_parents.clone())
     }
 
     fn with_parents(
@@ -92,11 +89,7 @@ impl ModelCheckpoint {
     /// This is an append-only checkpoint, not a snapshot of existing entities.
     /// Between capture and discard, callers must not remove, reorder, or modify
     /// entities that preceded the checkpoint.
-    pub fn discard_appended(
-        &self,
-        model: &mut Model,
-        _ctx: &DecodeContext<'_>,
-    ) -> Result<(), CodecError> {
+    pub fn discard_appended(&self, model: &mut Model) -> Result<(), CodecError> {
         let parents = self.feature_parents.clone();
         macro_rules! admit_truncation {
             ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {$(
@@ -111,11 +104,8 @@ impl ModelCheckpoint {
     }
 
     /// Compare captured arena lengths and feature-parent tables.
-    pub fn same_state(&self, other: &Self, _ctx: &DecodeContext<'_>) -> Result<bool, CodecError> {
-        if self.lengths != other.lengths {
-            return Ok(false);
-        }
-        Ok(self.feature_parents == other.feature_parents)
+    pub fn same_state(&self, other: &Self) -> bool {
+        self.lengths == other.lengths && self.feature_parents == other.feature_parents
     }
 
     fn restore(&self, model: &mut Model, parents: crate::document::FeatureRegenerationParents) {
@@ -304,11 +294,7 @@ impl ModelDraft {
 
 impl<A> ModelDraft<A> {
     /// Admit the entity's arena storage and check its identity before insertion.
-    pub fn insert<T: ArenaEntity>(
-        &mut self,
-        entity: T,
-        _ctx: &DecodeContext<'_>,
-    ) -> Result<(), DraftError> {
+    pub fn insert<T: ArenaEntity>(&mut self, entity: T) -> Result<(), DraftError> {
         let identity = entity.identity();
         let index = match self.insertion_index.take() {
             Some(index) => index,
@@ -399,9 +385,7 @@ impl<A> ModelDraft<A> {
         if !self.model.features.is_empty() || self.model.has_feature_regeneration_parents() {
             if let Err(error) = crate::document::feature_parents::validate(&[base, &self.model]) {
                 return Ok(Err(DraftError::FeatureParents {
-                    owner: error
-                        .owner()
-                        .try_clone_for_decode(ctx, "feature parent diagnostic owner")?,
+                    owner: error.owner().clone(),
                     message: format!("{error}"),
                 }));
             }
@@ -411,29 +395,21 @@ impl<A> ModelDraft<A> {
 }
 
 impl ModelDraft<DraftAccounting> {
-    /// Record staged exactness after admitting the retained key and record.
-    pub fn exactness(
-        &mut self,
-        _ctx: &DecodeContext<'_>,
-        identity: impl std::fmt::Display,
-        exactness: Exactness,
-    ) -> Result<(), CodecError> {
+    /// Record staged exactness.
+    pub fn exactness(&mut self, identity: impl std::fmt::Display, exactness: Exactness) {
         let identity = identity.to_string();
         if exactness == Exactness::ByteExact {
             self.accounting.exactness.remove(&identity);
         } else {
             self.accounting.exactness.insert(identity, exactness);
         }
-        Ok(())
     }
 
     /// Retains exactness notes selected by identity.
-    pub fn retain_exactness(
-        &mut self,
-        _ctx: &DecodeContext<'_>,
-        keep: impl FnMut(&str) -> Result<bool, CodecError>,
-    ) -> Result<(), CodecError> {
-        crate::annotations::retain_identity_entries(&mut self.accounting.exactness, keep)
+    pub fn retain_exactness(&mut self, mut keep: impl FnMut(&str) -> bool) {
+        self.accounting
+            .exactness
+            .retain(|identity, _| keep(identity));
     }
 
     /// Commit decoded entities and transfer their owned exactness entries.
@@ -661,7 +637,7 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
         &mut self,
         draft: ModelDraft,
     ) -> Result<Result<(), DraftError>, CodecError> {
-        self.state.commit_draft(draft, self.ctx, || Ok(()))
+        self.state.commit_draft(draft, self.ctx, || ())
     }
 
     /// Admit an accounted draft and its annotation transfer before either is applied.
@@ -671,8 +647,7 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
         annotations: &mut Annotations,
     ) -> Result<Result<(), DraftError>, CodecError> {
         let ctx = self.ctx;
-        let mut transaction =
-            annotations.sparse_transaction(ctx, "draft annotation transaction")?;
+        let mut transaction = annotations.sparse_transaction();
         let ModelDraft {
             model,
             accounting,
@@ -694,7 +669,7 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
             } else if annotation_owners.is_some() {
                 annotations_admitted = false;
             }
-            transaction.exactness(&identity, exactness)?;
+            transaction.exactness(&identity, exactness);
         }
         match self.state.commit_draft(
             ModelDraft {
@@ -723,7 +698,6 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
         native: crate::native::Native,
         admit: impl FnOnce(&CadIr, &[crate::unknown::UnknownRecord]) -> Result<Result<T, E>, CodecError>,
     ) -> Result<Result<T, E>, CodecError> {
-        let ctx = self.ctx;
         self.state.ensure_identities()?;
         let index = self
             .state
@@ -741,7 +715,7 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
             .state
             .base
             .borrow_mut()
-            .try_append(ctx, model, native, |combined| admit(combined, unknowns))?;
+            .try_append(model, native, |combined| admit(combined, unknowns))?;
         if result.is_ok() {
             for (hash, group) in staged {
                 index.entry(hash).or_default().extend(group);
@@ -762,11 +736,11 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
     pub fn try_admit_append<'ann, T, E>(
         &mut self,
         mut candidate: CadIr,
-        changes: crate::annotations::SparseAnnotationTransaction<'ann, 'ctx>,
+        changes: crate::annotations::SparseAnnotationTransaction<'ann>,
         allowed: &[crate::report::check::Check],
         accept: impl FnOnce(
             Result<&crate::report::check::ValidationReport, &crate::native::NativeConvertError>,
-            crate::annotations::SparseAnnotationTransaction<'ann, 'ctx>,
+            crate::annotations::SparseAnnotationTransaction<'ann>,
         ) -> Result<Result<T, E>, CodecError>,
     ) -> Result<Result<T, E>, CodecError> {
         use crate::validate::admit::incremental::{AdmittedState, CandidateScope};
@@ -784,12 +758,11 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
             .take()
             .filter(|state| reuse && state.annotations_admitted);
         if let Some(admitted) = &mut state {
-            let mut suffix_annotations =
-                annotations.sparse_transaction(ctx, "appended admission annotations")?;
+            let mut suffix_annotations = annotations.sparse_transaction();
             macro_rules! select_suffix_annotations {
                 ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {$(
                     for entity in self.state.base.borrow().model.$field.get(admitted.lengths[<$ty as EntitySchema>::KIND.index()]..).ok_or_else(|| CodecError::malformed("admitted prefix was removed"))? {
-                        suffix_annotations.select(entity.identity())?;
+                        suffix_annotations.select(entity.identity());
                     }
                 )*};
             }
@@ -883,11 +856,10 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
             reuse && (allowed != crate::RHINO_DRAFT_CHECKS || state.annotations_admitted)
         });
         let local = if let Some(admitted) = &mut state {
-            let mut suffix =
-                annotations.sparse_transaction(ctx, "appended admission annotations")?;
+            let mut suffix = annotations.sparse_transaction();
             macro_rules! select_annotations {
                 ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {$(
-                    for entity in self.state.base.borrow().model.$field.get(admitted.lengths[<$ty as EntitySchema>::KIND.index()]..).ok_or_else(|| CodecError::malformed("admitted prefix was removed"))? { suffix.select(entity.identity())?; }
+                    for entity in self.state.base.borrow().model.$field.get(admitted.lengths[<$ty as EntitySchema>::KIND.index()]..).ok_or_else(|| CodecError::malformed("admitted prefix was removed"))? { suffix.select(entity.identity()); }
                 )*};
             }
             if allowed.contains(&crate::report::check::Check::Annotations) {
@@ -1159,7 +1131,7 @@ impl<D: BorrowMut<CadIr>> CommitState<'_, D> {
         &mut self,
         mut draft: ModelDraft,
         ctx: &DecodeContext<'_>,
-        before_apply: impl FnOnce() -> Result<T, CodecError>,
+        before_apply: impl FnOnce() -> T,
     ) -> Result<Result<T, DraftError>, CodecError> {
         self.ensure_identities()?;
         let base = self.base.borrow_mut();
@@ -1175,7 +1147,7 @@ impl<D: BorrowMut<CadIr>> CommitState<'_, D> {
             return Ok(Err(error));
         }
         let staged = stage_committed_identities(base, &draft.model, None, self.unknown_namespace);
-        let transferred = before_apply()?;
+        let transferred = before_apply();
         for (hash, group) in staged {
             identities.entry(hash).or_default().extend(group);
         }
@@ -1212,23 +1184,18 @@ mod tests {
 
     fn point_draft(id: &str) -> ModelDraft {
         let mut draft = ModelDraft::new();
-        draft
-            .insert(point(id), &cadmpeg_test_support::service_decode_context())
-            .expect("insert point into draft");
+        draft.insert(point(id)).expect("insert point into draft");
         draft
     }
 
     fn vertex_draft(id: &str, point: &str) -> ModelDraft {
         let mut draft = ModelDraft::new();
         draft
-            .insert(
-                Vertex {
-                    id: id.try_into().expect("valid identity"),
-                    point: point.try_into().expect("valid identity"),
-                    tolerance: None,
-                },
-                &cadmpeg_test_support::service_decode_context(),
-            )
+            .insert(Vertex {
+                id: id.try_into().expect("valid identity"),
+                point: point.try_into().expect("valid identity"),
+                tolerance: None,
+            })
             .expect("insert vertex into draft");
         draft
     }
@@ -1241,12 +1208,12 @@ mod tests {
         let mut draft = ModelDraft::new();
         for index in 0..4096 {
             draft
-                .insert(point(&format!("test:model:point#{index}")), &ctx)
+                .insert(point(&format!("test:model:point#{index}")))
                 .unwrap();
         }
         assert_eq!(draft.entity_count(), 4096);
         assert!(matches!(
-            draft.insert(point("test:model:point#4095"), &ctx),
+            draft.insert(point("test:model:point#4095")),
             Err(DraftError::IdentityCollision(_))
         ));
         ctx.finish_session().unwrap();
@@ -1254,19 +1221,16 @@ mod tests {
 
     #[test]
     fn direct_draft_edits_invalidate_insertion_identity_slots() {
-        let arena = DecodeArena::new();
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
         let mut draft = ModelDraft::new();
-        draft.insert(point("test:model:point#old"), &ctx).unwrap();
+        draft.insert(point("test:model:point#old")).unwrap();
         draft.model_mut().points.clear();
-        draft.insert(point("test:model:point#old"), &ctx).unwrap();
+        draft.insert(point("test:model:point#old")).unwrap();
         draft
             .model_mut()
             .points
             .push(point("test:model:point#direct"));
         assert!(matches!(
-            draft.insert(point("test:model:point#direct"), &ctx),
+            draft.insert(point("test:model:point#direct")),
             Err(DraftError::IdentityCollision(_))
         ));
         assert_eq!(draft.entity_count(), 2);
@@ -1297,10 +1261,7 @@ mod tests {
         let mut model = crate::document::Model::default();
         model.points.push(point("test:checkpoint:point#existing"));
         let original = model.clone();
-        let arena = DecodeArena::new();
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-        let checkpoint = ModelCheckpoint::capture(&model, &ctx).unwrap();
+        let checkpoint = ModelCheckpoint::capture(&model);
         model.assets.push(Asset {
             id: "test:checkpoint:asset#new".try_into().unwrap(),
             name: None,
@@ -1329,12 +1290,11 @@ mod tests {
         }
         model
             .set_feature_regeneration_parent(
-                &cadmpeg_test_support::service_decode_context(),
                 &("test:checkpoint:feature#child".try_into().unwrap()),
                 &("test:checkpoint:feature#parent".try_into().unwrap()),
             )
             .unwrap();
-        checkpoint.0.discard_appended(&mut model, &ctx).unwrap();
+        checkpoint.discard_appended(&mut model).unwrap();
         assert_eq!(model, original);
     }
 
@@ -1359,35 +1319,28 @@ mod tests {
         let mut draft = ModelDraft::new();
         for (ordinal, key) in ["parent", "child"].into_iter().enumerate() {
             draft
-                .insert(
-                    Feature {
-                        id: format!("test:draft:feature#{key}").try_into().unwrap(),
-                        ordinal: cadmpeg_core::decode::u64_from_index(ordinal),
-                        name: None,
-                        suppressed: None,
-                        dependencies: crate::features::DistinctMembers::default(),
-                        source_properties: std::collections::BTreeMap::default(),
-                        source_tag: None,
-                        source_text: None,
-                        source_content: crate::features::FeatureContent::default(),
-                        evaluation: crate::features::FeatureEvaluation::from_definition(
-                            FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
-                        ),
-                        native_ref: None,
-                    },
-                    &cadmpeg_test_support::service_decode_context(),
-                )
+                .insert(Feature {
+                    id: format!("test:draft:feature#{key}").try_into().unwrap(),
+                    ordinal: cadmpeg_core::decode::u64_from_index(ordinal),
+                    name: None,
+                    suppressed: None,
+                    dependencies: crate::features::DistinctMembers::default(),
+                    source_properties: std::collections::BTreeMap::default(),
+                    source_tag: None,
+                    source_text: None,
+                    source_content: crate::features::FeatureContent::default(),
+                    evaluation: crate::features::FeatureEvaluation::from_definition(
+                        FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
+                    ),
+                    native_ref: None,
+                })
                 .unwrap();
         }
         let child = "test:draft:feature#child".try_into().unwrap();
         let parent = "test:draft:feature#parent".try_into().unwrap();
         draft
             .model_mut()
-            .set_feature_regeneration_parent(
-                &cadmpeg_test_support::service_decode_context(),
-                &(child),
-                &(parent),
-            )
+            .set_feature_regeneration_parent(&(child), &(parent))
             .unwrap();
         let expected = draft.model().clone();
         let mut ir = CadIr::empty();
@@ -1411,10 +1364,7 @@ mod tests {
         ir.model.points.push(point("test:model:point#1"));
         let mut draft = ModelDraft::new().with_accounting();
         draft
-            .insert(
-                point("test:model:point#1"),
-                &cadmpeg_test_support::service_decode_context(),
-            )
+            .insert(point("test:model:point#1"))
             .expect("insert point into empty draft");
         let mut annotations = Annotations::default();
 
@@ -1646,16 +1596,13 @@ mod tests {
 
         let mut rejected = ModelDraft::new();
         rejected
-            .insert(
-                Vertex {
-                    id: rejected_identity.try_into().expect("valid identity"),
-                    point: "test:model:point#missing"
-                        .try_into()
-                        .expect("valid identity"),
-                    tolerance: None,
-                },
-                &cadmpeg_test_support::service_decode_context(),
-            )
+            .insert(Vertex {
+                id: rejected_identity.try_into().expect("valid identity"),
+                point: "test:model:point#missing"
+                    .try_into()
+                    .expect("valid identity"),
+                tolerance: None,
+            })
             .expect("insert rejected vertex");
         assert!(!session.contains(rejected_identity).unwrap());
         assert!(session.commit_model(rejected).unwrap().is_err());

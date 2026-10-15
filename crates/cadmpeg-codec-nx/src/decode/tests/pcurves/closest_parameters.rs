@@ -123,7 +123,6 @@ fn rational_spine_closest_search_resolves_close_global_branches() {
                 8_000_000,
             ),
         )
-        .expect("evaluator allocation succeeds")
         .expect("first close branch");
         let second = closest_nurbs_curve_parameter_with_budget(
             &curve,
@@ -134,7 +133,6 @@ fn rational_spine_closest_search_resolves_close_global_branches() {
                 8_000_000,
             ),
         )
-        .expect("evaluator allocation succeeds")
         .expect("second close branch");
         let remote = closest_nurbs_curve_parameter_with_budget(
             &curve,
@@ -145,7 +143,6 @@ fn rational_spine_closest_search_resolves_close_global_branches() {
                 8_000_000,
             ),
         )
-        .expect("evaluator allocation succeeds")
         .expect("remote global branch");
 
         assert!((first - 0.1).abs() < 1.0e-8);
@@ -205,7 +202,6 @@ fn periodic_nurbs_inversion_lifts_the_continuation_phase() {
                     8_000_000
                 )
             )
-            .expect("evaluator allocation succeeds")
             .expect("periodic curve phase"),
             4.0
         );
@@ -263,12 +259,10 @@ fn pcurve_bezier_extraction_preserves_rational_knot_spans() {
             .zip(weights)
             .map(|(point, weight)| [point.u * weight, point.v * weight, weight])
             .collect::<Vec<_>>();
-        let spans = homogeneous_spans(geometry_ctx, 2, &knots, &controls)
-            .expect("resource allocation did not fail")
-            .expect("valid Bézier extraction");
+        let spans = homogeneous_spans(2, &knots, &controls).expect("valid Bézier extraction");
 
         assert_eq!(spans.len(), 3);
-        for span in spans.iter() {
+        for span in &spans {
             for fraction in [0.0, 0.5, 1.0] {
                 let parameter = span.domain[0] + fraction * (span.domain[1] - span.domain[0]);
                 let expected = cadmpeg_ir::eval::nurbs_pcurve_uv(

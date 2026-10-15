@@ -1579,19 +1579,19 @@ fn append_legacy_brep(
     let body_id = {
         Ok::<_, cadmpeg_core::CodecError>(cadmpeg_ir::ids::BodyId::compose(
             &cadmpeg_ir::identity_namespace!("rhino", "object", "body"),
-            suffix_key.try_clone_for_decode(ctx, "Rhino temporary identity key")?,
+            suffix_key.clone(),
         ))
     }?;
     let region_id = {
         Ok::<_, cadmpeg_core::CodecError>(cadmpeg_ir::ids::RegionId::compose(
             &cadmpeg_ir::identity_namespace!("rhino", "object", "region"),
-            suffix_key.try_clone_for_decode(ctx, "Rhino temporary identity key")?,
+            suffix_key.clone(),
         ))
     }?;
     let shell_id = {
         Ok::<_, cadmpeg_core::CodecError>(cadmpeg_ir::ids::ShellId::compose(
             &cadmpeg_ir::identity_namespace!("rhino", "object", "shell"),
-            suffix_key.try_clone_for_decode(ctx, "Rhino temporary identity key")?,
+            suffix_key.clone(),
         ))
     }?;
     let mut trim_paths = { Vec::new() };
@@ -1670,7 +1670,7 @@ fn append_legacy_brep(
         let root = roots[index];
         if let Some(curve) = &record.curve {
             if let std::collections::btree_map::Entry::Vacant(entry) = group_curve.entry(root) {
-                entry.insert(curve.try_clone_for_decode(ctx, "Rhino V1 grouped curve copy")?);
+                entry.insert(curve.clone());
             }
         }
         group_tolerance
@@ -1856,13 +1856,11 @@ fn append_legacy_brep(
         let finite_position = cadmpeg_ir::features::FinitePoint3::new(position)
             .ok_or(Point::NON_FINITE_POSITION)
             .map_err(cadmpeg_core::CodecError::malformed)?;
-        model.points.push(Point::new(
-            point_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
-            finite_position,
-            None,
-        ));
+        model
+            .points
+            .push(Point::new(point_id.clone(), finite_position, None));
         model.vertices.push(Vertex {
-            id: vertex_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
+            id: vertex_id.clone(),
             point: point_id,
             tolerance: (tolerance > 0.0)
                 .then(|| {
@@ -1878,17 +1876,12 @@ fn append_legacy_brep(
     for root in &group_roots {
         let start_class = find_root(&mut endpoint_parents, root * 2);
         let end_class = find_root(&mut endpoint_parents, root * 2 + 1);
-        let start = vertex_by_class
-            .get(&start_class)
-            .map(|id| id.try_clone_for_decode(ctx, "Rhino V1 vertex identity copy"))
-            .transpose()?
-            .ok_or_else(|| {
-                CodecError::malformed("V1 edge start endpoint has no admitted vertex")
-            })?;
+        let start = vertex_by_class.get(&start_class).cloned().ok_or_else(|| {
+            CodecError::malformed("V1 edge start endpoint has no admitted vertex")
+        })?;
         let end = vertex_by_class
             .get(&end_class)
-            .map(|id| id.try_clone_for_decode(ctx, "Rhino V1 vertex identity copy"))
-            .transpose()?
+            .cloned()
             .ok_or_else(|| CodecError::malformed("V1 edge end endpoint has no admitted vertex"))?;
         let ids = [start, end];
         group_vertices.insert(*root, ids);
@@ -1904,7 +1897,7 @@ fn append_legacy_brep(
             let domain = curve_domain(&curve)?;
             model.curves.push(Curve {
                 parameter_range: None,
-                id: id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
+                id: id.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
                 source_object: None,
             });
@@ -1920,21 +1913,14 @@ fn append_legacy_brep(
             .get(&root)
             .ok_or_else(|| CodecError::Malformed("V1 edge has no vertices".to_string()))?;
         model.edges.push(Edge {
-            id: edge_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
+            id: edge_id.clone(),
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(
-                curve_id
-                    .as_ref()
-                    .map(|value| {
-                        value
-                            .0
-                            .try_clone_for_decode(ctx, "Rhino V1 curve identity copy")
-                    })
-                    .transpose()?,
+                curve_id.as_ref().map(|value| value.0.clone()),
                 curve_id.map(|value| value.1),
             )
             .map_err(CodecError::malformed)?,
-            start: vertices[0].try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
-            end: vertices[1].try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
+            start: vertices[0].clone(),
+            end: vertices[1].clone(),
             tolerance: group_tolerance
                 .get(&root)
                 .copied()
@@ -1961,7 +1947,7 @@ fn append_legacy_brep(
             legacy_identity_key(format!("{suffix}.slot-{face_index}"))?,
         );
         model.surfaces.push(Surface {
-            id: surface_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
+            id: surface_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(face_record.surface)),
             source_object: None,
         });
@@ -1986,10 +1972,7 @@ fn append_legacy_brep(
                     ))?,
                 );
                 let pcurve_domain = curve_domain(&trim.pcurve)?;
-                let pcurve_knots = trim
-                    .pcurve
-                    .knots()
-                    .try_clone_for_decode(ctx, "Rhino V1 pcurve knots")?;
+                let pcurve_knots = trim.pcurve.knots().clone();
                 let mut pcurve_points = Vec::<cadmpeg_ir::units::FinitePoint2>::new();
                 let mut pcurve_weights = if matches!(
                     trim.pcurve.pole_rows(),
@@ -2019,7 +2002,7 @@ fn append_legacy_brep(
                     }
                 }
                 model.pcurves.push(Pcurve {
-                    id: pcurve_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
+                    id: pcurve_id.clone(),
                     geometry: PcurveGeometry::Nurbs {
                         nurbs: PcurveNurbs::from_checked_lanes(ctx,
                             trim.pcurve.degree(),
@@ -2057,15 +2040,12 @@ fn append_legacy_brep(
                 coedges_by_root
                     .entry(root)
                     .or_default()
-                    .push(coedge_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?);
-                coedge_ids
-                    .push(coedge_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?);
+                    .push(coedge_id.clone());
+                coedge_ids.push(coedge_id.clone());
                 model.coedges.push(Coedge {
-                    id: coedge_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
-                    owner_loop: loop_id
-                        .try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
-                    edge: group_edges[&root]
-                        .try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
+                    id: coedge_id.clone(),
+                    owner_loop: loop_id.clone(),
+                    edge: group_edges[&root].clone(),
                     radial_next: coedge_id,
                     sense: if trim.reversed {
                         Sense::Reversed
@@ -2084,22 +2064,18 @@ fn append_legacy_brep(
                 });
                 global_trim += 1;
             }
-            let ring = cadmpeg_ir::topology::LoopRing::new(ctx, coedge_ids, Vec::new())
-                .map_err(cadmpeg_core::CodecError::from)?
+            let ring = cadmpeg_ir::topology::LoopRing::new(coedge_ids, Vec::new())
                 .map_err(|error| CodecError::Malformed(error.to_string()))?;
             model.loops.push(Loop {
-                id: loop_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
-                face: face_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
+                id: loop_id.clone(),
+                face: face_id.clone(),
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
             });
             match loop_record.role {
                 LoopBoundaryRole::Unspecified => {}
                 LoopBoundaryRole::Outer => {
                     classified = true;
-                    if outer_loop
-                        .replace(loop_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?)
-                        .is_some()
-                    {
+                    if outer_loop.replace(loop_id.clone()).is_some() {
                         return Err(CodecError::malformed(format_args!(
                             "V1 face {face_id} states more than one outer boundary"
                         )));
@@ -2117,15 +2093,15 @@ fn append_legacy_brep(
             };
 
             cadmpeg_ir::topology::FaceLoops::classified(
-                outer.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
+                outer.clone(),
                 face_loops.into_iter().filter(|id| *id != outer).collect(),
             )
         } else {
             cadmpeg_ir::topology::FaceLoops::unspecified(face_loops)
         };
         model.faces.push(Face {
-            id: face_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
-            shell: shell_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
+            id: face_id.clone(),
+            shell: shell_id.clone(),
             surface: surface_id,
             sense: if face_record.reversed {
                 Sense::Reversed
@@ -2148,15 +2124,14 @@ fn append_legacy_brep(
     }
     for ring in coedges_by_root.values() {
         for index in 0..ring.len() {
-            model.coedges[coedge_positions[&ring[index]]].radial_next = ring
-                [(index + 1) % ring.len()]
-            .try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?;
+            model.coedges[coedge_positions[&ring[index]]].radial_next =
+                ring[(index + 1) % ring.len()].clone();
         }
     }
     model.shells.push(
         Shell::new(
-            shell_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
-            region_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
+            shell_id.clone(),
+            region_id.clone(),
             shell_faces,
             Vec::new(),
             Vec::new(),
@@ -2164,8 +2139,8 @@ fn append_legacy_brep(
         .map_err(|message| cadmpeg_core::CodecError::Malformed(message.to_string()))?,
     );
     model.regions.push(Region {
-        id: region_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
-        body: body_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
+        id: region_id.clone(),
+        body: body_id.clone(),
         shells: vec![shell_id],
     });
     model.bodies.push(Body {
@@ -2679,49 +2654,47 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
             let body_id = {
                 Ok::<_, cadmpeg_core::CodecError>(cadmpeg_ir::ids::BodyId::compose(
                     &cadmpeg_ir::identity_namespace!("rhino", "object", "body"),
-                    suffix_key.try_clone_for_decode(ctx, "Rhino temporary identity key")?,
+                    suffix_key.clone(),
                 ))
             }?;
             let region_id = {
                 Ok::<_, cadmpeg_core::CodecError>(cadmpeg_ir::ids::RegionId::compose(
                     &cadmpeg_ir::identity_namespace!("rhino", "object", "region"),
-                    suffix_key.try_clone_for_decode(ctx, "Rhino temporary identity key")?,
+                    suffix_key.clone(),
                 ))
             }?;
             let shell_id = {
                 Ok::<_, cadmpeg_core::CodecError>(cadmpeg_ir::ids::ShellId::compose(
                     &cadmpeg_ir::identity_namespace!("rhino", "object", "shell"),
-                    suffix_key.try_clone_for_decode(ctx, "Rhino temporary identity key")?,
+                    suffix_key.clone(),
                 ))
             }?;
             let vertex_id = {
                 Ok::<_, cadmpeg_core::CodecError>(cadmpeg_ir::ids::VertexId::compose(
                     &cadmpeg_ir::identity_namespace!("rhino", "object", "vertex"),
-                    suffix_key.try_clone_for_decode(ctx, "Rhino temporary identity key")?,
+                    suffix_key.clone(),
                 ))
             }?;
             let point_id = cadmpeg_ir::ids::PointId::compose(
                 &cadmpeg_ir::identity_namespace!("rhino", "object", "point"),
                 suffix_key,
             );
-            ir.model.points.push(Point::new(
-                point_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
-                position,
-                None,
-            ));
+            ir.model
+                .points
+                .push(Point::new(point_id.clone(), position, None));
             ir.model.vertices.push(Vertex {
-                id: vertex_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
+                id: vertex_id.clone(),
                 point: point_id,
                 tolerance: None,
             });
             ir.model.shells.push(Shell::with_free_vertex(
-                shell_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
-                region_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
+                shell_id.clone(),
+                region_id.clone(),
                 vertex_id,
             ));
             ir.model.regions.push(Region {
-                id: region_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
-                body: body_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
+                id: region_id.clone(),
+                body: body_id.clone(),
                 shells: vec![shell_id],
             });
             ir.model.bodies.push(Body {
@@ -2803,8 +2776,7 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                         let curve_id = {
                             Ok::<_, cadmpeg_core::CodecError>(cadmpeg_ir::ids::CurveId::compose(
                                 &cadmpeg_ir::identity_namespace!("rhino", "object", "curve"),
-                                suffix_key
-                                    .try_clone_for_decode(ctx, "Rhino temporary identity key")?,
+                                suffix_key.clone(),
                             ))
                         }?;
                         let body_id = cadmpeg_ir::ids::BodyId::compose(
@@ -2822,8 +2794,7 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                         let edge_id = {
                             Ok::<_, cadmpeg_core::CodecError>(cadmpeg_ir::ids::EdgeId::compose(
                                 &cadmpeg_ir::identity_namespace!("rhino", "object", "edge"),
-                                suffix_key
-                                    .try_clone_for_decode(ctx, "Rhino temporary identity key")?,
+                                suffix_key.clone(),
                             ))
                         }?;
                         let start_vertex = cadmpeg_ir::ids::VertexId::compose(
@@ -2853,8 +2824,7 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                         let end = evaluate_nurbs(&segment, parameter_range[1])?;
                         ir.model.curves.push(Curve {
                             parameter_range: None,
-                            id: curve_id
-                                .try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
+                            id: curve_id.clone(),
                             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(segment)),
                             source_object: None,
                         });
@@ -2865,36 +2835,23 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                             .ok_or(Point::NON_FINITE_POSITION)
                             .map_err(cadmpeg_core::CodecError::malformed)?;
                         ir.model.points.extend([
-                            Point::new(
-                                start_point
-                                    .try_clone_for_decode(ctx, "Rhino V1 endpoint identity copy")?,
-                                start,
-                                None,
-                            ),
-                            Point::new(
-                                end_point
-                                    .try_clone_for_decode(ctx, "Rhino V1 endpoint identity copy")?,
-                                end,
-                                None,
-                            ),
+                            Point::new(start_point.clone(), start, None),
+                            Point::new(end_point.clone(), end, None),
                         ]);
                         ir.model.vertices.extend([
                             Vertex {
-                                id: start_vertex
-                                    .try_clone_for_decode(ctx, "Rhino V1 endpoint identity copy")?,
+                                id: start_vertex.clone(),
                                 point: start_point,
                                 tolerance: None,
                             },
                             Vertex {
-                                id: end_vertex
-                                    .try_clone_for_decode(ctx, "Rhino V1 endpoint identity copy")?,
+                                id: end_vertex.clone(),
                                 point: end_point,
                                 tolerance: None,
                             },
                         ]);
                         ir.model.edges.push(Edge {
-                            id: edge_id
-                                .try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
+                            id: edge_id.clone(),
                             carrier: cadmpeg_ir::topology::EdgeCarrier::new(
                                 Some(curve_id),
                                 Some(parameter_range),
@@ -2905,15 +2862,13 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                             tolerance: None,
                         });
                         ir.model.shells.push(Shell::with_wire_edge(
-                            shell_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
-                            region_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
+                            shell_id.clone(),
+                            region_id.clone(),
                             edge_id,
                         ));
                         ir.model.regions.push(Region {
-                            id: region_id
-                                .try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
-                            body: body_id
-                                .try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
+                            id: region_id.clone(),
+                            body: body_id.clone(),
                             shells: vec![shell_id],
                         });
                         ir.model.bodies.push(Body {
@@ -3016,7 +2971,7 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
             .set_arena(ctx, "legacy_v1_records", &direct_records)
             .map_err(CodecError::malformed)?;
     }
-    ir.model.finalize(ctx)?;
+    ir.model.finalize();
     let opaque_count = opaque_records.len();
     let opaque_bytes = opaque_records
         .iter()
@@ -3077,7 +3032,7 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
         ),
         (crate::coverage::LEGACY_V1_NURBS_BREPS, decoded_nurbs_breps),
     ] {
-        coverage.record(ctx, key, count)?;
+        coverage.record(key, count);
     }
     let mut source_fidelity = cadmpeg_ir::SourceFidelity::default();
     source_fidelity.retain_unknown_records(

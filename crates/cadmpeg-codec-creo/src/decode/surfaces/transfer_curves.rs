@@ -23,7 +23,6 @@ use crate::decode::analytic::pcurves::pcurve_edge_endpoint_evidence;
 use crate::decode::analytic::vertices::solved_topological_vertices;
 use crate::decode::source_carriers::SourceUnitCarriers;
 
-use super::intersection_candidates::FixedCandidates;
 use super::intersection_resolve::curve_contains_points;
 use super::intersection_resolve::{
     fc14_held_coordinate, multi_component_intersection_candidates, resolve_curve_candidates,
@@ -36,10 +35,9 @@ use super::nurbs_boundaries::{
 };
 
 pub(in super::super) fn analytic_curve_branches(
-    ctx: &DecodeContext<'_>,
     geometry: &CurveGeometry,
     tag: &'static str,
-) -> Result<FixedCandidates<(CurveGeometry, &'static str)>, CodecError> {
+) -> super::intersection_candidates::FixedCandidates<(CurveGeometry, &'static str)> {
     let opposite =
         if let CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(hyperbola_curve)) = geometry {
             Some((
@@ -51,25 +49,19 @@ pub(in super::super) fn analytic_curve_branches(
         } else {
             None
         };
-    Ok(std::iter::once((
-        geometry.try_clone_for_decode(ctx, "creo analytic curve branch geometry")?,
-        tag,
-    ))
-    .chain(opposite)
-    .collect())
+    std::iter::once((geometry.clone(), tag))
+        .chain(opposite)
+        .collect()
 }
 
 fn resolve_carrier_intersection_curve(
-    ctx: &DecodeContext<'_>,
     first: CarrierEquation,
     second: CarrierEquation,
     points: Option<[[f64; 3]; 2]>,
     allow_unresolved_endpoint_witness: bool,
-) -> Result<Option<(CurveGeometry, &'static str)>, CodecError> {
-    let Some((geometry, tag)) = carrier_intersection_curve(first, second) else {
-        return Ok(None);
-    };
-    let candidates = analytic_curve_branches(ctx, &geometry, tag)?;
+) -> std::option::Option<(cadmpeg_ir::geometry::CurveGeometry, &'static str)> {
+    let (geometry, tag) = carrier_intersection_curve(first, second)?;
+    let candidates = analytic_curve_branches(&geometry, tag);
     let selected = match points {
         Some(points) => exactly_one(
             candidates
@@ -89,7 +81,7 @@ fn resolve_carrier_intersection_curve(
             .filter(|()| candidates.len() == 1)
             .map(|()| 0)
     });
-    Ok(selected.and_then(|index| candidates.into_iter().nth(index)))
+    selected.and_then(|index| candidates.into_iter().nth(index))
 }
 
 pub(in super::super) fn transfer_carrier_intersection_curves(
@@ -138,12 +130,11 @@ pub(in super::super) fn transfer_carrier_intersection_curves(
             .is_some_and(|evidence| !evidence.complete)
             && !nurbs_endpoint_witnesses.contains(&curve_id);
         let resolved = resolve_carrier_intersection_curve(
-            ctx,
             first,
             second,
             points,
             allow_unresolved_endpoint_witness,
-        )?
+        )
         .or_else(|| {
             let candidates = multi_component_intersection_candidates(first, second);
             if points.is_some() {
@@ -161,7 +152,6 @@ pub(in super::super) fn transfer_carrier_intersection_curves(
             continue;
         }
         annotate(
-            ctx,
             annotations,
             &id,
             "VisibGeom",
@@ -384,7 +374,6 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
             continue;
         }
         annotate(
-            ctx,
             annotations,
             &id,
             "VisibGeom",
@@ -465,16 +454,12 @@ mod tests {
         points: Option<[[f64; 3]; 2]>,
         allow_unresolved_endpoint_witness: bool,
     ) -> Option<(CurveGeometry, &'static str)> {
-        crate::decode::with_test_decode_ctx(|ctx| {
-            resolve_carrier_intersection_curve_admitted(
-                ctx,
-                first,
-                second,
-                points,
-                allow_unresolved_endpoint_witness,
-            )
-        })
-        .expect("carrier intersection admission")
+        resolve_carrier_intersection_curve_admitted(
+            first,
+            second,
+            points,
+            allow_unresolved_endpoint_witness,
+        )
     }
     use crate::decode::analytic::equations::{CarrierEquation, PlaneEquation};
     use crate::topology::{HalfEdge, HalfEdgeId, HalfEdgeVertexIncidence};
@@ -489,10 +474,7 @@ mod tests {
             construction: ProceduralCurveId::mint(identity).expect("valid construction ID"),
             cache: None,
         };
-        let branches = crate::decode::with_test_decode_ctx(|ctx| {
-            super::analytic_curve_branches(ctx, &geometry, "procedural")
-        })
-        .expect("service admits branch");
+        let branches = { super::analytic_curve_branches(&geometry, "procedural") };
         assert_eq!(branches.len(), 1);
         assert_eq!(branches[0].0, geometry);
     }

@@ -6,9 +6,9 @@ mod parameter_ranges;
 
 #[test]
 fn b5_derived_field_records_exactness() {
-    let annotations = crate::test_support::with_service_context(|ctx| {
+    let annotations = crate::test_support::with_service_context(|_| {
         let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
-        annotations.derived(ctx, "catia:b5:vertex#0", "point")?;
+        annotations.derived("catia:b5:vertex#0", "point")?;
         Ok::<_, cadmpeg_core::CodecError>(annotations.build())
     })
     .expect("service budget admits the field note");

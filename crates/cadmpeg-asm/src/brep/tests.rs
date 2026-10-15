@@ -91,21 +91,17 @@ fn exact_circle_extrusion_reduces_to_cylinder_only_along_normal() {
     assert!(analytic_procedural_surface(&definition(Vector3::new(1.0, 0.0, 8.0))).is_none());
     let mut approximate = exact_circle_directrix();
     approximate
-        .try_map_control_points(
-            |index, point| {
-                let mut point = point.get();
-                if index == 3 {
-                    point.x += 1.0e-5;
-                }
-                cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
-                    cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
-                        "control_points contains a non-finite point".into(),
-                    )
-                })
-            },
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .expect("pole edit admission")
+        .try_map_control_points(|index, point| {
+            let mut point = point.get();
+            if index == 3 {
+                point.x += 1.0e-5;
+            }
+            cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                    "control_points contains a non-finite point".into(),
+                )
+            })
+        })
         .unwrap();
     assert!(rational_four_arc_circle(&approximate).is_none());
 }
@@ -215,21 +211,17 @@ fn exact_circle_recognition_is_projective_and_degree_invariant() {
         Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(_)))
     ));
     elevated
-        .try_map_control_points(
-            |index, point| {
-                let mut point = point.get();
-                if index == 5 {
-                    point.x += 1.0e-5;
-                }
-                cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
-                    cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
-                        "control_points contains a non-finite point".into(),
-                    )
-                })
-            },
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .expect("pole edit admission")
+        .try_map_control_points(|index, point| {
+            let mut point = point.get();
+            if index == 5 {
+                point.x += 1.0e-5;
+            }
+            cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                    "control_points contains a non-finite point".into(),
+                )
+            })
+        })
         .unwrap();
     assert!(rational_four_arc_circle(&elevated).is_none());
 }
@@ -308,21 +300,17 @@ fn constant_circular_plane_plane_blend_reduces_to_tangent_cylinder() {
         unreachable!()
     };
     spine
-        .try_map_control_points(
-            |index, point| {
-                let mut point = point.get();
-                if index == 1 {
-                    point.x = 2.1;
-                }
-                cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
-                    cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
-                        "control_points contains a non-finite point".into(),
-                    )
-                })
-            },
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .expect("pole edit admission")
+        .try_map_control_points(|index, point| {
+            let mut point = point.get();
+            if index == 1 {
+                point.x = 2.1;
+            }
+            cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                    "control_points contains a non-finite point".into(),
+                )
+            })
+        })
         .unwrap();
     assert!(analytic_procedural_surface(&definition).is_none());
 }
@@ -331,21 +319,17 @@ fn constant_circular_plane_plane_blend_reduces_to_tangent_cylinder() {
 fn constant_circular_plane_cylinder_blend_reduces_to_tangent_torus() {
     let mut circle = exact_circle_directrix();
     circle
-        .try_map_control_points(
-            |_, point| {
-                let mut point = point.get();
-                point.x -= 2.0;
-                point.y -= 3.0;
-                point.z -= 3.0;
-                cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
-                    cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
-                        "control_points contains a non-finite point".into(),
-                    )
-                })
-            },
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .expect("pole edit admission")
+        .try_map_control_points(|_, point| {
+            let mut point = point.get();
+            point.x -= 2.0;
+            point.y -= 3.0;
+            point.z -= 3.0;
+            cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                    "control_points contains a non-finite point".into(),
+                )
+            })
+        })
         .unwrap();
     let mut definition = nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Blend {
         supports: Box::new([
@@ -605,14 +589,6 @@ fn standard_attribute_chain_uses_forward_links_and_first_exact_color() {
     };
     use cadmpeg_ir::attributes::AttributeTarget;
 
-    let resource_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &resource_arena,
-        &cadmpeg_core::decode::DecodePolicy::default(),
-    )
-    .expect("test decode context");
-
     let record = |index, name: &str, next, payload: Vec<Token>| {
         let mut tokens = vec![
             Token::Ref(-1),
@@ -708,7 +684,6 @@ fn standard_attribute_chain_uses_forward_links_and_first_exact_color() {
     let mut emitted = HashSet::new();
     let mut source = Vec::new();
     collect_attributes(
-        &resource_ctx,
         &entity,
         &AttributeTarget::Face(FaceId::mint("test:model:face#0").expect("identity grammar")),
         &by_index,
@@ -739,14 +714,6 @@ fn legacy_attribute_chain_uses_second_field_forward_link() {
         attribute_chain_color_carrier, attribute_chain_name, collect_attributes,
     };
     use cadmpeg_ir::attributes::AttributeTarget;
-
-    let resource_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &resource_arena,
-        &cadmpeg_core::decode::DecodePolicy::default(),
-    )
-    .expect("test decode context");
 
     let entity = Record {
         index: 0,
@@ -808,7 +775,6 @@ fn legacy_attribute_chain_uses_second_field_forward_link() {
     let mut emitted = HashSet::new();
     let mut source = Vec::new();
     collect_attributes(
-        &resource_ctx,
         &entity,
         &AttributeTarget::Face(FaceId::mint("test:model:face#0").expect("identity grammar")),
         &by_index,
@@ -832,14 +798,6 @@ fn legacy_attribute_chain_uses_second_field_forward_link() {
 #[test]
 fn shell_and_loop_attribute_chains_retain_their_native_owners() {
     use cadmpeg_ir::attributes::AttributeTarget;
-
-    let resource_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &resource_arena,
-        &cadmpeg_core::decode::DecodePolicy::default(),
-    )
-    .expect("test decode context");
 
     let record = |index, name: &str, tokens: Vec<Token>| Record {
         index,
@@ -871,12 +829,10 @@ fn shell_and_loop_attribute_chains_retain_their_native_owners() {
             face: face_id,
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
                 cadmpeg_ir::topology::LoopRing::new(
-                    &cadmpeg_test_support::service_decode_context(),
                     vec![cadmpeg_ir::ids::CoedgeId::mint("test:model:coedge#0")
                         .expect("identity grammar")],
                     Vec::new(),
                 )
-                .expect("fixture ring admission")
                 .expect("valid loop ring"),
             ),
         }],
@@ -892,15 +848,8 @@ fn shell_and_loop_attribute_chains_retain_their_native_owners() {
     };
 
     assert_eq!(
-        emit_attributes(
-            &resource_ctx,
-            &mut brep,
-            &records,
-            &by_index,
-            &reach,
-            FORMAT
-        )
-        .expect("finite attribute values"),
+        emit_attributes(&mut brep, &records, &by_index, &reach, FORMAT)
+            .expect("finite attribute values"),
         HashSet::from([1, 2])
     );
     assert!(brep.attributes.iter().any(|attribute| attribute.target
@@ -918,14 +867,6 @@ fn lump_named_attributes_bind_to_their_owning_body() {
     use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue};
     use cadmpeg_ir::ids::BodyId;
     use cadmpeg_ir::topology::{Body, BodyKind, Region};
-
-    let resource_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &resource_arena,
-        &cadmpeg_core::decode::DecodePolicy::default(),
-    )
-    .expect("test decode context");
 
     let record = |index, name: &str, tokens: Vec<Token>| Record {
         index,
@@ -990,7 +931,6 @@ fn lump_named_attributes_bind_to_their_owning_body() {
     };
 
     let emitted = emit_attributes(
-        &resource_ctx,
         &mut brep,
         &records,
         &by_index,

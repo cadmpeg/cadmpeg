@@ -23,8 +23,7 @@ pub(crate) fn hash_records<T: Serialize + ?Sized>(
     ctx: &DecodeContext<'_>,
     value: &T,
 ) -> Result<String, CodecError> {
-    const OPERATION: &str = "hash SLDPRT canonical history bytes";
-    cadmpeg_ir::hash::canonical_json_sha256(ctx, value, OPERATION).map_err(Into::into)
+    cadmpeg_ir::hash::canonical_json_sha256(ctx, value).map_err(Into::into)
 }
 
 pub(crate) fn feature_hash(

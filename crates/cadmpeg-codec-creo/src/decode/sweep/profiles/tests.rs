@@ -165,9 +165,8 @@ fn source_sketch_geometry_drives_profile_analysis_after_millimeter_admission() {
     let mut carriers = crate::decode::source_carriers::SourceUnitCarriers::new(
         cadmpeg_ir::scalar::PositiveReal::new(25.4),
     );
-    crate::decode::with_test_decode_ctx(|ctx| {
+    ({
         carriers.admit_sketch_entities(
-            ctx,
             &mut ir,
             vec![SketchEntity::new(
                 entity_id,
@@ -739,8 +738,7 @@ fn nurbs_profile_local_depth_ceiling_leaves_the_span_unsampled() {
     .expect("fixture constructor admission")
     .expect("curved fixture");
     crate::decode::with_test_decode_ctx(|ctx| {
-        let mut evaluator =
-            cadmpeg_ir::eval::decode::NurbsPointEvaluator::new(ctx, &curve).expect("evaluator");
+        let mut evaluator = cadmpeg_ir::eval::decode::NurbsPointEvaluator::new(&curve);
         let mut points = Vec::new();
         let sampled = super::append_nurbs_profile_span(
             ctx,
@@ -767,8 +765,7 @@ fn nurbs_profile_local_depth_ceiling_leaves_the_span_unsampled() {
 fn nurbs_profile_local_point_ceiling_leaves_the_span_unsampled() {
     let curve = linear_profile_curve();
     crate::decode::with_test_decode_ctx(|ctx| {
-        let mut evaluator =
-            cadmpeg_ir::eval::decode::NurbsPointEvaluator::new(ctx, &curve).expect("evaluator");
+        let mut evaluator = cadmpeg_ir::eval::decode::NurbsPointEvaluator::new(&curve);
         let mut points = vec![[0.0, 0.0]; 262_145];
         let sampled = super::append_nurbs_profile_span(
             ctx,

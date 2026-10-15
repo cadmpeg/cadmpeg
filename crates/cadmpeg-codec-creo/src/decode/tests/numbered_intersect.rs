@@ -90,7 +90,7 @@ fn feature_edge_selection_with_service(
     ir: &CadIr,
     feature_id: u32,
 ) -> Option<EdgeSelection> {
-    crate::decode::with_test_decode_ctx(|ctx| feature_edge_selection(ctx, scan, ir, feature_id))
+    (feature_edge_selection(scan, ir, feature_id))
         .expect("service profile admits feature edge selection")
 }
 
@@ -100,10 +100,8 @@ fn generated_curve_edge_refs_with_service(
     available_features: &BTreeSet<IrFeatureId>,
     result_edge_ids: &BTreeMap<u32, Vec<u32>>,
 ) -> Option<Vec<GeneratedEdgeRef>> {
-    crate::decode::with_test_decode_ctx(|ctx| {
-        generated_curve_edge_refs(ctx, curve_ids, rows, available_features, result_edge_ids)
-    })
-    .expect("service profile admits generated curve references")
+    ({ generated_curve_edge_refs(curve_ids, rows, available_features, result_edge_ids) })
+        .expect("service profile admits generated curve references")
 }
 
 fn generated_surface_face_refs_with_service(
@@ -112,16 +110,8 @@ fn generated_surface_face_refs_with_service(
     result_surface_ids: &BTreeMap<u32, Vec<u32>>,
     available_features: &BTreeSet<IrFeatureId>,
 ) -> Option<Vec<GeneratedFaceRef>> {
-    crate::decode::with_test_decode_ctx(|ctx| {
-        generated_surface_face_refs(
-            ctx,
-            source_ids,
-            rows,
-            result_surface_ids,
-            available_features,
-        )
-    })
-    .expect("service profile admits generated surface references")
+    ({ generated_surface_face_refs(source_ids, rows, result_surface_ids, available_features) })
+        .expect("service profile admits generated surface references")
 }
 
 fn native_feature_dependency_ids_with_service(
@@ -857,17 +847,13 @@ fn generated_surface_faces_require_unique_rows_and_materialized_producers() {
         Some(vec![
             GeneratedFaceRef::new(
                 IrFeatureId::mint("creo:model:feature#97".to_string()).expect("identity grammar"),
-                "surface#98".to_string(),
-                &cadmpeg_test_support::service_decode_context(),
+                "surface#98".to_string()
             )
-            .expect("selection reference admission")
             .expect("valid test fixture"),
             GeneratedFaceRef::new(
                 IrFeatureId::mint("creo:model:feature#144".to_string()).expect("identity grammar"),
-                "surface#145".to_string(),
-                &cadmpeg_test_support::service_decode_context(),
+                "surface#145".to_string()
             )
-            .expect("selection reference admission")
             .expect("valid test fixture"),
         ])
     );
@@ -990,17 +976,13 @@ fn generated_curve_edges_require_unique_rows_and_materialized_producers() {
         Some(vec![
             GeneratedEdgeRef::new(
                 IrFeatureId::mint("creo:model:feature#12".to_string()).expect("identity grammar"),
-                "curve#45".to_string(),
-                &cadmpeg_test_support::service_decode_context(),
+                "curve#45".to_string()
             )
-            .expect("selection reference admission")
             .expect("valid test fixture"),
             GeneratedEdgeRef::new(
                 IrFeatureId::mint("creo:model:feature#18".to_string()).expect("identity grammar"),
-                "curve#46".to_string(),
-                &cadmpeg_test_support::service_decode_context(),
+                "curve#46".to_string()
             )
-            .expect("selection reference admission")
             .expect("valid test fixture"),
         ])
     );
@@ -1247,10 +1229,8 @@ fn model_feature_ids_include_row_backed_generated_producers() {
         ),
         Some(vec![GeneratedFaceRef::new(
             IrFeatureId::mint("creo:model:feature#50".to_string()).expect("identity grammar"),
-            "surface#61".to_string(),
-            &cadmpeg_test_support::service_decode_context(),
+            "surface#61".to_string()
         )
-        .expect("selection reference admission")
         .expect("valid test fixture")])
     );
     assert_eq!(
@@ -1262,10 +1242,8 @@ fn model_feature_ids_include_row_backed_generated_producers() {
         ),
         Some(vec![GeneratedEdgeRef::new(
             IrFeatureId::mint("creo:model:feature#50".to_string()).expect("identity grammar"),
-            "curve#59".to_string(),
-            &cadmpeg_test_support::service_decode_context(),
+            "curve#59".to_string()
         )
-        .expect("selection reference admission")
         .expect("valid test fixture")])
     );
     scan.features
@@ -1283,15 +1261,11 @@ fn model_feature_ids_include_row_backed_generated_producers() {
                 vec![GeneratedEdgeRef::new(
                     IrFeatureId::mint("creo:model:feature#50".to_string())
                         .expect("identity grammar"),
-                    "curve#59".to_string(),
-                    &cadmpeg_test_support::service_decode_context(),
+                    "curve#59".to_string()
                 )
-                .expect("selection reference admission")
                 .expect("valid test fixture")],
-                "creo:allfeatur:edgs_affected#10:59".to_string(),
-                &cadmpeg_test_support::service_decode_context(),
+                "creo:allfeatur:edgs_affected#10:59".to_string()
             )
-            .expect("selection reference admission")
             .expect("valid test fixture")
         )
     );
@@ -1401,7 +1375,6 @@ fn geometry_signal_excludes_opaque_carriers() {
     assert!(!has_transferred_geometry(&ir));
 
     let _attached = ir.model.add_procedural_surface(
-        &cadmpeg_ir::document::admission::StandardAdmission,
         &surface_id,
         ProceduralSurface::new(
             ProceduralSurfaceId::mint("test:model:entity#procedural".to_string())

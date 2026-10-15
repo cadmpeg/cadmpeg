@@ -68,9 +68,7 @@ fn one_knit_scan() -> crate::container::ContainerScan<'static> {
 #[test]
 fn knit_operand_fixture_generates_a_surface_face() {
     let scan = one_knit_scan();
-    let definition =
-        crate::decode::with_test_decode_ctx(|ctx| knit_surface_feature_definition(ctx, &scan, 416))
-            .expect("knit surface selection");
+    let definition = (knit_surface_feature_definition(&scan, 416)).expect("knit surface selection");
     assert!(matches!(
         definition,
         cadmpeg_ir::features::FeatureDefinition::Operation(

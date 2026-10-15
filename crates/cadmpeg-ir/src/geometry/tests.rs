@@ -40,14 +40,8 @@ fn inline_geometry_copy_preserves_each_carrier() {
         )
         .unwrap(),
     ));
-    let ctx = cadmpeg_test_support::service_decode_context();
     for geometry in [unknown, composite, transformed] {
-        assert_eq!(
-            geometry
-                .try_clone_for_decode(&ctx, "geometry copy")
-                .unwrap(),
-            geometry
-        );
+        assert_eq!(geometry.clone(), geometry);
     }
 }
 

@@ -1303,7 +1303,7 @@ fn nx_container_record_is_not_a_modeling_feature() {
 
 #[test]
 fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
-    crate::test_support::with_decode_context(|ctx| {
+    ({
         let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
         let dimensions = [10.0, 20.0, 30.0];
         for axis in 0..3 {
@@ -1347,9 +1347,7 @@ fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
         }
         let output = ir.model.bodies[0].id.clone();
         let placement = |ir: &CadIr, dimensions, outputs: &[BodyId]| {
-            block_placement(ctx, ir, dimensions, outputs)
-                .unwrap()
-                .map(|(_, transform)| transform)
+            block_placement(ir, dimensions, outputs).map(|(_, transform)| transform)
         };
 
         assert_eq!(
@@ -1357,7 +1355,7 @@ fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
             Some(cadmpeg_ir::transform::Transform::identity())
         );
         assert_eq!(
-            block_placement(ctx, &ir, dimensions, &[]).unwrap(),
+            block_placement(&ir, dimensions, &[]),
             Some((output.clone(), cadmpeg_ir::transform::Transform::identity()))
         );
         assert_eq!(
@@ -1525,7 +1523,7 @@ fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
 
 #[test]
 fn nx_sphere_projection_requires_one_complete_spherical_body() {
-    crate::test_support::with_decode_context(|ctx| {
+    ({
         let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
         let body = ir.model.bodies[0].id.clone();
         let face = ir.model.faces[0].id.clone();
@@ -1552,7 +1550,7 @@ fn nx_sphere_projection_requires_one_complete_spherical_body() {
         ));
 
         assert_eq!(
-            sphere_body_projection(ctx, &ir, &[]).unwrap(),
+            sphere_body_projection(&ir, &[]),
             Some((
                 body.clone(),
                 cadmpeg_ir::features::FinitePoint3::new(Point3::new(1., 2., 3.))
@@ -1562,7 +1560,7 @@ fn nx_sphere_projection_requires_one_complete_spherical_body() {
             ))
         );
         assert_eq!(
-            sphere_body_projection(ctx, &ir, std::slice::from_ref(&body)).unwrap(),
+            sphere_body_projection(&ir, std::slice::from_ref(&body)),
             Some((
                 body.clone(),
                 cadmpeg_ir::features::FinitePoint3::new(Point3::new(1., 2., 3.))
@@ -1614,16 +1612,14 @@ fn nx_sphere_projection_requires_one_complete_spherical_body() {
         ir.model.faces.push(second_face);
         ir.model.surfaces.push(second_surface);
 
-        assert!(sphere_body_projection(ctx, &ir, &[]).unwrap().is_none());
+        assert!(sphere_body_projection(&ir, &[]).is_none());
         assert!(sphere_body_projection(
-            ctx,
             &ir,
             &[
                 body,
                 BodyId::mint("test:model:entity#second-body").expect("identity grammar")
             ]
         )
-        .unwrap()
         .is_none());
     });
 }

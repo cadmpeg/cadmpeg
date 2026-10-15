@@ -551,9 +551,6 @@ rewrite_enum!(VertexSelection, []; {
     Native(field0),
 });
 
-#[cfg(test)]
-mod tests;
-
 rewrite_enum!(super::ConfigurationEvaluation, []; { Suppressed {}, Active { outputs } });
 rewrite_record!(super::ConfigurationFeatureState, []; { evaluation, dependencies, definition });
 rewrite_record!(super::FeatureEvaluation, []; { definition, outputs });

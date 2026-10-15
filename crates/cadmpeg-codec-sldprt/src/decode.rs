@@ -2104,7 +2104,7 @@ fn try_decode_brep(
         .transpose()?;
     let (selected_site_key, selected, mut decoded) = decoded_sites.swap_remove(selected_site);
     if active_stream.is_none() {
-        decoded.qualify_ids(ctx, &selected_site_key)?;
+        decoded.qualify_ids(&selected_site_key)?;
     }
     bind_opaque_geometry(&mut decoded, &streams[selected].section.native_id());
     let mut configuration_bodies = Vec::new();
@@ -2112,7 +2112,7 @@ fn try_decode_brep(
         configuration_bodies.push((index, copy_body_ids(&decoded.bodies)));
     }
     for (site, first, mut alternate) in decoded_sites {
-        alternate.qualify_ids(ctx, &site)?;
+        alternate.qualify_ids(&site)?;
         bind_opaque_geometry(&mut alternate, &streams[first].section.native_id());
         if let Some(index) = configuration_index(streams[first].source_stream().as_str()) {
             configuration_bodies.push((index, copy_body_ids(&alternate.bodies)));
@@ -2120,7 +2120,7 @@ fn try_decode_brep(
         // Keep only the selected source's bridge sequence namespace. Alternate
         // configuration sites are qualified into the model but do not own the
         // active SWIFT CadIdentifier lane.
-        merge_brep(ctx, &mut decoded, alternate)?;
+        merge_brep(&mut decoded, alternate)?;
     }
     let report = build_geometry_report(
         ctx,
@@ -2175,20 +2175,12 @@ fn retained_copy(
     Ok(bytes.to_vec())
 }
 
-fn merge_brep(
-    ctx: &DecodeContext<'_>,
-    target: &mut Brep,
-    mut source: Brep,
-) -> Result<(), CodecError> {
+fn merge_brep(target: &mut Brep, mut source: Brep) -> Result<(), CodecError> {
     // Sequence links are source-local and belong only to the selected SWIFT
     // source. Alternate configuration sequences must not enter its namespace.
     target
         .annotations
-        .append(
-            ctx,
-            source.annotations,
-            "merge SLDPRT annotation identities",
-        )?
+        .append(source.annotations)
         .map_err(CodecError::from)?;
     target.bodies.append(&mut source.bodies);
     target.regions.append(&mut source.regions);
@@ -2224,7 +2216,6 @@ fn merge_brep(
 }
 
 fn ensure_display_appearance(
-    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     definition: &crate::appearance::AppearanceDefinition,
     section_ordinal: usize,
@@ -2234,16 +2225,13 @@ fn ensure_display_appearance(
         appearance.name.as_deref() == Some(definition.name.as_str())
             && appearance.base_color == Some(definition.color)
     }) {
-        return existing
-            .id
-            .try_clone_for_decode(ctx, "SLDPRT display appearance identity");
+        return Ok(existing.id.clone());
     }
     let id = AppearanceId::compose(
         &cadmpeg_ir::identity_namespace!("sldprt", "appearance", "displaylist"),
         cadmpeg_ir::ids::IdentityKey::from(section_ordinal).colon(definition.record_offset),
     );
     crate::annotations::note(
-        ctx,
         annotations,
         id.as_str(),
         &definition.source_name,
@@ -2358,7 +2346,7 @@ fn build_geometry_ir(
         &lanes,
     )?;
     crate::history::configuration::align_configuration_parameter_kinds(&mut ir);
-    complete_resolved_configuration_parameter_snapshots(ctx, &mut ir)?;
+    complete_resolved_configuration_parameter_snapshots(&mut ir)?;
     stamp_parameter_baseline(ctx, &mut ir)?;
     let crate::resolved_features::sketch_projection::ProjectedSketches {
         mut sketches,
@@ -2366,7 +2354,6 @@ fn build_geometry_ir(
         constraints: mut sketch_constraints,
     } = crate::resolved_features::sketch_projection::sketches(ctx, scan, &mut annotations)?;
     crate::resolved_features::profiles::bind_sketch_profiles(
-        ctx,
         &mut ir.model.features,
         crate::resolved_features::profiles::SketchArenas {
             sketches: &mut sketches,
@@ -2377,7 +2364,7 @@ fn build_geometry_ir(
         &ir.model.parameters,
         &histories,
         &lanes,
-    )?;
+    );
     crate::resolved_features::bindings::bind_unresolved_detached_sketch_objects(
         ctx,
         &ir.model.features,
@@ -2428,13 +2415,12 @@ fn build_geometry_ir(
         sketch_lanes,
     )?;
     crate::resolved_features::profiles::project_sketch_block_profiles(
-        ctx,
         &mut ir.model.features,
         &mut sketches,
         &mut sketch_entities,
         &histories,
         sketch_lanes,
-    )?;
+    );
     crate::history::bind::bind_unique_sketch_feature(
         ctx,
         &mut ir.model.features,
@@ -2448,13 +2434,12 @@ fn build_geometry_ir(
         &histories,
     )?;
     crate::resolved_features::axes::bind_profile_revolution_axes(
-        ctx,
         &mut ir.model.features,
         &histories,
         lanes,
         &sketches,
         &brep.surfaces,
-    )?;
+    );
     crate::resolved_features::bindings::bind_pattern_inputs(
         ctx,
         &mut ir.model.features,
@@ -2476,7 +2461,6 @@ fn build_geometry_ir(
         sketch_lanes,
     )?;
     crate::resolved_features::dimensions::project_marker_dimensioned_circles(
-        ctx,
         &mut sketch_entities,
         &mut sketches,
         &ir.model.features,
@@ -2496,7 +2480,6 @@ fn build_geometry_ir(
         sketch_lanes,
     )?;
     crate::resolved_features::relation_geometry::project_relation_solved_line_geometry(
-        ctx,
         &mut sketch_entities,
         &sketches,
         &ir.model.features,
@@ -2638,14 +2621,13 @@ fn build_geometry_ir(
         &all_lanes,
     )?;
     crate::resolved_features::holes::project_spatial_hole_position_sketches(
-        ctx,
         &mut ir.model.features,
         &ir.model.spatial_sketches,
         &ir.model.spatial_sketch_entities,
         &ir.model.surfaces,
         &histories,
         &all_lanes,
-    )?;
+    );
     crate::resolved_features::holes::project_generated_hole_axes(
         &mut ir.model.features,
         &histories,
@@ -2744,7 +2726,7 @@ fn build_geometry_ir(
         &ir.model.surfaces,
     );
     crate::history::configuration::inherit_configuration_reference_plane_states(ctx, &mut ir)?;
-    sync_active_configuration_resolutions(ctx, &mut ir)?;
+    sync_active_configuration_resolutions(&mut ir)?;
     crate::history::bind::order_model_features_for_regeneration(ctx, &mut ir)?;
     let pattern_hole_nominals = crate::swift::pattern_hole_nominal_context(&ir.model.features);
     ir.model.pmi = crate::swift::annotations(
@@ -2779,7 +2761,7 @@ fn build_geometry_ir(
     native.store(ctx, ir.native.namespace_mut("sldprt"))?;
     // Stamp baseline before fabricating the read-side configuration snapshot.
     stamp_configuration_baseline(ctx, &mut ir)?;
-    snapshot_active_configuration(ctx, &mut ir)?;
+    snapshot_active_configuration(&mut ir)?;
     let mut unknowns = brep.unknowns;
     for owned_face_color in brep.face_colors {
         let annotation_source = &owned_face_color.source_stream;
@@ -2804,7 +2786,6 @@ fn build_geometry_ir(
             cadmpeg_ir::ids::IdentityKey::from(face_color.color_attr).with_tail(&site),
         );
         crate::annotations::note(
-            ctx,
             &mut annotations,
             id.as_str(),
             annotation_source,
@@ -2869,7 +2850,6 @@ fn build_geometry_ir(
             index,
         );
         crate::annotations::note(
-            ctx,
             &mut annotations,
             id.as_str(),
             &definition.source_name,
@@ -2940,7 +2920,6 @@ fn build_geometry_ir(
                 });
             }
             crate::annotations::note(
-                ctx,
                 &mut annotations,
                 id.as_str(),
                 display_stream,
@@ -2953,7 +2932,6 @@ fn build_geometry_ir(
                 let source_entity_id =
                     format!("{}::DisplayFace[{table_index}]", display_stream.as_str());
                 let appearance = ensure_display_appearance(
-                    ctx,
                     &mut ir,
                     definition,
                     display.ordinal(),
@@ -2991,7 +2969,6 @@ fn build_geometry_ir(
             display.ordinal(),
         );
         crate::annotations::note(
-            ctx,
             &mut annotations,
             display_id.as_str(),
             display_stream,
@@ -3023,8 +3000,8 @@ fn build_geometry_ir(
     assigned_tessellations.extend(remaining_assignments);
     let mut annotation_builder = AnnotationBuilder::resume(annotations);
     for id in assigned_tessellations {
-        annotation_builder.field_exactness(ctx, id.as_str(), "body", Exactness::Derived)?;
-        annotation_builder.field_exactness(ctx, id.as_str(), "faces", Exactness::Derived)?;
+        annotation_builder.field_exactness(id.as_str(), "body", Exactness::Derived)?;
+        annotation_builder.field_exactness(id.as_str(), "faces", Exactness::Derived)?;
     }
     let mut annotations = annotation_builder.build();
     for source_block in &mut scan.blocks {
@@ -3036,7 +3013,6 @@ fn build_geometry_ir(
             continue;
         }
         crate::annotations::note(
-            ctx,
             &mut annotations,
             id.as_str(),
             source_block.section.source_stream(),
@@ -3057,7 +3033,6 @@ fn build_geometry_ir(
             source_stream.directory_id,
         );
         crate::annotations::note(
-            ctx,
             &mut annotations,
             id.as_str(),
             &source_stream.path,
@@ -3110,7 +3085,7 @@ fn build_geometry_ir(
     // Sort arenas for the order-sensitive loss scans that follow; the local
     // digests are stamped once, in `decode_result`, after native unknown
     // records are attached.
-    ir.finalize(ctx)?;
+    ir.finalize();
     Ok((ir, annotations, unknowns, pmi_losses))
 }
 
@@ -3188,9 +3163,7 @@ fn source_meta(
     add_preview_metadata(scan, &mut attributes);
     add_solidworks_xml_metadata(scan, &mut attributes)?;
     Ok(SourceMeta::classified(
-        classification
-            .layers()
-            .clone(),
+        classification.layers().clone(),
         attributes,
     ))
 }
@@ -3471,7 +3444,6 @@ fn build_metadata_ir(
             site.header.schema.value().to_owned(),
         );
         crate::annotations::note(
-            ctx,
             &mut annotations,
             id.as_str(),
             site.source_stream(),
@@ -3488,9 +3460,7 @@ fn build_metadata_ir(
     }
 
     ir.source = Some(SourceMeta::classified(
-        classification
-            .layers()
-            .clone(),
+        classification.layers().clone(),
         attributes,
     ));
     project_design_history(
@@ -3533,10 +3503,9 @@ fn build_metadata_ir(
         &lanes,
     )?;
     crate::history::configuration::align_configuration_parameter_kinds(&mut ir);
-    complete_resolved_configuration_parameter_snapshots(ctx, &mut ir)?;
+    complete_resolved_configuration_parameter_snapshots(&mut ir)?;
     stamp_parameter_baseline(ctx, &mut ir)?;
     crate::resolved_features::profiles::bind_sketch_profiles(
-        ctx,
         &mut ir.model.features,
         crate::resolved_features::profiles::SketchArenas {
             sketches: &mut ir.model.sketches,
@@ -3547,7 +3516,7 @@ fn build_metadata_ir(
         &ir.model.parameters,
         &histories,
         &lanes,
-    )?;
+    );
     crate::resolved_features::bindings::bind_unresolved_detached_sketch_objects(
         ctx,
         &ir.model.features,
@@ -3598,13 +3567,12 @@ fn build_metadata_ir(
         sketch_lanes,
     )?;
     crate::resolved_features::profiles::project_sketch_block_profiles(
-        ctx,
         &mut ir.model.features,
         &mut ir.model.sketches,
         &mut ir.model.sketch_entities,
         &histories,
         sketch_lanes,
-    )?;
+    );
     crate::history::bind::bind_unique_sketch_feature(
         ctx,
         &mut ir.model.features,
@@ -3618,13 +3586,12 @@ fn build_metadata_ir(
         &histories,
     )?;
     crate::resolved_features::axes::bind_profile_revolution_axes(
-        ctx,
         &mut ir.model.features,
         &histories,
         lanes,
         &ir.model.sketches,
         &ir.model.surfaces,
-    )?;
+    );
     crate::resolved_features::bindings::bind_pattern_inputs(
         ctx,
         &mut ir.model.features,
@@ -3666,7 +3633,6 @@ fn build_metadata_ir(
         sketch_lanes,
     )?;
     crate::resolved_features::relation_geometry::project_relation_solved_line_geometry(
-        ctx,
         &mut ir.model.sketch_entities,
         &ir.model.sketches,
         &ir.model.features,
@@ -3706,14 +3672,13 @@ fn build_metadata_ir(
         lanes,
     )?;
     crate::resolved_features::holes::project_spatial_hole_position_sketches(
-        ctx,
         &mut ir.model.features,
         &ir.model.spatial_sketches,
         &ir.model.spatial_sketch_entities,
         &ir.model.surfaces,
         &histories,
         lanes,
-    )?;
+    );
     crate::resolved_features::holes::project_topological_hole_constructions(
         &mut ir.model.features,
         &crate::resolved_features::holes::HoleTopology {
@@ -3785,7 +3750,7 @@ fn build_metadata_ir(
         &ir.model.faces,
         &ir.model.surfaces,
     );
-    sync_active_configuration_resolutions(ctx, &mut ir)?;
+    sync_active_configuration_resolutions(&mut ir)?;
     crate::history::bind::order_features_for_regeneration(ctx, &mut ir.model.features)?;
     let configuration_losses = crate::history::configuration::project_configuration_sketch_states(
         ctx,
@@ -3813,12 +3778,12 @@ fn build_metadata_ir(
     bind_active_configuration_partition(&mut ir);
     mark_active_configuration(&mut ir);
     stamp_configuration_baseline(ctx, &mut ir)?;
-    snapshot_active_configuration(ctx, &mut ir)?;
+    snapshot_active_configuration(&mut ir)?;
     preserve_source_image(ctx, scan, &mut annotations, &mut unknowns)?;
     // Sort arenas for the order-sensitive loss scans that follow; the local
     // digests are stamped once, in `decode_result`, after native unknown
     // records are attached.
-    ir.finalize(ctx)?;
+    ir.finalize();
     Ok((ir, annotations, unknowns, pmi_losses))
 }
 
@@ -3854,11 +3819,8 @@ fn project_design_history(
     )?;
     ir.model.semantic_annotations =
         crate::history::project::project_semantic_notes(&semantic_projection)?;
-    crate::history::project::project_feature_model(ctx, &semantic_projection)?.install(
-        ctx,
-        &mut ir.model,
-        losses,
-    )?;
+    crate::history::project::project_feature_model(ctx, &semantic_projection)?
+        .install(&mut ir.model, losses)?;
     crate::resolved_features::bindings::bind_pattern_inputs(
         ctx,
         &mut ir.model.features,
@@ -3883,11 +3845,7 @@ fn project_design_history(
         lanes,
     );
     crate::resolved_features::holes::
-        enrich_history_cosmetic_thread_diameters_without_hole_constructions(
-            ctx,
-            &mut parameter_projection,
-            lanes,
-        )?;
+        enrich_history_cosmetic_thread_diameters_without_hole_constructions(&mut parameter_projection, lanes)?;
     crate::pmi::enrich_history_parameters(&mut parameter_projection, pmi_dimensions);
     ir.model.parameters =
         crate::history::parameters::project_parameters(ctx, &parameter_projection)?;
@@ -3957,10 +3915,7 @@ fn stamp_parameter_baseline(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(
     Ok(())
 }
 
-fn complete_resolved_configuration_parameter_snapshots(
-    ctx: &DecodeContext<'_>,
-    ir: &mut CadIr,
-) -> Result<(), CodecError> {
+fn complete_resolved_configuration_parameter_snapshots(ir: &mut CadIr) -> Result<(), CodecError> {
     for configuration in &mut ir.model.configurations {
         if configuration.parameter_values.is_empty() && configuration.feature_states.is_empty() {
             continue;
@@ -3976,8 +3931,7 @@ fn complete_resolved_configuration_parameter_snapshots(
             }
             let id = cadmpeg_ir::features::ParameterId::mint(parameter.id.as_str().to_owned())
                 .map_err(CodecError::malformed)?;
-            let value =
-                value.try_clone_for_decode(ctx, "retain SLDPRT snapshot parameter value")?;
+            let value = value.clone();
             configuration.parameter_values.insert(id, value);
         }
     }
@@ -4030,12 +3984,7 @@ fn mark_active_configuration(ir: &mut CadIr) {
     }
 }
 
-fn snapshot_active_configuration(
-    ctx: &DecodeContext<'_>,
-    ir: &mut CadIr,
-) -> Result<(), CodecError> {
-    const FEATURE_SNAPSHOT: &str = "retain SLDPRT configuration feature snapshot";
-
+fn snapshot_active_configuration(ir: &mut CadIr) -> Result<(), CodecError> {
     let mut active = ir
         .model
         .configurations
@@ -4064,8 +4013,7 @@ fn snapshot_active_configuration(
         let Some(value) = &parameter.value else {
             continue;
         };
-        let value =
-            value.try_clone_for_decode(ctx, "retain SLDPRT configuration parameter value")?;
+        let value = value.clone();
         let id = cadmpeg_ir::features::ParameterId::mint(parameter.id.as_str().to_owned())
             .map_err(CodecError::malformed)?;
         parameter_values.insert(id, value);
@@ -4074,7 +4022,7 @@ fn snapshot_active_configuration(
     for feature in &ir.model.features {
         let id = cadmpeg_ir::features::FeatureId::mint(feature.id.as_str().to_owned())
             .map_err(CodecError::malformed)?;
-        let state = feature.configuration_state(ctx, FEATURE_SNAPSHOT)?;
+        let state = feature.configuration_state();
         feature_states.insert(id, state);
     }
     let configuration = &mut ir.model.configurations[configuration_index];
@@ -4092,10 +4040,7 @@ fn snapshot_active_configuration(
     Ok(())
 }
 
-fn sync_active_configuration_resolutions(
-    ctx: &DecodeContext<'_>,
-    ir: &mut CadIr,
-) -> Result<(), cadmpeg_core::CodecError> {
+fn sync_active_configuration_resolutions(ir: &mut CadIr) -> Result<(), cadmpeg_core::CodecError> {
     let mut active = ir
         .model
         .configurations
@@ -4148,18 +4093,7 @@ fn sync_active_configuration_resolutions(
             continue;
         };
         let copied_placements = if placements.is_none() {
-            resolved_placements
-                .as_deref()
-                .map(|source| {
-                    source
-                        .iter()
-                        .map(|placement| {
-                            placement
-                                .try_clone_for_decode(ctx, "copy SLDPRT active configuration hole")
-                        })
-                        .collect::<Result<Vec<_>, _>>()
-                })
-                .transpose()?
+            resolved_placements.as_deref().map(<[_]>::to_vec)
         } else {
             None
         };
@@ -4202,20 +4136,12 @@ fn sync_active_configuration_resolutions(
                     cadmpeg_ir::features::holes::HoleConstruction::Form { .. }
                 )
             ) {
-            Some(
-                resolved_construction
-                    .try_clone_for_decode(ctx, "copy SLDPRT active configuration hole")?,
-            )
+            Some(resolved_construction.clone())
         } else {
             None
         };
         let copied_extent = if apply_resolution {
-            resolved_extent
-                .as_ref()
-                .map(|source| {
-                    source.try_clone_for_decode(ctx, "copy SLDPRT active configuration hole")
-                })
-                .transpose()?
+            resolved_extent.clone()
         } else {
             None
         };
@@ -4289,8 +4215,7 @@ fn sync_active_configuration_resolutions(
                     | cadmpeg_ir::features::FaceSelection::Native(_)
             )
         {
-            *face = resolved_face
-                .try_clone_for_decode(ctx, "copy SLDPRT resolved cosmetic thread face")?;
+            *face = resolved_face.clone();
         }
     }
     for feature in features {
@@ -4324,7 +4249,7 @@ fn sync_active_configuration_resolutions(
         };
         if distance == resolved_distance {
             *reference = Some(cadmpeg_ir::features::DatumPlaneReference::Face {
-                face: resolved_face.try_clone_for_decode(ctx, "copy SLDPRT resolved datum face")?,
+                face: resolved_face.clone(),
             });
         }
     }
@@ -4354,8 +4279,7 @@ fn sync_active_configuration_resolutions(
             continue;
         };
         if seeds == resolved_seeds && pattern.is_unresolved() {
-            *pattern = resolved_pattern
-                .try_clone_for_decode(ctx, "copy SLDPRT resolved configuration pattern")?;
+            *pattern = resolved_pattern.clone();
         }
     }
 
@@ -4564,7 +4488,7 @@ fn stamp_sketch_baseline(
 /// Both are machine-local content digests and carry the `_local_sha256` suffix
 /// that says so; see [`document_local_sha256`] and [`brep_local_sha256`].
 fn stamp_local_digests(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), CodecError> {
-    ir.finalize(ctx)?;
+    ir.finalize();
     let brep_hash = brep_local_sha256_in_place(ctx, ir)?;
     if let Some(source) = &mut ir.source {
         source.attributes.insert(
@@ -4632,7 +4556,6 @@ fn stamp_local_digests(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), Co
         ir.source.as_ref(),
         "sldprt",
         "sldprt:file:source-image#0",
-        "record SLDPRT document digest",
     )?;
     if let Some(source) = &mut ir.source {
         source.attributes.insert(
@@ -4915,8 +4838,7 @@ fn brep_partition_sha256(
             .any(|binding| binding.appearance == appearance.id)
     });
     (
-        cadmpeg_ir::hash::canonical_json_sha256(ctx, &normalized, "hash SLDPRT BREP partition")
-            .map_err(Into::into),
+        cadmpeg_ir::hash::canonical_json_sha256(ctx, &normalized).map_err(Into::into),
         normalized.model,
     )
 }
@@ -4934,7 +4856,6 @@ pub(crate) fn document_local_sha256(ir: &CadIr) -> Result<String, CodecError> {
         ir.source.as_ref(),
         "sldprt",
         "sldprt:file:source-image#0",
-        "record SLDPRT document digest",
     )?;
     ctx.finish_session()?;
     Ok(digest)
@@ -4947,7 +4868,6 @@ fn preserve_source_image(
     unknowns: &mut Vec<UnknownRecord>,
 ) -> Result<(), CodecError> {
     crate::annotations::note(
-        ctx,
         annotations,
         "sldprt:file:source-image#0",
         &cadmpeg_ir::stream_name!("source"),

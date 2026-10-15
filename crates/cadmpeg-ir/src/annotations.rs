@@ -9,7 +9,7 @@ use std::sync::Arc;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use cadmpeg_core::decode::{DecodeContext, ResourceLimit};
+use cadmpeg_core::decode::ResourceLimit;
 use cadmpeg_core::CodecError;
 
 use crate::provenance::{AnnotationProvenance, Exactness, StreamName};
@@ -60,8 +60,8 @@ impl AnnotationTransaction {
     }
 
     /// Transfer the candidate tables to the document.
-    pub fn into_retained(self) -> Result<Annotations, CodecError> {
-        Ok(self.annotations)
+    pub fn into_retained(self) -> Annotations {
+        self.annotations
     }
 }
 
@@ -325,19 +325,13 @@ impl ExactnessNote {
 pub struct StreamHandle(Arc<StreamName>);
 
 impl StreamHandle {
-    /// Allocate one shared stream name under the caller's decode budget.
+    /// Share one admitted stream name.
     ///
     /// ```compile_fail
-    /// fn invalid(ctx: &cadmpeg_core::decode::DecodeContext<'_>) {
-    ///     let _ = cadmpeg_ir::annotations::StreamHandle::new(ctx, "", "stream handle");
-    /// }
+    /// let _ = cadmpeg_ir::annotations::StreamHandle::new("");
     /// ```
-    pub fn new(
-        _ctx: &DecodeContext<'_>,
-        stream: StreamName,
-        _operation: &'static str,
-    ) -> Result<Self, CodecError> {
-        Ok(Self(Arc::new(stream)))
+    pub fn new(stream: StreamName) -> Self {
+        Self(Arc::new(stream))
     }
 }
 
@@ -353,9 +347,9 @@ impl AnnotationStorage for () {
 
 /// A transaction builder: a failed update discards its candidate tables.
 #[derive(Debug)]
-pub struct TransactionStorage<'ctx>(std::marker::PhantomData<&'ctx ()>);
+pub struct TransactionStorage;
 
-impl AnnotationStorage for TransactionStorage<'_> {
+impl AnnotationStorage for TransactionStorage {
     const SCOPED: bool = true;
 }
 
@@ -404,21 +398,16 @@ impl<Storage: AnnotationStorage> AnnotationBuilder<Storage> {
     }
 
     /// Copy the tables into a transaction builder.
-    pub fn copy_transaction<'ctx>(
-        &self,
-        _ctx: &'ctx DecodeContext<'_>,
-        _operation: &'static str,
-    ) -> Result<AnnotationBuilder<TransactionStorage<'ctx>>, CodecError> {
-        Ok(AnnotationBuilder {
+    pub fn copy_transaction(&self) -> AnnotationBuilder<TransactionStorage> {
+        AnnotationBuilder {
             state: AnnotationState::resume(self.state.annotations.clone()),
             storage: std::marker::PhantomData,
-        })
+        }
     }
 
     /// Record provenance and exactness within this builder's storage policy.
     pub fn annotate(
         &mut self,
-        _ctx: &DecodeContext<'_>,
         id: impl Display,
         stream: impl Display,
         offset: u64,
@@ -428,16 +417,15 @@ impl<Storage: AnnotationStorage> AnnotationBuilder<Storage> {
         self.update(|state| state.annotate(id, stream, offset, tag, exactness))
     }
 
-    /// Record provenance under the caller's decode context.
+    /// Record provenance.
     pub fn note(
         &mut self,
-        _ctx: &DecodeContext<'_>,
         id: impl Display,
         stream: &StreamHandle,
         offset: u64,
         tag: Option<&str>,
-    ) -> Result<(), CodecError> {
-        self.update(|state| state.note(id, stream, offset, tag))
+    ) {
+        self.state.note(id, stream, offset, tag);
     }
 
     /// Record provenance with an already admitted owned identity.
@@ -447,53 +435,35 @@ impl<Storage: AnnotationStorage> AnnotationBuilder<Storage> {
         stream: &StreamHandle,
         offset: u64,
         tag: Option<&str>,
-    ) -> Result<(), CodecError> {
-        self.update(|state| {
-            state.insert_provenance(std::borrow::Cow::Owned(id), stream, offset, tag)
-        })
+    ) {
+        self.state
+            .insert_provenance(std::borrow::Cow::Owned(id), stream, offset, tag);
     }
 
-    /// Set entity exactness under the caller's context.
-    pub fn exactness(
-        &mut self,
-        _ctx: &DecodeContext<'_>,
-        id: impl Display,
-        exactness: Exactness,
-    ) -> Result<&mut Self, CodecError> {
-        self.update(|state| {
-            state.exactness(id, exactness);
-            Ok::<(), CodecError>(())
-        })?;
-        Ok(self)
+    /// Set entity exactness.
+    pub fn exactness(&mut self, id: impl Display, exactness: Exactness) -> &mut Self {
+        self.state.exactness(id, exactness);
+        self
     }
 
     /// Set exactness with an already admitted identity.
-    pub fn exactness_owned(
-        &mut self,
-        id: String,
-        exactness: Exactness,
-    ) -> Result<&mut Self, CodecError> {
-        self.update(|state| {
-            state.exactness_owned(id, exactness);
-            Ok::<(), CodecError>(())
-        })?;
-        Ok(self)
+    pub fn exactness_owned(&mut self, id: String, exactness: Exactness) -> &mut Self {
+        self.state.exactness_owned(id, exactness);
+        self
     }
 
-    /// Mark a field as derived under the caller's context.
+    /// Mark a field as derived.
     pub fn derived(
         &mut self,
-        ctx: &DecodeContext<'_>,
         id: impl Display,
         field: &str,
     ) -> Result<&mut Self, AnnotationFieldError> {
-        self.field_exactness(ctx, id, field, Exactness::Derived)
+        self.field_exactness(id, field, Exactness::Derived)
     }
 
-    /// Set field exactness under the caller's context.
+    /// Set field exactness.
     pub fn field_exactness<'f>(
         &mut self,
-        _ctx: &DecodeContext<'_>,
         id: impl Display,
         field: impl Into<std::borrow::Cow<'f, str>>,
         exactness: Exactness,
@@ -517,30 +487,26 @@ impl<Storage: AnnotationStorage> AnnotationBuilder<Storage> {
         Ok(self)
     }
 
-    /// Retain exactness selected by identity, deciding every entry first.
-    pub fn retain_exactness(
-        &mut self,
-        _ctx: &DecodeContext<'_>,
-        keep: impl FnMut(&str) -> Result<bool, CodecError>,
-    ) -> Result<&mut Self, CodecError> {
-        self.update(|state| retain_identity_entries(&mut state.annotations.exactness, keep))?;
-        Ok(self)
+    /// Retain exactness selected by identity.
+    pub fn retain_exactness(&mut self, mut keep: impl FnMut(&str) -> bool) -> &mut Self {
+        self.state
+            .annotations
+            .exactness
+            .retain(|identity, _| keep(identity));
+        self
     }
 
     /// Remove annotations for an entity.
-    pub fn remove_entity(&mut self, _ctx: &DecodeContext<'_>, id: &str) -> Result<(), CodecError> {
-        self.update(|state| {
-            state.annotations.provenance.remove(id);
-            state.annotations.exactness.remove(id);
-            Ok(())
-        })
+    pub fn remove_entity(&mut self, id: &str) {
+        self.state.annotations.provenance.remove(id);
+        self.state.annotations.exactness.remove(id);
     }
 }
 
-impl AnnotationBuilder<TransactionStorage<'_>> {
+impl AnnotationBuilder<TransactionStorage> {
     /// Transfer a transaction's tables to a retained builder.
-    pub fn into_retained(self) -> Result<AnnotationBuilder, CodecError> {
-        Ok(AnnotationBuilder::resume(self.state.annotations))
+    pub fn into_retained(self) -> AnnotationBuilder {
+        AnnotationBuilder::resume(self.state.annotations)
     }
 }
 
@@ -576,53 +542,34 @@ impl AnnotationState {
         let stream = StreamName::try_from(stream)
             .map_err(|_| CodecError::malformed("annotation stream name is empty"))?;
         let stream = StreamHandle(Arc::new(stream));
-        self.note(&id, &stream, offset, Some(tag))?;
+        self.note(&id, &stream, offset, Some(tag));
         self.exactness(&id, exactness);
         Ok(())
     }
 
     /// Format a temporary lookup identity before admitting its provenance.
-    fn note(
-        &mut self,
-        id: impl Display,
-        stream: &StreamHandle,
-        offset: u64,
-        tag: Option<&str>,
-    ) -> Result<(), CodecError> {
+    fn note(&mut self, id: impl Display, stream: &StreamHandle, offset: u64, tag: Option<&str>) {
         let id = id.to_string();
-        self.insert_provenance(std::borrow::Cow::Borrowed(&id), stream, offset, tag)
+        self.insert_provenance(std::borrow::Cow::Borrowed(&id), stream, offset, tag);
     }
 
     /// Admit one provenance record, moving an owned identity when it is new.
     fn insert_provenance(
         &mut self,
-        mut id: std::borrow::Cow<'_, str>,
+        id: std::borrow::Cow<'_, str>,
         stream: &StreamHandle,
         offset: u64,
         tag: Option<&str>,
-    ) -> Result<(), CodecError> {
-        let previous = self.annotations.provenance.get_mut(id.as_ref());
-        let provenance = || {
-            let tag = tag.map(str::to_owned);
-
-            Ok::<_, CodecError>(AnnotationProvenance::annotation(
-                stream.0.clone(),
-                offset,
-                tag,
-            ))
-        };
-        if let Some(previous) = previous {
-            *previous = provenance()?;
+    ) {
+        let provenance =
+            AnnotationProvenance::annotation(stream.0.clone(), offset, tag.map(str::to_owned));
+        if let Some(previous) = self.annotations.provenance.get_mut(id.as_ref()) {
+            *previous = provenance;
         } else {
-            if let std::borrow::Cow::Borrowed(text) = id {
-                id = std::borrow::Cow::Owned(text.to_owned());
-            }
-            // The lookup proved absence. Admit the new slot without another lookup.
             self.annotations
                 .provenance
-                .insert(id.into_owned(), provenance()?);
+                .insert(id.into_owned(), provenance);
         }
-        Ok(())
     }
 
     /// Set entity exactness after admitting any new retained record.
@@ -752,47 +699,23 @@ impl AnnotationState {
     }
 }
 
-/// Complete all fallible decisions before changing an identity-keyed map.
-pub(crate) fn retain_identity_entries<V>(
-    entries: &mut BTreeMap<String, V>,
-    mut keep: impl FnMut(&str) -> Result<bool, CodecError>,
-) -> Result<(), CodecError> {
-    let mut decisions = Vec::new();
-    for identity in entries.keys() {
-        decisions.push(keep(identity)?);
-    }
-    let mut decisions = decisions.into_iter();
-    entries.retain(|_, _| decisions.next() == Some(true));
-    Ok(())
-}
-
 impl Annotations {
     /// Copy the annotation tables into a transaction.
-    pub fn copy_transaction(
-        &self,
-        _ctx: &DecodeContext<'_>,
-        _operation: &'static str,
-    ) -> Result<AnnotationTransaction, CodecError> {
-        Ok(AnnotationTransaction {
+    pub fn copy_transaction(&self) -> AnnotationTransaction {
+        AnnotationTransaction {
             annotations: self.clone(),
-        })
+        }
     }
 
-    /// Retain provenance selected by identity, deciding every entry first.
-    pub fn retain_provenance(
-        &mut self,
-        _ctx: &DecodeContext<'_>,
-        keep: impl FnMut(&str) -> Result<bool, CodecError>,
-    ) -> Result<(), CodecError> {
-        retain_identity_entries(&mut self.provenance, keep)
+    /// Retain provenance selected by identity.
+    pub fn retain_provenance(&mut self, mut keep: impl FnMut(&str) -> bool) {
+        self.provenance.retain(|identity, _| keep(identity));
     }
 
     /// Remap both tables. A collision leaves both tables unchanged.
     pub fn map_ids(
         &mut self,
-        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         mut map: impl FnMut(&str) -> Result<String, cadmpeg_core::CodecError>,
-        _operation: &'static str,
     ) -> Result<Result<(), AnnotationIdentityCollision>, cadmpeg_core::CodecError> {
         enum Destination {
             Provenance(String),
@@ -879,43 +802,30 @@ impl Annotations {
     }
 
     /// Append disjoint tables.
-    pub fn append(
-        &mut self,
-        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        mut other: Self,
-        _operation: &'static str,
-    ) -> Result<Result<(), AnnotationIdentityCollision>, cadmpeg_core::CodecError> {
+    pub fn append(&mut self, mut other: Self) -> Result<(), AnnotationIdentityCollision> {
         for id in other.provenance.keys().chain(other.exactness.keys()) {
             if self.provenance.contains_key(id) || self.exactness.contains_key(id) {
-                return Ok(Err(AnnotationIdentityCollision { id: id.to_owned() }));
+                return Err(AnnotationIdentityCollision { id: id.to_owned() });
             }
         }
         self.provenance.append(&mut other.provenance);
         self.exactness.append(&mut other.exactness);
-        Ok(Ok(()))
+        Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
     #[test]
     fn annotation_remap_moves_nested_records_to_the_mapped_identity() {
         const MAPPED: &str = "test:point#mapped";
-        let ctx = cadmpeg_test_support::service_decode_context();
         let mut builder = super::AnnotationBuilder::new();
-        let stream =
-            super::StreamHandle::new(&ctx, crate::stream_name!("test"), "fixture stream handle")
-                .unwrap();
-        builder
-            .note(&ctx, "test:point#0", &stream, 0, None)
-            .unwrap();
-        builder
-            .exactness(&ctx, "test:point#0", super::Exactness::Inferred)
-            .unwrap();
+        let stream = super::StreamHandle::new(crate::stream_name!("test"));
+        builder.note("test:point#0", &stream, 0, None);
+        builder.exactness("test:point#0", super::Exactness::Inferred);
         let mut annotations = builder.build();
-        let outcome = annotations.map_ids(&ctx, |_| Ok(MAPPED.to_owned()), "test_annotation_remap");
+        let outcome = annotations.map_ids(|_| Ok(MAPPED.to_owned()));
         assert!(matches!(outcome, Ok(Ok(()))));
         assert!(annotations.provenance.contains_key(MAPPED));
     }
@@ -923,55 +833,29 @@ mod tests {
     #[test]
     fn exactness_update_and_removal_allocate_no_retained_records() {
         let mut builder = super::AnnotationBuilder::new();
-        builder
-            .exactness(
-                &cadmpeg_test_support::service_decode_context(),
-                "test:point#0",
-                super::Exactness::Derived,
-            )
-            .unwrap();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        builder
-            .exactness(&ctx, "test:point#0", super::Exactness::Inferred)
-            .unwrap();
+        builder.exactness("test:point#0", super::Exactness::Derived);
+        builder.exactness("test:point#0", super::Exactness::Inferred);
         assert_eq!(
             builder.state.annotations.exactness["test:point#0"].entity(),
             super::Exactness::Inferred
         );
-        builder
-            .exactness(&ctx, "test:point#0", super::Exactness::ByteExact)
-            .unwrap();
-        builder
-            .exactness(&ctx, "test:point#missing", super::Exactness::ByteExact)
-            .unwrap();
+        builder.exactness("test:point#0", super::Exactness::ByteExact);
+        builder.exactness("test:point#missing", super::Exactness::ByteExact);
         assert!(builder.state.annotations.exactness.is_empty());
     }
 
     #[test]
     fn annotation_copy_preserves_nested_entries() {
-        let ctx = cadmpeg_test_support::service_decode_context();
         let mut builder = super::AnnotationBuilder::new();
-        let stream =
-            super::StreamHandle::new(&ctx, crate::stream_name!("test"), "fixture stream handle")
-                .unwrap();
+        let stream = super::StreamHandle::new(crate::stream_name!("test"));
+        builder.note("test:point#0", &stream, 7, Some("point"));
         builder
-            .note(&ctx, "test:point#0", &stream, 7, Some("point"))
-            .unwrap();
-        builder
-            .derived(&ctx, "test:point#0", "position")
+            .derived("test:point#0", "position")
             .expect("field path");
-        let copied = builder
-            .copy_transaction(&ctx, "test_annotation_copy")
-            .and_then(super::AnnotationBuilder::into_retained)
-            .expect("copy");
+        let copied = builder.copy_transaction().into_retained();
         assert_eq!(copied.build(), builder.clone().build());
         let original = builder.build();
-        let transaction = original
-            .copy_transaction(&ctx, "annotation transaction copy")
-            .unwrap();
+        let transaction = original.copy_transaction();
         assert_eq!(transaction.annotations(), &original);
     }
 
@@ -979,22 +863,15 @@ mod tests {
     fn annotate_matches_note_and_exactness() {
         let id = "test:model:entity#1";
         let stream = "creo:VisibGeom";
-        let ctx = cadmpeg_test_support::service_decode_context();
         let mut annotated = super::AnnotationBuilder::new();
         annotated
-            .annotate(&ctx, id, stream, 42, "face", super::Exactness::Derived)
+            .annotate(id, stream, 42, "face", super::Exactness::Derived)
             .unwrap();
-        let handle = super::StreamHandle::new(
-            &ctx,
-            super::StreamName::try_from(stream.to_owned()).unwrap(),
-            "fixture stream handle",
-        )
-        .unwrap();
+        let handle =
+            super::StreamHandle::new(super::StreamName::try_from(stream.to_owned()).unwrap());
         let mut expected = super::AnnotationBuilder::new();
-        expected.note(&ctx, id, &handle, 42, Some("face")).unwrap();
-        expected
-            .exactness(&ctx, id, super::Exactness::Derived)
-            .unwrap();
+        expected.note(id, &handle, 42, Some("face"));
+        expected.exactness(id, super::Exactness::Derived);
         assert_eq!(annotated.build(), expected.build());
     }
 
@@ -1038,29 +915,11 @@ mod tests {
     #[test]
     fn builder_names_streams_and_records_provenance() {
         let mut builder = AnnotationBuilder::new();
-        let first = StreamHandle::new(
-            &cadmpeg_test_support::service_decode_context(),
-            crate::stream_name!("f3d:Breps.BlobParts/body.smbh"),
-            "fixture stream handle",
-        )
-        .unwrap();
-        let second = StreamHandle::new(
-            &cadmpeg_test_support::service_decode_context(),
-            crate::stream_name!("f3d:Breps.BlobParts/body.smbh"),
-            "fixture stream handle",
-        )
-        .unwrap();
+        let first = StreamHandle::new(crate::stream_name!("f3d:Breps.BlobParts/body.smbh"));
+        let second = StreamHandle::new(crate::stream_name!("f3d:Breps.BlobParts/body.smbh"));
 
         assert_eq!(first, second);
-        builder
-            .note(
-                &cadmpeg_test_support::service_decode_context(),
-                "f3d:body#0",
-                &first,
-                42,
-                Some("body"),
-            )
-            .unwrap();
+        builder.note("f3d:body#0", &first, 42, Some("body"));
 
         let annotations = builder.build();
         assert_eq!(annotations.stream_count(), 1);
@@ -1072,37 +931,14 @@ mod tests {
 
     #[test]
     fn owned_annotation_keys_preserve_note_and_exactness_semantics() {
-        let stream = StreamHandle::new(
-            &cadmpeg_test_support::service_decode_context(),
-            crate::stream_name!("native-stream"),
-            "fixture stream handle",
-        )
-        .unwrap();
+        let stream = StreamHandle::new(crate::stream_name!("native-stream"));
         let mut formatted = AnnotationBuilder::new();
         let mut owned = AnnotationBuilder::new();
         for (offset, exactness) in [(7, Exactness::Derived), (11, Exactness::ByteExact)] {
-            formatted
-                .note(
-                    &cadmpeg_test_support::service_decode_context(),
-                    "entity",
-                    &stream,
-                    offset,
-                    Some("tag"),
-                )
-                .unwrap();
-            formatted
-                .exactness(
-                    &cadmpeg_test_support::service_decode_context(),
-                    "entity",
-                    exactness,
-                )
-                .unwrap();
-            owned
-                .note_owned(String::from("entity"), &stream, offset, Some("tag"))
-                .unwrap();
-            owned
-                .exactness_owned(String::from("entity"), exactness)
-                .unwrap();
+            formatted.note("entity", &stream, offset, Some("tag"));
+            formatted.exactness("entity", exactness);
+            owned.note_owned(String::from("entity"), &stream, offset, Some("tag"));
+            owned.exactness_owned(String::from("entity"), exactness);
         }
         let owned = owned.build();
         assert_eq!(owned, formatted.build());
@@ -1114,37 +950,11 @@ mod tests {
     #[test]
     fn repeated_note_replaces_location_and_clears_the_previous_tag() {
         let mut builder = AnnotationBuilder::new();
-        let first = StreamHandle::new(
-            &cadmpeg_test_support::service_decode_context(),
-            crate::stream_name!("first"),
-            "fixture stream handle",
-        )
-        .unwrap();
-        let second = StreamHandle::new(
-            &cadmpeg_test_support::service_decode_context(),
-            crate::stream_name!("second"),
-            "fixture stream handle",
-        )
-        .unwrap();
+        let first = StreamHandle::new(crate::stream_name!("first"));
+        let second = StreamHandle::new(crate::stream_name!("second"));
 
-        builder
-            .note(
-                &cadmpeg_test_support::service_decode_context(),
-                "entity",
-                &first,
-                7,
-                Some("stale"),
-            )
-            .unwrap();
-        builder
-            .note(
-                &cadmpeg_test_support::service_decode_context(),
-                "entity",
-                &second,
-                11,
-                None,
-            )
-            .unwrap();
+        builder.note("entity", &first, 7, Some("stale"));
+        builder.note("entity", &second, 11, None);
 
         let annotations = builder.build();
         let provenance = &annotations.provenance["entity"];
@@ -1161,21 +971,8 @@ mod tests {
     #[test]
     fn a_nonempty_whitespace_stream_name_is_preserved_on_the_annotation_wire() {
         let mut builder = AnnotationBuilder::new();
-        let stream = StreamHandle::new(
-            &cadmpeg_test_support::service_decode_context(),
-            crate::stream_name!(" \t"),
-            "fixture stream handle",
-        )
-        .unwrap();
-        builder
-            .note(
-                &cadmpeg_test_support::service_decode_context(),
-                "whitespace",
-                &stream,
-                3,
-                None,
-            )
-            .unwrap();
+        let stream = StreamHandle::new(crate::stream_name!(" \t"));
+        builder.note("whitespace", &stream, 3, None);
 
         let annotations = builder.build();
         assert_eq!(annotations.provenance["whitespace"].stream(), " \t");
@@ -1190,21 +987,8 @@ mod tests {
     #[test]
     fn annotation_provenance_names_its_stream_and_refuses_the_deleted_index_table() {
         let mut builder = AnnotationBuilder::new();
-        let stream = StreamHandle::new(
-            &cadmpeg_test_support::service_decode_context(),
-            crate::stream_name!("f3d:Breps.BlobParts/body.smbh"),
-            "fixture stream handle",
-        )
-        .unwrap();
-        builder
-            .note(
-                &cadmpeg_test_support::service_decode_context(),
-                "f3d:body#0",
-                &stream,
-                42,
-                Some("body"),
-            )
-            .unwrap();
+        let stream = StreamHandle::new(crate::stream_name!("f3d:Breps.BlobParts/body.smbh"));
+        builder.note("f3d:body#0", &stream, 42, Some("body"));
         let annotations = builder.build();
 
         let value = serde_json::to_value(&annotations).unwrap();
@@ -1244,62 +1028,17 @@ mod tests {
     #[test]
     fn a_stream_name_survives_foreign_builder_clone_and_resume() {
         let first = AnnotationBuilder::new();
-        let handle = StreamHandle::new(
-            &cadmpeg_test_support::service_decode_context(),
-            crate::stream_name!("first"),
-            "fixture stream handle",
-        )
-        .unwrap();
+        let handle = StreamHandle::new(crate::stream_name!("first"));
         let mut second = AnnotationBuilder::new();
-        second
-            .note(
-                &cadmpeg_test_support::service_decode_context(),
-                "foreign",
-                &handle,
-                1,
-                None,
-            )
-            .unwrap();
+        second.note("foreign", &handle, 1, None);
         let mut cloned = first.clone();
-        cloned
-            .note(
-                &cadmpeg_test_support::service_decode_context(),
-                "cloned",
-                &handle,
-                2,
-                None,
-            )
-            .unwrap();
+        cloned.note("cloned", &handle, 2, None);
         let mut resumed = AnnotationBuilder::resume(first.build());
-        resumed
-            .note(
-                &cadmpeg_test_support::service_decode_context(),
-                "resumed",
-                &handle,
-                3,
-                None,
-            )
-            .unwrap();
+        resumed.note("resumed", &handle, 3, None);
         let mut empty = AnnotationBuilder::new();
-        empty
-            .note(
-                &cadmpeg_test_support::service_decode_context(),
-                "empty",
-                &handle,
-                4,
-                None,
-            )
-            .unwrap();
+        empty.note("empty", &handle, 4, None);
         let mut same_name = AnnotationBuilder::new();
-        same_name
-            .note(
-                &cadmpeg_test_support::service_decode_context(),
-                "same-name",
-                &handle,
-                5,
-                None,
-            )
-            .unwrap();
+        same_name.note("same-name", &handle, 5, None);
         assert_eq!(same_name.state.annotations.stream_count(), 1);
         for (builder, id) in [
             (second, "foreign"),
@@ -1328,24 +1067,11 @@ mod tests {
                 Exactness::ByteExact,
             ] {
                 if entity_first {
-                    borrowed
-                        .exactness(
-                            &cadmpeg_test_support::service_decode_context(),
-                            "test:point#1",
-                            exactness,
-                        )
-                        .unwrap();
-                    owned
-                        .exactness_owned("test:point#1".to_string(), exactness)
-                        .unwrap();
+                    borrowed.exactness("test:point#1", exactness);
+                    owned.exactness_owned("test:point#1".to_string(), exactness);
                 }
                 borrowed
-                    .field_exactness(
-                        &cadmpeg_test_support::service_decode_context(),
-                        "test:point#1",
-                        "position.x",
-                        exactness,
-                    )
+                    .field_exactness("test:point#1", "position.x", exactness)
                     .unwrap();
                 owned
                     .field_exactness_owned(
@@ -1373,25 +1099,11 @@ mod tests {
         let mut builder = AnnotationBuilder::new();
 
         builder
-            .derived(
-                &cadmpeg_test_support::service_decode_context(),
-                "f3d:edge#0",
-                "param_range",
-            )
+            .derived("f3d:edge#0", "param_range")
             .expect("nonempty exactness field")
-            .exactness(
-                &cadmpeg_test_support::service_decode_context(),
-                "f3d:edge#0",
-                Exactness::Inferred,
-            )
-            .unwrap();
+            .exactness("f3d:edge#0", Exactness::Inferred);
         builder
-            .field_exactness(
-                &cadmpeg_test_support::service_decode_context(),
-                "f3d:edge#0",
-                "param_range",
-                Exactness::ByteExact,
-            )
+            .field_exactness("f3d:edge#0", "param_range", Exactness::ByteExact)
             .expect("nonempty exactness field");
 
         let expected_fields = BTreeMap::from([(
@@ -1406,13 +1118,7 @@ mod tests {
             }
         );
 
-        builder
-            .exactness(
-                &cadmpeg_test_support::service_decode_context(),
-                "f3d:edge#0",
-                Exactness::ByteExact,
-            )
-            .unwrap();
+        builder.exactness("f3d:edge#0", Exactness::ByteExact);
         assert!(builder.state.annotations.exactness.is_empty());
     }
 
@@ -1449,29 +1155,13 @@ mod tests {
         for entity_first in [false, true] {
             let mut builder = AnnotationBuilder::new();
             if entity_first {
-                builder
-                    .exactness(
-                        &cadmpeg_test_support::service_decode_context(),
-                        "nx:model:surface#1",
-                        Exactness::Derived,
-                    )
-                    .unwrap();
+                builder.exactness("nx:model:surface#1", Exactness::Derived);
             }
             builder
-                .derived(
-                    &cadmpeg_test_support::service_decode_context(),
-                    "nx:model:surface#1",
-                    "geometry",
-                )
+                .derived("nx:model:surface#1", "geometry")
                 .expect("nonempty exactness field");
             if !entity_first {
-                builder
-                    .exactness(
-                        &cadmpeg_test_support::service_decode_context(),
-                        "nx:model:surface#1",
-                        Exactness::Derived,
-                    )
-                    .unwrap();
+                builder.exactness("nx:model:surface#1", Exactness::Derived);
             }
             assert_eq!(
                 serde_json::to_value(&builder.state.annotations.exactness["nx:model:surface#1"])
@@ -1488,35 +1178,13 @@ mod tests {
     #[test]
     fn removing_an_entity_removes_provenance_and_exactness() {
         let mut builder = AnnotationBuilder::new();
-        let stream = StreamHandle::new(
-            &cadmpeg_test_support::service_decode_context(),
-            crate::stream_name!("catia:e5_0d_03"),
-            "fixture stream handle",
-        )
-        .unwrap();
+        let stream = StreamHandle::new(crate::stream_name!("catia:e5_0d_03"));
+        builder.note("catia:e5:curve#0", &stream, 42, Some("circle"));
         builder
-            .note(
-                &cadmpeg_test_support::service_decode_context(),
-                "catia:e5:curve#0",
-                &stream,
-                42,
-                Some("circle"),
-            )
-            .unwrap();
-        builder
-            .derived(
-                &cadmpeg_test_support::service_decode_context(),
-                "catia:e5:curve#0",
-                "geometry",
-            )
+            .derived("catia:e5:curve#0", "geometry")
             .expect("nonempty exactness field");
 
-        builder
-            .remove_entity(
-                &cadmpeg_test_support::service_decode_context(),
-                "catia:e5:curve#0",
-            )
-            .unwrap();
+        builder.remove_entity("catia:e5:curve#0");
 
         assert!(!builder
             .state
@@ -1534,20 +1202,8 @@ mod tests {
     fn exactness_field_admission_rejects_empty_keys_without_mutation() {
         let id = "test:model:point#0";
         let mut builder = AnnotationBuilder::new();
-        builder
-            .exactness(
-                &cadmpeg_test_support::service_decode_context(),
-                id,
-                Exactness::Inferred,
-            )
-            .unwrap();
-        builder
-            .derived(
-                &cadmpeg_test_support::service_decode_context(),
-                id,
-                "position.x",
-            )
-            .expect("nonempty path");
+        builder.exactness(id, Exactness::Inferred);
+        builder.derived(id, "position.x").expect("nonempty path");
         let before =
             serde_json::to_value(&builder.state.annotations).expect("serialize annotations");
         for exactness in [
@@ -1556,12 +1212,7 @@ mod tests {
             Exactness::Inferred,
         ] {
             let error = builder
-                .field_exactness(
-                    &cadmpeg_test_support::service_decode_context(),
-                    id,
-                    "",
-                    exactness,
-                )
+                .field_exactness(id, "", exactness)
                 .expect_err("empty path");
             assert!(
                 error.to_string().contains("field name cannot be empty"),
@@ -1572,9 +1223,7 @@ mod tests {
                 before
             );
         }
-        assert!(builder
-            .derived(&cadmpeg_test_support::service_decode_context(), id, "")
-            .is_err());
+        assert!(builder.derived(id, "").is_err());
         assert_eq!(
             serde_json::to_value(&builder.state.annotations).expect("serialize annotations"),
             before
@@ -1608,21 +1257,9 @@ mod tests {
         for scope in ["entity", "fields"] {
             let mut builder = AnnotationBuilder::new();
             if scope == "entity" {
-                builder
-                    .exactness(
-                        &cadmpeg_test_support::service_decode_context(),
-                        id,
-                        Exactness::Inferred,
-                    )
-                    .unwrap();
+                builder.exactness(id, Exactness::Inferred);
             }
-            builder
-                .derived(
-                    &cadmpeg_test_support::service_decode_context(),
-                    id,
-                    "position",
-                )
-                .expect("nonempty field");
+            builder.derived(id, "position").expect("nonempty field");
             let report = crate::report::decode::DecodeReport::unclassified(
                 "test",
                 crate::report::decode::DecodeTransfer::full(true),
@@ -1661,19 +1298,12 @@ mod builder_storage_tests {
     use super::{AnnotationBuilder, Exactness, StreamHandle};
     #[test]
     fn annotation_builder_transaction_leaves_the_original_unchanged() {
-        let ctx = cadmpeg_test_support::service_decode_context();
-        let stream =
-            StreamHandle::new(&ctx, crate::stream_name!("test"), "fixture stream handle").unwrap();
+        let stream = StreamHandle::new(crate::stream_name!("test"));
         let mut original = AnnotationBuilder::new();
-        original
-            .note(&ctx, "test:model:point#prior", &stream, 0, Some("prior"))
-            .unwrap();
-        let mut candidate = original
-            .copy_transaction(&ctx, "annotation candidate storage")
-            .unwrap();
+        original.note("test:model:point#prior", &stream, 0, Some("prior"));
+        let mut candidate = original.copy_transaction();
         candidate
             .annotate(
-                &ctx,
                 "test:model:point#candidate",
                 "candidate stream",
                 7,
@@ -1682,7 +1312,7 @@ mod builder_storage_tests {
             )
             .unwrap();
         candidate
-            .derived(&ctx, "test:model:point#candidate", "position")
+            .derived("test:model:point#candidate", "position")
             .unwrap();
         assert!(candidate
             .annotations()
@@ -1694,28 +1324,12 @@ mod builder_storage_tests {
     #[test]
     fn annotation_builder_transaction_commits_the_same_tables() {
         let ctx = cadmpeg_test_support::service_decode_context();
-        let stream = StreamHandle::new(
-            &cadmpeg_test_support::service_decode_context(),
-            crate::stream_name!("test"),
-            "fixture stream handle",
-        )
-        .unwrap();
+        let stream = StreamHandle::new(crate::stream_name!("test"));
         let mut original = AnnotationBuilder::new();
-        original
-            .note(
-                &cadmpeg_test_support::service_decode_context(),
-                "test:model:point#prior",
-                &stream,
-                0,
-                Some("prior"),
-            )
-            .unwrap();
-        let mut candidate = original
-            .copy_transaction(&ctx, "annotation candidate storage")
-            .unwrap();
+        original.note("test:model:point#prior", &stream, 0, Some("prior"));
+        let mut candidate = original.copy_transaction();
         candidate
             .annotate(
-                &ctx,
                 "test:model:point#candidate",
                 "candidate stream",
                 7,
@@ -1726,7 +1340,6 @@ mod builder_storage_tests {
         let mut expected = original.clone();
         expected
             .annotate(
-                &ctx,
                 "test:model:point#candidate",
                 "candidate stream",
                 7,
@@ -1734,7 +1347,7 @@ mod builder_storage_tests {
                 Exactness::Derived,
             )
             .unwrap();
-        assert_eq!(candidate.into_retained().unwrap().build(), expected.build());
+        assert_eq!(candidate.into_retained().build(), expected.build());
         ctx.finish_session().unwrap();
     }
 }

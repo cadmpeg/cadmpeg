@@ -2066,12 +2066,7 @@ impl FeatureContent {
     }
 
     /// Append decoded content without repeating a parameter or child-feature reference.
-    pub fn push(
-        &mut self,
-        value: FeatureSourceContent,
-        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        _operation: &'static str,
-    ) -> Result<(), FeatureCollectionError> {
+    pub fn push(&mut self, value: FeatureSourceContent) -> Result<(), FeatureCollectionError> {
         if !matches!(value, FeatureSourceContent::Text(_)) {
             for member in &self.0 {
                 if member == &value {
@@ -2083,16 +2078,6 @@ impl FeatureContent {
         }
 
         self.0.push(value);
-        Ok(())
-    }
-
-    /// Accepts a capacity hint; growth happens on push.
-    pub fn reserve_for_decode(
-        &mut self,
-        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        _additional: usize,
-        _operation: &'static str,
-    ) -> Result<(), cadmpeg_core::CodecError> {
         Ok(())
     }
 
@@ -4068,15 +4053,6 @@ impl FeatureOperation {
 }
 
 impl FeatureDefinition {
-    /// Copy the definition.
-    pub fn try_clone_for_decode(
-        &self,
-        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        _operation: &'static str,
-    ) -> Result<Self, cadmpeg_core::CodecError> {
-        Ok(self.clone())
-    }
-
     /// The operation this definition performs, its post-processing layer aside.
     #[must_use]
     pub const fn operation(&self) -> &FeatureOperation {
@@ -6292,31 +6268,26 @@ impl VertexSelection {
     pub fn generated(
         vertex: GeneratedVertexRef,
         native: String,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
-        Ok(SelectionReference::new(native, ctx)?.map(|native| Self::Generated { vertex, native }))
+    ) -> Result<Self, BodySelectionError> {
+        SelectionReference::new(native).map(|native| Self::Generated { vertex, native })
     }
     /// Admit a historical vertex and its native reference.
     pub fn historical(
         state: FeatureInputTopologyId,
         vertex: HistoricalVertexId,
         native: String,
-        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
-        Ok(NonBlankString::new(native)
+    ) -> Result<Self, BodySelectionError> {
+        NonBlankString::new(native)
             .ok_or(BodySelectionError::BlankNativeMember)
             .map(|native| Self::Historical {
                 state,
                 vertex,
                 native,
-            }))
+            })
     }
     /// Admit a native vertex reference.
-    pub fn native(
-        native: String,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
-        Ok(SelectionReference::new(native, ctx)?.map(Self::Native))
+    pub fn native(native: String) -> Result<Self, BodySelectionError> {
+        SelectionReference::new(native).map(Self::Native)
     }
 }
 
@@ -6387,13 +6358,9 @@ impl EdgeSelection {
     pub fn generated(
         edges: Vec<GeneratedEdgeRef>,
         native: String,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
-        let edges = match edges.try_into() {
-            Ok(members) => members,
-            Err(error) => return Ok(Err(error)),
-        };
-        Ok(SelectionReference::new(native, ctx)?.map(|native| Self::Generated { edges, native }))
+    ) -> Result<Self, BodySelectionError> {
+        let edges = edges.try_into()?;
+        SelectionReference::new(native).map(|native| Self::Generated { edges, native })
     }
 }
 
@@ -6464,46 +6431,30 @@ impl FaceSelection {
     pub fn generated(
         faces: Vec<GeneratedFaceRef>,
         native: String,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
-        let faces = match faces.try_into() {
-            Ok(members) => members,
-            Err(error) => return Ok(Err(error)),
-        };
-        Ok(SelectionReference::new(native, ctx)?.map(|native| Self::Generated { faces, native }))
+    ) -> Result<Self, BodySelectionError> {
+        let faces = faces.try_into()?;
+        SelectionReference::new(native).map(|native| Self::Generated { faces, native })
     }
 }
 
 impl GeneratedEdgeRef {
-    /// Admit a feature-local persistent identity through the caller context.
-    pub fn new(
-        feature: FeatureId,
-        local_id: String,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
-        Ok(SelectionReference::new(local_id, ctx)?.map(|local_id| Self { feature, local_id }))
+    /// Admit a feature-local persistent identity.
+    pub fn new(feature: FeatureId, local_id: String) -> Result<Self, BodySelectionError> {
+        SelectionReference::new(local_id).map(|local_id| Self { feature, local_id })
     }
 }
 
 impl GeneratedFaceRef {
-    /// Admit a feature-local persistent identity through the caller context.
-    pub fn new(
-        feature: FeatureId,
-        local_id: String,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
-        Ok(SelectionReference::new(local_id, ctx)?.map(|local_id| Self { feature, local_id }))
+    /// Admit a feature-local persistent identity.
+    pub fn new(feature: FeatureId, local_id: String) -> Result<Self, BodySelectionError> {
+        SelectionReference::new(local_id).map(|local_id| Self { feature, local_id })
     }
 }
 
 impl GeneratedVertexRef {
-    /// Admit a feature-local persistent identity through the caller context.
-    pub fn new(
-        feature: FeatureId,
-        local_id: String,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
-        Ok(SelectionReference::new(local_id, ctx)?.map(|local_id| Self { feature, local_id }))
+    /// Admit a feature-local persistent identity.
+    pub fn new(feature: FeatureId, local_id: String) -> Result<Self, BodySelectionError> {
+        SelectionReference::new(local_id).map(|local_id| Self { feature, local_id })
     }
 }
 
@@ -6524,12 +6475,9 @@ impl TryFrom<String> for SelectionReference {
 }
 
 impl SelectionReference {
-    /// Admit validation of a persistent reference with the caller context.
-    pub fn new(
-        value: String,
-        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
-        Ok(Self::try_from(value))
+    /// Admit a nonblank persistent reference.
+    pub fn new(value: String) -> Result<Self, BodySelectionError> {
+        Self::try_from(value)
     }
 
     /// The retained reference text.
@@ -6653,16 +6601,6 @@ impl<T: PartialEq> DistinctMembers<T> {
 }
 
 impl<T> DistinctMembers<T> {
-    /// Accepts a capacity hint; growth happens on push.
-    pub fn reserve_for_decode(
-        &mut self,
-        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        _additional: usize,
-        _operation: &'static str,
-    ) -> Result<(), cadmpeg_core::CodecError> {
-        Ok(())
-    }
-
     /// Removes all members.
     pub fn clear(&mut self) {
         self.0.clear();
@@ -7168,13 +7106,9 @@ pub struct GeneratedBodyRef {
 }
 
 impl GeneratedBodyRef {
-    /// Admit a feature-local persistent identity through the caller context.
-    pub fn new(
-        feature: FeatureId,
-        local_id: String,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
-        Ok(SelectionReference::new(local_id, ctx)?.map(|local_id| Self { feature, local_id }))
+    /// Admit a feature-local persistent identity.
+    pub fn new(feature: FeatureId, local_id: String) -> Result<Self, BodySelectionError> {
+        SelectionReference::new(local_id).map(|local_id| Self { feature, local_id })
     }
 }
 
@@ -9121,13 +9055,9 @@ impl PlanarProfileRef {
     pub fn generated(
         curves: Vec<GeneratedCurveRef>,
         native: String,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
-        let curves = match curves.try_into() {
-            Ok(members) => members,
-            Err(error) => return Ok(Err(error)),
-        };
-        Ok(SelectionReference::new(native, ctx)?.map(|native| Self::Generated { curves, native }))
+    ) -> Result<Self, BodySelectionError> {
+        let curves = curves.try_into()?;
+        SelectionReference::new(native).map(|native| Self::Generated { curves, native })
     }
 }
 
@@ -9226,13 +9156,9 @@ impl PathRef {
 }
 
 impl GeneratedCurveRef {
-    /// Admit a feature-local persistent identity through the caller context.
-    pub fn new(
-        feature: FeatureId,
-        local_id: String,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
-        Ok(SelectionReference::new(local_id, ctx)?.map(|local_id| Self { feature, local_id }))
+    /// Admit a feature-local persistent identity.
+    pub fn new(feature: FeatureId, local_id: String) -> Result<Self, BodySelectionError> {
+        SelectionReference::new(local_id).map(|local_id| Self { feature, local_id })
     }
 }
 
@@ -9635,32 +9561,10 @@ cadmpeg_core::named_optional_field!(
 cadmpeg_core::named_optional_field!(deserialize_context, BinderTarget, "context");
 cadmpeg_core::named_optional_field!(deserialize_form, FlexForm, "form");
 
-macro_rules! feature_copy_api {
-    ($($ty:ty),+ $(,)?) => { $(impl $ty {
-        /// Copy the feature fields.
-        pub fn try_clone_for_decode(&self, _ctx: &cadmpeg_core::decode::DecodeContext<'_>, _operation: &'static str) -> Result<Self, cadmpeg_core::CodecError> {
-            Ok(self.clone())
-        }
-    })+ };
-}
-feature_copy_api!(
-    RevolutionAxis,
-    PlanarProfileRef,
-    VertexSelection,
-    LinearTermination,
-    ParameterValue,
-    Feature,
-    ConfigurationFeatureState,
-    FaceSelection
-);
 impl Feature {
     /// Copy the evaluated construction state for one configuration.
-    pub fn configuration_state(
-        &self,
-        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        _operation: &'static str,
-    ) -> Result<ConfigurationFeatureState, cadmpeg_core::CodecError> {
-        Ok(ConfigurationFeatureState {
+    pub fn configuration_state(&self) -> ConfigurationFeatureState {
+        ConfigurationFeatureState {
             evaluation: if self.suppressed.unwrap_or(false) {
                 ConfigurationEvaluation::Suppressed {}
             } else {
@@ -9670,7 +9574,7 @@ impl Feature {
             },
             dependencies: self.dependencies.clone(),
             definition: self.evaluation.definition.clone(),
-        })
+        }
     }
 }
 

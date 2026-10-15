@@ -551,17 +551,13 @@ fn semantic_writer_applies_rational_and_non_rational_sketch_nurbs_edits() {
                     return;
                 };
                 curve
-                    .try_map_control_points(
-                        |pole_index, point| {
-                            let mut point = point.get();
-                            if pole_index == 1 {
-                                point.v += 250.0;
-                            }
-                            cadmpeg_ir::units::FinitePoint2::new(point).ok_or(())
-                        },
-                        &cadmpeg_test_support::service_decode_context(),
-                    )
-                    .expect("pole edit admission")
+                    .try_map_control_points(|pole_index, point| {
+                        let mut point = point.get();
+                        if pole_index == 1 {
+                            point.v += 250.0;
+                        }
+                        cadmpeg_ir::units::FinitePoint2::new(point).ok_or(())
+                    })
                     .unwrap();
                 if let Some(mut weights) = curve.pole_rows().weights() {
                     weights[1] = 0.75;

@@ -287,111 +287,91 @@ impl BrepTransferDiagnostics {
 
     pub(in super::super) fn record_coverage(
         &self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         coverage: &mut cadmpeg_ir::report::decode::Coverage,
-    ) -> Result<(), cadmpeg_core::CodecError> {
+    ) {
         coverage.record(
-            ctx,
             crate::coverage::BREP_CANDIDATE_FACE_COUNT,
             self.candidate_face_count,
-        )?;
+        );
         coverage.record(
-            ctx,
             crate::coverage::BREP_ADMITTED_FACE_COUNT,
             self.admitted_face_count,
-        )?;
+        );
         coverage.record(
-            ctx,
             crate::coverage::BREP_EMITTED_FACE_COUNT,
             self.emitted_face_count,
-        )?;
+        );
         coverage.record(
-            ctx,
             crate::coverage::BREP_BOUNDARY_CURVE_COUNT,
             self.boundary_curve_count,
-        )?;
+        );
         coverage.record(
-            ctx,
             crate::coverage::BREP_BOUNDARY_CURVE_MISSING_INCIDENCE_COUNT,
             self.boundary_curve_missing_incidence_count,
-        )?;
+        );
         coverage.record(
-            ctx,
             crate::coverage::BREP_BOUNDARY_CURVE_UNSOLVED_VERTEX_COUNT,
             self.boundary_curve_unsolved_vertex_count,
-        )?;
+        );
         if self.legacy_nonvisible_face_reference_count > 0 {
             coverage.record(
-                ctx,
                 crate::coverage::BREP_LEGACY_NONVISIBLE_FACE_REFERENCE_COUNT,
                 self.legacy_nonvisible_face_reference_count,
-            )?;
+            );
         }
         coverage.record(
-            ctx,
             crate::coverage::BREP_VERTEX_TOPOLOGICAL_COUNT,
             self.vertex_solve.topological_vertices,
-        )?;
+        );
         coverage.record(
-            ctx,
             crate::coverage::BREP_VERTEX_CARRIER_INCIDENT_COUNT,
             self.vertex_solve.carrier_incident_vertices,
-        )?;
+        );
         coverage.record(
-            ctx,
             crate::coverage::BREP_VERTEX_CARRIER_PAIR_INTERSECTION_CANDIDATE_COUNT,
             self.vertex_solve.carrier_pair_candidates,
-        )?;
+        );
         coverage.record(
-            ctx,
             crate::coverage::BREP_VERTEX_CARRIER_TRIPLE_INTERSECTION_CANDIDATE_COUNT,
             self.vertex_solve.carrier_triple_candidates,
-        )?;
+        );
         coverage.record(
-            ctx,
             crate::coverage::BREP_VERTEX_CARRIER_VALID_INTERSECTION_CANDIDATE_COUNT,
             self.vertex_solve.carrier_valid_candidates,
-        )?;
+        );
         coverage.record(
-            ctx,
             crate::coverage::BREP_VERTEX_CARRIER_ZERO_CANDIDATE_COUNT,
             self.vertex_solve.carrier_no_geometric_candidate_vertices
                 + self.vertex_solve.carrier_no_valid_candidate_vertices,
-        )?;
+        );
         if self.vertex_solve.carrier_no_geometric_candidate_vertices != 0 {
             coverage.record(
-                ctx,
                 crate::coverage::BREP_VERTEX_CARRIER_NO_GEOMETRIC_CANDIDATE_COUNT,
                 self.vertex_solve.carrier_no_geometric_candidate_vertices,
-            )?;
+            );
         }
         if self.vertex_solve.carrier_no_valid_candidate_vertices != 0 {
             coverage.record(
-                ctx,
                 crate::coverage::BREP_VERTEX_CARRIER_NO_VALID_CANDIDATE_COUNT,
                 self.vertex_solve.carrier_no_valid_candidate_vertices,
-            )?;
+            );
         }
         coverage.record(
-            ctx,
             crate::coverage::BREP_VERTEX_CARRIER_AMBIGUOUS_CANDIDATE_COUNT,
             self.vertex_solve.carrier_ambiguous_candidate_vertices,
-        )?;
+        );
         coverage.record(
-            ctx,
             crate::coverage::BREP_VERTEX_CARRIER_POINT_COUNT,
             self.vertex_solve.carrier_points,
-        )?;
+        );
         coverage.record(
-            ctx,
             crate::coverage::BREP_PCURVE_RECORD_COUNT,
             self.vertex_solve.pcurve.records,
-        )?;
+        );
         coverage.record(
-            ctx,
             crate::coverage::BREP_PCURVE_PATH_COUNT,
             self.vertex_solve.pcurve.paths(),
-        )?;
+        );
         let pcurve = &self.vertex_solve.pcurve;
         if pcurve.inactive_paths > 0
             || pcurve.inactive_records > 0
@@ -399,257 +379,209 @@ impl BrepTransferDiagnostics {
             || pcurve.topology_mismatch_records > 0
         {
             coverage.record(
-                ctx,
                 crate::coverage::BREP_PCURVE_INACTIVE_PATH_COUNT,
                 pcurve.inactive_paths,
-            )?;
+            );
             coverage.record(
-                ctx,
                 crate::coverage::BREP_PCURVE_INACTIVE_RECORD_COUNT,
                 pcurve.inactive_records,
-            )?;
+            );
             coverage.record(
-                ctx,
                 crate::coverage::BREP_PCURVE_PARTIAL_RECORD_COUNT,
                 pcurve.partial_records,
-            )?;
+            );
             coverage.record(
-                ctx,
                 crate::coverage::BREP_PCURVE_TOPOLOGY_MISMATCH_RECORD_COUNT,
                 pcurve.topology_mismatch_records,
-            )?;
+            );
         }
         coverage.record(
-            ctx,
             crate::coverage::BREP_PCURVE_MISSING_SURFACE_PATH_COUNT,
             self.vertex_solve.pcurve.missing_surfaces,
-        )?;
+        );
         coverage.record(
-            ctx,
             crate::coverage::BREP_PCURVE_UNEVALUABLE_PATH_COUNT,
             self.vertex_solve.pcurve.unevaluable_paths,
-        )?;
+        );
         coverage.record(
-            ctx,
             crate::coverage::BREP_PCURVE_MAPPED_PATH_COUNT,
             self.vertex_solve.pcurve.mapped_paths,
-        )?;
+        );
         if pcurve.carrier_validated_paths > 0
             || pcurve.carrier_rejected_paths > 0
             || pcurve.carrier_unknown_paths() > 0
             || pcurve.carrier_rejected_records > 0
         {
             coverage.record(
-                ctx,
                 crate::coverage::BREP_PCURVE_CARRIER_VALIDATED_PATH_COUNT,
                 pcurve.carrier_validated_paths,
-            )?;
+            );
             coverage.record(
-                ctx,
                 crate::coverage::BREP_PCURVE_CARRIER_REJECTED_PATH_COUNT,
                 pcurve.carrier_rejected_paths,
-            )?;
+            );
             coverage.record(
-                ctx,
                 crate::coverage::BREP_PCURVE_CARRIER_UNKNOWN_PATH_COUNT,
                 pcurve.carrier_unknown_paths(),
-            )?;
+            );
             coverage.record(
-                ctx,
                 crate::coverage::BREP_PCURVE_CARRIER_UNKNOWN_MISSING_SURFACE_PATH_COUNT,
                 pcurve.carrier_unknown_missing_surface_paths,
-            )?;
+            );
             coverage.record(
-                ctx,
                 crate::coverage::BREP_PCURVE_CARRIER_UNKNOWN_MISSING_CARRIER_PATH_COUNT,
                 pcurve.carrier_unknown_missing_carrier_paths,
-            )?;
+            );
             coverage.record(
-                ctx,
                 crate::coverage::BREP_PCURVE_CARRIER_UNKNOWN_UNSUPPORTED_PAIR_PATH_COUNT,
                 pcurve.carrier_unknown_unsupported_pair_paths,
-            )?;
+            );
             coverage.record(
-                ctx,
                 crate::coverage::BREP_PCURVE_CARRIER_UNKNOWN_PARALLEL_PLANE_PATH_COUNT,
                 pcurve.carrier_unknown_parallel_plane_paths,
-            )?;
+            );
             coverage.record(
-                ctx,
                 crate::coverage::BREP_PCURVE_CARRIER_UNKNOWN_UNSUPPORTED_PATH_COUNT,
                 pcurve.carrier_unknown_unsupported_path_paths,
-            )?;
+            );
             coverage.record(
-                ctx,
                 crate::coverage::BREP_PCURVE_CARRIER_REJECTED_RECORD_COUNT,
                 pcurve.carrier_rejected_records,
-            )?;
+            );
         }
         coverage.record(
-            ctx,
             crate::coverage::BREP_PCURVE_UNMAPPED_RECORD_COUNT,
             self.vertex_solve.pcurve.unmapped_records,
-        )?;
+        );
         coverage.record(
-            ctx,
             crate::coverage::BREP_PCURVE_INCONSISTENT_RECORD_COUNT,
             self.vertex_solve.pcurve.inconsistent_records,
-        )?;
+        );
         coverage.record(
-            ctx,
             crate::coverage::BREP_PCURVE_ACCEPTED_RECORD_COUNT,
             self.vertex_solve.pcurve.accepted_records,
-        )?;
+        );
         coverage.record(
-            ctx,
             crate::coverage::BREP_PCURVE_COMPLETE_RECORD_COUNT,
             self.vertex_solve.pcurve.complete_records,
-        )?;
+        );
         if self.vertex_solve.pcurve.two_chart_records > 0 {
             coverage.record(
-                ctx,
                 crate::coverage::BREP_PCURVE_TWO_CHART_RECORD_COUNT,
                 self.vertex_solve.pcurve.two_chart_records,
-            )?;
+            );
             coverage.record(
-                ctx,
                 crate::coverage::BREP_PCURVE_TWO_CHART_MAPPED_RECORD_COUNT,
                 self.vertex_solve.pcurve.two_chart_mapped_records(),
-            )?;
+            );
             coverage.record(
-                ctx,
                 crate::coverage::BREP_PCURVE_TWO_CHART_COMPLETE_RECORD_COUNT,
                 self.vertex_solve.pcurve.two_chart_complete_records,
-            )?;
+            );
             coverage.record(
-                ctx,
                 crate::coverage::BREP_PCURVE_TWO_CHART_PARTIAL_RECORD_COUNT,
                 self.vertex_solve.pcurve.two_chart_partial_records,
-            )?;
+            );
             coverage.record(
-                ctx,
                 crate::coverage::BREP_PCURVE_TWO_CHART_MISSING_SURFACE_PATH_COUNT,
                 self.vertex_solve.pcurve.two_chart_missing_surface_paths,
-            )?;
+            );
             coverage.record(
-                ctx,
                 crate::coverage::BREP_PCURVE_TWO_CHART_UNEVALUABLE_PATH_COUNT,
                 self.vertex_solve.pcurve.two_chart_unevaluable_paths,
-            )?;
+            );
             coverage.record(
-                ctx,
                 crate::coverage::BREP_PCURVE_TWO_CHART_SURFACE_MISMATCH_RECORD_COUNT,
                 self.vertex_solve.pcurve.two_chart_surface_mismatch_records,
-            )?;
+            );
             coverage.record(
-                ctx,
                 crate::coverage::BREP_PCURVE_TWO_CHART_NO_SAMPLE_RECORD_COUNT,
                 self.vertex_solve.pcurve.two_chart_no_sample_records,
-            )?;
+            );
             coverage.record(
-                ctx,
                 crate::coverage::BREP_PCURVE_TWO_CHART_UNMAPPED_RECORD_COUNT,
                 self.vertex_solve.pcurve.two_chart_unmapped_records,
-            )?;
+            );
         }
         coverage.record(
-            ctx,
             crate::coverage::BREP_PCURVE_CONFLICTING_CURVE_COUNT,
             self.vertex_solve.pcurve.conflicting_curves,
-        )?;
+        );
         coverage.record(
-            ctx,
             crate::coverage::BREP_VERTEX_PCURVE_ENDPOINT_EVIDENCE_COUNT,
             self.vertex_solve.pcurve.evidence,
-        )?;
+        );
         coverage.record(
-            ctx,
             crate::coverage::BREP_VERTEX_COMPLETE_PCURVE_ENDPOINT_EVIDENCE_COUNT,
             self.vertex_solve.pcurve.complete_evidence,
-        )?;
+        );
         coverage.record(
-            ctx,
             crate::coverage::BREP_VERTEX_PCURVE_CONSTRAINT_COUNT,
             self.vertex_solve.pcurve_constraints,
-        )?;
+        );
         if self.vertex_solve.pcurve_fixed_endpoint_conflicts > 0 {
             coverage.record(
-                ctx,
                 crate::coverage::BREP_VERTEX_PCURVE_FIXED_ENDPOINT_CONFLICT_COUNT,
                 self.vertex_solve.pcurve_fixed_endpoint_conflicts,
-            )?;
+            );
         }
         if self.vertex_solve.pcurve_ambiguous_endpoint_vertices > 0 {
             coverage.record(
-                ctx,
                 crate::coverage::BREP_VERTEX_PCURVE_AMBIGUOUS_ENDPOINT_VERTEX_COUNT,
                 self.vertex_solve.pcurve_ambiguous_endpoint_vertices,
-            )?;
+            );
         }
         coverage.record(
-            ctx,
             crate::coverage::BREP_VERTEX_DIRECTED_ENDPOINT_ASSIGNMENT_COUNT,
             self.vertex_solve.directed_endpoint_assignments,
-        )?;
+        );
         coverage.record(
-            ctx,
             crate::coverage::BREP_VERTEX_DIRECTED_ENDPOINT_CONFLICT_COUNT,
             self.vertex_solve.directed_endpoint_conflicts,
-        )?;
+        );
         coverage.record(
-            ctx,
             crate::coverage::BREP_VERTEX_NURBS_ENDPOINT_CONSTRAINT_COUNT,
             self.vertex_solve.nurbs_endpoint_constraints,
-        )?;
+        );
         coverage.record(
-            ctx,
             crate::coverage::BREP_VERTEX_ANALYTIC_DOMAIN_COUNT,
             self.vertex_solve.analytic_domain_vertices,
-        )?;
+        );
         coverage.record(
-            ctx,
             crate::coverage::BREP_VERTEX_SOLVED_COUNT,
             self.vertex_solve.solved_vertices,
-        )?;
+        );
         coverage.record(
-            ctx,
             crate::coverage::BREP_REJECTED_FACE_COUNT,
             self.face_rejection_diagnostics.len(),
-        )?;
+        );
         for reason in FaceAdmissionRejection::ALL {
-            coverage.record(ctx, reason.coverage_key(), self.evidence(reason).0)?;
+            coverage.record(reason.coverage_key(), self.evidence(reason).0);
         }
         coverage.record(
-            ctx,
             crate::coverage::BREP_BODY_COUNT_MISMATCH_COUNT,
             usize::from(self.body_count_mismatch),
-        )?;
+        );
         coverage.record(
-            ctx,
             crate::coverage::BREP_LEGACY_BODY_OWNERSHIP_AMBIGUOUS_COUNT,
             usize::from(self.legacy_body_ownership_ambiguous),
-        )?;
+        );
         coverage.record(
-            ctx,
             crate::coverage::BREP_EMPTY_COMPONENT_COUNT,
             self.empty_component_count,
-        )?;
+        );
         coverage.record(
-            ctx,
             crate::coverage::BREP_ADMITTED_COMPONENT_COUNT,
             self.admitted_component_count,
-        )?;
+        );
         coverage.record(
-            ctx,
             crate::coverage::BREP_SELECTED_BODY_COUNT,
             self.selected_body_count.unwrap_or_default(),
-        )?;
+        );
         coverage.record(
-            ctx,
             crate::coverage::BREP_SELECTED_BODY_COUNT_UNRESOLVED,
             usize::from(self.selected_body_count.is_none()),
-        )?;
-        Ok(())
+        );
     }
 }
 
@@ -1640,7 +1572,6 @@ impl BrepFaceReferences {
 }
 
 fn native_loop_ring(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     native_loop: &crate::topology::Loop,
     face_id: u32,
 ) -> Result<cadmpeg_ir::topology::LoopRing, cadmpeg_core::CodecError> {
@@ -1651,9 +1582,7 @@ fn native_loop_ring(
             format_args!("{}:{}", half_edge.curve_id, half_edge.side.index()),
         )?);
     }
-    match cadmpeg_ir::topology::LoopRing::new(ctx, coedge_ids, Vec::new())
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    match cadmpeg_ir::topology::LoopRing::new(coedge_ids, Vec::new()) {
         Ok(ring) => Ok(ring),
         Err(error) => Err(cadmpeg_core::CodecError::malformed(format!(
             "VisibGeom face {face_id} loop ring: {error}"
@@ -2010,7 +1939,6 @@ pub(in super::super) fn transfer_native_brep(
             vertex_id,
         )?;
         annotate(
-            ctx,
             annotations,
             &point_id,
             "VisibGeom",
@@ -2081,7 +2009,6 @@ pub(in super::super) fn transfer_native_brep(
             vertex_id,
         )?;
         annotate(
-            ctx,
             annotations,
             &vertex,
             "VisibGeom",
@@ -2124,9 +2051,7 @@ pub(in super::super) fn transfer_native_brep(
                     .filter(|candidate| candidate.id == curve),
             );
             if let Some(candidate) = candidate {
-                let mut geometry = source_carriers
-                    .curve_geometry(candidate)
-                    .try_clone_for_decode(ctx, "creo B-rep edge source curve geometry")?;
+                let mut geometry = source_carriers.curve_geometry(candidate).clone();
                 let derived_line = curve_evidence.derived_intersections.contains(&curve)
                     && matches!(geometry.solved(), Some(SolvedCurveGeometry::Line(_)));
                 let range = if derived_line {
@@ -2173,7 +2098,6 @@ pub(in super::super) fn transfer_native_brep(
             *curve_id,
         )?;
         annotate(
-            ctx,
             annotations,
             &id,
             "VisibGeom",
@@ -2200,7 +2124,6 @@ pub(in super::super) fn transfer_native_brep(
         if !ir.model.curves.iter().any(|item| item.id == curve) {
             let offset = row_offsets.get(curve_id).copied().unwrap_or(0);
             annotate(
-                ctx,
                 annotations,
                 &curve,
                 "VisibGeom",
@@ -2252,7 +2175,6 @@ pub(in super::super) fn transfer_native_brep(
             component_index + 1,
         )?;
         annotate(
-            ctx,
             annotations,
             &body_id,
             "VisibGeom",
@@ -2261,7 +2183,6 @@ pub(in super::super) fn transfer_native_brep(
             Exactness::Derived,
         )?;
         annotate(
-            ctx,
             annotations,
             &region_id,
             "VisibGeom",
@@ -2311,7 +2232,6 @@ pub(in super::super) fn transfer_native_brep(
                 )?
             };
             annotate(
-                ctx,
                 annotations,
                 &shell_id,
                 "VisibGeom",
@@ -2395,7 +2315,6 @@ pub(in super::super) fn transfer_native_brep(
             let surface = native_surface_id(scan, *face_id)?;
             if !ir.model.surfaces.iter().any(|item| item.id == surface) {
                 annotate(
-                    ctx,
                     annotations,
                     &surface,
                     face_source_namespace,
@@ -2438,7 +2357,6 @@ pub(in super::super) fn transfer_native_brep(
                 Sense::Forward
             };
             annotate(
-                ctx,
                 annotations,
                 &face,
                 "VisibGeom",
@@ -2448,7 +2366,6 @@ pub(in super::super) fn transfer_native_brep(
             )?;
             for loop_id in &loop_ids {
                 annotate(
-                    ctx,
                     annotations,
                     loop_id,
                     "VisibGeom",
@@ -2472,7 +2389,7 @@ pub(in super::super) fn transfer_native_brep(
                 },
             )?;
             for (native_loop, loop_id) in native_loops.iter().zip(loop_ids) {
-                let ring = native_loop_ring(ctx, native_loop, *face_id)?;
+                let ring = native_loop_ring(native_loop, *face_id)?;
                 ctx.charge_entities(1, "admit Creo model loops")?;
                 ir.model.loops.push(IrLoop {
                     id: crate::identity::copy_checked_id(loop_id.as_str())?,
@@ -2497,7 +2414,6 @@ pub(in super::super) fn transfer_native_brep(
                         crate::identity::copy_checked_id(id.as_str())?
                     };
                     annotate(
-                        ctx,
                         annotations,
                         &id,
                         "VisibGeom",
@@ -2649,14 +2565,7 @@ pub(in super::super) fn transfer_native_brep(
                             );
                             let pcurve = crate::identity::compose_checked::<PcurveId>(&crate::identity::VISIBGEOM_PCURVE, format_args!("{}:{face_id}", half_edge.curve_id))?;
                             if !ir.model.pcurves.iter().any(|item| item.id == pcurve) {
-                                annotate(ctx,
-                                    annotations,
-                                    &pcurve,
-                                    "VisibGeom",
-                                    cadmpeg_core::decode::u64_from_index(offset),
-                                    tag,
-                                    Exactness::Derived,
-                                )?;
+                                annotate(annotations, &pcurve, "VisibGeom", cadmpeg_core::decode::u64_from_index(offset), tag, Exactness::Derived)?;
                                 ctx.charge_entities(1, "admit Creo model pcurves")?;
                                 source_carriers.admit_pcurve(
                                     ctx,
@@ -2737,7 +2646,6 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
             continue;
         };
         annotate(
-            ctx,
             annotations,
             &id,
             "VisibGeom",
@@ -2807,7 +2715,6 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
                 continue;
             };
             annotate(
-                ctx,
                 annotations,
                 &id,
                 "VisibGeom",

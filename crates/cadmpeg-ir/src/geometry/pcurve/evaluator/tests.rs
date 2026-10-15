@@ -32,13 +32,7 @@ fn evaluator_lanes_copy_both_lanes() {
     let ctx = cadmpeg_test_support::service_decode_context();
     for rational in [false, true] {
         let source = poles(rational);
-        let lanes = PcurveEvaluatorLanes::new(
-            &ctx,
-            &source,
-            "evaluator point copy",
-            "evaluator weight copy",
-        )
-        .unwrap();
+        let lanes = PcurveEvaluatorLanes::new(&source);
         assert_eq!(
             lanes.points(),
             [Point2::new(1.0, 2.0), Point2::new(3.0, 4.0)]
@@ -57,13 +51,7 @@ fn evaluator_lanes_keep_empty_weight_presence() {
         } else {
             PcurveNurbsPoles::Polynomial { points: Vec::new() }
         };
-        let lanes = PcurveEvaluatorLanes::new(
-            &ctx,
-            &source,
-            "empty evaluator points",
-            "empty evaluator weights",
-        )
-        .unwrap();
+        let lanes = PcurveEvaluatorLanes::new(&source);
         assert!(lanes.points().is_empty());
         assert_eq!(lanes.weights(), rational.then_some([].as_slice()));
     }

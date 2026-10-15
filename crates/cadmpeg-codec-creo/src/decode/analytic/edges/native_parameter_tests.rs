@@ -562,10 +562,7 @@ fn solved_endpoints_select_one_hyperbola_branch() {
         )
         .expect("valid HyperbolaCurve fixture"),
     ));
-    let branches = crate::decode::with_test_decode_ctx(|ctx| {
-        analytic_curve_branches(ctx, &hyperbola, "hyperbola")
-    })
-    .expect("analytic branches admitted");
+    let branches = { analytic_curve_branches(&hyperbola, "hyperbola") };
     let points = [
         evaluated(&branches[1].0, -1.0),
         evaluated(&branches[1].0, 2.0),

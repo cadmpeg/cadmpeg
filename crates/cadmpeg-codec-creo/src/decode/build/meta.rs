@@ -119,10 +119,9 @@ pub(super) fn source_meta(
     }
     if let Some(legacy) = scan.framing.layout.legacy_ascii() {
         coverage.record(
-            ctx,
             crate::coverage::DECODED_LEGACY_PRINCIPAL_UNIT_COUNT,
             usize::from(scan.framing.principal_unit.is_some()),
-        )?;
+        );
         let mut object_arrows = 0usize;
         let mut object_inlines = 0usize;
         let mut object_nulls = 0usize;
@@ -137,77 +136,63 @@ pub(super) fn source_meta(
             }
         }
         coverage.record(
-            ctx,
             crate::coverage::DECODED_LEGACY_OBJECT_ARROW_COUNT,
             object_arrows,
-        )?;
+        );
         coverage.record(
-            ctx,
             crate::coverage::DECODED_LEGACY_OBJECT_INLINE_COUNT,
             object_inlines,
-        )?;
+        );
         coverage.record(
-            ctx,
             crate::coverage::DECODED_LEGACY_OBJECT_NULL_COUNT,
             object_nulls,
-        )?;
+        );
         coverage.record(
-            ctx,
             crate::coverage::DECODED_LEGACY_OBJECT_ARRAY_COUNT,
             object_arrays,
-        )?;
+        );
         coverage.record(
-            ctx,
             crate::coverage::INCOMPLETE_LEGACY_OBJECT_ARRAY_COUNT,
             legacy.persistence.incomplete_object_array_count,
-        )?;
+        );
         coverage.record(
-            ctx,
             crate::coverage::UNRESOLVED_LEGACY_OBJECT_VALUE_COUNT,
             legacy.persistence.unresolved_object_value_count,
-        )?;
+        );
         let integer_counts = legacy_numeric_coverage(&legacy.persistence.integer_values.rows)?;
         coverage.record(
-            ctx,
             crate::coverage::DECODED_LEGACY_INTEGER_SCALAR_COUNT,
             integer_counts.scalars,
-        )?;
+        );
         coverage.record(
-            ctx,
             crate::coverage::DECODED_LEGACY_INTEGER_ARRAY_COUNT,
             integer_counts.arrays,
-        )?;
+        );
         coverage.record(
-            ctx,
             crate::coverage::DECODED_LEGACY_INTEGER_ELEMENT_COUNT,
             integer_counts.elements,
-        )?;
+        );
         coverage.record(
-            ctx,
             crate::coverage::UNRESOLVED_LEGACY_INTEGER_VALUE_COUNT,
             legacy.persistence.integer_values.unresolved_count,
-        )?;
+        );
         let real_counts = legacy_numeric_coverage(&legacy.persistence.real_values.rows)?;
         coverage.record(
-            ctx,
             crate::coverage::DECODED_LEGACY_REAL_SCALAR_COUNT,
             real_counts.scalars,
-        )?;
+        );
         coverage.record(
-            ctx,
             crate::coverage::DECODED_LEGACY_REAL_ARRAY_COUNT,
             real_counts.arrays,
-        )?;
+        );
         coverage.record(
-            ctx,
             crate::coverage::DECODED_LEGACY_REAL_ELEMENT_COUNT,
             real_counts.elements,
-        )?;
+        );
         coverage.record(
-            ctx,
             crate::coverage::UNRESOLVED_LEGACY_REAL_VALUE_COUNT,
             legacy.persistence.real_values.unresolved_count,
-        )?;
+        );
         let (string_scalars, string_arrays, string_elements, undecoded_encodings) =
             legacy.persistence.string_values.iter().try_fold(
                 (0usize, 0usize, 0usize, 0usize),
@@ -239,51 +224,43 @@ pub(super) fn source_meta(
                 },
             )?;
         coverage.record(
-            ctx,
             crate::coverage::DECODED_LEGACY_STRING_SCALAR_COUNT,
             string_scalars,
-        )?;
+        );
         coverage.record(
-            ctx,
             crate::coverage::DECODED_LEGACY_STRING_ARRAY_COUNT,
             string_arrays,
-        )?;
+        );
         coverage.record(
-            ctx,
             crate::coverage::DECODED_LEGACY_STRING_ELEMENT_COUNT,
             string_elements,
-        )?;
+        );
         coverage.record(
-            ctx,
             crate::coverage::INCOMPLETE_LEGACY_STRING_ARRAY_COUNT,
             legacy.persistence.incomplete_string_array_count,
-        )?;
+        );
         coverage.record(
-            ctx,
             crate::coverage::UNRESOLVED_LEGACY_STRING_VALUE_COUNT,
             legacy.persistence.unresolved_string_value_count,
-        )?;
+        );
         coverage.record(
-            ctx,
             crate::coverage::UNDECODED_LEGACY_STRING_ENCODING_COUNT,
             undecoded_encodings,
-        )?;
+        );
         record_scalar_string_coverage(
-            ctx,
             &mut coverage,
             crate::coverage::DECODED_LEGACY_TYPE_3_SCALAR_COUNT,
             crate::coverage::UNRESOLVED_LEGACY_TYPE_3_VALUE_COUNT,
             crate::coverage::UNDECODED_LEGACY_TYPE_3_ENCODING_COUNT,
             &legacy.persistence.type_3_values,
-        )?;
+        );
         record_scalar_string_coverage(
-            ctx,
             &mut coverage,
             crate::coverage::DECODED_LEGACY_TYPE_4_SCALAR_COUNT,
             crate::coverage::UNRESOLVED_LEGACY_TYPE_4_VALUE_COUNT,
             crate::coverage::UNDECODED_LEGACY_TYPE_4_ENCODING_COUNT,
             &legacy.persistence.type_4_values,
-        )?;
+        );
         let mut insert_numbered_numeric_coverage =
             |scalar_key,
              array_key,
@@ -292,10 +269,10 @@ pub(super) fn source_meta(
              counts: LegacyNumericCoverage,
              unresolved|
              -> Result<(), cadmpeg_core::CodecError> {
-                coverage.record(ctx, scalar_key, counts.scalars)?;
-                coverage.record(ctx, array_key, counts.arrays)?;
-                coverage.record(ctx, element_key, counts.elements)?;
-                coverage.record(ctx, unresolved_key, unresolved)?;
+                coverage.record(scalar_key, counts.scalars);
+                coverage.record(array_key, counts.arrays);
+                coverage.record(element_key, counts.elements);
+                coverage.record(unresolved_key, unresolved);
                 Ok(())
             };
         insert_numbered_numeric_coverage(
@@ -340,38 +317,31 @@ pub(super) fn source_meta(
         )?;
     }
     coverage.record(
-        ctx,
         crate::coverage::DECODED_PRIMITIVE_TRIANGLE_STRIP_COUNT,
         scan.primitives.triangle_strips.len(),
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::CONFLICTING_PRIMITIVE_TRIANGLE_STRIP_REPRESENTATION_COUNT,
         scan.primitives
             .conflicting_triangle_strip_representation_count,
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_SURFACE_ROW_COUNT,
         scan.surfaces.rows.len(),
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_CROSS_SECTION_SURFACE_ROW_COUNT,
         scan.surfaces.cross_section_rows.len(),
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_SURFACE_PARAMETER_RECORD_COUNT,
         scan.surfaces.parameters.len(),
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_CROSS_SECTION_SURFACE_PARAMETER_RECORD_COUNT,
         scan.surfaces.cross_section_parameters.len(),
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_POSITIONAL_EXTRUSION_DIRECTION_COUNT,
         scan.surfaces
             .parameters
@@ -381,127 +351,104 @@ pub(super) fn source_meta(
                     && record.extrusion_direction().is_some()
             })
             .count(),
-    )?;
+    );
     let torus_coverage = torus_parameter_coverage(scan);
     coverage.record(
-        ctx,
         crate::coverage::DECODED_TORUS_RADIUS_OVERRIDE_COUNT,
         torus_coverage.radius_overrides,
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_TYPE26_REPLAYED_MINOR_RADIUS_COUNT,
         torus_coverage.replayed_minor_radii,
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_TORUS_OUTLINE_EXTENT_COUNT,
         torus_coverage.outline_extents,
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_TYPE26_FIVE_COORDINATE_ENVELOPE_COUNT,
         torus_coverage.five_coordinate_envelopes,
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_TYPE26_SPLIT_COORDINATE_ENVELOPE_COUNT,
         torus_coverage.split_coordinate_envelopes,
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_PLANE_LOCAL_SYSTEM_COUNT,
         scan.planes.local_systems.len(),
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_CROSS_SECTION_PLANE_LOCAL_SYSTEM_COUNT,
         scan.planes.cross_section_local_systems.len(),
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_PLANE_ENVELOPE_COUNT,
         scan.planes.envelopes.len(),
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_CROSS_SECTION_PLANE_ENVELOPE_COUNT,
         scan.planes.cross_section_envelopes.len(),
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_OUTLINE_PLANE_COUNT,
         scan.planes.outlines.len(),
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_POSITIONAL_FRAME_PLANE_COUNT,
         scan.planes.positional_frames.len(),
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_CROSS_SECTION_OUTLINE_PLANE_COUNT,
         scan.planes.cross_section_outlines.len(),
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_SURFACE_PROTOTYPE_COUNT,
         scan.surfaces.prototype_count,
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_NAMED_SURFACE_PROTOTYPE_COUNT,
         scan.surfaces.prototype_records.len(),
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_REFERENCE_LINE_COUNT,
         scan.references.lines.len(),
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_REFERENCE_CIRCLE_COUNT,
         scan.references.circles.len(),
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_REFERENCE_CONIC_COUNT,
         scan.references.conics.len(),
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::TRANSFERRED_REFERENCE_ELLIPSE_COUNT,
         scan.references.ellipses.len(),
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_TABULATED_CYLINDER_CURVE_REPLAY_COUNT,
         scan.curves.tabulated_cylinder_replays.len(),
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_TABULATED_CYLINDER_CONTROL_POINT_SET_COUNT,
         scan.curves
             .tabulated_cylinder_replays
             .iter()
             .filter(|replay| replay.control_points.iter().all(Option::is_some))
             .count(),
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_CURVE_PROTOTYPE_COUNT,
         scan.curves.prototypes.len(),
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_CURVE_PARAMETER_RECORD_COUNT,
         scan.curves.parameters.len(),
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_CURVE_EXPRESSION_RECORD_COUNT,
         scan.curves.expressions.len(),
-    )?;
+    );
     insert_source_attribute(
         &mut attributes,
         "expanded_section_count",
@@ -544,178 +491,143 @@ pub(super) fn source_meta(
             )
         }));
     coverage.record(
-        ctx,
         crate::coverage::DECODED_CONFIGURATION_DRIVER_TABLE_REFERENCE_COUNT,
         configuration_driver_table_reference_count,
-    )?;
+    );
     let legacy_family_table = scan.framing.legacy_family_table.as_ref();
     coverage.record(
-        ctx,
         crate::coverage::DECODED_LEGACY_CONFIGURATION_DRIVER_TABLE_COUNT,
         usize::from(legacy_family_table.is_some()),
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_LEGACY_CONFIGURATION_ITEM_COUNT,
         legacy_family_table.map_or(0, |table| table.items.len()),
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_LEGACY_CONFIGURATION_INSTANCE_COUNT,
         legacy_family_table.map_or(0, |table| table.instances.len()),
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::TRANSFERRED_CONFIGURATION_DRIVER_TABLE_COUNT,
         0,
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_PCURVE_COUNT,
         scan.curves.pcurves.len(),
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_TWO_CHART_PCURVE_COUNT,
         scan.curves.two_chart_pcurves.len(),
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_FC_CURVE_COORDINATE_RECORD_COUNT,
         scan.curves.fc_coordinates.len(),
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_FC05_CIRCLE_COUNT,
         scan.curves.fc05_circles.len(),
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_FC05_CYLINDER_CAP_PAIR_COUNT,
         scan.curves.fc05_cylinder_cap_pairs.len(),
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_PROTOTYPE_PCURVE_COUNT,
         scan.curves.prototype_pcurves.len(),
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_CURVE_PROTOTYPE_TOPOLOGY_COUNT,
         scan.curves.prototype_topology.len(),
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_BOUND_PROTOTYPE_PCURVE_COUNT,
         scan.curves.bound_prototype_pcurves.len(),
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_CURVE_TOPOLOGY_ROW_COUNT,
         scan.curves.topology_rows.len(),
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_CROSS_SECTION_CURVE_ROW_COUNT,
         scan.curves.cross_section_rows.len(),
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_CROSS_SECTION_CURVE_PROTOTYPE_COUNT,
         scan.curves.cross_section_prototypes.len(),
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_HALF_EDGE_COUNT,
         scan.topology.half_edges.len(),
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_TOPOLOGICAL_VERTEX_COUNT,
         scan.topology.vertices.len(),
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_LOOP_COUNT,
         scan.topology.loops.len(),
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_FACE_COMPONENT_COUNT,
         scan.topology.face_components.len(),
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_DATUM_PLANE_COUNT,
         scan.planes.datums.len(),
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_FEATURE_COUNT,
         scan.features.ids.len(),
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_FEATURE_ROW_COUNT,
         scan.features.rows.len(),
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_FEATURE_CHOICE_COUNT,
         scan.features.choices.len(),
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_FEATURE_CHOICE_FIELD_COUNT,
         scan.features.choice_fields.len(),
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_FEATURE_GEOMETRY_TABLE_COUNT,
         scan.features.geometry_tables.len(),
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_FEATURE_LOOP_HISTORY_ENTRY_COUNT,
         scan.features.loop_history_entries.len(),
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_FEATURE_AFFECTED_ID_ARRAY_COUNT,
         scan.features.affected_ids.len(),
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_FEATURE_REPLAY_AFFECTED_ID_COUNT,
         scan.features.replay_affected_ids.len(),
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_SURFACE_MERGE_REPLAY_AFFECTED_ID_COUNT,
         scan.features.surface_merge_replay_affected_ids.len(),
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_FEATURE_LOOP_RESTORE_DIRECTION_COUNT,
         scan.features.loop_restore_directions.len(),
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_FEATURE_REVOLUTION_EXTENT_COUNT,
         scan.features.revolution_extents.len(),
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_FEATURE_DEFINITION_COUNT,
         scan.features.definitions.len(),
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_FEATURE_SECTION_TRANSFORM_COUNT,
         scan.features.section_transforms.len(),
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_FEATURE_PLACEMENT_INSTRUCTION_COUNT,
         scan.features
             .definitions
@@ -724,26 +636,23 @@ pub(super) fn source_meta(
                 crate::feature::definitions::placement_instructions(definition).count()
             })
             .sum::<usize>(),
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_FEATURE_OPERATION_STATE_COUNT,
         scan.features.operation_states.len(),
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_FEATURE_OPERATION_COUNT,
         scan.features.operations.len(),
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_FEATURE_OUTLINE_COUNT,
         scan.features
             .definitions
             .iter()
             .map(|definition| definition.outlines.len())
             .sum::<usize>(),
-    )?;
+    );
     let mut section_point_count = 0;
     for variables in scan
         .features
@@ -756,12 +665,10 @@ pub(super) fn source_meta(
         section_point_count += points.len() + ambiguous.len();
     }
     coverage.record(
-        ctx,
         crate::coverage::DECODED_FEATURE_SECTION_POINT_COUNT,
         section_point_count,
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_FEATURE_SOLVER_VARIABLE_COUNT,
         scan.features
             .definitions
@@ -769,7 +676,7 @@ pub(super) fn source_meta(
             .filter_map(|definition| definition.variables.as_ref())
             .map(|variables| variables.rows.len())
             .sum::<usize>(),
-    )?;
+    );
     let missing_feature_solver_variable_count = scan
         .features
         .definitions
@@ -791,10 +698,9 @@ pub(super) fn source_meta(
             Ok::<usize, cadmpeg_core::CodecError>(total + missing)
         })?;
     coverage.record(
-        ctx,
         crate::coverage::MISSING_FEATURE_SOLVER_VARIABLE_COUNT,
         missing_feature_solver_variable_count,
-    )?;
+    );
     let (
         decoded_dimension_driven_variable_count,
         decoded_dimension_driven_coordinate_variable_count,
@@ -883,64 +789,54 @@ pub(super) fn source_meta(
             ))
         })?;
     coverage.record(
-        ctx,
         crate::coverage::DECODED_FEATURE_DIMENSION_DRIVEN_VARIABLE_COUNT,
         decoded_dimension_driven_variable_count,
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_FEATURE_DIMENSION_DRIVEN_COORDINATE_VARIABLE_COUNT,
         decoded_dimension_driven_coordinate_variable_count,
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_FEATURE_DIMENSION_DRIVEN_OTHER_VARIABLE_COUNT,
         decoded_dimension_driven_variable_count
             .checked_sub(decoded_dimension_driven_coordinate_variable_count)
             .ok_or_else(|| {
                 CodecError::malformed("resolved dimension count exceeds decoded count")
             })?,
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_FEATURE_DIMENSION_DRIVEN_GUESS_COUNT,
         decoded_dimension_driven_guess_count,
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::RESOLVED_FEATURE_DIMENSION_DRIVEN_VARIABLE_COUNT,
         resolved_dimension_driven_variable_count,
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::RESOLVED_FEATURE_DIMENSION_DRIVEN_COORDINATE_VARIABLE_COUNT,
         resolved_dimension_driven_coordinate_variable_count,
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::RESOLVED_FEATURE_DIMENSION_DRIVEN_OTHER_VARIABLE_COUNT,
         resolved_dimension_driven_other_variable_count,
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::UNRESOLVED_FEATURE_DIMENSION_DRIVEN_VARIABLE_COUNT,
         decoded_dimension_driven_variable_count
             .checked_sub(resolved_dimension_driven_variable_count)
             .ok_or_else(|| {
                 CodecError::malformed("resolved dimension count exceeds decoded count")
             })?,
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::UNRESOLVED_FEATURE_DIMENSION_DRIVEN_COORDINATE_VARIABLE_COUNT,
         decoded_dimension_driven_coordinate_variable_count
             .checked_sub(resolved_dimension_driven_coordinate_variable_count)
             .ok_or_else(|| {
                 CodecError::malformed("resolved dimension count exceeds decoded count")
             })?,
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::UNRESOLVED_FEATURE_DIMENSION_DRIVEN_OTHER_VARIABLE_COUNT,
         decoded_dimension_driven_variable_count
             .checked_sub(decoded_dimension_driven_coordinate_variable_count)
@@ -949,14 +845,12 @@ pub(super) fn source_meta(
             .ok_or_else(|| {
                 CodecError::malformed("resolved dimension count exceeds decoded count")
             })?,
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::UNRESOLVED_FEATURE_DIMENSION_DRIVEN_GUESS_COUNT,
         decoded_dimension_driven_guess_count,
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_FEATURE_CIRCLE_SEGMENT_COUNT,
         scan.features
             .definitions
@@ -964,9 +858,8 @@ pub(super) fn source_meta(
             .filter_map(|definition| definition.segments.as_ref())
             .map(|segments| segments.rows.circles().count())
             .sum::<usize>(),
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_FEATURE_POINT_SEGMENT_COUNT,
         scan.features
             .definitions
@@ -974,9 +867,8 @@ pub(super) fn source_meta(
             .filter_map(|definition| definition.segments.as_ref())
             .map(|segments| segments.rows.points().count())
             .sum::<usize>(),
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_FEATURE_CENTERED_LINE_SEGMENT_COUNT,
         scan.features
             .definitions
@@ -984,9 +876,8 @@ pub(super) fn source_meta(
             .filter_map(|definition| definition.segments.as_ref())
             .map(|segments| segments.rows.centered_lines().count())
             .sum::<usize>(),
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_FEATURE_REFERENCE_LINE_SEGMENT_COUNT,
         scan.features
             .definitions
@@ -994,9 +885,8 @@ pub(super) fn source_meta(
             .filter_map(|definition| definition.segments.as_ref())
             .map(|segments| segments.rows.reference_lines().count())
             .sum::<usize>(),
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_FEATURE_BOUNDED_CURVE_SEGMENT_COUNT,
         scan.features
             .definitions
@@ -1004,9 +894,8 @@ pub(super) fn source_meta(
             .filter_map(|definition| definition.segments.as_ref())
             .map(|segments| segments.rows.bounded_curves().count())
             .sum::<usize>(),
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_FEATURE_CONIC_SEGMENT_COUNT,
         scan.features
             .definitions
@@ -1014,9 +903,8 @@ pub(super) fn source_meta(
             .filter_map(|definition| definition.segments.as_ref())
             .map(|segments| segments.rows.conics().count())
             .sum::<usize>(),
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_FEATURE_OPAQUE_SEGMENT_COUNT,
         scan.features
             .definitions
@@ -1024,9 +912,8 @@ pub(super) fn source_meta(
             .filter_map(|definition| definition.segments.as_ref())
             .map(|segments| segments.rows.opaque().count())
             .sum::<usize>(),
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_FEATURE_TRIM_ENTITY_COUNT,
         scan.features
             .definitions
@@ -1034,9 +921,8 @@ pub(super) fn source_meta(
             .filter_map(|definition| definition.trim_entities.as_ref())
             .map(|entities| entities.rows.len())
             .sum::<usize>(),
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_FEATURE_TRIM_VERTEX_COUNT,
         scan.features
             .definitions
@@ -1044,9 +930,8 @@ pub(super) fn source_meta(
             .filter_map(|definition| definition.trim_vertices.as_ref())
             .map(|vertices| vertices.rows.len())
             .sum::<usize>(),
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_FEATURE_ORDER_ENTRY_COUNT,
         scan.features
             .definitions
@@ -1054,9 +939,8 @@ pub(super) fn source_meta(
             .filter_map(|definition| definition.order_table.as_ref())
             .map(|order| order.rows.len())
             .sum::<usize>(),
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_FEATURE_DIMENSION_COUNT,
         scan.features
             .definitions
@@ -1064,9 +948,8 @@ pub(super) fn source_meta(
             .filter_map(|definition| definition.dimensions.as_ref())
             .map(|dimensions| dimensions.rows.len())
             .sum::<usize>(),
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_FEATURE_RELATION_COUNT,
         scan.features
             .definitions
@@ -1074,7 +957,7 @@ pub(super) fn source_meta(
             .filter_map(|definition| definition.relations.as_ref())
             .map(|relations| relations.rows.len())
             .sum::<usize>(),
-    )?;
+    );
     let mut equation_table_count = 0;
     let mut equation_count = 0;
     for definition in &scan.features.definitions {
@@ -1086,17 +969,14 @@ pub(super) fn source_meta(
         }
     }
     coverage.record(
-        ctx,
         crate::coverage::DECODED_FEATURE_EQUATION_TABLE_COUNT,
         equation_table_count,
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_FEATURE_EQUATION_COUNT,
         equation_count,
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_FEATURE_SAVED_ENTITY_COUNT,
         scan.features
             .definitions
@@ -1104,9 +984,8 @@ pub(super) fn source_meta(
             .filter_map(|definition| definition.saved_section.as_ref())
             .map(|saved| saved.entities.len())
             .sum::<usize>(),
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_FEATURE_SAVED_CONIC_COUNT,
         scan.features
             .definitions
@@ -1120,27 +999,23 @@ pub(super) fn source_meta(
                 )
             })
             .count(),
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_FEATURE_ENTITY_COUNT,
         scan.features.entities.len(),
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_FEATURE_ENTITY_REFERENCE_COUNT,
         scan.features.entity_references.len(),
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_FEATURE_ENTITY_TABLE_COUNT,
         scan.features.entity_tables.len(),
-    )?;
+    );
     coverage.record(
-        ctx,
         crate::coverage::DECODED_FEATURE_SURFACE_REPLAY_ASSOCIATION_COUNT,
         feature_surface_replay_association_count(scan)?,
-    )?;
+    );
     if let Some(count) = scan.framing.declared_body_count {
         insert_source_attribute(&mut attributes, "declared_body_count", count);
     }
@@ -1149,11 +1024,7 @@ pub(super) fn source_meta(
     }
     Ok((
         SourceMeta::classified(
-            DialectLayers::of(
-                classification
-                    .matched()
-                    .clone(),
-            ),
+            DialectLayers::of(classification.matched().clone()),
             cadmpeg_core::text::named_entries("the creo container", attributes)?,
         ),
         coverage,
@@ -1161,14 +1032,12 @@ pub(super) fn source_meta(
 }
 
 fn record_scalar_string_coverage<K>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     coverage: &mut cadmpeg_ir::report::decode::Coverage,
     scalar_key: cadmpeg_ir::report::decode::CoverageKey,
     unresolved_key: cadmpeg_ir::report::decode::CoverageKey,
     undecoded_key: cadmpeg_ir::report::decode::CoverageKey,
     values: &crate::legacy::TypedValues<crate::legacy::ValueRecord<K>>,
-) -> Result<(), cadmpeg_core::CodecError>
-where
+) where
     K: crate::legacy::LegacyCode<Payload = crate::legacy::StringValue>,
 {
     let undecoded_encodings = values
@@ -1176,10 +1045,9 @@ where
         .iter()
         .map(|record| record.payload.undecoded_encoding_count())
         .sum();
-    coverage.record(ctx, scalar_key, values.rows.len())?;
-    coverage.record(ctx, unresolved_key, values.unresolved_count)?;
-    coverage.record(ctx, undecoded_key, undecoded_encodings)?;
-    Ok(())
+    coverage.record(scalar_key, values.rows.len());
+    coverage.record(unresolved_key, values.unresolved_count);
+    coverage.record(undecoded_key, undecoded_encodings);
 }
 
 #[cfg(test)]

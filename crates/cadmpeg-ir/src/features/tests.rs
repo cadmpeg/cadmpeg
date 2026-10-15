@@ -475,10 +475,8 @@ fn body_selection_admission_rejects_invalid_members() {
     .is_err());
     assert!(GeneratedBodyRef::new(
         super::FeatureId::mint("test:test:feature#1").unwrap(),
-        " ".into(),
-        &cadmpeg_test_support::service_decode_context(),
+        " ".into()
     )
-    .expect("selection reference admission")
     .is_err());
     for value in [
         serde_json::json!({"kind":"local","value":{"bodies":[],"native":"source"}}),

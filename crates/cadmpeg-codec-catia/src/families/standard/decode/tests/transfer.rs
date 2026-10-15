@@ -1097,9 +1097,6 @@ fn standard_revolution_procedure_copy_result() {
             parameter_interval: [0.0, 1.0],
         },
     ));
-    let service = crate::test_support::with_service_context(|ctx| {
-        super::super::copy_standard_procedure(ctx, &procedure)
-    })
-    .expect("service budget");
+    let service = ({ super::super::copy_standard_procedure(&procedure) }).expect("service budget");
     assert!(service == procedure);
 }

@@ -7,14 +7,12 @@ use cadmpeg_ir::ids::BodyId;
 
 #[test]
 fn nx_block_new_body_ignores_only_the_provisional_initial_writer() {
-    crate::test_support::with_decode_context(|ctx| {
+    ({
         let body = BodyId::mint("test:model:entity#body").expect("identity grammar");
         let provisional =
             FeatureId::mint("synthetic:test:id#initial-bodies").expect("identity grammar");
         let mut history = BodyWriterHistory::default();
-        history
-            .record_writer(ctx, None, None, std::slice::from_ref(&body), &provisional)
-            .expect("admitted writer history");
+        history.record_writer(None, None, std::slice::from_ref(&body), &provisional);
 
         assert_eq!(
             new_body_boolean_op(&NewBodyEvidence {
@@ -33,15 +31,7 @@ fn nx_block_new_body_ignores_only_the_provisional_initial_writer() {
         let fallback_prior =
             FeatureId::mint("synthetic:test:id#fallback-prior-feature").expect("identity grammar");
         let mut fallback_history = BodyWriterHistory::default();
-        fallback_history
-            .record_writer(
-                ctx,
-                None,
-                None,
-                std::slice::from_ref(&body),
-                &fallback_prior,
-            )
-            .expect("admitted writer history");
+        fallback_history.record_writer(None, None, std::slice::from_ref(&body), &fallback_prior);
         assert_eq!(
             new_body_boolean_op(&NewBodyEvidence {
                 has_complete_projection: true,
@@ -57,9 +47,7 @@ fn nx_block_new_body_ignores_only_the_provisional_initial_writer() {
         );
 
         let prior = FeatureId::mint("synthetic:test:id#prior-feature").expect("identity grammar");
-        history
-            .record_writer(ctx, Some(7), None, std::slice::from_ref(&body), &prior)
-            .expect("admitted writer history");
+        history.record_writer(Some(7), None, std::slice::from_ref(&body), &prior);
         assert_eq!(
             new_body_boolean_op(&NewBodyEvidence {
                 has_complete_projection: true,
@@ -90,9 +78,7 @@ fn nx_block_new_body_ignores_only_the_provisional_initial_writer() {
         let offset_prior =
             FeatureId::mint("synthetic:test:id#offset-prior-feature").expect("identity grammar");
         let mut offset_history = BodyWriterHistory::default();
-        offset_history
-            .record_writer(ctx, None, Some("store:block#7"), &[], &offset_prior)
-            .expect("admitted writer history");
+        offset_history.record_writer(None, Some("store:block#7"), &[], &offset_prior);
         assert_eq!(
             new_body_boolean_op(&NewBodyEvidence {
                 has_complete_projection: true,

@@ -61,9 +61,8 @@ fn block_payload_input(
 #[test]
 fn block_payload_admits_fixture() {
     let (container, construction) = block_payload_input(b"A");
-    let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+    let decode = |_: &cadmpeg_core::decode::DecodeContext<'_>| {
         crate::native::features::construction_records::feature_block_construction_payloads(
-            ctx,
             &container,
             std::slice::from_ref(&construction),
         )
@@ -85,9 +84,8 @@ enum BlockFieldRoute {
 fn assert_block_field_admits(route: BlockFieldRoute) {
     let bytes = b"\x03\x08Point1\0\x50\x59\x66\x64\x00\x30\x43\x0c\xcc\xcc\xcc\xcd\x72";
     let (container, construction) = block_payload_input(bytes);
-    let payloads = crate::test_support::with_decode_context(|ctx| {
+    let payloads = ({
         crate::native::features::construction_records::feature_block_construction_payloads(
-            ctx,
             &container,
             std::slice::from_ref(&construction),
         )
@@ -126,10 +124,9 @@ block_field_admit_test!(block_name_admits_fixture, BlockFieldRoute::Name);
 fn block_named_record_admits_fixture() {
     let bytes = b"\x03\x08Point1\0\x50\x59\x66\x64\x00\x30\x43\x0c\xcc\xcc\xcc\xcd\x72";
     let (container, construction) = block_payload_input(bytes);
-    let (payloads, names, scalars) = crate::test_support::with_decode_context(|ctx| {
+    let (payloads, names, scalars) = crate::test_support::with_decode_context(|_| {
         let payloads =
             crate::native::features::construction_records::feature_block_construction_payloads(
-                ctx,
                 &container,
                 std::slice::from_ref(&construction),
             )?;
@@ -157,10 +154,9 @@ fn block_point_input() -> (
 ) {
     let bytes = b"\x03\x08Point1\0\x50\x59\x66\x64\x00\x30\x43\x0c\xcc\xcc\xcc\xcd\x72";
     let (container, construction) = block_payload_input(bytes);
-    crate::test_support::with_decode_context(|ctx| {
+    crate::test_support::with_decode_context(|_| {
         let payloads =
             crate::native::features::construction_records::feature_block_construction_payloads(
-                ctx,
                 &container,
                 std::slice::from_ref(&construction),
             )?;

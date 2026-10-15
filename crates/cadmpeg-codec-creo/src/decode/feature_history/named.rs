@@ -91,12 +91,10 @@ fn name_only_feature_definition(
         )));
     }
     if numbered_feature_name_has_family(kind, "Thicken") {
-        return Ok(Some(thicken_feature_definition(ctx, scan, ir, feature_id)?));
+        return Ok(Some(thicken_feature_definition(scan, ir, feature_id)?));
     }
     if numbered_feature_name_has_family(kind, "Merge") {
-        return Ok(Some(knit_surface_feature_definition(
-            ctx, scan, feature_id,
-        )?));
+        return Ok(Some(knit_surface_feature_definition(scan, feature_id)?));
     }
     if let Some(definition) = surface_intersect_feature_definition(ctx, scan, feature_id, kind)? {
         return Ok(Some(definition));
@@ -106,7 +104,6 @@ fn name_only_feature_definition(
     }
     if matches!(kind, "Protrusion" | "Cut") {
         return Ok(Some(extrude_feature_definition_with_profile(
-            ctx,
             scan,
             ir,
             source_carriers,
@@ -161,7 +158,6 @@ fn name_only_feature_definition(
             preceding_features_establish_body(ir),
         );
         return Ok(Some(extrude_feature_definition_with_profile(
-            ctx,
             scan,
             ir,
             source_carriers,
@@ -219,14 +215,13 @@ pub(in super::super) fn named_or_referenced_feature_definition(
 }
 
 pub(super) fn extrude_feature_definition_with_profile(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &CadIr,
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     feature_id: u32,
     op: BooleanOp,
 ) -> Result<IrFeatureDefinition, CodecError> {
-    let profile = match unique_feature_profile_ref(ctx, scan, ir, feature_id)? {
+    let profile = match unique_feature_profile_ref(scan, ir, feature_id) {
         Some(profile) => profile,
         None => unresolved_feature_profile_ref(feature_id),
     };
@@ -282,7 +277,7 @@ fn revolve_feature_definition_with_profile(
     let extent = feature_revolution_extent(scan, feature_id);
     let output_kind = sweep_output_kind(scan, ir, "revolution", feature_id);
     let profile =
-        unique_feature_profile_ref(ctx, scan, ir, feature_id)?.and_then(|profile| match profile {
+        unique_feature_profile_ref(scan, ir, feature_id).and_then(|profile| match profile {
             ProfileRef::Planar(planar) => Some(planar),
             _ => None,
         });

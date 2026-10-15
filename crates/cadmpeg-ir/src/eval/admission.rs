@@ -465,7 +465,6 @@ mod tests {
         });
         ir.model
             .add_procedural_curve(
-                &crate::document::admission::StandardAdmission,
                 &id,
                 ProceduralCurve::new(
                     crate::ids::ProceduralCurveId::mint("test:model:procedural#cycle").unwrap(),
@@ -475,7 +474,6 @@ mod tests {
                     },
                 ),
             )
-            .unwrap()
             .unwrap();
         let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
         let arena = DecodeArena::new();

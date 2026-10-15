@@ -120,7 +120,7 @@ fn nurbs_surface_boundaries(
                 nurbs.u_periodic(),
             )
         };
-        let knots = source_knots.try_clone_for_decode(ctx, "creo NURBS boundary knots")?;
+        let knots = source_knots.clone();
         let poles = if let Some(weights) = weights {
             let mut paired = Vec::new();
             paired.extend(

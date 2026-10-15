@@ -400,7 +400,7 @@ fn walk_native_markers(
         if let Some(block) = try_block(ctx, root, i)? {
             i = block.offset + block_hdr::LEN + block.preamble_len + index_from_u32(block.comp_sz);
             ctx.charge_entities(1, "admit SLDPRT block")?;
-            blocks.push(block.into_block(ctx)?);
+            blocks.push(block.into_block());
             continue;
         }
         if let Some(cell) = try_cache_cell(bytes, i) {
@@ -431,11 +431,7 @@ fn compound_stream(
     let ps_streams = crate::parasolid::extract_streams_with_offsets(semantic_payload, ctx)?;
     let path = match cadmpeg_ir::StreamName::try_from(path) {
         Ok(path) => path,
-        Err(_) => cadmpeg_ir::stream_name!("compound@").with_suffix(
-            ctx,
-            directory_id,
-            "compose annotation stream name",
-        )?,
+        Err(_) => cadmpeg_ir::stream_name!("compound@").with_suffix(directory_id),
     };
     Ok(CompoundStream {
         path,
@@ -578,23 +574,19 @@ struct RawBlock {
 }
 
 impl RawBlock {
-    fn into_block(self, ctx: &DecodeContext<'_>) -> Result<Block, CodecError> {
+    fn into_block(self) -> Block {
         let section = match self.section {
             Some(name) => match cadmpeg_ir::StreamName::try_from(name) {
                 Ok(name) => BlockName::Named(name),
-                Err(_) => BlockName::Anonymous(cadmpeg_ir::stream_name!("block@").with_suffix(
-                    ctx,
-                    self.offset,
-                    "compose annotation stream name",
-                )?),
+                Err(_) => BlockName::Anonymous(
+                    cadmpeg_ir::stream_name!("block@").with_suffix(self.offset),
+                ),
             },
-            None => BlockName::Anonymous(cadmpeg_ir::stream_name!("block@").with_suffix(
-                ctx,
-                self.offset,
-                "compose annotation stream name",
-            )?),
+            None => {
+                BlockName::Anonymous(cadmpeg_ir::stream_name!("block@").with_suffix(self.offset))
+            }
         };
-        Ok(Block {
+        Block {
             offset: self.offset,
             type_id: self.type_id,
             comp_sz: self.comp_sz,
@@ -602,7 +594,7 @@ impl RawBlock {
             family: self.family,
             payload: self.payload,
             ps_streams: self.ps_streams,
-        })
+        }
     }
 }
 

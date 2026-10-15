@@ -772,7 +772,6 @@ pub(in crate::native) fn feature_draft_construction_index_lanes(
 
 /// Reconstruct ordered logical payloads from resolved draft index lanes.
 pub(in crate::native) fn feature_draft_construction_payloads(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
     lanes: &[FeatureDraftConstructionIndexLane],
 ) -> Result<Vec<FeatureConstructionPayload>, cadmpeg_core::CodecError> {
@@ -786,7 +785,7 @@ pub(in crate::native) fn feature_draft_construction_payloads(
             .indices()
             .map(|row| row.target.to_owned())
             .collect::<Vec<_>>();
-        let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, &blocks)? else {
+        let Some(content) = FeaturePayloadContent::from_source(data_blocks, &blocks)? else {
             continue;
         };
         let id = lane.id.replacen(
@@ -809,7 +808,6 @@ pub(in crate::native) fn feature_draft_construction_payloads(
 
 /// Reconstruct ordered logical payloads from complete draft construction graphs.
 pub(in crate::native) fn feature_draft_construction_graph_payloads(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
     lanes: &[FeatureDraftConstructionIndexLane],
     references: &[FeatureDraftConstructionReference],
@@ -856,7 +854,7 @@ pub(in crate::native) fn feature_draft_construction_graph_payloads(
         }) {
             continue;
         }
-        let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, &blocks)? else {
+        let Some(content) = FeaturePayloadContent::from_source(data_blocks, &blocks)? else {
             continue;
         };
         let Some((_, key)) = lane.id.rsplit_once('#') else {

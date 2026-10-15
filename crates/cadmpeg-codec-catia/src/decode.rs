@@ -299,7 +299,7 @@ fn finish_decode(
         &mut annotations,
         &modeling_graph_scope,
     )?;
-    design_feature_transfer.assign_parameter_owners(ctx, &mut ir, &native)?;
+    design_feature_transfer.assign_parameter_owners(&mut ir, &native)?;
     let appearance_transfer = crate::appearance::transfer(
         ctx,
         &mut ir,
@@ -1901,9 +1901,7 @@ fn finish_decode(
             .is_some_and(|name| design_feature::NativeOperationClass::try_from(name).is_ok())
     }) {
         if !native_operation_feature_ids.contains(&feature.id) {
-            let id = feature
-                .id
-                .try_clone_for_decode(ctx, "catia_native_operation_feature_id")?;
+            let id = feature.id.clone();
             native_operation_feature_ids.insert(id);
         }
     }
@@ -3397,14 +3395,13 @@ fn finish_decode(
             ir.model.configurations.len(),
         ),
     ] {
-        report.coverage.record(ctx, key, count)?;
+        report.coverage.record(key, count);
     }
     if transferred_pmi_dimension_count != 0 {
         report.coverage.record(
-            ctx,
             crate::coverage::TRANSFERRED_PMI_DIMENSION_COUNT,
             transferred_pmi_dimension_count,
-        )?;
+        );
     }
     let untransferred_line_profile_count = native
         .consolidated_line_profiles

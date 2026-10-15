@@ -51,11 +51,8 @@ pub(super) enum B5ProceduralSurface<'a> {
 }
 
 /// Classify a surface into its direct geometry or procedural construction.
-pub(super) fn surface_carrier<'a>(
-    ctx: &DecodeContext<'_>,
-    surface: &'a B5Surface,
-) -> Result<B5SurfaceCarrier<'a>, CodecError> {
-    Ok(match surface {
+pub(super) fn surface_carrier(surface: &B5Surface) -> B5SurfaceCarrier<'_> {
+    match surface {
         B5Surface::Plane { origin, frame, .. } => {
             B5SurfaceCarrier::Analytic(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::new(*origin, *frame),
@@ -99,11 +96,9 @@ pub(super) fn surface_carrier<'a>(
                 (*minor_radius).into(),
             ),
         ))),
-        B5Surface::Nurbs(surface) => {
-            B5SurfaceCarrier::Analytic(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-                surface.try_clone_for_decode(ctx, "catia_b5_surface_carrier_nurbs")?,
-            )))
-        }
+        B5Surface::Nurbs(surface) => B5SurfaceCarrier::Analytic(SurfaceGeometry::Solved(
+            SolvedSurfaceGeometry::Nurbs(surface.clone()),
+        )),
         B5Surface::UnresolvedNurbs { .. } | B5Surface::Unknown { .. } => {
             B5SurfaceCarrier::Procedural(B5ProceduralSurface::Unresolved)
         }
@@ -129,7 +124,7 @@ pub(super) fn surface_carrier<'a>(
             angular_scale: *angular_scale,
             bounds: [profile_range.endpoints(), angular_range.endpoints()],
         }),
-    })
+    }
 }
 
 pub(super) fn neutral_surface(
@@ -140,7 +135,7 @@ pub(super) fn neutral_surface(
     payload: &UnknownId,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<SurfacePlan, CodecError> {
-    let carrier = match surface_carrier(ctx, surface)? {
+    let carrier = match surface_carrier(surface) {
         B5SurfaceCarrier::Analytic(geometry) => {
             return Ok(SurfacePlan {
                 geometry,
@@ -152,7 +147,7 @@ pub(super) fn neutral_surface(
     if let Some(extrusion) = super::resolved_extrusion_surface(ctx, graph, surface_id, refusal)? {
         return Ok(SurfacePlan {
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
-                record: Some(payload.try_clone_for_decode(ctx, "catia_b5_extrusion_unknown_id")?),
+                record: Some(payload.clone()),
             }),
             // The resolved extrusion is retained by the surface plan.
             procedure: { Some(SurfaceProcedure::Extrusion(Box::new(extrusion))) },
@@ -162,7 +157,7 @@ pub(super) fn neutral_surface(
     let geometry = match carrier {
         B5ProceduralSurface::Unresolved => {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
-                record: Some(payload.try_clone_for_decode(ctx, "catia_b5_unresolved_unknown_id")?),
+                record: Some(payload.clone()),
             })
         }
         B5ProceduralSurface::RollingBall {
@@ -171,12 +166,10 @@ pub(super) fn neutral_surface(
         } => {
             procedure = Some(SurfaceProcedure::RollingBall {
                 carrier_object_id,
-                definition: Box::new(copy_rolling_ball_definition(ctx, definition)?),
+                definition: Box::new(copy_rolling_ball_definition(definition)?),
             });
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
-                record: Some(
-                    payload.try_clone_for_decode(ctx, "catia_b5_rolling_ball_unknown_id")?,
-                ),
+                record: Some(payload.clone()),
             })
         }
         B5ProceduralSurface::Revolution {
@@ -199,7 +192,7 @@ pub(super) fn neutral_surface(
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface))
             }
             None => SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
-                record: Some(payload.try_clone_for_decode(ctx, "catia_b5_revolution_unknown_id")?),
+                record: Some(payload.clone()),
             }),
         },
     };
@@ -211,7 +204,6 @@ pub(super) fn neutral_surface(
 }
 
 pub(in crate::families) fn copy_rolling_ball_definition(
-    ctx: &DecodeContext<'_>,
     definition: &ProceduralSurfaceDefinition,
 ) -> Result<ProceduralSurfaceDefinition, CodecError> {
     let ProceduralSurfaceDefinition::RollingBallJet(jet) = definition else {
@@ -221,7 +213,7 @@ pub(in crate::families) fn copy_rolling_ball_definition(
     };
     let stations = jet.stations().to_vec();
     Ok(ProceduralSurfaceDefinition::RollingBallJet(
-        cadmpeg_ir::geometry::RollingBallJetStations::from_parts(jet.degree(), stations, ctx)?
+        cadmpeg_ir::geometry::RollingBallJetStations::from_parts(jet.degree(), stations)
             .map_err(CodecError::malformed)?,
     ))
 }
@@ -616,8 +608,7 @@ pub(super) fn emit_surfaces(
         face_surfaces.insert(face.surface);
     }
     for (object_id, plan) in surface_plan {
-        let id = surface_ids[&object_id]
-            .try_clone_for_decode(admission.context(), "catia_b5_emitted_surface_ref")?;
+        let id = surface_ids[&object_id].clone();
         let revolution_cache = matches!(
             plan.procedure.as_ref(),
             Some(SurfaceProcedure::Revolution(_))
@@ -632,7 +623,6 @@ pub(super) fn emit_surfaces(
                 Some(SurfaceProcedure::Extrusion(_))
             );
         annotate(
-            admission.context(),
             annotations,
             &id,
             "object_stream_b5_03",
@@ -655,9 +645,9 @@ pub(super) fn emit_surfaces(
             },
         )?;
         if revolution_cache {
-            annotations.derived(admission.context(), id.as_str(), "geometry")?;
+            annotations.derived(id.as_str(), "geometry")?;
         }
-        let model_id = id.try_clone_for_decode(admission.context(), "catia_b5_model_surface_id")?;
+        let model_id = id.clone();
         admission.charge()?;
         ir.model.surfaces.push(Surface {
             id: model_id,
@@ -683,21 +673,17 @@ pub(super) fn emit_surfaces(
                     CurveId::mint,
                 )?;
                 annotate(
-                    admission.context(),
                     annotations,
                     &directrix_id,
                     "object_stream_b5_03",
                     "2d_profile_curve",
                     Exactness::Derived,
                 )?;
-                annotations.derived(admission.context(), directrix_id.as_str(), "geometry")?;
+                annotations.derived(directrix_id.as_str(), "geometry")?;
                 admission.charge()?;
                 ir.model.curves.push(Curve {
                     parameter_range: None,
-                    id: directrix_id.try_clone_for_decode(
-                        admission.context(),
-                        "catia_b5_profile_curve_record_id",
-                    )?,
+                    id: directrix_id.clone(),
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                         revolution.directrix,
                     )),
@@ -709,7 +695,6 @@ pub(super) fn emit_surfaces(
                     ProceduralSurfaceId::mint,
                 )?;
                 annotate(
-                    admission.context(),
                     annotations,
                     &procedural_id,
                     "object_stream_b5_03",
@@ -718,7 +703,6 @@ pub(super) fn emit_surfaces(
                 )?;
                 admission.charge()?;
                 let _attached = ir.model.add_procedural_surface(
-                    admission.context(),
                     &id,
                     cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
                         directrix_id,
@@ -737,7 +721,7 @@ pub(super) fn emit_surfaces(
                         )
                     })
                     .map_err(cadmpeg_core::CodecError::malformed)?,
-                )?;
+                );
             }
             Some(SurfaceProcedure::RollingBall {
                 carrier_object_id,
@@ -753,7 +737,6 @@ pub(super) fn emit_surfaces(
                 )?;
                 let carrier_tag = format!("result_carrier:{carrier_object_id:08x}");
                 annotate(
-                    admission.context(),
                     annotations,
                     &procedural_id,
                     "object_stream_a8_03_32",
@@ -762,10 +745,9 @@ pub(super) fn emit_surfaces(
                 )?;
                 admission.charge()?;
                 let _attached = ir.model.add_procedural_surface(
-                    admission.context(),
                     &id,
                     ProceduralSurface::new(procedural_id, *definition, None),
-                )?;
+                );
             }
             Some(SurfaceProcedure::RollingBall { .. }) | None => {}
         }
@@ -789,7 +771,6 @@ pub(super) fn emit_surfaces(
             ProceduralSurfaceId::mint,
         )?;
         annotate(
-            admission.context(),
             annotations,
             &procedural_id,
             "object_stream_b5_03",
@@ -799,16 +780,12 @@ pub(super) fn emit_surfaces(
         let record_bounds = super::parameter_record_bounds(offset.parameter_bounds);
         admission.charge()?;
         let _attached = ir.model.add_procedural_surface(
-            admission.context(),
-            &surface.try_clone_for_decode(admission.context(), "catia_b5_offset_surface_id")?,
+            &surface.clone(),
             ProceduralSurface::new(
                 procedural_id,
                 ProceduralSurfaceDefinition::Offset(
                     cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::legacy(
-                        support.try_clone_for_decode(
-                            admission.context(),
-                            "catia_b5_offset_support_id",
-                        )?,
+                        support.clone(),
                         offset.distance,
                         None,
                         None,
@@ -819,7 +796,7 @@ pub(super) fn emit_surfaces(
                 ),
                 Some(record_bounds),
             ),
-        )?;
+        );
     }
     Ok(surface_ids)
 }
@@ -845,10 +822,7 @@ fn emit_extrusion_procedure(
         } => {
             let make_side = |side: super::ResolvedExtrusionSupport| {
                 Ok::<_, cadmpeg_core::CodecError>(IntcurveSupportSide {
-                    surface: Some(surface_ids[&side.surface_object_id].try_clone_for_decode(
-                        admission.context(),
-                        "catia_b5_extrusion_support_surface_id",
-                    )?),
+                    surface: Some(surface_ids[&side.surface_object_id].clone()),
                     pcurve: Some(SupportPcurve::new(
                         side.pcurve,
                         (side.pcurve_parameter_range
@@ -861,7 +835,6 @@ fn emit_extrusion_procedure(
             let [first, second] = *supports;
             let sides = [make_side(first)?, make_side(second)?];
             annotate(
-                admission.context(),
                 annotations,
                 &directrix_id,
                 "object_stream_a8_03_25",
@@ -871,10 +844,7 @@ fn emit_extrusion_procedure(
             admission.charge()?;
             ir.model.curves.push(Curve {
                 parameter_range: None,
-                id: directrix_id.try_clone_for_decode(
-                    admission.context(),
-                    "catia_b5_extrusion_directrix_record_id",
-                )?,
+                id: directrix_id.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
                 source_object: Some(cgm_source("curve", extrusion.directrix_object_id)?),
             });
@@ -884,7 +854,6 @@ fn emit_extrusion_procedure(
                 ProceduralCurveId::mint,
             )?;
             annotate(
-                admission.context(),
                 annotations,
                 &procedure_id,
                 "object_stream_a8_03_25",
@@ -906,18 +875,12 @@ fn emit_extrusion_procedure(
             );
 
             admission.charge()?;
-            let _attached = ir.model.add_procedural_curve(
-                admission.context(),
-                &directrix_id.try_clone_for_decode(
-                    admission.context(),
-                    "catia_b5_extrusion_procedure_owner_id",
-                )?,
-                procedure,
-            )?;
+            let _attached = ir
+                .model
+                .add_procedural_curve(&directrix_id.clone(), procedure);
         }
         super::ResolvedExtrusionDirectrix::SurfaceCurve { curve, .. } => {
             annotate(
-                admission.context(),
                 annotations,
                 &directrix_id,
                 "object_stream_b5_03_24",
@@ -927,10 +890,7 @@ fn emit_extrusion_procedure(
             admission.charge()?;
             ir.model.curves.push(Curve {
                 parameter_range: None,
-                id: directrix_id.try_clone_for_decode(
-                    admission.context(),
-                    "catia_b5_extrusion_directrix_record_id",
-                )?,
+                id: directrix_id.clone(),
                 geometry: curve,
                 source_object: Some(cgm_source("curve", extrusion.directrix_object_id)?),
             });
@@ -949,7 +909,6 @@ fn emit_extrusion_procedure(
                 CurveId::mint,
             )?;
             annotate(
-                admission.context(),
                 annotations,
                 &source_id,
                 "object_stream_b5_03_24",
@@ -959,15 +918,11 @@ fn emit_extrusion_procedure(
             admission.charge()?;
             ir.model.curves.push(Curve {
                 parameter_range: None,
-                id: source_id.try_clone_for_decode(
-                    admission.context(),
-                    "catia_b5_extrusion_source_record_id",
-                )?,
+                id: source_id.clone(),
                 geometry: source_curve,
                 source_object: Some(cgm_source("curve", source_object_id)?),
             });
             annotate(
-                admission.context(),
                 annotations,
                 &directrix_id,
                 "object_stream_b5_03_14",
@@ -977,10 +932,7 @@ fn emit_extrusion_procedure(
             admission.charge()?;
             ir.model.curves.push(Curve {
                 parameter_range: None,
-                id: directrix_id.try_clone_for_decode(
-                    admission.context(),
-                    "catia_b5_extrusion_directrix_record_id",
-                )?,
+                id: directrix_id.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
                 source_object: Some(cgm_source("curve", extrusion.directrix_object_id)?),
             });
@@ -990,7 +942,6 @@ fn emit_extrusion_procedure(
                 ProceduralCurveId::mint,
             )?;
             annotate(
-                admission.context(),
                 annotations,
                 &procedure_id,
                 "object_stream_b5_03_14",
@@ -998,21 +949,18 @@ fn emit_extrusion_procedure(
                 Exactness::ByteExact,
             )?;
             admission.charge()?;
-            let _attached = ir.model.add_procedural_curve(admission.context(),
-                &directrix_id.try_clone_for_decode(admission.context(), "catia_b5_extrusion_procedure_owner_id")?,
-                ProceduralCurve::new(
+            let _attached = ir.model.add_procedural_curve(&directrix_id.clone(), ProceduralCurve::new(
                     procedure_id,
                     ProceduralCurveDefinition::Offset(
                         cadmpeg_ir::geometry::curve_payloads::OffsetCurveConstruction::along_direction(
                             source_id,
                             distance,
                             direction,
-                            Some(surface_ids[&support.surface_object_id].try_clone_for_decode(admission.context(), "catia_b5_extrusion_support_surface_id")?),
+                            Some(surface_ids[&support.surface_object_id].clone()),
                             source_parameter_range,
                         ),
                     ),
-                ),
-            )?;
+                ));
         }
     }
     let procedure_id = crate::resource::compose_u32_id(
@@ -1021,7 +969,6 @@ fn emit_extrusion_procedure(
         ProceduralSurfaceId::mint,
     )?;
     annotate(
-        admission.context(),
         annotations,
         &procedure_id,
         "object_stream_b5_03",
@@ -1031,7 +978,6 @@ fn emit_extrusion_procedure(
     let record_bounds = super::parameter_record_bounds(extrusion.parameter_bounds);
     admission.charge()?;
     let _attached = ir.model.add_procedural_surface(
-        admission.context(),
         surface_id,
         ProceduralSurface::new(
             procedure_id,
@@ -1046,7 +992,7 @@ fn emit_extrusion_procedure(
             ),
             Some(record_bounds),
         ),
-    )?;
+    );
     Ok(())
 }
 
@@ -1282,9 +1228,7 @@ mod carrier_resource_tests {
             .expect("fixture constructor admission")
             .expect("valid bilinear surface"),
         );
-        let admitted =
-            crate::test_support::with_service_context(|ctx| surface_carrier(ctx, &surface))
-                .expect("service profile");
+        let admitted = surface_carrier(&surface);
         assert!(matches!(admitted, B5SurfaceCarrier::Analytic(_)));
     }
 }

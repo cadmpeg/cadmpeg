@@ -763,9 +763,7 @@ fn profile_termination_operands() -> (
                     local_id: "generated vertex".to_string().try_into().unwrap(),
                 },
                 "vertex native".into(),
-                &cadmpeg_test_support::service_decode_context(),
             )
-            .expect("selection reference admission")
             .unwrap(),
         },
         LinearTermination::ToVertex {
@@ -773,18 +771,11 @@ fn profile_termination_operands() -> (
                 state,
                 HistoricalVertexId::mint("synthetic:test:id#historical-vertex").unwrap(),
                 "historical vertex".into(),
-                &cadmpeg_test_support::service_decode_context(),
             )
-            .expect("selection reference admission")
             .unwrap(),
         },
         LinearTermination::ToVertex {
-            vertex: VertexSelection::native(
-                "native vertex".into(),
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .expect("selection reference admission")
-            .unwrap(),
+            vertex: VertexSelection::native("native vertex".into()).unwrap(),
         },
     ];
     (planar, terminations)

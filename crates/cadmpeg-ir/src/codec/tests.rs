@@ -30,13 +30,7 @@ fn decoded(ir: CadIr) -> Decoded {
 }
 
 fn decode_result(ir: CadIr) -> DecodeResult {
-    DecodeResult::new(
-        decoded(ir),
-        FormatId::new("test"),
-        false,
-        &cadmpeg_test_support::service_decode_context(),
-    )
-    .expect("result construction is admitted")
+    DecodeResult::new(decoded(ir), FormatId::new("test"), false)
 }
 
 struct RejectFloorCodec;
@@ -319,13 +313,7 @@ fn a_decode_result_without_source_metadata_reports_the_codec_format() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
     ir.source = None;
 
-    let result = DecodeResult::new(
-        decoded(ir),
-        FormatId::new("test"),
-        false,
-        &cadmpeg_test_support::service_decode_context(),
-    )
-    .expect("result construction is admitted");
+    let result = DecodeResult::new(decoded(ir), FormatId::new("test"), false);
 
     assert_eq!(result.report().format(), "test");
     assert!(result.report().dialects().is_none());
@@ -336,11 +324,8 @@ fn a_decode_result_without_source_metadata_reports_the_codec_format() {
 fn a_decode_result_keeps_the_body_it_was_given() {
     let mut body = DecodeBody::new(crate::report::decode::DecodeTransfer::full(false));
     body.notes.push("kept".into());
-    crate::test_support::with_service_decode_context(|ctx| {
-        body.coverage
-            .record(ctx, crate::report::decode::CoverageKey::new("entities"), 3)
-    })
-    .expect("coverage entry");
+    body.coverage
+        .record(crate::report::decode::CoverageKey::new("entities"), 3);
     let result = DecodeResult::new(
         Decoded {
             ir: unit_cube().expect("valid unit cube fixture"),
@@ -349,9 +334,7 @@ fn a_decode_result_keeps_the_body_it_was_given() {
         },
         FormatId::new("test"),
         true,
-        &cadmpeg_test_support::service_decode_context(),
-    )
-    .expect("result construction is admitted");
+    );
 
     assert!(result.report().container_only());
     assert_eq!(result.report().notes, ["kept"]);
@@ -372,13 +355,7 @@ fn wrapper_stamps_request_scope_for_each_backend_transfer() {
         for container_only in [false, true] {
             let mut decoded = decoded(unit_cube().expect("valid unit cube fixture"));
             decoded.body.transfer = transfer;
-            let result = DecodeResult::new(
-                decoded,
-                FormatId::new("test"),
-                container_only,
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .expect("result construction is admitted");
+            let result = DecodeResult::new(decoded, FormatId::new("test"), container_only);
             assert_eq!(result.report().container_only(), container_only);
             assert_eq!(
                 result.report().geometry_transferred(),

@@ -6,14 +6,12 @@ use super::retain_live_annotations;
 #[test]
 fn live_annotation_lookup_scales_with_tree_depth() {
     let mut ir = cadmpeg_ir::CadIr::empty();
-    let mut annotations = crate::test_support::with_decode_context(|ctx| {
+    let mut annotations = {
         let mut builder = cadmpeg_ir::annotations::AnnotationBuilder::new();
         for index in 0..4000 {
             let id = cadmpeg_ir::ids::PointId::mint(format!("nx:model:point#{index}"))
                 .expect("identity");
-            builder
-                .exactness(ctx, &id, cadmpeg_ir::Exactness::Derived)
-                .expect("annotation");
+            builder.exactness(&id, cadmpeg_ir::Exactness::Derived);
             ir.model.points.push(cadmpeg_ir::topology::Point::new(
                 id,
                 cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(0., 0., 0.))
@@ -21,14 +19,11 @@ fn live_annotation_lookup_scales_with_tree_depth() {
                 None,
             ));
         }
-        builder
-            .exactness(ctx, "nx:model:point#absent", cadmpeg_ir::Exactness::Derived)
-            .expect("absent selector");
+        builder.exactness("nx:model:point#absent", cadmpeg_ir::Exactness::Derived);
         builder.build()
-    });
-    crate::test_support::with_decode_context(|ctx| {
-        retain_live_annotations(ctx, &ir, &[], &mut annotations)
-            .expect("live annotations are retained");
+    };
+    ({
+        retain_live_annotations(&ir, &[], &mut annotations);
     });
     assert_eq!(annotations.exactness().len(), 4000);
     assert!(!annotations

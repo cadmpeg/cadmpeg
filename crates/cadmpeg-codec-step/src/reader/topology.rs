@@ -372,7 +372,6 @@ pub(super) fn decode(
                 &edges,
                 point_positions,
                 &mut losses,
-                ctx,
             )?;
             let (built, failures) = outcome.into_parts();
             let mut committed = 0;
@@ -419,7 +418,6 @@ pub(super) fn decode(
             point_positions,
             scope_root,
             &mut losses,
-            ctx,
         )?;
         let (built, failures) = outcome.into_parts();
         let mut committed = 0;
@@ -623,7 +621,7 @@ pub(super) fn decode(
             losses.push(StepLossCode::DecodeWarning.note(note));
         }
         let Some(mut built) =
-            build_geometric_set(id, record, exchange, carrier_index, &mut losses, ctx)?
+            build_geometric_set(id, record, exchange, carrier_index, &mut losses)?
         else {
             if mark_standalone_geometric_set(
                 id,
@@ -954,7 +952,6 @@ fn build_wire(
     edefs: &BTreeMap<u64, Rc<EdgeDef>>,
     point_positions: &CarrierIndex,
     losses: &mut Vec<LossNote>,
-    ctx: &DecodeContext<'_>,
 ) -> Result<BuildOutcome, CodecError> {
     let Some(model) = exchange.records().get(&id) else {
         return Ok(BuildOutcome::Partial {
@@ -988,7 +985,6 @@ fn build_wire(
             },
             scoped,
             losses,
-            ctx,
         ) {
             Ok(Some(value)) => outcome.push(value),
             Ok(None) => outcome.fail(None)?,
@@ -1018,7 +1014,6 @@ fn build_wire_set(
     sources: WireSources<'_>,
     scoped: bool,
     losses: &mut Vec<LossNote>,
-    ctx: &DecodeContext<'_>,
 ) -> Result<Option<Built>, CodecError> {
     let WireSources {
         vdefs,
@@ -1143,33 +1138,30 @@ fn build_wire_set(
             return Ok(None);
         }
     };
-    let staged = staged_topology(
-        StagedTopologyParts {
-            typed,
-            vertices: built_vertices,
-            edges: built_edges,
-            coedges: Vec::new(),
-            loops: Vec::new(),
-            faces: Vec::new(),
-            surfaces: Vec::new(),
-            shells: vec![shell_value],
-            region: Region {
-                id: region.clone(),
-                body: body.clone(),
-                shells: vec![shell],
-            },
-            body: Body {
-                id: body.clone(),
-                kind: BodyKind::Wire,
-                regions: vec![region],
-                transform: None,
-                name: None,
-                color: None,
-                visible: None,
-            },
+    let staged = staged_topology(StagedTopologyParts {
+        typed,
+        vertices: built_vertices,
+        edges: built_edges,
+        coedges: Vec::new(),
+        loops: Vec::new(),
+        faces: Vec::new(),
+        surfaces: Vec::new(),
+        shells: vec![shell_value],
+        region: Region {
+            id: region.clone(),
+            body: body.clone(),
+            shells: vec![shell],
         },
-        ctx,
-    );
+        body: Body {
+            id: body.clone(),
+            kind: BodyKind::Wire,
+            regions: vec![region],
+            transform: None,
+            name: None,
+            color: None,
+            visible: None,
+        },
+    });
     let mut built = match staged {
         Ok(built) => built,
         Err(StageError::Draft(error)) => {
@@ -1191,7 +1183,6 @@ fn build_shell_wire(
     point_positions: &CarrierIndex,
     scope_root: bool,
     losses: &mut Vec<LossNote>,
-    ctx: &DecodeContext<'_>,
 ) -> Result<BuildOutcome, CodecError> {
     let Some(model) = exchange.records().get(&id) else {
         return Ok(BuildOutcome::Partial {
@@ -1228,7 +1219,6 @@ fn build_shell_wire(
                 root: scope_root,
             },
             losses,
-            ctx,
         ) {
             Ok(Some(value)) => outcome.push(value),
             Ok(None) => outcome.fail(None)?,
@@ -1245,7 +1235,6 @@ fn build_shell_wire_set(
     sources: WireSources<'_>,
     scope: WireScope,
     losses: &mut Vec<LossNote>,
-    ctx: &DecodeContext<'_>,
 ) -> Result<Option<Built>, CodecError> {
     let WireSources {
         vdefs,
@@ -1431,33 +1420,30 @@ fn build_shell_wire_set(
             return Ok(None);
         }
     };
-    let staged = staged_topology(
-        StagedTopologyParts {
-            typed,
-            vertices,
-            edges,
-            coedges: Vec::new(),
-            loops: Vec::new(),
-            faces: Vec::new(),
-            surfaces: Vec::new(),
-            shells: vec![shell_value],
-            region: Region {
-                id: region.clone(),
-                body: body.clone(),
-                shells: vec![shell],
-            },
-            body: Body {
-                id: body.clone(),
-                kind: BodyKind::Wire,
-                regions: vec![region],
-                transform: None,
-                name: None,
-                color: None,
-                visible: None,
-            },
+    let staged = staged_topology(StagedTopologyParts {
+        typed,
+        vertices,
+        edges,
+        coedges: Vec::new(),
+        loops: Vec::new(),
+        faces: Vec::new(),
+        surfaces: Vec::new(),
+        shells: vec![shell_value],
+        region: Region {
+            id: region.clone(),
+            body: body.clone(),
+            shells: vec![shell],
         },
-        ctx,
-    );
+        body: Body {
+            id: body.clone(),
+            kind: BodyKind::Wire,
+            regions: vec![region],
+            transform: None,
+            name: None,
+            color: None,
+            visible: None,
+        },
+    });
     let mut built = match staged {
         Ok(built) => built,
         Err(StageError::Draft(error)) => {
@@ -1514,7 +1500,6 @@ fn build_geometric_set(
     exchange: &Exchange,
     carrier_index: &CarrierIndex,
     losses: &mut Vec<LossNote>,
-    ctx: &DecodeContext<'_>,
 ) -> Result<Option<Built>, CodecError> {
     let Some(set_ids) = representation_item_values(representation) else {
         losses.push(StepLossCode::DecodeWarning.note(format!(
@@ -1590,33 +1575,30 @@ fn build_geometric_set(
         Vec::new(),
     )
     .map_err(CodecError::malformed)?;
-    let staged = staged_topology(
-        StagedTopologyParts {
-            typed,
-            vertices: Vec::new(),
-            edges: Vec::new(),
-            coedges: Vec::new(),
-            loops: Vec::new(),
-            faces,
-            surfaces: Vec::new(),
-            shells: vec![shell],
-            region: Region {
-                id: region.clone(),
-                body: body.clone(),
-                shells: vec![shell_id],
-            },
-            body: Body {
-                id: body,
-                kind: BodyKind::Sheet,
-                regions: vec![region],
-                transform: None,
-                name: None,
-                color: None,
-                visible: None,
-            },
+    let staged = staged_topology(StagedTopologyParts {
+        typed,
+        vertices: Vec::new(),
+        edges: Vec::new(),
+        coedges: Vec::new(),
+        loops: Vec::new(),
+        faces,
+        surfaces: Vec::new(),
+        shells: vec![shell],
+        region: Region {
+            id: region.clone(),
+            body: body.clone(),
+            shells: vec![shell_id],
         },
-        ctx,
-    );
+        body: Body {
+            id: body,
+            kind: BodyKind::Sheet,
+            regions: vec![region],
+            transform: None,
+            name: None,
+            color: None,
+            visible: None,
+        },
+    });
     match staged {
         Ok(built) => Ok(Some(built)),
         Err(StageError::Draft(error)) => {
@@ -2154,10 +2136,7 @@ struct StagedTopologyParts {
     body: Body,
 }
 
-fn staged_topology(
-    parts: StagedTopologyParts,
-    ctx: &DecodeContext<'_>,
-) -> Result<Built, StageError> {
+fn staged_topology(parts: StagedTopologyParts) -> Result<Built, StageError> {
     let StagedTopologyParts {
         typed,
         vertices,
@@ -2172,33 +2151,33 @@ fn staged_topology(
     } = parts;
     let mut draft = ModelDraft::new();
     for vertex in vertices {
-        draft.insert(vertex, ctx)?;
+        draft.insert(vertex)?;
     }
     for edge in edges {
-        draft.insert(edge, ctx)?;
+        draft.insert(edge)?;
     }
     for coedge in coedges {
-        draft.insert(coedge, ctx)?;
+        draft.insert(coedge)?;
     }
     for loop_ in loops {
-        draft.insert(loop_, ctx)?;
+        draft.insert(loop_)?;
     }
     for face in faces {
-        draft.insert(face, ctx)?;
+        draft.insert(face)?;
     }
     let mut surface_ids = BTreeSet::new();
     for surface in surfaces {
         if !surface_ids.contains(surface.id.as_str()) {
             surface_ids.insert(surface.id.as_str().to_owned());
-            draft.insert(surface, ctx)?;
+            draft.insert(surface)?;
         }
     }
     for shell in shells {
-        draft.insert(shell, ctx)?;
+        draft.insert(shell)?;
     }
-    draft.insert(region, ctx)?;
+    draft.insert(region)?;
     let body_id = body.id.clone();
-    draft.insert(body, ctx)?;
+    draft.insert(body)?;
     Ok(Built {
         typed,
         draft,
@@ -2897,8 +2876,7 @@ fn build_one(
                         radial.entry(edge_id).or_default().push(coedges.len() - 1);
                         typed.insert(loop_step);
                     }
-                    let Ok(ring) = cadmpeg_ir::topology::LoopRing::new(ctx, coedge_ids, Vec::new())
-                        .map_err(cadmpeg_core::CodecError::from)?
+                    let Ok(ring) = cadmpeg_ir::topology::LoopRing::new(coedge_ids, Vec::new())
                     else {
                         note_failure(failure, loop_step, CarrierKind::PolyLoopPointCarrier);
                         return Err(BuildError::Absent);
@@ -3131,9 +3109,7 @@ fn build_one(
                         typed.insert(parent);
                     }
                 }
-                let Ok(ring) = cadmpeg_ir::topology::LoopRing::new(ctx, coedge_ids, Vec::new())
-                    .map_err(cadmpeg_core::CodecError::from)?
-                else {
+                let Ok(ring) = cadmpeg_ir::topology::LoopRing::new(coedge_ids, Vec::new()) else {
                     note_failure(failure, loop_step, CarrierKind::EdgeLoopCarrier);
                     return Err(BuildError::Absent);
                 };
@@ -3418,21 +3394,18 @@ fn build_one(
             }
         }
     }
-    let mut built = match staged_topology(
-        StagedTopologyParts {
-            typed,
-            vertices,
-            edges,
-            coedges,
-            loops,
-            faces,
-            surfaces,
-            shells,
-            region,
-            body,
-        },
-        ctx,
-    ) {
+    let mut built = match staged_topology(StagedTopologyParts {
+        typed,
+        vertices,
+        edges,
+        coedges,
+        loops,
+        faces,
+        surfaces,
+        shells,
+        region,
+        body,
+    }) {
         Ok(built) => built,
         Err(StageError::Draft(_)) => {
             note_failure(failure, id, CarrierKind::TopologyDraft);

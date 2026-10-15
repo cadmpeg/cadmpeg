@@ -1038,13 +1038,7 @@ fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr
         .model
         .pcurves
         .retain(|pcurve| pcurves.contains(&pcurve.id));
-    let ordering_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ordering_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &ordering_arena,
-        &cadmpeg_core::decode::DecodePolicy::default(),
-    )?;
-    subset.model.finalize(&ordering_ctx)?;
+    subset.model.finalize();
     Ok(subset)
 }
 
@@ -1872,11 +1866,7 @@ pub(crate) fn swobjects_local_sha256(
     let mut attributes = metadata_attributes(ir);
     attributes.retain(|attribute| attribute.name != "source_linear_unit_code");
     let views = (attributes, swobjects_materials(ir)?);
-    Ok(cadmpeg_ir::hash::canonical_json_sha256(
-        ctx,
-        &views,
-        "hash SLDPRT SWObjects semantics",
-    )?)
+    Ok(cadmpeg_ir::hash::canonical_json_sha256(ctx, &views)?)
 }
 
 pub(crate) fn swobjects_material_local_sha256(
@@ -1884,11 +1874,7 @@ pub(crate) fn swobjects_material_local_sha256(
     ir: &CadIr,
 ) -> Result<String, CodecError> {
     let materials = swobjects_materials(ir)?;
-    Ok(cadmpeg_ir::hash::canonical_json_sha256(
-        ctx,
-        &materials,
-        "hash SLDPRT SWObjects materials",
-    )?)
+    Ok(cadmpeg_ir::hash::canonical_json_sha256(ctx, &materials)?)
 }
 
 pub(crate) fn swobjects_metadata_identity_local_sha256(
@@ -1900,11 +1886,7 @@ pub(crate) fn swobjects_metadata_identity_local_sha256(
         .filter(|attribute| attribute.name != "source_linear_unit_code")
         .map(|attribute| (&attribute.id, attribute.name.as_str()))
         .collect::<Vec<_>>();
-    Ok(cadmpeg_ir::hash::canonical_json_sha256(
-        ctx,
-        &identities,
-        "hash SLDPRT metadata identities",
-    )?)
+    Ok(cadmpeg_ir::hash::canonical_json_sha256(ctx, &identities)?)
 }
 
 fn history_payload(history: &crate::records::FeatureHistory) -> Result<Vec<u8>, CodecError> {

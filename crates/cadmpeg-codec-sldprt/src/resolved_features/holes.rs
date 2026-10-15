@@ -552,7 +552,6 @@ fn hole_profile_from_child_order<'a>(
 }
 
 pub(crate) fn enrich_history_cosmetic_thread_diameters(
-    ctx: &DecodeContext<'_>,
     histories: &mut [crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) -> Result<(), CodecError> {
@@ -585,7 +584,6 @@ pub(crate) fn enrich_history_cosmetic_thread_diameters(
                         continue;
                     };
                     let Some(value) = crate::history::project::solid::threaded_hole_major_diameter(
-                        ctx,
                         producer,
                         &features_by_source,
                         &history.features,
@@ -641,13 +639,12 @@ pub(crate) fn enrich_history_cosmetic_thread_diameters(
 }
 
 pub(crate) fn enrich_history_cosmetic_thread_diameters_without_hole_constructions(
-    ctx: &DecodeContext<'_>,
     histories: &mut [crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) -> Result<(), CodecError> {
     let mut projection = histories.to_vec();
     enrich_history_hole_constructions(&mut projection, lanes)?;
-    enrich_history_cosmetic_thread_diameters(ctx, &mut projection, lanes)?;
+    enrich_history_cosmetic_thread_diameters(&mut projection, lanes)?;
     let mut fallback_parameters = HashMap::new();
     for feature in projection.iter().flat_map(|history| &history.features) {
         let Some(diameter) = feature.parameters.get("D2") else {
@@ -1402,13 +1399,10 @@ pub(crate) fn project_profiled_hole_constructions(
             } else {
                 fallback_constructions
                     .get(&native.id.as_str())
-                    .map(|source| {
-                        source
-                            .extent
-                            .try_clone_for_decode(ctx, "SLDPRT profiled hole extent copy")
-                            .map(|extent| ProfiledHoleConstruction { extent, ..*source })
+                    .map(|source| ProfiledHoleConstruction {
+                        extent: source.extent.clone(),
+                        ..*source
                     })
-                    .transpose()?
             };
         let Some(construction) = construction else {
             continue;
@@ -1808,14 +1802,13 @@ pub(crate) fn hole_position_carrier_present(
 }
 
 pub(crate) fn project_spatial_hole_position_sketches(
-    ctx: &DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
     spatial_sketches: &[SpatialSketch],
     spatial_entities: &[SpatialSketchEntity],
     surfaces: &[Surface],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-) -> Result<(), CodecError> {
+) {
     let mut native_features = HashMap::new();
     for feature in histories.iter().flat_map(|history| &history.features) {
         let key = feature.id.as_str();
@@ -1952,8 +1945,7 @@ pub(crate) fn project_spatial_hole_position_sketches(
                 ambiguous = true;
                 break;
             };
-            resolved
-                .push(placement.try_clone_for_decode(ctx, "SLDPRT spatial hole placement copy")?);
+            resolved.push(placement.clone());
         }
         if resolved.is_empty() && !ambiguous {
             let mut points = Vec::new();
@@ -1993,7 +1985,6 @@ pub(crate) fn project_spatial_hole_position_sketches(
             });
         }
     }
-    Ok(())
 }
 
 fn coplanar_spatial_position_placements(points: &[Point3]) -> Option<Vec<HolePlacement>> {
@@ -2750,8 +2741,7 @@ fn partition_seeded_hole_axes(
         let (Some(partition), None) = (matches.next(), matches.next()) else {
             return Ok(());
         };
-        partitions[partition]
-            .push(placement.try_clone_for_decode(ctx, "SLDPRT seeded hole placement copy")?);
+        partitions[partition].push(placement.clone());
     }
     if partitions.iter().any(Vec::is_empty) {
         return Ok(());

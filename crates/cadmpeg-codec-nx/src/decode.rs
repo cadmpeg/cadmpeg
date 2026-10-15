@@ -265,22 +265,17 @@ fn build_metadata_ir(
     let mut ir = CadIr::decoded(source_meta(scan, dialects, None)?);
     let mut annotations = AnnotationBuilder::new();
     let mut losses = Vec::new();
-    let source_stream = StreamHandle::new(
-        ctx,
-        cadmpeg_ir::stream_name!("nx:container"),
-        "allocate annotation stream handle",
-    )?;
+    let source_stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
     for (si, stream) in scan.streams.iter().enumerate() {
         if stream.kind().is_parasolid() {
             let unknown = unknown_stream(ctx, si, stream)?;
             annotations.note(
-                ctx,
                 unknown.id().as_str(),
                 &source_stream,
                 cadmpeg_core::decode::u64_from_index(stream.file_offset),
                 Some(stream.kind().label()),
-            )?;
-            annotations.exactness(ctx, unknown.id().as_str(), Exactness::Derived)?;
+            );
+            annotations.exactness(unknown.id().as_str(), Exactness::Derived);
             unknowns.push(unknown);
         }
     }

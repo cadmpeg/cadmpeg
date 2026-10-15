@@ -149,13 +149,8 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
                 id: loops[index].clone(),
                 face: faces[index].clone(),
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-                    cadmpeg_ir::topology::LoopRing::new(
-                        &cadmpeg_test_support::service_decode_context(),
-                        vec![coedges[index].clone()],
-                        Vec::new(),
-                    )
-                    .expect("fixture ring admission")
-                    .expect("valid loop ring"),
+                    cadmpeg_ir::topology::LoopRing::new(vec![coedges[index].clone()], Vec::new())
+                        .expect("valid loop ring"),
                 ),
             });
             ir.model.coedges.push(Coedge {

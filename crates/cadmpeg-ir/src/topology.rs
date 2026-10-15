@@ -14,7 +14,6 @@ use crate::ids::{
 use crate::math::Point3;
 use crate::scalar::UnitBinary32;
 use crate::transform::Transform;
-use cadmpeg_core::decode::DecodeContext;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -814,31 +813,30 @@ impl LoopRing {
 
     /// Build a ring, validating distinct coedges and vertex-use anchors.
     pub fn new(
-        _ctx: &DecodeContext<'_>,
         coedges: Vec<CoedgeId>,
         vertex_uses: Vec<AnchoredVertexUse>,
-    ) -> Result<Result<Self, LoopRingError>, cadmpeg_core::decode::ResourceLimit> {
+    ) -> Result<Self, LoopRingError> {
         if coedges.is_empty() {
-            return Ok(Err(LoopRingError("loop ring must contain a coedge")));
+            return Err(LoopRingError("loop ring must contain a coedge"));
         }
         let mut members: Vec<&CoedgeId> = Vec::new();
         for coedge in &coedges {
             let Err(position) = members.binary_search(&coedge) else {
-                return Ok(Err(LoopRingError("loop ring coedges must be distinct")));
+                return Err(LoopRingError("loop ring coedges must be distinct"));
             };
             members.insert(position, coedge);
         }
         for vertex_use in &vertex_uses {
             if members.binary_search(&&vertex_use.after).is_err() {
-                return Ok(Err(LoopRingError(
+                return Err(LoopRingError(
                     "loop ring vertex-use after must name a coedge in the ring",
-                )));
+                ));
             }
         }
-        Ok(Ok(Self {
+        Ok(Self {
             coedges,
             vertex_uses,
-        }))
+        })
     }
 
     /// Coedges in source traversal order.
@@ -858,16 +856,13 @@ impl Loop {
     /// Replace the complete coedge ring after checking its local structure.
     pub fn replace_ring(
         &mut self,
-        ctx: &DecodeContext<'_>,
         coedges: Vec<CoedgeId>,
         vertex_uses: Vec<AnchoredVertexUse>,
     ) -> Result<(), LoopRingAdmissionError> {
         if !matches!(&self.boundary, LoopBoundary::Ring(_)) {
             return Err(LoopRingError("cannot replace the ring of a vertex-only loop").into());
         }
-        self.boundary = LoopBoundary::Ring(
-            LoopRing::new(ctx, coedges, vertex_uses)?.map_err(LoopRingAdmissionError::from)?,
-        );
+        self.boundary = LoopBoundary::Ring(LoopRing::new(coedges, vertex_uses)?);
         Ok(())
     }
 
@@ -1938,11 +1933,9 @@ mod tests {
             pcurves: vec![],
         }];
         let ring = LoopRing::new(
-            &ctx,
             vec![first.clone(), second.clone(), third.clone()],
             vertex_uses.clone(),
         )
-        .unwrap()
         .unwrap();
         assert_eq!(
             ring.coedges(),
@@ -1950,15 +1943,13 @@ mod tests {
         );
         assert_eq!(ring.vertex_uses(), vertex_uses);
         assert_eq!(
-            LoopRing::new(&ctx, vec![first, second.clone(), third, second], vec![])
-                .unwrap()
+            LoopRing::new(vec![first, second.clone(), third, second], vec![])
                 .unwrap_err()
                 .to_string(),
             "loop ring coedges must be distinct"
         );
         let foreign = super::CoedgeId::mint("test:model:coedge#prefix-longer").unwrap();
         let invalid = LoopRing::new(
-            &ctx,
             ring.coedges().to_vec(),
             vec![AnchoredVertexUse {
                 vertex: "test:model:vertex#0".try_into().unwrap(),
@@ -1966,7 +1957,6 @@ mod tests {
                 pcurves: vec![],
             }],
         )
-        .unwrap()
         .unwrap_err();
         assert_eq!(
             invalid.to_string(),
@@ -2004,34 +1994,20 @@ mod tests {
 
     #[test]
     fn loop_ring_rejects_empty_or_duplicate_coedges_and_foreign_anchors() {
-        assert!(LoopRing::new(
-            &cadmpeg_test_support::service_decode_context(),
-            Vec::new(),
-            Vec::new()
-        )
-        .expect("fixture ring admission")
-        .is_err());
+        assert!(LoopRing::new(Vec::new(), Vec::new()).is_err());
 
         let coedge: super::CoedgeId = "test:model:coedge#0".try_into().unwrap();
         let foreign: super::CoedgeId = "test:model:coedge#foreign".try_into().unwrap();
         let vertex: super::VertexId = "test:model:vertex#0".try_into().unwrap();
+        assert!(LoopRing::new(vec![coedge.clone(), coedge.clone()], Vec::new()).is_err());
         assert!(LoopRing::new(
-            &cadmpeg_test_support::service_decode_context(),
-            vec![coedge.clone(), coedge.clone()],
-            Vec::new()
-        )
-        .expect("fixture ring admission")
-        .is_err());
-        assert!(LoopRing::new(
-            &cadmpeg_test_support::service_decode_context(),
             vec![coedge],
             vec![AnchoredVertexUse {
                 vertex,
                 after: foreign,
                 pcurves: Vec::new(),
-            }],
+            }]
         )
-        .expect("fixture ring admission")
         .is_err());
     }
 
@@ -2041,34 +2017,19 @@ mod tests {
         let mut loop_ = Loop {
             id: "test:model:loop#0".try_into().unwrap(),
             face: "test:model:face#0".try_into().unwrap(),
-            boundary: LoopBoundary::Ring(
-                LoopRing::new(
-                    &cadmpeg_test_support::service_decode_context(),
-                    vec![coedge.clone()],
-                    Vec::new(),
-                )
-                .expect("fixture ring admission")
-                .unwrap(),
-            ),
+            boundary: LoopBoundary::Ring(LoopRing::new(vec![coedge.clone()], Vec::new()).unwrap()),
         };
         let before = loop_.clone();
-        assert!(loop_
-            .replace_ring(
-                &cadmpeg_test_support::service_decode_context(),
-                Vec::new(),
-                Vec::new()
-            )
-            .is_err());
+        assert!(loop_.replace_ring(Vec::new(), Vec::new()).is_err());
         assert_eq!(loop_, before);
         assert!(loop_
             .replace_ring(
-                &cadmpeg_test_support::service_decode_context(),
                 vec![coedge],
                 vec![AnchoredVertexUse {
                     vertex: "test:model:vertex#0".try_into().unwrap(),
                     after: "test:model:coedge#foreign".try_into().unwrap(),
                     pcurves: Vec::new(),
-                }],
+                }]
             )
             .is_err());
         assert_eq!(loop_, before);
@@ -2102,13 +2063,7 @@ mod tests {
             id: coedge.owner_loop.clone(),
             face: "test:model:face#0".try_into().expect("valid identity"),
             boundary: LoopBoundary::Ring(
-                super::LoopRing::new(
-                    &cadmpeg_test_support::service_decode_context(),
-                    vec![coedge.id.clone()],
-                    Vec::new(),
-                )
-                .expect("fixture ring admission")
-                .expect("valid loop ring"),
+                super::LoopRing::new(vec![coedge.id.clone()], Vec::new()).unwrap(),
             ),
         };
         assert_eq!(

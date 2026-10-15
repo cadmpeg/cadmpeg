@@ -52,21 +52,17 @@ fn native_patch_edits_compact_counted_nurbs_surface_arrays() {
     };
     let mut new = old.clone();
     let target = new.v_count() + 1;
-    new.try_map_control_points(
-        |index, pole| {
-            let mut pole = pole.get();
-            if index == target {
-                pole.z = 750.0;
-            }
-            cadmpeg_ir::features::FinitePoint3::new(pole).ok_or_else(|| {
-                cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
-                    "control_points contains a non-finite point".into(),
-                )
-            })
-        },
-        &cadmpeg_test_support::service_decode_context(),
-    )
-    .expect("pole edit admission")
+    new.try_map_control_points(|index, pole| {
+        let mut pole = pole.get();
+        if index == target {
+            pole.z = 750.0;
+        }
+        cadmpeg_ir::features::FinitePoint3::new(pole).ok_or_else(|| {
+            cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                "control_points contains a non-finite point".into(),
+            )
+        })
+    })
     .unwrap();
     edit::replace(&mut new, |previous| {
         let mut knots = previous.u_knots().to_vec();
@@ -191,21 +187,17 @@ fn native_patch_edits_nurbs_carriers_beside_untyped_surfaces() {
             })
             .unwrap();
         curve
-            .try_map_control_points(
-                |index, point| {
-                    let mut point = point.get();
-                    if index == 1 {
-                        point.y = 1_500.0;
-                    }
-                    cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
-                        cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
-                            "control_points contains a non-finite point".into(),
-                        )
-                    })
-                },
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .expect("pole edit admission")
+            .try_map_control_points(|index, point| {
+                let mut point = point.get();
+                if index == 1 {
+                    point.y = 1_500.0;
+                }
+                cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                    cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                        "control_points contains a non-finite point".into(),
+                    )
+                })
+            })
             .unwrap();
         curve
             .edit_knots(&cadmpeg_test_support::service_decode_context(), |knots| {
@@ -225,21 +217,17 @@ fn native_patch_edits_nurbs_carriers_beside_untyped_surfaces() {
             .unwrap();
         let target = surface.v_count() + 1;
         surface
-            .try_map_control_points(
-                |index, pole| {
-                    let mut pole = pole.get();
-                    if index == target {
-                        pole.z = 750.0;
-                    }
-                    cadmpeg_ir::features::FinitePoint3::new(pole).ok_or_else(|| {
-                        cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
-                            "control_points contains a non-finite point".into(),
-                        )
-                    })
-                },
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .expect("pole edit admission")
+            .try_map_control_points(|index, pole| {
+                let mut pole = pole.get();
+                if index == target {
+                    pole.z = 750.0;
+                }
+                cadmpeg_ir::features::FinitePoint3::new(pole).ok_or_else(|| {
+                    cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                        "control_points contains a non-finite point".into(),
+                    )
+                })
+            })
             .unwrap();
         edit::replace(surface, |previous| {
             let mut knots = previous.u_knots().to_vec();
@@ -661,11 +649,7 @@ fn auxiliary_edit_retains_opaque_partition_payload() {
         let source_fidelity = decoded.source_fidelity_mut();
         let mut annotations =
             cadmpeg_ir::AnnotationBuilder::resume(std::mem::take(&mut source_fidelity.annotations));
-        annotations
-            .retain_exactness(&cadmpeg_test_support::service_decode_context(), |_| {
-                Ok(false)
-            })
-            .unwrap();
+        annotations.retain_exactness(|_| false);
         source_fidelity.annotations = annotations.build();
     }
     assert_eq!(

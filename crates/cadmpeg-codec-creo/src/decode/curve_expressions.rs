@@ -502,8 +502,7 @@ fn curve_expression_properties(
         let value = join_cyclic_dependency_names(&cyclic_dependencies);
         insert_curve_expression_property(&mut properties, "cyclic_dependencies", value);
     }
-    cadmpeg_core::text::named_entries(parameter_id.as_str(), properties)
-        .map_err(Into::into)
+    cadmpeg_core::text::named_entries(parameter_id.as_str(), properties).map_err(Into::into)
 }
 
 fn native_curve_expression_definition(
@@ -657,7 +656,6 @@ pub(super) fn transfer_curve_expression_features(
                 dimension_parameters,
             )?;
             annotate(
-                ctx,
                 annotations,
                 parameter_id.as_str(),
                 &source_section,
@@ -756,7 +754,6 @@ pub(super) fn transfer_curve_expression_features(
                 format_args!("{}-{}", record.entity_id, record.offset),
             )?;
             annotate(
-                ctx,
                 annotations,
                 curve_id.as_str(),
                 &source_section,
@@ -765,7 +762,6 @@ pub(super) fn transfer_curve_expression_features(
                 Exactness::Unknown,
             )?;
             annotate(
-                ctx,
                 annotations,
                 procedural_id.as_str(),
                 &source_section,
@@ -785,7 +781,6 @@ pub(super) fn transfer_curve_expression_features(
                 },
             )?;
             source_carriers.admit_procedural_curve(
-                ctx,
                 ir,
                 &curve_id,
                 ProceduralCurve::new(procedural_id, procedural_definition),
@@ -816,7 +811,6 @@ pub(super) fn transfer_curve_expression_features(
             native_curve_expression_definition(record.entity_id, record.assignments.len())?
         };
         annotate(
-            ctx,
             annotations,
             feature_id.as_str(),
             &source_section,

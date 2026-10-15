@@ -1,28 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Raw pcurve lanes for geometry evaluation.
 
-use cadmpeg_core::decode::{DecodeContext, ResourceLimit};
-
 use super::PcurveNurbsPoles;
 use crate::math::Point2;
 use crate::units::FinitePoint2;
 
 /// Raw evaluator copies of a pcurve's positions and weights.
 #[derive(Debug)]
-pub struct PcurveEvaluatorLanes<'ctx> {
+pub struct PcurveEvaluatorLanes {
     points: Vec<Point2>,
     weights: Option<Vec<f64>>,
-    _ctx: std::marker::PhantomData<&'ctx ()>,
 }
 
-impl<'ctx> PcurveEvaluatorLanes<'ctx> {
+impl PcurveEvaluatorLanes {
     /// Copy positions and rational weights.
-    pub fn new(
-        _ctx: &'ctx DecodeContext<'_>,
-        poles: &PcurveNurbsPoles<FinitePoint2>,
-        _point_operation: &'static str,
-        _weight_operation: &'static str,
-    ) -> Result<Self, ResourceLimit> {
+    pub fn new(poles: &PcurveNurbsPoles<FinitePoint2>) -> Self {
         let mut points = Vec::new();
         let mut weights = None;
         match poles {
@@ -42,11 +34,7 @@ impl<'ctx> PcurveEvaluatorLanes<'ctx> {
                 weights = Some(copied);
             }
         }
-        Ok(Self {
-            points,
-            weights,
-            _ctx: std::marker::PhantomData,
-        })
+        Self { points, weights }
     }
 
     /// Raw positions in source order.

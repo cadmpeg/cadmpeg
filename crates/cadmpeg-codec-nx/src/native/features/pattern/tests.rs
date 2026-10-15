@@ -44,10 +44,9 @@ fn pattern_construction_route_admits_one_payload() {
         stable_identity: None,
         source_offset: 0,
     }];
-    let admitted = crate::test_support::with_decode_context(|ctx| {
-        super::feature_pattern_construction_payloads(ctx, &container, &labels, &references)
-    })
-    .expect("admitted pattern construction payload");
+    let admitted =
+        ({ super::feature_pattern_construction_payloads(&container, &labels, &references) })
+            .expect("admitted pattern construction payload");
     assert_eq!(admitted.len(), 1);
 }
 
@@ -140,7 +139,7 @@ fn assert_pattern_content_admits(bytes: &[u8], route: PatternContentRoute) {
     let file =
         crate::test_support::test_prt::prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", part)]);
     let container = crate::container::scan_bytes(file).expect("pattern construction container");
-    let payload = crate::test_support::with_decode_context(|ctx| {
+    let payload = crate::test_support::with_decode_context(|_| {
         let blocks = crate::native::features::offset_data_block_bytes(&container)?;
         let id = blocks
             .keys()
@@ -148,7 +147,7 @@ fn assert_pattern_content_admits(bytes: &[u8], route: PatternContentRoute) {
             .cloned()
             .expect("synthetic pattern block");
         let content: FeaturePayloadContent<Vec<FeaturePayloadBlock>> =
-            FeaturePayloadContent::from_source(ctx, [id], &blocks)?.expect("pattern source block");
+            FeaturePayloadContent::from_source([id], &blocks)?.expect("pattern source block");
         Ok::<FeatureConstructionPayload, cadmpeg_core::CodecError>(FeatureConstructionPayload {
             id: "pattern-payload".to_string(),
             operation_label: "pattern-operation".to_string(),

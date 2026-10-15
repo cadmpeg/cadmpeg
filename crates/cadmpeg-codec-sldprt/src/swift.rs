@@ -317,7 +317,6 @@ pub(crate) fn annotations(
                     .is_some_and(|suffix| suffix.starts_with(':'))
         }) {
             crate::annotations::note(
-                ctx,
                 annotations,
                 annotation.id.as_str(),
                 &stream,

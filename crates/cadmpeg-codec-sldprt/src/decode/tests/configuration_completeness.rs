@@ -27,14 +27,10 @@ fn complete_parting_line_draft_does_not_require_an_outward_flag() {
         vec![cadmpeg_ir::features::GeneratedFaceRef::new(
             FeatureId::mint("synthetic:test:id#producer").expect("identity grammar"),
             "1".into(),
-            &cadmpeg_test_support::service_decode_context(),
         )
-        .expect("selection reference admission")
         .unwrap()],
         "native".into(),
-        &cadmpeg_test_support::service_decode_context(),
     )
-    .expect("selection reference admission")
     .unwrap();
     let mut ir = CadIr::empty();
     ir.model.features.push(Feature {
@@ -91,14 +87,10 @@ fn complete_parting_line_draft_does_not_require_an_outward_flag() {
                 vec![cadmpeg_ir::features::GeneratedFaceRef::new(
                     FeatureId::mint("synthetic:test:id#producer").expect("identity grammar"),
                     "2".into(),
-                    &cadmpeg_test_support::service_decode_context(),
                 )
-                .expect("selection reference admission")
                 .unwrap()],
                 "native".into(),
-                &cadmpeg_test_support::service_decode_context(),
             )
-            .expect("selection reference admission")
             .unwrap(),
             pull: Some(cadmpeg_ir::features::DraftPull {
                 direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
@@ -416,12 +408,7 @@ fn active_configuration_inherits_late_feature_resolutions() {
         native_ref: None,
     });
 
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(b"configuration", &arena, &policy)
-            .unwrap();
-    sync_active_configuration_resolutions(&ctx, &mut ir).unwrap();
+    sync_active_configuration_resolutions(&mut ir).unwrap();
 
     assert!(
         matches!(&(ir.model.configurations[0].feature_states[&feature_id].definition),
@@ -469,7 +456,7 @@ fn active_configuration_inherits_late_feature_resolutions() {
         edited_diameter,
     )
     .unwrap();
-    sync_active_configuration_resolutions(&ctx, &mut ir).unwrap();
+    sync_active_configuration_resolutions(&mut ir).unwrap();
     assert!(matches!(
         &ir.model.configurations[0].feature_states[&hole_id].definition, FeatureDefinition::Operation(FeatureOperation::Hole {
             placements,
@@ -643,12 +630,7 @@ fn active_configuration_snapshots_final_neutral_design_state() {
         });
     }
 
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(b"configuration", &arena, &policy)
-            .unwrap();
-    snapshot_active_configuration(&ctx, &mut ir).unwrap();
+    snapshot_active_configuration(&mut ir).unwrap();
 
     assert_eq!(
         ir.model.configurations[0].parameter_values[&parameter_id],
@@ -683,7 +665,7 @@ fn active_configuration_snapshots_final_neutral_design_state() {
         .evaluation = cadmpeg_ir::features::ConfigurationEvaluation::Active {
         outputs: cadmpeg_ir::features::DistinctMembers::default(),
     };
-    snapshot_active_configuration(&ctx, &mut ir).unwrap();
+    snapshot_active_configuration(&mut ir).unwrap();
     assert_eq!(
         ir.model.configurations[0].parameter_values[&parameter_id],
         ParameterValue::Length(Length::new(25.0).unwrap())
@@ -758,11 +740,7 @@ fn resolved_configuration_snapshots_inherit_only_independent_parameter_values() 
         configuration("synthetic:test:id#unresolved", BTreeMap::new()),
     ];
 
-    complete_resolved_configuration_parameter_snapshots(
-        &cadmpeg_test_support::service_decode_context(),
-        &mut ir,
-    )
-    .unwrap();
+    complete_resolved_configuration_parameter_snapshots(&mut ir).unwrap();
 
     assert_eq!(
         ir.model.configurations[0].parameter_values,

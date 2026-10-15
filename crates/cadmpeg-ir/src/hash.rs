@@ -56,14 +56,10 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
 pub fn canonical_json_sha256<T: Serialize + ?Sized>(
     ctx: &DecodeContext<'_>,
     value: &T,
-    operation: &'static str,
 ) -> Result<String, DigestError> {
     let mut writer = DigestWriter(Sha256::new());
     write_canonical_json(ctx, &mut writer, value)?;
-    let digest =
-        digest::Sha256Digest::from_bytes_for_decode(ctx, writer.0.finalize().into(), operation)
-            .map_err(CanonicalJsonError::from)?;
-    Ok(digest.into())
+    Ok(digest::Sha256Digest::from_bytes(writer.0.finalize().into()).into())
 }
 
 /// A digest could not be computed.
@@ -126,9 +122,8 @@ pub fn document_local_sha256(
     source: Option<&SourceMeta>,
     format: &str,
     source_image_id: &str,
-    operation: &'static str,
 ) -> Result<String, CodecError> {
-    document_local_sha256_without_carried(ctx, ir, source, format, source_image_id, &[], operation)
+    document_local_sha256_without_carried(ctx, ir, source, format, source_image_id, &[])
 }
 
 /// [`document_local_sha256`] with the `format` native arenas named in
@@ -144,9 +139,8 @@ pub fn document_local_sha256_without_carried(
     format: &str,
     source_image_id: &str,
     carried: &[&str],
-    operation: &'static str,
 ) -> Result<String, CodecError> {
-    let unknowns = reduced_unknowns(ctx, ir, format, source_image_id, operation)?;
+    let unknowns = reduced_unknowns(ctx, ir, format, source_image_id)?;
     let document = (|| {
         Ok::<_, CodecError>(NormalizedDocument {
             ir_version: ir.ir_version(),
@@ -157,7 +151,7 @@ pub fn document_local_sha256_without_carried(
             native: normalized_native(&ir.native, format, &unknowns, carried),
         })
     })()?;
-    canonical_json_sha256(ctx, &document, operation).map_err(Into::into)
+    canonical_json_sha256(ctx, &document).map_err(Into::into)
 }
 
 fn reduced_unknowns(
@@ -165,7 +159,6 @@ fn reduced_unknowns(
     ir: &CadIr,
     format: &str,
     source_image_id: &str,
-    _operation: &'static str,
 ) -> Result<Vec<NativeRecord>, CodecError> {
     let mut reduced = Vec::new();
     if let Some(namespace) = ir.native.namespace(format) {
@@ -286,16 +279,12 @@ mod tests {
 
     #[test]
     fn a_finite_float_digests() {
+        assert!(
+            canonical_json_sha256(&cadmpeg_test_support::service_decode_context(), &1.0f64).is_ok()
+        );
         assert!(canonical_json_sha256(
             &cadmpeg_test_support::service_decode_context(),
-            &1.0f64,
-            "canonical hash fixture"
-        )
-        .is_ok());
-        assert!(canonical_json_sha256(
-            &cadmpeg_test_support::service_decode_context(),
-            &vec![1.0f64, -2.5],
-            "canonical hash fixture"
+            &vec![1.0f64, -2.5]
         )
         .is_ok());
     }
@@ -304,11 +293,7 @@ mod tests {
     fn a_non_finite_float_has_no_digest() {
         for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
             let Err(DigestError::CanonicalJson(CanonicalJsonError::NonFinite { value: refused })) =
-                canonical_json_sha256(
-                    &cadmpeg_test_support::service_decode_context(),
-                    &value,
-                    "canonical hash fixture",
-                )
+                canonical_json_sha256(&cadmpeg_test_support::service_decode_context(), &value)
             else {
                 panic!("a non-finite float must have no canonical JSON");
             };
@@ -335,19 +320,12 @@ mod tests {
     #[test]
     fn a_nested_non_finite_float_has_no_digest() {
         let nested = serde_json::json!({ "outer": [{ "inner": 1.0 }] });
-        assert!(canonical_json_sha256(
-            &cadmpeg_test_support::service_decode_context(),
-            &nested,
-            "canonical hash fixture"
-        )
-        .is_ok());
+        assert!(
+            canonical_json_sha256(&cadmpeg_test_support::service_decode_context(), &nested).is_ok()
+        );
         let nested = vec![Some(vec![(1.0f64, f64::NAN)])];
         assert!(matches!(
-            canonical_json_sha256(
-                &cadmpeg_test_support::service_decode_context(),
-                &nested,
-                "canonical hash fixture"
-            ),
+            canonical_json_sha256(&cadmpeg_test_support::service_decode_context(), &nested),
             Err(DigestError::CanonicalJson(
                 CanonicalJsonError::NonFinite { .. }
             ))
@@ -475,8 +453,7 @@ mod tests {
         assert_eq!(
             canonical_json_sha256(
                 &cadmpeg_test_support::service_decode_context(),
-                &pinned_native(),
-                "canonical hash fixture"
+                &pinned_native()
             )
             .unwrap(),
             "7249c236a39ac27b8614a9ef11d6b1e1c416e1242d909e6d0e94a96c1d6507d4"
@@ -508,8 +485,7 @@ mod tests {
                 ),
             ],
         );
-        ir.finalize(&cadmpeg_test_support::service_decode_context())
-            .expect("fixture ordering is admitted");
+        ir.finalize();
         ir
     }
 
@@ -524,8 +500,7 @@ mod tests {
             )
             .expect("valid native identity")],
         );
-        ir.finalize(&cadmpeg_test_support::service_decode_context())
-            .expect("fixture ordering is admitted");
+        ir.finalize();
         ir
     }
 
@@ -541,7 +516,6 @@ mod tests {
             pinned_document().source.as_ref(),
             "pin",
             source_image,
-            "document-local SHA-256",
         )
         .unwrap();
 
@@ -554,7 +528,6 @@ mod tests {
             readable_ir.source.as_ref(),
             "pin",
             source_image,
-            "document-local SHA-256",
         )
         .unwrap();
         assert_ne!(readable, absent);
@@ -567,8 +540,7 @@ mod tests {
             &unreadable,
             unreadable.source.as_ref(),
             "pin",
-            source_image,
-            "document-local SHA-256"
+            source_image
         )
         .is_err());
         assert!(document_local_sha256(
@@ -576,8 +548,7 @@ mod tests {
             &unreadable,
             unreadable.source.as_ref(),
             "pin",
-            source_image,
-            "document-local SHA-256"
+            source_image
         )
         .is_err());
 
@@ -596,8 +567,7 @@ mod tests {
             &raw_source,
             raw_source.source.as_ref(),
             "pin",
-            source_image,
-            "document-local SHA-256"
+            source_image
         )
         .is_err());
     }
@@ -608,12 +578,7 @@ mod tests {
     fn pins_document_digests() {
         let ir = pinned_document();
         assert_eq!(
-            canonical_json_sha256(
-                &cadmpeg_test_support::service_decode_context(),
-                &ir,
-                "canonical hash fixture"
-            )
-            .unwrap(),
+            canonical_json_sha256(&cadmpeg_test_support::service_decode_context(), &ir).unwrap(),
             "dfc5790d04d56453ec5d9bd2ce5f221522ea0bdc25acdcf97a9047705f30afc7"
         );
         assert_eq!(
@@ -622,8 +587,7 @@ mod tests {
                 &ir,
                 ir.source.as_ref(),
                 "pin",
-                "pin:test:source-image#0",
-                "document-local SHA-256"
+                "pin:test:source-image#0"
             )
             .unwrap(),
             "ab55b3269d93d9cf9a76ba6b0ffe0166598d143349b52f545569bfe77768366b"
@@ -645,7 +609,6 @@ mod tests {
             ir.source.as_ref(),
             "pin",
             "pin:test:source-image#0",
-            "document-local SHA-256",
         )
         .unwrap();
         assert_eq!(actual, expected);
@@ -721,8 +684,7 @@ mod tests {
                 &ir,
                 ir.source.as_ref(),
                 "pin",
-                "pin:test:source-image#0",
-                "document-local SHA-256"
+                "pin:test:source-image#0"
             )
             .unwrap(),
             independently_normalized
@@ -740,8 +702,7 @@ mod tests {
                 &ir,
                 Some(&source),
                 "pin",
-                "pin:test:source-image#0",
-                "document-local SHA-256"
+                "pin:test:source-image#0"
             )
             .unwrap(),
             document_local_sha256(
@@ -749,8 +710,7 @@ mod tests {
                 &pinned_document_with_source(),
                 pinned_document_with_source().source.as_ref(),
                 "pin",
-                "pin:test:source-image#0",
-                "document-local SHA-256"
+                "pin:test:source-image#0"
             )
             .unwrap()
         );
@@ -764,22 +724,11 @@ mod tests {
         let ir = pinned_document();
         let json = ir.to_canonical_json().unwrap();
         let mut reparsed = CadIr::from_json(&json).unwrap();
-        reparsed
-            .finalize(&cadmpeg_test_support::service_decode_context())
-            .expect("fixture ordering is admitted");
+        reparsed.finalize();
         assert_eq!(
-            canonical_json_sha256(
-                &cadmpeg_test_support::service_decode_context(),
-                &ir,
-                "canonical hash fixture"
-            )
-            .unwrap(),
-            canonical_json_sha256(
-                &cadmpeg_test_support::service_decode_context(),
-                &reparsed,
-                "canonical hash fixture"
-            )
-            .unwrap()
+            canonical_json_sha256(&cadmpeg_test_support::service_decode_context(), &ir).unwrap(),
+            canonical_json_sha256(&cadmpeg_test_support::service_decode_context(), &reparsed)
+                .unwrap()
         );
         assert_eq!(ir.to_canonical_json().unwrap(), json);
     }
@@ -788,9 +737,7 @@ mod tests {
     /// source image, and hash the serialized string.
     fn cloned_local_digest(ir: &CadIr, format: &str, source_image_id: &str) -> String {
         let mut normalized = ir.clone();
-        normalized
-            .finalize(&cadmpeg_test_support::service_decode_context())
-            .expect("fixture ordering is admitted");
+        normalized.finalize();
         normalized.source = ir.source.as_ref().map(|source| {
             let mut source = source.clone();
             source.attributes.remove(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE);
@@ -893,8 +840,7 @@ mod tests {
                 &ir,
                 ir.source.as_ref(),
                 "synthetic",
-                source_image,
-                "document-local SHA-256"
+                source_image
             )
             .unwrap(),
             cloned_local_digest(&ir, "synthetic", source_image)
@@ -905,8 +851,7 @@ mod tests {
                 &ir,
                 ir.source.as_ref(),
                 "absent",
-                source_image,
-                "document-local SHA-256"
+                source_image
             )
             .unwrap(),
             cloned_local_digest(&ir, "absent", source_image)
@@ -923,7 +868,6 @@ mod tests {
             ir.source.as_ref(),
             "synthetic",
             source_image,
-            "document-local SHA-256",
         )
         .unwrap();
 
@@ -938,8 +882,7 @@ mod tests {
                 &recorded,
                 recorded.source.as_ref(),
                 "synthetic",
-                source_image,
-                "document-local SHA-256"
+                source_image
             )
             .unwrap(),
             hash
@@ -958,8 +901,7 @@ mod tests {
                 &repacked,
                 repacked.source.as_ref(),
                 "synthetic",
-                source_image,
-                "document-local SHA-256"
+                source_image
             )
             .unwrap(),
             hash
@@ -991,30 +933,15 @@ mod tests {
         let arena = DecodeArena::new();
         let policy = DecodePolicy::service();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let digest = document_local_sha256(
-            &ctx,
-            &ir,
-            None,
-            "test",
-            "test:model:unknown#source",
-            "indexed digest",
-        )
-        .unwrap();
+        let digest =
+            document_local_sha256(&ctx, &ir, None, "test", "test:model:unknown#source").unwrap();
         ctx.finish_session().unwrap();
         ir.model.curves.reverse();
         ir.model.procedural_curves.reverse();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert_eq!(
             digest,
-            document_local_sha256(
-                &ctx,
-                &ir,
-                None,
-                "test",
-                "test:model:unknown#source",
-                "indexed digest"
-            )
-            .unwrap()
+            document_local_sha256(&ctx, &ir, None, "test", "test:model:unknown#source").unwrap()
         );
         ctx.finish_session().unwrap();
     }
@@ -1046,7 +973,7 @@ mod tests {
             let (ctx, _) =
                 DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
             assert!(
-                matches!(document_local_sha256(&ctx, &ir, None, "test", "test:model:unknown#source", "orphan digest"), Err(CodecError::Malformed(message)) if message.contains("no unique owning curve"))
+                matches!(document_local_sha256(&ctx, &ir, None, "test", "test:model:unknown#source"), Err(CodecError::Malformed(message)) if message.contains("no unique owning curve"))
             );
         }
     }
@@ -1065,7 +992,6 @@ mod tests {
             ir.source.as_ref(),
             "pin",
             "pin:test:source-image#0",
-            "document-local SHA-256",
         )
         .unwrap_err();
         let CodecError::ResourceLimit(original) = error else {

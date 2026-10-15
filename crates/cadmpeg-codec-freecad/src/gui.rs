@@ -54,13 +54,12 @@ struct BodyUpdate {
 }
 
 fn push_body_update(
-    ctx: &DecodeContext<'_>,
     plan: &mut AppearancePlan,
     id: &cadmpeg_ir::ids::BodyId,
     visible: Assignment<Option<bool>>,
     color: Result<Option<Color>, CodecError>,
 ) -> Result<(), CodecError> {
-    let id = id.try_clone_for_decode(ctx, "FCStd GUI body update identity")?;
+    let id = id.clone();
     let color = color?;
     plan.body_updates.push(BodyUpdate { id, visible, color });
     Ok(())
@@ -230,7 +229,6 @@ fn transfer_xml(
     let admission = schema::classify(schema_declaration.as_deref());
     let neutral_schema_version = admission.neutral_schema_version();
     let transferred = transfer_schema_one(
-        ctx,
         ir,
         text,
         &xml,
@@ -260,7 +258,6 @@ fn transfer_xml(
 }
 
 fn transfer_schema_one(
-    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     text: &str,
     xml: &roxmltree::Document<'_>,
@@ -433,17 +430,15 @@ fn transfer_schema_one(
         let material = values.get("ShapeMaterial");
         let body_ids = {
             select_shape_bodies(
-                ctx,
                 ir,
                 payloads_by_owner
                     .iter()
                     .filter(|(owner, property, _)| *owner == object_id && *property == "Shape")
                     .map(|(_, _, payload)| *payload),
             )
-        }?;
+        };
         for body_id in &body_ids {
             push_body_update(
-                ctx,
                 &mut plan,
                 body_id,
                 Assignment::Set(visibility),
@@ -457,7 +452,6 @@ fn transfer_schema_one(
             .and_then(|value| value.attribute("file"))
         {
             transfer_topology_colors(
-                ctx,
                 ir,
                 &mut plan,
                 TopologyColorRequest {
@@ -483,7 +477,6 @@ fn transfer_schema_one(
                 .get("LineWidth")
                 .and_then(|value| value.attribute("value"));
             transfer_primitive_appearance(
-                ctx,
                 ir,
                 &mut plan,
                 &mut losses,
@@ -502,7 +495,6 @@ fn transfer_schema_one(
             .and_then(|value| value.attribute("file"))
         {
             transfer_topology_colors(
-                ctx,
                 ir,
                 &mut plan,
                 TopologyColorRequest {
@@ -527,7 +519,6 @@ fn transfer_schema_one(
                 .get("PointSize")
                 .and_then(|value| value.attribute("value"));
             transfer_primitive_appearance(
-                ctx,
                 ir,
                 &mut plan,
                 &mut losses,
@@ -546,7 +537,6 @@ fn transfer_schema_one(
             .and_then(|value| value.attribute("file"))
         {
             transfer_topology_colors(
-                ctx,
                 ir,
                 &mut plan,
                 TopologyColorRequest {
@@ -584,7 +574,7 @@ fn transfer_schema_one(
             }
         }
         plan.appearances.push(Appearance {
-            id: appearance_id.try_clone_for_decode(ctx, "FCStd GUI appearance identity copy")?,
+            id: appearance_id.clone(),
             name: Some(format!("{name} shape appearance")),
             asset_guid: None,
             library_id: None,
@@ -601,11 +591,8 @@ fn transfer_schema_one(
                 id: binding_id(format_args!(
                     "fcstd:appearance:binding#{provider_key}:{index}"
                 ))?,
-                target: AppearanceTarget::Body(
-                    body.try_clone_for_decode(ctx, "FCStd GUI binding body identity")?,
-                ),
-                appearance: appearance_id
-                    .try_clone_for_decode(ctx, "FCStd GUI binding appearance identity")?,
+                target: AppearanceTarget::Body(body.clone()),
+                appearance: appearance_id.clone(),
                 source_entity_id: Some(object_id.to_owned()),
                 object_type: Some("ViewProvider".into()),
                 visible: None,
@@ -623,7 +610,6 @@ fn transfer_schema_one(
         validate_gui_list_payloads(&graph.properties, entries, requires_alpha_conversion)?;
     let mut material_losses = Vec::new();
     transfer_shape_appearances(
-        ctx,
         ir,
         &mut plan,
         &graph,
@@ -1052,7 +1038,6 @@ fn shape_payload_prefixes(
 }
 
 fn transfer_primitive_appearance(
-    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     plan: &mut AppearancePlan,
     losses: &mut Vec<LossNote>,
@@ -1074,10 +1059,7 @@ fn transfer_primitive_appearance(
                     .iter()
                     .any(|prefix| crate::native::id_key(edge.id.as_str()).starts_with(prefix))
             }) {
-                targets.push(AppearanceTarget::Edge(
-                    edge.id
-                        .try_clone_for_decode(ctx, "FCStd GUI primitive target identity")?,
-                ));
+                targets.push(AppearanceTarget::Edge(edge.id.clone()));
             }
         }
         PrimitiveStyle::Point(_) => {
@@ -1086,11 +1068,7 @@ fn transfer_primitive_appearance(
                     .iter()
                     .any(|prefix| crate::native::id_key(vertex.id.as_str()).starts_with(prefix))
             }) {
-                targets.push(AppearanceTarget::Vertex(
-                    vertex
-                        .id
-                        .try_clone_for_decode(ctx, "FCStd GUI primitive target identity")?,
-                ));
+                targets.push(AppearanceTarget::Vertex(vertex.id.clone()));
             }
         }
     }
@@ -1135,7 +1113,7 @@ fn transfer_primitive_appearance(
         );
     }
     plan.appearances.push(Appearance {
-        id: appearance_id.try_clone_for_decode(ctx, "FCStd GUI appearance identity copy")?,
+        id: appearance_id.clone(),
         name: Some(format!("{provider_name} {label} appearance")),
         asset_guid: None,
         library_id: None,
@@ -1168,8 +1146,7 @@ fn transfer_primitive_appearance(
                 "fcstd:appearance:binding#{binding_key}:{provider_key}:{index}"
             ))?,
             target,
-            appearance: appearance_id
-                .try_clone_for_decode(ctx, "FCStd GUI binding appearance identity")?,
+            appearance: appearance_id.clone(),
             source_entity_id: Some(object_id.to_owned()),
             object_type: Some(object_type.into()),
             visible: None,
@@ -3773,7 +3750,6 @@ fn read_material_string(view: &mut View<'_>, property_id: &str) -> Result<String
 }
 
 fn transfer_shape_appearances(
-    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     plan: &mut AppearancePlan,
     graph: &Graph,
@@ -3803,7 +3779,7 @@ fn transfer_shape_appearances(
         let Some(materials) = material_lists.get(&property.id) else {
             continue;
         };
-        let body_ids = displayed_shape_bodies(ctx, ir, object_id, properties, payloads)?;
+        let body_ids = displayed_shape_bodies(ir, object_id, properties, payloads)?;
         let group = displayed_shape_group(object_id, properties, payloads, element_maps, "Face")?;
         let mapped_count = match group {
             None => 0,
@@ -3842,7 +3818,7 @@ fn transfer_shape_appearances(
         for (index, material) in materials.iter().enumerate() {
             let appearance_id = shape_material_appearance_id(&provider_key, index)?;
             plan.appearances.push(material_appearance(
-                appearance_id.try_clone_for_decode(ctx, "FCStd GUI appearance identity copy")?,
+                appearance_id.clone(),
                 &provider.name,
                 index,
                 material,
@@ -3850,7 +3826,6 @@ fn transfer_shape_appearances(
             if materials.len() == 1 {
                 for (body_index, body) in body_ids.iter().enumerate() {
                     push_body_update(
-                        ctx,
                         plan,
                         body,
                         Assignment::Keep,
@@ -3860,11 +3835,8 @@ fn transfer_shape_appearances(
                         id: binding_id(format_args!(
                             "fcstd:appearance:binding#shape-material:{provider_key}:{body_index}"
                         ))?,
-                        target: AppearanceTarget::Body(
-                            body.try_clone_for_decode(ctx, "FCStd GUI binding body identity")?,
-                        ),
-                        appearance: appearance_id
-                            .try_clone_for_decode(ctx, "FCStd GUI binding appearance identity")?,
+                        target: AppearanceTarget::Body(body.clone()),
+                        appearance: appearance_id.clone(),
                         source_entity_id: Some(object_id.to_owned()),
                         object_type: Some("ViewProvider ShapeAppearance".into()),
                         visible: None,
@@ -3873,7 +3845,6 @@ fn transfer_shape_appearances(
                 }
             } else if let Some(group) = group {
                 bind_material_faces(
-                    ctx,
                     ir,
                     plan,
                     group,
@@ -3888,7 +3859,6 @@ fn transfer_shape_appearances(
 }
 
 fn displayed_shape_bodies(
-    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     object_id: &str,
     properties: &[PropertyRecord],
@@ -3897,14 +3867,16 @@ fn displayed_shape_bodies(
     let Some(payload) = displayed_shape_payload(object_id, properties, payloads)? else {
         return Ok(Vec::new());
     };
-    select_shape_bodies(ctx, ir, std::iter::once(payload.id.as_str()))
+    Ok(select_shape_bodies(
+        ir,
+        std::iter::once(payload.id.as_str()),
+    ))
 }
 
 fn select_shape_bodies<'a>(
-    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     payload_ids: impl IntoIterator<Item = &'a str>,
-) -> Result<Vec<cadmpeg_ir::ids::BodyId>, CodecError> {
+) -> Vec<cadmpeg_ir::ids::BodyId> {
     let mut body_ids = Vec::new();
     for payload_id in payload_ids {
         let payload_key = crate::native::id_key(payload_id);
@@ -3914,14 +3886,11 @@ fn select_shape_bodies<'a>(
                 .strip_prefix(payload_key)
                 .is_some_and(|suffix| suffix.starts_with(':'))
             {
-                body_ids.push(
-                    body.id
-                        .try_clone_for_decode(ctx, "FCStd GUI displayed body identity")?,
-                );
+                body_ids.push(body.id.clone());
             }
         }
     }
-    Ok(body_ids)
+    body_ids
 }
 
 fn displayed_shape_payload<'a>(
@@ -4045,7 +4014,6 @@ fn material_appearance(
 }
 
 fn bind_material_faces(
-    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     plan: &mut AppearancePlan,
     group: &ElementMapGroup,
@@ -4070,17 +4038,14 @@ fn bind_material_faces(
         else {
             continue;
         };
-        let face = face
-            .id
-            .try_clone_for_decode(ctx, "FCStd GUI binding face identity")?;
+        let face = face.id.clone();
         let binding_index = ir.model.appearance_bindings.len() + plan.bindings.len();
         plan.bindings.push(AppearanceBinding {
             id: binding_id(format_args!(
                 "fcstd:appearance:binding#shape-material:{provider_key}:{binding_index}"
             ))?,
             target: AppearanceTarget::Face(face),
-            appearance: appearance_id
-                .try_clone_for_decode(ctx, "FCStd GUI binding appearance identity")?,
+            appearance: appearance_id.clone(),
             source_entity_id: Some(object_id.to_owned()),
             object_type: Some("ViewProvider ShapeAppearance".into()),
             visible: None,
@@ -4137,7 +4102,6 @@ struct TopologyColorRequest<'a> {
 }
 
 fn transfer_topology_colors(
-    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     plan: &mut AppearancePlan,
     request: TopologyColorRequest<'_>,
@@ -4224,8 +4188,7 @@ fn transfer_topology_colors(
             }
             if !emitted_appearance {
                 plan.appearances.push(Appearance {
-                    id: appearance_id
-                        .try_clone_for_decode(ctx, "FCStd GUI appearance identity copy")?,
+                    id: appearance_id.clone(),
                     name: Some(format!(
                         "{provider_name} {}{} appearance",
                         kind.name(),
@@ -4262,35 +4225,19 @@ fn transfer_topology_colors(
                     .faces
                     .iter()
                     .find(|face| face.id.as_str() == topology_id.as_str())
-                    .map(|face| {
-                        face.id
-                            .try_clone_for_decode(ctx, "FCStd GUI binding topology identity")
-                            .map(AppearanceTarget::Face)
-                    })
-                    .transpose()?,
+                    .map(|face| AppearanceTarget::Face(face.id.clone())),
                 TopologyColorKind::Edge => ir
                     .model
                     .edges
                     .iter()
                     .find(|edge| edge.id.as_str() == topology_id.as_str())
-                    .map(|edge| {
-                        edge.id
-                            .try_clone_for_decode(ctx, "FCStd GUI binding topology identity")
-                            .map(AppearanceTarget::Edge)
-                    })
-                    .transpose()?,
+                    .map(|edge| AppearanceTarget::Edge(edge.id.clone())),
                 TopologyColorKind::Vertex => ir
                     .model
                     .vertices
                     .iter()
                     .find(|vertex| vertex.id.as_str() == topology_id.as_str())
-                    .map(|vertex| {
-                        vertex
-                            .id
-                            .try_clone_for_decode(ctx, "FCStd GUI binding topology identity")
-                            .map(AppearanceTarget::Vertex)
-                    })
-                    .transpose()?,
+                    .map(|vertex| AppearanceTarget::Vertex(vertex.id.clone())),
             };
             let Some(target) = target else {
                 continue;
@@ -4303,8 +4250,7 @@ fn transfer_topology_colors(
                     index + 1,
                 ))?,
                 target,
-                appearance: appearance_id
-                    .try_clone_for_decode(ctx, "FCStd GUI binding appearance identity")?,
+                appearance: appearance_id.clone(),
                 source_entity_id: Some(object_id.to_owned()),
                 object_type: Some(format!("ViewProvider {}", kind.name())),
                 visible: None,
@@ -4506,12 +4452,7 @@ mod shape_association_tests {
     #[test]
     fn repeated_payload_body_selection_keeps_both_occurrences() {
         let ir = shape_ir();
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let policy = cadmpeg_core::decode::DecodePolicy::service();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root is within policy");
-        let body_ids = select_shape_bodies(&ctx, &ir, ["payload", "payload"])
-            .expect("service policy admits both source occurrences");
+        let body_ids = select_shape_bodies(&ir, ["payload", "payload"]);
         assert_eq!(
             body_ids,
             [ir.model.bodies[0].id.clone(), ir.model.bodies[0].id.clone()]

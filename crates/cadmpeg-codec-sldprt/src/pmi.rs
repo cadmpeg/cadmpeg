@@ -613,7 +613,6 @@ fn collect_dimensions(
         match extract_dimension(ctx, payload, offset, &normalized, parent) {
             Ok(Some(record)) => {
                 crate::annotations::note(
-                    ctx,
                     annotations,
                     record.id.clone(),
                     stream,

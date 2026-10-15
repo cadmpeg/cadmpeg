@@ -96,26 +96,17 @@ fn solved_point_projection_succeeds() {
     project_solved_point_with_policy(DecodePolicy::service()).unwrap();
 }
 
-fn project_solved_line_with_policy(policy: DecodePolicy) -> Result<(), CodecError> {
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(b"solved line", &arena, &policy)?;
+fn project_solved_line_with_policy() -> Result<(), CodecError> {
     let (sketch, feature, lane) = planar_fixture();
     let mut entities = Vec::new();
-    project_relation_solved_line_geometry(
-        &ctx,
-        &mut entities,
-        &[sketch],
-        &[feature],
-        &[],
-        &[lane],
-    )?;
+    project_relation_solved_line_geometry(&mut entities, &[sketch], &[feature], &[], &[lane])?;
     assert!(entities.is_empty());
     Ok(())
 }
 
 #[test]
 fn solved_line_projection_succeeds() {
-    project_solved_line_with_policy(DecodePolicy::service()).unwrap();
+    project_solved_line_with_policy().unwrap();
 }
 
 fn project_relation_point_with_policy() {

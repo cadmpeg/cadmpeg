@@ -206,14 +206,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
                 ),
             },
         );
-        ir.model
-            .add_procedural_curve(
-                &cadmpeg_ir::document::admission::StandardAdmission,
-                &spine,
-                procedural,
-            )
-            .unwrap()
-            .unwrap();
+        ir.model.add_procedural_curve(&spine, procedural).unwrap();
         assert_eq!(
             crate::decode::support_uv::blend_spine_cache_fit_tolerance(&ir, &surface, 0.25),
             1.0
@@ -475,7 +468,6 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
             source_object: None,
         });
         let _attached = ir.model.add_procedural_curve(
-            &cadmpeg_ir::document::admission::StandardAdmission,
             &boundary_curve,
             ProceduralCurve::new(
                 ProceduralCurveId::mint("test:model:entity#synthetic:blend-boundary")

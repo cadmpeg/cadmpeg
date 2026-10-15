@@ -459,11 +459,8 @@ fn dialect_layers_without_kernel_evidence_hold_only_the_primary() {
             .into_iter()
             .collect(),
     );
-    let layers = layers(
-        &primary,
-        &crate::kernel::ActiveCarrierState::NotApplicable,
-    )
-    .expect("primary layer");
+    let layers =
+        layers(&primary, &crate::kernel::ActiveCarrierState::NotApplicable).expect("primary layer");
     assert_eq!(layers.primary(), &primary);
     assert_eq!(layers.iter().count(), 1);
 }

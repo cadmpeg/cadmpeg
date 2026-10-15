@@ -82,17 +82,13 @@ fn invalidation_preserves_lanes_with_a_prior_validation_proof() {
                                 panic!("NURBS support lane");
                             };
                             nurbs
-                                .try_map_control_points(
-                                    |_, point| {
-                                        let point = point.get();
-                                        cadmpeg_ir::units::FinitePoint2::new(
-                                            cadmpeg_ir::math::Point2::new(point.u + 100.0, point.v),
-                                        )
-                                        .ok_or(())
-                                    },
-                                    &cadmpeg_test_support::service_decode_context(),
-                                )
-                                .expect("pole edit admission")
+                                .try_map_control_points(|_, point| {
+                                    let point = point.get();
+                                    cadmpeg_ir::units::FinitePoint2::new(
+                                        cadmpeg_ir::math::Point2::new(point.u + 100.0, point.v),
+                                    )
+                                    .ok_or(())
+                                })
                                 .unwrap();
                         };
                         cadmpeg_ir::geometry::IntcurveSupportContext::try_new(
@@ -205,15 +201,13 @@ fn validated_support_uv_exposes_ordered_endpoint_witnesses() {
         .expect("intersection owner")
         .clone();
 
-    let witnesses = crate::test_support::with_decode_context(|ctx| {
+    let witnesses = {
         crate::decode::support_uv::validated_support_uv_endpoint_witnesses(
-            ctx,
             result.ir(),
             &pending,
             &validated_lanes,
         )
-    })
-    .expect("validated witnesses fit the service profile");
+    };
 
     assert_eq!(
         crate::decode::pcurves::endpoint_witness_for_candidate(
@@ -445,7 +439,6 @@ fn coupled_uv_completion_uses_values_lane_before_budgeted_offset_inverse() {
             source_object: None,
         });
         let _attached = ir.model.add_procedural_curve(
-            &cadmpeg_ir::document::admission::StandardAdmission,
             &curve,
             ProceduralCurve::new(
                 procedural_id.clone(),

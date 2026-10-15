@@ -94,26 +94,6 @@ fn admitted_nurbs_surface_grid_preserves_constructor_wire_and_errors() {
 }
 
 #[test]
-fn knot_copy_succeeds_under_service_profile() {
-    let knots = super::KnotVector::new(
-        &cadmpeg_test_support::service_decode_context(),
-        vec![0.0, 0.0, 1.0, 1.0],
-    )
-    .expect("fixture knot admission")
-    .expect("valid knots");
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty input");
-    assert_eq!(
-        knots
-            .try_clone_for_decode(&ctx, "knot copy")
-            .expect("service budget"),
-        knots
-    );
-}
-
-#[test]
 fn consumed_nurbs_parts_keep_knot_and_pole_storage() {
     use crate::geometry::nurbs::NurbsPoles3;
 
@@ -332,18 +312,14 @@ fn owned_curve_mapping_preserves_polynomial_and_rational_poles() {
         let mut actual = source.clone();
         let weights = actual.weights();
         actual
-            .try_map_control_points(
-                |_, point| {
-                    FinitePoint3::new(Point3::new(
-                        point.get().x + 1.0,
-                        point.get().y,
-                        point.get().z,
-                    ))
-                    .ok_or("finite map")
-                },
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .expect("pole edit admission")
+            .try_map_control_points(|_, point| {
+                FinitePoint3::new(Point3::new(
+                    point.get().x + 1.0,
+                    point.get().y,
+                    point.get().z,
+                ))
+                .ok_or("finite map")
+            })
             .expect("finite point map");
         assert_eq!(actual.weights(), weights);
         assert_eq!(actual.control_points().len(), source.control_points().len());
@@ -362,16 +338,11 @@ fn owned_curve_mapping_preserves_polynomial_and_rational_poles() {
 fn a_refused_curve_pole_edit_keeps_the_prior_poles() {
     let mut curve = curve();
     let original = curve.clone();
-    let refusal = curve
-        .try_map_control_points(
-            |_, _| {
-                Err(crate::geometry::nurbs::NurbsError::EditRefused(
-                    "caller refused this pole".into(),
-                ))
-            },
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .expect("pole edit admission");
+    let refusal = curve.try_map_control_points(|_, _| {
+        Err(crate::geometry::nurbs::NurbsError::EditRefused(
+            "caller refused this pole".into(),
+        ))
+    });
     assert_eq!(
         refusal,
         Err(crate::geometry::nurbs::NurbsError::EditRefused(
@@ -385,16 +356,11 @@ fn a_refused_curve_pole_edit_keeps_the_prior_poles() {
 fn a_refused_surface_pole_edit_keeps_the_prior_poles() {
     let mut surface = surface();
     let original = surface.clone();
-    let refusal = surface
-        .try_map_control_points(
-            |_, _| {
-                Err(crate::geometry::nurbs::NurbsError::EditRefused(
-                    "caller refused this pole".into(),
-                ))
-            },
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .expect("pole edit admission");
+    let refusal = surface.try_map_control_points(|_, _| {
+        Err(crate::geometry::nurbs::NurbsError::EditRefused(
+            "caller refused this pole".into(),
+        ))
+    });
     assert_eq!(
         refusal,
         Err(crate::geometry::nurbs::NurbsError::EditRefused(
@@ -424,39 +390,30 @@ fn curve_map_updates_every_polynomial_and_rational_pole_atomically() {
         let weights = curve.weights();
         let last = curve.pole_count() - 1;
         assert_eq!(
-            curve
-                .try_map_control_points(
-                    |index, point| {
-                        if index == last {
-                            Err("last pole")
-                        } else {
-                            FinitePoint3::new(Point3::new(
-                                point.get().x + 1.0,
-                                point.get().y,
-                                point.get().z,
-                            ))
-                            .ok_or("non-finite point")
-                        }
-                    },
-                    &cadmpeg_test_support::service_decode_context()
-                )
-                .expect("pole edit admission"),
-            Err("last pole")
-        );
-        assert_eq!(curve, original);
-        curve
-            .try_map_control_points(
-                |index, point| {
+            curve.try_map_control_points(|index, point| {
+                if index == last {
+                    Err("last pole")
+                } else {
                     FinitePoint3::new(Point3::new(
-                        point.get().x + f64::from(u32::try_from(index).unwrap()) + 1.0,
+                        point.get().x + 1.0,
                         point.get().y,
                         point.get().z,
                     ))
                     .ok_or("non-finite point")
-                },
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .expect("pole edit admission")
+                }
+            }),
+            Err("last pole")
+        );
+        assert_eq!(curve, original);
+        curve
+            .try_map_control_points(|index, point| {
+                FinitePoint3::new(Point3::new(
+                    point.get().x + f64::from(u32::try_from(index).unwrap()) + 1.0,
+                    point.get().y,
+                    point.get().z,
+                ))
+                .ok_or("non-finite point")
+            })
             .unwrap();
         for (index, (mapped, prior)) in curve
             .control_points()
@@ -500,39 +457,30 @@ fn surface_map_updates_every_polynomial_and_rational_pole_atomically() {
         let weights = surface.weights();
         let last = surface.poles().len() - 1;
         assert_eq!(
-            surface
-                .try_map_control_points(
-                    |index, point| {
-                        if index == last {
-                            Err("last pole")
-                        } else {
-                            FinitePoint3::new(Point3::new(
-                                point.get().x + 1.0,
-                                point.get().y,
-                                point.get().z,
-                            ))
-                            .ok_or("non-finite point")
-                        }
-                    },
-                    &cadmpeg_test_support::service_decode_context()
-                )
-                .expect("pole edit admission"),
-            Err("last pole")
-        );
-        assert_eq!(surface, original);
-        surface
-            .try_map_control_points(
-                |index, point| {
+            surface.try_map_control_points(|index, point| {
+                if index == last {
+                    Err("last pole")
+                } else {
                     FinitePoint3::new(Point3::new(
-                        point.get().x + f64::from(u32::try_from(index).unwrap()) + 1.0,
+                        point.get().x + 1.0,
                         point.get().y,
                         point.get().z,
                     ))
                     .ok_or("non-finite point")
-                },
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .expect("pole edit admission")
+                }
+            }),
+            Err("last pole")
+        );
+        assert_eq!(surface, original);
+        surface
+            .try_map_control_points(|index, point| {
+                FinitePoint3::new(Point3::new(
+                    point.get().x + f64::from(u32::try_from(index).unwrap()) + 1.0,
+                    point.get().y,
+                    point.get().z,
+                ))
+                .ok_or("non-finite point")
+            })
             .unwrap();
         for (index, (mapped, prior)) in surface.poles().iter().zip(original.poles()).enumerate() {
             assert_eq!(
@@ -601,9 +549,7 @@ fn surface_transposition_preserves_every_pole_and_weight() {
         .expect("fixture constructor admission")
         .unwrap();
         let original = surface.clone();
-        surface
-            .transpose_parameter_axes(&cadmpeg_test_support::service_decode_context())
-            .expect("transpose admission");
+        surface.transpose_parameter_axes();
         assert_eq!((surface.u_count(), surface.v_count()), (2, 3));
         assert_eq!((surface.u_degree(), surface.v_degree()), (1, 2));
         assert_eq!(surface.u_knots(), original.v_knots());
@@ -616,9 +562,7 @@ fn surface_transposition_preserves_every_pole_and_weight() {
                 assert_eq!(surface.weight(v, u), original.weight(u, v));
             }
         }
-        surface
-            .transpose_parameter_axes(&cadmpeg_test_support::service_decode_context())
-            .expect("transpose admission");
+        surface.transpose_parameter_axes();
         assert_eq!(surface, original);
     }
 }
@@ -639,20 +583,15 @@ fn bspline_surface_edit_refusal_keeps_control_points() {
     .expect("fixture B-spline admission")
     .unwrap();
     let original = surface.clone();
-    let refusal = surface
-        .try_map_control_points(
-            |index, point| {
-                if index == 3 {
-                    return Err(NurbsError::EditRefused("caller refused this pole".into()));
-                }
-                let mut moved = point.get();
-                moved.z = 3.0;
-                crate::features::FinitePoint3::new(moved)
-                    .ok_or_else(|| NurbsError::Structure("non-finite pole".into()))
-            },
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .expect("pole edit admission");
+    let refusal = surface.try_map_control_points(|index, point| {
+        if index == 3 {
+            return Err(NurbsError::EditRefused("caller refused this pole".into()));
+        }
+        let mut moved = point.get();
+        moved.z = 3.0;
+        crate::features::FinitePoint3::new(moved)
+            .ok_or_else(|| NurbsError::Structure("non-finite pole".into()))
+    });
     assert_eq!(
         refusal,
         Err(NurbsError::EditRefused("caller refused this pole".into()))
@@ -688,30 +627,22 @@ fn bspline_surface_numeric_admission_and_transactional_edit() {
     .unwrap();
     let original = surface.clone();
     assert!(surface
-        .try_map_control_points(
-            |_, point| {
-                let mut moved = point.get();
-                moved.x = f64::NAN;
-                crate::features::FinitePoint3::new(moved).ok_or(())
-            },
-            &cadmpeg_test_support::service_decode_context()
-        )
-        .expect("pole edit admission")
+        .try_map_control_points(|_, point| {
+            let mut moved = point.get();
+            moved.x = f64::NAN;
+            crate::features::FinitePoint3::new(moved).ok_or(())
+        })
         .is_err());
     assert_eq!(surface, original);
     let mut wire = serde_json::to_value(&surface).unwrap();
     wire["u_knots"] = serde_json::json!([0.0, 1.0, 0.0, 1.0]);
     assert!(serde_json::from_value::<BsplineSurface>(wire).is_err());
     surface
-        .try_map_control_points(
-            |_, point| {
-                let mut moved = point.get();
-                moved.z = 2.0;
-                crate::features::FinitePoint3::new(moved).ok_or(())
-            },
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .expect("pole edit admission")
+        .try_map_control_points(|_, point| {
+            let mut moved = point.get();
+            moved.z = 2.0;
+            crate::features::FinitePoint3::new(moved).ok_or(())
+        })
         .unwrap();
     assert!(surface
         .control_points
@@ -749,9 +680,7 @@ fn nurbs_stores_hand_out_their_admitted_poles_knots_and_weights() {
         None
     );
     let mut reversed = curve.clone();
-    reversed
-        .reverse_parameterization(&cadmpeg_test_support::service_decode_context())
-        .expect("signed reversal admission");
+    reversed.reverse_parameterization();
     assert_eq!(reversed.knots().as_slice(), [-5.0, -5.0, -2.0, -2.0]);
 
     let surface = surface();
@@ -1108,20 +1037,11 @@ fn nurbs_stores_hold_admitted_poles_and_take_admitted_lanes() {
     );
 
     let mut mapped = curve.clone();
-    let refusal = mapped
-        .try_map_control_points(
-            |_, _| Err(NurbsError::EditRefused("kept".into())),
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .expect("pole edit admission");
+    let refusal = mapped.try_map_control_points(|_, _| Err(NurbsError::EditRefused("kept".into())));
     assert_eq!(refusal, Err(NurbsError::EditRefused("kept".into())));
     assert_eq!(mapped, curve);
     mapped
-        .try_map_control_points(
-            |_, point| Ok::<_, NurbsError>(point.negated()),
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .expect("pole edit admission")
+        .try_map_control_points(|_, point| Ok::<_, NurbsError>(point.negated()))
         .unwrap();
     assert_eq!(
         mapped.control_points(),
@@ -1155,59 +1075,23 @@ fn nurbs_stores_hold_admitted_poles_and_take_admitted_lanes() {
         Ok(surface.clone())
     );
     assert_eq!(
+        positive_controls(&surface.poles(), Some(&[1.0, 1.0, 2.0, 2.0])),
         positive_controls(
-            &cadmpeg_test_support::service_decode_context(),
-            &surface.poles(),
-            Some(&[1.0, 1.0, 2.0, 2.0]),
-            "Bezier positive controls"
-        )
-        .expect("resource allocation did not fail")
-        .map(|output| output.to_vec()),
-        positive_controls(
-            &cadmpeg_test_support::service_decode_context(),
             &surface.pole_grid().raw_points().concat(),
-            Some(&[1.0, 1.0, 2.0, 2.0]),
-            "Bezier positive controls"
+            Some(&[1.0, 1.0, 2.0, 2.0])
         )
-        .expect("resource allocation did not fail")
-        .map(|output| output.to_vec())
     );
     assert_eq!(
-        positive_controls(
-            &cadmpeg_test_support::service_decode_context(),
-            &surface.poles(),
-            None,
-            "Bezier positive controls"
-        )
-        .expect("resource allocation did not fail")
-        .map(|output| output.to_vec()),
-        positive_controls(
-            &cadmpeg_test_support::service_decode_context(),
-            &surface.poles(),
-            Some(&[1.0; 4]),
-            "Bezier positive controls"
-        )
-        .expect("resource allocation did not fail")
-        .map(|output| output.to_vec())
+        positive_controls(&surface.poles(), None),
+        positive_controls(&surface.poles(), Some(&[1.0; 4]))
     );
     assert_eq!(
-        positive_controls(
-            &cadmpeg_test_support::service_decode_context(),
-            &[Point3::new(f64::INFINITY, 0.0, 0.0)],
-            Some(&[1.0]),
-            "Bezier positive controls"
-        )
-        .expect("resource allocation did not fail")
-        .map(|output| output.to_vec()),
+        positive_controls(&[Point3::new(f64::INFINITY, 0.0, 0.0)], Some(&[1.0])),
         None
     );
     let mut mapped = surface.clone();
     mapped
-        .try_map_control_points(
-            |_, point| Ok::<_, NurbsError>(point.negated()),
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .expect("pole edit admission")
+        .try_map_control_points(|_, point| Ok::<_, NurbsError>(point.negated()))
         .unwrap();
     assert_eq!(
         mapped.pole(1, 1).map(FinitePoint3::get),
@@ -1242,11 +1126,7 @@ fn nurbs_stores_hold_admitted_poles_and_take_admitted_lanes() {
     );
     let mut mapped = pcurve.clone();
     mapped
-        .try_map_control_points(
-            |_, point| Ok::<_, NurbsError>(point.negated()),
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .expect("pole edit admission")
+        .try_map_control_points(|_, point| Ok::<_, NurbsError>(point.negated()))
         .unwrap();
     assert_eq!(
         mapped.control_points(),
@@ -1518,9 +1398,7 @@ fn nurbs_curve_mapping_maps_poles_and_keeps_knots_and_weights() {
     .expect("fixture constructor admission")
     .expect("rational curve");
     let mapped = curve
-        .map_control_points(&ctx, "mapped NURBS fixture", |point| {
-            Point3::new(point.x + 2.0, point.y, point.z)
-        })
+        .map_control_points(|point| Point3::new(point.x + 2.0, point.y, point.z))
         .expect("mapping admission")
         .expect("finite mapped curve");
     assert_eq!(mapped.knots(), curve.knots());
@@ -1530,9 +1408,7 @@ fn nurbs_curve_mapping_maps_poles_and_keeps_knots_and_weights() {
         vec![Point3::new(3.0, 2.0, 3.0), Point3::new(6.0, 5.0, 6.0)]
     );
     assert!(curve
-        .map_control_points(&ctx, "mapped NURBS fixture", |_| {
-            Point3::new(f64::INFINITY, 0.0, 0.0)
-        })
+        .map_control_points(|_| { Point3::new(f64::INFINITY, 0.0, 0.0) })
         .expect("mapping admission")
         .is_none());
     assert_eq!(curve.control_points()[0], Point3::new(1.0, 2.0, 3.0));

@@ -299,15 +299,11 @@ fn failed_numeric_edits_preserve_the_whole_carrier() {
         .expect("knot edit admission")
         .is_err());
     assert!(curve
-        .try_map_control_points(
-            |_, point| {
-                let mut mapped = point.get();
-                mapped.x = f64::INFINITY;
-                crate::features::FinitePoint3::new(mapped).ok_or(())
-            },
-            &cadmpeg_test_support::service_decode_context()
-        )
-        .expect("pole edit admission")
+        .try_map_control_points(|_, point| {
+            let mut mapped = point.get();
+            mapped.x = f64::INFINITY;
+            crate::features::FinitePoint3::new(mapped).ok_or(())
+        })
         .is_err());
     assert!(curve_weights(&curve, vec![0.0, 1.0]).is_err());
     assert!(curve_weights(&curve, vec![1.0]).is_err());
@@ -361,15 +357,11 @@ fn failed_numeric_edits_preserve_the_whole_carrier() {
     })
     .is_err());
     assert!(surface
-        .try_map_control_points(
-            |_, point| {
-                let mut mapped = point.get();
-                mapped.y = f64::NEG_INFINITY;
-                crate::features::FinitePoint3::new(mapped).ok_or(())
-            },
-            &cadmpeg_test_support::service_decode_context()
-        )
-        .expect("pole edit admission")
+        .try_map_control_points(|_, point| {
+            let mut mapped = point.get();
+            mapped.y = f64::NEG_INFINITY;
+            crate::features::FinitePoint3::new(mapped).ok_or(())
+        })
         .is_err());
     assert!(surface_weights(&surface, vec![vec![0.0, 1.0], vec![1.0, 1.0]]).is_err());
     assert!(surface_weights(&surface, vec![vec![1.0]]).is_err());
@@ -391,14 +383,10 @@ fn failed_numeric_edits_preserve_the_whole_carrier() {
     })
     .is_err());
     assert!(pcurve
-        .try_map_control_points(
-            |_, point| {
-                crate::units::FinitePoint2::new(crate::math::Point2::new(f64::NAN, point.get().v))
-                    .ok_or(())
-            },
-            &cadmpeg_test_support::service_decode_context()
-        )
-        .expect("pole edit admission")
+        .try_map_control_points(|_, point| {
+            crate::units::FinitePoint2::new(crate::math::Point2::new(f64::NAN, point.get().v))
+                .ok_or(())
+        })
         .is_err());
     assert!(pcurve_weights(&pcurve, vec![1.0, 0.0]).is_err());
     assert!(pcurve_weights(&pcurve, vec![1.0]).is_err());
@@ -461,34 +449,26 @@ fn failed_numeric_edits_preserve_the_whole_carrier() {
 fn reversal_preserves_weight_and_parameter_correspondence() {
     let mut curve = curve();
     let original = curve.clone();
-    curve
-        .reverse_parameterization(&cadmpeg_test_support::service_decode_context())
-        .expect("signed reversal admission");
+    curve.reverse_parameterization();
     assert_eq!(curve.knots().as_slice(), &[-5.0, -5.0, -2.0, -2.0]);
     assert_eq!(
         curve.control_points(),
         vec![original.control_points()[1], original.control_points()[0]]
     );
     assert_eq!(curve.pole_rows().weights(), Some(vec![2.0, -1.0]));
-    curve
-        .reverse_parameterization(&cadmpeg_test_support::service_decode_context())
-        .expect("signed reversal admission");
+    curve.reverse_parameterization();
     assert_eq!(curve, original);
 
     let mut pcurve = pcurve();
     let original = pcurve.clone();
-    pcurve
-        .reverse_parameterization(&cadmpeg_test_support::service_decode_context())
-        .expect("signed reversal admission");
+    pcurve.reverse_parameterization();
     assert_eq!(pcurve.knots().as_slice(), &[-5.0, -5.0, -2.0, -2.0]);
     assert_eq!(
         pcurve.control_points(),
         vec![original.control_points()[1], original.control_points()[0]]
     );
     assert_eq!(pcurve.pole_rows().weights(), Some(vec![2.0, 1.0]));
-    pcurve
-        .reverse_parameterization(&cadmpeg_test_support::service_decode_context())
-        .expect("signed reversal admission");
+    pcurve.reverse_parameterization();
     assert_eq!(pcurve, original);
 }
 
@@ -530,19 +510,14 @@ fn pole_maps_visit_both_passes_refuse_a_late_pole_atomically_and_compose() {
         ($original:expr, $count:expr) => {{
             let original = $original;
             let count: usize = $count;
-            let ctx = cadmpeg_test_support::service_decode_context();
             let mut edited = original.clone();
             let calls = Cell::new(0_usize);
             for _ in 0..2 {
                 edited
-                    .try_map_control_points(
-                        |_, point| {
-                            calls.set(calls.get() + 1);
-                            Ok::<_, ()>(point.negated())
-                        },
-                        &ctx,
-                    )
-                    .expect("pole edit admission")
+                    .try_map_control_points(|_, point| {
+                        calls.set(calls.get() + 1);
+                        Ok::<_, ()>(point.negated())
+                    })
                     .expect("valid map");
             }
             assert_eq!(calls.get(), 4 * count);
@@ -550,18 +525,13 @@ fn pole_maps_visit_both_passes_refuse_a_late_pole_atomically_and_compose() {
 
             let mut edited = original.clone();
             assert_eq!(
-                edited
-                    .try_map_control_points(
-                        |index, point| {
-                            if index + 1 == count {
-                                Err("last pole")
-                            } else {
-                                Ok(point.negated())
-                            }
-                        },
-                        &ctx,
-                    )
-                    .expect("pole edit admission"),
+                edited.try_map_control_points(|index, point| {
+                    if index + 1 == count {
+                        Err("last pole")
+                    } else {
+                        Ok(point.negated())
+                    }
+                },),
                 Err("last pole")
             );
             assert_eq!(edited, original);
@@ -647,19 +617,14 @@ fn in_place_pcurve_mapping_keeps_edits_before_a_refused_pole() {
     let mut edited = original.clone();
     let mut calls = 0;
     assert_eq!(
-        edited
-            .try_map_control_points_in_place(
-                |point| {
-                    calls += 1;
-                    if calls == 2 {
-                        Err("second pole")
-                    } else {
-                        Ok(point.negated())
-                    }
-                },
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .expect("pole edit admission"),
+        edited.try_map_control_points_in_place(|point| {
+            calls += 1;
+            if calls == 2 {
+                Err("second pole")
+            } else {
+                Ok(point.negated())
+            }
+        }),
         Err("second pole")
     );
     assert_eq!(

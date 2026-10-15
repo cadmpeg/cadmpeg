@@ -111,8 +111,7 @@ pub(super) fn transfer_closed_face_topology(
         }
         macro_rules! copied_id {
             ($value:expr, $kind:ident) => {
-                admitted!(($value)
-                    .try_clone_for_decode(admission.context(), "catia_zero_topology_identity_copy"))
+                ($value).clone()
             };
         }
         let ZeroEntityClosedTopology {
@@ -248,15 +247,12 @@ pub(super) fn transfer_closed_face_topology(
         }
 
         for occurrence in &mut occurrences {
-            let curve_geometry = admitted!(ir
+            let curve_geometry = ir
                 .model
                 .curves
                 .iter()
                 .find(|curve| curve.id == occurrence.curve)
-                .map(|curve| curve
-                    .geometry
-                    .try_clone_for_decode(admission.context(), "catia_zero_wire_curve_copy"))
-                .transpose())?;
+                .map(|curve| curve.geometry.clone())?;
             let source_range = occurrence
                 .model_parameters
                 .and_then(increasing_range)
@@ -333,7 +329,7 @@ pub(super) fn transfer_closed_face_topology(
                                 if let Some(parameter_range) = canonical_range {
                                     curve.geometry = geometry;
                                     admitted!(annotations
-                                        .derived(admission.context(), &occurrence.curve, "geometry")
+                                        .derived(&occurrence.curve, "geometry")
                                         .map(|_| ())
                                         .map_err(cadmpeg_core::CodecError::from));
                                     (copied_id!(occurrence.curve, CurveId), parameter_range)
@@ -342,7 +338,7 @@ pub(super) fn transfer_closed_face_topology(
                                         SolvedCurveGeometry::Unknown { record: None },
                                     );
                                     admitted!(annotations
-                                        .derived(admission.context(), &occurrence.curve, "geometry")
+                                        .derived(&occurrence.curve, "geometry")
                                         .map(|_| ())
                                         .map_err(cadmpeg_core::CodecError::from));
                                     (copied_id!(occurrence.curve, CurveId), parameter_range)
@@ -353,7 +349,7 @@ pub(super) fn transfer_closed_face_topology(
                                     SolvedCurveGeometry::Unknown { record: None },
                                 );
                                 admitted!(annotations
-                                    .derived(admission.context(), &occurrence.curve, "geometry")
+                                    .derived(&occurrence.curve, "geometry")
                                     .map(|_| ())
                                     .map_err(cadmpeg_core::CodecError::from));
                                 (copied_id!(occurrence.curve, CurveId), parameter_range)
@@ -383,7 +379,7 @@ pub(super) fn transfer_closed_face_topology(
                         );
                     }
                     admitted!(annotations
-                        .derived(admission.context(), &occurrence.curve, "geometry")
+                        .derived(&occurrence.curve, "geometry")
                         .map(|_| ())
                         .map_err(cadmpeg_core::CodecError::from));
                     (copied_id!(occurrence.curve, CurveId), parameter_range)
@@ -518,7 +514,6 @@ pub(super) fn transfer_closed_face_topology(
 
         for (index, locus) in endpoint_loci.iter().enumerate() {
             admitted!(annotate(
-                admission.context(),
                 annotations,
                 &point_ids[index],
                 "zero_entity_a9_03",
@@ -527,7 +522,7 @@ pub(super) fn transfer_closed_face_topology(
                 Exactness::Inferred
             ));
             admitted!(annotations
-                .derived(admission.context(), &point_ids[index], "position")
+                .derived(&point_ids[index], "position")
                 .map(|_| ())
                 .map_err(cadmpeg_core::CodecError::from));
             if let Err(error) = admission.charge() {
@@ -539,7 +534,6 @@ pub(super) fn transfer_closed_face_topology(
                 None,
             ));
             admitted!(annotate(
-                admission.context(),
                 annotations,
                 &vertex_ids[index],
                 "zero_entity_a9_03",
@@ -548,7 +542,7 @@ pub(super) fn transfer_closed_face_topology(
                 Exactness::Inferred
             ));
             admitted!(annotations
-                .derived(admission.context(), &vertex_ids[index], "point")
+                .derived(&vertex_ids[index], "point")
                 .map(|_| ())
                 .map_err(cadmpeg_core::CodecError::from));
             if let Err(error) = admission.charge() {
@@ -567,7 +561,6 @@ pub(super) fn transfer_closed_face_topology(
                 continue;
             };
             admitted!(annotate(
-                admission.context(),
                 annotations,
                 &pcurve.id,
                 "zero_entity_a9_03",
@@ -576,7 +569,7 @@ pub(super) fn transfer_closed_face_topology(
                 Exactness::Derived
             ));
             admitted!(annotations
-                .derived(admission.context(), &pcurve.id, "geometry")
+                .derived(&pcurve.id, "geometry")
                 .map(|_| ())
                 .map_err(cadmpeg_core::CodecError::from));
             if let Err(error) = admission.charge() {
@@ -584,9 +577,7 @@ pub(super) fn transfer_closed_face_topology(
             }
             let pcurve = Pcurve {
                 id: copied_id!(pcurve.id, PcurveId),
-                geometry: admitted!(pcurve
-                    .geometry
-                    .try_clone_for_decode(admission.context(), "catia_zero_topology_pcurve_copy")),
+                geometry: pcurve.geometry.clone(),
                 metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
                     None,
                     Some(cadmpeg_ir::units::FiniteVector::new(
@@ -652,7 +643,6 @@ pub(super) fn transfer_closed_face_topology(
                 [*occurrence_by_support.get(&candidate.support_record_ordinals[0])?]
             .0;
             admitted!(annotate(
-                admission.context(),
                 annotations,
                 &edge_id,
                 "zero_entity_a9_03",
@@ -661,20 +651,20 @@ pub(super) fn transfer_closed_face_topology(
                 Exactness::Inferred
             ));
             admitted!(annotations
-                .derived(admission.context(), &edge_id, "curve")
+                .derived(&edge_id, "curve")
                 .map(|_| ())
                 .map_err(cadmpeg_core::CodecError::from));
             admitted!(annotations
-                .derived(admission.context(), &edge_id, "start")
+                .derived(&edge_id, "start")
                 .map(|_| ())
                 .map_err(cadmpeg_core::CodecError::from));
             admitted!(annotations
-                .derived(admission.context(), &edge_id, "end")
+                .derived(&edge_id, "end")
                 .map(|_| ())
                 .map_err(cadmpeg_core::CodecError::from));
             if param_range.is_some() {
                 admitted!(annotations
-                    .derived(admission.context(), &edge_id, "param_range")
+                    .derived(&edge_id, "param_range")
                     .map(|_| ())
                     .map_err(cadmpeg_core::CodecError::from));
             }
@@ -719,7 +709,6 @@ pub(super) fn transfer_closed_face_topology(
                 ZeroEntityLoopClass::Bound50 => return None,
             };
             admitted!(annotate(
-                admission.context(),
                 annotations,
                 face_id,
                 "zero_entity_a9_03",
@@ -728,19 +717,19 @@ pub(super) fn transfer_closed_face_topology(
                 Exactness::Inferred
             ));
             admitted!(annotations
-                .derived(admission.context(), face_id, "shell")
+                .derived(face_id, "shell")
                 .map(|_| ())
                 .map_err(cadmpeg_core::CodecError::from));
             admitted!(annotations
-                .derived(admission.context(), face_id, "surface")
+                .derived(face_id, "surface")
                 .map(|_| ())
                 .map_err(cadmpeg_core::CodecError::from));
             admitted!(annotations
-                .derived(admission.context(), face_id, "sense")
+                .derived(face_id, "sense")
                 .map(|_| ())
                 .map_err(cadmpeg_core::CodecError::from));
             admitted!(annotations
-                .derived(admission.context(), face_id, "loops")
+                .derived(face_id, "loops")
                 .map(|_| ())
                 .map_err(cadmpeg_core::CodecError::from));
             if let Err(error) = admission.charge() {
@@ -754,15 +743,7 @@ pub(super) fn transfer_closed_face_topology(
                 loops: match loop_ids.split_first() {
                     // The source states the outer boundary first.
                     Some((outer, inner)) => {
-                        let inner = admitted!(inner
-                            .iter()
-                            .map(|id| {
-                                id.try_clone_for_decode(
-                                    admission.context(),
-                                    "catia_zero_topology_inner_loop_id",
-                                )
-                            })
-                            .collect::<Result<Vec<_>, _>>());
+                        let inner = inner.to_vec();
                         cadmpeg_ir::topology::FaceLoops::classified(
                             copied_id!(outer, LoopId),
                             inner,
@@ -801,7 +782,6 @@ pub(super) fn transfer_closed_face_topology(
                     vertex_uses.push(vertex_use);
                 }
                 admitted!(annotate(
-                    admission.context(),
                     annotations,
                     loop_id,
                     "zero_entity_a9_03",
@@ -810,30 +790,19 @@ pub(super) fn transfer_closed_face_topology(
                     Exactness::Inferred
                 ));
                 admitted!(annotations
-                    .derived(admission.context(), loop_id, "face")
+                    .derived(loop_id, "face")
                     .map(|_| ())
                     .map_err(cadmpeg_core::CodecError::from));
                 admitted!(annotations
-                    .derived(admission.context(), loop_id, "coedges")
+                    .derived(loop_id, "coedges")
                     .map(|_| ())
                     .map_err(cadmpeg_core::CodecError::from));
                 admitted!(annotations
-                    .derived(admission.context(), loop_id, "vertex_uses")
+                    .derived(loop_id, "vertex_uses")
                     .map(|_| ())
                     .map_err(cadmpeg_core::CodecError::from));
-                let ring = admitted!(cadmpeg_ir::topology::LoopRing::new(
-                    admission.context(),
-                    admitted!(coedge_ids
-                        .iter()
-                        .map(|id| id.try_clone_for_decode(
-                            admission.context(),
-                            "catia_zero_topology_ring_coedge_id"
-                        ))
-                        .collect::<Result<Vec<_>, _>>()),
-                    vertex_uses
-                )
-                .map_err(cadmpeg_core::CodecError::from))
-                .ok()?;
+                let ring =
+                    cadmpeg_ir::topology::LoopRing::new(coedge_ids.clone(), vertex_uses).ok()?;
                 if let Err(error) = admission.charge() {
                     return Some(Err(error));
                 }
@@ -904,7 +873,6 @@ pub(super) fn transfer_closed_face_topology(
                     }
                     let coedge_id = copied_id!(coedge_ids[member_index], CoedgeId);
                     admitted!(annotate(
-                        admission.context(),
                         annotations,
                         &coedge_id,
                         "zero_entity_a9_03",
@@ -913,32 +881,32 @@ pub(super) fn transfer_closed_face_topology(
                         Exactness::Inferred
                     ));
                     admitted!(annotations
-                        .derived(admission.context(), &coedge_id, "owner_loop")
+                        .derived(&coedge_id, "owner_loop")
                         .map(|_| ())
                         .map_err(cadmpeg_core::CodecError::from));
                     admitted!(annotations
-                        .derived(admission.context(), &coedge_id, "edge")
+                        .derived(&coedge_id, "edge")
                         .map(|_| ())
                         .map_err(cadmpeg_core::CodecError::from));
                     admitted!(annotations
-                        .derived(admission.context(), &coedge_id, "radial_next")
+                        .derived(&coedge_id, "radial_next")
                         .map(|_| ())
                         .map_err(cadmpeg_core::CodecError::from));
                     admitted!(annotations
-                        .derived(admission.context(), &coedge_id, "sense")
+                        .derived(&coedge_id, "sense")
                         .map(|_| ())
                         .map_err(cadmpeg_core::CodecError::from));
                     admitted!(annotations
-                        .derived(admission.context(), &coedge_id, "pcurves")
+                        .derived(&coedge_id, "pcurves")
                         .map(|_| ())
                         .map_err(cadmpeg_core::CodecError::from));
                     if use_curve.is_some() {
                         admitted!(annotations
-                            .derived(admission.context(), &coedge_id, "use_curve")
+                            .derived(&coedge_id, "use_curve")
                             .map(|_| ())
                             .map_err(cadmpeg_core::CodecError::from));
                         admitted!(annotations
-                            .derived(admission.context(), &coedge_id, "use_curve_parameter_range")
+                            .derived(&coedge_id, "use_curve_parameter_range")
                             .map(|_| ())
                             .map_err(cadmpeg_core::CodecError::from));
                     }
@@ -978,7 +946,6 @@ pub(super) fn transfer_closed_face_topology(
         }
 
         admitted!(annotate(
-            admission.context(),
             annotations,
             &body_id,
             "zero_entity_a9_03",
@@ -987,11 +954,11 @@ pub(super) fn transfer_closed_face_topology(
             Exactness::Derived
         ));
         admitted!(annotations
-            .derived(admission.context(), &body_id, "kind")
+            .derived(&body_id, "kind")
             .map(|_| ())
             .map_err(cadmpeg_core::CodecError::from));
         admitted!(annotations
-            .derived(admission.context(), &body_id, "regions")
+            .derived(&body_id, "regions")
             .map(|_| ())
             .map_err(cadmpeg_core::CodecError::from));
         if let Err(error) = admission.charge() {
@@ -1009,7 +976,6 @@ pub(super) fn transfer_closed_face_topology(
         };
         ir.model.bodies.push(body);
         admitted!(annotate(
-            admission.context(),
             annotations,
             &region_id,
             "zero_entity_a9_03",
@@ -1018,11 +984,11 @@ pub(super) fn transfer_closed_face_topology(
             Exactness::Derived
         ));
         admitted!(annotations
-            .derived(admission.context(), &region_id, "body")
+            .derived(&region_id, "body")
             .map(|_| ())
             .map_err(cadmpeg_core::CodecError::from));
         admitted!(annotations
-            .derived(admission.context(), &region_id, "shells")
+            .derived(&region_id, "shells")
             .map(|_| ())
             .map_err(cadmpeg_core::CodecError::from));
         if let Err(error) = admission.charge() {
@@ -1036,7 +1002,6 @@ pub(super) fn transfer_closed_face_topology(
         };
         ir.model.regions.push(region);
         admitted!(annotate(
-            admission.context(),
             annotations,
             &shell_id,
             "zero_entity_a9_03",
@@ -1045,11 +1010,11 @@ pub(super) fn transfer_closed_face_topology(
             Exactness::Derived
         ));
         admitted!(annotations
-            .derived(admission.context(), &shell_id, "region")
+            .derived(&shell_id, "region")
             .map(|_| ())
             .map_err(cadmpeg_core::CodecError::from));
         admitted!(annotations
-            .derived(admission.context(), &shell_id, "faces")
+            .derived(&shell_id, "faces")
             .map(|_| ())
             .map_err(cadmpeg_core::CodecError::from));
         if let Err(error) = admission.charge() {

@@ -78,13 +78,9 @@ pub(super) fn project(
                     expanded_body_len: cadmpeg_core::decode::u64_from_index(
                         meta.body.window().len(),
                     ),
-                    expanded_body_sha256:
-                        cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
-                            ctx,
-                            meta.body.window(),
-                            "retain Inventor segment body digest",
-                        )
-                        .map(String::from)?,
+                    expanded_body_sha256: String::from(
+                        cadmpeg_ir::hash::digest::Sha256Digest::digest(meta.body.window()),
+                    ),
                     table_prefix: meta.tables.prefix,
                     block_count: cadmpeg_core::decode::u64_from_index(meta.tables.blocks.len()),
                     type_count: cadmpeg_core::decode::u64_from_index(meta.tables.types.len()),
@@ -100,12 +96,11 @@ pub(super) fn project(
                         payload_len: cadmpeg_core::decode::u64_from_index(
                             section.payload.window().len(),
                         ),
-                        payload_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
-                            ctx,
-                            section.payload.window(),
-                            "retain Inventor metadata section digest",
-                        )
-                        .map(String::from)?,
+                        payload_sha256: String::from(
+                            cadmpeg_ir::hash::digest::Sha256Digest::digest(
+                                section.payload.window(),
+                            ),
+                        ),
                     });
                 }
                 for descriptor in &meta.tables.types {
@@ -143,13 +138,11 @@ pub(super) fn project(
                             stream_trailer_len: cadmpeg_core::decode::u64_from_index(
                                 table.stream_trailer.window().len(),
                             ),
-                            stream_trailer_sha256:
-                                cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
-                                    ctx,
+                            stream_trailer_sha256: String::from(
+                                cadmpeg_ir::hash::digest::Sha256Digest::digest(
                                     table.stream_trailer.window(),
-                                    "retain Inventor RSe stream trailer digest",
-                                )
-                                .map(String::from)?,
+                                ),
+                            ),
                         }
                     }
                     RecordFrameState::Unavailable(detail) => SegmentBulkFrame::Unavailable {
@@ -165,21 +158,15 @@ pub(super) fn project(
                     compressed_len: cadmpeg_core::decode::u64_from_index(
                         bulk.compressed.window().len(),
                     ),
-                    compressed_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
-                        ctx,
-                        bulk.compressed.window(),
-                        "retain Inventor compressed bulk digest",
-                    )
-                    .map(String::from)?,
+                    compressed_sha256: String::from(
+                        cadmpeg_ir::hash::digest::Sha256Digest::digest(bulk.compressed.window()),
+                    ),
                     expanded_len: cadmpeg_core::decode::u64_from_index(
                         bulk.expanded.window().len(),
                     ),
-                    expanded_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
-                        ctx,
+                    expanded_sha256: String::from(cadmpeg_ir::hash::digest::Sha256Digest::digest(
                         bulk.expanded.window(),
-                        "retain Inventor expanded bulk digest",
-                    )
-                    .map(String::from)?,
+                    )),
                     records,
                 });
             }

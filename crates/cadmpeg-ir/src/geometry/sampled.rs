@@ -82,15 +82,6 @@ impl PolygonalSurface {
         &self.triangles
     }
 
-    /// Copy both sampled lanes through the decode collection budget.
-    pub fn try_clone_for_decode(
-        &self,
-        _ctx: &DecodeContext<'_>,
-        _operation: &'static str,
-    ) -> Result<Self, CodecError> {
-        Ok(self.clone())
-    }
-
     /// Build a polygonal surface whose triangle indices address `vertices`.
     pub fn new(
         vertices: Vec<Point3>,
@@ -407,17 +398,16 @@ impl PolylineSamples<FiniteReal, FinitePoint3> {
     pub fn edit_admitted_points<E>(
         &mut self,
         mut edit: impl FnMut(FinitePoint3) -> Result<FinitePoint3, E>,
-        _ctx: &DecodeContext<'_>,
-    ) -> Result<Result<(), E>, CodecError> {
+    ) -> Result<(), E> {
         match self {
-            Self::Unparameterized { points } => Ok(edit_sample_rows(points, |point| {
+            Self::Unparameterized { points } => edit_sample_rows(points, |point| {
                 *point = edit(*point)?;
                 Ok(())
-            })),
-            Self::Parameterized { vertices } => Ok(edit_sample_rows(vertices, |vertex| {
+            }),
+            Self::Parameterized { vertices } => edit_sample_rows(vertices, |vertex| {
                 vertex.point = edit(vertex.point)?;
                 Ok(())
-            })),
+            }),
         }
     }
 
@@ -452,15 +442,6 @@ fn edit_sample_rows<T: Copy, E>(
 }
 
 impl PolylineCurve {
-    /// Copy the sample lane through the decode collection budget.
-    pub fn try_clone_for_decode(
-        &self,
-        _ctx: &DecodeContext<'_>,
-        _operation: &'static str,
-    ) -> Result<Self, CodecError> {
-        Ok(self.clone())
-    }
-
     /// Build from admitted sample scalars and points, checking only the
     /// sample count, computed deviation, and parameter order.
     pub fn from_checked_samples(

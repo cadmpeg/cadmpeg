@@ -23,12 +23,12 @@ fn assert_datum_payload_admits(route: DatumPayloadRoute) {
         ))
     })
     .expect("datum construction inputs");
-    let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| match route {
+    let decode = |_: &cadmpeg_core::decode::DecodeContext<'_>| match route {
         DatumPayloadRoute::Csys => {
-            feature_datum_csys_payloads(ctx, &container, &constructions).map(|rows| rows.len())
+            feature_datum_csys_payloads(&container, &constructions).map(|rows| rows.len())
         }
         DatumPayloadRoute::Plane => {
-            feature_datum_plane_payloads(ctx, &container, &headers).map(|rows| rows.len())
+            feature_datum_plane_payloads(&container, &headers).map(|rows| rows.len())
         }
     };
     let admitted = crate::test_support::with_decode_context(|ctx| decode(ctx))

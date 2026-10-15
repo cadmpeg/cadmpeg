@@ -161,9 +161,7 @@ fn reusable_nurbs_evaluator_refuses_depth() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_recursion_depth = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    let mut evaluator = super::NurbsPointEvaluator::new(&ctx, &curve)
-        .map_err(CodecError::from)
-        .expect("scratch storage");
+    let mut evaluator = super::NurbsPointEvaluator::new(&curve);
     assert!(
         matches!(evaluator.point(&ctx, 0.5).map_err(CodecError::from), Err(CodecError::ResourceLimit(resource)) if resource.operation == "geometry evaluation nesting")
     );
@@ -173,9 +171,7 @@ fn reusable_nurbs_evaluator_refuses_depth() {
 fn reusable_nurbs_evaluator_matches_point_evaluation_above_inline_support() {
     let curve = heap_support_curve();
     with_policy(DecodePolicy::service(), |ctx| {
-        let mut evaluator = super::NurbsPointEvaluator::new(ctx, &curve)
-            .map_err(CodecError::from)
-            .expect("heap basis");
+        let mut evaluator = super::NurbsPointEvaluator::new(&curve);
         for index in 0..10_000 {
             let parameter = f64::from(index % 101) / 100.0;
             assert_eq!(
@@ -224,9 +220,7 @@ fn reusable_nurbs_evaluator_keeps_constant_and_linear_spans_inline() {
             let mut policy = DecodePolicy::service();
             policy.limits.max_recursion_depth = 0;
             with_policy(policy, |ctx| {
-                let mut evaluator = super::NurbsPointEvaluator::new(ctx, &curve)
-                    .map_err(CodecError::from)
-                    .expect("inline basis");
+                let mut evaluator = super::NurbsPointEvaluator::new(&curve);
                 for index in 0..10_000 {
                     let parameter = f64::from(index % 101) / 100.0;
                     assert_eq!(

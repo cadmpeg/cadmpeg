@@ -25,11 +25,7 @@ pub(in crate::native) fn attach_expression_parameters(
         let table_expressions = tables.entry(table).or_default();
         table_expressions.push(expression);
     }
-    let stream = StreamHandle::new(
-        ctx,
-        cadmpeg_ir::stream_name!("nx:container"),
-        "allocate annotation stream handle",
-    )?;
+    let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
     let mut uses_by_expression =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureParameterUse>>::new();
     for parameter_use in parameter_uses {
@@ -106,13 +102,12 @@ pub(in crate::native) fn attach_expression_parameters(
             .min()
             .unwrap_or(0);
         annotations.note(
-            ctx,
             &feature_id,
             &stream,
             first_offset,
             Some("hostglobalvariables"),
-        )?;
-        annotations.exactness(ctx, &feature_id, Exactness::Derived)?;
+        );
+        annotations.exactness(&feature_id, Exactness::Derived);
         let mut source_content = Vec::new();
         for expression in &expressions {
             let Some(parameter) = expression_parameter_id(&expression.id) else {
@@ -128,12 +123,12 @@ pub(in crate::native) fn attach_expression_parameters(
         )?;
         if !source_content.is_empty() {
             annotations
-                .derived(ctx, &feature_id, "source_content")
+                .derived(&feature_id, "source_content")
                 .map_err(cadmpeg_core::CodecError::from)?;
         }
         let ordinal = base_ordinal + cadmpeg_core::decode::u64_from_index(table_ordinal);
         ir.model.features.push(Feature {
-            id: feature_id.try_clone_for_decode(ctx, "NX expression feature identity")?,
+            id: feature_id.clone(),
             ordinal,
             name: Some("NX expressions".to_string()),
             suppressed: Some(false),
@@ -168,23 +163,22 @@ pub(in crate::native) fn attach_expression_parameters(
             };
 
             annotations.note(
-                ctx,
                 id.as_str(),
                 &stream,
                 expression.source_offset,
                 Some("Number"),
-            )?;
+            );
             annotations
-                .derived(ctx, id.as_str(), "owner")
+                .derived(id.as_str(), "owner")
                 .map_err(cadmpeg_core::CodecError::from)?;
             annotations
-                .derived(ctx, id.as_str(), "ordinal")
+                .derived(id.as_str(), "ordinal")
                 .map_err(cadmpeg_core::CodecError::from)?;
             annotations
-                .derived(ctx, id.as_str(), "value")
+                .derived(id.as_str(), "value")
                 .map_err(cadmpeg_core::CodecError::from)?;
             annotations
-                .derived(ctx, id.as_str(), "native_ref")
+                .derived(id.as_str(), "native_ref")
                 .map_err(cadmpeg_core::CodecError::from)?;
             let mut dependencies = Vec::new();
             if ordinal < ordered_count {
@@ -199,14 +193,12 @@ pub(in crate::native) fn attach_expression_parameters(
                     if dependencies.contains(candidate) {
                         continue;
                     }
-                    dependencies.push(
-                        candidate.try_clone_for_decode(ctx, "NX expression dependency identity")?,
-                    );
+                    dependencies.push(candidate.clone());
                 }
             }
             if !dependencies.is_empty() {
                 annotations
-                    .derived(ctx, id.as_str(), "dependencies")
+                    .derived(id.as_str(), "dependencies")
                     .map_err(cadmpeg_core::CodecError::from)?;
             }
             let value = expression.value.and_then(|value| match &expression.unit {
@@ -233,7 +225,7 @@ pub(in crate::native) fn attach_expression_parameters(
                 expression.unit.property_name(),
             )?;
             annotations
-                .derived(ctx, id.as_str(), "properties")
+                .derived(id.as_str(), "properties")
                 .map_err(cadmpeg_core::CodecError::from)?;
             if let Some(declaration) = expression
                 .declaration
@@ -251,7 +243,7 @@ pub(in crate::native) fn attach_expression_parameters(
                     declaration.object_id.to_string(),
                 )?;
                 annotations
-                    .derived(ctx, id.as_str(), "properties")
+                    .derived(id.as_str(), "properties")
                     .map_err(cadmpeg_core::CodecError::from)?;
             }
             for (consumer_ordinal, parameter_use) in uses_by_expression
@@ -271,7 +263,7 @@ pub(in crate::native) fn attach_expression_parameters(
                     parameter_use.id.clone(),
                 )?;
                 annotations
-                    .derived(ctx, id.as_str(), "properties")
+                    .derived(id.as_str(), "properties")
                     .map_err(cadmpeg_core::CodecError::from)?;
             }
             let ordinal = u32::try_from(ordinal).map_err(|_| {
@@ -281,9 +273,7 @@ pub(in crate::native) fn attach_expression_parameters(
             })?;
             ir.model.parameters.push(DesignParameter {
                 id,
-                owner: Some(
-                    feature_id.try_clone_for_decode(ctx, "NX expression feature identity")?,
-                ),
+                owner: Some(feature_id.clone()),
                 ordinal,
                 name: expression.name.as_str().to_owned(),
                 expression: expression.expression.clone(),
@@ -351,7 +341,6 @@ fn order_expression_dependencies(
 }
 
 pub(super) fn attach_block_dimension_parameter_consumers(
-    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     dimensions: &[crate::native::features::FeatureBlockDimensions],
     annotations: &mut AnnotationBuilder,
@@ -406,7 +395,7 @@ pub(super) fn attach_block_dimension_parameter_consumers(
                 )?;
             }
             annotations
-                .derived(ctx, parameter.id.as_str(), "properties")
+                .derived(parameter.id.as_str(), "properties")
                 .map_err(cadmpeg_core::CodecError::from)?;
         }
     }

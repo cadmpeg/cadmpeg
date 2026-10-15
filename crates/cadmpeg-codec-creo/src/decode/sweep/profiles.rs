@@ -599,11 +599,7 @@ impl ProfileGeometry {
                 radius: *radius,
             },
             Self::Nurbs { curve } => SketchGeometryDefinition::Nurbs {
-                curve: super::nurbs::copy_pcurve_nurbs(
-                    ctx,
-                    curve,
-                    "creo profile sketch NURBS knots",
-                )?,
+                curve: super::nurbs::copy_pcurve_nurbs(ctx, curve)?,
             },
         })
         .ok())
@@ -763,14 +759,10 @@ pub(in super::super) fn resolved_sketch_profiles(
             };
             let source_geometry = source_carriers.sketch_geometry(entity);
             let source_geometry = match source_geometry.definition() {
-                SketchGeometryDefinition::Nurbs { curve } => {
-                    let operation = "creo resolved profile NURBS copy";
-                    SketchGeometry::nurbs(curve.try_clone_for_decode(ctx, operation)?)
-                }
+                SketchGeometryDefinition::Nurbs { curve } => SketchGeometry::nurbs(curve.clone()),
                 SketchGeometryDefinition::Line { .. }
                 | SketchGeometryDefinition::Arc { .. }
-                | SketchGeometryDefinition::Circle { .. } => source_geometry
-                    .try_clone_for_decode(ctx, "creo resolved analytic profile copy")?,
+                | SketchGeometryDefinition::Circle { .. } => source_geometry.clone(),
                 _ => return Ok(None),
             };
             let Some(row) = ProfileEntity::new(ctx, source_geometry, entity_use.reversed)? else {
@@ -1071,7 +1063,7 @@ struct NurbsProfileSpan {
 
 fn nurbs_profile_point(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    evaluator: &mut cadmpeg_ir::eval::decode::NurbsPointEvaluator<'_, '_>,
+    evaluator: &mut cadmpeg_ir::eval::decode::NurbsPointEvaluator<'_>,
     nurbs: &NurbsCurve,
     parameter: f64,
 ) -> Result<Option<[f64; 2]>, cadmpeg_core::CodecError> {
@@ -1098,7 +1090,7 @@ fn append_nurbs_profile_point(points: &mut Vec<[f64; 2]>, point: [f64; 2]) -> Op
 
 fn append_nurbs_profile_span(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    evaluator: &mut cadmpeg_ir::eval::decode::NurbsPointEvaluator<'_, '_>,
+    evaluator: &mut cadmpeg_ir::eval::decode::NurbsPointEvaluator<'_>,
     nurbs: &NurbsCurve,
     span: &NurbsProfileSpan,
     points: &mut Vec<[f64; 2]>,
@@ -1177,7 +1169,7 @@ fn nurbs_profile_polyline(
     let Some(range) = nurbs_intrinsic_parameter_range(nurbs) else {
         return Ok(None);
     };
-    let mut evaluator = cadmpeg_ir::eval::decode::NurbsPointEvaluator::new(ctx, nurbs)?;
+    let mut evaluator = cadmpeg_ir::eval::decode::NurbsPointEvaluator::new(nurbs);
     let [lower, upper] = cadmpeg_ir::scalar::FiniteReal::raw_array(range);
     let Some(first) = nurbs_profile_point(ctx, &mut evaluator, nurbs, lower)? else {
         return Ok(None);

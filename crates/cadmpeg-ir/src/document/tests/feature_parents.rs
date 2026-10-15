@@ -30,7 +30,6 @@ fn predecessor_document() -> CadIr {
     }
     ir.model
         .set_feature_regeneration_parent(
-            &cadmpeg_test_support::service_decode_context(),
             &("test:parent-wire:feature#1-child".try_into().unwrap()),
             &("test:parent-wire:feature#0-parent".try_into().unwrap()),
         )

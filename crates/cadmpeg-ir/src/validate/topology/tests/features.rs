@@ -74,9 +74,7 @@ fn historical_vertex_selection_requires_input_state_membership() {
                         state_id.clone(),
                         historical_vertex,
                         "vertex:local".into(),
-                        &cadmpeg_test_support::service_decode_context(),
                     )
-                    .expect("selection reference admission")
                     .unwrap(),
                 })),
             }),
@@ -204,8 +202,7 @@ fn neutral_features_resolve_sketch_profile_and_path_operands() {
         evaluation: crate::features::FeatureEvaluation::from_definition(definitions[1].clone()),
         native_ref: None,
     });
-    ir.finalize(&cadmpeg_test_support::service_decode_context())
-        .expect("fixture ordering is admitted");
+    ir.finalize();
     let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     assert_eq!(
         report
@@ -305,8 +302,7 @@ fn feature_history_rejects_dangling_and_forward_dependencies() {
         ),
         native_ref: None,
     });
-    ir.finalize(&cadmpeg_test_support::service_decode_context())
-        .expect("fixture ordering is admitted");
+    ir.finalize();
     let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     for fragment in [
         "does not precede",
@@ -371,8 +367,7 @@ fn feature_parameters_require_unique_names_and_ordinals() {
             native_ref: None,
         });
     }
-    ir.finalize(&cadmpeg_test_support::service_decode_context())
-        .expect("fixture ordering is admitted");
+    ir.finalize();
     let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     assert!(report
         .findings
@@ -514,8 +509,7 @@ fn document_parameters_can_feed_feature_parameters() {
         pmi: None,
         native_ref: None,
     });
-    ir.finalize(&cadmpeg_test_support::service_decode_context())
-        .expect("fixture ordering is admitted");
+    ir.finalize();
     assert!(validate_neutral(&ir, Vec::new())
         .expect("resource allocation did not fail")
         .findings
@@ -568,8 +562,7 @@ fn offset_plane_references_form_an_acyclic_graph_independent_of_list_order() {
             .unwrap(),
         }),
     ));
-    ir.finalize(&cadmpeg_test_support::service_decode_context())
-        .expect("fixture ordering is admitted");
+    ir.finalize();
 
     let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     assert!(!report
@@ -659,17 +652,9 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
                     side: ExtrudeSide {
                         termination: LinearTermination::ToVertex {
                             vertex: VertexSelection::generated(
-                                GeneratedVertexRef::new(
-                                    source.clone(),
-                                    "vertex-0".into(),
-                                    &cadmpeg_test_support::service_decode_context(),
-                                )
-                                .expect("selection reference admission")
-                                .unwrap(),
+                                GeneratedVertexRef::new(source.clone(), "vertex-0".into()).unwrap(),
                                 "test:vertex-selection".into(),
-                                &cadmpeg_test_support::service_decode_context(),
                             )
-                            .expect("selection reference admission")
                             .unwrap(),
                         },
                         draft: None,
@@ -939,17 +924,9 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
             FeatureDefinition::Operation(FeatureOperation::Extrude {
                 profile: ProfileRef::Planar(
                     PlanarProfileRef::generated(
-                        vec![GeneratedCurveRef::new(
-                            source.clone(),
-                            "curve-0".into(),
-                            &cadmpeg_test_support::service_decode_context(),
-                        )
-                        .expect("selection reference admission")
-                        .unwrap()],
+                        vec![GeneratedCurveRef::new(source.clone(), "curve-0".into()).unwrap()],
                         "synthetic:test:profile-selection".into(),
-                        &cadmpeg_test_support::service_decode_context(),
                     )
-                    .expect("selection reference admission")
                     .unwrap(),
                 ),
                 direction: ExtrudeDirection::ProfileNormal {},
@@ -1193,13 +1170,9 @@ fn generated_body_selection_must_name_a_declared_producer_result() {
         else {
             panic!("test consumer must retain its generated body selection");
         };
-        *bodies = vec![GeneratedBodyRef::new(
-            bodies[0].feature.clone(),
-            "body#undeclared".into(),
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .expect("selection reference admission")
-        .unwrap()]
+        *bodies = vec![
+            GeneratedBodyRef::new(bodies[0].feature.clone(), "body#undeclared".into()).unwrap(),
+        ]
         .try_into()
         .unwrap();
     });
@@ -1265,8 +1238,7 @@ fn reference_images_require_valid_assets_and_plane_placements() {
         ),
         native_ref: None,
     });
-    ir.finalize(&cadmpeg_test_support::service_decode_context())
-        .expect("fixture ordering is admitted");
+    ir.finalize();
     assert!(validate_neutral(&ir, Vec::new())
         .expect("resource allocation did not fail")
         .is_ok());
@@ -1327,8 +1299,7 @@ fn decals_require_valid_assets_faces_and_opacity() {
         ),
         native_ref: None,
     });
-    ir.finalize(&cadmpeg_test_support::service_decode_context())
-        .expect("fixture ordering is admitted");
+    ir.finalize();
     assert!(validate_neutral(&ir, Vec::new())
         .expect("resource allocation did not fail")
         .is_ok());

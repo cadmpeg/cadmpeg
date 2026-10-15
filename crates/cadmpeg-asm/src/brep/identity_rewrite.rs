@@ -36,10 +36,10 @@ impl RewriteIdentities for AnnotationRecord {
     }
     fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(
         mut self,
-        ctx: &DecodeContext<'_>,
+        _ctx: &DecodeContext<'_>,
         map: &mut IdentityMap<'_, F>,
     ) -> Result<Self, CodecError> {
-        self.id = map.identity(ctx, &self.id)?;
+        self.id = map.identity(&self.id)?;
         Ok(self)
     }
 }

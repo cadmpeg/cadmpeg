@@ -217,7 +217,7 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
                 .and_then(Option::as_ref)
                 .and_then(|id| self.values.get(id))
                 .ok_or(ExpressionFailure::NoValue)?;
-            Ok((value).try_clone_for_decode(self.ctx, "retain SLDPRT parameter value text")?)
+            Ok((value).clone())
         };
         match token {
             Token::Quoted(token) => referenced(token.as_ref()),

@@ -147,7 +147,7 @@ fn blind_extrusion_uses_its_sole_dimension_as_depth() {
 
     assert!(native_parameter_is_length(&feature, "s", Some("2.1")));
     assert!(matches!(
-        project_extrude(&cadmpeg_test_support::service_decode_context(), &feature, &HashMap::new(), &HashMap::new()).unwrap(),
+        project_extrude(&feature, &HashMap::new(), &HashMap::new()),
         Some(FeatureDefinition::Operation(FeatureOperation::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
@@ -173,7 +173,7 @@ fn modern_extrusion_with_one_source_dimension_defaults_to_blind() {
         .insert(cadmpeg_core::nonblank_literal!("m"), "6.4".into());
 
     assert!(matches!(
-        project_extrude(&cadmpeg_test_support::service_decode_context(), &feature, &HashMap::new(), &HashMap::new()).unwrap(),
+        project_extrude(&feature, &HashMap::new(), &HashMap::new()),
         Some(FeatureDefinition::Operation(FeatureOperation::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
@@ -328,12 +328,7 @@ fn repeated_dimension_content_projects_one_owned_parameter() {
     assert_eq!(parameter_names(&feature), vec!["D1", "D1"]);
     assert_eq!(projected_parameter_names(&feature), vec!["D1"]);
     assert_eq!(
-        (&*project_feature_content(
-            &cadmpeg_test_support::service_decode_context(),
-            &feature,
-            &HashMap::new()
-        )
-        .unwrap()),
+        (&*project_feature_content(&feature, &HashMap::new()).unwrap()),
         vec![FeatureSourceContent::Parameter(
             ParameterId::mint("sldprt:model:parameter#1:2:0").expect("identity grammar")
         )]
@@ -612,7 +607,6 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
         native_profile.id.clone(),
     );
     let projected = project_hole(
-        &cadmpeg_test_support::service_decode_context(),
         &native_owned,
         &HashMap::new(),
         &[native_owned.clone(), native_profile],
@@ -647,7 +641,6 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
     ]
     .into();
     let projected = project_hole(
-        &cadmpeg_test_support::service_decode_context(),
         &canonical,
         &HashMap::new(),
         std::slice::from_ref(&canonical),

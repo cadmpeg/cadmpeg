@@ -42,8 +42,7 @@ pub fn assert_native_limit<T: Serialize>(record: &T, expected: impl Into<serde_j
     let text = serde_json::to_string(&stored[0]).expect("stored text");
     visits.set(0);
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes =
-        u64::try_from(text.len()).expect("record text length") - 1;
+    policy.limits.max_retained_bytes = u64::try_from(text.len()).expect("record text length") - 1;
     let (limited, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
     let error = arena_from(&limited, [Ok::<_, NativeConvertError>(&counted)])

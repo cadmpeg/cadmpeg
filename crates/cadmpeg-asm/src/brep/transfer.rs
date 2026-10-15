@@ -129,10 +129,10 @@ pub fn transfer_into_ir<'ir>(
     ir.model.curves.extend(curves);
     ir.model.pcurves.extend(pcurves);
     ir.model
-        .add_procedural_surfaces(ctx, procedural_surfaces)?
+        .add_procedural_surfaces(procedural_surfaces)?
         .map_err(CodecError::malformed)?;
     ir.model
-        .add_procedural_curves(ctx, procedural_curves)?
+        .add_procedural_curves(procedural_curves)?
         .map_err(CodecError::malformed)?;
     ir.model.attributes.extend(attributes);
 

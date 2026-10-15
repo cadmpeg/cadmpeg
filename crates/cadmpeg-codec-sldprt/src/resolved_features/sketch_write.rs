@@ -377,13 +377,7 @@ pub(super) fn sketch_brep(
         color: None,
         visible: None,
     });
-    let ordering_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ordering_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &ordering_arena,
-        &cadmpeg_core::decode::DecodePolicy::default(),
-    )?;
-    ir.model.finalize(&ordering_ctx)?;
+    ir.model.finalize();
     Ok(ir)
 }
 

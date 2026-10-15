@@ -134,11 +134,9 @@ fn sketch_projection_shares_endpoint_constraint() {
         )
         .with_endpoint_refs(vec!["shared".into(), "second".into()]),
     ];
-    let ctx = cadmpeg_test_support::service_decode_context();
     let mut annotations = cadmpeg_ir::annotations::Annotations::default();
     let mut constraints = Vec::new();
     super::project_endpoint_constraints(
-        &ctx,
         super::EndpointConstraintSource {
             sketch: &sketch,
             entities: &entities,

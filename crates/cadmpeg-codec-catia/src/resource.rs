@@ -3,7 +3,7 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_core::decode::{index_from_u32, DecodeContext};
+use cadmpeg_core::decode::index_from_u32;
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 
@@ -38,44 +38,6 @@ pub(crate) fn compose_u32_id<T>(
     construct: impl FnOnce(String) -> Result<T, cadmpeg_ir::ids::IdentityError>,
 ) -> Result<T, CodecError> {
     compose_index_id(namespace, index_from_u32(value), construct)
-}
-
-pub(crate) fn copy_intcurve_support_context(
-    ctx: &DecodeContext<'_>,
-    context: &cadmpeg_ir::geometry::IntcurveSupportContext,
-    operation: &'static str,
-) -> Result<cadmpeg_ir::geometry::IntcurveSupportContext, CodecError> {
-    use cadmpeg_ir::geometry::{IntcurveSupportContext, IntcurveSupportSide, SupportPcurve};
-
-    let [left, right] = context.sides().each_ref().map(|side| {
-        Ok::<_, CodecError>(IntcurveSupportSide {
-            surface: side
-                .surface
-                .as_ref()
-                .map(|id| id.try_clone_for_decode(ctx, operation))
-                .transpose()?,
-            pcurve: side
-                .pcurve
-                .as_ref()
-                .map(|pcurve| {
-                    Ok::<_, CodecError>(SupportPcurve::new(
-                        pcurve.geometry.try_clone_for_decode(ctx, operation)?,
-                        pcurve.parameter_range,
-                    ))
-                })
-                .transpose()?,
-        })
-    });
-    let [first, second, third] = context
-        .discontinuities()
-        .each_ref()
-        .map(std::clone::Clone::clone);
-    IntcurveSupportContext::from_parts(
-        [left?, right?],
-        context.parameter_range(),
-        [first, second, third],
-    )
-    .map_err(CodecError::malformed)
 }
 
 #[cfg(test)]

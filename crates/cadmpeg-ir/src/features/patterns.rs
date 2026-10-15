@@ -747,17 +747,6 @@ selection_field_deserializer!(deserialize_local_occurrences, "occurrences");
 
 mod decode_clone;
 
-impl PatternKind {
-    /// Copy admitted fields through the caller's decode context.
-    pub fn try_clone_for_decode(
-        &self,
-        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        _operation: &'static str,
-    ) -> Result<Self, cadmpeg_core::CodecError> {
-        Ok(self.clone())
-    }
-}
-
 #[cfg(test)]
 mod tests;
 

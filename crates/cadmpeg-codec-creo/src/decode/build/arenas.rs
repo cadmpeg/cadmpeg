@@ -629,7 +629,6 @@ pub(super) fn emit_geometry_arenas(
     let pcurve_endpoints = pcurve_endpoint_records(scan);
     for (record, offset) in &pcurve_endpoints {
         annotate(
-            ctx,
             annotations,
             &record.id,
             "VisibGeom",
@@ -907,7 +906,6 @@ pub(super) fn emit_geometry_arenas(
     for (expression, source) in curve_expressions.iter().zip(&scan.curves.expressions) {
         let source_section = source_section_ref(scan, source.expression_offset);
         annotate(
-            ctx,
             annotations,
             &expression.id,
             source_section,
@@ -932,7 +930,6 @@ pub(super) fn emit_geometry_arenas(
                 .find(|section| section.contains(state.state_offset))
                 .map_or("MdlStatus", |section| section.name());
             annotate(
-                ctx,
                 annotations,
                 &state.id,
                 section,
@@ -960,7 +957,6 @@ pub(super) fn emit_geometry_arenas(
     )?;
     if let Some(family_table) = family_table_record(scan) {
         annotate(
-            ctx,
             annotations,
             super::super::records::CreoFamilyTableRecord::ID,
             "FamilyInf",

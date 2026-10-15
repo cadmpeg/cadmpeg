@@ -20,10 +20,7 @@ fn regeneration_edge_appends_child_parent_pair() {
     let child = FeatureId::mint("creo:model:feature#41").expect("identity grammar");
     let parent = FeatureId::mint("creo:model:feature#40").expect("identity grammar");
     let mut edges = Vec::new();
-    crate::decode::with_test_decode_ctx(|ctx| {
-        append_regeneration_edge(ctx, &mut edges, &child, &parent)
-    })
-    .expect("regeneration edge");
+    append_regeneration_edge(&mut edges, &child, &parent);
     assert_eq!(edges, vec![(child, parent)]);
 }
 
@@ -40,10 +37,8 @@ fn regeneration_edge_commit_installs_feature_parent() {
     child.id = child_id.clone();
     child.ordinal = 1;
     ir.model.features.push(child);
-    crate::decode::with_test_decode_ctx(|ctx| {
-        commit_regeneration_edges(ctx, &mut ir, vec![(child_id.clone(), parent_id.clone())])
-    })
-    .expect("regeneration parent");
+    ({ commit_regeneration_edges(&mut ir, vec![(child_id.clone(), parent_id.clone())]) })
+        .expect("regeneration parent");
     assert_eq!(ir.model.feature_parent(&child_id), Some(&parent_id));
 }
 

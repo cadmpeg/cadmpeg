@@ -26,17 +26,13 @@ fn rational_patch_rejects_out_of_domain_endpoint_instead_of_moving_it() {
 fn nurbs_surface_parameter_segment_bound_contains_curved_diagonal() {
     let mut surface = bilinear_surface();
     surface
-        .try_map_control_points(
-            |index, point| {
-                let mut mapped = point.get();
-                if index == 3 {
-                    mapped.z = 1.0;
-                }
-                crate::features::FinitePoint3::new(mapped).ok_or(())
-            },
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .expect("pole edit admission")
+        .try_map_control_points(|index, point| {
+            let mut mapped = point.get();
+            if index == 3 {
+                mapped.z = 1.0;
+            }
+            crate::features::FinitePoint3::new(mapped).ok_or(())
+        })
         .unwrap();
     let parameters = [Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)];
     let chord = [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 1.0, 1.0)];
@@ -114,9 +110,8 @@ fn surface_patches_extract_split_and_bound_the_bilinear_net() {
     let surface = bilinear_surface();
     let ctx = cadmpeg_test_support::service_decode_context();
     let budget = WorkBudget::new(1_000_000);
-    let patches = crate::eval::rational_surface_patches_with_budget(&ctx, &surface, &budget)
-        .expect("extraction")
-        .expect("active patch");
+    let patches =
+        crate::eval::rational_surface_patches_with_budget(&surface, &budget).expect("active patch");
     assert_eq!(patches.len(), 1);
     let patch = &patches[0];
     assert_eq!(patch.u_domain.endpoints(), [0.0, 1.0]);
@@ -155,11 +150,7 @@ fn surface_patches_extract_split_and_bound_the_bilinear_net() {
     assert_eq!(lower, 0.0);
     assert!((diameter - 2.0_f64.sqrt()).abs() <= 4.0 * f64::EPSILON);
     let exhausted = WorkBudget::new(0);
-    assert!(
-        crate::eval::rational_surface_patches_with_budget(&ctx, &surface, &exhausted)
-            .expect("independent local exhaustion")
-            .is_none()
-    );
+    assert!(crate::eval::rational_surface_patches_with_budget(&surface, &exhausted).is_none());
     ctx.finish_session()
         .expect("local exhaustion is not a session refusal");
 }

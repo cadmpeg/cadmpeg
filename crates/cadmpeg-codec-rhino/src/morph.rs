@@ -680,7 +680,6 @@ fn cage_properties(
 /// `resolve_captive` maps each captive UUID to its native record identity.
 /// It charges unresolved references as needed; raw UUIDs stay in `captive_ids`.
 pub(crate) fn project(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     morph: &Morph,
     key: &str,
     name: Option<String>,
@@ -792,7 +791,7 @@ pub(crate) fn project(
         }
     }
     Ok(Feature {
-        id: feature_id.try_clone_for_decode(ctx, "Rhino morph feature identity copy")?,
+        id: feature_id.clone(),
         ordinal,
         name,
         suppressed: Some(false),
@@ -912,15 +911,8 @@ mod tests {
         assert_eq!(end.control_points[7][0].get(), 70.0);
         // One nil captive: no resolved identity and no charge.
         assert_eq!(morph.captive_ids.len(), 1);
-        let feature = project(
-            &cadmpeg_test_support::service_decode_context(),
-            &morph,
-            "test",
-            None,
-            "native".to_string(),
-            |_| None,
-        )
-        .expect("the fixture states named properties");
+        let feature = project(&morph, "test", None, "native".to_string(), |_| None)
+            .expect("the fixture states named properties");
         assert_eq!(feature.source_tag.as_deref(), Some("RhinoMorphControl"));
         let cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::Native { parameters, .. },
@@ -929,14 +921,9 @@ mod tests {
             panic!("expected a native morph definition");
         };
         assert!(!parameters.contains_key("captive_0_object"));
-        let resolved = project(
-            &cadmpeg_test_support::service_decode_context(),
-            &morph,
-            "test",
-            None,
-            "native".to_string(),
-            |_| Some("rhino:object:record#000007".to_string()),
-        )
+        let resolved = project(&morph, "test", None, "native".to_string(), |_| {
+            Some("rhino:object:record#000007".to_string())
+        })
         .expect("the fixture states named properties");
         let cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::Native { parameters, .. },
@@ -974,15 +961,8 @@ mod tests {
             quick_preview: false,
             preserve_structure: false,
         };
-        let feature = super::project(
-            &cadmpeg_test_support::service_decode_context(),
-            &morph,
-            "fixture",
-            None,
-            "native".into(),
-            |_| None,
-        )
-        .expect("morph projection");
+        let feature = super::project(&morph, "fixture", None, "native".into(), |_| None)
+            .expect("morph projection");
         assert_eq!(feature.source_properties["start_degree"], "1");
     }
 
