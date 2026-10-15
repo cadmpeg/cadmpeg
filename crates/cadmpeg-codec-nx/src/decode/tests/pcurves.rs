@@ -452,7 +452,7 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
                 point.get(),
                 parameter,
             )
-            .expect("resource allocation did not fail")
+            .expect("compute the model curve parameter near point")
             .unwrap_or_else(|| panic!("closed intersection inverts at parameter {parameter}"));
             assert!((inverse.get() - parameter).abs() < 1.0e-10);
         }
@@ -1515,7 +1515,7 @@ fn nurbs_surface_fit_uses_the_declared_geometric_tolerance() {
         None,
         0.01,
     )
-    .expect("resource allocation did not fail")
+    .expect("check NURBS surface parameter within tolerance")
     .unwrap();
     let mapped = cadmpeg_ir::eval::decode::nurbs_surface_point(
         cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,

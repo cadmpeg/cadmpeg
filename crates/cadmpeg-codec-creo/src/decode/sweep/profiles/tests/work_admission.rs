@@ -24,7 +24,7 @@ fn fixture() -> (CadIr, SketchId) {
 fn closed_circle_sketch_resolves_one_profile() {
     let (ir, sketch_id) = fixture();
     let carriers = crate::decode::source_carriers::SourceUnitCarriers::default();
-    let profiles = crate::decode::with_test_decode_ctx(|ctx| {
+    let profiles = crate::decode::with_service_context(|ctx| {
         super::super::resolved_sketch_profiles(ctx, &ir, &carriers, &sketch_id, 1)
     })
     .expect("resolved profiles");
@@ -35,7 +35,7 @@ fn closed_circle_sketch_resolves_one_profile() {
 fn closed_circle_sketch_projects_connected_vertices() {
     let (ir, sketch_id) = fixture();
     let carriers = crate::decode::source_carriers::SourceUnitCarriers::default();
-    let profiles = crate::decode::with_test_decode_ctx(|ctx| {
+    let profiles = crate::decode::with_service_context(|ctx| {
         super::super::connected_sketch_profile_vertices(ctx, &ir, &carriers, &sketch_id)
             .map(Iterator::collect::<Vec<_>>)
     })

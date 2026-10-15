@@ -137,7 +137,7 @@ fn plane_envelope_reader_reads_one_envelope() {
     let envelopes = with_surface_ctx(&payload, |ctx| {
         crate::surface::plane_envelopes_for_rows(ctx, &payload, &rows)
     })
-    .expect("service admits the envelope");
+    .expect("compute the plane envelopes for rows");
     assert_eq!(envelopes.len(), 1);
 }
 

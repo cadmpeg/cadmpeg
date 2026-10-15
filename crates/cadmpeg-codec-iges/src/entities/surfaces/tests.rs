@@ -185,8 +185,8 @@ fn decode_solves_a_parameter_matched_ruled_surface() {
         .losses
         .iter()
         .any(|loss| loss.code == IgesLossCode::RuledDevelopabilityNotTransferred.kind()));
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+    let validation =
+        cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -227,7 +227,7 @@ fn decode_projects_an_interval_certified_linear_bezier_ruled_surface() {
         "{midpoint:?}"
     );
     assert!(cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .is_ok());
 }
 
@@ -286,7 +286,7 @@ fn decode_reconciles_rational_ruled_rail_denominators_exactly() {
         );
     }
     assert!(cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .is_ok());
 }
 
@@ -370,7 +370,7 @@ fn decode_projects_rational_circular_arc_length_ruled_surface() {
             && loss.message.contains("entity type 118")
     }));
     assert!(cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .is_ok());
 }
 
@@ -414,7 +414,7 @@ fn decode_projects_composite_ruled_and_tabulated_carriers() {
         .iter()
         .any(|loss| loss.code == IgesLossCode::RuledDevelopabilityNotTransferred.kind()));
     assert!(cadmpeg_ir::validate_neutral(ruled.ir(), Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .is_ok());
 
     let tabulated = IgesCodec
@@ -430,7 +430,7 @@ fn decode_projects_composite_ruled_and_tabulated_carriers() {
         tabulated.report().losses
     );
     assert!(cadmpeg_ir::validate_neutral(tabulated.ir(), Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .is_ok());
 }
 
@@ -463,8 +463,8 @@ fn decode_solves_a_surface_of_revolution_as_rational_quadratic_spans() {
     assert!((point.y - expected).abs() < 1.0e-12);
     assert!((point.z - 1.0).abs() < 1.0e-12);
     assert!(result.report().losses.is_empty());
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+    let validation =
+        cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -498,8 +498,8 @@ fn decode_solves_a_surface_of_revolution_from_an_ellipse_carrier() {
     assert!((point.x - 0.5).abs() < 1.0e-12);
     assert!((point.y - 1.5).abs() < 1.0e-12);
     assert!(point.z.abs() < 1.0e-12);
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+    let validation =
+        cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -569,8 +569,8 @@ fn decode_solves_a_surface_of_revolution_from_a_line_with_roundoff_endpoints() {
         "{:#?}",
         result.report().losses
     );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+    let validation =
+        cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -706,7 +706,7 @@ fn decode_solves_a_surface_of_revolution_from_an_exact_hyperbola_carrier() {
             result.report().losses
         );
         let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail");
+            .expect("validate the neutral model");
         assert!(validation.is_ok(), "{:#?}", validation.findings);
     }
 }
@@ -773,8 +773,8 @@ fn decode_projects_a_trimmed_revolution_at_an_intermediate_native_angle() {
         "{:#?}",
         result.report().losses
     );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+    let validation =
+        cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 

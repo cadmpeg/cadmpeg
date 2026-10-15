@@ -51,7 +51,7 @@ fn alias_row_retained_limit_refuses_json_record() {
         let mut namespace = cadmpeg_ir::NativeNamespace::default();
         namespace
             .set_arena(ctx, arena_name, std::slice::from_ref(row))
-            .expect("service profile admits alias row");
+            .expect("store the native arena");
     });
 }
 
@@ -89,7 +89,7 @@ fn value_schema_selection_retained_limit_refuses_json_record() {
         let mut namespace = cadmpeg_ir::NativeNamespace::default();
         namespace
             .set_arena(ctx, arena_name, std::slice::from_ref(selection))
-            .expect("service profile admits selection");
+            .expect("store the native arena");
     });
 }
 
@@ -1141,7 +1141,7 @@ fn arena_projection_lists_catalogs_and_their_entries() {
         }],
     });
     let service = super::super::CatiaArenaProjection::from_owned(native.clone())
-        .expect("service native projection budget");
+        .expect("construct the catia arena projection");
     assert_eq!(service.catalogs.len(), 1);
     assert_eq!(service.catalog_entries.len(), 1);
 }
@@ -1208,7 +1208,7 @@ fn semantic_indices_find_entities_in_configuration_row_chain() {
     let classes = super::super::entity_class_index(records.iter().copied());
     assert!(!classes.is_empty());
     let admitted = super::super::semantic_entity_indices(&native.entity_records, &classes)
-        .expect("service profile admits semantic indices");
+        .expect("compute the semantic entity indices");
     assert!(!admitted.2.is_empty());
 }
 
@@ -1234,7 +1234,7 @@ fn configuration_entity_produces_a_schema_configuration_record() {
     let classes = super::super::entity_class_index(graph.records.iter());
     let (expressions, expression_entities, entities, terminal_nulls, bindings) =
         super::super::semantic_entity_indices(&native.entity_records, &classes)
-            .expect("service profile admits semantic indexes");
+            .expect("compute the semantic entity indices");
     let references = super::super::CatiaEntityReferenceIndex {
         entities: &entities,
         classes: &classes,

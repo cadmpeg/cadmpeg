@@ -1244,7 +1244,7 @@ fn decode_routes_a_line_profile_only_nested_stream_to_a_wire() {
         cadmpeg_ir::topology::BodyKind::Wire
     );
     assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .is_ok());
 }
 
@@ -1278,7 +1278,7 @@ fn decode_routes_a_resolved_revolution_only_nested_stream_to_freeform() {
         _ => false,
     });
     assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .is_ok());
 }
 

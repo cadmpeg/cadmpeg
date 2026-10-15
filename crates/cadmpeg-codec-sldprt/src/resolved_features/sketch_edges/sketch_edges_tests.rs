@@ -137,7 +137,7 @@ fn sketch_projection_shares_endpoint_constraint() {
         &mut annotations,
         &mut constraints,
     )
-    .expect("service budget");
+    .expect("project endpoint constraints");
     assert_eq!(constraints.len(), 1);
 }
 

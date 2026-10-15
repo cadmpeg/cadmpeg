@@ -1313,7 +1313,7 @@ mod tests {
             &mut no_root_ir,
             &[]
         )
-        .expect("resource allocation did not fail"));
+        .expect("check that the neutral model is admissible"));
         let mut annotations = AnnotationBuilder::new();
         let root = ZeroEntityOwnershipRoot {
             face_roster_pos: 1,
@@ -1360,7 +1360,7 @@ mod tests {
             &mut ir,
             &[]
         )
-        .expect("resource allocation did not fail"));
+        .expect("check that the neutral model is admissible"));
     }
 
     #[test]
@@ -1474,7 +1474,7 @@ mod tests {
             &mut ir,
             &[]
         )
-        .expect("resource allocation did not fail"));
+        .expect("check that the neutral model is admissible"));
     }
 
     #[test]
@@ -1527,7 +1527,7 @@ mod tests {
             DecodeContext::from_root_bytes(&[0], &service_arena, &service_policy)
                 .expect("fixture fits the input limit");
         assert!(run_with(&service_ctx)
-            .expect("service resource budget")
+            .expect("transfer the zero-entity topology")
             .is_none());
     }
 
@@ -1572,7 +1572,9 @@ mod tests {
             )
         };
         let service = crate::test_support::with_service_context(run_with);
-        assert!(service.expect("service budget").is_none());
+        assert!(service
+            .expect("transfer the zero-entity topology")
+            .is_none());
     }
 }
 

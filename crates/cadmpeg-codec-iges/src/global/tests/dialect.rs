@@ -100,7 +100,7 @@ fn fixed_ascii_verified_versions_decode_under_their_versioned_profiles() {
             result.report().losses
         );
         assert!(cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok());
     }
 }

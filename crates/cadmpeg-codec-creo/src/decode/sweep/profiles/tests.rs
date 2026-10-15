@@ -53,8 +53,8 @@ fn borrowed_nurbs_profile_sampler_keeps_line_endpoints() {
     )
     .expect("linear NURBS fixture");
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| super::nurbs_profile_polyline(ctx, &nurbs, 0.01))
-            .expect("service profile resources"),
+        crate::decode::with_service_context(|ctx| super::nurbs_profile_polyline(ctx, &nurbs, 0.01))
+            .expect("compute the NURBS profile polyline"),
         Some(vec![[0.0, 0.0], [1.0, 0.0]])
     );
 }
@@ -124,8 +124,8 @@ fn hole_profiles_inside_outer_profile_are_ordered() {
         vec![profile_circle([2.0, 0.0], 1.0, true)],
     ];
     assert!(
-        crate::decode::with_test_decode_ctx(|ctx| super::ordered_extrusion_profiles(ctx, profiles))
-            .expect("service resources")
+        crate::decode::with_service_context(|ctx| super::ordered_extrusion_profiles(ctx, profiles))
+            .expect("compute the ordered extrusion profiles")
             .is_some()
     );
 }
@@ -142,11 +142,11 @@ fn connected_profile_vertices_read_line_endpoints() {
         .push(line_entity(&entity_id, &sketch_id, [1.0, 0.0]));
     let carriers = crate::decode::source_carriers::SourceUnitCarriers::default();
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             super::connected_sketch_profile_vertices(ctx, &ir, &carriers, &sketch_id)
                 .map(std::iter::Iterator::collect::<Vec<_>>)
         })
-        .expect("service profile vertices"),
+        .expect("compute the connected sketch profile vertices"),
         vec![(0, vec![[0.0, 0.0], [1.0, 0.0]])]
     );
 }
@@ -184,17 +184,17 @@ fn source_sketch_geometry_drives_profile_analysis_after_millimeter_admission() {
     assert_eq!(center.u, 25.4);
     assert_eq!(radius.get(), 50.8);
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| super::connected_sketch_profile_vertices(
+        crate::decode::with_service_context(|ctx| super::connected_sketch_profile_vertices(
             ctx, &ir, &carriers, &sketch_id
         )
         .map(std::iter::Iterator::collect::<Vec<_>>))
-        .expect("service profile vertices"),
+        .expect("compute the connected sketch profile vertices"),
         vec![(0, vec![[3.0, 0.0]])]
     );
-    let profiles = crate::decode::with_test_decode_ctx(|ctx| {
+    let profiles = crate::decode::with_service_context(|ctx| {
         super::resolved_sketch_profiles(ctx, &ir, &carriers, &sketch_id, 1)
     })
-    .expect("resource admission")
+    .expect("compute the resolved sketch profiles")
     .expect("source profile");
     let super::ProfileGeometry::Circle { center, radius } = profiles[0][0].geometry() else {
         panic!("source profile changed family");
@@ -228,10 +228,10 @@ fn resolved_nurbs_profile_keeps_closed_source_geometry() {
         SketchGeometry::nurbs(nurbs),
     ));
     let carriers = crate::decode::source_carriers::SourceUnitCarriers::default();
-    let profiles = crate::decode::with_test_decode_ctx(|ctx| {
+    let profiles = crate::decode::with_service_context(|ctx| {
         super::resolved_sketch_profiles(ctx, &ir, &carriers, &sketch_id, 1)
     })
-    .expect("service allocation")
+    .expect("compute the resolved sketch profiles")
     .expect("closed source profile");
     assert_eq!(profiles.len(), 1);
     assert_eq!(profiles[0].len(), 1);
@@ -254,10 +254,10 @@ fn resolved_profile_reads_closed_circle() {
         .sketch_entities
         .push(SketchEntity::new(entity_id, sketch_id.clone(), geometry));
     let carriers = crate::decode::source_carriers::SourceUnitCarriers::default();
-    let profiles = crate::decode::with_test_decode_ctx(|ctx| {
+    let profiles = crate::decode::with_service_context(|ctx| {
         super::resolved_sketch_profiles(ctx, &ir, &carriers, &sketch_id, 1)
     })
-    .expect("service allocation")
+    .expect("compute the resolved sketch profiles")
     .expect("closed circle profile");
     assert_eq!(profiles.len(), 1);
     assert_eq!(profiles[0].len(), 1);
@@ -284,10 +284,10 @@ fn nurbs_profile_area_uses_finite_gauss_samples_on_a_wide_domain() {
         )
         .expect("wide finite sketch NURBS"),
     );
-    let area = crate::decode::with_test_decode_ctx(|ctx| {
+    let area = crate::decode::with_service_context(|ctx| {
         super::nurbs_profile_signed_area_twice(ctx, &geometry, false)
     })
-    .expect("service area resources")
+    .expect("compute the NURBS profile signed area twice")
     .expect("finite wide-domain area");
     assert!((area - 1.0).abs() <= EPS_WIDE_NURBS_AREA);
 }
@@ -307,25 +307,25 @@ fn profile_joins_reject_duplicate_sketch_ids() {
         .push(line_entity(&entity_id, &sketch_id, [1.0, 0.0]));
 
     assert!(
-        crate::decode::with_test_decode_ctx(|ctx| super::connected_sketch_profile_vertices(
+        crate::decode::with_service_context(|ctx| super::connected_sketch_profile_vertices(
             ctx,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             &sketch_id
         )
         .map(std::iter::Iterator::collect::<Vec<_>>))
-        .expect("service profile vertices")
+        .expect("compute the connected sketch profile vertices")
         .is_empty()
     );
     assert!(
-        crate::decode::with_test_decode_ctx(|ctx| super::resolved_sketch_profiles(
+        crate::decode::with_service_context(|ctx| super::resolved_sketch_profiles(
             ctx,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             &sketch_id,
             1
         ))
-        .expect("resource admission")
+        .expect("compute the resolved sketch profiles")
         .is_none()
     );
 }
@@ -343,25 +343,25 @@ fn profile_joins_reject_duplicate_sketch_entity_ids() {
     ]);
 
     assert!(
-        crate::decode::with_test_decode_ctx(|ctx| super::connected_sketch_profile_vertices(
+        crate::decode::with_service_context(|ctx| super::connected_sketch_profile_vertices(
             ctx,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             &sketch_id
         )
         .map(std::iter::Iterator::collect::<Vec<_>>))
-        .expect("service profile vertices")
+        .expect("compute the connected sketch profile vertices")
         .is_empty()
     );
     assert!(
-        crate::decode::with_test_decode_ctx(|ctx| super::resolved_sketch_profiles(
+        crate::decode::with_service_context(|ctx| super::resolved_sketch_profiles(
             ctx,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             &sketch_id,
             1
         ))
-        .expect("resource admission")
+        .expect("compute the resolved sketch profiles")
         .is_none()
     );
 }
@@ -376,7 +376,7 @@ fn circular_pcurve_quarter_circle_spans_quarter_turn() {
         &"quarter circle",
         &mut crate::lane_refusal::LaneRefusals::new(),
     )
-    .expect("service allocation")
+    .expect("compute the circular pcurve")
     .expect("quarter-circle geometry");
     assert_eq!(
         cadmpeg_ir::eval::decode::pcurve_uv(
@@ -419,7 +419,7 @@ fn extrusion_cap_pcurve_wraps_an_arc_stored_beyond_one_turn() {
             &"wrapped arc cap",
             &mut crate::lane_refusal::LaneRefusals::new(),
         )
-        .expect("service allocation")
+        .expect("compute the extrusion cap pcurve")
         .expect("quarter-turn cap geometry");
         // One quarter turn: the curve midpoint is the angular midpoint.
         for (parameter, expected) in [
@@ -476,7 +476,7 @@ fn two_refused_circular_pcurves_state_two_records_each_naming_its_instance() {
         &"extrusion feature 11 cap",
         &mut refusal,
     )
-    .expect("resource admission");
+    .expect("compute the circular pcurve");
     let second = super::circular_pcurve(
         [f64::MAX, f64::MAX],
         f64::MAX,
@@ -485,7 +485,7 @@ fn two_refused_circular_pcurves_state_two_records_each_naming_its_instance() {
         &"extrusion feature 12 cap",
         &mut refusal,
     )
-    .expect("resource admission");
+    .expect("compute the circular pcurve");
     assert!(first.is_none(), "the refused arc states no pcurve");
     assert!(second.is_none(), "the refused arc states no pcurve");
     let records = refusal.take_records();
@@ -548,7 +548,7 @@ fn overflowing_profile_area_is_not_validated() {
             .expect("finite sketch line"),
             false,
         )
-        .expect("service profile resources")
+        .expect("construct the profile entity")
         .expect("profile entity")
     };
     let origin = [0.0, 0.0];
@@ -557,10 +557,10 @@ fn overflowing_profile_area_is_not_validated() {
     let circuit = [edge(origin, right), edge(right, upper), edge(upper, origin)];
     let profile: Vec<_> = circuit.clone().into_iter().chain(circuit).collect();
     assert!(super::extrusion_profile_signed_area(&ctx, &profile)
-        .expect("service area resources")
+        .expect("compute the extrusion profile signed area")
         .is_none());
     assert!(super::ValidatedProfile::new(&ctx, profile)
-        .expect("service validation resources")
+        .expect("construct the validated profile")
         .is_none());
 }
 
@@ -678,7 +678,7 @@ fn resolved_profile_nurbs_copy_keeps_knots_and_poles() {
             SketchGeometry::nurbs(curve.clone()),
         ));
         let carriers = crate::decode::source_carriers::SourceUnitCarriers::default();
-        let profiles = crate::decode::with_test_decode_ctx(|ctx| {
+        let profiles = crate::decode::with_service_context(|ctx| {
             super::resolved_sketch_profiles(ctx, &ir, &carriers, &sketch_id, 1)
         })
         .expect("service")
@@ -703,7 +703,7 @@ fn nurbs_profile_local_depth_ceiling_leaves_the_span_unsampled() {
         false,
     )
     .expect("curved fixture");
-    crate::decode::with_test_decode_ctx(|ctx| {
+    crate::decode::with_service_context(|ctx| {
         let mut evaluator = cadmpeg_ir::eval::decode::NurbsPointEvaluator::new(&curve);
         let mut points = Vec::new();
         let sampled = super::append_nurbs_profile_span(
@@ -730,7 +730,7 @@ fn nurbs_profile_local_depth_ceiling_leaves_the_span_unsampled() {
 #[test]
 fn nurbs_profile_local_point_ceiling_leaves_the_span_unsampled() {
     let curve = linear_profile_curve();
-    crate::decode::with_test_decode_ctx(|ctx| {
+    crate::decode::with_service_context(|ctx| {
         let mut evaluator = cadmpeg_ir::eval::decode::NurbsPointEvaluator::new(&curve);
         let mut points = vec![[0.0, 0.0]; 262_145];
         let sampled = super::append_nurbs_profile_span(
@@ -756,7 +756,7 @@ fn nurbs_profile_local_point_ceiling_leaves_the_span_unsampled() {
 
 #[test]
 fn nurbs_profile_point_append_stops_before_growth_at_the_common_ceiling() {
-    crate::decode::with_test_decode_ctx(|ctx| {
+    crate::decode::with_service_context(|ctx| {
         let mut points = vec![[0.0; 2]; super::MAX_NURBS_PROFILE_POINTS];
         let appended = super::append_nurbs_profile_point(&mut points, [1.0; 2]);
         assert_eq!(appended, None);

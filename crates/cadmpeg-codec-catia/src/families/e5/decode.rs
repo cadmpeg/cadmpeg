@@ -226,7 +226,14 @@ parameter_range: None,
         for (index, jet) in rolling_ball_jets.iter().enumerate() {
             let surface_index = surfaces.len() + index;
             let surface_id = admitted!(crate::resource::compose_index_id(&cadmpeg_ir::identity_namespace!("catia", "e5", "surf"), surface_index, SurfaceId::mint));
-            let procedural_id = admitted!(crate::resource::compose_index_id(&cadmpeg_ir::identity_namespace!("catia", "e5", "procedural-surf"), surface_index, ProceduralSurfaceId::mint));
+            let procedural_id
+                = admitted!(
+                    crate::resource::compose_index_id(
+                        &cadmpeg_ir::identity_namespace!("catia", "e5", "procedural-surf"),
+                        surface_index,
+                        ProceduralSurfaceId::mint
+                    )
+                );
             admitted!(annotate(&mut annotations, &surface_id, "e5_0d_03", u64_from_index(jet.pos), "rolling_ball_jet_carrier", Exactness::ByteExact));
             admitted!(annotations.derived(&surface_id, "geometry").map(|_| ()).map_err(cadmpeg_core::CodecError::from));
             if let Err(error) = admission.charge() {
@@ -3339,7 +3346,7 @@ mod route_tests {
         crate::test_support::with_service_context(|ctx| {
             e5_pcurve_on_surface(ctx, pcurve, surface, refusal)
         })
-        .expect("service resource budget")
+        .expect("compute the E5 pcurve on surface")
     }
 
     fn jet_pcurve(
@@ -3374,7 +3381,7 @@ mod route_tests {
         };
         assert!(
             crate::test_support::with_service_context(|ctx| e5_native_uv_endpoints(ctx, &line))
-                .expect("service resource budget")
+                .expect("compute the E5 native UV endpoints")
                 .is_none()
         );
 
@@ -3388,7 +3395,7 @@ mod route_tests {
         };
         assert!(
             crate::test_support::with_service_context(|ctx| e5_native_uv_endpoints(ctx, &circle))
-                .expect("service resource budget")
+                .expect("compute the E5 native UV endpoints")
                 .is_none()
         );
     }
@@ -3471,7 +3478,7 @@ mod route_tests {
         let (normal, u_axis, uv_scale) = crate::test_support::with_service_context(|ctx| {
             solve_e5_plane_frame(ctx, 100, point([0.0, 0.0, 0.0]), &topology, &points, None)
         })
-        .expect("service resource budget")
+        .expect("solve E5 plane frame")
         .expect("17-segment plane frame");
         assert!(normal.as_raw().dot(Vector3::new(0.0, 0.0, 1.0)) > 1.0 - EPS_E5_DECODE_POSITION);
         assert!(u_axis.as_raw().dot(Vector3::new(1.0, 0.0, 0.0)) > 1.0 - EPS_E5_DECODE_POSITION);
@@ -3485,7 +3492,7 @@ mod route_tests {
                 &points,
                 Some(Vector3::new(f64::NAN, 0.0, 1.0)),
             ))
-            .expect("service resource budget")
+            .expect("solve E5 plane frame")
             .is_none()
         );
     }
@@ -3563,7 +3570,7 @@ mod route_tests {
         let (normal, u_axis, uv_scale) = crate::test_support::with_service_context(|ctx| {
             solve_e5_plane_frame(ctx, 100, point([0.0, 0.0, 0.0]), &topology, &points, None)
         })
-        .expect("service resource budget")
+        .expect("solve E5 plane frame")
         .expect("negative native chart frame");
         assert!(
             normal.as_raw().dot(Vector3::new(0.0, 0.0, 1.0)) > 1.0 - EPS_E5_DECODE_EXACT_GEOMETRY
@@ -3628,7 +3635,7 @@ mod route_tests {
                 &mut crate::nurbs::LaneRefusals::new(),
             )
         })
-        .expect("service profile admits E5 boundary curve")
+        .expect("compute the E5 boundary curve")
         .expect("reflected plane boundary");
         assert!(
             matches!(curve, CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve))
@@ -3828,7 +3835,7 @@ mod route_tests {
                 &points,
                 &mut crate::nurbs::LaneRefusals::new()
             ))
-            .expect("service resource budget")
+            .expect("plan E5 boundary")
             .is_none()
         );
     }
@@ -3903,7 +3910,7 @@ mod route_tests {
                 &mut crate::nurbs::LaneRefusals::new(),
             )
         })
-        .expect("service resource budget")
+        .expect("plan E5 boundary")
         .expect("boundary plan");
         assert!(plan.intersections.is_empty());
         assert!(plan.edge_curves.is_empty());
@@ -4027,7 +4034,7 @@ mod route_tests {
                 &mut crate::nurbs::LaneRefusals::new(),
             )
         })
-        .expect("service resource budget")
+        .expect("plan E5 boundary")
         .expect("boundary plan");
         assert!(plan.intersections.is_empty());
         assert!(!plan.surface_curves.contains_key(&200));
@@ -4142,7 +4149,7 @@ mod route_tests {
                 &mut admission,
                 &mut Vec::new()
             )
-            .expect("service limits admit E5 topology"));
+            .expect("transfer E5 topology"));
         });
         assert_eq!(
             ir.model.coedges[0].pcurves[0]
@@ -4208,7 +4215,7 @@ mod route_tests {
             &topology(vec![face(1, 10)], vec![10]),
             &[(None, vec![1])],
         )
-        .expect("service resource budget")
+        .expect("compute the E5 ownership plan")
         .expect("required invariant");
         assert_eq!(plan[0].kind, BodyKind::Sheet);
         assert_eq!(plan[0].components, vec![vec![1]]);
@@ -4218,7 +4225,7 @@ mod route_tests {
             &topology(vec![face(1, 10), face(2, 10)], vec![10]),
             &[(None, vec![1, 2])],
         )
-        .expect("service resource budget")
+        .expect("compute the E5 ownership plan")
         .expect("required invariant");
         assert_eq!(plan[0].kind, BodyKind::Solid);
         assert_eq!(plan[0].components, vec![vec![1, 2]]);
@@ -4228,7 +4235,7 @@ mod route_tests {
             &topology(vec![face(1, 10), face(2, 11)], vec![10, 11]),
             &[(None, vec![1, 2])],
         )
-        .expect("service resource budget")
+        .expect("compute the E5 ownership plan")
         .expect("required invariant");
         assert_eq!(plan[0].kind, BodyKind::Sheet);
         assert_eq!(plan[0].components, vec![vec![1], vec![2]]);
@@ -4238,7 +4245,7 @@ mod route_tests {
             &topology(vec![face(1, 10), face(2, 10), face(3, 11)], vec![10, 11]),
             &[(None, vec![1, 2, 3])],
         )
-        .expect("service resource budget")
+        .expect("compute the E5 ownership plan")
         .expect("required invariant");
         assert_eq!(plan[0].kind, BodyKind::General);
         assert_eq!(plan[0].components, vec![vec![1, 2], vec![3]]);
@@ -4248,18 +4255,18 @@ mod route_tests {
             &topology(vec![face(1, 10), face(2, 10)], vec![10]),
             &[(Some(1), vec![1]), (Some(2), vec![2])],
         )
-        .expect("service resource budget")
+        .expect("compute the E5 ownership plan")
         .is_none());
         assert!(e5_ownership_plan(
             &ctx,
             &topology(vec![face(1, 10)], vec![10, 11]),
             &[(None, vec![1])],
         )
-        .expect("service resource budget")
+        .expect("compute the E5 ownership plan")
         .is_none());
         assert!(
             e5_ownership_plan(&ctx, &topology(Vec::new(), Vec::new()), &[])
-                .expect("service resource budget")
+                .expect("compute the E5 ownership plan")
                 .is_none()
         );
     }
@@ -4340,7 +4347,7 @@ mod route_tests {
                 &mut crate::nurbs::LaneRefusals::new(),
             )
         })
-        .expect("service profile admits E5 boundary curve")
+        .expect("compute the E5 boundary curve")
         .expect("cylinder boundary circle");
         assert!(
             matches!(curve, CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))
@@ -4395,7 +4402,7 @@ mod route_tests {
                 &mut crate::nurbs::LaneRefusals::new(),
             )
         })
-        .expect("service profile admits E5 boundary curve")
+        .expect("compute the E5 boundary curve")
         .expect("near-isoparametric cylinder boundary circle");
         assert!(
             matches!(curve, CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) if { circle_curve.radius().get() == 2.0 })
@@ -4449,7 +4456,7 @@ mod route_tests {
                 &mut crate::nurbs::LaneRefusals::new(),
             )
         })
-        .expect("service profile admits E5 boundary curve")
+        .expect("compute the E5 boundary curve")
         .expect("cylinder boundary circle");
         assert!(
             matches!(curve, CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) if { circle_curve.radius().get() == 2.0 })
@@ -4491,7 +4498,7 @@ mod route_tests {
                 &mut crate::nurbs::LaneRefusals::new(),
             )
         })
-        .expect("service profile admits E5 boundary curve")
+        .expect("compute the E5 boundary curve")
         .expect("finite nonzero plane line");
         assert!(matches!(
             curve,
@@ -4541,8 +4548,8 @@ mod route_tests {
             );
             Ok::<_, cadmpeg_core::CodecError>((ir.model.surfaces, unused))
         };
-        let (surfaces, unused) = crate::test_support::with_service_context(run)
-            .expect("service budget admits the unused surface stash");
+        let (surfaces, unused) =
+            crate::test_support::with_service_context(run).expect("prune the unused E5 surfaces");
         assert!(surfaces.is_empty());
         assert_eq!(unused.len(), 1);
     }
@@ -4580,7 +4587,7 @@ mod route_tests {
             )
         };
         assert!(crate::test_support::with_service_context(run)
-            .expect("service resource budget")
+            .expect("compute the E5 pcurve on surface")
             .is_some());
     }
 }

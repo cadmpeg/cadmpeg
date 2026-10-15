@@ -3,7 +3,7 @@
 
 use super::{extruded_segment_surface, placed_section_curve_geometry};
 use crate::decode::feature_history::dimensions::{
-    feature_dimension_display, feature_dimension_parameter_id, feature_dimension_parameter_layout,
+    feature_dimension_display, feature_dimension_parameter_layout,
     feature_dimension_parameter_row_id, resolved_feature_dimension_parameter,
 };
 use crate::decode::feature_history::outputs::{
@@ -40,7 +40,7 @@ fn section_segment_radius_constraints(
     sketch: &SketchId,
 ) -> Vec<(cadmpeg_ir::sketches::SketchConstraint, usize)> {
     ({ checked_section_segment_radius_constraints(definition, sketch) })
-        .expect("service profile admits segment radius constraints")
+        .expect("compute the checked section segment radius constraints")
 }
 
 fn section_segment_radius_constraints_for_emitted(
@@ -57,7 +57,7 @@ fn section_segment_radius_constraints_for_emitted(
             available_parameters,
         )
     })
-    .expect("service profile admits emitted segment radius constraints")
+    .expect("compute the checked section segment radius constraints for emitted")
 }
 
 #[test]
@@ -250,11 +250,14 @@ fn dimension_identity_includes_its_feature_definition() {
     let sketch_1200 =
         SketchId::mint("creo:model:sketch#1200".to_string()).expect("valid test fixture");
     assert_ne!(
-        feature_dimension_parameter_id(&sketch_917, 3),
-        feature_dimension_parameter_id(&sketch_1104, 3)
+        feature_dimension_parameter_row_id(&sketch_917, 3, None)
+            .expect("build the dimension parameter identity"),
+        feature_dimension_parameter_row_id(&sketch_1104, 3, None)
+            .expect("build the dimension parameter identity")
     );
     assert_eq!(
-        feature_dimension_parameter_id(&sketch_917, 3)
+        feature_dimension_parameter_row_id(&sketch_917, 3, None)
+            .expect("build the dimension parameter identity")
             .expect("valid test identity")
             .as_str(),
         "creo:featdefs:parameter#917:3"
@@ -283,8 +286,10 @@ fn dimension_identity_includes_its_feature_definition() {
         ])
     );
     assert_ne!(
-        feature_dimension_parameter_row_id(&sketch_917, 3, Some(0)),
+        feature_dimension_parameter_row_id(&sketch_917, 3, Some(0))
+            .expect("build the dimension parameter identity"),
         feature_dimension_parameter_row_id(&sketch_917, 3, Some(1))
+            .expect("build the dimension parameter identity")
     );
     let dimension = crate::feature::definitions::FeatureDimension {
         dimension_type: 2,
@@ -327,7 +332,8 @@ fn dimension_identity_includes_its_feature_definition() {
             &sketch_917,
             definition.dimensions.as_ref().expect("dimension table"),
             0,
-        ),
+        )
+        .expect("resolve the dimension parameter"),
         Some((
             &dimension,
             ParameterId::mint("creo:featdefs:parameter#917:3".to_string())
@@ -356,7 +362,7 @@ fn dimension_identity_includes_its_feature_definition() {
         .rows[0]
         .dimension_type = 3;
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| resolved_section_radii(ctx, &definition))
+        crate::decode::with_service_context(|ctx| resolved_section_radii(ctx, &definition))
             .expect("test section solve"),
         BTreeMap::from([(0, 5.0)])
     );
@@ -424,7 +430,7 @@ fn dimension_identity_includes_its_feature_definition() {
         .rows[0]
         .dimension_type = 4;
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| resolved_section_radii(ctx, &definition))
+        crate::decode::with_service_context(|ctx| resolved_section_radii(ctx, &definition))
             .expect("test section solve"),
         BTreeMap::from([(0, 2.5)])
     );
@@ -466,7 +472,7 @@ fn dimension_identity_includes_its_feature_definition() {
         .expect("segment table")
         .declared_count = 2;
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| resolved_section_radii(ctx, &definition))
+        crate::decode::with_service_context(|ctx| resolved_section_radii(ctx, &definition))
             .expect("test section solve"),
         BTreeMap::from([(0, 2.5)])
     );
@@ -494,7 +500,7 @@ fn dimension_identity_includes_its_feature_definition() {
         .rows[0]
         .dimension_type = 2;
     assert!(
-        crate::decode::with_test_decode_ctx(|ctx| resolved_section_radii(ctx, &definition))
+        crate::decode::with_service_context(|ctx| resolved_section_radii(ctx, &definition))
             .expect("test section solve")
             .is_empty()
     );
@@ -623,7 +629,7 @@ fn dimension_identity_includes_its_feature_definition() {
     assert_eq!(
         section_circle_geometry(
             &BTreeMap::from([(7, [1.0, 2.0])]),
-            &crate::decode::with_test_decode_ctx(|ctx| resolved_section_radii(ctx, &definition))
+            &crate::decode::with_service_context(|ctx| resolved_section_radii(ctx, &definition))
                 .expect("test section solve"),
             &definition
                 .segments
@@ -653,7 +659,8 @@ fn dimension_identity_includes_its_feature_definition() {
         ..table.clone()
     };
     assert_eq!(
-        resolved_feature_dimension_parameter(&sketch_917, &unresolved_table, 0),
+        resolved_feature_dimension_parameter(&sketch_917, &unresolved_table, 0)
+            .expect("resolve the dimension parameter"),
         Some((
             &unresolved_dimension,
             ParameterId::mint("creo:featdefs:parameter#917:4".to_string())
@@ -665,7 +672,8 @@ fn dimension_identity_includes_its_feature_definition() {
         ..unresolved_table
     };
     assert_eq!(
-        resolved_feature_dimension_parameter(&sketch_917, &incomplete_table, 0),
+        resolved_feature_dimension_parameter(&sketch_917, &incomplete_table, 0)
+            .expect("resolve the dimension parameter"),
         None
     );
     table.rows.push(dimension);
@@ -675,7 +683,8 @@ fn dimension_identity_includes_its_feature_definition() {
             &sketch_917,
             definition.dimensions.as_ref().expect("dimension table"),
             0,
-        ),
+        )
+        .expect("resolve the dimension parameter"),
         None
     );
     assert_eq!(
@@ -683,7 +692,8 @@ fn dimension_identity_includes_its_feature_definition() {
             &sketch_917,
             definition.dimensions.as_ref().expect("dimension table"),
             1,
-        ),
+        )
+        .expect("resolve the dimension parameter"),
         None
     );
 }
@@ -730,7 +740,7 @@ fn evaluated_sweep_bodies_are_feature_outputs() {
         visible: None,
     });
     assert_eq!(
-        evaluated_sweep_output_bodies(&ir, 40).expect("service profile admits output bodies"),
+        evaluated_sweep_output_bodies(&ir, 40).expect("compute the evaluated sweep output bodies"),
         vec![
             BodyId::mint("creo:feature:extrusion#40:body".to_string()).expect("identity grammar"),
             BodyId::mint("creo:feature:revolution#40:body".to_string()).expect("identity grammar"),

@@ -156,7 +156,11 @@ fn bore_backed_position_projection_projects_one_point_sketch() {
     assert!(
         matches!(entities[0].geometry.definition(), SketchGeometryDefinition::Point { position } if position.get() == Point2::new(2.0, 3.0))
     );
-    assert!(
-        matches!(features[1].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Sketch { sketch: SketchFeatureBinding::Planar(Some(id)) }) if id == &expected)
-    );
+    assert!(matches!(
+        features[1].evaluation.definition(),
+        FeatureDefinition::Operation(
+            FeatureOperation::Sketch { sketch: SketchFeatureBinding::Planar(Some(id)) }
+        )
+            if id == &expected
+    ));
 }

@@ -117,7 +117,7 @@ fn decode_transfers_positional_line_extrusion_plane() {
         Some(1)
     );
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
@@ -201,7 +201,7 @@ fn decode_transfers_lane_specific_tabulated_line_extrusion_plane() {
         Some(1)
     );
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{validation:#?}");
 }
 

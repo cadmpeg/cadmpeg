@@ -27,7 +27,7 @@ fn setting_a_mask_bit_allocates_the_mask_for_a_new_key() {
             "catia_face_configuration_mask_words",
         )
     })
-    .expect("service resource budget");
+    .expect("set mask bit");
     assert_eq!(masks.get(&3), Some(&vec![1]));
 }
 
@@ -45,7 +45,9 @@ fn face_configuration_support_accepts_agreeing_shared_edge_pairs() {
         let mut domains = fixture();
         super::super::prune_face_configuration_support(ctx, &mut domains, &WorkBudget::new(1_000))
     };
-    assert!(crate::test_support::with_service_context(run).expect("service resource budget"));
+    assert!(
+        crate::test_support::with_service_context(run).expect("prune face configuration support")
+    );
 }
 
 #[test]
@@ -66,7 +68,8 @@ fn face_singleton_support_accepts_agreeing_shared_edge_pairs() {
             &WorkBudget::new(1_000),
         )
     };
-    assert!(crate::test_support::with_service_context(run).expect("service resource budget"));
+    assert!(crate::test_support::with_service_context(run)
+        .expect("prune face configuration singleton support"));
 }
 
 #[test]
@@ -114,7 +117,8 @@ fn partial_assignment_on_a_face_triangle_is_orientable() {
             &WorkBudget::new(10_000),
         )
     };
-    assert!(crate::test_support::with_service_context(run).expect("service resource budget"));
+    assert!(crate::test_support::with_service_context(run)
+        .expect("check partial face orientability viable"));
 }
 
 #[test]
@@ -153,7 +157,7 @@ fn incidence_components_group_edges_whose_choices_share_points() {
 
     assert_eq!(
         incidence_choice_components(&choices, &edge_faces, Some(&domains), Some(&quotient))
-            .expect("service resource budget"),
+            .expect("compute the incidence choice components"),
         vec![vec![0, 1], vec![2]],
     );
 }
@@ -166,7 +170,7 @@ fn coupled_edges_join_their_incidence_components() {
 
     assert_eq!(
         join_incidence_components_by_coupling(components.clone(), &active)
-            .expect("service resource budget"),
+            .expect("join incidence components by coupling"),
         expected,
     );
 }
@@ -204,7 +208,8 @@ fn common_boundary_propagation_succeeds_for_a_single_ordered_face() {
         )
     };
     assert_eq!(
-        crate::test_support::with_service_context(run).expect("service resource budget"),
+        crate::test_support::with_service_context(run)
+            .expect("propagate common boundary components"),
         Some(())
     );
 }
@@ -232,7 +237,7 @@ fn unordered_cycle_search_closes_a_triangle() {
         )
     };
     assert!(!crate::test_support::with_service_context(run)
-        .expect("service resource budget")
+        .expect("compute the bounded unordered cycle assignments")
         .expect("closed cycle assignments")
         .is_empty());
 }

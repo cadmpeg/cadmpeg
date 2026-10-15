@@ -32,7 +32,7 @@ fn open_single_edge_boundary_has_no_orientation_options() {
             .map(|options| options.is_empty())
     };
     catia_test_context!(service_ctx);
-    assert!(run(&service_ctx).expect("service resource budget"));
+    assert!(run(&service_ctx).expect("compute the assignment options"));
 }
 
 #[test]
@@ -46,7 +46,7 @@ fn edge_domains_outside_the_quotient_are_not_viable() {
     );
     assert!(!quotient
         .edge_domains_viable(&[vec![[2, 3]]])
-        .expect("service resource budget"));
+        .expect("check edge domains viable"));
 }
 
 #[test]
@@ -68,7 +68,7 @@ fn open_single_edge_boundary_has_no_fixed_direction_options() {
     let options = vec![vec![vec![false]]];
     assert!(quotient
         .assignment_options_for_directions(&assignment, &options, 1, None)
-        .expect("service resource budget")
+        .expect("compute the assignment options for directions")
         .is_empty());
 }
 
@@ -91,6 +91,6 @@ fn open_single_edge_boundary_cannot_merge_label_directions() {
     );
     assert!(quotient
         .merge_label_directions_in_place(&assignment, &[vec![false]], &[Some(false)], None,)
-        .expect("service resource budget")
+        .expect("merge label directions")
         .is_none());
 }

@@ -121,7 +121,7 @@ fn formula_legacy_candidates_transfer_under_service_profile() {
             &crate::decode::ModelingGraphScope::Unscoped,
         )
     })
-    .expect("service profile admits three legacy candidates");
+    .expect("transfer parameters");
     assert_eq!(ir.model.parameters.len(), 3);
 }
 
@@ -162,4 +162,16 @@ fn legacy_types_follow_unique_selector_chains() {
     assert_eq!(types.resolved(9), None);
     assert!(types.descriptors.contains_key(&7));
     assert!(!types.descriptors.contains_key(&9));
+}
+
+#[test]
+fn relation_symbol_binds_inputs_up_to_its_ordinal() {
+    let forms = |symbol| super::super::legacy_symbol_input_forms(symbol);
+
+    assert_eq!(forms("#1_"), ["#1_"]);
+    assert_eq!(forms("#1_/2"), ["#1_/2", "#1_"]);
+    assert_eq!(forms("#1_  /23"), ["#1_  /23", "#1_", "#1_ ", "#1_  "]);
+    assert_eq!(forms("#1_ "), ["#1_", "#1_ "]);
+    assert_eq!(forms("#1_ /"), ["#1_ /"]);
+    assert_eq!(forms("#1_ /2a"), ["#1_ /2a"]);
 }

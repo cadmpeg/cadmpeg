@@ -14,7 +14,7 @@ fn evaluate_pcurve(pcurve: &B5Pcurve, parameter: f64) -> Option<[f64; 2]> {
     crate::test_support::with_service_context(|ctx| {
         super::super::evaluate_pcurve(ctx, pcurve, parameter)
     })
-    .expect("service budget")
+    .expect("evaluate pcurve")
 }
 
 use super::super::parse_line_pcurve;

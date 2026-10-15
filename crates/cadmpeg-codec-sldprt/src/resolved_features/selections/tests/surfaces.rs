@@ -65,7 +65,7 @@ fn extrusion_endpoint_selector_is_found_after_feature_name_offset() {
             payload.len(),
             prefix_len + body_marker,
         )
-        .expect("component path resource admission"),
+        .expect("compute the compact extrusion endpoint selector for marker"),
         Some(selector)
     );
 }

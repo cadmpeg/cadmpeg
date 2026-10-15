@@ -166,9 +166,6 @@ pub(crate) const FEATDEFS_SAVED_DUMMY: IdentityNamespace =
     cadmpeg_ir::identity_namespace!("creo", "featdefs", "saved_dummy");
 pub(crate) const FEATDEFS_SECTION_CURVE: IdentityNamespace =
     cadmpeg_ir::identity_namespace!("creo", "featdefs", "section_curve");
-#[cfg(test)]
-pub(crate) const FEATDEFS_PARAMETER: IdentityNamespace =
-    cadmpeg_ir::identity_namespace!("creo", "featdefs", "parameter");
 
 pub(crate) const MDL_REF_INFO_ARC_Z: IdentityNamespace =
     cadmpeg_ir::identity_namespace!("creo", "mdl_ref_info", "arc_z");

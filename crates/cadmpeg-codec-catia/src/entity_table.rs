@@ -1470,8 +1470,8 @@ mod tests {
             &arena,
             &cadmpeg_core::decode::DecodePolicy::service(),
         )
-        .expect("entity-table fixture fits the service profile");
-        super::parse_runs(&ctx, data).expect("entity-table fixture fits resource limits")
+        .expect("build the decode context");
+        super::parse_runs(&ctx, data).expect("parse runs")
     }
 
     #[test]

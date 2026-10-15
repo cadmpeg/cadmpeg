@@ -1046,7 +1046,7 @@ mod tests {
             archive,
             warnings,
         )
-        .expect("service profile admits modifier diagnostics")
+        .expect("parse attribute userdata")
     }
 
     fn descriptor(payload: &[u8], application_uuid: Option<Uuid>) -> AttributeUserdataDescriptor {

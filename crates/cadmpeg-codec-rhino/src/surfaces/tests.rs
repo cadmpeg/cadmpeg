@@ -21,8 +21,8 @@ const EPS_EXACT_GEOMETRY: f64 = 1.0e-12;
 fn with_test_context<R>(f: impl FnOnce(&DecodeContext<'_>) -> R) -> R {
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("test context input fits service profile");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("build the decode context");
     f(&ctx)
 }
 

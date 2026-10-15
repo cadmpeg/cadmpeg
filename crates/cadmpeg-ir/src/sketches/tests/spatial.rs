@@ -476,7 +476,7 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
         });
     ir.finalize();
     assert!(validate_neutral(&ir, Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .findings
         .is_empty());
     let mut non_curve_offset = ir.clone();
@@ -508,7 +508,7 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
         })
         .unwrap();
     assert!(validate_neutral(&non_curve_offset, Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .findings
         .iter()
         .any(
@@ -523,7 +523,7 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
         .expect("spatial distance parameter")
         .value = Some(ParameterValue::Length(Length::new(3.0).unwrap()));
     let invalid_distance_findings = validate_neutral(&invalid_distance, Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .findings;
     assert!(invalid_distance_findings.iter().any(|finding| finding
         .message

@@ -192,7 +192,7 @@ fn closed_circle_edge_gets_a_derived_seam_vertex() {
                 })
     );
     assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .is_ok());
 }
 
@@ -240,7 +240,7 @@ fn oblique_cylinder_section_gets_an_exact_polar_harmonic_pcurve() {
                 })
     );
     assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .is_ok());
 }
 
@@ -280,7 +280,7 @@ fn coaxial_cone_circle_preserves_parameter_direction() {
     assert!((origin.v - 1000.0).abs() < 1.0e-9);
     assert_eq!(direction, cadmpeg_ir::math::Point2::new(-1.0, 0.0));
     assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .is_ok());
 }
 
@@ -320,7 +320,7 @@ fn coaxial_torus_circle_gets_constant_minor_angle_pcurve() {
     assert!((origin.v - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12);
     assert_eq!(direction, cadmpeg_ir::math::Point2::new(1.0, 0.0));
     assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .is_ok());
 }
 
@@ -543,7 +543,7 @@ fn linear_nurbs_surface_boundary_gets_affine_line_pcurve() {
     );
     assert!(
         cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -585,7 +585,7 @@ fn bounded_planar_line_pcurve_keeps_the_curve_parameterization() {
     );
     assert!(
         cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }

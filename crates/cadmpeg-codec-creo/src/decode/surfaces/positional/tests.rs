@@ -47,7 +47,7 @@ fn scan_with_tabulated_replay() -> crate::container::ContainerScan<'static> {
 #[test]
 fn line_extrusion_replay_without_surface_row_transfers_nothing() {
     let scan = scan_with_tabulated_replay();
-    let count = crate::decode::with_test_decode_ctx(|ctx| {
+    let count = crate::decode::with_service_context(|ctx| {
         super::transfer_positional_line_extrusion_planes(
             ctx,
             &scan,
@@ -56,14 +56,14 @@ fn line_extrusion_replay_without_surface_row_transfers_nothing() {
             &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
         )
     })
-    .expect("service admits replay set");
+    .expect("transfer positional line extrusion planes");
     assert_eq!(count, 0);
 }
 
 #[test]
 fn tabulated_replay_without_surface_row_transfers_nothing() {
     let scan = scan_with_tabulated_replay();
-    let count = crate::decode::with_test_decode_ctx(|ctx| {
+    let count = crate::decode::with_service_context(|ctx| {
         super::transfer_tabulated_cylinder_spline_extrusions(
             ctx,
             &scan,
@@ -73,7 +73,7 @@ fn tabulated_replay_without_surface_row_transfers_nothing() {
             &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
         )
     })
-    .expect("service admits replay count");
+    .expect("transfer tabulated cylinder spline extrusions");
     assert_eq!(count, 0);
 }
 
@@ -106,7 +106,7 @@ fn positional_round_result() -> Result<usize, CodecError> {
             edge_ids: None,
             offset: 0,
         });
-    crate::decode::with_test_decode_ctx(|ctx| {
+    crate::decode::with_service_context(|ctx| {
         super::transfer_positional_tori(
             ctx,
             &scan,
@@ -118,7 +118,10 @@ fn positional_round_result() -> Result<usize, CodecError> {
 }
 #[test]
 fn positional_torus_round_without_frame_transfers_nothing() {
-    assert_eq!(positional_round_result().expect("service admits round"), 0);
+    assert_eq!(
+        positional_round_result().expect("compute the positional round result"),
+        0
+    );
 }
 
 #[test]
@@ -180,7 +183,7 @@ fn unresolved_round_type26_frames_are_not_admitted_as_constant_tori() {
     let mut ir = cadmpeg_ir::document::CadIr::empty();
 
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| super::transfer_positional_tori(
+        crate::decode::with_service_context(|ctx| super::transfer_positional_tori(
             ctx,
             &scan,
             &mut ir,
@@ -219,7 +222,7 @@ fn transfers_an_exact_zero_major_inline_frame_as_a_sphere() {
     let mut ir = cadmpeg_ir::document::CadIr::empty();
 
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| super::transfer_positional_tori(
+        crate::decode::with_service_context(|ctx| super::transfer_positional_tori(
             ctx,
             &scan,
             &mut ir,
@@ -263,7 +266,7 @@ fn positional_sphere_is_in_millimeters_at_ir_admission() {
     let mut source_carriers = crate::decode::source_carriers::SourceUnitCarriers::new(
         cadmpeg_ir::scalar::PositiveReal::new(25.4),
     );
-    crate::decode::with_test_decode_ctx(|ctx| {
+    crate::decode::with_service_context(|ctx| {
         super::transfer_positional_tori(
             ctx,
             &scan,
@@ -446,7 +449,7 @@ fn construction_copy_scan(tabulated: bool) -> crate::container::ContainerScan<'s
 #[test]
 fn positional_line_extrusion_transfers_one_construction_surface() {
     let scan = construction_copy_scan(false);
-    let count = crate::decode::with_test_decode_ctx(|ctx| {
+    let count = crate::decode::with_service_context(|ctx| {
         super::transfer_positional_line_extrusion_planes(
             ctx,
             &scan,
@@ -455,14 +458,14 @@ fn positional_line_extrusion_transfers_one_construction_surface() {
             &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
         )
     })
-    .expect("service resources");
+    .expect("transfer positional line extrusion planes");
     assert_eq!(count, 1);
 }
 
 #[test]
 fn tabulated_extrusion_transfers_one_construction_surface() {
     let scan = construction_copy_scan(true);
-    let count = crate::decode::with_test_decode_ctx(|ctx| {
+    let count = crate::decode::with_service_context(|ctx| {
         super::transfer_tabulated_cylinder_spline_extrusions(
             ctx,
             &scan,
@@ -472,6 +475,6 @@ fn tabulated_extrusion_transfers_one_construction_surface() {
             &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
         )
     })
-    .expect("service resources");
+    .expect("transfer tabulated cylinder spline extrusions");
     assert_eq!(count, 1);
 }

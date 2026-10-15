@@ -292,7 +292,7 @@ fn first_instance_torus_radii_are_in_millimeters_at_ir_admission() {
     let mut losses = Vec::new();
     let scale = cadmpeg_ir::scalar::PositiveReal::new(25.4).expect("inch scale");
     let mut source_carriers = crate::decode::source_carriers::SourceUnitCarriers::new(Some(scale));
-    crate::decode::with_test_decode_ctx(|ctx| {
+    crate::decode::with_service_context(|ctx| {
         super::transfer_first_instance_prototype_surfaces(
             ctx,
             &scan,

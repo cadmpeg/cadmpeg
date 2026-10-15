@@ -54,7 +54,7 @@ fn decode_projects_part_attributes_to_document_attributes() {
     );
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }

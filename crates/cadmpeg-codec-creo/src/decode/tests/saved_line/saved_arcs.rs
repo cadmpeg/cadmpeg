@@ -137,7 +137,7 @@ fn saved_arc_joins_through_order_table() {
         offset: 38,
     });
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(
+        crate::decode::with_service_context(|ctx| resolved_section_points(
             ctx,
             &coordinate_definition
         ))
@@ -294,7 +294,7 @@ fn saved_arc_joins_through_order_table() {
         offset: 28,
     });
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             let radii = crate::decode::sketch::radii::resolved_section_radii(ctx, &trimmed)?;
             Ok::<_, cadmpeg_core::CodecError>(resolved_trim_vertex_coordinates(
                 &trimmed,
@@ -332,7 +332,7 @@ fn saved_arc_joins_through_order_table() {
         offset: 30,
     });
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             let radii =
                 crate::decode::sketch::radii::resolved_section_radii(ctx, &conflicting_vertex)?;
             Ok::<_, cadmpeg_core::CodecError>(resolved_trim_vertex_coordinates(
@@ -385,7 +385,7 @@ fn saved_arc_joins_through_order_table() {
         panic!("test entity is an arc");
     }
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             let radii = crate::decode::sketch::radii::resolved_section_radii(ctx, &trimmed)?;
             Ok::<_, cadmpeg_core::CodecError>(resolved_trim_vertex_coordinates(
                 &trimmed,
@@ -416,7 +416,7 @@ fn saved_arc_joins_through_order_table() {
     assert_eq!(
         section_segment_intersection_carrier(
             &trimmed,
-            &crate::decode::with_test_decode_ctx(|ctx| resolved_section_radii(ctx, &trimmed))
+            &crate::decode::with_service_context(|ctx| resolved_section_radii(ctx, &trimmed))
                 .expect("test section solve"),
             &BTreeMap::new(),
             segment,

@@ -23,7 +23,7 @@ fn b5_frame_walk_ignores_markers_inside_payloads() {
     let graph = crate::test_support::with_service_context(|ctx| {
         crate::families::b5::graph::parse(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new())
     })
-    .expect("service resource budget")
+    .expect("parse the graph")
     .expect("length-closed B5 graph");
     assert_eq!(graph.faces.len(), 1);
     assert_eq!(graph.loops.len(), 1);
@@ -56,7 +56,7 @@ fn b5_analytic_line_pcurve_resolves_to_clamped_linear_form() {
     let graph = crate::test_support::with_service_context(|ctx| {
         crate::families::b5::graph::parse(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new())
     })
-    .expect("service resource budget")
+    .expect("parse the graph")
     .expect("length-closed B5 graph");
     let pcurve = graph.pcurves.get(&600).expect("analytic line pcurve");
     assert_eq!(pcurve.degree, 1);
@@ -120,7 +120,7 @@ fn b5_circle_pcurve_rejects_nonfinite_derived_poles() {
     let graph = crate::test_support::with_service_context(|ctx| {
         crate::families::b5::graph::parse(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new())
     })
-    .expect("service resource budget")
+    .expect("parse the graph")
     .expect("length-closed B5 graph");
     assert!(!graph.pcurves.contains_key(&600));
 }
@@ -138,7 +138,7 @@ fn b5_line_pcurve_rejects_nonfinite_derived_poles() {
     let graph = crate::test_support::with_service_context(|ctx| {
         crate::families::b5::graph::parse(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new())
     })
-    .expect("service resource budget")
+    .expect("parse the graph")
     .expect("length-closed B5 graph");
     assert!(!graph.pcurves.contains_key(&600));
 }
@@ -159,7 +159,7 @@ fn b5_pcurve_lift_rejects_nonfinite_world_endpoints() {
     let graph = crate::test_support::with_service_context(|ctx| {
         crate::families::b5::graph::parse(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new())
     })
-    .expect("service resource budget")
+    .expect("parse the graph")
     .expect("length-closed B5 graph");
     assert!(graph.pcurves[&600].lifted_endpoints.is_none());
 }
@@ -255,7 +255,7 @@ fn b5_object_graph_resolves_face_loop_pcurve_and_edge_members() {
     let graph = crate::test_support::with_service_context(|ctx| {
         crate::families::b5::graph::parse(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new())
     })
-    .expect("service resource budget")
+    .expect("parse the graph")
     .expect("B5 object topology");
     assert_eq!(graph.faces[0].surface, 100);
     assert_eq!(graph.faces[0].loops, vec![400]);

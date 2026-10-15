@@ -21,7 +21,7 @@ fn incidence_face_configuration_support_retains_shared_edge_correlations() {
 
     assert!(
         prune_face_configuration_support(&ctx, &mut domains, &budget)
-            .expect("service resource budget")
+            .expect("prune face configuration support")
     );
     assert_eq!(domains[0], vec![correlated[0].clone()]);
 
@@ -29,14 +29,14 @@ fn incidence_face_configuration_support_retains_shared_edge_correlations() {
     let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     assert!(
         !prune_face_configuration_support(&ctx, &mut incompatible, &budget)
-            .expect("service resource budget")
+            .expect("prune face configuration support")
     );
 
     let preserved = incompatible.clone();
     let budget = WorkBudget::new(0);
     assert!(
         prune_face_configuration_support(&ctx, &mut incompatible, &budget)
-            .expect("service resource budget")
+            .expect("prune face configuration support")
     );
     assert_eq!(incompatible, preserved);
     assert!(budget.exhausted());
@@ -57,7 +57,7 @@ fn incidence_face_configuration_support_propagates_across_a_factor_chain() {
 
     assert!(
         prune_face_configuration_support(&ctx, &mut domains, &budget)
-            .expect("service resource budget")
+            .expect("prune face configuration support")
     );
     assert_eq!(
         domains,
@@ -72,7 +72,7 @@ fn incidence_face_configuration_support_propagates_across_a_factor_chain() {
     let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     assert!(
         prune_face_configuration_support(&ctx, &mut optional, &budget)
-            .expect("service resource budget")
+            .expect("prune face configuration support")
     );
     assert_eq!(optional[0], vec![vec![(0, [0, 1])]]);
 }
@@ -95,7 +95,7 @@ fn incidence_face_singleton_support_rejects_an_inconsistent_factor_cycle() {
 
     assert!(
         prune_face_configuration_support(&ctx, &mut inconsistent, &arc_budget)
-            .expect("service resource budget")
+            .expect("prune face configuration support")
     );
     assert!(inconsistent.iter().all(|domain| domain.len() == 2));
 
@@ -105,13 +105,13 @@ fn incidence_face_singleton_support_rejects_an_inconsistent_factor_cycle() {
         &mut inconsistent,
         &singleton_budget,
     )
-    .expect("service resource budget"));
+    .expect("prune face configuration singleton support"));
 
     let mut consistent = vec![equal(0, 1), equal(1, 2), equal(2, 0)];
     let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     assert!(
         prune_face_configuration_singleton_support(&ctx, &mut consistent, &budget,)
-            .expect("service resource budget")
+            .expect("prune face configuration singleton support")
     );
     assert!(consistent.iter().all(|domain| domain.len() == 2));
 
@@ -119,7 +119,7 @@ fn incidence_face_singleton_support_rejects_an_inconsistent_factor_cycle() {
     let exhausted = WorkBudget::new(0);
     assert!(
         prune_face_configuration_singleton_support(&ctx, &mut consistent, &exhausted,)
-            .expect("service resource budget")
+            .expect("prune face configuration singleton support")
     );
     assert_eq!(consistent, preserved);
     assert!(exhausted.exhausted());
@@ -136,7 +136,7 @@ fn incidence_face_singleton_support_tracks_multiword_configuration_masks() {
 
     assert!(
         prune_face_configuration_singleton_support(&ctx, &mut domains, &budget,)
-            .expect("service resource budget")
+            .expect("prune face configuration singleton support")
     );
     assert_eq!(domains[0], vec![vec![(0, [129, 129])]]);
     assert_eq!(domains[1], vec![vec![(0, [129, 129])]]);
@@ -161,7 +161,7 @@ fn ordered_face_support_prunes_edge_pairs_to_complete_configurations() {
 
     assert!(
         prune_ordered_face_endpoint_support(&ctx, &domains, &mut choices, &budget,)
-            .expect("service resource budget")
+            .expect("prune ordered face endpoint support")
     );
     assert_eq!(choices, vec![vec![[0, 1], [0, 2]], vec![[0, 1], [0, 2]]]);
 
@@ -169,7 +169,7 @@ fn ordered_face_support_prunes_edge_pairs_to_complete_configurations() {
     let exhausted = WorkBudget::new(0);
     assert!(
         prune_ordered_face_endpoint_support(&ctx, &domains, &mut unpruned, &exhausted,)
-            .expect("service resource budget")
+            .expect("prune ordered face endpoint support")
     );
     assert_eq!(
         unpruned,
@@ -228,7 +228,7 @@ fn incidence_forced_face_chain_does_not_consume_branch_budget() {
         state: IncidenceSearchState::Open,
     };
 
-    search.search().expect("service resource budget");
+    search.search().expect("search the face configurations");
 
     assert_ne!(search.state, IncidenceSearchState::Exhausted);
     assert_eq!(search.solutions, vec![vec![(0, [0, 0]), (1, [1, 1])]]);
@@ -281,7 +281,7 @@ fn incidence_forced_face_configuration_closes_its_frontier_atomically() {
         state: IncidenceSearchState::Open,
     };
 
-    search.search().expect("service resource budget");
+    search.search().expect("search the face configurations");
 
     assert_ne!(search.state, IncidenceSearchState::Exhausted);
     assert_eq!(search.solutions, vec![vec![(0, [0, 1]), (1, [0, 1])]]);
@@ -342,13 +342,13 @@ fn incidence_candidate_uses_a_separate_global_quotient_validation_budget() {
 
     assert!(search
         .candidate_fits(0, [0, 0])
-        .expect("service resource budget"));
+        .expect("check candidate fits"));
     assert!(!budget.exhausted());
     search.adjust(0, [0, 0]);
     search.assignment[0] = Some([0, 0]);
     assert!(search
         .ordered_faces_feasible([0])
-        .expect("service resource budget"));
+        .expect("check ordered faces feasible"));
     assert!(!budget.exhausted());
 }
 
@@ -394,10 +394,10 @@ fn incidence_selection_validates_only_its_affected_faces() {
 
     assert!(search
         .ordered_faces_feasible([0])
-        .expect("service resource budget"));
+        .expect("check ordered faces feasible"));
     assert!(!search
         .ordered_faces_feasible([1])
-        .expect("service resource budget"));
+        .expect("check ordered faces feasible"));
 }
 
 #[test]
@@ -425,7 +425,7 @@ fn face_configuration_domains_prepare_for_shared_edge_faces() {
         &[None],
         &[true],
     )
-    .expect("service resource budget")
+    .expect("prepare face configuration domains")
     .is_some());
 }
 
@@ -451,5 +451,5 @@ fn ordered_face_support_pruning_accepts_a_two_edge_boundary() {
         &mut service_choices,
         &WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS),
     )
-    .expect("service budget"));
+    .expect("prune ordered face endpoint support"));
 }

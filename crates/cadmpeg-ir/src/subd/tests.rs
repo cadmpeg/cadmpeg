@@ -50,7 +50,7 @@ fn subd_round_trip_and_directed_ring_validation() {
         .unwrap(),
     });
     assert!(validate_neutral(&ir, Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .is_ok());
     let parsed = CadIr::from_json(&ir.to_canonical_json().unwrap()).unwrap();
     assert_eq!(parsed, ir);

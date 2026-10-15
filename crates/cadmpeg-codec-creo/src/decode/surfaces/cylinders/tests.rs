@@ -21,7 +21,7 @@ fn hole_cylinders_with_duplicate_feature_rows_transfer_nothing() {
     };
     scan.features.rows.extend([row.clone(), row]);
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| super::transfer_hole_cylinders(
+        crate::decode::with_service_context(|ctx| super::transfer_hole_cylinders(
             ctx,
             &scan,
             &mut cadmpeg_ir::document::CadIr::empty(),
@@ -335,7 +335,7 @@ fn constant_round_radius_without_edges_transfers_nothing() {
             offset: 0,
         });
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             super::transfer_positional_cylinders(
                 ctx,
                 &scan,
@@ -354,7 +354,7 @@ fn constant_round_radius_without_edges_transfers_nothing() {
 fn constrained_slot_fillet_uses_native_plane_carriers_when_model_planes_are_absent() {
     let scan = slot_fillet_scan();
     let mut ir = cadmpeg_ir::document::CadIr::empty();
-    let transferred = crate::decode::with_test_decode_ctx(|ctx| {
+    let transferred = crate::decode::with_service_context(|ctx| {
         super::transfer_constrained_slot_fillet_cylinders(
             ctx,
             &scan,
@@ -388,7 +388,7 @@ fn constrained_slot_cylinder_radius_is_in_millimeters_at_ir_admission() {
     let mut source_carriers = crate::decode::source_carriers::SourceUnitCarriers::new(
         cadmpeg_ir::scalar::PositiveReal::new(25.4),
     );
-    crate::decode::with_test_decode_ctx(|ctx| {
+    crate::decode::with_service_context(|ctx| {
         super::transfer_constrained_slot_fillet_cylinders(
             ctx,
             &scan,
@@ -417,7 +417,7 @@ fn split_outline_uses_native_plane_carrier_when_model_plane_is_absent() {
     let mut ir = cadmpeg_ir::document::CadIr::empty();
 
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| super::transfer_split_outline_cylinders(
+        crate::decode::with_service_context(|ctx| super::transfer_split_outline_cylinders(
             ctx,
             &scan,
             &mut ir,
@@ -448,7 +448,7 @@ fn split_outline_rejects_duplicate_surface_rows() {
     let mut ir = cadmpeg_ir::document::CadIr::empty();
 
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| super::transfer_split_outline_cylinders(
+        crate::decode::with_service_context(|ctx| super::transfer_split_outline_cylinders(
             ctx,
             &scan,
             &mut ir,
@@ -509,7 +509,7 @@ fn section_feature_type24_frame_is_not_admitted_as_round_cylinder() {
     let mut ir = cadmpeg_ir::document::CadIr::empty();
 
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| super::transfer_positional_cylinders(
+        crate::decode::with_service_context(|ctx| super::transfer_positional_cylinders(
             ctx,
             &scan,
             &mut ir,
@@ -583,7 +583,7 @@ fn unresolved_round_type24_frame_is_not_admitted_as_constant_cylinder() {
     let mut ir = cadmpeg_ir::document::CadIr::empty();
 
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| super::transfer_positional_cylinders(
+        crate::decode::with_service_context(|ctx| super::transfer_positional_cylinders(
             ctx,
             &scan,
             &mut ir,
@@ -650,7 +650,7 @@ fn inline_type24_frame_is_admitted_in_a_round_feature() {
     let mut ir = cadmpeg_ir::document::CadIr::empty();
 
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| super::transfer_positional_cylinders(
+        crate::decode::with_service_context(|ctx| super::transfer_positional_cylinders(
             ctx,
             &scan,
             &mut ir,
@@ -717,7 +717,7 @@ fn positional_frame_reconciles_an_existing_model_cylinder() {
     ir.model.surfaces.push(model_cylinder(7, 0.75));
 
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| super::transfer_positional_cylinders(
+        crate::decode::with_service_context(|ctx| super::transfer_positional_cylinders(
             ctx,
             &scan,
             &mut ir,
@@ -942,7 +942,7 @@ fn counterbore_positional_radius_gate_rejects_unrelated_frame() {
     ir.model.surfaces.push(model_cylinder(1, 60.0));
 
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| super::transfer_positional_cylinders(
+        crate::decode::with_service_context(|ctx| super::transfer_positional_cylinders(
             ctx,
             &scan,
             &mut ir,
@@ -967,7 +967,7 @@ fn counterbore_positional_radius_gate_accepts_declared_source_radius() {
     ir.model.surfaces.push(model_cylinder(1, 60.0));
 
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| super::transfer_positional_cylinders(
+        crate::decode::with_service_context(|ctx| super::transfer_positional_cylinders(
             ctx,
             &scan,
             &mut ir,
@@ -1000,7 +1000,7 @@ fn constrained_slot_fillet_uses_transferred_plane_carriers_when_native_planes_ar
     ]);
 
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             super::transfer_constrained_slot_fillet_cylinders(
                 ctx,
                 &scan,
@@ -1023,7 +1023,7 @@ fn constrained_slot_fillet_rejects_conflicting_model_plane_carriers() {
         .push(model_plane(3, [0.0, -0.5, 0.0], [0.0, 1.0, 0.0]));
 
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             super::transfer_constrained_slot_fillet_cylinders(
                 ctx,
                 &scan,
@@ -1088,7 +1088,7 @@ fn rowless_round_cylinder_rejects_duplicate_sibling_model_surfaces() {
         .extend([model_cylinder(13, 2.0), model_cylinder(13, 3.0)]);
 
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| super::transfer_rowless_round_cylinders(
+        crate::decode::with_service_context(|ctx| super::transfer_rowless_round_cylinders(
             ctx,
             &scan,
             &mut ir,
@@ -1151,7 +1151,7 @@ fn rowless_round_identity_input() -> (
 #[test]
 fn rowless_round_cylinder_identity_preserves_service_geometry() {
     let (scan, mut ir) = rowless_round_identity_input();
-    let count = crate::decode::with_test_decode_ctx(|ctx| {
+    let count = crate::decode::with_service_context(|ctx| {
         super::transfer_rowless_round_cylinders(
             ctx,
             &scan,
@@ -1263,7 +1263,7 @@ fn split_outline_rejects_conflicting_model_plane_carrier() {
         .push(model_plane(1, [0.0, 0.0, -0.5], [0.0, 0.0, 1.0]));
 
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| super::transfer_split_outline_cylinders(
+        crate::decode::with_service_context(|ctx| super::transfer_split_outline_cylinders(
             ctx,
             &scan,
             &mut ir,

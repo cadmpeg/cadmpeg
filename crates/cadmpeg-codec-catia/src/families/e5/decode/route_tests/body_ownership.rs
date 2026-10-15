@@ -59,7 +59,7 @@ fn faces_sharing_an_edge_form_one_body_component() {
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("fixture fits input limit");
     let ownership = resolve_e5_ownership(&ctx, &topology)
-        .expect("service resource budget")
+        .expect("resolve E5 ownership")
         .expect("connected body plan");
     assert_eq!(ownership.bodies[0].components, vec![vec![1, 2]]);
 }

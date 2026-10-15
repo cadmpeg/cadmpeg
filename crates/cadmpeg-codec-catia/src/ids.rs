@@ -56,7 +56,7 @@ mod tests {
             "catia:graph:object#owner:child",
             &cadmpeg_ir::identity_component!("feature"),
         )
-        .expect("service profile admits neutral identity");
+        .expect("build the history ID");
         assert_eq!(admitted.as_str(), "catia:graph:feature#owner:child");
     }
 }

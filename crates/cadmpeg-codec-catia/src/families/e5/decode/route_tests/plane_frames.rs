@@ -154,7 +154,7 @@ fn e5_plane_solver_uses_known_normal_and_canonical_sign_for_rank_one_uv() {
             Some(Vector3::new(0.0, 1.0, 0.0)),
         )
     })
-    .expect("service resource budget")
+    .expect("solve E5 plane frame")
     .expect("rank-one plane frame");
     assert!(normal.as_raw().dot(Vector3::new(0.0, 1.0, 0.0)) > 1.0 - EPS_E5_DECODE_EXACT_GEOMETRY);
     assert!(u_axis.as_raw().dot(Vector3::new(0.0, 0.0, 1.0)) > 1.0 - EPS_E5_DECODE_EXACT_GEOMETRY);
@@ -226,7 +226,7 @@ fn e5_plane_solver_rechecks_the_returned_unit_frame() {
                 Some(Vector3::new(0.0, 0.0, 1.0)),
             )
         })
-        .expect("service resource budget");
+        .expect("solve E5 plane frame");
         if scale == 1.0 {
             let (normal, u_axis, uv_scale) = result.expect("unit plane chart");
             let v_axis = normal.as_raw().cross(*u_axis.as_raw());
@@ -271,7 +271,7 @@ fn e5_native_uv_endpoints_hand_back_admitted_pairs() {
             ctx,
             &line([3.0, -1.0])
         ))
-        .expect("service resource budget"),
+        .expect("compute the E5 native UV endpoints"),
         Some([uv([1.0, 2.0]), uv([7.0, 0.0])])
     );
     assert_eq!(
@@ -279,7 +279,7 @@ fn e5_native_uv_endpoints_hand_back_admitted_pairs() {
             ctx,
             &line([f64::MAX, 0.0])
         ))
-        .expect("service resource budget"),
+        .expect("compute the E5 native UV endpoints"),
         None
     );
 }
@@ -297,7 +297,7 @@ fn e5_native_uv_endpoints_evaluate_a_linear_nurbs_pcurve() {
         crate::test_support::with_service_context(|ctx| super::super::e5_native_uv_endpoints(
             ctx, &pcurve
         ))
-        .expect("service resource budget")
+        .expect("compute the E5 native UV endpoints")
         .is_some()
     );
 }
@@ -386,7 +386,7 @@ fn e5_vertices_derive_from_line_pcurve_bounds_on_a_plane() {
             std::slice::from_ref(&surface),
             &mut crate::nurbs::LaneRefusals::new(),
         ))
-        .expect("service resource budget"),
+        .expect("derive E5 vertices"),
         Some(vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)])
     );
 }

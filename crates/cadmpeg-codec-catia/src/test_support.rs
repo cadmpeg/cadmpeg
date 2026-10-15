@@ -28,7 +28,7 @@ pub(crate) fn with_service_context<T>(
         &arena,
         &cadmpeg_core::decode::DecodePolicy::service(),
     )
-    .expect("empty test root fits the service profile");
+    .expect("build the decode context");
     run(&ctx)
 }
 
@@ -40,7 +40,7 @@ pub(crate) fn with_entity_limit<T>(
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_entities = max_entities;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root fits the service profile");
+        .expect("build the decode context");
     run(&ctx)
 }
 

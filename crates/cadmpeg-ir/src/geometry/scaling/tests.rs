@@ -216,8 +216,7 @@ fn a_scaled_curve_chain_fits_a_small_stack_and_keeps_resource_limits() {
                 .scaled(&ctx, scale(25.4))
                 .expect("admitted carrier copy")
                 .expect("finite scaled chain");
-            ctx.finish_session()
-                .expect("exact copy and scaling budgets");
+            ctx.finish_session().expect("finish the decode session");
             let refused = with_depth_limit(depth - 1, |ctx| {
                 chain.clone().scaled_owned(ctx, scale(25.4))
             });
@@ -226,7 +225,7 @@ fn a_scaled_curve_chain_fits_a_small_stack_and_keeps_resource_limits() {
                 if limit.operation == "IR geometry unit scaling nesting")
             );
             let scaled = with_depth_limit(depth, |ctx| chain.scaled_owned(ctx, scale(25.4)))
-                .expect("exact work and depth budgets")
+                .expect("scale the chain")
                 .expect("finite scaled chain");
             assert_eq!(borrowed, scaled);
             assert_eq!(scaled.nesting_depth(), MAX_GEOMETRY_NESTING);

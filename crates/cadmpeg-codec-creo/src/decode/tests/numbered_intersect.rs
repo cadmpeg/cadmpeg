@@ -70,8 +70,7 @@ fn feature_edge_selection_with_service(
     ir: &CadIr,
     feature_id: u32,
 ) -> Option<EdgeSelection> {
-    (feature_edge_selection(scan, ir, feature_id))
-        .expect("service profile admits feature edge selection")
+    (feature_edge_selection(scan, ir, feature_id)).expect("compute the feature edge selection")
 }
 
 fn generated_curve_edge_refs_with_service(
@@ -81,7 +80,7 @@ fn generated_curve_edge_refs_with_service(
     result_edge_ids: &BTreeMap<u32, Vec<u32>>,
 ) -> Option<Vec<GeneratedEdgeRef>> {
     ({ generated_curve_edge_refs(curve_ids, rows, available_features, result_edge_ids) })
-        .expect("service profile admits generated curve references")
+        .expect("compute the generated curve edge refs")
 }
 
 fn generated_surface_face_refs_with_service(
@@ -91,7 +90,7 @@ fn generated_surface_face_refs_with_service(
     available_features: &BTreeSet<IrFeatureId>,
 ) -> Option<Vec<GeneratedFaceRef>> {
     ({ generated_surface_face_refs(source_ids, rows, result_surface_ids, available_features) })
-        .expect("service profile admits generated surface references")
+        .expect("compute the generated surface face refs")
 }
 
 fn native_feature_dependency_ids_with_service(
@@ -403,7 +402,7 @@ fn section_coordinate_system_solves_coupled_equations_and_withholds_derivations_
     SectionEquationFixture::add_point(&mut difference, 2, SectionAxis::U, -1.0);
     difference.rhs = 2.0;
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| solve_section_coordinate_equations(
+        crate::decode::with_service_context(|ctx| solve_section_coordinate_equations(
             ctx,
             &[
                 sum,
@@ -419,7 +418,7 @@ fn section_coordinate_system_solves_coupled_equations_and_withholds_derivations_
 
     let stored = BTreeMap::from([((1, SectionAxis::U), 1.0), ((1, SectionAxis::V), 3.0)]);
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| solve_section_coordinate_equations(
+        crate::decode::with_service_context(|ctx| solve_section_coordinate_equations(
             ctx,
             &[
                 SectionEquationFixture::point_value(1, SectionAxis::U, 1.0),
@@ -438,7 +437,7 @@ fn section_coordinate_system_solves_coupled_equations_and_withholds_derivations_
         ((2, SectionAxis::V), 4.0),
     ]);
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| solve_section_coordinate_equations(
+        crate::decode::with_service_context(|ctx| solve_section_coordinate_equations(
             ctx,
             &[
                 SectionEquationFixture::point_value(1, SectionAxis::U, 1.0),
@@ -459,7 +458,7 @@ fn section_coordinate_system_solves_coupled_equations_and_withholds_derivations_
         ])
     );
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| solve_section_coordinate_equations(
+        crate::decode::with_service_context(|ctx| solve_section_coordinate_equations(
             ctx,
             &[
                 SectionEquationFixture::point_value(3, SectionAxis::U, 1.0e12),
@@ -471,7 +470,7 @@ fn section_coordinate_system_solves_coupled_equations_and_withholds_derivations_
         BTreeMap::from([(3, [Some(1.0e12), Some(-1.0e12)])])
     );
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| solve_section_coordinate_equations(
+        crate::decode::with_service_context(|ctx| solve_section_coordinate_equations(
             ctx,
             &[SectionEquationFixture::point_value(4, SectionAxis::U, 7.0)],
             &BTreeMap::new(),
@@ -489,7 +488,7 @@ fn unsigned_dimension_signs_are_reconciled_only_when_unique() {
     ];
     let stored = BTreeMap::from([((1, SectionAxis::U), 0.0), ((2, SectionAxis::U), 10.0)]);
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| solve_unsigned_dimension_coordinates(
+        crate::decode::with_service_context(|ctx| solve_unsigned_dimension_coordinates(
             ctx,
             &equations,
             &stored,
@@ -499,7 +498,7 @@ fn unsigned_dimension_signs_are_reconciled_only_when_unique() {
         BTreeMap::from([((3, SectionAxis::U), 3.0)])
     );
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| solve_unsigned_dimension_coordinates(
+        crate::decode::with_service_context(|ctx| solve_unsigned_dimension_coordinates(
             ctx,
             &[SectionEquationFixture::point_value(1, SectionAxis::U, 0.0)],
             &BTreeMap::from([((1, SectionAxis::U), 0.0)]),
@@ -1175,8 +1174,7 @@ fn model_feature_ids_include_row_backed_generated_producers() {
             offset: 100,
         });
 
-    let available_features =
-        model_feature_ids(&scan).expect("service profile admits feature identities");
+    let available_features = model_feature_ids(&scan).expect("compute the model feature IDs");
     assert_eq!(
         available_features,
         BTreeSet::from([
@@ -1421,19 +1419,21 @@ fn full_turn_section_carriers_classify_analytic_revolution_surfaces() {
         .expect("valid test fixture")
     };
 
-    assert!(
-        matches!(revolved_section_circle(&transform, [2.0, 3.0], &axis).map(|circle| CurveGeometry::try_from(circle).expect("valid revolved circle")), Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)))
-                if {
-                    let center = circle_curve.center().get();
-        let axis = circle_curve.frame().axis().as_raw();
-        let ref_direction = circle_curve.frame().reference().as_raw();
-        let radius = circle_curve.radius().get();
-                    center == Point3::new(0.0, 3.0, 0.0)
-                        && *axis == Vector3::new(0.0, 1.0, 0.0)
-                        && *ref_direction == Vector3::new(1.0, 0.0, 0.0)
-                        && radius == 2.0
-                })
-    );
+    assert!(matches!(
+        revolved_section_circle(&transform, [2.0, 3.0], &axis).map(
+            |circle| CurveGeometry::try_from(circle).expect("valid revolved circle")
+        ),
+        Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)))
+            if {
+                let center = circle_curve.center().get();
+    let axis = circle_curve.frame().axis().as_raw();
+    let ref_direction = circle_curve.frame().reference().as_raw();
+    let radius = circle_curve.radius().get();
+                center == Point3::new(0.0, 3.0, 0.0)
+                    && *axis == Vector3::new(0.0, 1.0, 0.0)
+                    && *ref_direction == Vector3::new(1.0, 0.0, 0.0)
+                    && radius == 2.0
+            }));
     assert!(revolved_section_circle(&transform, [0.0, 3.0], &axis).is_none());
     assert!(
         matches!(extruded_section_line(&transform, [2.0, 3.0]), Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)))
@@ -1444,39 +1444,39 @@ fn full_turn_section_carriers_classify_analytic_revolution_surfaces() {
                 })
     );
 
-    assert!(
-        matches!(revolved_section_surface(&transform, &line([2.0, 0.0], [2.0, 4.0]), &axis), Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)))
-        if {
-            let radius = cylinder_surface.radius().get();
-            radius == 2.0
-        })
-    );
-    assert!(
-        matches!(revolved_section_surface(&transform, &line([0.0, 3.0], [4.0, 3.0]), &axis), Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)))
-        if {
-            let origin = plane_surface.origin();
-            origin.y == 3.0
-        })
-    );
-    assert!(
-        matches!(revolved_section_surface(&transform, &line([2.0, 0.0], [4.0, 2.0]), &axis), Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)))
-                if {
-                    let radius = cone_surface.radius().get();
-        let half_angle = cone_surface.half_angle().get();
-                    radius == 2.0 && (half_angle - std::f64::consts::FRAC_PI_4).abs() < EPS_REVOLUTION_CONE_ANGLE
-                })
-    );
-    assert!(
-        matches!(revolved_section_surface(&transform, &line([4.0, 0.0], [2.0, 2.0]), &axis), Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)))
-                if {
-                    let axis = cone_surface.frame().axis().as_raw();
-        let radius = cone_surface.radius().get();
-        let half_angle = cone_surface.half_angle().get();
-                    axis.y == -1.0
-                        && radius == 4.0
-                        && (half_angle - std::f64::consts::FRAC_PI_4).abs() < EPS_REVOLUTION_CONE_ANGLE
-                })
-    );
+    assert!(matches!(
+        revolved_section_surface(&transform, &line([2.0, 0.0], [2.0, 4.0]), &axis),
+        Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)))
+    if {
+        let radius = cylinder_surface.radius().get();
+        radius == 2.0
+    }));
+    assert!(matches!(
+        revolved_section_surface(&transform, &line([0.0, 3.0], [4.0, 3.0]), &axis),
+        Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)))
+    if {
+        let origin = plane_surface.origin();
+        origin.y == 3.0
+    }));
+    assert!(matches!(
+        revolved_section_surface(&transform, &line([2.0, 0.0], [4.0, 2.0]), &axis),
+        Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)))
+            if {
+                let radius = cone_surface.radius().get();
+    let half_angle = cone_surface.half_angle().get();
+                radius == 2.0 && (half_angle - std::f64::consts::FRAC_PI_4).abs() < EPS_REVOLUTION_CONE_ANGLE
+            }));
+    assert!(matches!(
+        revolved_section_surface(&transform, &line([4.0, 0.0], [2.0, 2.0]), &axis),
+        Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)))
+            if {
+                let axis = cone_surface.frame().axis().as_raw();
+    let radius = cone_surface.radius().get();
+    let half_angle = cone_surface.half_angle().get();
+                axis.y == -1.0
+                    && radius == 4.0
+                    && (half_angle - std::f64::consts::FRAC_PI_4).abs() < EPS_REVOLUTION_CONE_ANGLE
+            }));
     let centered_arc = SketchGeometry::try_from(SketchGeometryDefinition::Arc {
         center: cadmpeg_ir::math::Point2::new(0.0, 3.0),
         radius: Length::new(2.0).expect("finite length fixture"),

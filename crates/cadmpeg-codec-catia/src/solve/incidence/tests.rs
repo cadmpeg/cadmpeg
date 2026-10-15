@@ -81,12 +81,12 @@ fn endpoint_candidate_search_selects_a_face_closing_assignment() {
         4,
         &budget,
     )
-    .expect("service resource budget")
+    .expect("reconstruct incidence candidates")
     .expect("unique face-closing endpoint assignment");
     assert_eq!(
         topology
             .edge_vertices(&ctx)
-            .expect("service resource budget")
+            .expect("compute the edge vertices")
             .expect("edge vertices")[0],
         [0, 1]
     );
@@ -105,12 +105,12 @@ fn endpoint_candidate_search_selects_a_face_closing_assignment() {
         4,
         &budget,
     )
-    .expect("service resource budget")
+    .expect("reconstruct incidence candidates")
     .expect("unique face-closing assignment with deferred port orientation");
     assert_eq!(
         topology
             .edge_vertices(&ctx)
-            .expect("service resource budget")
+            .expect("compute the edge vertices")
             .expect("edge vertices")[0],
         [1, 0]
     );
@@ -164,7 +164,7 @@ fn endpoint_candidate_fallback_honors_caller_budget() {
         4,
         &budget,
     )
-    .expect("service resource budget")
+    .expect("reconstruct incidence candidates")
     .is_none());
     assert!(budget.exhausted());
 }
@@ -216,7 +216,7 @@ fn endpoint_candidate_validation_charges_full_incidence_work() {
             },
         },
     )
-    .expect("service resource budget");
+    .expect("visit incidence endpoint pair solutions");
 
     assert_eq!(outcome, IncidenceSolve::Exhausted);
     assert!(!visited);
@@ -228,7 +228,7 @@ fn incidence_propagation_closes_degree_one_vertices_before_search() {
     let mut choices = vec![vec![[0, 1]], vec![[1, 2], [3, 4]], vec![[2, 0]]];
     let edge_faces = [[0, 0], [0, 0], [0, 0]];
     crate::solve::incidence::prune_incidence_choices(&ctx, &mut choices, &edge_faces, 1, 5)
-        .expect("service resource budget")
+        .expect("prune incidence choices")
         .expect("face incidence is satisfiable");
     assert_eq!(choices, vec![vec![[0, 1]], vec![[1, 2]], vec![[2, 0]]]);
 }
@@ -239,7 +239,7 @@ fn incidence_propagation_removes_candidates_with_unsupported_vertices() {
     let mut choices = vec![vec![[0, 1], [2, 3]], vec![[0, 1]]];
     let edge_faces = [[0, 0], [0, 0]];
     crate::solve::incidence::prune_incidence_choices(&ctx, &mut choices, &edge_faces, 1, 4)
-        .expect("service resource budget")
+        .expect("prune incidence choices")
         .expect("face incidence is satisfiable");
     assert_eq!(choices, vec![vec![[0, 1]], vec![[0, 1]]]);
 }
@@ -251,7 +251,7 @@ fn incidence_deferred_support_retains_an_explicit_boundary_gap() {
     let edge_faces = [[0, 0]];
 
     prune_incidence_choices_with_deferred_support(&ctx, &mut choices, &edge_faces, 1, 2)
-        .expect("service resource budget")
+        .expect("prune incidence choices with deferred support")
         .expect("deferred boundary support is not an explicit contradiction");
     assert_eq!(choices, vec![vec![[0, 1]]]);
 }
@@ -270,7 +270,7 @@ fn incidence_propagation_indexes_wide_endpoint_support_domains() {
         1,
         domain.len(),
     )
-    .expect("service resource budget")
+    .expect("prune incidence choices")
     .expect("each endpoint candidate has support from the other edge");
     assert_eq!(choices, vec![domain.clone(), domain]);
 }
@@ -288,7 +288,7 @@ fn incidence_propagation_does_not_allocate_the_declared_point_product() {
         1,
         usize::MAX,
     )
-    .expect("service resource budget")
+    .expect("prune incidence choices")
     .expect("sparse endpoint incidence is independent of the declared cardinality");
     assert_eq!(choices, vec![vec![[0, 1]], vec![[0, 1]]]);
 }
@@ -331,10 +331,10 @@ fn incidence_component_rejects_a_choice_that_strands_a_degree_one_vertex() {
 
     assert!(!search
         .candidate_fits(0, [0, 1])
-        .expect("service resource budget"));
+        .expect("check candidate fits"));
     assert!(search
         .candidate_fits(0, [0, 2])
-        .expect("service resource budget"));
+        .expect("check candidate fits"));
 }
 
 #[test]
@@ -383,12 +383,12 @@ fn incidence_component_indexes_and_revalidates_frontier_support() {
 
     assert!(search
         .candidate_fits(0, [0, 1])
-        .expect("service resource budget"));
+        .expect("check candidate fits"));
     assert!(!budget.exhausted());
     search.assignment[1] = Some([0, 1]);
     assert!(!search
         .candidate_fits(0, [0, 1])
-        .expect("service resource budget"));
+        .expect("check candidate fits"));
 }
 
 #[test]
@@ -399,11 +399,11 @@ fn incidence_component_caches_implicit_frontier_support() {
     let face_edges = vec![vec![0, 1]];
     let mut quotient =
         crate::solve::mesh_quotient::initial_mesh_quotient(&choices, 2, &[[0, 1], [0, 1]])
-            .expect("service resource budget")
+            .expect("compute the initial mesh quotient")
             .expect("initial quotient");
     let coordinate_domains = quotient
         .prepare_coordinate_root_domains(&ctx, 2, &choices, None)
-        .expect("service resource budget")
+        .expect("prepare coordinate root domains")
         .expect("implicit coordinate domains");
     let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
@@ -437,7 +437,7 @@ fn incidence_component_caches_implicit_frontier_support() {
 
     assert!(search
         .candidate_fits(0, [0, 1])
-        .expect("service resource budget"));
+        .expect("check candidate fits"));
     assert_eq!(
         *search.degree_support_witnesses.borrow(),
         HashMap::from([((0, 0), vec![(1, [0, 1])]), ((0, 1), vec![(1, [0, 1])]),])
@@ -483,10 +483,10 @@ fn incidence_degree_support_budget_exhaustion_keeps_candidate_unknown() {
 
     assert!(search
         .candidate_fits(0, [0, 1])
-        .expect("service resource budget"));
+        .expect("check candidate fits"));
     assert!(!budget.exhausted());
     assert!(degree_budget.exhausted());
-    search.search().expect("service resource budget");
+    search.search().expect("search the incidence choices");
     assert_ne!(search.state, IncidenceSearchState::Exhausted);
 }
 
@@ -528,7 +528,7 @@ fn incidence_component_requires_degree_support_to_fit_every_incident_face() {
 
     assert!(!search
         .candidate_fits(0, [0, 1])
-        .expect("service resource budget"));
+        .expect("check candidate fits"));
 }
 
 #[test]
@@ -539,11 +539,11 @@ fn incidence_candidate_checks_ordered_faces_with_implicit_edge_domains() {
     let face_edges = vec![vec![0, 1]];
     let mut quotient =
         crate::solve::mesh_quotient::initial_mesh_quotient(&choices, 2, &[[10, 10], [11, 12]])
-            .expect("service resource budget")
+            .expect("compute the initial mesh quotient")
             .expect("initial quotient");
     let coordinate_domains = quotient
         .prepare_coordinate_root_domains(&ctx, 2, &choices, None)
-        .expect("service resource budget")
+        .expect("prepare coordinate root domains")
         .expect("implicit coordinate domains");
     let use_ = |edge| MeshBoundaryEdgeCandidate {
         edge,
@@ -588,7 +588,7 @@ fn incidence_candidate_checks_ordered_faces_with_implicit_edge_domains() {
 
     assert!(!search
         .candidate_fits(0, [0, 0])
-        .expect("service resource budget"));
+        .expect("check candidate fits"));
     assert!(!propagation_budget.exhausted());
 }
 
@@ -632,7 +632,7 @@ fn incidence_branch_reuses_candidate_viability_across_incident_face_frontiers() 
         search
             .branch(None)
             .map(|options| options.map(Iterator::collect))
-            .expect("service resource budget"),
+            .expect("branch the search"),
         Some(vec![(0, [0, 2])])
     );
     assert!(!budget.exhausted());
@@ -678,7 +678,7 @@ fn incidence_branch_stops_ranking_at_a_singleton_domain() {
         search
             .branch(None)
             .map(|options| options.map(Iterator::collect))
-            .expect("service resource budget"),
+            .expect("branch the search"),
         Some(vec![(0, [0, 2])])
     );
     assert!(!budget.exhausted());
@@ -729,7 +729,7 @@ fn incidence_component_uses_operation_budget_for_a_wide_rejected_frontier() {
         state: IncidenceSearchState::Open,
     };
 
-    search.search().expect("service resource budget");
+    search.search().expect("search the incidence choices");
 
     assert_ne!(search.state, IncidenceSearchState::Exhausted);
     assert_eq!(search.solutions.len(), 1);
@@ -784,7 +784,7 @@ fn incidence_component_schedules_partial_constraint_variables_first() {
         search
             .branch(None)
             .map(|options| options.map(Iterator::collect))
-            .expect("service resource budget"),
+            .expect("branch the search"),
         Some(vec![(1, [3, 4]), (1, [3, 5]), (1, [4, 5])])
     );
 }
@@ -841,7 +841,7 @@ fn incidence_component_assigns_canonical_class_members_in_order() {
         search
             .branch(None)
             .map(|options| options.map(Iterator::collect))
-            .expect("service resource budget"),
+            .expect("branch the search"),
         Some(vec![(0, [0, 1]), (0, [0, 2])])
     );
 
@@ -855,7 +855,7 @@ fn incidence_component_assigns_canonical_class_members_in_order() {
         independent
             .branch(None)
             .map(|options| options.map(Iterator::collect))
-            .expect("service resource budget"),
+            .expect("branch the search"),
         Some(Vec::new())
     );
 }
@@ -897,7 +897,7 @@ fn incidence_component_declines_when_its_work_budget_is_exhausted() {
         state: IncidenceSearchState::Open,
     };
 
-    search.search().expect("service resource budget");
+    search.search().expect("search the incidence choices");
 
     assert!(matches!(search.state, IncidenceSearchState::Exhausted));
     assert!(search.solutions.is_empty());
@@ -952,7 +952,7 @@ fn incidence_face_configuration_scan_does_not_charge_irrelevant_faces() {
     assert_eq!(
         search
             .face_configuration_options()
-            .expect("service resource budget"),
+            .expect("compute the face configuration options"),
         None
     );
     assert!(!budget.exhausted());
@@ -1004,7 +1004,7 @@ fn exhausted_boundary_lookahead_does_not_exhaust_exact_incidence_search() {
         state: IncidenceSearchState::Open,
     };
 
-    search.search().expect("service resource budget");
+    search.search().expect("search the incidence choices");
 
     assert_ne!(search.state, IncidenceSearchState::Exhausted);
     assert_eq!(search.solutions, vec![vec![(0, [0, 0])]]);
@@ -1067,7 +1067,7 @@ fn incidence_face_configuration_branches_on_the_narrowest_estimated_face() {
     assert_eq!(
         search
             .face_configuration_options()
-            .expect("service resource budget"),
+            .expect("compute the face configuration options"),
         Some(vec![vec![(0, [0, 0])]])
     );
     assert!(!budget.exhausted());
@@ -1130,7 +1130,7 @@ fn incidence_face_configuration_branches_on_the_narrowest_projected_face() {
     assert_eq!(
         search
             .face_configuration_options()
-            .expect("service resource budget"),
+            .expect("compute the face configuration options"),
         Some(vec![vec![(1, [10, 11]), (2, [10, 11])]])
     );
 }
@@ -1161,7 +1161,7 @@ fn incidence_face_configuration_reuses_persistent_domains_across_assignments() {
         &[None; 2],
         &[true; 2],
     )
-    .expect("service resource budget")
+    .expect("prepare face configuration domains")
     .expect("compiled face factors");
     let mut search = crate::solve::incidence::IncidenceComponentSearch {
         ctx: &ctx,
@@ -1194,7 +1194,7 @@ fn incidence_face_configuration_reuses_persistent_domains_across_assignments() {
     assert_eq!(
         search
             .face_configuration_options()
-            .expect("service resource budget"),
+            .expect("compute the face configuration options"),
         Some(vec![
             vec![(0, [0, 0]), (1, [0, 0])],
             vec![(0, [1, 1]), (1, [1, 1])]
@@ -1204,7 +1204,7 @@ fn incidence_face_configuration_reuses_persistent_domains_across_assignments() {
     assert_eq!(
         search
             .face_configuration_options()
-            .expect("service resource budget"),
+            .expect("compute the face configuration options"),
         Some(vec![vec![(1, [1, 1])]])
     );
     assert!(!propagation_budget.exhausted());
@@ -1237,7 +1237,7 @@ fn incidence_face_factor_masks_roll_back_between_configuration_branches() {
         &[None; 2],
         &[true; 2],
     )
-    .expect("service resource budget")
+    .expect("prepare face configuration domains")
     .expect("compiled face factors");
     let mut search = crate::solve::incidence::IncidenceComponentSearch {
         ctx: &ctx,
@@ -1267,7 +1267,7 @@ fn incidence_face_factor_masks_roll_back_between_configuration_branches() {
         state: IncidenceSearchState::Open,
     };
 
-    search.search().expect("service resource budget");
+    search.search().expect("search the incidence choices");
 
     assert_eq!(
         search.solutions,
@@ -1304,7 +1304,7 @@ fn persistent_face_configuration_preparation_retains_global_contradictions() {
         &selected,
         &[false, true, false],
     )
-    .expect("service resource budget")
+    .expect("prepare face configuration domains")
     .expect("ordered face factors");
 
     assert!(prepared.domains().iter().flatten().any(Vec::is_empty));
@@ -1318,7 +1318,7 @@ fn persistent_face_configuration_preparation_retains_global_contradictions() {
         &selected,
         &[false, true, false],
     )
-    .expect("service resource budget")
+    .expect("prepare face configuration domains")
     .expect("compatible ordered face factors");
     assert!(prepared
         .domains()
@@ -1361,6 +1361,6 @@ fn incidence_pruning_keeps_two_edges_closing_one_face() {
         1,
         2,
     )
-    .expect("service budget")
+    .expect("prune incidence choices")
     .is_some());
 }

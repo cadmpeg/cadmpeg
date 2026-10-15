@@ -589,7 +589,18 @@ pub(in crate::decode) fn section_equation_equal_length_constraint_rows(
                     let ordinal = equation.arguments[index]?;
                     variables.rows.get(usize::try_from(ordinal).ok()?)
                 });
-            let [Some(first_u), Some(first_v), Some(second_u), Some(second_v), Some(third_u), Some(third_v), Some(fourth_u), Some(fourth_v), Some(auxiliary)] = rows
+            let [
+                Some(first_u),
+                Some(first_v),
+                Some(second_u),
+                Some(second_v),
+                Some(third_u),
+                Some(third_v),
+                Some(fourth_u),
+                Some(fourth_v),
+                Some(auxiliary)
+            ]
+                = rows
             else {
                 return None;
             };

@@ -51,7 +51,7 @@ impl DimensionedScalars {
     pub(crate) fn empty(dimensions: u32, count: u32) -> Result<Self, cadmpeg_core::CodecError> {
         let extent = Self::extent(dimensions, count)
             .ok_or_else(|| cadmpeg_core::CodecError::malformed("test scalar grid extent"))?;
-        let values = crate::decode::with_test_decode_ctx(|ctx| {
+        let values = crate::decode::with_service_context(|ctx| {
             ctx.alloc_filled(extent.len, None, "creo scalar slots")
         })?;
         Ok(Self {
@@ -78,7 +78,7 @@ impl CountedScalars {
     pub(crate) fn empty(count: u32) -> Result<Self, cadmpeg_core::CodecError> {
         let extent = Self::extent(count)
             .ok_or_else(|| cadmpeg_core::CodecError::malformed("test scalar array count"))?;
-        let values = crate::decode::with_test_decode_ctx(|ctx| {
+        let values = crate::decode::with_service_context(|ctx| {
             ctx.alloc_filled(extent.len, None, "creo scalar slots")
         })?;
         Ok(Self {

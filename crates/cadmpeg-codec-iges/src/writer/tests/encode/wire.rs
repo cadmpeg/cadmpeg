@@ -110,8 +110,8 @@ fn reversed_composite_with_shared_vertex() -> EditableDecodeResult {
 #[test]
 fn encode_refuses_reversed_composite_with_shared_wire_vertex() {
     let decoded = reversed_composite_with_shared_vertex();
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+    let validation =
+        cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
     let Err(error) = plan_at(IgesVersion::V5_0, decoded.ir(), None) else {
         panic!("shared wire vertex was accepted");
@@ -191,7 +191,7 @@ fn encode_reverses_a_composite_constituent_as_a_directed_type_102_child() {
     }));
     let validation =
         cadmpeg_ir::validate_neutral(round_trip.ir(), round_trip.report().losses.clone())
-            .expect("resource allocation did not fail");
+            .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -207,7 +207,7 @@ fn synthesized_wire_refuses_shared_vertex_identity() {
     ir.model.edges.push(second);
     ir.model.edges.sort_by(|left, right| left.id.cmp(&right.id));
     let validation =
-        cadmpeg_ir::validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
+        cadmpeg_ir::validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
     assert_eq!(ir.model.edges[0].start, ir.model.edges[1].start);
 
@@ -226,7 +226,7 @@ fn synthesized_owned_wire_refuses_unrepresented_body() {
     let mut ir = decoded.ir().clone();
     ir.model.bodies[0].name = Some("Owned wire".into());
     let validation =
-        cadmpeg_ir::validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
+        cadmpeg_ir::validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 
     let error = crate::writer::synthesize(&ir, IgesVersion::V5_3)

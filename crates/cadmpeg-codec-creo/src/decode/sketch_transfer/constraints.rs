@@ -7,7 +7,7 @@ use crate::decode::sketch::equations_scalar::SectionScalarVariable;
 use crate::feature::definitions::SolverSubtable;
 
 use super::super::feature_history::dimensions::{
-    feature_relation_table_complete, resolved_feature_dimension_parameter_admitted,
+    feature_relation_table_complete, resolved_feature_dimension_parameter,
 };
 use super::super::sketch::coordinates::{
     resolved_section_coordinates, saved_section_coordinate_witnesses,
@@ -32,8 +32,8 @@ use super::super::sketch_ids::{
     sketch_constraint_id_admitted, sketch_entity_id_admitted, sketch_native_ref_admitted,
 };
 use crate::decode::sketch_transfer::identity::{
-    opaque_section_segment_identity_suffix_admitted, section_entity_external_ids,
-    section_segment_identity_suffix_admitted, unique_section_segment_external_ids,
+    opaque_section_segment_identity_suffix, section_entity_external_ids,
+    section_segment_identity_suffix, unique_section_segment_external_ids,
 };
 use crate::decode::sketch_transfer::loci::{
     section_point_locus, section_skamp_active, section_skamp_locus,
@@ -643,7 +643,7 @@ fn section_segment_radius_bindings(
         if segment.radius_ref.is_none() && segment.radius2_ref.is_none() {
             continue;
         }
-        let suffix = section_segment_identity_suffix_admitted(&unique_segment_ids, segment);
+        let suffix = section_segment_identity_suffix(&unique_segment_ids, segment);
         for (field, ordinal) in [
             (SegmentRadiusField::Primary, segment.radius_ref),
             (SegmentRadiusField::Secondary, segment.radius2_ref),
@@ -673,7 +673,7 @@ fn section_segment_radius_bindings(
                 definition.dimensions.as_ref(),
             ) {
                 (Some(ordinal), Some(dimensions)) => {
-                    resolved_feature_dimension_parameter_admitted(sketch, dimensions, ordinal)?
+                    resolved_feature_dimension_parameter(sketch, dimensions, ordinal)?
                         .map(|(dimension, parameter)| (dimension.dimension_type, parameter))
                 }
                 _ => None,
@@ -694,7 +694,7 @@ fn section_segment_radius_bindings(
         if segment.radius_ref.is_none() && segment.radius2_ref.is_none() {
             continue;
         }
-        let suffix = opaque_section_segment_identity_suffix_admitted(&unique_segment_ids, segment);
+        let suffix = opaque_section_segment_identity_suffix(&unique_segment_ids, segment);
         for (field, ordinal) in [
             (SegmentRadiusField::Primary, segment.radius_ref),
             (SegmentRadiusField::Secondary, segment.radius2_ref),
@@ -890,7 +890,7 @@ pub(in super::super) fn section_equation_radius_dimension_constraints(
             continue;
         };
         let Some((dimension, parameter)) =
-            resolved_feature_dimension_parameter_admitted(sketch, dimensions, ordinal)?
+            resolved_feature_dimension_parameter(sketch, dimensions, ordinal)?
         else {
             continue;
         };
@@ -1015,7 +1015,7 @@ fn section_equation_radius_dimension_parameters(
             continue;
         };
         let Some((dimension, parameter)) =
-            resolved_feature_dimension_parameter_admitted(sketch, dimensions, ordinal)?
+            resolved_feature_dimension_parameter(sketch, dimensions, ordinal)?
         else {
             continue;
         };
@@ -1660,7 +1660,7 @@ pub(in super::super) fn section_equation_axis_distance_constraints(
                 return Ok(None);
             };
             let Some((dimension, parameter)) =
-                resolved_feature_dimension_parameter_admitted(sketch, dimensions, ordinal)?
+                resolved_feature_dimension_parameter(sketch, dimensions, ordinal)?
             else {
                 return Ok(None);
             };
@@ -1726,7 +1726,7 @@ pub(in super::super) fn section_equation_unsigned_distance_constraints(
                     return Ok(None);
                 };
                 let Some((_, parameter)) =
-                    resolved_feature_dimension_parameter_admitted(sketch, dimensions, ordinal)?
+                    resolved_feature_dimension_parameter(sketch, dimensions, ordinal)?
                 else {
                     return Ok(None);
                 };
@@ -1849,7 +1849,7 @@ fn native_section_dimension_constraint_definition(
         .zip(usize::try_from(relation.dimension_id).ok())
     {
         Some((dimensions, ordinal)) => {
-            resolved_feature_dimension_parameter_admitted(sketch, dimensions, ordinal)?
+            resolved_feature_dimension_parameter(sketch, dimensions, ordinal)?
                 .map(|(_, parameter)| parameter)
         }
         None => None,
@@ -2002,7 +2002,7 @@ pub(in super::super) fn section_dimension_constraints(
                 {
                     Some((dimensions, ordinal)) => capture_constraint_refusal(
                         &mut coordinate_refusal,
-                        resolved_feature_dimension_parameter_admitted(sketch, dimensions, ordinal),
+                        resolved_feature_dimension_parameter(sketch, dimensions, ordinal),
                     )?,
                     None => None,
                 };
@@ -2909,7 +2909,7 @@ mod tests {
             offset: 0,
         };
         let sketch = SketchId::mint("creo:model:sketch#5").expect("valid sketch ID");
-        let admitted = crate::decode::with_test_decode_ctx(|ctx| {
+        let admitted = crate::decode::with_service_context(|ctx| {
             super::section_dimension_constraints(ctx, &definition, &sketch)
         })
         .expect("dimension row");
@@ -2971,7 +2971,7 @@ mod binding_tests {
         retained.offset = 13;
         table.rows.extend([skipped, retained]);
         let sketch = SketchId::mint("creo:model:sketch#5").expect("valid sketch ID");
-        let constraints = crate::decode::with_test_decode_ctx(|ctx| {
+        let constraints = crate::decode::with_service_context(|ctx| {
             super::section_dimension_constraints(ctx, &definition, &sketch)
         })
         .expect("constraints");

@@ -345,19 +345,7 @@ pub(in super::super) fn saved_section_external_id(
     (!ambiguous_segment_ids.contains(&external_id)).then_some(external_id)
 }
 
-#[cfg(test)]
 pub(in super::super) fn section_segment_identity_suffix(
-    unique_external_ids: &BTreeSet<u32>,
-    segment: &crate::feature::definitions::FeatureSegment,
-) -> String {
-    if unique_external_ids.contains(&segment.external_id) {
-        segment.external_id.to_string()
-    } else {
-        format!("offset:{}", segment.offset)
-    }
-}
-
-pub(in super::super) fn section_segment_identity_suffix_admitted(
     unique_external_ids: &BTreeSet<u32>,
     segment: &crate::feature::definitions::FeatureSegment,
 ) -> String {
@@ -368,7 +356,7 @@ pub(in super::super) fn section_segment_identity_suffix_admitted(
     }
 }
 
-pub(super) fn opaque_section_segment_identity_suffix_admitted(
+pub(super) fn opaque_section_segment_identity_suffix(
     unique_external_ids: &BTreeSet<u32>,
     segment: &crate::feature::definitions::FeatureOpaqueSegment,
 ) -> String {
@@ -432,10 +420,7 @@ mod tests {
             offset: 9,
         };
         assert_eq!(
-            super::section_segment_identity_suffix_admitted(
-                &std::collections::BTreeSet::new(),
-                &segment
-            ),
+            super::section_segment_identity_suffix(&std::collections::BTreeSet::new(), &segment),
             "offset:9"
         );
     }
@@ -445,7 +430,7 @@ mod tests {
         let segment = opaque(42);
         let expected = format!("opaque:offset:{}", segment.offset);
         assert_eq!(
-            super::opaque_section_segment_identity_suffix_admitted(
+            super::opaque_section_segment_identity_suffix(
                 &std::collections::BTreeSet::new(),
                 &segment
             ),
@@ -580,7 +565,7 @@ mod tests {
     #[test]
     fn materialized_saved_section_external_ids_follow_the_order_table() {
         let definition = saved_line_definition();
-        let ids = crate::decode::with_test_decode_ctx(|ctx| {
+        let ids = crate::decode::with_service_context(|ctx| {
             super::materialized_saved_section_external_ids(
                 ctx,
                 &definition,

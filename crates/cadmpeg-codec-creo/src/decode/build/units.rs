@@ -1251,9 +1251,12 @@ mod tests {
         .expect("valid finite regression fixture");
         let geometry = ({ super::scale_sketch_geometry(geometry, positive(10.)) })
             .expect("valid finite regression fixture");
-        assert!(
-            matches!(geometry.definition(),SketchGeometryDefinition::Parabola{bounds:Some(bounds),focal_length,..} if cadmpeg_ir::scalar::FiniteReal::raw_array(*bounds) == [10., 20.] && focal_length.get()==20.)
-        );
+        assert!(matches!(
+            geometry.definition(),
+            SketchGeometryDefinition::Parabola{bounds:Some(bounds),focal_length,..}
+                if cadmpeg_ir::scalar::FiniteReal::raw_array(*bounds) == [10., 20.]
+                && focal_length.get()==20.
+        ));
     }
 
     use super::{
@@ -1293,7 +1296,7 @@ mod tests {
         let mut ir = CadIr::empty();
         let carriers =
             crate::decode::source_carriers::SourceUnitCarriers::new(Some(positive(25.4)));
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             carriers.admit_feature(
                 ctx,
                 &mut ir,
@@ -1464,7 +1467,7 @@ mod tests {
         )
         .expect("finite NURBS fixture");
         let mut ir = CadIr::empty();
-        let error = crate::decode::with_test_decode_ctx(|ctx| {
+        let error = crate::decode::with_service_context(|ctx| {
             crate::decode::source_carriers::SourceUnitCarriers::new(Some(positive(25.4)))
                 .admit_curve(
                     ctx,
@@ -1538,7 +1541,7 @@ mod tests {
             },
         )
         .expect("valid test fixture");
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             scale_pattern_kind(ctx, &mut pattern, positive(25.4))
         })
         .expect("valid test fixture");
@@ -1569,7 +1572,7 @@ mod tests {
             fuzzy_tolerance: FuzzyTolerance::Explicit(positive_length(2.0)),
         };
 
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             scale_feature_definition(ctx, &mut definition, positive(25.4))
         })
         .expect("valid test fixture");
@@ -1595,7 +1598,7 @@ mod tests {
             crate::decode::source_carriers::SourceUnitCarriers::new(Some(positive(25.4)));
         let surface_id = cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#surface")
             .expect("identity grammar");
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             source_carriers.admit_surface(
                 ctx,
                 &mut ir,
@@ -1638,7 +1641,7 @@ mod tests {
             .expect("surface construction admission");
         let curve_id =
             cadmpeg_ir::ids::CurveId::mint("test:model:entity#curve").expect("identity grammar");
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             source_carriers.admit_curve(
                 ctx,
                 &mut ir,
@@ -1864,14 +1867,14 @@ mod tests {
         let SurfaceGeometry::Solved(surface_solved) = &mut surface else {
             panic!("test surface changed family");
         };
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             scale_surface_geometry(ctx, surface_solved, positive(25.4))
         })
         .expect("finite surface scaling");
         let CurveGeometry::Solved(curve_solved) = &mut curve else {
             panic!("test curve changed family");
         };
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             scale_curve_geometry(ctx, curve_solved, positive(25.4))
         })
         .expect("finite curve scaling");
@@ -1945,7 +1948,7 @@ mod tests {
     fn an_elliptic_arc_keeps_radii_that_round_to_one_value() {
         let [low, high] = collapsing_pair();
         let mut definition = elliptic_arc(Point3::new(1.0, 2.0, 3.0), [high, low]);
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             scale_feature_definition(ctx, &mut definition, positive(25.4))
         })
         .expect("ordered radii");
@@ -1970,7 +1973,7 @@ mod tests {
             ),
         ] {
             let mut definition = definition;
-            let error = crate::decode::with_test_decode_ctx(|ctx| {
+            let error = crate::decode::with_service_context(|ctx| {
                 scale_feature_definition(ctx, &mut definition, positive(25.4))
             })
             .expect_err("an overflowing arc")
@@ -2069,7 +2072,7 @@ mod tests {
             },
         )
         .expect("strictly increasing offsets");
-        let error = crate::decode::with_test_decode_ctx(|ctx| {
+        let error = crate::decode::with_service_context(|ctx| {
             scale_pattern_kind(ctx, &mut pattern, positive(25.4))
         })
         .expect_err("the offsets collapse")
@@ -2224,7 +2227,7 @@ mod tests {
                     Ok(())
                 })
                 .expect("reference");
-            crate::decode::with_test_decode_ctx(|ctx| {
+            crate::decode::with_service_context(|ctx| {
                 scale_pattern_kind(ctx, &mut value, positive(2.0))
             })
             .expect("scaled");
@@ -2330,7 +2333,7 @@ mod tests {
             matches!(error, CodecError::ResourceLimit(resource) if resource.operation == "creo surface parameter scale nesting")
         );
         assert_eq!(
-            crate::decode::with_test_decode_ctx(|ctx| super::curve_parameter_scale(
+            crate::decode::with_service_context(|ctx| super::curve_parameter_scale(
                 ctx,
                 &curve,
                 positive(2.0)
@@ -2339,7 +2342,7 @@ mod tests {
             Some(positive(2.0))
         );
         assert_eq!(
-            crate::decode::with_test_decode_ctx(|ctx| super::surface_parameter_scales(
+            crate::decode::with_service_context(|ctx| super::surface_parameter_scales(
                 ctx, &surface, 2.0
             ))
             .expect("service"),
@@ -2348,7 +2351,7 @@ mod tests {
     }
 
     fn scaled_definition(mut definition: FeatureDefinition) -> FeatureDefinition {
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             scale_feature_definition(ctx, &mut definition, positive(2.0))
         })
         .expect("service");
@@ -2390,9 +2393,11 @@ mod tests {
         else {
             panic!("fixture");
         };
-        assert!(
-            matches!(shape.generated_sections_mut().next(), Some(cadmpeg_ir::features::GeneratedSweepSection::CircularRegion { region }) if region.outer_radius().get() == 2.0)
-        );
+        assert!(matches!(
+            shape.generated_sections_mut().next(),
+            Some(cadmpeg_ir::features::GeneratedSweepSection::CircularRegion { region })
+                if region.outer_radius().get() == 2.0
+        ));
     }
 
     #[test]
@@ -2495,12 +2500,14 @@ mod tests {
             })
         };
         let mut result = definition();
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             scale_feature_definition(ctx, &mut result, positive(2.0))
         })
         .expect("service");
-        assert!(
-            matches!(result, FeatureDefinition::Operation(FeatureOperation::Polyline { chain }) if chain.points()[0].get().x == 2.0 && chain.points()[1].get().x == 4.0)
-        );
+        assert!(matches!(
+            result,
+            FeatureDefinition::Operation(FeatureOperation::Polyline { chain })
+                if chain.points()[0].get().x == 2.0 && chain.points()[1].get().x == 4.0
+        ));
     }
 }

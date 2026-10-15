@@ -3,8 +3,6 @@
 
 use cadmpeg_ir::features::FeatureId as IrFeatureId;
 use cadmpeg_ir::ids::CurveId;
-#[cfg(test)]
-use cadmpeg_ir::ids::IdentityKey;
 use cadmpeg_ir::sketches::{SketchConstraintId, SketchEntityId, SketchId};
 
 use crate::container::ContainerScan;
@@ -254,11 +252,6 @@ pub(super) fn sketch_identity_scope(sketch: &SketchId) -> &str {
         .as_str()
         .strip_prefix("creo:model:sketch#")
         .unwrap_or(sketch.as_str())
-}
-
-#[cfg(test)]
-pub(super) fn sketch_identity_key(sketch: &SketchId) -> Option<IdentityKey> {
-    IdentityKey::try_new(sketch_identity_scope(sketch).to_owned()).ok()
 }
 
 pub(super) fn sketch_entity_id_admitted(

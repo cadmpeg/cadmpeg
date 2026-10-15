@@ -1199,8 +1199,10 @@ fn endpoint_pair_gauge_canonicalization_snapshots_row_values() {
     let left = [[0, 1], [2, 3]].into_iter().map(Some).collect::<Vec<_>>();
     let right = [[2, 3], [0, 1]].into_iter().map(Some).collect::<Vec<_>>();
     assert_eq!(
-        canonicalize_partial_endpoint_pair_gauge(&left, gauge).expect("service resource budget"),
-        canonicalize_partial_endpoint_pair_gauge(&right, gauge).expect("service resource budget"),
+        canonicalize_partial_endpoint_pair_gauge(&left, gauge)
+            .expect("canonicalize partial endpoint pair gauge"),
+        canonicalize_partial_endpoint_pair_gauge(&right, gauge)
+            .expect("canonicalize partial endpoint pair gauge"),
     );
 }
 
@@ -1289,11 +1291,10 @@ fn mesh_candidate_comparison_collapses_coordinate_row_gauge() {
     let left = (topology(false), vec![0, 1, 2, 3]);
     let right = (topology(true), vec![0, 1, 2, 3]);
 
-    assert!(
-        !mesh_candidates_equivalent(&ctx, &left, &right, None).expect("service resource budget")
-    );
+    assert!(!mesh_candidates_equivalent(&ctx, &left, &right, None)
+        .expect("check mesh candidates equivalent"));
     assert!(mesh_candidates_equivalent(&ctx, &left, &right, Some(gauge))
-        .expect("service resource budget"));
+        .expect("check mesh candidates equivalent"));
 
     let mut mismatched_topology = topology(false);
     let boundary = &mut mismatched_topology.faces[1].boundaries[0];
@@ -1301,7 +1302,7 @@ fn mesh_candidate_comparison_collapses_coordinate_row_gauge() {
     let mismatched = (mismatched_topology, vec![0, 1, 2, 3]);
     assert!(
         !mesh_candidates_equivalent(&ctx, &left, &mismatched, Some(gauge))
-            .expect("service resource budget")
+            .expect("check mesh candidates equivalent")
     );
 }
 
@@ -1354,7 +1355,7 @@ fn mesh_candidate_comparison_collapses_independent_seam_row_coordinate_automorph
         &edge_candidates,
         &edge_identity_evidence,
     )
-    .expect("service resource budget");
+    .expect("build mesh coordinate gauge");
     assert_eq!(coordinate_gauge.components.len(), COMPONENT_COUNT);
     for component in 0..COMPONENT_COUNT {
         let mut coordinate_swap = (0..COMPONENT_COUNT * 4).collect::<Vec<_>>();
@@ -1424,22 +1425,22 @@ fn mesh_candidate_comparison_collapses_independent_seam_row_coordinate_automorph
     let left = (topology(0), identity.clone());
     let canonical_left =
         canonicalize_mesh_candidate_for_output(&ctx, &left.0, &left.1, Some(gauge))
-            .expect("service resource budget")
+            .expect("canonicalize mesh candidate for output")
             .expect("seam candidate canonicalization");
 
     for mask in 1..(1 << COMPONENT_COUNT) {
         let right = (topology(mask), identity.clone());
         assert!(!mesh_candidates_equivalent(&ctx, &left, &right, None)
-            .expect("service resource budget"));
+            .expect("check mesh candidates equivalent"));
         assert!(
             mesh_candidates_equivalent(&ctx, &left, &right, Some(gauge))
-                .expect("service resource budget"),
+                .expect("check mesh candidates equivalent"),
             "seam gauge did not collapse mask {mask:#b}"
         );
         assert_eq!(
             canonical_left,
             canonicalize_mesh_candidate_for_output(&ctx, &right.0, &right.1, Some(gauge))
-                .expect("service resource budget")
+                .expect("canonicalize mesh candidate for output")
                 .expect("seam candidate canonicalization"),
             "seam gauge representative depends on search arrival order for mask {mask:#b}"
         );
@@ -1449,7 +1450,7 @@ fn mesh_candidate_comparison_collapses_independent_seam_row_coordinate_automorph
     displaced.vertex_points[0][0] = -1.0;
     assert!(
         !mesh_candidates_equivalent(&ctx, &left, &(displaced, identity), Some(gauge))
-            .expect("service resource budget")
+            .expect("check mesh candidates equivalent")
     );
 
     let mut mismatched_geometry = edge_geometry;
@@ -1466,7 +1467,7 @@ fn mesh_candidate_comparison_collapses_independent_seam_row_coordinate_automorph
         &edge_candidates,
         &edge_identity_evidence,
     )
-    .expect("service resource budget");
+    .expect("build mesh coordinate gauge");
     let mismatched_gauge = MeshCandidateGauge {
         edge_rows: &edge_rows,
         edge_faces: &edge_faces,
@@ -1483,7 +1484,7 @@ fn mesh_candidate_comparison_collapses_independent_seam_row_coordinate_automorph
         &(row_swapped, (0..COMPONENT_COUNT * 4).collect()),
         Some(mismatched_gauge),
     )
-    .expect("service resource budget"));
+    .expect("check mesh candidates equivalent"));
 }
 
 pub(super) fn canonicalize_endpoint_relation_state(
@@ -1782,7 +1783,7 @@ fn relation_state_memo_collapses_coordinate_gauge() {
             &pairs.into_iter().map(Some).collect::<Vec<_>>(),
             gauge,
         )
-        .expect("service resource budget")
+        .expect("canonicalize endpoint relation state")
         .expect("coordinate gauge state")
     };
 
@@ -1833,7 +1834,7 @@ fn relation_state_memo_uses_coordinate_gauge_domain_alternatives() {
             },
         }]];
         canonicalize_endpoint_relation_state(&ctx, &domains, &[None, None], gauge)
-            .expect("service resource budget")
+            .expect("canonicalize endpoint relation state")
             .expect("coordinate gauge state")
     };
 
@@ -1862,7 +1863,7 @@ fn relation_state_memo_applies_one_row_mapping_to_assigned_and_domains() {
         &edge_candidates,
         &edge_identity_evidence,
     )
-    .expect("service resource budget");
+    .expect("build mesh coordinate gauge");
     let gauge = MeshCandidateGauge {
         edge_rows: &edge_rows,
         edge_faces: &edge_faces,
@@ -1880,7 +1881,7 @@ fn relation_state_memo_applies_one_row_mapping_to_assigned_and_domains() {
             },
         }]];
         canonicalize_endpoint_relation_state(&ctx, &domains, &assigned, gauge)
-            .expect("service resource budget")
+            .expect("canonicalize endpoint relation state")
             .expect("row-coordinate gauge state")
     };
 
@@ -1963,7 +1964,7 @@ fn edge_row_gauge_canonicalizes_a_two_edge_loop() {
     assert!(crate::test_support::with_service_context(|ctx| {
         canonicalize_mesh_edge_row_gauges(ctx, topology.clone(), gauge, None)
     })
-    .expect("service resource budget")
+    .expect("canonicalize mesh edge row gauges")
     .is_some());
 }
 
@@ -2015,7 +2016,7 @@ fn endpoint_relation_state_canonicalizes_under_a_swap_gauge() {
         canonicalize_endpoint_relation_state(ctx, &domains, &[Some([0, 1])], gauge)
     };
     assert!(crate::test_support::with_service_context(run)
-        .expect("service resource budget")
+        .expect("canonicalize endpoint relation state")
         .is_some());
 }
 
@@ -2043,7 +2044,7 @@ fn coordinate_gauge_has_components_for_two_parallel_lines() {
         )
     };
     assert!(!crate::test_support::with_service_context(run)
-        .expect("service resource budget")
+        .expect("build mesh coordinate gauge")
         .components
         .is_empty());
 }
@@ -2090,13 +2091,15 @@ fn mesh_candidate_with_coordinate_gauge_is_equivalent_to_itself() {
         mesh_candidates_equivalent(ctx, &candidate, &candidate, Some(gauge))
     };
     catia_test_context!(service_ctx);
-    assert!(crate::test_support::with_service_context(run).expect("service resource budget"));
+    assert!(
+        crate::test_support::with_service_context(run).expect("check mesh candidates equivalent")
+    );
     assert!(canonicalize_mesh_candidate_for_output(
         &service_ctx,
         &candidate.0,
         &candidate.1,
         Some(gauge),
     )
-    .expect("service resource budget")
+    .expect("canonicalize mesh candidate for output")
     .is_some());
 }

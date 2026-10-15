@@ -20,7 +20,7 @@ fn port_candidate_search_refuses_depth_limit() {
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("fixture fits input limit");
     assert_eq!(
-        bind_edge_port_candidates(&ctx, &ports, &candidates).expect("service resource budget"),
+        bind_edge_port_candidates(&ctx, &ports, &candidates).expect("bind edge port candidates"),
         Some(vec![[0, 1], [1, 2]]),
     );
 
@@ -30,7 +30,7 @@ fn port_candidate_search_refuses_depth_limit() {
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("fixture fits input limit");
     assert!(bind_edge_port_candidates(&ctx, &[[10, 11]], &ambiguous)
-        .expect("service resource budget")
+        .expect("bind edge port candidates")
         .is_none());
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -53,7 +53,7 @@ fn compact_standard_ports_reuse_handles_in_the_global_trim_namespace() {
             true,
         )
     })
-    .expect("service resource budget")
+    .expect("compute the standard edge port identities")
     .expect("compact standard ports");
 
     assert_eq!(ports, vec![[0, 1], [1, 2], [2, 0]]);
@@ -79,7 +79,7 @@ fn standard_full_table_reuses_terminal_handles_for_every_row_layout() {
     let ports = crate::test_support::with_service_context(|ctx| {
         crate::solve::missing_edge::standard_edge_port_identities(ctx, &bytes, true)
     })
-    .expect("service resource budget")
+    .expect("compute the standard edge port identities")
     .expect("standard full-table ports");
     assert_eq!(ports, vec![[0, 1], [1, 2], [1, 3]]);
 }
@@ -103,12 +103,12 @@ fn standard_mesh_ports_preserve_global_terminal_handle_identity() {
     let ports = crate::test_support::with_service_context(|ctx| {
         crate::solve::missing_edge::standard_mesh_edge_ports(ctx, &bytes)
     })
-    .expect("service resource budget")
+    .expect("compute the standard mesh edge ports")
     .expect("mesh port collapse");
     let table_ports = crate::test_support::with_service_context(|ctx| {
         crate::solve::missing_edge::standard_edge_port_identities(ctx, &bytes, true)
     })
-    .expect("service resource budget")
+    .expect("compute the standard edge port identities")
     .expect("global terminal-handle ports");
     assert_eq!(table_ports[1][1], table_ports[2][0]);
     assert_eq!(
@@ -159,14 +159,14 @@ fn standard_mesh_resolver_derives_trim_components_from_local_ports() {
             &[[0, 0]; 4],
             &candidates,
         )
-        .expect("service resource budget")
+        .expect("parse standard mesh endpoint candidates")
         .expect("trim occurrence endpoint quotient");
 
     assert_eq!(assignment, vec![0, 1, 2, 3]);
     assert_eq!(
         topology
             .edge_vertices(&ctx)
-            .expect("service resource budget")
+            .expect("compute the edge vertices")
             .expect("resolved edge endpoints"),
         vec![[0, 1], [1, 2], [2, 3], [0, 3]]
     );
@@ -180,7 +180,7 @@ fn standard_mesh_candidate_quotient_defers_occurrence_direction() {
 
     assert!(
         crate::solve::mesh_quotient::initial_mesh_quotient(&candidates, 4, &local_ports)
-            .expect("service resource budget")
+            .expect("compute the initial mesh quotient")
             .is_some()
     );
     assert!(crate::solve::mesh_quotient::initial_mesh_quotient(
@@ -188,7 +188,7 @@ fn standard_mesh_candidate_quotient_defers_occurrence_direction() {
         4,
         &prematurely_oriented_ports
     )
-    .expect("service resource budget")
+    .expect("compute the initial mesh quotient")
     .is_none());
 }
 
@@ -197,7 +197,7 @@ fn standard_mesh_ports_are_occurrence_components_not_coordinate_indices() {
     let ports = crate::test_support::with_service_context(|ctx| {
         crate::solve::missing_edge::standard_mesh_edge_ports(ctx, &standard_quad_topology_stream())
     })
-    .expect("service resource budget")
+    .expect("compute the standard mesh edge ports")
     .expect("mesh endpoint components");
     assert_eq!(ports.len(), 4);
     assert_eq!(
@@ -218,7 +218,7 @@ fn standard_mesh_coverage_reports_exact_matched_partition() {
         &standard_quad_topology_stream(),
         &[[0, 0]; 4],
     )
-    .expect("service resource budget")
+    .expect("compute the standard mesh face coverage")
     .expect("mesh coverage");
     assert_eq!(coverage.len(), 1);
     assert_eq!(coverage[0].face, 0);
@@ -235,7 +235,7 @@ fn standard_mesh_coverage_reports_exact_matched_partition() {
     bytes.drain(first_row + 4..first_row + 6);
     let coverage =
         crate::solve::missing_edge::standard_mesh_face_coverage(&ctx, &bytes, &[[0, 0]; 4])
-            .expect("service resource budget")
+            .expect("compute the standard mesh face coverage")
             .expect("one gap");
     assert_eq!(coverage[0].missing_edges, [0]);
     assert_eq!(coverage[0].gaps.len(), 1);
@@ -245,7 +245,7 @@ fn standard_mesh_coverage_reports_exact_matched_partition() {
         &bytes,
         &[[0, 0]; 4],
     )
-    .expect("service resource budget")
+    .expect("compute the standard mesh missing edge placements")
     .expect("complete missing-edge placement domain");
     assert_eq!(placements[0].len(), 1);
     assert_eq!(placements[0][0].edge, 0);
@@ -257,7 +257,7 @@ fn standard_mesh_coverage_reports_exact_matched_partition() {
         None,
         false,
     )
-    .expect("service resource budget")
+    .expect("compute the standard mesh missing edge assignments")
     .expect("complete missing-edge assignments");
     assert_eq!(assignments[0], [placements[0].clone()]);
     let mut local_ports = bytes.clone();
@@ -275,7 +275,7 @@ fn standard_mesh_coverage_reports_exact_matched_partition() {
             None,
             false
         )
-        .expect("service resource budget")
+        .expect("compute the standard mesh missing edge assignments")
         .is_some()
     );
     let boundaries = crate::solve::missing_edge::standard_mesh_boundary_assignments(
@@ -284,11 +284,11 @@ fn standard_mesh_coverage_reports_exact_matched_partition() {
         &[[0, 0]; 4],
         None,
     )
-    .expect("service resource budget")
+    .expect("compute the standard mesh boundary assignments")
     .expect("complete ordered boundary assignments");
     let boundary_context =
         crate::solve::missing_edge::StandardMeshBoundaryContext::parse(&ctx, &bytes, &[[0, 0]; 4])
-            .expect("service resource budget")
+            .expect("parse the standard mesh boundary context")
             .expect("parsed boundary context");
     assert_eq!(
         crate::solve::missing_edge::standard_mesh_boundary_assignments_from_context(
@@ -296,7 +296,7 @@ fn standard_mesh_coverage_reports_exact_matched_partition() {
             &boundary_context,
             None,
         )
-        .expect("service resource budget")
+        .expect("compute the standard mesh boundary assignments from context")
         .expect("assignments from parsed context"),
         boundaries,
     );
@@ -307,14 +307,14 @@ fn standard_mesh_coverage_reports_exact_matched_partition() {
             &boundary_context,
             Some(&singleton_endpoints),
         )
-        .expect("service resource budget"),
+        .expect("compute the standard mesh boundary assignments from context"),
         crate::solve::missing_edge::standard_mesh_boundary_assignments(
             &ctx,
             &bytes,
             &[[0, 0]; 4],
             Some(&singleton_endpoints),
         )
-        .expect("service resource budget"),
+        .expect("compute the standard mesh boundary assignments"),
     );
     assert_eq!(boundaries[0].len(), 1);
     assert_eq!(boundaries[0][0].boundaries.len(), 1);
@@ -337,13 +337,13 @@ fn standard_mesh_coverage_reports_exact_matched_partition() {
         &[0],
         &[vec![vec![false; 4]]],
     )
-    .expect("service resource budget")
+    .expect("parse standard mesh selection")
     .expect("selected mesh-corner quotient");
     assert_eq!(selected.logical_vertex_count(), 4);
     assert_eq!(
         selected
             .edge_vertices(&ctx)
-            .expect("service resource budget")
+            .expect("compute the edge vertices")
             .expect("selected edge vertices"),
         [[0, 1], [1, 2], [2, 3], [3, 0]]
     );
@@ -354,13 +354,13 @@ fn standard_mesh_coverage_reports_exact_matched_partition() {
             &[[0, 0]; 4],
             &[Vec::new(), vec![[1, 2]], vec![[2, 3]], vec![[3, 0]]],
         )
-        .expect("service resource budget")
+        .expect("parse standard mesh endpoint candidates")
         .expect("abstract mesh quotient search");
     assert_eq!(searched.logical_vertex_count(), 4);
     assert_eq!(
         searched
             .edge_vertices(&ctx)
-            .expect("service resource budget")
+            .expect("compute the edge vertices")
             .expect("searched edge vertices")
             .into_iter()
             .map(|vertices| {
@@ -382,7 +382,7 @@ fn standard_mesh_coverage_reports_exact_matched_partition() {
             vec![[3, 0]],
         ],
     )
-    .expect("service resource budget")
+    .expect("compute the standard mesh prune endpoint candidates")
     .expect("ordered boundary endpoint domains");
     assert_eq!(cycle_domains[0], [[0, 1]]);
     let inferred_cycle_domains =
@@ -392,7 +392,7 @@ fn standard_mesh_coverage_reports_exact_matched_partition() {
             &[[0, 0]; 4],
             &[Vec::new(), vec![[1, 2]], vec![[2, 3]], vec![[3, 0]]],
         )
-        .expect("service resource budget")
+        .expect("compute the standard mesh prune endpoint candidates")
         .expect("endpoint domain inferred from ordered neighbors");
     assert_eq!(inferred_cycle_domains[0], [[0, 1]]);
     let endpoint_domains = crate::solve::missing_edge::standard_mesh_placement_endpoint_pairs(
@@ -401,7 +401,7 @@ fn standard_mesh_coverage_reports_exact_matched_partition() {
         &[[0, 0]; 4],
         &[None, Some([1, 2]), Some([2, 3]), Some([3, 0])],
     )
-    .expect("service resource budget")
+    .expect("compute the standard mesh placement endpoint pairs")
     .expect("gap-corner endpoint domains");
     assert_eq!(endpoint_domains[0], [[0, 1]]);
     let endpoint_assignments =
@@ -411,7 +411,7 @@ fn standard_mesh_coverage_reports_exact_matched_partition() {
             &[[0, 0]; 4],
             &[None, Some([1, 2]), Some([2, 3]), Some([3, 0])],
         )
-        .expect("service resource budget")
+        .expect("compute the standard mesh missing edge endpoint assignments")
         .expect("correlated gap-corner endpoint assignments");
     assert_eq!(endpoint_assignments[0].len(), 1);
     assert_eq!(endpoint_assignments[0][0].len(), 1);
@@ -426,7 +426,7 @@ fn standard_mesh_coverage_reports_exact_matched_partition() {
             &[[0, 0]; 4],
             &[Some([1, 0]), Some([1, 2]), Some([2, 3]), Some([3, 0])],
         )
-        .expect("service resource budget")
+        .expect("compute the standard mesh pruned missing edge endpoint assignments")
         .expect("endpoint-compatible face assignment");
     assert_eq!(pruned[0][0][0].endpoint_pairs, Some(vec![[0, 1]]));
     assert!(
@@ -436,7 +436,7 @@ fn standard_mesh_coverage_reports_exact_matched_partition() {
             &[[0, 0]; 4],
             &[Some([0, 2]), Some([1, 2]), Some([2, 3]), Some([3, 0]),],
         )
-        .expect("service resource budget")
+        .expect("compute the standard mesh pruned missing edge endpoint assignments")
         .is_none()
     );
 }
@@ -455,7 +455,7 @@ fn unmatched_standard_row_arity_does_not_fix_trim_span() {
 
     let coverage =
         crate::solve::missing_edge::standard_mesh_face_coverage(&ctx, &bytes, &[[0, 0]; 4])
-            .expect("service resource budget")
+            .expect("compute the standard mesh face coverage")
             .expect("unmatched row coverage");
     assert_eq!(coverage[0].missing_edges, [0]);
     assert_eq!(coverage[0].gaps[0].length, 2);
@@ -466,7 +466,7 @@ fn unmatched_standard_row_arity_does_not_fix_trim_span() {
         None,
         false,
     )
-    .expect("service resource budget")
+    .expect("compute the standard mesh missing edge assignments")
     .expect("unmatched curve samples do not determine trim span");
     assert_eq!(assignments[0].len(), 1);
     assert_eq!(assignments[0][0][0].segment_count, 2);
@@ -489,7 +489,7 @@ fn unmatched_fbb_complete_row_arity_fixes_trim_span() {
     }
     let coverage =
         crate::solve::missing_edge::standard_mesh_face_coverage(&ctx, &bytes, &[[0, 0]; 4])
-            .expect("service resource budget")
+            .expect("compute the standard mesh face coverage")
             .expect("unmatched FBB row coverage");
     assert_eq!(coverage[0].missing_edges, [0, 1]);
     assert_eq!(coverage[0].gaps[0].length, 4);
@@ -501,7 +501,7 @@ fn unmatched_fbb_complete_row_arity_fixes_trim_span() {
         None,
         false,
     )
-    .expect("service resource budget")
+    .expect("compute the standard mesh missing edge assignments")
     .expect("complete FBB row spans");
     assert_eq!(assignments[0].len(), 2);
     assert!(assignments[0].iter().all(|assignment| {
@@ -518,7 +518,7 @@ fn standard_mesh_runs_include_flanking_segments() {
     let runs = crate::test_support::with_service_context(|ctx| {
         crate::solve::missing_edge::standard_mesh_edge_runs(ctx, &standard_quad_topology_stream())
     })
-    .expect("service resource budget")
+    .expect("parse the standard mesh edge runs")
     .expect("mesh edge runs");
     assert_eq!(runs.len(), 4);
     assert_eq!(
@@ -549,7 +549,7 @@ fn standard_mesh_gap_assignment_uses_compact_endpoint_identity() {
         None,
         false,
     )
-    .expect("service resource budget")
+    .expect("compute the standard mesh missing edge assignments")
     .expect("native port-ordered full gap");
     assert_eq!(assignments.len(), 1);
     assert_eq!(assignments[0].len(), 280);
@@ -568,7 +568,7 @@ fn standard_mesh_gap_assignment_uses_compact_endpoint_identity() {
             &[[0, 0]; 4],
             &[vec![[0, 1]], vec![[1, 2]], vec![[2, 3]], vec![[3, 0]]],
         )
-        .expect("service resource budget")
+        .expect("parse standard mesh endpoint candidates")
         .expect("endpoint-constrained full gap");
     assert_eq!(topology.logical_vertex_count(), 4);
     assert_eq!(points, [0, 1, 2, 3]);
@@ -595,7 +595,7 @@ fn standard_mesh_endpoint_domains_ignore_row_local_endpoint_order() {
             &[[0, 0]; 4],
             &[vec![[0, 1]], vec![[1, 2]], vec![[2, 3]], vec![[3, 0]]],
         )
-        .expect("service resource budget")
+        .expect("parse standard mesh endpoint candidates")
         .expect("independent endpoint-port gauge");
     let coedges = &topology.faces[0].boundaries[0].coedges;
     assert!(coedges.iter().all(|coedge| !coedge.reversed));
@@ -650,7 +650,7 @@ fn standard_quad_yields_mesh_boundary_assignments() {
         )
     };
     assert!(crate::test_support::with_service_context(run)
-        .expect("service budget")
+        .expect("compute the standard mesh boundary assignments")
         .is_some());
 }
 
@@ -673,7 +673,7 @@ fn single_boundary_candidate_has_endpoint_support() {
         )
     };
     assert!(crate::test_support::with_service_context(run)
-        .expect("service budget")
+        .expect("compute the boundary endpoint support")
         .is_some());
 }
 
@@ -697,7 +697,7 @@ fn standard_quad_with_an_unmatched_row_yields_missing_edge_assignments() {
         )
     };
     assert!(crate::test_support::with_service_context(run)
-        .expect("service budget")
+        .expect("compute the standard mesh missing edge assignments")
         .is_some());
 }
 
@@ -714,6 +714,6 @@ fn endpoint_pruning_admits_a_quad_missing_one_edge_candidate() {
         )
     };
     assert!(crate::test_support::with_service_context(run)
-        .expect("service budget")
+        .expect("compute the standard mesh prune endpoint candidates")
         .is_some());
 }

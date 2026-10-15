@@ -145,7 +145,7 @@ fn decode_classifies_and_bounds_all_standard_conic_arc_families() {
         }
         assert!(result.report().losses.is_empty(), "form {form}");
         let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail");
+            .expect("validate the neutral model");
         assert!(
             validation.is_ok(),
             "form {form}: {:#?}",
@@ -331,8 +331,8 @@ fn decode_canonicalizes_ellipse_arc_seam_noise() {
         Some(0.0)
     );
     assert!(result.report().losses.is_empty());
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+    let validation =
+        cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -388,7 +388,7 @@ fn parabola_projection_preserves_common_large_coefficient_scale() {
         assert_eq!(parabola.focal_distance().get(), 0.25);
         assert!(result.report().losses.is_empty());
         assert!(cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok());
     }
 }

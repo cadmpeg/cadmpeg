@@ -368,8 +368,11 @@ fn apply_field_specs(
         }
         return Ok(fields);
     }
-    let [Some(f0), Some(f1), Some(f2), Some(f3), Some(f4), Some(f5), Some(f6), Some(f7), Some(f8), Some(f9), Some(f10), Some(f11), Some(f12), Some(f13), Some(f14), Some(f15)] =
-        specs
+    #[rustfmt::skip]
+    let [
+        Some(f0), Some(f1), Some(f2), Some(f3), Some(f4), Some(f5), Some(f6), Some(f7),
+        Some(f8), Some(f9), Some(f10), Some(f11), Some(f12), Some(f13), Some(f14), Some(f15),
+    ] = specs
     else {
         return Err(malformed(
             "the first Data record does not specify every non-redundant Directory field",

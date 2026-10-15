@@ -2,8 +2,7 @@
 //! EXT11 support-UV assignment, completion, and equivalent-parameter transfer.
 
 use super::blend::{
-    blend_boundary_parameter_from_contact_pcurve_with_geometry_and_budget,
-    blend_support_parameter_from_source_pcurve_with_index_and_budget_and_seed_cache,
+    blend_boundary_parameter_from_contact_pcurve, blend_support_parameter_from_source_pcurve,
     blend_surface_definition_with_index, blend_surface_parameter_grid_with_index_and_budget,
     blend_surface_parameters_for_fit_with_grid_and_budget,
     blend_surface_parameters_for_fit_with_source_continuation_and_budget,
@@ -12,6 +11,7 @@ use super::blend::{
     blend_surface_parameters_from_point_with_index_and_budget,
     decoded_surface_point_with_geometry_and_budget, spine_contact_pcurve_with_index,
     BlendContactSeedCache, BlendParameterGrid, BoundaryInverseTarget, CircularBlendDefinition,
+    ContactCurveSample, SourcePcurveSample,
 };
 use super::geometry_work::GeometryWorkBudget;
 use super::nurbs_fit::{fit_nurbs_surface_parameter, fit_nurbs_surface_parameter_locally};
@@ -1331,17 +1331,23 @@ fn complete_support_uv_wave(
                                         if let Some((source_pcurve, source_surface)) =
                                             source_pcurve.zip(other_surface_id)
                                         {
-                                            parameters = blend_support_parameter_from_source_pcurve_with_index_and_budget_and_seed_cache(
-&model_index,
-&crate::decode::blend::SourcePcurveSample { blend: source_surface, support: surface_id, source_pcurve: &source_pcurve.geometry, curve_parameter: sample_parameter },
-BoundaryInverseTarget {
-                                                    point: *point,
-                                                    seed,
-                                                    tolerance: effective_fit_tolerance,
-                                                },
-&mut contact_seeds,
-geometry_budget,
-)?;
+                                            parameters =
+                                                blend_support_parameter_from_source_pcurve(
+                                                    &model_index,
+                                                    &SourcePcurveSample {
+                                                        blend: source_surface,
+                                                        support: surface_id,
+                                                        source_pcurve: &source_pcurve.geometry,
+                                                        curve_parameter: sample_parameter,
+                                                    },
+                                                    BoundaryInverseTarget {
+                                                        point: *point,
+                                                        seed,
+                                                        tolerance: effective_fit_tolerance,
+                                                    },
+                                                    &mut contact_seeds,
+                                                    geometry_budget,
+                                                )?;
                                         }
                                     }
                                     if parameters.is_none() {
@@ -1353,16 +1359,24 @@ geometry_budget,
                                             boundary,
                                         )) = other_contact
                                         {
-                                            parameters = blend_boundary_parameter_from_contact_pcurve_with_geometry_and_budget(
-&model_index,
-&crate::decode::blend::ContactCurveSample { support: other_surface, support_geometry: other_geometry, contact_pcurve, boundary, support_pcurve: other_pcurve, curve_parameter: sample_parameter },
-BoundaryInverseTarget {
-                                                    point: *point,
-                                                    seed,
-                                                    tolerance: effective_fit_tolerance,
-                                                },
-geometry_budget,
-)?;
+                                            parameters =
+                                                blend_boundary_parameter_from_contact_pcurve(
+                                                    &model_index,
+                                                    &ContactCurveSample {
+                                                        support: other_surface,
+                                                        support_geometry: other_geometry,
+                                                        contact_pcurve,
+                                                        boundary,
+                                                        support_pcurve: other_pcurve,
+                                                        curve_parameter: sample_parameter,
+                                                    },
+                                                    BoundaryInverseTarget {
+                                                        point: *point,
+                                                        seed,
+                                                        tolerance: effective_fit_tolerance,
+                                                    },
+                                                    geometry_budget,
+                                                )?;
                                         }
                                     }
                                     if parameters.is_none() {

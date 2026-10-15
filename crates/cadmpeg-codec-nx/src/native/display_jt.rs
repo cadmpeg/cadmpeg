@@ -15,7 +15,8 @@ mod version;
 
 use cadmpeg_ir::native::bytes::NativeBytes;
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::hash::Hash;
 
 use serde::ser::SerializeSeq;
 use serde::{Deserialize, Serialize};
@@ -5152,12 +5153,157 @@ fn multiply_jt_matrices(left: DisplayJtMatrix, right: DisplayJtMatrix) -> Option
     Some(product)
 }
 
-struct JtPathLookup<'a, 'b> {
-    by_object: &'a BTreeMap<u32, &'b DisplayJtBaseNodeData>,
-    parents: &'a BTreeMap<u32, Vec<u32>>,
-    instance_ids: &'a BTreeMap<u32, String>,
-    transforms: &'a [&'b DisplayJtGeometricTransformAttribute],
-    materials: &'a [&'b DisplayJtMaterialAttribute],
+/// The Display-JT node graph of one scene segment.
+struct JtSceneGraph<'b> {
+    by_object: BTreeMap<u32, &'b DisplayJtBaseNodeData>,
+    parents: BTreeMap<u32, Vec<u32>>,
+    instance_ids: BTreeMap<u32, String>,
+    /// Transform attributes by object id; `None` when the id repeats.
+    transforms: HashMap<u32, Option<&'b DisplayJtGeometricTransformAttribute>>,
+    /// Material attributes by object id; `None` when the id repeats.
+    materials: HashMap<u32, Option<&'b DisplayJtMaterialAttribute>>,
+}
+
+impl<'b> JtSceneGraph<'b> {
+    /// The node graph of `scene_segment`, or `None` when a node object id or
+    /// an instance object id repeats, a node has more than one child list, or
+    /// a child is not a node of the scene.
+    ///
+    /// `elements` holds the first compressed element of each id.
+    fn new(
+        scene_segment: &str,
+        inputs: &DisplayJtTessellationInputs<'b>,
+        elements: &HashMap<&str, &DisplayJtCompressedElement>,
+    ) -> Option<Self> {
+        let in_scene = |element_id: &str| {
+            elements
+                .get(element_id)
+                .is_some_and(|element| element.segment == scene_segment)
+        };
+        let mut by_object = BTreeMap::new();
+        for base in inputs
+            .base_nodes
+            .iter()
+            .filter(|base| in_scene(&base.element))
+        {
+            if by_object.insert(base.object_id, base).is_some() {
+                return None;
+            }
+        }
+        let transforms = unique_by_key(
+            inputs
+                .transforms
+                .iter()
+                .filter(|attribute| in_scene(&attribute.element)),
+            |attribute| attribute.object_id,
+        );
+        let materials = unique_by_key(
+            inputs
+                .materials
+                .iter()
+                .filter(|attribute| in_scene(&attribute.element)),
+            |attribute| attribute.object_id,
+        );
+        let base_ids = by_object
+            .values()
+            .map(|base| base.id.as_str())
+            .collect::<HashSet<_>>();
+        let mut instance_ids = BTreeMap::new();
+        for node in inputs.instance_nodes {
+            if !base_ids.contains(node.base_node.as_str()) {
+                continue;
+            }
+            if instance_ids
+                .insert(node.object_id, node.id.clone())
+                .is_some()
+            {
+                return None;
+            }
+        }
+        let mut group_children = HashMap::<&str, Vec<&[u32]>>::new();
+        for node in inputs.group_nodes {
+            group_children
+                .entry(node.base_node.as_str())
+                .or_default()
+                .push(node.child_object_ids.as_slice());
+        }
+        let mut instance_children = HashMap::<&str, Vec<&[u32]>>::new();
+        for node in inputs.instance_nodes {
+            instance_children
+                .entry(node.base_node.as_str())
+                .or_default()
+                .push(std::slice::from_ref(&node.child_object_id));
+        }
+        let mut parents = BTreeMap::<u32, Vec<u32>>::new();
+        for (object_id, base) in &by_object {
+            let group = match group_children.get(base.id.as_str()).map(Vec::as_slice) {
+                None | Some([]) => None,
+                Some([children]) => Some(*children),
+                Some(_) => return None,
+            };
+            let instance = match instance_children.get(base.id.as_str()).map(Vec::as_slice) {
+                None | Some([]) => None,
+                Some([children]) => Some(*children),
+                Some(_) => return None,
+            };
+            if group.is_some() && instance.is_some() {
+                return None;
+            }
+            for &child in group.or(instance).unwrap_or_default() {
+                if !by_object.contains_key(&child) {
+                    return None;
+                }
+                parents.entry(child).or_default().push(*object_id);
+            }
+        }
+        Some(Self {
+            by_object,
+            parents,
+            instance_ids,
+            transforms,
+            materials,
+        })
+    }
+
+    /// Every instance path of the shape node `shape_object_id`, or `None` when
+    /// the node is not in the graph or a path does not resolve.
+    fn node_paths(
+        &self,
+        ctx: &DecodeContext<'_>,
+        shape_object_id: u32,
+        visits: &WorkBudget,
+    ) -> Result<Option<Vec<DisplayJtPath>>, CodecError> {
+        if !self.by_object.contains_key(&shape_object_id) {
+            return Ok(None);
+        }
+        resolve_display_jt_node_paths(ctx, shape_object_id, self, &mut BTreeSet::new(), visits)
+    }
+}
+
+/// The first record of each key.
+fn first_by_key<'a, T, K: Eq + Hash>(
+    records: &'a [T],
+    key: impl Fn(&'a T) -> K,
+) -> HashMap<K, &'a T> {
+    let mut map = HashMap::new();
+    for record in records {
+        map.entry(key(record)).or_insert(record);
+    }
+    map
+}
+
+/// The record of each key, or `None` when the key repeats.
+fn unique_by_key<T: Copy, K: Eq + Hash>(
+    records: impl IntoIterator<Item = T>,
+    key: impl Fn(T) -> K,
+) -> HashMap<K, Option<T>> {
+    let mut map = HashMap::new();
+    for record in records {
+        map.entry(key(record))
+            .and_modify(|unique| *unique = None)
+            .or_insert(Some(record));
+    }
+    map
 }
 
 /// Upper bound on node visits while enumerating the instance paths of one
@@ -5169,7 +5315,7 @@ const MAX_JT_NODE_PATH_VISITS: usize = 1 << 16;
 fn resolve_display_jt_node_paths(
     ctx: &DecodeContext<'_>,
     object_id: u32,
-    lookup: &JtPathLookup<'_, '_>,
+    lookup: &JtSceneGraph<'_>,
     visiting: &mut BTreeSet<u32>,
     visits: &WorkBudget,
 ) -> Result<Option<Vec<DisplayJtPath>>, CodecError> {
@@ -5216,25 +5362,16 @@ fn resolve_display_jt_node_paths(
     let mut results = Vec::new();
     for mut path in parent_states {
         for attribute_id in &base.attribute_object_ids {
-            let mut matching_transforms = lookup
-                .transforms
-                .iter()
-                .filter(|attribute| attribute.object_id == *attribute_id)
-                .copied();
-            let transform = matching_transforms.next();
-            let duplicate_transform = matching_transforms.next().is_some();
-            let mut matching_materials = lookup
-                .materials
-                .iter()
-                .filter(|attribute| attribute.object_id == *attribute_id)
-                .copied();
-            let material = matching_materials.next();
-            if duplicate_transform
-                || matching_materials.next().is_some()
-                || transform.is_some() && material.is_some()
-            {
-                return Ok(None);
-            }
+            // An attribute id names at most one transform or one material.
+            let (transform, material) = match (
+                lookup.transforms.get(attribute_id),
+                lookup.materials.get(attribute_id),
+            ) {
+                (None, None) => (None, None),
+                (Some(&Some(transform)), None) => (Some(transform), None),
+                (None, Some(&Some(material))) => (None, Some(material)),
+                _ => return Ok(None),
+            };
             if let Some(attribute) = transform {
                 if attribute.state_flags & 0x04 == 0
                     && (!path.final_transform || attribute.state_flags & 0x02 != 0)
@@ -5259,93 +5396,6 @@ fn resolve_display_jt_node_paths(
         results.push(path);
     }
     Ok(Some(results))
-}
-
-fn display_jt_node_paths(
-    ctx: &DecodeContext<'_>,
-    scene_segment: &str,
-    shape_object_id: u32,
-    inputs: &DisplayJtTessellationInputs<'_>,
-    visits: &WorkBudget,
-) -> Result<Option<Vec<DisplayJtPath>>, CodecError> {
-    let in_scene = |element_id: &str| {
-        inputs
-            .compressed_elements
-            .iter()
-            .find(|element| element.id == element_id)
-            .is_some_and(|element| element.segment == scene_segment)
-    };
-    let mut by_object = BTreeMap::new();
-    for base in inputs
-        .base_nodes
-        .iter()
-        .filter(|base| in_scene(&base.element))
-    {
-        if by_object.insert(base.object_id, base).is_some() {
-            return Ok(None);
-        }
-    }
-    if !by_object.contains_key(&shape_object_id) {
-        return Ok(None);
-    }
-    let scoped_transforms = inputs
-        .transforms
-        .iter()
-        .filter(|attribute| in_scene(&attribute.element))
-        .collect::<Vec<_>>();
-    let scoped_materials = inputs
-        .materials
-        .iter()
-        .filter(|attribute| in_scene(&attribute.element))
-        .collect::<Vec<_>>();
-    let mut parents = BTreeMap::<u32, Vec<u32>>::new();
-    let mut instance_ids = BTreeMap::new();
-    for node in inputs.instance_nodes {
-        if !by_object.values().any(|base| base.id == node.base_node) {
-            continue;
-        }
-        if instance_ids
-            .insert(node.object_id, node.id.clone())
-            .is_some()
-        {
-            return Ok(None);
-        }
-    }
-    for (object_id, base) in &by_object {
-        let mut group_children = inputs
-            .group_nodes
-            .iter()
-            .filter(|node| node.base_node == base.id)
-            .map(|node| node.child_object_ids.as_slice());
-        let group = group_children.next();
-        if group_children.next().is_some() {
-            return Ok(None);
-        }
-        let mut instance_children = inputs
-            .instance_nodes
-            .iter()
-            .filter(|node| node.base_node == base.id)
-            .map(|node| std::slice::from_ref(&node.child_object_id));
-        let instance = instance_children.next();
-        if instance_children.next().is_some() || group.is_some() && instance.is_some() {
-            return Ok(None);
-        }
-        let children = group.or(instance).unwrap_or_default();
-        for &child in children {
-            if !by_object.contains_key(&child) {
-                return Ok(None);
-            }
-            parents.entry(child).or_default().push(*object_id);
-        }
-    }
-    let lookup = JtPathLookup {
-        by_object: &by_object,
-        parents: &parents,
-        instance_ids: &instance_ids,
-        transforms: &scoped_transforms,
-        materials: &scoped_materials,
-    };
-    resolve_display_jt_node_paths(ctx, shape_object_id, &lookup, &mut BTreeSet::new(), visits)
 }
 
 fn transform_jt_point(matrix: [[f64; 4]; 4], point: [f32; 3]) -> Option<FinitePoint3> {
@@ -5436,50 +5486,58 @@ pub(super) fn display_jt_tessellations(
         compressed_elements,
         ..
     } = *inputs;
+    let coordinate_headers = first_by_key(coordinate_headers, |header| header.id.as_str());
+    let coordinates = first_by_key(coordinates, |coordinates| coordinates.header.as_str());
+    let shape_elements = first_by_key(shape_elements, |element| element.id.as_str());
+    let bindings = unique_by_key(bindings, |binding| {
+        (binding.shape_segment.as_str(), binding.payload_object_id)
+    });
+    let elements = first_by_key(compressed_elements, |element| element.id.as_str());
+    let base_nodes = first_by_key(base_nodes, |base| base.id.as_str());
+    // A shape node binds the scene segment of its base node's element.
+    let shape_nodes = unique_by_key(
+        shape_nodes.iter().filter_map(|node| {
+            let base = base_nodes.get(node.base_node.as_str())?;
+            let element = elements.get(base.element.as_str())?;
+            Some((node, element.segment.as_str()))
+        }),
+        |(node, segment)| (node.object_id, segment),
+    );
+    let vertex_headers = first_by_key(vertex_headers, |header| header.element.as_str());
+    let normals = first_by_key(normals, |normals| normals.vertex_records_header.as_str());
+    let colors = first_by_key(colors, |colors| colors.vertex_records_header.as_str());
+    let texture_coordinates = first_by_key(texture_coordinates, |coordinates| {
+        (
+            coordinates.vertex_records_header.as_str(),
+            coordinates.channel,
+        )
+    });
+    let vertex_flags = first_by_key(vertex_flags, |flags| flags.vertex_records_header.as_str());
+    let mut scene_graphs = HashMap::<&str, Option<JtSceneGraph<'_>>>::new();
     let mut tessellations = Vec::new();
     for mesh in meshes {
         let coordinate_header = required!(coordinate_headers
-            .iter()
-            .find(|header| header.id == mesh.coordinate_header));
-        let coordinates = required!(coordinates
-            .iter()
-            .find(|coordinates| coordinates.header == coordinate_header.id));
+            .get(mesh.coordinate_header.as_str())
+            .copied());
+        let coordinates = required!(coordinates.get(coordinate_header.id.as_str()).copied());
         let shape_element = required!(shape_elements
-            .iter()
-            .find(|element| element.id == coordinate_header.element));
-        let mut matching_bindings = bindings.iter().filter(|binding| {
-            binding.shape_segment == shape_element.segment
-                && binding.payload_object_id == shape_element.object_id
-        });
-        let binding = required!(matching_bindings.next());
-        if matching_bindings.next().is_some() {
-            return Ok(Vec::new());
-        }
-        let mut matching_nodes = shape_nodes.iter().filter(|node| {
-            if node.object_id != binding.shape_node_object_id {
-                return false;
-            }
-            let Some(base) = base_nodes.iter().find(|base| base.id == node.base_node) else {
-                return false;
-            };
-            compressed_elements
-                .iter()
-                .find(|element| element.id == base.element)
-                .is_some_and(|element| element.segment == binding.scene_segment)
-        });
-        let shape_node = required!(matching_nodes.next());
-        if matching_nodes.next().is_some() {
-            return Ok(Vec::new());
-        }
+            .get(coordinate_header.element.as_str())
+            .copied());
+        let binding = required!(required!(bindings
+            .get(&(shape_element.segment.as_str(), shape_element.object_id))
+            .copied()));
+        let (shape_node, _) = required!(required!(shape_nodes
+            .get(&(binding.shape_node_object_id, binding.scene_segment.as_str()))
+            .copied()));
+        let scene_graph = scene_graphs
+            .entry(binding.scene_segment.as_str())
+            .or_insert_with(|| JtSceneGraph::new(&binding.scene_segment, inputs, &elements));
         let visits = WorkBudget::new(MAX_JT_NODE_PATH_VISITS);
-        let Some(paths) = display_jt_node_paths(
-            ctx,
-            &binding.scene_segment,
-            shape_node.object_id,
-            inputs,
-            &visits,
-        )?
-        else {
+        let paths = match scene_graph.as_ref() {
+            Some(scene_graph) => scene_graph.node_paths(ctx, shape_node.object_id, &visits)?,
+            None => None,
+        };
+        let Some(paths) = paths else {
             if visits.exhausted() {
                 losses.push(NxLossCode::SourceScanBounded.note(format!(
                     "The instance-path scan of Display-JT shape node {} reached its visit bound; \
@@ -5503,25 +5561,15 @@ pub(super) fn display_jt_tessellations(
         if rendered.is_empty() {
             return Ok(Vec::new());
         }
-        let vertex_header = required!(vertex_headers
-            .iter()
-            .find(|header| header.element == shape_element.id));
+        let vertex_header = required!(vertex_headers.get(shape_element.id.as_str()).copied());
         let normal_array = (vertex_header.vertex_bindings & 0x8 != 0)
-            .then(|| {
-                normals
-                    .iter()
-                    .find(|normals| normals.vertex_records_header == vertex_header.id)
-            })
+            .then(|| normals.get(vertex_header.id.as_str()).copied())
             .flatten();
         if vertex_header.vertex_bindings & 0x8 != 0 && normal_array.is_none() {
             return Ok(Vec::new());
         }
         let color_array = (vertex_header.vertex_bindings & 0x30 != 0)
-            .then(|| {
-                colors
-                    .iter()
-                    .find(|colors| colors.vertex_records_header == vertex_header.id)
-            })
+            .then(|| colors.get(vertex_header.id.as_str()).copied())
             .flatten();
         if vertex_header.vertex_bindings & 0x30 != 0 && color_array.is_none() {
             return Ok(Vec::new());
@@ -5530,18 +5578,13 @@ pub(super) fn display_jt_tessellations(
         for channel in (0..8_u8)
             .filter(|channel| vertex_header.vertex_bindings & (0xf_u64 << (8 + 4 * channel)) != 0)
         {
-            let array = required!(texture_coordinates.iter().find(|coordinates| {
-                coordinates.vertex_records_header == vertex_header.id
-                    && coordinates.channel == channel
-            }));
+            let array = required!(texture_coordinates
+                .get(&(vertex_header.id.as_str(), channel))
+                .copied());
             texture_arrays.push(array);
         }
         let vertex_flag_array = (vertex_header.vertex_bindings & 0x40 != 0)
-            .then(|| {
-                vertex_flags
-                    .iter()
-                    .find(|flags| flags.vertex_records_header == vertex_header.id)
-            })
+            .then(|| vertex_flags.get(vertex_header.id.as_str()).copied())
             .flatten();
         if vertex_header.vertex_bindings & 0x40 != 0 && vertex_flag_array.is_none() {
             return Ok(Vec::new());

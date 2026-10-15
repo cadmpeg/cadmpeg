@@ -1610,7 +1610,7 @@ fn decode_plane_support_lane_variants(
 /// local-system sign for compact one-half coordinates.
 #[cfg(test)]
 fn decode_plane_support_local_system_slots(body: &[u8], cache: &ScalarCache) -> Option<[f64; 12]> {
-    crate::decode::with_test_decode_ctx(|ctx| decode_plane_support_local_system(ctx, body, cache))
+    crate::decode::with_service_context(|ctx| decode_plane_support_local_system(ctx, body, cache))
         .expect("service scalar admission")
         .map(|(values, _)| values.get())
 }
@@ -2387,7 +2387,7 @@ mod tests {
             0
         );
         assert_eq!(
-            with_context(&bytes, decode).expect("service profile admits the absent candidate"),
+            with_context(&bytes, decode).expect("decode inline non plane local system prefix"),
             0
         );
         let error = with_depth_limit(&bytes, 1, decode).expect_err("need minus one refuses");
@@ -2412,7 +2412,7 @@ mod tests {
             0
         );
         assert_eq!(
-            with_context(&bytes, decode).expect("service profile admits the absent candidate"),
+            with_context(&bytes, decode).expect("decode inline non plane origin prefix"),
             0
         );
         let error = with_depth_limit(&bytes, 1, decode).expect_err("need minus one refuses");
@@ -2437,7 +2437,7 @@ mod tests {
             0
         );
         assert_eq!(
-            with_context(&bytes, decode).expect("service profile admits the absent candidate"),
+            with_context(&bytes, decode).expect("decode plane support lane variants"),
             0
         );
         let error = with_depth_limit(&bytes, 1, decode).expect_err("need minus one refuses");
@@ -2730,7 +2730,7 @@ mod tests {
         ];
         let cache = ScalarCache::default();
         for (body, axis, expected) in cases {
-            let frame = crate::decode::with_test_decode_ctx(|ctx| {
+            let frame = crate::decode::with_service_context(|ctx| {
                 decode_inline_non_plane_local_system_prefix(ctx, &body, &cache)
             })
             .expect("service scalar admission")
@@ -2809,7 +2809,7 @@ mod tests {
         body.extend([0x18, 0x18, 0x18]);
 
         assert_eq!(
-            crate::decode::with_test_decode_ctx(|ctx| decode_plane_support_local_system(
+            crate::decode::with_service_context(|ctx| decode_plane_support_local_system(
                 ctx,
                 &body,
                 &ScalarCache::default()
@@ -2832,7 +2832,7 @@ mod tests {
         let expected = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 2.0, 2.0, 4.0];
         let cache = ScalarCache::default();
 
-        assert!(crate::decode::with_test_decode_ctx(|ctx| {
+        assert!(crate::decode::with_service_context(|ctx| {
             decode_inline_non_plane_local_system_prefix(ctx, &body, &cache)
         })
         .expect("service scalar admission")
@@ -2853,7 +2853,7 @@ mod tests {
         let expected = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, -1.0, 2.0, 2.0, 4.0];
         let cache = ScalarCache::default();
 
-        assert!(crate::decode::with_test_decode_ctx(|ctx| {
+        assert!(crate::decode::with_service_context(|ctx| {
             decode_inline_non_plane_local_system_prefix(ctx, &body, &cache)
         })
         .expect("service scalar admission")
@@ -2917,7 +2917,7 @@ mod tests {
         body.push(0x18);
 
         assert_eq!(
-            crate::decode::with_test_decode_ctx(|ctx| decode_plane_support_local_system(
+            crate::decode::with_service_context(|ctx| decode_plane_support_local_system(
                 ctx, &body, &cache
             ))
             .expect("service scalar admission")
@@ -2925,7 +2925,7 @@ mod tests {
             Some(PlaneSupportFrameLayout::SupportTriples)
         );
         assert_eq!(
-            crate::decode::with_test_decode_ctx(|ctx| decode_plane_support_local_system(
+            crate::decode::with_service_context(|ctx| decode_plane_support_local_system(
                 ctx,
                 &[0x10; 12],
                 &ScalarCache::default()
@@ -3060,7 +3060,7 @@ mod tests {
     fn diagonal_compact_plane_support_names_the_z_normal() {
         let body = [0x0f, 0x18, 0xe5, 0x10, 0x18, 0xe5, 0x10, 0x18, 0x18, 0x18];
 
-        let (slots, layout) = crate::decode::with_test_decode_ctx(|ctx| {
+        let (slots, layout) = crate::decode::with_service_context(|ctx| {
             decode_plane_support_local_system(ctx, &body, &ScalarCache::default())
         })
         .expect("service scalar admission")
@@ -3111,7 +3111,7 @@ mod tests {
         body.extend_from_slice(&positive_subunit_coordinate(first_z));
         body.extend_from_slice(&[0x18, 0x18, 0x18]);
 
-        let (slots, layout) = crate::decode::with_test_decode_ctx(|ctx| {
+        let (slots, layout) = crate::decode::with_service_context(|ctx| {
             decode_plane_support_local_system(ctx, &body, &cache)
         })
         .expect("service scalar admission")
@@ -3144,7 +3144,7 @@ mod tests {
         body.extend_from_slice(&[0x18, 0x18, 0x18]);
 
         assert_eq!(
-            crate::decode::with_test_decode_ctx(|ctx| decode_plane_support_lane_variants(
+            crate::decode::with_service_context(|ctx| decode_plane_support_lane_variants(
                 ctx, &body, &cache
             ))
             .expect("service scalar admission")
@@ -3152,7 +3152,7 @@ mod tests {
             1
         );
         assert!(
-            crate::decode::with_test_decode_ctx(|ctx| decode_plane_support_local_system(
+            crate::decode::with_service_context(|ctx| decode_plane_support_local_system(
                 ctx, &body, &cache
             ))
             .expect("service scalar admission")

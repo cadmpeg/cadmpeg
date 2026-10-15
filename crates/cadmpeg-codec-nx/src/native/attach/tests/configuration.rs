@@ -1070,17 +1070,23 @@ fn nx_native_feature_parameters_require_unique_resolved_names() {
 fn nx_intersection_labels_project_without_fabricating_construction_fields() {
     for operation in ["ASSOCIATIVE_INTERSECTION", "Intersection Curve"] {
         assert!(matches!(
-            non_boolean_feature_definition_with_parameters(operation,
-                &[],
-                None,
-                None,
-                HoleProjection::default(),
-                std::collections::BTreeMap::default(),
-            ).unwrap(), cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::SectionShape {
-                operands,
+        non_boolean_feature_definition_with_parameters(operation,
+            &[],
+            None,
+            None,
+            HoleProjection::default(),
+            std::collections::BTreeMap::default(),
+        ).unwrap(), cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::SectionShape {
+            operands,
 
-                approximate: None,
-            }) if matches!((operands.first(), operands.second(),), (cadmpeg_ir::features::BodySelection::Unresolved, cadmpeg_ir::features::BodySelection::Unresolved,))));
+            approximate: None,
+        }) if matches!(
+            (operands.first(), operands.second(),),
+            (
+                cadmpeg_ir::features::BodySelection::Unresolved,
+                cadmpeg_ir::features::BodySelection::Unresolved,
+            )
+        )));
     }
 }
 

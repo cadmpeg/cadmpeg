@@ -153,7 +153,7 @@ fn parse_root_with_service(payload: &[u8]) -> Option<Entity> {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &DecodePolicy::service())
         .expect("payload fits service policy");
-    parse_unique_root(&ctx, payload).expect("SWIFT root fits service budget")
+    parse_unique_root(&ctx, payload).expect("parse unique root")
 }
 
 fn swift_rendered_annotation_limit_error(

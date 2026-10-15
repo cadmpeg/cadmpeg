@@ -39,7 +39,7 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         normal: [1.0, 0.0, 0.0],
     });
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| solve_carriers(ctx, &[cylinder, cap, tangent]))
+        crate::decode::with_service_context(|ctx| solve_carriers(ctx, &[cylinder, cap, tangent]))
             .expect("test carrier solve"),
         Some([2.0, 0.0, 3.0])
     );
@@ -60,7 +60,7 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         normal: [0.0, 0.0, 1.0],
     });
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| solve_carriers(
+        crate::decode::with_service_context(|ctx| solve_carriers(
             ctx,
             &[x_axis_cylinder, y_axis_cylinder, tangent_plane]
         ))
@@ -87,7 +87,7 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         normal: [1.0, 0.0, -1.0],
     });
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| solve_carriers(
+        crate::decode::with_service_context(|ctx| solve_carriers(
             ctx,
             &[cone, offset_plane, generator_parallel_plane]
         ))
@@ -98,14 +98,14 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         origin: [1.0, 0.0, 0.0],
         normal: [1.0, 0.0, 0.0],
     };
-    let mut secant_points = crate::decode::with_test_decode_ctx(|ctx| {
+    let mut secant_points = crate::decode::with_service_context(|ctx| {
         intersect_plane_with_two_quadrics(ctx, secant_plane, x_axis_cylinder, y_axis_cylinder)
     })
     .expect("test carrier solve");
     secant_points.sort_by(|left, right| left[1].total_cmp(&right[1]));
     assert_eq!(secant_points, vec![[1.0, -1.0, 0.0], [1.0, 1.0, 0.0]]);
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| solve_carriers(
+        crate::decode::with_service_context(|ctx| solve_carriers(
             ctx,
             &[
                 x_axis_cylinder,
@@ -122,7 +122,7 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         normal: [1.0, 0.0, 0.0],
     });
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| solve_carriers(ctx, &[cylinder, cap, secant]))
+        crate::decode::with_service_context(|ctx| solve_carriers(ctx, &[cylinder, cap, secant]))
             .expect("test carrier solve"),
         None
     );
@@ -191,7 +191,7 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
                     origin.x == 2.0 && direction.z == 1.0
                 }));
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| solve_carriers(
+        crate::decode::with_service_context(|ctx| solve_carriers(
             ctx,
             &[
                 cap,
@@ -259,12 +259,12 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
                 })
     );
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| solve_carriers(ctx, &[equator, secant, sphere]))
+        crate::decode::with_service_context(|ctx| solve_carriers(ctx, &[equator, secant, sphere]))
             .expect("test carrier solve"),
         None
     );
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| solve_carriers(ctx, &[equator, tangent, sphere]))
+        crate::decode::with_service_context(|ctx| solve_carriers(ctx, &[equator, tangent, sphere]))
             .expect("test carrier solve"),
         Some([2.0, 0.0, 0.0])
     );
@@ -290,7 +290,7 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         origin: [0.0, 5.0_f64.sqrt(), 0.0],
         normal: [0.0, 1.0, 0.0],
     });
-    let sphere_circle_point = crate::decode::with_test_decode_ctx(|ctx| {
+    let sphere_circle_point = crate::decode::with_service_context(|ctx| {
         solve_carriers(ctx, &[first_sphere, second_sphere, sphere_circle_tangent])
     })
     .expect("test carrier solve")
@@ -304,7 +304,7 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         radius: 3.0,
     });
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| solve_carriers(
+        crate::decode::with_service_context(|ctx| solve_carriers(
             ctx,
             &[sphere, external_tangent_sphere, equator]
         ))
@@ -318,7 +318,7 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         radius: 2.0,
     });
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| solve_carriers(
+        crate::decode::with_service_context(|ctx| solve_carriers(
             ctx,
             &[sphere, tangent, noncoaxial_cylinder]
         ))
@@ -336,7 +336,7 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         radius: 2.0,
     });
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| solve_carriers(
+        crate::decode::with_service_context(|ctx| solve_carriers(
             ctx,
             &[enclosing_sphere, internally_tangent_sphere, equator]
         ))
@@ -362,7 +362,7 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
                 })
     );
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| solve_carriers(
+        crate::decode::with_service_context(|ctx| solve_carriers(
             ctx,
             &[cylinder, sphere, tangent]
         ))
@@ -398,7 +398,7 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         ],
         normal: [1.0, 0.0, 1.0],
     });
-    let solved = crate::decode::with_test_decode_ctx(|ctx| {
+    let solved = crate::decode::with_service_context(|ctx| {
         solve_carriers(ctx, &[coaxial_secant, sphere, upper_circle_tangent])
     })
     .expect("test carrier solve")
@@ -407,7 +407,7 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
     assert!(solved[1].abs() < 1.0e-12);
     assert!((solved[2] - sphere_offset).abs() < 1.0e-12);
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| solve_carriers(
+        crate::decode::with_service_context(|ctx| solve_carriers(
             ctx,
             &[
                 coaxial_secant,
@@ -468,7 +468,7 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         normal: [1.0, 0.0, 0.0],
     });
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| solve_carriers(
+        crate::decode::with_service_context(|ctx| solve_carriers(
             ctx,
             &[elliptical_cone, cap, elliptical_tangent]
         ))
@@ -480,7 +480,7 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         normal: [1.0, 0.0, 0.0],
     });
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| solve_carriers(
+        crate::decode::with_service_context(|ctx| solve_carriers(
             ctx,
             &[elliptical_cone, cap, elliptical_secant]
         ))
@@ -612,7 +612,7 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         assert!(point_on_carrier(point, elliptical_cone));
     }
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| solve_carriers(ctx, &[cone, cap, tangent]))
+        crate::decode::with_service_context(|ctx| solve_carriers(ctx, &[cone, cap, tangent]))
             .expect("test carrier solve"),
         None
     );
@@ -621,7 +621,7 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         normal: [1.0, 0.0, 0.0],
     });
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| solve_carriers(ctx, &[cone, cap, cone_tangent]))
+        crate::decode::with_service_context(|ctx| solve_carriers(ctx, &[cone, cap, cone_tangent]))
             .expect("test carrier solve"),
         Some([5.0, 0.0, 3.0])
     );
@@ -652,7 +652,7 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         origin: [1.0, 0.0, 0.0],
         normal: [1.0, 0.0, 0.0],
     });
-    let cone_sphere_vertex = crate::decode::with_test_decode_ctx(|ctx| {
+    let cone_sphere_vertex = crate::decode::with_service_context(|ctx| {
         solve_carriers(ctx, &[cone_tangent_sphere, cone, cone_sphere_plane])
     })
     .expect("test carrier solve")
@@ -745,7 +745,7 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         origin: [4.0, 0.0, 0.0],
         normal: [1.0, 0.0, 1.0],
     });
-    let cone_cylinder_vertex = crate::decode::with_test_decode_ctx(|ctx| {
+    let cone_cylinder_vertex = crate::decode::with_service_context(|ctx| {
         solve_carriers(
             ctx,
             &[cone, coaxial_cone_cylinder, cone_cylinder_tangent_plane],
@@ -842,7 +842,7 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         normal: [1.0, 0.0, 0.0],
     });
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| solve_carriers(
+        crate::decode::with_service_context(|ctx| solve_carriers(
             ctx,
             &[outer_tangent_cylinder, torus, outer_circle_tangent]
         ))
@@ -899,7 +899,7 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         normal: [1.0, 0.0, 0.0],
     });
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| solve_carriers(
+        crate::decode::with_service_context(|ctx| solve_carriers(
             ctx,
             &[torus_tangent_sphere, torus, torus_sphere_plane]
         ))
@@ -915,7 +915,7 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         normal: [0.0, 1.0, -1.0],
     });
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| solve_carriers(
+        crate::decode::with_service_context(|ctx| solve_carriers(
             ctx,
             &[torus, outer_tangent_plane, oblique_tangent_plane]
         ))
@@ -930,7 +930,7 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         origin: [0.0, 0.0, 0.0],
         normal: [0.0, 0.0, 1.0],
     };
-    let mut secant_points = crate::decode::with_test_decode_ctx(|ctx| {
+    let mut secant_points = crate::decode::with_service_context(|ctx| {
         intersect_two_planes_with_torus(
             ctx,
             axial_plane,
@@ -1001,7 +1001,7 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         normal: [1.0, 0.0, 0.0],
     });
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| solve_carriers(
+        crate::decode::with_service_context(|ctx| solve_carriers(
             ctx,
             &[torus, second_torus, tori_plane]
         ))
@@ -1011,7 +1011,7 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
     assert!(point_on_carrier([5.0, 0.0, 2.0], torus));
     assert!(!point_on_carrier([5.0, 0.0, 0.0], torus));
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| solve_carriers(
+        crate::decode::with_service_context(|ctx| solve_carriers(
             ctx,
             &[torus, torus_tangent, cone_tangent]
         ))

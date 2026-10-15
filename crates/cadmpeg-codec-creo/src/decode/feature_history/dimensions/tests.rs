@@ -10,7 +10,7 @@ use cadmpeg_ir::features::{
 use cadmpeg_ir::AnnotationBuilder;
 
 use super::super::dimensions::{
-    dimension_expression, feature_dimension_parameter_row_id_admitted, insert_dimension_property,
+    dimension_expression, feature_dimension_parameter_row_id, insert_dimension_property,
     planned_feature_dimension_parameter_ids, push_feature_source_parameter,
     transfer_feature_dimensions, HexToken,
 };
@@ -24,7 +24,7 @@ fn layout_key() -> cadmpeg_ir::sketches::SketchId {
 fn dimension_row_identity_appends_occurrence_suffix() {
     let sketch = layout_key();
     assert_eq!(
-        feature_dimension_parameter_row_id_admitted(&sketch, 3, Some(1))
+        feature_dimension_parameter_row_id(&sketch, 3, Some(1))
             .expect("service ID")
             .expect("valid ID")
             .as_str(),
@@ -96,7 +96,7 @@ fn one_dimension_transfer() -> (crate::container::ContainerScan<'static>, CadIr)
 #[test]
 fn dimension_transfer_records_parameter_for_external_id() {
     let (scan, mut ir) = one_dimension_transfer();
-    let (transferred, parameters) = crate::decode::with_test_decode_ctx(|ctx| {
+    let (transferred, parameters) = crate::decode::with_service_context(|ctx| {
         transfer_feature_dimensions(
             ctx,
             &scan,
@@ -267,7 +267,7 @@ fn dimension_transfer_rejects_duplicate_owner_feature_ids() {
         });
     }
 
-    let (transferred, _) = crate::decode::with_test_decode_ctx(|ctx| {
+    let (transferred, _) = crate::decode::with_service_context(|ctx| {
         transfer_feature_dimensions(
             ctx,
             &scan,

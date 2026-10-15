@@ -25,7 +25,7 @@ fn evaluate_pcurve(pcurve: &B5Pcurve, parameter: f64) -> Option<[f64; 2]> {
     crate::test_support::with_service_context(|ctx| {
         super::super::evaluate_pcurve(ctx, pcurve, parameter)
     })
-    .expect("service budget")
+    .expect("evaluate pcurve")
 }
 
 use super::super::pcurve_nurbs_knots;
@@ -38,7 +38,7 @@ fn pcurve_endpoints(
     crate::test_support::with_service_context(|ctx| {
         super::super::pcurve_endpoints(ctx, pcurve_id, edge_id, geometry)
     })
-    .expect("service budget")
+    .expect("compute the pcurve endpoints")
 }
 
 fn lift_parameter_incidence(
@@ -49,7 +49,7 @@ fn lift_parameter_incidence(
     crate::test_support::with_service_context(|ctx| {
         super::super::lift_parameter_incidence(ctx, pcurve_id, parameter, geometry)
     })
-    .expect("service budget")
+    .expect("lift parameter incidence")
 }
 
 fn bind_edge_vertices(
@@ -60,7 +60,7 @@ fn bind_edge_vertices(
     crate::test_support::with_service_context(|ctx| {
         super::super::bind_edge_vertices(ctx, loops, geometry, points)
     })
-    .expect("service budget")
+    .expect("bind edge vertices")
 }
 
 fn bind_native_vertices(
@@ -82,11 +82,11 @@ fn bind_native_vertices(
             points,
         )
     })
-    .expect("service budget")
+    .expect("bind native vertices")
 }
 
 fn point_index(points: &[cadmpeg_ir::features::FinitePoint3]) -> HashMap<[i64; 3], Vec<usize>> {
-    super::super::point_index(points).expect("service budget")
+    super::super::point_index(points).expect("compute the point index")
 }
 
 use super::super::merge_pcurve_candidate;
@@ -99,7 +99,7 @@ fn resolve_surface_aliases(
     conflicts: &mut HashSet<u32>,
 ) -> bool {
     ({ super::super::resolve_surface_aliases(records, by_id, surfaces, conflicts) })
-        .expect("service budget")
+        .expect("resolve surface aliases")
 }
 
 fn surface_alias_carrier(
@@ -107,7 +107,8 @@ fn surface_alias_carrier(
     by_id: &HashMap<u32, &B5Record>,
     surfaces: &BTreeMap<u32, B5Surface>,
 ) -> Option<B5Surface> {
-    ({ super::super::surface_alias_carrier(object_id, by_id, surfaces) }).expect("service budget")
+    ({ super::super::surface_alias_carrier(object_id, by_id, surfaces) })
+        .expect("compute the surface alias carrier")
 }
 
 fn resolve_targeted_surface(
@@ -120,7 +121,7 @@ fn resolve_targeted_surface(
     crate::test_support::with_service_context(|ctx| {
         super::super::resolve_targeted_surface(ctx, object_id, records, headers, resolved, rolling)
     })
-    .expect("service budget")
+    .expect("resolve targeted surface")
 }
 
 #[test]
@@ -1247,7 +1248,7 @@ fn targeted_surface_resolution_returns_a_cached_surface() {
                 &HashMap::new(),
             )
         })
-        .expect("service budget"),
+        .expect("resolve targeted surface"),
         Some(surface)
     );
 }

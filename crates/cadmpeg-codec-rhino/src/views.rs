@@ -1778,7 +1778,7 @@ mod tests {
             archive,
             crate::settings::MillimeterScale::IDENTITY,
         )
-        .expect("service profile admits the named construction plane");
+        .expect("parse named construction planes");
         assert_eq!(values.len(), 1);
     }
 
@@ -1828,7 +1828,7 @@ mod tests {
             &scan,
             &mut cadmpeg_ir::document::CadIr::empty(),
         )
-        .expect("service profile admits the retained list");
+        .expect("install the views");
         assert_eq!(installed.losses.len(), 1);
         assert_eq!(installed.opaque_records.len(), 1);
     }
@@ -1845,7 +1845,7 @@ mod tests {
             crate::settings::MillimeterScale::IDENTITY,
             super::ViewListKind::Named,
         )
-        .expect("service profile admits loss");
+        .expect("parse list");
         assert_eq!(losses.len(), 1);
     }
 
@@ -1857,7 +1857,7 @@ mod tests {
             &scan,
             &mut cadmpeg_ir::document::CadIr::empty(),
         )
-        .expect("service profile retains the malformed construction plane");
+        .expect("install the views");
         assert_eq!(installed.losses.len(), 1);
         assert_eq!(installed.opaque_records.len(), 1);
     }
@@ -1870,7 +1870,7 @@ mod tests {
             &scan,
             &mut cadmpeg_ir::document::CadIr::empty(),
         )
-        .expect("service profile retains the malformed active-view list");
+        .expect("install the views");
         assert_eq!(installed.opaque_records.len(), 1);
     }
 
@@ -1895,7 +1895,7 @@ mod tests {
             crate::settings::MillimeterScale::IDENTITY,
             ViewListKind::Named,
         )
-        .expect("view record fits service profile");
+        .expect("parse list");
         assert_eq!(admitted.0.len(), 1);
     }
 
@@ -1953,7 +1953,7 @@ mod tests {
             ArchiveVersion::V5,
             crate::settings::MillimeterScale::IDENTITY,
         )
-        .expect("service profile admits the clipping plane");
+        .expect("parse attributes");
         assert_eq!(attributes.clipping_planes.len(), 1);
     }
 

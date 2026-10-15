@@ -801,7 +801,7 @@ mod tests {
     }
 
     fn stated_parameters(first: PlanarConicEquation, second: PlanarConicEquation) -> Vec<[f64; 2]> {
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             common_plane_conic_parameters(
                 ctx,
                 restrict_planar_conic_to_chart(first, CHART_ORIGIN, CHART_U_AXIS, CHART_V_AXIS),

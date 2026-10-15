@@ -1230,7 +1230,7 @@ fn user_string_owner_mapping_preserves_order_and_source_cleanup() {
         42,
         &mut losses,
     )
-    .expect("user strings fit the service profile");
+    .expect("parse the first user string records");
     assert!(losses.is_empty());
     assert_eq!(geometry_values.len(), 1);
     assert_eq!(geometry_values[0].key, "GeometryKey");

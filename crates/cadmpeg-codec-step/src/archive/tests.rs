@@ -396,7 +396,7 @@ fn root_reference_notes_use_the_contextually_parsed_exchange() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
     let (ctx, view) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-        .expect("ZIP fits the service profile");
+        .expect("build the decode context");
     let opened = super::open_root(&ctx, view).expect("open ZIP root");
     let (exchange, _) = crate::parse::parse(opened.view.window(), &ctx)
         .expect("parse root under the active context");

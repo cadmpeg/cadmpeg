@@ -91,7 +91,7 @@ fn extrusion_arc_pcurve_is_exact_in_both_directions() {
             &"circular pcurve fixture",
             &mut crate::lane_refusal::LaneRefusals::new(),
         )
-        .expect("resource admission")
+        .expect("compute the circular pcurve")
         .expect("circular pcurve fixture");
         let first = cadmpeg_ir::eval::decode::pcurve_uv(
             cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
@@ -140,23 +140,23 @@ fn extrusion_profile_area_includes_oriented_arc_sector() {
     .expect("valid test fixture");
     let counterclockwise = vec![
         ProfileEntity::new(&ctx, arc.clone(), false)
-            .expect("service resources")
+            .expect("construct the profile entity")
             .expect("valid profile entity"),
         ProfileEntity::new(&ctx, line.clone(), false)
-            .expect("service resources")
+            .expect("construct the profile entity")
             .expect("valid profile entity"),
     ];
     let clockwise = vec![
         ProfileEntity::new(&ctx, arc, true)
-            .expect("service resources")
+            .expect("construct the profile entity")
             .expect("valid profile entity"),
         ProfileEntity::new(&ctx, line, true)
-            .expect("service resources")
+            .expect("construct the profile entity")
             .expect("valid profile entity"),
     ];
     assert!(
         (extrusion_profile_signed_area(&ctx, &counterclockwise)
-            .expect("service area resources")
+            .expect("compute the extrusion profile signed area")
             .expect("positive area")
             .get()
             - std::f64::consts::FRAC_PI_2)
@@ -165,7 +165,7 @@ fn extrusion_profile_area_includes_oriented_arc_sector() {
     );
     assert!(
         (extrusion_profile_signed_area(&ctx, &clockwise)
-            .expect("service area resources")
+            .expect("compute the extrusion profile signed area")
             .expect("negative area")
             .get()
             + std::f64::consts::FRAC_PI_2)
@@ -191,10 +191,10 @@ fn full_turn_arc_remains_a_closed_extrusion_profile() {
         .expect("valid test fixture"),
         false,
     )
-    .expect("service resources")
+    .expect("construct the profile entity")
     .expect("valid profile entity")];
     let profiles = ordered_extrusion_profiles(&ctx, vec![profile.clone()])
-        .expect("service ordering resources")
+        .expect("compute the ordered extrusion profiles")
         .expect("a full-turn arc is a closed profile");
     let area = profiles[0].area();
     assert_eq!(
@@ -251,7 +251,7 @@ fn circle_remains_a_closed_extrusion_profile() {
         circle.clone(),
     ));
 
-    let profiles = crate::decode::with_test_decode_ctx(|ctx| {
+    let profiles = crate::decode::with_service_context(|ctx| {
         resolved_sketch_profiles(
             ctx,
             &ir,
@@ -260,16 +260,16 @@ fn circle_remains_a_closed_extrusion_profile() {
             1,
         )
     })
-    .expect("resource admission")
+    .expect("compute the resolved sketch profiles")
     .expect("one circle profile");
     assert_eq!(
         profiles,
         vec![vec![ProfileEntity::new(&ctx, circle.clone(), false)
-            .expect("service resources")
+            .expect("construct the profile entity")
             .expect("valid profile entity")]]
     );
     let ordered = ordered_extrusion_profiles(&ctx, profiles.clone())
-        .expect("service ordering resources")
+        .expect("compute the ordered extrusion profiles")
         .expect("closed circle");
     let area = ordered[0].area();
     assert_eq!(
@@ -290,7 +290,7 @@ fn circle_remains_a_closed_extrusion_profile() {
             &"extrusion cap fixture",
             &mut crate::lane_refusal::LaneRefusals::new(),
         )
-        .expect("resource admission")
+        .expect("compute the extrusion cap pcurve")
         .expect("extrusion cap pcurve fixture");
         let first = cadmpeg_ir::eval::decode::pcurve_uv(
             cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
@@ -332,7 +332,7 @@ fn circle_remains_a_closed_extrusion_profile() {
         assert_eq!(
             profile_arc(
                 &ProfileEntity::new(&ctx, circle.clone(), reversed)
-                    .expect("service resources")
+                    .expect("construct the profile entity")
                     .expect("valid profile entity")
             ),
             Some((
@@ -351,7 +351,7 @@ fn circle_remains_a_closed_extrusion_profile() {
         seam,
         profile_arc(
             &ProfileEntity::new(&ctx, circle, false)
-                .expect("service resources")
+                .expect("construct the profile entity")
                 .expect("valid profile entity")
         )
         .expect("circle arc"),

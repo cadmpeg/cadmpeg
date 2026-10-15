@@ -1966,7 +1966,7 @@ impl MeshQuotient {
                     };
                     if !quotient
                         .propagate_component_edge_domains(root, edge_candidates, None)
-                        .expect("service resource budget")
+                        .expect("propagate component edge domains")
                     {
                         return;
                     }
@@ -2011,7 +2011,7 @@ impl MeshQuotient {
                     };
                     if quotient
                         .propagate_component_edge_domains(root, edge_candidates, None)
-                        .expect("service resource budget")
+                        .expect("propagate component edge domains")
                     {
                         output.push((directions.clone(), quotient));
                     }
@@ -6927,7 +6927,7 @@ mod face_domain_support_tests {
         )];
 
         let assignments = materialize_boundary_domains(&domains, &[[0, 1], [0, 1]])
-            .expect("service resource budget")
+            .expect("materialize boundary domains")
             .expect("closed deferred boundary");
         assert_eq!(assignments.len(), 1);
         assert_eq!(assignments[0].len(), 1);
@@ -6944,7 +6944,7 @@ mod face_domain_support_tests {
     fn complete_endpoint_pairs_materialize_unordered_cycle() {
         let domains = [MeshFaceBoundaryDomain::UnorderedFullCycle(vec![0, 1, 2])];
         let assignments = materialize_boundary_domains(&domains, &[[0, 1], [1, 2], [2, 0]])
-            .expect("service resource budget")
+            .expect("materialize boundary domains")
             .expect("closed unordered boundary");
 
         assert_eq!(assignments.len(), 1);
@@ -6968,7 +6968,7 @@ mod face_domain_support_tests {
             },
         ])];
         assert!(materialize_boundary_domains(&domains, &[])
-            .expect("service resource budget")
+            .expect("materialize boundary domains")
             .is_some());
     }
 
@@ -6977,7 +6977,7 @@ mod face_domain_support_tests {
         let domains = [MeshFaceBoundaryDomain::UnorderedFullCycle(vec![0, 1, 2])];
         let pairs = [[0, 1], [1, 2], [2, 0]];
         assert!(materialize_boundary_domains(&domains, &pairs)
-            .expect("service resource budget")
+            .expect("materialize boundary domains")
             .is_some());
     }
 }
@@ -8574,7 +8574,7 @@ fn mesh_candidate_rejection_retains_the_failed_solver_stage() {
                 complete_solution_valid: |_| true,
             }
         )
-        .expect("service resource budget"),
+        .expect("parse standard mesh candidate outcome"),
         MeshSolve::Failed(MeshCandidateFailure::Rejected(
             MeshCandidateRejection::InputStructure
         ))
@@ -8615,7 +8615,7 @@ fn face_domain_solver_returns_the_unique_concrete_assignment() {
             })
         },
     )
-    .expect("service resource budget");
+    .expect("parse standard mesh candidate outcome with face assignments");
 
     let MeshSolve::Solved((faces, _, _)) = result else {
         panic!("face-domain solver did not retain the unique branch");
@@ -8656,7 +8656,7 @@ fn face_domain_solver_evaluates_only_endpoint_closed_assignments() {
             })
         },
     )
-    .expect("service resource budget");
+    .expect("parse standard mesh candidate outcome with face assignments");
 
     let MeshSolve::Solved((faces, _, _)) = result else {
         panic!("face-domain solver did not retain the closed assignment");
@@ -8691,7 +8691,7 @@ fn face_domain_solver_reports_distinct_assignments_as_ambiguity() {
             )))
         },
     )
-    .expect("service resource budget");
+    .expect("parse standard mesh candidate outcome with face assignments");
 
     assert!(matches!(
         result,
@@ -8761,7 +8761,7 @@ fn endpoint_configuration_relation_solves_cycle_orientation_globally() {
                 coordinate_domains: None,
             },
         )
-        .expect("service resource budget")
+        .expect("resolve endpoint configuration relation")
     else {
         panic!("endpoint configuration relation did not solve the cycle");
     };
@@ -8827,7 +8827,7 @@ fn fixed_endpoint_pairs_materialize_duplicate_boundary_assignments() {
             coordinate_domains: None,
         },
     )
-    .expect("service resource budget");
+    .expect("resolve endpoint configuration relation");
 
     let Some(MeshSolve::Solved((topology, point_assignment))) = result else {
         panic!("endpoint relation did not materialize duplicate assignments");
@@ -8861,9 +8861,11 @@ fn endpoint_relation_keeps_stopped_face_assignments() {
     assert!(choices
         .iter()
         .any(|choice| { matches!(choice.selection, MeshEndpointRelationSelection::Deferred) }));
-    assert!(choices
-        .iter()
-        .any(|choice| matches!(&choice.selection, MeshEndpointRelationSelection::Enumerated { assignments, edge_pairs } if assignments == &[0] && edge_pairs == &[(0, [0, 0])])));
+    assert!(choices.iter().any(|choice| matches!(
+        &choice.selection,
+        MeshEndpointRelationSelection::Enumerated { assignments, edge_pairs }
+            if assignments == &[0] && edge_pairs == &[(0, [0, 0])]
+    )));
 }
 
 #[test]
@@ -8966,7 +8968,7 @@ fn endpoint_relation_requires_one_joint_support_for_all_shared_edges() {
     ];
     let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let constraints = build_endpoint_relation_constraints(&ctx, &domains, &budget)
-        .expect("service resource budget")
+        .expect("build endpoint relation constraints")
         .expect("shared-edge relation constraints should build");
     let mut assigned = vec![None; 2];
 
@@ -8977,7 +8979,7 @@ fn endpoint_relation_requires_one_joint_support_for_all_shared_edges() {
         &constraints,
         &budget,
     )
-    .expect("service resource budget"));
+    .expect("propagate endpoint relation domains"));
     assert_eq!(
         domains[0]
             .iter()
@@ -9033,7 +9035,7 @@ fn endpoint_relation_treats_optional_shared_edges_as_wildcards() {
     ];
     let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let constraints = build_endpoint_relation_constraints(&ctx, &domains, &budget)
-        .expect("service resource budget")
+        .expect("build endpoint relation constraints")
         .expect("shared-edge relation constraints should build");
     let mut assigned = vec![None];
 
@@ -9044,7 +9046,7 @@ fn endpoint_relation_treats_optional_shared_edges_as_wildcards() {
         &constraints,
         &budget,
     )
-    .expect("service resource budget"));
+    .expect("propagate endpoint relation domains"));
     assert_eq!(
         domains[0]
             .iter()
@@ -9181,7 +9183,7 @@ fn coordinate_root_closure_distinguishes_symmetric_assignments() {
     ]);
     let outcome = quotient
         .coordinate_root_closure_outcome(&ctx, 2, &[vec![[0, 1]]], None, None)
-        .expect("service resource budget");
+        .expect("compute the coordinate root closure outcome");
 
     assert_eq!(
         outcome,
@@ -9201,7 +9203,7 @@ fn coordinate_root_closure_rejects_a_single_prefix_after_budget_refusal() {
     assert_eq!(
         quotient
             .coordinate_root_closure_outcome(&ctx, 2, &[vec![[0, 1]]], None, Some(&budget),)
-            .expect("service resource budget"),
+            .expect("compute the coordinate root closure outcome"),
         MeshSolve::Failed(MeshCandidateFailure::Exhausted(()))
     );
     assert!(budget.exhausted());
@@ -9250,7 +9252,7 @@ fn coordinate_root_closure_rejects_a_refused_incidence_check() {
             Some((&edge_faces, &boundary_domains)),
             Some(&refused_budget),
         )
-        .expect("service resource budget");
+        .expect("compute the coordinate root closure outcome");
     assert_eq!(
         refused,
         MeshSolve::Failed(MeshCandidateFailure::Exhausted(()))
@@ -9265,7 +9267,7 @@ fn coordinate_root_closure_rejects_a_refused_incidence_check() {
             Some((&edge_faces, &boundary_domains)),
             Some(&complete_budget),
         )
-        .expect("service resource budget");
+        .expect("compute the coordinate root closure outcome");
     assert!(matches!(complete, MeshSolve::Solved(_)));
     assert!(!complete_budget.exhausted());
 }
@@ -9377,7 +9379,7 @@ fn coordinate_root_preparation_budgets_independent_components_separately() {
                 None,
                 Some(&shared_budget),
             )
-            .expect("service resource budget"),
+            .expect("compute the coordinate root closure outcome"),
         MeshSolve::Failed(MeshCandidateFailure::Exhausted(()))
     );
 
@@ -9395,7 +9397,7 @@ fn coordinate_root_preparation_budgets_independent_components_separately() {
             },
             Some(&shared_incidence_budget),
         )
-        .expect("service resource budget")
+        .expect("close coordinate roots for incidence")
         .is_none());
     assert!(shared_incidence_budget.exhausted());
 
@@ -9412,7 +9414,7 @@ fn coordinate_root_preparation_budgets_independent_components_separately() {
             },
             Some(&preparation_budget),
         )
-        .expect("service resource budget");
+        .expect("compute the coordinate root closure outcome for incidence");
     assert!(matches!(outcome, MeshSolve::Solved(_)), "{outcome:?}");
     assert!(!preparation_budget.exhausted());
 }
@@ -9501,7 +9503,7 @@ fn singleton_mesh_path_handles_many_independent_face_cycles() {
                 candidate_gauge: None,
             },
         )
-        .expect("service resource budget")
+        .expect("resolve singleton mesh endpoint candidates")
         .expect("singleton path applies")
     else {
         panic!("singleton path did not solve");
@@ -9553,7 +9555,7 @@ fn singleton_mesh_path_filters_endpoint_incompatible_face_assignments() {
                 candidate_gauge: None,
             },
         )
-        .expect("service resource budget")
+        .expect("resolve singleton mesh endpoint candidates")
         .expect("endpoint filtering should leave one face assignment")
     else {
         panic!("endpoint filtering did not solve");
@@ -9597,7 +9599,7 @@ fn singleton_mesh_path_handles_closed_endpoint_pairs() {
                 candidate_gauge: None,
             },
         )
-        .expect("service resource budget")
+        .expect("resolve singleton mesh endpoint candidates")
         .expect("closed endpoint pair should use a direction gauge")
     else {
         panic!("closed endpoint pair did not solve");
@@ -9705,7 +9707,7 @@ mod direct_matching_tests {
         ];
         let port_identities = vec![[0, 1], [1, 2], [2, 0]];
         let quotient = initial_mesh_quotient(&edge_candidates, 3, &port_identities)
-            .expect("service resource budget")
+            .expect("compute the initial mesh quotient")
             .expect("triangle quotient");
         let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
 
@@ -9718,12 +9720,12 @@ mod direct_matching_tests {
             &port_identities,
             &budget,
         )
-        .expect("service resource budget")
+        .expect("resolve mesh selection from quotient")
         .is_none());
 
         let singleton_candidates = vec![vec![[0, 1]], vec![[1, 2]], vec![[0, 2]]];
         let singleton_quotient = initial_mesh_quotient(&singleton_candidates, 3, &port_identities)
-            .expect("service resource budget")
+            .expect("compute the initial mesh quotient")
             .expect("three singleton edge pairs form a triangle quotient");
         let run = |ctx: &DecodeContext<'_>| {
             let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
@@ -9738,7 +9740,7 @@ mod direct_matching_tests {
             )
         };
         assert!(matches!(
-            run(&ctx).expect("service resource budget"),
+            run(&ctx).expect("resolve mesh selection from quotient"),
             Some(super::MeshSolve::Solved(_))
         ));
     }
@@ -9914,7 +9916,7 @@ fn arc_consistency_rejects_a_root_without_supporting_pairs() {
             None,
         )
     };
-    assert!(!crate::test_support::with_service_context(run).expect("service resource budget"));
+    assert!(!crate::test_support::with_service_context(run).expect("enforce edge arc consistency"));
 }
 
 #[test]
@@ -9931,7 +9933,7 @@ fn arc_consistency_from_initial_edges_rejects_unsupported_roots() {
             None,
         )
     };
-    assert!(!crate::test_support::with_service_context(run).expect("service resource budget"));
+    assert!(!crate::test_support::with_service_context(run).expect("enforce edge arc consistency"));
 }
 
 #[test]
@@ -9949,10 +9951,10 @@ fn initial_quotient_requires_candidate_points_below_point_count() {
     let candidates = [vec![[0, 1]]];
     let identities = [[10, 11]];
     assert!(initial_mesh_quotient(&candidates, 1, &identities)
-        .expect("service resource budget")
+        .expect("compute the initial mesh quotient")
         .is_none());
     assert!(initial_mesh_quotient(&candidates, 2, &identities)
-        .expect("service resource budget")
+        .expect("compute the initial mesh quotient")
         .is_some());
 }
 
@@ -9962,7 +9964,7 @@ fn initial_quotient_merges_ports_with_a_shared_identity() {
     let candidates = [vec![[0, 1]], vec![[0, 1]]];
     let identities = [[10, 11], [10, 12]];
     assert!(initial_mesh_quotient(&candidates, 2, &identities)
-        .expect("service resource budget")
+        .expect("compute the initial mesh quotient")
         .is_some());
 }
 
@@ -9975,7 +9977,7 @@ fn same_class_edges_with_equal_choices_are_ordered_as_one_pair() {
             &[0, 0],
             &choices
         ))
-        .expect("service resource budget")
+        .expect("compute the edge class search constraint")
         .expect("matching edge classes")
         .ordered,
         vec![(0, 1)]
@@ -9989,7 +9991,7 @@ fn merging_an_edges_endpoints_reports_that_edge_as_changed() {
     let mut right = left.clone();
     assert!(right.merge(0, 1).expect("service merge").is_some());
     assert_eq!(
-        changed_quotient_edges(&left, &right).expect("service resource budget"),
+        changed_quotient_edges(&left, &right).expect("compute the changed quotient edges"),
         HashSet::from([0])
     );
 }
@@ -10125,7 +10127,8 @@ fn endpoint_configuration_relation_solves_a_triangle_face() {
         )
     };
     assert!(matches!(
-        crate::test_support::with_service_context(run).expect("service resource budget"),
+        crate::test_support::with_service_context(run)
+            .expect("resolve endpoint configuration relation"),
         Some(MeshSolve::Solved(_))
     ));
 }
@@ -10182,7 +10185,7 @@ fn singleton_mesh_selection_solves_a_triangle_face() {
         )
     };
     assert!(matches!(
-        crate::test_support::with_service_context(run).expect("service resource budget"),
+        crate::test_support::with_service_context(run).expect("resolve singleton mesh selection"),
         Some(MeshSolve::Solved(_))
     ));
 }
@@ -10226,7 +10229,8 @@ fn endpoint_candidate_search_accepts_self_loop_edges() {
             },
         )
     };
-    crate::test_support::with_service_context(run).expect("service resource budget");
+    crate::test_support::with_service_context(run)
+        .expect("resolve standard mesh endpoint candidates");
 }
 
 #[test]
@@ -10263,7 +10267,7 @@ fn fixed_endpoint_pairs_accept_a_self_loop_face() {
             None,
         )
     };
-    crate::test_support::with_service_context(run).expect("service resource budget");
+    crate::test_support::with_service_context(run).expect("resolve fixed mesh endpoint pairs");
 }
 
 #[test]
@@ -10322,7 +10326,7 @@ fn fixed_endpoint_pairs_survive_direction_enumeration_overflow() {
             None,
         )
     };
-    crate::test_support::with_service_context(run).expect("service resource budget");
+    crate::test_support::with_service_context(run).expect("resolve fixed mesh endpoint pairs");
 }
 
 #[test]
@@ -10366,7 +10370,7 @@ fn endpoint_relation_constraints_build_with_and_without_optional_edges() {
         catia_test_context!(service_ctx);
         assert!(
             build_endpoint_relation_constraints(&service_ctx, &domains, &budget)
-                .expect("service resource budget")
+                .expect("build endpoint relation constraints")
                 .is_some()
         );
     }
@@ -10426,7 +10430,9 @@ fn endpoint_relation_walk_fails_when_the_evaluator_accepts_nothing() {
             },
         )
     };
-    assert!(!crate::test_support::with_service_context(run).expect("service resource budget"));
+    assert!(
+        !crate::test_support::with_service_context(run).expect("walk endpoint relation domains")
+    );
 }
 
 #[test]
@@ -10442,7 +10448,7 @@ fn endpoint_relation_propagation_keeps_matching_shared_edge_choices() {
     let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     catia_test_context!(service_ctx);
     let constraints = build_endpoint_relation_constraints(&service_ctx, &domains, &budget)
-        .expect("service resource budget")
+        .expect("build endpoint relation constraints")
         .expect("shared edge creates relation constraints");
     let mut service_domains = domains.clone();
     assert!(propagate_endpoint_relation_domains(
@@ -10452,7 +10458,7 @@ fn endpoint_relation_propagation_keeps_matching_shared_edge_choices() {
         &constraints,
         &budget,
     )
-    .expect("service resource budget"));
+    .expect("propagate endpoint relation domains"));
 }
 
 #[test]
@@ -10468,7 +10474,7 @@ fn endpoint_relation_propagation_rejects_an_empty_face_domain() {
     catia_test_context!(service_ctx);
     let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let constraints = build_endpoint_relation_constraints(&service_ctx, &domains, &budget)
-        .expect("service resource budget")
+        .expect("build endpoint relation constraints")
         .expect("shared edge creates relation constraints");
     let mut empty = domains.clone();
     empty[0].clear();
@@ -10479,7 +10485,7 @@ fn endpoint_relation_propagation_rejects_an_empty_face_domain() {
         &constraints,
         &budget,
     )
-    .expect("service resource budget"));
+    .expect("propagate endpoint relation domains"));
 
     let mut empty = domains;
     empty[0].clear();
@@ -10616,7 +10622,8 @@ fn coordinate_root_closure_solves_a_merged_two_point_quotient() {
         )
     };
     assert!(matches!(
-        crate::test_support::with_service_context(run).expect("service resource budget"),
+        crate::test_support::with_service_context(run)
+            .expect("compute the coordinate root closure outcome"),
         MeshSolve::Solved(_)
     ));
 }
@@ -10634,7 +10641,7 @@ fn coordinate_root_closure_rejects_out_of_range_root_points() {
     assert!(matches!(
         make_quotient()
             .coordinate_root_closure_outcome(&service_ctx, 2, &candidates, None, None)
-            .expect("service resource budget"),
+            .expect("compute the coordinate root closure outcome"),
         MeshSolve::Failed(MeshCandidateFailure::Rejected(()))
     ));
 }
@@ -10650,7 +10657,7 @@ fn coverage_matching_fails_when_a_point_has_no_root() {
         .expect("fixture fits the input limit");
     assert!(
         MeshCoordinateRootDomains::coverage_matching(&ctx, &domains, 2, None)
-            .expect("service resource budget")
+            .expect("construct the mesh coordinate root domains")
             .is_none()
     );
 }
@@ -10665,7 +10672,7 @@ fn coordinate_root_preparation_admits_two_roots_on_one_edge() {
     catia_test_context!(service_ctx);
     assert!(make_quotient()
         .prepare_coordinate_root_domains(&service_ctx, 2, &candidates, None)
-        .expect("service resource budget")
+        .expect("prepare coordinate root domains")
         .is_some());
 }
 
@@ -10688,7 +10695,7 @@ fn candidate_refinement_refuses_a_missing_coverage_matching() {
         .expect("fixture fits the input limit");
     assert!(domains
         .refine_candidates(&ctx, &candidates, None)
-        .expect("service resource budget")
+        .expect("refine the candidates")
         .is_none());
 }
 
@@ -10713,7 +10720,7 @@ fn all_different_refinement_narrows_the_third_root_to_point_two() {
         )
     };
     let service = crate::test_support::with_service_context(run)
-        .expect("service resource budget")
+        .expect("refine domains")
         .expect("Hall refinement is feasible");
     assert_eq!(service.domains[2], vec![2]);
 }
@@ -10732,17 +10739,17 @@ fn candidate_refinement_keeps_domains_and_selects_an_edge_arc() {
         domains.refine_candidates(ctx, domains.edge_candidates.as_ref(), None)
     };
     assert!(crate::test_support::with_service_context(unchanged)
-        .expect("service resource budget")
+        .expect("refine the candidates")
         .is_some());
     let selected =
         |ctx: &DecodeContext<'_>| domains.refine_edge_candidate_arc(ctx, 0, [0, 1], None);
     let selected_domains = crate::test_support::with_service_context(selected)
-        .expect("service resource budget")
+        .expect("refine edge candidate arc")
         .expect("selected coordinate domains");
     assert_eq!(selected_domains.edge_candidate_points(0), Some(vec![0, 1]));
     let changed = |ctx: &DecodeContext<'_>| domains.refine_candidates(ctx, &[vec![[0, 1]]], None);
     assert!(crate::test_support::with_service_context(changed)
-        .expect("service resource budget")
+        .expect("refine the candidates")
         .is_some());
 }
 

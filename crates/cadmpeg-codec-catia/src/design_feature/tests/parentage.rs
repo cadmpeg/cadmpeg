@@ -221,7 +221,6 @@ fn object_without_owner_chain_gets_no_feature_parent() {
         .features
         .push(feature("one", "synthetic:test:object#one"));
     let transfer = DesignFeatureTransfer::default();
-    ({ transfer.assign_feature_parents(&mut ir, &native) })
-        .expect("service profile admits parent indexes");
+    ({ transfer.assign_feature_parents(&mut ir, &native) }).expect("assign feature parents");
     assert!(ir.model.feature_parent(&ir.model.features[0].id).is_none());
 }

@@ -51,7 +51,7 @@ fn reconciled_plane_uses_source_carrier_after_millimeter_admission() {
     let mut source_carriers = crate::decode::source_carriers::SourceUnitCarriers::new(
         cadmpeg_ir::scalar::PositiveReal::new(25.4),
     );
-    crate::decode::with_test_decode_ctx(|ctx| {
+    crate::decode::with_service_context(|ctx| {
         source_carriers.admit_surface(
             ctx,
             &mut ir,
@@ -291,7 +291,7 @@ fn unique_native_conic_loop_places_its_plane_surface() {
         source_object: None,
     });
 
-    let transferred = crate::decode::with_test_decode_ctx(|ctx| {
+    let transferred = crate::decode::with_service_context(|ctx| {
         transfer_topology_bound_planes(
             ctx,
             &scan,
@@ -327,7 +327,7 @@ fn unique_native_conic_loop_places_its_plane_surface() {
         .push(scan.curves.topology_rows[0].clone());
     ir.model.surfaces.clear();
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| transfer_topology_bound_planes(
+        crate::decode::with_service_context(|ctx| transfer_topology_bound_planes(
             ctx,
             &scan,
             &mut ir,
@@ -401,7 +401,7 @@ fn unique_nurbs_line_loop_places_its_plane_surface() {
     }
 
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| transfer_topology_bound_planes(
+        crate::decode::with_service_context(|ctx| transfer_topology_bound_planes(
             ctx,
             &scan,
             &mut ir,

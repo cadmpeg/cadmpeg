@@ -20,12 +20,12 @@ fn equal_endpoint_ports_produce_closed_edge_candidates() {
     let candidates = [vec![[0, 0], [1, 1], [2, 2]], vec![[1, 3], [2, 4]]];
     assert_eq!(
         prune_edge_candidates_by_port_domains(&ctx, &ports, &candidates)
-            .expect("service resource budget"),
+            .expect("prune edge candidates by port domains"),
         Some(vec![vec![[1, 1], [2, 2]], vec![[1, 3], [2, 4]]])
     );
     assert_eq!(
         prune_edge_candidates_by_port_domains(&ctx, &[[10, 10]], &[vec![[0, 1], [0, 2]]])
-            .expect("service resource budget"),
+            .expect("prune edge candidates by port domains"),
         None
     );
 }
@@ -41,7 +41,7 @@ fn endpoint_port_domains_propagate_pair_correlation_to_a_fixpoint() {
 
     assert_eq!(
         prune_edge_candidates_by_port_domains(&ctx, &ports, &candidates)
-            .expect("service resource budget"),
+            .expect("prune edge candidates by port domains"),
         Some(vec![vec![[0, 1]], vec![[1, 4]], vec![[4, 6]]])
     );
 }
@@ -57,7 +57,7 @@ fn deferred_port_rows_do_not_constrain_open_face_components() {
 
     assert_eq!(
         prune_edge_candidates_by_port_domains(&ctx, &ports, &candidates)
-            .expect("service resource budget"),
+            .expect("prune edge candidates by port domains"),
         None
     );
     assert_eq!(
@@ -67,7 +67,7 @@ fn deferred_port_rows_do_not_constrain_open_face_components() {
             &candidates,
             &[false, true, true],
         )
-        .expect("service resource budget"),
+        .expect("prune edge candidates by port domains"),
         Some(candidates.to_vec())
     );
 }
@@ -100,7 +100,7 @@ fn duplicate_face_reference_slot_is_completed_by_face_closure() {
         None,
         Some(&[]),
     )
-    .expect("service resource budget")
+    .expect("complete duplicate face slots")
     .expect("unique face-closing slot assignment");
 
     assert_eq!(faces, vec![[0, 1], [0, 1], [0, 1]]);
@@ -138,7 +138,7 @@ fn duplicate_face_completion_keeps_sparse_endpoint_identities() {
         None,
         Some(&[]),
     )
-    .expect("service resource budget")
+    .expect("complete duplicate face slots")
     .expect("sparse endpoint identities");
 
     assert_eq!(faces, vec![[0, 1], [0, 1], [0, 1]]);
@@ -163,7 +163,7 @@ fn independent_duplicate_face_slots_have_one_canonical_search_order() {
         .collect::<Vec<_>>();
 
     let completed = complete_duplicate_face_slots(&ctx, &rows, &serialized, &points, 2, None, None)
-        .expect("service resource budget")
+        .expect("complete duplicate face slots")
         .expect("independent closed edges have one face completion");
     assert_eq!(completed, vec![[0, 1]; rows.len()]);
 }
@@ -210,7 +210,7 @@ fn standard_edge_tables_use_the_fixed_u16_width_when_rows_are_empty() {
     let points = crate::test_support::with_service_context(|ctx| {
         crate::families::standard::fbb::standard_vertex_points(ctx, &bytes)
     })
-    .expect("service resource budget")
+    .expect("compute the standard vertex points")
     .expect("standard vertex table");
     assert_eq!(points.len(), 3);
 }
@@ -237,7 +237,7 @@ fn duplicate_face_completion_rejects_out_of_range_faces() {
     }];
     assert!(
         complete_duplicate_face_slots(&ctx, &rows, &[[0, 2]], &[[0, 1]], 2, None, None,)
-            .expect("service resource budget")
+            .expect("complete duplicate face slots")
             .is_none()
     );
 }
@@ -279,7 +279,7 @@ fn equivalent_edge_rows_share_one_incidence_assignment_gauge() {
         Some(&[0, 1, 2, 2]),
         None,
     )
-    .expect("service resource budget")
+    .expect("complete duplicate face slots")
     .expect("one assignment modulo equivalent edge rows");
 
     let mut assigned = [faces[2][1], faces[3][1]];
@@ -334,7 +334,7 @@ fn consistent_port_domains_keep_every_edge_candidate() {
                 &candidates,
                 deferred,
             )
-            .expect("service resource budget"),
+            .expect("prune edge candidates by port domains"),
             Some(candidates.to_vec())
         );
     }

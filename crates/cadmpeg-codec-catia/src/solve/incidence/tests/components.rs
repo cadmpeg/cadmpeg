@@ -22,7 +22,7 @@ fn incidence_components_join_only_through_shared_face_vertices() {
     let edge_faces = [[0, 0], [0, 0], [0, 0], [0, 0]];
     assert_eq!(
         crate::solve::incidence::incidence_choice_components(&choices, &edge_faces, None, None)
-            .expect("service resource budget"),
+            .expect("compute the incidence choice components"),
         vec![vec![0, 1], vec![2]]
     );
 }
@@ -44,7 +44,7 @@ fn incidence_component_preflight_ignores_disjoint_unassigned_cycles_on_the_same_
         None,
         &|_| Ok(true),
     )
-    .expect("service resource budget")
+    .expect("compute the component incidence pair solutions")
     .expect("independent same-face cycle solutions");
 
     assert_eq!(solutions.len(), 4);
@@ -64,7 +64,7 @@ fn incidence_component_composition_does_not_allocate_the_declared_point_product(
         None,
         &|_| Ok(true),
     )
-    .expect("service resource budget")
+    .expect("compute the component incidence pair solutions")
     .expect("sparse component degree state");
 
     assert_eq!(solutions, vec![vec![[usize::MAX - 1, usize::MAX - 1]]]);
@@ -92,7 +92,7 @@ fn incidence_component_preflight_retains_fixed_chain_frontiers() {
         None,
         &|_| Ok(true),
     )
-    .expect("service resource budget")
+    .expect("compute the component incidence pair solutions")
     .expect("fixed-chain component frontier");
 
     assert_eq!(solutions, vec![vec![[0, 1], [1, 3], [3, 4], [4, 0]]]);
@@ -105,7 +105,7 @@ fn partial_incidence_constraint_joins_every_component_it_can_couple() {
 
     assert_eq!(
         crate::solve::incidence::join_incidence_components_by_coupling(components, &active)
-            .expect("service resource budget"),
+            .expect("join incidence components by coupling"),
         vec![vec![0, 2, 3, 5], vec![1], vec![4]],
     );
 }
@@ -139,7 +139,7 @@ fn incidence_components_order_prerequisites_without_joining_domains() {
         &choices,
         AssignmentOrder::new(None, Some(&dependencies)),
     )
-    .expect("service resource budget")
+    .expect("order incidence components by constraints")
     .expect("acyclic component prerequisites");
 
     assert_eq!(components, vec![vec![2], vec![0], vec![1]]);
@@ -159,7 +159,7 @@ fn incidence_components_reject_prerequisite_cycles() {
             &choices,
             AssignmentOrder::new(Some(&predecessors), None),
         )
-        .expect("service resource budget")
+        .expect("order incidence components by constraints")
         .is_none()
     );
 
@@ -171,7 +171,7 @@ fn incidence_components_reject_prerequisite_cycles() {
             &choices,
             AssignmentOrder::new(Some(&predecessors), None),
         )
-        .expect("service resource budget")
+        .expect("order incidence components by constraints")
         .is_none()
     );
 }
@@ -203,7 +203,7 @@ fn incidence_components_keep_fixed_face_boundaries_independent() {
             Some(&fixed),
             None
         )
-        .expect("service resource budget"),
+        .expect("compute the incidence choice components"),
         vec![vec![0, 1], vec![2, 3]]
     );
 
@@ -222,7 +222,7 @@ fn incidence_components_keep_fixed_face_boundaries_independent() {
             Some(&alternatives),
             None
         )
-        .expect("service resource budget"),
+        .expect("compute the incidence choice components"),
         vec![vec![0, 1, 2, 3]]
     );
 }
@@ -255,7 +255,7 @@ fn incidence_components_include_overlapping_quotient_domains() {
             None,
             Some(&quotient)
         )
-        .expect("service resource budget"),
+        .expect("compute the incidence choice components"),
         vec![vec![0, 1], vec![2]]
     );
 }
@@ -315,7 +315,7 @@ fn incidence_components_solve_coupled_face_vertex_closures() {
         None,
         &|_| Ok(true),
     )
-    .expect("service resource budget")
+    .expect("compute the component incidence pair solutions")
     .expect("component closure solution");
     assert!(solutions
         .iter()
@@ -356,7 +356,7 @@ fn incidence_components_reject_degree_cycles_in_the_wrong_edge_order() {
         None,
         &|_| Ok(true),
     )
-    .expect("service resource budget")
+    .expect("compute the component incidence pair solutions")
     .expect("ordered component solution");
 
     assert_eq!(solutions.len(), 1);
@@ -386,7 +386,7 @@ fn incidence_unordered_full_cycle_rejects_disconnected_degree_cycles() {
         None,
         &|_| Ok(true),
     )
-    .expect("service resource budget")
+    .expect("compute the component incidence pair solutions")
     .expect("connected cycle solution");
 
     assert_eq!(solutions, vec![vec![[0, 1], [1, 2], [2, 3], [0, 3]]]);
@@ -425,10 +425,10 @@ fn deferred_boundary_enforces_anchored_gap_capacities() {
 
     assert!(
         crate::solve::incidence::deferred_boundary_closes(&domain, &valid)
-            .expect("service resource budget")
+            .expect("compute the deferred boundary closes")
     );
     let assignment = crate::solve::incidence::deferred_boundary_assignment(&domain, &valid)
-        .expect("service resource budget")
+        .expect("compute the deferred boundary assignment")
         .expect("materialized deferred boundary");
     assert_eq!(
         assignment.boundaries[0]
@@ -446,7 +446,7 @@ fn deferred_boundary_enforces_anchored_gap_capacities() {
     );
     assert!(
         !crate::solve::incidence::deferred_boundary_closes(&domain, &overfilled_first_gap)
-            .expect("service resource budget")
+            .expect("compute the deferred boundary closes")
     );
 }
 
@@ -461,7 +461,7 @@ fn deferred_boundary_materialization_assigns_canonical_positive_spans() {
     };
     let assignment =
         crate::solve::incidence::deferred_boundary_assignment(&domain, &[[0, 1], [0, 1]])
-            .expect("service resource budget")
+            .expect("compute the deferred boundary assignment")
             .expect("materialized deferred boundary");
 
     assert_eq!(
@@ -494,7 +494,7 @@ fn deferred_anchored_runs_propagate_forced_adjacencies() {
     let candidates = vec![vec![[0, 1]], vec![[0, 1]]];
     let mut quotient =
         crate::solve::mesh_quotient::initial_mesh_quotient(&candidates, 2, &[[0, 1], [2, 3]])
-            .expect("service resource budget")
+            .expect("compute the initial mesh quotient")
             .expect("initial quotient");
     let budget = WorkBudget::new(100);
 
@@ -505,7 +505,7 @@ fn deferred_anchored_runs_propagate_forced_adjacencies() {
         &mut quotient,
         &budget,
     )
-    .expect("service resource budget")
+    .expect("propagate common ordered face quotients")
     .expect("forced deferred quotient");
 
     assert_eq!(
@@ -539,7 +539,7 @@ fn deferred_quotient_retains_unknown_exact_run_direction() {
     let candidates = vec![vec![[0, 1]], vec![[0, 1]]];
     let mut quotient =
         crate::solve::mesh_quotient::initial_mesh_quotient(&candidates, 2, &[[0, 1], [2, 3]])
-            .expect("service resource budget")
+            .expect("compute the initial mesh quotient")
             .expect("initial quotient");
     let budget = WorkBudget::new(100);
 
@@ -550,7 +550,7 @@ fn deferred_quotient_retains_unknown_exact_run_direction() {
         &mut quotient,
         &budget,
     )
-    .expect("service resource budget")
+    .expect("propagate common ordered face quotients")
     .expect("unknown exact direction is deferred");
 
     assert_ne!(
@@ -592,7 +592,7 @@ fn deferred_gap_search_propagates_quotient_forced_edge_order() {
         &mut quotient,
         &budget,
     )
-    .expect("service resource budget")
+    .expect("propagate common ordered face quotients")
     .expect("deferred gap quotient");
 
     assert_eq!(
@@ -653,7 +653,7 @@ fn ordered_structural_equations_propagate_without_direction_enumeration() {
         &mut quotient,
         &budget,
     )
-    .expect("service resource budget")
+    .expect("propagate common ordered face quotients")
     .expect("structural quotient");
 
     assert_eq!(
@@ -739,7 +739,7 @@ fn ordered_cycle_final_search_retains_domain_forced_directions() {
         &mut quotient,
         &budget,
     )
-    .expect("service resource budget")
+    .expect("propagate common ordered face quotients")
     .expect("supported cycle quotient");
 
     let solutions = crate::solve::incidence::component_incidence_pair_solutions(
@@ -753,7 +753,7 @@ fn ordered_cycle_final_search_retains_domain_forced_directions() {
         None,
         &|_| Ok(true),
     )
-    .expect("service resource budget")
+    .expect("compute the component incidence pair solutions")
     .expect("the final search retains the correlated cycle");
     assert_eq!(solutions, vec![vec![[0, 1], [0, 1]]]);
 }
@@ -788,7 +788,7 @@ fn ordered_components_retain_unknown_edges_in_the_abstract_quotient() {
         &candidates,
         &mut quotient,
     )
-    .expect("service resource budget")
+    .expect("propagate common boundary components")
     .expect("ordered component quotient");
 
     assert_eq!(
@@ -819,7 +819,7 @@ fn unordered_components_close_cycles_in_the_abstract_quotient() {
         &candidates,
         &mut quotient,
     )
-    .expect("service resource budget")
+    .expect("propagate common boundary components")
     .expect("unordered component quotient");
 
     assert_eq!(
@@ -847,14 +847,14 @@ fn compact_unordered_boundary_rejects_partial_subtours() {
         &[Some([0, 1]), Some([1, 2]), Some([2, 0]), None, None],
         None,
     )
-    .expect("service resource budget"));
+    .expect("check compact boundary domain viable"));
     assert!(compact_boundary_domain_viable(
         &ctx,
         &domain,
         &[Some([0, 1]), Some([1, 2]), Some([2, 3]), None, None],
         None,
     )
-    .expect("service resource budget"));
+    .expect("check compact boundary domain viable"));
     assert!(compact_boundary_domain_viable(
         &ctx,
         &domain,
@@ -867,7 +867,7 @@ fn compact_unordered_boundary_rejects_partial_subtours() {
         ],
         None,
     )
-    .expect("service resource budget"));
+    .expect("check compact boundary domain viable"));
 }
 
 #[test]
@@ -878,7 +878,7 @@ fn compact_unordered_boundary_refuses_degree_overflow() {
     assignment.push(None);
     assert!(
         !compact_boundary_domain_viable(&ctx, &domain, &assignment, None)
-            .expect("service resource budget")
+            .expect("check compact boundary domain viable")
     );
 }
 
@@ -896,7 +896,7 @@ fn unordered_component_enumeration_is_atomic_at_its_state_limit() {
             16,
             &budget,
         )
-        .expect("service resource budget")
+        .expect("compute the bounded unordered cycle assignments")
         .is_none()
     );
 }
@@ -932,7 +932,7 @@ fn deferred_components_select_gap_orders_in_the_abstract_quotient() {
         &candidates,
         &mut quotient,
     )
-    .expect("service resource budget")
+    .expect("propagate common boundary components")
     .expect("deferred component quotient");
 
     assert_eq!(
@@ -976,7 +976,7 @@ fn deferred_faces_share_one_endpoint_quotient() {
     let choices = vec![vec![[0, 1]], vec![[0, 1]]];
     let quotient =
         crate::solve::mesh_quotient::initial_mesh_quotient(&choices, 2, &[[0, 1], [2, 3]])
-            .expect("service resource budget")
+            .expect("compute the initial mesh quotient")
             .expect("initial quotient");
     let budget = WorkBudget::new(10_000);
 
@@ -990,7 +990,7 @@ fn deferred_faces_share_one_endpoint_quotient() {
             &quotient,
             &budget,
         )
-        .expect("service resource budget")
+        .expect("check compact boundary domains jointly viable")
     );
     assert!(
         !crate::solve::incidence::compact_boundary_domains_jointly_viable(
@@ -1002,7 +1002,7 @@ fn deferred_faces_share_one_endpoint_quotient() {
             &quotient,
             &budget,
         )
-        .expect("service resource budget")
+        .expect("check compact boundary domains jointly viable")
     );
 }
 
@@ -1029,7 +1029,7 @@ fn compact_faces_share_one_physical_edge_direction_gauge() {
         4,
         &[[0, 1], [2, 3], [4, 5], [6, 7], [8, 9]],
     )
-    .expect("service resource budget")
+    .expect("compute the initial mesh quotient")
     .expect("initial quotient");
     let budget = WorkBudget::new(10_000);
 
@@ -1043,7 +1043,7 @@ fn compact_faces_share_one_physical_edge_direction_gauge() {
             &quotient,
             &budget,
         )
-        .expect("service resource budget")
+        .expect("check compact boundary domains jointly viable")
     );
 }
 
@@ -1071,7 +1071,7 @@ fn compact_face_quotient_states_accumulate_across_calls() {
     let assignment = [Some([0, 1]), Some([0, 1])];
     let quotient =
         crate::solve::mesh_quotient::initial_mesh_quotient(&choices, 2, &[[0, 1], [2, 3]])
-            .expect("service resource budget")
+            .expect("compute the initial mesh quotient")
             .expect("initial quotient");
     let budget = WorkBudget::new(10_000);
     let first = domain(false);
@@ -1088,7 +1088,7 @@ fn compact_face_quotient_states_accumulate_across_calls() {
             initial.clone(),
             &budget,
         )
-        .expect("service resource budget")
+        .expect("advance compact boundary domains")
     else {
         panic!("first face quotient");
     };
@@ -1102,7 +1102,7 @@ fn compact_face_quotient_states_accumulate_across_calls() {
             initial,
             &budget,
         )
-        .expect("service resource budget"),
+        .expect("advance compact boundary domains"),
         crate::solve::incidence::CompactBoundaryAdvanceOutcome::Complete(_)
     ));
     assert!(matches!(
@@ -1115,7 +1115,7 @@ fn compact_face_quotient_states_accumulate_across_calls() {
             first_states,
             &budget,
         )
-        .expect("service resource budget"),
+        .expect("advance compact boundary domains"),
         crate::solve::incidence::CompactBoundaryAdvanceOutcome::Rejected
     ));
 }
@@ -1126,7 +1126,7 @@ fn compact_face_quotient_state_cap_is_exhausted() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root fits the service profile");
+        .expect("build the decode context");
     let choices = vec![Vec::new(); EDGE_COUNT];
     let quotient = MeshQuotient::new(
         (0..EDGE_COUNT * 2)
@@ -1162,7 +1162,7 @@ fn compact_face_quotient_state_cap_is_exhausted() {
         vec![(quotient, HashSet::new())],
         &budget,
     )
-    .expect("service resource budget");
+    .expect("advance compact boundary domains");
     assert!(matches!(
         outcome,
         crate::solve::incidence::CompactBoundaryAdvanceOutcome::Exhausted
@@ -1191,7 +1191,10 @@ fn independent_component_choices_yield_every_pair_solution() {
     };
     crate::test_support::with_service_context(|ctx| {
         assert_eq!(
-            run(ctx).expect("service budget").expect("solutions").len(),
+            run(ctx)
+                .expect("compute the component incidence pair solutions")
+                .expect("solutions")
+                .len(),
             4
         );
     });
@@ -1211,7 +1214,7 @@ fn incidence_components_order_a_single_prerequisite_chain() {
             &choices,
             AssignmentOrder::new(None, Some(&dependencies)),
         )
-        .expect("service budget")
+        .expect("order incidence components by constraints")
         .is_some()
     );
 }
@@ -1236,7 +1239,7 @@ fn component_search_stops_at_the_first_visited_solution() {
             &mut |_| Ok(ControlFlow::Break(())),
         )
     })
-    .expect("service budget");
+    .expect("visit component incidence pair solutions");
     assert!(matches!(
         outcome,
         crate::solve::incidence::IncidenceSolve::Solved(1)
@@ -1255,7 +1258,7 @@ fn deferred_boundary_closes_a_four_cycle_over_two_missing_edges() {
     let pairs = [[0, 1], [0, 1]];
     assert!(
         crate::solve::incidence::deferred_boundary_closes(&domain, &pairs)
-            .expect("service resource budget")
+            .expect("compute the deferred boundary closes")
     );
 }
 
@@ -1266,7 +1269,7 @@ fn compact_unordered_cycle_rejects_a_closed_triangle_subtour() {
     catia_test_context!(service_ctx);
     assert!(
         !compact_boundary_domain_viable(&service_ctx, &domain, &assignment, None)
-            .expect("service resource budget")
+            .expect("check compact boundary domain viable")
     );
 }
 
@@ -1277,7 +1280,7 @@ fn compact_unordered_triangle_cycle_is_viable() {
     catia_test_context!(service_ctx);
     assert!(
         compact_boundary_domain_viable(&service_ctx, &domain, &assignment, None)
-            .expect("service resource budget")
+            .expect("check compact boundary domain viable")
     );
 }
 
@@ -1298,5 +1301,5 @@ fn component_face_closing_a_triangle_is_viable() {
         Some(&domains),
         3,
     )
-    .expect("service resource budget"));
+    .expect("check component incidence faces viable"));
 }

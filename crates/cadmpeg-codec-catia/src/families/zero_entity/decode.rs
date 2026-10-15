@@ -1449,7 +1449,7 @@ mod tests {
             &mut ir,
             &[]
         )
-        .expect("resource allocation did not fail"));
+        .expect("check that the neutral model is admissible"));
     }
 
     #[test]
@@ -1577,7 +1577,7 @@ mod tests {
             &mut ir,
             &[]
         )
-        .expect("resource allocation did not fail"));
+        .expect("check that the neutral model is admissible"));
     }
 
     #[test]
@@ -1737,7 +1737,7 @@ mod tests {
             &mut ir,
             &[]
         )
-        .expect("resource allocation did not fail"));
+        .expect("check that the neutral model is admissible"));
     }
 
     #[test]

@@ -1209,7 +1209,23 @@ pub(super) fn build_standard_edge_curve(
                         let reference = cadmpeg_ir::geometry::derive_reference_direction(
                             *candidate_axis.as_raw(),
                         );
-                        let mut range = standard_circle_param_range(ctx, crate::families::standard::decode::edge_geometry::StandardCircleParamRangeInputs { ir, bindings, surface_indices, brep, support, center, radius, axis: *candidate_axis.as_raw(), ref_direction: reference, start, end, refusal })?;
+                        let mut range = standard_circle_param_range(
+                            ctx,
+                            StandardCircleParamRangeInputs {
+                                ir,
+                                bindings,
+                                surface_indices,
+                                brep,
+                                support,
+                                center,
+                                radius,
+                                axis: *candidate_axis.as_raw(),
+                                ref_direction: reference,
+                                start,
+                                end,
+                                refusal,
+                            },
+                        )?;
                         if range.is_none() {
                             if let Some(native) = native_support {
                                 range = native_support_circle_param_range(

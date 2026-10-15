@@ -54,7 +54,7 @@ fn remaining_merge_capacity_respects_mutually_exclusive_orientations() {
     assert_eq!(
         search
             .remaining_equation_merge_capacity(&mut quotient)
-            .expect("service resource budget"),
+            .expect("compute the remaining equation merge capacity"),
         Some(2)
     );
 }
@@ -103,7 +103,7 @@ fn remaining_equations_must_connect_equal_singleton_domains() {
     assert_eq!(
         search
             .remaining_equation_merge_capacity(&mut quotient)
-            .expect("service resource budget"),
+            .expect("compute the remaining equation merge capacity"),
         None
     );
 }
@@ -142,7 +142,7 @@ fn remaining_equation_components_require_a_coordinate_matching() {
     assert_eq!(
         search
             .remaining_equation_merge_capacity(&mut quotient)
-            .expect("service resource budget"),
+            .expect("compute the remaining equation merge capacity"),
         None
     );
 }
@@ -181,7 +181,7 @@ fn coordinate_matching_reserves_unavoidable_roots_per_component() {
     assert_eq!(
         search
             .remaining_equation_merge_capacity(&mut quotient)
-            .expect("service resource budget"),
+            .expect("compute the remaining equation merge capacity"),
         None
     );
 }
@@ -250,7 +250,7 @@ fn mesh_selection_declines_when_its_work_budget_is_exhausted() {
 
     search
         .search_with_limit(&quotient, 0)
-        .expect("service resource budget");
+        .expect("search the mesh selection");
 
     assert!(matches!(search.outcome, SearchOutcome::Exhausted));
 }
@@ -314,7 +314,7 @@ fn mesh_selection_finishes_the_active_face_component_first() {
 
     search
         .search_from_state(&quotient, true, &budget, &propagation_budget)
-        .expect("service resource budget");
+        .expect("search from state");
 
     assert!(!search.outcome.is_closed());
     assert!(matches!(search.outcome, SearchOutcome::Open));
@@ -361,7 +361,7 @@ fn forced_face_selection_does_not_exhaust_the_work_budget() {
     };
     let quotient = MeshQuotient::new(repeated_domain(HashSet::from([0]), 2));
 
-    search.search(&quotient).expect("service resource budget");
+    search.search(&quotient).expect("search the mesh selection");
 
     assert!(!search.outcome.is_closed());
 }
@@ -418,7 +418,7 @@ fn overmerged_face_options_do_not_exhaust_the_work_budget() {
     };
     let quotient = MeshQuotient::new(repeated_domain(HashSet::from([0, 1, 2]), 4));
 
-    search.search(&quotient).expect("service resource budget");
+    search.search(&quotient).expect("search the mesh selection");
 
     assert!(!search.outcome.is_closed());
     assert!(matches!(search.outcome, SearchOutcome::Open));
@@ -477,8 +477,12 @@ fn mesh_selection_merges_corner_equations_common_to_every_option() {
         MeshQuotient::new((0..6).map(|_| Arc::new(HashSet::from([0, 1, 2]))).collect());
 
     assert!(search
-        .propagate_forced_face_equations(&mut quotient)
-        .expect("service resource budget"));
+        .propagate_forced_face_equations_from(
+            &mut quotient,
+            None,
+            &WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS),
+        )
+        .expect("propagate the forced face equations"));
     assert_eq!(
         quotient.find(1).expect("service forest traversal"),
         quotient.find(2).expect("service forest traversal")
@@ -541,8 +545,12 @@ fn mesh_selection_merges_equations_common_to_every_assignment() {
         MeshQuotient::new((0..6).map(|_| Arc::new(HashSet::from([0, 1, 2]))).collect());
 
     assert!(search
-        .propagate_forced_face_equations(&mut quotient)
-        .expect("service resource budget"));
+        .propagate_forced_face_equations_from(
+            &mut quotient,
+            None,
+            &WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS),
+        )
+        .expect("propagate the forced face equations"));
     assert_eq!(
         quotient.find(1).expect("service forest traversal"),
         quotient.find(2).expect("service forest traversal")
@@ -601,8 +609,12 @@ fn mesh_selection_common_equations_ignore_infeasible_assignments() {
     );
 
     assert!(search
-        .propagate_forced_face_equations(&mut quotient)
-        .expect("service resource budget"));
+        .propagate_forced_face_equations_from(
+            &mut quotient,
+            None,
+            &WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS),
+        )
+        .expect("propagate the forced face equations"));
     assert_eq!(
         quotient.find(1).expect("service forest traversal"),
         quotient.find(2).expect("service forest traversal")
@@ -667,8 +679,12 @@ fn mesh_selection_propagates_closed_ports_without_enumerating_directions() {
         13
     );
     assert!(search
-        .propagate_forced_face_equations(&mut quotient)
-        .expect("service resource budget"));
+        .propagate_forced_face_equations_from(
+            &mut quotient,
+            None,
+            &WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS),
+        )
+        .expect("propagate the forced face equations"));
     assert_eq!(
         quotient.root_count().expect("service quotient traversal"),
         1
@@ -722,7 +738,7 @@ fn single_selected_face_search_reaches_a_solved_outcome() {
     };
     catia_test_context!(service_ctx);
     assert!(matches!(
-        run(&service_ctx).expect("service resource budget"),
+        run(&service_ctx).expect("search state"),
         SearchOutcome::Solved(_)
     ));
 }

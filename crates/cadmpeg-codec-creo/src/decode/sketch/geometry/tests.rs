@@ -45,7 +45,7 @@ fn saved_profile_fixture() -> (SketchId, Vec<(u32, SketchGeometry)>) {
 #[test]
 fn saved_profile_collections_preserve_circle_and_line_order() {
     let (sketch, geometries) = saved_profile_fixture();
-    let profiles = crate::decode::with_test_decode_ctx(|ctx| {
+    let profiles = crate::decode::with_service_context(|ctx| {
         super::saved_profile_chains(ctx, &sketch, &geometries)
     })
     .expect("admitted profiles");

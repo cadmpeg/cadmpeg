@@ -174,7 +174,7 @@ fn datum_feature_rejects_conflicting_local_and_transferred_plane_carriers() {
         source_object: None,
     });
     assert!(matches!(
-        crate::decode::with_test_decode_ctx(|ctx| schema_feature_definition(
+        crate::decode::with_service_context(|ctx| schema_feature_definition(
             ctx,
             &scan,
             &ir,
@@ -201,7 +201,7 @@ fn datum_feature_rejects_conflicting_local_and_transferred_plane_carriers() {
         _ => panic!("transferred datum plane"),
     }
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| schema_feature_definition(
+        crate::decode::with_service_context(|ctx| schema_feature_definition(
             ctx,
             &scan,
             &ir,
@@ -325,7 +325,7 @@ fn unbounded_plane_rejects_conflicting_carriers() {
     .expect("unbounded plane admitted")
     .is_none());
     assert!(matches!(
-        crate::decode::with_test_decode_ctx(|ctx| schema_feature_definition(
+        crate::decode::with_service_context(|ctx| schema_feature_definition(
             ctx,
             &scan,
             &ir,

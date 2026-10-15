@@ -274,7 +274,7 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, root) =
             DecodeContext::from_root_bytes(&compressed, &arena, &DecodePolicy::service())
-                .expect("test input fits service profile");
+                .expect("build the decode context");
         assert!(matches!(
             inflate_deflate(&ctx, root, ExpandSpec::Exact(10)),
             Err(CodecError::Malformed(message))

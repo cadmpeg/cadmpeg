@@ -6,7 +6,7 @@ use super::feature_row_for_aggregate;
 fn scan_bytes_retains_one_section() {
     let bytes = crate::test_support::build_prt("c", &[("VisibGeom", b"payload".to_vec())]);
     let service =
-        crate::decode::with_test_decode_ctx(|ctx| crate::container::scan_bytes(ctx, bytes.clone()))
+        crate::decode::with_service_context(|ctx| crate::container::scan_bytes(ctx, bytes.clone()))
             .expect("service scan admitted");
     assert_eq!(service.framing.sections.len(), 1);
 }
@@ -93,7 +93,7 @@ fn damaged_compressed_section_does_not_discard_an_independent_expansion() {
             .expect("good section extent"),
     ];
     let mut losses = Vec::new();
-    let expanded = crate::decode::with_test_decode_ctx(|ctx| {
+    let expanded = crate::decode::with_service_context(|ctx| {
         super::super::expanded_sections(ctx, &bytes, &sections, &mut losses)
     })
     .expect("independent section is readable");

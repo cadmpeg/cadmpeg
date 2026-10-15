@@ -28,7 +28,7 @@ pub(crate) fn validate_native(
 ) -> Vec<cadmpeg_ir::report::check::Finding> {
     let bytes = serde_json::to_vec(ir).expect("test document serializes");
     with_service_context(&bytes, |ctx| {
-        crate::validate_native(ctx, ir).expect("test validation is within resource limits")
+        crate::validate_native(ctx, ir).expect("validate the native records")
     })
 }
 

@@ -1,9 +1,10 @@
 use crate::solve::mesh_quotient::possible_face_choices_with_limit;
 use crate::solve::mesh_quotient::{
     possible_face_choices, possible_face_equations, MeshQuotient, MeshSelectionSearch,
-    SearchOutcome, MAX_FACE_EQUATION_CACHE_ENTRIES,
+    SearchOutcome, MAX_FACE_EQUATION_CACHE_ENTRIES, MAX_MESH_CONSTRAINT_OPERATIONS,
 };
 use crate::solve::missing_edge::{MeshBoundaryEdgeCandidate, MeshFaceBoundaryAssignment};
+use cadmpeg_core::decode::WorkBudget;
 use std::cell::RefCell;
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -54,24 +55,36 @@ fn face_equation_cache_ignores_unrelated_quotient_components() {
         MeshQuotient::new((0..6).map(|_| Arc::new(HashSet::from([0, 1, 2]))).collect());
 
     assert!(search
-        .propagate_forced_face_equations(&mut quotient)
-        .expect("service resource budget"));
+        .propagate_forced_face_equations_from(
+            &mut quotient,
+            None,
+            &WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS),
+        )
+        .expect("propagate the forced face equations"));
     assert_eq!(search.face_equation_cache.borrow().len(), 1);
     quotient
         .merge(4, 5)
         .expect("service merge")
         .expect("unrelated component merge");
     assert!(search
-        .propagate_forced_face_equations(&mut quotient)
-        .expect("service resource budget"));
+        .propagate_forced_face_equations_from(
+            &mut quotient,
+            None,
+            &WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS),
+        )
+        .expect("propagate the forced face equations"));
     assert_eq!(search.face_equation_cache.borrow().len(), 1);
     quotient
         .merge(0, 4)
         .expect("service merge")
         .expect("component joined to a face port");
     assert!(search
-        .propagate_forced_face_equations(&mut quotient)
-        .expect("service resource budget"));
+        .propagate_forced_face_equations_from(
+            &mut quotient,
+            None,
+            &WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS),
+        )
+        .expect("propagate the forced face equations"));
     assert_eq!(search.face_equation_cache.borrow().len(), 2);
     {
         let mut cache = search.face_equation_cache.borrow_mut();
@@ -84,8 +97,12 @@ fn face_equation_cache_ignores_unrelated_quotient_components() {
         .expect("service merge")
         .expect("new face-component merge");
     assert!(search
-        .propagate_forced_face_equations(&mut quotient)
-        .expect("service resource budget"));
+        .propagate_forced_face_equations_from(
+            &mut quotient,
+            None,
+            &WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS),
+        )
+        .expect("propagate the forced face equations"));
     assert_eq!(search.face_equation_cache.borrow().len(), 1);
 }
 
@@ -137,7 +154,13 @@ fn forced_face_equations_propagate_for_a_two_edge_loop() {
         };
         let mut quotient =
             MeshQuotient::new((0..6).map(|_| Arc::new(HashSet::from([0, 1, 2]))).collect());
-        search.propagate_forced_face_equations(&mut quotient)
+        search.propagate_forced_face_equations_from(
+            &mut quotient,
+            None,
+            &WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS),
+        )
     };
-    crate::test_support::with_service_context(|ctx| assert!(run(ctx).expect("service budget")));
+    crate::test_support::with_service_context(|ctx| {
+        assert!(run(ctx).expect("propagate the forced face equations"));
+    });
 }

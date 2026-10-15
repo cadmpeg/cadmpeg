@@ -349,7 +349,7 @@ fn section_solver_skamp_identity_and_native_state_preserve_source_semantics() {
         }],
     );
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(
+        crate::decode::with_service_context(|ctx| resolved_section_points(
             ctx,
             &center_coincidence
         ))

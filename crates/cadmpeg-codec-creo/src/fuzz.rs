@@ -88,35 +88,35 @@ pub fn container_scan(
 mod tests {
     #[test]
     fn wrappers_accept_empty() {
-        crate::decode::with_test_decode_ctx(|ctx| super::datum(ctx, &[]))
+        crate::decode::with_service_context(|ctx| super::datum(ctx, &[]))
             .expect("datum fuzz wrapper");
-        crate::decode::with_test_decode_ctx(|ctx| super::curve_prototypes(ctx, &[]))
+        crate::decode::with_service_context(|ctx| super::curve_prototypes(ctx, &[]))
             .expect("curve fuzz wrapper");
-        crate::decode::with_test_decode_ctx(|ctx| super::surface_rows(ctx, &[]))
+        crate::decode::with_service_context(|ctx| super::surface_rows(ctx, &[]))
             .expect("surface row fuzz wrapper");
-        crate::decode::with_test_decode_ctx(|ctx| super::scalar(ctx, &[]))
+        crate::decode::with_service_context(|ctx| super::scalar(ctx, &[]))
             .expect("scalar fuzz wrapper");
         super::compact_int(&[]);
         super::psb_tokens(&[]);
         super::short_form_float(&[]);
-        let _probe = crate::decode::with_test_decode_ctx(|ctx| super::container_scan(ctx, &[]));
+        let _probe = crate::decode::with_service_context(|ctx| super::container_scan(ctx, &[]));
     }
 
     #[test]
     fn wrappers_accept_fixture() {
         let data = crate::test_support::build_prt("1.0", &[]);
-        crate::decode::with_test_decode_ctx(|ctx| super::datum(ctx, &data))
+        crate::decode::with_service_context(|ctx| super::datum(ctx, &data))
             .expect("datum fuzz wrapper");
-        crate::decode::with_test_decode_ctx(|ctx| super::curve_prototypes(ctx, &data))
+        crate::decode::with_service_context(|ctx| super::curve_prototypes(ctx, &data))
             .expect("curve fuzz wrapper");
-        crate::decode::with_test_decode_ctx(|ctx| super::surface_rows(ctx, &data))
+        crate::decode::with_service_context(|ctx| super::surface_rows(ctx, &data))
             .expect("surface row fuzz wrapper");
-        crate::decode::with_test_decode_ctx(|ctx| super::scalar(ctx, &data))
+        crate::decode::with_service_context(|ctx| super::scalar(ctx, &data))
             .expect("scalar fuzz wrapper");
         super::compact_int(&data);
         super::psb_tokens(&data);
         super::short_form_float(&data);
-        crate::decode::with_test_decode_ctx(|ctx| super::container_scan(ctx, &data))
+        crate::decode::with_service_context(|ctx| super::container_scan(ctx, &data))
             .expect("container fuzz wrapper");
     }
 }

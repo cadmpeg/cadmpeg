@@ -89,7 +89,7 @@ fn decode_emits_both_intersection_support_pcurves() {
     assert!(context.sides()[1].pcurve.is_some());
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -124,7 +124,7 @@ fn decode_discards_serialized_support_uv_lane_that_misses_chart() {
     assert!(nurbs.control_points().iter().all(|point| point.u == 0.0));
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -177,7 +177,7 @@ fn decode_retains_uncharted_intersection_without_inventing_a_range() {
         .all(|edge| edge.param_range().is_none()));
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -220,7 +220,7 @@ fn terminal_plane_intersection_without_a_direct_carrier_remains_unresolved() {
     assert_eq!(edge.param_range(), None);
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -257,7 +257,7 @@ fn terminal_cylinder_generator_without_a_direct_carrier_remains_unresolved() {
     };
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 
@@ -313,7 +313,7 @@ fn terminal_cone_generator_without_a_direct_carrier_remains_unresolved() {
     };
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -377,7 +377,7 @@ fn terminal_sphere_and_torus_meridians_without_a_direct_carrier_remain_unresolve
         assert_eq!(edge.param_range(), None);
         assert!(
             cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-                .expect("resource allocation did not fail")
+                .expect("validate the neutral model")
                 .is_ok()
         );
     }
@@ -424,7 +424,7 @@ fn decode_emits_topology_when_record_xmt_uses_extended_encoding() {
     assert_eq!(result.ir().model.vertices.len(), 1);
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -543,7 +543,7 @@ fn decode_replaces_partition_bspline_surface_wrapper_from_deltas() {
     )));
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -563,7 +563,7 @@ fn decode_replaces_partition_bspline_curve_wrapper_from_deltas() {
     )));
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -583,7 +583,7 @@ fn decode_uses_partner_fin_vertex_for_edge_endpoint() {
     assert_eq!(result.ir().model.coedges.len(), 2);
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -600,7 +600,7 @@ fn decode_resolves_forward_trimmed_curve_chain() {
     );
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -630,7 +630,7 @@ fn decode_retains_a_curve_when_its_trim_range_misses_edge_vertices() {
     assert_eq!(edge.param_range(), None);
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -649,7 +649,7 @@ fn decode_omits_overflowing_line_trim_range() {
     assert_eq!(result.ir().model.edges[0].param_range(), None);
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -687,7 +687,7 @@ fn decode_tracks_extended_face_reference_shift() {
     );
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -735,7 +735,7 @@ fn decode_tracks_all_extended_topology_reference_shifts() {
     assert_eq!(result.ir().model.points[0].position().get().x, 10.0);
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -789,7 +789,7 @@ fn decode_tracks_geometry_envelope_escape_shift() {
     ));
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -972,7 +972,7 @@ fn decode_retains_every_rmfastload_active_body() {
         .all(|loss| !loss.message.contains("sub-body partition")));
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -1018,7 +1018,7 @@ fn decode_preselection_retains_skipped_rmfastload_stream_as_unknown() {
         .any(|unknown| unknown.id.as_str() == "nx:container:parasolid#1"));
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -1056,7 +1056,7 @@ fn decode_resolves_all_terminal_feature_bodies_without_active_selection() {
         .all(|loss| !loss.message.contains("sub-body partition")));
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -1079,7 +1079,7 @@ fn decode_selects_active_shell_when_body_record_is_absent() {
         .all(|loss| !loss.message.contains("sub-body partition")));
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -1242,7 +1242,7 @@ fn decode_retains_unsupported_named_stream_payloads() {
     }
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -1277,7 +1277,7 @@ fn decode_typed_saved_toggle_stream_is_not_retained_as_opaque() {
         .all(|loss| loss.code != crate::loss::NxLossCode::ContainerStreamOpaque.kind()));
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }

@@ -837,7 +837,7 @@ mod tests {
     use crate::test_support::{fixture_offset, object};
 
     fn scan(persistence: &Persistence) -> super::LegacyGeometryScan {
-        scan_checked(persistence).expect("service admits legacy geometry")
+        scan_checked(persistence).expect("scan the container")
     }
 
     use cadmpeg_ir::scalar::PositiveLength;
@@ -1342,7 +1342,7 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
             &v_tangents,
             &mixed_derivatives,
         )
-        .expect("service admits derivative vectors")
+        .expect("construct the interpolation grid")
         .expect("complete full derivative grid");
         let u_derivatives = spline.u_derivatives();
         let v_derivatives = spline.v_derivatives();

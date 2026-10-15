@@ -39,7 +39,7 @@ fn numerical_0922_inverse_keeps_both_branches() {
             [0., d],
             POINT_FIT_TOLERANCE,
         )
-        .expect("evaluation resources");
+        .expect("compute the degree one NURBS point parameter");
         println!("Creo folded segment domain {d:e}: {result:?}");
         assert_eq!(result, None);
     }
@@ -93,7 +93,7 @@ fn numerical_audit_full_edge_survives_small_knot_domain() {
                 &c,
                 [[0., 0., 0.], [1., 0., 0.]]
             )
-            .expect("evaluation resources"),
+            .expect("compute the nonperiodic NURBS edge parameter range"),
             Some([0., d])
         );
     }

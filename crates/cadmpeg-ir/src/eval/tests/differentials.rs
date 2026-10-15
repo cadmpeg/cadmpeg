@@ -399,7 +399,7 @@ fn rational_surface_isocurves_preserve_the_tensor_product_parameterization() {
             axis,
             fixed,
         )
-        .expect("resource allocation did not fail")
+        .expect("compute the NURBS surface isocurve")
         .expect("exact isocurve");
         let geometry = SolvedCurveGeometry::Nurbs(isocurve);
         for varying in [0.0, 0.2, 0.7, 1.0] {

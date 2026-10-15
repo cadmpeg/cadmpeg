@@ -1099,7 +1099,7 @@ mod tests {
                 extrusion,
                 &mut admission,
             )
-            .expect("service limits admit the extrusion procedure");
+            .expect("emit extrusion procedure");
         });
 
         assert!(matches!(
@@ -1135,8 +1135,17 @@ mod tests {
             Some(1e-5)
         );
         assert!(match ir.model.procedural_surfaces[0].definition() {
-            ProceduralSurfaceDefinition::Extrusion(matched_payload) =>
-                matches!((&matched_payload.parameter_interval().map(cadmpeg_ir::units::FiniteVector::get), matched_payload.direction(), &matched_payload.native_position(),), (Some([0.0, 1.0]), direction, None,) if *direction == Vector3::new(0.0, 0.0, 1.0)),
+            ProceduralSurfaceDefinition::Extrusion(matched_payload) => matches!(
+                (
+                    &matched_payload.parameter_interval().map(
+                        cadmpeg_ir::units::FiniteVector::get
+                    ),
+                    matched_payload.direction(),
+                    &matched_payload.native_position(),
+                ),
+                (Some([0.0, 1.0]), direction, None,)
+                    if *direction == Vector3::new(0.0, 0.0, 1.0)
+            ),
             _ => false,
         });
         assert_eq!(
@@ -1170,8 +1179,7 @@ mod tests {
                 &mut crate::nurbs::LaneRefusals::new(),
             )
         };
-        let admitted =
-            crate::test_support::with_service_context(run).expect("service resource budget");
+        let admitted = crate::test_support::with_service_context(run).expect("revolve NURBS");
         assert!(admitted.is_some());
     }
 }

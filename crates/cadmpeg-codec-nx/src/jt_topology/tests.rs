@@ -23,7 +23,7 @@ fn jt_topological_dual_mesh_reconstructs_closed_tetrahedron() {
                 large_words: &[],
             },
         )
-        .expect("dual mesh decode resources admitted")
+        .expect("decode the dual mesh")
         .expect("valid closed dual mesh");
 
         assert_eq!(

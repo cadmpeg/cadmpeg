@@ -1078,7 +1078,14 @@ pub(crate) fn project_relation_point_dimensioned_circles(
             if entities.iter().any(|entity| {
                 entity.sketch == **sketch
                     && matches!(entity.geometry.definition(), SketchGeometryDefinition::Circle { center: existing, radius: existing_radius }
-                        if quantize(existing.get(), EPS_DIMENSIONS_PROJECT_RELATION_POINT_DIMENSIONED_CIRCLES_E8) == quantize(center.get(), EPS_DIMENSIONS_PROJECT_RELATION_POINT_DIMENSIONED_CIRCLES_E8)
+                        if quantize(
+                            existing.get(),
+                            EPS_DIMENSIONS_PROJECT_RELATION_POINT_DIMENSIONED_CIRCLES_E8
+                        )
+                        == quantize(
+                            center.get(),
+                            EPS_DIMENSIONS_PROJECT_RELATION_POINT_DIMENSIONED_CIRCLES_E8
+                        )
                             && same_dimension_length(existing_radius.get(), radius))
             }) {
                 continue;

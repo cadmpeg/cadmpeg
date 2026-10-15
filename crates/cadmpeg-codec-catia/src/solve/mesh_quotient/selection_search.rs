@@ -304,15 +304,6 @@ impl MeshSelectionSearch<'_, '_> {
         Ok(signature)
     }
 
-    #[cfg(test)]
-    pub(super) fn propagate_forced_face_equations(
-        &self,
-        quotient: &mut MeshQuotient,
-    ) -> Result<bool, CodecError> {
-        let budget = WorkBudget::new(usize::MAX);
-        self.propagate_forced_face_equations_from(quotient, None, &budget)
-    }
-
     pub(super) fn propagate_forced_face_equations_from(
         &self,
         quotient: &mut MeshQuotient,
@@ -800,7 +791,19 @@ impl MeshSelectionSearch<'_, '_> {
             let Some(port_identities) = self.port_identities else {
                 return Ok(());
             };
-            let Some(outcome) = resolve_singleton_mesh_selection(self.ctx, crate::solve::mesh_quotient::selection_search::ResolveSingletonMeshSelectionInputs { edge_rows: self.edge_rows, vertex_points: self.vertex_points, edge_candidates: self.edge_candidates, selected: &selected_assignments, directions: &directions, port_identities, budget, candidate_gauge: self.candidate_gauge })?
+            let Some(outcome) = resolve_singleton_mesh_selection(
+                self.ctx,
+                ResolveSingletonMeshSelectionInputs {
+                    edge_rows: self.edge_rows,
+                    vertex_points: self.vertex_points,
+                    edge_candidates: self.edge_candidates,
+                    selected: &selected_assignments,
+                    directions: &directions,
+                    port_identities,
+                    budget,
+                    candidate_gauge: self.candidate_gauge,
+                },
+            )?
             else {
                 return Ok(());
             };
@@ -1057,7 +1060,19 @@ impl MeshSelectionSearch<'_, '_> {
                 .all(|candidates| candidates.len() == 1)
             {
                 if let Some(port_identities) = self.port_identities {
-                    let outcome = resolve_singleton_mesh_selection(self.ctx, crate::solve::mesh_quotient::selection_search::ResolveSingletonMeshSelectionInputs { edge_rows: self.edge_rows, vertex_points: self.vertex_points, edge_candidates: self.edge_candidates, selected: &selected_assignments, directions: &directions, port_identities, budget, candidate_gauge: self.candidate_gauge })?;
+                    let outcome = resolve_singleton_mesh_selection(
+                        self.ctx,
+                        ResolveSingletonMeshSelectionInputs {
+                            edge_rows: self.edge_rows,
+                            vertex_points: self.vertex_points,
+                            edge_candidates: self.edge_candidates,
+                            selected: &selected_assignments,
+                            directions: &directions,
+                            port_identities,
+                            budget,
+                            candidate_gauge: self.candidate_gauge,
+                        },
+                    )?;
                     if let Some(outcome) = outcome {
                         match outcome {
                             MeshSolve::Solved((topology, assignment)) => {

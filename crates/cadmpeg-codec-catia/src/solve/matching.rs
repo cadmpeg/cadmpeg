@@ -631,7 +631,7 @@ mod tests {
     fn repairs_matching_after_a_matched_edge_is_removed() {
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &DecodePolicy::service())
-            .expect("matching fixture fits the service profile");
+            .expect("build the decode context");
         let domains = [vec![1], vec![0, 2], vec![0, 1]];
         let repaired = repair_distinct_domain_matching_with_budget(
             &ctx,
@@ -640,7 +640,7 @@ mod tests {
             &[0, 1, 2],
             None,
         )
-        .expect("matching repair fits the service profile")
+        .expect("repair distinct domain matching")
         .expect("the remaining augmenting path should repair the matching");
 
         assert_eq!(repaired, vec![1, 2, 0]);
@@ -650,7 +650,7 @@ mod tests {
     fn rejects_domains_when_a_removed_edge_cannot_be_repaired() {
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &DecodePolicy::service())
-            .expect("matching fixture fits the service profile");
+            .expect("build the decode context");
         let domains = [vec![0], vec![0]];
 
         assert!(repair_distinct_domain_matching_with_budget(
@@ -660,7 +660,7 @@ mod tests {
             &[0, 1],
             None,
         )
-        .expect("matching repair fits the service profile")
+        .expect("repair distinct domain matching")
         .is_none());
     }
 
@@ -668,12 +668,12 @@ mod tests {
     fn matching_supports_retain_alternating_cycles_and_paths_to_free_points() {
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &DecodePolicy::service())
-            .expect("matching fixture fits the service profile");
+            .expect("build the decode context");
         let mut domains = [vec![0, 1], vec![0, 2]];
 
         assert_eq!(
             retain_distinct_matching_supports(&ctx, &mut domains, 3, &[1, 0], None)
-                .expect("matching supports fit the service profile"),
+                .expect("retain distinct matching supports"),
             Some(false)
         );
         assert_eq!(domains, [vec![0, 1], vec![0, 2]]);
@@ -683,12 +683,12 @@ mod tests {
     fn matching_supports_remove_edges_outside_every_complete_matching() {
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &DecodePolicy::service())
-            .expect("matching fixture fits the service profile");
+            .expect("build the decode context");
         let mut domains = [vec![0, 1], vec![0]];
 
         assert_eq!(
             retain_distinct_matching_supports(&ctx, &mut domains, 2, &[1, 0], None)
-                .expect("matching supports fit the service profile"),
+                .expect("retain distinct matching supports"),
             Some(true)
         );
         assert_eq!(domains, [vec![1], vec![0]]);
@@ -699,7 +699,7 @@ mod tests {
         const POINT_COUNT: usize = 4;
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &DecodePolicy::service())
-            .expect("matching fixture fits the service profile");
+            .expect("build the decode context");
         for first_mask in 1u8..1 << POINT_COUNT {
             for second_mask in 1u8..1 << POINT_COUNT {
                 for third_mask in 1u8..1 << POINT_COUNT {
@@ -715,7 +715,7 @@ mod tests {
                         None,
                         None,
                     )
-                    .expect("matching search fits the service profile") else {
+                    .expect("compute the distinct domain matching") else {
                         continue;
                     };
                     let mut pruned = original.clone();
@@ -726,7 +726,7 @@ mod tests {
                         &matching,
                         None,
                     )
-                    .expect("matching supports fit the service profile")
+                    .expect("retain distinct matching supports")
                     .expect("valid matching");
                     for (domain, values) in original.iter().enumerate() {
                         for &point in values {
@@ -737,7 +737,7 @@ mod tests {
                                 None,
                                 Some(MatchingEdgeConstraint::Require(domain, point)),
                             )
-                            .expect("matching search fits the service profile")
+                            .expect("compute the distinct domain matching")
                             .is_some();
                             assert_eq!(
                                 pruned[domain].contains(&point),
@@ -757,7 +757,7 @@ mod tests {
         let arena = DecodeArena::new();
         let policy = DecodePolicy::service();
         let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-            .expect("matching fixture fits the service profile");
+            .expect("build the decode context");
         assert!(distinct_domain_matching_with_budget(
             &ctx,
             domains.iter().map(Vec::as_slice),
@@ -765,7 +765,7 @@ mod tests {
             None,
             None,
         )
-        .expect("service resource budget")
+        .expect("compute the distinct domain matching")
         .is_none());
     }
 
@@ -775,7 +775,7 @@ mod tests {
         let arena = DecodeArena::new();
         let policy = DecodePolicy::service();
         let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-            .expect("matching fixture fits the service profile");
+            .expect("build the decode context");
         assert!(repair_distinct_domain_matching_with_budget(
             &ctx,
             domains.iter().map(Vec::as_slice),
@@ -783,7 +783,7 @@ mod tests {
             &[],
             None,
         )
-        .expect("service resource budget")
+        .expect("repair distinct domain matching")
         .is_none());
     }
 
@@ -792,11 +792,11 @@ mod tests {
         let arena = DecodeArena::new();
         let policy = DecodePolicy::service();
         let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-            .expect("matching fixture fits the service profile");
+            .expect("build the decode context");
         let mut domains = [vec![0, 2]];
         assert!(
             retain_distinct_matching_supports(&ctx, &mut domains, 2, &[0], None)
-                .expect("service resource budget")
+                .expect("retain distinct matching supports")
                 .is_none()
         );
     }
@@ -809,9 +809,9 @@ mod tests {
         let arena = DecodeArena::new();
         let policy = DecodePolicy::service();
         let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-            .expect("matching fixture fits the service profile");
+            .expect("build the decode context");
         assert!(unique_coordinate_bijection(&ctx, &domains, &points)
-            .expect("service resource budget")
+            .expect("compute the unique coordinate bijection")
             .is_none());
     }
 }

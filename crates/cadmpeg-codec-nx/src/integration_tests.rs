@@ -68,7 +68,7 @@ fn decode(bytes: Vec<u8>) -> EditableDecodeResult {
 
 fn assert_valid(result: &EditableDecodeResult) {
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{validation:#?}");
     assert!(result.ir().native.namespace("nx").is_some());
 }
@@ -99,7 +99,7 @@ fn inspect_summary_preserves_preview_attributes_under_service_profile() {
     scan.streams[0].file_offset = 123_456_789;
     let summary =
         crate::test_support::with_decode_context(|ctx| crate::inspect::summarize(ctx, &scan))
-            .expect("preview summary fits the service profile");
+            .expect("summarize the inspection");
     assert_eq!(summary.entries[0].name, "parasolid#0");
     assert_eq!(
         summary.entries[0].attributes,
@@ -123,7 +123,7 @@ fn inspect_summary_preserves_invalid_legacy_storage_note() {
     let scan = invalid_legacy_storage_summary_scan();
     let summary =
         crate::test_support::with_decode_context(|ctx| crate::inspect::summarize(ctx, &scan))
-            .expect("storage fallback fits the service profile");
+            .expect("summarize the inspection");
     assert!(summary.notes.iter().any(|note| {
         note == "parasolid#0: verbatim container entry stores fewer bytes than it expands to: 2/3"
     }));

@@ -188,7 +188,7 @@ fn decode_retains_repeated_sketch_snapshots_with_offset_identities() {
             )
     }));
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
@@ -451,7 +451,7 @@ fn incomplete_section_tables_keep_saved_endpoint_witnesses() {
     };
 
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             crate::decode::sketch::coordinates::resolved_section_points(ctx, &definition)
         })
         .expect("test section solve"),
@@ -801,7 +801,7 @@ fn resolved_section_points_propagate_orientation_and_explicit_signed_dimensions(
     };
 
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             crate::decode::sketch::coordinates::resolved_section_points(ctx, &definition)
         })
         .expect("test section solve")
@@ -809,7 +809,7 @@ fn resolved_section_points_propagate_orientation_and_explicit_signed_dimensions(
         Some(&[7.0, 3.0])
     );
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             crate::decode::sketch::coordinates::resolved_section_points(ctx, &definition)
         })
         .expect("test section solve")
@@ -817,7 +817,7 @@ fn resolved_section_points_propagate_orientation_and_explicit_signed_dimensions(
         Some(&[17.0, 20.0])
     );
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             crate::decode::sketch::radii::resolved_section_radii(ctx, &definition)
         })
         .expect("test section solve")
@@ -825,7 +825,7 @@ fn resolved_section_points_propagate_orientation_and_explicit_signed_dimensions(
         Some(&4.0)
     );
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             crate::decode::sketch::coordinates::resolved_section_points(ctx, &definition)
         })
         .expect("test section solve")
@@ -833,7 +833,7 @@ fn resolved_section_points_propagate_orientation_and_explicit_signed_dimensions(
         Some(&[8.0, 30.0])
     );
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             crate::decode::sketch::coordinates::resolved_section_coordinates(ctx, &definition)
         })
         .expect("test section solve")
@@ -964,7 +964,7 @@ fn resolved_section_points_propagate_orientation_and_explicit_signed_dimensions(
             offset: 0,
         });
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             crate::decode::sketch::coordinates::resolved_section_points(
                 ctx,
                 &saved_endpoint_definition,
@@ -981,7 +981,7 @@ fn resolved_section_points_propagate_orientation_and_explicit_signed_dimensions(
         .as_mut()
         .expect("variables")
         .declared_count = 2;
-    assert!(crate::decode::with_test_decode_ctx(|ctx| {
+    assert!(crate::decode::with_service_context(|ctx| {
         crate::decode::sketch::coordinates::resolved_section_points(ctx, &incomplete_variables)
     })
     .expect("test section solve")
@@ -994,7 +994,7 @@ fn resolved_section_points_propagate_orientation_and_explicit_signed_dimensions(
         .expect("dimensions")
         .declared_count = 3;
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             crate::decode::sketch::coordinates::resolved_section_coordinates(
                 ctx,
                 &incomplete_dimensions,
@@ -1011,7 +1011,7 @@ fn resolved_section_points_propagate_orientation_and_explicit_signed_dimensions(
         .as_mut()
         .expect("segments")
         .declared_count = 6;
-    assert!(!crate::decode::with_test_decode_ctx(|ctx| {
+    assert!(!crate::decode::with_service_context(|ctx| {
         crate::decode::sketch::coordinates::resolved_section_points(ctx, &incomplete_segments)
     })
     .expect("test section solve")

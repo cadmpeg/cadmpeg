@@ -6962,7 +6962,7 @@ mod tests {
             endpoints,
             &mut crate::lane_refusal::LaneRefusals::new(),
         )
-        .expect("resource allocation did not fail")
+        .expect("compute the intersection support pcurve")
         .expect("support parameterization");
         let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs } = geometry else {
             panic!("expected solved UV NURBS");
@@ -6990,7 +6990,7 @@ mod tests {
             endpoints,
             &mut crate::lane_refusal::LaneRefusals::new()
         )
-        .expect("resource allocation did not fail")
+        .expect("compute the intersection support pcurve")
         .is_none());
 
         let malformed = super::super::intersection::IntersectionSupportData {
@@ -7005,7 +7005,7 @@ mod tests {
             endpoints,
             &mut crate::lane_refusal::LaneRefusals::new()
         )
-        .expect("resource allocation did not fail")
+        .expect("compute the intersection support pcurve")
         .is_none());
     }
 
@@ -7106,7 +7106,7 @@ mod tests {
             endpoints,
             &mut crate::lane_refusal::LaneRefusals::new(),
         )
-        .expect("resource allocation did not fail")
+        .expect("compute the intersection support pcurve")
         .expect("analytic support inversion");
         let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs } = geometry else {
             panic!("expected solved UV NURBS");
@@ -7134,7 +7134,7 @@ mod tests {
             endpoints,
             &mut crate::lane_refusal::LaneRefusals::new()
         )
-        .expect("resource allocation did not fail")
+        .expect("compute the intersection support pcurve")
         .is_none());
     }
 
@@ -7179,7 +7179,7 @@ mod tests {
             endpoints,
             &mut crate::lane_refusal::LaneRefusals::new(),
         )
-        .expect("resource allocation did not fail")
+        .expect("compute the intersection support pcurve")
         .expect("torus support inversion");
         let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs } = geometry else {
             panic!("expected solved UV NURBS");
@@ -7239,7 +7239,7 @@ mod tests {
             endpoints,
             &mut crate::lane_refusal::LaneRefusals::new(),
         )
-        .expect("resource allocation did not fail")
+        .expect("compute the intersection support pcurve")
         .expect("NURBS support inversion");
         let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs } = geometry else {
             panic!("expected solved UV NURBS");
@@ -7289,7 +7289,7 @@ mod tests {
             endpoints,
             &mut crate::lane_refusal::LaneRefusals::new(),
         )
-        .expect("resource allocation did not fail")
+        .expect("compute the intersection support pcurve")
         .is_none());
         assert!(intersection_support_pcurve(
             &support_data(0.34),
@@ -7299,7 +7299,7 @@ mod tests {
             endpoints,
             &mut crate::lane_refusal::LaneRefusals::new(),
         )
-        .expect("resource allocation did not fail")
+        .expect("compute the intersection support pcurve")
         .is_some());
     }
 
@@ -7491,7 +7491,7 @@ mod tests {
             &body,
             &cadmpeg_ir::stream_name!("candidate-admission"),
         )
-        .expect("service profile admits native B-rep candidates");
+        .expect("decode body");
     }
 
     #[test]
@@ -7830,7 +7830,7 @@ mod tests {
             cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::U,
             0.5,
         )
-        .expect("resource allocation did not fail")
+        .expect("compute the NURBS surface isocurve")
         .expect("surface isocurve");
         assert!(super::nurbs_representation_matches(&expected, &clamped));
     }
@@ -7894,7 +7894,7 @@ mod tests {
             cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::U,
             0.5,
         )
-        .expect("resource allocation did not fail")
+        .expect("compute the NURBS surface isocurve")
         .expect("quadratic surface isocurve");
         assert!(super::nurbs_representation_matches(&expected, &clamped));
     }
@@ -7955,7 +7955,7 @@ mod tests {
             cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::U,
             0.5,
         )
-        .expect("resource allocation did not fail")
+        .expect("compute the NURBS surface isocurve")
         .expect("rational surface isocurve");
         assert!(super::nurbs_representation_matches(&expected, &clamped));
     }

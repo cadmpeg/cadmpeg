@@ -186,7 +186,7 @@ fn nurbs_parameter_solver_inverts_a_rational_surface_point() {
         None,
         &cadmpeg_core::decode::WorkBudget::new(TEST_SURFACE_INVERSION_WORK),
     )
-    .expect("resource allocation did not fail")
+    .expect("compute the NURBS surface closest parameter")
     .unwrap();
 
     assert!((actual.u - expected.u).abs() < 1.0e-10);
@@ -199,7 +199,7 @@ fn nurbs_parameter_solver_inverts_a_rational_surface_point() {
         Some(Point2::new(f64::NAN, 0.5)),
         &cadmpeg_core::decode::WorkBudget::new(TEST_SURFACE_INVERSION_WORK),
     )
-    .expect("resource allocation did not fail")
+    .expect("compute the NURBS surface closest parameter")
     .unwrap();
     assert!((after_invalid_seed.u - expected.u).abs() < 1.0e-10);
     assert!((after_invalid_seed.v - expected.v).abs() < 1.0e-10);
@@ -652,7 +652,7 @@ fn nurbs_parameter_solver_rejects_a_remote_local_minimum_seed() {
         Some(Point2::new(0.875, 0.3)),
         &cadmpeg_core::decode::WorkBudget::new(TEST_SURFACE_INVERSION_WORK),
     )
-    .expect("resource allocation did not fail")
+    .expect("compute the NURBS surface closest parameter")
     .unwrap();
 
     assert!((actual.u - expected.u).abs() < 1.0e-10);
@@ -691,7 +691,7 @@ fn nurbs_parameter_solver_preserves_close_equal_branches() {
         Some(Point2::new(0.50011, 0.3)),
         &cadmpeg_core::decode::WorkBudget::new(TEST_SURFACE_INVERSION_WORK),
     )
-    .expect("resource allocation did not fail")
+    .expect("compute the NURBS surface closest parameter")
     .unwrap();
 
     assert!((actual.u - expected.u).abs() < 1.0e-10);
@@ -1300,18 +1300,22 @@ fn reverse_blend_contact_transfers_a_boundary_sample_to_its_support() {
             crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK,
         );
         let mut contact_seeds = crate::decode::blend::BlendContactSeedCache::default();
-        let actual =
-        crate::decode::blend::blend_support_parameter_from_source_pcurve_with_index_and_budget_and_seed_cache(
-&index,
-&crate::decode::blend::SourcePcurveSample { blend: &blend, support: &support, source_pcurve: &source_pcurve, curve_parameter: parameter },
-crate::decode::blend::BoundaryInverseTarget {
+        let actual = crate::decode::blend::blend_support_parameter_from_source_pcurve(
+            &index,
+            &crate::decode::blend::SourcePcurveSample {
+                blend: &blend,
+                support: &support,
+                source_pcurve: &source_pcurve,
+                curve_parameter: parameter,
+            },
+            crate::decode::blend::BoundaryInverseTarget {
                 point,
                 seed: None,
                 tolerance: FIT_TOLERANCE,
             },
-&mut contact_seeds,
-&geometry_budget,
-)
+            &mut contact_seeds,
+            &geometry_budget,
+        )
         .expect("evaluator allocation succeeds")
         .expect("reverse contact relation transfers the certified boundary");
         assert!((actual.u - expected.u).abs() <= FIT_TOLERANCE);

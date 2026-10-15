@@ -19,7 +19,7 @@ fn with_decode_ctx<T>(
     let policy = cadmpeg_core::decode::DecodePolicy::desktop();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy)
         .expect("surface fixture is admitted");
-    run(&ctx).expect("surface fixture stays within resource limits")
+    run(&ctx).expect("run the surface fixture")
 }
 
 fn named_prototype_records(
