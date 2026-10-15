@@ -72,6 +72,7 @@ pub(super) fn decode<'ctx>(
     topology: &TopologyData,
     ir: &mut CadIr,
     ctx: &'ctx DecodeContext<'_>,
+    admitted_ir_entities: &mut u64,
 ) -> Result<
     (
         StageOutcome<(
@@ -175,6 +176,7 @@ pub(super) fn decode<'ctx>(
                 visible: None,
                 definition: PmiDefinition::Datum { identification },
             },
+            admitted_ir_entities,
         )?;
         claim_storage
             .with_storage(|| ctx.insert_btree_set(&mut typed, id, "step_pmi_typed_claims"))?;
@@ -251,6 +253,7 @@ pub(super) fn decode<'ctx>(
                     basis: Vec::new(),
                 },
             },
+            admitted_ir_entities,
         )?;
         claim_storage
             .with_storage(|| ctx.insert_btree_set(&mut typed, id, "step_pmi_typed_claims"))?;
@@ -365,6 +368,7 @@ pub(super) fn decode<'ctx>(
                     references: datum_references,
                 },
             },
+            admitted_ir_entities,
         )?;
         reference_storage.commit()?;
         claim_storage
@@ -498,6 +502,7 @@ pub(super) fn decode<'ctx>(
                 visible: None,
                 definition: PmiDefinition::Dimension(definition),
             },
+            admitted_ir_entities,
         )?;
         claim_storage
             .with_storage(|| ctx.insert_btree_set(&mut typed, id, "step_pmi_typed_claims"))?;
@@ -942,6 +947,7 @@ pub(super) fn decode<'ctx>(
                     modifiers: tolerance_modifiers(record, ctx)?,
                 },
             },
+            admitted_ir_entities,
         )?;
         claim_storage
             .with_storage(|| ctx.insert_btree_set(&mut typed, id, "step_pmi_typed_claims"))?;
@@ -1141,6 +1147,7 @@ pub(super) fn decode<'ctx>(
                     semantics,
                 },
             },
+            admitted_ir_entities,
         )?;
         claim_storage
             .with_storage(|| ctx.insert_btree_set(&mut typed, id, "step_pmi_typed_claims"))?;

@@ -34,12 +34,14 @@ fn pmi_refuses(records: &str, operation: &str) {
             policy.limits.max_collection_items = limit;
             let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
                 .expect("root fits collection policy");
+            let mut admitted = cadmpeg_core::decode::u64_from_index(setup_ir.model.entity_count());
             let result = super::super::decode(
                 &exchange,
                 &geometry.value,
                 &topology.value,
                 &mut setup_ir.clone(),
                 &ctx,
+                &mut admitted,
             )
             .map(|_| ());
             if let Err(CodecError::ResourceLimit(refusal)) = &result {
@@ -83,12 +85,15 @@ fn pmi_retained_refuses(records: &str, operation: &str) {
                 let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
                     .expect("root fits retained policy");
 
+                let mut admitted =
+                    cadmpeg_core::decode::u64_from_index(setup_ir.model.entity_count());
                 (super::super::decode(
                     &exchange,
                     &geometry.value,
                     &topology.value,
                     &mut setup_ir.clone(),
                     &ctx,
+                    &mut admitted,
                 ))
                 .map(|_| ())
             },
@@ -374,6 +379,7 @@ fn datum_reference_refuses(records: &str, operation: &str) {
                             identification: "A".into(),
                         },
                     },
+                    &mut 0,
                 )
                 .expect("datum annotation setup");
             let mut losses = Vec::new();

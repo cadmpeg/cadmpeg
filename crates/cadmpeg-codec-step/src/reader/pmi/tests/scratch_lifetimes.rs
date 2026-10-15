@@ -20,8 +20,16 @@ fn decode_with_scratch_cap(records: &str, cap: u64) -> CadIr {
     let mut policy = DecodePolicy::service();
     policy.limits.max_materialized_bytes = cap;
     crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
-        super::super::decode(&exchange, &geometry.value, &topology.value, &mut ir, ctx)
-            .expect("only live scratch fits");
+        let mut admitted = cadmpeg_core::decode::u64_from_index(ir.model.entity_count());
+        super::super::decode(
+            &exchange,
+            &geometry.value,
+            &topology.value,
+            &mut ir,
+            ctx,
+            &mut admitted,
+        )
+        .expect("only live scratch fits");
     });
     ir
 }
@@ -121,6 +129,7 @@ fn geometric_usage_releases_consumed_indices_before_claim_growth() {
                         PmiDimension::new(DimensionKind::Size, None, None).expect("dimension"),
                     ),
                 },
+                &mut 0,
             )
             .expect("annotation index");
         let mut typed = BTreeSet::new();
