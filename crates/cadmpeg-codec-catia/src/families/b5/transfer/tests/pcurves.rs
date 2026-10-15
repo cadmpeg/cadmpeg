@@ -1704,3 +1704,50 @@ fn affine_cylinder_pcurve_preserves_exact_helix_construction() {
     assert_eq!(angle_range.get(), [0.0, tiny]);
     assert!((pitch.z - 4.0 * std::f64::consts::PI).abs() < 1.0e-12);
 }
+
+#[test]
+fn nurbs_isocurve_result() {
+    use cadmpeg_ir::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
+    let pcurve = B5Pcurve {
+        object_id: 1,
+        surface: 2,
+        degree: 1,
+        distinct_knots: crate::test_support::test_b5::finite_lane(&[0.0, 1.0]),
+        multiplicities: vec![2, 2],
+        control_points: vec![
+            crate::test_support::test_b5::finite_vector([0.5, 0.0]),
+            crate::test_support::test_b5::finite_vector([0.5, 1.0]),
+        ],
+        weights: None,
+        parameter_range: None,
+        parameterization: B5PcurveParameterization::Native,
+        class_21_suffix_scalar: None,
+        lifted_endpoints: None,
+    };
+    let surface = NurbsSurface::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
+        NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        NurbsSurfaceLanes::new(
+            vec![
+                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
+                vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
+            ],
+            None,
+        ),
+        false,
+    )
+    .expect("fixture constructor admission")
+    .expect("valid bilinear surface");
+    let curve = crate::test_support::with_service_context(|ctx| {
+        super::super::pcurves::nurbs_isocurve(ctx, &pcurve, &surface)
+    })
+    .expect("service budget")
+    .expect("bilinear isocurve");
+    assert_eq!(
+        curve.control_points(),
+        [Point3::new(0.5, 0.0, 0.0), Point3::new(0.5, 1.0, 0.0)]
+    );
+    assert_eq!(curve.knots().as_slice(), [0.0, 0.0, 1.0, 1.0]);
+    assert!(curve.weights().is_none());
+}

@@ -763,3 +763,34 @@ fn allocation_program_rejects_an_unconsumed_trim_packet() {
     let trims = [trim(0x4a, [0, 1, 2, 3]), trim(0x41, [4, 5, 6, 7])];
     assert!(motif_port_points(&trims, 4).is_none());
 }
+
+#[test]
+fn endpoint_order_helpers_result() {
+    let trails = [vec![0], vec![1]];
+    let candidates = vec![vec![[0, 1]], vec![[1, 2]], vec![[0, 2]]];
+    let trail_run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        bounded_oriented_trail_orders(ctx, &trails, 2)
+    };
+    let cycle_run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        bounded_endpoint_cycle_orders(ctx, &[2, 0, 1], &candidates, 4)
+    };
+    assert_eq!(
+        crate::test_support::with_service_context(trail_run).expect("service budget"),
+        Some(vec![vec![0, 1], vec![1, 0]])
+    );
+    assert_eq!(
+        crate::test_support::with_service_context(cycle_run).expect("service budget"),
+        Some(vec![vec![0, 1, 2]])
+    );
+}
+
+#[test]
+fn motif_port_identity_map_result() {
+    let trims = [
+        trim(0x4a, [0, 1, 2, 3]),
+        trim(0x4a, [10, 11, 12, 13]),
+        trim(0x4a, [20, 21, 22, 23]),
+    ];
+    let points = motif_port_points(&trims, 8).expect("complete motif allocation");
+    assert_eq!(points.len(), 8);
+}

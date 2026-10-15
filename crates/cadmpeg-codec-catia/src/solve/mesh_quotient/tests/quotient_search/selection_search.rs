@@ -6,6 +6,7 @@ use super::{
     EdgeRow, HashSet, MeshBoundaryEdgeCandidate, MeshFaceBoundaryAssignment, MeshQuotient,
     MeshSelectionSearch, RefCell, SearchOutcome, StandardTopologyDraft, WorkBudget,
 };
+use crate::solve::mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS;
 
 #[test]
 fn remaining_merge_capacity_respects_mutually_exclusive_orientations() {
@@ -672,4 +673,56 @@ fn mesh_selection_propagates_closed_ports_without_enumerating_directions() {
         quotient.root_count().expect("service quotient traversal"),
         1
     );
+}
+
+#[test]
+fn completed_mesh_search_result() {
+    use cadmpeg_core::decode::DecodeContext;
+    use cadmpeg_core::CodecError;
+    let assignments = vec![vec![MeshFaceBoundaryAssignment {
+        boundaries: vec![vec![MeshBoundaryEdgeCandidate {
+            edge: 0,
+            start: 0,
+            end: 0,
+            reversed: Some(false),
+        }]],
+    }]];
+    let edge_rows = vec![{
+        assert!(EdgeRow::new(1, vec![0], EdgeBoundaryLayout::CompleteBoundaryRun).is_none());
+        EdgeRow::new(1, vec![0, 0], EdgeBoundaryLayout::CompleteBoundaryRun)
+            .expect("admitted edge row")
+    }];
+    let edge_candidates = vec![vec![[0, 0]]];
+    let vertex_points = [[0.0; 3]];
+    let domain = Arc::new(HashSet::from([0]));
+    let quotient = MeshQuotient::new(vec![domain.clone(), domain]);
+    let run = |ctx: &DecodeContext<'_>| -> Result<SearchOutcome<(StandardTopologyDraft, Vec<usize>)>, CodecError> {
+        let mut search = MeshSelectionSearch {
+            ctx,
+            assignments: &assignments,
+            possible_face_equations: Vec::new(),
+            possible_face_choices: Vec::new(),
+            face_work: vec![Some(1)],
+            edge_candidates: &edge_candidates,
+            edge_rows: &edge_rows,
+            vertex_points: &vertex_points,
+            candidate_gauge: None,
+            port_identities: None,
+            fixed_face_directions: Vec::new(),
+            fixed_edge_orientations: Vec::new(),
+            edge_has_fixed_direction: Vec::new(),
+            selected: vec![Some((0, vec![vec![false]]))],
+            visited_states: HashSet::new(),
+            outcome: SearchOutcome::Open,
+            face_equation_cache: RefCell::default(),
+        };
+        let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+        search.search_state(&quotient, true, &budget, &budget)?;
+        Ok(search.outcome)
+    };
+    catia_test_context!(service_ctx);
+    assert!(matches!(
+        run(&service_ctx).expect("service resource budget"),
+        SearchOutcome::Solved(_)
+    ));
 }

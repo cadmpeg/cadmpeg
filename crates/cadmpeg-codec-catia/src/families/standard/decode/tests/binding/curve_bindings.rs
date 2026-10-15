@@ -9,6 +9,8 @@ use super::{
     Point2, Point3, PointId, SolvedCurveGeometry, SolvedSurfaceGeometry, StandardCurveGeometry,
     StandardCurveSupport, Surface, SurfaceGeometry, SurfaceId, Vector3,
 };
+use crate::families::standard::decode::edge_geometry::ensure_native_edge_support_surface;
+use crate::families::standard::decode::tests::binding::unit_square_surface;
 
 #[test]
 fn spherical_section_endpoint_pair_survives_topology_admission_without_pcurve() {
@@ -656,4 +658,54 @@ fn generated_analytic_curve_ranges_use_angular_parameters() {
     assert!((short[0] - 0.0).abs() < ANGLE_TOLERANCE);
     assert!((short[1] - std::f64::consts::FRAC_PI_2).abs() < ANGLE_TOLERANCE);
     assert!((long[1] - 1.5 * std::f64::consts::PI).abs() < ANGLE_TOLERANCE);
+}
+
+#[test]
+fn native_edge_support_match_result() {
+    let source =
+        crate::assemble::cgm_source("surface", 42).expect("service profile admits source identity");
+    let id = SurfaceId::mint("catia:test:surface#matching".to_owned()).expect("surface identity");
+    let geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None });
+    let mut ir = CadIr::empty();
+    ir.model.surfaces.push(Surface {
+        id: id.clone(),
+        geometry: geometry.clone(),
+        source_object: Some(source),
+    });
+    let carrier = crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(geometry);
+    let matched = crate::test_support::with_service_context(|ctx| {
+        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+        ensure_native_edge_support_surface(
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            42,
+            &carrier,
+            &mut admission,
+        )
+    })
+    .expect("service profile admits surface match");
+    assert_eq!(matched, id);
+    assert_eq!(ir.model.surfaces.len(), 1);
+}
+
+#[test]
+fn native_edge_support_nurbs_copy_result() {
+    let carrier = crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(unit_square_surface())),
+    );
+    let admitted = crate::test_support::with_service_context(|ctx| {
+        let mut ir = CadIr::empty();
+        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+        let id = ensure_native_edge_support_surface(
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            42,
+            &carrier,
+            &mut admission,
+        )?;
+        Ok::<_, cadmpeg_core::CodecError>((id, ir.model.surfaces))
+    })
+    .expect("service budget admits native edge support surface");
+    assert_eq!(admitted.1.len(), 1);
+    assert_eq!(admitted.0, admitted.1[0].id);
 }

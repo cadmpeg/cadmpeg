@@ -1756,3 +1756,32 @@ fn b5_supports_with_an_overflowing_placed_endpoint_agree_on_their_finite_endpoin
         .expect("evaluator allocation succeeds")
     );
 }
+
+#[test]
+fn reparameterized_nurbs_knots_result() {
+    let curve = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+        NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
+            1,
+            vec![10.0, 10.0, 20.0, 20.0],
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+            None,
+            false,
+        )
+        .expect("fixture constructor admission")
+        .expect("valid curve"),
+    ));
+    let target = crate::test_support::test_b5::increasing([0.0, 2.0]);
+    let admitted = crate::test_support::with_service_context(|ctx| {
+        charged_curve_on_parameter_range(
+            ctx,
+            curve,
+            [10.0, 20.0],
+            target,
+            &"curve",
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+    })
+    .expect("service budget");
+    assert!(admitted.is_some());
+}

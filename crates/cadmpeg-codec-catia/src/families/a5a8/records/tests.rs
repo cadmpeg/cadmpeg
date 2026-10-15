@@ -733,6 +733,14 @@ fn a8_pcurve_parser_reads_degree5_uv_jet() {
 }
 
 #[test]
+fn a8_pcurve_bspline_result() {
+    let [jet] = crate::families::a5a8::records::a8_pcurves(&a8_pcurve_stream())
+        .try_into()
+        .expect("one A8 pcurve jet");
+    assert!(jet.bspline().is_some());
+}
+
+#[test]
 fn a8_pcurve_parser_accepts_frame_bounded_site_count() {
     let pcurves = crate::families::a5a8::records::a8_pcurves(&a8_pcurve_stream_with_count(8193));
     assert_eq!(pcurves.len(), 1);
@@ -1458,3 +1466,60 @@ fn rolling_ball_limit_curves_reproduce_stored_endpoint_sites() {
 mod decode_transfer;
 
 mod curve_and_guide_records;
+
+#[test]
+fn a8_external_grid_range_result() {
+    let bytes = a8_elided_surface_stream();
+    let ranges = crate::families::a5a8::records::a8_external_grid_ranges(&bytes);
+    assert_eq!(ranges.len(), 1);
+    assert!(ranges[0].start < ranges[0].end);
+    assert!(ranges[0].end <= bytes.len());
+}
+
+#[test]
+fn a8_external_grid_poles_result() {
+    let bytes = a8_elided_surface_stream();
+    let [header] = crate::families::a5a8::records::a8_surface_headers(&bytes)
+        .collect::<Vec<_>>()
+        .try_into()
+        .expect("one elided header");
+    let surface = crate::test_support::with_service_context(|ctx| {
+        crate::families::a5a8::records::a8_surface_from_external_grid(
+            ctx,
+            &bytes,
+            &header,
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+    })
+    .expect("service collection budget")
+    .expect("unique external pole allocation");
+    assert_eq!(surface.geometry.poles().len(), 9);
+}
+
+#[test]
+fn a8_inline_poles_result() {
+    let bytes = a8_surface_stream();
+    let surfaces = crate::test_support::with_service_context(|ctx| {
+        crate::families::a5a8::records::a8_surfaces(
+            ctx,
+            &bytes,
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+    })
+    .expect("service collection budget");
+    assert_eq!(surfaces.len(), 1);
+}
+
+#[test]
+fn a8_header_lanes_result() {
+    let bytes = a8_surface_stream();
+    let object_id = cadmpeg_core::decode::View::u32_le_at(&bytes, 7).expect("fixture object id");
+    let header = crate::families::a5a8::records::a8_surface_header_from_object_frame(
+        &bytes,
+        0,
+        bytes.len(),
+        object_id,
+    )
+    .expect("complete surface header");
+    assert_eq!(header.object_id, object_id);
+}

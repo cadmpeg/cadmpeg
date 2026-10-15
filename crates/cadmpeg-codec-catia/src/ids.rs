@@ -49,4 +49,14 @@ mod tests {
             ));
         }
     }
+
+    #[test]
+    fn neutral_history_identity_result() {
+        let admitted = neutral_history_id(
+            "catia:graph:object#owner:child",
+            &cadmpeg_ir::identity_component!("feature"),
+        )
+        .expect("service profile admits neutral identity");
+        assert_eq!(admitted.as_str(), "catia:graph:feature#owner:child");
+    }
 }

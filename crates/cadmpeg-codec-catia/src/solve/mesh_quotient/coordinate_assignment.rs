@@ -1657,4 +1657,35 @@ mod tests {
         .expect("service budget");
         assert!(viable);
     }
+
+    #[test]
+    fn deferred_coordinate_boundary_result() {
+        use cadmpeg_core::decode::DecodeArena;
+        use cadmpeg_core::decode::DecodeContext;
+        use cadmpeg_core::decode::DecodePolicy;
+        let domain = MeshFaceBoundaryDomain::DeferredValidation(MeshDeferredFaceBoundary {
+            cycles: vec![MeshDeferredBoundaryCycle {
+                length: 2,
+                exact_uses: vec![(
+                    MeshBoundaryEdgeCandidate {
+                        edge: 0,
+                        start: 0,
+                        end: 1,
+                        reversed: Some(false),
+                    },
+                    1,
+                )],
+            }],
+            missing_edges: vec![1],
+        });
+        let edge_by_id = HashMap::from([(0, 0), (1, 1)]);
+        let edges = [[0, 1], [2, 3]];
+        let assigned = [None, Some(1), Some(1), Some(0)];
+        let arena = DecodeArena::new();
+        let service = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &service)
+            .expect("fixture fits the service profile");
+        assert!(partial_compact_assignment_viable(&ctx, crate::solve::mesh_quotient::coordinate_assignment::PartialCompactAssignmentViableInputs { domain: &domain, local_edge_by_id: &edge_by_id, edges: &edges, global_edge_count: 2, assigned: &assigned, candidate: (0, 0), budget: None })
+        .expect("service budget"));
+    }
 }

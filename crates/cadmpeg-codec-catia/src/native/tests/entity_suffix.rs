@@ -988,3 +988,25 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
 }
+
+#[test]
+fn suffix_schema_selection_result() {
+    let native = crate::native::CatiaNative::decode(&standard_catpart_with_parameter_value(&[
+        0x81, 0x92, 0x82, 0x32, 4, 0, 0, 0, 0x81, 0x81, 0x49,
+    ]));
+    let record = &native.entity_records[0];
+    let catalog = native.catalogs.first();
+    let admitted = super::super::entity_suffix_schema_selection(record.suffix_value(), catalog);
+    assert_eq!(admitted, record.suffix_schema_selection);
+}
+
+#[test]
+fn nested_suffix_schema_resolution_result() {
+    let native = crate::native::CatiaNative::decode(&standard_catpart_with_parameter_value(&[
+        0x84, 0x93, 0x82, 0x32, 4, 0, 0, 0, 0x32, 5, 0, 0, 0, 0x81, 0x49,
+    ]));
+    let record = &native.entity_records[0];
+    let catalog = native.catalogs.first();
+    let admitted = super::super::entity_suffix_schema_selection(record.suffix_value(), catalog);
+    assert_eq!(admitted, record.suffix_schema_selection);
+}

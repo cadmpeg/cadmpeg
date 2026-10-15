@@ -6979,6 +6979,32 @@ mod face_domain_support_tests {
             .iter()
             .all(|use_| use_.reversed.is_some()));
     }
+
+    #[test]
+    fn ordered_boundary_copy_result() {
+        let domains = [MeshFaceBoundaryDomain::Ordered(vec![
+            MeshFaceBoundaryAssignment {
+                boundaries: vec![vec![MeshBoundaryEdgeCandidate {
+                    edge: 0,
+                    start: 0,
+                    end: 1,
+                    reversed: Some(false),
+                }]],
+            },
+        ])];
+        assert!(materialize_boundary_domains(&domains, &[])
+            .expect("service resource budget")
+            .is_some());
+    }
+
+    #[test]
+    fn unordered_boundary_copy_result() {
+        let domains = [MeshFaceBoundaryDomain::UnorderedFullCycle(vec![0, 1, 2])];
+        let pairs = [[0, 1], [1, 2], [2, 0]];
+        assert!(materialize_boundary_domains(&domains, &pairs)
+            .expect("service resource budget")
+            .is_some());
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -9878,4 +9904,885 @@ mod pair_support_tests {
         assert!(assignments.iter().all(|choices| choices.len() == 1));
         assert!(candidates.iter().all(|pairs| pairs == &[[0, 0]]));
     }
+}
+
+#[test]
+fn arc_consistency_result() {
+    let run = |ctx: &DecodeContext<'_>| {
+        let mut domains = vec![vec![2, 3], vec![1, 2]];
+        enforce_edge_arc_consistency(
+            ctx,
+            &mut domains,
+            &[[0, 1]],
+            &[0],
+            &[vec![0], vec![0]],
+            &[vec![[0, 1]]],
+            None,
+        )
+    };
+    assert!(!crate::test_support::with_service_context(run).expect("service resource budget"));
+}
+
+#[test]
+fn arc_consistency_from_result() {
+    let run = |ctx: &DecodeContext<'_>| {
+        let mut domains = vec![vec![2, 3], vec![1, 2]];
+        enforce_edge_arc_consistency_from(
+            ctx,
+            &mut domains,
+            &[[0, 1]],
+            &[vec![0], vec![0]],
+            &[vec![[0, 1]]],
+            &[0],
+            None,
+        )
+    };
+    assert!(!crate::test_support::with_service_context(run).expect("service resource budget"));
+}
+
+#[test]
+fn sparse_membership_result() {
+    let run = || {
+        let mut domains = vec![vec![2, 3], vec![1, 2]];
+        enforce_sparse_endpoint_membership(&mut domains, &[[0, 1]], &[0], &[vec![[0, 1]]], None)
+    };
+    assert!(!run());
+}
+
+#[cfg(test)]
+#[test]
+fn initial_quotient_points_result() {
+    let candidates = [vec![[0, 1]]];
+    let identities = [[10, 11]];
+    assert!(initial_mesh_quotient(&candidates, 1, &identities)
+        .expect("service resource budget")
+        .is_none());
+    assert!(initial_mesh_quotient(&candidates, 2, &identities)
+        .expect("service resource budget")
+        .is_some());
+}
+
+#[cfg(test)]
+#[test]
+fn initial_quotient_union_and_merge_result() {
+    let candidates = [vec![[0, 1]], vec![[0, 1]]];
+    let identities = [[10, 11], [10, 12]];
+    assert!(initial_mesh_quotient(&candidates, 2, &identities)
+        .expect("service resource budget")
+        .is_some());
+}
+
+#[test]
+fn edge_class_ordered_pairs_result() {
+    let choices = vec![vec![[0, 1], [1, 2]], vec![[0, 1], [1, 2]]];
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| edge_class_search_constraint(
+            ctx,
+            &[0, 0],
+            &choices
+        ))
+        .expect("service resource budget")
+        .expect("matching edge classes")
+        .ordered,
+        vec![(0, 1)]
+    );
+}
+
+#[test]
+fn changed_quotient_edges_result() {
+    let points = Arc::new(HashSet::from([0]));
+    let left = MeshQuotient::new(vec![Arc::clone(&points), Arc::clone(&points)]);
+    let mut right = left.clone();
+    assert!(right.merge(0, 1).expect("service merge").is_some());
+    assert_eq!(
+        changed_quotient_edges(&left, &right).expect("service resource budget"),
+        HashSet::from([0])
+    );
+}
+
+#[test]
+fn relation_coordinate_candidates_result() {
+    let domains = [vec![MeshEndpointRelationChoice {
+        id: 0,
+        selection: MeshEndpointRelationSelection::Enumerated {
+            assignments: vec![0],
+            edge_pairs: vec![(1, [0, 1])],
+        },
+    }]];
+    let run = || relation_coordinate_candidate_domains(&domains, &[None], &[vec![[0, 1]]]);
+    assert!(run().is_none());
+}
+
+#[test]
+fn endpoint_configuration_helpers_result() {
+    let use_edge = |edge| MeshBoundaryEdgeCandidate {
+        edge,
+        start: 0,
+        end: 1,
+        reversed: None,
+    };
+    let invalid_assignment = MeshFaceBoundaryAssignment {
+        boundaries: vec![vec![use_edge(0), use_edge(1)]],
+    };
+    let assignment_result =
+        || endpoint_configuration_for_assignment(&invalid_assignment, &[[0, 1]]);
+    assert!(assignment_result().is_none());
+    let valid_assignment = MeshFaceBoundaryAssignment {
+        boundaries: vec![vec![use_edge(0)]],
+    };
+    let duplicate_configuration = vec![(0, [0, 1]), (0, [0, 1])];
+    let cycle_result =
+        || endpoint_configuration_cycles_viable(&valid_assignment, &duplicate_configuration);
+    assert!(cycle_result().is_none());
+    let pairs = HashMap::from([(0, [0, 1]), (1, [1, 0])]);
+    let invalid_boundary = vec![use_edge(0), use_edge(1), use_edge(2)];
+    let boundary_result =
+        || endpoint_configuration_boundary_cycle_viable(&invalid_boundary, &pairs);
+    assert!(boundary_result().is_none());
+}
+
+#[test]
+fn face_domain_solution_copy_result() {
+    let assignments = [vec![[0, 0]]];
+    let run = |ctx: &DecodeContext<'_>| {
+        let budget = WorkBudget::new(MAX_MESH_TOPOLOGY_OPERATIONS);
+        parse_standard_mesh_candidate_outcome_with_face_assignments(
+            ctx,
+            MeshFaceAssignmentCandidates::Concrete {
+                assignments: &assignments,
+                face_count: 1,
+            },
+            &budget,
+            |_, _| {
+                Ok(MeshSolve::Solved((
+                    StandardTopologyDraft {
+                        faces: Vec::new(),
+                        edge_rows: Vec::new(),
+                        vertex_points: Vec::new(),
+                        logical_vertex_count: 0,
+                    },
+                    Vec::new(),
+                )))
+            },
+        )
+    };
+    assert!(matches!(
+        crate::test_support::with_service_context(run),
+        Ok(MeshSolve::Solved(_))
+    ));
+}
+
+#[test]
+fn endpoint_configuration_relation_result() {
+    let edge_rows = (0..3)
+        .map(|_| {
+            assert!(EdgeRow::new(1, Vec::new(), EdgeBoundaryLayout::CompleteBoundaryRun).is_none());
+            EdgeRow::new(1, vec![0, 0], EdgeBoundaryLayout::CompleteBoundaryRun)
+                .expect("admitted edge row")
+        })
+        .collect::<Vec<_>>();
+    let vertex_points = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]];
+    let edge_candidates = vec![vec![[0, 1]], vec![[1, 2]], vec![[0, 2]]];
+    let assignments = vec![vec![MeshFaceBoundaryAssignment {
+        boundaries: vec![vec![
+            MeshBoundaryEdgeCandidate {
+                edge: 0,
+                start: 0,
+                end: 1,
+                reversed: None,
+            },
+            MeshBoundaryEdgeCandidate {
+                edge: 1,
+                start: 1,
+                end: 2,
+                reversed: None,
+            },
+            MeshBoundaryEdgeCandidate {
+                edge: 2,
+                start: 2,
+                end: 0,
+                reversed: None,
+            },
+        ]],
+    }]];
+    let configurations = vec![vec![Some(vec![vec![
+        (0, [0, 1]),
+        (1, [1, 2]),
+        (2, [0, 2]),
+    ]])]];
+    let run = |ctx: &DecodeContext<'_>| {
+        let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+        resolve_endpoint_configuration_relation_streaming(
+            ctx,
+            crate::solve::mesh_quotient::ResolveEndpointConfigurationRelationStreamingInputs {
+                assignments: &assignments,
+                endpoint_configurations: &configurations,
+                edge_candidates: &edge_candidates,
+                edge_rows: &edge_rows,
+                vertex_points: &vertex_points,
+                port_identities: &[[0, 1], [2, 3], [4, 5]],
+                budget: &budget,
+                partial_solution_valid: None,
+                complete_solution_valid: None,
+                candidate_gauge: None,
+                priority_edges: None,
+                coordinate_domains: None,
+            },
+        )
+    };
+    assert!(matches!(
+        crate::test_support::with_service_context(run).expect("service resource budget"),
+        Some(MeshSolve::Solved(_))
+    ));
+}
+
+#[test]
+fn singleton_mesh_selection_result() {
+    let edge_rows = (0..3)
+        .map(|_| {
+            assert!(EdgeRow::new(1, Vec::new(), EdgeBoundaryLayout::CompleteBoundaryRun).is_none());
+            EdgeRow::new(1, vec![0, 0], EdgeBoundaryLayout::CompleteBoundaryRun)
+                .expect("admitted edge row")
+        })
+        .collect::<Vec<_>>();
+    let vertex_points = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]];
+    let candidates = vec![vec![[0, 1]], vec![[1, 2]], vec![[0, 2]]];
+    let selected = [MeshFaceBoundaryAssignment {
+        boundaries: vec![vec![
+            MeshBoundaryEdgeCandidate {
+                edge: 0,
+                start: 0,
+                end: 1,
+                reversed: None,
+            },
+            MeshBoundaryEdgeCandidate {
+                edge: 1,
+                start: 1,
+                end: 2,
+                reversed: None,
+            },
+            MeshBoundaryEdgeCandidate {
+                edge: 2,
+                start: 2,
+                end: 0,
+                reversed: None,
+            },
+        ]],
+    }];
+    let directions = [vec![vec![false, false, false]]];
+    let identities = [[0, 1], [1, 2], [2, 0]];
+    let run = |ctx: &DecodeContext<'_>| {
+        let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+        resolve_singleton_mesh_selection(
+            ctx,
+            crate::solve::mesh_quotient::selection_search::ResolveSingletonMeshSelectionInputs {
+                edge_rows: &edge_rows,
+                vertex_points: &vertex_points,
+                edge_candidates: &candidates,
+                selected: &selected,
+                directions: &directions,
+                port_identities: &identities,
+                budget: &budget,
+                candidate_gauge: None,
+            },
+        )
+    };
+    assert!(matches!(
+        crate::test_support::with_service_context(run).expect("service resource budget"),
+        Some(MeshSolve::Solved(_))
+    ));
+}
+
+#[test]
+fn general_mesh_search_result() {
+    let edge_rows = (0..2)
+        .map(|_| {
+            assert!(EdgeRow::new(1, Vec::new(), EdgeBoundaryLayout::CompleteBoundaryRun).is_none());
+            EdgeRow::new(1, vec![0, 0], EdgeBoundaryLayout::CompleteBoundaryRun)
+                .expect("admitted edge row")
+        })
+        .collect::<Vec<_>>();
+    let vertex_points = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]];
+    let candidates = [vec![[0, 0], [1, 1]], vec![[0, 0], [1, 1]]];
+    let assignments = vec![vec![MeshFaceBoundaryAssignment {
+        boundaries: vec![vec![MeshBoundaryEdgeCandidate {
+            edge: 0,
+            start: 0,
+            end: 0,
+            reversed: None,
+        }]],
+    }]];
+    let run = |ctx: &DecodeContext<'_>| {
+        let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+        resolve_standard_mesh_endpoint_candidates(
+            ctx,
+            crate::solve::mesh_quotient::ResolveStandardMeshEndpointCandidatesInputs {
+                edge_rows: &edge_rows,
+                vertex_points: &vertex_points,
+                edge_candidates: &candidates,
+                assignments: assignments.clone(),
+                port_identities: &[[0, 0], [1, 1]],
+                prepared_quotient: None,
+                edge_direction_evidence: None,
+                budget: &budget,
+                partial_solution_valid: None,
+                complete_solution_valid: None,
+                candidate_gauge: None,
+                priority_edges: None,
+            },
+        )
+    };
+    crate::test_support::with_service_context(run).expect("service resource budget");
+}
+
+#[test]
+fn fixed_mesh_search_result() {
+    let edge_rows = (0..2)
+        .map(|_| {
+            assert!(EdgeRow::new(1, Vec::new(), EdgeBoundaryLayout::CompleteBoundaryRun).is_none());
+            EdgeRow::new(1, vec![0, 0], EdgeBoundaryLayout::CompleteBoundaryRun)
+                .expect("admitted edge row")
+        })
+        .collect::<Vec<_>>();
+    let vertex_points = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]];
+    let candidates = [vec![[0, 0]], vec![[1, 1]]];
+    let selected = [MeshFaceBoundaryAssignment {
+        boundaries: vec![vec![MeshBoundaryEdgeCandidate {
+            edge: 0,
+            start: 0,
+            end: 0,
+            reversed: None,
+        }]],
+    }];
+    let run = |ctx: &DecodeContext<'_>| {
+        let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+        resolve_fixed_mesh_endpoint_pairs(
+            ctx,
+            MeshEndpointGeometry {
+                edge_rows: &edge_rows,
+                vertex_points: &vertex_points,
+            },
+            &candidates,
+            &selected,
+            &[[0, 0], [1, 1]],
+            &budget,
+            None,
+        )
+    };
+    crate::test_support::with_service_context(run).expect("service resource budget");
+}
+
+#[test]
+fn fixed_mesh_direction_overflow_result() {
+    const BOUNDARY_COUNT: usize = 13;
+    let edge_count = BOUNDARY_COUNT * 2 + 1;
+    let edge_rows = (0..edge_count)
+        .map(|_| {
+            assert!(EdgeRow::new(1, Vec::new(), EdgeBoundaryLayout::CompleteBoundaryRun).is_none());
+            EdgeRow::new(1, vec![0, 0], EdgeBoundaryLayout::CompleteBoundaryRun)
+                .expect("admitted edge row")
+        })
+        .collect::<Vec<_>>();
+    let candidates = vec![vec![[0, 1]]; edge_count];
+    let identities = (0..edge_count)
+        .map(|edge| {
+            [
+                u32::try_from(edge * 2).expect("fixture value fits u32"),
+                u32::try_from(edge * 2 + 1).expect("fixture value fits u32"),
+            ]
+        })
+        .collect::<Vec<_>>();
+    let selected = [MeshFaceBoundaryAssignment {
+        boundaries: (0..BOUNDARY_COUNT)
+            .map(|boundary| {
+                vec![
+                    MeshBoundaryEdgeCandidate {
+                        edge: boundary * 2,
+                        start: 0,
+                        end: 1,
+                        reversed: Some(false),
+                    },
+                    MeshBoundaryEdgeCandidate {
+                        edge: boundary * 2 + 1,
+                        start: 1,
+                        end: 0,
+                        reversed: None,
+                    },
+                ]
+            })
+            .collect(),
+    }];
+    let vertex_points = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]];
+    let run = |ctx: &DecodeContext<'_>| {
+        let budget = WorkBudget::new(1);
+        resolve_fixed_mesh_endpoint_pairs(
+            ctx,
+            MeshEndpointGeometry {
+                edge_rows: &edge_rows,
+                vertex_points: &vertex_points,
+            },
+            &candidates,
+            &selected,
+            &identities,
+            &budget,
+            None,
+        )
+    };
+    crate::test_support::with_service_context(run).expect("service resource budget");
+}
+
+#[test]
+fn endpoint_relation_face_choices_result() {
+    let assignment = MeshFaceBoundaryAssignment {
+        boundaries: vec![vec![MeshBoundaryEdgeCandidate {
+            edge: 0,
+            start: 0,
+            end: 0,
+            reversed: None,
+        }]],
+    };
+    let assignments = [assignment.clone(), assignment];
+    let configurations = [Some(vec![vec![(0, [0, 0])]]), Some(vec![vec![(1, [0, 0])]])];
+    let run = || {
+        let mut covered = [false];
+        collect_endpoint_relation_face_choices(&assignments, &configurations, &mut covered)
+    };
+    assert!(run().is_none());
+}
+
+#[test]
+fn endpoint_relation_support_masks_result() {
+    let make_domains = |optional_edge: bool| {
+        let choice = |id, edge_pairs| MeshEndpointRelationChoice {
+            id,
+            selection: MeshEndpointRelationSelection::Enumerated {
+                assignments: vec![0],
+                edge_pairs,
+            },
+        };
+        let mut right = vec![choice(0, vec![(0, [0, 1]), (1, [2, 3])])];
+        if optional_edge {
+            right.push(choice(1, vec![(0, [0, 1])]));
+        }
+        vec![vec![choice(0, vec![(0, [0, 1]), (1, [2, 3])])], right]
+    };
+    for optional_edge in [false, true] {
+        let domains = make_domains(optional_edge);
+        let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+        catia_test_context!(service_ctx);
+        assert!(
+            build_endpoint_relation_constraints(&service_ctx, &domains, &budget)
+                .expect("service resource budget")
+                .is_some()
+        );
+    }
+}
+
+#[test]
+fn endpoint_relation_walk_result() {
+    let choices = vec![
+        MeshEndpointRelationChoice {
+            id: 0,
+            selection: MeshEndpointRelationSelection::Enumerated {
+                assignments: vec![0],
+                edge_pairs: vec![(0, [0, 1])],
+            },
+        },
+        MeshEndpointRelationChoice {
+            id: 1,
+            selection: MeshEndpointRelationSelection::Enumerated {
+                assignments: vec![1],
+                edge_pairs: vec![(0, [0, 1])],
+            },
+        },
+    ];
+    let assignment = MeshFaceBoundaryAssignment {
+        boundaries: vec![vec![MeshBoundaryEdgeCandidate {
+            edge: 0,
+            start: 0,
+            end: 1,
+            reversed: None,
+        }]],
+    };
+    let assignments = [vec![assignment.clone(), assignment]];
+    let constraints = MeshEndpointRelationConstraints {
+        arcs: vec![vec![]],
+        incoming: vec![vec![]],
+        choice_counts: vec![2],
+    };
+    let run = |ctx: &DecodeContext<'_>| {
+        let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+        let mut memo = HashSet::new();
+        walk_endpoint_relation_domains(
+            ctx,
+            crate::solve::mesh_quotient::WalkEndpointRelationDomainsInputs {
+                domains: vec![choices.clone()],
+                face_assignments: &assignments,
+                assigned: vec![None],
+                constraints: &constraints,
+                point_count: 2,
+                budget: &budget,
+                state_memo: &mut memo,
+                candidate_gauge: None,
+                priority_edges: Some(&[true]),
+                partial_solution_valid: None,
+                coordinate_domains: None,
+                coordinate_budget: None,
+                evaluate: &mut |_, _| Ok(false),
+            },
+        )
+    };
+    assert!(!crate::test_support::with_service_context(run).expect("service resource budget"));
+}
+
+#[test]
+fn endpoint_relation_active_masks_result() {
+    let choice = MeshEndpointRelationChoice {
+        id: 0,
+        selection: MeshEndpointRelationSelection::Enumerated {
+            assignments: vec![0],
+            edge_pairs: vec![(0, [0, 1])],
+        },
+    };
+    let domains = vec![vec![choice.clone()], vec![choice]];
+    let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    catia_test_context!(service_ctx);
+    let constraints = build_endpoint_relation_constraints(&service_ctx, &domains, &budget)
+        .expect("service resource budget")
+        .expect("shared edge creates relation constraints");
+    let mut service_domains = domains.clone();
+    assert!(propagate_endpoint_relation_domains(
+        &service_ctx,
+        &mut service_domains,
+        &mut [None],
+        &constraints,
+        &budget,
+    )
+    .expect("service resource budget"));
+}
+
+#[test]
+fn endpoint_relation_dirty_faces_result() {
+    let choice = MeshEndpointRelationChoice {
+        id: 0,
+        selection: MeshEndpointRelationSelection::Enumerated {
+            assignments: vec![0],
+            edge_pairs: vec![(0, [0, 1])],
+        },
+    };
+    let domains = vec![vec![choice.clone()], vec![choice]];
+    catia_test_context!(service_ctx);
+    let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let constraints = build_endpoint_relation_constraints(&service_ctx, &domains, &budget)
+        .expect("service resource budget")
+        .expect("shared edge creates relation constraints");
+    let mut empty = domains.clone();
+    empty[0].clear();
+    assert!(!propagate_endpoint_relation_domains(
+        &service_ctx,
+        &mut empty,
+        &mut [None],
+        &constraints,
+        &budget,
+    )
+    .expect("service resource budget"));
+
+    let mut empty = domains;
+    empty[0].clear();
+}
+
+#[test]
+fn face_endpoint_configurations_result() {
+    let assignment = MeshFaceBoundaryAssignment {
+        boundaries: vec![
+            vec![MeshBoundaryEdgeCandidate {
+                edge: 0,
+                start: 0,
+                end: 0,
+                reversed: None,
+            }],
+            vec![MeshBoundaryEdgeCandidate {
+                edge: 1,
+                start: 0,
+                end: 0,
+                reversed: None,
+            }],
+        ],
+    };
+    let candidates = [vec![[0, 0]], vec![[0, 0]]];
+    let run = || {
+        let budget = WorkBudget::new(32);
+        mesh_face_endpoint_configurations(
+            std::slice::from_ref(&assignment),
+            &candidates,
+            &[None; 2],
+            &budget,
+        )
+    };
+    assert_eq!(run(), Some(vec![vec![(0, [0, 0]), (1, [0, 0])]]));
+}
+
+#[test]
+fn endpoint_configuration_directions_result() {
+    let assignment = MeshFaceBoundaryAssignment {
+        boundaries: vec![vec![
+            MeshBoundaryEdgeCandidate {
+                edge: 0,
+                start: 0,
+                end: 1,
+                reversed: None,
+            },
+            MeshBoundaryEdgeCandidate {
+                edge: 1,
+                start: 0,
+                end: 1,
+                reversed: None,
+            },
+        ]],
+    };
+    let configuration = vec![(0, [0, 1]), (1, [0, 1])];
+    assert_eq!(
+        endpoint_configuration_directions(&assignment, &configuration)
+            .expect("directions")
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn endpoint_cycle_viability_result() {
+    let assignment = MeshFaceBoundaryAssignment {
+        boundaries: vec![vec![
+            MeshBoundaryEdgeCandidate {
+                edge: 0,
+                start: 0,
+                end: 1,
+                reversed: None,
+            },
+            MeshBoundaryEdgeCandidate {
+                edge: 1,
+                start: 1,
+                end: 0,
+                reversed: None,
+            },
+        ]],
+    };
+    let candidates = [vec![[0, 1]], vec![[1, 0]]];
+    let run = || {
+        mesh_assignment_endpoint_cycles_viable_where(&assignment, &candidates, None, |_, _| true)
+    };
+    assert_eq!(run(), Some(true));
+}
+
+#[test]
+fn coordinate_root_closure_result() {
+    let edge_candidates = vec![vec![[0, 1]], vec![[0, 1]]];
+    let edge_faces = [[0, 1], [0, 1]];
+    let boundary = MeshFaceBoundaryAssignment {
+        boundaries: vec![vec![
+            MeshBoundaryEdgeCandidate {
+                edge: 0,
+                start: 0,
+                end: 0,
+                reversed: None,
+            },
+            MeshBoundaryEdgeCandidate {
+                edge: 1,
+                start: 0,
+                end: 0,
+                reversed: None,
+            },
+        ]],
+    };
+    let boundary_domains = vec![
+        MeshFaceBoundaryDomain::Ordered(vec![boundary.clone()]),
+        MeshFaceBoundaryDomain::Ordered(vec![boundary]),
+    ];
+    let run = |ctx: &DecodeContext<'_>| {
+        let mut quotient = MeshQuotient::new(
+            (0..4)
+                .map(|node| Arc::new(HashSet::from([usize::from(node % 2 != 0)])))
+                .collect(),
+        );
+        quotient
+            .merge(0, 2)
+            .expect("service merge")
+            .expect("shared left endpoint");
+        quotient
+            .merge(1, 3)
+            .expect("service merge")
+            .expect("shared right endpoint");
+        let budget = WorkBudget::new(1_000);
+        quotient.coordinate_root_closure_outcome(
+            ctx,
+            2,
+            &edge_candidates,
+            Some((&edge_faces, &boundary_domains)),
+            Some(&budget),
+        )
+    };
+    assert!(matches!(
+        crate::test_support::with_service_context(run).expect("service resource budget"),
+        MeshSolve::Solved(_)
+    ));
+}
+
+#[test]
+fn coordinate_closure_result() {
+    let make_quotient = || {
+        MeshQuotient::new(vec![
+            Arc::new(HashSet::from([9])),
+            Arc::new(HashSet::from([0])),
+        ])
+    };
+    let candidates = [vec![[0, 1]]];
+    catia_test_context!(service_ctx);
+    assert!(matches!(
+        make_quotient()
+            .coordinate_root_closure_outcome(&service_ctx, 2, &candidates, None, None)
+            .expect("service resource budget"),
+        MeshSolve::Failed(MeshCandidateFailure::Rejected(()))
+    ));
+}
+
+#[test]
+fn coordinate_coverage_matching_result() {
+    use cadmpeg_core::decode::DecodeArena;
+    use cadmpeg_core::decode::DecodePolicy;
+    let domains = [vec![0]];
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("fixture fits the input limit");
+    assert!(
+        MeshCoordinateRootDomains::coverage_matching(&ctx, &domains, 2, None)
+            .expect("service resource budget")
+            .is_none()
+    );
+}
+
+#[test]
+fn coordinate_root_preparation_result() {
+    let candidates = [vec![[0, 1]]];
+    let make_quotient = || {
+        let domain = Arc::new(HashSet::from([0, 1]));
+        MeshQuotient::new(vec![domain.clone(), domain])
+    };
+    catia_test_context!(service_ctx);
+    assert!(make_quotient()
+        .prepare_coordinate_root_domains(&service_ctx, 2, &candidates, None)
+        .expect("service resource budget")
+        .is_some());
+}
+
+#[test]
+fn local_coordinate_refinement_result() {
+    use cadmpeg_core::decode::DecodeArena;
+    use cadmpeg_core::decode::DecodePolicy;
+    let domains = MeshCoordinateRootDomains {
+        domains: Arc::new(vec![vec![0, 1], vec![1, 2], vec![0, 2]]),
+        edges: Arc::new(vec![[0, 1], [1, 2]]),
+        root_edges: Arc::new(vec![vec![0], vec![0, 1], vec![1]]),
+        edge_candidates: Arc::new(vec![vec![[0, 1], [1, 2]], vec![[1, 2], [0, 2]]]),
+        coverage_matching: Vec::new(),
+        point_count: 3,
+    };
+    let candidates = [vec![[1, 2]], vec![[1, 2], [0, 2]]];
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("fixture fits the input limit");
+    assert!(domains
+        .refine_candidates(&ctx, &candidates, None)
+        .expect("service resource budget")
+        .is_none());
+}
+
+#[test]
+fn coordinate_refinement_result() {
+    let domains = MeshCoordinateRootDomains {
+        domains: Arc::new(vec![vec![0, 1], vec![0, 1], vec![0, 1, 2]]),
+        edges: Arc::new(vec![[0, 2]]),
+        root_edges: Arc::new(vec![vec![0], vec![], vec![0]]),
+        edge_candidates: Arc::new(vec![vec![[0, 1], [0, 2], [1, 2]]]),
+        coverage_matching: vec![0, 1, 2],
+        point_count: 3,
+    };
+    let run = |ctx: &DecodeContext<'_>| {
+        domains.refine_domains(
+            ctx,
+            domains.domains.as_ref().clone(),
+            domains.edge_candidates.as_ref(),
+            &[],
+            true,
+            None,
+        )
+    };
+    let service = crate::test_support::with_service_context(run)
+        .expect("service resource budget")
+        .expect("Hall refinement is feasible");
+    assert_eq!(service.domains[2], vec![2]);
+}
+
+#[test]
+fn coordinate_root_copies_result() {
+    let domains = MeshCoordinateRootDomains {
+        domains: Arc::new(vec![vec![0], vec![1]]),
+        edges: Arc::new(vec![[0, 1]]),
+        root_edges: Arc::new(vec![vec![0], vec![0]]),
+        edge_candidates: Arc::new(vec![vec![[0, 1], [1, 0]]]),
+        coverage_matching: vec![0, 1],
+        point_count: 2,
+    };
+    let unchanged = |ctx: &DecodeContext<'_>| {
+        domains.refine_candidates(ctx, domains.edge_candidates.as_ref(), None)
+    };
+    assert!(crate::test_support::with_service_context(unchanged)
+        .expect("service resource budget")
+        .is_some());
+    let selected =
+        |ctx: &DecodeContext<'_>| domains.refine_edge_candidate_arc(ctx, 0, [0, 1], None);
+    let selected_domains = crate::test_support::with_service_context(selected)
+        .expect("service resource budget")
+        .expect("selected coordinate domains");
+    assert_eq!(selected_domains.edge_candidate_points(0), Some(vec![0, 1]));
+    let changed = |ctx: &DecodeContext<'_>| domains.refine_candidates(ctx, &[vec![[0, 1]]], None);
+    assert!(crate::test_support::with_service_context(changed)
+        .expect("service resource budget")
+        .is_some());
+}
+
+#[cfg(test)]
+#[test]
+fn singleton_direction_growth_result() {
+    let boundary = [MeshBoundaryEdgeCandidate {
+        edge: 0,
+        start: 0,
+        end: 1,
+        reversed: None,
+    }];
+    let candidates = vec![vec![[0, 0]]];
+    assert_eq!(
+        singleton_mesh_boundary_directions(&boundary, &candidates, None),
+        Some(vec![false])
+    );
+}
+
+#[cfg(test)]
+#[test]
+fn singleton_cycle_signature_result() {
+    let assignment = MeshFaceBoundaryAssignment {
+        boundaries: vec![vec![MeshBoundaryEdgeCandidate {
+            edge: 0,
+            start: 0,
+            end: 1,
+            reversed: None,
+        }]],
+    };
+    let directions = vec![vec![false]];
+    let candidates = vec![vec![[0, 0]]];
+    assert_eq!(
+        canonical_singleton_coordinate_cycles(&assignment, &directions, &candidates),
+        Some(vec![vec![0]])
+    );
 }

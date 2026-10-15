@@ -2,6 +2,8 @@
 //! component search tests.
 
 use super::{Arc, HashSet, MeshPartialEndpointConstraint, MeshQuotient};
+use crate::solve::missing_edge::MeshBoundaryEdgeCandidate;
+use crate::solve::missing_edge::MeshFaceBoundaryDomain;
 
 #[test]
 fn incidence_components_filter_complete_solutions_during_search() {
@@ -402,4 +404,50 @@ fn incidence_component_prefix_can_prove_the_consumer_result_before_exhaustion() 
     assert_eq!(outcome, IncidenceSolve::Solved(2));
     assert_eq!(visited, 2);
     assert_eq!(validated.get(), 2);
+}
+
+#[test]
+fn compact_boundary_advance_result() {
+    use cadmpeg_core::decode::DecodeContext;
+    use cadmpeg_core::decode::WorkBudget;
+    let use_ = |edge| MeshBoundaryEdgeCandidate {
+        edge,
+        start: edge,
+        end: (edge + 1) % 2,
+        reversed: Some(false),
+    };
+    let domain = MeshFaceBoundaryDomain::DeferredValidation(
+        crate::solve::missing_edge::MeshDeferredFaceBoundary {
+            cycles: vec![crate::solve::missing_edge::MeshDeferredBoundaryCycle {
+                length: 2,
+                exact_uses: vec![(use_(0), 1), (use_(1), 1)],
+            }],
+            missing_edges: Vec::new(),
+        },
+    );
+    catia_test_context!(service_ctx);
+    let choices = vec![vec![[0, 1]], vec![[0, 1]]];
+    let quotient =
+        crate::solve::mesh_quotient::initial_mesh_quotient(&choices, 2, &[[0, 1], [2, 3]])
+            .expect("service resource budget")
+            .expect("initial quotient");
+    let advance = |ctx: &DecodeContext<'_>| {
+        let budget = WorkBudget::new(10_000);
+        crate::solve::incidence::advance_compact_boundary_domains(
+            ctx,
+            [&domain],
+            &choices,
+            &[Some([0, 1]), Some([0, 1])],
+            None,
+            vec![(quotient.clone(), HashSet::new())],
+            &budget,
+        )
+        .map(|outcome| {
+            matches!(
+                outcome,
+                crate::solve::incidence::CompactBoundaryAdvanceOutcome::Complete(_)
+            )
+        })
+    };
+    assert!(advance(&service_ctx).expect("service resource budget"));
 }

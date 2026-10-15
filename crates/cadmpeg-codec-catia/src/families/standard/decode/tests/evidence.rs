@@ -1504,3 +1504,192 @@ fn line_pair_constraint_rejects_pairs_beyond_edge_roles() {
 mod overflowing_support;
 
 mod circle_ranges;
+
+#[test]
+fn standard_evidence_store_result() {
+    use crate::families::standard::decode::{StandardEvidenceStore, StandardSurfaceEvidence};
+    let build = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        let mut store = StandardEvidenceStore::default();
+        store.add(
+            17,
+            StandardSurfaceEvidence::Geometry(SurfaceGeometry::Solved(
+                SolvedSurfaceGeometry::Unknown { record: None },
+            )),
+        );
+        store.into_outputs(ctx, &HashSet::new())
+    };
+    let (geometries, procedures) =
+        crate::test_support::with_service_context(build).expect("service context admits evidence");
+    assert_eq!(geometries.len(), 1);
+    assert!(matches!(
+        geometries.get(&17),
+        Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
+            record: None
+        }))
+    ));
+    assert!(procedures.is_empty());
+}
+
+#[test]
+fn plane_normal_candidate_and_result_maps_result() {
+    let records = [StandardSurfaceRecord::Analytic(SurfacePrefix {
+        pos: 0,
+        target: 10,
+        kind: AnalyticSurfaceKind::Plane,
+    })];
+    let frames = [Some(crate::test_support::test_b5::finite_vector([
+        0.0, 0.0, 1.0,
+    ]))];
+    let normals = standard_plane_normals_from_face_frames(&records, &frames);
+    assert_eq!(normals.len(), 1);
+}
+
+#[test]
+fn native_support_pcurve_copy_result() {
+    let pcurve = PcurveGeometry::Nurbs {
+        nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
+            None,
+            false,
+        )
+        .expect("fixture pcurve construction admission")
+        .expect("valid linear pcurve"),
+    };
+    let carrier = crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+    );
+    let native = StandardEdgeSupport {
+        surface_object_ids: [20, 21],
+        carriers: [carrier.clone(), carrier],
+        pcurves: [pcurve.clone(), pcurve],
+        parameter_range: [0.0, 1.0],
+    };
+    let copy = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        standard_oriented_native_support_pcurves(
+            ctx,
+            &native,
+            &[],
+            [0, 1],
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+    };
+    let admitted = crate::test_support::with_service_context(copy)
+        .expect("service profile admits native support copy")
+        .expect("unbound endpoints still retain native pcurves");
+    assert_eq!(admitted, native.pcurves);
+}
+
+#[test]
+fn standard_native_reverse_label_result() {
+    let points = [1.0, 4.0]
+        .into_iter()
+        .enumerate()
+        .map(|(index, x)| {
+            Point::new(
+                PointId::mint(format!("catia:test:point#{index}")).expect("identity"),
+                cadmpeg_ir::features::FinitePoint3::new(Point3::new(x, 0.0, 0.0))
+                    .expect("finite point"),
+                None,
+            )
+        })
+        .collect::<Vec<_>>();
+    let plane = crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .expect("plane fixture"),
+        )),
+    );
+    let pcurve = PcurveGeometry::Line(
+        cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+            Point2::new(0.0, 0.0),
+            Point2::new(1.0, 0.0),
+        )
+        .expect("line pcurve"),
+    );
+    let native = StandardEdgeSupport {
+        surface_object_ids: [20, 21],
+        carriers: [plane.clone(), plane],
+        pcurves: [pcurve.clone(), pcurve],
+        parameter_range: [1.0, 4.0],
+    };
+    assert_eq!(
+        standard_native_support_endpoint_pair(
+            &cadmpeg_test_support::service_decode_context(),
+            &native,
+            &points,
+            &[0, 1],
+            Some([0, 1])
+        ),
+        Ok(Some([0, 1]))
+    );
+    assert!(crate::test_support::with_service_context(|ctx| {
+        standard_oriented_native_support_pcurves(
+            ctx,
+            &native,
+            &points,
+            [1, 0],
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+    })
+    .expect("service profile admits reversal")
+    .is_some());
+}
+
+#[test]
+fn standard_edge_limit_curve_copy_result() {
+    let mut ir = CadIr::empty();
+    for (index, x) in [0.0, 1.0].into_iter().enumerate() {
+        ir.model.points.push(Point::new(
+            PointId::mint(format!("catia:test:point#{index}")).expect("identity"),
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(x, 0.0, 0.0))
+                .expect("finite point"),
+            None,
+        ));
+    }
+    let support = StandardCurveSupport {
+        pos: 10,
+        tag: 20,
+        faces: [0, 0],
+        geometry: StandardCurveGeometry::Bspline,
+    };
+    let limit_curve = NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+        None,
+        false,
+    )
+    .expect("fixture constructor admission")
+    .expect("valid linear NURBS");
+    let admitted = crate::test_support::with_service_context(|ctx| {
+        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+        build_standard_edge_curve(
+            ctx,
+            crate::families::standard::decode::edge_geometry::BuildStandardEdgeCurveInputs {
+                ir: &mut ir,
+                annotations: &mut AnnotationBuilder::new(),
+                bindings: &[],
+                surface_indices: &HashMap::new(),
+                brep: &[],
+                support: &support,
+                points: [0, 1],
+                native_support: None,
+                limit_curve: Some((&limit_curve, [0.0, 1.0])),
+                refusal: &mut crate::nurbs::LaneRefusals::new(),
+                admission: &mut admission,
+            },
+        )
+    })
+    .expect("service profile admits the edge");
+    assert!(admitted.0.is_some());
+    assert!(matches!(&ir.model.curves[0].geometry,
+        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) if curve == &limit_curve));
+}

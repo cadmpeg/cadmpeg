@@ -228,3 +228,10 @@ fn inline_bytes_serialization_refuses_wrapped_length() {
     let bytes = InlineBytes(vec![0; 256].into());
     assert!(serde_json::to_value(&bytes).is_err());
 }
+
+#[test]
+fn value_block_payload_result() {
+    let mut bytes = value_block_stream(&[0x81]);
+    bytes.extend_from_slice(&[0x7c, 0x02]);
+    assert_eq!(parse(&bytes).len(), 1);
+}

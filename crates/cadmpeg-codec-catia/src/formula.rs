@@ -4689,6 +4689,63 @@ mod parser_tests {
             assert!(actual.dimension() == FormulaDimension::ANGLE, "{literal}");
         }
     }
+
+    #[test]
+    fn formula_design_parameter_copy_result() {
+        let mut parameter = unset_candidate(FormulaParameterType::String).parameter;
+        parameter
+            .dependencies
+            .insert(
+                &cadmpeg_test_support::service_decode_context(),
+                ParameterId::mint("synthetic:test:id#dependency".to_string())
+                    .expect("identity grammar"),
+                "insert fixture member",
+            )
+            .expect("member insertion admission");
+        parameter.properties.insert(
+            cadmpeg_core::nonblank_literal!("source"),
+            "value".to_string(),
+        );
+        let admitted = crate::test_support::with_service_context(|ctx| {
+            super::copy_design_parameter(ctx, &parameter)
+        })
+        .expect("service profile admits parameter copy");
+        assert_eq!(admitted, parameter);
+    }
+
+    #[test]
+    fn formula_candidate_index_result() {
+        let candidate = unset_candidate(FormulaParameterType::String);
+        let mut candidates = BTreeMap::new();
+        crate::test_support::with_service_context(|ctx| {
+            super::merge_formula_parameter_candidate(
+                ctx,
+                &mut candidates,
+                &mut std::collections::BTreeSet::new(),
+                candidate,
+            )
+        })
+        .expect("service profile admits candidate");
+        assert_eq!(candidates.len(), 1);
+    }
+
+    #[test]
+    fn formula_literal_and_property_projection_result() {
+        let properties = super::parameter_properties("String", Some("source-binding"))
+            .expect("service profile admits properties");
+        assert_eq!(properties["value_type"], "String");
+        assert_eq!(properties["catia_binding"], "source-binding");
+    }
+
+    #[test]
+    fn formula_string_value_copy_result() {
+        let value = ParameterValue::String("source string".to_string());
+        let admitted = crate::test_support::with_service_context(|ctx| {
+            value.try_clone_for_decode(ctx, "catia_formula_parameter_value_copy")
+        })
+        .expect("service profile admits string copy");
+        assert_eq!(admitted, value);
+    }
 }
 
 #[cfg(test)]

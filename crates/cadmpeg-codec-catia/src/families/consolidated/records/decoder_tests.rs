@@ -1345,3 +1345,19 @@ fn edge_use_resolution_ignores_unmatched_nodes() {
         .expect("unmatched node windows parse");
     assert!(runs.is_empty());
 }
+
+#[test]
+fn object_stream_vertex_ranges_rows_and_points_result() {
+    let mut bytes = vec![0xb2, 0x03, 0x06, 0x00, 0x05, 0x05, 0x08, 0x01];
+    for value in [1.0_f32, 2.0, 3.0] {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+
+    let vertices = crate::families::consolidated::records::object_stream_vertices(&bytes)
+        .expect("service decode");
+    assert_eq!(vertices.len(), 1);
+    assert_eq!(
+        vertices[0].get(),
+        cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
+    );
+}

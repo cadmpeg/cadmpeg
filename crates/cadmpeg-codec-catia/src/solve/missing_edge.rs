@@ -4422,3 +4422,61 @@ pub(crate) fn motif_port_points(
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+#[test]
+fn mesh_edge_ports_result() {
+    let analysis = StandardMeshAnalysis {
+        edge_rows: vec![{
+            assert!(EdgeRow::new(
+                0,
+                vec![0],
+                crate::families::standard::topology::EdgeBoundaryLayout::CompleteBoundaryRun
+            )
+            .is_none());
+            EdgeRow::new(
+                1,
+                vec![0, 0],
+                crate::families::standard::topology::EdgeBoundaryLayout::CompleteBoundaryRun,
+            )
+            .expect("admitted edge row")
+        }],
+        cycles: vec![vec![vec![0, 1]]],
+        occurrences: vec![vec![MeshEdgeRun {
+            edge: 0,
+            face: 0,
+            cycle: 0,
+            start: 0,
+            segment_count: 1,
+            reversed: false,
+        }]],
+        fixed_complete_row_spans: false,
+    };
+
+    assert_eq!(
+        mesh_edge_ports(&analysis, &[[10, 11]]).expect("service resource budget"),
+        Some(vec![[0, 1]])
+    );
+}
+
+#[cfg(test)]
+#[test]
+fn mesh_edge_occurrences_result() {
+    let rows = [{
+        assert!(EdgeRow::new(
+            0,
+            vec![0],
+            crate::families::standard::topology::EdgeBoundaryLayout::CompleteBoundaryRun
+        )
+        .is_none());
+        EdgeRow::new(
+            1,
+            vec![0, 1, 0],
+            crate::families::standard::topology::EdgeBoundaryLayout::CompleteBoundaryRun,
+        )
+        .expect("admitted edge row")
+    }];
+    let cycles = [vec![vec![0, 1]]];
+
+    assert!(mesh_edge_occurrences(&rows, &cycles).is_some());
+}

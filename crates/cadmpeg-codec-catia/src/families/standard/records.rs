@@ -1061,4 +1061,31 @@ mod tests {
             .is_nan());
         assert_eq!(super::f32_le(&1.5_f32.to_le_bytes(), 0), Some(1.5));
     }
+
+    #[test]
+    fn surface_prefix_and_vertex_roster_limits_result() {
+        let prefix = [0x12, 0x34, 0x56, 0, 0x1a, 0, 0x33, 0x33, 0];
+        assert_eq!(super::surface_prefixes(&prefix).len(), 1);
+        let roster = [0x54, 1, 0, 0, 0, 0, 0];
+        assert_eq!(super::standard_vertex_roster(&roster, 1), Some(vec![1]));
+    }
+
+    #[test]
+    fn surface_roster_tables_groups_and_supports_result() {
+        let mut bytes = vec![0x34, 0x12, 0, 0, 0, 0];
+        for value in [0.0f32, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 2.0] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        bytes.push(0x01);
+        let analytic = bytes.len();
+        bytes.extend_from_slice(&[0x78, 0x56, 0, 0, 0x1a, 0, 0x33, 0x33]);
+        bytes.resize(analytic + 72, 0);
+        bytes.push(0xff);
+        bytes.extend_from_slice(&[0x60, 1, 0, 0, 0x00, 0x02, 0x00, 0x33, 0x36, 0, 1]);
+        let populations = crate::test_support::with_service_context(|ctx| {
+            super::standard_surface_populations(ctx, &bytes)
+        })
+        .expect("service resource budget");
+        assert_eq!(populations.len(), 1);
+    }
 }

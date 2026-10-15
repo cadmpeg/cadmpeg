@@ -1252,6 +1252,56 @@ mod tests {
         assert_eq!(point.y, -2_000_000.0);
         assert_eq!(point.z, 2_000_000.0);
     }
+
+    #[test]
+    fn consolidated_record_inventory_result() {
+        let bytes = [0xb2, 0x03, 0x06, 0x00, 0x05];
+        let records = super::consolidated_records_in_sources(
+            &bytes,
+            std::iter::once(std::iter::once(super::SourceExtent::whole(&bytes))),
+        )
+        .expect("service decode");
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].class, 0x06);
+    }
+
+    #[test]
+    fn pcurve_late_nonfinite_scalar_result() {
+        let mut bytes = crate::test_support::test_a5a8::a5_pcurve_stream();
+        let records = consolidated_records(&bytes);
+        let record = &records[0];
+        let payload = record.payload().expect("payload");
+        let (_, count, _, lanes, _, _) =
+            super::pcurve_layout(&bytes, payload.start, payload.end).expect("layout");
+        let late = lanes[6] + (count - 1) * 8;
+        bytes[late..late + 8].copy_from_slice(&f64::NAN.to_le_bytes());
+        assert!(
+            super::family_pcurves_from_records(&bytes, &records, ConsolidatedFamily::A).is_empty()
+        );
+    }
+
+    #[test]
+    fn consolidated_pcurve_sites_tail_and_outer_collection_result() {
+        let bytes = crate::test_support::test_a5a8::a5_pcurve_stream();
+        let records = consolidated_records(&bytes);
+        let pcurves = super::family_pcurves_from_records(&bytes, &records, ConsolidatedFamily::A);
+        assert_eq!(pcurves.len(), 1);
+        assert_eq!(pcurves[0].sites.len(), 2);
+        assert_eq!(pcurves[0].tail, [0x07]);
+    }
+
+    #[test]
+    fn consolidated_pcurve_native_lanes_result() {
+        let bytes = crate::test_support::test_a5a8::a5_pcurve_stream();
+        let records = consolidated_records(&bytes);
+        let pcurves = super::family_pcurves_from_records(&bytes, &records, ConsolidatedFamily::A);
+        let pcurve = &pcurves[0];
+        let lanes = pcurve.native_lanes();
+        assert_eq!(
+            (lanes.0.len(), lanes.1.len(), lanes.2.len(), lanes.3.len()),
+            (2, 2, 2, 2)
+        );
+    }
 }
 
 #[cfg(test)]

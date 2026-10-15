@@ -4927,4 +4927,160 @@ mod tests {
     }
 
     mod rechart_cases;
+
+    #[test]
+    fn consolidated_jet_pcurve_workspace_result() {
+        use crate::wire::records::{ConsolidatedPcurve, ConsolidatedPcurveSite};
+        let site = |knot, u| ConsolidatedPcurveSite {
+            knot: cadmpeg_ir::scalar::FiniteReal::new(knot).expect("finite knot"),
+            point: cadmpeg_ir::units::FiniteVector::new([u, 0.0]).expect("finite point"),
+            first_derivatives: cadmpeg_ir::units::FiniteVector::new([1.0, 0.0])
+                .expect("finite first jet"),
+            second_derivatives: cadmpeg_ir::units::FiniteVector::new([0.0, 0.0])
+                .expect("finite second jet"),
+        };
+        let pcurve = ConsolidatedPcurve {
+            pos: 16,
+            support_id: 1,
+            extrapolation_sites: 0,
+            sites: vec![site(0.0, 0.0), site(1.0, 1.0)]
+                .try_into()
+                .expect("ordered fixture sites"),
+            range: cadmpeg_ir::topology::IncreasingParameterInterval::new([0.0, 1.0])
+                .expect("increasing range"),
+            tail: Vec::new(),
+        };
+        let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+            super::consolidated_jet_pcurve(
+                ctx,
+                &pcurve,
+                &ConsolidatedCarrierChart::Identity,
+                &mut crate::nurbs::LaneRefusals::new(),
+            )
+        };
+        assert!(crate::test_support::with_service_context(run)
+            .expect("service profile admits consolidated jet")
+            .is_some());
+    }
+
+    #[test]
+    fn consolidated_line_profile_result() {
+        let bytes = crate::test_support::test_b2::b2_line_profile_stream();
+        let records = crate::wire::records::consolidated_records(&bytes);
+        let service = consolidated_line_profiles(&bytes, &records)
+            .expect("service profile admits line profile");
+        assert_eq!(service.len(), 1);
+    }
+
+    #[test]
+    fn freeform_surface_pool_result() {
+        let bytes = crate::test_support::test_a5a8::a5_surface_stream();
+        let records = crate::wire::records::consolidated_records(&bytes);
+        let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+            let mut ir = CadIr::empty();
+            let mut annotations = AnnotationBuilder::new();
+            let mut admission = super::FamilyEntityAdmission::new(ctx);
+            append_freeform_surface_pools(
+                &mut ir,
+                &mut annotations,
+                &bytes,
+                &records,
+                &HashMap::new(),
+                &mut crate::nurbs::LaneRefusals::new(),
+                &mut admission,
+            )
+            .map(|_| ir.model.surfaces.len())
+        };
+        assert_eq!(
+            crate::test_support::with_service_context(run)
+                .expect("service profile admits freeform surface pool"),
+            1
+        );
+    }
+
+    #[test]
+    fn a5_guide_scratch_points_result() {
+        let bytes = crate::test_support::test_a5a8::a5_guide_curve_stream();
+        let records = crate::wire::records::consolidated_records(&bytes);
+        let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+            let mut ir = CadIr::empty();
+            let mut annotations = AnnotationBuilder::new();
+            let mut admission = super::FamilyEntityAdmission::new(ctx);
+            append_freeform_surface_pools(
+                &mut ir,
+                &mut annotations,
+                &bytes,
+                &records,
+                &HashMap::new(),
+                &mut crate::nurbs::LaneRefusals::new(),
+                &mut admission,
+            )
+            .map(|_| ir.model.curves.len())
+        };
+        assert_eq!(
+            crate::test_support::with_service_context(run)
+                .expect("service profile admits A5 guide curve"),
+            1
+        );
+    }
+
+    #[test]
+    fn equivalent_surface_rechart_result() {
+        let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None });
+        let pcurve = PcurveGeometry::Nurbs {
+            nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)],
+                None,
+                false,
+            )
+            .expect("fixture pcurve construction admission")
+            .expect("valid pcurve fixture"),
+        };
+        let copied = crate::test_support::with_service_context(|ctx| {
+            rechart_equivalent_surface_pcurve(ctx, &pcurve, &surface, &surface)
+        })
+        .expect("service budget");
+        assert_eq!(copied, Some(pcurve));
+    }
+
+    #[test]
+    fn standard_carrier_tag_index_result() {
+        let mut ir = CadIr::empty();
+        ir.model.surfaces.push(Surface {
+            id: SurfaceId::mint("catia:test:surface#tagged".to_owned()).expect("identity grammar"),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+            source_object: Some(
+                crate::assemble::cgm_source("carrier", 0x1234)
+                    .expect("service profile admits source object"),
+            ),
+        });
+        let indexed =
+            crate::test_support::with_service_context(|ctx| standard_carrier_surface_ids(ctx, &ir))
+                .expect("service budget");
+        assert_eq!(indexed.get(&0x1234), Some(&None));
+    }
+
+    #[test]
+    fn consolidated_revolution_directrix_id_result() {
+        let bytes = crate::test_support::test_b2::b2_resolved_revolution_stream();
+        let records = crate::wire::records::consolidated_records(&bytes);
+        let resolved =
+            crate::families::b2::records::b2_resolved_revolutions_from_records(&bytes, &records);
+        assert_eq!(resolved.len(), 1);
+    }
+
+    #[test]
+    fn consolidated_line_profile_identity_result() {
+        let bytes = crate::test_support::test_b2::b2_line_profile_stream();
+        let records = crate::wire::records::consolidated_records(&bytes);
+        let service = consolidated_line_profiles(&bytes, &records).expect("service budget");
+        assert_eq!(service.len(), 1);
+        assert_eq!(
+            service[0].curve.id.as_str(),
+            "catia:consolidated:line-profile-curve#0"
+        );
+    }
 }

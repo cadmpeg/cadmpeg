@@ -1205,3 +1205,278 @@ fn remaining_merge_capacity_counts_distinct_quotient_equations() {
 }
 
 mod selection_search;
+
+#[test]
+fn quotient_assignment_deduplication_result() {
+    let assignment = MeshFaceBoundaryAssignment {
+        boundaries: vec![vec![
+            MeshBoundaryEdgeCandidate {
+                edge: 0,
+                start: 0,
+                end: 1,
+                reversed: None,
+            },
+            MeshBoundaryEdgeCandidate {
+                edge: 1,
+                start: 1,
+                end: 0,
+                reversed: None,
+            },
+        ]],
+    };
+    let run = || {
+        let mut faces = vec![vec![assignment.clone(), assignment.clone()]];
+        deduplicate_mesh_quotient_assignments(&mut faces);
+        Ok::<_, cadmpeg_core::CodecError>(faces[0].len())
+    };
+    assert_eq!(run().expect("service resource budget"), 1);
+}
+
+#[test]
+fn possible_face_equations_result() {
+    let assignments = vec![vec![MeshFaceBoundaryAssignment {
+        boundaries: vec![vec![
+            MeshBoundaryEdgeCandidate {
+                edge: 0,
+                start: 0,
+                end: 1,
+                reversed: None,
+            },
+            MeshBoundaryEdgeCandidate {
+                edge: 1,
+                start: 1,
+                end: 0,
+                reversed: None,
+            },
+        ]],
+    }]];
+    let run = || possible_face_equations(&assignments);
+    let service = run();
+    assert_eq!(service.len(), 1);
+    assert!(!service[0].is_empty());
+}
+
+#[test]
+fn selection_state_signature_result() {
+    let assignments = [Vec::new()];
+    let quotient = MeshQuotient::new(vec![Arc::new(HashSet::from([0]))]);
+    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        let search = MeshSelectionSearch {
+            ctx,
+            assignments: &assignments,
+            possible_face_equations: Vec::new(),
+            possible_face_choices: Vec::new(),
+            face_work: vec![Some(1)],
+            edge_candidates: &[],
+            edge_rows: &[],
+            vertex_points: &[],
+            candidate_gauge: None,
+            port_identities: None,
+            fixed_face_directions: Vec::new(),
+            fixed_edge_orientations: vec![Some(true)],
+            edge_has_fixed_direction: Vec::new(),
+            selected: vec![Some((0, vec![vec![true]]))],
+            visited_states: HashSet::new(),
+            outcome: SearchOutcome::Open,
+            face_equation_cache: RefCell::default(),
+        };
+        search.selection_state_signature(&quotient, false)
+    };
+    let signature =
+        crate::test_support::with_service_context(run).expect("service resource budget");
+    assert_eq!(signature.1, vec![Some((0, vec![vec![true]]))]);
+}
+
+#[test]
+fn coordinate_root_candidate_copy_and_changed_edge_result() {
+    let candidates = [
+        vec![[0, 1], [0, 2]],
+        vec![[0, 1]],
+        vec![[0, 1]],
+        vec![[2, 2]],
+    ];
+    let quotient = crate::solve::mesh_quotient::initial_mesh_quotient(
+        &candidates,
+        3,
+        &[[10, 11], [10, 12], [13, 11], [14, 14]],
+    )
+    .expect("service resource budget")
+    .expect("initial quotient");
+    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        quotient
+            .clone()
+            .prepare_coordinate_root_domains(ctx, 3, &candidates, None)
+    };
+    let selected = crate::test_support::with_service_context(run)
+        .expect("service resource budget")
+        .expect("coordinate root domains");
+    assert_eq!(selected.edge_candidates()[0], [[0, 1]]);
+}
+
+#[test]
+fn ordered_corner_equations_result() {
+    use cadmpeg_core::decode::DecodeContext;
+    use cadmpeg_core::CodecError;
+    let edge_candidates = vec![vec![[0, 1]], vec![[1, 2]], vec![[2, 0]]];
+    let assignment = MeshFaceBoundaryAssignment {
+        boundaries: vec![(0..3)
+            .map(|edge| MeshBoundaryEdgeCandidate {
+                edge,
+                start: 0,
+                end: 0,
+                reversed: None,
+            })
+            .collect()],
+    };
+    let domains = [MeshFaceBoundaryDomain::Ordered(vec![assignment.clone()])];
+    catia_test_context!(service_ctx);
+    let initial_quotient =
+        initial_mesh_quotient(&edge_candidates, 3, &[[10, 11], [12, 13], [14, 15]])
+            .expect("service resource budget")
+            .expect("initial quotient");
+    let run = |ctx: &DecodeContext<'_>| {
+        let mut quotient = initial_quotient.clone();
+        let budget = WorkBudget::new(1_000);
+        let equations = crate::solve::mesh_quotient::common_supported_corner_equations(
+            ctx,
+            &mut quotient,
+            std::slice::from_ref(&assignment),
+            &budget,
+        )?;
+        Ok::<_, CodecError>(equations)
+    };
+    assert!(crate::test_support::with_service_context(run)
+        .expect("service resource budget")
+        .is_some());
+    let fixed_assignment = MeshFaceBoundaryAssignment {
+        boundaries: vec![(0..3)
+            .map(|edge| MeshBoundaryEdgeCandidate {
+                edge,
+                start: 0,
+                end: 0,
+                reversed: Some(false),
+            })
+            .collect()],
+    };
+    let fixed_run = |ctx: &DecodeContext<'_>| {
+        let mut quotient = initial_quotient.clone();
+        let budget = WorkBudget::new(1_000);
+        crate::solve::mesh_quotient::common_supported_corner_equations(
+            ctx,
+            &mut quotient,
+            std::slice::from_ref(&fixed_assignment),
+            &budget,
+        )
+    };
+    assert_eq!(
+        fixed_run(&service_ctx)
+            .expect("service resource budget")
+            .expect("fixed cycle has supported corners")
+            .len(),
+        3
+    );
+    let mut quotient = initial_quotient.clone();
+    let budget = WorkBudget::new(1_000);
+    assert_eq!(
+        crate::solve::mesh_quotient::propagate_common_ordered_face_quotients(
+            &service_ctx,
+            &domains,
+            &edge_candidates,
+            &mut quotient,
+            &budget,
+        )
+        .expect("service resource budget"),
+        Some(())
+    );
+}
+
+#[test]
+fn common_full_quotient_result() {
+    use cadmpeg_core::CodecError;
+    let domains = repeated_domain(HashSet::from([0, 1]), 4);
+    let base = MeshQuotient::new(domains.clone());
+    let mut alternative = MeshQuotient::new(domains);
+    alternative
+        .merge(0, 2)
+        .expect("service merge")
+        .expect("shared domain");
+    alternative
+        .merge(1, 3)
+        .expect("service merge")
+        .expect("shared domain");
+    let run = || {
+        let mut quotient = base.clone();
+        let result = crate::solve::mesh_quotient::propagate_common_full_quotients(
+            vec![alternative.clone()],
+            &[Vec::new(), Vec::new()],
+            &mut quotient,
+        )?;
+        Ok::<_, CodecError>((
+            result,
+            [
+                quotient.find(0).expect("service forest traversal"),
+                quotient.find(1).expect("service forest traversal"),
+                quotient.find(2).expect("service forest traversal"),
+                quotient.find(3).expect("service forest traversal"),
+            ],
+        ))
+    };
+    let (result, roots) = run().expect("service resource budget");
+    assert_eq!(result, Some(()));
+    assert_eq!(roots[0], roots[2]);
+    assert_eq!(roots[1], roots[3]);
+}
+
+#[test]
+fn face_choice_materialization_result() {
+    let assignments = vec![vec![MeshFaceBoundaryAssignment {
+        boundaries: vec![vec![MeshBoundaryEdgeCandidate {
+            edge: 0,
+            start: 0,
+            end: 0,
+            reversed: None,
+        }]],
+    }]];
+    let fallback = vec![vec![[0, 1]]];
+    let run = |work_limit| {
+        let mut choices = Vec::new();
+        let complete =
+            possible_face_choices_with_limit(&assignments, &fallback, work_limit, &mut choices);
+        complete.then_some(choices)
+    };
+    assert!(run(2).is_none());
+}
+
+#[test]
+fn face_choice_fallback_result() {
+    let assignment = MeshFaceBoundaryAssignment {
+        boundaries: vec![(0..13)
+            .map(|edge| MeshBoundaryEdgeCandidate {
+                edge,
+                start: edge,
+                end: edge + 1,
+                reversed: None,
+            })
+            .collect()],
+    };
+    let faces = [vec![assignment]];
+    let fallback = [vec![[0, 1]]];
+    let mut choices = Vec::new();
+    let complete = possible_face_choices_with_limit(&faces, &fallback, 2, &mut choices);
+    assert_eq!(complete.then_some(choices), Some(vec![vec![vec![[0, 1]]]]));
+}
+
+#[test]
+fn point_assignment_result() {
+    let make_quotient = || {
+        MeshQuotient::new(vec![
+            Arc::new(HashSet::from([0])),
+            Arc::new(HashSet::from([1])),
+        ])
+    };
+    assert!(crate::test_support::with_service_context(|ctx| {
+        make_quotient().point_assignment(ctx, 2, &[vec![[0, 1]]], None)
+    })
+    .expect("service resource budget")
+    .is_some());
+}

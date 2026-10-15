@@ -443,6 +443,14 @@ mod tests {
             states_the_key(key, &refusal::<super::CatiaConsolidatedEdgeNodeWire>(key));
         }
     }
+
+    #[test]
+    fn native_vertex_identities_result() {
+        let native = CatiaNative::decode(&a5_native_edge_run_stream(6, 139, 142));
+        assert!(!native.consolidated_edge_nodes.is_empty());
+        let service = super::consolidated_vertex_identities(&native.consolidated_edge_nodes);
+        assert_eq!(service, native.consolidated_vertex_identities);
+    }
 }
 
 // Each optional key below names itself in whatever it refuses.

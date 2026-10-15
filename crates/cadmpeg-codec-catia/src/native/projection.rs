@@ -1045,3 +1045,25 @@ impl CatiaOuterContainerBinding {
         }
     }
 }
+
+#[cfg(test)]
+mod consolidated_edge_run_limit_tests {
+
+    #[test]
+    fn native_edge_runs_result() {
+        let bytes = crate::test_support::test_a5a8::a5_surface_stream();
+        let records = crate::wire::records::consolidated_records(&bytes);
+        let runs = crate::test_support::with_service_context(|ctx| {
+            super::consolidated_edge_runs(
+                ctx,
+                &bytes,
+                &records,
+                &[],
+                &[],
+                &mut crate::nurbs::LaneRefusals::new(),
+            )
+        })
+        .expect("service collection budget");
+        assert!(runs.is_empty());
+    }
+}

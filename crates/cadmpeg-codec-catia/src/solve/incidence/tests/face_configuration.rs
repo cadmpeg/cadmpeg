@@ -7,6 +7,7 @@ use super::{
     IncidenceSearchState, MeshBoundaryEdgeCandidate, MeshFaceBoundaryAssignment,
     MeshFaceBoundaryDomain, RefCell, WorkBudget, MAX_MESH_CONSTRAINT_OPERATIONS,
 };
+use crate::solve::incidence::prepare_face_configuration_domains;
 
 #[test]
 fn incidence_face_configuration_support_retains_shared_edge_correlations() {
@@ -397,4 +398,58 @@ fn incidence_selection_validates_only_its_affected_faces() {
     assert!(!search
         .ordered_faces_feasible([1])
         .expect("service resource budget"));
+}
+
+#[test]
+fn incidence_face_factor_allocations_result() {
+    let edge = MeshBoundaryEdgeCandidate {
+        edge: 0,
+        start: 0,
+        end: 0,
+        reversed: Some(false),
+    };
+    let assignments = vec![
+        MeshFaceBoundaryDomain::Ordered(vec![MeshFaceBoundaryAssignment {
+            boundaries: vec![vec![edge]],
+        }]),
+        MeshFaceBoundaryDomain::Ordered(vec![MeshFaceBoundaryAssignment {
+            boundaries: vec![vec![edge]],
+        }]),
+    ];
+    let choices = vec![vec![[0, 0], [1, 1]]];
+    catia_test_context!(service_ctx);
+    assert!(prepare_face_configuration_domains(
+        &service_ctx,
+        Some(&assignments),
+        &choices,
+        &[None],
+        &[true],
+    )
+    .expect("service resource budget")
+    .is_some());
+}
+
+#[test]
+fn ordered_face_support_result() {
+    let use_ = |edge| MeshBoundaryEdgeCandidate {
+        edge,
+        start: 0,
+        end: 0,
+        reversed: None,
+    };
+    let domains = [MeshFaceBoundaryDomain::Ordered(vec![
+        MeshFaceBoundaryAssignment {
+            boundaries: vec![vec![use_(0), use_(1)]],
+        },
+    ])];
+    let choices = vec![vec![[0, 1]], vec![[0, 1]]];
+    catia_test_context!(service_ctx);
+    let mut service_choices = choices.clone();
+    assert!(prune_ordered_face_endpoint_support(
+        &service_ctx,
+        &domains,
+        &mut service_choices,
+        &WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS),
+    )
+    .expect("service budget"));
 }

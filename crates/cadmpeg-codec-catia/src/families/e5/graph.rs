@@ -2380,4 +2380,138 @@ mod tests {
             Err(super::LoopSignError::Sign)
         ));
     }
+
+    #[test]
+    fn e5_support_walk_result() {
+        let pcurves = BTreeMap::from([(
+            3,
+            E5Pcurve::Line {
+                surface: 10,
+                origin: finite_pair([0.0, 0.0]),
+                direction: finite_pair([1.0, 0.0]),
+                range: finite_pair([0.0, 1.0]),
+            },
+        )]);
+        let supports = BTreeMap::from([(
+            1,
+            E5CurveSupport {
+                kind: E5CurveSupportKind::Intersection([3, 3]),
+                mode: 0,
+                range: finite_pair([0.0, 1.0]),
+                tail: Vec::new(),
+            },
+        )]);
+        assert!(curve_support_reference_closes(1, &pcurves, &supports));
+    }
+
+    #[test]
+    fn aa_nurbs_pcurve_result() {
+        let mut payload = vec![0x81, 0x87, 0, 0];
+        for value in [1_u32, 0, 0, 2, 0] {
+            payload.extend_from_slice(&value.to_le_bytes());
+        }
+        for value in [0.0_f64, 1.0] {
+            payload.extend_from_slice(&value.to_le_bytes());
+        }
+        for value in [2_u32, 2] {
+            payload.extend_from_slice(&value.to_le_bytes());
+        }
+        for point in [[0.0_f64, 0.0], [1.0, 1.0]] {
+            for value in point {
+                payload.extend_from_slice(&value.to_le_bytes());
+            }
+        }
+        payload.extend_from_slice(&[0; 37]);
+        assert!(matches!(
+            parse_nurbs_pcurve(&payload, 2, 7),
+            Some(E5Pcurve::Nurbs { .. })
+        ));
+    }
+
+    #[test]
+    fn jet_pcurve_result() {
+        let mut payload = Vec::new();
+        for value in [5_u32, 0, 0, 2, 0, 0, 0] {
+            payload.extend_from_slice(&value.to_le_bytes());
+        }
+        payload.extend_from_slice(&1.0_f64.to_le_bytes());
+        for value in [6_u32, 6, 2] {
+            payload.extend_from_slice(&value.to_le_bytes());
+        }
+        for _ in 0..8 {
+            payload.extend_from_slice(&0.0_f64.to_le_bytes());
+        }
+        payload.extend_from_slice(&1_u16.to_le_bytes());
+        for _ in 0..4 {
+            payload.extend_from_slice(&0.0_f64.to_le_bytes());
+        }
+        payload.extend_from_slice(&0.0_f64.to_le_bytes());
+        payload.extend_from_slice(&1.0_f64.to_le_bytes());
+        assert!(matches!(
+            parse_jet_pcurve(&payload, 0, 7),
+            Some(E5Pcurve::Jet { .. })
+        ));
+    }
+
+    #[test]
+    fn e5_topology_collections_result() {
+        let bytes = crate::test_support::test_e5::e5_torus_topology_stream();
+        assert!(
+            crate::test_support::with_service_context(|ctx| parse_topology(ctx, &bytes))
+                .expect("service resource budget")
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn e5_curve_support_tail_result() {
+        let mut payload = vec![0x81, 0x81, 0x81, 0, 0];
+        payload.extend_from_slice(&0.0_f64.to_le_bytes());
+        payload.extend_from_slice(&1.0_f64.to_le_bytes());
+        payload.push(0xaa);
+        let record = Record {
+            class: 0xc0,
+            id: 1,
+            payload: &payload,
+        };
+        assert_eq!(
+            super::parse_curve_support(&record)
+                .expect("valid curve support")
+                .tail,
+            [0xaa]
+        );
+    }
+
+    #[test]
+    fn e5_orientation_result() {
+        let faces = vec![E5Face {
+            record_id: 1,
+            surface: 2,
+            trailer_sign: Sign::Positive,
+            loops: vec![E5Loop {
+                record_id: 3,
+                surface: 2,
+                members: e5_loop_members(&[4], &[5], &[false]),
+                oriented_members: None,
+                outer: Some(true),
+                orientation_hint: None,
+            }],
+        }];
+        e5_test_context!(service_ctx);
+        assert!(solve_absolute_orientation(&service_ctx, &mut faces.clone())
+            .expect("orientation fits the service profile"));
+    }
+
+    #[test]
+    fn e5_edge_tail_result() {
+        let mut bytes = Vec::new();
+        append_e5_record(
+            &mut bytes,
+            0xff,
+            110,
+            &[0x85, 0x08, 200, 0x08, 10, 0x08, 11, 0x80, 0x80, 0x7f],
+        );
+        let service = crate::test_support::with_service_context(|ctx| parse_topology(ctx, &bytes));
+        assert!(matches!(service, Ok(None)));
+    }
 }

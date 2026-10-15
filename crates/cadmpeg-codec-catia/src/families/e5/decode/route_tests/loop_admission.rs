@@ -69,3 +69,9 @@ fn loop_admission_refuses_incomplete_duplicate_and_out_of_range_orders() {
     empty.members.clear();
     assert!(E5LoopPlan::admit(&empty).is_none());
 }
+
+#[test]
+fn loop_admission_result() {
+    let source = loop_record(&[1, 0]);
+    assert!(E5LoopPlan::admit(&source).is_some());
+}

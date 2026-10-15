@@ -438,4 +438,50 @@ mod tests {
         );
         assert!(ir.model.pmi.is_empty());
     }
+
+    #[test]
+    fn pmi_duplicate_search_result() {
+        let native = CatiaNative {
+            entity_records: vec![range_only_entity("DiameterThread")],
+            ..CatiaNative::default()
+        };
+        let mut ir = CadIr::empty();
+        crate::test_support::with_service_context(|ctx| {
+            transfer_dimensions(
+                ctx,
+                &mut ir,
+                &native,
+                &crate::decode::ModelingGraphScope::Unscoped,
+                &HashSet::new(),
+            )
+        })
+        .expect("first dimension");
+
+        assert_eq!(ir.model.pmi.len(), 1);
+    }
+
+    #[test]
+    fn pmi_dimension_identity_result() {
+        let native = CatiaNative {
+            entity_records: vec![range_only_entity("DiameterThread")],
+            ..CatiaNative::default()
+        };
+        let mut ir = CadIr::empty();
+        assert!(ir.model.pmi.is_empty());
+        let admitted = with_service_context(|ctx| {
+            transfer_dimensions(
+                ctx,
+                &mut ir,
+                &native,
+                &crate::decode::ModelingGraphScope::Unscoped,
+                &HashSet::new(),
+            )
+        })
+        .expect("service profile admits dimension");
+        assert_eq!(admitted, 1);
+        assert_eq!(
+            ir.model.pmi[0].id.as_str(),
+            "catia:model:pmi#entity-record-0000000000"
+        );
+    }
 }

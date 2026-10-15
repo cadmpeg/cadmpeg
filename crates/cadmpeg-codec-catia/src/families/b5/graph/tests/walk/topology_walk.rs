@@ -7,6 +7,11 @@ use super::{
     B5Edge, B5EdgeTerminalControl, B5IncidenceLane, B5Record, B5Surface, B5VertexIncidenceControl,
     B5VertexIncidenceLink, BTreeMap, HashMap,
 };
+use crate::families::b5::graph::collect_object_stream_frames;
+use crate::families::b5::graph::edge_support_pcurve_references_from_frames;
+use crate::families::b5::graph::face_surface_references_from_frames;
+use crate::families::b5::graph::typed_parameter_incidences_from_records;
+use crate::families::b5::graph::typed_vertex_incidence_rosters_from_records;
 
 #[test]
 fn record_walk_includes_wide_header_loop_nodes() {
@@ -500,5 +505,70 @@ fn loop_and_edge_curve_wrapper_bind_an_unframed_pcurve_occurrence() {
             &surfaces,
         ),
         BTreeMap::from([(9, 11)])
+    );
+}
+
+#[test]
+fn b5_topology_reference_helpers_result() {
+    let mut reference_bytes = Vec::new();
+    crate::test_support::test_b5::append_b5_record(
+        &mut reference_bytes,
+        0x5e,
+        17,
+        &[0x85, 0x92, 0x8f, 0x95, 0x93, 0x94, 0x21],
+    );
+    crate::test_support::test_b5::append_b5_record(
+        &mut reference_bytes,
+        0x23,
+        18,
+        &[0x82, 0x89, 0x8a],
+    );
+    crate::test_support::test_b5::append_b5_record(&mut reference_bytes, 0x5f, 19, &[0x81, 0x89]);
+    let frames = collect_object_stream_frames(&reference_bytes);
+    let edge_ids = std::collections::HashSet::from([17]);
+    assert_eq!(
+        edge_vertex_references(&reference_bytes),
+        BTreeMap::from([(17, [15, 21])])
+    );
+    assert_eq!(
+        face_surface_references_from_frames(&reference_bytes, &frames),
+        [(19, 9)]
+    );
+    assert_eq!(
+        edge_support_pcurve_references_from_frames(&reference_bytes, &edge_ids, &frames),
+        BTreeMap::from([(17, [9, 10])])
+    );
+}
+
+#[test]
+fn parameter_and_roster_incidence_result() {
+    let roster = B5Record {
+        offset: 0,
+        family: 0xb5,
+        class: 0x05,
+        object_id: 18,
+        payload: vec![0x82, 0x89, 0x8a],
+    };
+    let mut payload = vec![0x82, 0x89, 0x8a, 0x82];
+    payload.extend_from_slice(&1.25f64.to_le_bytes());
+    payload.push(0x15);
+    payload.extend_from_slice(&2.5f64.to_le_bytes());
+    payload.push(0x2d);
+    let parameter = B5Record {
+        offset: 0,
+        family: 0xb5,
+        class: 0x06,
+        object_id: 17,
+        payload,
+    };
+    assert_eq!(
+        typed_parameter_incidences_from_records(std::slice::from_ref(&parameter))[&17]
+            .lanes
+            .len(),
+        2
+    );
+    assert_eq!(
+        typed_vertex_incidence_rosters_from_records(std::slice::from_ref(&roster))[&18],
+        [9, 10]
     );
 }

@@ -549,3 +549,39 @@ fn standard_carrier_endpoints_refuse_caller_depth() {
         assert_eq!(ctx.resource_refusal(), Some(limit));
     });
 }
+
+#[test]
+fn freeform_surface_carrier_result() {
+    let bytes = crate::test_support::test_b2::b2_sphere_stream();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    let service = crate::test_support::with_service_context(|ctx| {
+        freeform_surface_carriers(
+            ctx,
+            &bytes,
+            &records,
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+    })
+    .expect("service profile admits sphere carrier");
+    assert_eq!(service.len(), 1);
+}
+
+#[test]
+fn freeform_fallback_carrier_identity_result() {
+    let file = crate::test_support::test_container::outer_body_catpart(
+        &crate::test_support::test_b2::b2_sphere_stream(),
+    );
+    let scan = crate::test_support::with_service_context(|ctx| {
+        crate::container::scan_bytes(ctx, file.clone())
+    })
+    .expect("service scan");
+    let service = crate::test_support::with_service_context(|ctx| {
+        super::super::try_decode_freeform_surfaces(
+            ctx,
+            &scan,
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+    })
+    .expect("service budget");
+    assert!(service.is_some());
+}

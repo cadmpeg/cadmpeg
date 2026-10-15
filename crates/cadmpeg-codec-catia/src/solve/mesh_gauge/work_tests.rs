@@ -1,4 +1,8 @@
 use super::{EdgeBoundaryLayout, EdgeRow, MeshEdgeGeometry};
+use crate::solve::mesh_gauge::map_endpoint_relation_state;
+use crate::solve::mesh_gauge::relation_row_gauge_mapping;
+use crate::solve::mesh_gauge::MeshCandidateGauge;
+use crate::solve::mesh_quotient::MeshEndpointRelationSelection;
 
 #[test]
 fn coordinate_gauge_keeps_identity_for_unsearched_eight_point_class() {
@@ -88,4 +92,174 @@ fn signature_interning_orders_large_keys() {
     })
     .expect("service decode");
     assert_eq!(colors, (0..1024).collect::<Vec<_>>());
+}
+
+#[test]
+fn relation_choice_sort_result() {
+    let state = (
+        vec![],
+        vec![vec![
+            MeshEndpointRelationSelection::Enumerated {
+                assignments: vec![0; 128],
+                edge_pairs: vec![],
+            };
+            2
+        ]],
+    );
+    let gauge = MeshCandidateGauge {
+        edge_rows: &[],
+        edge_faces: &[],
+        edge_geometry: &[],
+        edge_candidates: &[],
+        edge_identity_evidence: &[],
+        coordinate_gauge: None,
+    };
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| {
+            map_endpoint_relation_state(ctx, &state, gauge, &[])
+        })
+        .expect("service work allowance"),
+        Some(state)
+    );
+}
+
+#[test]
+fn relation_row_sort_result() {
+    let rows = std::array::from_fn::<_, 2, _>(|_| {
+        EdgeRow::new(1, vec![0, 1], EdgeBoundaryLayout::CompleteBoundaryRun)
+            .expect("nonempty handles")
+    });
+    let faces = [[0, 1]; 2];
+    let geometry = [MeshEdgeGeometry::Line; 2];
+    let candidates = [vec![[0, 1]], vec![[0, 1]]];
+    let evidence = [false; 2];
+    let gauge = MeshCandidateGauge {
+        edge_rows: &rows,
+        edge_faces: &faces,
+        edge_geometry: &geometry,
+        edge_candidates: &candidates,
+        edge_identity_evidence: &evidence,
+        coordinate_gauge: None,
+    };
+    let state = (
+        vec![None; 2],
+        vec![vec![MeshEndpointRelationSelection::Deferred; 128]],
+    );
+    assert_eq!(
+        relation_row_gauge_mapping(&state, gauge, &[0, 1]).expect("service work allowance"),
+        Some(vec![0, 1])
+    );
+}
+
+#[test]
+fn coordinate_permutation_search_result() {
+    let mut output = vec![];
+    crate::test_support::with_service_context(|ctx| {
+        super::enumerate_coordinate_permutations(
+            ctx,
+            &[0, 1],
+            0,
+            &mut vec![],
+            &mut [false; 2],
+            &mut output,
+        )
+    })
+    .expect("two permutations fit service work");
+    assert_eq!(output, vec![vec![0, 1], vec![1, 0]]);
+}
+
+#[test]
+fn gauge_signature_lookup_result() {
+    let signatures = vec![vec![0usize; 128]; 2];
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| {
+            super::intern_gauge_signatures(ctx, signatures)
+        })
+        .expect("service comparison work"),
+        vec![0, 0]
+    );
+}
+
+#[test]
+fn mapped_pair_scan_result() {
+    let state = (
+        vec![None],
+        vec![vec![MeshEndpointRelationSelection::Enumerated {
+            assignments: vec![],
+            edge_pairs: vec![(0, [0, 1]), (0, [0, 1])],
+        }]],
+    );
+    let gauge = MeshCandidateGauge {
+        edge_rows: &[],
+        edge_faces: &[],
+        edge_geometry: &[],
+        edge_candidates: &[],
+        edge_identity_evidence: &[],
+        coordinate_gauge: None,
+    };
+    assert!(crate::test_support::with_service_context(|ctx| {
+        map_endpoint_relation_state(ctx, &state, gauge, &[0, 1])
+    })
+    .expect("service work")
+    .is_none());
+}
+
+#[test]
+fn partial_endpoint_candidate_comparison_result() {
+    let coordinate = super::MeshCoordinateGauge {
+        components: vec![vec![vec![0, 1], vec![1, 0]]],
+    };
+    let gauge = MeshCandidateGauge {
+        edge_rows: &[],
+        edge_faces: &[],
+        edge_geometry: &[],
+        edge_candidates: &[],
+        edge_identity_evidence: &[],
+        coordinate_gauge: Some(&coordinate),
+    };
+    let pairs = vec![None; 128];
+    assert_eq!(
+        super::canonicalize_partial_endpoint_pair_gauge(&pairs, gauge),
+        Some(pairs)
+    );
+}
+
+fn comparison_topology() -> crate::families::standard::topology::StandardTopologyDraft {
+    use crate::families::standard::topology::{
+        BoundaryDraft, CoedgeUse, FaceTopologyDraft, StandardTopologyDraft,
+    };
+    StandardTopologyDraft {
+        faces: vec![FaceTopologyDraft {
+            boundaries: vec![BoundaryDraft::new(vec![
+                CoedgeUse {
+                    edge_row: 0,
+                    reversed: false,
+                    start_vertex: 0,
+                    end_vertex: 1,
+                },
+                CoedgeUse {
+                    edge_row: 0,
+                    reversed: true,
+                    start_vertex: 1,
+                    end_vertex: 0,
+                },
+            ])
+            .expect("nonempty cycle")],
+        }],
+        edge_rows: vec![
+            EdgeRow::new(1, vec![0, 1], EdgeBoundaryLayout::CompleteBoundaryRun)
+                .expect("nonempty handles"),
+        ],
+        vertex_points: vec![[0.0, 0.0, 0.0]; 2],
+        logical_vertex_count: 2,
+    }
+}
+
+#[test]
+fn candidate_equivalence_result() {
+    let candidate = (comparison_topology(), vec![0, 1]);
+    assert!(crate::test_support::with_service_context(|ctx| {
+        super::mesh_candidates_equivalent_with_context(ctx, &candidate, &candidate, None)
+    })
+    .expect("service comparison"));
 }

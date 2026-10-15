@@ -1419,3 +1419,132 @@ fn duplicate_face_assignment_visitor_keeps_alternates_correlated() {
 }
 
 mod endpoint_ports;
+
+#[test]
+fn layered_endpoint_relations_and_support_maps_result() {
+    let candidates = [vec![[0, 1], [0, 2]], vec![[1, 3], [2, 4]], vec![[0, 3]]];
+    let assignment = MeshFaceBoundaryAssignment {
+        boundaries: vec![(0..3)
+            .map(|edge| MeshBoundaryEdgeCandidate {
+                edge,
+                start: 0,
+                end: 0,
+                reversed: None,
+            })
+            .collect()],
+    };
+    let run = || {
+        crate::solve::mesh_quotient::mesh_assignment_endpoint_cycle_support_by(
+            &assignment,
+            None,
+            |edge| {
+                candidates.get(edge).map(|values| {
+                    crate::solve::mesh_quotient::MeshEndpointCandidates::Explicit(values)
+                })
+            },
+            |_, _| true,
+        )
+    };
+    let support = run().expect("bounded layered support");
+    assert_eq!(support.by_edge[&0], HashSet::from([[0, 1]]));
+}
+
+#[test]
+fn mesh_assignment_endpoint_cycle_support_result() {
+    let candidates = [vec![[0, 1]]];
+    let assignment = MeshFaceBoundaryAssignment {
+        boundaries: vec![vec![MeshBoundaryEdgeCandidate {
+            edge: 0,
+            start: 0,
+            end: 0,
+            reversed: None,
+        }]],
+    };
+    let run = || {
+        crate::solve::mesh_quotient::mesh_assignment_endpoint_cycle_support_by(
+            &assignment,
+            None,
+            |edge| {
+                candidates.get(edge).map(|values| {
+                    crate::solve::mesh_quotient::MeshEndpointCandidates::Explicit(values)
+                })
+            },
+            |_, _| true,
+        )
+    };
+    assert!(run().expect("one-layer support").by_edge.is_empty());
+}
+
+#[test]
+fn implicit_ordered_face_pruning_result() {
+    catia_test_context!(service_ctx);
+    let choices = vec![vec![[0, 1], [0, 2]], Vec::new(), vec![[0, 3]]];
+    let mut quotient = crate::solve::mesh_quotient::initial_mesh_quotient(
+        &choices,
+        4,
+        &[[10, 11], [12, 13], [14, 15]],
+    )
+    .expect("service resource budget")
+    .expect("initial quotient");
+    let coordinate_domains = quotient
+        .prepare_coordinate_root_domains(&service_ctx, 4, &choices, None)
+        .expect("service resource budget")
+        .expect("implicit coordinate domains");
+    let assignment = MeshFaceBoundaryAssignment {
+        boundaries: vec![(0..3)
+            .map(|edge| MeshBoundaryEdgeCandidate {
+                edge,
+                start: 0,
+                end: 0,
+                reversed: None,
+            })
+            .collect()],
+    };
+    let domains = [MeshFaceBoundaryDomain::Ordered(vec![assignment])];
+    let mut service_choices = choices.clone();
+    let budget = WorkBudget::new(10_000);
+    assert!(
+        crate::solve::incidence::prune_implicit_ordered_face_endpoint_support(
+            &domains,
+            &mut service_choices,
+            &coordinate_domains,
+            &budget,
+        )
+        .expect("service resource budget")
+    );
+}
+
+#[test]
+fn mesh_endpoint_pair_support_result() {
+    let assignment = |edges: &[usize]| MeshFaceBoundaryAssignment {
+        boundaries: vec![edges
+            .iter()
+            .copied()
+            .map(|edge| MeshBoundaryEdgeCandidate {
+                edge,
+                start: 0,
+                end: 0,
+                reversed: None,
+            })
+            .collect()],
+    };
+    let assignments = vec![
+        vec![assignment(&[0, 1, 2])],
+        vec![assignment(&[0, 3, 4]), assignment(&[0, 5, 6])],
+    ];
+    let candidates = vec![
+        vec![[0, 1], [0, 3]],
+        vec![[1, 2]],
+        vec![[2, 0]],
+        vec![[1, 4]],
+        vec![[4, 0]],
+        vec![[3, 5]],
+        vec![[5, 0]],
+    ];
+    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        let mut assignments = assignments.clone();
+        let mut candidates = candidates.clone();
+        prune_mesh_endpoint_pair_support(ctx, &mut assignments, &mut candidates)
+    };
+    (assert!(crate::test_support::with_service_context(run).expect("service budget")));
+}

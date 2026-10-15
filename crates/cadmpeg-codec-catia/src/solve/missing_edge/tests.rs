@@ -5,6 +5,8 @@ use super::{
     INDEXED_VISUALIZATION_POINT_HEADER_LEN, INDEXED_VISUALIZATION_POINT_MARKER,
 };
 use crate::families::standard::topology::{EdgeBoundaryLayout, EdgeRow};
+use crate::solve::missing_edge::resolve_edge_faces_from_runs;
+use crate::solve::missing_edge::MeshEdgeRun;
 use std::collections::HashSet;
 use std::sync::Arc;
 
@@ -367,4 +369,182 @@ fn repeated_handle_index_preserves_face_order() {
     })
     .expect("service decode");
     assert_eq!(actual, Some(expected));
+}
+
+#[test]
+fn counted_port_identity_maps_and_pairs_result() {
+    let fixtures = [
+        (
+            crate::test_support::test_topology::standard_quad_topology_stream(),
+            false,
+        ),
+        (
+            crate::test_support::test_topology::fbb_only_quad_topology_stream(),
+            true,
+        ),
+    ];
+    for (bytes, fbb) in fixtures {
+        let ports = if fbb {
+            super::fbb_edge_port_identities(&bytes, true)
+        } else {
+            crate::test_support::with_service_context(|ctx| {
+                super::standard_edge_port_identities(ctx, &bytes, true)
+            })
+            .expect("service resource budget")
+        }
+        .expect("counted edge ports");
+        assert_eq!(ports.len(), 4);
+    }
+}
+
+#[test]
+fn edge_run_face_collection_result() {
+    let run = MeshEdgeRun {
+        edge: 0,
+        face: 1,
+        cycle: 0,
+        start: 0,
+        segment_count: 1,
+        reversed: false,
+    };
+    catia_test_context!(service_ctx);
+    assert_eq!(
+        resolve_edge_faces_from_runs(&service_ctx, &[[1, 1]], &[run]).expect("service budget"),
+        Some(vec![[1, 1]])
+    );
+}
+
+#[test]
+fn edge_port_queue_result() {
+    let ports = [[10, 11]];
+    let pairs = [Some([0, 1])];
+    catia_test_context!(service_ctx);
+    assert_eq!(
+        super::propagate_edge_port_points(&service_ctx, &ports, &pairs)
+            .expect("service resource budget"),
+        Some(vec![Some([0, 1])])
+    );
+}
+
+#[test]
+fn ordered_port_seed_result() {
+    let ports = [[10, 11]];
+    let pairs = [Some([0, 1])];
+    let ordered = [Some([0, 1])];
+    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        super::propagate_edge_port_points_with_ordered_seeds(ctx, &ports, &pairs, &ordered)
+    };
+    assert_eq!(
+        crate::test_support::with_service_context(run).expect("service budget"),
+        Some(vec![Some([0, 1])])
+    );
+}
+
+#[test]
+fn partial_port_projection_result() {
+    let ports = [Some([10, 11]), None];
+    let pairs = [Some([0, 1]), Some([2, 3])];
+    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        super::propagate_partial_edge_port_points_with_ordered_seeds(ctx, &ports, &pairs, &[])
+    };
+    assert_eq!(
+        crate::test_support::with_service_context(run).expect("service budget"),
+        Some(pairs.to_vec())
+    );
+}
+
+#[test]
+fn edge_port_solution_result() {
+    let ports = [[10, 11]];
+    let candidates = [vec![[0, 1]]];
+    catia_test_context!(service_ctx);
+    assert_eq!(
+        super::bind_edge_port_candidates(&service_ctx, &ports, &candidates)
+            .expect("service resource budget"),
+        Some(vec![[0, 1]])
+    );
+}
+
+#[test]
+fn visualization_endpoint_bindings_result() {
+    let points = [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]];
+    let rows = [row(&[0, 1])];
+    let raw = raw_visualization_table(1, &points);
+    let mut compressed = INDEXED_VISUALIZATION_POINT_MARKER.to_vec();
+    compressed.extend_from_slice(&2u32.to_le_bytes());
+    compressed.push(0xff);
+    compressed.extend_from_slice(&2u32.to_le_bytes());
+    compressed.extend_from_slice(&[0, 0, 0, 0]);
+    compressed.extend_from_slice(&[0x00, 0xff]);
+    compressed.extend_from_slice(&6u32.to_le_bytes());
+    for scalar in [1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0] {
+        compressed.extend_from_slice(&scalar.to_le_bytes());
+    }
+    for bytes in [&raw, &compressed] {
+        let run = || visualization_endpoint_pairs(bytes, &rows, &points);
+        assert_eq!(run(), Some(vec![[0, 1]]));
+    }
+}
+
+#[test]
+fn repeated_handle_candidates_result() {
+    let rows = vec![row(&[10, 11])];
+    let faces = vec![handles(&[10, 11]), handles(&[10, 11])];
+    catia_test_context!(service_ctx);
+    assert_eq!(
+        repeated_edge_face_handle_candidates_from_sets(&service_ctx, &rows, &faces, &[[0, 0]],)
+            .expect("service budget"),
+        Some(vec![vec![1]])
+    );
+}
+
+#[test]
+fn repeated_face_refinement_result() {
+    for allowed_face in [vec![2usize], vec![3usize]] {
+        let run = || {
+            let mut allowed = [allowed_face.clone()];
+            refine_repeated_edge_face_candidates(&[[0, 0]], &mut allowed, &[vec![2]])
+        };
+        assert_eq!(run(), Some(()));
+    }
+}
+
+#[test]
+fn endpoint_degree_closure_result() {
+    let edge_faces = [[0, 1], [0, 0], [0, 1]];
+    let allowed = [Vec::new(), vec![1], Vec::new()];
+    let endpoint_pairs = [[0, 1], [1, 2], [2, 0]];
+    catia_test_context!(service_ctx);
+    assert!(repeated_face_endpoint_closures(
+        &service_ctx,
+        &edge_faces,
+        &allowed,
+        &endpoint_pairs,
+        2,
+    )
+    .expect("service budget")
+    .is_some());
+}
+
+#[test]
+fn duplicate_face_assignment_result() {
+    let serialized = [[0usize, 0]];
+    let allowed = [vec![0usize, 1]];
+    let run =
+        || unique_duplicate_face_assignment(&serialized, &allowed, 2, |faces| Ok(faces[0][1] == 1));
+    assert_eq!(run().expect("service budget"), Some(vec![[0, 1]]));
+}
+
+#[test]
+fn mesh_edge_run_materialization_result() {
+    let bytes = crate::test_support::test_topology::standard_quad_topology_stream();
+    let run =
+        |ctx: &cadmpeg_core::decode::DecodeContext<'_>| super::standard_mesh_edge_runs(ctx, &bytes);
+    assert_eq!(
+        crate::test_support::with_service_context(run)
+            .expect("service budget")
+            .expect("runs")
+            .len(),
+        4
+    );
 }

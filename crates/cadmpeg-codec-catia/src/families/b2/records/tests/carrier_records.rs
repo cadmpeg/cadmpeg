@@ -530,3 +530,18 @@ fn cylinder_circumference_tolerance_is_an_absolute_length() {
         inside
     ));
 }
+
+#[test]
+fn b2_offset_support_binding_result() {
+    let offsets = crate::families::b2::records::b2_offset_supports(&b2_offset_support_stream());
+    let carriers = crate::test_support::with_service_context(|ctx| {
+        crate::families::a5a8::records::a5_surfaces(
+            ctx,
+            &a5_surface_stream(),
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+    })
+    .expect("service profile admits surface");
+    let service = crate::families::b2::records::offset_support_carriers(&offsets, &carriers);
+    assert_eq!(service.len(), 1);
+}

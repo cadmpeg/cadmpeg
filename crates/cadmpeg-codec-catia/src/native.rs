@@ -9014,3 +9014,50 @@ fn filter_nested_inventory(
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod consolidated_cone_face_limit_tests {
+    use super::consolidated_parameter_points;
+
+    #[test]
+    fn native_cone_face_parameter_links_result() {
+        let bytes = crate::test_support::test_b2::b2_cone_face_parameter_point_stream();
+        let records = crate::wire::records::consolidated_records(&bytes);
+        let points = consolidated_parameter_points(&bytes, &records);
+        assert_eq!(points.len(), 4);
+    }
+}
+
+#[cfg(test)]
+mod consolidated_cylinder_limit_tests {
+    use super::{consolidated_cylinder_groups, consolidated_cylinders};
+
+    #[test]
+    fn native_standalone_cylinder_result() {
+        let bytes = crate::test_support::test_b2::b2_cylinder_stream();
+        let records = crate::wire::records::consolidated_records(&bytes);
+        let cylinders = consolidated_cylinders(&bytes, &records);
+        assert_eq!(cylinders.len(), 1);
+    }
+
+    #[test]
+    fn native_embedded_cylinder_and_group_result() {
+        let bytes = crate::test_support::test_b2::b2_embedded_cylinder_stream();
+        let records = crate::wire::records::consolidated_records(&bytes);
+        let (groups, cylinders) = consolidated_cylinder_groups(&bytes, &records);
+        assert_eq!((groups.len(), cylinders.len()), (1, 1));
+    }
+}
+
+#[cfg(test)]
+mod consolidated_pcurve_limit_tests {
+
+    #[test]
+    fn native_pcurve_id_and_output_result() {
+        let bytes = crate::test_support::test_a5a8::a5_pcurve_stream();
+        let records = crate::wire::records::consolidated_records(&bytes);
+        let pcurves = super::consolidated_pcurves(&bytes, &records);
+        assert_eq!(pcurves.len(), 1);
+        assert_eq!(pcurves[0].points.len(), 2);
+    }
+}

@@ -2318,6 +2318,44 @@ mod tests {
         // No predecessor is strictly below the successor: no path at all.
         assert!(unique_monotone_run(&[record(&[5]), record(&[4])]).is_none());
     }
+
+    #[test]
+    fn entity_table_cumulative_path_storage_result() {
+        let candidate = |entity_id| EntityRecordCandidates {
+            pos: 0,
+            total_len: 12,
+            lead: 0x01,
+            layout: EntityRecordLayout::Inline,
+            identities: vec![EntityIdentityCandidate {
+                delimiter: 0,
+                entity_id,
+            }],
+        };
+        let records = [candidate(1), candidate(2)];
+
+        assert!(unique_monotone_run(&records).is_some());
+    }
+
+    #[test]
+    fn numeric_packet_items_result() {
+        let mut payload = vec![0xaa, 0x81, 0x87, 0xe8, 0xf4, 0x1a, 0x37, 0x83, 0x84, 0xe6];
+        payload.extend_from_slice(&42.0_f64.to_bits().to_le_bytes());
+        payload.extend_from_slice(&[0xfe, 0xbb]);
+        assert!(super::parse_numeric_value_packet(&payload, 1).is_some());
+    }
+
+    #[test]
+    fn definition_schema_selectors_result() {
+        let prefix = [0x32, 4, 0, 0, 0];
+        let admitted = super::parse_definition_schema_selectors(&prefix);
+        assert_eq!(
+            admitted,
+            [super::DefinitionSchemaSelector {
+                value: 4,
+                offset: 0
+            }]
+        );
+    }
 }
 
 // Each optional key below names itself in whatever it refuses.

@@ -7,6 +7,11 @@ use super::{
     Point3, PointId, SolvedSurfaceGeometry, StandardCurveGeometry, StandardCurveSupport,
     StandardEdgeSupport, Surface, SurfaceGeometry, SurfaceId, Vector3, Vertex, VertexId,
 };
+use crate::families::standard::decode::copy_standard_extrusion_definition;
+use crate::families::standard::decode::standard_extrusion_support_id;
+use crate::families::standard::records::AnalyticSurfaceKind;
+use crate::families::standard::records::StandardSurfaceRecord;
+use crate::families::standard::records::SurfacePrefix;
 
 #[test]
 fn standard_empty_vertex_population_creates_no_owner_or_annotations() {
@@ -522,5 +527,182 @@ fn a_native_endpoint_pair_reads_from_the_finite_support_when_its_placed_partner_
             None
         ),
         Ok(Some([0, 1]))
+    );
+}
+
+#[test]
+fn standard_free_vertex_members_result() {
+    let mut ir = CadIr::empty();
+    ir.model.vertices.push(Vertex {
+        id: VertexId::mint("catia:test:vertex#limit").expect("identity grammar"),
+        point: PointId::mint("catia:test:point#limit").expect("identity grammar"),
+        tolerance: None,
+    });
+    crate::test_support::with_service_context(|ctx| {
+        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+        attach_free_vertices(ctx, &mut ir, &mut AnnotationBuilder::new(), &mut admission)
+    })
+    .expect("service context admits the free vertex");
+    assert_eq!(ir.model.shells[0].free_vertices().len(), 1);
+}
+
+#[test]
+fn standard_extrusion_support_result() {
+    use std::collections::HashMap;
+    let mut surfaces = Vec::new();
+    let mut supports = HashMap::new();
+    let geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None });
+    crate::test_support::with_service_context(|ctx| {
+        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+        standard_extrusion_support_id(
+            ctx,
+            &mut AnnotationBuilder::new(),
+            &mut surfaces,
+            &mut supports,
+            7,
+            geometry,
+            &mut admission,
+        )
+    })
+    .expect("service context admits support");
+    assert_eq!(surfaces.len(), 1);
+    assert_eq!(supports.len(), 1);
+}
+
+#[test]
+fn standard_native_edge_face_carrier_and_candidate_limits_result() {
+    use std::collections::HashMap;
+    use std::collections::HashSet;
+    let supports = [StandardCurveSupport {
+        pos: 0,
+        tag: 700,
+        faces: [0, 0],
+        geometry: StandardCurveGeometry::Bspline,
+    }];
+    let records = [10u32, 20].map(|target| {
+        StandardSurfaceRecord::Analytic(SurfacePrefix {
+            pos: 0,
+            target,
+            kind: AnalyticSurfaceKind::Cylinder,
+        })
+    });
+    let owners = HashMap::from([(700, HashSet::from([20]))]);
+    let mut faces = [[0, 0]];
+    crate::families::standard::decode::apply_standard_native_edge_faces(
+        &mut faces, &supports, &records, &owners,
+    );
+    assert_eq!(faces, [[0, 1]]);
+}
+
+#[test]
+fn standard_face_attachment_result() {
+    let brep = crate::test_support::test_topology::standard_quad_topology_stream();
+    let bindings = [(
+        SurfaceId::mint("catia:test:surface#face").expect("identity grammar"),
+        true,
+        0,
+    )];
+    let mut ir = CadIr::empty();
+    crate::test_support::with_service_context(|ctx| {
+        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+        crate::families::standard::decode::attach_standard_faces(
+            ctx,
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            &bindings,
+            &brep,
+            &mut admission,
+        )
+    })
+    .expect("service context admits the standard face");
+    assert_eq!(ir.model.faces[0].id.as_str(), "catia:standard:face#0");
+    assert_eq!(ir.model.bodies[0].id.as_str(), "catia:standard:body#0");
+    assert_eq!(ir.model.regions[0].id.as_str(), "catia:standard:region#0-0");
+    assert_eq!(ir.model.shells[0].id.as_str(), "catia:standard:shell#0-0");
+    assert_eq!(ir.model.shells[0].faces().len(), 1);
+}
+
+#[test]
+fn standard_face_partition_result() {
+    let brep = crate::test_support::test_topology::standard_quad_topology_stream();
+    let bindings = [(
+        SurfaceId::mint("catia:test:surface#partition").expect("identity grammar"),
+        true,
+        0,
+    )];
+    let mut base_ir = CadIr::empty();
+    let mut base_annotations = AnnotationBuilder::new();
+    crate::test_support::with_service_context(|ctx| {
+        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+        crate::families::standard::decode::attach_standard_faces(
+            ctx,
+            &mut base_ir,
+            &mut base_annotations,
+            &bindings,
+            &brep,
+            &mut admission,
+        )
+    })
+    .expect("service context admits the initial face");
+    let mut second = base_ir.model.faces[0].clone();
+    second.id = cadmpeg_ir::ids::FaceId::mint("catia:standard:face#1").expect("identity grammar");
+    crate::test_support::with_service_context(|ctx| {
+        crate::assemble::annotate(
+            ctx,
+            &mut base_annotations,
+            &second.id,
+            "MainDataStream+SurfacicReps",
+            0,
+            "surfacic_reps_face_sense",
+            cadmpeg_ir::Exactness::ByteExact,
+        )
+    })
+    .expect("service profile admits second face annotation");
+    base_ir.model.faces.push(second);
+    let components = [vec![0], vec![1]];
+    let result = crate::test_support::with_service_context(|ctx| {
+        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+        crate::families::standard::decode::partition_standard_face_components(
+            ctx,
+            &mut base_ir,
+            &mut base_annotations,
+            &components,
+            &mut admission,
+        )
+    })
+    .expect("service context admits partitioned faces");
+    assert!(result);
+    assert_eq!(base_ir.model.regions.len(), 2);
+    assert_eq!(
+        base_ir.model.regions[1].id.as_str(),
+        "catia:standard:region#0-1"
+    );
+    assert_eq!(
+        base_ir.model.shells[1].id.as_str(),
+        "catia:standard:shell#0-1"
+    );
+    assert_eq!(
+        base_ir.model.shells[1].faces()[0].as_str(),
+        "catia:standard:face#1"
+    );
+}
+
+#[test]
+fn standard_extrusion_definition_copy_result() {
+    let directrix =
+        cadmpeg_ir::ids::CurveId::mint("catia:test:directrix#7").expect("identity grammar");
+    let direction =
+        cadmpeg_ir::features::FiniteVector3::new(cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0))
+            .expect("finite direction");
+    let definition = cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::legacy(
+        directrix, None, direction, None, None,
+    );
+    let copied = crate::test_support::with_service_context(|ctx| {
+        copy_standard_extrusion_definition(ctx, &definition)
+    })
+    .expect("service context admits the retained directrix identity");
+    assert_eq!(
+        copied,
+        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(definition),
     );
 }
