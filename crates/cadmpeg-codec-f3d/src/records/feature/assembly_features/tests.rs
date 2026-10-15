@@ -8,9 +8,9 @@ use super::{
 
 fn occurrence(explicit: bool) -> DesignComponentOccurrence {
     let placement = if explicit {
-        r#","occurrence_ordinal":2,"transform":[[1.0,0.0,0.0,2.0],[0.0,1.0,0.0,0.0],[0.0,0.0,1.0,0.0],[0.0,0.0,0.0,1.0]],"transform_offset":219"#
+        r#","occurrence_ordinal":2,"transform":[[1.0,0.0,0.0,2.0],[0.0,1.0,0.0,0.0],[0.0,0.0,1.0,0.0],[0.0,0.0,0.0,1.0]],"transform_offset":219,"owner_entity":3,"owner_entity_offset":357"#
     } else {
-        r#","occurrence_ordinal":1"#
+        r#","occurrence_ordinal":1,"owner_entity":3,"owner_entity_offset":229"#
     };
     serde_json::from_str(&format!(
         r#"{{"id":"f3d:native:occurrence#0","class_tag":"292","record_index":1,"byte_offset":10,"component_record_index":2,"component_guid":"aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee","component_guid_offset":58,"occurrence_guid":"ffffffff-bbbb-4ccc-8ddd-eeeeeeeeeeee","occurrence_guid_offset":134{placement}}}"#

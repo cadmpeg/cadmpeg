@@ -3000,12 +3000,43 @@ impl<'a> F3dDecodeSession<'a> {
             }
         };
 
-        let (components, occurrences) = crate::design::components::project_local_components(
-            &self.native.design_parameter_scopes,
-            &self.native.design_component_occurrences,
+        let local_components = crate::design::decode::components::decode_local_components(
+            scan,
+            &self.native.design_component_naming_spaces,
         )?;
-        self.ir.model.product_definitions.extend(components);
-        self.ir.model.occurrences.extend(occurrences);
+        let bodies = self
+            .ir
+            .model
+            .bodies
+            .iter()
+            .map(|body| body.id.clone())
+            .collect::<std::collections::BTreeSet<_>>();
+        let bodies_final = matches!(finalize_path, FinalizePath::Geometry(_));
+        let root_ordinal_start = self
+            .ir
+            .model
+            .occurrences
+            .iter()
+            .filter(|occurrence| {
+                matches!(
+                    occurrence.parent,
+                    cadmpeg_ir::products::OccurrenceParent::Root {}
+                )
+            })
+            .count();
+        let local = crate::design::components::project_local_components(
+            &crate::design::components::LocalComponentSources {
+                scopes: &self.native.design_parameter_scopes,
+                occurrences: &self.native.design_component_occurrences,
+                components: &local_components,
+                body_bindings: &self.native.design_body_bindings,
+                bodies: bodies_final.then_some(&bodies),
+                root_ordinal_start,
+            },
+        )?;
+        self.ir.model.product_definitions.extend(local.definitions);
+        self.ir.model.occurrences.extend(local.occurrences);
+        self.report.losses.extend(local.losses);
         crate::design::components::project_derived_instance_features(
             &mut self.ir.model.features,
             &self.native.design_parameter_scopes,

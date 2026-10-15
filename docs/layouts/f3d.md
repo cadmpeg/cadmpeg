@@ -18,7 +18,7 @@ compact `Loft` prefix and nested profile-region frames, the class-418
 operation prologues and cross-document selector, the axial `Assemble` carrier
 and selector prefixes, the non-axial assembly-operation operand-path locator run,
 locator, and wrapper, and the sheet-metal `EdgeFlange` fixed operation section
-(§3.1), plus the `Canvas` geometry and scope records, the `Decal` scope, image-record prefixes, current sketch-container visibility member, the grouped identity `Component Insert` frames, and the class-`283` / class-`262` `Component Insert` scope frames with their class-`334` carrier prefix. ASM stream records are tabulated in `docs/layouts/asm.toml`. Protein page records are tabulated in `docs/layouts/protein.toml`.
+(§3.1), plus the `Canvas` geometry and scope records, the `Decal` scope, image-record prefixes, current sketch-container visibility member, the grouped identity `Component Insert` frames, the class-`283` / class-`262` `Component Insert` scope frames with their class-`334` carrier prefix, and the local component-occurrence frames and root-instance prefix. ASM stream records are tabulated in `docs/layouts/asm.toml`. Protein page records are tabulated in `docs/layouts/protein.toml`.
 Container and manifest layers are text grammars and are listed under "Not
 tabulated".
 
@@ -4847,6 +4847,96 @@ Spec §3.1 · layout: byte offsets · size: 30 B
 | 11 | 9 | `zero_run_9` | `bytes[9]` | little | spec | The expanded prologue has nine zero bytes at scope offsets 11 through 19, a marked null u32 at offset 20, and a marked geometry-record reference at offset 25. |
 | 20 | 5 | `null_reference` | `bytes[5]` | little | spec | The expanded prologue has nine zero bytes at scope offsets 11 through 19, a marked null u32 at offset 20, and a marked geometry-record reference at offset 25. |
 | 25 | 5 | `geometry_reference` | `bytes[5]` | little | spec | The expanded prologue has nine zero bytes at scope offsets 11 through 19, a marked null u32 at offset 20, and a marked geometry-record reference at offset 25. |
+
+## `local_component_occurrence_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 209 B
+
+Offsets are relative to the carrier's indexed header. The identity tail or the matrix tail follows at offset 209.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/components.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 8 | `empty_instance_name` | `bytes[8]` | little | spec | the frame stores u32 `0` and an empty LP-ASCII instance name |
+| 19 | 1 | `path_marker` | `u8` | little | spec | `u8 1` at offset 19 · value `1` |
+| 20 | 4 | `path_count` | `u32` | little | spec | u32 path count `1` at offset 20 · value `1` |
+| 24 | 9 | `component_reference` | `bytes[9]` | little | spec | Marked component-record references at offsets 24 and 197 |
+| 40 | 4 | `occurrence_ordinal` | `u32` | little | spec | the one-based occurrence ordinal at offset 40 |
+| 44 | 76 | `carrier_guid` | `bytes[76]` | little | spec | an LP-UTF16 carrier GUID at offset 44 |
+| 120 | 76 | `occurrence_guid` | `bytes[76]` | little | spec | an LP-UTF16 occurrence GUID at offset 120 |
+| 197 | 9 | `component_reference_repeat` | `bytes[9]` | little | spec | Marked component-record references at offsets 24 and 197 |
+| 208 | 1 | `identity_flag` | `u8` | little | spec | Offset 208 is the identity flag. |
+
+Unstated regions:
+
+- `0..11` (11 B): Indexed header.
+- `33..40` (7 B): Zero trailing field of the component-record reference.
+- `196..197` (1 B): Zero separator.
+- `206..208` (2 B): Zero trailing field of the repeated component-record reference.
+
+## `local_component_occurrence_identity_tail`
+
+Spec §3.1 · layout: byte offsets · size: 20 B
+
+Offsets are relative to the end of the 209-byte prefix; the identity frame is 229 bytes.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/components.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 9 | 1 | `owner_marker` | `u8` | little | spec | Nine zero bytes and the marker `u8 1` follow the flag or the matrix. · value `1` |
+| 10 | 8 | `owner_entity` | `u64` | little | spec | The u64 owner entity is at offset 219 of the identity frame |
+
+Unstated regions:
+
+- `0..9` (9 B): Nine zero bytes.
+- `18..20` (2 B): Two zero bytes close the frame.
+
+## `local_component_occurrence_matrix_tail`
+
+Spec §3.1 · layout: byte offsets · size: 148 B
+
+Offsets are relative to the end of the 209-byte prefix; the matrix frame is 357 bytes.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/components.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 128 | `transform` | `f64[16]` | little | spec | a row-major rigid local-to-container transform at offset 209 |
+| 137 | 1 | `owner_marker` | `u8` | little | spec | Nine zero bytes and the marker `u8 1` follow the flag or the matrix. · value `1` |
+| 138 | 8 | `owner_entity` | `u64` | little | spec | offset 347 of the matrix frame |
+
+Unstated regions:
+
+- `128..137` (9 B): Nine zero bytes.
+- `146..148` (2 B): Two zero bytes close the frame.
+
+## `root_instance_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 45 B
+
+Offsets are relative to the root-instance record's indexed header. The record continues after the component-definition reference.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/components.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 4 | `leading_zero` | `u32` | little | spec | After its indexed header that record stores u32 `0` · value `0` |
+| 15 | 4 | `instance_name_length` | `u32` | little | spec | LP-ASCII `rootInstance` · value `12` |
+| 19 | 12 | `instance_name` | `bytes[12]` | little | spec | LP-ASCII `rootInstance` |
+| 31 | 1 | `path_marker` | `u8` | little | spec | `u8 1`, u32 path count `1` · value `1` |
+| 32 | 4 | `path_count` | `u32` | little | spec | `u8 1`, u32 path count `1` · value `1` |
+| 36 | 1 | `component_marker` | `u8` | little | spec | a marked u64 component-definition reference · value `1` |
+| 37 | 8 | `component_reference` | `u64` | little | spec | a marked u64 component-definition reference |
+
+Unstated regions:
+
+- `0..11` (11 B): Indexed header.
 
 ## Not tabulated
 
