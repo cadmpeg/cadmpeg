@@ -726,9 +726,15 @@ fn history_snapshot_old_references_refuse_collection_limit() {
 #[test]
 fn history_record_references_refuse_collection_limit() {
     let bytes = one_framed_history_record();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 3;
-    let error = history_record_with_limits(&bytes, &policy);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "frame F3D history references",
+        |cap| {
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            Err::<(), cadmpeg_core::CodecError>(history_record_with_limits(&bytes, &policy))
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "frame F3D history references")
@@ -738,9 +744,15 @@ fn history_record_references_refuse_collection_limit() {
 #[test]
 fn history_record_vector_refuses_collection_limit() {
     let bytes = one_framed_history_record();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 4;
-    let error = history_record_with_limits(&bytes, &policy);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "frame F3D history record",
+        |cap| {
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            Err::<(), cadmpeg_core::CodecError>(history_record_with_limits(&bytes, &policy))
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "frame F3D history record")
