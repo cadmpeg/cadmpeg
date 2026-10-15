@@ -198,7 +198,11 @@ fn id_offset_construction(attr: u16) -> ProceduralSurfaceId {
     )
 }
 
-type FaceEdgesBySurfaceCarrier = BTreeMap<u16, Vec<BTreeSet<u16>>>;
+/// Edge sets in source face order; carrier groups reference those slots.
+pub(super) struct FaceEdges {
+    pub(super) faces: Vec<BTreeSet<u16>>,
+    pub(super) by_carrier: BTreeMap<u16, Vec<usize>>,
+}
 
 /// Procedural surface resolution reads these indexes lazily. Analytic faces
 /// do not traverse the source faces for procedural support lookup.
@@ -207,7 +211,7 @@ pub(super) struct ProceduralSupportIndexes<'source, 'ctx> {
     loop_set: &'source BTreeSet<u16>,
     tables: &'source topology::Tables,
     emitted: Option<BTreeMap<u16, u16>>,
-    face_edges: Option<FaceEdgesBySurfaceCarrier>,
+    face_edges: Option<FaceEdges>,
     storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
 }
 
@@ -276,14 +280,17 @@ impl<'source, 'ctx> ProceduralSupportIndexes<'source, 'ctx> {
     pub(super) fn face_edges(
         &mut self,
         ctx: &DecodeContext<'_>,
-    ) -> Result<&FaceEdgesBySurfaceCarrier, cadmpeg_core::CodecError> {
+    ) -> Result<&FaceEdges, cadmpeg_core::CodecError> {
         let faces = self.faces;
         let t = self.tables;
         match self.face_edges {
             Some(ref index) => Ok(index),
             None => {
                 let index = self.storage.with_storage(|| {
-                    let mut face_edges_by_surface_carrier = FaceEdgesBySurfaceCarrier::new();
+                    let mut index = FaceEdges {
+                        faces: Vec::new(),
+                        by_carrier: BTreeMap::new(),
+                    };
                     for face in ctx.admit_iter(faces, "index Parasolid surface face edges")? {
                         let mut edges = BTreeSet::new();
                         for (_, ring) in
@@ -304,19 +311,85 @@ impl<'source, 'ctx> ProceduralSupportIndexes<'source, 'ctx> {
                                 }
                             }
                         }
+                        let position = index.faces.len();
+                        ctx.push_vec(&mut index.faces, edges, "collect Parasolid face edge sets")?;
                         ctx.push_btree_group(
-                            &mut face_edges_by_surface_carrier,
+                            &mut index.by_carrier,
                             face.surface_attr,
-                            edges,
+                            position,
                             "index Parasolid surface face edges",
                             "collect Parasolid surface face edges",
                         )?;
                     }
-                    Ok::<_, cadmpeg_core::CodecError>(face_edges_by_surface_carrier)
+                    Ok::<_, cadmpeg_core::CodecError>(index)
                 })?;
                 Ok(self.face_edges.insert(index))
             }
         }
+    }
+    /// Hidden supports have already published their complete offset chains.
+    /// Analytic supports can also reuse the surface of an emitted face.
+    pub(super) fn support_is_published(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        attr: u16,
+        carriers: CarrierView<'_, '_>,
+        hidden: &BTreeSet<u16>,
+    ) -> Result<bool, cadmpeg_core::CodecError> {
+        if ctx.contains_btree_set(hidden, &attr, "test published Parasolid blend supports")? {
+            return Ok(true);
+        }
+        if carriers.surface(ctx, attr)?.is_none() {
+            return Ok(false);
+        }
+        ctx.contains_key_btree_map(
+            self.emitted(ctx)?,
+            &attr,
+            "lookup Parasolid emitted_face_surface_by_carrier",
+        )
+    }
+
+    /// Inspect the selected supports with the acyclicity traversal. No separate
+    /// offset-chain scan is needed to decide whether a losing blend publishes.
+    pub(super) fn blend_supports_need_emission(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        supports: [u16; 2],
+        carriers: CarrierView<'_, '_>,
+        hidden: &BTreeSet<u16>,
+    ) -> Result<Option<bool>, cadmpeg_core::CodecError> {
+        let mut needs_emission = false;
+        for attr in supports {
+            if self.support_is_published(ctx, attr, carriers, hidden)? {
+                continue;
+            }
+            let mut visit = |attr| -> Result<(), cadmpeg_core::CodecError> {
+                if needs_emission {
+                    return Ok(());
+                }
+                if !ctx.contains_key_btree_map(
+                    self.emitted(ctx)?,
+                    &attr,
+                    "lookup Parasolid emitted_face_surface_by_carrier",
+                )? && !ctx.contains_btree_set(
+                    hidden,
+                    &attr,
+                    "test emitted Parasolid support surfaces",
+                )? {
+                    needs_emission = true;
+                }
+                Ok(())
+            };
+            let (acyclic, storage) = ctx
+                .with_scoped_storage("hold Parasolid surface support walk", || {
+                    support_is_acyclic_with(ctx, attr, carriers, &mut BTreeSet::new(), &mut visit)
+                })?;
+            drop(storage);
+            if !acyclic {
+                return Ok(None);
+            }
+        }
+        Ok(Some(needs_emission))
     }
 }
 
@@ -395,7 +468,7 @@ pub(super) fn support_is_acyclic(
 ) -> Result<bool, cadmpeg_core::CodecError> {
     let (acyclic, storage) = ctx
         .with_scoped_storage("hold Parasolid surface support walk", || {
-            support_is_acyclic_with(ctx, attr, carriers, &mut BTreeSet::new())
+            support_is_acyclic_with(ctx, attr, carriers, &mut BTreeSet::new(), &mut |_| Ok(()))
         })?;
     drop(storage);
     Ok(acyclic)
@@ -406,16 +479,18 @@ fn support_is_acyclic_with(
     attr: u16,
     carriers: CarrierView<'_, '_>,
     resolving: &mut BTreeSet<u16>,
+    visit: &mut impl FnMut(u16) -> Result<(), cadmpeg_core::CodecError>,
 ) -> Result<bool, cadmpeg_core::CodecError> {
     let _depth = ctx.enter_nested("check Parasolid surface support")?;
     ctx.charge_work(1, "check Parasolid surface support")?;
     if !ctx.insert_btree_set(resolving, attr, "track Parasolid surface support")? {
         return Ok(false);
     }
+    visit(attr)?;
     let acyclic = if carriers.surface(ctx, attr)?.is_some() {
         Ok(true)
     } else if let Some(offset) = carriers.offset(ctx, attr)? {
-        support_is_acyclic_with(ctx, offset.support, carriers, resolving)
+        support_is_acyclic_with(ctx, offset.support, carriers, resolving, visit)
     } else {
         Ok(true)
     };

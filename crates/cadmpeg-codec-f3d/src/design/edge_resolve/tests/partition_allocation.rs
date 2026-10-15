@@ -27,29 +27,31 @@ fn assert_partition_refusal(operation: &'static str, through_scope: bool) {
     let target_operand = recipe_edge_operand(12, &[], &deleted);
     let scope_groups = [source_group, target_group];
     let operands = [source_operand, target_operand];
-    for limit in 0..64 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result = if through_scope {
-            scope_partition_edge_group_candidates(
-                &scope_groups[1],
-                &scope_groups,
-                &operands,
-                scope_groups[1].members(),
-                &ctx,
-            )
-        } else {
-            partition_unique_incomplete_edge_group(1, &groups, &ctx)
-        };
-        match result {
-            Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
-            Err(CodecError::ResourceLimit(_)) => {}
-            other => panic!("expected partition refusal at {operation}: {other:?}"),
-        }
-    }
-    panic!("no partition refusal at {operation}");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation,
+        |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let result = if through_scope {
+                scope_partition_edge_group_candidates(
+                    &scope_groups[1],
+                    &scope_groups,
+                    &operands,
+                    scope_groups[1].members(),
+                    &ctx,
+                )
+            } else {
+                partition_unique_incomplete_edge_group(1, &groups, &ctx)
+            };
+
+            (result).map(|_| ())
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(failure)
+        if failure.operation == operation && failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
 }
 
 #[test]

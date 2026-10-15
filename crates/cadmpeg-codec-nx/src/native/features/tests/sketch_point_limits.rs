@@ -20,11 +20,10 @@ fn sketch_point_refusal(
     route: SketchPointRoute,
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> cadmpeg_core::CodecError {
+    let source_bytes_1 = crate::test_support::test_prt::composed_feature_history_prt();
+
     let container = crate::test_support::with_decode_context(|ctx| {
-        crate::container::scan_bytes(
-            ctx,
-            crate::test_support::test_prt::composed_feature_history_prt(),
-        )
+        crate::container::scan_bytes(ctx, &source_bytes_1)
     })
     .expect("composed feature-history container");
     let (records, names, scalars, pairs) = crate::test_support::with_decode_context(|ctx| {

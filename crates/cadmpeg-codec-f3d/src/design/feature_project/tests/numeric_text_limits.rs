@@ -37,20 +37,17 @@ fn assert_numeric_text_refusal(operation: &'static str, unit: &str) {
             },
         )
     };
-    for limit in 0..4096 {
-        match run(limit) {
-            Err(CodecError::ResourceLimit(failure))
-                if failure.operation == operation
-                    && failure.dimension == ResourceDimension::RetainedBytes =>
-            {
-                let below = failure.used.checked_add(failure.additional).unwrap() - 1;
-                assert!(matches!(run(below), Err(CodecError::ResourceLimit(failure))
-                    if failure.operation == operation && failure.dimension == ResourceDimension::RetainedBytes));
-                return;
-            }
-            Err(CodecError::ResourceLimit(_)) => {}
-            result => panic!("missing {operation} refusal: {result:?}"),
-        }
-    }
-    panic!("no {operation} refusal");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        operation,
+        |limit| (run(limit)).map(|_| ()),
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(failure)
+        if failure.operation == operation && failure.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+    let CodecError::ResourceLimit(failure) = error else {
+        unreachable!()
+    };
+    let below = failure.used.checked_add(failure.additional).unwrap() - 1;
+    assert!(matches!(run(below), Err(CodecError::ResourceLimit(failure))
+        if failure.operation == operation && failure.dimension == ResourceDimension::RetainedBytes));
 }

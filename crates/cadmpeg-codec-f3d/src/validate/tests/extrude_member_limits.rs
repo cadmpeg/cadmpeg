@@ -93,12 +93,12 @@ fn with_matching_identity(native: &mut crate::native::F3dNative) {
     );
 }
 
-fn member_error(
+fn member_result(
     valid: bool,
     identity: bool,
     max_items: u64,
     max_retained: u64,
-) -> cadmpeg_core::CodecError {
+) -> Result<(), cadmpeg_core::CodecError> {
     crate::test_support::with_decode_context(|service_ctx| {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
         let ir = cadmpeg_ir::examples::unit_cube().unwrap();
@@ -113,8 +113,21 @@ fn member_error(
         let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
         ctx.decode = &decode;
-        super::super::validate_extrude_selection_members(&ctx, &mut Vec::new()).unwrap_err()
+        super::super::validate_extrude_selection_members(&ctx, &mut Vec::new())
     })
+}
+
+/// Refuse `operation` at its collection boundary, with every earlier item admitted.
+fn member_collection_refusal(
+    valid: bool,
+    identity: bool,
+    operation: &str,
+) -> cadmpeg_core::CodecError {
+    cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation,
+        |cap| member_result(valid, identity, cap, u64::MAX),
+    )
 }
 
 #[test]
@@ -156,14 +169,19 @@ fn extrude_member_history_states_refuse_collection_limit() {
                 transition: None,
             }],
         });
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 4;
-        let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
-        ctx.decode = &decode;
-        let error =
-            super::super::validate_extrude_selection_members(&ctx, &mut Vec::new()).unwrap_err();
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            "index F3D Extrude selection history states",
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = cap;
+                let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+                ctx.decode = &decode;
+                super::super::validate_extrude_selection_members(&ctx, &mut Vec::new())
+            },
+        );
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D Extrude selection history states")
@@ -173,7 +191,7 @@ fn extrude_member_history_states_refuse_collection_limit() {
 
 #[test]
 fn extrude_member_identity_index_refuses_collection_limit() {
-    let error = member_error(true, true, 0, u64::MAX);
+    let error = member_collection_refusal(true, true, "collect F3D Extrude selection identities");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D Extrude selection identities")
@@ -182,7 +200,7 @@ fn extrude_member_identity_index_refuses_collection_limit() {
 
 #[test]
 fn extrude_member_slot_refuses_collection_limit() {
-    let error = member_error(true, false, 2, u64::MAX);
+    let error = member_collection_refusal(true, false, "index F3D Extrude selection member slots");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D Extrude selection member slots")
@@ -191,7 +209,8 @@ fn extrude_member_slot_refuses_collection_limit() {
 
 #[test]
 fn extrude_member_record_refuses_collection_limit() {
-    let error = member_error(true, false, 3, u64::MAX);
+    let error =
+        member_collection_refusal(true, false, "index F3D Extrude selection member records");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D Extrude selection member records")
@@ -200,7 +219,7 @@ fn extrude_member_record_refuses_collection_limit() {
 
 #[test]
 fn extrude_member_invalid_finding_refuses_collection_limit() {
-    let error = member_error(false, false, 2, u64::MAX);
+    let error = member_collection_refusal(false, false, "collect F3D native validation findings");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D native validation findings")
@@ -212,7 +231,7 @@ fn extrude_member_invalid_entity_refuses_retained_limit() {
     let error = cadmpeg_test_support::refusal::resource_limit_at(
         cadmpeg_core::decode::ResourceDimension::RetainedBytes,
         "retain F3D validation entity",
-        |cap| Err::<(), cadmpeg_core::CodecError>(member_error(false, false, u64::MAX, cap)),
+        |cap| member_result(false, false, u64::MAX, cap),
     );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -230,4 +249,139 @@ fn extrude_member_valid_slot_has_no_finding() {
         super::super::validate_extrude_selection_members(&ctx, &mut findings).unwrap();
         assert!(findings.is_empty());
     })
+}
+
+#[test]
+fn extrude_member_without_selected_sketch_skips_target_index() {
+    use crate::records::sketch_geometry::{
+        SketchPoint, SketchPointCompanion, SketchPointDraft, SketchPointRecordForm,
+    };
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    crate::test_support::with_decode_policy(&policy, |decode| {
+        let ir = cadmpeg_ir::CadIr::empty();
+        let mut native = native(true);
+        native.sketch_points.push(
+            SketchPoint::try_from(SketchPointDraft {
+                id: "f3d:Design/BulkStream.dat:point#20".into(),
+                record_index: 20,
+                owner_reference: Some(7),
+                class_tag: "256".to_owned().try_into().unwrap(),
+                byte_offset: 0,
+                coordinate_offset: 11,
+                record_form: SketchPointRecordForm::Version8 {
+                    persistent_id: std::num::NonZeroU64::new(42).unwrap(),
+                    flags: [false; 7],
+                    depth: 0.0,
+                },
+                companion: SketchPointCompanion {
+                    incident_curves: Vec::new(),
+                },
+                paired_reference: 21,
+                coordinates: cadmpeg_ir::math::Point2::new(0.0, 0.0),
+            })
+            .unwrap(),
+        );
+        let ctx = super::super::Ctx::new(&ir, &native, decode).unwrap();
+        let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "scan F3D Extrude selection point targets",
+            None,
+        );
+        let mut findings = Vec::new();
+        super::super::validate_extrude_selection_members(&ctx, &mut findings).unwrap();
+        assert!(findings.is_empty());
+        assert!(decode.resource_refusal().is_none());
+        assert!(decode
+            .admit_iter(
+                &native.sketch_points,
+                "scan F3D Extrude selection point targets"
+            )
+            .is_err());
+    });
+}
+
+#[test]
+fn extrude_member_invalid_header_skips_selected_sketch_target_index() {
+    use crate::records::feature::scope::{
+        DesignExtrudeScope, DesignParameterScope, DesignScopePayload,
+    };
+    use crate::records::sketch_geometry::{
+        SketchPoint, SketchPointCompanion, SketchPointDraft, SketchPointRecordForm,
+    };
+    use crate::records::topology::sketch_profile::{
+        DesignSketchProfileOperand, DesignSketchProfileOperandDraft,
+    };
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    crate::test_support::with_decode_policy(&policy, |decode| {
+        let ir = cadmpeg_ir::CadIr::empty();
+        let mut native = native(true);
+        native.sketch_points.push(
+            SketchPoint::try_from(SketchPointDraft {
+                id: "f3d:Design/BulkStream.dat:point#20".into(),
+                record_index: 20,
+                owner_reference: Some(7),
+                class_tag: "256".to_owned().try_into().unwrap(),
+                byte_offset: 0,
+                coordinate_offset: 11,
+                record_form: SketchPointRecordForm::Version8 {
+                    persistent_id: std::num::NonZeroU64::new(42).unwrap(),
+                    flags: [false; 7],
+                    depth: 0.0,
+                },
+                companion: SketchPointCompanion {
+                    incident_curves: Vec::new(),
+                },
+                paired_reference: 21,
+                coordinates: cadmpeg_ir::math::Point2::new(0.0, 0.0),
+            })
+            .unwrap(),
+        );
+        let profile = DesignSketchProfileOperand::try_new(DesignSketchProfileOperandDraft {
+            scope_reference_ordinal: 0,
+            record_index: 8,
+            byte_offset: 300,
+            class_tag: "277".to_owned().try_into().unwrap(),
+            asset_id: "11111111-2222-4333-8444-555555555555"
+                .to_owned()
+                .try_into()
+                .unwrap(),
+            asset_id_offset: 320,
+            entity_id: crate::records::identity::DesignEntityId::from_parts("sketch", 7),
+            entity_reference_offset: 400,
+            region_selection: None,
+            paired_class_tag: "259".to_owned().try_into().unwrap(),
+            paired_byte_offset: 450,
+        })
+        .unwrap();
+        let mut draft = native.design_parameter_scopes.remove(0).into_draft();
+        draft.payload = DesignScopePayload::Extrude(Some(DesignExtrudeScope {
+            extrude_profile: Some(profile),
+            ..Default::default()
+        }));
+        native
+            .design_parameter_scopes
+            .push(DesignParameterScope::try_new(draft).unwrap());
+        native
+            .design_record_headers
+            .retain(|header| header.record_index != 10);
+        let ctx = super::super::Ctx::new(&ir, &native, decode).unwrap();
+        let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "scan F3D Extrude selection point targets",
+            None,
+        );
+        let mut findings = Vec::new();
+        super::super::validate_extrude_selection_members(&ctx, &mut findings).unwrap();
+        assert_eq!(findings.len(), 1);
+        assert_eq!(
+            findings[0].entity.as_deref(),
+            Some(native.design_extrude_selection_members[0].id.as_str())
+        );
+        assert!(decode.resource_refusal().is_none());
+        assert!(decode
+            .admit_iter(&[0], "scan F3D Extrude selection point targets")
+            .is_err());
+    });
 }

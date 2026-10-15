@@ -30,6 +30,7 @@ fn brep_value_walks_preserve_work_refusals() {
                     ctx,
                     &value,
                     &[],
+                    None,
                     &mut Vec::new(),
                 ),
             }
@@ -71,4 +72,50 @@ fn body_selector_scans_preserve_work_refusals() {
             assert_eq!(Some(limit), ctx.resource_refusal());
         });
     }
+}
+
+#[test]
+fn persistent_subentity_group_range_propagates_work_refusal() {
+    use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue};
+
+    let attribute = super::generic_tag_attribute(
+        AttributeTarget::Face(cadmpeg_ir::ids::FaceId::mint("f3d:test:face#1").unwrap()),
+        (2, 2),
+        1,
+        vec![
+            AttributeValue::Integer(7),
+            AttributeValue::String("97".into()),
+            AttributeValue::Integer(0),
+            AttributeValue::Integer(1),
+            AttributeValue::Integer(302),
+        ],
+    );
+    let operation = "visit F3D persistent subentity groups";
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        operation,
+        0,
+        |ctx| super::super::persistent_subentity_tags(ctx, &attribute).map(|_| ()),
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == operation)
+    );
+}
+
+#[test]
+fn sketch_link_field_scan_preserves_work_refusal() {
+    use cadmpeg_ir::attributes::AttributeValue;
+    let values = [
+        AttributeValue::Integer(1),
+        AttributeValue::Integer(1),
+        AttributeValue::Integer(3),
+        AttributeValue::String("7 18446744073709551615 -1 0 2 0".into()),
+    ];
+    crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "scan F3D sketch link fields",
+        0,
+        |ctx| super::super::sketch_link_payload(ctx, &values),
+    );
 }

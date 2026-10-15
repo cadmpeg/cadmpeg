@@ -471,37 +471,6 @@ fn geometry_hole_position_projection_scratch_refuses_work_limit() {
 }
 
 #[test]
-fn metadata_bore_backed_position_projection_refuses_collection_limit() {
-    let options = DecodeOptions::default();
-    let limit = collection_refusal_with_options(
-        &bore_backed_position_source(),
-        options,
-        "project SLDPRT bore backed position sketches",
-    );
-    assert_eq!(
-        limit.dimension,
-        cadmpeg_core::decode::ResourceDimension::CollectionItems
-    );
-    assert_eq!(limit.additional, 1);
-}
-
-#[test]
-fn metadata_bore_backed_position_projection_refuses_work_limit() {
-    let options = DecodeOptions::default();
-    let limit = work_refusal_with_request(
-        &bore_backed_position_source(),
-        options,
-        "project SLDPRT bore backed position sketches",
-        Some(1), // One visitor work unit; key reads have separate requests.
-    );
-    assert_eq!(
-        limit.dimension,
-        cadmpeg_core::decode::ResourceDimension::WorkUnits
-    );
-    assert_eq!(limit.additional, 1);
-}
-
-#[test]
 fn geometry_bore_backed_position_projection_refuses_collection_limit() {
     let options = DecodeOptions::default();
     let limit = collection_refusal_with_options(

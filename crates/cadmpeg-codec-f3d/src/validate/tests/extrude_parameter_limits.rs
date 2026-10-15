@@ -63,7 +63,17 @@ fn extrude_error(
 #[test]
 fn extrude_face_groups_refuse_collection_limit() {
     use crate::records::feature::extrude::DesignExtrudeOperation;
-    let error = extrude_error(0, u64::MAX, DesignExtrudeOperation::NewBody);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "collect F3D Extrude face operand groups",
+        |cap| {
+            Err::<(), cadmpeg_core::CodecError>(extrude_error(
+                cap,
+                u64::MAX,
+                DesignExtrudeOperation::NewBody,
+            ))
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D Extrude face operand groups")
@@ -73,7 +83,17 @@ fn extrude_face_groups_refuse_collection_limit() {
 #[test]
 fn extrude_invalid_operation_finding_refuses_collection_limit() {
     use crate::records::feature::extrude::DesignExtrudeOperation;
-    let error = extrude_error(0, u64::MAX, DesignExtrudeOperation::Join);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "collect F3D native validation findings",
+        |cap| {
+            Err::<(), cadmpeg_core::CodecError>(extrude_error(
+                cap,
+                u64::MAX,
+                DesignExtrudeOperation::Join,
+            ))
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D native validation findings")
@@ -83,9 +103,63 @@ fn extrude_invalid_operation_finding_refuses_collection_limit() {
 #[test]
 fn extrude_invalid_operation_entity_refuses_retained_limit() {
     use crate::records::feature::extrude::DesignExtrudeOperation;
-    let error = extrude_error(u64::MAX, 0, DesignExtrudeOperation::Join);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain F3D validation entity",
+        |cap| {
+            Err::<(), cadmpeg_core::CodecError>(extrude_error(
+                u64::MAX,
+                cap,
+                DesignExtrudeOperation::Join,
+            ))
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "retain F3D validation entity")
     );
+}
+
+#[test]
+fn extrude_operand_group_scans_preserve_work_refusal() {
+    use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    for operation in [
+        "find F3D Extrude profile groups",
+        "find F3D Extrude body operand group",
+        "count F3D Extrude face operand groups",
+        "count F3D Extrude target shape groups",
+    ] {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            operation,
+            |cap| {
+                crate::test_support::with_decode_context(|service_ctx| {
+                    let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+                    let mut native = super::construction_group_limits::native(true, false);
+                    native.design_parameter_scopes[0] = DesignParameterScope::empty(
+                        "f3d:Design/BulkStream.dat:design-parameter-scope#10",
+                        DesignFeatureKind::Extrude,
+                        10,
+                    );
+                    let arena = DecodeArena::new();
+                    let mut policy = DecodePolicy::service();
+                    policy.limits.max_work_units = cap;
+                    let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                    let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+                    ctx.decode = &decode;
+                    let result =
+                        super::super::validate_extrude_parameter_operands(&ctx, &mut Vec::new());
+                    if let Err(cadmpeg_core::CodecError::ResourceLimit(ref limit)) = result {
+                        assert_eq!(decode.resource_refusal().as_ref(), Some(limit));
+                    }
+                    result
+                })
+            },
+        );
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == operation && limit.dimension == ResourceDimension::WorkUnits)
+        );
+    }
 }

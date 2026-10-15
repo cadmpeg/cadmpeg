@@ -2064,8 +2064,6 @@ fn feature_result(
     slot: usize,
     index: &ProjectionIndex<'_>,
 ) -> Option<Result<(FeatureId, FeatureResultTopology), CodecError>> {
-    const FEATURE_ID_PREFIX: &str = "inventor:design:feature#";
-    const RESULT_ID_PREFIX: &str = "inventor:design:feature-result#";
     let collection = option_result_value!(slot_property(ctx, source, slot, index))?;
     let PmDcFeaturePropertyKind::References {
         family: PmDcFeatureReferenceFamily::ObjectCollection,
@@ -2116,74 +2114,34 @@ fn feature_result(
         Ok(value) => value,
         Err(error) => return Some(Err(error)),
     };
-    let key_len = key.as_str().len();
-    let Some(feature_id_len) = FEATURE_ID_PREFIX.len().checked_add(key_len) else {
-        return Some(Err(ctx.refuse_codec_limit(
-            "retain Inventor feature result identities",
-            u64::MAX,
-            u64::MAX,
-        )));
-    };
-    let Some(result_id_len) = RESULT_ID_PREFIX.len().checked_add(key_len) else {
-        return Some(Err(ctx.refuse_codec_limit(
-            "retain Inventor feature result identities",
-            u64::MAX,
-            u64::MAX,
-        )));
-    };
     let feature_id_text = match ctx.format_retained(
-        format_args!("{FEATURE_ID_PREFIX}{}", key.as_str()),
+        format_args!("inventor:design:feature#{}", key.as_str()),
         "retain Inventor feature result identities",
     ) {
         Ok(value) => value,
         Err(error) => return Some(Err(error)),
     };
     let result_id_text = match ctx.format_retained(
-        format_args!("{RESULT_ID_PREFIX}{}", key.as_str()),
+        format_args!("inventor:design:feature-result#{}", key.as_str()),
         "retain Inventor feature result identities",
     ) {
         Ok(value) => value,
         Err(error) => return Some(Err(error)),
     };
-    debug_assert_eq!(feature_id_text.len(), feature_id_len);
-    debug_assert_eq!(result_id_text.len(), result_id_len);
-    let Some(feature_id_scan) = cadmpeg_core::decode::u64_from_index(feature_id_len)
-        .checked_add(cadmpeg_core::decode::u64_from_index(key_len))
-    else {
-        return Some(Err(ctx.refuse_codec_limit(
-            "validate Inventor feature result identity",
-            u64::MAX,
-            u64::MAX,
-        )));
-    };
-    let Some(result_id_scan) = cadmpeg_core::decode::u64_from_index(result_id_len)
-        .checked_add(cadmpeg_core::decode::u64_from_index(key_len))
-    else {
-        return Some(Err(ctx.refuse_codec_limit(
-            "validate Inventor feature result identity",
-            u64::MAX,
-            u64::MAX,
-        )));
-    };
-    let Some(identity_scan_work) = feature_id_scan.checked_add(result_id_scan) else {
-        return Some(Err(ctx.refuse_codec_limit(
-            "validate Inventor feature result identity",
-            u64::MAX,
-            u64::MAX,
-        )));
-    };
-    if let Err(error) = ctx.charge_work(
-        identity_scan_work,
+    let Ok(feature_id) = option_result_value!(FeatureId::mint_for_decode(
+        ctx,
+        feature_id_text,
         "validate Inventor feature result identity",
-    ) {
-        return Some(Err(error));
-    }
-    let Ok(feature_id) = FeatureId::mint(feature_id_text) else {
+    )) else {
         return Some(Err(CodecError::malformed(
             "generated Inventor feature identity is invalid",
         )));
     };
-    let Ok(result_id) = FeatureResultTopologyId::mint(result_id_text) else {
+    let Ok(result_id) = option_result_value!(FeatureResultTopologyId::mint_for_decode(
+        ctx,
+        result_id_text,
+        "validate Inventor feature result identity",
+    )) else {
         return Some(Err(CodecError::malformed(
             "generated Inventor feature result identity is invalid",
         )));

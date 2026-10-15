@@ -12,6 +12,7 @@ pub(crate) mod configurations;
 pub(crate) mod constraints;
 pub(crate) mod decode;
 pub(crate) mod dimensions;
+mod edge_references;
 pub(crate) mod edge_resolve;
 pub(crate) mod face_resolve;
 pub(crate) mod feature_project;

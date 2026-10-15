@@ -537,11 +537,10 @@ mod tests {
     fn resolved_datum_header_refusal(
         configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
     ) -> cadmpeg_core::CodecError {
+        let source_bytes_1 = crate::test_support::test_prt::composed_feature_history_prt();
+
         let container = crate::test_support::with_decode_context(|ctx| {
-            crate::container::scan_bytes(
-                ctx,
-                crate::test_support::test_prt::composed_feature_history_prt(),
-            )
+            crate::container::scan_bytes(ctx, &source_bytes_1)
         })
         .expect("composed datum plane container");
         let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
@@ -601,7 +600,7 @@ mod tests {
         );
     }
 
-    fn datum_plane_container() -> crate::container::Container<'static> {
+    fn datum_plane_file() -> Vec<u8> {
         let payload = crate::test_support::test_om::composed_feature_history_payload(
             &[(
                 &[0xff; 4],
@@ -610,21 +609,19 @@ mod tests {
             )],
             &[],
         );
-        crate::test_support::with_decode_context(|ctx| {
-            crate::container::scan_bytes(
-                ctx,
-                crate::test_support::test_prt::prt_with_named_payloads(&[(
-                    "/Root/UG_PART/UG_PART",
-                    payload,
-                )]),
-            )
-        })
-        .unwrap()
+        crate::test_support::test_prt::prt_with_named_payloads(&[(
+            "/Root/UG_PART/UG_PART",
+            payload,
+        )])
     }
 
     #[test]
     fn datum_plane_header_route_preserves_header_only_record() {
-        let container = datum_plane_container();
+        let file = datum_plane_file();
+        let container = crate::test_support::with_decode_context(|ctx| {
+            crate::container::scan_bytes(ctx, &file)
+        })
+        .expect("synthetic container");
         let headers = crate::test_support::with_decode_context(|ctx| {
             let history = crate::native::features::FeatureHistory::new(ctx, &container)?;
             let inputs = crate::native::features::feature_input_blocks(ctx, &history)?;
@@ -639,7 +636,11 @@ mod tests {
 
     #[test]
     fn datum_plane_header_route_refuses_collection_limit() {
-        let container = datum_plane_container();
+        let file = datum_plane_file();
+        let container = crate::test_support::with_decode_context(|ctx| {
+            crate::container::scan_bytes(ctx, &file)
+        })
+        .expect("synthetic container");
 
         crate::test_support::with_decode_context_over(
             &[],
@@ -663,7 +664,11 @@ mod tests {
 
     #[test]
     fn datum_plane_header_route_refuses_retained_limit() {
-        let container = datum_plane_container();
+        let file = datum_plane_file();
+        let container = crate::test_support::with_decode_context(|ctx| {
+            crate::container::scan_bytes(ctx, &file)
+        })
+        .expect("synthetic container");
 
         crate::test_support::with_decode_context_over(
             &[],

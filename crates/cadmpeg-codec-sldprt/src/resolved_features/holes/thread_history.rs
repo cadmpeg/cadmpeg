@@ -8,6 +8,7 @@ use cadmpeg_core::CodecError;
 use std::collections::{BTreeMap, HashMap};
 
 const OPERATION: &str = "enrich SLDPRT cosmetic thread diameters";
+const ID_ENTRIES: &str = "insert SLDPRT thread history ID entry";
 const RECORDS: &str = "index SLDPRT hole profile records";
 
 struct UniqueRecords<'features, 'ctx> {
@@ -53,7 +54,7 @@ impl<'features, 'ctx, 'arena> ThreadHistoryLookups<'features, 'ctx, 'arena> {
         while let Some(feature) = self.context.next_charged(&mut source, OPERATION)? {
             self.storage.with_storage(|| {
                 self.context
-                    .insert_hash_map(&mut entries, feature.id.as_str(), feature, OPERATION)
+                    .insert_hash_map(&mut entries, feature.id.as_str(), feature, ID_ENTRIES)
             })?;
         }
         let found = self

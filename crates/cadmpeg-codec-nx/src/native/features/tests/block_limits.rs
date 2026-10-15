@@ -47,19 +47,12 @@ fn block_construction_refusal(
 
 fn block_payload_input(
     first_block: &[u8],
-) -> (
-    crate::container::Container<'static>,
-    crate::native::features::FeatureBlockConstruction,
-) {
+) -> (Vec<u8>, crate::native::features::FeatureBlockConstruction) {
     let mut store = vec![b"A".as_slice(); 20];
     store[0] = first_block;
     let part = crate::test_support::test_om::composed_feature_history_payload(&[], &store);
     let file =
         crate::test_support::test_prt::prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", part)]);
-    let container = crate::test_support::with_decode_context(move |ctx| {
-        crate::container::scan_bytes(ctx, file)
-    })
-    .expect("block payload container");
     let construction = crate::native::features::FeatureBlockConstruction {
         id: "block-construction#0".into(),
         operation_label: "operation".into(),
@@ -73,13 +66,16 @@ fn block_payload_input(
         terminal_reference: "reference#18".into(),
         terminal_data_block: "nx:om-data-blocks-0:block#19".into(),
     };
-    (container, construction)
+    (file, construction)
 }
 
 fn block_payload_refusal(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> cadmpeg_core::CodecError {
-    let (container, construction) = block_payload_input(b"A");
+    let (file, construction) = block_payload_input(b"A");
+    let container =
+        crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, &file))
+            .expect("synthetic container");
     let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
         crate::native::features::construction_records::feature_block_construction_payloads(
             ctx,
@@ -114,7 +110,10 @@ fn block_field_refusal(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> cadmpeg_core::CodecError {
     let bytes = b"\x03\x08Point1\0\x50\x59\x66\x64\x00\x30\x43\x0c\xcc\xcc\xcc\xcd\x72";
-    let (container, construction) = block_payload_input(bytes);
+    let (file, construction) = block_payload_input(bytes);
+    let container =
+        crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, &file))
+            .expect("synthetic container");
     let payloads = crate::test_support::with_decode_context(|ctx| {
         crate::native::features::construction_records::feature_block_construction_payloads(
             ctx,
@@ -203,7 +202,10 @@ fn block_named_record_refusal(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> cadmpeg_core::CodecError {
     let bytes = b"\x03\x08Point1\0\x50\x59\x66\x64\x00\x30\x43\x0c\xcc\xcc\xcc\xcd\x72";
-    let (container, construction) = block_payload_input(bytes);
+    let (file, construction) = block_payload_input(bytes);
+    let container =
+        crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, &file))
+            .expect("synthetic container");
     let (payloads, names, scalars) = crate::test_support::with_decode_context(|ctx| {
         let payloads =
             crate::native::features::construction_records::feature_block_construction_payloads(
@@ -283,7 +285,10 @@ fn block_point_input() -> (
     Vec<crate::native::features::FeaturePayloadScalar>,
 ) {
     let bytes = b"\x03\x08Point1\0\x50\x59\x66\x64\x00\x30\x43\x0c\xcc\xcc\xcc\xcd\x72";
-    let (container, construction) = block_payload_input(bytes);
+    let (file, construction) = block_payload_input(bytes);
+    let container =
+        crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, &file))
+            .expect("synthetic container");
     crate::test_support::with_decode_context(|ctx| {
         let payloads =
             crate::native::features::construction_records::feature_block_construction_payloads(

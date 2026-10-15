@@ -1929,17 +1929,17 @@ fn decode_mesh_design_records(
     scan: &ContainerScan,
 ) -> Result<Vec<DesignMeshFeature>, CodecError> {
     let mut out = Vec::new();
-    for entry in ctx
-        .admit_iter(&scan.entries, "scan F3D mesh design streams")?
-        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
-    {
+    for entry in ctx.admit_iter(&scan.entries, "scan F3D mesh design streams")? {
+        if !scan.is_design_stream(ctx, entry, ContainerRole::Bulkstream)? {
+            continue;
+        }
         let Some(meta) = metadata_for_bulk_stream(ctx, scan, &entry.name)? else {
             continue;
         };
         let mut asset_for_filename = |filename: &str| mesh_image_asset(ctx, scan, filename);
         let mut features = parse_mesh_design_records(
             ctx,
-            scan.entry_bytes(&entry.name)?,
+            scan.entry_bytes(ctx, &entry.name)?,
             &meta,
             &entry.name,
             &mut asset_for_filename,
@@ -1968,7 +1968,7 @@ fn mesh_image_asset(
 ) -> Result<(String, cadmpeg_ir::assets::AssetId), CodecError> {
     const OPERATION: &str = "find F3D mesh texture image";
     let is_image = |candidate: &ContainerEntry| -> Result<bool, CodecError> {
-        if !scan.is_design_asset_entry(candidate, ContainerRole::Image) {
+        if !scan.is_design_asset_entry(ctx, candidate, ContainerRole::Image)? {
             return Ok(false);
         }
         let basename = entry_basename(ctx, &candidate.name)?;
@@ -2079,12 +2079,12 @@ pub(crate) fn decode_mesh_bodies(
 ) -> Result<MeshDecode, CodecError> {
     let mut features = decode_mesh_design_records(ctx, scan)?;
     let mut outcomes = Vec::new();
-    for entry in ctx
-        .admit_iter(&scan.entries, "scan F3D ParaMesh assets")?
-        .filter(|entry| scan.is_design_asset_entry(entry, ContainerRole::Paramesh))
-    {
+    for entry in ctx.admit_iter(&scan.entries, "scan F3D ParaMesh assets")? {
+        if !scan.is_design_asset_entry(ctx, entry, ContainerRole::Paramesh)? {
+            continue;
+        }
         let container = match scan
-            .entry_bytes(&entry.name)
+            .entry_bytes(ctx, &entry.name)
             .and_then(|bytes| decode_mesh_container(ctx, bytes))
         {
             Ok(container) => container,
@@ -3470,7 +3470,10 @@ mod tests {
 
     #[test]
     fn mesh_feature_identifier_refuses_prefix_and_suffix_limits() {
-        let stream = crate::ids::native_scope("Synthetic/BulkStream.dat");
+        let stream = crate::test_support::with_decode_context(|ctx| {
+            crate::ids::native_scope(ctx, "Synthetic/BulkStream.dat", "retain F3D native scope")
+                .expect("test F3D native identity")
+        });
         for (limit, operation) in [
             (0, "f3d mesh feature ID prefix"),
             (u64_from_index(stream.len()), "f3d mesh feature ID suffix"),
@@ -3492,7 +3495,10 @@ mod tests {
             let id = super::mesh_feature_id_charged(ctx, &stream, 100).unwrap();
             assert_eq!(
                 id,
-                crate::ids::native_design_mesh_feature_id("Synthetic/BulkStream.dat", 100)
+                crate::test_support::with_decode_context(|ctx| {
+                    crate::ids::native_design_mesh_feature_id(ctx, "Synthetic/BulkStream.dat", 100)
+                        .expect("test F3D native identity")
+                })
             );
         });
     }
@@ -3862,7 +3868,13 @@ mod tests {
             attributes: Vec::new(),
         };
         let geometry = || super::split_container(container()).2;
-        let native_scope_bytes = u64_from_index(crate::ids::native_scope("mesh.paramesh").len());
+        let native_scope_bytes = u64_from_index(
+            crate::test_support::with_decode_context(|ctx| {
+                crate::ids::native_scope(ctx, "mesh.paramesh", "retain F3D native scope")
+                    .expect("test F3D native identity")
+            })
+            .len(),
+        );
         for (retained_limit, operation) in [
             (0, "f3d native stream key"),
             (native_scope_bytes, "f3d mesh body identifier"),
@@ -3901,7 +3913,12 @@ mod tests {
                 MeshBody::from_geometry(ctx, "mesh.paramesh", 100, transform, geometry()).unwrap();
             assert_eq!(
                 body.id,
-                crate::ids::native_mesh_body_id("mesh.paramesh", 100)
+                crate::test_support::with_decode_context(|ctx| crate::ids::native_mesh_body_id(
+                    ctx,
+                    "mesh.paramesh",
+                    100
+                )
+                .expect("test F3D native identity"))
             );
             assert_eq!(body.vertices.len(), 2);
             assert_eq!(body.corner_normals.unwrap().len(), 2);
