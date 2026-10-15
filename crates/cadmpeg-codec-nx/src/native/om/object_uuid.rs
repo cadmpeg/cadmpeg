@@ -165,6 +165,7 @@ mod tests {
             .set(IndexedSectionCache::Borrowed {
                 sections: vec![(0, section)],
                 blocks: BTreeMap::new(),
+                bounded_entries: Vec::new(),
             })
             .expect("test cache is empty");
         Container {

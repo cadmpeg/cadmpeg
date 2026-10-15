@@ -26,7 +26,7 @@ use std::sync::OnceLock;
 
 use cadmpeg_container::compound::{CompoundEntry, CompoundPrefixProbe, CompoundSnapshot};
 use cadmpeg_core::bytes::find;
-use cadmpeg_core::decode::{bounded_len, DecodeContext, View};
+use cadmpeg_core::decode::{bounded_len, DecodeContext, View, WorkBudget};
 use cadmpeg_core::CodecError;
 
 use crate::layout::directory_entry as dir_entry;
@@ -432,57 +432,83 @@ impl<'a> Container<'a> {
         Ok(result)
     }
 
+    /// Parse and cache the indexed object-model sections of every entry.
+    fn indexed_section_cache(&self) -> Result<&IndexedSectionCache<'a>, CodecError> {
+        if let Some(cache) = self.indexed_section_layouts.get() {
+            return Ok(cache);
+        }
+        let cache = match &self.data {
+            SourceImage::Borrowed(view) => {
+                let bytes = view.window();
+                let bytes: &'a [u8] = bytes;
+                let (sections, _, bounded_entries) =
+                    parse_indexed_section_cache(bytes, &self.entries, false)?;
+                let mut blocks = BTreeMap::new();
+                for (section_ordinal, (entry_index, section)) in sections.iter().enumerate() {
+                    let Some((control, _, records)) = section.as_offset_only() else {
+                        continue;
+                    };
+                    let entry_offset = self
+                        .entries
+                        .get(*entry_index)
+                        .and_then(crate::container::DirEntry::file_span)
+                        .map_or(0, |(offset, _)| offset);
+                    blocks.insert(
+                        offset_block_key(section_ordinal, 0),
+                        (
+                            control.bytes,
+                            entry_offset + cadmpeg_core::decode::u64_from_index(control.offset),
+                        ),
+                    );
+                    for (ordinal, block) in (1..).zip(records) {
+                        blocks.insert(
+                            offset_block_key(section_ordinal, ordinal),
+                            (
+                                block.bytes,
+                                entry_offset + cadmpeg_core::decode::u64_from_index(block.offset),
+                            ),
+                        );
+                    }
+                }
+                IndexedSectionCache::Borrowed {
+                    sections,
+                    blocks,
+                    bounded_entries,
+                }
+            }
+            SourceImage::Owned(bytes) => {
+                let (_, layouts, bounded_entries) =
+                    parse_indexed_section_cache(bytes, &self.entries, true)?;
+                IndexedSectionCache::Owned {
+                    layouts,
+                    bounded_entries,
+                }
+            }
+        };
+        Ok(self.indexed_section_layouts.get_or_init(|| cache))
+    }
+
+    /// Name the entries whose indexed-section search reached its work bound,
+    /// so their remaining sections were skipped.
+    pub(crate) fn bounded_indexed_om_entries(&self) -> Result<Vec<&DirEntry>, CodecError> {
+        let (IndexedSectionCache::Borrowed {
+            bounded_entries, ..
+        }
+        | IndexedSectionCache::Owned {
+            bounded_entries, ..
+        }) = self.indexed_section_cache()?;
+        Ok(bounded_entries
+            .iter()
+            .filter_map(|index| self.entries.get(*index))
+            .collect())
+    }
+
     /// Locate indexed NX object-model sections in catalogued file entries.
     pub(crate) fn indexed_om_sections(
         &self,
     ) -> Result<Vec<(EntryRef<'_>, crate::om::IndexedSection<'_>)>, CodecError> {
-        let cache = if let Some(cache) = self.indexed_section_layouts.get() {
-            cache
-        } else {
-            let cache = match &self.data {
-                SourceImage::Borrowed(view) => {
-                    let bytes = view.window();
-                    let bytes: &'a [u8] = bytes;
-                    let (sections, _) = parse_indexed_section_cache(bytes, &self.entries, false)?;
-                    let mut blocks = BTreeMap::new();
-                    for (section_ordinal, (entry_index, section)) in sections.iter().enumerate() {
-                        let Some((control, _, records)) = section.as_offset_only() else {
-                            continue;
-                        };
-                        let entry_offset = self
-                            .entries
-                            .get(*entry_index)
-                            .and_then(crate::container::DirEntry::file_span)
-                            .map_or(0, |(offset, _)| offset);
-                        blocks.insert(
-                            offset_block_key(section_ordinal, 0),
-                            (
-                                control.bytes,
-                                entry_offset + cadmpeg_core::decode::u64_from_index(control.offset),
-                            ),
-                        );
-                        for (ordinal, block) in (1..).zip(records) {
-                            blocks.insert(
-                                offset_block_key(section_ordinal, ordinal),
-                                (
-                                    block.bytes,
-                                    entry_offset
-                                        + cadmpeg_core::decode::u64_from_index(block.offset),
-                                ),
-                            );
-                        }
-                    }
-                    IndexedSectionCache::Borrowed { sections, blocks }
-                }
-                SourceImage::Owned(bytes) => {
-                    let (_, layouts) = parse_indexed_section_cache(bytes, &self.entries, true)?;
-                    IndexedSectionCache::Owned { layouts }
-                }
-            };
-            self.indexed_section_layouts.get_or_init(|| cache)
-        };
         let mut result = Vec::new();
-        match cache {
+        match self.indexed_section_cache()? {
             IndexedSectionCache::Borrowed { sections, .. } => {
                 for (entry_index, section) in sections {
                     if let Some(entry) = EntryRef::new(&self.entries, *entry_index) {
@@ -490,7 +516,7 @@ impl<'a> Container<'a> {
                     }
                 }
             }
-            IndexedSectionCache::Owned { layouts } => {
+            IndexedSectionCache::Owned { layouts, .. } => {
                 for (entry_index, layout) in layouts {
                     if let Some(entry) = EntryRef::new(&self.entries, *entry_index) {
                         result.push((entry, layout.materialize()));
@@ -524,25 +550,36 @@ impl<'a> Container<'a> {
             .collect()
     }
 
+    /// Pair each external-reference entry with its in-bounds payload.
+    fn external_reference_payloads(&self) -> Vec<(&DirEntry, &[u8])> {
+        self.entries
+            .iter()
+            .filter(|entry| entry.name.contains("ExternalReferences"))
+            .filter_map(|entry| {
+                let (offset, size) = entry.file_span()?;
+                let offset = usize::try_from(offset).ok()?;
+                let end = offset.checked_add(usize::try_from(size).ok()?)?;
+                Some((entry, self.data.get(offset..end)?))
+            })
+            .collect()
+    }
+
+    /// Name the external-reference entries whose string-table search reached
+    /// its work bound, so their strings and indexed records were skipped.
+    pub(crate) fn bounded_external_reference_entries(&self) -> Vec<&DirEntry> {
+        self.external_reference_payloads()
+            .into_iter()
+            .filter(|(_, payload)| {
+                locate_extref_string_table(payload) == ExtrefStringTableSearch::Bounded
+            })
+            .map(|(entry, _)| entry)
+            .collect()
+    }
+
     /// Extract child-part strings with their owning entry and payload offset.
     pub(crate) fn external_reference_strings(&self) -> Vec<(&DirEntry, usize, String)> {
         let mut out = Vec::new();
-        for entry in &self.entries {
-            if !entry.name.contains("ExternalReferences") {
-                continue;
-            }
-            let Some((offset, size)) = entry.file_span() else {
-                continue;
-            };
-            let (Ok(offset), Ok(size)) = (usize::try_from(offset), usize::try_from(size)) else {
-                continue;
-            };
-            let Some(end) = offset.checked_add(size) else {
-                continue;
-            };
-            let Some(payload) = self.data.get(offset..end) else {
-                continue;
-            };
+        for (entry, payload) in self.external_reference_payloads() {
             let Some((_, strings)) = parse_extref_string_table(payload) else {
                 continue;
             };
@@ -558,22 +595,7 @@ impl<'a> Container<'a> {
     /// Decode indexed EXTREFSTREAM record prefixes and sorted handle lanes.
     pub(crate) fn external_reference_records(&self) -> Vec<(&DirEntry, ExtrefRecord)> {
         let mut out = Vec::new();
-        for entry in &self.entries {
-            if !entry.name.contains("ExternalReferences") {
-                continue;
-            }
-            let Some((offset, size)) = entry.file_span() else {
-                continue;
-            };
-            let (Ok(offset), Ok(size)) = (usize::try_from(offset), usize::try_from(size)) else {
-                continue;
-            };
-            let Some(end) = offset.checked_add(size) else {
-                continue;
-            };
-            let Some(payload) = self.data.get(offset..end) else {
-                continue;
-            };
+        for (entry, payload) in self.external_reference_payloads() {
             let records = parse_extref_records(payload);
             out.extend(records.into_iter().map(|record| (entry, record)));
         }
@@ -585,22 +607,7 @@ impl<'a> Container<'a> {
         &self,
     ) -> Vec<(&DirEntry, ExtrefIndexedRecord)> {
         let mut out = Vec::new();
-        for entry in &self.entries {
-            if !entry.name.contains("ExternalReferences") {
-                continue;
-            }
-            let Some((offset, size)) = entry.file_span() else {
-                continue;
-            };
-            let (Ok(offset), Ok(size)) = (usize::try_from(offset), usize::try_from(size)) else {
-                continue;
-            };
-            let Some(end) = offset.checked_add(size) else {
-                continue;
-            };
-            let Some(payload) = self.data.get(offset..end) else {
-                continue;
-            };
+        for (entry, payload) in self.external_reference_payloads() {
             let Some(records) = parse_extref_record_index(payload) else {
                 continue;
             };
@@ -701,8 +708,37 @@ pub(crate) struct ExtrefIndexedRecord {
     pub(crate) byte_len: usize,
 }
 
-fn locate_extref_string_table(payload: &[u8]) -> Option<(usize, usize, usize)> {
-    let last_marker = payload.len().checked_sub(4)?;
+/// Bytes the external-reference string-table search may validate in one
+/// payload, counting the length prefix and text of every candidate entry.
+/// Candidates overlap, so an unbounded search is quadratic in the payload. A
+/// table written by NX ends at the payload end and is validated once.
+const MAX_EXTREF_STRING_TABLE_SEARCH_WORK: usize = 1 << 24;
+
+/// Outcome of the backward search for the external-reference string table.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ExtrefStringTableSearch {
+    /// Marker offset, entry count and first entry offset of the table.
+    Found(usize, usize, usize),
+    /// No candidate marker frames a complete table.
+    Absent,
+    /// The search spent [`MAX_EXTREF_STRING_TABLE_SEARCH_WORK`] first.
+    Bounded,
+}
+
+impl ExtrefStringTableSearch {
+    fn found(self) -> Option<(usize, usize, usize)> {
+        match self {
+            Self::Found(marker, count, start) => Some((marker, count, start)),
+            Self::Absent | Self::Bounded => None,
+        }
+    }
+}
+
+fn locate_extref_string_table(payload: &[u8]) -> ExtrefStringTableSearch {
+    let budget = WorkBudget::new(MAX_EXTREF_STRING_TABLE_SEARCH_WORK);
+    let Some(last_marker) = payload.len().checked_sub(4) else {
+        return ExtrefStringTableSearch::Absent;
+    };
     for marker in (0..last_marker).rev() {
         if payload[marker] != 1 {
             continue;
@@ -720,33 +756,43 @@ fn locate_extref_string_table(payload: &[u8]) -> Option<(usize, usize, usize)> {
         let Some(count) = bounded_len(u64::from(count), 3, remaining) else {
             continue;
         };
-        let valid = (|| -> Option<usize> {
-            let mut pos = start;
-            for _ in 0..count {
+        let mut pos = start;
+        let mut valid = true;
+        for _ in 0..count {
+            let entry = (|| {
                 let length = View::u16_le_at(payload, pos).map(usize::from)?;
                 let string_offset = pos.checked_add(2)?;
                 let end = string_offset.checked_add(length)?;
-                let raw = payload.get(string_offset..end)?;
-                let value = std::str::from_utf8(raw).ok()?;
-                if value.is_empty() || value.chars().any(char::is_control) {
-                    return None;
-                }
-                pos = end;
+                Some((end, payload.get(string_offset..end)?))
+            })();
+            let Some((end, raw)) = entry else {
+                valid = false;
+                break;
+            };
+            if !budget.charge_by(end - pos) {
+                return ExtrefStringTableSearch::Bounded;
             }
-            Some(pos)
-        })();
-        if valid != Some(payload.len()) {
-            continue;
+            let Ok(value) = std::str::from_utf8(raw) else {
+                valid = false;
+                break;
+            };
+            if value.is_empty() || value.chars().any(char::is_control) {
+                valid = false;
+                break;
+            }
+            pos = end;
         }
-        return Some((marker, count, start));
+        if valid && pos == payload.len() {
+            return ExtrefStringTableSearch::Found(marker, count, start);
+        }
     }
-    None
+    ExtrefStringTableSearch::Absent
 }
 
 type ExtrefStringTable = (usize, Vec<(usize, String)>);
 
 fn parse_extref_string_table(payload: &[u8]) -> Option<ExtrefStringTable> {
-    let (marker, count, start) = locate_extref_string_table(payload)?;
+    let (marker, count, start) = locate_extref_string_table(payload).found()?;
     let mut out = Vec::new();
     let mut pos = start;
     for _ in 0..count {
@@ -826,7 +872,7 @@ fn parse_extref_record_index(payload: &[u8]) -> Option<Vec<ExtrefIndexedRecord>>
     if !payload.starts_with(b"EXTREFSTREAM") || payload.get(24) != Some(&0) {
         return None;
     }
-    let (string_table, _, _) = locate_extref_string_table(payload)?;
+    let (string_table, _, _) = locate_extref_string_table(payload).found()?;
     let mut directory = Vec::new();
     let mut record_ids = std::collections::BTreeSet::new();
     let mut at = 25usize;
@@ -970,9 +1016,13 @@ pub(crate) enum IndexedSectionCache<'a> {
     Borrowed {
         sections: Vec<(usize, crate::om::IndexedSection<'a>)>,
         blocks: BTreeMap<String, (&'a [u8], u64)>,
+        /// Entries whose section search reached its work bound.
+        bounded_entries: Vec<usize>,
     },
     Owned {
         layouts: Vec<(usize, crate::om::cache::IndexedSectionLayout)>,
+        /// Entries whose section search reached its work bound.
+        bounded_entries: Vec<usize>,
     },
 }
 
@@ -1046,9 +1096,10 @@ fn parse_indexed_section_cache<'bytes>(
     bytes: &'bytes [u8],
     entries: &[DirEntry],
     retain_layouts: bool,
-) -> Result<(IndexedSections<'bytes>, IndexedSectionLayouts), CodecError> {
+) -> Result<(IndexedSections<'bytes>, IndexedSectionLayouts, Vec<usize>), CodecError> {
     let mut sections = Vec::new();
     let mut layouts = Vec::new();
+    let mut bounded_entries = Vec::new();
     let mut seen = std::collections::BTreeSet::new();
     for (entry_index, entry) in entries.iter().enumerate() {
         let Some((offset, size)) = entry.file_span() else {
@@ -1063,7 +1114,11 @@ fn parse_indexed_section_cache<'bytes>(
         let Some(payload) = bytes.get(offset..end) else {
             continue;
         };
-        let parsed = crate::om::indexed_sections(payload)?;
+        let budget = WorkBudget::new(crate::om::MAX_INDEXED_SECTION_REGISTRY_WORK);
+        let parsed = crate::om::indexed_sections(payload, &budget)?;
+        if budget.exhausted() {
+            bounded_entries.push(entry_index);
+        }
         if parsed.is_empty() {
             continue;
         }
@@ -1087,7 +1142,7 @@ fn parse_indexed_section_cache<'bytes>(
             sections.push((entry_index, section));
         }
     }
-    Ok((sections, layouts))
+    Ok((sections, layouts, bounded_entries))
 }
 
 /// Return whether `prefix` starts with [`MAGIC`].

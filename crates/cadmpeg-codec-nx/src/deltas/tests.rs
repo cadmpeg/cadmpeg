@@ -77,7 +77,7 @@ fn deltas_walks_complete_status_prefixed_entity_51_records() {
     assert_eq!(census.full_counts()["ENTITY_51"], 1);
     assert_eq!(census.bytes_decoded(), stream.len());
     let residual = crate::deltas::semantic_residual(&stream).unwrap();
-    let retained = crate::parasolid::entity_51_records(&residual).records;
+    let retained = crate::parasolid::entity_51_records(&residual);
     assert_eq!(retained.len(), 1);
     assert_eq!(u32::from(retained[0].xmt), 10);
     assert!(residual[..stream.len()].iter().all(|byte| *byte == 0xff));

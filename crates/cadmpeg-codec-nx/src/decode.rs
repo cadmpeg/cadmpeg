@@ -164,6 +164,20 @@ fn report_untransferred_streams(
                 )));
         }
     }
+    for entry in scan.container.bounded_external_reference_entries() {
+        body.losses.push(NxLossCode::SourceScanBounded.note(format!(
+            "The external-reference string-table search in {} reached its work bound; \
+             its child-part strings and indexed records were skipped.",
+            entry.name
+        )));
+    }
+    for entry in scan.container.bounded_indexed_om_entries()? {
+        body.losses.push(NxLossCode::SourceScanBounded.note(format!(
+            "The indexed object-model section search in {} reached its work bound; \
+             its remaining sections were skipped.",
+            entry.name
+        )));
+    }
     for (index, stream) in scan.streams.iter().enumerate() {
         if !stream.kind().is_parasolid() {
             body.losses

@@ -1154,42 +1154,40 @@ fn jt_scene_binding_transfers_visible_triangles_in_document_units() {
         source_offset: 106,
     };
 
+    let inputs = super::DisplayJtTessellationInputs {
+        meshes: &[mesh],
+        coordinates: &[coordinates],
+        normals: &[normals],
+        colors: &[colors],
+        texture_coordinates: &[texture_coordinates],
+        vertex_flags: &[vertex_flags],
+        vertex_headers: &[vertex_header],
+        coordinate_headers: &[header],
+        shape_elements: &[shape_element],
+        bindings: &[binding],
+        shape_nodes: &[node],
+        base_nodes: &[
+            base,
+            instance_base,
+            second_instance_base,
+            group_base,
+            ignored_group_base,
+        ],
+        group_nodes: &[group, ignored_group],
+        instance_nodes: &[instance, second_instance],
+        transforms: &[transform],
+        materials: &[material],
+        compressed_elements: &[
+            compressed,
+            instance_element,
+            second_instance_element,
+            group_element,
+            ignored_group_element,
+            material_element,
+        ],
+    };
     let tessellations = crate::test_support::with_decode_context(|ctx| {
-        super::display_jt_tessellations(
-            ctx,
-            &super::DisplayJtTessellationInputs {
-                meshes: &[mesh],
-                coordinates: &[coordinates],
-                normals: &[normals],
-                colors: &[colors],
-                texture_coordinates: &[texture_coordinates],
-                vertex_flags: &[vertex_flags],
-                vertex_headers: &[vertex_header],
-                coordinate_headers: &[header],
-                shape_elements: &[shape_element],
-                bindings: &[binding],
-                shape_nodes: &[node],
-                base_nodes: &[
-                    base,
-                    instance_base,
-                    second_instance_base,
-                    group_base,
-                    ignored_group_base,
-                ],
-                group_nodes: &[group, ignored_group],
-                instance_nodes: &[instance, second_instance],
-                transforms: &[transform],
-                materials: &[material],
-                compressed_elements: &[
-                    compressed,
-                    instance_element,
-                    second_instance_element,
-                    group_element,
-                    ignored_group_element,
-                    material_element,
-                ],
-            },
-        )
+        super::display_jt_tessellations(ctx, &inputs)
     })
     .expect("complete scene binding");
     assert_eq!(tessellations.len(), 2);
@@ -1272,6 +1270,38 @@ fn jt_scene_binding_transfers_visible_triangles_in_document_units() {
         .concat()
     );
     assert_eq!(tessellations[0].1, 120);
+
+    // Each node path retains its own copy of the mesh lanes.
+    let mesh = &tessellations[0].0;
+    let copy = mesh.vertex_count() * std::mem::size_of::<cadmpeg_ir::features::FinitePoint3>()
+        + mesh.triangle_count() * std::mem::size_of::<[u32; 3]>()
+        + mesh.vertex_normals().len() * std::mem::size_of::<cadmpeg_ir::features::FiniteVector3>()
+        + mesh
+            .channels()
+            .iter()
+            .map(|channel| channel.data().len())
+            .sum::<usize>();
+    let both_copies = cadmpeg_core::decode::u64_from_index(2 * copy);
+    for (limit, admitted) in [(both_copies, true), (both_copies - 1, false)] {
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| policy.limits.max_retained_bytes = limit,
+            |ctx| match super::display_jt_tessellations(ctx, &inputs) {
+                Ok(tessellations) => {
+                    assert!(admitted);
+                    assert_eq!(tessellations.len(), 2);
+                }
+                Err(error) => {
+                    assert!(!admitted);
+                    assert!(
+                        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                            && limit.operation == "retain NX JT tessellation")
+                    );
+                }
+            },
+        );
+    }
 }
 
 #[test]

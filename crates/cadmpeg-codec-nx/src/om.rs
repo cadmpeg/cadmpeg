@@ -43,7 +43,7 @@ use std::num::NonZeroU8;
 use std::sync::Arc;
 
 use crate::printable_string::PrintableString;
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{DecodeContext, View, WorkBudget};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
 
@@ -3781,7 +3781,27 @@ impl<'a> IndexedCandidate<'a> {
             IndexedCandidateKind::OffsetOnly(index) => index.source(),
         }
     }
+
+    fn base(&self) -> usize {
+        match &self.kind {
+            IndexedCandidateKind::Fixed(index) => index.base(),
+            IndexedCandidateKind::OffsetOnly(_) => 0,
+        }
+    }
+
+    /// Bytes the type and field registry scans read before the entity index;
+    /// an entity index before the base leaves no registry to scan.
+    fn registry_span(&self) -> Option<usize> {
+        self.start().checked_sub(self.base())
+    }
 }
+
+/// Registry bytes [`indexed_sections`] may scan while materializing the
+/// candidates of one payload. Every candidate scans the bytes between its base
+/// and its entity index, and candidates of one payload share those bytes, so
+/// the total is quadratic in the payload without a bound. The sections NX
+/// writes scan each payload byte about once.
+pub(crate) const MAX_INDEXED_SECTION_REGISTRY_WORK: usize = 1 << 28;
 
 fn product_record_range_at(bytes: &[u8], offset: usize) -> Option<ProductRecordRange> {
     let suffix = bytes.get(offset..)?;
@@ -3849,10 +3869,7 @@ fn select_outer_indexed_candidates(
 fn materialize_indexed_candidate(candidate: IndexedCandidate<'_>) -> IndexedSection<'_> {
     let bytes = candidate.source();
     let entity_index_offset = candidate.start();
-    let base = match &candidate.kind {
-        IndexedCandidateKind::Fixed(index) => index.base(),
-        IndexedCandidateKind::OffsetOnly(_) => 0,
-    };
+    let base = candidate.base();
     let type_registry = registry::type_registry(bytes, base, entity_index_offset);
     let fields =
         registry::all_field_definitions(bytes, type_registry.field_start, entity_index_offset);
@@ -3902,8 +3919,12 @@ fn materialize_indexed_candidate(candidate: IndexedCandidate<'_>) -> IndexedSect
 /// A candidate is accepted only when the arrays are adjacent, the index is
 /// monotone, its first offset is zero, its second offset self-anchors the first
 /// entity exactly at the end of the object-id table, and that entity carries the
-/// NX root marker.
-pub(crate) fn indexed_sections(bytes: &[u8]) -> Result<Vec<IndexedSection<'_>>, CodecError> {
+/// NX root marker. Each candidate charges its registry span to `budget`; once
+/// the budget is exhausted the remaining candidates are skipped.
+pub(crate) fn indexed_sections<'a>(
+    bytes: &'a [u8],
+    budget: &WorkBudget<'_>,
+) -> Result<Vec<IndexedSection<'a>>, CodecError> {
     let mut candidates = Vec::new();
     let mut seen_record_starts = BTreeSet::new();
     let mut product_record_ranges = Vec::new();
@@ -4046,6 +4067,12 @@ pub(crate) fn indexed_sections(bytes: &[u8]) -> Result<Vec<IndexedSection<'_>>, 
     }
     let mut sections = Vec::new();
     for candidate in select_outer_indexed_candidates(candidates) {
+        if candidate
+            .registry_span()
+            .is_some_and(|span| !budget.charge_by(span))
+        {
+            break;
+        }
         sections.push(materialize_indexed_candidate(candidate));
     }
     Ok(sections)

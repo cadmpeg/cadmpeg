@@ -60,3 +60,46 @@ fn decoded_route_refuses_nesting_limit() {
             if limit.dimension == ResourceDimension::RecursionDepth
     ));
 }
+
+#[test]
+fn bounded_indexed_section_search_reports_a_scan_loss() {
+    let file = crate::test_support::test_prt::prt_with_named_payloads(&[(
+        "/Root/UG_PART/UG_PART",
+        crate::test_support::test_om::indexed_om_section(),
+    )]);
+    let container = crate::container::scan_bytes(file.as_slice()).unwrap();
+    container
+        .indexed_section_layouts
+        .set(crate::container::IndexedSectionCache::Borrowed {
+            sections: Vec::new(),
+            blocks: std::collections::BTreeMap::new(),
+            bounded_entries: vec![0],
+        })
+        .expect("the cache is empty");
+    let scan = super::super::Scan {
+        container,
+        streams: Vec::new(),
+    };
+    let mut body = cadmpeg_ir::codec::DecodeBody {
+        transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(false),
+        coverage: cadmpeg_ir::report::decode::Coverage::default(),
+        losses: Vec::new(),
+        notes: Vec::new(),
+        transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
+    };
+
+    super::super::report_untransferred_streams(
+        &scan,
+        &mut body,
+        crate::native::TypedNative::Available,
+    )
+    .unwrap();
+
+    let bounded = body
+        .losses
+        .iter()
+        .filter(|loss| loss.code == crate::loss::NxLossCode::SourceScanBounded.kind())
+        .collect::<Vec<_>>();
+    assert_eq!(bounded.len(), 1);
+    assert!(bounded[0].message.contains("/Root/UG_PART/UG_PART"));
+}
