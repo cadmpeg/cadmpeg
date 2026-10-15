@@ -8650,7 +8650,7 @@ impl CatiaNative {
             &arena,
             &cadmpeg_core::decode::DecodePolicy::service(),
         )
-        .expect("test record source fits the service profile");
+        .expect("build the decode context");
         let consolidated_records =
             crate::wire::records::consolidated_records_in_ranges(bytes, ranges.iter().cloned());
         Self::decode_with_records(
@@ -8659,7 +8659,7 @@ impl CatiaNative {
             &consolidated_records,
             &mut crate::nurbs::LaneRefusals::new(),
         )
-        .expect("test native records fit the service profile")
+        .expect("decode the records")
     }
 
     /// Decode CATIA-native records from descriptor-scoped logical sources.

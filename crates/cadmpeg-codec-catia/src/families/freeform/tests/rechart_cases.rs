@@ -295,7 +295,7 @@ fn a_revolution_frame_admitted_when_read_converts_to_a_torus_without_a_second_ax
             admission,
         )
     })
-    .expect("service limits admit freeform model records");
+    .expect("append consolidated revolutions");
     let [binding] = bindings.as_slice() else {
         panic!("the admitted revolution converts to one torus");
     };
@@ -344,7 +344,7 @@ fn a_torus_reference_tilted_off_the_axis_by_rounding_keeps_the_perpendicularity_
                 admission,
             )
         })
-        .expect("service limits admit freeform model records")
+        .expect("append consolidated revolutions")
     };
     assert!(convert(1.0 + deviation).is_empty());
     let bindings = convert(1.0);
@@ -530,7 +530,7 @@ fn b2_sphere_stream_yields_one_freeform_surface_carrier() {
     let records = crate::wire::records::consolidated_records(&bytes);
     let service =
         freeform_surface_carriers(&bytes, &records, &mut crate::nurbs::LaneRefusals::new())
-            .expect("service profile admits sphere carrier");
+            .expect("compute the freeform surface carriers");
     assert_eq!(service.len(), 1);
 }
 
@@ -550,6 +550,6 @@ fn freeform_fallback_decodes_an_outer_body_sphere() {
             &mut crate::nurbs::LaneRefusals::new(),
         )
     })
-    .expect("service budget");
+    .expect("decode freeform surfaces");
     assert!(service.is_some());
 }

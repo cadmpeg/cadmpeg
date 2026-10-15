@@ -945,7 +945,7 @@ mod route_tests {
                 [crate::container::OUTER_MAGIC.as_slice(), &[0; 8]].concat(),
             )
         })
-        .expect("service resource budget");
+        .expect("scan the container");
         let ir = CadIr::empty();
         let counts = super::GeometryReportCounts {
             face_local_freeform: 0,
@@ -1040,7 +1040,7 @@ mod route_tests {
                 },
             )
         })
-        .expect("circle evaluation resources")
+        .expect("compute the circle parameter range from surface branch")
         .expect("tiny circle branch");
         assert_eq!(range, [0.0, sweep]);
     }
@@ -1085,7 +1085,7 @@ mod route_tests {
                 },
             )
         })
-        .expect("circle evaluation resources")
+        .expect("compute the circle parameter range from surface branch")
         .is_none());
         assert!(crate::test_support::with_service_context(|ctx| {
             circle_parameter_range_from_surface_branch(
@@ -1103,7 +1103,7 @@ mod route_tests {
                 },
             )
         })
-        .expect("circle evaluation resources")
+        .expect("compute the circle parameter range from surface branch")
         .is_none());
         assert!(crate::test_support::with_service_context(|ctx| {
             circle_parameter_range_from_surface_branch(
@@ -1121,7 +1121,7 @@ mod route_tests {
                 },
             )
         })
-        .expect("circle evaluation resources")
+        .expect("compute the circle parameter range from surface branch")
         .is_none());
     }
 
@@ -1153,7 +1153,7 @@ mod route_tests {
             &mut valid,
             &[]
         )
-        .expect("resource allocation did not fail"));
+        .expect("check that the neutral model is admissible"));
 
         let mut invalid =
             cadmpeg_test_support::admissibility::rejected_missing_region("catia:test")
@@ -1163,7 +1163,7 @@ mod route_tests {
             &mut invalid,
             &[]
         )
-        .expect("resource allocation did not fail"));
+        .expect("check that the neutral model is admissible"));
     }
 
     /// Phase 5 freeze: shared builders must match the CATIA admission gate.
@@ -1175,7 +1175,7 @@ mod route_tests {
             &mut accepted,
             &[]
         )
-        .expect("resource allocation did not fail"));
+        .expect("check that the neutral model is admissible"));
         let mut rejected =
             cadmpeg_test_support::admissibility::rejected_missing_region("catia:test")
                 .expect("fixture identities are valid");
@@ -1184,7 +1184,7 @@ mod route_tests {
             &mut rejected,
             &[]
         )
-        .expect("resource allocation did not fail"));
+        .expect("check that the neutral model is admissible"));
     }
 
     /// Decimal object-id keys reach the gate in native traversal order, in which
@@ -1212,7 +1212,7 @@ mod route_tests {
             std::iter::empty(),
             Vec::new(),
         )
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
         assert!(unsorted
             .findings
             .iter()
@@ -1223,7 +1223,7 @@ mod route_tests {
             &mut ir,
             &[],
         )
-        .expect("resource allocation did not fail");
+        .expect("check that the neutral model is admissible");
 
         assert_eq!(
             ir.model
@@ -1238,7 +1238,7 @@ mod route_tests {
             std::iter::empty(),
             Vec::new(),
         )
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
         assert!(!sorted
             .findings
             .iter()
@@ -1286,7 +1286,7 @@ mod route_tests {
             &mut ir,
             &unknowns
         )
-        .expect("resource allocation did not fail"));
+        .expect("check that the neutral model is admissible"));
     }
 
     #[test]
@@ -1412,7 +1412,7 @@ mod route_tests {
                 format_args!("record:{:08x}", 7),
                 cadmpeg_ir::Exactness::Derived,
             )
-            .expect("service profile admits annotation");
+            .expect("annotate the entity");
             builder.build()
         };
         let note = &annotations.provenance["catia:test:curve#0"];
@@ -1429,7 +1429,7 @@ mod route_tests {
                 crate::test_support::test_container::standard_catpart(),
             )
         })
-        .expect("service profile admits container scan");
+        .expect("scan the container");
         let report = super::build_container_report(&scan);
         assert_eq!(report.losses.len(), 2);
         assert!(report.losses[0]
@@ -1461,7 +1461,7 @@ mod route_tests {
             Ok::<_, cadmpeg_core::CodecError>(payload.links().to_vec())
         };
         assert_eq!(
-            crate::test_support::with_service_context(run).expect("service resource budget"),
+            crate::test_support::with_service_context(run).expect("link payload carriers"),
             [id.as_str()]
         );
     }
@@ -1490,20 +1490,18 @@ mod route_tests {
                 crate::test_support::test_container::standard_catpart(),
             )
         })
-        .expect("service budget admits container scan");
-        let matched =
-            crate::dialect::classify(&scan).expect("service budget admits dialect classification");
-        let source = source_meta(&scan, &matched).expect("service budget admits source metadata");
+        .expect("scan the container");
+        let matched = crate::dialect::classify(&scan).expect("classify the dialect");
+        let source = source_meta(&scan, &matched).expect("build the source metadata");
         assert_eq!(source.attributes["file_size"], scan.data.len().to_string());
     }
 
     #[test]
     fn cgm_source_ids_join_the_kind_and_the_formatted_key() {
-        let source =
-            super::cgm_source("surface", 0x1234).expect("service profile admits source identity");
+        let source = super::cgm_source("surface", 0x1234).expect("build the CGM source object");
         assert_eq!(source.object_id.as_str(), "cgm-surface:001234");
         let key = super::cgm_source_key("frame", format_args!("{:010}", 23))
-            .expect("service profile admits frame identity");
+            .expect("build the CGM source key");
         assert_eq!(key.object_id.as_str(), "cgm-frame:0000000023");
     }
 }

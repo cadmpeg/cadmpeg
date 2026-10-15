@@ -264,7 +264,7 @@ fn referenced_edge_vertex_references_excludes_unreferenced_allocations() {
             &mut crate::nurbs::LaneRefusals::new(),
         )
     })
-    .expect("service resource budget")
+    .expect("parse the topology walk")
     .expect("B5 graph");
     assert!(graph.complete);
     graph.edges.insert(
@@ -309,7 +309,7 @@ fn duplicate_face_loop_ownership_does_not_close_the_graph() {
     let graph = crate::test_support::with_service_context(|ctx| {
         parse(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new())
     })
-    .expect("service resource budget")
+    .expect("parse the topology walk")
     .expect("structurally parseable B5 graph");
 
     assert_eq!(graph.faces.len(), 2);

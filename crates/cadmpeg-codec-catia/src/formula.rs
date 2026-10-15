@@ -3728,7 +3728,7 @@ fn evaluate_formula_expression<'a>(
     bindings: &BTreeMap<&'a str, EvaluatedFormulaValue>,
 ) -> Option<EvaluatedFormulaValue> {
     crate::test_support::with_service_context(|ctx| parse_formula_expression(ctx, source, bindings))
-        .expect("service profile admits formula parser fixture")
+        .expect("parse formula expression")
 }
 
 #[cfg(test)]
@@ -3740,7 +3740,7 @@ fn evaluate_formula_expression_with_mode<'a>(
     crate::test_support::with_service_context(|ctx| {
         parse_formula_expression_with_mode(ctx, source, bindings, evaluate)
     })
-    .expect("service profile admits formula parser fixture")
+    .expect("parse formula expression with mode")
 }
 
 fn static_formula_value(parameter_type: FormulaParameterType) -> EvaluatedFormulaValue {
@@ -4651,8 +4651,7 @@ mod parser_tests {
             cadmpeg_core::nonblank_literal!("source"),
             "value".to_string(),
         );
-        let admitted = super::copy_design_parameter(&parameter)
-            .expect("service profile admits parameter copy");
+        let admitted = super::copy_design_parameter(&parameter).expect("copy design parameter");
         assert_eq!(admitted, parameter);
     }
 
@@ -4665,14 +4664,14 @@ mod parser_tests {
             &mut std::collections::BTreeSet::new(),
             candidate,
         )
-        .expect("service profile admits candidate");
+        .expect("merge formula parameter candidate");
         assert_eq!(candidates.len(), 1);
     }
 
     #[test]
     fn parameter_properties_record_value_type_and_binding() {
         let properties = super::parameter_properties("String", Some("source-binding"))
-            .expect("service profile admits properties");
+            .expect("compute the parameter properties");
         assert_eq!(properties["value_type"], "String");
         assert_eq!(properties["catia_binding"], "source-binding");
     }

@@ -36,7 +36,7 @@ fn decode(bytes: Vec<u8>) -> EditableDecodeResult {
 
 fn assert_valid(result: &EditableDecodeResult) {
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
     assert_every_entity_has_v1_annotation(result.ir(), &result.source_fidelity().annotations);
     assert!(result.ir().native.namespace("catia").is_some());
@@ -117,7 +117,7 @@ fn fbb_only_pipeline_transfers_carriers_without_inventing_topology() {
     let scan = crate::test_support::with_service_context(|ctx| {
         crate::container::scan_bytes(ctx, bytes.clone())
     })
-    .expect("service resource budget");
+    .expect("scan the container");
     assert_eq!(scan.variant, Variant::FbbOnly);
     assert!(scan.census.fbb_runs > 0);
     assert_eq!(scan.census.edge_delimiters, 0);
@@ -138,7 +138,7 @@ fn fbb_only_pipeline_attaches_complete_boundary_topology() {
     let scan = crate::test_support::with_service_context(|ctx| {
         crate::container::scan_bytes(ctx, bytes.clone())
     })
-    .expect("service resource budget");
+    .expect("scan the container");
     assert_eq!(scan.variant, Variant::FbbOnly);
     assert_eq!(scan.census.edge_delimiters, 0);
 
@@ -173,7 +173,7 @@ fn fbb_only_pipeline_solves_an_unmatched_complete_run_with_mesh_incidence() {
     assert!(crate::test_support::with_service_context(|ctx| {
         crate::families::standard::topology::parse_fbb(ctx, &topology)
     })
-    .expect("service resource budget")
+    .expect("parse FBB")
     .is_none());
 
     let result = decode(fbb_only_quad_unmatched_edge_catpart());
@@ -205,7 +205,7 @@ fn zero_entity_pipeline_binds_parametric_support_without_a_cached_curve() {
             ctx,
             bytes.clone()
         ))
-        .expect("service resource budget")
+        .expect("scan the container")
         .variant,
         Variant::ZeroEntity
     );
@@ -240,7 +240,7 @@ fn e5_pipeline_uses_the_coherent_record_stream_over_the_nested_spine() {
     let scan = crate::test_support::with_service_context(|ctx| {
         crate::container::scan_bytes(ctx, bytes.clone())
     })
-    .expect("service resource budget");
+    .expect("scan the container");
     assert_eq!(scan.variant, Variant::E5Stream);
     assert!(scan.e5_record_range.is_some());
 
@@ -262,7 +262,7 @@ fn float_packed_pipeline_recovers_the_external_a8_control_grid() {
     let scan = crate::test_support::with_service_context(|ctx| {
         crate::container::scan_bytes(ctx, bytes.clone())
     })
-    .expect("service resource budget");
+    .expect("scan the container");
     assert_eq!(scan.variant, Variant::FloatPackedInnerNoFbb);
 
     let result = decode(bytes);
@@ -348,7 +348,7 @@ fn container_only_raw_payload_refuses_retained_bytes_before_copy() {
     let retained_len = crate::test_support::with_service_context(|ctx| {
         crate::container::scan_bytes(ctx, bytes.clone())
     })
-    .expect("service resource budget")
+    .expect("scan the container")
     .brep
     .expect("standard B-rep")
     .len();
@@ -402,7 +402,7 @@ fn full_route_raw_payload_refuses_retained_bytes_before_copy() {
     let retained_len = crate::test_support::with_service_context(|ctx| {
         crate::container::scan_bytes(ctx, bytes.clone())
     })
-    .expect("service resource budget")
+    .expect("scan the container")
     .brep
     .expect("standard B-rep")
     .len();

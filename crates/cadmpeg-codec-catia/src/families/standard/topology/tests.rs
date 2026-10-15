@@ -60,7 +60,7 @@ fn body_kinds_rejects_an_overflowing_face_group_sum() {
     assert_eq!(
         topology
             .body_kinds(&[usize::MAX, 1])
-            .expect("service resource budget"),
+            .expect("compute the body kinds"),
         None
     );
 }
@@ -68,10 +68,10 @@ fn body_kinds_rejects_an_overflowing_face_group_sum() {
 #[test]
 fn incidence_cycles_rejects_duplicate_and_out_of_range_edges() {
     assert!(incidence_cycles(&[0, 0], &[[0, 0]])
-        .expect("service resource budget")
+        .expect("compute the incidence cycles")
         .is_none());
     assert!(incidence_cycles(&[1], &[[0, 0]])
-        .expect("service resource budget")
+        .expect("compute the incidence cycles")
         .is_none());
 }
 
@@ -86,7 +86,7 @@ fn boundary_orientation_constraints_retain_the_flip_assignment() {
         crate::test_support::with_service_context(|ctx| {
             solve_boundary_orientation_constraints(ctx, 4, &edge_uses, false)
         })
-        .expect("service resource budget"),
+        .expect("solve boundary orientation constraints"),
         Some(vec![false, true, true, false])
     );
 }
@@ -167,7 +167,7 @@ fn ambiguous_duplicate_faces_stay_unassigned_with_an_empty_mesh() {
     assert!(crate::test_support::with_service_context(|ctx| {
         ambiguous_duplicate_face_fixture(ctx, Some(&[0, 1, 2, 3]), Some(&[]))
     })
-    .expect("service resource budget")
+    .expect("assign the duplicate faces")
     .is_none());
 }
 
@@ -273,7 +273,8 @@ fn duplicate_face_assignments_with_different_slots_are_not_equivalent() {
             [&[0, 0], &[0, 1]],
         )
     };
-    assert!(!crate::test_support::with_service_context(run).expect("service resource budget"));
+    assert!(!crate::test_support::with_service_context(run)
+        .expect("check duplicate face assignments equivalent"));
 }
 
 #[test]
@@ -289,7 +290,7 @@ fn duplicate_face_slots_keep_an_already_complete_assignment() {
         complete_duplicate_face_slots(ctx, &rows, &[[0, 1]], &[[0, 1]], 2, None, None)
     };
     assert_eq!(
-        crate::test_support::with_service_context(run).expect("service resource budget"),
+        crate::test_support::with_service_context(run).expect("complete duplicate face slots"),
         Some(vec![[0, 1]])
     );
 }
@@ -309,7 +310,7 @@ fn incidence_reconstructs_a_closed_edge_shared_by_two_faces() {
         reconstruct_incidence(ctx, rows(), vec![[1.0, 0.0, 0.0]], &[[0, 1]], &[[0, 0]], 2)
     };
     assert!(crate::test_support::with_service_context(run)
-        .expect("service resource budget")
+        .expect("reconstruct incidence")
         .is_some());
 }
 
@@ -345,7 +346,7 @@ fn edge_vertices_follow_the_coedge_direction() {
     assert_eq!(
         topology
             .edge_vertices(&ctx)
-            .expect("service resource budget"),
+            .expect("compute the edge vertices"),
         Some(vec![[0, 1]])
     );
 }
@@ -387,7 +388,7 @@ fn edge_vertices_reject_an_edge_row_without_a_coedge() {
     };
     assert!(
         crate::test_support::with_service_context(|ctx| topology.edge_vertices(ctx))
-            .expect("service resource budget")
+            .expect("compute the edge vertices")
             .is_none()
     );
 }
@@ -443,12 +444,12 @@ fn vertex_points_bind_by_endpoint_pairs_and_reject_out_of_range_points() {
     assert_eq!(
         topology
             .bind_vertex_points(&ctx, &[[0, 1], [1, 2]])
-            .expect("service resource budget"),
+            .expect("bind vertex points"),
         Some(vec![0, 1, 2])
     );
     assert!(topology
         .bind_vertex_points(&ctx, &[[3, 1], [1, 2]])
-        .expect("service resource budget")
+        .expect("bind vertex points")
         .is_none());
 }
 
@@ -475,12 +476,12 @@ fn mesh_selection_rejects_an_assignment_naming_a_missing_edge_row() {
 
     assert!(
         reconstruct_mesh_selection(&rows, &points, &[assignment_for(1)], &directions)
-            .expect("service resource budget")
+            .expect("reconstruct mesh selection")
             .is_none()
     );
     assert!(
         reconstruct_mesh_selection(&rows, &points, &[assignment_for(0)], &directions)
-            .expect("service resource budget")
+            .expect("reconstruct mesh selection")
             .is_some()
     );
 }
@@ -489,10 +490,10 @@ fn mesh_selection_rejects_an_assignment_naming_a_missing_edge_row() {
 fn incidence_cycles_close_two_opposed_edges_and_reject_repeats() {
     let points = [[0, 1], [1, 0]];
     assert!(incidence_cycles(&[0, 1], &points)
-        .expect("service resource budget")
+        .expect("compute the incidence cycles")
         .is_some());
     assert!(incidence_cycles(&[0, 0], &points)
-        .expect("service resource budget")
+        .expect("compute the incidence cycles")
         .is_none());
 }
 
@@ -508,11 +509,11 @@ fn empty_mesh_selection_reconstructs_with_rows_or_points_alone() {
     };
     let selected: [MeshFaceBoundaryAssignment; 0] = [];
     assert!(reconstruct_mesh_selection(&[row], &[], &selected, &[])
-        .expect("service budget")
+        .expect("reconstruct mesh selection")
         .is_some());
     assert!(
         reconstruct_mesh_selection(&[], &[[0.0, 0.0, 0.0]], &selected, &[])
-            .expect("service budget")
+            .expect("reconstruct mesh selection")
             .is_some()
     );
 }
@@ -545,6 +546,6 @@ fn face_orientation_rejects_an_unpaired_edge_use() {
     assert!(crate::test_support::with_service_context(|ctx| {
         orient_face_cycles(ctx, &mut faces())
     })
-    .expect("service resource budget")
+    .expect("orient face cycles")
     .is_none());
 }

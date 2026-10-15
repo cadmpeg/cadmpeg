@@ -121,7 +121,7 @@ fn formula_legacy_candidates_transfer_under_service_profile() {
             &crate::decode::ModelingGraphScope::Unscoped,
         )
     })
-    .expect("service profile admits three legacy candidates");
+    .expect("transfer parameters");
     assert_eq!(ir.model.parameters.len(), 3);
 }
 

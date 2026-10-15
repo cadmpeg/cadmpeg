@@ -4454,7 +4454,7 @@ fn mesh_edge_ports_map_local_ports_to_vertex_indices() {
     };
 
     assert_eq!(
-        mesh_edge_ports(&analysis, &[[10, 11]]).expect("service resource budget"),
+        mesh_edge_ports(&analysis, &[[10, 11]]).expect("compute the mesh edge ports"),
         Some(vec![[0, 1]])
     );
 }

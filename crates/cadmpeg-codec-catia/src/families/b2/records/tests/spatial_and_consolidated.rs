@@ -90,7 +90,7 @@ fn decode_inner_no_directory_transfers_b2_cylinder() {
             ctx,
             inner_no_directory_b2_catpart()
         ))
-        .expect("service resource budget")
+        .expect("scan the container")
         .variant,
         Variant::InnerNoDirectory
     );

@@ -19,7 +19,7 @@ fn duplicate_face_assignment_visitor_reports_the_bound() {
         visits += 1;
         Ok(true)
     })
-    .expect("service resource budget");
+    .expect("visit duplicate face assignments");
 
     assert_eq!(outcome, Some(DuplicateFaceAssignmentVisit::Exhausted));
     assert_eq!(visits, 3);
@@ -33,7 +33,7 @@ fn one_admitted_alternate_does_not_force_a_second_face() {
 
     assert!(
         unique_duplicate_face_assignment(&serialized, &allowed, 2, |_| Ok(true))
-            .expect("service resource budget")
+            .expect("compute the unique duplicate face assignment")
             .is_none()
     );
 }
@@ -54,7 +54,7 @@ fn exact_mesh_occurrences_complete_duplicate_face_slot() {
         &[[1, 1], [2, 2], [3, 4]],
         &[run(0, 1), run(0, 5), run(1, 2), run(2, 3), run(2, 4)],
     )
-    .expect("service resource budget")
+    .expect("resolve edge faces from runs")
     .expect("consistent exact face occurrences");
 
     assert_eq!(faces, vec![[1, 5], [2, 2], [3, 4]]);
@@ -73,7 +73,7 @@ fn one_mesh_occurrence_keeps_duplicate_face_slot_unresolved() {
     };
 
     let faces = resolve_edge_faces_from_runs(&ctx, &[[1, 1]], &[run])
-        .expect("service resource budget")
+        .expect("resolve edge faces from runs")
         .expect("a single occurrence does not conflict with the serialized wildcard");
 
     assert_eq!(faces, vec![[1, 1]]);
@@ -92,7 +92,7 @@ fn ambiguous_mesh_occurrences_defer_duplicate_face_slot() {
     };
 
     let faces = resolve_edge_faces_from_runs(&ctx, &[[1, 1]], &[run(1), run(5), run(6)])
-        .expect("service resource budget")
+        .expect("resolve edge faces from runs")
         .expect("ambiguous occurrences remain a deferred face domain");
 
     assert_eq!(faces, vec![[1, 1]]);
@@ -106,7 +106,7 @@ fn endpoint_ports_reject_contradictory_pair_constraints() {
         crate::test_support::with_service_context(|ctx| propagate_edge_port_points(
             ctx, &ports, &pairs
         ))
-        .expect("service resource budget"),
+        .expect("propagate edge port points"),
         None
     );
 }
@@ -121,7 +121,7 @@ fn native_edge_identities_bind_ambiguous_coordinate_pairs() {
             &ports,
             &candidates
         ))
-        .expect("service resource budget"),
+        .expect("bind edge port candidates"),
         Some(vec![[0, 1], [2, 3], [0, 2], [1, 3]])
     );
 }
@@ -137,7 +137,7 @@ fn mesh_edge_ports_allow_one_coordinate_row_at_multiple_ports() {
             &ports,
             &candidates
         ))
-        .expect("service resource budget"),
+        .expect("compute the unique mesh edge port candidate pairs"),
         Some(vec![[0, 1], [0, 2]])
     );
 }
@@ -153,7 +153,7 @@ fn mesh_edge_ports_reject_multiple_unordered_assignments() {
             &ports,
             &candidates
         ))
-        .expect("service resource budget"),
+        .expect("compute the unique mesh edge port candidate pairs"),
         None
     );
 }
@@ -169,7 +169,7 @@ fn mesh_edge_ports_resolve_shared_port_without_point_bijection() {
             &ports,
             &candidates
         ))
-        .expect("service resource budget"),
+        .expect("compute the unique mesh edge port candidate pairs"),
         Some(vec![[0, 1], [0, 2], [1, 3]])
     );
 }
@@ -188,7 +188,7 @@ fn deferred_mesh_edge_ports_do_not_constrain_settled_rows() {
                 &[false, true],
             )
         })
-        .expect("service resource budget"),
+        .expect("compute the unique mesh edge port candidate pairs"),
         Some(vec![Some([0, 1]), None])
     );
 }
@@ -214,7 +214,7 @@ fn deferred_mesh_edge_port_components_leave_all_connected_rows_unresolved() {
                 &[true, false, false, false, false, false],
             )
         })
-        .expect("service resource budget"),
+        .expect("compute the unique mesh edge port candidate pairs"),
         Some(vec![None, None, None, None, None, None]),
     );
 }
@@ -229,7 +229,7 @@ fn native_edge_identities_reject_multiple_coordinate_bijections() {
             &ports,
             &candidates
         ))
-        .expect("service resource budget"),
+        .expect("bind edge port candidates"),
         None
     );
 }
@@ -242,7 +242,7 @@ fn native_edge_identities_preserve_endpoint_equality() {
             &[[10, 11]],
             &[vec![[0, 0]]]
         ))
-        .expect("service resource budget"),
+        .expect("bind edge port candidates"),
         None
     );
     assert_eq!(
@@ -251,7 +251,7 @@ fn native_edge_identities_preserve_endpoint_equality() {
             &[[10, 10]],
             &[vec![[0, 1]]]
         ))
-        .expect("service resource budget"),
+        .expect("bind edge port candidates"),
         None
     );
     assert_eq!(
@@ -260,7 +260,7 @@ fn native_edge_identities_preserve_endpoint_equality() {
             &[[10, 10]],
             &[vec![[0, 0]]]
         ))
-        .expect("service resource budget"),
+        .expect("bind edge port candidates"),
         Some(vec![[0, 0]])
     );
 }
@@ -281,7 +281,7 @@ fn native_edge_identities_bind_independent_components_with_local_budgets() {
     let solution = crate::test_support::with_service_context(|ctx| {
         bind_edge_port_candidates(ctx, &ports, &candidates)
     })
-    .expect("service resource budget")
+    .expect("bind edge port candidates")
     .expect("independent port components");
 
     assert_eq!(solution.len(), COMPONENT_COUNT);
@@ -307,7 +307,7 @@ fn native_edge_identities_do_not_charge_forced_chain_depth() {
     let solution = crate::test_support::with_service_context(|ctx| {
         bind_edge_port_candidates(ctx, &ports, &candidates)
     })
-    .expect("service resource budget")
+    .expect("bind edge port candidates")
     .expect("forced connected port chain");
 
     assert_eq!(
@@ -324,11 +324,11 @@ fn duplicate_coordinate_rows_have_one_geometric_bijection() {
         &arena,
         &cadmpeg_core::decode::DecodePolicy::service(),
     )
-    .expect("matching fixture fits the service profile");
+    .expect("build the decode context");
     let domains = [HashSet::from([0, 1]), HashSet::from([0, 1])];
     assert_eq!(
         unique_coordinate_bijection(&ctx, &domains, &[[1.0, 2.0, 3.0], [1.0, 2.0, 3.0]])
-            .expect("bijection fits the service profile"),
+            .expect("compute the unique coordinate bijection"),
         Some(vec![0, 1])
     );
 }
@@ -342,7 +342,7 @@ fn forced_coordinate_bijection_has_no_recursive_depth_limit() {
         &arena,
         &cadmpeg_core::decode::DecodePolicy::service(),
     )
-    .expect("matching fixture fits the service profile");
+    .expect("build the decode context");
     let domains = (0..POINT_COUNT)
         .map(|point| HashSet::from([point]))
         .collect::<Vec<_>>();
@@ -358,7 +358,7 @@ fn forced_coordinate_bijection_has_no_recursive_depth_limit() {
 
     assert_eq!(
         unique_coordinate_bijection(&ctx, &domains, &points)
-            .expect("bijection fits the service profile"),
+            .expect("compute the unique coordinate bijection"),
         Some((0..POINT_COUNT).collect())
     );
 }
@@ -371,7 +371,7 @@ fn coordinate_bijection_respects_duplicate_class_capacity() {
         &arena,
         &cadmpeg_core::decode::DecodePolicy::service(),
     )
-    .expect("matching fixture fits the service profile");
+    .expect("build the decode context");
     let domains = [
         HashSet::from([0, 2]),
         HashSet::from([0, 1]),
@@ -381,7 +381,7 @@ fn coordinate_bijection_respects_duplicate_class_capacity() {
 
     assert_eq!(
         unique_coordinate_bijection(&ctx, &domains, &points)
-            .expect("bijection fits the service profile"),
+            .expect("compute the unique coordinate bijection"),
         Some(vec![2, 0, 1])
     );
 }
@@ -394,11 +394,11 @@ fn distinct_coordinate_bijections_remain_ambiguous() {
         &arena,
         &cadmpeg_core::decode::DecodePolicy::service(),
     )
-    .expect("matching fixture fits the service profile");
+    .expect("build the decode context");
     let domains = [HashSet::from([0, 1]), HashSet::from([0, 1])];
     assert_eq!(
         unique_coordinate_bijection(&ctx, &domains, &[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]])
-            .expect("bijection fits the service profile"),
+            .expect("compute the unique coordinate bijection"),
         None
     );
 }
@@ -411,7 +411,7 @@ fn duplicate_face_visitor_completes_when_the_callback_accepts() {
         visit_duplicate_face_assignments(ctx, &serialized, &allowed, 2, 4, |_| Ok(true))
     };
     assert_eq!(
-        crate::test_support::with_service_context(run).expect("service budget"),
+        crate::test_support::with_service_context(run).expect("visit duplicate face assignments"),
         Some(DuplicateFaceAssignmentVisit::Complete)
     );
 }

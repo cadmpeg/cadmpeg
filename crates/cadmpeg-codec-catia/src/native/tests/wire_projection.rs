@@ -51,7 +51,7 @@ fn entity_reference_retained_limit_refuses_json_record() {
         let mut namespace = cadmpeg_ir::NativeNamespace::default();
         namespace
             .set_arena(ctx, arena_name, std::slice::from_ref(&record))
-            .expect("service profile admits reference");
+            .expect("store the native arena");
     });
 }
 
@@ -98,7 +98,7 @@ fn signature_cohort_retained_limit_refuses_json_record() {
         let mut namespace = cadmpeg_ir::NativeNamespace::default();
         namespace
             .set_arena(ctx, arena_name, std::slice::from_ref(&cohort))
-            .expect("service profile admits cohort");
+            .expect("store the native arena");
     });
 }
 
@@ -152,6 +152,6 @@ fn object_record_reference_retained_limit_refuses_json_record() {
         let mut namespace = cadmpeg_ir::NativeNamespace::default();
         namespace
             .set_arena(ctx, arena_name, std::slice::from_ref(&record))
-            .expect("service profile admits record reference");
+            .expect("store the native arena");
     });
 }

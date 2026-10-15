@@ -65,7 +65,7 @@ fn design_parallel_table_retained_limit_refuses_json_record() {
         let mut namespace = cadmpeg_ir::NativeNamespace::default();
         namespace
             .set_arena(ctx, arena_name, std::slice::from_ref(&record))
-            .expect("service profile admits table");
+            .expect("store the native arena");
     });
 }
 
@@ -119,7 +119,7 @@ fn design_reference_cell_retained_limit_refuses_json_record() {
         let mut namespace = cadmpeg_ir::NativeNamespace::default();
         namespace
             .set_arena(ctx, arena_name, std::slice::from_ref(&record))
-            .expect("service profile admits cell");
+            .expect("store the native arena");
     });
 }
 

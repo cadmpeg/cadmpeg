@@ -37,7 +37,7 @@ fn transfer_vertex_tolerances(
     crate::test_support::with_service_context(|ctx| {
         super::super::vertices::transfer_vertex_tolerances(ctx, graph, supports, surfaces, pcurves)
     })
-    .expect("service budget")
+    .expect("transfer vertex tolerances")
 }
 
 use super::super::referenced_surface_ids;
@@ -589,7 +589,7 @@ fn incomplete_graph_excludes_a_face_whose_members_have_no_vertex_loci() {
             &mut crate::nurbs::LaneRefusals::new(),
             &mut admission,
         )
-        .expect("service limits admit B5 topology"));
+        .expect("transfer the B5 topology"));
     });
     assert_eq!(
         ir.model
@@ -748,7 +748,7 @@ fn repeated_source_pcurve_retains_occurrence_ranges_and_directions() {
             &mut crate::nurbs::LaneRefusals::new(),
             &mut admission,
         )
-        .expect("service limits admit B5 topology"));
+        .expect("transfer the B5 topology"));
     });
     assert_eq!(ir.model.pcurves.len(), 3);
     assert_eq!(ir.model.coedges.len(), 3);
@@ -1181,7 +1181,7 @@ fn exact_revolution_builders_reject_unbounded_subdivision_counts() {
             &"test record",
             &mut crate::nurbs::LaneRefusals::new(),
         ))
-        .expect("service resource budget")
+        .expect("revolve NURBS")
         .is_none()
     );
     let mut wide_knots = vec![0.0; 123];
@@ -1204,7 +1204,7 @@ fn exact_revolution_builders_reject_unbounded_subdivision_counts() {
             &"test record",
             &mut crate::nurbs::LaneRefusals::new(),
         ))
-        .expect("service resource budget")
+        .expect("revolve NURBS")
         .is_none()
     );
 }

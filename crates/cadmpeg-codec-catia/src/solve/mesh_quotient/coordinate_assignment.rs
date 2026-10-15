@@ -1630,7 +1630,7 @@ mod tests {
                 },
             )
         })
-        .expect("service budget");
+        .expect("check partial compact assignment viable");
         assert!(viable);
     }
 
@@ -1660,7 +1660,7 @@ mod tests {
                 },
             )
         })
-        .expect("service budget");
+        .expect("check partial compact assignment viable");
         assert!(viable);
     }
 
@@ -1690,7 +1690,7 @@ mod tests {
         let arena = DecodeArena::new();
         let service = DecodePolicy::service();
         let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &service)
-            .expect("fixture fits the service profile");
+            .expect("build the decode context");
         assert!(partial_compact_assignment_viable(
             &ctx,
             PartialCompactAssignmentViableInputs {
@@ -1703,6 +1703,6 @@ mod tests {
                 budget: None
             }
         )
-        .expect("service budget"));
+        .expect("check partial compact assignment viable"));
     }
 }

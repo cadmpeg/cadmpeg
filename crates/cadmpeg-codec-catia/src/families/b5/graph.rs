@@ -3774,7 +3774,7 @@ fn parse_extrusion_surface(
             &BTreeMap::new(),
         )
     })
-    .expect("service budget")
+    .expect("parse extrusion surface")
 }
 
 fn parse_extrusion_surface_with_context(

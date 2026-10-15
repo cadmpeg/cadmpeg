@@ -1099,7 +1099,7 @@ mod tests {
                 extrusion,
                 &mut admission,
             )
-            .expect("service limits admit the extrusion procedure");
+            .expect("emit extrusion procedure");
         });
 
         assert!(matches!(
@@ -1179,8 +1179,7 @@ mod tests {
                 &mut crate::nurbs::LaneRefusals::new(),
             )
         };
-        let admitted =
-            crate::test_support::with_service_context(run).expect("service resource budget");
+        let admitted = crate::test_support::with_service_context(run).expect("revolve NURBS");
         assert!(admitted.is_some());
     }
 }

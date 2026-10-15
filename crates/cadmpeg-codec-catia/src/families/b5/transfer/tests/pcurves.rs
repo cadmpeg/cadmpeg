@@ -38,21 +38,21 @@ fn oriented_nurbs_range(
     crate::test_support::with_service_context(|ctx| {
         super::super::pcurves::oriented_nurbs_range(ctx, geometry, parameters, edge_start, edge_end)
     })
-    .expect("service budget")
+    .expect("compute the oriented NURBS range")
 }
 
 fn lifted_curve_geometry(pcurve: &B5Pcurve, surface: &B5Surface) -> Option<CurveGeometry> {
     crate::test_support::with_service_context(|ctx| {
         super::super::pcurves::lifted_curve_geometry(ctx, pcurve, surface)
     })
-    .expect("service budget")
+    .expect("compute the lifted curve geometry")
 }
 
 fn isocurve_endpoint_parameters(pcurve: &B5Pcurve, parameters: [f64; 2]) -> Option<[f64; 2]> {
     crate::test_support::with_service_context(|ctx| {
         super::super::pcurves::isocurve_endpoint_parameters(ctx, pcurve, parameters)
     })
-    .expect("service budget")
+    .expect("compute the isocurve endpoint parameters")
 }
 
 fn oriented_circle_plan(
@@ -68,7 +68,7 @@ fn oriented_circle_plan(
             ctx, pcurve, surface, geometry, parameters, edge_start, edge_end,
         )
     })
-    .expect("service budget")
+    .expect("compute the oriented circle plan")
 }
 
 fn cylinder_helix(
@@ -84,7 +84,7 @@ fn cylinder_helix(
             ctx, pcurve, surface, parameters, edge_start, edge_end, refusal,
         )
     })
-    .expect("service budget")
+    .expect("compute the cylinder helix")
 }
 
 #[test]
@@ -135,7 +135,7 @@ fn revolution_cache_preserves_native_profile_and_arc_length_chart() {
             &mut crate::nurbs::LaneRefusals::new(),
         )
     })
-    .expect("service resource budget")
+    .expect("compute the revolution surface")
     .expect("exact revolution cache");
     assert_eq!(plan.parameter_interval, [-1.0, 1.0]);
     assert_eq!(plan.angular_interval, [0.0, std::f64::consts::PI]);
@@ -166,7 +166,7 @@ fn revolution_cache_preserves_native_profile_and_arc_length_chart() {
             &"test record",
             &mut crate::nurbs::LaneRefusals::new(),
         ))
-        .expect("service resource budget")
+        .expect("compute the revolution surface")
         .is_none()
     );
 }
@@ -285,7 +285,7 @@ fn revolution_isocurve_keeps_its_native_trim_range() {
             10,
             &mut crate::nurbs::LaneRefusals::new()
         ))
-        .expect("service resource budget"),
+        .expect("compute the resolved surface carrier in graph"),
         Some(ResolvedPcurveSurface::Geometry(SurfaceGeometry::Solved(
             SolvedSurfaceGeometry::Nurbs(_)
         )))
@@ -1234,7 +1234,7 @@ fn owned_sphere_class_1d_pcurve_enters_the_transfer_plan() {
             &mut crate::nurbs::LaneRefusals::new(),
             &mut admission,
         )
-        .expect("service limits admit B5 topology"));
+        .expect("transfer the B5 topology"));
     });
     assert_eq!(ir.model.pcurves.len(), 1);
     assert!(matches!(
@@ -1425,7 +1425,7 @@ fn decimal_object_id_keys_transfer_to_an_admissible_model() {
             &mut crate::nurbs::LaneRefusals::new(),
             &mut admission,
         )
-        .expect("service limits admit B5 topology"));
+        .expect("transfer the B5 topology"));
     });
 
     // Native traversal order, which the arena-order check reads as unsorted.
@@ -1445,7 +1445,7 @@ fn decimal_object_id_keys_transfer_to_an_admissible_model() {
     assert_eq!(ir.model.vertices.len(), 6);
     assert_eq!(ir.model.pcurves.len(), 2);
     let unsorted_arenas = cadmpeg_ir::validate::validate_neutral(&ir, Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .findings
         .iter()
         .filter(|finding| finding.check == cadmpeg_ir::report::check::Check::ArenaOrder)
@@ -1460,7 +1460,7 @@ fn decimal_object_id_keys_transfer_to_an_admissible_model() {
         &mut ir,
         &[]
     )
-    .expect("resource allocation did not fail"));
+    .expect("check that the neutral model is admissible"));
     assert_eq!(
         ir.model
             .faces
@@ -1565,7 +1565,7 @@ fn tensor_surface_contraction_preserves_exact_isocurve() {
         cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::U,
         0.25,
     )
-    .expect("resource allocation did not fail")
+    .expect("compute the NURBS surface isocurve")
     .expect("u isocurve");
     assert_eq!(curve.degree(), 1);
     assert_eq!(curve.knots(), surface.v_knots());
@@ -1728,7 +1728,7 @@ fn bilinear_surface_lifts_a_constant_u_pcurve_to_its_isocurve() {
     let curve = crate::test_support::with_service_context(|ctx| {
         super::super::pcurves::nurbs_isocurve(ctx, &pcurve, &surface)
     })
-    .expect("service budget")
+    .expect("compute the NURBS isocurve")
     .expect("bilinear isocurve");
     assert_eq!(
         curve.control_points(),

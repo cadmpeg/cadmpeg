@@ -3367,7 +3367,7 @@ mod tests {
         crate::test_support::with_service_context(|ctx| {
             super::solve_planar_chart_rechart(ctx, sites, loci, target)
         })
-        .expect("service chart resource budget")
+        .expect("solve planar chart rechart")
     }
 
     fn with_admission<T>(run: impl FnOnce(&mut super::FamilyEntityAdmission<'_, '_>) -> T) -> T {
@@ -3485,7 +3485,7 @@ mod tests {
         let graph = crate::test_support::with_service_context(|ctx| {
             parse(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new())
         })
-        .expect("service resource budget")
+        .expect("parse the freeform graph")
         .expect("one resolved and one unresolved face");
         assert_eq!(graph.face_records.len(), 2);
         assert_eq!(graph.faces.len(), 1);
@@ -3516,7 +3516,7 @@ mod tests {
                 None,
                 &mut crate::nurbs::LaneRefusals::new()
             ))
-            .expect("service resource budget")
+            .expect("parse from records")
             .is_some()
         );
         assert!(
@@ -3529,7 +3529,7 @@ mod tests {
                 None,
                 &mut crate::nurbs::LaneRefusals::new()
             ))
-            .expect("service resource budget")
+            .expect("parse from records")
             .is_none()
         );
     }
@@ -3604,7 +3604,7 @@ mod tests {
             &[(curve_id, [0.0, 1.0], 17)],
             admission
         ))
-        .expect("service limits admit freeform model records"));
+        .expect("attach standalone wires"));
         assert_eq!(
             ir.model.bodies[0].kind,
             cadmpeg_ir::topology::BodyKind::Wire
@@ -3622,8 +3622,8 @@ mod tests {
             Point3::new(7.0, 11.0, 13.0)
         );
         ir.finalize();
-        let validation = cadmpeg_ir::validate_neutral(&ir, Vec::new())
-            .expect("resource allocation did not fail");
+        let validation =
+            cadmpeg_ir::validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
         assert!(validation.is_ok(), "{:?}", validation.findings);
     }
 
@@ -3653,7 +3653,7 @@ mod tests {
             &[(curve_id.clone(), [0.0, 1.0], 0), (curve_id, [1.0, 0.0], 1)],
             admission
         ))
-        .expect("service limits admit freeform model records"));
+        .expect("attach standalone wires"));
         assert_eq!(ir.model, before);
     }
 
@@ -3663,7 +3663,7 @@ mod tests {
         let bytes = crate::test_support::test_b2::b2_line_profile_stream();
         let profiles =
             consolidated_line_profiles(&bytes, &crate::wire::records::consolidated_records(&bytes))
-                .expect("service profile admits line profiles");
+                .expect("compute the consolidated line profiles");
         let wires = profiles
             .iter()
             .map(|profile| (profile.curve.id.clone(), profile.range, profile.pos))
@@ -3676,7 +3676,7 @@ mod tests {
                 admission,
             )
         })
-        .expect("service limits admit freeform model records");
+        .expect("append consolidated line profiles");
         assert_eq!(wires.len(), 1);
         assert!(with_admission(|admission| attach_standalone_wires(
             &mut ir,
@@ -3684,7 +3684,7 @@ mod tests {
             &wires,
             admission
         ))
-        .expect("service limits admit freeform model records"));
+        .expect("attach standalone wires"));
         assert_eq!(
             ir.model.edges[0]
                 .param_range()
@@ -3702,8 +3702,8 @@ mod tests {
             assert!((actual.z - expected.z).abs() < 1.0e-12);
         }
         ir.finalize();
-        let validation = cadmpeg_ir::validate_neutral(&ir, Vec::new())
-            .expect("resource allocation did not fail");
+        let validation =
+            cadmpeg_ir::validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
         assert!(validation.is_ok(), "{:?}", validation.findings);
     }
 
@@ -3721,7 +3721,7 @@ mod tests {
                 admission,
             )
         })
-        .expect("service limits admit freeform model records");
+        .expect("append consolidated line profiles");
 
         let mut pooled = CadIr::empty();
         with_admission(|admission| {
@@ -4233,7 +4233,7 @@ mod tests {
             )),
             source_object: Some(
                 crate::assemble::cgm_source("carrier", 0x1234)
-                    .expect("service profile admits source object"),
+                    .expect("build the CGM source object"),
             ),
         });
 
@@ -4300,7 +4300,7 @@ mod tests {
             )),
             source_object: Some(
                 crate::assemble::cgm_source("carrier", 0x1234)
-                    .expect("service profile admits source object"),
+                    .expect("build the CGM source object"),
             ),
         });
 
@@ -4372,7 +4372,7 @@ mod tests {
                 geometry,
                 source_object: Some(
                     crate::assemble::cgm_source("carrier", 0x1234)
-                        .expect("service profile admits source object"),
+                        .expect("build the CGM source object"),
                 ),
             });
         }
@@ -4598,7 +4598,7 @@ mod tests {
         let bytes = crate::test_support::test_b2::b2_line_profile_stream();
         let records = crate::wire::records::consolidated_records(&bytes);
         let service = consolidated_line_profiles(&bytes, &records)
-            .expect("service profile admits line profile");
+            .expect("compute the consolidated line profiles");
         assert_eq!(service.len(), 1);
     }
 
@@ -4622,8 +4622,7 @@ mod tests {
             .map(|_| ir.model.surfaces.len())
         };
         assert_eq!(
-            crate::test_support::with_service_context(run)
-                .expect("service profile admits freeform surface pool"),
+            crate::test_support::with_service_context(run).expect("append freeform surface pools"),
             1
         );
     }
@@ -4648,8 +4647,7 @@ mod tests {
             .map(|_| ir.model.curves.len())
         };
         assert_eq!(
-            crate::test_support::with_service_context(run)
-                .expect("service profile admits A5 guide curve"),
+            crate::test_support::with_service_context(run).expect("append freeform surface pools"),
             1
         );
     }
@@ -4667,8 +4665,8 @@ mod tests {
             )
             .expect("valid pcurve fixture"),
         };
-        let copied =
-            rechart_equivalent_surface_pcurve(&pcurve, &surface, &surface).expect("service budget");
+        let copied = rechart_equivalent_surface_pcurve(&pcurve, &surface, &surface)
+            .expect("compute the rechart equivalent surface pcurve");
         assert_eq!(copied, Some(pcurve));
     }
 
@@ -4680,7 +4678,7 @@ mod tests {
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
             source_object: Some(
                 crate::assemble::cgm_source("carrier", 0x1234)
-                    .expect("service profile admits source object"),
+                    .expect("build the CGM source object"),
             ),
         });
         let indexed = standard_carrier_surface_ids(&ir);
@@ -4700,7 +4698,8 @@ mod tests {
     fn line_profile_curve_gets_the_consolidated_line_profile_id() {
         let bytes = crate::test_support::test_b2::b2_line_profile_stream();
         let records = crate::wire::records::consolidated_records(&bytes);
-        let service = consolidated_line_profiles(&bytes, &records).expect("service budget");
+        let service = consolidated_line_profiles(&bytes, &records)
+            .expect("compute the consolidated line profiles");
         assert_eq!(service.len(), 1);
         assert_eq!(
             service[0].curve.id.as_str(),

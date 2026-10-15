@@ -1459,7 +1459,7 @@ fn design_object_without_records_transfers_no_feature_ids() {
             &crate::decode::ModelingGraphScope::Unscoped,
         )
     })
-    .expect("service profile admits feature lookup");
+    .expect("transfer design features");
     assert!(service.feature_ids.is_empty());
 }
 
@@ -1479,7 +1479,7 @@ fn principal_and_reference_planes_each_transfer_one_feature() {
     crate::test_support::with_service_context(|ctx| {
         super::transfer_principal_plane(ctx, &mut ir, &mut transfer, principal)
     })
-    .expect("service profile admits principal plane");
+    .expect("transfer principal plane");
     assert_eq!(ir.model.features.len(), 1);
     let reference = super::ReferencePlaneCandidate {
         object: &object,
@@ -1491,7 +1491,7 @@ fn principal_and_reference_planes_each_transfer_one_feature() {
     crate::test_support::with_service_context(|ctx| {
         super::transfer_reference_plane(ctx, &mut reference_ir, &mut reference_transfer, &reference)
     })
-    .expect("service profile admits reference plane");
+    .expect("transfer reference plane");
     assert_eq!(reference_ir.model.features.len(), 1);
 }
 
@@ -1515,7 +1515,7 @@ fn sketch_and_edge_fillet_each_transfer_one_feature() {
     crate::test_support::with_service_context(|ctx| {
         super::transfer_sketch(ctx, &mut ir, &mut transfer, sketch_object, sketch_record)
     })
-    .expect("service profile admits sketch feature");
+    .expect("transfer sketch");
     assert_eq!(ir.model.sketches.len(), 1);
     assert_eq!(ir.model.features.len(), 1);
     let operation_object = design_object("synthetic:test:object#operation", None);
@@ -1546,7 +1546,7 @@ fn sketch_and_edge_fillet_each_transfer_one_feature() {
             &sources,
         )
     })
-    .expect("service profile admits native operation");
+    .expect("transfer native operation");
     assert_eq!(operation_ir.model.features.len(), 1);
 }
 
@@ -1592,8 +1592,7 @@ fn parameter_owner_resolves_through_entity_record_to_object_feature() {
     };
     let mut ir = CadIr::empty();
     ir.model.parameters.push(parameter("one", "owner-entity"));
-    ({ transfer.assign_parameter_owners(&mut ir, &native) })
-        .expect("service profile admits owner indexes");
+    ({ transfer.assign_parameter_owners(&mut ir, &native) }).expect("assign parameter owners");
     assert_eq!(ir.model.parameters[0].owner.as_ref(), Some(&feature_id));
 }
 
@@ -1625,7 +1624,7 @@ fn operation_without_owner_records_has_no_source_properties() {
         &objects,
         &operation_ids,
     )
-    .expect("service profile admits operation owner rows");
+    .expect("compute the native operation definition properties");
     assert!(admitted.source_properties.is_empty());
 }
 
@@ -1648,7 +1647,7 @@ fn native_operation_map_holds_owned_parameter_value_by_name() {
         ir.model.features[0].id.clone(),
     )]);
     ({ assign_native_operation_parameter_values(&mut ir, &owners) })
-        .expect("service profile admits operation values");
+        .expect("assign native operation parameter values");
     let FeatureDefinition::Operation(FeatureOperation::Native { parameters, .. }) =
         ir.model.features[0].evaluation.definition()
     else {
@@ -1669,7 +1668,7 @@ fn schema_value_properties_hold_entry_and_value_under_prefix() {
     let properties = {
         let mut properties = BTreeMap::new();
         super::insert_schema_value_properties(&mut properties, &prefix, &value)
-            .expect("service profile admits operation properties");
+            .expect("insert schema value properties");
         properties
     };
     assert_eq!(

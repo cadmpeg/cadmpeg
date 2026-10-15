@@ -1009,7 +1009,7 @@ mod tests {
                 2,
                 Some(1)
             ))
-            .expect("service resource budget")
+            .expect("compute the standard curve supports")
             .is_empty()
         );
         for marker in 0..=u8::MAX {
@@ -1020,7 +1020,7 @@ mod tests {
             let rows = crate::test_support::with_service_context(|ctx| {
                 super::standard_curve_supports(ctx, &bytes, 2, Some(1))
             })
-            .expect("service resource budget");
+            .expect("compute the standard curve supports");
             assert_eq!(rows.len(), 1, "preceding non-row marker {marker:#04x}");
             assert_eq!(rows[0].pos, 11);
             assert_eq!(rows[0].tag, 2);
@@ -1085,7 +1085,7 @@ mod tests {
         let populations = crate::test_support::with_service_context(|ctx| {
             super::standard_surface_populations(ctx, &bytes)
         })
-        .expect("service resource budget");
+        .expect("compute the standard surface populations");
         assert_eq!(populations.len(), 1);
     }
 }
