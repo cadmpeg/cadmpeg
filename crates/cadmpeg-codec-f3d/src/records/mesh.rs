@@ -5,7 +5,6 @@ use cadmpeg_core::decode::u64_from_index;
 
 use super::identity::Located;
 use super::references::DesignClassTag;
-use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::assets::AssetId;
 use cadmpeg_ir::features::FinitePoint3;
@@ -77,14 +76,6 @@ impl Serialize for DesignRelaxedGuidText {
 }
 
 impl DesignRelaxedGuidText {
-    pub(crate) fn try_clone_for_decode(
-        &self,
-        ctx: &DecodeContext<'_>,
-        operation: &'static str,
-    ) -> Result<Self, CodecError> {
-        Ok(Self(self.0.try_clone_for_decode(ctx, operation)?))
-    }
-
     /// The original GUID text.
     pub(crate) fn as_str(&self) -> &str {
         self.0.as_str()
@@ -227,7 +218,6 @@ pub(crate) struct DesignMeshTextureTable {
 
 impl DesignMeshTextureTable {
     pub(crate) fn new_charged(
-        _ctx: &DecodeContext<'_>,
         record: DesignMeshRecordIdentity,
         resources: Vec<DesignMeshTextureResource>,
     ) -> Result<Self, CodecError> {

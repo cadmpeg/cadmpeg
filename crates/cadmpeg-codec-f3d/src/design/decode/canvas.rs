@@ -2,7 +2,7 @@
 //! Parse exact image-plane bindings owned by Design `Canvas` scopes.
 
 use crate::bytes::lp_ascii_filtered_view;
-use crate::bytes::lp_utf16_bounded_charged;
+use crate::bytes::lp_utf16_bounded;
 use crate::container::ContainerScan;
 use crate::design::decode::image::embedded_image_asset;
 use crate::design::decode::scopes::shared_frames::marked_reference;
@@ -26,12 +26,10 @@ const DESIGN_LENGTH_TO_MM: f64 = 10.0;
 
 /// Decode every structurally complete Canvas geometry and image-asset record.
 pub(crate) fn decode_canvas_images(
-    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     scopes: &[DesignParameterScope],
 ) -> Result<Vec<DesignCanvasImage>, CodecError> {
     super::image::decode_scoped_images(
-        ctx,
         scan,
         scopes,
         &crate::records::feature::scope::DesignFeatureKind::Canvas,
@@ -57,7 +55,7 @@ pub(crate) fn project_canvas_images(
         }) else {
             continue;
         };
-        let feature_id = crate::design::identity::neutral_feature_id(ctx, scope)?;
+        let feature_id = crate::design::identity::neutral_feature_id(scope)?;
         let Some(feature) = features.iter_mut().find(|feature| feature.id == feature_id) else {
             continue;
         };
@@ -115,7 +113,6 @@ pub(crate) fn project_canvas_images(
 }
 
 fn parse_canvas_image(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     stream: &str,
     scope: &DesignParameterScope,
@@ -207,17 +204,7 @@ fn parse_canvas_image(
         let geometry_payload = bytes.get(geometry_at + 69..geometry_at + 146)?;
         let geometry_payload = DesignCanvasGeometryPayload::try_from(geometry_payload).ok()?;
 
-        let (label, after_label) = match lp_utf16_bounded_charged(
-            ctx,
-            bytes,
-            geometry_at + 213,
-            1..=256,
-            "f3d Design UTF-16 text",
-        ) {
-            Ok(Some(value)) => value,
-            Ok(None) => return None,
-            Err(error) => return Some(Err(error)),
-        };
+        let (label, after_label) = lp_utf16_bounded(bytes, geometry_at + 213, 1..=256)?;
         if after_label != paired_at {
             return None;
         }
@@ -229,17 +216,8 @@ fn parse_canvas_image(
         {
             return None;
         }
-        let (asset_name, after_asset_name) = match lp_utf16_bounded_charged(
-            ctx,
-            bytes,
-            asset_record_at + 21,
-            1..=1024,
-            "f3d Design UTF-16 text",
-        ) {
-            Ok(Some(value)) => value,
-            Ok(None) => return None,
-            Err(error) => return Some(Err(error)),
-        };
+        let (asset_name, after_asset_name) =
+            lp_utf16_bounded(bytes, asset_record_at + 21, 1..=1024)?;
         if after_asset_name != scope_at {
             return None;
         }
@@ -356,14 +334,9 @@ mod tests {
     #[test]
     fn canvas_image_decodes_asset_name() {
         let (bytes, scope) = fixture();
-        let image = parse_canvas_image(
-            &cadmpeg_test_support::service_decode_context(),
-            &bytes,
-            "Design/BulkStream.dat",
-            &scope,
-        )
-        .unwrap()
-        .unwrap();
+        let image = parse_canvas_image(&bytes, "Design/BulkStream.dat", &scope)
+            .unwrap()
+            .unwrap();
         assert_eq!(image.asset_name(), "a.png");
     }
 
@@ -378,14 +351,9 @@ mod tests {
 
         const ENTRY: &str = "FusionAssetName[Active]/Design1/Images.BlobParts/a.png";
         let (bytes, scope) = fixture();
-        let image = parse_canvas_image(
-            &cadmpeg_test_support::service_decode_context(),
-            &bytes,
-            "Design/BulkStream.dat",
-            &scope,
-        )
-        .unwrap()
-        .unwrap();
+        let image = parse_canvas_image(&bytes, "Design/BulkStream.dat", &scope)
+            .unwrap()
+            .unwrap();
         let feature = || Feature {
             id: crate::ids::neutral_feature_id(&scope),
             ordinal: 0,

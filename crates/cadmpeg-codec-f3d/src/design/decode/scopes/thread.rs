@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact thread construction scopes and thread payloads.
 
-use crate::bytes::lp_utf16_bounded_charged;
+use crate::bytes::lp_utf16_bounded;
 use crate::layout::thread_compact_construction_tail as thread_compact_tail;
 use crate::layout::thread_compact_legacy_construction_tail as thread_compact_legacy_tail;
 use crate::layout::thread_owner_marked_scope_prefix as thread_owner;
@@ -13,11 +13,10 @@ use crate::records::feature::scope::DesignParameterScope;
 use crate::records::feature::thread;
 use crate::records::feature::thread::DesignThreadConstruction;
 use crate::records::feature::thread::DesignThreadForm;
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 
 pub(super) fn exact_thread_construction(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     scope: &DesignParameterScope,
 ) -> Result<Option<DesignThreadConstruction>, CodecError> {
@@ -52,7 +51,6 @@ pub(super) fn exact_thread_construction(
         }
     }
     let Some(construction) = parse_thread_payload(
-        ctx,
         bytes,
         designation_at,
         prefix_form,
@@ -124,35 +122,21 @@ fn thread_form(bytes: &[u8], marker_at: usize, token_at: usize) -> Option<Thread
 }
 
 pub(super) fn parse_thread_payload(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     designation_at: usize,
     expected_form: ThreadPrefix,
     face_group_record_indices: Vec<u32>,
 ) -> Result<Option<DesignThreadConstruction>, CodecError> {
-    let Some((designation, after_designation)) = lp_utf16_bounded_charged(
-        ctx,
-        bytes,
-        designation_at,
-        1..=128,
-        "f3d Design UTF-16 text",
-    )?
+    let Some((designation, after_designation)) = lp_utf16_bounded(bytes, designation_at, 1..=128)
     else {
         return Ok(None);
     };
-    let Some((nominal_size_text, after_nominal)) = lp_utf16_bounded_charged(
-        ctx,
-        bytes,
-        after_designation,
-        1..=64,
-        "f3d Design UTF-16 text",
-    )?
+    let Some((nominal_size_text, after_nominal)) =
+        lp_utf16_bounded(bytes, after_designation, 1..=64)
     else {
         return Ok(None);
     };
-    let Some((profile, after_profile)) =
-        lp_utf16_bounded_charged(ctx, bytes, after_nominal, 1..=256, "f3d Design UTF-16 text")?
-    else {
+    let Some((profile, after_profile)) = lp_utf16_bounded(bytes, after_nominal, 1..=256) else {
         return Ok(None);
     };
     Ok((|| {

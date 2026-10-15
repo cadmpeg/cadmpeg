@@ -430,21 +430,13 @@ fn genesis_entity_header_variant_resolves_suffix_and_id() {
         entity_id_offset,
         optional_slot_present,
         end,
-    } = parse_genesis_entity_header(&cadmpeg_test_support::service_decode_context(), &bytes, 0)
-        .unwrap()
-        .unwrap();
+    } = parse_genesis_entity_header(&bytes, 0).unwrap();
     assert_eq!(entity_id_offset, payload_start);
     assert_eq!(entity_id.suffix(), 201);
     assert_eq!(entity_id.as_str(), "0_201");
     assert!(!optional_slot_present);
     assert_eq!(end, bytes.len());
-    assert!(parse_settled_entity_header(
-        &cadmpeg_test_support::service_decode_context(),
-        &bytes,
-        0
-    )
-    .unwrap()
-    .is_none());
+    assert!(parse_settled_entity_header(&bytes, 0).is_none());
 }
 
 fn genesis_relation_record(

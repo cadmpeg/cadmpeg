@@ -1335,11 +1335,7 @@ fn sketch_relation_runs_reject_partial_resolution_and_preserve_atomic_binding() 
     use crate::records::sketch_relations::{
         SketchRelationMembers, SketchRelationOperand, SketchRelationReturnMembers,
     };
-    let unresolved = SketchRelationMembers::from_indices(
-        &cadmpeg_test_support::service_decode_context(),
-        [(1, 25, 3), (2, 40, 5)],
-    )
-    .unwrap();
+    let unresolved = SketchRelationMembers::from_indices([(1, 25, 3), (2, 40, 5)]).unwrap();
     let mut resolved = unresolved.clone();
     resolved.resolve(|record_index| SketchRelationOperand::Record { record_index });
     for (row, (index, offset, ordinal)) in resolved.iter().zip([(1, 25, 3), (2, 40, 5)]) {
@@ -1358,11 +1354,7 @@ fn sketch_relation_runs_reject_partial_resolution_and_preserve_atomic_binding() 
     assert!(
         SketchRelationMembers::try_from(vec![resolved[0].clone(), unresolved[1].clone()]).is_err()
     );
-    let unresolved_return = SketchRelationReturnMembers::from_indices(
-        &cadmpeg_test_support::service_decode_context(),
-        [(2, 60), (1, 75)],
-    )
-    .unwrap();
+    let unresolved_return = SketchRelationReturnMembers::from_indices([(2, 60), (1, 75)]).unwrap();
     let mut resolved_return = unresolved_return.clone();
     resolved_return.resolve(|record_index| SketchRelationOperand::Record { record_index });
     assert!(SketchRelationReturnMembers::try_from(vec![

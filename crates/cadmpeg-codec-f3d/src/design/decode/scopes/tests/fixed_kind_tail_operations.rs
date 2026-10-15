@@ -45,9 +45,7 @@ fn tested_surface_offset_operation(
     records: &crate::design::decode::sketch::IndexedRecordOffsets,
     scope: &DesignParameterScope,
 ) -> Option<DesignSurfaceOffsetOperation> {
-    crate::design::test_support::with_test_decode_context(|ctx| {
-        exact_surface_offset_operation(ctx, bytes, records, scope).unwrap()
-    })
+    exact_surface_offset_operation(bytes, records, scope).unwrap()
 }
 
 pub(super) fn fixed_kind_tail_operations(

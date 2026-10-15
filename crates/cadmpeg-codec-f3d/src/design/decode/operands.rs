@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse edge, face, and body operand frames and recipe structure.
 
-use crate::bytes::lp_utf16_bounded_charged;
+use crate::bytes::lp_utf16_bounded;
 use crate::records::topology::{
     construction::DesignConstructionOperandRole, extrude_selection::DesignExtrudeFaceEncoding,
 };
@@ -12,8 +12,8 @@ use crate::bytes::lp_ascii_filtered_view;
 use crate::bytes::{is_guid_relaxed, take_reference};
 use crate::container::ContainerScan;
 use crate::design::decode::dimension_frames::{
-    bind_recipe_reference_candidates_charged, contiguous_i32_program,
-    decode_recipe_references_charged, recipe_record_prefix,
+    bind_recipe_reference_candidates_charged, contiguous_i32_program, decode_recipe_references,
+    recipe_record_prefix,
 };
 use crate::design::decode::scopes::extrude::is_class_296_two_sided_to_faces_scope;
 use crate::design::decode::scopes::parameter_scope::payload_prologue;
@@ -22,7 +22,7 @@ use crate::design::decode::sketch::{
     cached_borrowed_record_offsets, cached_owned_record_offsets, indexed_record_header_at,
     next_indexed_record_offset, next_indexed_record_offset_with_index, IndexedRecordOffsets,
 };
-use crate::design::decode::text::design_record_id_charged;
+use crate::design::decode::text::design_record_id;
 use crate::design::decode::text::relaxed_guid_end;
 use crate::design::{design_feature_family, DesignFeatureFamily};
 use crate::ids::native_stream;
@@ -167,7 +167,7 @@ pub(crate) fn decode_edge_operands(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let records = cached_borrowed_record_offsets(ctx, &mut record_offset_index, stream, bytes)?;
+        let records = cached_borrowed_record_offsets(&mut record_offset_index, stream, bytes)?;
         for (ordinal, record_index) in scope.reference_members().values().copied().enumerate() {
             if !member_indices.contains(&record_index) {
                 continue;
@@ -214,7 +214,6 @@ pub(crate) fn decode_edge_operands(
 
 /// Decode vertex-recipe members retained inside edge-treatment groups.
 pub(crate) fn decode_edge_treatment_vertex_operands(
-    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     scopes: &[DesignParameterScope],
     groups: &[DesignConstructionOperandGroup],
@@ -243,7 +242,7 @@ pub(crate) fn decode_edge_treatment_vertex_operands(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let records = cached_borrowed_record_offsets(ctx, &mut record_offset_index, stream, bytes)?;
+        let records = cached_borrowed_record_offsets(&mut record_offset_index, stream, bytes)?;
         for (scope_reference_ordinal, record_index) in
             scope.reference_members().values().copied().enumerate()
         {
@@ -272,8 +271,7 @@ pub(crate) fn decode_edge_treatment_vertex_operands(
             let Some(header) = header_index.get(&(stream, record_index)) else {
                 continue;
             };
-            let Some(recipe) = parse_vertex_recipe(ctx, bytes, records, stream, header, recipes)
-            else {
+            let Some(recipe) = parse_vertex_recipe(bytes, records, stream, header, recipes) else {
                 continue;
             };
             let recipe = recipe?;
@@ -285,13 +283,11 @@ pub(crate) fn decode_edge_treatment_vertex_operands(
             };
 
             out.push(DesignEdgeTreatmentVertexOperand {
-                id: design_record_id_charged(
-                    ctx,
+                id: design_record_id(
                     stream,
                     ":edge-treatment-vertex-operand#",
                     header.byte_offset,
-                    "f3d vertex operand ID",
-                )?,
+                ),
                 scope_record_index: scope.record_index,
                 scope_reference_ordinal,
                 group_record_index: group.record_index,
@@ -306,7 +302,6 @@ pub(crate) fn decode_edge_treatment_vertex_operands(
 
 /// Bind each `WorkPoint` input to its exact edge, vertex, or `WorkPlane` carrier.
 pub(crate) fn bind_work_point_input_carriers(
-    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     scopes: &mut [DesignParameterScope],
     headers: &[DesignRecordHeader],
@@ -350,17 +345,12 @@ pub(crate) fn bind_work_point_input_carriers(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let records = cached_owned_record_offsets(ctx, &mut record_offset_index, &stream, bytes)?;
+        let records = cached_owned_record_offsets(&mut record_offset_index, &stream, bytes)?;
         let scope_record_index = scope.record_index;
         let Some(construction) = scope.work_point_construction_mut() else {
             continue;
         };
-        let mut inputs = construction
-            .rule
-            .inputs()
-            .into_iter()
-            .map(|input| input.try_clone_for_decode(ctx, "f3d WorkPoint input copy"))
-            .collect::<Result<Vec<_>, _>>()?;
+        let mut inputs = construction.rule.inputs().to_vec();
         for input in &mut inputs {
             let mut edge_matches = edge_operands.iter().filter(|operand| {
                 native_stream(&operand.id) == Some(stream.as_str())
@@ -379,8 +369,7 @@ pub(crate) fn bind_work_point_input_carriers(
             let Some(header) = header_index.get(&(stream.as_str(), input.record_index())) else {
                 continue;
             };
-            if let Some(recipe) = parse_vertex_recipe(ctx, bytes, records, &stream, header, recipes)
-            {
+            if let Some(recipe) = parse_vertex_recipe(bytes, records, &stream, header, recipes) {
                 input
                     .try_set_carrier(Some(Box::new(DesignWorkPointInputCarrier::VertexRecipe {
                         recipe: recipe?,
@@ -388,13 +377,9 @@ pub(crate) fn bind_work_point_input_carriers(
                     .map_err(CodecError::Malformed)?;
                 continue;
             }
-            if let Some(selection) = parse_work_point_sketch_point_frame(
-                ctx,
-                bytes,
-                input.record_index(),
-                header.byte_offset,
-            )
-            .transpose()?
+            if let Some(selection) =
+                parse_work_point_sketch_point_frame(bytes, input.record_index(), header.byte_offset)
+                    .transpose()?
             {
                 let mut point_matches = sketch_points.iter().filter(|point| {
                     native_stream(&point.id) == Some(stream.as_str())
@@ -439,7 +424,6 @@ pub(crate) fn bind_work_point_input_carriers(
                 continue;
             }
             let Some(selection) = parse_entity_selection_frame(
-                ctx,
                 bytes,
                 input.record_index(),
                 header.byte_offset,
@@ -500,7 +484,6 @@ pub(crate) fn bind_work_point_input_carriers(
 
 /// Bind the exact three-vertex construction carried by a `WorkPlane` scope.
 pub(crate) fn bind_work_plane_constructions(
-    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     scopes: &mut [DesignParameterScope],
     headers: &[DesignRecordHeader],
@@ -533,7 +516,7 @@ pub(crate) fn bind_work_plane_constructions(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let records = cached_owned_record_offsets(ctx, &mut record_offset_index, &stream, bytes)?;
+        let records = cached_owned_record_offsets(&mut record_offset_index, &stream, bytes)?;
         let Some([placement_record_index, first, second, third, extra_offset]) =
             scope.reference_members().values_array()
         else {
@@ -563,7 +546,6 @@ pub(crate) fn bind_work_plane_constructions(
         let [Some(first_input), Some(second_input), Some(third_input)] = [first, second, third]
             .map(|record_index| {
                 parse_vertex_recipe(
-                    ctx,
                     bytes,
                     records,
                     &stream,
@@ -663,7 +645,6 @@ pub(crate) fn edge_recipe_terminal_delta(
 
 /// Decode persistent selection identities named by Fillet and Chamfer groups.
 pub(crate) fn decode_edge_identity_operands(
-    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     scopes: &[DesignParameterScope],
     groups: &[DesignConstructionOperandGroup],
@@ -709,7 +690,7 @@ pub(crate) fn decode_edge_identity_operands(
             let Ok(start) = usize::try_from(header.byte_offset) else {
                 continue;
             };
-            let Some(parsed) = parse_edge_identity_member(ctx, bytes, start).transpose()? else {
+            let Some(parsed) = parse_edge_identity_member(bytes, start) else {
                 continue;
             };
             let Ok(group_member_ordinal) = u32::try_from(ordinal) else {
@@ -725,13 +706,11 @@ pub(crate) fn decode_edge_identity_operands(
             out.push(
                 DesignEdgeIdentityOperand::try_new(
                     crate::records::topology::edge_identity::DesignEdgeIdentityOperandDraft {
-                        id: design_record_id_charged(
-                            ctx,
+                        id: design_record_id(
                             &entry.name,
                             ":design-edge-identity-operand#",
                             header.byte_offset,
-                            "f3d edge identity ID",
-                        )?,
+                        ),
                         scope_record_index: scope.record_index,
                         group_record_index: group.record_index,
                         group_member_ordinal,
@@ -880,7 +859,7 @@ pub(crate) fn decode_face_operands(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let records = cached_borrowed_record_offsets(ctx, &mut record_offset_index, stream, bytes)?;
+        let records = cached_borrowed_record_offsets(&mut record_offset_index, stream, bytes)?;
         for (group_member_index, record_index) in group
             .members()
             .iter()
@@ -963,7 +942,7 @@ pub(crate) fn decode_face_operands(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let records = cached_borrowed_record_offsets(ctx, &mut record_offset_index, stream, bytes)?;
+        let records = cached_borrowed_record_offsets(&mut record_offset_index, stream, bytes)?;
         let legacy_as_built = scope.kind()
             == crate::records::feature::scope::DesignFeatureKind::AsBuilt
             && crate::design::assembly::legacy_as_built_421_generation(
@@ -1031,7 +1010,6 @@ pub(crate) fn decode_face_operands(
 /// source envelopes. The source envelope is distinct from a face-regeneration
 /// recipe: its members can name curves and vertices in one operation.
 pub(crate) fn decode_face_source_groups(
-    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     scopes: &[DesignParameterScope],
 ) -> Result<Vec<DesignFaceSourceGroup>, CodecError> {
@@ -1049,7 +1027,7 @@ pub(crate) fn decode_face_source_groups(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let records = cached_borrowed_record_offsets(ctx, &mut record_offset_index, stream, bytes)?;
+        let records = cached_borrowed_record_offsets(&mut record_offset_index, stream, bytes)?;
         let Ok(scope_start) = usize::try_from(scope.byte_offset()) else {
             continue;
         };
@@ -1097,7 +1075,7 @@ pub(crate) fn decode_face_source_groups(
                     let Some(source_byte_offset) = carrier_byte_offset.checked_add(indexed_header::LEN).and_then(|at| records.first_at_or_after(at, source_record_index)) else { return Ok(None); };
                     let Some((source_class_tag, _)) =
                         lp_ascii_filtered_view(bytes, source_byte_offset, 3..=3, u8::is_ascii_digit) else { return Ok(None); };
-                    let Some(member) = parse_extrude_identity_member(ctx, bytes, source_byte_offset).transpose()? else { return Ok(None); };
+                    let Some(member) = parse_extrude_identity_member(bytes, source_byte_offset) else { return Ok(None); };
                     let Ok(source_byte_offset_u64) = u64::try_from(source_byte_offset) else { return Ok(None); };
                     let Ok(offset) = u64::try_from(offset) else { return Ok(None); };
                     let Ok(class_tag) = crate::design::decode::text::class_tag_from_view(source_class_tag) else { return Ok(None); };
@@ -1156,13 +1134,7 @@ pub(crate) fn decode_face_source_groups(
                 continue;
             };
             out.push(DesignFaceSourceGroup {
-                id: design_record_id_charged(
-                    ctx,
-                    &entry.name,
-                    ":design-face-source-group#",
-                    carrier_start,
-                    "f3d face source group ID",
-                )?,
+                id: design_record_id(&entry.name, ":design-face-source-group#", carrier_start),
                 scope_record_index: scope.record_index,
                 carrier_reference_ordinal,
                 carrier_record_index: *carrier_record_index,
@@ -1457,7 +1429,6 @@ pub(crate) fn edge_operand_candidate_faces(
 
 /// Resolve the unique sketch-profile frame named by profile-based scopes.
 pub(crate) fn bind_sketch_profiles(
-    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     scopes: &mut [DesignParameterScope],
     headers: &[DesignRecordHeader],
@@ -1485,8 +1456,7 @@ pub(crate) fn bind_sketch_profiles(
             else {
                 continue;
             };
-            let Some(profile) =
-                parse_sketch_profile(ctx, bytes, stream, ordinal, header, entities).transpose()?
+            let Some(profile) = parse_sketch_profile(bytes, stream, ordinal, header, entities)
             else {
                 continue;
             };
@@ -1525,7 +1495,6 @@ pub(crate) fn bind_sketch_profiles(
 
 /// Decode the counted selection group named by each Extrude scope.
 pub(crate) fn decode_extrude_selection_groups(
-    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     scopes: &[DesignParameterScope],
     headers: &[DesignRecordHeader],
@@ -1551,15 +1520,8 @@ pub(crate) fn decode_extrude_selection_groups(
             let Some(header) = headers.get(&(stream, record_index)) else {
                 continue;
             };
-            if let Some(group) = parse_extrude_selection_group(ctx, bytes, scope, ordinal, header)?
-            {
-                push_extrude_selection_group(
-                    ctx,
-                    &mut out,
-                    group,
-                    &entry.name,
-                    header.byte_offset,
-                )?;
+            if let Some(group) = parse_extrude_selection_group(bytes, scope, ordinal, header)? {
+                push_extrude_selection_group(&mut out, group, &entry.name, header.byte_offset);
             }
         }
     }
@@ -1568,21 +1530,13 @@ pub(crate) fn decode_extrude_selection_groups(
 }
 
 fn push_extrude_selection_group(
-    ctx: &DecodeContext<'_>,
     out: &mut Vec<DesignExtrudeSelectionGroup>,
     mut group: DesignExtrudeSelectionGroup,
     stream: &str,
     offset: u64,
-) -> Result<(), CodecError> {
-    group.id = design_record_id_charged(
-        ctx,
-        stream,
-        ":design-extrude-selection-group#",
-        offset,
-        "f3d extrude selection group ID",
-    )?;
+) {
+    group.id = design_record_id(stream, ":design-extrude-selection-group#", offset);
     out.push(group);
-    Ok(())
 }
 
 /// Decode counted construction-operand groups named by feature scopes.
@@ -1591,7 +1545,6 @@ fn push_extrude_selection_group(
 /// close it is recorded on the owning scope, so a group the grammar cannot read
 /// is distinguishable from a reference member that is not a group at all.
 pub(crate) fn decode_construction_operand_groups(
-    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     scopes: &mut [DesignParameterScope],
     headers: &[DesignRecordHeader],
@@ -1654,7 +1607,6 @@ pub(crate) fn decode_construction_operand_groups(
                 continue;
             };
             match parse_construction_operand_group(
-                ctx,
                 bytes,
                 scope,
                 ordinal,
@@ -1662,12 +1614,11 @@ pub(crate) fn decode_construction_operand_groups(
             ) {
                 ConstructionOperandGroupParse::Complete(group) => {
                     push_construction_operand_group(
-                        ctx,
                         &mut out,
                         group,
                         &entry.name,
                         header.byte_offset,
-                    )?;
+                    );
                 }
                 ConstructionOperandGroupParse::Unclosed => {
                     unclosed.push(record_index);
@@ -1685,28 +1636,19 @@ pub(crate) fn decode_construction_operand_groups(
 }
 
 fn push_construction_operand_group(
-    ctx: &DecodeContext<'_>,
     out: &mut Vec<DesignConstructionOperandGroup>,
     mut group: Box<DesignConstructionOperandGroup>,
     stream: &str,
     offset: u64,
-) -> Result<(), CodecError> {
-    group.id = design_record_id_charged(
-        ctx,
-        stream,
-        ":design-construction-operand-group#",
-        offset,
-        "f3d construction operand group ID",
-    )?;
+) {
+    group.id = design_record_id(stream, ":design-construction-operand-group#", offset);
     out.push(*group);
-    Ok(())
 }
 
 /// Decode the fixed role-less body carrier used by the legacy Boolean-Loft
 /// envelopes. The ordinary role-`0x8` body group is admitted only when this
 /// exact carrier is present at scope-reference ordinal zero.
 pub(crate) fn decode_loft_legacy_body_carriers(
-    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     scopes: &[DesignParameterScope],
     headers: &[DesignRecordHeader],
@@ -1741,7 +1683,7 @@ pub(crate) fn decode_loft_legacy_body_carriers(
             let Some(carrier) = parse_loft_legacy_body_carrier(bytes, scope, header) else {
                 continue;
             };
-            push_loft_legacy_body_carrier(ctx, &mut out, carrier, &entry.name, header.byte_offset)?;
+            push_loft_legacy_body_carrier(&mut out, carrier, &entry.name, header.byte_offset);
         }
     }
     out.sort_by(|left, right| left.id.cmp(&right.id));
@@ -1750,21 +1692,13 @@ pub(crate) fn decode_loft_legacy_body_carriers(
 }
 
 fn push_loft_legacy_body_carrier(
-    ctx: &DecodeContext<'_>,
     out: &mut Vec<DesignLoftLegacyBodyCarrier>,
     mut carrier: DesignLoftLegacyBodyCarrier,
     stream: &str,
     offset: u64,
-) -> Result<(), CodecError> {
-    carrier.id = design_record_id_charged(
-        ctx,
-        stream,
-        ":design-loft-legacy-body-carrier#",
-        offset,
-        "f3d legacy Loft body carrier ID",
-    )?;
+) {
+    carrier.id = design_record_id(stream, ":design-loft-legacy-body-carrier#", offset);
     out.push(carrier);
-    Ok(())
 }
 
 /// Parse one class-`322`/`262` or class-`411`/`266` legacy Loft body carrier.
@@ -1960,7 +1894,6 @@ fn push_fillet_radius_group(
 }
 
 pub(crate) fn decode_fillet_radius_groups(
-    _ctx: &DecodeContext<'_>,
     scopes: &[DesignParameterScope],
     groups: &[DesignConstructionOperandGroup],
     owners: &[DesignParameterOwner],
@@ -2290,7 +2223,6 @@ impl From<&DesignRecordHeader> for RecordFrame {
 /// both: exactly one of the four readings reaches a paired header carrying
 /// this record's own index.
 pub(super) fn parse_construction_operand_group(
-    _ctx: &DecodeContext<'_>,
     bytes: &[u8],
     scope: &DesignParameterScope,
     scope_reference_ordinal: u32,
@@ -2932,7 +2864,6 @@ fn take_record_reference(bytes: &[u8], at: &mut usize) -> Option<(u32, u64)> {
 
 /// Decode the persistent identity frame named by each construction-operand group.
 pub(crate) fn decode_construction_operand_identities(
-    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     groups: &[DesignConstructionOperandGroup],
     headers: &[DesignRecordHeader],
@@ -2960,15 +2891,13 @@ pub(crate) fn decode_construction_operand_identities(
         };
         let bytes = scan.entry_bytes(&entry.name)?;
         if let Some(mut identity) =
-            parse_construction_operand_identity(ctx, bytes, group, wrapper_header).transpose()?
+            parse_construction_operand_identity(bytes, group, wrapper_header).transpose()?
         {
-            identity.id = design_record_id_charged(
-                ctx,
+            identity.id = design_record_id(
                 &entry.name,
                 ":design-construction-operand-identity#",
                 wrapper_header.byte_offset,
-                "f3d construction operand identity ID",
-            )?;
+            );
 
             out.push(identity);
         }
@@ -3063,7 +2992,6 @@ pub(crate) fn bind_lost_edge_groups(
 }
 
 fn parse_construction_operand_identity(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     group: &DesignConstructionOperandGroup,
     wrapper_header: &DesignRecordHeader,
@@ -3132,8 +3060,8 @@ fn parse_construction_operand_identity(
     if !chain_started {
         return None;
     }
-    let persistent_identity = match parse_extrude_identity_member(ctx, bytes, current_at) {
-        Some(Ok(member)) => DesignConstructionPersistentIdentity::try_new(
+    let persistent_identity = match parse_extrude_identity_member(bytes, current_at) {
+        Some(member) => DesignConstructionPersistentIdentity::try_new(
             crate::records::topology::construction::DesignConstructionPersistentIdentityDraft {
                 local_id: member.local_id,
                 local_id_offset: member.local_id_offset,
@@ -3148,7 +3076,6 @@ fn parse_construction_operand_identity(
             },
         )
         .ok(),
-        Some(Err(error)) => return Some(Err(error)),
         None => None,
     };
     DesignConstructionOperandIdentity::try_new(
@@ -3282,7 +3209,6 @@ fn take_optional_tracking_identity(bytes: &[u8], cursor: &mut usize) -> Tracking
 }
 
 fn parse_extrude_selection_group(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     scope: &DesignParameterScope,
     scope_reference_ordinal: u32,
@@ -3371,7 +3297,7 @@ fn parse_extrude_selection_group(
     let Some(wire) = wire else {
         return Ok(None);
     };
-    match DesignExtrudeSelectionGroup::from_wire_charged(ctx, wire?) {
+    match DesignExtrudeSelectionGroup::from_wire_charged(wire?) {
         Ok(group) => Ok(Some(group)),
         Err(error @ CodecError::ResourceLimit(_)) => Err(error),
         Err(_) => Ok(None),
@@ -3380,7 +3306,6 @@ fn parse_extrude_selection_group(
 
 /// Decode the fixed-width records named by Extrude selection groups.
 pub(crate) fn decode_extrude_selection_members(
-    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     groups: &[DesignExtrudeSelectionGroup],
     headers: &[DesignRecordHeader],
@@ -3409,15 +3334,13 @@ pub(crate) fn decode_extrude_selection_members(
                 continue;
             };
             if let Some(mut member) =
-                parse_extrude_selection_member(ctx, bytes, group, ordinal, header).transpose()?
+                parse_extrude_selection_member(bytes, group, ordinal, header).transpose()?
             {
-                member.id = design_record_id_charged(
-                    ctx,
+                member.id = design_record_id(
                     &entry.name,
                     ":design-extrude-selection-member#",
                     header.byte_offset,
-                    "f3d extrude selection member ID",
-                )?;
+                );
 
                 out.push(member);
             }
@@ -3429,7 +3352,6 @@ pub(crate) fn decode_extrude_selection_members(
 
 /// Decode nested persistent-entity frames named by construction groups.
 pub(crate) fn decode_entity_selection_operands(
-    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     groups: &[DesignConstructionOperandGroup],
     headers: &[DesignRecordHeader],
@@ -3458,15 +3380,13 @@ pub(crate) fn decode_entity_selection_operands(
                 continue;
             };
             if let Some(mut operand) =
-                parse_entity_selection_operand(ctx, bytes, group, ordinal, header).transpose()?
+                parse_entity_selection_operand(bytes, group, ordinal, header).transpose()?
             {
-                operand.id = design_record_id_charged(
-                    ctx,
+                operand.id = design_record_id(
                     &entry.name,
                     ":design-entity-selection-operand#",
                     header.byte_offset,
-                    "f3d entity selection operand ID",
-                )?;
+                );
 
                 out.push(operand);
             }
@@ -3477,14 +3397,12 @@ pub(crate) fn decode_entity_selection_operands(
 }
 
 pub(super) fn parse_entity_selection_operand(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     group: &DesignConstructionOperandGroup,
     group_member_ordinal: u32,
     header: &DesignRecordHeader,
 ) -> Option<Result<DesignEntitySelectionOperand, CodecError>> {
     let frame = match parse_entity_selection_frame(
-        ctx,
         bytes,
         header.record_index,
         header.byte_offset,
@@ -3553,11 +3471,10 @@ pub(in crate::design::decode) struct EntitySelectionPrefix {
 }
 
 pub(super) fn parse_entity_selection_prefix(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     record_index: u32,
-) -> Option<Result<EntitySelectionPrefix, CodecError>> {
+) -> Option<EntitySelectionPrefix> {
     // Persistent selections use a ten-byte prelude and a u32 presence value.
     // Face-recipe selections add two prelude bytes, encode presence as one
     // byte, and add three zero bytes before the first UTF-16 length.
@@ -3592,28 +3509,8 @@ pub(super) fn parse_entity_selection_prefix(
     } else {
         return None;
     };
-    let (asset_id, after_asset_id) = match lp_utf16_bounded_charged(
-        ctx,
-        bytes,
-        asset_start,
-        1..=256,
-        "f3d Design UTF-16 text",
-    ) {
-        Ok(Some(value)) => value,
-        Ok(None) => return None,
-        Err(error) => return Some(Err(error)),
-    };
-    let (context_id, after_context_id) = match lp_utf16_bounded_charged(
-        ctx,
-        bytes,
-        after_asset_id,
-        1..=256,
-        "f3d Design UTF-16 text",
-    ) {
-        Ok(Some(value)) => value,
-        Ok(None) => return None,
-        Err(error) => return Some(Err(error)),
-    };
+    let (asset_id, after_asset_id) = lp_utf16_bounded(bytes, asset_start, 1..=256)?;
+    let (context_id, after_context_id) = lp_utf16_bounded(bytes, after_asset_id, 1..=256)?;
     if !is_guid_relaxed(&asset_id)
         || !is_guid_relaxed(&context_id)
         || View::u32_le_at(bytes, after_context_id)? != 2
@@ -3621,13 +3518,13 @@ pub(super) fn parse_entity_selection_prefix(
     {
         return None;
     }
-    Some(Ok(EntitySelectionPrefix {
+    Some(EntitySelectionPrefix {
         asset_id,
         asset_id_offset: u64::try_from(asset_start.checked_add(4)?).ok()?,
         context_id,
         context_id_offset: u64::try_from(after_asset_id.checked_add(4)?).ok()?,
         after_context_id,
-    }))
+    })
 }
 
 /// Match the selected curve identity carried by a nested entity-selection frame.
@@ -3667,16 +3564,12 @@ struct WorkPointSketchPointFrame {
 /// presence marker, two marked `u32` slots separated by zero `u32` values,
 /// and the following point-data record.
 fn parse_work_point_sketch_point_frame(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     record_index: u32,
     byte_offset: u64,
 ) -> Option<Result<WorkPointSketchPointFrame, CodecError>> {
     let start = usize::try_from(byte_offset).ok()?;
-    let prefix = match parse_entity_selection_prefix(ctx, bytes, start, record_index)? {
-        Ok(prefix) => prefix,
-        Err(error) => return Some(Err(error)),
-    };
+    let prefix = parse_entity_selection_prefix(bytes, start, record_index)?;
     let paired_at = next_indexed_record_offset(bytes, prefix.after_context_id + 8)?;
     let nested_one_at = next_indexed_record_offset(bytes, paired_at + indexed_header::LEN)?;
     let nested_two_at = next_indexed_record_offset(bytes, nested_one_at + indexed_header::LEN)?;
@@ -3746,17 +3639,13 @@ fn parse_work_point_sketch_point_frame(
 
 /// Parse the nested persistent-entity frame without assigning group ownership.
 pub(super) fn parse_entity_selection_frame(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     record_index: u32,
     byte_offset: u64,
     class_tag: &str,
 ) -> Option<Result<EntitySelectionFrame, CodecError>> {
     let start = usize::try_from(byte_offset).ok()?;
-    let prefix = match parse_entity_selection_prefix(ctx, bytes, start, record_index)? {
-        Ok(prefix) => prefix,
-        Err(error) => return Some(Err(error)),
-    };
+    let prefix = parse_entity_selection_prefix(bytes, start, record_index)?;
     let paired_at = next_indexed_record_offset(bytes, prefix.after_context_id + 8)?;
     let nested_one_at = next_indexed_record_offset(bytes, paired_at + 11)?;
     let nested_two_at = next_indexed_record_offset(bytes, nested_one_at + 11)?;
@@ -3873,7 +3762,6 @@ pub(super) fn parse_entity_selection_frame(
 
 /// Decode whole-body construction operands that contain one persistent body recipe.
 pub(crate) fn decode_body_recipe_operands(
-    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     scopes: &[DesignParameterScope],
     groups: &[DesignConstructionOperandGroup],
@@ -3926,7 +3814,7 @@ pub(crate) fn decode_body_recipe_operands(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let records = cached_borrowed_record_offsets(ctx, &mut record_offset_index, stream, bytes)?;
+        let records = cached_borrowed_record_offsets(&mut record_offset_index, stream, bytes)?;
         for (ordinal, record_index) in group
             .members()
             .iter()
@@ -3948,12 +3836,10 @@ pub(crate) fn decode_body_recipe_operands(
             ) else {
                 continue;
             };
-            if let Some(operand) = parse_body_recipe_operand_with_index(
-                ctx, bytes, records, group, ordinal, header, recipe,
-            )
-            .transpose()?
+            if let Some(operand) =
+                parse_body_recipe_operand_with_index(bytes, records, group, ordinal, header, recipe)
             {
-                push_body_recipe_operand(ctx, &mut out, operand, &entry.name, header.byte_offset)?;
+                push_body_recipe_operand(&mut out, operand, &entry.name, header.byte_offset);
             }
         }
     }
@@ -3969,7 +3855,7 @@ pub(crate) fn decode_body_recipe_operands(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let records = cached_borrowed_record_offsets(ctx, &mut record_offset_index, stream, bytes)?;
+        let records = cached_borrowed_record_offsets(&mut record_offset_index, stream, bytes)?;
         let operation = scope.combine_operation();
         let record_indexes = operation
             .into_iter()
@@ -4016,17 +3902,14 @@ pub(crate) fn decode_body_recipe_operands(
                 scope_reference_ordinal,
             };
             if let Some(operand) = parse_body_recipe_operand_frame_with_index(
-                ctx,
                 bytes,
                 records,
                 scope.record_index,
                 owner,
                 header,
                 recipe,
-            )
-            .transpose()?
-            {
-                push_body_recipe_operand(ctx, &mut out, operand, &entry.name, header.byte_offset)?;
+            ) {
+                push_body_recipe_operand(&mut out, operand, &entry.name, header.byte_offset);
             }
         }
     }
@@ -4044,22 +3927,14 @@ pub(crate) fn decode_body_recipe_operands(
 }
 
 fn push_body_recipe_operand(
-    ctx: &DecodeContext<'_>,
     out: &mut Vec<DesignBodyRecipeOperand>,
     mut operand: DesignBodyRecipeOperand,
     stream: &str,
     offset: u64,
-) -> Result<(), CodecError> {
-    operand.id = design_record_id_charged(
-        ctx,
-        stream,
-        ":design-body-recipe-operand#",
-        offset,
-        "f3d body recipe operand ID",
-    )?;
+) {
+    operand.id = design_record_id(stream, ":design-body-recipe-operand#", offset);
 
     out.push(operand);
-    Ok(())
 }
 
 /// Select the sole body recipe in the structural interval after the `N+3`
@@ -4151,16 +4026,14 @@ fn body_recipe_operand_end_with_index(
 
 #[cfg(test)]
 fn parse_body_recipe_operand(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     group: &DesignConstructionOperandGroup,
     group_member_ordinal: u32,
     header: &DesignRecordHeader,
     recipe: &ConstructionRecipe,
-) -> Option<Result<DesignBodyRecipeOperand, CodecError>> {
+) -> Option<DesignBodyRecipeOperand> {
     let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
     parse_body_recipe_operand_with_index(
-        ctx,
         bytes,
         &records,
         group,
@@ -4171,16 +4044,14 @@ fn parse_body_recipe_operand(
 }
 
 fn parse_body_recipe_operand_with_index(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     group: &DesignConstructionOperandGroup,
     group_member_ordinal: u32,
     header: &DesignRecordHeader,
     recipe: &ConstructionRecipe,
-) -> Option<Result<DesignBodyRecipeOperand, CodecError>> {
+) -> Option<DesignBodyRecipeOperand> {
     parse_body_recipe_operand_frame_with_index(
-        ctx,
         bytes,
         records,
         group.scope_record_index,
@@ -4194,14 +4065,13 @@ fn parse_body_recipe_operand_with_index(
 }
 
 fn parse_body_recipe_operand_frame_with_index(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope_record_index: u32,
     owner: DesignOperandOwner,
     header: &DesignRecordHeader,
     recipe: &ConstructionRecipe,
-) -> Option<Result<DesignBodyRecipeOperand, CodecError>> {
+) -> Option<DesignBodyRecipeOperand> {
     let start = usize::try_from(header.byte_offset).ok()?;
     let recipe_at = usize::try_from(recipe.byte_offset).ok()?;
     let prologue_end = body_recipe_prologue_end_with_index(records, start, header.record_index)?;
@@ -4243,28 +4113,8 @@ fn parse_body_recipe_operand_frame_with_index(
     }
     let nested_record_index = View::u64_le_at(bytes, cursor + 1)?;
     let asset_id_at = cursor.checked_add(15)?;
-    let (asset_id, after_asset_id) = match lp_utf16_bounded_charged(
-        ctx,
-        bytes,
-        asset_id_at,
-        1..=256,
-        "f3d Design UTF-16 text",
-    ) {
-        Ok(Some(value)) => value,
-        Ok(None) => return None,
-        Err(error) => return Some(Err(error)),
-    };
-    let (context_id, after_context_id) = match lp_utf16_bounded_charged(
-        ctx,
-        bytes,
-        after_asset_id,
-        1..=256,
-        "f3d Design UTF-16 text",
-    ) {
-        Ok(Some(value)) => value,
-        Ok(None) => return None,
-        Err(error) => return Some(Err(error)),
-    };
+    let (asset_id, after_asset_id) = lp_utf16_bounded(bytes, asset_id_at, 1..=256)?;
+    let (context_id, after_context_id) = lp_utf16_bounded(bytes, after_asset_id, 1..=256)?;
     let selector_tail_at = after_context_id.checked_add(4)?;
     let selector_tail: [u8; 4] = bytes
         .get(selector_tail_at..selector_tail_at.checked_add(4)?)?
@@ -4315,12 +4165,10 @@ fn parse_body_recipe_operand_frame_with_index(
         },
     )
     .ok()
-    .map(Ok)
 }
 
 /// Join body-recipe Design references to solved persistent face tags.
 pub(crate) fn bind_body_recipe_operand_candidates(
-    _ctx: &DecodeContext<'_>,
     operands: &mut [DesignBodyRecipeOperand],
     recipes: &[ConstructionRecipe],
     tags: &[PersistentSubentityTag],
@@ -4483,17 +4331,13 @@ pub(crate) fn bind_extrude_selection_identities(
 }
 
 fn parse_extrude_selection_member(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     group: &DesignExtrudeSelectionGroup,
     group_member_ordinal: u32,
     header: &DesignRecordHeader,
 ) -> Option<Result<DesignExtrudeSelectionMember, CodecError>> {
     let start = usize::try_from(header.byte_offset).ok()?;
-    let member = match parse_extrude_identity_member(ctx, bytes, start)? {
-        Ok(member) => member,
-        Err(error) => return Some(Err(error)),
-    };
+    let member = parse_extrude_identity_member(bytes, start)?;
     DesignExtrudeSelectionMember::try_new(
         crate::records::topology::extrude_selection::DesignExtrudeSelectionMemberDraft {
             id: String::new(),
@@ -4535,38 +4379,18 @@ struct ParsedExtrudeIdentityMember {
 }
 
 fn parse_extrude_identity_member(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
-) -> Option<Result<ParsedExtrudeIdentityMember, CodecError>> {
+) -> Option<ParsedExtrudeIdentityMember> {
     if bytes.get(start + extrude_member::ZERO_RUN_10..start + extrude_member::LOCAL_IDENTITY)?
         != [0; 10]
     {
         return None;
     }
     let local_id = View::u64_le_at(bytes, start + extrude_member::LOCAL_IDENTITY)?;
-    let (asset_id, after_asset_id) = match lp_utf16_bounded_charged(
-        ctx,
-        bytes,
-        start + extrude_member::ASSET_UUID_LENGTH,
-        1..=256,
-        "f3d Design UTF-16 text",
-    ) {
-        Ok(Some(value)) => value,
-        Ok(None) => return None,
-        Err(error) => return Some(Err(error)),
-    };
-    let (context_id, after_context_id) = match lp_utf16_bounded_charged(
-        ctx,
-        bytes,
-        after_asset_id,
-        1..=256,
-        "f3d Design UTF-16 text",
-    ) {
-        Ok(Some(value)) => value,
-        Ok(None) => return None,
-        Err(error) => return Some(Err(error)),
-    };
+    let (asset_id, after_asset_id) =
+        lp_utf16_bounded(bytes, start + extrude_member::ASSET_UUID_LENGTH, 1..=256)?;
+    let (context_id, after_context_id) = lp_utf16_bounded(bytes, after_asset_id, 1..=256)?;
     let tail_slot_offset = after_context_id.checked_add(4)?;
     let tail_slot_present = match bytes.get(tail_slot_offset)? {
         0 => false,
@@ -4607,7 +4431,7 @@ fn parse_extrude_identity_member(
     } else {
         return None;
     };
-    Some(Ok(ParsedExtrudeIdentityMember {
+    Some(ParsedExtrudeIdentityMember {
         local_id,
         local_id_offset: u64::try_from(start + extrude_member::LOCAL_IDENTITY).ok()?,
         asset_id,
@@ -4618,7 +4442,7 @@ fn parse_extrude_identity_member(
         tail_slot_offset: u64::try_from(tail_slot_offset).ok()?,
         next_record_index,
         next_byte_offset,
-    }))
+    })
 }
 
 struct ParsedEdgeIdentityMember {
@@ -4630,11 +4454,7 @@ struct ParsedEdgeIdentityMember {
     context_id_offset: u64,
 }
 
-fn parse_edge_identity_member(
-    ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-    start: usize,
-) -> Option<Result<ParsedEdgeIdentityMember, CodecError>> {
+fn parse_edge_identity_member(bytes: &[u8], start: usize) -> Option<ParsedEdgeIdentityMember> {
     use crate::records::topology::edge_identity::DesignEdgeIdentityLayout;
     let layout = if bytes.get(start + 11..start + 23) == Some(&[0; 12]) {
         DesignEdgeIdentityLayout::Full
@@ -4655,39 +4475,19 @@ fn parse_edge_identity_member(
         return None;
     }
     let local_id = u64::from(View::u32_le_at(bytes, start + local_id_offset)?);
-    let (asset_id, after_asset_id) = match lp_utf16_bounded_charged(
-        ctx,
-        bytes,
-        start + asset_offset,
-        1..=256,
-        "f3d Design UTF-16 text",
-    ) {
-        Ok(Some(value)) => value,
-        Ok(None) => return None,
-        Err(error) => return Some(Err(error)),
-    };
-    let (context_id, _after_context_id) = match lp_utf16_bounded_charged(
-        ctx,
-        bytes,
-        after_asset_id,
-        1..=256,
-        "f3d Design UTF-16 text",
-    ) {
-        Ok(Some(value)) => value,
-        Ok(None) => return None,
-        Err(error) => return Some(Err(error)),
-    };
+    let (asset_id, after_asset_id) = lp_utf16_bounded(bytes, start + asset_offset, 1..=256)?;
+    let (context_id, _after_context_id) = lp_utf16_bounded(bytes, after_asset_id, 1..=256)?;
     if !is_guid_relaxed(&asset_id) || !is_guid_relaxed(&context_id) {
         return None;
     }
-    Some(Ok(ParsedEdgeIdentityMember {
+    Some(ParsedEdgeIdentityMember {
         layout,
         local_id,
         asset_id,
         asset_id_offset: u64::try_from(start + asset_offset + 4).ok()?,
         context_id,
         context_id_offset: u64::try_from(after_asset_id + 4).ok()?,
-    }))
+    })
 }
 
 fn utf16_decimal_u64(bytes: &[u8], at: usize) -> Option<(u64, usize)> {
@@ -4716,13 +4516,12 @@ fn utf16_decimal_u64(bytes: &[u8], at: usize) -> Option<(u64, usize)> {
 }
 
 pub(in crate::design) fn parse_sketch_profile(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     stream: &str,
     scope_reference_ordinal: u32,
     header: &DesignRecordHeader,
     entities: &[DesignEntityHeader],
-) -> Option<Result<DesignSketchProfileOperand, CodecError>> {
+) -> Option<DesignSketchProfileOperand> {
     let start = usize::try_from(header.byte_offset).ok()?;
     if bytes.get(start + 11..start + 21)? != [0; 10]
         || bytes.get(start + 21) != Some(&1)
@@ -4733,12 +4532,7 @@ pub(in crate::design) fn parse_sketch_profile(
         return None;
     }
     relaxed_guid_end(bytes, start + 36)?;
-    let (asset_id, after_asset_id) =
-        match lp_utf16_bounded_charged(ctx, bytes, start + 36, 1..=256, "f3d Design UTF-16 text") {
-            Ok(Some(value)) => value,
-            Ok(None) => return None,
-            Err(error) => return Some(Err(error)),
-        };
+    let (asset_id, after_asset_id) = lp_utf16_bounded(bytes, start + 36, 1..=256)?;
     let (entity_suffix, after_entity_suffix) = utf16_decimal_u64(bytes, after_asset_id)?;
     let paired_at = next_indexed_record_offset(bytes, start + 11)?;
     let (paired_class_tag, after_paired_tag) =
@@ -4801,7 +4595,6 @@ pub(in crate::design) fn parse_sketch_profile(
         },
     )
     .ok()
-    .map(Ok)
 }
 
 fn parse_sketch_profile_region_selection(
@@ -5002,7 +4795,6 @@ enum RecipeOperandTerminator {
 
 /// Parse one exact persistent vertex-recipe envelope.
 fn parse_vertex_recipe(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     stream: &str,
@@ -5010,7 +4802,6 @@ fn parse_vertex_recipe(
     recipes: &[ConstructionRecipe],
 ) -> Option<Result<DesignVertexRecipe, CodecError>> {
     let parsed = parse_recipe_operand(
-        ctx,
         bytes,
         records,
         stream,
@@ -5021,10 +4812,6 @@ fn parse_vertex_recipe(
             RecipeOperandTerminator::RecordDelta(5),
         ),
     )?;
-    let parsed = match parsed {
-        Ok(parsed) => parsed,
-        Err(error) => return Some(Err(error)),
-    };
     DesignVertexRecipe::try_new(
         crate::records::feature::work_geometry::DesignVertexRecipeDraft {
             record_index: header.record_index,
@@ -5051,14 +4838,13 @@ fn parse_vertex_recipe(
 
 /// Parse the indexed-record envelope shared by topology recipe operands.
 fn parse_recipe_operand(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     stream: &str,
     header: &DesignRecordHeader,
     recipes: &[ConstructionRecipe],
     (recipe_kind, terminator): (ConstructionRecipeKind, RecipeOperandTerminator),
-) -> Option<Result<ParsedRecipeOperand, CodecError>> {
+) -> Option<ParsedRecipeOperand> {
     let family_name = crate::design::RECIPES
         .iter()
         .find_map(|(name, kind)| (*kind == recipe_kind).then_some(*name))?;
@@ -5141,11 +4927,7 @@ fn parse_recipe_operand(
         family_name.len(),
     )?;
     let recipe_prefix_offset = u64::try_from(recipe_prefix_at).ok()?;
-    let recipe_references =
-        match decode_recipe_references_charged(ctx, recipe_prefix_bytes, recipe_prefix_offset) {
-            Ok(references) => references,
-            Err(error) => return Some(Err(error)),
-        };
+    let recipe_references = decode_recipe_references(recipe_prefix_bytes, recipe_prefix_offset);
     let recipe_program_at = usize::try_from(recipe.byte_offset)
         .ok()?
         .checked_add(family_name.len())?;
@@ -5156,7 +4938,7 @@ fn parse_recipe_operand(
     let recipe_program = contiguous_i32_program(bytes, recipe_program_at, recipe_program_end)?;
     let recipe_prefix_bytes = recipe_prefix_bytes.to_vec();
     let recipe_id = recipe.id.clone();
-    Some(Ok(ParsedRecipeOperand {
+    Some(ParsedRecipeOperand {
         paired_byte_offset: u64::try_from(offsets[0]).ok()?,
         paired_class_tag: crate::design::decode::text::class_tag_from_view(indexed[0].0).ok()?,
         recipe_record_index,
@@ -5169,7 +4951,7 @@ fn parse_recipe_operand(
         recipe_program,
         next_record_index,
         next_byte_offset,
-    }))
+    })
 }
 
 fn parse_edge_operand(
@@ -5184,7 +4966,6 @@ fn parse_edge_operand(
     let next_record_delta = edge_recipe_terminal_delta(&scope.kind());
     let stream = native_stream(&scope.id)?;
     let parsed = parse_recipe_operand(
-        ctx,
         bytes,
         records,
         stream,
@@ -5198,7 +4979,6 @@ fn parse_edge_operand(
     .or_else(|| {
         let limit = terminal_group_limit?;
         parse_recipe_operand(
-            ctx,
             bytes,
             records,
             stream,
@@ -5210,10 +4990,6 @@ fn parse_edge_operand(
             ),
         )
     })?;
-    let parsed = match parsed {
-        Ok(parsed) => parsed,
-        Err(error) => return Some(Err(error)),
-    };
     let recipe_structure = match edge_recipe_structure_with_context(ctx, &parsed.recipe_program) {
         Ok(structure) => structure,
         Err(error) => return Some(Err(error)),
@@ -5233,18 +5009,13 @@ fn parse_edge_operand(
     let local_topology_references = recipe_structure.as_ref().and_then(|structure| {
         edge_recipe_local_topology_references(structure, parsed.recipe_references.len())
     });
-    let id = match design_record_id_charged(
-        ctx,
+    let id = design_record_id(
         stream
             .strip_prefix(crate::ids::SCHEME_PREFIX)
             .unwrap_or(stream),
         ":design-edge-operand#",
         header.byte_offset,
-        "f3d edge operand ID",
-    ) {
-        Ok(id) => id,
-        Err(error) => return Some(Err(error)),
-    };
+    );
     DesignEdgeOperand::try_new(
         crate::records::topology::edge_identity::DesignEdgeOperandDraft {
             id,
@@ -5965,14 +5736,8 @@ pub(super) fn parse_face_operand(
         usize::try_from(recipe.byte_offset).ok()?,
         family_name_len,
     )?;
-    let recipe_references = match decode_recipe_references_charged(
-        ctx,
-        recipe_prefix_bytes,
-        u64::try_from(recipe_prefix_at).ok()?,
-    ) {
-        Ok(references) => references,
-        Err(error) => return Some(Err(error)),
-    };
+    let recipe_references =
+        decode_recipe_references(recipe_prefix_bytes, u64::try_from(recipe_prefix_at).ok()?);
     let recipe_program_at = usize::try_from(recipe.byte_offset)
         .ok()?
         .checked_add(family_name_len)?;
@@ -5992,18 +5757,13 @@ pub(super) fn parse_face_operand(
             Err(error) => return Some(Err(error)),
         };
     let recipe_id = recipe.id.clone();
-    let id = match design_record_id_charged(
-        ctx,
+    let id = design_record_id(
         stream
             .strip_prefix(crate::ids::SCHEME_PREFIX)
             .unwrap_or(stream),
         ":design-face-operand#",
         header.byte_offset,
-        "f3d face operand ID",
-    ) {
-        Ok(id) => id,
-        Err(error) => return Some(Err(error)),
-    };
+    );
     DesignFaceOperand::try_new(crate::records::topology::face::DesignFaceOperandDraft {
         id,
         scope_record_index: scope.record_index,

@@ -80,13 +80,7 @@ fn standard_recipe_references_refuse_nested_items_and_token_text() {
     prefix.extend_from_slice(&331u32.to_le_bytes());
     prefix.extend_from_slice(&[0; 8]);
     assert_eq!(
-        crate::test_support::with_decode_context(|ctx| {
-            crate::design::decode::dimension_frames::decode_recipe_references_charged(
-                ctx, &prefix, 0,
-            )
-            .expect("recipe references")
-        })
-        .len(),
+        { crate::design::decode::dimension_frames::decode_recipe_references(&prefix, 0) }.len(),
         1
     );
 }
@@ -109,13 +103,7 @@ fn paired_recipe_references_refuse_operand_and_flattened_runs() {
     prefix.extend_from_slice(&305u32.to_le_bytes());
     prefix.extend_from_slice(&[0; 4]);
     assert_eq!(
-        crate::test_support::with_decode_context(|ctx| {
-            crate::design::decode::dimension_frames::decode_recipe_references_charged(
-                ctx, &prefix, 0,
-            )
-            .expect("recipe references")
-        })
-        .len(),
+        { crate::design::decode::dimension_frames::decode_recipe_references(&prefix, 0) }.len(),
         2
     );
 }
@@ -135,13 +123,7 @@ fn grouped_recipe_references_refuse_output_run() {
     }
     prefix.extend_from_slice(&[0; 4]);
     assert_eq!(
-        crate::test_support::with_decode_context(|ctx| {
-            crate::design::decode::dimension_frames::decode_recipe_references_charged(
-                ctx, &prefix, 0,
-            )
-            .expect("recipe references")
-        })
-        .len(),
+        { crate::design::decode::dimension_frames::decode_recipe_references(&prefix, 0) }.len(),
         4
     );
 }
@@ -174,12 +156,8 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
     prefix.extend_from_slice(&0u32.to_le_bytes());
     prefix.extend_from_slice(&0u32.to_le_bytes());
 
-    let references = crate::test_support::with_decode_context(|ctx| {
-        crate::design::decode::dimension_frames::decode_recipe_references_charged(
-            ctx, &prefix, 1_000,
-        )
-        .expect("recipe references")
-    });
+    let references =
+        { crate::design::decode::dimension_frames::decode_recipe_references(&prefix, 1_000) };
     assert_eq!(references.len(), 3);
     assert_eq!(references[0].selector, 1);
     assert_eq!(references[0].selector_offset, 1_022);
@@ -220,22 +198,12 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
             .flat_map(u32::to_le_bytes),
     );
     assert_eq!(
-        crate::test_support::with_decode_context(|ctx| {
-            crate::design::decode::dimension_frames::decode_recipe_references_charged(
-                ctx, &prefix, 1_000,
-            )
-            .expect("recipe references")
-        }),
+        { crate::design::decode::dimension_frames::decode_recipe_references(&prefix, 1_000) },
         references
     );
     prefix.extend_from_slice(&[0; 2]);
     assert_eq!(
-        crate::test_support::with_decode_context(|ctx| {
-            crate::design::decode::dimension_frames::decode_recipe_references_charged(
-                ctx, &prefix, 1_000,
-            )
-            .expect("recipe references")
-        }),
+        { crate::design::decode::dimension_frames::decode_recipe_references(&prefix, 1_000) },
         references
     );
     let tags = [
@@ -373,12 +341,8 @@ fn dimension_recipe_decodes_signed_decimal_reference_tokens() {
     prefix.extend_from_slice(&0u32.to_le_bytes());
     prefix.extend_from_slice(&0u32.to_le_bytes());
 
-    let references = crate::test_support::with_decode_context(|ctx| {
-        crate::design::decode::dimension_frames::decode_recipe_references_charged(
-            ctx, &prefix, 1_000,
-        )
-        .expect("recipe references")
-    });
+    let references =
+        { crate::design::decode::dimension_frames::decode_recipe_references(&prefix, 1_000) };
     assert_eq!(references.len(), 2);
     assert_eq!(references[0].selector, 1);
     assert_eq!(references[0].token, "-2");
@@ -413,12 +377,8 @@ fn face_recipe_decodes_paired_packed_reference_runs() {
         }
     }
 
-    let references = crate::test_support::with_decode_context(|ctx| {
-        crate::design::decode::dimension_frames::decode_recipe_references_charged(
-            ctx, &prefix, 1_000,
-        )
-        .expect("recipe references")
-    });
+    let references =
+        { crate::design::decode::dimension_frames::decode_recipe_references(&prefix, 1_000) };
     assert!(crate::design::decode::dimension_frames::is_paired_recipe_reference_frame(&prefix));
     assert_eq!(references.len(), 4);
     assert_eq!(
@@ -447,14 +407,9 @@ fn face_recipe_decodes_paired_packed_reference_runs() {
     let second_operand_at = reference_offsets[0] + 8;
     let mut packed_second = prefix.clone();
     packed_second.drain(second_operand_at + 4..second_operand_at + 8);
-    assert!(crate::test_support::with_decode_context(|ctx| {
-        crate::design::decode::dimension_frames::decode_recipe_references_charged(
-            ctx,
-            &packed_second,
-            1_000,
-        )
-        .expect("recipe references")
-    })
+    assert!({
+        crate::design::decode::dimension_frames::decode_recipe_references(&packed_second, 1_000)
+    }
     .is_empty());
     let mut invalid_header = prefix.clone();
     invalid_header[0] = 1;
@@ -464,37 +419,29 @@ fn face_recipe_decodes_paired_packed_reference_runs() {
 
     let mut trailing = prefix.clone();
     trailing.extend_from_slice(&0u32.to_le_bytes());
-    assert!(crate::test_support::with_decode_context(|ctx| {
-        crate::design::decode::dimension_frames::decode_recipe_references_charged(
-            ctx, &trailing, 1_000,
-        )
-        .expect("recipe references")
-    })
+    assert!({
+        crate::design::decode::dimension_frames::decode_recipe_references(&trailing, 1_000)
+    }
     .is_empty());
     assert!(!crate::design::decode::dimension_frames::is_paired_recipe_reference_frame(&trailing));
 
     let mut mismatched_selector = prefix.clone();
     mismatched_selector[second_operand_at..second_operand_at + 4]
         .copy_from_slice(&2u32.to_le_bytes());
-    assert!(crate::test_support::with_decode_context(|ctx| {
-        crate::design::decode::dimension_frames::decode_recipe_references_charged(
-            ctx,
+    assert!({
+        crate::design::decode::dimension_frames::decode_recipe_references(
             &mismatched_selector,
             1_000,
         )
-        .expect("recipe references")
-    })
+    }
     .is_empty());
 
     let second_run_at = reference_offsets[1];
     prefix[second_run_at..second_run_at + 4].copy_from_slice(&306u32.to_le_bytes());
-    assert!(crate::test_support::with_decode_context(|ctx| {
-        crate::design::decode::dimension_frames::decode_recipe_references_charged(
-            ctx, &prefix, 1_000,
-        )
-        .expect("recipe references")
-    })
-    .is_empty());
+    assert!(
+        { crate::design::decode::dimension_frames::decode_recipe_references(&prefix, 1_000) }
+            .is_empty()
+    );
     assert!(!crate::design::decode::dimension_frames::is_paired_recipe_reference_frame(&prefix));
 }
 
@@ -532,12 +479,8 @@ fn face_recipe_decodes_five_group_reference_sequence() {
     }
     prefix.extend_from_slice(&0u32.to_le_bytes());
 
-    let references = crate::test_support::with_decode_context(|ctx| {
-        crate::design::decode::dimension_frames::decode_recipe_references_charged(
-            ctx, &prefix, 1_000,
-        )
-        .expect("recipe references")
-    });
+    let references =
+        { crate::design::decode::dimension_frames::decode_recipe_references(&prefix, 1_000) };
     assert!(crate::design::decode::dimension_frames::is_grouped_recipe_reference_frame(&prefix));
     assert_eq!(
         references
@@ -568,68 +511,49 @@ fn face_recipe_decodes_five_group_reference_sequence() {
 
     let mut wrong_first_group_count = prefix.clone();
     wrong_first_group_count[18..22].copy_from_slice(&3u32.to_le_bytes());
-    assert!(crate::test_support::with_decode_context(|ctx| {
-        crate::design::decode::dimension_frames::decode_recipe_references_charged(
-            ctx,
+    assert!({
+        crate::design::decode::dimension_frames::decode_recipe_references(
             &wrong_first_group_count,
             1_000,
         )
-        .expect("recipe references")
-    })
+    }
     .is_empty());
     let mut wrong_group_count = prefix.clone();
     wrong_group_count[14..18].copy_from_slice(&4u32.to_le_bytes());
-    assert!(crate::test_support::with_decode_context(|ctx| {
-        crate::design::decode::dimension_frames::decode_recipe_references_charged(
-            ctx,
-            &wrong_group_count,
-            1_000,
-        )
-        .expect("recipe references")
-    })
+    assert!({
+        crate::design::decode::dimension_frames::decode_recipe_references(&wrong_group_count, 1_000)
+    }
     .is_empty());
     let mut empty_group = prefix.clone();
     empty_group[second_group_count_at..second_group_count_at + 4]
         .copy_from_slice(&0u32.to_le_bytes());
-    assert!(crate::test_support::with_decode_context(|ctx| {
-        crate::design::decode::dimension_frames::decode_recipe_references_charged(
-            ctx,
-            &empty_group,
-            1_000,
-        )
-        .expect("recipe references")
-    })
+    assert!({
+        crate::design::decode::dimension_frames::decode_recipe_references(&empty_group, 1_000)
+    }
     .is_empty());
     let mut length_prefixed_token = prefix.clone();
     length_prefixed_token.splice(26..26, 2u32.to_le_bytes());
-    assert!(crate::test_support::with_decode_context(|ctx| {
-        crate::design::decode::dimension_frames::decode_recipe_references_charged(
-            ctx,
+    assert!({
+        crate::design::decode::dimension_frames::decode_recipe_references(
             &length_prefixed_token,
             1_000,
         )
-        .expect("recipe references")
-    })
+    }
     .is_empty());
     let mut locally_terminated_operand = prefix.clone();
     locally_terminated_operand.splice(first_operand_end..first_operand_end, 0u32.to_le_bytes());
-    assert!(crate::test_support::with_decode_context(|ctx| {
-        crate::design::decode::dimension_frames::decode_recipe_references_charged(
-            ctx,
+    assert!({
+        crate::design::decode::dimension_frames::decode_recipe_references(
             &locally_terminated_operand,
             1_000,
         )
-        .expect("recipe references")
-    })
+    }
     .is_empty());
     let mut trailing = prefix.clone();
     trailing.extend_from_slice(&0u32.to_le_bytes());
-    assert!(crate::test_support::with_decode_context(|ctx| {
-        crate::design::decode::dimension_frames::decode_recipe_references_charged(
-            ctx, &trailing, 1_000,
-        )
-        .expect("recipe references")
-    })
+    assert!({
+        crate::design::decode::dimension_frames::decode_recipe_references(&trailing, 1_000)
+    }
     .is_empty());
     assert!(!crate::design::decode::dimension_frames::is_grouped_recipe_reference_frame(&trailing));
 }
@@ -658,12 +582,8 @@ fn face_recipe_decodes_dynamic_group_reference_sequence() {
     }
     prefix.extend_from_slice(&0u32.to_le_bytes());
 
-    let references = crate::test_support::with_decode_context(|ctx| {
-        crate::design::decode::dimension_frames::decode_recipe_references_charged(
-            ctx, &prefix, 1_000,
-        )
-        .expect("recipe references")
-    });
+    let references =
+        { crate::design::decode::dimension_frames::decode_recipe_references(&prefix, 1_000) };
     assert!(crate::design::decode::dimension_frames::is_grouped_recipe_reference_frame(&prefix));
     assert_eq!(
         references
@@ -704,13 +624,8 @@ fn dimension_recipe_rejects_non_decimal_reference_tokens() {
         prefix.extend_from_slice(&0u32.to_le_bytes());
 
         assert!(
-            crate::test_support::with_decode_context(|ctx| {
-                crate::design::decode::dimension_frames::decode_recipe_references_charged(
-                    ctx, &prefix, 1_000,
-                )
-                .expect("recipe references")
-            })
-            .is_empty(),
+            { crate::design::decode::dimension_frames::decode_recipe_references(&prefix, 1_000) }
+                .is_empty(),
             "accepted token {token:?}"
         );
     }
@@ -752,7 +667,6 @@ fn dimension_annotation_frame_links_nullable_loci_to_governing_owner() {
     bytes.resize(paired_byte_offset + 59, 0);
 
     let frame = parse_dimension_annotation_frame(
-        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         0,
         Some(383),
@@ -791,7 +705,6 @@ fn dimension_annotation_frame_links_nullable_loci_to_governing_owner() {
     assert_eq!(frame.owner_reference, 201);
 
     let leading = parse_dimension_annotation_frame(
-        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         0,
         None,
@@ -959,12 +872,7 @@ fn dimension_annotation_interval_refuses_collection_limit() {
             points: &[],
             curves: &[],
         };
-        let admitted = super::decode_dimension_annotation_frames(
-            &cadmpeg_test_support::service_decode_context(),
-            &inputs,
-            &[],
-        )
-        .unwrap();
+        let admitted = super::decode_dimension_annotation_frames(&inputs, &[]).unwrap();
         assert!(admitted.is_empty());
     });
 }

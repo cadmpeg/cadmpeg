@@ -271,14 +271,7 @@ pub(super) fn exact_legacy_as_built_421_operands(
     let hole_record_index = hole_reference.value;
     let second_selection_record_index = second_selection_reference.value;
     let point = exact_point_data_construction(bytes, records, &[point_record_index], stream_types)?;
-    let hole = match exact_hole_construction(
-ctx,
-bytes,
-records,
-scope,
-stream_types,
-&crate::records::feature::scope::DesignFeatureKind::AsBuilt,
-) {
+    let hole = match exact_hole_construction(bytes, records, scope, stream_types, &crate::records::feature::scope::DesignFeatureKind::AsBuilt) {
         Ok(Some(hole)) => hole,
         Ok(None) => return None,
         Err(error) => return Some(Err(error)),
@@ -441,11 +434,7 @@ fn exact_legacy_as_built_face_selection(
                 Ok(operand) => operand,
                 Err(error) => return Some(Err(error)),
             };
-            let prefix = match parse_entity_selection_prefix(ctx, bytes, byte_offset, record_index)?
-            {
-                Ok(prefix) => prefix,
-                Err(error) => return Some(Err(error)),
-            };
+            let prefix = parse_entity_selection_prefix(bytes, byte_offset, record_index)?;
             let next_byte_offset = operand.next_byte_offset();
             Some(Ok(DesignAssemblyLegacySelection {
                 record_index,

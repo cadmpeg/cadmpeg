@@ -33,7 +33,7 @@ use cadmpeg_protein::{
     CONTINUATION_MARKER, PAGE_SIZE, RECORD_MARKER, STREAM_HEADER_LEN, TERMINAL_MARKER,
 };
 
-use crate::bytes::{is_guid_prefix, lp_utf16_bounded_charged, skip_lp_u32_bytes, take_lp_utf8};
+use crate::bytes::{is_guid_prefix, lp_utf16_bounded, skip_lp_u32_bytes, take_lp_utf8};
 use crate::container::ContainerScan;
 use crate::design::presentation::{
     APPEARANCE_LIBRARY_ID, GUID_LEN, MODERN_APPEARANCE_LIBRARY_IDS as APPEARANCE_LIBRARY_ID_PAIR,
@@ -665,8 +665,8 @@ pub(crate) fn decode_with_body_bindings<'a>(
         )));
     }
     out.dedup_by(|a, b| a.id == b.id);
-    let assignments = decode_design_assignments(ctx, scan)?;
-    let act_channels = decode_act_channels(ctx, scan)?;
+    let assignments = decode_design_assignments(scan)?;
+    let act_channels = decode_act_channels(scan)?;
     let object_types = decode_design_object_types(scan)?;
     for assignment in &assignments {
         if appearance_for_assignment(&out, assignment)?.is_none() {
@@ -751,7 +751,7 @@ pub(crate) fn decode_with_body_bindings<'a>(
             )?,
         });
     }
-    let face_assignments = decode_face_appearance_assignments(ctx, scan)?;
+    let face_assignments = decode_face_appearance_assignments(scan)?;
     let has_topology_assignments =
         !assignments.is_empty() || !body_overrides.is_empty() || !face_assignments.is_empty();
     Ok(DecodedMaterials {
@@ -915,7 +915,6 @@ fn decoded_color(values: [f64; 4]) -> Option<Color> {
 }
 
 pub(crate) fn decode_design_assignments(
-    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
 ) -> Result<Vec<DesignMaterialAssignment>, CodecError> {
     let mut out = Vec::new();
@@ -926,13 +925,13 @@ pub(crate) fn decode_design_assignments(
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         let Some(metadata) =
-            crate::design::decode::meta::metadata_for_bulk_stream(ctx, scan, &entry.name)?
+            crate::design::decode::meta::metadata_for_bulk_stream(scan, &entry.name)?
         else {
             continue;
         };
-        let body_map = crate::design::decode::body::body_bindings(ctx, bytes, &metadata)?;
+        let body_map = crate::design::decode::body::body_bindings(bytes, &metadata)?;
         for presentation in
-            crate::design::decode::presentation::body_presentations(ctx, bytes, &metadata)?
+            crate::design::decode::presentation::body_presentations(bytes, &metadata)?
         {
             let Some(material) = presentation.material else {
                 continue;
@@ -1006,14 +1005,14 @@ fn decode_body_appearance_overrides(
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         let Some(metadata) =
-            crate::design::decode::meta::metadata_for_bulk_stream(ctx, scan, &entry.name)?
+            crate::design::decode::meta::metadata_for_bulk_stream(scan, &entry.name)?
         else {
             continue;
         };
-        let body_map = crate::design::decode::body::body_bindings(ctx, bytes, &metadata)?;
+        let body_map = crate::design::decode::body::body_bindings(bytes, &metadata)?;
         let mut appearances = browser_body_appearances(ctx, bytes)?;
         for presentation in
-            crate::design::decode::presentation::body_presentations(ctx, bytes, &metadata)?
+            crate::design::decode::presentation::body_presentations(bytes, &metadata)?
         {
             if presentation.owner
                 != crate::design::decode::presentation::BodyPresentationOwner::Bare
@@ -1088,7 +1087,6 @@ pub(crate) struct FaceAppearanceAssignment {
 /// primary-index frame
 /// ([spec §3.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#32-materials)).
 fn decode_face_appearance_assignments(
-    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
 ) -> Result<Vec<FaceAppearanceAssignment>, CodecError> {
     let mut out = Vec::new();
@@ -1099,13 +1097,12 @@ fn decode_face_appearance_assignments(
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         let Some(metadata) =
-            crate::design::decode::meta::metadata_for_bulk_stream(ctx, scan, &entry.name)?
+            crate::design::decode::meta::metadata_for_bulk_stream(scan, &entry.name)?
         else {
             continue;
         };
-        for frame in crate::metastream::primary_record_frames(ctx, &metadata, bytes.len())? {
+        for frame in crate::metastream::primary_record_frames(&metadata, bytes.len())? {
             out.extend(face_appearance_assignments_in_frame(
-                ctx,
                 &bytes[frame.start..frame.end],
             )?);
         }
@@ -1116,19 +1113,16 @@ fn decode_face_appearance_assignments(
 /// Decode a synthetic test slice as one Design primary-index frame.
 #[cfg(test)]
 fn face_appearance_assignments(bytes: &[u8]) -> Vec<FaceAppearanceAssignment> {
-    crate::test_support::with_decode_context(|ctx| {
-        face_appearance_assignments_in_frame(ctx, bytes).expect("face assignment budget")
-    })
+    face_appearance_assignments_in_frame(bytes).expect("face assignment budget")
 }
 
 /// Decode face assignments from one exact Design primary-index frame.
 fn face_appearance_assignments_in_frame(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<Vec<FaceAppearanceAssignment>, CodecError> {
-    let strings = lp_utf16_strings(ctx, bytes)?;
-    let mut out = legacy_face_appearance_assignments(ctx, bytes, &strings)?;
-    out.extend(modern_face_appearance_assignments(ctx, bytes, &strings)?);
+    let strings = lp_utf16_strings(bytes);
+    let mut out = legacy_face_appearance_assignments(bytes, &strings);
+    out.extend(modern_face_appearance_assignments(bytes, &strings)?);
     Ok(out)
 }
 
@@ -1137,10 +1131,9 @@ fn face_appearance_assignments_in_frame(
 /// Every accepted member is adjacent to the next one. This excludes other
 /// body-presentation records that share the appearance-library marker.
 fn legacy_face_appearance_assignments(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     strings: &[(usize, String)],
-) -> Result<Vec<FaceAppearanceAssignment>, CodecError> {
+) -> Vec<FaceAppearanceAssignment> {
     const LP_GUID_BYTES: usize = 4 + GUID_LEN * 2;
     const COLOR_BYTES: usize = 4 * size_of::<f32>();
     const CARRIER_BYTES: usize = 12;
@@ -1153,7 +1146,7 @@ fn legacy_face_appearance_assignments(
         let Some((visual_at, visual)) = index.checked_sub(1).and_then(|at| strings.get(at)) else {
             continue;
         };
-        let Some((_, visual_len)) = lp_utf16_string_at(ctx, bytes, *visual_at)? else {
+        let Some((_, visual_len)) = lp_utf16_string_at(bytes, *visual_at) else {
             continue;
         };
         if visual_at.checked_add(visual_len) != Some(*marker_at) {
@@ -1168,7 +1161,7 @@ fn legacy_face_appearance_assignments(
         else {
             continue;
         };
-        let Some((face_guid, face_len)) = lp_utf16_string_at(ctx, bytes, face_at)? else {
+        let Some((face_guid, face_len)) = lp_utf16_string_at(bytes, face_at) else {
             continue;
         };
         if face_len != LP_GUID_BYTES || !is_lowercase_guid(&face_guid) {
@@ -1188,7 +1181,7 @@ fn legacy_face_appearance_assignments(
             continue;
         }
 
-        let Some((_, marker_len)) = lp_utf16_string_at(ctx, bytes, *marker_at)? else {
+        let Some((_, marker_len)) = lp_utf16_string_at(bytes, *marker_at) else {
             continue;
         };
         let mut cursor = marker_at + marker_len;
@@ -1198,8 +1191,7 @@ fn legacy_face_appearance_assignments(
         if optional_name_count == 0 {
             cursor += 4;
         } else {
-            let Some((display_name, display_name_end)) =
-                lp_utf16_bounded_charged(ctx, bytes, cursor, 1..=256, "retain F3D UTF-16 string")?
+            let Some((display_name, display_name_end)) = lp_utf16_bounded(bytes, cursor, 1..=256)
             else {
                 continue;
             };
@@ -1208,7 +1200,7 @@ fn legacy_face_appearance_assignments(
             }
             cursor = display_name_end;
         }
-        let Some((selector, selector_len)) = lp_utf16_string_at(ctx, bytes, cursor)? else {
+        let Some((selector, selector_len)) = lp_utf16_string_at(bytes, cursor) else {
             continue;
         };
         if !legacy_face_selector_is_valid(selector_kind, &selector) {
@@ -1227,7 +1219,7 @@ fn legacy_face_appearance_assignments(
             color: Some(color),
         });
     }
-    Ok(out)
+    out
 }
 
 /// Decode the normalized RGBA carrier of a legacy face assignment.
@@ -1269,7 +1261,6 @@ fn legacy_face_selector_is_valid(kind: u8, selector: &str) -> bool {
 /// gaps; the second is the B-rep face-attribute identity. Other paired-library
 /// envelopes do not satisfy this grammar.
 fn modern_face_appearance_assignments(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     strings: &[(usize, String)],
 ) -> Result<Vec<FaceAppearanceAssignment>, CodecError> {
@@ -1289,7 +1280,7 @@ fn modern_face_appearance_assignments(
         let Some((visual_at, visual)) = index.checked_sub(1).and_then(|at| strings.get(at)) else {
             continue;
         };
-        let Some((_, visual_len)) = lp_utf16_string_at(ctx, bytes, *visual_at)? else {
+        let Some((_, visual_len)) = lp_utf16_string_at(bytes, *visual_at) else {
             continue;
         };
         if visual_at.checked_add(visual_len) != Some(*marker_at) {
@@ -1300,7 +1291,7 @@ fn modern_face_appearance_assignments(
         let Ok(visual) = DesignVisualToken::try_from(visual_text) else {
             continue;
         };
-        let Some((_, first_library_len)) = lp_utf16_string_at(ctx, bytes, *marker_at)? else {
+        let Some((_, first_library_len)) = lp_utf16_string_at(bytes, *marker_at) else {
             continue;
         };
         let Some(second_library_at) = marker_at.checked_add(first_library_len).and_then(|end| {
@@ -1319,7 +1310,7 @@ fn modern_face_appearance_assignments(
         let Some(face_at) = face_end.checked_sub(LP_GUID_BYTES) else {
             continue;
         };
-        let Some((face_guid, face_len)) = lp_utf16_string_at(ctx, bytes, face_at)? else {
+        let Some((face_guid, face_len)) = lp_utf16_string_at(bytes, face_at) else {
             continue;
         };
         if face_at.checked_add(face_len) != Some(face_end)
@@ -1335,8 +1326,7 @@ fn modern_face_appearance_assignments(
         let Some(first_guid_at) = first_guid_end.checked_sub(LP_GUID_BYTES) else {
             continue;
         };
-        let Some((first_guid, first_guid_len)) = lp_utf16_string_at(ctx, bytes, first_guid_at)?
-        else {
+        let Some((first_guid, first_guid_len)) = lp_utf16_string_at(bytes, first_guid_at) else {
             continue;
         };
         if first_guid_at.checked_add(first_guid_len) != Some(first_guid_end)
@@ -1399,7 +1389,7 @@ fn browser_body_appearances(
     bytes: &[u8],
 ) -> Result<Vec<(u64, DesignVisualToken)>, CodecError> {
     let nodes = crate::design::decode::body::scanned_browser_node_entities(bytes);
-    let strings = lp_utf16_strings(ctx, bytes)?;
+    let strings = lp_utf16_strings(bytes);
     let mut out = Vec::new();
     for (index, (_, marker)) in strings.iter().enumerate() {
         // The visual token is the string before the marker, so a marker at the
@@ -1685,7 +1675,6 @@ fn decode_design_object_types(
 }
 
 fn decode_act_channels(
-    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
 ) -> Result<std::collections::HashMap<u64, BTreeMap<String, String>>, CodecError> {
     let mut out = std::collections::HashMap::new();
@@ -1724,14 +1713,7 @@ fn decode_act_channels(
                     valid = false;
                     break;
                 };
-                let Some((guid, after_guid)) = lp_utf16_bounded_charged(
-                    ctx,
-                    bytes,
-                    after_name,
-                    1..=64,
-                    "retain F3D UTF-16 string",
-                )?
-                else {
+                let Some((guid, after_guid)) = lp_utf16_bounded(bytes, after_name, 1..=64) else {
                     valid = false;
                     break;
                 };
@@ -1743,13 +1725,7 @@ fn decode_act_channels(
                 cursor = after_guid;
             }
             if valid {
-                if let Some((entity, end)) = lp_utf16_bounded_charged(
-                    ctx,
-                    bytes,
-                    cursor,
-                    1..=64,
-                    "retain F3D UTF-16 string",
-                )? {
+                if let Some((entity, end)) = lp_utf16_bounded(bytes, cursor, 1..=64) {
                     if let Some(suffix) = entity_suffix(&entity) {
                         out.insert(suffix, channels);
                     }
@@ -1768,10 +1744,7 @@ fn entity_suffix(value: &str) -> Option<u64> {
     suffix.parse().ok()
 }
 
-fn lp_utf16_strings(
-    ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-) -> Result<Vec<(usize, String)>, CodecError> {
+fn lp_utf16_strings(bytes: &[u8]) -> Vec<(usize, String)> {
     let mut out = Vec::new();
     let mut offset = 0usize;
     while offset + 4 <= bytes.len() {
@@ -1789,14 +1762,14 @@ fn lp_utf16_strings(
             offset += 1;
             continue;
         }
-        if let Some((value, record_len)) = lp_utf16_string_at(ctx, bytes, offset)? {
+        if let Some((value, record_len)) = lp_utf16_string_at(bytes, offset) {
             out.push((offset, value));
             offset += record_len;
         } else {
             offset += 1;
         }
     }
-    Ok(out)
+    out
 }
 
 /// Reject an unframed string candidate before decoding its full declared run.
@@ -1838,20 +1811,14 @@ fn utf16_string_prefix_is_text(bytes: &[u8], payload_at: usize, count: usize) ->
 
 /// Decode one LP-UTF16 string at `offset`. Rejects a count outside 2..=256,
 /// invalid UTF-16, or a control character.
-fn lp_utf16_string_at(
-    ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-    offset: usize,
-) -> Result<Option<(String, usize)>, CodecError> {
-    let Some((value, end)) =
-        lp_utf16_bounded_charged(ctx, bytes, offset, 2..=256, "retain F3D UTF-16 string")?
-    else {
-        return Ok(None);
+fn lp_utf16_string_at(bytes: &[u8], offset: usize) -> Option<(String, usize)> {
+    let Some((value, end)) = lp_utf16_bounded(bytes, offset, 2..=256) else {
+        return None;
     };
     if value.chars().any(char::is_control) {
-        return Ok(None);
+        return None;
     }
-    Ok(Some((value, end - offset)))
+    Some((value, end - offset))
 }
 
 /// Select the sole ordered body-map pair carrying one material owner's Design

@@ -51,7 +51,6 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
     };
 
     let scope = parse_parameter_scope(
-        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         header.record_index,
@@ -103,7 +102,6 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
         .into_iter()
         .filter_map(|header| {
             parse_parameter_scope(
-                &cadmpeg_test_support::service_decode_context(),
                 &bytes,
                 &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
                 header.record_index,
@@ -119,7 +117,6 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
     let mut compact_tail = bytes.clone();
     compact_tail.remove(paired_at - 1);
     let compact = parse_parameter_scope(
-        &cadmpeg_test_support::service_decode_context(),
         &compact_tail,
         &crate::design::test_support::indexed_record_offsets_for_test(&compact_tail),
         header.record_index,
@@ -151,7 +148,6 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
         legacy.extend_from_slice(b"261");
         legacy.extend_from_slice(&12u32.to_le_bytes());
         let decoded = parse_parameter_scope(
-            &cadmpeg_test_support::service_decode_context(),
             &legacy,
             &crate::design::test_support::indexed_record_offsets_for_test(&legacy),
             header.record_index,
@@ -180,7 +176,6 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
     extended_tail.extend_from_slice(b"261");
     extended_tail.extend_from_slice(&12u32.to_le_bytes());
     let extended = parse_parameter_scope(
-        &cadmpeg_test_support::service_decode_context(),
         &extended_tail,
         &crate::design::test_support::indexed_record_offsets_for_test(&extended_tail),
         header.record_index,
@@ -204,7 +199,6 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
         variant.extend_from_slice(b"261");
         variant.extend_from_slice(&12u32.to_le_bytes());
         let decoded = parse_parameter_scope(
-            &cadmpeg_test_support::service_decode_context(),
             &variant,
             &crate::design::test_support::indexed_record_offsets_for_test(&variant),
             header.record_index,
@@ -242,7 +236,6 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
     copy_scope.extend_from_slice(b"259");
     copy_scope.extend_from_slice(&12u32.to_le_bytes());
     let copy = parse_parameter_scope(
-        &cadmpeg_test_support::service_decode_context(),
         &copy_scope,
         &crate::design::test_support::indexed_record_offsets_for_test(&copy_scope),
         header.record_index,
@@ -309,18 +302,8 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let operation_arena = cadmpeg_core::decode::DecodeArena::new();
-    let operation_policy = cadmpeg_core::decode::DecodePolicy::service();
-    let operation_ctx = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &operation_bytes,
-        &operation_arena,
-        &operation_policy,
-    )
-    .expect("operation decode context")
-    .0;
     let operation =
         crate::design::decode::scopes::copy_paste_bodies::exact_copy_paste_bodies_operation(
-            &operation_ctx,
             &operation_bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&operation_bytes),
             &operation_scope,
@@ -373,7 +356,6 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
         .copy_from_slice(&2u32.to_le_bytes());
     generic_references.splice(reference_at + 10..reference_at + 10, generic_reference);
     let generic_scope = parse_parameter_scope(
-        &cadmpeg_test_support::service_decode_context(),
         &generic_references,
         &crate::design::test_support::indexed_record_offsets_for_test(&generic_references),
         header.record_index,

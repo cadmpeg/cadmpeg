@@ -1151,7 +1151,6 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     second_owner.entity_id = crate::records::identity::DesignEntityId::from_parts("0", 278);
     entities.push(second_owner);
     let error = crate::design::decode::sketch::bind_sketch_graph(
-        &cadmpeg_test_support::service_decode_context(),
         &entities,
         &mut points,
         &mut curves,

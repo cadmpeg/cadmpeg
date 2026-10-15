@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse Design segment metadata and the ordered feature timeline.
 
-use crate::bytes::lp_utf16_bounded_charged;
+use crate::bytes::lp_utf16_bounded;
 use cadmpeg_core::container::{ContainerEntry, ContainerRole};
 
 use std::collections::{HashMap, HashSet};
 
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 
 use crate::bytes::lp_ascii_filtered_view;
 use crate::bytes::{take_reference, Reference};
 use crate::container::ContainerScan;
-use crate::design::decode::text::design_record_id_charged;
+use crate::design::decode::text::design_record_id;
 use crate::ids::native_stream;
 use crate::records::{
     entity_header::{DesignFeatureTimeline, SegmentType, SegmentTypeData, DESIGN_MODULE_FUSION},
@@ -75,26 +75,22 @@ fn paired_bulk_entry_name<'a>(
 }
 
 /// Decode the type table of every Design `MetaStream` entry.
-pub(crate) fn decode_types(
-    ctx: &DecodeContext<'_>,
-    scan: &ContainerScan,
-) -> Result<Vec<SegmentType>, CodecError> {
+pub(crate) fn decode_types(scan: &ContainerScan) -> Result<Vec<SegmentType>, CodecError> {
     let mut out = Vec::new();
     for entry in scan
         .entries
         .iter()
         .filter_map(|entry| MetaStreamEntry::from_design_entry(scan, entry))
     {
-        let meta = scan.parsed_metastream(ctx, &entry.entry.name)?;
+        let meta = scan.parsed_metastream(&entry.entry.name)?;
         for design_type in &meta.types {
-            out.push(copy_design_type(ctx, design_type, &entry.entry.name)?);
+            out.push(copy_design_type(design_type, &entry.entry.name)?);
         }
     }
     Ok(out)
 }
 
 fn copy_design_type(
-    ctx: &DecodeContext<'_>,
     design_type: &SegmentTypeData,
     stream: &str,
 ) -> Result<SegmentType, CodecError> {
@@ -111,13 +107,7 @@ fn copy_design_type(
     };
     let module = String::from_utf8(design_type.module.as_bytes().to_vec())
         .map_err(|_| CodecError::Malformed("F3D Design module text is invalid UTF-8".into()))?;
-    let id = design_record_id_charged(
-        ctx,
-        stream,
-        ":design-type#",
-        design_type.byte_offset,
-        "f3d design type id suffix",
-    )?;
+    let id = design_record_id(stream, ":design-type#", design_type.byte_offset);
     SegmentType::try_new(
         id,
         crate::records::entity_header::SegmentTypeData {
@@ -135,7 +125,6 @@ fn copy_design_type(
 }
 
 fn insert_component_naming_space(
-    ctx: &DecodeContext<'_>,
     by_component: &mut HashMap<u64, DesignComponentNamingSpace>,
     bulk_name: &str,
     marker: usize,
@@ -154,13 +143,7 @@ fn insert_component_naming_space(
 
     let byte_offset = u64::try_from(marker)
         .map_err(|_| CodecError::malformed("f3d component naming marker offset exceeds u64"))?;
-    let id = design_record_id_charged(
-        ctx,
-        bulk_name,
-        ":design-component-naming-space#",
-        byte_offset,
-        "f3d component naming space id suffix",
-    )?;
+    let id = design_record_id(bulk_name, ":design-component-naming-space#", byte_offset);
     let context_uuid_offset = u64::try_from(context_uuid_offset)
         .map_err(|_| CodecError::malformed("f3d component naming UUID offset exceeds u64"))?;
     by_component.insert(
@@ -178,7 +161,6 @@ fn insert_component_naming_space(
 
 /// Decode each component entity's UUID-bound local naming space.
 pub(crate) fn decode_component_naming_spaces(
-    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
 ) -> Result<Vec<DesignComponentNamingSpace>, CodecError> {
     let mut out = Vec::new();
@@ -187,7 +169,7 @@ pub(crate) fn decode_component_naming_spaces(
         .iter()
         .filter_map(|entry| MetaStreamEntry::from_design_entry(scan, entry))
     {
-        let meta = scan.parsed_metastream(ctx, &meta_entry.entry.name)?;
+        let meta = scan.parsed_metastream(&meta_entry.entry.name)?;
         let mut component_entities = HashSet::new();
         for design_type in meta.types.iter().filter(|design_type| {
             design_type.module == COMPONENT_MODULE
@@ -230,14 +212,7 @@ pub(crate) fn decode_component_naming_spaces(
                 if !component_entities.contains(&component_record_index) {
                     continue;
                 }
-                let Some((context_uuid, _)) = lp_utf16_bounded_charged(
-                    ctx,
-                    bytes,
-                    uuid_offset,
-                    36..=36,
-                    "f3d Design UTF-16 text",
-                )?
-                else {
+                let Some((context_uuid, _)) = lp_utf16_bounded(bytes, uuid_offset, 36..=36) else {
                     continue;
                 };
                 let Ok(context_uuid) =
@@ -246,7 +221,6 @@ pub(crate) fn decode_component_naming_spaces(
                     continue;
                 };
                 insert_component_naming_space(
-                    ctx,
                     &mut by_component,
                     bulk_name,
                     marker,
@@ -284,14 +258,7 @@ pub(crate) fn decode_component_naming_spaces(
             }) {
                 continue;
             }
-            let Some((context_uuid, _)) = lp_utf16_bounded_charged(
-                ctx,
-                bytes,
-                uuid_offset,
-                36..=36,
-                "f3d Design UTF-16 text",
-            )?
-            else {
+            let Some((context_uuid, _)) = lp_utf16_bounded(bytes, uuid_offset, 36..=36) else {
                 continue;
             };
             let Ok(context_uuid) =
@@ -300,7 +267,6 @@ pub(crate) fn decode_component_naming_spaces(
                 continue;
             };
             insert_component_naming_space(
-                ctx,
                 &mut by_component,
                 bulk_name,
                 marker,
@@ -327,7 +293,6 @@ pub(crate) fn decode_component_naming_spaces(
 
 /// Parse the `MetaStream` paired with one Design `BulkStream`.
 pub(crate) fn metadata_for_bulk_stream(
-    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     bulk_entry_name: &str,
 ) -> Result<Option<std::rc::Rc<crate::metastream::MetaStream>>, CodecError> {
@@ -341,7 +306,7 @@ pub(crate) fn metadata_for_bulk_stream(
     else {
         return Ok(None);
     };
-    scan.parsed_metastream(ctx, &meta_entry.name).map(Some)
+    scan.parsed_metastream(&meta_entry.name).map(Some)
 }
 
 /// One live Design record selected by the primary index and resolved through
@@ -392,11 +357,10 @@ fn record_header_class_tag(
 /// primary class-member sequence and must point to a nested header for the same
 /// entity.
 pub(super) fn design_primary_frames<'a>(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     meta: &'a crate::metastream::MetaStream,
 ) -> Result<Vec<DesignPrimaryFrame<'a>>, CodecError> {
-    let indexed = crate::metastream::primary_record_frames(ctx, meta, bytes.len())?;
+    let indexed = crate::metastream::primary_record_frames(meta, bytes.len())?;
     let mut registered_entities = HashSet::new();
     for (ordinal, design_type) in meta.types.iter().enumerate() {
         for &entity_id in design_type.entities.values() {
@@ -459,7 +423,6 @@ pub(super) struct TypedPrimaryFrame<'a> {
 /// Resolve every entity registered to `type_guid` through the sibling
 /// `MetaStream` primary index and verify its dynamic class tag.
 pub(super) fn typed_primary_frames<'a>(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     meta: &'a crate::metastream::MetaStream,
     type_guid: &str,
@@ -487,7 +450,7 @@ pub(super) fn typed_primary_frames<'a>(
 
     let mut resolved_entities = HashSet::new();
     let mut frames = Vec::new();
-    for primary_frame in design_primary_frames(ctx, bytes, meta)? {
+    for primary_frame in design_primary_frames(bytes, meta)? {
         if !primary_frame
             .design_type
             .type_guid
@@ -613,7 +576,6 @@ fn local_reference(
 }
 
 fn parse_feature_timeline_record(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     stream: &str,
     frame: std::ops::Range<usize>,
@@ -727,13 +689,7 @@ fn parse_feature_timeline_record(
     let Some(record_index) = std::num::NonZeroU64::new(expected_entity_id) else {
         return Ok(None);
     };
-    let id = design_record_id_charged(
-        ctx,
-        stream,
-        ":design-feature-timeline#",
-        frame_start,
-        "retain F3D timeline identity",
-    )?;
+    let id = design_record_id(stream, ":design-feature-timeline#", frame_start);
     Ok(DesignFeatureTimeline::try_new(
         id,
         frame,
@@ -747,7 +703,6 @@ fn parse_feature_timeline_record(
 
 /// Decode the exact counted scope list that carries authored feature order.
 pub(crate) fn decode_feature_timelines(
-    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
 ) -> Result<Vec<DesignFeatureTimeline>, CodecError> {
     let mut out = Vec::new();
@@ -757,7 +712,6 @@ pub(crate) fn decode_feature_timelines(
         .filter_map(|entry| MetaStreamEntry::from_design_entry(scan, entry))
     {
         let meta = crate::metastream::parse(
-            ctx,
             scan.entry_bytes(&meta_entry.entry.name)?,
             &meta_entry.entry.name,
         )?;
@@ -866,7 +820,6 @@ pub(crate) fn decode_feature_timelines(
                     ));
                 }
                 let timeline = parse_feature_timeline_record(
-                    ctx,
                     bytes,
                     bulk_name,
                     start..end,

@@ -2920,7 +2920,6 @@ pub(crate) fn constraint_parameters(
 /// Attach single-locus offset dimensions to uniquely matching typed offset
 /// relations and remove their redundant native annotation constraints.
 pub(crate) fn bind_offset_dimension_parameters(
-    _ctx: &DecodeContext<'_>,
     constraints: &mut Vec<cadmpeg_ir::sketches::SketchConstraint>,
     parameters: &[DesignParameter],
 ) -> Result<(), CodecError> {

@@ -47,12 +47,8 @@ fn decode_fillet_radius_groups(
     owners: &[DesignParameterOwner],
     parameters: &[DesignParameter],
 ) -> Vec<crate::records::topology::fillet::DesignFilletRadiusGroup> {
-    crate::test_support::with_decode_context(|ctx| {
-        crate::design::decode::operands::decode_fillet_radius_groups(
-            ctx, scopes, groups, owners, parameters,
-        )
-    })
-    .unwrap()
+    crate::design::decode::operands::decode_fillet_radius_groups(scopes, groups, owners, parameters)
+        .unwrap()
 }
 
 #[test]

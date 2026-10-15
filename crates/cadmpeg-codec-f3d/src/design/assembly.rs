@@ -5,7 +5,6 @@ use cadmpeg_core::decode::u64_from_index;
 
 use std::collections::BTreeMap;
 
-use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::ids::OccurrenceId;
@@ -246,7 +245,6 @@ pub(crate) fn legacy_as_built_421_generation(
 
 /// Project assembly scopes whose connector frames and operand qualifiers are complete.
 pub(crate) fn project_assembly_joints(
-    ctx: &DecodeContext<'_>,
     scopes: &[DesignParameterScope],
     native_occurrences: &[DesignComponentOccurrence],
     features: &[Feature],
@@ -302,7 +300,6 @@ pub(crate) fn project_assembly_joints(
                 operands,
             )) => {
                 let Some(projected) = project_qualified_operands(
-                    ctx,
                     operands.each_ref().map(|operand| &operand.qualifier),
                     stream,
                     &occurrences,
@@ -380,7 +377,6 @@ pub(crate) fn project_assembly_joints(
 }
 
 fn project_qualified_operands(
-    ctx: &DecodeContext<'_>,
     qualifiers: [&DesignAssemblyOperandQualifier; 2],
     stream: &str,
     occurrences: &BTreeMap<(&str, String), Option<&DesignComponentOccurrence>>,
@@ -462,19 +458,13 @@ fn project_qualified_operands(
                     }
                     DesignAssemblyAxialOperandTarget::DocumentRootJointOrigin {
                         scope_record_index,
-                    } => project_joint_origin_operand(
-                        ctx,
-                        *scope_record_index,
-                        stream,
-                        scopes,
-                        features,
-                    ),
+                    } => {
+                        project_joint_origin_operand(*scope_record_index, stream, scopes, features)
+                    }
                 },
                 DesignAssemblyOperandQualifier::JointOrigin {
                     scope_record_index, ..
-                } => {
-                    project_joint_origin_operand(ctx, *scope_record_index, stream, scopes, features)
-                }
+                } => project_joint_origin_operand(*scope_record_index, stream, scopes, features),
             }
         };
     let Some(first) = project(qualifiers[0])? else {
@@ -487,7 +477,6 @@ fn project_qualified_operands(
 }
 
 fn project_joint_origin_operand(
-    ctx: &DecodeContext<'_>,
     scope_record_index: u32,
     stream: &str,
     scopes: &[DesignParameterScope],
@@ -512,7 +501,7 @@ fn project_joint_origin_operand(
         return Ok(None);
     }
     Ok(Some(JointOperand::root(
-        super::identity::neutral_feature_id(ctx, target_scope)?.into_string(),
+        super::identity::neutral_feature_id(target_scope)?.into_string(),
         Vec::new(),
     )))
 }
@@ -1057,111 +1046,106 @@ mod tests {
 
     #[test]
     fn axial_operands_project_component_and_document_root_qualifiers() {
-        crate::test_support::with_decode_context(|decode_ctx| {
-            let component_scope = DesignParameterScope::empty(
-                "f3d:Design/BulkStream.dat:component-insert#200",
-                crate::records::feature::scope::DesignFeatureKind::ComponentInsert,
-                200,
-            );
-            let origin_scope = DesignParameterScope::empty(
-                "f3d:Design/BulkStream.dat:joint-origin#80",
-                crate::records::feature::scope::DesignFeatureKind::JointOrigin,
-                80,
-            );
-            let mut origin_scope = origin_scope;
-            origin_scope.with_joint_origin_transform(
-                [
-                    [1.0, 0.0, 0.0, 0.0],
-                    [0.0, 1.0, 0.0, 0.0],
-                    [0.0, 0.0, 1.0, 0.0],
-                    [0.0, 0.0, 0.0, 1.0],
-                ]
-                .try_into()
-                .unwrap(),
-            );
-            let occurrence =
-                OccurrenceId::mint("test:model:occurrence#component").expect("identity grammar");
-            let features = [
-                feature(
-                    &component_scope.id,
-                    FeatureDefinition::Operation(FeatureOperation::InsertComponent {
-                        occurrence: occurrence.clone(),
-                    }),
-                ),
-                feature(
-                    &origin_scope.id,
-                    FeatureDefinition::Operation(FeatureOperation::DatumCoordinateSystem {
-                        frame: cadmpeg_ir::features::FeatureCoordinateFrame::new(
-                            Point3::new(0.0, 0.0, 0.0),
-                            Vector3::new(1.0, 0.0, 0.0),
-                            Vector3::new(0.0, 1.0, 0.0),
-                            Vector3::new(0.0, 0.0, 1.0),
-                        )
-                        .unwrap(),
-                    }),
-                ),
-            ];
-            let targets = [
-                DesignAssemblyAxialOperandTarget::ComponentInsertOccurrence {
-                    component_insert_scope_record_index: 200,
-                    construction_record_index: 70,
-                    construction_class_tag: crate::records::references::DesignClassTag::try_from(
-                        "305".to_owned(),
+        let component_scope = DesignParameterScope::empty(
+            "f3d:Design/BulkStream.dat:component-insert#200",
+            crate::records::feature::scope::DesignFeatureKind::ComponentInsert,
+            200,
+        );
+        let origin_scope = DesignParameterScope::empty(
+            "f3d:Design/BulkStream.dat:joint-origin#80",
+            crate::records::feature::scope::DesignFeatureKind::JointOrigin,
+            80,
+        );
+        let mut origin_scope = origin_scope;
+        origin_scope.with_joint_origin_transform(
+            [
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ]
+            .try_into()
+            .unwrap(),
+        );
+        let occurrence =
+            OccurrenceId::mint("test:model:occurrence#component").expect("identity grammar");
+        let features = [
+            feature(
+                &component_scope.id,
+                FeatureDefinition::Operation(FeatureOperation::InsertComponent {
+                    occurrence: occurrence.clone(),
+                }),
+            ),
+            feature(
+                &origin_scope.id,
+                FeatureDefinition::Operation(FeatureOperation::DatumCoordinateSystem {
+                    frame: cadmpeg_ir::features::FeatureCoordinateFrame::new(
+                        Point3::new(0.0, 0.0, 0.0),
+                        Vector3::new(1.0, 0.0, 0.0),
+                        Vector3::new(0.0, 1.0, 0.0),
+                        Vector3::new(0.0, 0.0, 1.0),
                     )
                     .unwrap(),
-                    construction_byte_offset: 1_300,
-                    construction_transform_offset: 1_348,
-                    axis_record_index_offsets: [1_493, 1_509],
-                    construction_paired_class_tag:
-                        crate::records::references::DesignClassTag::try_from("261".to_owned())
-                            .unwrap(),
-                    construction_paired_byte_offset: 1_680,
-                    selectors: Box::new([selector(), second_selector()]),
-                },
-                DesignAssemblyAxialOperandTarget::DocumentRootJointOrigin {
-                    scope_record_index: 80,
-                },
-            ];
+                }),
+            ),
+        ];
+        let targets = [
+            DesignAssemblyAxialOperandTarget::ComponentInsertOccurrence {
+                component_insert_scope_record_index: 200,
+                construction_record_index: 70,
+                construction_class_tag: crate::records::references::DesignClassTag::try_from(
+                    "305".to_owned(),
+                )
+                .unwrap(),
+                construction_byte_offset: 1_300,
+                construction_transform_offset: 1_348,
+                axis_record_index_offsets: [1_493, 1_509],
+                construction_paired_class_tag:
+                    crate::records::references::DesignClassTag::try_from("261".to_owned()).unwrap(),
+                construction_paired_byte_offset: 1_680,
+                selectors: Box::new([selector(), second_selector()]),
+            },
+            DesignAssemblyAxialOperandTarget::DocumentRootJointOrigin {
+                scope_record_index: 80,
+            },
+        ];
 
-            let qualifiers =
-                targets.map(|target| DesignAssemblyOperandQualifier::AxialTarget { target });
-            let scopes = vec![component_scope, origin_scope.clone()];
-            let operands = super::project_qualified_operands(
-                decode_ctx,
-                qualifiers.each_ref(),
-                "f3d:Design/BulkStream.dat",
-                &BTreeMap::new(),
-                &scopes,
-                &features,
-            )
-            .unwrap()
-            .expect("complete axial operands");
+        let qualifiers =
+            targets.map(|target| DesignAssemblyOperandQualifier::AxialTarget { target });
+        let scopes = vec![component_scope, origin_scope.clone()];
+        let operands = super::project_qualified_operands(
+            qualifiers.each_ref(),
+            "f3d:Design/BulkStream.dat",
+            &BTreeMap::new(),
+            &scopes,
+            &features,
+        )
+        .unwrap()
+        .expect("complete axial operands");
 
-            assert_eq!(
-                operands[0].container,
-                cadmpeg_ir::OperandContainer::Occurrence { occurrence }
-            );
-            assert!(operands[0]
-                .object
-                .starts_with("f3d:feature-input:connector#"));
-            assert_eq!(operands[1].container, cadmpeg_ir::OperandContainer::Root {});
-            assert_eq!(
-                operands[1].object,
-                crate::ids::neutral_feature_id(&origin_scope).as_str()
-            );
+        assert_eq!(
+            operands[0].container,
+            cadmpeg_ir::OperandContainer::Occurrence { occurrence }
+        );
+        assert!(operands[0]
+            .object
+            .starts_with("f3d:feature-input:connector#"));
+        assert_eq!(operands[1].container, cadmpeg_ir::OperandContainer::Root {});
+        assert_eq!(
+            operands[1].object,
+            crate::ids::neutral_feature_id(&origin_scope).as_str()
+        );
 
-            let unlisted_operands = super::project_qualified_operands(
-                decode_ctx,
-                qualifiers.each_ref(),
-                "f3d:Design/BulkStream.dat",
-                &BTreeMap::new(),
-                &scopes,
-                &features[..1],
-            )
-            .unwrap()
-            .expect("frame-resolved unlisted root JointOrigin");
-            assert_eq!(unlisted_operands[1].object, operands[1].object);
-        });
+        let unlisted_operands = super::project_qualified_operands(
+            qualifiers.each_ref(),
+            "f3d:Design/BulkStream.dat",
+            &BTreeMap::new(),
+            &scopes,
+            &features[..1],
+        )
+        .unwrap()
+        .expect("frame-resolved unlisted root JointOrigin");
+        assert_eq!(unlisted_operands[1].object, operands[1].object);
     }
 
     #[test]

@@ -327,17 +327,8 @@ fn parameter_variants_have_exact_string_and_scalar_boundaries() {
     let mut sheet_metal =
         parameter_record(Some(301), "50.00 mm", "FlangeHeight", Some("mm"), "d2", 5.0);
     sheet_metal[22..30].copy_from_slice(&6u64.to_le_bytes());
-    let (_, expression_end) = crate::test_support::with_decode_context(|ctx| {
-        crate::bytes::lp_utf16_bounded_charged(
-            ctx,
-            &sheet_metal,
-            46,
-            1..=256,
-            "retain F3D UTF-16 string",
-        )
-        .unwrap()
-    })
-    .expect("sheet-metal expression");
+    let (_, expression_end) =
+        crate::bytes::lp_utf16_bounded(&sheet_metal, 46, 1..=256).expect("sheet-metal expression");
     sheet_metal.insert(expression_end + 9, 0);
     let tail = sheet_metal.len() - 12;
     sheet_metal[tail + 2] = 16;
@@ -376,10 +367,7 @@ fn duplicate_parameter_index_keeps_the_first_serialized_frame() {
     zip.write_all(&bulk).unwrap();
     let archive = zip.finish().unwrap().into_inner();
 
-    let parameters = with_scan(&archive, |scan| {
-        decode_parameters(&cadmpeg_test_support::service_decode_context(), scan)
-    })
-    .unwrap();
+    let parameters = with_scan(&archive, |scan| decode_parameters(scan)).unwrap();
     let [parameter] = parameters.as_slice() else {
         panic!("expected one canonical parameter");
     };
@@ -939,13 +927,8 @@ fn parameter_companion_decode_refuses_index_output_and_identifier_limits() {
     zip.write_all(&prefix).unwrap();
     let archive = zip.finish().unwrap().into_inner();
     with_scan(&archive, |scan| {
-        let decoded = super::decode_parameter_companions(
-            &cadmpeg_test_support::service_decode_context(),
-            scan,
-            &[owner.clone()],
-            &[header.clone()],
-        )
-        .unwrap();
+        let decoded =
+            super::decode_parameter_companions(scan, &[owner.clone()], &[header.clone()]).unwrap();
         assert_eq!(decoded.len(), 1);
         assert_eq!(
             decoded[0].id(),
@@ -1018,14 +1001,11 @@ fn parameter_owner_uses_the_paired_same_index_header_as_its_boundary() {
     let mut exact = parameter_owner_frame();
     exact.extend_from_slice(&paired_header());
     let owners = with_scan(&archive(stream, &exact), |scan| {
-        crate::design::test_support::with_test_decode_context(|ctx| {
-            crate::design::decode::parameters::decode_parameter_owners(
-                ctx,
-                scan,
-                std::slice::from_ref(&parameter),
-                std::slice::from_ref(&header),
-            )
-        })
+        crate::design::decode::parameters::decode_parameter_owners(
+            scan,
+            std::slice::from_ref(&parameter),
+            std::slice::from_ref(&header),
+        )
     })
     .expect("exact owner frame");
     let [owner] = owners.as_slice() else {
@@ -1035,14 +1015,11 @@ fn parameter_owner_uses_the_paired_same_index_header_as_its_boundary() {
     assert_eq!(owner.evaluated_value_offset(), 40);
 
     let unresolved = with_scan(&archive(stream, &[]), |scan| {
-        crate::design::test_support::with_test_decode_context(|ctx| {
-            crate::design::decode::parameters::decode_parameter_owners(
-                ctx,
-                scan,
-                std::slice::from_ref(&parameter),
-                &[],
-            )
-        })
+        crate::design::decode::parameters::decode_parameter_owners(
+            scan,
+            std::slice::from_ref(&parameter),
+            &[],
+        )
     })
     .expect("missing owner frame is retained as an unresolved binding");
     assert!(unresolved.is_empty());
@@ -1051,14 +1028,11 @@ fn parameter_owner_uses_the_paired_same_index_header_as_its_boundary() {
     extended.push(0);
     extended.extend_from_slice(&paired_header());
     let error = with_scan(&archive(stream, &extended), |scan| {
-        crate::design::test_support::with_test_decode_context(|ctx| {
-            crate::design::decode::parameters::decode_parameter_owners(
-                ctx,
-                scan,
-                std::slice::from_ref(&parameter),
-                std::slice::from_ref(&header),
-            )
-        })
+        crate::design::decode::parameters::decode_parameter_owners(
+            scan,
+            std::slice::from_ref(&parameter),
+            std::slice::from_ref(&header),
+        )
     })
     .expect_err("an owner-shaped prefix must not shorten the exact frame");
     assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
@@ -1290,19 +1264,15 @@ fn frame_relative_offsets_refuse_to_saturate_at_the_end_of_the_address_space() {
 
     let payload = parameter_record(None, "1", "User Parameter", None, "p", 1.0);
     let stream = "FusionAssetName[Active]/Design1/BulkStream.dat";
-    assert!(super::parse_design_parameter(
-        &cadmpeg_test_support::service_decode_context(),
-        &payload
-    )
-    .unwrap()
-    .expect("parsed parameter")
-    .into_record(stream, u64::MAX)
-    .is_none());
+    assert!(super::parse_design_parameter(&payload)
+        .unwrap()
+        .expect("parsed parameter")
+        .into_record(stream, u64::MAX)
+        .is_none());
 
-    let parsed =
-        super::parse_design_parameter(&cadmpeg_test_support::service_decode_context(), &payload)
-            .unwrap()
-            .expect("parsed parameter");
+    let parsed = super::parse_design_parameter(&payload)
+        .unwrap()
+        .expect("parsed parameter");
     let error = super::locate_design_parameter(parsed, stream, usize::MAX)
         .expect_err("a frame at the end of the address space cannot be located");
     assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
@@ -1311,9 +1281,6 @@ fn frame_relative_offsets_refuse_to_saturate_at_the_end_of_the_address_space() {
 #[test]
 fn design_parameter_text_fields_refuse_each_retained_limit() {
     let payload = parameter_record(Some(44), "1", "AlongDistance", Some("mm"), "d71", 1.0);
-    let parsed =
-        super::parse_design_parameter(&cadmpeg_test_support::service_decode_context(), &payload)
-            .unwrap()
-            .unwrap();
+    let parsed = super::parse_design_parameter(&payload).unwrap().unwrap();
     assert_eq!(parsed.name, "d71");
 }

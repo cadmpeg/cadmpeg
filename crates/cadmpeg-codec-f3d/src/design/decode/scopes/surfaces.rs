@@ -24,7 +24,6 @@ use crate::records::feature::surface_ops::DesignSurfaceOffsetOperation;
 use crate::records::feature::surface_ops::DesignSurfaceOffsetSupport;
 use crate::records::feature::surface_ops::DesignSurfaceStitchOperation;
 use crate::records::topology::extrude_selection::DesignOperandRole;
-use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use std::collections::HashSet;
@@ -69,12 +68,11 @@ pub(super) fn exact_surface_extend_operation(
 }
 
 pub(super) fn exact_surface_offset_operation(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
 ) -> Result<Option<DesignSurfaceOffsetOperation>, CodecError> {
-    if let Some(operation) = exact_surface_offset_face_groups(ctx, bytes, records, scope)? {
+    if let Some(operation) = exact_surface_offset_face_groups(bytes, records, scope)? {
         return Ok(Some(operation));
     }
     let Some(operation) = exact_surface_boundary_operation(
@@ -105,7 +103,6 @@ pub(super) fn exact_surface_offset_operation(
 }
 
 fn exact_surface_offset_face_groups(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
@@ -134,7 +131,6 @@ fn exact_surface_offset_face_groups(
             .skip(1)
         {
             let group = exact_construction_operand_group(
-                ctx,
                 bytes,
                 records,
                 scope,
@@ -191,7 +187,6 @@ fn exact_surface_offset_face_groups(
 }
 
 fn exact_construction_operand_group(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
@@ -212,8 +207,7 @@ fn exact_construction_operand_group(
             class_tag: crate::design::decode::text::class_tag_from_view(class_tag).ok()?,
             byte_offset: u64::try_from(start).ok()?,
         };
-        match parse_construction_operand_group(ctx, bytes, scope, scope_reference_ordinal, &header)
-        {
+        match parse_construction_operand_group(bytes, scope, scope_reference_ordinal, &header) {
             ConstructionOperandGroupParse::Complete(group) => {
                 if candidate.replace(*group).is_some() {
                     return None;

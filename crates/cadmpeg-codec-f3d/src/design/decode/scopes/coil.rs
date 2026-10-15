@@ -231,7 +231,6 @@ pub(super) fn exact_coil_placement(
             return None;
         }
         let persistent_frame = match parse_entity_selection_frame(
-            ctx,
             bytes,
             selection_record_index,
             u64::try_from(selection_start).ok()?,
@@ -451,15 +450,7 @@ fn exact_coil_face_selection(
     recipes: &[ConstructionRecipe],
 ) -> Result<Option<DesignCoilSelection>, CodecError> {
     (|| {
-        let prefix = match parse_entity_selection_prefix(
-            ctx,
-            bytes,
-            selection_start,
-            selection_record_index,
-        )? {
-            Ok(prefix) => prefix,
-            Err(error) => return Some(Err(error)),
-        };
+        let prefix = parse_entity_selection_prefix(bytes, selection_start, selection_record_index)?;
         let id = scope.id.to_owned();
         let header = DesignRecordHeader {
             id,

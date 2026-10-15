@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Text reads shared by Design record decoders.
 
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 
 /// Validate a borrowed three-digit class tag before making its fixed-size copy.
@@ -15,17 +15,12 @@ pub(in crate::design::decode) fn class_tag_from_view(
 }
 
 /// Compose a native scope and record suffix.
-pub(in crate::design::decode) fn design_record_id_charged(
-    _ctx: &DecodeContext<'_>,
+pub(in crate::design::decode) fn design_record_id(
     stream: &str,
     suffix: &'static str,
     offset: u64,
-    _operation: &'static str,
-) -> Result<String, CodecError> {
-    Ok(format!(
-        "{}{suffix}{offset}",
-        crate::ids::native_scope(stream)
-    ))
+) -> String {
+    format!("{}{suffix}{offset}", crate::ids::native_scope(stream))
 }
 
 /// Validate an exact 36-code-unit relaxed GUID into a fixed ASCII array.
@@ -135,17 +130,8 @@ mod tests {
             for unit in value.encode_utf16() {
                 bytes.extend_from_slice(&unit.to_le_bytes());
             }
-            let owned = crate::test_support::with_decode_context(|ctx| {
-                crate::bytes::lp_utf16_bounded_charged(
-                    ctx,
-                    &bytes,
-                    0,
-                    1..=256,
-                    "retain F3D UTF-16 string",
-                )
-                .unwrap()
-            })
-            .and_then(|(value, end)| crate::bytes::is_guid_relaxed(&value).then_some(end));
+            let owned = crate::bytes::lp_utf16_bounded(&bytes, 0, 1..=256)
+                .and_then(|(value, end)| crate::bytes::is_guid_relaxed(&value).then_some(end));
             assert_eq!(relaxed_guid_end(&bytes, 0), owned);
         }
     }
@@ -165,17 +151,8 @@ mod tests {
             for unit in value.encode_utf16() {
                 bytes.extend_from_slice(&unit.to_le_bytes());
             }
-            let prior = crate::test_support::with_decode_context(|ctx| {
-                crate::bytes::lp_utf16_bounded_charged(
-                    ctx,
-                    &bytes,
-                    0,
-                    36..=36,
-                    "retain F3D UTF-16 string",
-                )
-                .unwrap()
-            })
-            .filter(|(text, _)| crate::bytes::is_guid_relaxed(text));
+            let prior = crate::bytes::lp_utf16_bounded(&bytes, 0, 36..=36)
+                .filter(|(text, _)| crate::bytes::is_guid_relaxed(text));
             let current = fixed_guid_ascii(&bytes, 0)
                 .map(|(guid, end)| (String::from_utf8(guid.to_vec()).unwrap(), end));
             assert_eq!(current, prior);
@@ -197,17 +174,9 @@ mod tests {
             for unit in value.encode_utf16() {
                 bytes.extend_from_slice(&unit.to_le_bytes());
             }
-            let decoded = crate::test_support::with_decode_context(|ctx| {
-                crate::bytes::lp_utf16_bounded_charged(
-                    ctx,
-                    &bytes,
-                    0,
-                    expected.len()..=expected.len(),
-                    "retain F3D UTF-16 string",
-                )
-                .unwrap()
-            })
-            .and_then(|(text, end)| (text == expected).then_some(end));
+            let decoded =
+                { crate::bytes::lp_utf16_bounded(&bytes, 0, expected.len()..=expected.len()) }
+                    .and_then(|(text, end)| (text == expected).then_some(end));
             assert_eq!(fixed_utf16_ascii_eq(&bytes, 0, expected), decoded);
             bytes.pop();
             assert_eq!(fixed_utf16_ascii_eq(&bytes, 0, expected), None);

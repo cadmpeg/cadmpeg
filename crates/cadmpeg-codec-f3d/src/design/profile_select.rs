@@ -3005,15 +3005,12 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
             continue;
         };
         let Some(profile) = parse_sketch_profile(
-            ctx,
             bytes,
             stream,
             group.scope_reference_ordinal,
             header,
             resolution.entities,
-        )
-        .transpose()?
-        else {
+        ) else {
             continue;
         };
         let mut matches = resolution.placements.iter().filter(|placement| {

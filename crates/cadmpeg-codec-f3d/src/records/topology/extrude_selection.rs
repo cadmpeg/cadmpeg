@@ -10,7 +10,6 @@ use crate::records::mesh::DesignRelaxedGuidText;
 use crate::records::references::DesignClassTag;
 use crate::records::serde_column::SliceColumn;
 use crate::records::sketch_relations::SketchRelationOperand;
-use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use serde::Deserialize;
 use serde::Serialize;
@@ -153,7 +152,6 @@ pub(crate) struct DesignExtrudeSelectionGroupWire {
 
 impl DesignExtrudeSelectionGroup {
     pub(crate) fn from_wire_charged(
-        _ctx: &DecodeContext<'_>,
         wire: DesignExtrudeSelectionGroupWire,
     ) -> Result<Self, CodecError> {
         Self::from_wire_inner(wire).map_err(CodecError::Malformed)

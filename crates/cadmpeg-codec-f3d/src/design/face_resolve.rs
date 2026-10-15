@@ -1038,7 +1038,7 @@ fn historical_face_selection_with_native(
     if faces.is_empty() {
         return Ok(None);
     }
-    let feature = crate::design::identity::neutral_feature_id(ctx, scope)?;
+    let feature = crate::design::identity::neutral_feature_id(scope)?;
     let feature_key = crate::design::identity::identity_key(feature.as_str())?;
     let prefix = crate::design::identity::history_input_prefix(feature_key, previous_state_id)?;
     let mut historical_faces = Vec::new();
@@ -1590,7 +1590,6 @@ fn unique_face_operand_history_candidate(
 }
 
 pub(crate) fn resolve_bounded_face_history_candidates(
-    _ctx: &DecodeContext<'_>,
     operand: &DesignFaceOperand,
 ) -> Result<Option<Vec<i64>>, CodecError> {
     if operand.recipe_kind != crate::records::recipes::ConstructionRecipeKind::BoundedFace {
@@ -1609,11 +1608,10 @@ pub(crate) fn resolve_bounded_face_history_candidates(
 }
 
 pub(crate) fn resolve_stable_bounded_face_history_set(
-    _ctx: &DecodeContext<'_>,
     operand: &DesignFaceOperand,
-) -> Result<Option<Vec<i64>>, CodecError> {
+) -> Option<Vec<i64>> {
     if complete_counted_face_recipe(operand).is_none() {
-        return Ok(None);
+        return None;
     }
     let mut active_faces = Vec::new();
     for face in &operand.preceding_candidate_faces {
@@ -1622,17 +1620,14 @@ pub(crate) fn resolve_stable_bounded_face_history_set(
             .rsplit_once('#')
             .and_then(|(_, slot)| slot.parse::<i64>().ok())
         else {
-            return Ok(None);
+            return None;
         };
         if active_faces.contains(&slot) {
-            return Ok(None);
+            return None;
         }
         active_faces.push(slot);
     }
-    Ok(stable_face_support_set(
-        &active_faces,
-        &operand.historical_support_contexts,
-    ))
+    stable_face_support_set(&active_faces, &operand.historical_support_contexts)
 }
 
 /// Resolve the selected input faces of an unhealed `SurfaceDeleteFace`.

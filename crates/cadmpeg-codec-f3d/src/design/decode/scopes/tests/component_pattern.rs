@@ -92,12 +92,7 @@ fn component_pattern_generated_instances_refuse_collection_limit() {
     if let DesignScopePayloadMut::RectangularPattern(slot) = scope.payload_mut() {
         *slot = Some(construction);
     }
-    bind_component_pattern_occurrences(
-        &cadmpeg_test_support::service_decode_context(),
-        &mut scope,
-        &occurrences,
-    )
-    .unwrap();
+    bind_component_pattern_occurrences(&mut scope, &occurrences).unwrap();
     let Some(DesignRectangularPatternInstances::Components {
         component_guid,
         seed,

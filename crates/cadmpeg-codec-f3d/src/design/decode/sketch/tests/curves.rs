@@ -17,16 +17,13 @@ fn tested_decode_sketch_curve_geometry(
     Option<crate::design::decode::sketch::DecodedSketchCurveGeometry>,
     cadmpeg_core::CodecError,
 > {
-    crate::design::test_support::with_test_decode_context(|ctx| {
-        crate::design::decode::sketch::decode_sketch_curve_geometry(
-            ctx,
-            payload,
-            geometry_shift,
-            record_index,
-            class,
-            record_at,
-        )
-    })
+    crate::design::decode::sketch::decode_sketch_curve_geometry(
+        payload,
+        geometry_shift,
+        record_index,
+        class,
+        record_at,
+    )
 }
 
 #[test]

@@ -20,10 +20,6 @@ use cadmpeg_ir::ids::FaceId;
 
 #[test]
 fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut group = DesignConstructionOperandGroup::try_from(
         crate::records::topology::construction::DesignConstructionOperandGroupDraft {
             id: "f3d:Design/BulkStream.dat:operand-group#90".into(),
@@ -128,9 +124,8 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
         80,
     );
 
-    let mut operand = parse_body_recipe_operand(&ctx, &bytes, &group, 0, &record, &recipe)
-        .expect("body recipe operand")
-        .unwrap();
+    let mut operand = parse_body_recipe_operand(&bytes, &group, 0, &record, &recipe)
+        .expect("body recipe operand");
     assert_eq!(operand.references().len(), 2);
     assert_eq!(operand.references()[0].design_reference, 2265);
     assert_eq!(operand.references()[0].form, 3);
@@ -196,7 +191,6 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
         },
     ];
     crate::design::decode::operands::bind_body_recipe_operand_candidates(
-        &ctx,
         std::slice::from_mut(&mut operand),
         std::slice::from_ref(&recipe),
         &candidate_tags,
@@ -224,9 +218,8 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
         byte_offset: u64_from_index(empty_recipe_at),
         ..recipe.clone()
     };
-    let empty = parse_body_recipe_operand(&ctx, &empty_bytes, &group, 0, &record, &empty_recipe)
-        .expect("empty body recipe operand")
-        .unwrap();
+    let empty = parse_body_recipe_operand(&empty_bytes, &group, 0, &record, &empty_recipe)
+        .expect("empty body recipe operand");
     assert!(empty.references().is_empty());
     assert_eq!(empty.nested_record_index(), 103);
     assert_eq!(empty.next_byte_offset(), u64_from_index(empty_next_at));
@@ -263,7 +256,6 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
         });
     let mut combine_operand = operand.clone();
     crate::design::decode::operands::bind_body_recipe_operand_candidates(
-        &ctx,
         std::slice::from_mut(&mut combine_operand),
         std::slice::from_ref(&combine_recipe),
         &[
@@ -300,9 +292,8 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
     indexed_header(&mut nested, *b"302", 1);
     indexed_header(&mut nested, *b"305", 11);
     bytes.splice(next_at..next_at, nested.iter().copied());
-    let operand = parse_body_recipe_operand(&ctx, &bytes, &group, 0, &record, &recipe)
-        .expect("body recipe operand with nested recipe records")
-        .unwrap();
+    let operand = parse_body_recipe_operand(&bytes, &group, 0, &record, &recipe)
+        .expect("body recipe operand with nested recipe records");
     assert_eq!(
         operand.next_byte_offset(),
         u64_from_index(next_at + nested.len())
@@ -319,12 +310,7 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
     recipe.id = crate::ids::native_scoped_id(stream_name, "construction-recipe", recipe_at);
     let output_id = crate::ids::native_scoped_id(stream_name, "design-body-recipe-operand", 0);
     crate::test_support::zip_test::with_scan(&archive, |scan| {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let policy = cadmpeg_core::decode::DecodePolicy::default();
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let decoded = crate::design::decode::operands::decode_body_recipe_operands(
-            &ctx,
             scan,
             &[],
             std::slice::from_ref(&group),
@@ -339,10 +325,6 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
 
 #[test]
 fn class_367_body_recipe_operand_decodes_scale_member_frame() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut bytes = Vec::new();
     indexed_header(&mut bytes, *b"367", 100);
     bytes.extend_from_slice(&[0; 10]);
@@ -437,9 +419,8 @@ fn class_367_body_recipe_operand_decodes_scale_member_frame() {
         }),
     };
 
-    let operand = parse_body_recipe_operand(&ctx, &bytes, &group, 0, &record, &recipe)
-        .expect("class-367 body recipe operand")
-        .unwrap();
+    let operand = parse_body_recipe_operand(&bytes, &group, 0, &record, &recipe)
+        .expect("class-367 body recipe operand");
     assert_eq!(operand.references().len(), 1);
     assert_eq!(operand.references()[0].design_reference, 301);
     assert_eq!(operand.references()[0].form, 33);

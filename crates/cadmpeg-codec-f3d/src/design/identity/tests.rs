@@ -43,8 +43,7 @@ fn encoded_placement() -> crate::records::sketch_placement::DesignSketchPlacemen
 fn neutral_feature_id_preserves_bytes() {
     let scope = encoded_scope();
     assert_eq!(
-        crate::test_support::with_decode_context(|ctx| super::neutral_feature_id(ctx, &scope))
-            .unwrap(),
+        super::neutral_feature_id(&scope).unwrap(),
         crate::ids::neutral_feature_id(&scope)
     );
 }
@@ -63,10 +62,7 @@ fn neutral_assembly_joint_id_preserves_bytes() {
     let scope = encoded_scope();
     assert_eq!(
         super::neutral_assembly_joint_id(&scope).unwrap(),
-        crate::test_support::with_decode_context(|ctx| {
-            crate::ids::neutral_assembly_joint_id(ctx, &scope)
-        })
-        .expect("joint identifier")
+        crate::ids::neutral_assembly_joint_id(&scope).unwrap()
     );
 }
 

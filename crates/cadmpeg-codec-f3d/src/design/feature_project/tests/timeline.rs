@@ -96,10 +96,7 @@ fn history_state_predecessors_are_component_qualified() {
         naming_space(10, "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"),
         naming_space(20, "ffffffff-eeee-4ddd-8ccc-bbbbbbbbbbbb"),
     ];
-    let graph = crate::test_support::with_decode_context(|decode_ctx| {
-        ScopeHistoryGraph::new(decode_ctx, &scopes, &[], &[], &naming_spaces, &[])
-    })
-    .unwrap();
+    let graph = ScopeHistoryGraph::new(&scopes, &[], &[], &naming_spaces, &[]).unwrap();
 
     let predecessor = graph
         .predecessor(&second, |_| true)

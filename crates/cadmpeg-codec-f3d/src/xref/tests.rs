@@ -459,12 +459,10 @@ fn repeated_target_occurrence_record_with_path_role(
     let metadata_guid_a = "66666666-7777-8888-9999-aaaaaaaaaaaa";
     let metadata_guid_b = "bbbbbbbb-cccc-dddd-eeee-ffffffffffff";
     let mut bytes = occurrence_record(path_role, entity_id, &[1], None);
-    let path_end = crate::test_support::with_decode_context(|decode_ctx| {
-        super::occurrence_path(decode_ctx, &bytes)
-    })
-    .unwrap()
-    .expect("synthetic path")
-    .1;
+    let path_end = super::occurrence_path(&bytes)
+        .unwrap()
+        .expect("synthetic path")
+        .1;
     bytes.truncate(path_end);
     bytes.extend_from_slice(&envelope_discriminator.to_le_bytes());
     bytes.extend(
@@ -526,16 +524,10 @@ fn repeated_target_placements_decode_identity_and_matrix_forms() {
     assert_eq!(matrix_4.len(), 823);
     assert_eq!(matrix_5.len(), 823);
     assert_eq!(matrix_6.len(), 823);
-    let (matrix_role, _, matrix_offset) = super::repeated_target_component_insert(
-        &cadmpeg_test_support::service_decode_context(),
-        &matrix_6,
-        0,
-        matrix_6.len(),
-        15,
-        matrix,
-    )
-    .unwrap()
-    .expect("matrix carrier matching the scope transform");
+    let (matrix_role, _, matrix_offset) =
+        super::repeated_target_component_insert(&matrix_6, 0, matrix_6.len(), 15, matrix)
+            .unwrap()
+            .expect("matrix carrier matching the scope transform");
     assert_eq!(matrix_role, role);
     assert!(matrix_offset.is_some());
     let mut bytes = identity_1;
@@ -558,7 +550,6 @@ fn repeated_target_placements_decode_identity_and_matrix_forms() {
     let local_carrier =
         repeated_target_occurrence_record_with_path_role(path_role, &retained_role, 16, 1, None);
     let (decoded_role, role_offset, transform_offset) = super::repeated_target_component_insert(
-        &cadmpeg_test_support::service_decode_context(),
         &local_carrier,
         0,
         local_carrier.len(),
@@ -741,7 +732,6 @@ fn malformed_legacy_typed_placement_reports_its_role() {
     let mut bytes = legacy_occurrence_record(role, 10, None);
     bytes.pop();
     let (placements, failures) = super::occurrence_placements_with_failures(
-        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         &super::indexed_records(&bytes),
         None,
@@ -797,14 +787,8 @@ fn malformed_role_placement_is_retained_as_a_decode_failure() {
     bytes.pop();
     let records = super::indexed_records(&bytes);
 
-    let (placements, failures) = super::occurrence_placements_with_failures(
-        &cadmpeg_test_support::service_decode_context(),
-        &bytes,
-        &records,
-        None,
-        None,
-    )
-    .unwrap();
+    let (placements, failures) =
+        super::occurrence_placements_with_failures(&bytes, &records, None, None).unwrap();
 
     assert!(placements.is_empty());
     assert_eq!(failures.len(), 1);

@@ -6,9 +6,7 @@ fn tested_parse_sketch_surface(
     payload: &[u8],
     record_at: usize,
 ) -> Result<Option<crate::design::decode::sketch::ParsedSketchSurface>, cadmpeg_core::CodecError> {
-    crate::design::test_support::with_test_decode_context(|ctx| {
-        parse_sketch_surface(ctx, payload, record_at)
-    })
+    parse_sketch_surface(payload, record_at)
 }
 
 fn canonical_surface_payload() -> Vec<u8> {

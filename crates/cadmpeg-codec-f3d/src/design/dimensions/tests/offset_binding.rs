@@ -3,7 +3,6 @@
 use crate::design::dimensions::bind_offset_dimension_parameters;
 use crate::ids::neutral_parameter_id;
 use crate::records::parameters::DesignParameter;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::sketches::{
     SketchConstraint, SketchConstraintDefinition, SketchConstraintDefinitionInput,
     SketchNativeOperand, SketchOffsetPair,
@@ -90,10 +89,7 @@ fn offset_binding_fixture() -> (Vec<SketchConstraint>, Vec<DesignParameter>) {
 #[test]
 fn offset_dimension_binding_preserves_parameter_and_removes_annotation() {
     let (mut constraints, parameters) = offset_binding_fixture();
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::default();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    bind_offset_dimension_parameters(&ctx, &mut constraints, &parameters).unwrap();
+    bind_offset_dimension_parameters(&mut constraints, &parameters).unwrap();
     assert_eq!(constraints.len(), 1);
     assert!(matches!(constraints[0].definition.kind(),
         SketchConstraintDefinitionInput::Offset { parameter: Some(driving), .. }

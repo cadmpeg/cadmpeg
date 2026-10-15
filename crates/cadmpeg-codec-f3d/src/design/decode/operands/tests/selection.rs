@@ -23,10 +23,6 @@ use crate::test_support::lp_utf16;
 
 #[test]
 fn sketch_profile_frame_resolves_its_decimal_entity_suffix() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut bytes = Vec::new();
     bytes.extend_from_slice(&3u32.to_le_bytes());
     bytes.extend_from_slice(b"308");
@@ -71,15 +67,12 @@ fn sketch_profile_frame_resolves_its_decimal_entity_suffix() {
     };
 
     let profile = parse_sketch_profile(
-        &ctx,
         &bytes,
         "f3d:Design/BulkStream.dat",
         4,
         &header,
         std::slice::from_ref(&entity),
     )
-    .transpose()
-    .unwrap()
     .expect("sketch-profile operand");
     assert_eq!(profile.scope_reference_ordinal, 4);
     assert_eq!(profile.entity_id.suffix(), 172);
@@ -111,15 +104,12 @@ fn sketch_profile_frame_resolves_its_decimal_entity_suffix() {
         ..header
     };
     let compact = parse_sketch_profile(
-        &ctx,
         &bytes,
         "f3d:Design/BulkStream.dat",
         2,
         &compact_header,
         std::slice::from_ref(&entity),
     )
-    .transpose()
-    .unwrap()
     .expect("compact sketch-profile operand");
     assert_eq!(compact.scope_reference_ordinal, 2);
     assert_eq!(
@@ -146,15 +136,12 @@ fn sketch_profile_frame_resolves_its_decimal_entity_suffix() {
     bytes.extend_from_slice(b"258");
     bytes.extend_from_slice(&100u32.to_le_bytes());
     let omitted = parse_sketch_profile(
-        &ctx,
         &bytes,
         "f3d:Design/BulkStream.dat",
         2,
         &compact_header,
         std::slice::from_ref(&entity),
     )
-    .transpose()
-    .unwrap()
     .expect("omitted-ordinal sketch-profile operand");
     assert_eq!(
         omitted.paired_byte_offset(),
@@ -164,7 +151,6 @@ fn sketch_profile_frame_resolves_its_decimal_entity_suffix() {
 
 #[test]
 fn sketch_profile_resolves_a_leading_zero_entity_suffix() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let mut bytes = Vec::new();
     bytes.extend_from_slice(&3u32.to_le_bytes());
     bytes.extend_from_slice(b"308");
@@ -203,29 +189,19 @@ fn sketch_profile_resolves_a_leading_zero_entity_suffix() {
         )
         .unwrap(),
     };
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::default();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let profile = parse_sketch_profile(
-        &ctx,
         &bytes,
         "f3d:Design/BulkStream.dat",
         4,
         &header,
         std::slice::from_ref(&entity),
     )
-    .transpose()
-    .unwrap()
     .expect("profile with leading-zero suffix");
     assert_eq!(profile.entity_id.suffix(), 172);
 }
 
 #[test]
 fn generated_base_flange_profile_frame_resolves() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let (bytes, _) = crate::test_support::streams_test::generated_design_base_flange_bulkstream();
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     let profile_offset = records
@@ -255,15 +231,12 @@ fn generated_base_flange_profile_frame_resolves() {
         .expect("valid module registration"),
     };
     let profile = parse_sketch_profile(
-        &ctx,
         &bytes,
         "f3d:Design/BulkStream.dat",
         1,
         &header,
         std::slice::from_ref(&entity),
     )
-    .transpose()
-    .unwrap()
     .expect("generated BaseFlange profile operand");
     assert_eq!(profile.entity_id.as_str(), "Sketch_800");
     assert_eq!(profile.entity_id.suffix(), 800);
@@ -271,10 +244,6 @@ fn generated_base_flange_profile_frame_resolves() {
 
 #[test]
 fn extrude_operand_identity_walks_shared_wrapper_grammar_to_a_fixed_leaf() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let group = DesignConstructionOperandGroup::try_from(
         crate::records::topology::construction::DesignConstructionOperandGroupDraft {
             id: "f3d:Design/BulkStream.dat:operand-group#100".into(),
@@ -342,7 +311,7 @@ fn extrude_operand_identity_walks_shared_wrapper_grammar_to_a_fixed_leaf() {
     bytes.extend_from_slice(&[0; 5]);
     indexed_header(&mut bytes, *b"301", 900);
 
-    let identity = parse_construction_operand_identity(&ctx, &bytes, &group, &wrapper_header)
+    let identity = parse_construction_operand_identity(&bytes, &group, &wrapper_header)
         .expect("identity chain")
         .unwrap();
     assert_eq!(
@@ -376,10 +345,9 @@ fn extrude_operand_identity_walks_shared_wrapper_grammar_to_a_fixed_leaf() {
     expanded_bytes.extend_from_slice(&900u32.to_le_bytes());
     expanded_bytes.extend_from_slice(&[0; 6]);
     indexed_header(&mut expanded_bytes, *b"301", 900);
-    let expanded =
-        parse_construction_operand_identity(&ctx, &expanded_bytes, &group, &wrapper_header)
-            .expect("identity chain with expanded tail reference")
-            .unwrap();
+    let expanded = parse_construction_operand_identity(&expanded_bytes, &group, &wrapper_header)
+        .expect("identity chain with expanded tail reference")
+        .unwrap();
     let persistent = expanded
         .persistent_identity()
         .expect("expanded persistent identity leaf");
@@ -455,10 +423,6 @@ fn extrude_operand_identity_walks_shared_wrapper_grammar_to_a_fixed_leaf() {
 
 #[test]
 fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let group = DesignConstructionOperandGroup::try_from(
         crate::records::topology::construction::DesignConstructionOperandGroupDraft {
             id: "f3d:Design/BulkStream.dat:operand-group#90".into(),
@@ -536,7 +500,7 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
     let next_at = bytes.len();
     indexed_header(&mut bytes, *b"311", 104);
 
-    let operand = parse_entity_selection_operand(&ctx, &bytes, &group, 0, &record)
+    let operand = parse_entity_selection_operand(&bytes, &group, 0, &record)
         .expect("nested entity-selection frame")
         .unwrap();
     assert_eq!(operand.primary_identity, 1331);
@@ -558,7 +522,7 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
     compact.extend_from_slice(&1331u64.to_le_bytes());
     let compact_next_at = compact.len();
     indexed_header(&mut compact, *b"311", 109);
-    let compact_operand = parse_entity_selection_operand(&ctx, &compact, &group, 0, &record)
+    let compact_operand = parse_entity_selection_operand(&compact, &group, 0, &record)
         .expect("compact nested entity-selection frame")
         .unwrap();
     assert_eq!(compact_operand.primary_identity, 1331);
@@ -586,7 +550,7 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
     curve_identity.extend_from_slice(&183u64.to_le_bytes());
     let curve_next_at = curve_identity.len();
     indexed_header(&mut curve_identity, *b"311", 104);
-    let curve_operand = parse_entity_selection_operand(&ctx, &curve_identity, &group, 0, &record)
+    let curve_operand = parse_entity_selection_operand(&curve_identity, &group, 0, &record)
         .expect("expanded Sketch-curve entity-selection frame")
         .unwrap();
     assert_eq!(curve_operand.primary_identity, 1331);
@@ -631,15 +595,10 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
         class_tag: crate::records::references::DesignClassTag::try_from("338".to_owned()).unwrap(),
         ..record
     };
-    let class_338_operand = parse_entity_selection_operand(
-        &ctx,
-        &class_338_curve_identity,
-        &group,
-        0,
-        &class_338_record,
-    )
-    .expect("class-338 Sketch-curve entity-selection frame")
-    .unwrap();
+    let class_338_operand =
+        parse_entity_selection_operand(&class_338_curve_identity, &group, 0, &class_338_record)
+            .expect("class-338 Sketch-curve entity-selection frame")
+            .unwrap();
     assert_eq!(class_338_operand.primary_identity, 949);
     assert_eq!(
         class_338_operand
@@ -672,8 +631,7 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
     let mut invalid_class_338 = class_338_curve_identity.clone();
     invalid_class_338[identity_at + 20] = 0;
     assert!(
-        parse_entity_selection_operand(&ctx, &invalid_class_338, &group, 0, &class_338_record)
-            .is_none()
+        parse_entity_selection_operand(&invalid_class_338, &group, 0, &class_338_record).is_none()
     );
 }
 

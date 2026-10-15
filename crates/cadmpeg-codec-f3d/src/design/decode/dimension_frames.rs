@@ -9,7 +9,7 @@ use crate::container::ContainerScan;
 use crate::design::construction_recipe_family_name_len;
 use crate::design::decode::meta::{decode_types, stream_types_by_entity};
 use crate::design::decode::sketch::{indexed_record_offsets, next_indexed_record_offset};
-use crate::design::decode::text::design_record_id_charged;
+use crate::design::decode::text::design_record_id;
 use crate::ids::native_stream;
 use crate::layout::grouped_recipe_reference_prefix as grouped_recipe;
 use crate::records::{
@@ -110,7 +110,6 @@ fn dimension_geometry_indices(
 /// Decode the indexed record that directly contains each construction recipe
 /// owned by a dimensional parameter companion.
 pub(crate) fn decode_dimension_recipe_records(
-    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     parameters: &[DesignParameter],
     owners: &[DesignParameterOwner],
@@ -190,7 +189,7 @@ pub(crate) fn decode_dimension_recipe_records(
             let Ok(prefix_offset) = u64::try_from(prefix_offset) else {
                 continue;
             };
-            let references = decode_recipe_references_charged(ctx, prefix_bytes, prefix_offset)?;
+            let references = decode_recipe_references(prefix_bytes, prefix_offset);
             let Some(program) = contiguous_i32_program(bytes, program_offset, record_end) else {
                 continue;
             };
@@ -208,13 +207,11 @@ pub(crate) fn decode_dimension_recipe_records(
             ) else {
                 continue;
             };
-            let id = design_record_id_charged(
-                ctx,
+            let id = design_record_id(
                 &entry.name,
                 ":design-dimension-recipe-record#",
                 recipe.byte_offset,
-                "f3d dimension recipe record ID",
-            )?;
+            );
             let recipe_id = recipe.id.to_owned();
 
             out.push(DesignDimensionRecipeRecord {
@@ -240,20 +237,19 @@ pub(crate) fn decode_dimension_recipe_records(
     Ok(out)
 }
 
-pub(crate) fn decode_recipe_references_charged(
-    _ctx: &DecodeContext<'_>,
+pub(crate) fn decode_recipe_references(
     prefix: &[u8],
     prefix_offset: u64,
-) -> Result<Vec<crate::records::dimensions::DesignRecipeReference>, CodecError> {
+) -> Vec<crate::records::dimensions::DesignRecipeReference> {
     if prefix
         .get(..10)
         .is_none_or(|bytes| bytes.iter().any(|byte| *byte != 0))
         || View::u32_le_at(prefix, 10) != Some(1)
         || View::u32_le_at(prefix, 18).is_none_or(|value| value == 0)
     {
-        return Ok(Vec::new());
+        return Vec::new();
     }
-    Ok(match View::u32_le_at(prefix, 14) {
+    match View::u32_le_at(prefix, 14) {
         Some(2) => decode_paired_recipe_references(prefix, prefix_offset),
         Some(3) => decode_standard_recipe_references(prefix, prefix_offset),
         Some(group_count) if group_count >= 4 => usize::try_from(group_count)
@@ -262,7 +258,7 @@ pub(crate) fn decode_recipe_references_charged(
                 decode_grouped_recipe_references(prefix, prefix_offset, group_count)
             }),
         _ => Vec::new(),
-    })
+    }
 }
 
 fn decode_standard_recipe_references(
@@ -869,7 +865,6 @@ pub(super) fn contiguous_i32_program(bytes: &[u8], start: usize, end: usize) -> 
 /// Decode paired typed sketch loci nested immediately after dimensional
 /// parameter-companion prefixes.
 pub(crate) fn decode_dimension_locus_pairs(
-    ctx: &DecodeContext<'_>,
     inputs: &DimensionDecodeInputs<'_>,
 ) -> Result<Vec<DesignDimensionLocusPair>, CodecError> {
     let &DimensionDecodeInputs {
@@ -917,13 +912,11 @@ pub(crate) fn decode_dimension_locus_pairs(
         ) else {
             continue;
         };
-        pair.id = design_record_id_charged(
-            ctx,
+        pair.id = design_record_id(
             &entry.name,
             ":design-dimension-locus-pair#",
             pair.byte_offset(),
-            "f3d dimension locus pair ID",
-        )?;
+        );
         let Some(governing_companion_record_index) = following_dimension_companion_record_index(
             &pair.id,
             pair.paired_byte_offset(),
@@ -1075,7 +1068,6 @@ fn parse_dimension_locus_pair(
 /// Decode dimension frames whose ordered operand run contains a null record
 /// reference followed by one typed sketch-geometry reference.
 pub(crate) fn decode_dimension_null_locus_pairs(
-    ctx: &DecodeContext<'_>,
     inputs: &DimensionDecodeInputs<'_>,
     pairs: &[DesignDimensionLocusPair],
     groups: &[DesignDimensionLocusGroup],
@@ -1136,13 +1128,11 @@ pub(crate) fn decode_dimension_null_locus_pairs(
         ) else {
             continue;
         };
-        pair.id = design_record_id_charged(
-            ctx,
+        pair.id = design_record_id(
             &entry.name,
             ":design-dimension-null-locus-pair#",
             pair.byte_offset(),
-            "f3d dimension null locus pair ID",
-        )?;
+        );
         let Some(governing_companion_record_index) = following_dimension_companion_record_index(
             &pair.id,
             pair.paired_byte_offset(),
@@ -1255,7 +1245,6 @@ fn parse_dimension_null_locus_pair(
 /// Decode paired `EntityGenesis` dimensional frames carrying annotation data
 /// and a direct backlink to the governed parameter owner.
 pub(crate) fn decode_dimension_annotation_frames(
-    ctx: &DecodeContext<'_>,
     inputs: &DimensionDecodeInputs<'_>,
     entities: &[DesignEntityHeader],
 ) -> Result<Vec<DesignDimensionAnnotationFrame>, CodecError> {
@@ -1359,7 +1348,6 @@ pub(crate) fn decode_dimension_annotation_frames(
                     break;
                 };
                 if let Some(parsed) = parse_dimension_annotation_frame(
-                    ctx,
                     bytes,
                     at,
                     containing_companion_record_index,
@@ -1372,13 +1360,11 @@ pub(crate) fn decode_dimension_annotation_frames(
                         position = at + 1;
                         continue;
                     }
-                    frame.id = design_record_id_charged(
-                        ctx,
+                    frame.id = design_record_id(
                         &entry.name,
                         ":design-dimension-annotation-frame#",
                         frame.byte_offset(),
-                        "f3d dimension annotation frame ID",
-                    )?;
+                    );
                     let Ok(paired_at) = usize::try_from(frame.paired_byte_offset()) else {
                         return Err(CodecError::Malformed(
                             "F3D annotation paired offset is not representable".into(),
@@ -1402,7 +1388,6 @@ pub(crate) fn decode_dimension_annotation_frames(
 }
 
 fn parse_dimension_annotation_frame(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     companion_record_index: Option<u32>,
@@ -1586,7 +1571,7 @@ fn parse_dimension_annotation_frame(
         owner_reference,
         owner_reference_offset: u64_from_index(paired_byte_offset + 20),
     };
-    match DesignDimensionAnnotationFrame::try_new_charged(ctx, draft) {
+    match DesignDimensionAnnotationFrame::try_new_charged(draft) {
         Ok(frame) => Some(Ok(frame)),
         Err(error @ CodecError::ResourceLimit(_)) => Some(Err(error)),
         Err(_) => None,
@@ -1612,7 +1597,6 @@ fn is_dimension_presentation_type(type_guid: &str) -> bool {
 /// owner. The type table selects the primary and paired classes; no numeric
 /// class tag is treated as a cross-stream type identity.
 pub(crate) fn decode_dimension_presentation_frames(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     inputs: &DimensionDecodeInputs<'_>,
     entities: &[DesignEntityHeader],
 ) -> Result<Vec<DesignDimensionPresentationFrame>, CodecError> {
@@ -1637,7 +1621,7 @@ pub(crate) fn decode_dimension_presentation_frames(
 
         sketch_scope_by_entity.insert((stream, placement.entity_id.suffix()), scope_record_index);
     }
-    let types = decode_types(ctx, scan)?;
+    let types = decode_types(scan)?;
     let mut out = Vec::new();
     for entry in scan
         .entries
@@ -1714,13 +1698,11 @@ pub(crate) fn decode_dimension_presentation_frames(
             else {
                 continue;
             };
-            frame.id = design_record_id_charged(
-                ctx,
+            frame.id = design_record_id(
                 &entry.name,
                 ":design-dimension-presentation-frame#",
                 frame.byte_offset,
-                "f3d dimension presentation frame ID",
-            )?;
+            );
             frame.governing_owner_record_index = owner.record_index();
             frame.governing_parameter_record_index = owner.parameter_record_index();
             frame.governing_companion_record_index = owner.companion_record_index();
@@ -1826,7 +1808,6 @@ fn parse_dimension_presentation_frame(
 /// Decode counted typed sketch loci nested immediately after dimensional
 /// parameter-companion prefixes.
 pub(crate) fn decode_dimension_locus_groups(
-    ctx: &DecodeContext<'_>,
     inputs: &DimensionDecodeInputs<'_>,
     entities: &[DesignEntityHeader],
 ) -> Result<Vec<DesignDimensionLocusGroup>, CodecError> {
@@ -1886,13 +1867,11 @@ pub(crate) fn decode_dimension_locus_groups(
             &sketch_entities,
         );
         for mut group in candidates {
-            group.id = design_record_id_charged(
-                ctx,
+            group.id = design_record_id(
                 &entry.name,
                 ":design-dimension-locus-group#",
                 group.byte_offset,
-                "f3d dimension locus group ID",
-            )?;
+            );
 
             out.push(group);
         }

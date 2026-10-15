@@ -8,7 +8,6 @@ use super::{
     references::DesignClassTag,
 };
 use crate::records::serde_column::SliceColumn;
-use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
 use serde::{Deserialize, Serialize};
@@ -196,7 +195,6 @@ pub(crate) struct SketchRelationMembers(pub(super) Vec<SketchRelationMember>);
 impl SketchRelationMembers {
     /// Construct the unresolved source run with its member locations.
     pub(crate) fn from_indices(
-        _ctx: &DecodeContext<'_>,
         rows: impl IntoIterator<Item = (u32, usize, u32)>,
     ) -> Result<Self, CodecError> {
         let mut members = Vec::new();
@@ -267,7 +265,6 @@ pub(crate) struct SketchRelationReturnMembers(Vec<SketchRelationReturnMember>);
 impl SketchRelationReturnMembers {
     /// Construct the unresolved source run with its member locations.
     pub(crate) fn from_indices(
-        _ctx: &DecodeContext<'_>,
         rows: impl IntoIterator<Item = (u32, usize)>,
     ) -> Result<Self, CodecError> {
         let mut members = Vec::new();
@@ -738,12 +735,10 @@ impl SketchRelation {
     /// Resolve both member runs without changing their byte offsets.
     pub(crate) fn resolve_members(
         &mut self,
-        _ctx: &DecodeContext<'_>,
         mut resolve: impl FnMut(u32) -> SketchRelationOperand,
-    ) -> Result<(), CodecError> {
+    ) {
         self.members.resolve(&mut resolve);
         self.return_members.resolve(resolve);
-        Ok(())
     }
 
     /// Retained auxiliary references.
