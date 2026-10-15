@@ -36,7 +36,7 @@ fn complex_validation_measure_carrier_is_decoded() {
             .contains("geometric validation property #41 has an unsupported value")
     }));
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -214,7 +214,7 @@ fn numerical_followup_mesh_volume_and_centroid_are_translation_invariant() {
         .unwrap();
         tessellation.body = Some(ir.model.bodies[0].id.clone());
         ir.model.tessellations = vec![tessellation];
-        let properties = super::mesh_properties(&ir).expect("mesh budget admits calculation");
+        let properties = super::mesh_properties(&ir).expect("compute the mesh properties");
         assert!((properties.volume - 1.0 / 3.0).abs() <= f64::EPSILON);
         assert_eq!(
             properties.centroid,
@@ -256,7 +256,7 @@ fn numerical_seventh_mesh_mass_properties_preserve_uniform_scale() {
         .unwrap();
         tessellation.body = Some(ir.model.bodies[0].id.clone());
         ir.model.tessellations = vec![tessellation];
-        let properties = super::mesh_properties(&ir).expect("mesh budget admits calculation");
+        let properties = super::mesh_properties(&ir).expect("compute the mesh properties");
         assert!(
             (properties.volume / scale / scale / scale - 1.0 / 3.0).abs() <= 8.0 * f64::EPSILON
         );

@@ -22,7 +22,7 @@ fn unconnected_faces_form_separate_components() {
         .expect("service context");
     let components =
         super::super::connected_face_components(&faces, &[], &[], &BTreeMap::new(), &service_ctx)
-            .expect("service admits two face neighbors");
+            .expect("compute the connected face components");
     assert_eq!(components, vec![vec![0], vec![1]]);
 }
 
