@@ -86,10 +86,14 @@ fn decode_resolves_feature_topology_selections() {
         }) if faces == &[base.ir().model.faces[0].id.clone()] && native == face
     ));
     assert!(matches!(
-        decoded.ir().model.features[2].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Combine {
-            operands,
-            ..
-        }) if matches!((operands.target(), operands.tools(),), (BodySelection::Resolved { bodies, native }, BodySelection::Resolved { .. },) if bodies.as_slice() == [base.ir().model.bodies[0].id.clone()] && native == body)));
+    decoded.ir().model.features[2].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Combine {
+        operands,
+        ..
+    }) if matches!(
+        (operands.target(), operands.tools(),),
+        (BodySelection::Resolved { bodies, native }, BodySelection::Resolved { .. },)
+            if bodies.as_slice() == [base.ir().model.bodies[0].id.clone()] && native == body
+    )));
     assert!(matches!(
         decoded.ir().model.features[3].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Extrude {
@@ -115,11 +119,16 @@ fn decode_resolves_feature_topology_selections() {
         }) if faces == &[base.ir().model.faces[0].id.clone()] && native == face
     ));
     assert!(matches!(
-        decoded.ir().model.features[5].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Sweep {
-            shape,
-            path: Some(PathRef::Edges(edges)),
-            ..
-        }) if matches!((shape.referenced_profile(),), (Some(PlanarProfileRef::Faces(faces)),) if faces == std::slice::from_ref(&face_id) && edges == std::slice::from_ref(&edge_id))));
+    decoded.ir().model.features[5].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Sweep {
+        shape,
+        path: Some(PathRef::Edges(edges)),
+        ..
+    }) if matches!(
+        (shape.referenced_profile(),),
+        (Some(PlanarProfileRef::Faces(faces)),)
+            if faces == std::slice::from_ref(&face_id)
+            && edges == std::slice::from_ref(&edge_id)
+    )));
 
     decoded.ir_mut().model.features[0]
         .evaluation
