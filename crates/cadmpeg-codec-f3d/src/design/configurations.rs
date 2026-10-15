@@ -218,7 +218,7 @@ pub(crate) fn project_configurations(
                 parameter_values: BTreeMap::new(),
                 feature_states: BTreeMap::new(),
                 bodies: None,
-                native_ref: Some(super::identity::configuration_entry_id(table.entry_name())?),
+                native_ref: Some(super::identity::configuration_entry_id(table.entry_name())),
             });
         }
     }
@@ -250,7 +250,7 @@ pub(crate) fn project_configurations(
 pub(crate) fn bind_configuration_parameter_overrides(
     configurations: &mut [cadmpeg_ir::features::DesignConfiguration],
     parameters: &[cadmpeg_ir::features::DesignParameter],
-) -> Result<(), CodecError> {
+) {
     for configuration in configurations {
         configuration.properties.retain(|key, expression| {
             let Some(name) = key.as_str().strip_prefix("parameter:") else {
@@ -269,7 +269,6 @@ pub(crate) fn bind_configuration_parameter_overrides(
             false
         });
     }
-    Ok(())
 }
 
 /// Replace name-keyed suppression properties with stable feature references
@@ -576,8 +575,7 @@ mod tests {
             native_ref: None,
         };
         let mut projected = project_configurations(&[table]).expect("ordered configuration table");
-        bind_configuration_parameter_overrides(&mut projected, std::slice::from_ref(&parameter))
-            .unwrap();
+        bind_configuration_parameter_overrides(&mut projected, std::slice::from_ref(&parameter));
         assert_eq!(projected[0].parameter_overrides[&parameter.id], "25 mm");
         assert!(projected[0].properties.is_empty());
         assert_eq!(
@@ -602,7 +600,7 @@ mod tests {
         )
         .unwrap()])
         .expect("ordered configuration table");
-        bind_configuration_parameter_overrides(&mut ambiguous, &[parameter, duplicate]).unwrap();
+        bind_configuration_parameter_overrides(&mut ambiguous, &[parameter, duplicate]);
         assert!(ambiguous[0].parameter_overrides.is_empty());
         assert_eq!(
             unresolved_configuration_parameter_override_count(&ambiguous),

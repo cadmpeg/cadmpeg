@@ -582,16 +582,16 @@ fn parse_feature_timeline_record(
     expected: (&str, u64),
     source_ordinal: u32,
     type_guids_by_entity: &HashMap<u64, Vec<&str>>,
-) -> Result<Option<DesignFeatureTimeline>, CodecError> {
+) -> Option<DesignFeatureTimeline> {
     let (expected_class_tag, expected_entity_id) = expected;
-    let Some((
+    let (
         class_tag,
         mut at,
         context_reference_offset,
         context_record_index,
         item_count_offset,
         count,
-    )) = (|| {
+    ) = (|| {
         let (start, end) = (frame.start, frame.end);
         let (class_tag, after_tag) =
             lp_ascii_filtered_view(bytes, start, 3..=3, u8::is_ascii_digit)?;
@@ -629,51 +629,31 @@ fn parse_feature_timeline_record(
             item_count_offset,
             count,
         ))
-    })()
-    else {
-        return Ok(None);
-    };
+    })()?;
 
     let mut items = Vec::new();
     for _ in 0..count {
-        let Some(target_offset) = at.checked_add(1) else {
-            return Ok(None);
-        };
-        let Some(reference) = take_reference(bytes, &mut at) else {
-            return Ok(None);
-        };
-        let Some(target) = local_reference(&reference, type_guids_by_entity) else {
-            return Ok(None);
-        };
-        let Some(target_offset) = u64::try_from(target_offset).ok() else {
-            return Ok(None);
-        };
+        let target_offset = at.checked_add(1)?;
+        let reference = take_reference(bytes, &mut at)?;
+        let target = local_reference(&reference, type_guids_by_entity)?;
+        let target_offset = u64::try_from(target_offset).ok()?;
         items.push(crate::records::identity::Located {
             value: target,
             offset: target_offset,
         });
     }
     if at != frame.end {
-        return Ok(None);
+        return None;
     }
 
     let source_start = frame.start;
-    let Some(frame_start) = u64::try_from(source_start).ok() else {
-        return Ok(None);
-    };
-    let Some(frame_length) = frame
+    let frame_start = u64::try_from(source_start).ok()?;
+    let frame_length = frame
         .end
         .checked_sub(frame.start)
-        .and_then(|value| u64::try_from(value).ok())
-    else {
-        return Ok(None);
-    };
-    let Some(context_reference_offset) = u64::try_from(context_reference_offset).ok() else {
-        return Ok(None);
-    };
-    let Some(item_count_offset) = u64::try_from(item_count_offset).ok() else {
-        return Ok(None);
-    };
+        .and_then(|value| u64::try_from(value).ok())?;
+    let context_reference_offset = u64::try_from(context_reference_offset).ok()?;
+    let item_count_offset = u64::try_from(item_count_offset).ok()?;
     let Ok(frame) = crate::records::entity_header::DesignTimelineFrame::new(
         frame_start,
         frame_length,
@@ -681,16 +661,12 @@ fn parse_feature_timeline_record(
         item_count_offset,
         items,
     ) else {
-        return Ok(None);
+        return None;
     };
-    let Some(class_tag) = crate::design::decode::text::class_tag_from_view(class_tag).ok() else {
-        return Ok(None);
-    };
-    let Some(record_index) = std::num::NonZeroU64::new(expected_entity_id) else {
-        return Ok(None);
-    };
+    let class_tag = crate::design::decode::text::class_tag_from_view(class_tag).ok()?;
+    let record_index = std::num::NonZeroU64::new(expected_entity_id)?;
     let id = design_record_id(stream, ":design-feature-timeline#", frame_start);
-    Ok(DesignFeatureTimeline::try_new(
+    DesignFeatureTimeline::try_new(
         id,
         frame,
         class_tag,
@@ -698,7 +674,7 @@ fn parse_feature_timeline_record(
         source_ordinal,
         context_record_index,
     )
-    .ok())
+    .ok()
 }
 
 /// Decode the exact counted scope list that carries authored feature order.
@@ -826,7 +802,7 @@ pub(crate) fn decode_feature_timelines(
                     (&expected_class_tag, *entity_id),
                     entity_source_ordinal,
                     &type_guids_by_entity,
-                )?
+                )
                 .ok_or_else(|| {
                     CodecError::Malformed(
                         "Design feature-timeline record does not match its exact frame".into(),

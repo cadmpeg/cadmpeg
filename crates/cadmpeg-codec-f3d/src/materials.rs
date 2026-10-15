@@ -1104,7 +1104,7 @@ fn decode_face_appearance_assignments(
         for frame in crate::metastream::primary_record_frames(&metadata, bytes.len())? {
             out.extend(face_appearance_assignments_in_frame(
                 &bytes[frame.start..frame.end],
-            )?);
+            ));
         }
     }
     Ok(out)
@@ -1113,17 +1113,15 @@ fn decode_face_appearance_assignments(
 /// Decode a synthetic test slice as one Design primary-index frame.
 #[cfg(test)]
 fn face_appearance_assignments(bytes: &[u8]) -> Vec<FaceAppearanceAssignment> {
-    face_appearance_assignments_in_frame(bytes).expect("face assignment budget")
+    face_appearance_assignments_in_frame(bytes)
 }
 
 /// Decode face assignments from one exact Design primary-index frame.
-fn face_appearance_assignments_in_frame(
-    bytes: &[u8],
-) -> Result<Vec<FaceAppearanceAssignment>, CodecError> {
+fn face_appearance_assignments_in_frame(bytes: &[u8]) -> Vec<FaceAppearanceAssignment> {
     let strings = lp_utf16_strings(bytes);
     let mut out = legacy_face_appearance_assignments(bytes, &strings);
-    out.extend(modern_face_appearance_assignments(bytes, &strings)?);
-    Ok(out)
+    out.extend(modern_face_appearance_assignments(bytes, &strings));
+    out
 }
 
 /// Decode the variable-width legacy face-assignment envelope.
@@ -1263,7 +1261,7 @@ fn legacy_face_selector_is_valid(kind: u8, selector: &str) -> bool {
 fn modern_face_appearance_assignments(
     bytes: &[u8],
     strings: &[(usize, String)],
-) -> Result<Vec<FaceAppearanceAssignment>, CodecError> {
+) -> Vec<FaceAppearanceAssignment> {
     const LP_GUID_BYTES: usize = 4 + GUID_LEN * 2;
     const FIRST_GUID_GAP: usize = 25;
     const FACE_GUID_GAP: usize = 28;
@@ -1341,7 +1339,7 @@ fn modern_face_appearance_assignments(
             color: None,
         });
     }
-    Ok(out)
+    out
 }
 
 /// Validate the fixed carrier gap after the first lower-case GUID of a paired
@@ -1812,9 +1810,7 @@ fn utf16_string_prefix_is_text(bytes: &[u8], payload_at: usize, count: usize) ->
 /// Decode one LP-UTF16 string at `offset`. Rejects a count outside 2..=256,
 /// invalid UTF-16, or a control character.
 fn lp_utf16_string_at(bytes: &[u8], offset: usize) -> Option<(String, usize)> {
-    let Some((value, end)) = lp_utf16_bounded(bytes, offset, 2..=256) else {
-        return None;
-    };
+    let (value, end) = lp_utf16_bounded(bytes, offset, 2..=256)?;
     if value.chars().any(char::is_control) {
         return None;
     }

@@ -1046,7 +1046,7 @@ fn historical_face_selection_with_native(
         let id = crate::design::identity::history_input_face_id(&prefix, face)?;
         historical_faces.push(id);
     }
-    let fallback_native = native.to_owned();
+    let fallback_native = native.clone();
     Ok(Some(
         cadmpeg_ir::features::FaceSelection::historical(
             crate::design::identity::feature_input_topology_id(&feature, previous_state_id)?,
@@ -1144,9 +1144,7 @@ fn split_face_updated_target_slots(
     if updated.len() != updated_face_slots.len() {
         return None;
     }
-    let Some(stream) = native_stream(&group.id) else {
-        return None;
-    };
+    let stream = native_stream(&group.id)?;
     let mut represented = HashSet::new();
     let mut faces = Vec::new();
     for (ordinal, record_index) in group
@@ -1155,9 +1153,7 @@ fn split_face_updated_target_slots(
         .map(|member| &member.value)
         .enumerate()
     {
-        let Some(ordinal) = u32::try_from(ordinal).ok() else {
-            return None;
-        };
+        let ordinal = u32::try_from(ordinal).ok()?;
         let mut matches = operands.iter().filter(|operand| {
             native_stream(&operand.id) == Some(stream)
                 && operand.scope_record_index == group.scope_record_index
@@ -1167,20 +1163,15 @@ fn split_face_updated_target_slots(
                 && operand.recipe_kind
                     == crate::records::recipes::ConstructionRecipeKind::BoundedFace
         });
-        let Some(operand) = matches.next() else {
-            return None;
-        };
+        let operand = matches.next()?;
         if matches.next().is_some() || operand.preceding_candidate_faces.is_empty() {
             return None;
         }
         for face in &operand.preceding_candidate_faces {
-            let Some(slot) = face
+            let slot = face
                 .as_str()
                 .rsplit_once('#')
-                .and_then(|(_, slot)| slot.parse().ok())
-            else {
-                return None;
-            };
+                .and_then(|(_, slot)| slot.parse().ok())?;
             if updated.contains(&slot) && represented.insert(slot) {
                 faces.push(slot);
             }
@@ -1200,9 +1191,7 @@ fn historical_face_group_slots(
     operands: &[DesignFaceOperand],
     members: FaceGroupMembers,
 ) -> Option<Vec<i64>> {
-    let Some(stream) = native_stream(&group.id) else {
-        return None;
-    };
+    let stream = native_stream(&group.id)?;
     let mut faces = Vec::new();
     let mut contributing_members = 0;
     for (ordinal, record_index) in group
@@ -1211,9 +1200,7 @@ fn historical_face_group_slots(
         .map(|member| &member.value)
         .enumerate()
     {
-        let Some(ordinal) = u32::try_from(ordinal).ok() else {
-            return None;
-        };
+        let ordinal = u32::try_from(ordinal).ok()?;
         let mut matches = operands.iter().filter(|operand| {
             native_stream(&operand.id) == Some(stream)
                 && operand.scope_record_index == group.scope_record_index
@@ -1221,9 +1208,7 @@ fn historical_face_group_slots(
                 && operand.group_member_ordinal() == Some(ordinal)
                 && operand.record_index() == *record_index
         });
-        let Some(operand) = matches.next() else {
-            return None;
-        };
+        let operand = matches.next()?;
         if matches.next().is_some() {
             return None;
         }
@@ -1255,9 +1240,7 @@ fn historical_face_group_slots(
 }
 
 fn split_face_complete_candidate_slots(operand: &DesignFaceOperand) -> Option<Vec<i64>> {
-    if complete_counted_face_recipe(operand).is_none() {
-        return None;
-    }
+    complete_counted_face_recipe(operand)?;
     let faces = if let Some(face) = &operand.resolved_active_face {
         std::slice::from_ref(face)
     } else {
@@ -1272,13 +1255,10 @@ fn split_face_complete_candidate_slots(operand: &DesignFaceOperand) -> Option<Ve
     };
     let mut slots = Vec::new();
     for face in faces {
-        let Some(slot) = face
+        let slot = face
             .as_str()
             .rsplit_once('#')
-            .and_then(|(_, slot)| slot.parse::<i64>().ok())
-        else {
-            return None;
-        };
+            .and_then(|(_, slot)| slot.parse::<i64>().ok())?;
         slots.push(slot);
     }
     let mut preceding = HashSet::new();
@@ -1591,37 +1571,30 @@ fn unique_face_operand_history_candidate(
 
 pub(crate) fn resolve_bounded_face_history_candidates(
     operand: &DesignFaceOperand,
-) -> Result<Option<Vec<i64>>, CodecError> {
+) -> Option<Vec<i64>> {
     if operand.recipe_kind != crate::records::recipes::ConstructionRecipeKind::BoundedFace {
-        return Ok(None);
+        return None;
     }
-    if let Some(candidate) = convergent_effective_face_support(operand)? {
-        return Ok(Some(candidate));
+    if let Some(candidate) = convergent_effective_face_support(operand) {
+        return Some(candidate);
     }
-    let Some(header_value) = complete_counted_face_recipe(operand) else {
-        return Ok(None);
-    };
-    Ok(bounded_face_candidate_by_boundary_cardinality(
+    let header_value = complete_counted_face_recipe(operand)?;
+    bounded_face_candidate_by_boundary_cardinality(
         header_value,
         &operand.historical_support_contexts,
-    ))
+    )
 }
 
 pub(crate) fn resolve_stable_bounded_face_history_set(
     operand: &DesignFaceOperand,
 ) -> Option<Vec<i64>> {
-    if complete_counted_face_recipe(operand).is_none() {
-        return None;
-    }
+    complete_counted_face_recipe(operand)?;
     let mut active_faces = Vec::new();
     for face in &operand.preceding_candidate_faces {
-        let Some(slot) = face
+        let slot = face
             .as_str()
             .rsplit_once('#')
-            .and_then(|(_, slot)| slot.parse::<i64>().ok())
-        else {
-            return None;
-        };
+            .and_then(|(_, slot)| slot.parse::<i64>().ok())?;
         if active_faces.contains(&slot) {
             return None;
         }
@@ -1641,15 +1614,9 @@ pub(crate) fn resolve_stable_bounded_face_history_set(
 pub(crate) fn resolve_surface_delete_face_history_set(
     operand: &DesignFaceOperand,
 ) -> Option<Vec<i64>> {
-    if counted_face_recipe_frame(operand).is_none() {
-        return None;
-    }
-    let Some(active_faces) = unique_stable_face_slots(&operand.preceding_candidate_faces) else {
-        return None;
-    };
-    let Some(changed_faces) = unique_stable_face_slots(&operand.changed_candidate_faces) else {
-        return None;
-    };
+    counted_face_recipe_frame(operand)?;
+    let active_faces = unique_stable_face_slots(&operand.preceding_candidate_faces)?;
+    let changed_faces = unique_stable_face_slots(&operand.changed_candidate_faces)?;
     if active_faces.is_empty() || changed_faces != active_faces {
         return None;
     }
@@ -1667,9 +1634,7 @@ pub(crate) fn resolve_surface_delete_face_history_set(
         if !covered.insert(context.active_face_slot) {
             return None;
         }
-        let Some(boundaries) = valid_preceding_face_boundaries(context) else {
-            return None;
-        };
+        let boundaries = valid_preceding_face_boundaries(context)?;
         let [boundary] = boundaries else {
             return None;
         };
@@ -1683,13 +1648,10 @@ pub(crate) fn resolve_surface_delete_face_history_set(
 fn unique_stable_face_slots(faces: &[cadmpeg_ir::ids::FaceId]) -> Option<Vec<i64>> {
     let mut slots = Vec::new();
     for face in faces {
-        let Some(slot) = face
+        let slot = face
             .as_str()
             .rsplit_once('#')
-            .and_then(|(_, slot)| slot.parse::<i64>().ok())
-        else {
-            return None;
-        };
+            .and_then(|(_, slot)| slot.parse::<i64>().ok())?;
         slots.push(slot);
     }
     if slots.iter().any(|slot| *slot < 0) {
@@ -1753,19 +1715,12 @@ fn stable_face_support_set(
     Some(result)
 }
 
-fn convergent_effective_face_support(
-    operand: &DesignFaceOperand,
-) -> Result<Option<Vec<i64>>, CodecError> {
-    let Some(active_faces) = effective_historical_face_slots(
+fn convergent_effective_face_support(operand: &DesignFaceOperand) -> Option<Vec<i64>> {
+    let active_faces = effective_historical_face_slots(
         face_operand_candidates(operand),
         &operand.historical_support_contexts,
-    ) else {
-        return Ok(None);
-    };
-    Ok(convergent_face_support(
-        &active_faces,
-        &operand.historical_support_contexts,
-    ))
+    )?;
+    convergent_face_support(&active_faces, &operand.historical_support_contexts)
 }
 
 /// Return candidate slots that have a complete historical support context.
@@ -1782,13 +1737,10 @@ fn effective_historical_face_slots(
 ) -> Option<Vec<i64>> {
     let mut candidate_slots = Vec::new();
     for face in candidates {
-        let Some(slot) = face
+        let slot = face
             .as_str()
             .rsplit_once('#')
-            .and_then(|(_, slot)| slot.parse::<i64>().ok())
-        else {
-            return None;
-        };
+            .and_then(|(_, slot)| slot.parse::<i64>().ok())?;
         candidate_slots.push(slot);
     }
     candidate_slots.sort_unstable_by(Ord::cmp);
@@ -1815,9 +1767,7 @@ fn convergent_face_support(
         return None;
     }
     let mut contexts = support_contexts.iter();
-    let Some(first) = contexts.next() else {
-        return None;
-    };
+    let first = contexts.next()?;
     let mut support = Vec::new();
     for slot in &first.preceding_face_slots {
         support.push(*slot);

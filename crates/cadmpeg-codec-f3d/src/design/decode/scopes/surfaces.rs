@@ -32,27 +32,24 @@ pub(super) fn exact_surface_extend_operation(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
-) -> Result<Option<DesignSurfaceExtendOperation>, CodecError> {
-    let Some(operation) = exact_surface_boundary_operation(
+) -> Option<DesignSurfaceExtendOperation> {
+    let operation = exact_surface_boundary_operation(
         bytes,
         records,
         scope,
         DesignFeatureFamily::SurfaceExtend,
         8,
-    )?
-    else {
-        return Ok(None);
-    };
+    )?;
     if operation.distance.get() <= 0.0 {
-        return Ok(None);
+        return None;
     }
     let method = match operation.mode {
         0 => DesignSurfaceExtendMethod::Natural,
         1 => DesignSurfaceExtendMethod::Tangent,
         2 => DesignSurfaceExtendMethod::Perpendicular,
-        _ => return Ok(None),
+        _ => return None,
     };
-    Ok(Some(DesignSurfaceExtendOperation {
+    Some(DesignSurfaceExtendOperation {
         distance: operation.distance,
         distance_offset: operation.distance_offset,
         distance_record_index: operation.distance_record_index,
@@ -64,7 +61,7 @@ pub(super) fn exact_surface_extend_operation(
         edge_record_indices: operation.edge_record_indices,
         tolerance: operation.tolerance,
         tolerance_offset: operation.tolerance_offset,
-    }))
+    })
 }
 
 pub(super) fn exact_surface_offset_operation(
@@ -81,8 +78,7 @@ pub(super) fn exact_surface_offset_operation(
         scope,
         DesignFeatureFamily::SurfaceOffset,
         65,
-    )?
-    else {
+    ) else {
         return Ok(None);
     };
     Ok(
@@ -240,7 +236,7 @@ fn exact_surface_boundary_operation(
     scope: &DesignParameterScope,
     family: DesignFeatureFamily,
     boundary_kind: u32,
-) -> Result<Option<ExactSurfaceBoundaryOperation>, CodecError> {
+) -> Option<ExactSurfaceBoundaryOperation> {
     let parsed = (|| {
         if design_feature_family(&scope.kind()) != Some(family) {
             return None;
@@ -368,7 +364,7 @@ fn exact_surface_boundary_operation(
             tolerance_offset,
         ))
     })();
-    let Some((
+    let (
         scalar,
         distance_record_index,
         boundary_record_index,
@@ -379,14 +375,11 @@ fn exact_surface_boundary_operation(
         boundary_reference_offset,
         tolerance,
         tolerance_offset,
-    )) = parsed
-    else {
-        return Ok(None);
-    };
+    ) = parsed?;
 
     let mut edges = Vec::new();
     edges.extend(edge_record_indices.copied());
-    Ok(Some(ExactSurfaceBoundaryOperation {
+    Some(ExactSurfaceBoundaryOperation {
         distance: scalar.value,
         distance_offset: scalar.value_offset,
         distance_record_index,
@@ -398,7 +391,7 @@ fn exact_surface_boundary_operation(
         edge_record_indices: edges,
         tolerance,
         tolerance_offset,
-    }))
+    })
 }
 
 pub(super) fn exact_surface_stitch_operation(

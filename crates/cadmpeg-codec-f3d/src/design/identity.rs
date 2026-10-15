@@ -280,8 +280,8 @@ pub(super) fn neutral_assembly_joint_id(
     ))
 }
 
-pub(super) fn configuration_entry_id(entry: &str) -> Result<String, CodecError> {
-    Ok(format!("f3d:configuration:entry#{}", Encoded(entry, false)))
+pub(super) fn configuration_entry_id(entry: &str) -> String {
+    format!("f3d:configuration:entry#{}", Encoded(entry, false))
 }
 
 pub(super) fn history_input_prefix(

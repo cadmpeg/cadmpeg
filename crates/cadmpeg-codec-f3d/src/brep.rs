@@ -160,7 +160,7 @@ impl Brep {
     }
 
     /// Append a disjoint, already-qualified BREP graph.
-    pub(crate) fn append(&mut self, other: Self) -> Result<(), CodecError> {
+    pub(crate) fn append(&mut self, other: Self) {
         let mut asm = other.asm;
         macro_rules! append_vecs {
             ($($field:ident),+ $(,)?) => {
@@ -226,7 +226,6 @@ impl Brep {
             persistent_subentity_tags,
             creation_timestamps,
         );
-        Ok(())
     }
 }
 

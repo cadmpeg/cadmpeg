@@ -201,7 +201,7 @@ fn ambiguous_scope_histories_use_exact_result_body_sources() {
     .unwrap();
     let scopes = vec![scope.clone(), next_scope];
     let bindings =
-        { bind_scope_histories(&scopes, std::slice::from_ref(&binding), &[], &histories) }.unwrap();
+        { bind_scope_histories(&scopes, std::slice::from_ref(&binding), &[], &histories) };
     assert_eq!(bindings[&scope.id], histories[1].id);
     assert_eq!(
         bound_scope_history(&scope.id, &bindings, &histories)
@@ -257,7 +257,7 @@ fn ambiguous_scope_histories_use_exact_result_body_sources() {
     )
     .unwrap();
     let bindings =
-        { bind_scope_histories(&scopes, &[], std::slice::from_ref(&operand), &histories) }.unwrap();
+        { bind_scope_histories(&scopes, &[], std::slice::from_ref(&operand), &histories) };
     assert_eq!(bindings[&scope.id], histories[1].id);
 }
 
@@ -340,7 +340,7 @@ fn state_pairs_use_raw_next_links_before_transitions_are_derived() {
         })
         .unwrap();
     let scopes = vec![root, successor];
-    let bindings = bind_scope_histories(&scopes, &[], &[], &histories).unwrap();
+    let bindings = bind_scope_histories(&scopes, &[], &[], &histories);
     assert_eq!(bindings.len(), 2);
     assert_eq!(bindings["f3d:native:scope#1"], "history");
     assert_eq!(bindings["f3d:native:scope#2"], "history");
@@ -412,30 +412,24 @@ fn circular_pattern_face_uses_unique_rigid_surface_radius() {
         cadmpeg_ir::ids::FaceId::mint(crate::ids::brep_entity_id(22)).expect("identity grammar"),
     ];
     assert_eq!(
-        {
-            resolve_pattern_face_by_surface_radius(
-                &candidates,
-                &preceding,
-                &result,
-                &HashSet::from([11, 12]),
-            )
-        }
-        .unwrap(),
+        resolve_pattern_face_by_surface_radius(
+            &candidates,
+            &preceding,
+            &result,
+            &HashSet::from([11, 12]),
+        ),
         Some(11)
     );
 
     let mut ambiguous = preceding;
     ambiguous.surface_radii[1].radius = 2.5;
     assert_eq!(
-        {
-            resolve_pattern_face_by_surface_radius(
-                &candidates,
-                &ambiguous,
-                &result,
-                &HashSet::from([11, 12]),
-            )
-        }
-        .unwrap(),
+        resolve_pattern_face_by_surface_radius(
+            &candidates,
+            &ambiguous,
+            &result,
+            &HashSet::from([11, 12]),
+        ),
         None
     );
 }
@@ -455,13 +449,13 @@ fn historical_edge_axis_uses_the_state_specific_curve_carrier() {
         ..AsmHistoricalTopology::default()
     };
     assert_eq!(
-        historical_edge_axis(7, &topology).unwrap(),
+        historical_edge_axis(7, &topology),
         Some((
             cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
             cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
         ))
     );
-    assert_eq!(historical_edge_axis(8, &topology).unwrap(), None);
+    assert_eq!(historical_edge_axis(8, &topology), None);
 }
 
 #[test]
@@ -504,7 +498,7 @@ fn historical_edge_axis_uses_a_unique_incident_surface_axis() {
         cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
         cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
     ));
-    assert_eq!(historical_edge_axis(7, &topology).unwrap(), expected);
+    assert_eq!(historical_edge_axis(7, &topology), expected);
 
     topology.face_surfaces.push(AsmHistoricalCarrierBinding {
         entity: 11,
@@ -515,7 +509,7 @@ fn historical_edge_axis_uses_a_unique_incident_surface_axis() {
         cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
         cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
     ));
-    assert_eq!(historical_edge_axis(7, &topology).unwrap(), None);
+    assert_eq!(historical_edge_axis(7, &topology), None);
 
     topology.face_surfaces.pop();
     topology
@@ -544,7 +538,7 @@ fn historical_edge_axis_uses_a_unique_incident_surface_axis() {
         entity: 12,
         carrier: 42,
     });
-    assert_eq!(historical_edge_axis(7, &topology).unwrap(), None);
+    assert_eq!(historical_edge_axis(7, &topology), None);
 }
 
 #[test]
@@ -593,15 +587,12 @@ fn historical_pattern_face_axis_uses_one_analytic_surface_carrier() {
         }],
     };
     assert_eq!(
-        raw_axes(
-            {
-                historical_pattern_identity_axes_for_selection(
-                    Some((AsmHistoricalEntityKind::Face, 11, &[1])),
-                    &history,
-                )
-            }
-            .unwrap()
-        ),
+        raw_axes({
+            historical_pattern_identity_axes_for_selection(
+                Some((AsmHistoricalEntityKind::Face, 11, &[1])),
+                &history,
+            )
+        }),
         vec![(origin, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0))]
     );
 
@@ -616,15 +607,12 @@ fn historical_pattern_face_axis_uses_one_analytic_surface_carrier() {
         normal: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 2.0),
     }];
     assert_eq!(
-        raw_axes(
-            {
-                historical_pattern_identity_axes_for_selection(
-                    Some((AsmHistoricalEntityKind::Face, 11, &[1])),
-                    &planar_history,
-                )
-            }
-            .unwrap()
-        ),
+        raw_axes({
+            historical_pattern_identity_axes_for_selection(
+                Some((AsmHistoricalEntityKind::Face, 11, &[1])),
+                &planar_history,
+            )
+        }),
         vec![(origin, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0))]
     );
 
@@ -646,7 +634,6 @@ fn historical_pattern_face_axis_uses_one_analytic_surface_carrier() {
             &ambiguous_history,
         )
     }
-    .unwrap()
     .is_empty());
 
     let mut missing_carrier = history.clone();
@@ -665,19 +652,19 @@ fn historical_pattern_face_axis_uses_one_analytic_surface_carrier() {
             &missing_carrier,
         )
     }
-    .unwrap()
     .is_empty());
     let identities = HistoricalIdentityIndex::build(std::slice::from_ref(&missing_carrier), [11]);
     assert_eq!(
-        raw_axes(
-            historical_pattern_identity_axes(11, &identities, &missing_carrier, Some(1)).unwrap()
-        ),
+        raw_axes(historical_pattern_identity_axes(
+            11,
+            &identities,
+            &missing_carrier,
+            Some(1)
+        )),
         vec![(origin, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0))]
     );
     assert!(
-        { historical_pattern_identity_axes(11, &identities, &missing_carrier, None) }
-            .unwrap()
-            .is_empty()
+        { historical_pattern_identity_axes(11, &identities, &missing_carrier, None) }.is_empty()
     );
 }
 
@@ -1055,8 +1042,7 @@ fn active_face_support_retains_invariant_preceding_owners() {
             &preceding,
             &changed_faces,
             &mut crate::history::topology_cache::TopologyQueryCache::default()
-        )
-        .unwrap(),
+        ),
         [
             crate::records::topology::historical_context::DesignHistoricalFaceSupportContext {
                 active_face_slot: 40,
@@ -1077,8 +1063,7 @@ fn active_face_support_retains_invariant_preceding_owners() {
             &preceding,
             &changed_faces,
             &mut crate::history::topology_cache::TopologyQueryCache::default()
-        )
-        .unwrap(),
+        ),
         [
             crate::records::topology::historical_context::DesignHistoricalFaceSupportContext {
                 active_face_slot: 4,
@@ -1098,7 +1083,6 @@ fn active_face_support_retains_invariant_preceding_owners() {
             &mut crate::history::topology_cache::TopologyQueryCache::default(),
         )
     }
-    .unwrap()
     .is_empty());
 }
 
@@ -1255,7 +1239,7 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
     assert_eq!(topology.coedge_topology[0].edge, 7);
     assert_eq!(topology.coedge_topology[0].radial_next, 6);
     assert_eq!(
-        historical_edge_context(7, &topology).unwrap(),
+        historical_edge_context(7, &topology),
         crate::records::topology::historical_context::DesignHistoricalEdgeContext {
             edge_slot: 7,
             incident_loops: vec![
@@ -1339,7 +1323,7 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
             ],
         },
     ];
-    let selectors = recipe_selector_candidates(Some(&structure), &contexts).unwrap();
+    let selectors = recipe_selector_candidates(Some(&structure), &contexts);
     assert_eq!(selectors.len(), 2);
     assert_eq!(selectors[0].selector, 1);
     assert_eq!(selectors[0].boundary_count_matching_edge_slots, [8]);
@@ -1548,7 +1532,7 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
                 }
             })
             .collect();
-        match historical_loop_boundary(coedges, &crate::history::loop_index::LoopIndex::new(topology), &crate::history::topology_cache::endpoint_index(topology)).unwrap() {
+        match historical_loop_boundary(coedges, &crate::history::loop_index::LoopIndex::new(topology), &crate::history::topology_cache::endpoint_index(topology)) {
             crate::records::topology::historical_context::DesignHistoricalLoopBoundary::Vertices(rows) => Some(
                 rows.into_iter()
                     .map(|row| row.vertex_slot)

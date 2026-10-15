@@ -50,7 +50,7 @@ fn thread_scope_decodes_standard_size_and_face_group() {
         .unwrap(),
     };
     assert_thread_construction(
-        parse_thread_payload(&bytes, 38, ThreadPrefix::Standard, vec![988]).unwrap(),
+        parse_thread_payload(&bytes, 38, ThreadPrefix::Standard, vec![988]),
         &expected,
     );
     let mut invalid_standard_pitch_marker = bytes.clone();
@@ -61,8 +61,7 @@ fn thread_scope_decodes_standard_size_and_face_group() {
             38,
             ThreadPrefix::Standard,
             vec![988]
-        )
-        .unwrap(),
+        ),
         None
     );
 
@@ -85,16 +84,12 @@ fn thread_scope_decodes_standard_size_and_face_group() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    assert_thread_construction(
-        exact_thread_construction(&bytes, &scope).unwrap(),
-        &expected,
-    );
+    assert_thread_construction(exact_thread_construction(&bytes, &scope), &expected);
 
     let mut owner_marked = bytes;
     owner_marked.splice(20..20, [1, 0, 0, 0]);
     let shifted_expected =
         parse_thread_payload(&owner_marked, 42, ThreadPrefix::Standard, vec![988])
-            .unwrap()
             .expect("owner-marked standard Thread payload");
     assert_eq!(shifted_expected.designation_offset, 42);
     scope
@@ -105,17 +100,17 @@ fn thread_scope_decodes_standard_size_and_face_group() {
         })
         .unwrap();
     assert_thread_construction(
-        exact_thread_construction(&owner_marked, &scope).unwrap(),
+        exact_thread_construction(&owner_marked, &scope),
         &shifted_expected,
     );
     let mut invalid_owner_marker = owner_marked.clone();
     invalid_owner_marker[20..24].copy_from_slice(&2u32.to_le_bytes());
     assert_eq!(
-        exact_thread_construction(&invalid_owner_marker, &scope).unwrap(),
+        exact_thread_construction(&invalid_owner_marker, &scope),
         None
     );
     assert_eq!(
-        parse_thread_payload(&owner_marked, 42, ThreadPrefix::Compact, vec![988]).unwrap(),
+        parse_thread_payload(&owner_marked, 42, ThreadPrefix::Compact, vec![988]),
         None
     );
 }
@@ -157,7 +152,7 @@ fn thread_scope_decodes_class_334_legacy_standard_tail() {
         .unwrap(),
     };
     assert_thread_construction(
-        parse_thread_payload(&bytes, 38, ThreadPrefix::Standard, vec![988]).unwrap(),
+        parse_thread_payload(&bytes, 38, ThreadPrefix::Standard, vec![988]),
         &expected,
     );
 
@@ -180,16 +175,13 @@ fn thread_scope_decodes_class_334_legacy_standard_tail() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    assert_thread_construction(
-        exact_thread_construction(&bytes, &scope).unwrap(),
-        &expected,
-    );
+    assert_thread_construction(exact_thread_construction(&bytes, &scope), &expected);
 
     scope.class_tag =
         crate::records::references::DesignClassTag::try_from("335".to_owned()).unwrap();
     scope.paired_class_tag =
         crate::records::references::DesignClassTag::try_from("258".to_owned()).unwrap();
-    assert_eq!(exact_thread_construction(&bytes, &scope).unwrap(), None);
+    assert_eq!(exact_thread_construction(&bytes, &scope), None);
 }
 
 fn assert_thread_construction(
@@ -261,7 +253,7 @@ fn thread_scope_decodes_compact_preamble_and_localized_profile() {
         .unwrap(),
     };
     assert_thread_construction(
-        parse_thread_payload(&bytes, 38, ThreadPrefix::Compact, vec![988]).unwrap(),
+        parse_thread_payload(&bytes, 38, ThreadPrefix::Compact, vec![988]),
         &expected,
     );
     let mut referenced = bytes.clone();
@@ -274,7 +266,7 @@ fn thread_scope_decodes_compact_preamble_and_localized_profile() {
         offset: u64_from_index(after_profile + 39),
     }));
     assert_thread_construction(
-        parse_thread_payload(&referenced, 38, ThreadPrefix::Compact, vec![988]).unwrap(),
+        parse_thread_payload(&referenced, 38, ThreadPrefix::Compact, vec![988]),
         &referenced_expected,
     );
 
@@ -299,10 +291,7 @@ fn thread_scope_decodes_compact_preamble_and_localized_profile() {
         crate::records::references::DesignClassTag::try_from("904".to_owned()).unwrap();
     let mut plural_expected = expected.clone();
     plural_expected.face_group_record_indices.push(992);
-    assert_thread_construction(
-        exact_thread_construction(&bytes, &scope).unwrap(),
-        &plural_expected,
-    );
+    assert_thread_construction(exact_thread_construction(&bytes, &scope), &plural_expected);
 
     let mut owner_marked = bytes;
     owner_marked.splice(20..20, [1, 0, 0, 0]);
@@ -315,13 +304,13 @@ fn thread_scope_decodes_compact_preamble_and_localized_profile() {
         })
         .unwrap();
     assert_thread_construction(
-        exact_thread_construction(&owner_marked, &scope).unwrap(),
+        exact_thread_construction(&owner_marked, &scope),
         &plural_expected,
     );
     let mut invalid_owner_separator = owner_marked.clone();
     invalid_owner_separator[24] = 1;
     assert_eq!(
-        exact_thread_construction(&invalid_owner_separator, &scope).unwrap(),
+        exact_thread_construction(&invalid_owner_separator, &scope),
         None
     );
 
@@ -338,10 +327,7 @@ fn thread_scope_decodes_compact_preamble_and_localized_profile() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    assert_eq!(
-        exact_thread_construction(&owner_marked, &scope).unwrap(),
-        None
-    );
+    assert_eq!(exact_thread_construction(&owner_marked, &scope), None);
 }
 
 #[test]
@@ -381,7 +367,7 @@ fn thread_scope_decodes_class_414_legacy_compact_tail() {
         .unwrap(),
     };
     assert_thread_construction(
-        parse_thread_payload(&bytes, 38, ThreadPrefix::Compact, vec![988]).unwrap(),
+        parse_thread_payload(&bytes, 38, ThreadPrefix::Compact, vec![988]),
         &expected,
     );
 
@@ -404,16 +390,13 @@ fn thread_scope_decodes_class_414_legacy_compact_tail() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    assert_thread_construction(
-        exact_thread_construction(&bytes, &scope).unwrap(),
-        &expected,
-    );
+    assert_thread_construction(exact_thread_construction(&bytes, &scope), &expected);
 
     scope.class_tag =
         crate::records::references::DesignClassTag::try_from("334".to_owned()).unwrap();
     scope.paired_class_tag =
         crate::records::references::DesignClassTag::try_from("262".to_owned()).unwrap();
-    assert_eq!(exact_thread_construction(&bytes, &scope).unwrap(), None);
+    assert_eq!(exact_thread_construction(&bytes, &scope), None);
 }
 
 #[test]

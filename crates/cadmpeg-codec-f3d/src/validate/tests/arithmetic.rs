@@ -113,7 +113,7 @@ fn locus_findings(group: DesignDimensionLocusGroup) -> Vec<cadmpeg_ir::report::c
         let ir = cadmpeg_ir::examples::unit_cube().unwrap();
         let mut native = crate::native::F3dNative::default();
         native.design_dimension_locus_groups.push(group);
-        let mut ctx = super::super::Ctx::new(&ir, &native, decode).unwrap();
+        let mut ctx = super::super::Ctx::new(&ir, &native, decode);
         let stream = super::super::design_stream(&native.design_dimension_locus_groups[0].id);
         ctx.parameters_by_index.insert((stream, 7), &parameter);
         ctx.owners_by_index.insert((stream, 6), &owner);
@@ -230,7 +230,7 @@ fn companion_findings(
         let ir = cadmpeg_ir::examples::unit_cube().unwrap();
         let mut native = crate::native::F3dNative::default();
         native.design_parameter_companions.push(companion);
-        let mut ctx = super::super::Ctx::new(&ir, &native, decode).unwrap();
+        let mut ctx = super::super::Ctx::new(&ir, &native, decode);
         let stream = super::super::design_stream(native.design_parameter_companions[0].id());
         ctx.owners_by_index.insert((stream, 6), &owner);
         ctx.records_by_index.insert((stream, 8), &header);
@@ -381,7 +381,7 @@ fn annotation_findings(payload_length: u64) -> Vec<cadmpeg_ir::report::check::Fi
         )
         .unwrap();
         native.design_dimension_annotation_frames.push(frame);
-        let mut ctx = super::super::Ctx::new(&ir, &native, decode).unwrap();
+        let mut ctx = super::super::Ctx::new(&ir, &native, decode);
         let stream = super::super::design_stream(&native.design_dimension_annotation_frames[0].id);
         ctx.parameters_by_index.insert((stream, 7), &parameter);
         ctx.owners_by_index.insert((stream, 6), &owner);

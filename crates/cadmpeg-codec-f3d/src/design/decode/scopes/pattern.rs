@@ -50,7 +50,7 @@ pub(super) fn exact_rectangular_pattern_construction(
         if lanes.next().is_some() {
             return None;
         }
-        ordered_lanes.sort_by(|left, right| left.local_ordinal().cmp(&right.local_ordinal()));
+        ordered_lanes.sort_by_key(|left| left.local_ordinal());
         let [u_count, v_count, u_extent, v_extent] = ordered_lanes;
         if [u_count, v_count, u_extent, v_extent]
             .iter()

@@ -459,10 +459,7 @@ fn repeated_target_occurrence_record_with_path_role(
     let metadata_guid_a = "66666666-7777-8888-9999-aaaaaaaaaaaa";
     let metadata_guid_b = "bbbbbbbb-cccc-dddd-eeee-ffffffffffff";
     let mut bytes = occurrence_record(path_role, entity_id, &[1], None);
-    let path_end = super::occurrence_path(&bytes)
-        .unwrap()
-        .expect("synthetic path")
-        .1;
+    let path_end = super::occurrence_path(&bytes).unwrap().1;
     bytes.truncate(path_end);
     bytes.extend_from_slice(&envelope_discriminator.to_le_bytes());
     bytes.extend(
@@ -1088,8 +1085,7 @@ fn exact_component_insert_carriers_precede_structured_placements() {
     };
 
     assert_eq!(
-        super::occurrence_transforms_with_precedence(vec![direct], &[structured.clone()], "role")
-            .unwrap(),
+        super::occurrence_transforms_with_precedence(vec![direct], &[structured.clone()], "role"),
         vec![Some(direct)]
     );
     assert_eq!(

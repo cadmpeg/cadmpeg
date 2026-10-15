@@ -35,7 +35,7 @@ fn named_scope_tail_requires_one_repeated_binary_lane_value() {
     for lane_value in [0, 1] {
         let bytes = named_scope_tail(lane_value);
         assert_eq!(
-            named_parameter_scope_tail_is_valid(&bytes, 0, bytes.len(), bytes.len()).unwrap(),
+            named_parameter_scope_tail_is_valid(&bytes, 0, bytes.len(), bytes.len()),
             Some(true)
         );
     }
@@ -44,8 +44,7 @@ fn named_scope_tail_requires_one_repeated_binary_lane_value() {
     let marker = mismatched.len() - 59;
     mismatched[marker + 34..marker + 42].copy_from_slice(&1u64.to_le_bytes());
     assert_eq!(
-        named_parameter_scope_tail_is_valid(&mismatched, 0, mismatched.len(), mismatched.len())
-            .unwrap(),
+        named_parameter_scope_tail_is_valid(&mismatched, 0, mismatched.len(), mismatched.len()),
         Some(false)
     );
 
@@ -56,8 +55,7 @@ fn named_scope_tail_requires_one_repeated_binary_lane_value() {
             0,
             outside_domain.len(),
             outside_domain.len()
-        )
-        .unwrap(),
+        ),
         Some(false)
     );
 }

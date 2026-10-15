@@ -48,7 +48,6 @@ fn decode_fillet_radius_groups(
     parameters: &[DesignParameter],
 ) -> Vec<crate::records::topology::fillet::DesignFilletRadiusGroup> {
     crate::design::decode::operands::decode_fillet_radius_groups(scopes, groups, owners, parameters)
-        .unwrap()
 }
 
 #[test]

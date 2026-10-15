@@ -281,12 +281,10 @@ fn identity_key_component_charged(value: &str) -> String {
 }
 
 /// Reverse [`identity_key_component`] for a complete encoded component.
-pub(crate) fn decode_identity_key_component(
-    value: &str,
-) -> Result<Option<String>, cadmpeg_core::CodecError> {
+pub(crate) fn decode_identity_key_component(value: &str) -> Option<String> {
     let bytes = value.as_bytes();
     let mut decoded = Vec::new();
-    Ok((|| {
+    (|| {
         let mut at = 0;
         while at < bytes.len() {
             if bytes[at] != b'%' {
@@ -305,7 +303,7 @@ pub(crate) fn decode_identity_key_component(
             at += 3;
         }
         String::from_utf8(decoded).ok()
-    })())
+    })()
 }
 
 /// The neutral B-rep topology entity key for entity `index`.
@@ -1496,9 +1494,7 @@ mod tests {
             .expect("native scheme")
             .to_owned();
         assert_eq!(
-            decode_identity_key_component(&encoded)
-                .expect("service admission")
-                .as_deref(),
+            decode_identity_key_component(&encoded).as_deref(),
             Some(entry)
         );
         assert_eq!(

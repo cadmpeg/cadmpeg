@@ -81,7 +81,7 @@ fn design_type_copy_refuses_table_entities_module_and_id_limits() {
     zip.start_file(meta_name, stored).unwrap();
     zip.write_all(&meta).unwrap();
     let archive = zip.finish().unwrap().into_inner();
-    let types = with_scan(&archive, |scan| super::decode_types(scan)).unwrap();
+    let types = with_scan(&archive, super::decode_types).unwrap();
     assert_eq!(types.len(), 1);
     assert_eq!(types[0].module, "Component");
     assert_eq!(
@@ -189,7 +189,6 @@ fn feature_timeline_item_limit_refuses_before_counted_vector_allocation() {
         0,
         &HashMap::new(),
     )
-    .unwrap()
     .unwrap();
     assert_eq!(
         admitted
@@ -223,7 +222,6 @@ fn feature_timeline_id_refuses_prefix_and_suffix_limits() {
         0,
         &HashMap::new(),
     )
-    .unwrap()
     .unwrap();
     let expected_id = crate::ids::native_design_feature_timeline_id(stream, 0);
     assert_eq!(timeline.id(), &expected_id);
@@ -268,7 +266,7 @@ fn timeline_collection_growth_refuses_at_map_child_and_output() {
         .unwrap();
     zip.write_all(&meta).unwrap();
     let archive = zip.finish().unwrap().into_inner();
-    let admitted = with_scan(&archive, |scan| super::decode_feature_timelines(scan)).unwrap();
+    let admitted = with_scan(&archive, super::decode_feature_timelines).unwrap();
     assert_eq!(admitted.len(), 1);
     assert_eq!(admitted[0].record_index.get(), 35);
 }
@@ -417,7 +415,7 @@ fn component_naming_space_refuses_each_collection_and_id_limit() {
         .unwrap();
     zip.write_all(&meta).unwrap();
     let archive = zip.finish().unwrap().into_inner();
-    let spaces = with_scan(&archive, |scan| super::decode_component_naming_spaces(scan)).unwrap();
+    let spaces = with_scan(&archive, super::decode_component_naming_spaces).unwrap();
     assert_eq!(spaces.len(), 1);
     assert_eq!(spaces[0].context_uuid.as_str(), context_uuid);
     assert_eq!(

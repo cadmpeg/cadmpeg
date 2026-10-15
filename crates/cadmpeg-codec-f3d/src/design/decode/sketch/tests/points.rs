@@ -212,8 +212,7 @@ fn point_companion_retains_both_prefixes_and_reference_encodings() {
                 inline_typed.then_some(SKETCH_POINT_TYPE_GUID),
             );
             assert_eq!(
-                decode_sketch_point_companion(&payload, POINT, record_form.clone(), &types)
-                    .expect("point companion admission"),
+                decode_sketch_point_companion(&payload, POINT, record_form.clone(), &types),
                 Some((
                     record_form
                         .clone()

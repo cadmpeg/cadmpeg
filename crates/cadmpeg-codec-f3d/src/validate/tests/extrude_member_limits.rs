@@ -47,9 +47,9 @@ fn extrude_member_valid_slot_has_no_finding() {
     crate::test_support::with_decode_context(|service_ctx| {
         let ir = cadmpeg_ir::examples::unit_cube().unwrap();
         let native = native(true);
-        let ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+        let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
         let mut findings = Vec::new();
-        super::super::validate_extrude_selection_members(&ctx, &mut findings).unwrap();
+        super::super::validate_extrude_selection_members(&ctx, &mut findings);
         assert!(findings.is_empty());
     })
 }

@@ -307,8 +307,8 @@ impl MeshAttribute {
         &self,
         vertices: usize,
         triangles: &[[u32; 3]],
-    ) -> Result<Option<Vec<u32>>, CodecError> {
-        let Some((vertex_count, positions)) = (|| {
+    ) -> Option<Vec<u32>> {
+        let (vertex_count, positions) = (|| {
             let count = self.count()?;
             let vertex_count = u32::try_from(vertices).ok()?;
             let positions = match &self.addressing {
@@ -344,29 +344,22 @@ impl MeshAttribute {
                 }
             }
             Some((vertex_count, positions))
-        })() else {
-            return Ok(None);
-        };
+        })()?;
         let mut selectors = Vec::new();
         for triangle in triangles {
             selectors.extend_from_slice(triangle);
         }
         for (ordinal, position) in positions.iter().enumerate() {
-            let Some(selector) = u32::try_from(ordinal)
+            let selector = u32::try_from(ordinal)
                 .ok()
-                .and_then(|index| vertex_count.checked_add(index))
-            else {
-                return Ok(None);
-            };
+                .and_then(|index| vertex_count.checked_add(index))?;
             let Ok(index) = usize::try_from(*position) else {
-                return Ok(None);
+                return None;
             };
-            let Some(slot) = selectors.get_mut(index) else {
-                return Ok(None);
-            };
+            let slot = selectors.get_mut(index)?;
             *slot = selector;
         }
-        Ok(Some(selectors))
+        Some(selectors)
     }
 }
 
@@ -1686,7 +1679,7 @@ fn decode_corner_normals(
         ));
     }
     let selectors = attribute
-        .corner_selectors(vertices, triangles)?
+        .corner_selectors(vertices, triangles)
         .ok_or_else(|| {
             CodecError::malformed("paramesh corner-normal addressing is inconsistent")
         })?;

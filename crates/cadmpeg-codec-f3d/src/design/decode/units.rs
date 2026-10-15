@@ -15,7 +15,6 @@ use crate::container::ContainerScan;
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::layout::indexed_design_record_header as indexed_header;
 use cadmpeg_core::decode::View;
-use cadmpeg_core::CodecError;
 
 /// An indexed-record header: `u32 3`, three class-tag digits, `u32 index`.
 const HEADER_LEN: usize = indexed_header::LEN;
@@ -150,8 +149,8 @@ fn collection_counts(bytes: &[u8]) -> impl Iterator<Item = usize> + '_ {
 /// the five stored length unit names is rejected: the search is a byte-window
 /// scan, and the closed name set is what separates the collection from a window
 /// that merely reads like one.
-fn decode_modeling_length_unit(bytes: &[u8]) -> Result<Option<String>, CodecError> {
-    let offsets = IndexedRecordOffsets::build(bytes)?;
+fn decode_modeling_length_unit(bytes: &[u8]) -> Option<String> {
+    let offsets = IndexedRecordOffsets::build(bytes);
     let payloads = |record_index: u32| {
         offsets
             .offsets(record_index)
@@ -177,14 +176,14 @@ fn decode_modeling_length_unit(bytes: &[u8]) -> Result<Option<String>, CodecErro
                             continue;
                         };
                         if property == MODELING_LENGTH_PROPERTY {
-                            return Ok(Some(value.to_owned()));
+                            return Some(value.to_owned());
                         }
                     }
                 }
             }
         }
     }
-    Ok(None)
+    None
 }
 
 /// The document's modelling length unit, read from the first design
@@ -192,21 +191,19 @@ fn decode_modeling_length_unit(bytes: &[u8]) -> Result<Option<String>, CodecErro
 ///
 /// An entry whose bytes cannot be read is skipped rather than failing the
 /// decode: the unit is presentation metadata, and no geometry depends on it.
-pub(crate) fn decode_document_length_unit(
-    scan: &ContainerScan,
-) -> Result<Option<String>, CodecError> {
+pub(crate) fn decode_document_length_unit(scan: &ContainerScan) -> Option<String> {
     for entry in scan
         .entries
         .iter()
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         if let Ok(bytes) = scan.entry_bytes(&entry.name) {
-            if let Some(unit) = decode_modeling_length_unit(bytes)? {
-                return Ok(Some(unit));
+            if let Some(unit) = decode_modeling_length_unit(bytes) {
+                return Some(unit);
             }
         }
     }
-    Ok(None)
+    None
 }
 
 #[cfg(test)]
@@ -217,9 +214,7 @@ pub(crate) mod tests {
     };
     use crate::test_support::{lp_ascii, lp_utf16};
 
-    fn decode_modeling_length_unit(bytes: &[u8]) -> Option<String> {
-        super::decode_modeling_length_unit(bytes).unwrap()
-    }
+    use super::decode_modeling_length_unit;
 
     /// The six systems in collection order.
     const SYSTEMS: [&str; 6] = [

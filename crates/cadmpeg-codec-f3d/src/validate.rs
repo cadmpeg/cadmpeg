@@ -624,11 +624,7 @@ impl<'a, 'd> Ctx<'a, 'd> {
     /// Build every shared index over `native` up front. All builds are pure and
     /// emit no findings, so their eager construction does not affect the
     /// observable finding order.
-    fn new(
-        ir: &'a CadIr,
-        native: &'a native::F3dNative,
-        decode: &'a DecodeContext<'d>,
-    ) -> Result<Self, CodecError> {
+    fn new(ir: &'a CadIr, native: &'a native::F3dNative, decode: &'a DecodeContext<'d>) -> Self {
         let records_by_index = native
             .design_record_headers
             .iter()
@@ -738,7 +734,7 @@ impl<'a, 'd> Ctx<'a, 'd> {
                 ))
             })
             .collect::<std::collections::HashMap<_, _>>();
-        Ok(Ctx {
+        Ctx {
             decode,
             ir,
             native,
@@ -755,7 +751,7 @@ impl<'a, 'd> Ctx<'a, 'd> {
             operand_groups_by_index,
             members_by_slot,
             sketch_owner_ids,
-        })
+        }
     }
 }
 
@@ -787,7 +783,7 @@ fn validate_loaded(
     ir: &CadIr,
     native: &native::F3dNative,
 ) -> Result<Vec<Finding>, CodecError> {
-    let ctx = Ctx::new(ir, native, decode)?;
+    let ctx = Ctx::new(ir, native, decode);
     let mut findings = Vec::new();
     let mut expected_face_operands = reload_native_arena(decode, ir, "design_face_operands")?;
     let scope_histories = history::bind_scope_histories(
@@ -795,7 +791,7 @@ fn validate_loaded(
         &native.design_body_bindings,
         &native.design_body_recipe_operands,
         &native.asm_histories,
-    )?;
+    );
     history::bind_face_operand_history_candidates(
         decode,
         &mut expected_face_operands,
@@ -839,7 +835,7 @@ fn validate_loaded(
     validate_canvas_images(&ctx, &mut findings);
     validate_decal_images(&ctx, &mut findings)?;
     validate_mesh_features(&ctx, &mut findings);
-    validate_component_occurrences(&ctx, &mut findings)?;
+    validate_component_occurrences(&ctx, &mut findings);
     validate_configurations(&ctx, &mut findings);
     validate_feature_timelines(&ctx, &mut findings)?;
     validate_parameter_scopes(&ctx, &mut findings)?;
@@ -847,7 +843,7 @@ fn validate_loaded(
     validate_construction_operand_groups(&ctx, &mut findings);
     validate_path_feature_operand_roles(&ctx, &mut findings);
     validate_extrude_parameter_operands(&ctx, &mut findings);
-    let fillet_radius_group_records = validate_fillet_radius_groups(&ctx, &mut findings)?;
+    let fillet_radius_group_records = validate_fillet_radius_groups(&ctx, &mut findings);
     validate_fillet_operand_groups(&ctx, &mut findings, &fillet_radius_group_records);
     let operand_identity_groups = validate_construction_operand_identities(&ctx, &mut findings);
     let edge_identity_records =
@@ -865,7 +861,7 @@ fn validate_loaded(
         &edge_operand_records,
         &edge_treatment_vertex_records,
     );
-    validate_extrude_selection_members(&ctx, &mut findings)?;
+    validate_extrude_selection_members(&ctx, &mut findings);
     validate_entity_selection_operands(&ctx, &mut findings);
     validate_extrude_selection_group_members(&ctx, &mut findings);
     validate_edge_treatment_groups(
@@ -883,7 +879,7 @@ fn validate_loaded(
         &face_operand_records,
         &native.design_entity_selection_operands,
     );
-    validate_face_source_groups(&ctx, &mut findings)?;
+    validate_face_source_groups(&ctx, &mut findings);
     validate_sketch_placements(&ctx, &mut findings);
     validate_parameter_owners(&ctx, &mut findings);
     validate_parameter_companions(&ctx, &mut findings);
@@ -891,7 +887,7 @@ fn validate_loaded(
     validate_dimension_companion_recipes(&ctx, &mut findings, &dimension_recipe_ids);
     let locus_pair_companions = validate_dimension_locus_pairs(&ctx, &mut findings);
     validate_dimension_annotation_frames(&ctx, &mut findings);
-    validate_dimension_presentation_frames(&ctx, &mut findings)?;
+    validate_dimension_presentation_frames(&ctx, &mut findings);
     let locus_group_companions = validate_dimension_locus_groups(&ctx, &mut findings);
     validate_dimension_null_locus_pairs(
         &ctx,
@@ -1257,7 +1253,7 @@ fn validate_feature_timelines(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<
         &native.design_body_recipe_operands,
         &native.design_component_naming_spaces,
         &native.asm_histories,
-    )?;
+    );
     for scope in &native.design_parameter_scopes {
         let Some(position) = scope_positions.get(scope.id.as_str()).copied() else {
             continue;
@@ -4076,10 +4072,7 @@ fn valid_vertex_recipe(
         }))
 }
 
-fn validate_component_occurrences(
-    ctx: &Ctx<'_, '_>,
-    findings: &mut Vec<Finding>,
-) -> Result<(), CodecError> {
+fn validate_component_occurrences(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
     struct LowerAscii<'a>(&'a str);
     impl std::fmt::Display for LowerAscii<'_> {
         fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -4133,7 +4126,6 @@ fn validate_component_occurrences(
             }
         }
     }
-    Ok(())
 }
 
 fn valid_component_pattern_occurrences(
@@ -5280,7 +5272,7 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
 fn validate_fillet_radius_groups<'a>(
     ctx: &Ctx<'a, '_>,
     findings: &mut Vec<Finding>,
-) -> Result<HashSet<(&'a str, u32)>, CodecError> {
+) -> HashSet<(&'a str, u32)> {
     let native = ctx.native;
     let parameters_by_index = &ctx.parameters_by_index;
     let owners_by_index = &ctx.owners_by_index;
@@ -5433,7 +5425,7 @@ fn validate_fillet_radius_groups<'a>(
             );
         }
     }
-    Ok(fillet_radius_group_records)
+    fillet_radius_group_records
 }
 
 /// Report Fillet operand groups that carry no radius assignment.
@@ -5770,14 +5762,14 @@ fn validate_edge_identity_operands<'a>(
         &native.design_body_bindings,
         &native.design_body_recipe_operands,
         &native.asm_histories,
-    )?;
+    );
     history::selection::bind_edge_identity_history(
         &mut expected_edge_identity_operands,
         &native.design_construction_operand_identities,
         &native.design_parameter_scopes,
         &native.asm_histories,
         &scope_histories,
-    )?;
+    );
     history::selection::bind_edge_identity_bounded_face_rules(
         &mut expected_edge_identity_operands,
         expected_face_operands,
@@ -5838,23 +5830,12 @@ fn validate_body_recipe_operands<'a>(
     let operand_groups_by_index = &ctx.operand_groups_by_index;
     let recipes_by_id = &ctx.recipes_by_id;
     let mut expected_operands = reload_native_arena(decode, ctx.ir, "design_body_recipe_operands")?;
-    if let Err(error) = design::decode::operands::bind_body_recipe_operand_candidates(
+    design::decode::operands::bind_body_recipe_operand_candidates(
         &mut expected_operands,
         &native.construction_recipes,
         &native.persistent_subentity_tags,
         &native.design_parameter_scopes,
-    ) {
-        if matches!(error, CodecError::ResourceLimit(_)) {
-            return Err(error);
-        }
-        let message = format!("Fusion Design body-recipe candidate binding failed: {error}");
-        findings.push(Finding {
-            check: Check::NativeLinks,
-            severity: Severity::Error,
-            message,
-            entity: None,
-        });
-    }
+    );
     history::bind_body_recipe_operand_history_candidates(
         decode,
         &mut expected_operands,
@@ -6145,10 +6126,7 @@ fn validate_operand_group_carriers<'a>(
 }
 
 /// Validate Extrude selection members against their resolved sketch geometry.
-fn validate_extrude_selection_members(
-    ctx: &Ctx,
-    findings: &mut Vec<Finding>,
-) -> Result<(), CodecError> {
+fn validate_extrude_selection_members(ctx: &Ctx, findings: &mut Vec<Finding>) {
     let native = ctx.native;
     let records_by_index = &ctx.records_by_index;
     let scopes_by_index = &ctx.scopes_by_index;
@@ -6218,7 +6196,7 @@ fn validate_extrude_selection_members(
             &native.design_component_naming_spaces,
             &native.design_body_bindings,
             &native.asm_histories,
-        )?;
+        );
         let history_matches = if history::projection_was_finalized(&native.asm_histories) {
             if let Some(binding) = member.historical.as_ref() {
                 binding
@@ -6290,7 +6268,6 @@ fn validate_extrude_selection_members(
             );
         }
     }
-    Ok(())
 }
 
 /// Validate entity-selection operand nested frames.
@@ -6432,7 +6409,7 @@ fn validate_edge_operands<'a>(
         &native.design_body_bindings,
         &native.design_body_recipe_operands,
         &native.asm_histories,
-    )?;
+    );
     history::bind_edge_operand_history_candidates(
         decode,
         &mut expected_edge_operands,
@@ -6480,14 +6457,12 @@ fn validate_edge_operands<'a>(
             .filter(|scope| {
                 scope.kind() == crate::records::feature::scope::DesignFeatureKind::SurfacePatch
             })
-            .map(|_| {
+            .and_then(|_| {
                 design::decode::operands::surface_patch_recipe_structure_with_context(
                     &operand.recipe_program,
                     operand.recipe_references.len(),
                 )
-            })
-            .transpose()?
-            .flatten();
+            });
         let terminal_group_member = native
             .design_construction_operand_groups
             .iter()
@@ -6578,7 +6553,7 @@ fn validate_edge_treatment_vertex_operands<'a>(
         &native.design_body_bindings,
         &native.design_body_recipe_operands,
         &native.asm_histories,
-    )?;
+    );
     history::bind_edge_treatment_vertex_history(
         &mut expected,
         &native.design_parameter_scopes,
@@ -7115,7 +7090,7 @@ fn validate_face_group_member_resolution(
 }
 
 /// Validate retained Face source carriers and their persistent identities.
-fn validate_face_source_groups(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(), CodecError> {
+fn validate_face_source_groups(ctx: &Ctx, findings: &mut Vec<Finding>) {
     let native = ctx.native;
     let mut carrier_records = HashSet::new();
     for group in &native.design_face_source_groups {
@@ -7213,7 +7188,6 @@ fn validate_face_source_groups(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result
             );
         }
     }
-    Ok(())
 }
 
 /// Validate sketch placement frames and their scope links.
@@ -7702,10 +7676,7 @@ fn validate_dimension_annotation_frames(ctx: &Ctx, findings: &mut Vec<Finding>) 
 }
 
 /// Validate direct dimension presentation frames and their sketch-owner joins.
-fn validate_dimension_presentation_frames(
-    ctx: &Ctx,
-    findings: &mut Vec<Finding>,
-) -> Result<(), CodecError> {
+fn validate_dimension_presentation_frames(ctx: &Ctx, findings: &mut Vec<Finding>) {
     let native = ctx.native;
     let parameters_by_index = &ctx.parameters_by_index;
     let owners_by_index = &ctx.owners_by_index;
@@ -7812,7 +7783,6 @@ fn validate_dimension_presentation_frames(
             );
         }
     }
-    Ok(())
 }
 
 /// Validate dimension locus groups; returns their companion set.

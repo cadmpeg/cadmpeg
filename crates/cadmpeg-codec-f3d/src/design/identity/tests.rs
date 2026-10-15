@@ -202,7 +202,7 @@ fn neutral_dimension_constraint_id_preserves_bytes() {
 fn configuration_entry_id_preserves_bytes() {
     let entry = "asset/a:#% \u{2003}ç.dsgcfg";
     assert_eq!(
-        super::configuration_entry_id(entry).unwrap(),
+        super::configuration_entry_id(entry),
         crate::ids::configuration_entry_id(
             entry,
             &cadmpeg_ir::identity_component!("configuration"),

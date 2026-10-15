@@ -367,7 +367,7 @@ fn duplicate_parameter_index_keeps_the_first_serialized_frame() {
     zip.write_all(&bulk).unwrap();
     let archive = zip.finish().unwrap().into_inner();
 
-    let parameters = with_scan(&archive, |scan| decode_parameters(scan)).unwrap();
+    let parameters = with_scan(&archive, decode_parameters).unwrap();
     let [parameter] = parameters.as_slice() else {
         panic!("expected one canonical parameter");
     };

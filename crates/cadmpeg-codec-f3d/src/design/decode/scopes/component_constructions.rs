@@ -134,17 +134,15 @@ pub(super) fn exact_derived_instance_construction(
             return None;
         }
         let transform_offset = u64::try_from(transform_offset).ok()?;
-        Some((|| {
-            Ok(DesignDerivedInstanceConstruction {
-                reference_record_index,
-                relation_record_index,
-                carrier_record_index,
-                component_guid: carrier.component_guid.clone(),
-                occurrence_guid: carrier.occurrence_guid.clone(),
-                transform,
-                transform_offset,
-            })
-        })())
+        Some(Ok(DesignDerivedInstanceConstruction {
+            reference_record_index,
+            relation_record_index,
+            carrier_record_index,
+            component_guid: carrier.component_guid.clone(),
+            occurrence_guid: carrier.occurrence_guid.clone(),
+            transform,
+            transform_offset,
+        }))
     })();
     parsed.transpose()
 }
@@ -344,16 +342,12 @@ pub(super) fn exact_component_insert_construction(
             let carrier_at =
                 unique_indexed_record_before(records, carrier_record_index, relation_at)?;
             if scope.class_tag.as_str() == "283" && scope.paired_class_tag.as_str() == "262" {
-                let (role, role_offset) = match exact_component_insert_carrier_334(
+                let (role, role_offset) = exact_component_insert_carrier_334(
                     bytes,
                     carrier_at,
                     relation_at,
                     carrier_record_index,
-                ) {
-                    Ok(Some(value)) => value,
-                    Ok(None) => return None,
-                    Err(error) => return Some(Err(error)),
-                };
+                )?;
                 (
                     carrier_record_index,
                     [(role, role_offset, None)].into_iter().collect::<Vec<_>>(),
@@ -588,7 +582,7 @@ fn exact_component_insert_carrier_334(
     carrier_at: usize,
     relation_at: usize,
     carrier_record_index: u32,
-) -> Result<Option<(String, usize)>, CodecError> {
+) -> Option<(String, usize)> {
     let parsed = (|| {
         let (class_tag, after_tag) =
             lp_ascii_filtered_view(bytes, carrier_at, 3..=3, u8::is_ascii_digit)?;
@@ -606,14 +600,9 @@ fn exact_component_insert_carrier_334(
         let role_start = carrier_at + component_carrier_334::NEUTRON_ROLE;
         Some(role_start)
     })();
-    let Some(role_start) = parsed else {
-        return Ok(None);
-    };
-    let Some((role, role_end)) = direct_utf16_role_until_tail(bytes, role_start, relation_at)?
-    else {
-        return Ok(None);
-    };
-    Ok((|| {
+    let role_start = parsed?;
+    let (role, role_end) = direct_utf16_role_until_tail(bytes, role_start, relation_at)?;
+    (|| {
         if !crate::bytes::is_guid_prefix(&role)
             || role.as_bytes().get(36) != Some(&b'_')
             || !role.get(37..)?.starts_with("urn:")
@@ -626,7 +615,7 @@ fn exact_component_insert_carrier_334(
         }
         fixed_guid_end(bytes, role_end + COMPONENT_CARRIER_ROLE_TAIL_BYTES)?;
         Some((role, role_start))
-    })())
+    })()
 }
 
 const COMPONENT_CARRIER_ROLE_TAIL_BYTES: usize = 10;
@@ -635,7 +624,7 @@ fn direct_utf16_role_until_tail(
     bytes: &[u8],
     start: usize,
     limit: usize,
-) -> Result<Option<(String, usize)>, CodecError> {
+) -> Option<(String, usize)> {
     let end = (|| {
         let mut at = start;
         while at.checked_add(COMPONENT_CARRIER_ROLE_TAIL_BYTES)? <= limit {
@@ -654,21 +643,15 @@ fn direct_utf16_role_until_tail(
         }
         None
     })();
-    let Some(end) = end else {
-        return Ok(None);
-    };
+    let end = end?;
 
     let mut role = String::new();
     for at in (start..end).step_by(2) {
-        let Some(unit) = View::u16_le_at(bytes, at) else {
-            return Ok(None);
-        };
-        let Some(byte) = u8::try_from(unit).ok() else {
-            return Ok(None);
-        };
+        let unit = View::u16_le_at(bytes, at)?;
+        let byte = u8::try_from(unit).ok()?;
         role.push(char::from(byte));
     }
-    Ok(Some((role, end)))
+    Some((role, end))
 }
 
 fn exact_component_insert_scope_283_262_257(
@@ -1029,20 +1012,18 @@ pub(super) fn exact_copy_paste_component_operation(
         if source_candidates.next().is_some() {
             return None;
         }
-        Some((|| {
-            Ok(DesignCopyPasteComponentOperation {
-                relation_record_index,
-                source_occurrence_record_index: source.record_index,
-                copied_occurrence_record_index,
-                component_guid: copied.component_guid.clone(),
-                source_occurrence_guid: source.occurrence_guid.clone(),
-                copied_occurrence_guid: copied.occurrence_guid.clone(),
-                source_transform,
-                source_transform_offset: u64_from_index(source_transform_offset),
-                copied_transform,
-                copied_transform_offset: u64_from_index(copied_transform_offset),
-            })
-        })())
+        Some(Ok(DesignCopyPasteComponentOperation {
+            relation_record_index,
+            source_occurrence_record_index: source.record_index,
+            copied_occurrence_record_index,
+            component_guid: copied.component_guid.clone(),
+            source_occurrence_guid: source.occurrence_guid.clone(),
+            copied_occurrence_guid: copied.occurrence_guid.clone(),
+            source_transform,
+            source_transform_offset: u64_from_index(source_transform_offset),
+            copied_transform,
+            copied_transform_offset: u64_from_index(copied_transform_offset),
+        }))
     })();
     parsed.transpose()
 }

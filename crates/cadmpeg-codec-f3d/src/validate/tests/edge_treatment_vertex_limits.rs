@@ -77,7 +77,7 @@ fn vertex_recipe_valid_at(recipe_offset: u64) -> bool {
             }],
             ..Default::default()
         };
-        let ctx = super::super::Ctx::new(&ir, &native, decode).unwrap();
+        let ctx = super::super::Ctx::new(&ir, &native, decode);
         super::super::valid_vertex_recipe(&ctx, &scope, stream, 100, &vertex).unwrap()
     })
 }

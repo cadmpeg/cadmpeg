@@ -57,7 +57,7 @@ pub(in crate::design) struct IndexedRecordOffsets {
 
 impl IndexedRecordOffsets {
     /// Index every exact indexed-record header in `bytes` in one forward pass.
-    pub(in crate::design) fn build(bytes: &[u8]) -> Result<Self, CodecError> {
+    pub(in crate::design) fn build(bytes: &[u8]) -> Self {
         let mut by_record_index = HashMap::<u32, Vec<usize>>::new();
         for header in indexed_record_offsets(bytes) {
             by_record_index
@@ -65,7 +65,7 @@ impl IndexedRecordOffsets {
                 .or_default()
                 .push(header.offset);
         }
-        Ok(Self { by_record_index })
+        Self { by_record_index }
     }
 
     /// Ascending header offsets carrying `record_index`.
@@ -112,11 +112,11 @@ pub(in crate::design) fn cached_borrowed_record_offsets<'a, 's>(
     cache: &'a mut HashMap<&'s str, IndexedRecordOffsets>,
     stream: &'s str,
     bytes: &[u8],
-) -> Result<&'a IndexedRecordOffsets, CodecError> {
+) -> &'a IndexedRecordOffsets {
     match cache.entry(stream) {
-        std::collections::hash_map::Entry::Occupied(entry) => Ok(entry.into_mut()),
+        std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
         std::collections::hash_map::Entry::Vacant(entry) => {
-            Ok(entry.insert(IndexedRecordOffsets::build(bytes)?))
+            entry.insert(IndexedRecordOffsets::build(bytes))
         }
     }
 }
@@ -126,11 +126,11 @@ pub(in crate::design) fn cached_owned_record_offsets<'a>(
     cache: &'a mut HashMap<String, IndexedRecordOffsets>,
     stream: &str,
     bytes: &[u8],
-) -> Result<&'a IndexedRecordOffsets, CodecError> {
+) -> &'a IndexedRecordOffsets {
     match cache.entry(stream.to_owned()) {
-        std::collections::hash_map::Entry::Occupied(entry) => Ok(entry.into_mut()),
+        std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
         std::collections::hash_map::Entry::Vacant(entry) => {
-            Ok(entry.insert(IndexedRecordOffsets::build(bytes)?))
+            entry.insert(IndexedRecordOffsets::build(bytes))
         }
     }
 }
@@ -154,7 +154,7 @@ pub(crate) fn decode_sketch_placements(
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         let scope = crate::ids::native_scope(&entry.name);
-        record_offsets.insert(scope, IndexedRecordOffsets::build(bytes)?);
+        record_offsets.insert(scope, IndexedRecordOffsets::build(bytes));
     }
     let mut visibilities = HashMap::new();
     for entry in scan
@@ -886,9 +886,7 @@ fn decode_lost_edge_references_from_stream(
 /// zero bytes, an optional slot, and the UTF-16LE entity id whose numeric
 /// suffix equals the header's entity suffix.
 pub(super) fn parse_settled_entity_header(bytes: &[u8], start: usize) -> Option<NamedEntityHeader> {
-    let Some(entity_suffix) = View::u64_le_at(bytes, start + 7) else {
-        return None;
-    };
+    let entity_suffix = View::u64_le_at(bytes, start + 7)?;
     if entity_suffix == 0 || bytes.get(start + 15..start + 20) != Some(&[0u8; 5]) {
         return None;
     }
@@ -897,9 +895,7 @@ pub(super) fn parse_settled_entity_header(bytes: &[u8], start: usize) -> Option<
         Some(1) if bytes.get(start + 21..start + 25) == Some(&[0u8; 4]) => (true, start + 25),
         _ => return None,
     };
-    let Some((entity_id, end)) = lp_utf16_bounded(bytes, string_offset, 1..=256) else {
-        return None;
-    };
+    let (entity_id, end) = lp_utf16_bounded(bytes, string_offset, 1..=256)?;
     let Ok(entity_id) = crate::records::identity::DesignEntityId::try_from(entity_id) else {
         return None;
     };
@@ -925,9 +921,7 @@ pub(super) struct NamedEntityHeader {
 /// key strings, the u64 origin bitfield, and the UTF-16LE entity id whose
 /// numeric suffix equals the record index.
 pub(super) fn parse_genesis_entity_header(bytes: &[u8], start: usize) -> Option<NamedEntityHeader> {
-    let Some(entity_suffix) = View::u32_le_at(bytes, start + 7).map(u64::from) else {
-        return None;
-    };
+    let entity_suffix = View::u32_le_at(bytes, start + 7).map(u64::from)?;
     if entity_suffix == 0 {
         return None;
     }
@@ -941,15 +935,9 @@ pub(super) fn parse_genesis_entity_header(bytes: &[u8], start: usize) -> Option<
     {
         return None;
     }
-    let Some(after_key) = lp_ascii_matches(bytes, cursor + 5, b"EntityGenesis") else {
-        return None;
-    };
-    let Some(after_type) = lp_ascii_matches(bytes, after_key, b"IntrinsicMetaTypeuint64") else {
-        return None;
-    };
-    let Some((entity_id, end)) = lp_utf16_bounded(bytes, after_type + 8, 1..=256) else {
-        return None;
-    };
+    let after_key = lp_ascii_matches(bytes, cursor + 5, b"EntityGenesis")?;
+    let after_type = lp_ascii_matches(bytes, after_key, b"IntrinsicMetaTypeuint64")?;
+    let (entity_id, end) = lp_utf16_bounded(bytes, after_type + 8, 1..=256)?;
     let Ok(entity_id) = crate::records::identity::DesignEntityId::try_from(entity_id) else {
         return None;
     };
@@ -1182,7 +1170,7 @@ pub(crate) fn decode_entity_headers(
                 .map(|module| (*module).to_owned());
             let in_sketch_module = module.as_deref() == Some(DESIGN_MODULE_SKETCH);
             let list = if in_sketch_module {
-                decode_reference_list(bytes, end)?
+                decode_reference_list(bytes, end)
             } else {
                 None
             };
@@ -1227,7 +1215,7 @@ pub(crate) fn decode_entity_headers(
         let Some(candidates) = candidates.filter(|candidates| !candidates.is_empty()) else {
             continue;
         };
-        let records = IndexedRecordOffsets::build(bytes)?;
+        let records = IndexedRecordOffsets::build(bytes);
         let mut existing = std::collections::HashSet::new();
         for entity in out
             .iter()
@@ -1280,9 +1268,7 @@ fn insert_entity_module<'a>(
     module: &'a str,
 ) {
     let stream_modules = entity_modules.entry(stream).or_default();
-    if !stream_modules.contains_key(&entity_id) {
-        stream_modules.insert(entity_id, module);
-    }
+    stream_modules.entry(entity_id).or_insert(module);
 }
 
 fn insert_legacy_candidate<'a>(
@@ -1697,7 +1683,7 @@ fn decode_sketch_points_from_stream(
                     && design_type.version == SKETCH_POINT_COMPANION_TYPE.1
                     && design_type.module == SKETCH_POINT_COMPANION_TYPE.2
             })
-            .map(|companion_frame| {
+            .and_then(|companion_frame| {
                 decode_sketch_point_companion(
                     &bytes[companion_frame.start..companion_frame.end],
                     record_index,
@@ -1705,8 +1691,6 @@ fn decode_sketch_points_from_stream(
                     &types_by_entity,
                 )
             })
-            .transpose()?
-            .flatten()
             .ok_or_else(|| {
                 crate::design::text::malformed_design(format_args!(
                     "F3D sketch point {record_index} has no valid inverse companion"
@@ -2868,7 +2852,7 @@ fn decode_sketch_point_companion(
     point_record_index: u32,
     record_form: SketchPointRecordForm,
     types_by_entity: &HashMap<u32, (&str, u32, &str)>,
-) -> Result<Option<(SketchPointRecordForm, SketchPointCompanion)>, CodecError> {
+) -> Option<(SketchPointRecordForm, SketchPointCompanion)> {
     let parsed = (|| {
         let reference_encoding = SketchPointCompanionReferenceEncoding::for_form(&record_form);
         let (prefix_present_zero, mut cursor) = if payload.get(11..21) == Some(&[0; 10][..]) {
@@ -2888,9 +2872,7 @@ fn decode_sketch_point_companion(
         cursor = cursor.checked_add(4)?;
         Some((reference_encoding, record_form, cursor, count))
     })();
-    let Some((reference_encoding, record_form, mut cursor, count)) = parsed else {
-        return Ok(None);
-    };
+    let (reference_encoding, record_form, mut cursor, count) = parsed?;
 
     let mut incident_curves = Vec::new();
     let parsed = (|| {
@@ -2922,7 +2904,7 @@ fn decode_sketch_point_companion(
         }
         Some((record_form, SketchPointCompanion { incident_curves }))
     })();
-    Ok(parsed)
+    parsed
 }
 
 const SKETCH_POINT_TYPE_GUID: &str = "C2CEDAE7-1716-47C1-B7B1-07B70081D0FB";
@@ -4533,10 +4515,7 @@ struct SketchReferenceList {
     end: usize,
 }
 
-fn decode_reference_list(
-    bytes: &[u8],
-    position: usize,
-) -> Result<Option<SketchReferenceList>, CodecError> {
+fn decode_reference_list(bytes: &[u8], position: usize) -> Option<SketchReferenceList> {
     // The eight-byte base-record slot is either a u32 record reference with a
     // zero high half or the all-ones sentinel marking a sketch with no base
     // record; the list grammar is identical in both forms.
@@ -4556,17 +4535,11 @@ fn decode_reference_list(
         let declared_count = usize::try_from(view.u32_le()?).ok()?;
         Some((view, record_reference, declared_count))
     })();
-    let Some((mut view, record_reference, declared_count)) = parsed else {
-        return Ok(None);
-    };
-    let Some(required_bytes) = declared_count.checked_mul(11) else {
-        return Ok(None);
-    };
-    let Some(remaining_bytes) = bytes.len().checked_sub(view.position()) else {
-        return Ok(None);
-    };
+    let (mut view, record_reference, declared_count) = parsed?;
+    let required_bytes = declared_count.checked_mul(11)?;
+    let remaining_bytes = bytes.len().checked_sub(view.position())?;
     if remaining_bytes < required_bytes {
-        return Ok(None);
+        return None;
     }
 
     let mut references = Vec::new();
@@ -4583,7 +4556,7 @@ fn decode_reference_list(
             break;
         }
         if references.len() == declared_count {
-            return Ok(None);
+            return None;
         }
         references.push(crate::records::identity::Located {
             value: reference,
@@ -4591,16 +4564,14 @@ fn decode_reference_list(
         });
         view = probe;
     }
-    Ok(
-        (references.len() == declared_count).then_some(SketchReferenceList {
-            record_reference: crate::records::identity::Located {
-                value: record_reference,
-                offset: u64_from_index(position),
-            },
-            references,
-            end: view.position(),
-        }),
-    )
+    (references.len() == declared_count).then_some(SketchReferenceList {
+        record_reference: crate::records::identity::Located {
+            value: record_reference,
+            offset: u64_from_index(position),
+        },
+        references,
+        end: view.position(),
+    })
 }
 
 fn decode_sketch_streams<T>(

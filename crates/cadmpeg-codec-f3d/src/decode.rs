@@ -90,7 +90,7 @@ fn container_only_dimension_parameters(
         &native.design_dimension_annotation_frames,
         &native.design_dimension_locus_groups,
         &native.design_dimension_recipe_records,
-    )?;
+    );
     let mut parameters_by_id = std::collections::HashSet::new();
     for owner in &native.design_parameter_owners {
         let stream = crate::ids::native_stream(owner.id()).unwrap_or(crate::ids::DEFAULT_STREAM);
@@ -1116,7 +1116,7 @@ fn design_projection_gaps(
         &native.design_body_recipe_operands,
         &native.design_component_naming_spaces,
         &native.asm_histories,
-    )?;
+    );
     for scope in &native.design_parameter_scopes {
         let Some(feature) = projected_features.get(scope.id.as_str()) else {
             continue;
@@ -2148,7 +2148,7 @@ fn try_decode_text_model(
         }
         match &mut merged {
             None => merged = Some((facts, part)),
-            Some((_, whole)) => whole.append(part)?,
+            Some((_, whole)) => whole.append(part),
         }
     }
     Ok(merged)
@@ -2464,7 +2464,7 @@ impl<'a> F3dDecodeSession<'a> {
             &self.native.design_dimension_locus_pairs,
             &self.native.design_dimension_locus_groups,
             &self.native.design_dimension_null_locus_pairs,
-        )?;
+        );
         crate::design::dimensions::bind_dimension_loci(
             crate::design::dimensions::DimensionLocusInputs {
                 placements: &self.native.design_sketch_placements,
@@ -2567,13 +2567,13 @@ impl<'a> F3dDecodeSession<'a> {
         crate::design::configurations::bind_configuration_parameter_overrides(
             &mut self.ir.model.configurations,
             &self.ir.model.parameters,
-        )?;
+        );
         let scope_histories = crate::history::bind_scope_histories(
             &self.native.design_parameter_scopes,
             &self.native.design_body_bindings,
             &self.native.design_body_recipe_operands,
             &self.native.asm_histories,
-        )?;
+        );
         self.ir.model.feature_input_topologies = crate::history::project_feature_input_topologies(
             ctx,
             &self.ir.model.features,
@@ -2915,7 +2915,7 @@ impl<'a> F3dDecodeSession<'a> {
                     &mut self.ir,
                     &materials.face_assignments,
                 )?;
-                apply_appearance_base_colors(&mut self.ir)?;
+                apply_appearance_base_colors(&mut self.ir);
                 self.ir
                     .model
                     .appearance_bindings
@@ -3307,7 +3307,7 @@ fn decode_scanned_document<'a>(
                     body_visibilities.push(visibility);
                 }
             }
-            brep.append(part)?;
+            brep.append(part);
             decoded_brep_count += 1;
         }
         if let Some(primary_model_brep) = primary_model_brep {
@@ -3783,7 +3783,7 @@ fn mesh_attribute_channels(
                 }
             }
             (MeshAttributeDomain::Corner, Some(item_size), Some(_)) => {
-                let Some(selectors) = attribute.corner_selectors(vertices, triangles)? else {
+                let Some(selectors) = attribute.corner_selectors(vertices, triangles) else {
                     *unresolved.entry(MeshAttributeDomain::Corner).or_default() += 1;
                     continue;
                 };
@@ -4790,7 +4790,7 @@ fn extend_related_design_records(
             &native.design_construction_operand_groups,
             &native.design_parameter_owners,
             &native.design_parameters,
-        )?;
+        );
     crate::design::decode::operands::bind_lost_edge_groups(
         &mut native.design_construction_operand_groups,
         &native.design_construction_operand_identities,
@@ -4844,7 +4844,7 @@ fn extend_related_design_records(
         &mut native.design_entity_selection_operands,
         &native.design_parameter_scopes,
         &native.asm_histories,
-    )?;
+    );
     crate::history::selection::bind_hole_selection_history(
         &mut native.design_parameter_scopes,
         &native.asm_histories,
@@ -4862,7 +4862,7 @@ fn extend_related_design_records(
         &native.construction_recipes,
         &native.persistent_subentity_tags,
         &native.design_parameter_scopes,
-    )?;
+    );
     crate::history::bind_body_recipe_operand_history_candidates(
         ctx,
         &mut native.design_body_recipe_operands,
@@ -4879,25 +4879,25 @@ fn extend_related_design_records(
         &native.design_component_naming_spaces,
         &native.design_body_bindings,
         &native.asm_histories,
-    )?;
+    );
     let scope_histories = crate::history::bind_scope_histories(
         &native.design_parameter_scopes,
         &native.design_body_bindings,
         &native.design_body_recipe_operands,
         &native.asm_histories,
-    )?;
+    );
     crate::history::selection::bind_circular_pattern_axes(
         &mut native.design_parameter_scopes,
         &native.asm_histories,
         &scope_histories,
-    )?;
+    );
     crate::history::selection::bind_edge_identity_history(
         &mut native.design_edge_identity_operands,
         &native.design_construction_operand_identities,
         &native.design_parameter_scopes,
         &native.asm_histories,
         &scope_histories,
-    )?;
+    );
     native.design_edge_operands = crate::design::decode::operands::decode_edge_operands(
         ctx,
         scan,
@@ -4987,7 +4987,7 @@ fn extend_related_design_records(
         &native.design_face_operands,
         &native.design_construction_operand_identities,
         &native.asm_histories,
-    )?;
+    );
     crate::history::selection::bind_edge_identity_bounded_face_rules(
         &mut native.design_edge_identity_operands,
         &native.design_face_operands,
@@ -5188,7 +5188,7 @@ fn source_attributes_and_tolerances(
     {
         attributes.insert("solved_record_len".to_owned(), off.to_string());
     }
-    if let Some(unit) = crate::design::decode::units::decode_document_length_unit(scan)? {
+    if let Some(unit) = crate::design::decode::units::decode_document_length_unit(scan) {
         attributes.insert("modeling_length_unit".to_owned(), unit);
     }
 
@@ -5387,7 +5387,7 @@ fn build_metadata_ir(scan: &ContainerScan) -> Result<MetadataIr, CodecError> {
         }
     }
     attributes.insert("zip_entry_count".to_owned(), scan.entries.len().to_string());
-    if let Some(unit) = crate::design::decode::units::decode_document_length_unit(scan)? {
+    if let Some(unit) = crate::design::decode::units::decode_document_length_unit(scan) {
         attributes.insert("modeling_length_unit".to_owned(), unit);
     }
 
@@ -5758,7 +5758,7 @@ fn insert_appearance_color<'a, K: Eq + std::hash::Hash>(
     }
 }
 
-fn apply_appearance_base_colors(ir: &mut CadIr) -> Result<(), CodecError> {
+fn apply_appearance_base_colors(ir: &mut CadIr) {
     use cadmpeg_ir::appearance::AppearanceTarget;
 
     let colors = ir
@@ -5789,7 +5789,6 @@ fn apply_appearance_base_colors(ir: &mut CadIr) -> Result<(), CodecError> {
             face.color = face_colors.get(&face.id).copied().flatten();
         }
     }
-    Ok(())
 }
 
 #[cfg(test)]

@@ -122,7 +122,7 @@ pub(crate) fn project_sketch_constraints(
             object_index: Some(record_index),
             native_ref: native_ref
                 .filter(|_| !projected.contains_key(&(scope, record_index)))
-                .map(|value| value.to_owned()),
+                .map(std::borrow::ToOwned::to_owned),
         }
     };
 
@@ -366,8 +366,8 @@ fn exact_rectangular_pattern(
                 direction: [source_direction[0], source_direction[1]],
                 count,
                 distance,
-                distance_parameter: distance_parameter.map(|parameter| crate::design::identity::neutral_parameter_id(parameter)).transpose()?,
-                count_parameter: count_parameter.map(|parameter| crate::design::identity::neutral_parameter_id(parameter)).transpose()?,
+                distance_parameter: distance_parameter.map(crate::design::identity::neutral_parameter_id).transpose()?,
+                count_parameter: count_parameter.map(crate::design::identity::neutral_parameter_id).transpose()?,
             }))
     };
     let Some(first) = project_direction(&directions[0])? else {
@@ -850,10 +850,10 @@ fn exact_circular_pattern(
         center,
         angle,
         angle_parameter
-            .map(|parameter| crate::design::identity::neutral_parameter_id(parameter))
+            .map(crate::design::identity::neutral_parameter_id)
             .transpose()?,
         count_parameter
-            .map(|parameter| crate::design::identity::neutral_parameter_id(parameter))
+            .map(crate::design::identity::neutral_parameter_id)
             .transpose()?,
         seed_entities,
         instances,
