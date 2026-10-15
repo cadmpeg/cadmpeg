@@ -18,7 +18,7 @@ fn raw_knot_reconstruction_admits_caller_storage_and_copy_work() {
         match dimension {
             ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = 71,
             ResourceDimension::CollectionItems => policy.limits.max_collection_items = 8,
-            ResourceDimension::WorkUnits => policy.limits.max_work_units = 8,
+            ResourceDimension::WorkUnits => policy.limits.max_work_units = 6,
             _ => panic!("test dimension"),
         }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
@@ -37,7 +37,8 @@ fn raw_knot_reconstruction_admits_caller_storage_and_copy_work() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 72;
     policy.limits.max_collection_items = 9;
-    policy.limits.max_work_units = 9;
+    // Seven stored knots are copied; the two fixed endpoint pushes need no work units.
+    policy.limits.max_work_units = 7;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     assert_eq!(
         reconstruct_knots(&ctx, &STORED, 3, 6).expect("exact limits"),
@@ -50,7 +51,8 @@ fn raw_knot_reconstruction_admits_caller_storage_and_copy_work() {
 fn raw_knot_reconstruction_preserves_work_across_successive_calls() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 17;
+    // Each reconstruction copies seven stored knots.
+    policy.limits.max_work_units = 13;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     assert_eq!(
         reconstruct_knots(&ctx, &STORED, 3, 6).expect("first call"),
@@ -62,8 +64,8 @@ fn raw_knot_reconstruction_preserves_work_across_successive_calls() {
         panic!("second call must use the same work account");
     };
     assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-    assert_eq!(limit.used, 9);
-    assert_eq!(limit.additional, 9);
+    assert_eq!(limit.used, 7);
+    assert_eq!(limit.additional, 7);
     assert!(
         matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
     );
@@ -72,7 +74,9 @@ fn raw_knot_reconstruction_preserves_work_across_successive_calls() {
 #[test]
 fn periodic_knot_scans_preserve_first_and_later_caller_refusals() {
     for checked in [false, true] {
-        let visits = if checked { 9 } else { 16 };
+        // Seven scale visits plus two comparisons. Raw knots also need one
+        // end probe for the combined finite-value and scale search.
+        let visits = if checked { 9 } else { 10 };
         for cap in 0..visits {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
@@ -89,12 +93,11 @@ fn periodic_knot_scans_preserve_first_and_later_caller_refusals() {
                 panic!("every visited knot and interval needs admission");
             };
             assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-            assert_eq!(limit.used, cap);
-            assert_eq!(limit.additional, 1);
-            let operation = if cap < 7 {
+            // The checked lane admits all seven source items before reading.
+            assert_eq!(limit.used, if checked && cap < 7 { 0 } else { cap });
+            assert_eq!(limit.additional, if checked && cap < 7 { 7 } else { 1 });
+            let operation = if cap < if checked { 7 } else { 8 } {
                 "Rhino periodic knot scale"
-            } else if !checked && cap < 14 {
-                "Rhino periodic knot finiteness"
             } else {
                 "Rhino periodic knot comparison"
             };

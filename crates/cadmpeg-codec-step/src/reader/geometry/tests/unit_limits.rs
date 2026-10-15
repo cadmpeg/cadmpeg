@@ -89,8 +89,12 @@ fn document_refusal(records: &str, collection_limit: u64, with_context: bool) ->
     policy.limits.max_collection_items = collection_limit;
     let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
         .expect("source fits policy");
-    let result =
-        super::super::document_unit_scale(&exchange, super::super::UnitScaleKind::Length, &ctx);
+    let result = super::super::document_unit_scale(
+        &exchange,
+        super::super::UnitScaleKind::Length,
+        &ctx,
+        &mut super::super::scalar_resolver(&exchange, &ctx),
+    );
     assert_eq!(
         with_context,
         records.contains("GLOBAL_UNIT_ASSIGNED_CONTEXT")
@@ -162,11 +166,13 @@ fn context_length_scales_refuse_collection_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
         .expect("source fits policy");
     assert!(matches!(
-        super::super::context_unit_scales(2, &exchange, &ctx),
-        Err(CodecError::ResourceLimit(refusal))
-            if refusal.dimension == ResourceDimension::CollectionItems
-                && refusal.operation == "step_context_length_scales"
-    ));
+            super::super::context_unit_scales(2, &exchange, &ctx,
+     &mut super::super::scalar_resolver(&exchange, &ctx),
+    ),
+            Err(CodecError::ResourceLimit(refusal))
+                if refusal.dimension == ResourceDimension::CollectionItems
+                    && refusal.operation == "step_context_length_scales"
+        ));
 }
 
 #[test]
@@ -184,68 +190,13 @@ fn context_angle_scales_refuse_collection_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
         .expect("source fits policy");
     assert!(matches!(
-        super::super::context_unit_scales(2, &exchange, &ctx),
-        Err(CodecError::ResourceLimit(refusal))
-            if refusal.dimension == ResourceDimension::CollectionItems
-                && refusal.operation == "step_context_angle_scales"
-    ));
-}
-
-fn candidate_refusal(angle: bool, limit: u64) -> CodecError {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
-    let (group, value) = if angle {
-        ("step_angle_candidate_groups", "step_angle_candidate_values")
-    } else {
-        (
-            "step_length_candidate_groups",
-            "step_length_candidate_values",
-        )
-    };
-    super::super::add_unit_candidate(
-        &mut BTreeMap::new(),
-        1,
-        PositiveReal::ONE,
-        &ctx,
-        group,
-        value,
-    )
-    .expect_err("candidate exceeds the limit")
-}
-
-#[test]
-fn length_candidate_groups_refuse_collection_limit() {
-    assert!(matches!(candidate_refusal(false, 0),
-        CodecError::ResourceLimit(refusal)
-            if refusal.dimension == ResourceDimension::CollectionItems
-                && refusal.operation == "step_length_candidate_groups"));
-}
-
-#[test]
-fn length_candidate_values_refuse_collection_limit() {
-    assert!(matches!(candidate_refusal(false, 1),
-        CodecError::ResourceLimit(refusal)
-            if refusal.dimension == ResourceDimension::CollectionItems
-                && refusal.operation == "step_length_candidate_values"));
-}
-
-#[test]
-fn angle_candidate_groups_refuse_collection_limit() {
-    assert!(matches!(candidate_refusal(true, 0),
-        CodecError::ResourceLimit(refusal)
-            if refusal.dimension == ResourceDimension::CollectionItems
-                && refusal.operation == "step_angle_candidate_groups"));
-}
-
-#[test]
-fn angle_candidate_values_refuse_collection_limit() {
-    assert!(matches!(candidate_refusal(true, 1),
-        CodecError::ResourceLimit(refusal)
-            if refusal.dimension == ResourceDimension::CollectionItems
-                && refusal.operation == "step_angle_candidate_values"));
+            super::super::context_unit_scales(2, &exchange, &ctx,
+     &mut super::super::scalar_resolver(&exchange, &ctx),
+    ),
+            Err(CodecError::ResourceLimit(refusal))
+                if refusal.dimension == ResourceDimension::CollectionItems
+                    && refusal.operation == "step_context_angle_scales"
+        ));
 }
 
 fn scope_refusal(records: &str, collection_limit: u64, depth_limit: Option<u64>) -> CodecError {
@@ -261,11 +212,17 @@ fn scope_refusal(records: &str, collection_limit: u64, depth_limit: Option<u64>)
     }
     let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
         .expect("source fits policy");
+    let mut active_storage = ctx
+        .reserve_scoped(0, "test unit scope owner")
+        .expect("empty owner");
+    let mut members = BTreeSet::new();
+    let mut active = BTreeSet::new();
     super::super::collect_unit_scope_members(
         1,
         &exchange,
-        &mut BTreeSet::new(),
-        &mut BTreeSet::new(),
+        &mut members,
+        &mut active,
+        &mut active_storage,
         &ctx,
     )
     .expect_err("scope traversal exceeds the limit")
@@ -315,7 +272,7 @@ fn unit_selected_scales_refuse_collection_limit() {
     let candidates = BTreeMap::from([(1, vec![PositiveReal::ONE])]);
     let default = PositiveReal::new(2.0).expect("positive default");
     assert!(matches!(
-        super::super::finalize_unit_candidates(candidates, default, "length", &mut Vec::new(), &ctx),
+        super::super::finalize_unit_candidates(candidates, default, "length", (&mut Vec::new(), &mut ctx.reserve_scoped(0, "test report backing").expect("owner")), &mut ctx.reserve_scoped(0, "test selected units").expect("empty scope"), &ctx),
         Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::CollectionItems
                 && refusal.operation == "step_unit_selected_scales"
@@ -337,34 +294,40 @@ fn conflicting_unit_loss_refuses_collection_limit() {
         ],
     )]);
     assert!(matches!(
-        super::super::finalize_unit_candidates(candidates, PositiveReal::ONE, "length", &mut Vec::new(), &ctx),
+        super::super::finalize_unit_candidates(candidates, PositiveReal::ONE, "length", (&mut Vec::new(), &mut ctx.reserve_scoped(0, "test report backing").expect("owner")), &mut ctx.reserve_scoped(0, "test selected units").expect("empty scope"), &ctx),
         Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::CollectionItems
                 && refusal.operation == "step_geometry_losses"
     ));
 }
 
-fn uncertainty_refusal(collection_limit: u64) -> CodecError {
+fn uncertainty_refusal(operation: &'static str) -> CodecError {
     let records = "#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));#2=UNCERTAINTY_MEASURE_WITH_UNIT(LENGTH_MEASURE(0.1),#1,'first_accuracy','');#3=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT((#2)) REPRESENTATION_CONTEXT('model','3D'));";
     let source = format!("{HEADER}{records}{TAIL}");
     let (exchange, _) =
         crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
             .expect("valid uncertainty exchange");
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = collection_limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
-        .expect("source fits policy");
-    match super::super::linear_uncertainty(&exchange, &ctx) {
-        Err(error) => error,
-        Ok(_) => panic!("uncertainty collection did not refuse"),
-    }
+    // Locate the emitted slot after the unit resolver and context lane have
+    // admitted their actual allocations; no earlier slot count is assumed.
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems,
+        operation,
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
+                .expect("source fits policy");
+            let mut scalar = super::super::scalar_resolver(&exchange, &ctx);
+            super::super::linear_uncertainty(&exchange, &ctx, &mut scalar).map(|_| ())
+        },
+    )
 }
 
 #[test]
 fn uncertainty_context_measures_refuse_collection_limit() {
     assert!(matches!(
-        uncertainty_refusal(1),
+        uncertainty_refusal("step_uncertainty_context_measures"),
         CodecError::ResourceLimit(refusal)
             if refusal.dimension == ResourceDimension::CollectionItems
                 && refusal.operation == "step_uncertainty_context_measures"
@@ -374,9 +337,81 @@ fn uncertainty_context_measures_refuse_collection_limit() {
 #[test]
 fn uncertainty_distinct_candidates_refuse_collection_limit() {
     assert!(matches!(
-        uncertainty_refusal(2),
+        uncertainty_refusal("step_uncertainty_distinct_candidates"),
         CodecError::ResourceLimit(refusal)
             if refusal.dimension == ResourceDimension::CollectionItems
                 && refusal.operation == "step_uncertainty_distinct_candidates"
     ));
+}
+
+#[test]
+fn document_unit_failure_does_not_charge_unvisited_records() {
+    use std::fmt::Write as _;
+    let mut source = format!("{HEADER}#1=LENGTH_UNIT();#2=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1)) REPRESENTATION_CONTEXT('',''));" );
+    for id in 3..4099 {
+        write!(source, "#{id}=CARTESIAN_POINT('',(0.,0.,0.));").expect("write synthetic record");
+    }
+    source.push_str(TAIL);
+    let (exchange, _) =
+        crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
+            .expect("valid unit exchange");
+    let run = |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
+            .expect("source fits policy");
+        let mut scalar = super::super::scalar_resolver(&exchange, &ctx);
+        super::super::document_unit_scale(
+            &exchange,
+            super::super::UnitScaleKind::Length,
+            &ctx,
+            &mut scalar,
+        )
+    };
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "step_length_unit_active",
+        &run,
+    );
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("resource probe returns a refusal")
+    };
+    // Twice the visited-prefix insertion need also admits its removal. The
+    // allowance remains smaller than even one visit to each untouched record.
+    let cap = 2 * (limit.used + limit.additional);
+    assert!(
+        cap < 4096,
+        "the prefix allowance must exclude the later records"
+    );
+    assert_eq!(run(cap).expect("visited prefix fits work budget"), None);
+}
+
+#[test]
+fn typed_unit_number_walk_refuses_work_limit() {
+    let mut value = crate::parse::Value::Integer(7);
+    for _ in 0..16 {
+        value = crate::parse::Value::Typed("NUMBER".into(), Box::new(value));
+    }
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "step unit typed number walk",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+                .expect("empty root fits policy");
+            super::super::typed_number(&value, &ctx)
+        },
+    );
+    assert!(
+        matches!(error, CodecError::ResourceLimit(refusal) if refusal.dimension == ResourceDimension::WorkUnits && refusal.operation == "step unit typed number walk")
+    );
+    crate::test_support::with_service_context(b"", |_, ctx| {
+        assert_eq!(
+            super::super::typed_number(&value, ctx).expect("service admits typed number"),
+            Some(7.0)
+        );
+    });
 }

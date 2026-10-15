@@ -6,7 +6,7 @@ use base64::{engine::general_purpose::STANDARD, Engine as _};
 
 #[test]
 fn ber_cursor_past_input_refuses_remaining_length() {
-    let mut ber = super::Ber::new(b"");
+    let mut ber = super::Ber::new(super::BerValue::root(b""));
     ber.at = 1;
     assert_eq!(super::require_empty(&ber), Err("BER cursor exceeds input"));
 }
@@ -105,7 +105,11 @@ fn accepts_a_minimal_detached_signed_data_envelope() {
         0x30, 0x0d, 0x06, 0x09, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x01, 0x05, 0x00,
         0x04, 0x00,
     ];
-    assert_eq!(validate_detached_cms(&cms), Ok(()));
+    assert_eq!(
+        crate::test_support::with_service_context(&[], |_, ctx| validate_detached_cms(ctx, &cms))
+            .map_err(|error| error.to_string()),
+        Ok(())
+    );
 }
 
 const BER_CMS_INDEFINITE: &[u8] = &[
@@ -120,17 +124,42 @@ const BER_CMS_INDEFINITE: &[u8] = &[
 
 #[test]
 fn accepts_cms_ber_indefinite_lengths() {
-    assert_eq!(validate_detached_cms(BER_CMS_INDEFINITE), Ok(()));
+    assert_eq!(
+        crate::test_support::with_service_context(&[], |_, ctx| validate_detached_cms(
+            ctx,
+            BER_CMS_INDEFINITE
+        ))
+        .map_err(|error| error.to_string()),
+        Ok(())
+    );
 }
 
 #[test]
 fn accepts_ber_contextual_subject_key_identifier_and_octet_string() {
     assert_eq!(
-        super::validate_signer_identifier(0x80, &[0x01, 0x02, 0x03]),
+        crate::test_support::with_service_context(&[], |_, ctx| {
+            let mut extents = std::collections::BTreeMap::new();
+            super::validate_signer_identifier(
+                ctx,
+                &mut extents,
+                0x80,
+                super::BerValue::root(&[0x01, 0x02, 0x03]),
+            )
+        })
+        .map_err(|error| error.to_string()),
         Ok(())
     );
     assert_eq!(
-        super::validate_octet_string(0x24, &[0x04, 0x01, 0xaa]),
+        crate::test_support::with_service_context(&[], |_, ctx| {
+            let mut extents = std::collections::BTreeMap::new();
+            super::validate_octet_string(
+                ctx,
+                &mut extents,
+                0x24,
+                super::BerValue::root(&[0x04, 0x01, 0xaa]),
+            )
+        })
+        .map_err(|error| error.to_string()),
         Ok(())
     );
 }
@@ -160,7 +189,11 @@ fn rejects_embedded_content() {
         0x03, 0x04, 0x02, 0x01, 0x30, 0x0d, 0x06, 0x09, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01,
         0x01, 0x01, 0x05, 0x00, 0x04, 0x00,
     ];
-    assert!(validate_detached_cms(&cms).is_err());
+    assert!(
+        crate::test_support::with_service_context(&[], |_, ctx| validate_detached_cms(ctx, &cms))
+            .map_err(|error| error.to_string())
+            .is_err()
+    );
 }
 
 #[test]
@@ -320,7 +353,11 @@ fn real_detached_cms_witness_remains_structural_after_source_tampering() {
     assert!(tampered_diagnostics.is_empty());
     assert_eq!(sections(&original, source)[0].cms.len(), 1324);
     assert_eq!(
-        super::validate_detached_cms(&sections(&original, source)[0].cms),
+        crate::test_support::with_service_context(&[], |_, ctx| super::validate_detached_cms(
+            ctx,
+            &sections(&original, source)[0].cms
+        ))
+        .map_err(|error| error.to_string()),
         Ok(())
     );
     assert_eq!(
@@ -427,3 +464,44 @@ fn parser_rejects_invalid_signature_base64() {
         ));
     }
 }
+
+#[test]
+fn ber_cursor_and_nested_values_preserve_resource_refusal() {
+    for (dimension, operation) in [
+        (
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "STEP signature cursor traversal",
+        ),
+        (
+            cadmpeg_core::decode::ResourceDimension::RecursionDepth,
+            "STEP BER nesting",
+        ),
+    ] {
+        cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            match dimension {
+                cadmpeg_core::decode::ResourceDimension::WorkUnits => {
+                    policy.limits.max_work_units = cap;
+                }
+                cadmpeg_core::decode::ResourceDimension::RecursionDepth => {
+                    policy.limits.max_recursion_depth = cap;
+                }
+                _ => unreachable!(),
+            }
+            crate::test_support::with_policy_context(BER_CMS_INDEFINITE, &policy, |input, ctx| {
+                match super::validate_detached_cms(ctx, input) {
+                    Ok(()) => Ok(()),
+                    Err(super::CmsError::Resource(error)) => {
+                        if let cadmpeg_core::CodecError::ResourceLimit(refusal) = &error {
+                            assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
+                        }
+                        Err(error)
+                    }
+                    other => panic!("valid BER must not fail syntax: {other:?}"),
+                }
+            })
+        });
+    }
+}
+
+mod extent_index;

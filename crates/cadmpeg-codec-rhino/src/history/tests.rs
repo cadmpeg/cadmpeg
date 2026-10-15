@@ -58,6 +58,19 @@ fn with_collection_limit<R>(
     apply(&ctx)
 }
 
+fn with_materialized_limit<R>(
+    data: &[u8],
+    max_materialized_bytes: u64,
+    apply: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> R,
+) -> R {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_materialized_bytes = max_materialized_bytes;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
+        .expect("history fixture fits the root limit");
+    apply(&ctx)
+}
+
 #[test]
 fn history_value_array_refuses_collection_limit() {
     let mut payload = 2_i32.to_le_bytes().to_vec();
@@ -71,7 +84,7 @@ fn history_value_array_refuses_collection_limit() {
             0,
             bytes.len(),
             ArchiveVersion::V8,
-            &mut Diagnostics::new(),
+            &mut |code, message| Diagnostics::new().push_coded_admitted(ctx, code, message),
         )
     })
     .expect_err("two history values exceed one collection item");
@@ -114,12 +127,57 @@ fn history_record_slot_refuses_collection_limit() {
             &mut Diagnostics::new(),
             0x1000_0026,
         )
+        .map(drop)
     })
     .expect_err("one admitted history record exceeds zero collection items");
     assert!(matches!(
         refusal,
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.operation == "Rhino history records"
+    ));
+}
+
+#[test]
+fn history_record_scan_visits_prefix_before_suffix_work_admission() {
+    const WORK_CAP: u64 = 1024;
+    let archive = ArchiveVersion::V5;
+    let mut integer_payload = 1_i32.to_le_bytes().to_vec();
+    integer_payload.extend(42_i32.to_le_bytes());
+    let first_value = value(2, &integer_payload);
+    let data =
+        source_band_history_record_with_major(archive, 1, 1, 0, std::slice::from_ref(&first_value));
+    let chunk = crate::chunks::chunk_at(&data, 0, data.len(), archive, false)
+        .expect("first history record framing");
+    let mut records = vec![crate::container::Record::long(
+        chunk.typecode,
+        chunk.range(),
+        chunk.body(),
+    )];
+    let record_count = usize::try_from(WORK_CAP + 1).expect("test record count fits");
+    records.resize(
+        record_count,
+        crate::container::Record::short(HISTORY_RECORD, 0..0, 0),
+    );
+
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = WORK_CAP;
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&data, &arena, &policy)
+        .expect("history fixture fits the root limit");
+    let error = parse_records(
+        &ctx,
+        &data,
+        &records,
+        archive,
+        &mut Diagnostics::new(),
+        0x1000_0026,
+    )
+    .expect_err("first record reaches its collection refusal before the suffix");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "Rhino history record values"
     ));
 }
 
@@ -135,6 +193,7 @@ fn opaque_history_record_slot_refuses_collection_limit() {
             &mut Diagnostics::new(),
             0x1000_0026,
         )
+        .map(drop)
     })
     .expect_err("one diagnostic exceeds zero collection items");
     assert!(matches!(
@@ -151,6 +210,7 @@ fn opaque_history_record_slot_refuses_collection_limit() {
             &mut Diagnostics::new(),
             0x1000_0026,
         )
+        .map(drop)
     })
     .expect_err("the diagnostic and opaque record exceed one collection item");
     assert!(matches!(
@@ -158,6 +218,88 @@ fn opaque_history_record_slot_refuses_collection_limit() {
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.operation == "Rhino opaque history records"
     ));
+}
+
+#[test]
+fn rejected_history_record_releases_scoped_fields_before_the_next_record() {
+    for repetitions in [1, 4096] {
+        let archive = ArchiveVersion::V5;
+        let text = "history fields".repeat(repetitions);
+        let mut string_payload = 1_i32.to_le_bytes().to_vec();
+        string_payload.extend(utf16_bytes(&text));
+        let string_value = value(8, &string_payload);
+        let rejected = source_band_history_record_with_major(
+            archive,
+            1,
+            1,
+            7,
+            std::slice::from_ref(&string_value),
+        );
+        let data = [rejected.as_slice(), rejected.as_slice()].concat();
+        let mut records = Vec::new();
+        let mut offset = 0;
+        for _ in 0..2 {
+            let chunk = crate::chunks::chunk_at(&data, offset, data.len(), archive, false)
+                .expect("history record framing");
+            records.push(crate::container::Record::long(
+                chunk.typecode,
+                chunk.range(),
+                chunk.body(),
+            ));
+            offset = chunk.next_offset();
+        }
+        let one_record_bytes = cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<HistoryValue>() + std::mem::size_of::<String>() + text.len(),
+        );
+
+        with_materialized_limit(&data, one_record_bytes - 1, |ctx| {
+            let error = parse_records(
+                ctx,
+                &data,
+                &records[..1],
+                archive,
+                &mut Diagnostics::new(),
+                0x1000_0026,
+            )
+            .expect_err("one history record exceeds its exact materialized storage allowance");
+            assert!(matches!(
+                error,
+                cadmpeg_core::CodecError::ResourceLimit(limit)
+                    if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
+                        && limit.operation == "Rhino history string"
+            ));
+        });
+
+        // Each scan vector has room for four entries. Allow twice each
+        // message length plus one text-growth overlap during formatting.
+        let warning_length_bound =
+            "history record at  degraded: framing error at : invalid history record type".len()
+                + 2 * usize::MAX.to_string().len();
+        let scan_bytes = 4
+            * (std::mem::size_of::<crate::loss::RhinoDiagnostic>()
+                + std::mem::size_of::<crate::container::OpaqueRecord>())
+            + 6 * warning_length_bound;
+        let scan_bytes = u64::try_from(scan_bytes).unwrap();
+        if repetitions > 1 {
+            assert!(
+                scan_bytes < one_record_bytes,
+                "two sets of fields cannot fit"
+            );
+        }
+        with_materialized_limit(&data, one_record_bytes + scan_bytes, |ctx| {
+            let scan = parse_records(
+                ctx,
+                &data,
+                &records,
+                archive,
+                &mut Diagnostics::new(),
+                0x1000_0026,
+            )
+            .expect("the second failed parse reuses the first record's released storage");
+            assert!(scan.records.is_empty());
+            assert_eq!(scan.opaque_records.len(), 2);
+        });
+    }
 }
 
 #[test]
@@ -183,7 +325,7 @@ fn history_subd_edge_collections_refuse_collection_limits() {
                 0,
                 bytes.len(),
                 ArchiveVersion::V8,
-                &mut Diagnostics::new(),
+                &mut |code, message| Diagnostics::new().push_coded_admitted(ctx, code, message),
             )
         })
         .expect_err("SubD edge collection exceeds limit");
@@ -211,7 +353,7 @@ fn history_polyedge_list_refuses_collection_limit() {
             0,
             bytes.len(),
             ArchiveVersion::V8,
-            &mut Diagnostics::new(),
+            &mut |code, message| Diagnostics::new().push_coded_admitted(ctx, code, message),
         )
     })
     .expect_err("one polyedge exceeds zero collection items");
@@ -316,11 +458,12 @@ fn projection_links_unique_prior_producers_and_preserves_native_parameters() {
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     assert_eq!(
         project(
-            &cadmpeg_test_support::service_decode_context(),
+            crate::history::ProjectionContext::Metadata(
+                &cadmpeg_test_support::service_decode_context()
+            ),
             &records,
-            None,
             &mut ir,
-            &mut Diagnostics::new()
+            &mut Diagnostics::new(),
         )
         .expect("history projection"),
         (0, 0, 0, 0)
@@ -353,9 +496,8 @@ fn history_projection_id_refusal(limit: u64, operation: &str) {
     let records = [record(1, 11, &[], &[])];
     let refusal = with_collection_limit(&[], limit, |ctx| {
         project(
-            ctx,
+            crate::history::ProjectionContext::Metadata(ctx),
             &records,
-            None,
             &mut cadmpeg_ir::document::CadIr::empty(),
             &mut Diagnostics::new(),
         )
@@ -384,11 +526,12 @@ fn projection_counts_dependency_on_later_producer() {
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     assert_eq!(
         project(
-            &cadmpeg_test_support::service_decode_context(),
+            crate::history::ProjectionContext::Metadata(
+                &cadmpeg_test_support::service_decode_context()
+            ),
             &records,
-            None,
             &mut ir,
-            &mut Diagnostics::new()
+            &mut Diagnostics::new(),
         )
         .expect("history projection"),
         (0, 0, 1, 0)
@@ -406,11 +549,12 @@ fn projection_counts_dependency_with_ambiguous_producers() {
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     assert_eq!(
         project(
-            &cadmpeg_test_support::service_decode_context(),
+            crate::history::ProjectionContext::Metadata(
+                &cadmpeg_test_support::service_decode_context()
+            ),
             &records,
-            None,
             &mut ir,
-            &mut Diagnostics::new()
+            &mut Diagnostics::new(),
         )
         .expect("history projection"),
         (0, 0, 1, 0)
@@ -616,10 +760,11 @@ fn unknown_history_record_type_is_retained_opaque() {
     );
     let scan = crate::container::scan_owned(bytes).expect("history table");
     assert!(scan.history.is_empty());
-    assert!(scan
+    assert!(crate::decode::with_expand_bytes(&[], |expand| scan
         .warnings
-        .messages()
-        .any(|message| message.contains("record type")));
+        .messages(expand.ctx())
+        .expect("diagnostic traversal fits"))
+    .any(|message| message.contains("record type")));
     let retained = scan
         .opaque_records
         .iter()
@@ -639,11 +784,12 @@ fn projection_preserves_duplicate_values_and_same_record_descendants() {
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     assert_eq!(
         project(
-            &cadmpeg_test_support::service_decode_context(),
+            crate::history::ProjectionContext::Metadata(
+                &cadmpeg_test_support::service_decode_context()
+            ),
             &records,
-            None,
             &mut ir,
-            &mut Diagnostics::new()
+            &mut Diagnostics::new(),
         )
         .expect("history projection"),
         (0, 0, 0, 0)
@@ -702,15 +848,14 @@ fn decoded_history_geometry_is_counted_as_untyped_while_it_stays_stringified() {
         };
         crate::decode::with_expand_bytes(&geometry_value, |expand| {
             structured_value_properties(
-                expand.ctx(),
+                crate::history::ProjectionContext::Geometry {
+                    expand,
+                    archive: ArchiveVersion::V8,
+                    writer_version: None,
+                    scale: crate::test_support::millimeter_scale(2.0),
+                },
                 "value_7",
                 &parsed.value,
-                Some((
-                    expand,
-                    ArchiveVersion::V8,
-                    None,
-                    crate::test_support::millimeter_scale(2.0),
-                )),
                 &mut properties,
                 &mut sink,
             )
@@ -742,9 +887,13 @@ fn embedded_history_point_cloud_refuses_collection_limit_without_omission() {
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     let mut warnings = Diagnostics::new();
     let refusal = project(
-        &cadmpeg_test_support::service_decode_context(),
+        crate::history::ProjectionContext::Geometry {
+            expand,
+            archive: ArchiveVersion::V8,
+            writer_version: None,
+            scale: MillimeterScale::IDENTITY,
+        },
         &[source.clone()],
-        Some((expand, ArchiveVersion::V8, None, MillimeterScale::IDENTITY)),
         &mut ir,
         &mut warnings,
     )
@@ -759,9 +908,13 @@ fn embedded_history_point_cloud_refuses_collection_limit_without_omission() {
         let mut ir = cadmpeg_ir::document::CadIr::empty();
         assert_eq!(
             project(
-                &cadmpeg_test_support::service_decode_context(),
+                crate::history::ProjectionContext::Geometry {
+                    expand,
+                    archive: ArchiveVersion::V8,
+                    writer_version: None,
+                    scale: MillimeterScale::IDENTITY
+                },
                 &[source],
-                Some((expand, ArchiveVersion::V8, None, MillimeterScale::IDENTITY)),
                 &mut ir,
                 &mut Diagnostics::new(),
             )
@@ -803,10 +956,11 @@ fn history_geometry_without_unit_binding_is_counted_and_source_located() {
             refusal: None,
         };
         structured_value_properties(
-            &cadmpeg_test_support::service_decode_context(),
+            crate::history::ProjectionContext::Metadata(
+                &cadmpeg_test_support::service_decode_context(),
+            ),
             "value_7",
             &parsed.value,
-            None,
             &mut properties,
             &mut sink,
         )
@@ -861,15 +1015,14 @@ fn embedded_geometry_polyedge_and_subd_chain_values_are_typed() {
     };
     crate::decode::with_expand_bytes(&geometry_value, |expand| {
         structured_value_properties(
-            expand.ctx(),
+            crate::history::ProjectionContext::Geometry {
+                expand,
+                archive: ArchiveVersion::V8,
+                writer_version: None,
+                scale: crate::test_support::millimeter_scale(2.0),
+            },
             "value_7",
             &parsed.value,
-            Some((
-                expand,
-                ArchiveVersion::V8,
-                None,
-                crate::test_support::millimeter_scale(2.0),
-            )),
             &mut properties,
             &mut sink,
         )
@@ -958,10 +1111,11 @@ fn unknown_history_subd_orientation_is_malformed() {
     );
     let scan = crate::container::scan_owned(bytes).expect("history table");
     assert!(scan.history.is_empty());
-    assert!(scan
+    assert!(crate::decode::with_expand_bytes(&[], |expand| scan
         .warnings
-        .messages()
-        .any(|message| message.contains("orientation")));
+        .messages(expand.ctx())
+        .expect("diagnostic traversal fits"))
+    .any(|message| message.contains("orientation")));
     let retained = scan
         .opaque_records
         .iter()
@@ -984,13 +1138,14 @@ fn subd_edge_chain_count_mismatch_drops_dependent_arrays_with_a_diagnostic() {
     chains.extend(anonymous_value(1, &chain));
     let value = value(14, &anonymous_value(1, &chains));
     let mut warnings = Diagnostics::new();
+    let ctx = cadmpeg_test_support::service_decode_context();
     let (parsed, _) = parse_value_with_warnings(
-        &cadmpeg_test_support::service_decode_context(),
+        &ctx,
         &value,
         0,
         value.len(),
         ArchiveVersion::V8,
-        &mut warnings,
+        &mut |code, message| warnings.push_coded_admitted(&ctx, code, message),
     )
     .expect("mismatched redundant arrays remain bounded");
     assert!(matches!(
@@ -1427,10 +1582,11 @@ fn history_polyedge_minor_versions_preserve_reference_and_paired_domains() {
             refusal: None,
         };
         structured_value_properties(
-            &cadmpeg_test_support::service_decode_context(),
+            crate::history::ProjectionContext::Metadata(
+                &cadmpeg_test_support::service_decode_context(),
+            ),
             "value_7",
             &Value::PolyEdges(vec![edge]),
-            None,
             &mut properties,
             &mut sink,
         )
@@ -1498,11 +1654,15 @@ fn assert_hatch_plane_overflow_is_refused(offset: usize, field: &str) {
         "{field}"
     );
     assert!(
-        warnings
-            .messages()
-            .any(|message| message.contains(field) && message.contains("not implemented yet")),
+        crate::decode::with_expand_bytes(&[], |expand| warnings
+            .messages(expand.ctx())
+            .expect("diagnostic traversal fits"))
+        .any(|message| message.contains(field) && message.contains("not implemented yet")),
         "{field}: {:?}",
-        warnings.messages().collect::<Vec<_>>()
+        crate::decode::with_expand_bytes(&[], |expand| warnings
+            .messages(expand.ctx())
+            .expect("diagnostic traversal fits"))
+        .collect::<Vec<_>>()
     );
 }
 
@@ -1575,9 +1735,10 @@ fn embedded_history_hatch_retains_base_geometry_after_malformed_gradient() {
     let semantic: serde_json::Value = serde_json::from_str(&semantic).expect("hatch JSON");
     assert_eq!(semantic["basepoint"], serde_json::json!([3.0, 4.0]));
     assert!(semantic.get("gradient").is_none());
-    assert!(warnings
-        .messages()
-        .any(|message| message.contains("invalid gradient type")));
+    assert!(crate::decode::with_expand_bytes(&[], |expand| warnings
+        .messages(expand.ctx())
+        .expect("diagnostic traversal fits"))
+    .any(|message| message.contains("invalid gradient type")));
 }
 
 #[test]
@@ -1727,3 +1888,71 @@ fn embedded_mesh_json_preserves_bytes_and_refuses_retained_limit() {
             if limit.operation == "Rhino embedded history geometry JSON"
     ));
 }
+
+#[test]
+fn history_cursor_walks_preserve_work_refusal() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    for (is_uuid_list, bytes) in [
+        (
+            true,
+            anonymous_value(
+                0,
+                &[
+                    2_i32.to_le_bytes().as_slice(),
+                    id(1).to_wire().as_slice(),
+                    id(2).to_wire().as_slice(),
+                ]
+                .concat(),
+            ),
+        ),
+        (
+            false,
+            value(
+                2,
+                &[
+                    2_i32.to_le_bytes(),
+                    11_i32.to_le_bytes(),
+                    12_i32.to_le_bytes(),
+                ]
+                .concat(),
+            ),
+        ),
+    ] {
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            "Rhino history cursor traversal",
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)?;
+                if is_uuid_list {
+                    uuid_list(&ctx, &bytes, 0, bytes.len(), ArchiveVersion::V8)
+                        .map(|_| ())
+                        .or_else(|error| Err(super::history_resource_error(&ctx, error)?))
+                } else {
+                    parse_value_with_warnings(
+                        &ctx,
+                        &bytes,
+                        0,
+                        bytes.len(),
+                        ArchiveVersion::V8,
+                        &mut |code, message| {
+                            Diagnostics::new().push_coded_admitted(&ctx, code, message)
+                        },
+                    )
+                    .map(|_| ())
+                    .or_else(|error| Err(super::history_resource_error(&ctx, error)?))
+                }
+            },
+        );
+    }
+}
+
+mod projection;
+
+mod budget_repairs;
+
+mod prefix_admission;
+
+mod context_admission;

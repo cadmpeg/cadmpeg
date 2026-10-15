@@ -5,6 +5,7 @@ use crate::loss::Diagnostics;
 use std::ops::Range;
 
 use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::eval::{nurbs_curve_parameter_domain, nurbs_curve_point_at_with_basis};
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::features::FiniteVector3;
@@ -17,7 +18,7 @@ use cadmpeg_ir::units::{FiniteVector, UnitVector3};
 
 use crate::chunks::{chunk_at, ArchiveVersion, BoundedReader, ChecksumStatus, Chunk};
 use crate::curves::{decode_embedded_curve_2d, error, exact_nurbs, DecodedCurve, GeometryError};
-use crate::objects::{parse_class_wrapper_with_userdata, UserdataDescriptor};
+use crate::objects::{parse_class_wrapper_with_scoped_userdata, UserdataDescriptor};
 use crate::settings::{interval, point, vector, MillimeterScale};
 use crate::wire::Uuid;
 
@@ -113,14 +114,20 @@ pub(crate) struct ExtrusionFormat {
 }
 
 /// Decodes one complete bounded `ON_Extrusion` class payload.
-pub(crate) fn decode(
-    expand: crate::mesh::MeshExpand<'_>,
+pub(crate) fn decode<'ctx>(
+    expand: crate::mesh::MeshExpand<'ctx>,
     data: &[u8],
     range: Range<usize>,
     format: ExtrusionFormat,
     userdata: &[UserdataDescriptor],
     mesh_budget: &mut crate::mesh::MeshBudget,
-) -> Result<DecodedExtrusion, GeometryError> {
+) -> Result<
+    (
+        DecodedExtrusion,
+        cadmpeg_core::decode::ScopedReservation<'ctx>,
+    ),
+    GeometryError,
+> {
     let ExtrusionFormat {
         archive,
         writer_version,
@@ -142,32 +149,46 @@ pub(crate) fn decode(
     }
 
     let profile_start = reader.position();
-    let profile = decode_embedded_curve_2d(expand.ctx(), data, &mut reader, scale, archive, 1)?;
+    let mut profile_storage = expand
+        .ctx()
+        .reserve_scoped(0, "Rhino extrusion source profile")?;
+    let profile = profile_storage.with_storage(|| {
+        decode_embedded_curve_2d(expand.ctx(), data, &mut reader, scale, archive, 1)
+    })?;
     let profile_range = profile_start..reader.position();
-    let path_from = crate::wire::scaled_point(point(&mut reader)?.0.get(), scale)
+    let path_from = crate::wire::scaled_point(point(expand.ctx(), &mut reader)?.0.get(), scale)
         .ok_or_else(|| error(reader.position(), "scaled extrusion path is invalid"))?
         .get();
-    let path_to = crate::wire::scaled_point(point(&mut reader)?.0.get(), scale)
+    let path_to = crate::wire::scaled_point(point(expand.ctx(), &mut reader)?.0.get(), scale)
         .ok_or_else(|| error(reader.position(), "scaled extrusion path is invalid"))?
         .get();
-    let trim = increasing_interval(interval(&mut reader)?.0, reader.position(), "path trim")?;
+    let trim = increasing_interval(
+        expand.ctx(),
+        interval(expand.ctx(), &mut reader)?.0,
+        reader.position(),
+        "path trim",
+    )?;
     if trim[0] < 0.0 || trim[1] > 1.0 {
         return Err(error(
             reader.position(),
             "extrusion path trim is outside the line interval",
         ));
     }
-    let up = crate::wire::vector(vector(&mut reader)?.0.get());
+    let up = crate::wire::vector(vector(expand.ctx(), &mut reader)?.0.get());
     let miter_present = [
         reader.bool_with_writer_version(writer_version)?,
         reader.bool_with_writer_version(writer_version)?,
     ];
     let miter_normals = [
-        crate::wire::vector(vector(&mut reader)?.0.get()),
-        crate::wire::vector(vector(&mut reader)?.0.get()),
+        crate::wire::vector(vector(expand.ctx(), &mut reader)?.0.get()),
+        crate::wire::vector(vector(expand.ctx(), &mut reader)?.0.get()),
     ];
-    let path_domain =
-        increasing_interval(interval(&mut reader)?.0, reader.position(), "path domain")?;
+    let path_domain = increasing_interval(
+        expand.ctx(),
+        interval(expand.ctx(), &mut reader)?.0,
+        reader.position(),
+        "path domain",
+    )?;
     let transposed = reader.bool_with_writer_version(writer_version)?;
     let profile_count = if minor >= 1 { reader.i32()? } else { 1 };
     if profile_count <= 0 {
@@ -185,81 +206,117 @@ pub(crate) fn decode(
     } else {
         [false, false]
     };
+    let mut staging_storage = expand
+        .ctx()
+        .reserve_scoped(0, "Rhino extrusion boundary staging")?;
+    let mut warning_storage = expand
+        .ctx()
+        .reserve_scoped(0, "Rhino extrusion diagnostics staging")?;
     let mut warnings = Diagnostics::new();
-    let mut payload_children = vec![profile_range];
-    let meshes = if minor >= 3 {
-        let cache_start = reader.position();
-        let cache_range = chunk_at(data, cache_start, reader.end(), archive, false)
-            .ok()
-            .map(|chunk| chunk.range());
-        if let Some(range) = cache_range {
-            payload_children.push(range);
-        }
-        match read_mesh_cache(
-            expand,
+    let mut payload_children = [profile_range, 0..0];
+    let mut child_count = 1;
+    let cached_meshes = warning_storage.with_storage(|| {
+        let cached_meshes = if minor >= 3 {
+            let cache_start = reader.position();
+            let cache_range = chunk_at(data, cache_start, reader.end(), archive, false)
+                .ok()
+                .map(|chunk| chunk.range());
+            if let Some(range) = cache_range {
+                payload_children[1] = range;
+                child_count = 2;
+            }
+            match read_mesh_cache(
+                expand,
+                data,
+                &mut reader,
+                ExtrusionFormat {
+                    archive,
+                    writer_version,
+                    scale,
+                },
+                mesh_budget,
+                &mut warnings,
+            ) {
+                Ok(meshes) => meshes,
+                Err(error @ GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(_))) => {
+                    return Err(error);
+                }
+                Err(cache_error) => {
+                    // MeshBudget counters stay monotonic after rejection.
+                    // Decoded meshes, descriptors, and their list-backing
+                    // guards drop with `read_mesh_cache`.
+                    warnings.push_admitted(
+                        expand.ctx(),
+                        format_args!("extrusion mesh cache dropped: {cache_error}"),
+                    )?;
+                    reader.skip(reader.remaining())?;
+                    (
+                        Vec::new(),
+                        expand
+                            .ctx()
+                            .reserve_scoped(0, "Rhino extrusion cache meshes")?,
+                        expand
+                            .ctx()
+                            .reserve_scoped(0, "Rhino extrusion mesh-cache payloads")?,
+                    )
+                }
+            }
+        } else {
+            match read_v5_mesh_cache(
+                expand,
+                data,
+                ExtrusionFormat {
+                    archive,
+                    writer_version,
+                    scale,
+                },
+                userdata,
+                mesh_budget,
+                &mut warnings,
+            ) {
+                Ok(meshes) => meshes,
+                Err(error @ GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(_))) => {
+                    return Err(error);
+                }
+                Err(cache_error) => {
+                    warnings.push_admitted(
+                        expand.ctx(),
+                        format_args!("V5 extrusion mesh cache dropped: {cache_error}"),
+                    )?;
+                    (
+                        Vec::new(),
+                        expand
+                            .ctx()
+                            .reserve_scoped(0, "Rhino extrusion cache meshes")?,
+                        expand
+                            .ctx()
+                            .reserve_scoped(0, "Rhino V5 extrusion mesh-cache payloads")?,
+                    )
+                }
+            }
+        };
+        Ok::<_, GeometryError>(cached_meshes)
+    })?;
+    // Declare the reservations before the meshes so rejection drops values first.
+    let (cache_payload_storage, mut mesh_storage, meshes) =
+        (cached_meshes.2, cached_meshes.1, cached_meshes.0);
+    staging_storage.absorb(&mut mesh_storage)?;
+    warning_storage.with_storage(|| {
+        expand.ctx().fold(
+            &meshes[..],
+            (),
+            |(), mesh| warnings.extend_cloned_admitted(expand.ctx(), &mesh.warnings),
+            "Rhino extrusion cached mesh warning traversal",
+        )?;
+        finish_payload(
+            expand.ctx(),
             data,
-            &mut reader,
-            ExtrusionFormat {
-                archive,
-                writer_version,
-                scale,
-            },
-            mesh_budget,
+            &outer,
+            reader,
+            &payload_children[..child_count],
             &mut warnings,
-        ) {
-            Ok(meshes) => meshes,
-            Err(error @ GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(_))) => {
-                return Err(error);
-            }
-            Err(cache_error) => {
-                // The document budget is not rolled back: any buffer the cache
-                // inflated before failing is retained in the arena, so its
-                // charge must stand (see `mesh::MeshBudget`).
-                warnings.push_admitted(
-                    expand.ctx(),
-                    format_args!("extrusion mesh cache dropped: {cache_error}"),
-                )?;
-                reader.skip(reader.remaining())?;
-                Vec::new()
-            }
-        }
-    } else {
-        match read_v5_mesh_cache(
-            expand,
-            data,
-            ExtrusionFormat {
-                archive,
-                writer_version,
-                scale,
-            },
-            userdata,
-            mesh_budget,
-            &mut warnings,
-        ) {
-            Ok(meshes) => meshes,
-            Err(error @ GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(_))) => {
-                return Err(error);
-            }
-            Err(cache_error) => {
-                warnings.push_admitted(
-                    expand.ctx(),
-                    format_args!("V5 extrusion mesh cache dropped: {cache_error}"),
-                )?;
-                Vec::new()
-            }
-        }
-    };
-    for mesh in &meshes {
-        warnings.extend_cloned_admitted(expand.ctx(), &mesh.warnings)?;
-    }
-    finish_payload(
-        expand.ctx(),
-        data,
-        &outer,
-        reader,
-        &payload_children,
-        &mut warnings,
-    )?;
+        )
+    })?;
 
     let path_delta = path_to.vector_from(path_from);
     let path_length = path_delta.norm();
@@ -270,7 +327,7 @@ pub(crate) fn decode(
         ));
     }
     let tangent = path_delta.scale(1.0 / path_length);
-    require_unit(up, version_offset, "extrusion up vector")?;
+    require_unit(expand.ctx(), up, version_offset, "extrusion up vector")?;
     if up.dot(tangent).abs() > UNIT_TOLERANCE {
         return Err(error(
             version_offset,
@@ -282,14 +339,20 @@ pub(crate) fn decode(
         active_miter(miter_present[1], miter_normals[1]),
     ];
 
-    let source_boundaries = split_profiles(
-        expand.ctx(),
-        profile,
-        usize::try_from(profile_count)
-            .map_err(|_| GeometryError::unpositioned("geometry count exceeds address space"))?,
-        version_offset,
-    )?;
+    let mut boundary_storage = expand
+        .ctx()
+        .reserve_scoped(0, "Rhino extrusion source boundaries")?;
+    let source_boundaries = boundary_storage.with_storage(|| {
+        split_profiles(
+            expand.ctx(),
+            profile,
+            usize::try_from(profile_count)
+                .map_err(|_| GeometryError::unpositioned("geometry count exceeds address space"))?,
+            version_offset,
+        )
+    })?;
     let xaxis = normalize(
+        expand.ctx(),
         up.cross(tangent),
         version_offset,
         "extrusion profile X axis",
@@ -299,72 +362,123 @@ pub(crate) fn decode(
         path_from.translated(path_delta, trim[1]),
     ];
     let direction = cap_origins[1].vector_from(cap_origins[0]);
-    let mut boundaries = expand
+    let mut start_curve_storage = expand
         .ctx()
-        .collection_vec(source_boundaries.len(), "Rhino extrusion boundaries")
-        .map_err(crate::curves::GeometryError::from)?;
-    let mut orientations = expand
+        .reserve_scoped(0, "Rhino extrusion start curves")?;
+    let mut boundaries = staging_storage.with_storage(|| {
+        expand
+            .ctx()
+            .collection_vec(source_boundaries.len(), "Rhino extrusion boundaries")
+    })?;
+    let mut orientation_storage = expand
         .ctx()
-        .collection_vec(source_boundaries.len(), "Rhino extrusion orientations")
-        .map_err(crate::curves::GeometryError::from)?;
-    for source in source_boundaries {
-        orientations.push(exact_orientation(expand.ctx(), &source, version_offset)?);
-        let source_nurbs = exact_nurbs(expand.ctx(), &source, version_offset)?;
-        require_profile_plane(&source_nurbs, version_offset)?;
-        let start_nurbs = transform_nurbs(
+        .reserve_scoped(0, "Rhino extrusion orientations")?;
+    let mut orientations = orientation_storage.with_storage(|| {
+        expand
+            .ctx()
+            .collection_vec(source_boundaries.len(), "Rhino extrusion orientations")
+    })?;
+    let source_profile_count = source_boundaries.len();
+    let mut source_profiles = source_boundaries.into_iter();
+    for _ in 0..source_profile_count {
+        let source = expand
+            .ctx()
+            .next_charged(&mut source_profiles, "Rhino extrusion profile traversal")?
+            .ok_or_else(|| error(version_offset, "extrusion profile source ended early"))?;
+        let mut source_nurbs_storage = expand
+            .ctx()
+            .reserve_scoped(0, "Rhino extrusion source NURBS")?;
+        let source_nurbs = source_nurbs_storage
+            .with_storage(|| exact_nurbs(expand.ctx(), &source, version_offset))?;
+        orientations.push(nurbs_orientation(
             expand.ctx(),
             &source_nurbs,
-            &ProfileFrame {
-                origin: cap_origins[0],
-                xaxis: xaxis.into(),
-                yaxis: up,
-                zaxis: tangent,
-                miter: active_miters[0],
-            },
             version_offset,
-        )?;
-        let end_nurbs = transform_nurbs(
+        )?);
+        let start_nurbs = staging_storage.with_storage(|| {
+            transform_nurbs(
+                expand.ctx(),
+                &source_nurbs,
+                &ProfileFrame {
+                    origin: cap_origins[0],
+                    xaxis: xaxis.into(),
+                    yaxis: up,
+                    zaxis: tangent,
+                    miter: active_miters[0],
+                },
+                version_offset,
+            )
+        })?;
+        let end_nurbs = staging_storage.with_storage(|| {
+            transform_nurbs(
+                expand.ctx(),
+                &source_nurbs,
+                &ProfileFrame {
+                    origin: cap_origins[1],
+                    xaxis: xaxis.into(),
+                    yaxis: up,
+                    zaxis: tangent,
+                    miter: active_miters[1],
+                },
+                version_offset,
+            )
+        })?;
+        let source_warnings = source.into_warnings();
+        let start_curve = start_curve_storage.with_storage(|| {
+            let mut boundary_warnings = Diagnostics::new();
+            boundary_warnings.extend_cloned_admitted(expand.ctx(), &source_warnings)?;
+            Ok::<_, GeometryError>(DecodedCurve::leaf(
+                CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                    start_nurbs
+                        .try_clone_for_decode(expand.ctx(), "Rhino extrusion start curve")?,
+                )),
+                boundary_warnings,
+            ))
+        })?;
+        let start_frame = cap_frame(
             expand.ctx(),
-            &source_nurbs,
-            &ProfileFrame {
-                origin: cap_origins[1],
-                xaxis: xaxis.into(),
-                yaxis: up,
-                zaxis: tangent,
-                miter: active_miters[1],
-            },
+            xaxis.into(),
+            up,
+            tangent,
+            active_miters[0],
             version_offset,
         )?;
-        let start_curve = DecodedCurve::leaf(
-            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                start_nurbs.try_clone_for_decode(expand.ctx(), "Rhino extrusion start curve")?,
-            )),
-            source.into_warnings(),
-        );
-        let start_frame = cap_frame(xaxis.into(), up, tangent, active_miters[0], version_offset)?;
-        let end_frame = cap_frame(xaxis.into(), up, tangent, active_miters[1], version_offset)?;
-        let start_pcurve = cap_pcurve(
+        let end_frame = cap_frame(
             expand.ctx(),
-            &start_nurbs,
-            cap_origins[0],
-            start_frame,
+            xaxis.into(),
+            up,
+            tangent,
+            active_miters[1],
             version_offset,
         )?;
-        let end_pcurve = cap_pcurve(
-            expand.ctx(),
-            &end_nurbs,
-            cap_origins[1],
-            end_frame,
-            version_offset,
-        )?;
-        let lateral = crate::surfaces::extrusion_nurbs(
-            expand.ctx(),
-            &start_nurbs,
-            &end_nurbs,
-            path_domain,
-            transposed,
-            version_offset,
-        )?;
+        let start_pcurve = staging_storage.with_storage(|| {
+            cap_pcurve(
+                expand.ctx(),
+                &start_nurbs,
+                cap_origins[0],
+                start_frame,
+                version_offset,
+            )
+        })?;
+        let end_pcurve = staging_storage.with_storage(|| {
+            cap_pcurve(
+                expand.ctx(),
+                &end_nurbs,
+                cap_origins[1],
+                end_frame,
+                version_offset,
+            )
+        })?;
+        let lateral = staging_storage.with_storage(|| {
+            crate::surfaces::extrusion_nurbs(
+                expand.ctx(),
+                &start_nurbs,
+                &end_nurbs,
+                path_domain,
+                transposed,
+                version_offset,
+            )
+        })?;
         boundaries.push(ExtrusionBoundary {
             start_curve,
             start_nurbs,
@@ -374,9 +488,16 @@ pub(crate) fn decode(
             lateral,
         });
     }
+    drop(source_profiles);
+    drop(boundary_storage);
+    drop(profile_storage);
     if (orientations.len() > 1
         && (orientations.first() != Some(&1)
-            || orientations.iter().skip(1).any(|value| *value != -1)))
+            || expand.ctx().any_by(
+                &orientations[1..],
+                |value| Ok(*value != -1),
+                "Rhino decode traversal",
+            )?))
         || (orientations.len() == 1 && !matches!(orientations[0], 0 | 1))
     {
         return Err(error(
@@ -384,7 +505,11 @@ pub(crate) fn decode(
             "extrusion profile orientations are invalid",
         ));
     }
-    let all_closed = orientations.iter().all(|orientation| *orientation != 0);
+    let all_closed = expand.ctx().all_by(
+        &orientations[..],
+        |orientation| Ok(*orientation != 0),
+        "Rhino decode traversal",
+    )?;
     let caps = if minor >= 2 {
         raw_caps
     } else if all_closed {
@@ -399,19 +524,45 @@ pub(crate) fn decode(
         ));
     }
     let cap_frames = [
-        cap_frame(xaxis.into(), up, tangent, active_miters[0], version_offset)?,
-        cap_frame(xaxis.into(), up, tangent, active_miters[1], version_offset)?,
+        cap_frame(
+            expand.ctx(),
+            xaxis.into(),
+            up,
+            tangent,
+            active_miters[0],
+            version_offset,
+        )?,
+        cap_frame(
+            expand.ctx(),
+            xaxis.into(),
+            up,
+            tangent,
+            active_miters[1],
+            version_offset,
+        )?,
     ];
-    Ok(DecodedExtrusion {
-        boundaries,
-        direction,
-        cap_origins,
-        cap_normals: [cap_frames[0].2, cap_frames[1].2],
-        cap_u_axes: [cap_frames[0].0, cap_frames[1].0],
-        caps,
-        meshes,
-        warnings,
-    })
+    let meshes = cache_payload_storage.commit_value(meshes)?;
+    let boundaries = start_curve_storage.commit_value(boundaries)?;
+    // Retain output diagnostics without promoting discarded cache-parser scratch.
+    let mut retained_warnings = Diagnostics::new();
+    if !warnings.is_empty() {
+        retained_warnings.extend_cloned_admitted(expand.ctx(), &warnings)?;
+    }
+    drop(warnings);
+    drop(warning_storage);
+    Ok((
+        DecodedExtrusion {
+            boundaries,
+            direction,
+            cap_origins,
+            cap_normals: [cap_frames[0].2, cap_frames[1].2],
+            cap_u_axes: [cap_frames[0].0, cap_frames[1].0],
+            caps,
+            meshes,
+            warnings: retained_warnings,
+        },
+        staging_storage,
+    ))
 }
 
 fn split_profiles(
@@ -439,23 +590,26 @@ fn split_profiles(
     let mut profiles = ctx
         .collection_vec(children.len(), "Rhino extrusion profile split")
         .map_err(crate::curves::GeometryError::from)?;
-    profiles.extend(children.into_iter().map(|(_, child)| child));
+    profiles.extend(
+        ctx.admit_iter(children, "Rhino extrusion profile split traversal")
+            .map_err(CodecError::from)?
+            .map(|(_, child)| child),
+    );
     Ok(profiles)
 }
 
-fn exact_orientation(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    curve: &DecodedCurve,
+fn nurbs_orientation(
+    ctx: &DecodeContext<'_>,
+    curve: &NurbsCurve,
     offset: usize,
 ) -> Result<i8, GeometryError> {
-    let curve = exact_nurbs(ctx, curve, offset)?;
     if curve.pole_count() < 2 || curve.degree() == 0 {
         return Err(error(offset, "extrusion profile closure is degenerate"));
     }
-    if profile_off_plane(&curve) {
+    if profile_off_plane(ctx, curve)? {
         return Err(error(offset, "extrusion profile is not in the XY plane"));
     }
-    let domain = nurbs_curve_parameter_domain(&curve)
+    let domain = nurbs_curve_parameter_domain(curve)
         .map(cadmpeg_ir::topology::IncreasingParameterInterval::endpoints)
         .ok_or_else(|| error(offset, "extrusion profile parameter domain is invalid"))?;
     let degree = usize::try_from(curve.degree())
@@ -463,9 +617,11 @@ fn exact_orientation(
     let basis_count = degree
         .checked_add(1)
         .ok_or_else(|| error(offset, "extrusion profile degree is too large"))?;
-    let mut basis = ctx.alloc_filled(basis_count, 0.0, "Rhino extrusion profile basis")?;
-    let start = evaluate_profile_point(ctx, &curve, domain[0], offset, &mut basis)?;
-    let end = evaluate_profile_point(ctx, &curve, domain[1], offset, &mut basis)?;
+    let mut basis_storage = ctx.reserve_scoped(0, "Rhino extrusion profile basis")?;
+    let mut basis = basis_storage
+        .with_storage(|| ctx.alloc_filled(basis_count, 0.0, "Rhino extrusion profile basis"))?;
+    let start = evaluate_profile_point(ctx, curve, domain[0], offset, &mut basis)?;
+    let end = evaluate_profile_point(ctx, curve, domain[1], offset, &mut basis)?;
     let sample_parameter = |start: f64, end: f64, fraction: f64, ordinary: f64| {
         if ordinary.is_finite() {
             Ok(ordinary)
@@ -475,21 +631,21 @@ fn exact_orientation(
                 .ok_or_else(|| error(offset, "extrusion profile parameter domain is invalid"))
         }
     };
-    if !source_periodic(&curve) {
+    if !source_periodic(ctx, curve)? {
         if !points_coincident(start, end) {
             return Ok(0);
         }
         let span = domain[1] - domain[0];
         let one_third = evaluate_profile_point(
             ctx,
-            &curve,
+            curve,
             sample_parameter(domain[0], domain[1], 1.0 / 3.0, domain[0] + span / 3.0)?,
             offset,
             &mut basis,
         )?;
         let two_thirds = evaluate_profile_point(
             ctx,
-            &curve,
+            curve,
             sample_parameter(
                 domain[0],
                 domain[1],
@@ -508,9 +664,16 @@ fn exact_orientation(
         }
     }
 
-    let span_count = curve
-        .knots()
-        .windows(2)
+    let span_count = ctx
+        .admit_iter(
+            curve.knots().as_slice(),
+            "Rhino extrusion orientation span count",
+        )
+        .map_err(CodecError::from)?
+        .windows(
+            std::num::NonZeroUsize::new(2)
+                .ok_or_else(|| CodecError::malformed("invalid window size"))?,
+        )
         .filter(|pair| pair[0] < pair[1] && pair[1] > domain[0] && pair[0] < domain[1])
         .count();
     if span_count == 0 {
@@ -539,13 +702,26 @@ fn exact_orientation(
 
     let mut previous = end;
     let mut twice_area = 0.0;
-    for pair in curve.knots().windows(2) {
+    let Some(knot_window_count) = curve.knots().len().checked_sub(1) else {
+        return Err(error(offset, "extrusion profile has no nonempty spans"));
+    };
+    let mut knot_windows = curve.knots()[..].windows(2);
+    for _ in 0..knot_window_count {
+        let pair = ctx
+            .next_charged(
+                &mut knot_windows,
+                "Rhino exact orientation window traversal",
+            )?
+            .ok_or_else(|| {
+                cadmpeg_core::CodecError::malformed("Rhino orientation knot source ended early")
+            })?;
         let span_start = pair[0].max(domain[0]);
         let span_end = pair[1].min(domain[1]);
         if span_start >= span_end {
             continue;
         }
         for sample in 0..samples_per_span {
+            ctx.charge_work(1, "Rhino extrusion exact_orientation records")?;
             let fraction = cadmpeg_core::convert::f64_from_index(sample)
                 .ok_or_else(|| error(offset, "geometry index exceeds exact float range"))?
                 / cadmpeg_core::convert::f64_from_index(samples_per_span)
@@ -556,12 +732,12 @@ fn exact_orientation(
                 fraction,
                 span_start + fraction * (span_end - span_start),
             )?;
-            let current = evaluate_profile_point(ctx, &curve, parameter, offset, &mut basis)?;
+            let current = evaluate_profile_point(ctx, curve, parameter, offset, &mut basis)?;
             twice_area += (previous.x - current.x) * (previous.y + current.y);
             previous = current;
         }
     }
-    let final_point = evaluate_profile_point(ctx, &curve, domain[1], offset, &mut basis)?;
+    let final_point = evaluate_profile_point(ctx, curve, domain[1], offset, &mut basis)?;
     twice_area += (previous.x - final_point.x) * (previous.y + final_point.y);
     if !twice_area.is_finite() {
         return Err(error(offset, "extrusion profile orientation is invalid"));
@@ -575,21 +751,29 @@ fn exact_orientation(
     })
 }
 
-fn source_periodic(curve: &NurbsCurve) -> bool {
+fn source_periodic(ctx: &DecodeContext<'_>, curve: &NurbsCurve) -> Result<bool, CodecError> {
     if !curve.periodic() || curve.degree() <= 1 {
-        return false;
+        return Ok(false);
     }
     let Ok(degree) = usize::try_from(curve.degree()) else {
-        return false;
+        return Ok(false);
     };
-    let control_points = curve.pole_rows().raw_points();
-    control_points.len() >= degree
-        && (0..degree).all(|offset| {
-            points_coincident(
-                control_points[degree - 1 - offset],
-                control_points[control_points.len() - 1 - offset],
-            )
-        })
+    let count = curve.pole_count();
+    if count < degree {
+        return Ok(false);
+    }
+    ctx.all_by(
+        0..degree,
+        |index| {
+            let first = curve.pole_rows().point_at(degree - 1 - index);
+            let last = curve.pole_rows().point_at(count - 1 - index);
+            Ok(match (first, last) {
+                (Some(first), Some(last)) => points_coincident(first.get(), last.get()),
+                _ => false,
+            })
+        },
+        "Rhino extrusion periodic closure search",
+    )
 }
 
 fn evaluate_profile_point(
@@ -626,18 +810,19 @@ fn points_coincident(first: Point3, second: Point3) -> bool {
     })
 }
 
-fn require_profile_plane(curve: &NurbsCurve, offset: usize) -> Result<(), GeometryError> {
-    if profile_off_plane(curve) {
-        return Err(error(offset, "extrusion profile is not in the XY plane"));
-    }
-    Ok(())
-}
-
-fn profile_off_plane(curve: &NurbsCurve) -> bool {
-    match curve.pole_rows() {
-        NurbsPoles3::Polynomial { points } => points.iter().any(|point| point.get().z != 0.0),
-        NurbsPoles3::Rational { points } => points.iter().any(|pole| pole.point.get().z != 0.0),
-    }
+fn profile_off_plane(ctx: &DecodeContext<'_>, curve: &NurbsCurve) -> Result<bool, CodecError> {
+    Ok(match curve.pole_rows() {
+        NurbsPoles3::Polynomial { points } => ctx.any_by(
+            points.as_slice(),
+            |point| Ok(point.get().z != 0.0),
+            "Rhino extrusion profile plane traversal",
+        )?,
+        NurbsPoles3::Rational { points } => ctx.any_by(
+            points.as_slice(),
+            |pole| Ok(pole.point.get().z != 0.0),
+            "Rhino extrusion profile plane traversal",
+        )?,
+    })
 }
 
 fn transform_nurbs(
@@ -649,15 +834,7 @@ fn transform_nurbs(
     let mut curve = curve.try_clone_for_decode(ctx, "Rhino extrusion transformed NURBS")?;
     curve.try_map_control_points(
         |_, point| {
-            let transformed = transform_local(
-                point.get(),
-                frame.origin,
-                frame.xaxis,
-                frame.yaxis,
-                frame.zaxis,
-                frame.miter,
-                offset,
-            )?;
+            let transformed = transform_local(ctx, point.get(), frame, offset)?;
             FinitePoint3::new(transformed).ok_or_else(|| {
                 GeometryError::malformed(offset, "control_points contains a non-finite point")
             })
@@ -668,12 +845,9 @@ fn transform_nurbs(
 }
 
 fn transform_local(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     point: Point3,
-    origin: Point3,
-    xaxis: Vector3,
-    yaxis: Vector3,
-    zaxis: Vector3,
-    miter: Option<UnitVector3>,
+    frame: &ProfileFrame,
     offset: usize,
 ) -> Result<Point3, GeometryError> {
     if point.z != 0.0 {
@@ -682,27 +856,34 @@ fn transform_local(
             "extrusion profile pole is outside the XY plane",
         ));
     }
-    let local = mitered_local(Vector3::new(point.x, point.y, 0.0), miter, offset)?;
-    Ok(origin.translated(
-        xaxis.scale(local.x) + yaxis.scale(local.y) + zaxis.scale(local.z),
+    let local = mitered_local(
+        ctx,
+        Vector3::new(point.x, point.y, 0.0),
+        frame.miter,
+        offset,
+    )?;
+    Ok(frame.origin.translated(
+        frame.xaxis.scale(local.x) + frame.yaxis.scale(local.y) + frame.zaxis.scale(local.z),
         1.0,
     ))
 }
 
 fn cap_frame(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     xaxis: Vector3,
     yaxis: Vector3,
     zaxis: Vector3,
     miter: Option<UnitVector3>,
     offset: usize,
 ) -> Result<(UnitVector3, UnitVector3, UnitVector3), GeometryError> {
-    let local_x = mitered_local(Vector3::new(1.0, 0.0, 0.0), miter, offset)?;
-    let local_y = mitered_local(Vector3::new(0.0, 1.0, 0.0), miter, offset)?;
+    let local_x = mitered_local(ctx, Vector3::new(1.0, 0.0, 0.0), miter, offset)?;
+    let local_y = mitered_local(ctx, Vector3::new(0.0, 1.0, 0.0), miter, offset)?;
     let world_x = local_to_world_vector(local_x, xaxis, yaxis, zaxis);
     let world_y = local_to_world_vector(local_y, xaxis, yaxis, zaxis);
-    let u = normalize(world_x, offset, "extrusion cap U axis")?;
-    let normal = normalize(world_x.cross(world_y), offset, "extrusion cap normal")?;
+    let u = normalize(ctx, world_x, offset, "extrusion cap U axis")?;
+    let normal = normalize(ctx, world_x.cross(world_y), offset, "extrusion cap normal")?;
     let v = normalize(
+        ctx,
         Vector3::from(normal).cross(u.into()),
         offset,
         "extrusion cap V axis",
@@ -725,7 +906,11 @@ fn cap_pcurve(
     let mut points = ctx
         .collection_vec(curve.pole_count(), "Rhino extrusion cap points")
         .map_err(crate::curves::GeometryError::from)?;
-    for index in 0..curve.pole_count() {
+    let mut indices = 0..curve.pole_count();
+    for _ in 0..curve.pole_count() {
+        let index = ctx
+            .next_charged(&mut indices, "Rhino extrusion cap pole traversal")?
+            .ok_or_else(|| error(offset, "extrusion cap pole traversal ended early"))?;
         let point = curve
             .pole_rows()
             .point_at(index)
@@ -738,17 +923,18 @@ fn cap_pcurve(
         }
         points.push(Point2::new(delta.dot(frame.0), delta.dot(frame.1)));
     }
-    let mut knots = ctx
-        .collection_vec(curve.knots().len(), "Rhino extrusion cap knots")
-        .map_err(crate::curves::GeometryError::from)?;
-    knots.extend_from_slice(curve.knots());
+    let knots = ctx.copy_slice(curve.knots().as_slice(), "Rhino extrusion cap knots")?;
     let weights = match curve.pole_rows() {
         NurbsPoles3::Polynomial { .. } => None,
         NurbsPoles3::Rational { points } => {
             let mut weights = ctx
                 .collection_vec(points.len(), "Rhino extrusion cap weights")
                 .map_err(crate::curves::GeometryError::from)?;
-            weights.extend(points.iter().map(|pole| pole.weight.get()));
+            weights.extend(
+                ctx.admit_iter(&points[..], "Rhino extrusion cap weight traversal")
+                    .map_err(CodecError::from)?
+                    .map(|pole| pole.weight.get()),
+            );
             Some(weights)
         }
     };
@@ -762,6 +948,7 @@ fn cap_pcurve(
 }
 
 fn mitered_local(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     point: Vector3,
     normal: Option<UnitVector3>,
     offset: usize,
@@ -774,6 +961,7 @@ fn mitered_local(
         return Ok(point);
     }
     let axis: Vector3 = normalize(
+        ctx,
         Vector3::new(-normal.y, normal.x, 0.0),
         offset,
         "extrusion miter rotation axis",
@@ -792,26 +980,51 @@ fn mitered_local(
     ))
 }
 
-fn read_mesh_cache(
-    expand: crate::mesh::MeshExpand<'_>,
+fn read_mesh_cache<'ctx>(
+    expand: crate::mesh::MeshExpand<'ctx>,
     data: &[u8],
     reader: &mut BoundedReader<'_>,
     format: ExtrusionFormat,
     mesh_budget: &mut crate::mesh::MeshBudget,
     warnings: &mut Diagnostics,
-) -> Result<Vec<crate::mesh::DecodedMesh>, GeometryError> {
+) -> Result<
+    (
+        Vec<crate::mesh::DecodedMesh>,
+        cadmpeg_core::decode::ScopedReservation<'ctx>,
+        cadmpeg_core::decode::ScopedReservation<'ctx>,
+    ),
+    GeometryError,
+> {
     let ExtrusionFormat {
         archive,
         writer_version,
         scale,
     } = format;
-    let cache = anonymous_chunk(data, reader, archive, "extrusion mesh cache")?;
+    let cache = anonymous_chunk(expand.ctx(), data, reader, archive, "extrusion mesh cache")?;
     let mut cache_reader = BoundedReader::new(data, cache.body().start, cache.body().end)?;
-    require_anonymous_version(&mut cache_reader, 1, 0, "extrusion mesh cache")?;
+    require_anonymous_version(
+        expand.ctx(),
+        &mut cache_reader,
+        1,
+        0,
+        "extrusion mesh cache",
+    )?;
+    let mut mesh_storage = expand
+        .ctx()
+        .reserve_scoped(0, "Rhino extrusion cache meshes")?;
+    let mut payload_storage = expand
+        .ctx()
+        .reserve_scoped(0, "Rhino extrusion mesh-cache payloads")?;
     let mut meshes = Vec::new();
+    let mut child_storage = expand
+        .ctx()
+        .reserve_scoped(0, "Rhino extrusion cache child ranges")?;
     let mut cache_children = Vec::new();
     let mut index = 0_usize;
     loop {
+        expand
+            .ctx()
+            .charge_work(1, "Rhino extrusion mesh-cache scan")?;
         match cache_reader.u8()? {
             0 => break,
             1 => {}
@@ -822,20 +1035,30 @@ fn read_mesh_cache(
                 ))
             }
         }
-        let item = anonymous_chunk(data, &mut cache_reader, archive, "mesh-cache item")?;
-        expand.ctx().reserve_vec(
+        let item = anonymous_chunk(
+            expand.ctx(),
+            data,
+            &mut cache_reader,
+            archive,
+            "mesh-cache item",
+        )?;
+        expand.ctx().push_scoped_vec(
+            &mut child_storage,
             &mut cache_children,
-            1,
+            item.range(),
             "Rhino extrusion mesh-cache children",
         )?;
-        cache_children.push(item.range());
         let mut item_reader = BoundedReader::new(data, item.body().start, item.body().end)?;
-        require_anonymous_version(&mut item_reader, 1, 0, "mesh-cache item")?;
+        require_anonymous_version(expand.ctx(), &mut item_reader, 1, 0, "mesh-cache item")?;
         item_reader.skip(16)?;
         let wrapper_start = item_reader.position();
         let wrapper = chunk_at(data, wrapper_start, item_reader.end(), archive, false)?;
-        let (class, userdata) = parse_class_wrapper_with_userdata(
+        let mut userdata_storage = expand
+            .ctx()
+            .reserve_scoped(0, "Rhino extrusion class userdata")?;
+        let (class, userdata) = parse_class_wrapper_with_scoped_userdata(
             expand.ctx(),
+            &mut userdata_storage,
             data,
             wrapper.range(),
             archive,
@@ -845,24 +1068,28 @@ fn read_mesh_cache(
         if class.class_uuid != crate::mesh::ON_MESH {
             return Err(error(wrapper_start, "mesh-cache item is not ON_Mesh"));
         }
-        let mesh = crate::mesh::decode(
-            expand,
-            data,
-            class.class_data_range,
-            archive,
-            crate::mesh::MeshDecodeOptions {
-                writer_version,
-                association: None,
-                id: crate::mesh::MeshId::ExtrusionCache(index),
-                scale,
-                userdata: &userdata,
-            },
-            mesh_budget,
+        let mesh = payload_storage.with_storage(|| {
+            crate::mesh::decode(
+                expand,
+                data,
+                class.class_data_range,
+                archive,
+                crate::mesh::MeshDecodeOptions {
+                    writer_version,
+                    association: None,
+                    id: crate::mesh::MeshId::ExtrusionCache(index),
+                    scale,
+                    userdata: &userdata[..],
+                },
+                mesh_budget,
+            )
+        })?;
+        expand.ctx().push_scoped_vec(
+            &mut mesh_storage,
+            &mut meshes,
+            mesh,
+            "Rhino extrusion mesh-cache meshes",
         )?;
-        expand
-            .ctx()
-            .reserve_vec(&mut meshes, 1, "Rhino extrusion mesh-cache meshes")?;
-        meshes.push(mesh);
         finish_anonymous(
             expand.ctx(),
             data,
@@ -891,39 +1118,67 @@ fn read_mesh_cache(
         },
         warnings,
     )?;
-    Ok(meshes)
+    Ok((meshes, mesh_storage, payload_storage))
 }
 
-fn read_v5_mesh_cache(
-    expand: crate::mesh::MeshExpand<'_>,
+fn read_v5_mesh_cache<'ctx>(
+    expand: crate::mesh::MeshExpand<'ctx>,
     data: &[u8],
     format: ExtrusionFormat,
     userdata: &[UserdataDescriptor],
     mesh_budget: &mut crate::mesh::MeshBudget,
     warnings: &mut Diagnostics,
-) -> Result<Vec<crate::mesh::DecodedMesh>, GeometryError> {
+) -> Result<
+    (
+        Vec<crate::mesh::DecodedMesh>,
+        cadmpeg_core::decode::ScopedReservation<'ctx>,
+        cadmpeg_core::decode::ScopedReservation<'ctx>,
+    ),
+    GeometryError,
+> {
     let ExtrusionFormat {
         archive,
         writer_version,
         scale,
     } = format;
-    let Some(cache) = userdata
-        .iter()
-        .filter_map(UserdataDescriptor::known)
-        .find(|value| {
-            value.class_uuid == ON_V5_EXTRUSION_DISPLAY_MESH_CACHE
-                && value.item_uuid == ON_V5_EXTRUSION_DISPLAY_MESH_CACHE
-        })
+    let Some(cache) = expand.ctx().find_map(
+        userdata,
+        |raw| {
+            let Some(value) = UserdataDescriptor::known(raw) else {
+                return Ok(None);
+            };
+            Ok((value.class_uuid == ON_V5_EXTRUSION_DISPLAY_MESH_CACHE
+                && value.item_uuid == ON_V5_EXTRUSION_DISPLAY_MESH_CACHE)
+                .then_some(value))
+        },
+        "Rhino read v5 mesh cache traversal",
+    )?
     else {
-        return Ok(Vec::new());
+        let payload_storage = expand
+            .ctx()
+            .reserve_scoped(0, "Rhino V5 extrusion mesh-cache payloads")?;
+        let mesh_storage = expand
+            .ctx()
+            .reserve_scoped(0, "Rhino V5 extrusion cache meshes")?;
+        return Ok((Vec::new(), mesh_storage, payload_storage));
     };
 
     let mut offset = cache.payload_range.start;
+    let mut mesh_storage = expand
+        .ctx()
+        .reserve_scoped(0, "Rhino V5 extrusion cache meshes")?;
+    let mut payload_storage = expand
+        .ctx()
+        .reserve_scoped(0, "Rhino V5 extrusion mesh-cache payloads")?;
     let mut meshes = Vec::new();
     for index in 0..3_usize {
         let wrapper = chunk_at(data, offset, cache.payload_range.end, archive, false)?;
-        let (class, nested_userdata) = parse_class_wrapper_with_userdata(
+        let mut userdata_storage = expand
+            .ctx()
+            .reserve_scoped(0, "Rhino extrusion nested userdata")?;
+        let (class, nested_userdata) = parse_class_wrapper_with_scoped_userdata(
             expand.ctx(),
+            &mut userdata_storage,
             data,
             wrapper.range(),
             archive,
@@ -931,24 +1186,28 @@ fn read_v5_mesh_cache(
         )?;
         if index < 2 {
             if class.class_uuid == crate::mesh::ON_MESH {
-                let mesh = crate::mesh::decode(
-                    expand,
-                    data,
-                    class.class_data_range,
-                    archive,
-                    crate::mesh::MeshDecodeOptions {
-                        writer_version,
-                        association: None,
-                        id: crate::mesh::MeshId::V5ExtrusionCache(index),
-                        scale,
-                        userdata: &nested_userdata,
-                    },
-                    mesh_budget,
+                let mesh = payload_storage.with_storage(|| {
+                    crate::mesh::decode(
+                        expand,
+                        data,
+                        class.class_data_range,
+                        archive,
+                        crate::mesh::MeshDecodeOptions {
+                            writer_version,
+                            association: None,
+                            id: crate::mesh::MeshId::V5ExtrusionCache(index),
+                            scale,
+                            userdata: &nested_userdata[..],
+                        },
+                        mesh_budget,
+                    )
+                })?;
+                expand.ctx().push_scoped_vec(
+                    &mut mesh_storage,
+                    &mut meshes,
+                    mesh,
+                    "Rhino V5 extrusion mesh-cache meshes",
                 )?;
-                expand
-                    .ctx()
-                    .reserve_vec(&mut meshes, 1, "Rhino V5 extrusion mesh-cache meshes")?;
-                meshes.push(mesh);
             } else if class.class_uuid != Uuid::nil() {
                 return Err(error(
                     wrapper.header_start,
@@ -962,10 +1221,11 @@ fn read_v5_mesh_cache(
     // `ReadObject` calls. The enclosing anonymous-chunk end operation then
     // skips any later bounded suffix, so preserve that forward-compatible
     // boundary instead of rejecting the optional cache.
-    Ok(meshes)
+    Ok((meshes, mesh_storage, payload_storage))
 }
 
 fn anonymous_chunk(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
@@ -975,7 +1235,10 @@ fn anonymous_chunk(
     if chunk.typecode != ANONYMOUS || chunk.short() {
         return Err(error(
             chunk.header_start,
-            format!("expected anonymous {name} chunk"),
+            ctx.format_retained(
+                format_args!("expected anonymous {name} chunk"),
+                "Rhino anonymous_chunk text",
+            )?,
         ));
     }
     Ok(chunk)
@@ -997,7 +1260,10 @@ fn finish_anonymous(
     warnings: &mut Diagnostics,
 ) -> Result<(), GeometryError> {
     child.skip_remaining()?;
-    let direct = crate::chunks::direct_checksum_ranges(ctx, &chunk.body(), checksum.children)?;
+    let mut ranges = ctx.reserve_scoped(0, "Rhino extrusion checksum ranges")?;
+    let direct = ranges.with_storage(|| {
+        crate::chunks::direct_checksum_ranges(ctx, &chunk.body(), checksum.children)
+    })?;
     if matches!(
         crate::chunks::verify_checksum_ranges(ctx, data, chunk, &direct)?,
         ChecksumStatus::Mismatch { .. }
@@ -1024,7 +1290,9 @@ fn finish_payload(
     warnings: &mut Diagnostics,
 ) -> Result<(), GeometryError> {
     reader.skip_remaining()?;
-    let direct = crate::chunks::direct_checksum_ranges(ctx, &chunk.body(), children)?;
+    let mut ranges = ctx.reserve_scoped(0, "Rhino extrusion checksum ranges")?;
+    let direct = ranges
+        .with_storage(|| crate::chunks::direct_checksum_ranges(ctx, &chunk.body(), children))?;
     if matches!(
         crate::chunks::verify_checksum_ranges(ctx, data, chunk, &direct)?,
         ChecksumStatus::Mismatch { .. }
@@ -1042,6 +1310,7 @@ fn finish_payload(
 }
 
 fn require_anonymous_version(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     reader: &mut BoundedReader<'_>,
     major: i32,
     minor: i32,
@@ -1053,13 +1322,17 @@ fn require_anonymous_version(
     if actual_major != major || actual_minor < minor {
         return Err(GeometryError::unsupported(
             offset,
-            format!("unsupported {name} version"),
+            ctx.format_retained(
+                format_args!("unsupported {name} version"),
+                "Rhino require_anonymous_version text",
+            )?,
         ));
     }
     Ok(())
 }
 
 fn increasing_interval(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     value: FiniteVector<2>,
     offset: usize,
     name: &str,
@@ -1067,16 +1340,33 @@ fn increasing_interval(
     if value[0] < value[1] {
         Ok(value)
     } else {
-        Err(error(offset, format!("extrusion {name} is invalid")))
+        Err(error(
+            offset,
+            ctx.format_retained(
+                format_args!("extrusion {name} is invalid"),
+                "Rhino increasing_interval text",
+            )?,
+        ))
     }
 }
 
-fn require_unit(value: Vector3, offset: usize, name: &str) -> Result<(), GeometryError> {
+fn require_unit(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    value: Vector3,
+    offset: usize,
+    name: &str,
+) -> Result<(), GeometryError> {
     let length = value.norm();
     if (length - 1.0).abs() <= UNIT_TOLERANCE {
         Ok(())
     } else {
-        Err(error(offset, format!("{name} is not unit")))
+        Err(error(
+            offset,
+            ctx.format_retained(
+                format_args!("{name} is not unit"),
+                "Rhino require_unit text",
+            )?,
+        ))
     }
 }
 
@@ -1088,10 +1378,23 @@ fn active_miter(present: bool, value: Vector3) -> Option<UnitVector3> {
     (Vector3::from(unit).z > MITER_Z_MINIMUM).then_some(unit)
 }
 
-fn normalize(value: Vector3, offset: usize, name: &str) -> Result<UnitVector3, GeometryError> {
+fn normalize(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    value: Vector3,
+    offset: usize,
+    name: &str,
+) -> Result<UnitVector3, GeometryError> {
     FiniteVector3::new(value)
         .and_then(UnitVector3::normalized_nonzero)
-        .ok_or_else(|| error(offset, format!("{name} is invalid")))
+        .map_or_else(
+            || {
+                Err(error(
+                    offset,
+                    ctx.format_retained(format_args!("{name} is invalid"), "Rhino normalize text")?,
+                ))
+            },
+            Ok,
+        )
 }
 
 fn local_to_world_vector(
@@ -1112,1312 +1415,4 @@ fn rodrigues(value: Vector3, axis: Vector3, angle: f64) -> Vector3 {
 }
 
 #[cfg(test)]
-pub(crate) mod tests {
-    const EPS_MITER_DIRECTION: f64 = 1.0e-12;
-
-    use super::{
-        active_miter, cap_frame, cap_pcurve, exact_orientation, mitered_local, read_mesh_cache,
-        read_v5_mesh_cache, split_profiles, transform_nurbs, ExtrusionFormat, ANONYMOUS,
-        CLOSURE_ABSOLUTE_TOLERANCE, ON_V5_EXTRUSION_DISPLAY_MESH_CACHE,
-    };
-    use crate::chunks::ArchiveVersion;
-    use crate::curves::DecodedCurve;
-    use crate::curves::GeometryError;
-    use crate::layout::anonymous_version_prefix as anon_ver;
-    use crate::layout::long_chunk_header_wide as long_wide;
-    use crate::layout::uuid_wire_form as uuid_wire;
-    use crate::loss::Diagnostics;
-    use crate::objects::ClassUserdata;
-    use crate::objects::UserdataDescriptor;
-    use crate::settings::MillimeterScale;
-    use crate::test_support::test_dump::{
-        crc_chunk, crc_chunk_excluding, long_chunk, push_f64, push_i32,
-    };
-    use cadmpeg_ir::features::FinitePoint3;
-    use cadmpeg_ir::geometry::{nurbs::NurbsCurve, CurveGeometry, SolvedCurveGeometry};
-    use cadmpeg_ir::math::{Point3, Vector3};
-    use cadmpeg_ir::scalar::FiniteReal;
-
-    /// Every fixture this module builds is decoded at an archive word of 50,
-    /// so its chunks use the eight-byte value grammar.
-    const CHUNKS: ArchiveVersion = ArchiveVersion::V5;
-
-    fn with_collection_limit<R>(
-        max_collection_items: u64,
-        f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> R,
-    ) -> R {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_collection_items = max_collection_items;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("test context input fits service profile");
-        f(&ctx)
-    }
-
-    fn decode(
-        data: &[u8],
-        range: std::ops::Range<usize>,
-        archive: ArchiveVersion,
-        writer_version: Option<i64>,
-        scale: MillimeterScale,
-        mesh_budget: &mut crate::mesh::MeshBudget,
-    ) -> Result<super::DecodedExtrusion, GeometryError> {
-        crate::decode::with_expand_bytes(data, |expand| {
-            super::decode(
-                expand,
-                data,
-                range,
-                ExtrusionFormat {
-                    archive,
-                    writer_version,
-                    scale,
-                },
-                &[],
-                mesh_budget,
-            )
-        })
-    }
-
-    fn polyline_wrapper(clockwise: bool, closed: bool) -> Vec<u8> {
-        let mut points = vec![
-            [0.0, 0.0, 0.0],
-            [2.0, 0.0, 0.0],
-            [2.0, 1.0, 0.0],
-            [0.0, 1.0, 0.0],
-        ];
-        if closed {
-            points.push(points[0]);
-        }
-        if clockwise {
-            points.reverse();
-        }
-        let point_count = points.len();
-        let mut payload = vec![0x10];
-        push_i32(
-            &mut payload,
-            i32::try_from(point_count).expect("fixture value fits i32"),
-        );
-        for point in points {
-            for value in point {
-                push_f64(&mut payload, value);
-            }
-        }
-        push_i32(
-            &mut payload,
-            i32::try_from(point_count).expect("fixture value fits i32"),
-        );
-        for value in 0..point_count {
-            push_f64(
-                &mut payload,
-                f64::from(u32::try_from(value).expect("required invariant")),
-            );
-        }
-        push_i32(&mut payload, 2);
-        let wire_uuid = [
-            0xe6, 0xd4, 0xd7, 0x4e, 0x47, 0xe9, 0xd3, 0x11, 0xbf, 0xe5, 0x00, 0x10, 0x83, 0x01,
-            0x22, 0xf0,
-        ];
-        let mut class_body = crc_chunk(CHUNKS, 0x0002_fffb, &wire_uuid);
-        class_body.extend(crc_chunk(CHUNKS, 0x0002_fffc, &payload));
-        class_body.extend(0x8002_7fff_u32.to_le_bytes());
-        class_body.extend(0_i64.to_le_bytes());
-        long_chunk(CHUNKS, 0x0002_7ffa, &class_body)
-    }
-
-    fn polycurve_wrapper() -> Vec<u8> {
-        let children = [polyline_wrapper(false, true), polyline_wrapper(true, true)];
-        let mut payload = vec![0x10];
-        push_i32(&mut payload, 2);
-        push_i32(&mut payload, 0);
-        push_i32(&mut payload, 0);
-        payload.extend([0_u8; 48]);
-        push_i32(&mut payload, 3);
-        for value in [0.0, 1.0, 2.0] {
-            push_f64(&mut payload, value);
-        }
-        payload.extend(children.concat());
-        let wire_uuid = [
-            0xe0, 0xd4, 0xd7, 0x4e, 0x47, 0xe9, 0xd3, 0x11, 0xbf, 0xe5, 0x00, 0x10, 0x83, 0x01,
-            0x22, 0xf0,
-        ];
-        let mut class_body = crc_chunk(CHUNKS, 0x0002_fffb, &wire_uuid);
-        class_body.extend(crc_chunk(CHUNKS, 0x0002_fffc, &payload));
-        class_body.extend(0x8002_7fff_u32.to_le_bytes());
-        class_body.extend(0_i64.to_le_bytes());
-        long_chunk(CHUNKS, 0x0002_7ffa, &class_body)
-    }
-
-    fn payload(minor: i32, caps: [bool; 2], cache: Option<Vec<u8>>) -> Vec<u8> {
-        payload_with_profile(minor, caps, cache, polyline_wrapper(false, true))
-    }
-
-    fn payload_with_profile(
-        minor: i32,
-        caps: [bool; 2],
-        cache: Option<Vec<u8>>,
-        profile: Vec<u8>,
-    ) -> Vec<u8> {
-        let mut body = Vec::new();
-        push_i32(&mut body, 1);
-        push_i32(&mut body, minor);
-        let profile_range = body.len()..body.len() + profile.len();
-        body.extend(profile);
-        for value in [10.0, 20.0, 30.0, 10.0, 20.0, 40.0] {
-            push_f64(&mut body, value);
-        }
-        for value in [0.25, 0.75] {
-            push_f64(&mut body, value);
-        }
-        for value in [0.0, 1.0, 0.0] {
-            push_f64(&mut body, value);
-        }
-        body.extend([0, 0]);
-        for value in [0.0; 6] {
-            push_f64(&mut body, value);
-        }
-        for value in [4.0, 9.0] {
-            push_f64(&mut body, value);
-        }
-        body.push(0);
-        if minor >= 1 {
-            push_i32(&mut body, 1);
-        }
-        if minor >= 2 {
-            body.push(u8::from(caps[0]));
-            body.push(u8::from(caps[1]));
-        }
-        let mut children = vec![profile_range];
-        if minor >= 3 {
-            let cache = cache.unwrap_or_else(empty_mesh_cache);
-            children.push(body.len()..body.len() + cache.len());
-            body.extend(cache);
-        }
-        crc_chunk_excluding(CHUNKS, ANONYMOUS, &body, &children)
-    }
-
-    pub(crate) fn archive_payload(
-        minor: i32,
-        caps: [bool; 2],
-        with_hole: bool,
-        mesh_cache: bool,
-    ) -> Vec<u8> {
-        let profile = if with_hole {
-            polycurve_wrapper()
-        } else {
-            polyline_wrapper(false, true)
-        };
-        let cache = (minor >= 3).then(|| {
-            if mesh_cache {
-                one_mesh_cache()
-            } else {
-                empty_mesh_cache()
-            }
-        });
-        let profile_len = profile.len();
-        let mut payload = payload_with_profile(minor, caps, cache, profile);
-        if with_hole {
-            let cap_bytes = usize::from(minor >= 2) * 2;
-            let cache_bytes = if minor >= 3 {
-                if mesh_cache {
-                    one_mesh_cache().len()
-                } else {
-                    empty_mesh_cache().len()
-                }
-            } else {
-                0
-            };
-            let count = payload.len() - 4 - cap_bytes - cache_bytes - 4;
-            payload[count..count + 4].copy_from_slice(&2_i32.to_le_bytes());
-            let body = &payload[12..payload.len() - 4];
-            #[allow(clippy::single_range_in_vec_init)] // The range is one checksum child.
-            let mut children = vec![8..8 + profile_len];
-            if cache_bytes != 0 {
-                children.push(body.len() - cache_bytes..body.len());
-            }
-            let arena = cadmpeg_core::decode::DecodeArena::new();
-            let ctx = cadmpeg_core::decode::DecodeContext::new(
-                &arena,
-                &cadmpeg_core::decode::DecodePolicy::service(),
-                false,
-            );
-            let direct = crate::chunks::direct_checksum_ranges(&ctx, &(0..body.len()), &children)
-                .expect("valid extrusion children");
-            let mut hasher = crc32fast::Hasher::new();
-            for range in &direct {
-                hasher.update(&body[range.expect("admitted fixture checksum traversal")]);
-            }
-            let crc = hasher.finalize();
-            let end = payload.len();
-            payload[end - 4..].copy_from_slice(&crc.to_le_bytes());
-        }
-        payload
-    }
-
-    fn empty_mesh_cache() -> Vec<u8> {
-        let mut body = Vec::new();
-        push_i32(&mut body, 1);
-        push_i32(&mut body, 0);
-        body.push(0);
-        crc_chunk(CHUNKS, ANONYMOUS, &body)
-    }
-
-    fn one_mesh_wrapper() -> Vec<u8> {
-        let mut mesh = vec![0x30];
-        push_i32(&mut mesh, 1);
-        push_i32(&mut mesh, 0);
-        for _ in 0..8 {
-            push_f64(&mut mesh, 0.0);
-        }
-        for _ in 0..2 {
-            push_f64(&mut mesh, 1.0);
-        }
-        for _ in 0..16 {
-            mesh.extend(0.0_f32.to_le_bytes());
-        }
-        push_i32(&mut mesh, 0);
-        mesh.extend([0, 0, 0, 0, 0]);
-        push_i32(&mut mesh, 1);
-        let vertex = [0_u8; 12];
-        mesh.extend((u32::try_from(vertex.len()).expect("fixture value fits u32")).to_le_bytes());
-        mesh.extend(crc32fast::hash(&vertex).to_le_bytes());
-        mesh.push(0);
-        mesh.extend(vertex);
-        for _ in 0..4 {
-            mesh.extend(0_u32.to_le_bytes());
-        }
-        let mesh_uuid = [
-            0xe4, 0xd4, 0xd7, 0x4e, 0x47, 0xe9, 0xd3, 0x11, 0xbf, 0xe5, 0x00, 0x10, 0x83, 0x01,
-            0x22, 0xf0,
-        ];
-        let mut class_body = crc_chunk(CHUNKS, 0x0002_fffb, &mesh_uuid);
-        class_body.extend(crc_chunk(CHUNKS, 0x0002_fffc, &mesh));
-        class_body.extend(0x8002_7fff_u32.to_le_bytes());
-        class_body.extend(0_i64.to_le_bytes());
-        long_chunk(CHUNKS, 0x0002_7ffa, &class_body)
-    }
-
-    fn one_mesh_cache() -> Vec<u8> {
-        let wrapper = one_mesh_wrapper();
-        let wrapper_len = wrapper.len();
-        let mut item = Vec::new();
-        push_i32(&mut item, 1);
-        push_i32(&mut item, 0);
-        item.extend([7; uuid_wire::LEN]);
-        item.extend(wrapper);
-        let wrapper_range =
-            anon_ver::LEN + uuid_wire::LEN..anon_ver::LEN + uuid_wire::LEN + wrapper_len;
-        let item = crc_chunk_excluding(CHUNKS, ANONYMOUS, &item, &[wrapper_range]);
-        let item_len = item.len();
-        let mut cache = Vec::new();
-        push_i32(&mut cache, 1);
-        push_i32(&mut cache, 0);
-        cache.push(1);
-        cache.extend(item);
-        cache.push(0);
-        #[allow(clippy::single_range_in_vec_init)] // The range is one checksum child.
-        let wrapped = crc_chunk_excluding(CHUNKS, ANONYMOUS, &cache, &[9..9 + item_len]);
-        wrapped
-    }
-
-    fn null_object_wrapper() -> Vec<u8> {
-        let uuid = crc_chunk(CHUNKS, 0x0002_fffb, &[0; 16]);
-        long_chunk(CHUNKS, 0x0002_7ffa, &uuid)
-    }
-
-    fn decoded_polygon(clockwise: bool, closed: bool) -> DecodedCurve {
-        let mut points = vec![
-            Point3::new(0.0, 0.0, 0.0),
-            Point3::new(2.0, 0.0, 0.0),
-            Point3::new(2.0, 1.0, 0.0),
-            Point3::new(0.0, 1.0, 0.0),
-        ];
-        if closed {
-            points.push(points[0]);
-        }
-        if clockwise {
-            points.reverse();
-        }
-        let count = points.len();
-        DecodedCurve::leaf(
-            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                NurbsCurve::from_lanes(
-                    &cadmpeg_test_support::service_decode_context(),
-                    1,
-                    (0..count + 2)
-                        .map(|value| {
-                            cadmpeg_core::convert::f64_from_index(value)
-                                .expect("fixture index is exactly representable")
-                        })
-                        .collect::<Vec<f64>>(),
-                    points,
-                    None,
-                    false,
-                )
-                .expect("fixture constructor admission")
-                .expect("valid polygon curve"),
-            )),
-            Diagnostics::new(),
-        )
-    }
-
-    fn polygon_nurbs() -> NurbsCurve {
-        let DecodedCurve::Leaf {
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
-            ..
-        } = decoded_polygon(false, true)
-        else {
-            unreachable!("polygon fixture is a NURBS leaf")
-        };
-        curve
-    }
-
-    fn decoded_quadratic_circle(clockwise: bool) -> DecodedCurve {
-        let radius = 2.0;
-        let mut points = vec![
-            Point3::new(radius, 0.0, 0.0),
-            Point3::new(radius, radius, 0.0),
-            Point3::new(0.0, radius, 0.0),
-            Point3::new(-radius, radius, 0.0),
-            Point3::new(-radius, 0.0, 0.0),
-            Point3::new(-radius, -radius, 0.0),
-            Point3::new(0.0, -radius, 0.0),
-            Point3::new(radius, -radius, 0.0),
-            Point3::new(radius, CLOSURE_ABSOLUTE_TOLERANCE / 2.0, 0.0),
-        ];
-        let mut weights = vec![
-            1.0,
-            std::f64::consts::FRAC_1_SQRT_2,
-            1.0,
-            std::f64::consts::FRAC_1_SQRT_2,
-            1.0,
-            std::f64::consts::FRAC_1_SQRT_2,
-            1.0,
-            std::f64::consts::FRAC_1_SQRT_2,
-            1.0,
-        ];
-        if clockwise {
-            points.reverse();
-            weights.reverse();
-        }
-        DecodedCurve::leaf(
-            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                NurbsCurve::from_lanes(
-                    &cadmpeg_test_support::service_decode_context(),
-                    2,
-                    vec![0.0, 0.0, 0.0, 1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0, 4.0],
-                    points,
-                    Some(weights),
-                    false,
-                )
-                .expect("fixture constructor admission")
-                .expect("valid circle curve"),
-            )),
-            Diagnostics::new(),
-        )
-    }
-
-    #[test]
-    fn anonymous_versions_1_0_through_1_3_apply_exact_gates_and_defaults() {
-        for minor in 0..=3 {
-            let bytes = payload(minor, [true, false], None);
-            let decoded = decode(
-                &bytes,
-                0..bytes.len(),
-                ArchiveVersion::V5,
-                None,
-                MillimeterScale::IDENTITY,
-                &mut crate::mesh::MeshBudget::new(),
-            )
-            .expect("required invariant");
-            assert_eq!(decoded.boundaries.len(), 1);
-            assert_eq!(
-                decoded.boundaries[0].lateral.v_knots().as_slice(),
-                vec![4.0, 4.0, 9.0, 9.0]
-            );
-            assert_eq!(
-                decoded.caps,
-                if minor < 2 {
-                    [true, true]
-                } else {
-                    [true, false]
-                }
-            );
-            assert!(decoded.meshes.is_empty());
-            assert!(decoded.warnings.is_empty());
-        }
-    }
-
-    #[test]
-    fn nil_profile_is_rejected_before_extrusion_transfer() {
-        let bytes = payload_with_profile(2, [false, false], None, null_object_wrapper());
-        assert!(decode(
-            &bytes,
-            0..bytes.len(),
-            ArchiveVersion::V5,
-            None,
-            MillimeterScale::IDENTITY,
-            &mut crate::mesh::MeshBudget::new(),
-        )
-        .is_err());
-    }
-
-    #[test]
-    fn profile_frame_uses_trim_start_up_cross_path_and_scales_once() {
-        let bytes = payload(2, [false, false], None);
-        let decoded = decode(
-            &bytes,
-            0..bytes.len(),
-            ArchiveVersion::V5,
-            None,
-            crate::test_support::millimeter_scale(25.4),
-            &mut crate::mesh::MeshBudget::new(),
-        )
-        .expect("required invariant");
-        assert_eq!(decoded.cap_origins[0], Point3::new(254.0, 508.0, 825.5));
-        assert_eq!(decoded.cap_origins[1], Point3::new(254.0, 508.0, 952.5));
-        let first = decoded.boundaries[0].start_nurbs.control_points()[1];
-        assert_eq!(first, Point3::new(304.8, 508.0, 825.5));
-        assert_eq!(decoded.direction, Vector3::new(0.0, 0.0, 127.0));
-    }
-
-    #[test]
-    fn single_open_profile_is_exact_when_uncapped_and_rejected_when_capped() {
-        let open = polyline_wrapper(false, false);
-        let legacy = payload_with_profile(0, [false, false], None, open.clone());
-        let decoded = decode(
-            &legacy,
-            0..legacy.len(),
-            ArchiveVersion::V5,
-            None,
-            MillimeterScale::IDENTITY,
-            &mut crate::mesh::MeshBudget::new(),
-        )
-        .expect("required invariant");
-        assert_eq!(decoded.caps, [false, false]);
-        assert_eq!(decoded.boundaries.len(), 1);
-        let capped = payload_with_profile(2, [true, false], None, open);
-        assert!(decode(
-            &capped,
-            0..capped.len(),
-            ArchiveVersion::V5,
-            None,
-            MillimeterScale::IDENTITY,
-            &mut crate::mesh::MeshBudget::new(),
-        )
-        .is_err());
-    }
-
-    #[test]
-    fn profile_basis_refuses_collection_limit_before_evaluation() {
-        let source = decoded_polygon(false, true);
-        let curve = polygon_nurbs();
-        let copied = u64::try_from(curve.knots().len() + curve.pole_count())
-            .expect("fixture copy count fits u64");
-        let basis_items = u64::from(curve.degree()) + 1;
-        with_collection_limit(copied + basis_items - 1, |ctx| {
-            let refusal = exact_orientation(ctx, &source, 0)
-                .expect_err("basis exceeds the remaining collection item");
-            assert!(matches!(
-                refusal,
-                GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-                    if limit.operation == "Rhino extrusion profile basis"
-            ));
-        });
-        with_collection_limit(copied + basis_items, |ctx| {
-            assert_eq!(
-                exact_orientation(ctx, &source, 0).expect("basis admitted"),
-                1
-            );
-        });
-    }
-
-    #[test]
-    fn orientation_supports_polygon_rational_and_open_profiles() {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let policy = cadmpeg_core::decode::DecodePolicy::default();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("test context input fits the default profile");
-        assert_eq!(
-            exact_orientation(&ctx, &decoded_polygon(false, true), 0).expect("required invariant"),
-            1
-        );
-        assert_eq!(
-            exact_orientation(&ctx, &decoded_polygon(true, true), 0).expect("required invariant"),
-            -1
-        );
-        assert_eq!(
-            exact_orientation(&ctx, &decoded_polygon(false, false), 0).expect("required invariant"),
-            0
-        );
-        assert_eq!(
-            exact_orientation(&ctx, &decoded_quadratic_circle(false), 0)
-                .expect("required invariant"),
-            1
-        );
-        assert_eq!(
-            exact_orientation(&ctx, &decoded_quadratic_circle(true), 0)
-                .expect("required invariant"),
-            -1
-        );
-        let mut off_plane = decoded_polygon(false, true);
-        let crate::curves::DecodedCurve::Leaf {
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
-            ..
-        } = &mut off_plane
-        else {
-            unreachable!()
-        };
-        curve
-            .try_map_control_points(
-                |index, point| {
-                    let mut point = point.get();
-                    if index == 1 {
-                        point.z = 1.0;
-                    }
-                    cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
-                        cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
-                            "control_points contains a non-finite point".into(),
-                        )
-                    })
-                },
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .expect("pole edit admission")
-            .expect("valid test curve edit");
-        assert!(exact_orientation(&ctx, &off_plane, 0).is_err());
-    }
-
-    #[test]
-    fn orientation_keeps_finite_samples_across_a_wide_profile_domain() {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let policy = cadmpeg_core::decode::DecodePolicy::default();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("test context input fits the default profile");
-        let mut profile = decoded_polygon(false, true);
-        let DecodedCurve::Leaf {
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
-            ..
-        } = &mut profile
-        else {
-            panic!("polygon NURBS fixture");
-        };
-        curve
-            .edit_knots(&ctx, |knots| {
-                knots.copy_from_slice(&[
-                    -f64::MAX,
-                    -f64::MAX,
-                    -f64::MAX * 0.5,
-                    0.0,
-                    f64::MAX * 0.5,
-                    f64::MAX,
-                    f64::MAX,
-                ]);
-            })
-            .expect("knot edit admission")
-            .expect("wide polygon knot interval");
-        assert_eq!(
-            exact_orientation(&ctx, &profile, 0).expect("finite orientation"),
-            1
-        );
-    }
-
-    #[test]
-    fn multiple_profiles_require_exact_polycurve_count_and_outer_hole_orientation() {
-        let outer = decoded_polygon(false, true);
-        let inner = decoded_polygon(true, true);
-        let finite = |value: f64| FiniteReal::new(value).expect("finite parameter");
-        let profile = DecodedCurve::Compound {
-            children: vec![(finite(0.0), outer), (finite(1.0), inner)],
-            end_parameter: finite(2.0),
-            warnings: Diagnostics::new(),
-        };
-        crate::decode::with_expand_bytes(&[], |expand| {
-            assert_eq!(
-                split_profiles(expand.ctx(), profile.clone(), 2, 0)
-                    .expect("required invariant")
-                    .len(),
-                2
-            );
-            assert!(split_profiles(expand.ctx(), profile, 3, 0).is_err());
-        });
-    }
-
-    #[test]
-    fn extrusion_profile_split_refuses_collection_limit() {
-        let finite = |value: f64| FiniteReal::new(value).expect("finite parameter");
-        let profile = DecodedCurve::Compound {
-            children: vec![
-                (finite(0.0), decoded_polygon(false, true)),
-                (finite(1.0), decoded_polygon(true, true)),
-            ],
-            end_parameter: finite(2.0),
-            warnings: Diagnostics::new(),
-        };
-        let refusal = with_collection_limit(1, |ctx| split_profiles(ctx, profile, 2, 0))
-            .expect_err("two profiles exceed one collection item");
-        assert!(matches!(
-            refusal,
-            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == "Rhino extrusion profile split"
-        ));
-    }
-
-    #[test]
-    fn extrusion_single_profile_refuses_collection_limit() {
-        let profile = decoded_polygon(false, true);
-        let refusal = with_collection_limit(0, |ctx| split_profiles(ctx, profile, 1, 0))
-            .expect_err("one profile exceeds zero collection items");
-        assert!(matches!(
-            refusal,
-            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == "Rhino extrusion profile split"
-        ));
-    }
-
-    #[test]
-    fn extrusion_transformed_nurbs_refuses_collection_limit() {
-        let curve = polygon_nurbs();
-        let needed = curve.knots().len() + curve.pole_count();
-        let refusal =
-            with_collection_limit(cadmpeg_core::decode::u64_from_index(needed - 1), |ctx| {
-                transform_nurbs(
-                    ctx,
-                    &curve,
-                    &super::ProfileFrame {
-                        origin: Point3::new(0.0, 0.0, 0.0),
-                        xaxis: Vector3::new(1.0, 0.0, 0.0),
-                        yaxis: Vector3::new(0.0, 1.0, 0.0),
-                        zaxis: Vector3::new(0.0, 0.0, 1.0),
-                        miter: None,
-                    },
-                    0,
-                )
-            })
-            .expect_err("curve copy exceeds collection limit");
-        assert!(matches!(
-            refusal,
-            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == "Rhino extrusion transformed NURBS"
-        ));
-    }
-
-    #[test]
-    fn extrusion_transformed_nurbs_refuses_retained_limit_one_byte_below_copy() {
-        let curve = polygon_nurbs();
-        let bytes = curve.knots().len() * std::mem::size_of::<f64>()
-            + curve.pole_count() * std::mem::size_of::<FinitePoint3>();
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_retained_bytes = u64::try_from(bytes - 1).expect("copy size");
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty test input");
-        let refusal = transform_nurbs(
-            &ctx,
-            &curve,
-            &super::ProfileFrame {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                xaxis: Vector3::new(1.0, 0.0, 0.0),
-                yaxis: Vector3::new(0.0, 1.0, 0.0),
-                zaxis: Vector3::new(0.0, 0.0, 1.0),
-                miter: None,
-            },
-            0,
-        )
-        .expect_err("full transformed copy exceeds limit by one byte");
-        assert!(matches!(
-            refusal,
-            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == "Rhino extrusion transformed NURBS"
-                    && limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-        ));
-    }
-
-    #[test]
-    fn extrusion_start_curve_copy_refuses_collection_limit() {
-        let curve = polygon_nurbs();
-        let needed = curve.knots().len() + curve.pole_count();
-        let refusal =
-            with_collection_limit(cadmpeg_core::decode::u64_from_index(needed - 1), |ctx| {
-                curve.try_clone_for_decode(ctx, "Rhino extrusion start curve")
-            })
-            .expect_err("start curve copy exceeds collection limit");
-        assert!(matches!(
-            refusal,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.operation == "Rhino extrusion start curve"
-        ));
-    }
-
-    #[test]
-    fn extrusion_nurbs_copy_refuses_retained_limit_one_byte_below_full_copy() {
-        let curve = polygon_nurbs();
-        let bytes = curve.knots().len() * std::mem::size_of::<f64>()
-            + curve.pole_count() * std::mem::size_of::<FinitePoint3>();
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_retained_bytes = u64::try_from(bytes - 1).expect("copy size");
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty test input");
-        let error = curve
-            .try_clone_for_decode(&ctx, "Rhino extrusion start curve")
-            .expect_err("full copy exceeds limit by one byte");
-        assert!(matches!(
-            error,
-            cadmpeg_core::CodecError::ResourceLimit(refusal)
-                if refusal.operation == "Rhino extrusion start curve"
-                    && refusal.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-        ));
-    }
-
-    #[test]
-    fn extrusion_cap_points_refuse_collection_limit() {
-        let curve = polygon_nurbs();
-        let frame = cap_frame(
-            Vector3::new(1.0, 0.0, 0.0),
-            Vector3::new(0.0, 1.0, 0.0),
-            Vector3::new(0.0, 0.0, 1.0),
-            None,
-            0,
-        )
-        .expect("unit cap frame");
-        let refusal = with_collection_limit(
-            cadmpeg_core::decode::u64_from_index(curve.pole_count() - 1),
-            |ctx| cap_pcurve(ctx, &curve, Point3::new(0.0, 0.0, 0.0), frame, 0),
-        )
-        .expect_err("cap points exceed collection limit");
-        assert!(matches!(
-            refusal,
-            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == "Rhino extrusion cap points"
-        ));
-    }
-
-    #[test]
-    fn extrusion_cap_knots_refuse_collection_limit() {
-        let curve = polygon_nurbs();
-        let frame = cap_frame(
-            Vector3::new(1.0, 0.0, 0.0),
-            Vector3::new(0.0, 1.0, 0.0),
-            Vector3::new(0.0, 0.0, 1.0),
-            None,
-            0,
-        )
-        .expect("unit cap frame");
-        let needed = curve.pole_count() + curve.knots().len();
-        let refusal =
-            with_collection_limit(cadmpeg_core::decode::u64_from_index(needed - 1), |ctx| {
-                cap_pcurve(ctx, &curve, Point3::new(0.0, 0.0, 0.0), frame, 0)
-            })
-            .expect_err("cap knots exceed collection limit");
-        assert!(matches!(
-            refusal,
-            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == "Rhino extrusion cap knots"
-        ));
-    }
-
-    #[test]
-    fn extrusion_cap_weights_refuse_collection_limit() {
-        let curve = NurbsCurve::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
-            1,
-            vec![0.0, 0.0, 1.0, 1.0],
-            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
-            Some(vec![1.0, 0.5]),
-            false,
-        )
-        .expect("fixture constructor admission")
-        .expect("valid rational cap profile");
-        let frame = cap_frame(
-            Vector3::new(1.0, 0.0, 0.0),
-            Vector3::new(0.0, 1.0, 0.0),
-            Vector3::new(0.0, 0.0, 1.0),
-            None,
-            0,
-        )
-        .expect("unit cap frame");
-        let needed = curve.pole_count() * 2 + curve.knots().len();
-        let refusal =
-            with_collection_limit(cadmpeg_core::decode::u64_from_index(needed - 1), |ctx| {
-                cap_pcurve(ctx, &curve, Point3::new(0.0, 0.0, 0.0), frame, 0)
-            })
-            .expect_err("cap weights exceed collection limit");
-        assert!(matches!(
-            refusal,
-            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == "Rhino extrusion cap weights"
-        ));
-    }
-
-    #[test]
-    fn strict_flags_trim_domains_and_later_minor_versions_are_accepted() {
-        let valid = payload(2, [false, false], None);
-        let body_start = long_wide::LEN;
-        let profile_len = polyline_wrapper(false, true).len();
-        let common = body_start + anon_ver::LEN + profile_len;
-        let trim_start = common + 48;
-        let up_start = trim_start + 16;
-        let miter_flags = up_start + 24;
-        let path_domain = miter_flags + 2 + 48;
-        let mut cases = Vec::new();
-        let mut noncanonical_bool = valid.clone();
-        noncanonical_bool[miter_flags] = 2;
-        assert!(decode(
-            &noncanonical_bool,
-            0..noncanonical_bool.len(),
-            ArchiveVersion::V5,
-            None,
-            MillimeterScale::IDENTITY,
-            &mut crate::mesh::MeshBudget::new(),
-        )
-        .is_ok());
-        let mut bad_trim = valid.clone();
-        bad_trim[trim_start..trim_start + 8].copy_from_slice(&(-0.1_f64).to_le_bytes());
-        cases.push(bad_trim);
-        let mut bad_domain = valid.clone();
-        bad_domain[path_domain + 8..path_domain + 16].copy_from_slice(&4.0_f64.to_le_bytes());
-        cases.push(bad_domain);
-        for bytes in cases {
-            assert!(decode(
-                &bytes,
-                0..bytes.len(),
-                ArchiveVersion::V5,
-                None,
-                MillimeterScale::IDENTITY,
-                &mut crate::mesh::MeshBudget::new(),
-            )
-            .is_err());
-        }
-        let mut future = payload(3, [false, false], Some(one_mesh_cache()));
-        future[body_start + anon_ver::MINOR..body_start + anon_ver::LEN]
-            .copy_from_slice(&4_i32.to_le_bytes());
-        assert!(decode(
-            &future,
-            0..future.len(),
-            ArchiveVersion::V5,
-            None,
-            MillimeterScale::IDENTITY,
-            &mut crate::mesh::MeshBudget::new(),
-        )
-        .is_ok());
-    }
-
-    #[test]
-    fn optional_mesh_cache_over_document_budget_propagates_resource_refusal() {
-        let bytes = payload(3, [false, false], Some(one_mesh_cache()));
-        let refusal = decode(
-            &bytes,
-            0..bytes.len(),
-            ArchiveVersion::V5,
-            None,
-            MillimeterScale::IDENTITY,
-            &mut crate::mesh::MeshBudget::with_limit(0),
-        )
-        .expect_err("optional cache resource refusal reaches the caller");
-        assert!(matches!(refusal,
-            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == "Rhino document mesh buffer bytes"
-                    && limit.limit == 0 && limit.used == 0 && limit.additional == 12));
-    }
-
-    #[test]
-    fn active_miter_unitizes_and_applies_only_above_the_z_threshold() {
-        assert_eq!(
-            active_miter(true, Vector3::new(0.0, 1.2, 1.6)).map(Vector3::from),
-            Some(Vector3::new(0.0, 0.6, 0.8))
-        );
-        assert_eq!(active_miter(true, Vector3::new(1.0, 0.0, 0.01)), None);
-        assert_eq!(active_miter(true, Vector3::new(0.0, 0.0, 0.0)), None);
-        assert!(mitered_local(
-            Vector3::new(1.0, 0.0, 0.0),
-            active_miter(true, Vector3::new(0.0, 1.2, 1.6)),
-            0
-        )
-        .is_ok());
-        let plain = cap_frame(
-            Vector3::new(1.0, 0.0, 0.0),
-            Vector3::new(0.0, 1.0, 0.0),
-            Vector3::new(0.0, 0.0, 1.0),
-            None,
-            0,
-        )
-        .expect("required invariant");
-        let mitered = cap_frame(
-            Vector3::new(1.0, 0.0, 0.0),
-            Vector3::new(0.0, 1.0, 0.0),
-            Vector3::new(0.0, 0.0, 1.0),
-            active_miter(true, Vector3::new(0.0, 1.2, 1.6)),
-            0,
-        )
-        .expect("required invariant");
-        assert_eq!(Vector3::from(plain.2), Vector3::new(0.0, 0.0, 1.0));
-        let mitered_normal: Vector3 = mitered.2.into();
-        assert!((mitered_normal.y - 0.6).abs() < EPS_MITER_DIRECTION);
-        assert!((mitered_normal.z - 0.8).abs() < EPS_MITER_DIRECTION);
-    }
-
-    #[test]
-    fn malformed_mesh_cache_is_dropped_without_losing_analytic_geometry() {
-        let malformed = crc_chunk(CHUNKS, ANONYMOUS, &[1, 0, 0, 0, 0, 0, 0, 0, 2]);
-        let bytes = payload(3, [false, false], Some(malformed));
-        let decoded = decode(
-            &bytes,
-            0..bytes.len(),
-            ArchiveVersion::V5,
-            None,
-            MillimeterScale::IDENTITY,
-            &mut crate::mesh::MeshBudget::new(),
-        )
-        .expect("required invariant");
-        assert_eq!(decoded.boundaries.len(), 1);
-        assert!(decoded.meshes.is_empty());
-        assert_eq!(decoded.warnings.len(), 1);
-    }
-
-    #[test]
-    fn malformed_mesh_cache_diagnostic_refuses_collection_limit() {
-        let malformed = crc_chunk(CHUNKS, ANONYMOUS, &[1, 0, 0, 0, 0, 0, 0, 0, 2]);
-        let bytes = payload(3, [false, false], Some(malformed));
-        let mut limit = 0_u64;
-        for _ in 0..128 {
-            let arena = cadmpeg_core::decode::DecodeArena::new();
-            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-            policy.limits.max_collection_items = limit;
-            let (ctx, root) =
-                cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-                    .expect("root view");
-            let refusal = super::decode(
-                crate::mesh::MeshExpand::new(&ctx, root),
-                &bytes,
-                0..bytes.len(),
-                ExtrusionFormat {
-                    archive: ArchiveVersion::V5,
-                    writer_version: None,
-                    scale: MillimeterScale::IDENTITY,
-                },
-                &[],
-                &mut crate::mesh::MeshBudget::new(),
-            )
-            .expect_err("mesh cache warning exceeds collection limit");
-            let GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(item)) = refusal
-            else {
-                panic!("expected resource refusal, got {refusal:?}");
-            };
-            if item.operation == "Rhino diagnostics" {
-                return;
-            }
-            limit = (item.used + item.additional).max(limit + 1);
-        }
-        panic!("mesh cache diagnostic boundary was not reached");
-    }
-
-    #[test]
-    fn optional_mesh_cache_propagates_decode_retained_limit() {
-        let bytes = payload(3, [false, false], Some(one_mesh_cache()));
-        let run = |cap| {
-            let arena = cadmpeg_core::decode::DecodeArena::new();
-            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-            policy.limits.max_retained_bytes = cap;
-            let (ctx, root) =
-                cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-                    .expect("root view");
-            let refusal = super::decode(
-                crate::mesh::MeshExpand::new(&ctx, root),
-                &bytes,
-                0..bytes.len(),
-                ExtrusionFormat {
-                    archive: ArchiveVersion::V5,
-                    writer_version: None,
-                    scale: MillimeterScale::IDENTITY,
-                },
-                &[],
-                &mut crate::mesh::MeshBudget::new(),
-            )
-            .expect_err("cache buffer exceeds zero retained bytes");
-            if let GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(first)) = &refusal {
-                assert_eq!(
-                    first.dimension,
-                    cadmpeg_core::decode::ResourceDimension::RetainedBytes
-                );
-                assert!(matches!(ctx.finish_session(),
-                Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == *first));
-            }
-            refusal
-        };
-        let refusal = run(crate::test_support::retained_limit_at(
-            "rhino_mesh_buffer",
-            0,
-            |cap| match run(cap) {
-                GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit)) => limit,
-                error => panic!("unexpected resource refusal: {error:?}"),
-            },
-        ));
-        assert!(matches!(
-            refusal,
-            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == "rhino_mesh_buffer"
-        ));
-    }
-
-    #[test]
-    fn extrusion_mesh_cache_child_range_refuses_collection_limit() {
-        let bytes = one_mesh_cache();
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let (ctx, root) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-                .expect("root view");
-        let mut reader =
-            crate::chunks::BoundedReader::new(&bytes, 0, bytes.len()).expect("valid cache range");
-        let refusal = read_mesh_cache(
-            crate::mesh::MeshExpand::new(&ctx, root),
-            &bytes,
-            &mut reader,
-            ExtrusionFormat {
-                archive: ArchiveVersion::V5,
-                writer_version: None,
-                scale: MillimeterScale::IDENTITY,
-            },
-            &mut crate::mesh::MeshBudget::new(),
-            &mut Diagnostics::new(),
-        )
-        .expect_err("one cache child exceeds zero collection items");
-        assert!(matches!(
-            refusal,
-            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == "Rhino extrusion mesh-cache children"
-        ));
-
-        let meshes = crate::decode::with_expand_bytes(&bytes, |expand| {
-            let mut reader = crate::chunks::BoundedReader::new(&bytes, 0, bytes.len())
-                .expect("valid cache range");
-            read_mesh_cache(
-                expand,
-                &bytes,
-                &mut reader,
-                ExtrusionFormat {
-                    archive: ArchiveVersion::V5,
-                    writer_version: None,
-                    scale: MillimeterScale::IDENTITY,
-                },
-                &mut crate::mesh::MeshBudget::new(),
-                &mut Diagnostics::new(),
-            )
-        })
-        .expect("service profile admits the cache");
-        assert_eq!(meshes.len(), 1);
-    }
-
-    #[test]
-    fn extrusion_mesh_cache_id_refuses_retained_limit() {
-        let bytes = one_mesh_cache();
-        let run = |cap| {
-            let arena = cadmpeg_core::decode::DecodeArena::new();
-            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-            policy.limits.max_retained_bytes = cap;
-            let (ctx, root) =
-                cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-                    .expect("root view");
-            let mut reader = crate::chunks::BoundedReader::new(&bytes, 0, bytes.len())
-                .expect("valid cache range");
-            let refusal = read_mesh_cache(
-                crate::mesh::MeshExpand::new(&ctx, root),
-                &bytes,
-                &mut reader,
-                ExtrusionFormat {
-                    archive: ArchiveVersion::V5,
-                    writer_version: None,
-                    scale: MillimeterScale::IDENTITY,
-                },
-                &mut crate::mesh::MeshBudget::new(),
-                &mut Diagnostics::new(),
-            )
-            .expect_err("cache ID exceeds the retained vertex buffer allowance");
-            refusal
-        };
-        let refusal = run(crate::test_support::retained_limit_at(
-            "Rhino extrusion mesh-cache ID",
-            0,
-            |cap| match run(cap) {
-                GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit)) => limit,
-                error => panic!("unexpected resource refusal: {error:?}"),
-            },
-        ));
-        assert!(matches!(
-            refusal,
-            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == "Rhino extrusion mesh-cache ID"
-        ));
-    }
-
-    #[test]
-    fn valid_mesh_cache_item_reuses_bounded_mesh_decoder() {
-        let bytes = payload(3, [false, false], Some(one_mesh_cache()));
-        let decoded = decode(
-            &bytes,
-            0..bytes.len(),
-            ArchiveVersion::V5,
-            None,
-            MillimeterScale::IDENTITY,
-            &mut crate::mesh::MeshBudget::new(),
-        )
-        .expect("required invariant");
-        assert_eq!(decoded.boundaries.len(), 1);
-        assert_eq!(decoded.meshes.len(), 1);
-        assert!(decoded.warnings.is_empty());
-    }
-
-    #[test]
-    fn v5_mesh_cache_consumes_two_mesh_slots_and_a_null_slot() {
-        let mut bytes = one_mesh_wrapper();
-        bytes.extend(null_object_wrapper());
-        bytes.extend(null_object_wrapper());
-        let descriptor = UserdataDescriptor::Known(ClassUserdata {
-            range: 0..bytes.len(),
-            version: (2, 2),
-            class_uuid: ON_V5_EXTRUSION_DISPLAY_MESH_CACHE,
-            item_uuid: ON_V5_EXTRUSION_DISPLAY_MESH_CACHE,
-            copy_count: 1,
-            transform_range: 0..0,
-            application_uuid: None,
-            save_context: None,
-            payload_range: 0..bytes.len(),
-        });
-        let result = crate::decode::with_expand_bytes(&bytes, |expand| {
-            read_v5_mesh_cache(
-                expand,
-                &bytes,
-                ExtrusionFormat {
-                    archive: ArchiveVersion::V5,
-                    writer_version: None,
-                    scale: MillimeterScale::IDENTITY,
-                },
-                std::slice::from_ref(&descriptor),
-                &mut crate::mesh::MeshBudget::new(),
-                &mut Diagnostics::new(),
-            )
-        })
-        .expect("V5 mesh cache");
-        assert_eq!(result.len(), 1);
-    }
-
-    #[test]
-    fn v5_extrusion_mesh_cache_id_refuses_retained_limit() {
-        let mut bytes = one_mesh_wrapper();
-        bytes.extend(null_object_wrapper());
-        bytes.extend(null_object_wrapper());
-        let descriptor = UserdataDescriptor::Known(ClassUserdata {
-            range: 0..bytes.len(),
-            version: (2, 2),
-            class_uuid: ON_V5_EXTRUSION_DISPLAY_MESH_CACHE,
-            item_uuid: ON_V5_EXTRUSION_DISPLAY_MESH_CACHE,
-            copy_count: 1,
-            transform_range: 0..0,
-            application_uuid: None,
-            save_context: None,
-            payload_range: 0..bytes.len(),
-        });
-        let run = |cap| {
-            let arena = cadmpeg_core::decode::DecodeArena::new();
-            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-            policy.limits.max_retained_bytes = cap;
-            let (ctx, root) =
-                cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-                    .expect("root view");
-            let refusal = read_v5_mesh_cache(
-                crate::mesh::MeshExpand::new(&ctx, root),
-                &bytes,
-                ExtrusionFormat {
-                    archive: ArchiveVersion::V5,
-                    writer_version: None,
-                    scale: MillimeterScale::IDENTITY,
-                },
-                std::slice::from_ref(&descriptor),
-                &mut crate::mesh::MeshBudget::new(),
-                &mut Diagnostics::new(),
-            )
-            .expect_err("V5 cache ID exceeds the retained vertex buffer allowance");
-            refusal
-        };
-        let refusal = run(crate::test_support::retained_limit_at(
-            "Rhino V5 extrusion mesh-cache ID",
-            0,
-            |cap| match run(cap) {
-                GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit)) => limit,
-                error => panic!("unexpected resource refusal: {error:?}"),
-            },
-        ));
-        assert!(matches!(
-            refusal,
-            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == "Rhino V5 extrusion mesh-cache ID"
-        ));
-    }
-
-    #[test]
-    fn v5_mesh_cache_skips_a_bounded_suffix_after_three_slots() {
-        let mut bytes = one_mesh_wrapper();
-        bytes.extend(null_object_wrapper());
-        bytes.extend(null_object_wrapper());
-        bytes.extend([0xa5, 0x5a]);
-        let descriptor = UserdataDescriptor::Known(ClassUserdata {
-            range: 0..bytes.len(),
-            version: (2, 2),
-            class_uuid: ON_V5_EXTRUSION_DISPLAY_MESH_CACHE,
-            item_uuid: ON_V5_EXTRUSION_DISPLAY_MESH_CACHE,
-            copy_count: 1,
-            transform_range: 0..0,
-            application_uuid: None,
-            save_context: None,
-            payload_range: 0..bytes.len(),
-        });
-        let result = crate::decode::with_expand_bytes(&bytes, |expand| {
-            read_v5_mesh_cache(
-                expand,
-                &bytes,
-                ExtrusionFormat {
-                    archive: ArchiveVersion::V5,
-                    writer_version: None,
-                    scale: MillimeterScale::IDENTITY,
-                },
-                std::slice::from_ref(&descriptor),
-                &mut crate::mesh::MeshBudget::new(),
-                &mut Diagnostics::new(),
-            )
-        })
-        .expect("V5 mesh cache suffix");
-        assert_eq!(result.len(), 1);
-    }
-
-    #[test]
-    fn payload_suffix_is_skipped() {
-        let mut bytes = payload(2, [false, false], None);
-        let crc_offset = bytes.len() - 4;
-        bytes.insert(crc_offset, 0xff);
-        let body_len = i64::from_le_bytes(bytes[4..12].try_into().expect("required invariant")) + 1;
-        bytes[4..12].copy_from_slice(&body_len.to_le_bytes());
-        let body = &bytes[12..bytes.len() - 4];
-        let crc = crc32fast::hash(body);
-        let end = bytes.len();
-        bytes[end - 4..].copy_from_slice(&crc.to_le_bytes());
-        assert!(decode(
-            &bytes,
-            0..bytes.len(),
-            ArchiveVersion::V5,
-            None,
-            MillimeterScale::IDENTITY,
-            &mut crate::mesh::MeshBudget::new(),
-        )
-        .is_ok());
-    }
-
-    const SMALL_MITER_TILT: f64 = 1.0e-8;
-    #[test]
-    fn numerical_seventh_miter_preserves_a_shallow_plane_tilt() {
-        let normal = super::active_miter(true, Vector3::new(SMALL_MITER_TILT, 0.0, 1.0)).unwrap();
-        let point = super::mitered_local(Vector3::new(1.0e8, 0.0, 0.0), Some(normal), 0).unwrap();
-        assert!((point.z + 1.0).abs() <= 8.0 * f64::EPSILON);
-        assert!(Vector3::from(normal).dot(point).abs() <= 8.0 * f64::EPSILON);
-    }
-}
+pub(crate) mod tests;
