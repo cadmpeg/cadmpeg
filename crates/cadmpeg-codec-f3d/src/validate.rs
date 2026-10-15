@@ -7075,10 +7075,11 @@ fn validate_face_operands<'a>(
                             Some(design::DesignFeatureFamily::Split) => {
                                 operand.scope_reference_ordinal == 1
                             }
-                            Some(design::DesignFeatureFamily::Hole) => {
-                                operand.recipe_kind
-                                    == records::recipes::ConstructionRecipeKind::BoundedFace
-                            }
+                            Some(design::DesignFeatureFamily::Hole) => matches!(
+                                operand.recipe_kind,
+                                records::recipes::ConstructionRecipeKind::BoundedFace
+                                    | records::recipes::ConstructionRecipeKind::Face
+                            ),
                             Some(design::DesignFeatureFamily::Assemble)
                                 if scope.kind()
                                     == crate::records::feature::scope::DesignFeatureKind::AsBuilt
