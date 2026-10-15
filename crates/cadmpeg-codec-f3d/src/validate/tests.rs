@@ -827,9 +827,20 @@ fn validation_accepts_hole_and_surface_trim_construction_group_roles() {
     .iter()
     .any(invalid_frame));
 
+    // A Hole body group can use role 0x8 for its whole-body recipe operand.
     f3d_native_mut(&mut ir).design_construction_operand_groups[1].operand_role =
         crate::records::topology::construction::DesignConstructionOperandRole::Other(
             DesignOperandRole::BODIES_B,
+        );
+    assert!(!crate::test_support::with_decode_context(|ctx| {
+        crate::validate::validate_native_charged(ctx, &ir).expect("service native validation")
+    })
+    .iter()
+    .any(invalid_frame));
+
+    f3d_native_mut(&mut ir).design_construction_operand_groups[1].operand_role =
+        crate::records::topology::construction::DesignConstructionOperandRole::Other(
+            DesignOperandRole::ROLE_0X21,
         );
     assert!(crate::test_support::with_decode_context(|ctx| {
         crate::validate::validate_native_charged(ctx, &ir).expect("service native validation")
