@@ -1468,18 +1468,34 @@ fn semantic_writer_round_trips_all_flex_modes() {
         .iter()
         .map(|feature| feature.evaluation.definition())
         .collect::<Vec<_>>();
-    assert!(
-        matches!(modes[0], FeatureDefinition::Operation(FeatureOperation::Flex { mode: FlexMode::Bending { angle }, .. }) if (angle.get() - 0.1).abs() < 1.0e-12)
-    );
-    assert!(
-        matches!(modes[1], FeatureDefinition::Operation(FeatureOperation::Flex { mode: FlexMode::Twisting { angle }, .. }) if (angle.get() - 0.2).abs() < 1.0e-12)
-    );
-    assert!(
-        matches!(modes[2], FeatureDefinition::Operation(FeatureOperation::Flex { mode: FlexMode::Tapering { factor }, .. }) if (factor.get() - 2.0).abs() < EPS_SCALAR_ROUND_TRIP)
-    );
-    assert!(
-        matches!(modes[3], FeatureDefinition::Operation(FeatureOperation::Flex { mode: FlexMode::Stretching { distance }, .. }) if (distance.get() - 12.0).abs() < 1.0e-12)
-    );
+    assert!(matches!(
+        modes[0],
+        FeatureDefinition::Operation(
+            FeatureOperation::Flex { mode: FlexMode::Bending { angle }, .. }
+        )
+            if (angle.get() - 0.1).abs() < 1.0e-12
+    ));
+    assert!(matches!(
+        modes[1],
+        FeatureDefinition::Operation(
+            FeatureOperation::Flex { mode: FlexMode::Twisting { angle }, .. }
+        )
+            if (angle.get() - 0.2).abs() < 1.0e-12
+    ));
+    assert!(matches!(
+        modes[2],
+        FeatureDefinition::Operation(
+            FeatureOperation::Flex { mode: FlexMode::Tapering { factor }, .. }
+        )
+            if (factor.get() - 2.0).abs() < EPS_SCALAR_ROUND_TRIP
+    ));
+    assert!(matches!(
+        modes[3],
+        FeatureDefinition::Operation(
+            FeatureOperation::Flex { mode: FlexMode::Stretching { distance }, .. }
+        )
+            if (distance.get() - 12.0).abs() < 1.0e-12
+    ));
 }
 
 #[test]

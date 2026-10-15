@@ -519,7 +519,13 @@ fn semantic_writer_retains_unresolved_native_pattern_construction() {
         FeatureDefinition::Operation(FeatureOperation::Pattern {
             seeds,
             pattern: admitted_pattern,
-        }) if matches!(admitted_pattern.definition(), PatternTransform::Unresolved { form: Some(cadmpeg_ir::features::patterns::PatternForm::Linear) } if seeds.is_empty())
+        }) if matches!(
+            admitted_pattern.definition(),
+            PatternTransform::Unresolved {
+                form: Some(cadmpeg_ir::features::patterns::PatternForm::Linear)
+            }
+                if seeds.is_empty()
+        )
     ));
     decoded.ir_mut().model.features[0].name = Some("Renamed pattern".into());
 
@@ -634,7 +640,15 @@ fn semantic_writer_round_trips_typed_sweep() {
             twist: Some(twist),
             scale: Some(scale),
             ..
-        }) if matches!((shape.referenced_profile(), shape.mode(),), (Some(PlanarProfileRef::Feature(profile)), cadmpeg_ir::features::SweepMode::Solid { op: cadmpeg_ir::features::SolidSweepOperation::NewBody },) if scale.get() == 1.5 && profile == &profile_a
+        }) if matches!(
+            (shape.referenced_profile(), shape.mode(),),
+            (
+                Some(PlanarProfileRef::Feature(profile)),
+                cadmpeg_ir::features::SweepMode::Solid {
+                    op: cadmpeg_ir::features::SolidSweepOperation::NewBody
+                },
+            )
+                if scale.get() == 1.5 && profile == &profile_a
             && path_ref == &path
             && (twist.get() - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12)));
 
@@ -1148,16 +1162,24 @@ fn semantic_writer_round_trips_typed_rib() {
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let profile_ref = decoded.ir().model.features[0].id.clone();
     assert!(matches!(
-        decoded.ir().model.features[1].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Rib {
-            construction: cadmpeg_ir::features::RibConstruction {
-                profile,
-                direction: Some(geometry_1),
-                thickness: Some(actual_thickness),
-                side: Some(RibSide::OneSided),
-                draft: RibDraft::Angle(value),
-            },
-            op: BooleanOp::Join,
-        }) if matches!((profile.as_ref(),), (Some(cadmpeg_ir::features::PlanarProfileRef::Feature(profile)),) if ( (profile == &profile_ref && (value.get() - 5f64.to_radians()).abs() < 1.0e-12) && actual_thickness.get() == 2.0) && matches!(geometry_1.get(), Vector3 { x: 0.0, y: 1.0, z: 0.0 }))));
+    decoded.ir().model.features[1].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Rib {
+        construction: cadmpeg_ir::features::RibConstruction {
+            profile,
+            direction: Some(geometry_1),
+            thickness: Some(actual_thickness),
+            side: Some(RibSide::OneSided),
+            draft: RibDraft::Angle(value),
+        },
+        op: BooleanOp::Join,
+    }) if matches!(
+        (profile.as_ref(),),
+        (Some(cadmpeg_ir::features::PlanarProfileRef::Feature(profile)),)
+            if (
+                (profile == &profile_ref && (value.get() - 5f64.to_radians()).abs() < 1.0e-12)
+                && actual_thickness.get() == 2.0
+            )
+            && matches!(geometry_1.get(), Vector3 { x: 0.0, y: 1.0, z: 0.0 })
+    )));
 
     {
         let mut ir_edit = decoded.ir_mut();

@@ -1868,8 +1868,19 @@ pub(super) fn inferred_point_coordinates_by_index(
         let [first, second] = scalar.operands.as_slice() else {
             continue;
         };
-        if scalar.feature_ref.as_deref() != Some(feature) || scalar.role != FeatureInputScalarRole::Driving || scalar.value.get() < 0.0
-            || ![first, second].iter().all(|operand| matches!(operand.kind, FeatureInputOperandKind::Native(tag) if SOLVER_POINT_REFERENCE_TAGS.contains(&tag.value()))) { continue; }
+        if scalar.feature_ref.as_deref() != Some(feature)
+            || scalar.role != FeatureInputScalarRole::Driving
+            || scalar.value.get() < 0.0
+            || ![first, second].iter().all(|operand| {
+                matches!(
+                    operand.kind,
+                    FeatureInputOperandKind::Native(tag)
+                        if SOLVER_POINT_REFERENCE_TAGS.contains(&tag.value())
+                )
+            })
+        {
+            continue;
+        }
         constraints.push((
             [
                 u32::from(first.entity_index),

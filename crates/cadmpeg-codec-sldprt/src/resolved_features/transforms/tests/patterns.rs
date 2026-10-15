@@ -574,7 +574,11 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
             ref seeds,
             pattern: admitted_pattern,
             ..
-        }) if matches!(admitted_pattern.definition(), PatternTransform::CurveDriven { path: None, .. } if seeds == &[PatternSeed::Feature(features[2].id.clone())])
+        }) if matches!(
+            admitted_pattern.definition(),
+            PatternTransform::CurveDriven { path: None, .. }
+                if seeds == &[PatternSeed::Feature(features[2].id.clone())]
+        )
     ));
     assert_eq!(
         features[0].dependencies.as_slice(),
@@ -932,7 +936,13 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
         FeatureDefinition::Operation(FeatureOperation::Pattern {
             ref seeds,
             pattern: admitted_pattern,
-        }) if matches!(admitted_pattern.definition(), PatternTransform::Unresolved { form: Some(cadmpeg_ir::features::patterns::PatternForm::Mirror) } if seeds == &[PatternSeed::Feature(features[2].id.clone())])
+        }) if matches!(
+            admitted_pattern.definition(),
+            PatternTransform::Unresolved {
+                form: Some(cadmpeg_ir::features::patterns::PatternForm::Mirror)
+            }
+                if seeds == &[PatternSeed::Feature(features[2].id.clone())]
+        )
     ));
     assert_eq!(
         features[0].dependencies.as_slice(),
@@ -974,11 +984,15 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
         }));
     bind_sweep_adjacent_profiles(&mut features, &[sweep_history], std::slice::from_ref(&lane));
     assert!(matches!(
-        features[0].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Sweep {
-            shape,
-            path: Some(PathRef::Sketch(ref path)),
-            ..
-        }) if matches!((shape.referenced_profile(),), (Some(cadmpeg_ir::features::PlanarProfileRef::Sketch(ref profile)),) if profile == &sketch && path == &path_sketch)));
+    features[0].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Sweep {
+        shape,
+        path: Some(PathRef::Sketch(ref path)),
+        ..
+    }) if matches!(
+        (shape.referenced_profile(),),
+        (Some(cadmpeg_ir::features::PlanarProfileRef::Sketch(ref profile)),)
+            if profile == &sketch && path == &path_sketch
+    )));
     assert_eq!(
         features[0].dependencies.as_slice(),
         [features[1].id.clone(), features[2].id.clone()]

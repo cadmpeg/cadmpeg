@@ -197,7 +197,10 @@ fn hole_wizard_drill_point_profile_retains_bore_and_blind_depth() {
                     drill_point_angle,
                 },
                 ..
-            }, Some(actual_diameter),) if ((drill_point_angle.get() - 118.0_f64.to_radians()).abs() < 1.0e-12) && actual_diameter.get() == 4.2 && actual_length.get() == 10.0)));
+            }, Some(actual_diameter),)
+                if ((drill_point_angle.get() - 118.0_f64.to_radians()).abs() < 1.0e-12)
+                    && actual_diameter.get() == 4.2
+                    && actual_length.get() == 10.0)));
 }
 
 #[test]

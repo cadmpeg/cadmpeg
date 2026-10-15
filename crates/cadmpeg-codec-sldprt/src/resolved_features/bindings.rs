@@ -315,7 +315,12 @@ pub(crate) fn bind_pattern_inputs(
                     FeatureDefinition::Operation(FeatureOperation::Pattern {
                         pattern: admitted_pattern,
                         ..
-                    }) if matches!(admitted_pattern.definition(), PatternTransform::Unresolved { form: Some(cadmpeg_ir::features::patterns::PatternForm::Linear) })
+                    }) if matches!(
+                        admitted_pattern.definition(),
+                        PatternTransform::Unresolved {
+                            form: Some(cadmpeg_ir::features::patterns::PatternForm::Linear)
+                        }
+                    )
                 ) {
                     if let Some((spacing, count)) =
                         object_start.filter(|start| *start < end).and_then(|start| {
@@ -652,8 +657,11 @@ pub(crate) fn bind_pattern_inputs(
         let [(origin, normal)] = candidates.as_slice() else {
             continue;
         };
-        if matches!(model_features[index].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. }) if pattern.is_unresolved())
-        {
+        if matches!(
+            model_features[index].evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. })
+                if pattern.is_unresolved()
+        ) {
             let admitted = PatternKind::new(PatternTransform::Mirror {
                 plane_origin: admitted_point(*origin)?,
                 plane_normal: admitted_direction(*normal)?,
@@ -731,8 +739,16 @@ pub(crate) fn bind_pattern_inputs(
         else {
             continue;
         };
-        if !matches!(model_features[index].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. }) if matches!(pattern.definition(), PatternTransform::Unresolved { form: Some(cadmpeg_ir::features::patterns::PatternForm::Circular) }))
-        {
+        if !matches!(
+            model_features[index].evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. })
+                if matches!(
+                    pattern.definition(),
+                    PatternTransform::Unresolved {
+                        form: Some(cadmpeg_ir::features::patterns::PatternForm::Circular)
+                    }
+                )
+        ) {
             continue;
         }
         let admitted = PatternKind::new(PatternTransform::Circular {

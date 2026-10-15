@@ -224,7 +224,9 @@ fn decode_retains_invalid_feature_directions_and_angles_as_native() {
             ref groups,
             ..
         }) if matches!(groups.as_slice(), [cadmpeg_ir::features::edge_treatments::ChamferGroup {
-            spec: cadmpeg_ir::features::edge_treatments::ChamferSpec::Unresolved { form: Some(cadmpeg_ir::features::edge_treatments::ChamferForm::DistanceAngle) },
+            spec: cadmpeg_ir::features::edge_treatments::ChamferSpec::Unresolved {
+                form: Some(cadmpeg_ir::features::edge_treatments::ChamferForm::DistanceAngle)
+            },
             ..
         }])
     ));
