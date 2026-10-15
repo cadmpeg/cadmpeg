@@ -33,6 +33,8 @@ fn state(state_id: i64) -> AsmDeltaState {
 #[test]
 fn history_state_queries_reuse_indexes_and_reject_duplicate_states() {
     let history = |states| AsmHistory {
+        topology_scope: crate::history_records::AsmTopologyScope::Complete,
+        materialized: crate::history_records::MaterializedTopologies::default(),
         id: "f3d:history".into(),
         byte_offset: 0,
         preamble: None,

@@ -32,6 +32,8 @@ fn discard_projection_caches_retains_compact_mirror_plane_topology() {
         ..Default::default()
     };
     let mut histories = [AsmHistory {
+        topology_scope: crate::history_records::AsmTopologyScope::Complete,
+        materialized: crate::history_records::MaterializedTopologies::default(),
         id: "history".into(),
         byte_offset: 0,
         preamble: None,
@@ -147,6 +149,8 @@ fn mirror_face_recipe_accepts_coincident_preceding_plane_faces() {
         ..Default::default()
     };
     let history = AsmHistory {
+        topology_scope: crate::history_records::AsmTopologyScope::Complete,
+        materialized: crate::history_records::MaterializedTopologies::default(),
         id: "history".into(),
         byte_offset: 0,
         preamble: None,
@@ -260,6 +264,8 @@ fn mirror_coedge_plane_uses_unique_planar_face_in_radial_cycle() {
     assert_eq!(plane.normal, Vector3::new(0.0, 0.0, 1.0));
 
     let history = AsmHistory {
+        topology_scope: crate::history_records::AsmTopologyScope::Complete,
+        materialized: crate::history_records::MaterializedTopologies::default(),
         id: "history".into(),
         byte_offset: 0,
         preamble: None,

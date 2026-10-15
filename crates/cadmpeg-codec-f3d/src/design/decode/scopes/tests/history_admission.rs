@@ -35,6 +35,8 @@ fn history_state(state_id: i64, previous_state_id: Option<i64>) -> AsmDeltaState
             AsmHistoricalTopology::default(),
         ),
         transition: previous_state_id.map(|previous_state_id| AsmHistoricalTransition {
+            record_revisions: Vec::new(),
+            rows: crate::history_records::AsmHistoricalRowsDelta::default(),
             previous_state_id: Some(previous_state_id),
             records: AsmHistoricalEntityDelta::default(),
             topology: AsmHistoricalTopologyDelta::default(),
@@ -44,6 +46,8 @@ fn history_state(state_id: i64, previous_state_id: Option<i64>) -> AsmDeltaState
 
 fn history(states: Vec<AsmDeltaState>) -> AsmHistory {
     AsmHistory {
+        topology_scope: crate::history_records::AsmTopologyScope::Complete,
+        materialized: crate::history_records::MaterializedTopologies::default(),
         id: "history".into(),
         byte_offset: 0,
         preamble: None,

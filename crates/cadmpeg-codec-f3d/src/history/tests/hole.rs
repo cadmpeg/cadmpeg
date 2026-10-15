@@ -88,6 +88,8 @@ fn test_history() -> AsmHistory {
     topology_delta.edges.inserted = vec![70];
     topology_delta.surfaces.inserted = vec![300];
     AsmHistory {
+        topology_scope: crate::history_records::AsmTopologyScope::Complete,
+        materialized: crate::history_records::MaterializedTopologies::default(),
         id: "history".into(),
         byte_offset: 0,
         preamble: None,
@@ -97,6 +99,8 @@ fn test_history() -> AsmHistory {
                 2,
                 result,
                 Some(AsmHistoricalTransition {
+                    record_revisions: Vec::new(),
+                    rows: crate::history_records::AsmHistoricalRowsDelta::default(),
                     previous_state_id: Some(1),
                     records: AsmHistoricalEntityDelta::default(),
                     topology: topology_delta,

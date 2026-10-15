@@ -17,6 +17,8 @@ use crate::history_records::{AsmDeltaState, AsmHistoricalTopology, AsmHistory};
 #[test]
 fn projection_caches_end_after_history_consumers() {
     let transition = crate::history_records::AsmHistoricalTransition {
+        record_revisions: Vec::new(),
+        rows: crate::history_records::AsmHistoricalRowsDelta::default(),
         previous_state_id: Some(1),
         records: Default::default(),
         topology: Default::default(),
@@ -45,6 +47,8 @@ fn projection_caches_end_after_history_consumers() {
         transition: Some(transition.clone()),
     };
     let mut histories = [AsmHistory {
+        topology_scope: crate::history_records::AsmTopologyScope::Complete,
+        materialized: crate::history_records::MaterializedTopologies::default(),
         id: "f3d:test:history#0".into(),
         byte_offset: 0,
         preamble: None,

@@ -104,12 +104,16 @@ fn move_body_selection_uses_unique_owning_history() {
         }
     };
     let mut transition = AsmHistoricalTransition {
+        record_revisions: Vec::new(),
+        rows: crate::history_records::AsmHistoricalRowsDelta::default(),
         previous_state_id: Some(41),
         records: AsmHistoricalEntityDelta::default(),
         topology: AsmHistoricalTopologyDelta::default(),
     };
     transition.topology.bodies.updated.push(1);
     let history = AsmHistory {
+        topology_scope: crate::history_records::AsmTopologyScope::Complete,
+        materialized: crate::history_records::MaterializedTopologies::default(),
         id: "history".into(),
         byte_offset: 0,
         preamble: None,
@@ -120,6 +124,8 @@ fn move_body_selection_uses_unique_owning_history() {
         ],
     };
     let unrelated_history = AsmHistory {
+        topology_scope: crate::history_records::AsmTopologyScope::Complete,
+        materialized: crate::history_records::MaterializedTopologies::default(),
         id: "unrelated-history".into(),
         byte_offset: 0,
         preamble: None,

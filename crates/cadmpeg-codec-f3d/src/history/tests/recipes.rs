@@ -222,6 +222,8 @@ fn work_point_vertex_recipe_resolves_common_historical_vertex() {
         ..AsmHistoricalTopology::default()
     };
     let history = AsmHistory {
+        topology_scope: crate::history_records::AsmTopologyScope::Complete,
+        materialized: crate::history_records::MaterializedTopologies::default(),
         id: "f3d:history".into(),
         byte_offset: 0,
         preamble: None,
@@ -364,6 +366,8 @@ fn feature_input_topology_projects_historical_vertices() {
         native_ref: Some(scope.id.clone()),
     };
     let history = AsmHistory {
+        topology_scope: crate::history_records::AsmTopologyScope::Complete,
+        materialized: crate::history_records::MaterializedTopologies::default(),
         id: "f3d:history".into(),
         byte_offset: 0,
         preamble: None,
@@ -805,12 +809,16 @@ fn body_recipe_history_fixture() -> (
         2,
         topology,
         Some(AsmHistoricalTransition {
+            record_revisions: Vec::new(),
+            rows: crate::history_records::AsmHistoricalRowsDelta::default(),
             previous_state_id: Some(1),
             records: AsmHistoricalEntityDelta::default(),
             topology: AsmHistoricalTopologyDelta::default(),
         }),
     );
     let history = AsmHistory {
+        topology_scope: crate::history_records::AsmTopologyScope::Complete,
+        materialized: crate::history_records::MaterializedTopologies::default(),
         id: "history".into(),
         byte_offset: 0,
         preamble: None,
@@ -1262,6 +1270,8 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         })
         .unwrap();
     let move_history = crate::history_records::AsmHistory {
+        topology_scope: crate::history_records::AsmTopologyScope::Complete,
+        materialized: crate::history_records::MaterializedTopologies::default(),
         id: "f3d:history".into(),
         byte_offset: 0,
         preamble: None,

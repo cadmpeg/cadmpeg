@@ -82,6 +82,8 @@ fn sole_transition_deletion_does_not_supply_operand_identity() {
             ..AsmHistoricalTopology::default()
         },
         Some(AsmHistoricalTransition {
+            record_revisions: Vec::new(),
+            rows: crate::history_records::AsmHistoricalRowsDelta::default(),
             previous_state_id: Some(1),
             records: AsmHistoricalEntityDelta::default(),
             topology: AsmHistoricalTopologyDelta {
@@ -94,6 +96,8 @@ fn sole_transition_deletion_does_not_supply_operand_identity() {
         }),
     );
     let history = AsmHistory {
+        topology_scope: crate::history_records::AsmTopologyScope::Complete,
+        materialized: crate::history_records::MaterializedTopologies::default(),
         id: "f3d:history".into(),
         byte_offset: 0,
         preamble: None,

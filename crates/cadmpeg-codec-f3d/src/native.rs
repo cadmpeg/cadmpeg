@@ -192,6 +192,8 @@ struct FlatAsmHistory<'a> {
     history_entry_count: Option<i64>,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     record_table_binding_budget_exceeded: bool,
+    #[serde(skip_serializing_if = "crate::history_records::is_default")]
+    topology_scope: crate::history_records::AsmTopologyScope,
     states: EmptyList,
 }
 
@@ -203,6 +205,7 @@ impl<'a> From<&'a AsmHistory> for FlatAsmHistory<'a> {
             stream_size: history.stream_size(),
             history_entry_count: history.history_entry_count(),
             record_table_binding_budget_exceeded: history.record_table_binding_budget_exceeded,
+            topology_scope: history.topology_scope,
             states: EmptyList,
         }
     }

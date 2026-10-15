@@ -125,6 +125,8 @@ fn mirror_plane_binding_falls_back_when_identity_has_no_persistent_value() {
         transition,
     };
     let history = crate::history_records::AsmHistory {
+        topology_scope: crate::history_records::AsmTopologyScope::Complete,
+        materialized: crate::history_records::MaterializedTopologies::default(),
         id: "history".into(),
         byte_offset: 0,
         preamble: None,
@@ -134,6 +136,8 @@ fn mirror_plane_binding_falls_back_when_identity_has_no_persistent_value() {
                 2,
                 crate::history_records::AsmHistoricalTopology::default(),
                 Some(crate::history_records::AsmHistoricalTransition {
+                    record_revisions: Vec::new(),
+                    rows: crate::history_records::AsmHistoricalRowsDelta::default(),
                     previous_state_id: Some(1),
                     records: Default::default(),
                     topology: Default::default(),
@@ -339,6 +343,8 @@ fn historical_mirror_plane_requires_one_exact_plane_in_the_selected_state() {
             face_slot: 27,
         };
     let mut history = AsmHistory {
+        topology_scope: crate::history_records::AsmTopologyScope::Complete,
+        materialized: crate::history_records::MaterializedTopologies::default(),
         id: "history".into(),
         byte_offset: 0,
         preamble: None,

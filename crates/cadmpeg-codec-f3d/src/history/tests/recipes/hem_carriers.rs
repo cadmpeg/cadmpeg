@@ -70,6 +70,8 @@ fn hem_carrier_offsets_prove_fold_direction() {
         ..Default::default()
     };
     let transition = AsmHistoricalTransition {
+        record_revisions: Vec::new(),
+        rows: crate::history_records::AsmHistoricalRowsDelta::default(),
         previous_state_id: Some(1),
         records: Default::default(),
         topology: AsmHistoricalTopologyDelta {
