@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::{
-    parameter_record, preceding_incident_angular_dimension_definition, HashMap, ParameterId,
+    parameter_record, preceding_incident_angular_dimension_definition, BTreeMap, ParameterId,
     Point2, Point3, SketchCurveGeometry, SketchCurveIdentity, SketchEntity, SketchEntityId,
     SketchGeometry, SketchGeometryDefinition, SketchId, SketchPoint, Vector3,
 };
@@ -74,7 +74,7 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
         entity(12, std::f64::consts::FRAC_PI_2),
         entity(13, -std::f64::consts::FRAC_PI_4),
     ];
-    let projected = HashMap::from([
+    let projected = BTreeMap::from([
         ((stream, 10), &entities[0]),
         ((stream, 11), &entities[1]),
         ((stream, 12), &entities[2]),
@@ -139,5 +139,77 @@ fn preceding_incident_angular_parameter_id_refuses_retained_limit() {
     fixture(
         "f3d preceding incident angular parameter id",
         ResourceDimension::RetainedBytes,
+    );
+}
+
+#[test]
+fn preceding_incident_point_source_refuses_work_limit() {
+    fixture(
+        "f3d preceding incident point source",
+        ResourceDimension::WorkUnits,
+    );
+}
+
+#[test]
+fn preceding_incident_point_stream_refuses_work_limit() {
+    fixture(
+        "f3d preceding incident point stream",
+        ResourceDimension::WorkUnits,
+    );
+}
+
+#[test]
+fn preceding_incident_curve_source_refuses_work_limit() {
+    fixture(
+        "f3d preceding incident curve source",
+        ResourceDimension::WorkUnits,
+    );
+}
+
+#[test]
+fn preceding_incident_curve_stream_refuses_work_limit() {
+    fixture(
+        "f3d preceding incident curve stream",
+        ResourceDimension::WorkUnits,
+    );
+}
+
+#[test]
+fn preceding_incident_curve_lookup_refuses_work_limit() {
+    fixture(
+        "f3d preceding incident curve lookup",
+        ResourceDimension::WorkUnits,
+    );
+}
+
+#[test]
+fn preceding_incident_entity_lookup_refuses_work_limit() {
+    fixture(
+        "f3d preceding incident entity lookup",
+        ResourceDimension::WorkUnits,
+    );
+}
+
+#[test]
+fn preceding_incident_sketch_equality_refuses_work_limit() {
+    fixture(
+        "f3d preceding incident sketch equality",
+        ResourceDimension::WorkUnits,
+    );
+}
+
+#[test]
+fn preceding_incident_curve_index_refuses_materialized_limit() {
+    fixture(
+        "f3d preceding incident curve index",
+        ResourceDimension::MaterializedBytes,
+    );
+}
+
+#[test]
+fn preceding_incident_curve_index_refuses_collection_limit() {
+    fixture(
+        "f3d preceding incident curve index",
+        ResourceDimension::CollectionItems,
     );
 }

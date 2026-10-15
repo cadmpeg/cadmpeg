@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-fn path_error(max_items: u64, max_retained_bytes: u64) -> cadmpeg_core::CodecError {
+fn path_result(max_items: u64, max_retained_bytes: u64) -> Result<(), cadmpeg_core::CodecError> {
     crate::test_support::with_decode_context(|service_ctx| {
         use crate::records::feature::{
             extrude::DesignExtrudeOperation, path_features::DesignPipeConstruction,
@@ -32,22 +32,96 @@ fn path_error(max_items: u64, max_retained_bytes: u64) -> cadmpeg_core::CodecErr
         let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
         ctx.decode = &decode;
-        super::super::validate_path_feature_operand_roles(&ctx, &mut Vec::new()).unwrap_err()
+        super::super::validate_path_feature_operand_roles(&ctx, &mut Vec::new())
     })
 }
 
 #[test]
-fn path_feature_operand_group_refuses_collection_limit() {
-    let error = path_error(0, u64::MAX);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D path-feature operand groups")
+fn path_feature_operand_groups_skip_redundant_collection() {
+    let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "collect F3D path-feature operand groups",
+        None,
     );
+    path_result(u64::MAX, u64::MAX).unwrap();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = u64::MAX;
+    crate::test_support::with_decode_policy(&policy, |decode| {
+        assert!(
+            matches!(decode.collect_vec([0_u32], "collect F3D path-feature operand groups"),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "collect F3D path-feature operand groups")
+        );
+    });
 }
 
 #[test]
-fn path_feature_operand_role_refuses_collection_limit() {
-    let error = path_error(1, u64::MAX);
+fn pipe_operand_roles_skip_vector_collection() {
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = u64::MAX;
+    crate::test_support::with_decode_policy(&policy, |decode| {
+        let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            "collect F3D path-feature operand roles",
+            None,
+        );
+        let ir = cadmpeg_ir::CadIr::empty();
+        let mut native = super::construction_group_limits::native(true, false);
+        native.design_parameter_scopes[0]
+            .try_edit(|draft| {
+                draft.payload = crate::records::feature::scope::DesignScopePayload::Pipe(Some(
+                    crate::records::feature::path_features::DesignPipeConstruction {
+                        operation:
+                            crate::records::feature::extrude::DesignExtrudeOperation::NewBody,
+                        operation_offset: 0,
+                        section_shape:
+                            crate::records::feature::surface_ops::DesignPipeSectionShape::Circular,
+                        section_shape_offset: 0,
+                        filled: true,
+                        filled_offset: 0,
+                        values: crate::test_support::reals([0.0; 4]),
+                        record_indexes: [100, 101, 102, 103],
+                        value_offsets: [0; 4],
+                    },
+                ));
+            })
+            .unwrap();
+        let ctx = super::super::Ctx::new(&ir, &native, decode).unwrap();
+        let mut findings = Vec::new();
+        super::super::validate_path_feature_operand_roles(&ctx, &mut findings).unwrap();
+        assert_eq!(findings.len(), 1);
+        assert!(decode.resource_refusal().is_none());
+        assert!(decode
+            .collect_vec([0_u32], "collect F3D path-feature operand roles")
+            .is_err());
+    });
+}
+
+#[test]
+fn loft_operand_role_vector_refuses_collection_limit() {
+    use crate::records::feature::{
+        extrude::DesignExtrudeOperation, path_features::DesignLoftConstruction,
+        scope::DesignScopePayload,
+    };
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "collect F3D path-feature operand roles",
+        0,
+        |decode| {
+            let ir = cadmpeg_ir::CadIr::empty();
+            let mut native = super::construction_group_limits::native(true, false);
+            native.design_parameter_scopes[0]
+                .try_edit(|draft| {
+                    draft.payload = DesignScopePayload::Loft(Some(DesignLoftConstruction {
+                        operation: DesignExtrudeOperation::NewBody,
+                        operation_offset: 0,
+                    }));
+                })
+                .unwrap();
+            let ctx = super::super::Ctx::new(&ir, &native, decode)?;
+            super::super::validate_path_feature_operand_roles(&ctx, &mut Vec::new())
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D path-feature operand roles")
@@ -56,7 +130,11 @@ fn path_feature_operand_role_refuses_collection_limit() {
 
 #[test]
 fn path_feature_invalid_finding_refuses_collection_limit() {
-    let error = path_error(2, u64::MAX);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "collect F3D native validation findings",
+        |cap| path_result(cap, u64::MAX),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D native validation findings")
@@ -68,10 +146,33 @@ fn path_feature_invalid_entity_refuses_retained_limit() {
     let error = cadmpeg_test_support::refusal::resource_limit_at(
         cadmpeg_core::decode::ResourceDimension::RetainedBytes,
         "retain F3D validation entity",
-        |cap| Err::<(), cadmpeg_core::CodecError>(path_error(u64::MAX, cap)),
+        |cap| path_result(u64::MAX, cap),
     );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "retain F3D validation entity")
+    );
+}
+
+#[test]
+fn loft_operand_role_scan_preserves_work_refusal() {
+    use crate::records::feature::extrude::DesignExtrudeOperation;
+    use crate::records::topology::extrude_selection::DesignOperandRole;
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "count F3D Loft body roles",
+        0,
+        |decode| {
+            super::super::loft_operand_roles_are_valid(
+                decode,
+                DesignExtrudeOperation::NewBody,
+                &[(DesignOperandRole::PROFILE, 1)],
+            )
+            .map(|_| ())
+        },
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "count F3D Loft body roles")
     );
 }

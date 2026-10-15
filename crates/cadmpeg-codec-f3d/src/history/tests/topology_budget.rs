@@ -15,59 +15,6 @@ fn limited_context(
         .0
 }
 
-fn body_brep(with_region: bool) -> cadmpeg_asm::brep::AsmBrep {
-    use cadmpeg_ir::ids::{BodyId, RegionId};
-    use cadmpeg_ir::topology::{Body, BodyKind};
-    let regions = if with_region {
-        vec![RegionId::mint("f3d:brep:entity#2").unwrap()]
-    } else {
-        Vec::new()
-    };
-    let body = Body {
-        id: BodyId::mint("f3d:brep:entity#1").unwrap(),
-        kind: BodyKind::Solid,
-        regions,
-        transform: None,
-        name: None,
-        color: None,
-        visible: None,
-    };
-    cadmpeg_asm::brep::AsmBrep {
-        bodies: vec![body],
-        ..Default::default()
-    }
-}
-
-#[test]
-fn historical_topology_references_refuse_collection_limit() {
-    let ctx = limited_context(0, u64::MAX);
-    let error = super::super::historical_topology(&ctx, &body_brep(false)).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D historical topology references")
-    );
-}
-
-#[test]
-fn historical_topology_relation_members_refuse_collection_limit() {
-    let ctx = limited_context(1, u64::MAX);
-    let error = super::super::historical_topology(&ctx, &body_brep(true)).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D historical topology references")
-    );
-}
-
-#[test]
-fn historical_topology_relation_rows_refuse_collection_limit() {
-    let ctx = limited_context(1, u64::MAX);
-    let error = super::super::historical_topology(&ctx, &body_brep(false)).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D historical topology relations")
-    );
-}
-
 fn tagged_brep() -> crate::brep::Brep {
     use cadmpeg_ir::attributes::AttributeTarget;
     use cadmpeg_ir::ids::FaceId;

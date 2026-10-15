@@ -227,7 +227,7 @@ impl SketchRelationMembers {
         mut resolve: impl FnMut(u32) -> SketchRelationOperand,
     ) -> Result<(), CodecError> {
         let mut resolved = Vec::new();
-        for row in &self.0 {
+        for row in ctx.admit_iter(&self.0, "scan F3D sketch relation members for resolution")? {
             ctx.reserve_vec(&mut resolved, 1, "resolve F3D sketch relation members")?;
             resolved.push(resolve(row.reference.record_index()));
         }
@@ -304,7 +304,10 @@ impl SketchRelationReturnMembers {
         mut resolve: impl FnMut(u32) -> SketchRelationOperand,
     ) -> Result<(), CodecError> {
         let mut resolved = Vec::new();
-        for row in &self.0 {
+        for row in ctx.admit_iter(
+            &self.0,
+            "scan F3D sketch relation return members for resolution",
+        )? {
             ctx.reserve_vec(
                 &mut resolved,
                 1,

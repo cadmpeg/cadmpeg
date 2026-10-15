@@ -9,6 +9,9 @@ const POST_2015_SUFFIX: &str = "_Post2015";
 
 /// Parse a visual token as a GUID followed by zero or more `_Post2015`
 /// revision markers.
+///
+/// The scan reads at most `value.len()` bytes. Decode callers charge that
+/// extent before calling; serde reconstruction and writers call it directly.
 pub(crate) fn visual_token(value: &str) -> Option<usize> {
     if !is_guid_prefix(value) {
         return None;
@@ -56,6 +59,9 @@ pub(crate) const MODERN_APPEARANCE_LIBRARY_IDS: [&str; 2] = [
 ];
 
 /// Whether a token names a physical material rather than one of its aspects.
+///
+/// Callers pass tokens read with a 256-unit bound, so the scan is bounded by a
+/// constant.
 pub(super) fn is_physical_material_token(value: &str) -> bool {
     value.starts_with("PrismMaterial") && !value.contains("_physmat_aspects")
 }
@@ -70,10 +76,25 @@ mod tests {
             .expect("revision-suffixed visual token");
         let revised_case_variant =
             super::visual_token("11111111-2222-3333-4444-555555555555_post2015_post2015");
-
         assert_ne!(base, revised);
         assert_eq!(revised, 2);
         assert!(revised_case_variant.is_none());
         assert!(super::visual_token("11111111-2222-3333-4444-555555555555_unrecognized").is_none());
+    }
+
+    #[test]
+    fn visual_token_admission_refuses_before_the_grammar_scan() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(
+            matches!(crate::records::references::DesignVisualToken::new(&ctx,
+            "11111111-2222-3333-4444-555555555555_Post2015".to_owned()),
+            Err(CodecError::ResourceLimit(failure)) if failure.dimension == ResourceDimension::WorkUnits
+                && failure.operation == "f3d visual token grammar")
+        );
     }
 }

@@ -1419,3 +1419,5 @@ fn fillet_unit_conversion_rejects_finite_overflow() {
 mod chamfer;
 
 mod typed_treatments;
+
+mod variable_radius_lifetimes;

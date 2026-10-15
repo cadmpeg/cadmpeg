@@ -134,7 +134,12 @@ fn xref_parse_loss_refuses_retained_limit() {
 fn assembly_property_note_preserves_role_and_data_text() {
     let table = placement_table();
     assert_eq!(
-        super::super::XrefPropertyNote(&table.references[0]).to_string(),
+        crate::test_support::with_decode_context(|ctx| super::super::XrefPropertyNote::new(
+            ctx,
+            &table.references[0]
+        ))
+        .unwrap()
+        .to_string(),
         "neutronRole role-guid, neutronData data-guid"
     );
 }
@@ -155,7 +160,7 @@ fn assembly_note_refuses_collection_limit() {
             &mut report.notes,
             format_args!(
                 "xref {}",
-                super::super::XrefPropertyNote(&table.references[0])
+                super::super::XrefPropertyNote::new(&ctx, &table.references[0]).unwrap()
             ),
             "collect F3D decode notes",
             "retain F3D decode note",
@@ -164,5 +169,62 @@ fn assembly_note_refuses_collection_limit() {
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D decode notes")
+    );
+}
+
+#[test]
+fn failed_xref_placement_reference_search_preserves_work_refusal() {
+    let mut table = placement_table();
+    table.placement_failures.push(4);
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "find F3D failed placement reference",
+        0,
+        |ctx| {
+            report_xref_placement_failures(
+                ctx,
+                &mut cadmpeg_ir::codec::DecodeBody::new(
+                    cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {},
+                ),
+                &table,
+            )
+        },
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "find F3D failed placement reference")
+    );
+}
+
+#[test]
+fn superseded_xref_placement_reference_search_preserves_work_refusal() {
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "find F3D superseded placement reference",
+        0,
+        |ctx| {
+            report_xref_placement_overrides(
+                ctx,
+                &mut cadmpeg_ir::codec::DecodeBody::new(
+                    cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {},
+                ),
+                &placement_table(),
+            )
+        },
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "find F3D superseded placement reference")
+    );
+}
+
+#[test]
+fn assembly_property_note_comparison_preserves_work_refusal() {
+    let table = placement_table();
+    crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "compare F3D xref property note",
+        0,
+        |ctx| super::super::XrefPropertyNote::new(ctx, &table.references[0]),
     );
 }

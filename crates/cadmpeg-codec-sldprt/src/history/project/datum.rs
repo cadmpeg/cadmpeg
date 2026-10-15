@@ -191,10 +191,10 @@ pub(super) fn project_equation_curve(
     require!(cadmpeg_ir::topology::IncreasingParameterInterval::new([
         start, end
     ]));
-    let parameter = require!(trimmed("Parameter")?);
-    let x_expression = require!(trimmed("XEquation")?);
-    let y_expression = require!(trimmed("YEquation")?);
-    let z_expression = require!(trimmed("ZEquation")?);
+    let parameter = require!(trimmed("Parameter")?.filter(|value| !value.is_empty()));
+    let x_expression = require!(trimmed("XEquation")?.filter(|value| !value.is_empty()));
+    let y_expression = require!(trimmed("YEquation")?.filter(|value| !value.is_empty()));
+    let z_expression = require!(trimmed("ZEquation")?.filter(|value| !value.is_empty()));
     let (curve, storage) = ctx.with_scoped_storage("retain SLDPRT equation curve", || {
         Ok::<_, CodecError>(cadmpeg_ir::features::FeatureEquationCurve::new(
             copy_reference_text(ctx, parameter)?,

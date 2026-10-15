@@ -297,7 +297,7 @@ mod tests {
     use super::{
         data_block_index_rows, data_block_linked_index_rows, data_block_target_index_rows,
     };
-    use crate::container::{self, Container};
+    use crate::container::Container;
     use crate::test_support::test_om::offset_only_indexed_om_section;
     use crate::test_support::test_prt::prt_with_named_payloads;
     use cadmpeg_core::decode::{DecodeContext, ResourceDimension};
@@ -309,16 +309,14 @@ mod tests {
     const TARGET_ROW: &[u8] =
         b"\x02\x01\x01\x01\x16\x01\xff\xff\x90\xfe\x01\x01\x01\x00\x47\x03\x07\x01\xc0\x44\x04\x00";
 
-    fn column_container(row: &[u8]) -> Container<'static> {
+    fn column_file(row: &[u8]) -> Vec<u8> {
         let mut section = offset_only_indexed_om_section();
         section.extend_from_slice(row);
         let index_start = 8 + 1 + b"UGS::ModlFeature".len() + 1;
         let end_at = index_start + 3 * 4;
         let section_len = u32::try_from(section.len()).expect("test section length");
         section[end_at..end_at + 4].copy_from_slice(&section_len.to_le_bytes());
-        let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", section)]);
-        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file))
-            .expect("column row container")
+        prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", section)])
     }
 
     type Route = fn(&DecodeContext<'_>, &Container<'_>) -> Result<usize, CodecError>;
@@ -345,7 +343,11 @@ mod tests {
     }
 
     fn route_refusal(row: &[u8], route: Route, dimension: ResourceDimension) -> CodecError {
-        let container = column_container(row);
+        let file = column_file(row);
+        let container = crate::test_support::with_decode_context(|ctx| {
+            crate::container::scan_bytes(ctx, &file)
+        })
+        .expect("synthetic container");
 
         let adjust: fn(&mut cadmpeg_core::decode::DecodePolicy) = match dimension {
             ResourceDimension::CollectionItems => |policy| {
@@ -372,7 +374,11 @@ mod tests {
             (TARGET_ROW, target_count),
         ];
         for (row, route) in routes {
-            let container = column_container(row);
+            let file = column_file(row);
+            let container = crate::test_support::with_decode_context(|ctx| {
+                crate::container::scan_bytes(ctx, &file)
+            })
+            .expect("synthetic container");
             assert_eq!(
                 crate::test_support::with_decode_context(|ctx| route(ctx, &container))
                     .expect("resolved row"),

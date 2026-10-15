@@ -112,7 +112,12 @@ fn lost_edge_reference_scan_preserves_record_fields() {
     assert_eq!(references.len(), 1);
     assert_eq!(
         references[0].id,
-        crate::ids::native_lost_edge_reference_id("BulkStream.dat", 0)
+        crate::test_support::with_decode_context(|ctx| crate::ids::native_lost_edge_reference_id(
+            ctx,
+            "BulkStream.dat",
+            0
+        )
+        .expect("test F3D native identity"))
     );
     assert_eq!(references[0].record_index, 41);
     assert_eq!(references[0].next_record_index, 42);

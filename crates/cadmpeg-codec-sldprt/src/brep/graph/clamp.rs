@@ -399,11 +399,11 @@ pub(super) fn clamp_nurbs_curve_to_domain_lanes(
     })
 }
 
-pub(super) fn clamp_nurbs_curve_to_domain(
-    ctx: &DecodeContext<'_>,
+pub(super) fn clamp_nurbs_curve_to_domain<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
     domain: [f64; 2],
-) -> Result<Option<cadmpeg_ir::geometry::nurbs::NurbsCurve>, NurbsPcurveFailure> {
+) -> Result<Option<cadmpeg_ir::geometry::nurbs::NurbsCurve>, NurbsPcurveFailure<'ctx>> {
     let mut candidate_storage = ctx.reserve_scoped(0, "hold clamped NURBS output candidate")?;
     let candidate = candidate_storage.with_storage(|| {
         let Some(lanes) = clamped_conversion_lanes(ctx, curve, domain)? else {
@@ -416,22 +416,18 @@ pub(super) fn clamp_nurbs_curve_to_domain(
         Some(Err(mut error)) => {
             use cadmpeg_ir::geometry::nurbs::NurbsError;
             let text = match &mut error {
-                NurbsError::Structure(text) | NurbsError::EditRefused(text) => Some(text),
+                NurbsError::Structure(text) | NurbsError::EditRefused(text) => text,
                 NurbsError::WeightLaneLength { field, .. }
-                | NurbsError::UnusableWeight { field, .. } => Some(field),
-                NurbsError::ResourceLimit(_) => None,
+                | NurbsError::UnusableWeight { field, .. } => field,
+                NurbsError::ResourceLimit(limit) => return Err((*limit).into()),
             };
-            // The diagnostic escapes both this candidate and any comparison
-            // workspace around the caller. Its copy has session storage.
-            let mut diagnostic_storage =
-                ctx.provisional_retained("retain clamped NURBS refusal")?;
-            if let Some(text) = text {
-                let copy = diagnostic_storage
-                    .with_storage(|| ctx.copy_retained_text(text, "copy clamped NURBS refusal"))?;
-                *text = copy;
-            }
+            // The error owns its diagnostic until the refusal sink copies it.
+            let mut diagnostic_storage = ctx.reserve_scoped(0, "hold clamped NURBS refusal")?;
+            let copy = diagnostic_storage
+                .with_storage(|| ctx.copy_retained_text(text, "copy clamped NURBS refusal"))?;
+            *text = copy;
             drop(candidate_storage);
-            Err(diagnostic_storage.commit_value(error)?.into())
+            Err(NurbsPcurveFailure::Carrier(error, Some(diagnostic_storage)))
         }
         None => Ok(None),
     }

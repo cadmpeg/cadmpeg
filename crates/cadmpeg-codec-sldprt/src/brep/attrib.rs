@@ -182,6 +182,8 @@ impl Dictionary<'_> {
 pub(super) struct Bindings<'ctx> {
     pub(super) face_atoms: Vec<RawFaceAtom<'ctx>>,
     pub(super) body_modifiers: Vec<BodyModifier>,
+    pub(super) face_atom_storage: Option<ScopedReservation<'ctx>>,
+    pub(super) body_modifier_storage: Option<ScopedReservation<'ctx>>,
 }
 
 /// Start of a record body: the tag, then an optional `0xff` marker.
@@ -572,6 +574,7 @@ pub(super) fn bindings<'ctx>(
     }
 
     // Both maps order their bindings by owner attribute.
+    let mut face_atom_storage = ctx.reserve_scoped(0, "hold Parasolid face atom slots")?;
     let mut face_atoms = Vec::new();
     for (face_attr, identity) in ctx.admit_iter(atoms, "retain Parasolid face atoms")? {
         let Some(identity) = identity else {
@@ -594,7 +597,8 @@ pub(super) fn bindings<'ctx>(
             }
             None => None,
         };
-        ctx.push_vec(
+        ctx.push_scoped_vec(
+            &mut face_atom_storage,
             &mut face_atoms,
             RawFaceAtom {
                 face_attr,
@@ -603,12 +607,14 @@ pub(super) fn bindings<'ctx>(
             "retain Parasolid face atoms",
         )?;
     }
+    let mut body_modifier_storage = ctx.reserve_scoped(0, "hold Parasolid body modifier slots")?;
     let mut body_modifiers = Vec::new();
     for (body_attr, ordinal) in ctx.admit_iter(modifiers, "retain Parasolid body modifiers")? {
         let Some(history_ordinal) = ordinal else {
             continue;
         };
-        ctx.push_vec(
+        ctx.push_scoped_vec(
+            &mut body_modifier_storage,
             &mut body_modifiers,
             BodyModifier {
                 body_attr,
@@ -621,6 +627,8 @@ pub(super) fn bindings<'ctx>(
     Ok(Bindings {
         face_atoms,
         body_modifiers,
+        face_atom_storage: Some(face_atom_storage),
+        body_modifier_storage: Some(body_modifier_storage),
     })
 }
 
@@ -953,7 +961,7 @@ mod tests {
             &bytes,
         );
         refusal(
-            ResourceDimension::RetainedBytes,
+            ResourceDimension::MaterializedBytes,
             "retain Parasolid face atoms",
             &bytes,
         );

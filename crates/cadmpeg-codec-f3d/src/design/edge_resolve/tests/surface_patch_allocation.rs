@@ -4,7 +4,11 @@ use super::*;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
 
-fn assert_surface_patch_refusal(operation: &'static str, retained: bool, contradictory: bool) {
+fn assert_surface_patch_refusal(
+    operation: &'static str,
+    dimension: ResourceDimension,
+    contradictory: bool,
+) {
     let mut group = group(2, 10);
     if !contradictory {
         group
@@ -32,35 +36,28 @@ fn assert_surface_patch_refusal(operation: &'static str, retained: bool, contrad
     let feature_id =
         cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#surface-patch").unwrap();
     {
-        let error = cadmpeg_test_support::refusal::resource_limit_at(
-            if retained {
-                ResourceDimension::RetainedBytes
-            } else {
-                ResourceDimension::CollectionItems
-            },
-            operation,
-            |cap| {
-                let arena = DecodeArena::new();
-                let mut policy = DecodePolicy::default();
-                if retained {
-                    policy.limits.max_retained_bytes = cap;
-                } else {
-                    policy.limits.max_collection_items = cap;
-                }
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-                resolved_surface_patch_edge_group(
-                    &group,
-                    std::slice::from_ref(&group),
-                    &operands,
-                    &[],
-                    Some(7),
-                    &feature_id,
-                    &ctx,
-                )
-            },
-        );
+        let error = cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            match dimension {
+                ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = cap,
+                ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = cap,
+                ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
+                _ => panic!("unsupported surface-patch refusal dimension"),
+            }
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            resolved_surface_patch_edge_group(
+                &group,
+                std::slice::from_ref(&group),
+                &operands,
+                &[],
+                Some(7),
+                &feature_id,
+                &ctx,
+            )
+        });
         assert!(matches!(error, CodecError::ResourceLimit(failure)
-            if failure.operation == operation && failure.dimension == (if retained { ResourceDimension::RetainedBytes } else { ResourceDimension::CollectionItems })));
+            if failure.operation == operation && failure.dimension == dimension));
     }
 }
 
@@ -68,7 +65,7 @@ macro_rules! surface_patch_collection_refusal {
     ($name:ident, $operation:literal) => {
         #[test]
         fn $name() {
-            assert_surface_patch_refusal($operation, false, false);
+            assert_surface_patch_refusal($operation, ResourceDimension::CollectionItems, false);
         }
     };
 }
@@ -99,16 +96,28 @@ surface_patch_collection_refusal!(
 );
 
 #[test]
-fn surface_patch_recipe_edge_id_refuses_retained_limit() {
-    assert_surface_patch_refusal("f3d surface patch recipe edge id", true, false);
+fn surface_patch_recipe_edge_id_refuses_materialized_limit() {
+    assert_surface_patch_refusal(
+        "f3d surface patch recipe edge id",
+        ResourceDimension::MaterializedBytes,
+        false,
+    );
 }
 
 #[test]
 fn surface_patch_historical_group_id_refuses_retained_limit() {
-    assert_surface_patch_refusal("f3d surface patch historical group id", true, false);
+    assert_surface_patch_refusal(
+        "f3d surface patch historical group id",
+        ResourceDimension::RetainedBytes,
+        false,
+    );
 }
 
 #[test]
 fn surface_patch_native_group_id_refuses_retained_limit() {
-    assert_surface_patch_refusal("f3d surface patch native group id", true, true);
+    assert_surface_patch_refusal(
+        "f3d surface patch native group id",
+        ResourceDimension::RetainedBytes,
+        true,
+    );
 }

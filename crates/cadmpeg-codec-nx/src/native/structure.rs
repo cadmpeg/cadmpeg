@@ -838,7 +838,8 @@ mod tests {
                 policy.limits.max_work_units = 0;
             },
             |ctx| {
-                let file = container(payload(&["plate"], &[1]));
+                let container_bytes_1 = container_bytes(payload(&["plate"], &[1]));
+                let file = container(&container_bytes_1);
                 let error = super::fast_load_component_roster(ctx, &file)
                     .expect_err("roster candidate selection needs work");
                 assert!(
@@ -858,7 +859,8 @@ mod tests {
                 configure(policy);
             },
             |ctx| {
-                let file = container(payload(&["plate"], &[1]));
+                let container_bytes_2 = container_bytes(payload(&["plate"], &[1]));
+                let file = container(&container_bytes_2);
                 super::fast_load_component_roster(ctx, &file).unwrap_err()
             },
         )
@@ -975,7 +977,7 @@ mod tests {
         bytes
     }
 
-    fn container(payload: Vec<u8>) -> Container<'static> {
+    fn container_bytes(payload: Vec<u8>) -> Vec<u8> {
         let mut data = vec![0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0];
         data.extend(
             u32::try_from(payload.len())
@@ -983,6 +985,10 @@ mod tests {
                 .to_be_bytes(),
         );
         data.extend(payload);
+        data
+    }
+
+    fn container(data: &[u8]) -> Container<'_> {
         let len = cadmpeg_core::decode::u64_from_index(data.len());
         Container {
             data: data.into(),
@@ -1019,7 +1025,8 @@ mod tests {
 
     #[test]
     fn extracts_repeated_component_occurrences() {
-        let container = container(payload(&["plate", "bolt", "nut"], &[1, 2, 2, 3]));
+        let container_bytes_3 = container_bytes(payload(&["plate", "bolt", "nut"], &[1, 2, 2, 3]));
+        let container = container(&container_bytes_3);
         let (prototypes, uuids, occurrences) = fast_load_component_roster(&container).unwrap();
         assert_eq!(uuids.len(), 1);
         assert_eq!(
@@ -1056,10 +1063,15 @@ mod tests {
 
     #[test]
     fn extracts_roster_with_none_metadata() {
-        let (prototypes, uuids, occurrences) = fast_load_component_roster(&container(
-            payload_with_metadata("None", &["pin", "head"], &[1, 2], 0, b"99"),
-        ))
-        .unwrap();
+        let container_bytes_4 = container_bytes(payload_with_metadata(
+            "None",
+            &["pin", "head"],
+            &[1, 2],
+            0,
+            b"99",
+        ));
+        let (prototypes, uuids, occurrences) =
+            fast_load_component_roster(&container(&container_bytes_4)).unwrap();
         assert_eq!(
             prototypes
                 .iter()
@@ -1075,16 +1087,16 @@ mod tests {
 
     #[test]
     fn extracts_roster_with_extended_model_metadata_header() {
+        let container_bytes_5 = container_bytes(payload_with_metadata_values(
+            &[1, 1, 2, 0x42, 0],
+            &["MODEL", "None"],
+            &["gear", "rod"],
+            &[1, 2],
+            0,
+            b"99",
+        ));
         let (prototypes, uuids, occurrences) =
-            fast_load_component_roster(&container(payload_with_metadata_values(
-                &[1, 1, 2, 0x42, 0],
-                &["MODEL", "None"],
-                &["gear", "rod"],
-                &[1, 2],
-                0,
-                b"99",
-            )))
-            .unwrap();
+            fast_load_component_roster(&container(&container_bytes_5)).unwrap();
         assert_eq!(
             prototypes
                 .iter()
@@ -1099,12 +1111,13 @@ mod tests {
 
     #[test]
     fn extracts_extended_occurrence_form_and_markers() {
-        let container = container(payload_with_occurrence_lane(
+        let container_bytes_6 = container_bytes(payload_with_occurrence_lane(
             &["plate", "bolt"],
             &[1, 2, 2],
             1,
             b"919",
         ));
+        let container = container(&container_bytes_6);
         let (_, _, occurrences) = fast_load_component_roster(&container).unwrap();
         assert_eq!(
             occurrences
@@ -1130,8 +1143,9 @@ mod tests {
     #[test]
     fn rejects_unknown_occurrence_lane_form_atomically() {
         let bytes = payload_with_occurrence_lane(&["plate"], &[1], 2, b"9");
+        let roster_bytes_1 = container_bytes(bytes);
         assert_eq!(
-            fast_load_component_roster(&container(bytes)).unwrap(),
+            fast_load_component_roster(&container(&roster_bytes_1)).unwrap(),
             (Vec::new(), Vec::new(), FastLoadOccurrences::default())
         );
     }
@@ -1139,15 +1153,17 @@ mod tests {
     #[test]
     fn rejects_unknown_occurrence_marker_atomically() {
         let bytes = payload_with_occurrence_lane(&["plate"], &[1], 0, b"7");
+        let roster_bytes_2 = container_bytes(bytes);
         assert_eq!(
-            fast_load_component_roster(&container(bytes)).unwrap(),
+            fast_load_component_roster(&container(&roster_bytes_2)).unwrap(),
             (Vec::new(), Vec::new(), FastLoadOccurrences::default())
         );
     }
 
     #[test]
     fn groups_equal_uuid_multiplicity_without_pairing_instances() {
-        let container = container(payload(&["plate", "bolt"], &[1, 2, 2]));
+        let container_bytes_7 = container_bytes(payload(&["plate", "bolt"], &[1, 2, 2]));
+        let container = container(&container_bytes_7);
         let (_, uuids, occurrences) = fast_load_component_roster(&container).unwrap();
         let values = (0..3)
             .map(|ordinal| ObjectUuidValue {
@@ -1187,7 +1203,8 @@ mod tests {
     fn fast_load_object_group_refusal(
         configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
     ) -> cadmpeg_core::CodecError {
-        let container = container(payload(&["plate"], &[1]));
+        let container_bytes_8 = container_bytes(payload(&["plate"], &[1]));
+        let container = container(&container_bytes_8);
         let (_, uuids, occurrences) = fast_load_component_roster(&container).unwrap();
         let value = ObjectUuidValue {
             id: "object-uuid#0".to_string(),
@@ -1249,7 +1266,8 @@ mod tests {
 
     #[test]
     fn rejects_out_of_range_prototype_index_atomically() {
-        let container = container(payload(&["plate"], &[1, 2]));
+        let container_bytes_9 = container_bytes(payload(&["plate"], &[1, 2]));
+        let container = container(&container_bytes_9);
         assert_eq!(
             fast_load_component_roster(&container).unwrap(),
             (Vec::new(), Vec::new(), FastLoadOccurrences::default())
@@ -1258,8 +1276,9 @@ mod tests {
 
     #[test]
     fn rejects_mismatched_envelope_length_atomically() {
-        let mut container = container(payload(&["plate"], &[1]));
-        container.data.to_mut()[11] += 1;
+        let mut container_bytes_10 = container_bytes(payload(&["plate"], &[1]));
+        container_bytes_10[11] += 1;
+        let container = container(&container_bytes_10);
         assert_eq!(
             fast_load_component_roster(&container).unwrap(),
             (Vec::new(), Vec::new(), FastLoadOccurrences::default())
@@ -1275,8 +1294,9 @@ mod tests {
             .rposition(|window| window == count_frame)
             .expect("fixture contains terminal occurrence count");
         bytes[offset + 1] = 2;
+        let roster_bytes_3 = container_bytes(bytes);
         assert_eq!(
-            fast_load_component_roster(&container(bytes)).unwrap(),
+            fast_load_component_roster(&container(&roster_bytes_3)).unwrap(),
             (Vec::new(), Vec::new(), FastLoadOccurrences::default())
         );
     }
@@ -1290,8 +1310,9 @@ mod tests {
             .expect("fixture contains MODEL")
             + 5;
         bytes[terminator] = b'X';
+        let roster_bytes_4 = container_bytes(bytes);
         assert_eq!(
-            fast_load_component_roster(&container(bytes)).unwrap(),
+            fast_load_component_roster(&container(&roster_bytes_4)).unwrap(),
             (Vec::new(), Vec::new(), FastLoadOccurrences::default())
         );
     }
@@ -1300,7 +1321,8 @@ mod tests {
     fn rejects_multiple_valid_rosters_atomically() {
         let mut first = payload(&["plate"], &[1]);
         first.extend(payload(&["bolt"], &[1]));
-        let container = container(first);
+        let container_bytes_11 = container_bytes(first);
+        let container = container(&container_bytes_11);
         assert_eq!(
             fast_load_component_roster(&container).unwrap(),
             (Vec::new(), Vec::new(), FastLoadOccurrences::default())

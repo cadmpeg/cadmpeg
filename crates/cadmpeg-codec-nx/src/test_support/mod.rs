@@ -40,7 +40,7 @@ pub(crate) fn extract_streams(bytes: &[u8]) -> Vec<crate::parasolid::Stream> {
         |ctx| {
             let root = cadmpeg_core::decode::View::over_retained(bytes);
             let container =
-                crate::container::scan_bytes(ctx, bytes.to_vec()).expect("test SPLMSSTR container");
+                crate::container::scan_bytes(ctx, bytes).expect("test SPLMSSTR container");
             crate::parasolid::extract_streams(ctx, root, &container)
                 .expect("test Parasolid streams")
         },

@@ -107,7 +107,11 @@ fn group_error(
 
 #[test]
 fn construction_group_member_index_refuses_collection_limit() {
-    let error = group_error(true, false, 0, u64::MAX);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "index F3D construction operand group members",
+        |cap| Err::<(), cadmpeg_core::CodecError>(group_error(true, false, cap, u64::MAX)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D construction operand group members")
@@ -116,7 +120,11 @@ fn construction_group_member_index_refuses_collection_limit() {
 
 #[test]
 fn construction_group_slot_refuses_collection_limit() {
-    let error = group_error(true, false, 1, u64::MAX);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "index F3D construction operand group slots",
+        |cap| Err::<(), cadmpeg_core::CodecError>(group_error(true, false, cap, u64::MAX)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D construction operand group slots")
@@ -125,7 +133,11 @@ fn construction_group_slot_refuses_collection_limit() {
 
 #[test]
 fn construction_group_invalid_finding_refuses_collection_limit() {
-    let error = group_error(false, false, 0, u64::MAX);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "collect F3D native validation findings",
+        |cap| Err::<(), cadmpeg_core::CodecError>(group_error(false, false, cap, u64::MAX)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D native validation findings")
@@ -134,7 +146,11 @@ fn construction_group_invalid_finding_refuses_collection_limit() {
 
 #[test]
 fn construction_group_invalid_entity_refuses_retained_limit() {
-    let error = group_error(false, false, u64::MAX, 0);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain F3D validation entity",
+        |cap| Err::<(), cadmpeg_core::CodecError>(group_error(false, false, u64::MAX, cap)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "retain F3D validation entity")
@@ -143,7 +159,11 @@ fn construction_group_invalid_entity_refuses_retained_limit() {
 
 #[test]
 fn construction_group_duplicate_slot_finding_refuses_collection_limit() {
-    let error = group_error(true, true, 3, u64::MAX);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "collect F3D native validation findings",
+        |cap| Err::<(), cadmpeg_core::CodecError>(group_error(true, true, cap, u64::MAX)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D native validation findings")

@@ -253,3 +253,164 @@ fn rejected_sphere_candidate_releases_identity_children() {
     );
     ctx.finish_session().unwrap();
 }
+
+fn assert_seam_pass_skips_indexes(mut out: Brep, spherical: bool, operations: &[&str]) -> Brep {
+    for operation in operations {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = u64::MAX;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            operation,
+            None,
+        );
+        if spherical {
+            synthesize_sphere_seams(&ctx, &mut out, &mut AnnotationBuilder::new(), &stream())
+                .unwrap();
+        } else {
+            synthesize_cylinder_seams(&ctx, &mut out, &mut AnnotationBuilder::new(), &stream())
+                .unwrap();
+        }
+        drop(probe);
+        ctx.finish_session().unwrap();
+    }
+    out
+}
+
+#[test]
+fn cylinder_nonsingleton_loops_skip_downstream_indexes() {
+    let mut out = cylinder(1.);
+    for (index, lp) in out.loops.iter_mut().enumerate() {
+        let original = lp.coedges()[0].clone();
+        let mut extra = out.coedges[index].clone();
+        extra.id = CoedgeId::mint(format!("test:model:coedge#extra-{index}")).unwrap();
+        extra.radial_next = extra.id.clone();
+        let added = extra.id.clone();
+        out.coedges.push(extra);
+        lp.boundary = LoopBoundary::Ring(
+            LoopRing::new(
+                &cadmpeg_test_support::service_decode_context(),
+                vec![original, added],
+                Vec::new(),
+            )
+            .unwrap()
+            .unwrap(),
+        );
+    }
+    let out = assert_seam_pass_skips_indexes(
+        out,
+        false,
+        &[
+            "index Parasolid seam coedges",
+            "index Parasolid seam edges",
+            "index Parasolid seam curves",
+            "index Parasolid seam vertices",
+            "index Parasolid seam points",
+        ],
+    );
+    assert_eq!(out.edges.len(), 2);
+    assert_eq!(out.loops.len(), 2);
+    assert_eq!(out.loops[0].coedges().len(), 2);
+}
+
+#[test]
+fn cylinder_missing_loop_skips_downstream_indexes() {
+    let mut out = cylinder(1.);
+    out.loops.clear();
+    let out = assert_seam_pass_skips_indexes(
+        out,
+        false,
+        &[
+            "index Parasolid seam coedges",
+            "index Parasolid seam edges",
+            "index Parasolid seam curves",
+            "index Parasolid seam vertices",
+            "index Parasolid seam points",
+        ],
+    );
+    assert_eq!(out.edges.len(), 2);
+    assert!(out.loops.is_empty());
+}
+
+#[test]
+fn sphere_unsupported_ring_skips_downstream_indexes() {
+    let mut out = sphere();
+    out.loops[0].boundary = LoopBoundary::Ring(LoopRing::single(out.coedges[0].id.clone()));
+    let out = assert_seam_pass_skips_indexes(
+        out,
+        true,
+        &[
+            "index Parasolid sphere coedge edges",
+            "index Parasolid sphere edges",
+            "index Parasolid sphere curves",
+            "index Parasolid sphere vertices",
+            "index Parasolid sphere points",
+            "index Parasolid sphere vertex points",
+        ],
+    );
+    assert_eq!(out.curves.len(), 2);
+    assert_eq!(out.loops[0].coedges().len(), 1);
+}
+
+#[test]
+fn sphere_four_edge_repair_skips_pole_selector() {
+    let mut out = sphere();
+    let mut edge = out.edges[0].clone();
+    edge.id = EdgeId::mint("test:model:edge#seam").unwrap();
+    edge.carrier = EdgeCarrier::unbounded(None);
+    let mut coedge = out.coedges[0].clone();
+    coedge.id = CoedgeId::mint("test:model:coedge#seam").unwrap();
+    coedge.radial_next = coedge.id.clone();
+    coedge.edge = edge.id.clone();
+    out.edges.push(edge);
+    out.coedges.push(coedge);
+    out.loops[0].boundary = LoopBoundary::Ring(
+        LoopRing::new(
+            &cadmpeg_test_support::service_decode_context(),
+            out.coedges.iter().map(|coedge| coedge.id.clone()).collect(),
+            Vec::new(),
+        )
+        .unwrap()
+        .unwrap(),
+    );
+    let out = assert_seam_pass_skips_indexes(out, true, &["index Parasolid sphere vertex points"]);
+    assert_eq!(out.coedges.len(), 4);
+    assert_eq!(out.curves.len(), 3);
+    assert!(out.edges[2].curve().is_some());
+    assert!(
+        matches!(out.curves[2].geometry.solved(), Some(SolvedCurveGeometry::Degenerate(curve))
+        if curve.point().get() == Point3::new(0., 0., 1.))
+    );
+    assert_eq!(out.points[0].position().get(), Point3::new(0., 0., 1.));
+}
+
+#[test]
+fn cylinder_rejected_first_ring_skips_second_ring_curve_index() {
+    let mut out = cylinder(1.);
+    out.edges[0].end = VertexId::mint("test:model:vertex#open-ring").unwrap();
+    let original_points: Vec<_> = out
+        .points
+        .iter()
+        .map(cadmpeg_ir::topology::Point::position)
+        .collect();
+    let out = assert_seam_pass_skips_indexes(
+        out,
+        false,
+        &[
+            "index Parasolid seam curves",
+            "index Parasolid seam vertices",
+            "index Parasolid seam points",
+        ],
+    );
+    assert_eq!(out.curves.len(), 2);
+    assert_eq!(out.edges.len(), 2);
+    assert_eq!(out.loops.len(), 2);
+    assert_eq!(
+        out.points
+            .iter()
+            .map(cadmpeg_ir::topology::Point::position)
+            .collect::<Vec<_>>(),
+        original_points
+    );
+}

@@ -508,7 +508,7 @@ fn extraction_rejects_zlib_members_with_invalid_integrity_trailers() {
             let root = cadmpeg_core::decode::View::over_retained(&indexed);
 
             let container = crate::test_support::with_decode_context(|ctx| {
-                container::scan_bytes(ctx, indexed.clone())
+                container::scan_bytes(ctx, &indexed)
             })
             .expect("test SPLMSSTR container");
             assert!(parasolid::extract_streams(ctx, root, &container).is_err());
@@ -520,7 +520,7 @@ fn extraction_rejects_zlib_members_with_invalid_integrity_trailers() {
 fn extraction_refuses_inflated_stream_copy_when_retained_budget_is_exhausted() {
     let file = prt_with_partition(&partition_stream());
     let container =
-        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file.clone()))
+        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, &file))
             .expect("test SPLMSSTR container");
     let error = crate::test_support::resource_refusal_at(
         &file,

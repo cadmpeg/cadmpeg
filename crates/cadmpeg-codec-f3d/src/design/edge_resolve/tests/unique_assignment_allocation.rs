@@ -13,23 +13,28 @@ fn assert_unique_refusal(operation: &'static str, group_route: bool) {
         crate::design::edge_resolve::EdgeAssignmentCandidates::Context,
         crate::design::edge_resolve::EdgeAssignmentCandidates::Edges(vec![18]),
     ];
-    for limit in 0..64 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result = if group_route {
-            crate::design::edge_resolve::unique_edge_group_assignment(&[&first, &second], &ctx)
-        } else {
-            crate::design::edge_resolve::unique_edge_assignment_with_context(&candidate_sets, &ctx)
-        };
-        match result {
-            Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
-            Err(CodecError::ResourceLimit(_)) => {}
-            other => panic!("expected unique assignment refusal at {operation}: {other:?}"),
-        }
-    }
-    panic!("no unique assignment refusal at {operation}");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation,
+        |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let result = if group_route {
+                crate::design::edge_resolve::unique_edge_group_assignment(&[&first, &second], &ctx)
+            } else {
+                crate::design::edge_resolve::unique_edge_assignment_with_context(
+                    &candidate_sets,
+                    &ctx,
+                )
+            };
+
+            (result).map(|_| ())
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(failure)
+        if failure.operation == operation && failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
 }
 
 #[test]

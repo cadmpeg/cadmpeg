@@ -93,3 +93,43 @@ fn rejected_equation_domain_does_not_read_or_copy_expressions() {
         .is_none());
     ctx.finish_session().unwrap();
 }
+
+#[test]
+fn blank_equation_expression_stops_before_expression_copies() {
+    let keys = ["Parameter", "XEquation", "YEquation", "ZEquation"];
+    for (blank, key) in keys.iter().enumerate() {
+        let mut source = feature("equation", None, 0);
+        property(&mut source, "Start", "0".into());
+        property(&mut source, "End", "1".into());
+        for (index, name) in keys.iter().enumerate() {
+            let value = match index.cmp(&blank) {
+                std::cmp::Ordering::Equal => " \t\u{2003} ".into(),
+                std::cmp::Ordering::Less => "t".into(),
+                std::cmp::Ordering::Greater => "x".repeat(100_000),
+            };
+            property(&mut source, name, value);
+        }
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 1_000;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(super::super::project_equation_curve(&ctx, &source)
+            .unwrap_or_else(|error| panic!("blank {key}: {error}"))
+            .is_none());
+        ctx.finish_session().unwrap();
+
+        policy.limits.max_work_units = u64::MAX;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "retain SLDPRT datum and curve reference",
+            None,
+        );
+        assert!(super::super::project_equation_curve(&ctx, &source)
+            .unwrap()
+            .is_none());
+        ctx.finish_session().unwrap();
+    }
+}
