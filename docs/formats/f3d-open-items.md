@@ -315,6 +315,25 @@ component occurrence" give the scope transforms for the source and the seed.
 transform is not the identity, the two placements disagree. The decoder uses
 the scope transform.
 
+### DR-78. Symmetric Extrude distance measurement
+
+**Question.** Which field states whether the distance of a symmetric
+distance `Extrude` is the travel on each side or the whole travel?
+
+**Known.** `f3d.md` §3.1 "An Extrude scope can carry one or both of its
+distance and taper inputs" gives the fixed lanes. One symmetric `Extrude`
+without indexed parameters stores lane zero as `1.2` cm on a Sketch in the
+plane `x = 150.5` mm. Its operation history holds planes at `x = 138.5` mm
+and `x = 162.5` mm, which is `12` mm on each side. The prologue stores
+travel direction `3`, face-extend option `2`, and side extents `[1, 0]`.
+
+**Need.** The neutral symmetric extent states the whole travel. A reader must
+know the measurement form to convert the stored distance. The decoder keeps
+the native feature when a fixed lane carries a symmetric distance.
+
+**Conflict.** The decoder converts an `AlongDistance` parameter of a symmetric
+`Extrude` to the whole travel without reading a measurement form.
+
 ## 2. External references
 
 ### XR-01. `neutronData` with a different GUID
