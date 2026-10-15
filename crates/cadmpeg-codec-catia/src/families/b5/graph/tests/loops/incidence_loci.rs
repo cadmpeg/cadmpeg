@@ -249,16 +249,8 @@ fn sphere_great_circle_pcurve_binds_native_incidence_coordinates() {
         edge_parameter_incidences: &edge_parameter_incidences,
         parameter_incidences: &parameter_incidences,
     };
-    assert_eq!(
-        crate::test_support::with_service_context(|ctx| {
-            counted_references(&records[0], 0x05).expect("service budget")
-        }),
-        Some(vec![30, 31])
-    );
-    let incidence = crate::test_support::with_service_context(|ctx| {
-        parameter_incidence(&records[1]).expect("service budget")
-    })
-    .expect("parameter incidence");
+    assert_eq!(counted_references(&records[0], 0x05), Some(vec![30, 31]));
+    let incidence = parameter_incidence(&records[1]).expect("parameter incidence");
     assert_eq!(
         incidence.lanes,
         [B5IncidenceLane {

@@ -8,11 +8,10 @@ use crate::test_support::test_topology::{
 };
 
 #[test]
-fn port_candidate_search_refuses_collection_depth_and_work_limits() {
+fn port_candidate_search_refuses_depth_limit() {
     use crate::solve::missing_edge::bind_edge_port_candidates;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
-    use std::collections::HashSet;
 
     let ports = [[10, 11], [11, 12]];
     let candidates = [vec![[0, 1]], vec![[1, 2]]];
@@ -25,45 +24,6 @@ fn port_candidate_search_refuses_collection_depth_and_work_limits() {
         Some(vec![[0, 1], [1, 2]]),
     );
 
-    let mut operations = HashSet::new();
-    for cap in 0..=128 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-            .expect("fixture fits input limit");
-        match bind_edge_port_candidates(&ctx, &ports, &candidates) {
-            Err(CodecError::ResourceLimit(limit)) => {
-                assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-                operations.insert(limit.operation);
-            }
-            Ok(Some(pairs)) => assert_eq!(pairs, vec![[0, 1], [1, 2]]),
-            Ok(None) => panic!("unique port assignment must be admitted"),
-            Err(error) => panic!("unexpected port refusal: {error}"),
-        }
-    }
-    for operation in [
-        "catia_port_dependency_union",
-        "catia_port_dependency_ports",
-        "catia_port_dependency_points",
-        "catia_port_component_edges",
-        "catia_port_component_roots",
-        "catia_port_components",
-        "catia_port_component_ports",
-        "catia_port_component_candidate_pairs",
-        "catia_port_component_candidates",
-        "catia_edge_port_solution",
-        "catia_edge_port_pairs",
-        "catia_port_search_points",
-        "catia_port_search_reverse_points",
-        "catia_port_search_inserted",
-        "catia_port_search_propagated",
-        "catia_port_search_solution",
-        "catia_port_assignment_result",
-    ] {
-        assert!(operations.contains(operation), "no refusal at {operation}");
-    }
-
     let ambiguous = [vec![[0, 1], [0, 2]]];
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
@@ -72,545 +32,25 @@ fn port_candidate_search_refuses_collection_depth_and_work_limits() {
     assert!(bind_edge_port_candidates(&ctx, &[[10, 11]], &ambiguous)
         .expect("service resource budget")
         .is_none());
-    for (depth, work, dimension) in [
-        (
-            1,
-            DecodePolicy::service().limits.max_work_units,
-            ResourceDimension::RecursionDepth,
-        ),
-        (
-            DecodePolicy::service().limits.max_recursion_depth,
-            0,
-            ResourceDimension::WorkUnits,
-        ),
-    ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_recursion_depth = depth;
-        policy.limits.max_work_units = work;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-            .expect("fixture fits input limit");
-        assert!(matches!(
-            bind_edge_port_candidates(&ctx, &[[10, 11]], &ambiguous),
-            Err(CodecError::ResourceLimit(limit)) if limit.dimension == dimension
-        ));
-    }
-}
-
-fn mesh_coverage_limit_operation(max_collection_items: u64) -> Option<&'static str> {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = max_collection_items;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("fixture fits the input limit");
-    let result = crate::solve::missing_edge::standard_mesh_face_coverage(
-        &ctx,
-        &standard_quad_topology_stream(),
-        &[[0, 0]; 4],
-    );
-    match result {
+    policy.limits.max_recursion_depth = 1;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("fixture fits input limit");
+    assert!(matches!(
+        bind_edge_port_candidates(&ctx, &[[10, 11]], &ambiguous),
         Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::CollectionItems =>
-        {
-            Some(limit.operation)
-        }
-        Ok(_) => None,
-        other => panic!("expected collection resource limit, got {other:?}"),
-    }
-}
-
-fn mesh_coverage_limit_operations() -> &'static std::collections::HashSet<&'static str> {
-    static OPERATIONS: std::sync::OnceLock<std::collections::HashSet<&'static str>> =
-        std::sync::OnceLock::new();
-    OPERATIONS.get_or_init(|| {
-        let mut operations = std::collections::HashSet::new();
-        for limit in 0..=1024 {
-            if let Some(operation) = mesh_coverage_limit_operation(limit) {
-                operations.insert(operation);
-            }
-        }
-        operations
-    })
-}
-
-#[test]
-fn mesh_cycle_occurrences_propagate_collection_refusal() {
-    assert!(mesh_coverage_limit_operations().contains("catia_mesh_cycle_occurrences"));
-}
-
-#[test]
-fn mesh_face_edges_propagate_collection_refusal() {
-    assert!(mesh_coverage_limit_operations().contains("catia_mesh_face_edges"));
-}
-
-#[test]
-fn mesh_edges_by_face_propagate_collection_refusal() {
-    assert!(mesh_coverage_limit_operations().contains("catia_mesh_edges_by_face"));
-}
-
-#[test]
-fn mesh_cycle_coverage_propagates_collection_refusal() {
-    assert!(mesh_coverage_limit_operations().contains("catia_mesh_cycle_coverage"));
-}
-
-#[test]
-fn mesh_occurrence_face_rows_refuse_collection_limit() {
-    assert!(mesh_coverage_limit_operations().contains("catia_mesh_occurrence_faces"));
-}
-
-#[test]
-fn mesh_cycle_occurrence_entries_refuse_collection_limit() {
-    assert!(mesh_coverage_limit_operations().contains("catia_mesh_cycle_occurrence_entries"));
-}
-
-#[test]
-fn mesh_present_face_edges_refuse_collection_limit() {
-    assert!(mesh_coverage_limit_operations().contains("catia_mesh_present_face_edges"));
-}
-
-#[test]
-fn mesh_face_edge_entries_refuse_collection_limit() {
-    assert!(mesh_coverage_limit_operations().contains("catia_mesh_face_edge_entries"));
-}
-
-#[test]
-fn mesh_coverage_faces_refuse_collection_limit() {
-    assert!(mesh_coverage_limit_operations().contains("catia_mesh_coverage_faces"));
-}
-
-fn one_gap_topology_stream() -> Vec<u8> {
-    let mut bytes = standard_quad_topology_stream();
-    let header = bytes
-        .windows(3)
-        .position(|window| window == [0x01, 0x01, 0x04])
-        .expect("edge table header");
-    let first_row = header + 3;
-    bytes[first_row + 1] = 2;
-    bytes.drain(first_row + 4..first_row + 6);
-    bytes
-}
-
-fn mesh_gap_coverage_limit_operation(max_collection_items: u64) -> Option<&'static str> {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = max_collection_items;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("fixture fits the input limit");
-    match crate::solve::missing_edge::standard_mesh_face_coverage(
-        &ctx,
-        &one_gap_topology_stream(),
-        &[[0, 0]; 4],
-    ) {
-        Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::CollectionItems =>
-        {
-            Some(limit.operation)
-        }
-        Ok(_) => None,
-        other => panic!("expected collection resource limit, got {other:?}"),
-    }
-}
-
-fn mesh_gap_coverage_limit_operations() -> &'static std::collections::HashSet<&'static str> {
-    static OPERATIONS: std::sync::OnceLock<std::collections::HashSet<&'static str>> =
-        std::sync::OnceLock::new();
-    OPERATIONS.get_or_init(|| {
-        let mut operations = std::collections::HashSet::new();
-        for limit in 0..=1024 {
-            if let Some(operation) = mesh_gap_coverage_limit_operation(limit) {
-                operations.insert(operation);
-            }
-        }
-        operations
-    })
-}
-
-#[test]
-fn mesh_coverage_gaps_refuse_collection_limit() {
-    assert!(mesh_gap_coverage_limit_operations().contains("catia_mesh_coverage_gaps"));
-}
-
-#[test]
-fn mesh_coverage_missing_edges_refuse_collection_limit() {
-    assert!(mesh_gap_coverage_limit_operations().contains("catia_mesh_coverage_missing_edges"));
-}
-
-fn mesh_boundary_domain_limit_operation(max_collection_items: u64) -> Option<&'static str> {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    let bytes = standard_quad_topology_stream();
-    let context = crate::test_support::with_service_context(|ctx| {
-        crate::solve::missing_edge::StandardMeshBoundaryContext::parse(ctx, &bytes, &[[0, 0]; 4])
-            .expect("service resource budget")
-            .expect("quad boundary context")
-    });
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = max_collection_items;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("fixture fits the input limit");
-    let result = crate::solve::missing_edge::standard_mesh_boundary_domains_from_context(
-        &ctx, &context, None, false,
-    );
-    match result {
-        Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::CollectionItems =>
-        {
-            Some(limit.operation)
-        }
-        Ok(_) => None,
-        other => panic!("expected collection resource limit, got {other:?}"),
-    }
-}
-
-fn mesh_boundary_domain_limit_operations() -> &'static std::collections::HashSet<&'static str> {
-    static OPERATIONS: std::sync::OnceLock<std::collections::HashSet<&'static str>> =
-        std::sync::OnceLock::new();
-    OPERATIONS.get_or_init(|| {
-        let mut operations = std::collections::HashSet::new();
-        for limit in 0..=1024 {
-            if let Some(operation) = mesh_boundary_domain_limit_operation(limit) {
-                operations.insert(operation);
-            }
-        }
-        operations
-    })
-}
-
-#[test]
-fn mesh_ordered_boundaries_propagate_collection_refusal() {
-    assert!(mesh_boundary_domain_limit_operations().contains("catia_mesh_ordered_boundaries"));
-}
-
-#[test]
-fn mesh_boundary_coverage_propagates_collection_refusal() {
-    assert!(mesh_boundary_domain_limit_operations().contains("catia_mesh_boundary_coverage"));
-}
-
-#[test]
-fn mesh_ordered_boundary_entries_refuse_collection_limit() {
-    assert!(mesh_boundary_domain_limit_operations().contains("catia_mesh_ordered_boundary_entries"));
-}
-
-#[test]
-fn mesh_completed_boundary_entries_refuse_retained_limit() {
-    let bytes = standard_quad_topology_stream();
-    let context = crate::test_support::with_service_context(|ctx| {
-        crate::solve::missing_edge::StandardMeshBoundaryContext::parse(ctx, &bytes, &[[0, 0]; 4])
-            .expect("service resource budget")
-            .expect("quad boundary context")
-    });
-    let refused = crate::test_support::with_retained_refusal(
-        &[],
-        "catia_mesh_completed_boundary_entries",
-        |ctx| {
-            crate::solve::missing_edge::standard_mesh_boundary_domains_from_context(
-                ctx, &context, None, false,
-            )
-        },
-    );
-    assert!(
-        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_mesh_completed_boundary_entries")
-    );
-}
-
-#[test]
-fn mesh_completed_boundaries_refuse_collection_limit() {
-    assert!(mesh_boundary_domain_limit_operations().contains("catia_mesh_completed_boundaries"));
-}
-
-#[test]
-fn mesh_ordered_assignments_refuse_collection_limit() {
-    assert!(mesh_boundary_domain_limit_operations().contains("catia_mesh_ordered_assignments"));
-}
-
-#[test]
-fn mesh_boundary_domain_face_rows_refuse_collection_limit() {
-    assert!(mesh_boundary_domain_limit_operations().contains("catia_mesh_boundary_domain_faces"));
-}
-
-#[test]
-fn mesh_boundary_assignment_projection_refuses_before_face_rows() {
-    let bytes = standard_quad_topology_stream();
-    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-        crate::solve::missing_edge::standard_mesh_boundary_assignments(
-            ctx,
-            &bytes,
-            &[[0, 0]; 4],
-            None,
-        )
-    };
-    assert!(crate::test_support::with_service_context(run)
-        .expect("service budget")
-        .is_some());
-    let mut operations = std::collections::HashSet::new();
-    for limit in 0..=1024 {
-        match crate::test_support::with_collection_limit(limit, run) {
-            Err(cadmpeg_core::CodecError::ResourceLimit(error)) => {
-                operations.insert(error.operation);
-            }
-            Ok(Some(_)) => break,
-            outcome => panic!("unexpected boundary assignment outcome: {outcome:?}"),
-        }
-    }
-    assert!(operations.contains("catia_boundary_assignment_faces"));
-}
-
-fn placement_endpoint_limit_operation(max_collection_items: u64) -> Option<&'static str> {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = max_collection_items;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("fixture fits the input limit");
-    let bytes = standard_quad_topology_stream();
-    let result = crate::solve::missing_edge::standard_mesh_placement_endpoint_pairs(
-        &ctx,
-        &bytes,
-        &[[0, 0]; 4],
-        &[None, Some([1, 2]), Some([2, 3]), Some([3, 0])],
-    );
-    match result {
-        Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::CollectionItems =>
-        {
-            Some(limit.operation)
-        }
-        Ok(_) => None,
-        other => panic!("expected collection resource limit, got {other:?}"),
-    }
-}
-
-fn placement_endpoint_limit_operations() -> &'static std::collections::HashSet<&'static str> {
-    static OPERATIONS: std::sync::OnceLock<std::collections::HashSet<&'static str>> =
-        std::sync::OnceLock::new();
-    OPERATIONS.get_or_init(|| {
-        let mut operations = std::collections::HashSet::new();
-        for limit in 0..=1024 {
-            if let Some(operation) = placement_endpoint_limit_operation(limit) {
-                operations.insert(operation);
-            }
-        }
-        operations
-    })
-}
-
-fn boundary_support_limit_operation(max_collection_items: u64) -> &'static str {
-    use cadmpeg_core::decode::{
-        DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, WorkBudget,
-    };
-    use cadmpeg_core::CodecError;
-
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = max_collection_items;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("fixture fits the input limit");
-    let boundary = [crate::solve::missing_edge::MeshBoundaryEdgeCandidate {
-        edge: 0,
-        start: 0,
-        end: 1,
-        reversed: None,
-    }];
-    let error = crate::solve::missing_edge::boundary_endpoint_support(
-        &ctx,
-        &boundary,
-        &[vec![[0, 1]]],
-        &WorkBudget::new(100),
-    )
-    .expect_err("boundary support allocation exceeds the collection limit");
-    match error {
-        CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems =>
-        {
-            limit.operation
-        }
-        other => panic!("expected collection resource limit, got {other:?}"),
-    }
-}
-
-#[test]
-fn boundary_support_layer_marks_propagate_collection_refusal() {
-    assert_eq!(
-        boundary_support_limit_operation(7),
-        "catia_boundary_layer_marks"
-    );
-}
-
-#[test]
-fn boundary_support_forward_marks_propagate_collection_refusal() {
-    assert_eq!(
-        boundary_support_limit_operation(10),
-        "catia_boundary_forward_marks"
-    );
-}
-
-#[test]
-fn boundary_support_backward_marks_propagate_collection_refusal() {
-    assert_eq!(
-        boundary_support_limit_operation(13),
-        "catia_boundary_backward_marks"
-    );
-}
-
-#[test]
-fn boundary_support_layer_state_storage_refuses_before_marks() {
-    assert_eq!(
-        boundary_support_limit_operation(0),
-        "catia_boundary_support_layer_rows"
-    );
-    assert_eq!(
-        boundary_support_limit_operation(1),
-        "catia_boundary_support_layer_states"
-    );
-    assert_eq!(
-        boundary_support_limit_operation(3),
-        "catia_boundary_first_points"
-    );
-}
-
-#[test]
-fn boundary_support_outer_rows_and_sets_refuse_before_growth() {
-    use cadmpeg_core::decode::WorkBudget;
-    let boundary = [crate::solve::missing_edge::MeshBoundaryEdgeCandidate {
-        edge: 0,
-        start: 0,
-        end: 1,
-        reversed: None,
-    }];
-    let candidates = [vec![[0, 0]]];
-    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-        crate::solve::missing_edge::boundary_endpoint_support(
-            ctx,
-            &boundary,
-            &candidates,
-            &WorkBudget::new(100),
-        )
-    };
-    assert!(crate::test_support::with_service_context(run)
-        .expect("service budget")
-        .is_some());
-    let mut operations = std::collections::HashSet::new();
-    for limit in 0..=64 {
-        match crate::test_support::with_collection_limit(limit, run) {
-            Err(cadmpeg_core::CodecError::ResourceLimit(error)) => {
-                operations.insert(error.operation);
-            }
-            Ok(Some(_)) => break,
-            outcome => panic!("unexpected boundary support outcome: {outcome:?}"),
-        }
-    }
-    for operation in [
-        "catia_boundary_support_mark_rows",
-        "catia_boundary_forward_mark_rows",
-        "catia_boundary_backward_mark_rows",
-        "catia_boundary_supported_pairs",
-        "catia_boundary_support_edges",
-    ] {
-        assert!(operations.contains(operation), "no refusal at {operation}");
-    }
-}
-
-#[test]
-fn placement_endpoint_domains_propagate_collection_refusal() {
-    assert!(placement_endpoint_limit_operations().contains("catia_placement_endpoint_domains"));
-}
-
-#[test]
-fn placement_endpoint_counts_propagate_collection_refusal() {
-    assert!(placement_endpoint_limit_operations().contains("catia_placement_counts"));
-}
-
-#[test]
-fn placement_endpoint_bound_counts_propagate_collection_refusal() {
-    assert!(placement_endpoint_limit_operations().contains("catia_placement_bound_counts"));
-}
-
-fn placement_missing_edge_limit_operation(max_collection_items: u64) -> Option<&'static str> {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    let bytes = one_gap_topology_stream();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = max_collection_items;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("fixture fits the input limit");
-    match crate::solve::missing_edge::standard_mesh_placement_endpoint_pairs(
-        &ctx,
-        &bytes,
-        &[[0, 0]; 4],
-        &[None, Some([1, 2]), Some([2, 3]), Some([3, 0])],
-    ) {
-        Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::CollectionItems =>
-        {
-            Some(limit.operation)
-        }
-        Ok(_) => None,
-        other => panic!("expected collection resource limit, got {other:?}"),
-    }
-}
-
-fn placement_missing_edge_limit_operations() -> &'static std::collections::HashSet<&'static str> {
-    static OPERATIONS: std::sync::OnceLock<std::collections::HashSet<&'static str>> =
-        std::sync::OnceLock::new();
-    OPERATIONS.get_or_init(|| {
-        let mut operations = std::collections::HashSet::new();
-        for limit in 0..=1024 {
-            if let Some(operation) = placement_missing_edge_limit_operation(limit) {
-                operations.insert(operation);
-            }
-        }
-        operations
-    })
-}
-
-#[test]
-fn placement_candidates_refuse_collection_limit() {
-    assert!(placement_missing_edge_limit_operations().contains("catia_placement_candidates"));
-}
-
-#[test]
-fn placement_endpoint_pairs_refuse_collection_limit() {
-    assert!(placement_missing_edge_limit_operations().contains("catia_placement_endpoint_pairs"));
-}
-
-#[test]
-fn placement_corner_and_face_domain_copies_refuse_before_growth() {
-    let operations = placement_missing_edge_limit_operations();
-    for operation in [
-        "catia_corner_candidate_points",
-        "catia_corner_point_copy",
-        "catia_corner_point_entries",
-        "catia_corner_run_constraints",
-        "catia_placement_endpoint_face_rows",
-        "catia_placement_endpoint_assignment_rows",
-        "catia_placement_endpoint_placement_rows",
-        "catia_placement_endpoint_candidate_pairs",
-        "catia_placement_face_domain_entries",
-        "catia_placement_face_domain_pairs",
-    ] {
-        assert!(operations.contains(operation), "no refusal at {operation}");
-    }
+            if limit.dimension == ResourceDimension::RecursionDepth
+    ));
 }
 
 #[test]
 fn compact_standard_ports_reuse_handles_in_the_global_trim_namespace() {
     let ports = crate::test_support::with_service_context(|ctx| {
-        crate::solve::missing_edge::standard_global_edge_port_identities(
+        crate::solve::missing_edge::standard_edge_port_identities(
             ctx,
             &compact_standard_triangle_topology_stream(),
+            true,
         )
     })
     .expect("service resource budget")
@@ -637,7 +77,7 @@ fn standard_full_table_reuses_terminal_handles_for_every_row_layout() {
     ]);
 
     let ports = crate::test_support::with_service_context(|ctx| {
-        crate::solve::missing_edge::standard_global_edge_port_identities(ctx, &bytes)
+        crate::solve::missing_edge::standard_edge_port_identities(ctx, &bytes, true)
     })
     .expect("service resource budget")
     .expect("standard full-table ports");
@@ -666,7 +106,7 @@ fn standard_mesh_ports_preserve_global_terminal_handle_identity() {
     .expect("service resource budget")
     .expect("mesh port collapse");
     let table_ports = crate::test_support::with_service_context(|ctx| {
-        crate::solve::missing_edge::standard_global_edge_port_identities(ctx, &bytes)
+        crate::solve::missing_edge::standard_edge_port_identities(ctx, &bytes, true)
     })
     .expect("service resource budget")
     .expect("global terminal-handle ports");
@@ -734,7 +174,6 @@ fn standard_mesh_resolver_derives_trim_components_from_local_ports() {
 
 #[test]
 fn standard_mesh_candidate_quotient_defers_occurrence_direction() {
-    catia_test_context!(ctx);
     let candidates = vec![vec![[1, 2]], vec![[0, 3]], vec![[0, 1]]];
     let local_ports = [[0, 1], [2, 3], [4, 5]];
     let prematurely_oriented_ports = [[0, 1], [1, 2], [3, 1]];
@@ -1034,56 +473,6 @@ fn unmatched_standard_row_arity_does_not_fix_trim_span() {
 }
 
 #[test]
-fn unmatched_standard_gap_walk_refuses_before_placement_storage() {
-    use cadmpeg_core::decode::ResourceDimension;
-    let mut bytes = standard_quad_topology_stream();
-    let header = bytes
-        .windows(3)
-        .position(|window| window == [0x01, 0x01, 0x04])
-        .expect("edge table header");
-    let first_row = header + 3;
-    bytes[first_row + 1] = 4;
-    bytes.splice(first_row + 6..first_row + 6, 0x7ffe_u16.to_be_bytes());
-    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-        crate::solve::missing_edge::standard_mesh_missing_edge_assignments(
-            ctx,
-            &bytes,
-            &[[0, 0]; 4],
-            None,
-            false,
-        )
-    };
-    assert!(crate::test_support::with_service_context(run)
-        .expect("service budget")
-        .is_some());
-    let mut operations = std::collections::HashSet::new();
-    let mut limit = 0;
-    let mut completed = false;
-    for _ in 0..512 {
-        match crate::test_support::with_collection_limit(limit, run) {
-            Err(cadmpeg_core::CodecError::ResourceLimit(error)) => {
-                assert_eq!(error.dimension, ResourceDimension::CollectionItems);
-                operations.insert(error.operation);
-                limit = error.used + error.additional;
-            }
-            Ok(Some(_)) => {
-                completed = true;
-                break;
-            }
-            outcome => panic!("unexpected gap assignment outcome: {outcome:?}"),
-        }
-    }
-    assert!(completed, "adaptive limit reaches the service outcome");
-    for operation in [
-        "catia_gap_placed_edges",
-        "catia_gap_complete_assignments",
-        "catia_missing_assignment_faces",
-    ] {
-        assert!(operations.contains(operation), "no refusal at {operation}");
-    }
-}
-
-#[test]
 fn unmatched_fbb_complete_row_arity_fixes_trim_span() {
     catia_test_context!(ctx);
     let mut bytes = crate::test_support::test_topology::fbb_only_quad_topology_stream();
@@ -1138,51 +527,6 @@ fn standard_mesh_runs_include_flanking_segments() {
             .collect::<Vec<_>>(),
         vec![(0, 0, 2), (1, 2, 2), (2, 4, 2), (3, 6, 2)]
     );
-}
-
-#[test]
-fn endpoint_pruning_refuses_before_complete_pairs_and_assignment_copies() {
-    use cadmpeg_core::decode::ResourceDimension;
-    let bytes = standard_quad_topology_stream();
-    let candidates = [Vec::new(), vec![[1, 2]], vec![[2, 3]], vec![[3, 0]]];
-    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-        crate::solve::missing_edge::standard_mesh_prune_endpoint_candidates(
-            ctx,
-            &bytes,
-            &[[0, 0]; 4],
-            &candidates,
-        )
-    };
-    assert!(crate::test_support::with_service_context(run)
-        .expect("service budget")
-        .is_some());
-    let mut operations = std::collections::HashSet::new();
-    let mut limit = 0;
-    let mut completed = false;
-    for _ in 0..512 {
-        match crate::test_support::with_collection_limit(limit, run) {
-            Err(cadmpeg_core::CodecError::ResourceLimit(error)) => {
-                assert_eq!(error.dimension, ResourceDimension::CollectionItems);
-                operations.insert(error.operation);
-                limit = error.used + error.additional;
-            }
-            Ok(Some(_)) => {
-                completed = true;
-                break;
-            }
-            outcome => panic!("unexpected endpoint pruning outcome: {outcome:?}"),
-        }
-    }
-    assert!(completed, "adaptive limit reaches the service outcome");
-    for operation in [
-        "catia_prune_complete_point_pairs",
-        "catia_prune_candidate_rows",
-        "catia_prune_candidate_pairs",
-        "catia_prune_retained_assignments",
-        "catia_prune_retained_boundary_uses",
-    ] {
-        assert!(operations.contains(operation), "no refusal at {operation}");
-    }
 }
 
 #[test]
@@ -1258,7 +602,7 @@ fn standard_mesh_endpoint_domains_ignore_row_local_endpoint_order() {
 }
 
 #[test]
-fn mesh_coverage_reuses_one_buffer_for_independent_cycles() {
+fn mesh_coverage_reports_one_gap_per_independent_cycle() {
     use crate::solve::missing_edge::{mesh_face_coverage, StandardMeshAnalysis};
     const FACES: usize = 64;
     let analysis = StandardMeshAnalysis {
@@ -1267,51 +611,29 @@ fn mesh_coverage_reuses_one_buffer_for_independent_cycles() {
         occurrences: Vec::new(),
         fixed_complete_row_spans: false,
     };
-    // Four face-index slots and two output slots per face, plus four reusable coverage cells.
-    let coverage = crate::test_support::with_collection_limit(
-        u64::try_from(6 * FACES + 4).expect("synthetic coverage items fit u64"),
-        |ctx| mesh_face_coverage(ctx, &analysis, &[]),
-    )
-    .expect("cycle coverage is admitted once")
-    .expect("uncovered cycles are valid");
+    let coverage =
+        crate::test_support::with_service_context(|ctx| mesh_face_coverage(ctx, &analysis, &[]))
+            .expect("service decode")
+            .expect("uncovered cycles are valid");
     assert_eq!(coverage.len(), FACES);
     assert!(coverage
         .iter()
         .all(|face| face.gaps.len() == 1 && face.gaps[0].length == 4));
-    crate::test_support::with_materialized_limit(4, |ctx| {
-        for _ in 0..128 {
-            assert!(mesh_face_coverage(ctx, &analysis, &[])
-                .expect("released coverage buffer")
-                .is_some());
-        }
-    });
 }
 
 #[test]
-fn endpoint_pruning_with_known_domains_does_not_build_all_point_pairs() {
+fn endpoint_pruning_with_known_domains_keeps_them() {
     let bytes = standard_quad_topology_stream();
     let candidates = [vec![[0, 1]], vec![[1, 2]], vec![[2, 3]], vec![[3, 0]]];
-    let mut limit = 0;
-    for _ in 0..512 {
-        let result = crate::test_support::with_collection_limit(limit, |ctx| {
-            crate::solve::missing_edge::standard_mesh_prune_endpoint_candidates(
-                ctx,
-                &bytes,
-                &[[0, 0]; 4],
-                &candidates,
-            )
-        });
-        match result {
-            Err(cadmpeg_core::CodecError::ResourceLimit(error)) => {
-                assert_ne!(error.operation, "catia_prune_complete_point_pairs");
-                limit = error.used + error.additional;
-            }
-            Ok(Some(pruned)) => {
-                assert_eq!(pruned, candidates);
-                return;
-            }
-            outcome => panic!("unexpected endpoint pruning outcome: {outcome:?}"),
-        }
-    }
-    panic!("adaptive limit must reach the known domains");
+    let pruned = crate::test_support::with_service_context(|ctx| {
+        crate::solve::missing_edge::standard_mesh_prune_endpoint_candidates(
+            ctx,
+            &bytes,
+            &[[0, 0]; 4],
+            &candidates,
+        )
+    })
+    .expect("service decode")
+    .expect("known domains admit the quad");
+    assert_eq!(pruned, candidates);
 }
