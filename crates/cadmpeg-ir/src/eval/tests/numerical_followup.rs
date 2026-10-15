@@ -37,7 +37,7 @@ fn numerical_followup_surface_projection_is_independent_of_scale() {
             target,
             Some(Point2::new(0., 0.)),
         )
-        .expect("resource allocation did not fail")
+        .expect("compute the NURBS surface parameter near point")
         .unwrap();
         assert!((uv.u - 0.3).abs() <= 8.0 * f64::EPSILON);
         assert!((uv.v - 0.4).abs() <= 8.0 * f64::EPSILON);
@@ -62,7 +62,7 @@ fn numerical_followup_curve_search_rejects_a_nonzero_zero_tolerance_residual() {
             0.,
             0.
         )
-        .expect("resource allocation did not fail"),
+        .expect("compute the NURBS curve parameter near point"),
         None
     );
 }
@@ -87,7 +87,7 @@ fn curve_search_admits_its_tolerance_before_the_search() {
                 tolerance,
                 0.5
             )
-            .expect("resource allocation did not fail"),
+            .expect("compute the NURBS curve parameter near point"),
             None
         );
     }
@@ -100,7 +100,7 @@ fn curve_search_admits_its_tolerance_before_the_search() {
         tolerance,
         seed,
     )
-    .expect("resource allocation did not fail");
+    .expect("compute the NURBS curve parameter near point");
     assert!(parameter.is_some());
     assert_eq!(
         parameter,
@@ -111,7 +111,7 @@ fn curve_search_admits_its_tolerance_before_the_search() {
             tolerance.get(),
             0.5
         )
-        .expect("resource allocation did not fail")
+        .expect("compute the NURBS curve parameter near point")
     );
 }
 
@@ -140,7 +140,7 @@ fn numerical_followup_rational_search_retains_common_weight_scaling() {
                 0.,
                 0.
             )
-            .expect("resource allocation did not fail")
+            .expect("compute the NURBS curve parameter near point")
             .map(crate::scalar::FiniteReal::get),
             Some(0.0)
         );
@@ -153,7 +153,7 @@ fn numerical_followup_rational_search_retains_common_weight_scaling() {
                 Point2::new(0.5, 0.),
                 0.,
             )
-            .expect("resource allocation did not fail"),
+            .expect("check NURBS pcurve contains point"),
             Some(true)
         );
     }
@@ -184,7 +184,7 @@ fn implicit_unit_weights_match_explicit_unit_weights_in_curve_search() {
             0.0,
             0.5
         )
-        .expect("resource allocation did not fail"),
+        .expect("compute the NURBS curve parameter near point"),
         nurbs_curve_parameter_near_point(
             &cadmpeg_test_support::service_decode_context(),
             &explicit,
@@ -192,12 +192,12 @@ fn implicit_unit_weights_match_explicit_unit_weights_in_curve_search() {
             0.0,
             0.5
         )
-        .expect("resource allocation did not fail")
+        .expect("compute the NURBS curve parameter near point")
     );
     let controls = [Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)];
     assert_eq!(
         nurbs_pcurve_contains_point(1, &[0.0, 0.0, 1.0, 1.0], &controls, None, controls[0], 0.0,)
-            .expect("resource allocation did not fail"),
+            .expect("check NURBS pcurve contains point"),
         nurbs_pcurve_contains_point(
             1,
             &[0.0, 0.0, 1.0, 1.0],
@@ -206,7 +206,7 @@ fn implicit_unit_weights_match_explicit_unit_weights_in_curve_search() {
             controls[0],
             0.0,
         )
-        .expect("resource allocation did not fail")
+        .expect("check NURBS pcurve contains point")
     );
 }
 
@@ -288,7 +288,7 @@ fn analytic_line_search_preserves_subnormal_scale_residuals() {
             crate::scalar::FiniteReal::ZERO,
             crate::scalar::NonNegativeLength::ZERO,
         )
-        .expect("resource allocation did not fail"),
+        .expect("compute the direct curve parameter near point"),
         None
     );
 }

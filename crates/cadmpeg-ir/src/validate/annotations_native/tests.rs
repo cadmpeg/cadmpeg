@@ -55,7 +55,7 @@ fn annotation_keys_and_field_paths_are_checked() {
         .expect("nonempty exactness field");
     source_fidelity.annotations = annotations.build();
     let findings = crate::validate_neutral_with_source_fidelity(&ir, &source_fidelity, Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .findings;
     assert!(findings.iter().any(|finding| {
         finding.check == Check::Annotations && finding.severity == crate::report::Severity::Error
@@ -78,7 +78,7 @@ fn native_topology_link_must_resolve() {
     );
     ir.native.finalize();
     assert!(validate_neutral(&ir, Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .findings
         .iter()
         .any(|finding| finding.check == Check::NativeLinks));
@@ -114,14 +114,14 @@ fn parameter_native_ref_must_resolve() {
         native_ref: Some("native:missing#0".into()),
     });
     assert!(validate_neutral(&ir, Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .findings
         .iter()
         .any(|finding| {
             finding.check == Check::NativeLinks && finding.entity.as_deref() == Some(id.as_str())
         }));
     assert!(validate_neutral(&ir, Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .findings
         .iter()
         .any(|finding| {
@@ -145,7 +145,7 @@ fn unresolved_unknown_record_link_is_reported_once() {
     .expect("store unknown record");
 
     let findings = validate_neutral(&ir, Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .findings;
     let reported = findings
         .iter()
@@ -177,7 +177,7 @@ fn complete_document_native_link_validation_reports_malformed_shapes() {
         }]}});
         let ir = crate::CadIr::from_json(&wire.to_string()).unwrap();
         let findings = validate_neutral(&ir, Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .findings;
         let found = findings
             .iter()
@@ -208,7 +208,7 @@ fn codec_owned_link_payloads_do_not_inherit_unknown_record_shape() {
         }]}});
         let ir = crate::CadIr::from_json(&wire.to_string()).unwrap();
         let findings = validate_neutral(&ir, Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .findings;
         assert!(
             findings

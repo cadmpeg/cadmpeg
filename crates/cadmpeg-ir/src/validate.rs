@@ -482,7 +482,7 @@ mod tests {
             native_ref: None,
         });
 
-        let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
+        let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
 
         assert!(report.findings.is_empty(), "{:?}", report.findings);
     }
@@ -540,7 +540,7 @@ mod tests {
             ),
         ];
 
-        let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
+        let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
         assert!(report.findings.is_empty(), "{:?}", report.findings);
     }
 }

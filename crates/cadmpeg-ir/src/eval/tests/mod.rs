@@ -492,7 +492,7 @@ fn degree_zero_nurbs_surface_has_an_exact_parameter_segment_bound() {
         [Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)],
         [point, point],
     )
-    .expect("resource allocation did not fail")
+    .expect("compute the NURBS surface parameter segment chord bound")
     .expect("degree-zero surface bound");
     assert!(bound <= EPS_DEGREE_ZERO_SURFACE_BOUND, "{bound}");
 }
@@ -520,7 +520,7 @@ fn degree_zero_nurbs_surface_patch_spans_use_their_matching_poles() {
             [Point2::new(range[0], 0.0), Point2::new(range[1], 1.0)],
             [pole, pole],
         )
-        .expect("resource allocation did not fail")
+        .expect("compute the NURBS surface parameter segment chord bound")
         .expect("degree-zero patch span bound");
         assert!(bound <= EPS_DEGREE_ZERO_SURFACE_BOUND, "{bound}");
     }
@@ -560,7 +560,7 @@ fn nurbs_surface_parameter_segment_bound_splits_internal_knots() {
         parameters,
         endpoints,
     )
-    .expect("resource allocation did not fail")
+    .expect("compute the NURBS surface parameter segment chord bound")
     .expect("multi-span rational Bézier residual bound");
 
     for index in 0..=100 {
@@ -667,7 +667,7 @@ fn direct_analytic_curve_inverses_preserve_native_parameters() {
             point.get(),
             parameter,
         )
-        .expect("resource allocation did not fail")
+        .expect("compute the model curve parameter near point")
         .expect("direct analytic inverse")
         .get();
         assert!((inverse - parameter).abs() < 1.0e-12);
@@ -763,7 +763,7 @@ fn polyline_inverse_searches_every_segment_in_native_parameter_space() {
             point,
             seed,
         )
-        .expect("resource allocation did not fail")
+        .expect("compute the model curve parameter near point")
         .expect("polyline inverse")
         .get();
         assert!((inverse - expected).abs() < 1.0e-12);
@@ -795,7 +795,7 @@ fn indexed_curve_inverse_uses_the_caller_tolerance() {
         point,
         0.5
     )
-    .expect("resource allocation did not fail")
+    .expect("compute the model curve parameter near point")
     .is_none());
     let inverse = super::model_curve_parameter_near_point_in_index_with_tolerance(
         &cadmpeg_test_support::service_decode_context(),
@@ -805,7 +805,7 @@ fn indexed_curve_inverse_uses_the_caller_tolerance() {
         0.5,
         0.01,
     )
-    .expect("resource allocation did not fail")
+    .expect("compute the model curve parameter near point")
     .expect("caller tolerance admits the bounded residual")
     .get();
     assert!((inverse - 0.5).abs() < 1.0e-12);
@@ -854,7 +854,7 @@ fn transformed_curve_inverse_uses_the_basis_parameterization() {
         point.get(),
         parameter,
     )
-    .expect("resource allocation did not fail")
+    .expect("compute the model curve parameter near point")
     .expect("transformed inverse")
     .get();
     assert!((inverse - parameter).abs() < 1.0e-10);
@@ -878,7 +878,7 @@ fn transformed_curve_inverse_uses_the_basis_parameterization() {
         Point3::new(0.0, 0.0, 0.0),
         0.0
     )
-    .expect("resource allocation did not fail")
+    .expect("compute the model curve parameter near point")
     .is_none());
 }
 
@@ -904,7 +904,7 @@ fn degenerate_curve_inverse_preserves_the_selected_parameter() {
             point,
             seed
         )
-        .expect("resource allocation did not fail")
+        .expect("compute the model curve parameter near point")
         .map(crate::scalar::FiniteReal::get),
         Some(seed)
     );
@@ -915,7 +915,7 @@ fn degenerate_curve_inverse_preserves_the_selected_parameter() {
         Point3::new(2.0, 3.0, 5.0),
         seed
     )
-    .expect("resource allocation did not fail")
+    .expect("compute the model curve parameter near point")
     .is_none());
 }
 
@@ -949,7 +949,7 @@ fn a_surface_isoline_reproduces_the_surface_along_its_free_parameter() {
             direction,
             at,
         )
-        .expect("resource allocation did not fail")
+        .expect("compute the NURBS surface isoline")
         .expect("isoline");
         for sample in samples {
             let (u, v) = match direction {
@@ -1843,7 +1843,7 @@ fn nurbs_curve_inverse_uses_the_seed_to_select_an_ambiguous_witness() {
             EPS_CURVE_INVERSE_WITNESS,
             0.1
         )
-        .expect("resource allocation did not fail")
+        .expect("compute the NURBS curve parameter near point")
         .map(crate::scalar::FiniteReal::get),
         Some(0.25)
     );
@@ -1855,7 +1855,7 @@ fn nurbs_curve_inverse_uses_the_seed_to_select_an_ambiguous_witness() {
             EPS_CURVE_INVERSE_WITNESS,
             0.9
         )
-        .expect("resource allocation did not fail")
+        .expect("compute the NURBS curve parameter near point")
         .map(crate::scalar::FiniteReal::get),
         Some(0.75)
     );
@@ -1867,7 +1867,7 @@ fn nurbs_curve_inverse_uses_the_seed_to_select_an_ambiguous_witness() {
             EPS_CURVE_INVERSE_WITNESS,
             0.5,
         )
-        .expect("resource allocation did not fail"),
+        .expect("compute the NURBS curve parameter near point"),
         None
     );
     assert!(nurbs_curve_speed_bound(&curve).is_some_and(|bound| bound.get() >= 2.0));

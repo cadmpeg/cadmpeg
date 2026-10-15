@@ -36,7 +36,7 @@ fn feature_operation_geometry_is_validated() {
         });
     }
     let findings = validate_neutral(&ir, Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .findings;
     assert!(!findings
         .iter()

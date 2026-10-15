@@ -29,7 +29,7 @@ fn a_support_side_whose_nurbs_pcurve_overflows_misses_its_contract_by_nan() {
         &crate::index::ModelIndex::new_model_only(&ir),
         &mut findings,
     )
-    .expect("resource allocation did not fail");
+    .expect("check procedural support consistency");
     assert_eq!(findings.len(), 1, "{findings:?}");
     assert_eq!(
         findings[0].message,
@@ -66,7 +66,7 @@ fn a_support_side_whose_placed_support_overflows_misses_its_contract_by_inf() {
         &crate::index::ModelIndex::new_model_only(&ir),
         &mut findings,
     )
-    .expect("resource allocation did not fail");
+    .expect("check procedural support consistency");
     assert_eq!(findings.len(), 1, "{findings:?}");
     assert_eq!(
         findings[0].message,
@@ -119,7 +119,7 @@ fn a_coedge_placed_pcurve_whose_mapped_points_overflow_misses_the_vertices_by_na
         &crate::index::ModelIndex::new_model_only(&ir),
         &mut findings,
     )
-    .expect("resource allocation did not fail");
+    .expect("check pcurve surface consistency");
     assert!(
         findings.iter().any(|finding| {
             finding.entity.as_deref() == Some(coedge_id.as_str())
@@ -169,7 +169,7 @@ fn a_surface_curve_whose_end_overflows_misses_its_support_contract_by_nan() {
         &crate::index::ModelIndex::new_model_only(&ir),
         &mut findings,
     )
-    .expect("resource allocation did not fail");
+    .expect("check procedural support consistency");
     assert_eq!(
         messages(&findings),
         ["procedural support side 0 misses its endpoint distance contract by NaN"]
@@ -190,7 +190,7 @@ fn a_surface_offset_whose_solved_end_overflows_misses_its_offset_distance_by_nan
         &crate::index::ModelIndex::new_model_only(&ir),
         &mut findings,
     )
-    .expect("resource allocation did not fail");
+    .expect("check procedural support consistency");
     assert_eq!(
         messages(&findings),
         ["surface-offset solved curve misses its base offset distance by NaN"]
@@ -213,7 +213,7 @@ fn a_surface_offset_whose_base_end_overflows_misses_its_contracts_by_nan() {
         &crate::index::ModelIndex::new_model_only(&ir),
         &mut findings,
     )
-    .expect("resource allocation did not fail");
+    .expect("check procedural support consistency");
     assert_eq!(
         messages(&findings),
         [
@@ -302,7 +302,7 @@ fn a_charted_tolerant_intersection_whose_end_overflows_misses_its_witnesses_by_n
         &crate::index::ModelIndex::new_model_only(&ir),
         &mut findings,
     )
-    .expect("resource allocation did not fail");
+    .expect("check procedural support consistency");
     assert_eq!(
         messages(&findings),
         ["charted tolerant intersection misses its endpoint witnesses by NaN"]
@@ -349,7 +349,7 @@ fn an_edge_curve_whose_end_overflows_misses_its_vertices_by_nan() {
         &ir,
         &mut findings,
     )
-    .expect("resource allocation did not fail");
+    .expect("check edge endpoint consistency");
     assert!(
         findings.iter().any(|finding| {
             finding.entity.as_deref() == Some(edge.as_str())
@@ -380,7 +380,7 @@ fn a_coedge_use_curve_whose_end_overflows_misses_its_traversal_vertices_by_nan()
         &ir,
         &mut findings,
     )
-    .expect("resource allocation did not fail");
+    .expect("check edge endpoint consistency");
     assert!(
         findings.iter().any(|finding| {
             finding.entity.as_deref() == Some(coedge.as_str())
@@ -568,7 +568,7 @@ fn a_support_side_on_a_blend_whose_support_partial_overflows_misses_its_contract
         &crate::index::ModelIndex::new_model_only(&ir),
         &mut findings,
     )
-    .expect("resource allocation did not fail");
+    .expect("check procedural support consistency");
     assert_eq!(findings.len(), 1, "{findings:?}");
     assert_eq!(
         findings[0].message,
@@ -652,7 +652,7 @@ fn a_charted_tolerant_intersection_on_a_blend_whose_support_partial_overflows_mi
         &crate::index::ModelIndex::new_model_only(&ir),
         &mut findings,
     )
-    .expect("resource allocation did not fail");
+    .expect("check procedural support consistency");
     assert_eq!(
         messages(&findings),
         ["charted tolerant intersection misses its endpoint witnesses by NaN"]

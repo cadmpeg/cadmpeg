@@ -10,7 +10,7 @@ fn ids_are_globally_unique_across_arenas() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
     ir.model.points[0].id = crate::ids::PointId::mint(ir.model.vertices[0].id.as_str()).unwrap();
     assert!(validate_neutral(&ir, Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .findings
         .iter()
         .any(|finding| finding.check == Check::Identity));
@@ -21,7 +21,7 @@ fn arena_ids_must_be_sorted() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
     ir.model.points.swap(0, 1);
     assert!(validate_neutral(&ir, Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .findings
         .iter()
         .any(|finding| finding.check == Check::ArenaOrder));
