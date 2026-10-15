@@ -535,11 +535,7 @@ mod tests {
             true,
         );
         assert_eq!(histories[0].features[0].parameters["D1"], "5mm");
-        let projected = crate::history::project::project_features(
-            &cadmpeg_test_support::service_decode_context(),
-            &histories,
-        )
-        .unwrap();
+        let projected = crate::history::project::project_features(&histories).unwrap();
         assert!(matches!(
             projected[0].evaluation.definition(),
             FeatureDefinition::Operation(FeatureOperation::MoveFace {
@@ -558,11 +554,7 @@ mod tests {
             let mut histories = vec![move_face_history()];
             enrich_history_move_face_translations_test(&mut histories, &[lane]);
             assert!(matches!(
-                crate::history::project::project_features(
-                    &cadmpeg_test_support::service_decode_context(),
-                    &histories
-                )
-                .unwrap()[0]
+                crate::history::project::project_features(&histories).unwrap()[0]
                     .evaluation
                     .definition(),
                 FeatureDefinition::Operation(FeatureOperation::Native { .. })
@@ -578,11 +570,7 @@ mod tests {
             ],
         );
         assert!(matches!(
-            crate::history::project::project_features(
-                &cadmpeg_test_support::service_decode_context(),
-                &histories
-            )
-            .unwrap()[0]
+            crate::history::project::project_features(&histories).unwrap()[0]
                 .evaluation
                 .definition(),
             FeatureDefinition::Operation(FeatureOperation::Native { .. })

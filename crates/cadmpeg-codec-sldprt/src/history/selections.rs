@@ -3,7 +3,7 @@
 
 use crate::brep::feature_source::FeatureSourceId;
 use crate::records::{FeatureHistory, FeatureInputSurfaceSelection};
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{Curve, SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -134,7 +134,6 @@ fn extrude_extent_sides_mut(extent: &mut ExtrudeExtent) -> Vec<&mut ExtrudeSide>
 }
 
 pub(crate) fn bind_topology_selections(
-    ctx: &DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
     histories: &[FeatureHistory],
     inputs: &TopologySelectionInputs<'_>,
@@ -187,9 +186,7 @@ pub(crate) fn bind_topology_selections(
             if let Some(outputs) = resolve_ids(scope, &body_ids) {
                 feature
                     .evaluation
-                    .set_outputs(cadmpeg_ir::features::DistinctMembers::try_from(
-                        outputs, ctx,
-                    )?);
+                    .set_outputs(cadmpeg_ir::features::DistinctMembers::try_from(outputs)?);
             }
         }
         let source_properties = &feature.source_properties;
@@ -427,30 +424,28 @@ pub(crate) fn bind_topology_selections(
                             let empty = cadmpeg_ir::features::CombineOperands::new(
                                 BodySelection::Unresolved,
                                 BodySelection::Unresolved,
-                                ctx,
-                            )?
+                            )
                             .map_err(CodecError::malformed)?;
                             let (mut target, mut tools) =
                                 std::mem::replace(operands, empty).into_parts();
-                            resolve_body_selection(ctx, &mut target, &body_ids)?;
-                            resolve_body_selection(ctx, &mut tools, &body_ids)?;
-                            *operands =
-                                cadmpeg_ir::features::CombineOperands::new(target, tools, ctx)?
-                                    .map_err(CodecError::malformed)?;
+                            resolve_body_selection(&mut target, &body_ids);
+                            resolve_body_selection(&mut tools, &body_ids);
+                            *operands = cadmpeg_ir::features::CombineOperands::new(target, tools)
+                                .map_err(CodecError::malformed)?;
                         }
                         FeatureDefinition::Operation(FeatureOperation::CutWithSurface {
                             targets,
                             tools,
                             ..
                         }) => {
-                            resolve_body_selection(ctx, targets, &body_ids)?;
+                            resolve_body_selection(targets, &body_ids);
                             resolve_face(tools);
                         }
                         FeatureDefinition::Operation(FeatureOperation::DeleteBody {
                             bodies,
                             ..
                         }) => {
-                            resolve_body_selection(ctx, bodies, &body_ids)?;
+                            resolve_body_selection(bodies, &body_ids);
                         }
                         FeatureDefinition::Operation(FeatureOperation::Pattern {
                             pattern, ..
@@ -462,12 +457,12 @@ pub(crate) fn bind_topology_selections(
                         FeatureDefinition::Operation(FeatureOperation::Scale {
                             bodies, ..
                         }) => {
-                            resolve_body_selection(ctx, bodies, &body_ids)?;
+                            resolve_body_selection(bodies, &body_ids);
                         }
                         FeatureDefinition::Operation(FeatureOperation::MoveBody {
                             bodies, ..
                         }) => {
-                            resolve_body_selection(ctx, bodies, &body_ids)?;
+                            resolve_body_selection(bodies, &body_ids);
                         }
                         FeatureDefinition::Operation(
                             FeatureOperation::DeleteFace { faces, .. }
@@ -482,8 +477,7 @@ pub(crate) fn bind_topology_selections(
                             let empty = cadmpeg_ir::features::ReplaceFaceOperands::new(
                                 FaceSelection::Unresolved,
                                 FaceSelection::Unresolved,
-                                ctx,
-                            )?
+                            )
                             .map_err(CodecError::malformed)?;
                             let (mut targets, mut replacements) =
                                 std::mem::replace(operands, empty).into_parts();
@@ -492,8 +486,7 @@ pub(crate) fn bind_topology_selections(
                             *operands = cadmpeg_ir::features::ReplaceFaceOperands::new(
                                 targets,
                                 replacements,
-                                ctx,
-                            )?
+                            )
                             .map_err(CodecError::malformed)?;
                         }
                         FeatureDefinition::Operation(FeatureOperation::Hole {
@@ -758,21 +751,12 @@ fn resolve_edge_selection(
 }
 
 fn resolve_body_selection(
-    ctx: &DecodeContext<'_>,
     selection: &mut BodySelection,
     ids: &HashMap<&str, Option<&cadmpeg_ir::ids::BodyId>>,
-) -> Result<(), CodecError> {
+) {
     if let BodySelection::Native(native) = selection {
-        let bodies = match resolve_ids(native, ids) {
-            Some(bodies) => match cadmpeg_ir::features::DistinctMembers::try_from(bodies, ctx) {
-                Ok(bodies) => Some(bodies),
-                Err(error @ cadmpeg_ir::features::FeatureCollectionError::Resource(_)) => {
-                    return Err(error.into())
-                }
-                Err(_) => None,
-            },
-            None => None,
-        };
+        let bodies = resolve_ids(native, ids)
+            .and_then(|bodies| cadmpeg_ir::features::DistinctMembers::try_from(bodies).ok());
         if let Some(bodies) = bodies {
             let old = std::mem::replace(selection, BodySelection::Unresolved);
             if let BodySelection::Native(native) = old {
@@ -780,7 +764,6 @@ fn resolve_body_selection(
             }
         }
     }
-    Ok(())
 }
 
 #[cfg(test)]

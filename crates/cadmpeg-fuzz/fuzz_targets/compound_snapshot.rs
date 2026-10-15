@@ -13,7 +13,7 @@ fuzz_target!(|data: &[u8]| {
     else {
         return;
     };
-    let _ = CompoundPrefixProbe::inspect_with_context(&ctx, root);
+    let _ = CompoundPrefixProbe::inspect(&ctx, root);
     let Ok(snapshot) = CompoundSnapshot::new(&ctx, root) else {
         return;
     };

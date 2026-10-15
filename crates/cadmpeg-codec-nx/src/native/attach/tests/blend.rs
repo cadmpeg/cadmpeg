@@ -13,12 +13,8 @@ fn nx_body_writing_blend_retains_unresolved_fillet_family() {
     let mut source_properties = BTreeMap::new();
     source_properties.insert("body_write.0".to_string(), "witness".to_string());
 
-    let definition = body_writing_unresolved_feature_definition(
-        &cadmpeg_test_support::service_decode_context(),
-        "BLEND",
-        &source_properties,
-    )
-    .expect("body-writing projection admission");
+    let definition = body_writing_unresolved_feature_definition("BLEND", &source_properties)
+        .expect("body-writing projection admission");
 
     assert_eq!(
         definition,
@@ -40,12 +36,8 @@ fn nx_non_body_writing_blend_remains_native_for_semantic_review() {
     let source_properties = BTreeMap::new();
 
     assert_eq!(
-        body_writing_unresolved_feature_definition(
-            &cadmpeg_test_support::service_decode_context(),
-            "BLEND",
-            &source_properties
-        )
-        .expect("body-writing projection admission"),
+        body_writing_unresolved_feature_definition("BLEND", &source_properties)
+            .expect("body-writing projection admission"),
         None
     );
 }
@@ -55,12 +47,8 @@ fn nx_body_writing_face_blend_retains_unresolved_face_blend_family() {
     let mut source_properties = BTreeMap::new();
     source_properties.insert("body_write.0".to_string(), "witness".to_string());
 
-    let definition = body_writing_unresolved_feature_definition(
-        &cadmpeg_test_support::service_decode_context(),
-        "FACE_BLEND",
-        &source_properties,
-    )
-    .expect("body-writing projection admission");
+    let definition = body_writing_unresolved_feature_definition("FACE_BLEND", &source_properties)
+        .expect("body-writing projection admission");
 
     assert_eq!(
         definition,
@@ -68,9 +56,7 @@ fn nx_body_writing_face_blend_retains_unresolved_face_blend_family() {
             operands: cadmpeg_ir::features::FaceBlendOperands::new(
                 FaceSelection::Unresolved,
                 FaceSelection::Unresolved,
-                &cadmpeg_test_support::service_decode_context(),
             )
-            .expect("operand admission")
             .unwrap(),
 
             radius: RadiusSpec::Unresolved { form: None },
@@ -84,12 +70,8 @@ fn nx_non_body_writing_face_blend_remains_native_for_semantic_review() {
     let source_properties = BTreeMap::new();
 
     assert_eq!(
-        body_writing_unresolved_feature_definition(
-            &cadmpeg_test_support::service_decode_context(),
-            "FACE_BLEND",
-            &source_properties
-        )
-        .expect("body-writing projection admission"),
+        body_writing_unresolved_feature_definition("FACE_BLEND", &source_properties)
+            .expect("body-writing projection admission"),
         None
     );
 }

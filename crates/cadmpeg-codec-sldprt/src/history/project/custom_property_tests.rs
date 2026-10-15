@@ -24,12 +24,9 @@ fn custom_properties_are_document_attributes_not_model_features() {
         features: vec![property],
     };
 
-    assert!(project_features(
-        &cadmpeg_test_support::service_decode_context(),
-        std::slice::from_ref(&history)
-    )
-    .unwrap()
-    .is_empty());
+    assert!(project_features(std::slice::from_ref(&history))
+        .unwrap()
+        .is_empty());
     let attributes = custom_property_attributes(std::slice::from_ref(&history))
         .expect("custom-property projection");
     assert_eq!(attributes.len(), 1);

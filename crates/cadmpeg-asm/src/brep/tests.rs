@@ -32,7 +32,6 @@ fn exact_circle_directrix() -> cadmpeg_ir::geometry::nurbs::NurbsCurve {
     let center = Point3::new(2.0, 3.0, 4.0);
     let point = |x, y| Point3::new(center.x + x, center.y + y, center.z);
     cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         2,
         vec![0.0, 0.0, 0.0, 1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0, 4.0],
         vec![
@@ -59,7 +58,6 @@ fn exact_circle_directrix() -> cadmpeg_ir::geometry::nurbs::NurbsCurve {
         ]),
         false,
     )
-    .expect("fixture constructor admission")
     .unwrap()
 }
 
@@ -152,7 +150,6 @@ fn degree_elevated_circle() -> cadmpeg_ir::geometry::nurbs::NurbsCurve {
         })
         .unzip();
     cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         3,
         vec![
             0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 2.0, 2.0, 2.0, 3.0, 3.0, 3.0, 4.0, 4.0, 4.0, 4.0,
@@ -161,7 +158,6 @@ fn degree_elevated_circle() -> cadmpeg_ir::geometry::nurbs::NurbsCurve {
         Some(weights),
         false,
     )
-    .expect("fixture constructor admission")
     .unwrap()
 }
 
@@ -176,21 +172,17 @@ fn exact_circle_recognition_is_projective_and_degree_invariant() {
     });
     {
         let replacement = cadmpeg_ir::geometry::nurbs::NurbsPoles3::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             scaled.pole_rows().raw_points(),
             scaled_weights,
         )
-        .expect("fixture pole pairing admission")
         .expect("scaled weights are finite and non-zero");
         edit::replace(&mut scaled, |previous| {
             cadmpeg_ir::geometry::nurbs::NurbsCurve::new(
-                &cadmpeg_test_support::service_decode_context(),
                 previous.degree(),
                 previous.knots().to_vec(),
                 replacement,
                 previous.periodic(),
             )
-            .expect("fixture final NURBS admission")
         })
     }
     .unwrap();
@@ -246,14 +238,12 @@ fn cylinder(origin: Point3, axis: Vector3, radius: f64) -> SurfaceGeometry {
 
 fn linear_spine(points: Vec<Point3>) -> cadmpeg_ir::geometry::nurbs::NurbsCurve {
     cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         2,
         vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
         points,
         None,
         false,
     )
-    .expect("fixture constructor admission")
     .unwrap()
 }
 
@@ -1063,7 +1053,6 @@ fn reversed_edge_negates_its_pcurve_validation_interval() {
         Some([[-0.55, -0.60], [0.55, 0.60]])
     );
     let candidate = cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![
@@ -1073,7 +1062,6 @@ fn reversed_edge_negates_its_pcurve_validation_interval() {
         None,
         false,
     )
-    .expect("fixture pcurve construction admission")
     .unwrap();
     assert_eq!(
         pcurve_ranges_on_domain(&candidate, Some(&edge)),
@@ -1282,7 +1270,6 @@ fn circle_recognition_is_invariant_under_common_weight_scale() {
     for curve in [exact_circle_directrix(), degree_elevated_circle()] {
         for scale in [1e-200, 1.0, 1e200] {
             let rescaled = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
-                &cadmpeg_test_support::service_decode_context(),
                 curve.degree(),
                 curve.knots().to_vec(),
                 curve.pole_rows().raw_points(),
@@ -1296,7 +1283,6 @@ fn circle_recognition_is_invariant_under_common_weight_scale() {
                 ),
                 false,
             )
-            .expect("fixture constructor admission")
             .unwrap();
             assert!(rational_four_arc_circle(&rescaled).is_some());
         }
@@ -1304,14 +1290,12 @@ fn circle_recognition_is_invariant_under_common_weight_scale() {
     let curve = exact_circle_directrix();
     for scale in [1e-200, 1.0, 1e200] {
         let polynomial = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             curve.degree(),
             curve.knots().to_vec(),
             curve.pole_rows().raw_points(),
             Some(vec![scale; 9]),
             false,
         )
-        .expect("fixture constructor admission")
         .unwrap();
         assert!(rational_four_arc_circle(&polynomial).is_none());
     }

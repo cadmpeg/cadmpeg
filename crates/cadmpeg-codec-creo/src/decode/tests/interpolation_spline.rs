@@ -72,7 +72,6 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
         SketchEntityId::mint("creo:model:sketch_entity#second-line".to_string()).unwrap();
     let spline = SketchGeometry::nurbs(
         cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             3,
             vec![2.0, 2.0, 2.0, 2.0, 5.0, 5.0, 5.0, 5.0],
             vec![
@@ -84,7 +83,6 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
             Some(vec![1.0, 0.75, 0.75, 1.0]),
             false,
         )
-        .expect("fixture pcurve construction admission")
         .unwrap(),
     );
     let first_line = SketchGeometry::try_from(SketchGeometryDefinition::Line {
@@ -164,14 +162,12 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
         &ctx,
         SketchGeometry::nurbs(
             cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
-                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)],
                 None,
                 false,
             )
-            .expect("fixture pcurve construction admission")
             .unwrap(),
         ),
         false,
@@ -197,17 +193,14 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
     for reversed in [false, true] {
         let start = if reversed { [0.0, 1.0] } else { [1.0, 0.0] };
         let end = if reversed { [1.0, 0.0] } else { [0.0, 1.0] };
-        let pcurve = crate::decode::with_test_decode_ctx(|ctx| {
-            extrusion_cap_pcurve(
-                ctx,
-                &spline,
-                reversed,
-                start,
-                end,
-                &"spline extrusion cap fixture",
-                &mut crate::lane_refusal::LaneRefusals::new(),
-            )
-        })
+        let pcurve = extrusion_cap_pcurve(
+            &spline,
+            reversed,
+            start,
+            end,
+            &"spline extrusion cap fixture",
+            &mut crate::lane_refusal::LaneRefusals::new(),
+        )
         .expect("resource admission")
         .unwrap();
         let PcurveGeometry::Nurbs { nurbs } = &pcurve else {
@@ -262,12 +255,7 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
     let mut refusal = crate::lane_refusal::LaneRefusals::new();
     let mut diagnostics =
         crate::lane_refusal::LaneRefusalContext::new(&"spline side surface fixture", &mut refusal);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("test decode context");
     let side = extrusion_brep_side_surface(
-        &ctx,
         &transform,
         &spline,
         false,
@@ -275,7 +263,6 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
         ExtrusionSpan::new(-2.0, 3.0).expect("valid span fixture"),
         &mut diagnostics,
     )
-    .expect("spline side surface resources")
     .expect("spline side surface");
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(side)) = side else {
         panic!("spline side surface is not NURBS");
@@ -1806,11 +1793,8 @@ fn only_body_evidence_or_a_new_body_sweep_establishes_prior_material() {
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
             definition,
-            cadmpeg_ir::features::DistinctMembers::try_from(
-                outputs,
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .expect("distinct output fixture"),
+            cadmpeg_ir::features::DistinctMembers::try_from(outputs)
+                .expect("distinct output fixture"),
         ),
         native_ref: None,
     };
@@ -1830,10 +1814,10 @@ fn only_body_evidence_or_a_new_body_sweep_establishes_prior_material() {
     assert!(!preceding_features_establish_body(&ir));
 
     ir.model.features[0].evaluation.set_outputs(
-        cadmpeg_ir::features::DistinctMembers::try_from(
-            vec![BodyId::mint("creo:model:body#1".to_string()).expect("identity grammar")],
-            &cadmpeg_test_support::service_decode_context(),
+        cadmpeg_ir::features::DistinctMembers::try_from(vec![BodyId::mint(
+            "creo:model:body#1".to_string(),
         )
+        .expect("identity grammar")])
         .expect("distinct output fixture"),
     );
     assert!(preceding_features_establish_body(&ir));

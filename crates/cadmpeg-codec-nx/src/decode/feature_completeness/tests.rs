@@ -510,17 +510,13 @@ fn nx_selection_completeness_requires_nonempty_unique_identities() {
         &BodySelection::local(
             vec!["nx:om-body-object#12".into()],
             "nx:om-object-index#12".into(),
-            &cadmpeg_test_support::service_decode_context(),
         )
-        .expect("body selection admission")
         .unwrap()
     ));
     assert!(BodySelection::local(
         vec!["nx:om-body-object#12".into(), "nx:om-body-object#12".into()],
         "nx:om-object-indices#12,13".into(),
-        &cadmpeg_test_support::service_decode_context(),
     )
-    .expect("body selection admission")
     .is_err());
     assert!(face_selection_is_incomplete(&FaceSelection::Resolved {
         faces: Vec::new(),
@@ -537,17 +533,13 @@ fn nx_selection_completeness_requires_nonempty_unique_identities() {
         &PlanarProfileRef::sketch_selection(
             cadmpeg_ir::sketches::SketchId::mint("test:test:sketch#0").unwrap(),
             vec!["nx:sketch-selection#0".into()],
-            &cadmpeg_test_support::service_decode_context(),
         )
-        .expect("profile membership admission")
         .unwrap()
     ));
     assert!(PlanarProfileRef::sketch_profiles(
         cadmpeg_ir::sketches::SketchId::mint("test:test:sketch#0").unwrap(),
         Vec::new(),
-        &cadmpeg_test_support::service_decode_context(),
     )
-    .expect("profile membership admission")
     .is_err());
     assert!(path_ref_is_incomplete(&PathRef::Curves(Vec::new())));
     assert!(path_ref_is_incomplete(
@@ -639,11 +631,7 @@ fn nx_loft_completeness_checks_native_point_sections_and_centerlines() {
                 ],
                 Some(PathRef::Native("nx:centerline#0".into())),
             ),
-            cadmpeg_ir::features::DistinctMembers::try_from(
-                vec![output],
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .unwrap(),
+            cadmpeg_ir::features::DistinctMembers::try_from(vec![output]).unwrap(),
         ),
         native_ref: None,
     });
@@ -735,11 +723,10 @@ fn nx_pattern_completeness_requires_distinct_seeds() {
     ));
     assert!(!pattern_feature_is_incomplete(
         &[PatternSeed::Bodies(BodySelection::Bodies(
-            cadmpeg_ir::features::DistinctMembers::try_from(
-                vec![cadmpeg_ir::ids::BodyId::mint("test:model:body#seed")
-                    .expect("identity grammar"),],
-                &cadmpeg_test_support::service_decode_context()
+            cadmpeg_ir::features::DistinctMembers::try_from(vec![cadmpeg_ir::ids::BodyId::mint(
+                "test:model:body#seed"
             )
+            .expect("identity grammar"),],)
             .expect("distinct bodies")
         ))],
         &pattern,
@@ -764,9 +751,7 @@ fn nx_replace_face_completeness_requires_resolved_disjoint_operands() {
             operands: cadmpeg_ir::features::ReplaceFaceOperands::new(
                 complete_targets.clone(),
                 complete_replacements.clone(),
-                &cadmpeg_test_support::service_decode_context(),
             )
-            .expect("operand admission")
             .unwrap(),
         })
         .body_output_family(),
@@ -828,11 +813,7 @@ fn nx_extrude_completeness_requires_direction_start_and_solid_state() {
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
             complete.clone(),
-            cadmpeg_ir::features::DistinctMembers::try_from(
-                vec![output],
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .unwrap(),
+            cadmpeg_ir::features::DistinctMembers::try_from(vec![output]).unwrap(),
         ),
         native_ref: None,
     });
@@ -880,10 +861,7 @@ fn nx_extrude_completeness_requires_direction_start_and_solid_state() {
             Vec::new(),
             Vec::new(),
             Vec::new(),
-            &cadmpeg_test_support::service_decode_context(),
-            "validate feature result members",
         )
-        .expect("result membership admission")
         .map(|members| {
             FeatureResultTopology::new(
                 FeatureResultTopologyId::mint("test:model:feature-result#extrude")
@@ -1053,11 +1031,7 @@ fn nx_revolve_completeness_checks_construction_and_output_lineage() {
                 construction: complete,
                 op: BooleanOp::NewBody,
             }),
-            cadmpeg_ir::features::DistinctMembers::try_from(
-                vec![output],
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .unwrap(),
+            cadmpeg_ir::features::DistinctMembers::try_from(vec![output]).unwrap(),
         ),
         native_ref: None,
     });
@@ -1239,18 +1213,14 @@ fn nx_body_operation_completeness_requires_distinct_members() {
 
     let shared = BodyId::mint("test:model:body#shared").expect("identity grammar");
     let target = BodySelection::Bodies(
-        cadmpeg_ir::features::DistinctMembers::try_from(
-            vec![shared.clone()],
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .expect("distinct bodies"),
+        cadmpeg_ir::features::DistinctMembers::try_from(vec![shared.clone()])
+            .expect("distinct bodies"),
     );
 
-    assert!(cadmpeg_ir::features::DistinctMembers::try_from(
-        vec![shared.clone(), shared.clone(),],
-        &cadmpeg_test_support::service_decode_context()
-    )
-    .is_err());
+    assert!(
+        cadmpeg_ir::features::DistinctMembers::try_from(vec![shared.clone(), shared.clone(),],)
+            .is_err()
+    );
     assert!(!body_selection_is_incomplete(&target));
 }
 
@@ -1289,13 +1259,8 @@ fn nx_configuration_completeness_requires_one_active_full_body_set() {
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("1 NX design configuration"));
 
-    ir.model.configurations[0].bodies = Some(
-        cadmpeg_ir::features::DistinctMembers::try_from(
-            bodies,
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .unwrap(),
-    );
+    ir.model.configurations[0].bodies =
+        Some(cadmpeg_ir::features::DistinctMembers::try_from(bodies).unwrap());
     losses.clear();
     append_design_intent_losses(&ir, &mut losses);
     assert!(losses.is_empty());
@@ -1322,18 +1287,11 @@ fn nx_configuration_completeness_requires_one_active_full_body_set() {
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
             FeatureDefinition::Operation(FeatureOperation::BaseFeature {
                 bodies: BodySelection::Bodies(
-                    cadmpeg_ir::features::DistinctMembers::try_from(
-                        vec![output.clone()],
-                        &cadmpeg_test_support::service_decode_context(),
-                    )
-                    .expect("distinct bodies"),
+                    cadmpeg_ir::features::DistinctMembers::try_from(vec![output.clone()])
+                        .expect("distinct bodies"),
                 ),
             }),
-            cadmpeg_ir::features::DistinctMembers::try_from(
-                vec![output.clone()],
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .unwrap(),
+            cadmpeg_ir::features::DistinctMembers::try_from(vec![output.clone()]).unwrap(),
         ),
         native_ref: None,
     };
@@ -1349,7 +1307,6 @@ fn nx_configuration_completeness_requires_one_active_full_body_set() {
             evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
                 outputs: cadmpeg_ir::features::DistinctMembers::try_from(
                     feature.evaluation.outputs().clone(),
-                    &cadmpeg_test_support::service_decode_context(),
                 )
                 .unwrap(),
             },
@@ -1474,22 +1431,17 @@ fn nx_body_producing_feature_families_require_history_outputs() {
 
     let output = cadmpeg_ir::ids::BodyId::mint("test:model:body#output").expect("identity grammar");
     ir.model.features[0].evaluation.set_outputs(
-        cadmpeg_ir::features::DistinctMembers::try_from(
-            vec![output.clone()],
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .unwrap(),
+        cadmpeg_ir::features::DistinctMembers::try_from(vec![output.clone()]).unwrap(),
     );
     losses.clear();
     append_design_intent_losses(&ir, &mut losses);
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("block (1)"));
 
-    assert!(cadmpeg_ir::features::DistinctMembers::try_from(
-        vec![output.clone(), output.clone()],
-        &cadmpeg_test_support::service_decode_context()
-    )
-    .is_err());
+    assert!(
+        cadmpeg_ir::features::DistinctMembers::try_from(vec![output.clone(), output.clone()],)
+            .is_err()
+    );
     losses.clear();
     append_design_intent_losses(&ir, &mut losses);
     assert_eq!(losses.len(), 1);
@@ -1636,14 +1588,7 @@ fn nx_body_producing_feature_families_require_history_outputs() {
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("datum plane (1)"));
 
-    ir.model.features[0]
-        .dependencies
-        .insert(
-            &cadmpeg_test_support::service_decode_context(),
-            datum,
-            "insert fixture member",
-        )
-        .expect("member insertion admission");
+    ir.model.features[0].dependencies.insert(datum);
     losses.clear();
     append_design_intent_losses(&ir, &mut losses);
     assert!(losses.is_empty());
@@ -1653,14 +1598,11 @@ fn nx_body_producing_feature_families_require_history_outputs() {
         .evaluation
         .set_definition(FeatureDefinition::Operation(FeatureOperation::SewBodies {
             bodies: (cadmpeg_ir::features::BodySelection::Bodies(
-                cadmpeg_ir::features::DistinctMembers::try_from(
-                    vec![
-                        output.clone(),
-                        cadmpeg_ir::ids::BodyId::mint("test:model:body#second")
-                            .expect("identity grammar"),
-                    ],
-                    &cadmpeg_test_support::service_decode_context(),
-                )
+                cadmpeg_ir::features::DistinctMembers::try_from(vec![
+                    output.clone(),
+                    cadmpeg_ir::ids::BodyId::mint("test:model:body#second")
+                        .expect("identity grammar"),
+                ])
                 .expect("distinct bodies"),
             ))
             .try_into()
@@ -1678,9 +1620,7 @@ fn nx_body_producing_feature_families_require_history_outputs() {
             bodies: (cadmpeg_ir::features::BodySelection::local(
                 vec![output.as_str().to_owned(), "second-sheet".into()],
                 "nx:body-selection#sew".into(),
-                &cadmpeg_test_support::service_decode_context(),
             )
-            .expect("body selection admission")
             .unwrap())
             .try_into()
             .unwrap(),
@@ -1698,20 +1638,14 @@ fn nx_body_producing_feature_families_require_history_outputs() {
                 cadmpeg_ir::features::BodySelection::local(
                     vec!["target-a".into()],
                     "nx:body-selection#targets".into(),
-                    &cadmpeg_test_support::service_decode_context(),
                 )
-                .expect("body selection admission")
                 .unwrap(),
                 cadmpeg_ir::features::BodySelection::local(
                     vec!["tool".into()],
                     "nx:body-selection#tools".into(),
-                    &cadmpeg_test_support::service_decode_context(),
                 )
-                .expect("body selection admission")
                 .unwrap(),
-                &cadmpeg_test_support::service_decode_context(),
             )
-            .expect("operand admission")
             .unwrap(),
 
             op: cadmpeg_ir::features::BooleanKind::Join,
@@ -1891,21 +1825,14 @@ fn nx_sew_completeness_does_not_invent_a_gap_tolerance() {
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
             FeatureDefinition::Operation(FeatureOperation::SewBodies {
                 bodies: (BodySelection::Bodies(
-                    cadmpeg_ir::features::DistinctMembers::try_from(
-                        vec![first.clone(), second],
-                        &cadmpeg_test_support::service_decode_context(),
-                    )
-                    .expect("distinct bodies"),
+                    cadmpeg_ir::features::DistinctMembers::try_from(vec![first.clone(), second])
+                        .expect("distinct bodies"),
                 ))
                 .try_into()
                 .unwrap(),
                 gap_tolerance: None,
             }),
-            cadmpeg_ir::features::DistinctMembers::try_from(
-                vec![first.clone()],
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .unwrap(),
+            cadmpeg_ir::features::DistinctMembers::try_from(vec![first.clone()]).unwrap(),
         ),
         native_ref: None,
     });

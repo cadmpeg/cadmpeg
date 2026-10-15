@@ -72,11 +72,9 @@ fn input_fixture() -> (
     (feature, scope, history)
 }
 
-fn project() -> Result<Vec<cadmpeg_ir::features::FeatureInputTopology>, cadmpeg_core::CodecError> {
+fn project() -> Vec<cadmpeg_ir::features::FeatureInputTopology> {
     let (feature, scope, history) = input_fixture();
-    let ctx = cadmpeg_test_support::service_decode_context();
     super::super::project_feature_input_topologies(
-        &ctx,
         std::slice::from_ref(&feature),
         std::slice::from_ref(&scope),
         std::slice::from_ref(&history),
@@ -87,7 +85,7 @@ fn project() -> Result<Vec<cadmpeg_ir::features::FeatureInputTopology>, cadmpeg_
 
 #[test]
 fn input_projection_preserves_member_order() {
-    let projected = project().unwrap();
+    let projected = project();
     assert_eq!(projected.len(), 1);
     assert_eq!(
         projected[0].vertices.as_slice()[0].as_str(),
@@ -120,17 +118,14 @@ fn input_topology_uses_scope_binding_when_global_state_numbers_repeat() {
         },
     );
     let histories = [history, other];
-    let ctx = cadmpeg_test_support::service_decode_context();
     let project = |bindings: &std::collections::HashMap<String, String>| {
         super::super::project_feature_input_topologies(
-            &ctx,
             std::slice::from_ref(&feature),
             std::slice::from_ref(&scope),
             &histories,
             &[],
             bindings,
         )
-        .unwrap()
     };
     assert!(project(&std::collections::HashMap::new()).is_empty());
     let bindings = std::collections::HashMap::from([(scope.id.clone(), histories[0].id.clone())]);
@@ -138,7 +133,10 @@ fn input_topology_uses_scope_binding_when_global_state_numbers_repeat() {
     assert_eq!(inputs.len(), 1);
     assert_eq!(
         inputs[0].faces.as_slice(),
-        &[crate::ids::history_input_face_id_charged(&feature.id, 4, 2).unwrap()]
+        &[crate::ids::history_input_face_id(
+            &crate::ids::history_input_prefix(&feature.id.key(), 4),
+            2
+        )]
     );
     assert_eq!(
         inputs[0].native_ref.as_deref(),
@@ -148,13 +146,11 @@ fn input_topology_uses_scope_binding_when_global_state_numbers_repeat() {
         std::collections::HashMap::from([(scope.id.clone(), "f3d:missing:history#0".into())]);
     assert!(project(&bindings).is_empty());
     assert!(super::super::project_feature_input_topologies(
-        &ctx,
         std::slice::from_ref(&feature),
         std::slice::from_ref(&scope),
         &histories[..1],
         &[],
         &bindings,
     )
-    .unwrap()
     .is_empty());
 }

@@ -362,7 +362,7 @@ pub(super) fn try_decode_freeform_surfaces(
                 Ok(records) => records,
                 Err(error) => return Some(Err(error)),
             };
-        let mut b5_graph = match crate::families::b5::graph::parse_from_records_budgeted(
+        let mut b5_graph = match crate::families::b5::graph::parse_from_records(
             ctx,
             &object_source,
             &selected_object_records,
@@ -478,32 +478,24 @@ pub(super) fn try_decode_freeform_surfaces(
         let typed_vertex_incidence_roster_member_count =
             typed_vertex_incidence_rosters.values().map(Vec::len).sum();
         let mut fallback_surfaces = if b5_graph.is_none() {
-            match freeform_surface_carriers(ctx, &scan.data, &consolidated_records, refusal) {
+            match freeform_surface_carriers(&scan.data, &consolidated_records, refusal) {
                 Ok(surfaces) => Some(surfaces),
                 Err(error) => return Some(Err(error)),
             }
         } else {
             None
         };
-        let b2_nurbs_curves = match crate::families::b2::records::b2_nurbs_curves_from_records(
-            ctx,
+        let b2_nurbs_curves = crate::families::b2::records::b2_nurbs_curves_from_records(
             &scan.data,
             &consolidated_records,
             refusal,
-        ) {
-            Ok(curves) => curves,
-            Err(error) => return Some(Err(error)),
-        };
+        );
         let b2_nurbs_curve_count = b2_nurbs_curves.len();
-        let a5_nurbs_curves = match crate::families::a5a8::records::a5_nurbs_curves_from_records(
-            ctx,
+        let a5_nurbs_curves = crate::families::a5a8::records::a5_nurbs_curves_from_records(
             &scan.data,
             &consolidated_records,
             refusal,
-        ) {
-            Ok(curves) => curves,
-            Err(error) => return Some(Err(error)),
-        };
+        );
         let a5_nurbs_curve_count = a5_nurbs_curves.len();
         let b2_spatial_circles = crate::families::b2::records::b2_spatial_circles_from_records(
             &scan.data,
@@ -614,8 +606,7 @@ pub(super) fn try_decode_freeform_surfaces(
             let surfaces = match fallback_surfaces.take() {
                 Some(surfaces) => surfaces,
                 None => {
-                    match freeform_surface_carriers(ctx, &scan.data, &consolidated_records, refusal)
-                    {
+                    match freeform_surface_carriers(&scan.data, &consolidated_records, refusal) {
                         Ok(surfaces) => surfaces,
                         Err(error) => return Some(Err(error)),
                     }
@@ -1215,13 +1206,12 @@ fn attach_standalone_wires(
 }
 
 fn freeform_surface_carriers(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     records: &[crate::wire::records::ConsolidatedRecord],
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Vec<FreeformSurfaceCarrier>, cadmpeg_core::CodecError> {
-    let resolved = crate::families::a5a8::records::resolved_a8_surfaces(ctx, data, refusal)?;
-    let a5 = crate::families::a5a8::records::a5_surfaces_from_records(ctx, data, records, refusal)?;
+    let resolved = crate::families::a5a8::records::resolved_a8_surfaces(data, refusal)?;
+    let a5 = crate::families::a5a8::records::a5_surfaces_from_records(data, records, refusal)?;
     let mut surfaces = Vec::new();
     for surface in resolved.into_iter().chain(a5) {
         let (source_object, source_tag) = freeform_surface_source(&surface)?;
@@ -1451,14 +1441,8 @@ pub(super) fn append_freeform_surface_pools(
     refusal: &mut crate::nurbs::LaneRefusals,
     admission: &mut FamilyEntityAdmission<'_, '_>,
 ) -> Result<ConsolidatedCurveBindingCounts, cadmpeg_core::CodecError> {
-    let mut surfaces =
-        crate::families::a5a8::records::resolved_a8_surfaces(admission.context(), data, refusal)?;
-    let a5 = crate::families::a5a8::records::a5_surfaces_from_records(
-        admission.context(),
-        data,
-        records,
-        refusal,
-    )?;
+    let mut surfaces = crate::families::a5a8::records::resolved_a8_surfaces(data, refusal)?;
+    let a5 = crate::families::a5a8::records::a5_surfaces_from_records(data, records, refusal)?;
 
     surfaces.extend(a5);
     let mut carrier_ids = Vec::new();
@@ -1593,8 +1577,7 @@ pub(super) fn append_freeform_surface_pools(
                 .into_iter()
                 .map(|point| Point3::new(point[0], point[1], point[2])),
         );
-        let geometry =
-            NurbsCurve::from_lanes(admission.context(), guide.degree, knots, poles, None, false)??;
+        let geometry = NurbsCurve::from_lanes(guide.degree, knots, poles, None, false)?;
         let id = crate::resource::compose_index_id(
             &cadmpeg_ir::identity_namespace!("catia", "guide", "curve"),
             ir.model.curves.len(),
@@ -1620,12 +1603,10 @@ pub(super) fn append_freeform_surface_pools(
     for jet in crate::families::a5a8::records::a5_freeform_curves_from_records(data, records) {
         for second_limit in [false, true] {
             let Some(curve) = crate::families::a5a8::records::rolling_ball_limit_curve(
-                admission.context(),
                 &jet,
                 second_limit,
                 refusal,
-            )?
-            else {
+            ) else {
                 continue;
             };
             let side = usize::from(second_limit);
@@ -1804,11 +1785,10 @@ impl ConsolidatedCarrierChart<'_> {
 }
 
 fn consolidated_jet_pcurve(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     pcurve: &crate::wire::records::ConsolidatedPcurve,
     chart: &ConsolidatedCarrierChart<'_>,
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> Result<Option<PcurveGeometry>, cadmpeg_core::CodecError> {
+) -> Option<PcurveGeometry> {
     let mut points = Vec::new();
     let mut first = Vec::new();
     let mut second = Vec::new();
@@ -1820,7 +1800,6 @@ fn consolidated_jet_pcurve(
         knots.push(site.knot.get());
     }
     quintic_jet_pcurve(
-        ctx,
         crate::wire::records::ConsolidatedPcurve::DEGREE,
         &knots,
         &points,
@@ -2056,12 +2035,8 @@ fn append_resolved_consolidated_surface_curves(
                 else {
                     continue;
                 };
-                let Some(geometry) = consolidated_jet_pcurve(
-                    admission.context(),
-                    pcurve,
-                    &ConsolidatedCarrierChart::Identity,
-                    refusal,
-                )?
+                let Some(geometry) =
+                    consolidated_jet_pcurve(pcurve, &ConsolidatedCarrierChart::Identity, refusal)
                 else {
                     continue;
                 };
@@ -2170,9 +2145,7 @@ fn append_resolved_consolidated_surface_curves(
                     }
                 };
                 let chart = ConsolidatedCarrierChart::Identity;
-                let Some(geometry) =
-                    consolidated_jet_pcurve(admission.context(), pcurve, &chart, refusal)?
-                else {
+                let Some(geometry) = consolidated_jet_pcurve(pcurve, &chart, refusal) else {
                     continue;
                 };
                 sides[side] = IntcurveSupportSide {
@@ -2308,9 +2281,7 @@ fn append_resolved_consolidated_surface_curves(
                 id
             };
 
-            let Some(geometry) =
-                consolidated_jet_pcurve(admission.context(), pcurve, &chart, refusal)?
-            else {
+            let Some(geometry) = consolidated_jet_pcurve(pcurve, &chart, refusal) else {
                 continue;
             };
             sides[side] = IntcurveSupportSide {
@@ -2341,11 +2312,10 @@ fn append_resolved_consolidated_surface_curves(
                 (resolved_geometry, sides[resolved_side].pcurve.as_ref())
             {
                 if let Some(partner_pcurve) = consolidated_jet_pcurve(
-                    admission.context(),
                     &resolved.block.pcurves[partner],
                     &ConsolidatedCarrierChart::Identity,
                     refusal,
-                )? {
+                ) {
                     let mut candidates = Vec::new();
 
                     for (index, surface) in freeform_surfaces.iter().enumerate() {
@@ -2432,17 +2402,15 @@ fn append_resolved_consolidated_surface_curves(
                             resolved.block.pcurves[0].pos);
                     let reversed_pcurves = sides.each_ref().map(|side| match &side.pcurve {
                         Some(pcurve) => crate::nurbs::reverse_pcurve_geometry(
-                            admission.context(),
                             &pcurve.geometry,
                             resolved.block.parameters.range.endpoints(),
                             refusal,
                             &label,
                         )
-                        .map(|geometry| geometry.map(Some)),
-                        None => Ok(Some(None)),
+                        .map(Some),
+                        None => Some(None),
                     });
-                    let [first, second] = reversed_pcurves;
-                    let [Some(first), Some(second)] = [first?, second?] else {
+                    let [Some(first), Some(second)] = reversed_pcurves else {
                         return Ok(None);
                     };
                     for (side, pcurve) in sides.iter_mut().zip([first, second]) {
@@ -2535,12 +2503,10 @@ fn append_resolved_consolidated_surface_curves(
                                     return Ok(Some((identity, None)));
                                 };
                                 let Some(mut pcurve) = consolidated_jet_pcurve(
-                                    admission.context(),
                                     &resolved.block.pcurves[partner],
                                     &chart,
                                     refusal,
-                                )?
-                                else {
+                                ) else {
                                     return Ok(None);
                                 };
                                 if reversed {
@@ -2549,12 +2515,11 @@ fn append_resolved_consolidated_surface_curves(
                                             resolved.block.pcurves[0].pos);
                                     pcurve =
                                         option_or_none!(crate::nurbs::reverse_pcurve_geometry(
-                                            admission.context(),
                                             &pcurve,
                                             resolved.block.parameters.range.endpoints(),
                                             refusal,
                                             &label,
-                                        )?);
+                                        ));
                                 }
                                 pcurve
                             }
@@ -2568,7 +2533,6 @@ fn append_resolved_consolidated_surface_curves(
                             ))
                         .geometry;
                         let resolved_pcurve = match rechart_equivalent_surface_pcurve(
-                            admission.context(),
                             &option_or_none!(sides[resolved_side].pcurve.as_ref()).geometry,
                             resolved_geometry,
                             standard_surface_geometry,
@@ -2579,7 +2543,6 @@ fn append_resolved_consolidated_surface_curves(
                                 binding_counts.rechart_numeric_failures += 1;
                                 return Ok(None);
                             }
-                            Err(RechartFailure::Resource(error)) => return Err(error),
                         };
                         let standard_geometries = if standard_resolved_side == 0 {
                             [resolved_pcurve, partner_pcurve]
@@ -2628,15 +2591,12 @@ fn append_resolved_consolidated_surface_curves(
                                 let label = format!(
                                         "standard pcurve of the edge block at byte {} reversed onto coedge {coedge}",
                                         resolved.block.pcurves[0].pos);
-                                let Some(reversed_geometry) =
-                                    crate::nurbs::reverse_pcurve_geometry(
-                                        admission.context(),
-                                        &geometry,
-                                        resolved.block.parameters.range.endpoints(),
-                                        refusal,
-                                        &label,
-                                    )?
-                                else {
+                                let Some(reversed_geometry) = crate::nurbs::reverse_pcurve_geometry(
+                                    &geometry,
+                                    resolved.block.parameters.range.endpoints(),
+                                    refusal,
+                                    &label,
+                                ) else {
                                     continue;
                                 };
                                 geometry = reversed_geometry;
@@ -3231,11 +3191,9 @@ fn same_surface_locus(left: &SurfaceGeometry, right: &SurfaceGeometry) -> bool {
 #[derive(Debug)]
 enum RechartFailure {
     NonFinite,
-    Resource(cadmpeg_core::CodecError),
 }
 
 fn rechart_equivalent_surface_pcurve(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     pcurve: &PcurveGeometry,
     source: &SurfaceGeometry,
     target: &SurfaceGeometry,
@@ -3309,13 +3267,11 @@ fn rechart_equivalent_surface_pcurve(
                 }
             }
             let shifted = cadmpeg_ir::geometry::pcurve::PcurveNurbs::new(
-                ctx,
                 nurbs.degree(),
                 knots,
                 poles,
                 nurbs.periodic(),
             )
-            .map_err(RechartFailure::Resource)?
             .map_err(|_| RechartFailure::NonFinite)?;
             Ok(Some(PcurveGeometry::Nurbs { nurbs: shifted }))
         }
@@ -3462,14 +3418,12 @@ mod tests {
             id: curve_id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                 NurbsCurve::from_lanes(
-                    &cadmpeg_test_support::service_decode_context(),
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
                     None,
                     false,
                 )
-                .expect("fixture constructor admission")
                 .expect("valid linear wire curve"),
             )),
             source_object: None,
@@ -3564,6 +3518,7 @@ mod tests {
                 std::slice::from_ref(&record),
                 &[],
                 false,
+                None,
                 &mut crate::nurbs::LaneRefusals::new()
             ))
             .expect("service resource budget")
@@ -3576,6 +3531,7 @@ mod tests {
                 &[record.clone(), record],
                 &[],
                 false,
+                None,
                 &mut crate::nurbs::LaneRefusals::new()
             ))
             .expect("service resource budget")
@@ -3637,14 +3593,12 @@ mod tests {
             id: curve_id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                 NurbsCurve::from_lanes(
-                    &cadmpeg_test_support::service_decode_context(),
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![Point3::new(2.0, 3.0, 5.0), Point3::new(7.0, 11.0, 13.0)],
                     None,
                     false,
                 )
-                .expect("fixture constructor admission")
                 .expect("valid linear NURBS"),
             )),
             source_object: None,
@@ -3687,14 +3641,12 @@ mod tests {
             id: curve_id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                 NurbsCurve::from_lanes(
-                    &cadmpeg_test_support::service_decode_context(),
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
                     None,
                     false,
                 )
-                .expect("fixture constructor admission")
                 .expect("valid linear NURBS"),
             )),
             source_object: None,
@@ -3846,15 +3798,9 @@ mod tests {
         bytes.extend_from_slice(&crate::test_support::test_b2::b2_embedded_cylinder_stream());
 
         let records = crate::wire::records::consolidated_records(&bytes);
-        let carriers = crate::test_support::with_service_context(|ctx| {
-            freeform_surface_carriers(
-                ctx,
-                &bytes,
-                &records,
-                &mut crate::nurbs::LaneRefusals::new(),
-            )
-            .expect("service decode")
-        });
+        let carriers =
+            freeform_surface_carriers(&bytes, &records, &mut crate::nurbs::LaneRefusals::new())
+                .expect("service decode");
         assert_eq!(carriers.len(), 2);
         assert!(carriers[0].source_tag.starts_with("b2_03_28:"));
         assert!(carriers[1].source_tag.starts_with("b2_03_60:"));
@@ -4013,10 +3959,8 @@ mod tests {
             .expect("valid LinePcurve fixture"),
         );
         assert_eq!(
-            crate::test_support::with_service_context(|ctx| {
-                rechart_equivalent_surface_pcurve(ctx, &pcurve, &source, &target)
-            })
-            .expect("finite pcurve rechart"),
+            rechart_equivalent_surface_pcurve(&pcurve, &source, &target)
+                .expect("finite pcurve rechart"),
             Some(PcurveGeometry::Line(
                 cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
                     Point2::new(0.25, 5.0),
@@ -4051,7 +3995,6 @@ mod tests {
         assert!(same_surface_locus(&source, &target));
         let pcurve = PcurveGeometry::Nurbs {
             nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
-                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![
@@ -4061,13 +4004,10 @@ mod tests {
                 None,
                 false,
             )
-            .expect("fixture pcurve construction admission")
             .expect("finite NURBS fixture"),
         };
         assert!(matches!(
-            crate::test_support::with_service_context(|ctx| {
-                rechart_equivalent_surface_pcurve(ctx, &pcurve, &source, &target)
-            }),
+            rechart_equivalent_surface_pcurve(&pcurve, &source, &target),
             Err(RechartFailure::NonFinite),
         ));
     }
@@ -4650,17 +4590,12 @@ mod tests {
                 .expect("increasing range"),
             tail: Vec::new(),
         };
-        let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-            super::consolidated_jet_pcurve(
-                ctx,
-                &pcurve,
-                &ConsolidatedCarrierChart::Identity,
-                &mut crate::nurbs::LaneRefusals::new(),
-            )
-        };
-        assert!(crate::test_support::with_service_context(run)
-            .expect("service profile admits consolidated jet")
-            .is_some());
+        assert!(super::consolidated_jet_pcurve(
+            &pcurve,
+            &ConsolidatedCarrierChart::Identity,
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+        .is_some());
     }
 
     #[test]
@@ -4729,20 +4664,16 @@ mod tests {
         let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None });
         let pcurve = PcurveGeometry::Nurbs {
             nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
-                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)],
                 None,
                 false,
             )
-            .expect("fixture pcurve construction admission")
             .expect("valid pcurve fixture"),
         };
-        let copied = crate::test_support::with_service_context(|ctx| {
-            rechart_equivalent_surface_pcurve(ctx, &pcurve, &surface, &surface)
-        })
-        .expect("service budget");
+        let copied =
+            rechart_equivalent_surface_pcurve(&pcurve, &surface, &surface).expect("service budget");
         assert_eq!(copied, Some(pcurve));
     }
 

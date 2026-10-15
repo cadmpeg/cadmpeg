@@ -120,7 +120,7 @@ pub(crate) fn resolve_side_entries(
 }
 
 /// Recover the persistence graph from `Document.xml` bytes.
-pub(crate) fn parse_with_context(
+pub(crate) fn parse(
     bytes: &[u8],
     schema_version: &str,
     ctx: &DecodeContext<'_>,

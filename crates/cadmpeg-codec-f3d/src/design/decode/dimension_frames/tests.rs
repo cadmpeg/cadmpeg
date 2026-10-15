@@ -260,7 +260,7 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
     ];
     let mut bound = references[0].clone();
     {
-        crate::design::decode::dimension_frames::bind_recipe_reference_candidates_charged(
+        crate::design::decode::dimension_frames::bind_recipe_reference_candidates(
             &mut bound, &tags, None,
         );
     };
@@ -303,7 +303,7 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
         },
     ];
     {
-        crate::design::decode::dimension_frames::bind_recipe_reference_candidates_charged(
+        crate::design::decode::dimension_frames::bind_recipe_reference_candidates(
             &mut bound,
             &stream_tags,
             Some("f3d:xref/A/occurrence-0/Asset/Design1/BulkStream.dat:dimension-recipe#1"),

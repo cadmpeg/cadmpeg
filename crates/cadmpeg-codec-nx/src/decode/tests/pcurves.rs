@@ -472,7 +472,6 @@ fn boundary_pcurve_requires_an_affine_carrier_witness() {
             id: curve.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                 NurbsCurve::from_lanes(
-                    &cadmpeg_test_support::service_decode_context(),
                     2,
                     vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
                     vec![
@@ -483,7 +482,6 @@ fn boundary_pcurve_requires_an_affine_carrier_witness() {
                     None,
                     false,
                 )
-                .expect("fixture constructor admission")
                 .unwrap(),
             )),
             source_object: None,
@@ -515,14 +513,12 @@ fn boundary_pcurve_requires_an_affine_carrier_witness() {
 
         ir.model.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
             NurbsCurve::from_lanes(
-                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)],
                 None,
                 false,
             )
-            .expect("fixture constructor admission")
             .unwrap(),
         ));
         assert!(matches!(
@@ -554,14 +550,12 @@ fn boundary_plane_pcurve_keeps_wide_finite_parameterization() {
             id: curve.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                 NurbsCurve::from_lanes(
-                    &cadmpeg_test_support::service_decode_context(),
                     1,
                     vec![-f64::MAX, -f64::MAX, f64::MAX, f64::MAX],
                     vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
                     None,
                     false,
                 )
-                .expect("fixture constructor admission")
                 .expect("finite wide boundary curve"),
             )),
             source_object: None,
@@ -615,14 +609,12 @@ fn boundary_cylinder_generator_keeps_wide_finite_parameterization() {
             id: curve.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                 NurbsCurve::from_lanes(
-                    &cadmpeg_test_support::service_decode_context(),
                     1,
                     vec![-f64::MAX, -f64::MAX, f64::MAX, f64::MAX],
                     vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 0.0, 1.0)],
                     None,
                     false,
                 )
-                .expect("fixture constructor admission")
                 .expect("finite wide generator"),
             )),
             source_object: None,
@@ -684,14 +676,12 @@ fn rational_generator_does_not_get_an_affine_boundary_certificate() {
         });
         let rational = PcurveGeometry::Nurbs {
             nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
-                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![Point2::new(0.0, 0.0), Point2::new(0.0, 1.0)],
                 Some(vec![1.0, 2.0]),
                 false,
             )
-            .expect("fixture pcurve construction admission")
             .expect("rational generator"),
         };
         let linear = PcurveGeometry::Line(
@@ -726,14 +716,12 @@ fn boundary_pcurve_accepts_a_certified_affine_nurbs_boundary() {
             id: curve.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                 NurbsCurve::from_lanes(
-                    &cadmpeg_test_support::service_decode_context(),
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![Point3::new(0.0, 0.0, 0.0), Point3::new(3.0, 0.0, 0.0)],
                     None,
                     false,
                 )
-                .expect("fixture constructor admission")
                 .unwrap(),
             )),
             source_object: None,
@@ -773,14 +761,12 @@ fn boundary_nurbs_surface_keeps_wide_finite_affine_pcurve() {
             id: curve.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                 NurbsCurve::from_lanes(
-                    &cadmpeg_test_support::service_decode_context(),
                     1,
                     vec![-f64::MAX, -f64::MAX, f64::MAX, f64::MAX],
                     vec![Point3::new(0.0, 0.0, 0.0), Point3::new(3.0, 0.0, 0.0)],
                     None,
                     false,
                 )
-                .expect("fixture constructor admission")
                 .expect("finite wide boundary curve"),
             )),
             source_object: None,
@@ -816,7 +802,6 @@ fn boundary_nurbs_surface_keeps_wide_finite_affine_pcurve() {
 fn affine_nurbs_surface(z: f64) -> SurfaceGeometry {
     SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
         NurbsSurface::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
             NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
             NurbsSurfaceLanes::new(
@@ -828,7 +813,6 @@ fn affine_nurbs_surface(z: f64) -> SurfaceGeometry {
             ),
             false,
         )
-        .expect("fixture constructor admission")
         .unwrap(),
     ))
 }
@@ -836,7 +820,6 @@ fn affine_nurbs_surface(z: f64) -> SurfaceGeometry {
 fn quadratic_translation_surface(z: f64) -> SurfaceGeometry {
     SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
         NurbsSurface::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0], false),
             NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0], false),
             NurbsSurfaceLanes::new(
@@ -854,7 +837,6 @@ fn quadratic_translation_surface(z: f64) -> SurfaceGeometry {
             ),
             false,
         )
-        .expect("fixture constructor admission")
         .unwrap(),
     ))
 }
@@ -862,7 +844,6 @@ fn quadratic_translation_surface(z: f64) -> SurfaceGeometry {
 fn degree_elevated_affine_surface(z: f64) -> SurfaceGeometry {
     SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
         NurbsSurface::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0], false),
             NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0], false),
             NurbsSurfaceLanes::new(
@@ -879,7 +860,6 @@ fn degree_elevated_affine_surface(z: f64) -> SurfaceGeometry {
             ),
             false,
         )
-        .expect("fixture constructor admission")
         .unwrap(),
     ))
 }
@@ -889,7 +869,6 @@ fn quadratic_paraboloid_surface() -> SurfaceGeometry {
     let square_controls = [0.0, 0.0, 1.0];
     SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
         NurbsSurface::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0], false),
             NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0], false),
             NurbsSurfaceLanes::new(
@@ -910,7 +889,6 @@ fn quadratic_paraboloid_surface() -> SurfaceGeometry {
             ),
             false,
         )
-        .expect("fixture constructor admission")
         .unwrap(),
     ))
 }
@@ -1116,7 +1094,6 @@ fn periodic_offset_cache_fit_covers_the_complete_active_domain() {
             let replacement = true;
             edit::replace(support_surface, |previous| {
                 NurbsSurface::new(
-                    &cadmpeg_test_support::service_decode_context(),
                     NurbsSurfaceAxis::new(
                         previous.u_degree(),
                         previous.u_knots().to_vec(),
@@ -1130,7 +1107,6 @@ fn periodic_offset_cache_fit_covers_the_complete_active_domain() {
                     previous.pole_grid().clone(),
                     previous.normal_reversed(),
                 )
-                .expect("fixture final NURBS admission")
             })
             .unwrap();
         };
@@ -1138,7 +1114,6 @@ fn periodic_offset_cache_fit_covers_the_complete_active_domain() {
             let replacement = true;
             edit::replace(candidate_surface, |previous| {
                 NurbsSurface::new(
-                    &cadmpeg_test_support::service_decode_context(),
                     NurbsSurfaceAxis::new(
                         previous.u_degree(),
                         previous.u_knots().to_vec(),
@@ -1152,7 +1127,6 @@ fn periodic_offset_cache_fit_covers_the_complete_active_domain() {
                     previous.pole_grid().clone(),
                     previous.normal_reversed(),
                 )
-                .expect("fixture final NURBS admission")
             })
             .unwrap();
         };
@@ -1218,7 +1192,6 @@ fn offset_cache_fit_decouples_distant_knot_span_scale() {
         let z = [0.0, 0.0, 0.1, 0.2];
         let support = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
             NurbsSurface::from_lanes(
-                &cadmpeg_test_support::service_decode_context(),
                 NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 0.5, 1.0, 1.0, 1.0], false),
                 NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
                 NurbsSurfaceLanes::new(
@@ -1232,7 +1205,6 @@ fn offset_cache_fit_decouples_distant_knot_span_scale() {
                 ),
                 false,
             )
-            .expect("fixture constructor admission")
             .unwrap(),
         ));
 
@@ -1255,7 +1227,6 @@ fn offset_cache_fit_certifies_regular_c0_knot_spans() {
         let z = [0.0, 0.0, 0.1, 0.1, 0.2];
         let support = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
             NurbsSurface::from_lanes(
-                &cadmpeg_test_support::service_decode_context(),
                 NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 0.5, 0.5, 1.0, 1.0, 1.0], false),
                 NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
                 NurbsSurfaceLanes::new(
@@ -1269,7 +1240,6 @@ fn offset_cache_fit_certifies_regular_c0_knot_spans() {
                 ),
                 false,
             )
-            .expect("fixture constructor admission")
             .unwrap(),
         ));
 
@@ -1360,7 +1330,6 @@ fn curved_offset_cache_fit_certifies_deeply_localized_regularity() {
         let z = [0.0, 0.0, 1.0 / 3.0, 1.0];
         let support = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
             NurbsSurface::from_lanes(
-                &cadmpeg_test_support::service_decode_context(),
                 NurbsSurfaceAxis::new(3, vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0], false),
                 NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
                 NurbsSurfaceLanes::new(
@@ -1374,7 +1343,6 @@ fn curved_offset_cache_fit_certifies_deeply_localized_regularity() {
                 ),
                 false,
             )
-            .expect("fixture constructor admission")
             .unwrap(),
         ));
         let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) = &support else {
@@ -1422,17 +1390,11 @@ fn curved_offset_cache_fit_certifies_varying_positive_weights() {
         let weight_grid = (0..3)
             .map(|u| (0..3).map(|v| axis_weights[u] * axis_weights[v]).collect())
             .collect::<Vec<Vec<f64>>>();
-        let poles = NurbsPoleGrid::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
-            surface.pole_grid().raw_points(),
-            Some(weight_grid),
-        )
-        .expect("fixture pole pairing admission");
+        let poles = NurbsPoleGrid::from_lanes(surface.pole_grid().raw_points(), Some(weight_grid));
         {
             let replacement = poles.unwrap();
             edit::replace(surface, |previous| {
                 NurbsSurface::new(
-                    &cadmpeg_test_support::service_decode_context(),
                     NurbsSurfaceAxis::new(
                         previous.u_degree(),
                         previous.u_knots().to_vec(),
@@ -1446,7 +1408,6 @@ fn curved_offset_cache_fit_certifies_varying_positive_weights() {
                     replacement,
                     previous.normal_reversed(),
                 )
-                .expect("fixture final NURBS admission")
             })
         }
         .unwrap();
@@ -1496,17 +1457,11 @@ fn rational_offset_cache_bounds_are_translation_invariant() {
         let weight_grid = (0..3)
             .map(|u| (0..3).map(|v| axis_weights[u] * axis_weights[v]).collect())
             .collect::<Vec<Vec<f64>>>();
-        let poles = NurbsPoleGrid::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
-            surface.pole_grid().raw_points(),
-            Some(weight_grid),
-        )
-        .expect("fixture pole pairing admission");
+        let poles = NurbsPoleGrid::from_lanes(surface.pole_grid().raw_points(), Some(weight_grid));
         {
             let replacement = poles.unwrap();
             edit::replace(surface, |previous| {
                 NurbsSurface::new(
-                    &cadmpeg_test_support::service_decode_context(),
                     NurbsSurfaceAxis::new(
                         previous.u_degree(),
                         previous.u_knots().to_vec(),
@@ -1520,7 +1475,6 @@ fn rational_offset_cache_bounds_are_translation_invariant() {
                     replacement,
                     previous.normal_reversed(),
                 )
-                .expect("fixture final NURBS admission")
             })
         }
         .unwrap();
@@ -1651,14 +1605,12 @@ fn edge_incidence_uses_only_declared_tolerances_at_large_scale() {
             id: curve_id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                 NurbsCurve::from_lanes(
-                    &cadmpeg_test_support::service_decode_context(),
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
                     None,
                     false,
                 )
-                .expect("fixture constructor admission")
                 .unwrap(),
             )),
             source_object: None,
@@ -1775,14 +1727,12 @@ fn edge_incidence_uses_only_declared_tolerances_at_large_scale() {
         ));
         let pcurve = PcurveGeometry::Nurbs {
             nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
-                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
                 None,
                 false,
             )
-            .expect("fixture pcurve construction admission")
             .unwrap(),
         };
 
@@ -1825,7 +1775,6 @@ fn boundary_coincidence_is_certified_between_uniform_samples() {
         ];
         let surface = || {
             NurbsSurface::from_lanes(
-                &cadmpeg_test_support::service_decode_context(),
                 NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
                 NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 0.01, 0.02, 1.0, 1.0], false),
                 NurbsSurfaceLanes::new(
@@ -1844,7 +1793,6 @@ fn boundary_coincidence_is_certified_between_uniform_samples() {
                 ),
                 false,
             )
-            .expect("fixture constructor admission")
             .unwrap()
         };
         ir.model.surfaces.extend([

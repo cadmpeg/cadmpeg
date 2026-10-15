@@ -149,7 +149,6 @@ impl<'a> SketchCurveSelectionResolution<'a> {
 pub(crate) fn bind_sweep_sketch_selections(
     features: &mut [cadmpeg_ir::features::Feature],
     resolution: &SketchCurveSelectionResolution<'_>,
-    ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PathRef, PlanarProfileRef};
     let SketchCurveSelectionResolution {
@@ -296,7 +295,7 @@ pub(crate) fn bind_sweep_sketch_selections(
                             })()?;
                             if let Some((sketch, selected)) = resolved {
                                 let profile =
-                                    PlanarProfileRef::sketch_entities(sketch, vec![selected], ctx)?
+                                    PlanarProfileRef::sketch_entities(sketch, vec![selected])
                                         .map_err(CodecError::malformed)?;
                                 section.set_referenced_profile(profile);
                             }
@@ -317,7 +316,7 @@ pub(crate) fn bind_sweep_sketch_selections(
                             if matching_groups.next().is_some() || group.members().len() != 1 {
                                 return Ok(None);
                             }
-                            resolve_entity_selection_path(group, &path_resolution, ctx)
+                            resolve_entity_selection_path(group, &path_resolution)
                         };
                         if let Some(path) = path {
                             if let Some(resolved) = resolve_path(path)? {
@@ -343,7 +342,6 @@ pub(crate) fn bind_sweep_sketch_selections(
 pub(crate) fn bind_split_face_sketch_selections(
     features: &mut [cadmpeg_ir::features::Feature],
     resolution: &SketchCurveSelectionResolution<'_>,
-    ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PathRef, SplitFaceTool};
 
@@ -372,8 +370,7 @@ pub(crate) fn bind_split_face_sketch_selections(
                     if matching_groups.next().is_some() {
                         break 'feature_edit;
                     }
-                    if let Some(path) = resolve_entity_selection_path(group, &path_resolution, ctx)?
-                    {
+                    if let Some(path) = resolve_entity_selection_path(group, &path_resolution)? {
                         *tool = SplitFaceTool::Path(path);
                     }
                 }
@@ -389,7 +386,6 @@ pub(crate) fn bind_split_face_sketch_selections(
 pub(crate) fn bind_surface_trim_sketch_selections(
     features: &mut [cadmpeg_ir::features::Feature],
     resolution: &SketchCurveSelectionResolution<'_>,
-    ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PathRef};
 
@@ -419,8 +415,7 @@ pub(crate) fn bind_surface_trim_sketch_selections(
                     if matching_groups.next().is_some() {
                         break 'feature_edit;
                     }
-                    if let Some(path) = resolve_entity_selection_path(group, &path_resolution, ctx)?
-                    {
+                    if let Some(path) = resolve_entity_selection_path(group, &path_resolution)? {
                         *tool = path;
                     }
                 }
@@ -491,7 +486,6 @@ pub(crate) fn bind_extrude_profile_selections(
                             if let Some(selection) = resolve_entity_selection_profile(
                                 group,
                                 &curve_resolution.path_resolution(),
-                                resolution.ctx,
                             )? {
                                 *profile = selection;
                                 break 'feature_edit;
@@ -503,7 +497,6 @@ pub(crate) fn bind_extrude_profile_selections(
                             effective_previous_history_state_id,
                             &feature.id,
                             scoped_histories,
-                            resolution.ctx,
                         )? {
                             *profile = ProfileRef::Planar(selection);
                         }
@@ -556,16 +549,13 @@ pub(crate) fn bind_extrude_profile_selections(
                             }
                             if all_resolved {
                                 let sketch_id = spatial_sketch.id.clone();
-                                *profile = match ProfileRef::spatial_sketch_profiles(
-                                    sketch_id,
-                                    indices,
-                                    resolution.ctx,
-                                )? {
-                                    Ok(profile) => profile,
-                                    Err(_) => ProfileRef::Planar(PlanarProfileRef::Native(
-                                        scope.id.clone(),
-                                    )),
-                                };
+                                *profile =
+                                    match ProfileRef::spatial_sketch_profiles(sketch_id, indices) {
+                                        Ok(profile) => profile,
+                                        Err(_) => ProfileRef::Planar(PlanarProfileRef::Native(
+                                            scope.id.clone(),
+                                        )),
+                                    };
                             } else {
                                 let mut group_ids = Vec::new();
                                 for group in &matching_groups {
@@ -574,10 +564,8 @@ pub(crate) fn bind_extrude_profile_selections(
                                 }
                                 let sketch_id = spatial_sketch.id.clone();
                                 *profile = match ProfileRef::spatial_sketch_selection(
-                                    sketch_id,
-                                    group_ids,
-                                    resolution.ctx,
-                                )? {
+                                    sketch_id, group_ids,
+                                ) {
                                     Ok(profile) => profile,
                                     Err(_) => ProfileRef::Planar(PlanarProfileRef::Native(
                                         scope.id.clone(),
@@ -605,10 +593,8 @@ pub(crate) fn bind_extrude_profile_selections(
                         )? {
                             let sketch_id = (sketch_id).clone();
                             *profile = ProfileRef::Planar(match PlanarProfileRef::sketch_profiles(
-                                sketch_id,
-                                profiles,
-                                resolution.ctx,
-                            )? {
+                                sketch_id, profiles,
+                            ) {
                                 Ok(profile) => profile,
                                 Err(_) => PlanarProfileRef::Native(scope.id.clone()),
                             });
@@ -632,7 +618,7 @@ pub(crate) fn bind_extrude_profile_selections(
                         selections.push(selection);
                     }
                     *profile = if let Some(merged) =
-                        merge_resolved_profile_selections(sketch_id, &selections, resolution.ctx)?
+                        merge_resolved_profile_selections(sketch_id, &selections)?
                     {
                         merged
                     } else {
@@ -642,14 +628,11 @@ pub(crate) fn bind_extrude_profile_selections(
                             group_ids.push(id);
                         }
                         let sketch_id = (sketch_id).clone();
-                        let fallback = match PlanarProfileRef::sketch_selection(
-                            sketch_id,
-                            group_ids,
-                            resolution.ctx,
-                        )? {
-                            Ok(profile) => profile,
-                            Err(_) => PlanarProfileRef::Native(scope.id.clone()),
-                        };
+                        let fallback =
+                            match PlanarProfileRef::sketch_selection(sketch_id, group_ids) {
+                                Ok(profile) => profile,
+                                Err(_) => PlanarProfileRef::Native(scope.id.clone()),
+                            };
                         ProfileRef::Planar(fallback)
                     };
                 }
@@ -664,14 +647,13 @@ pub(crate) fn bind_extrude_profile_selections(
 fn resolve_entity_selection_profile(
     group: &DesignConstructionOperandGroup,
     resolution: &EntitySelectionPathResolution<'_>,
-    ctx: &DecodeContext<'_>,
 ) -> Result<Option<cadmpeg_ir::features::ProfileRef>, CodecError> {
     use cadmpeg_ir::features::{PathRef, PlanarProfileRef, ProfileRef};
 
     if group.role() != DesignOperandRole::PROFILE {
         return Ok(None);
     }
-    let Some(path) = resolve_entity_selection_path(group, resolution, ctx)? else {
+    let Some(path) = resolve_entity_selection_path(group, resolution)? else {
         return Ok(None);
     };
     match path {
@@ -711,11 +693,9 @@ fn resolve_entity_selection_profile(
                     entities: curves,
                 })))
             } else {
-                Ok(
-                    PlanarProfileRef::sketch_profiles(sketch, selected_profiles, ctx)?
-                        .ok()
-                        .map(ProfileRef::Planar),
-                )
+                Ok(PlanarProfileRef::sketch_profiles(sketch, selected_profiles)
+                    .ok()
+                    .map(ProfileRef::Planar))
             }
         }
         PathRef::SpatialSketchCurves { sketch, curves } => {
@@ -747,7 +727,7 @@ fn resolve_entity_selection_profile(
             if profiles.is_empty() {
                 return Ok(None);
             }
-            Ok(ProfileRef::spatial_sketch_profiles(sketch, profiles, ctx)?.ok())
+            Ok(ProfileRef::spatial_sketch_profiles(sketch, profiles).ok())
         }
         _ => Ok(None),
     }
@@ -759,7 +739,6 @@ fn historical_face_profile_selection(
     previous_state_id: Option<i64>,
     feature_id: &cadmpeg_ir::features::FeatureId,
     scoped_histories: &[crate::history_records::AsmHistory],
-    ctx: &DecodeContext<'_>,
 ) -> Result<Option<cadmpeg_ir::features::PlanarProfileRef>, CodecError> {
     use cadmpeg_ir::features::PlanarProfileRef;
 
@@ -865,8 +844,7 @@ fn historical_face_profile_selection(
         crate::design::identity::feature_input_topology_id(feature_id, previous_state_id)?,
         face_ids,
         group_ids,
-        ctx,
-    )?
+    )
     .ok())
 }
 
@@ -1027,7 +1005,6 @@ enum ResolvedProfileSelection {
 fn merge_resolved_profile_selections(
     sketch: &cadmpeg_ir::sketches::SketchId,
     selections: &[cadmpeg_ir::features::ProfileRef],
-    ctx: &DecodeContext<'_>,
 ) -> Result<Option<cadmpeg_ir::features::ProfileRef>, CodecError> {
     use cadmpeg_ir::features::{PlanarProfileRef, ProfileRef};
 
@@ -1051,7 +1028,7 @@ fn merge_resolved_profile_selections(
             }) if selected == sketch && profiles.is_empty() => {
                 for region in selected_regions.as_slice() {
                     if !regions.contains(region) {
-                        let copied = copy_profile_region(region, ctx)?;
+                        let copied = copy_profile_region(region)?;
                         regions.push(copied);
                     }
                 }
@@ -1060,7 +1037,7 @@ fn merge_resolved_profile_selections(
         }
     }
     let selected = if !profiles.is_empty() {
-        PlanarProfileRef::sketch_profiles((sketch).clone(), profiles, ctx)?.ok()
+        PlanarProfileRef::sketch_profiles((sketch).clone(), profiles).ok()
     } else if !regions.is_empty() {
         PlanarProfileRef::sketch_regions((sketch).clone(), regions).ok()
     } else {
@@ -1071,7 +1048,6 @@ fn merge_resolved_profile_selections(
 
 fn copy_bound_profile(
     profile: &cadmpeg_ir::features::ProfileRef,
-    ctx: &DecodeContext<'_>,
 ) -> Result<cadmpeg_ir::features::ProfileRef, CodecError> {
     use cadmpeg_ir::features::ProfileRef;
 
@@ -1083,8 +1059,7 @@ fn copy_bound_profile(
             for index in profiles.as_slice() {
                 indices.push(*index);
             }
-            ProfileRef::spatial_sketch_profiles(sketch, indices, ctx)?
-                .map_err(CodecError::malformed)
+            ProfileRef::spatial_sketch_profiles(sketch, indices).map_err(CodecError::malformed)
         }
         ProfileRef::SpatialSketchSelection { sketch, selections } => {
             let sketch = (sketch).clone();
@@ -1093,7 +1068,7 @@ fn copy_bound_profile(
                 let id = selection.to_owned();
                 ids.push(id);
             }
-            ProfileRef::spatial_sketch_selection(sketch, ids, ctx)?.map_err(CodecError::malformed)
+            ProfileRef::spatial_sketch_selection(sketch, ids).map_err(CodecError::malformed)
         }
     }
 }
@@ -1114,7 +1089,6 @@ fn copy_bound_planar_profile(
 
 fn copy_bound_path(
     path: &cadmpeg_ir::features::PathRef,
-    ctx: &DecodeContext<'_>,
 ) -> Result<cadmpeg_ir::features::PathRef, CodecError> {
     use cadmpeg_ir::features::PathRef;
 
@@ -1126,7 +1100,7 @@ fn copy_bound_path(
                 let id = (curve).clone();
                 ids.push(id);
             }
-            PathRef::sketch_curves(sketch, ids, ctx)?.map_err(CodecError::malformed)
+            PathRef::sketch_curves(sketch, ids).map_err(CodecError::malformed)
         }
         PathRef::SpatialSketchCurves { sketch, curves } => {
             let sketch = (sketch).clone();
@@ -1135,7 +1109,7 @@ fn copy_bound_path(
                 let id = (curve).clone();
                 ids.push(id);
             }
-            PathRef::spatial_sketch_curves(sketch, ids, ctx)?.map_err(CodecError::malformed)
+            PathRef::spatial_sketch_curves(sketch, ids).map_err(CodecError::malformed)
         }
         _ => Err(CodecError::malformed(
             "bound path has unsupported resolved form",
@@ -1156,7 +1130,6 @@ fn copy_profile_boundary_use(
 
 fn copy_profile_region(
     region: &cadmpeg_ir::features::SketchProfileRegion,
-    ctx: &DecodeContext<'_>,
 ) -> Result<cadmpeg_ir::features::SketchProfileRegion, CodecError> {
     use cadmpeg_ir::features::SketchProfileRegion;
 
@@ -1166,7 +1139,7 @@ fn copy_profile_region(
             for hole in loops.holes().iter().copied() {
                 holes.push(hole);
             }
-            SketchProfileRegion::loops(loops.outer(), holes, ctx)?.map_err(CodecError::malformed)
+            SketchProfileRegion::loops(loops.outer(), holes).map_err(CodecError::malformed)
         }
         SketchProfileRegion::Trimmed {
             outer_boundary,
@@ -1291,8 +1264,7 @@ pub(super) fn resolved_extrude_profile_selection(
     }
     let profile = match resolved_profiles {
         Some(ResolvedProfileSelection::Loops(profiles)) => {
-            match PlanarProfileRef::sketch_profiles((sketch_id).clone(), profiles, resolution.ctx)?
-            {
+            match PlanarProfileRef::sketch_profiles((sketch_id).clone(), profiles) {
                 Ok(profile) => profile,
                 Err(_) => PlanarProfileRef::Native(group.id.clone()),
             }
@@ -1306,7 +1278,7 @@ pub(super) fn resolved_extrude_profile_selection(
         None => {
             let id = group.id.clone();
             let ids = vec![id];
-            match PlanarProfileRef::sketch_selection((sketch_id).clone(), ids, resolution.ctx)? {
+            match PlanarProfileRef::sketch_selection((sketch_id).clone(), ids) {
                 Ok(profile) => profile,
                 Err(_) => PlanarProfileRef::Native(group.id.clone()),
             }
@@ -1874,7 +1846,7 @@ fn transition_inserted_profile_selection(
     for hole in holes.iter().copied() {
         owned_holes.push(hole);
     }
-    let Some(region) = SketchProfileRegion::loops(outer, owned_holes, ctx)?.ok() else {
+    let Some(region) = SketchProfileRegion::loops(outer, owned_holes).ok() else {
         return Ok(None);
     };
     let output = vec![region];
@@ -2074,7 +2046,7 @@ fn historical_selection_regions(
     if ordered_selection_has_value(&selections) {
         return Ok(ordered_unique_profile_selections(selections));
     }
-    region_with_boundary_selection_members(members, sketch, &selections, ctx)
+    region_with_boundary_selection_members(members, sketch, &selections)
 }
 
 fn same_member_point_bits(left: &[Vec<Point3>], right: &[Vec<Point3>]) -> bool {
@@ -2127,14 +2099,13 @@ fn selection_for_member_points(
     if ordered_selection_has_value(&selections) {
         return Ok(ordered_unique_profile_selections(selections));
     }
-    region_with_boundary_selection_members(members, sketch, &selections, ctx)
+    region_with_boundary_selection_members(members, sketch, &selections)
 }
 
 fn region_with_boundary_selection_members(
     members: &[&DesignExtrudeSelectionMember],
     sketch: &cadmpeg_ir::sketches::Sketch,
     selections: &[Option<ResolvedProfileSelection>],
-    ctx: &DecodeContext<'_>,
 ) -> Result<Option<ResolvedProfileSelection>, CodecError> {
     use cadmpeg_ir::features::SketchProfileRegion;
 
@@ -2177,7 +2148,7 @@ fn region_with_boundary_selection_members(
     for hole in loops.holes().iter().copied() {
         owned_holes.push(hole);
     }
-    let Some(region) = SketchProfileRegion::loops(loops.outer(), owned_holes, ctx)?.ok() else {
+    let Some(region) = SketchProfileRegion::loops(loops.outer(), owned_holes).ok() else {
         return Ok(None);
     };
     let selected = vec![region];
@@ -2323,7 +2294,7 @@ fn selection_containing_points(
                 else {
                     continue;
                 };
-                if point_on_sketch_entity(ctx, *point, entity, tolerance)? {
+                if point_on_sketch_entity(*point, entity, tolerance)? {
                     on_boundary = true;
                     break;
                 }
@@ -2402,7 +2373,6 @@ impl<'a> SketchProfileResolution<'a> {
 fn resolve_entity_selection_path(
     group: &DesignConstructionOperandGroup,
     resolution: &EntitySelectionPathResolution<'_>,
-    ctx: &DecodeContext<'_>,
 ) -> Result<Option<cadmpeg_ir::features::PathRef>, CodecError> {
     use cadmpeg_ir::features::PathRef;
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
@@ -2538,7 +2508,7 @@ fn resolve_entity_selection_path(
             curves.push(id);
         }
         let sketch = spatial_sketch.clone();
-        return Ok(PathRef::spatial_sketch_curves(sketch, curves, ctx)?.ok());
+        return Ok(PathRef::spatial_sketch_curves(sketch, curves).ok());
     }
 
     let sketch = crate::design::identity::neutral_sketch_id(placement)?;
@@ -2566,7 +2536,7 @@ fn resolve_entity_selection_path(
     }) {
         return Ok(None);
     }
-    Ok(PathRef::sketch_curves(sketch, curves, ctx)?.ok())
+    Ok(PathRef::sketch_curves(sketch, curves).ok())
 }
 
 /// Resolve one ordered Loft guide or centerline group whose members select
@@ -2574,7 +2544,6 @@ fn resolve_entity_selection_path(
 fn resolved_loft_entity_selection_path(
     group: &DesignConstructionOperandGroup,
     resolution: &SketchProfileResolution<'_>,
-    ctx: &DecodeContext<'_>,
 ) -> Result<Option<cadmpeg_ir::features::PathRef>, CodecError> {
     if !matches!(
         group.role(),
@@ -2583,7 +2552,7 @@ fn resolved_loft_entity_selection_path(
         return Ok(None);
     }
     let path_resolution = resolution.path_resolution();
-    resolve_entity_selection_path(group, &path_resolution, ctx)
+    resolve_entity_selection_path(group, &path_resolution)
 }
 
 fn spatial_profile_member_entity<'a>(
@@ -2884,7 +2853,6 @@ fn spatial_profile_containing_entity(
 }
 
 pub(crate) fn bind_loft_and_revolve_sketch_selections(
-    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     groups: &[DesignConstructionOperandGroup],
     headers: &[DesignRecordHeader],
@@ -2951,13 +2919,13 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
                 spatial_sketch,
                 resolution,
             )? {
-                match ProfileRef::spatial_sketch_profiles(id, profiles, ctx)? {
+                match ProfileRef::spatial_sketch_profiles(id, profiles) {
                     Ok(profile) => profile,
                     Err(_) => ProfileRef::Planar(PlanarProfileRef::Native(group.id.clone())),
                 }
             } else {
                 let group_id = group.id.clone();
-                match ProfileRef::spatial_sketch_selection(id, vec![group_id], ctx)? {
+                match ProfileRef::spatial_sketch_selection(id, vec![group_id]) {
                     Ok(profile) => profile,
                     Err(_) => ProfileRef::Planar(PlanarProfileRef::Native(group.id.clone())),
                 }
@@ -2982,7 +2950,7 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
             DesignOperandRole::ROLE_0X5 | DesignOperandRole::ROLE_0X7
         ) && !group.members().is_empty()
     }) {
-        if let Some(path) = resolved_loft_entity_selection_path(group, resolution, ctx)? {
+        if let Some(path) = resolved_loft_entity_selection_path(group, resolution)? {
             resolved_entity_paths.insert(group.id.as_str(), path);
         }
     }
@@ -3049,10 +3017,10 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
         let profile = spatial_profile_containing_entity(spatial_sketch, &entity);
         let id = spatial_sketch_id.clone();
         let resolved = if let Some(profile) = profile {
-            ProfileRef::spatial_sketch_profiles(id, vec![profile], ctx)?
+            ProfileRef::spatial_sketch_profiles(id, vec![profile])
         } else {
             let operand_id = operand.id.clone();
-            ProfileRef::spatial_sketch_selection(id, vec![operand_id], ctx)?
+            ProfileRef::spatial_sketch_selection(id, vec![operand_id])
         };
         let resolved = match resolved {
             Ok(profile) => profile,
@@ -3077,7 +3045,7 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
                         continue;
                     };
                     if let Some(profile) = resolved_profiles.get(native.as_str()) {
-                        *section = LoftSection::Profile(copy_bound_profile(profile, ctx)?);
+                        *section = LoftSection::Profile(copy_bound_profile(profile)?);
                     }
                 }
                 match guidance {
@@ -3087,14 +3055,14 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
                                 continue;
                             };
                             if let Some(path) = resolved_entity_paths.get(native.as_str()) {
-                                *guide = copy_bound_path(path, ctx)?;
+                                *guide = copy_bound_path(path)?;
                             }
                         }
                     }
                     cadmpeg_ir::features::LoftGuidance::Centerline(centerline) => {
                         if let PathRef::Native(native) = centerline {
                             if let Some(path) = resolved_entity_paths.get(native.as_str()) {
-                                *centerline = copy_bound_path(path, ctx)?;
+                                *centerline = copy_bound_path(path)?;
                             }
                         }
                     }

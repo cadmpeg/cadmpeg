@@ -79,8 +79,7 @@ fn feature(id: &str) -> Feature {
 }
 
 fn link_service(scan: &crate::container::ContainerScan<'_>, ir: &mut CadIr) {
-    crate::decode::with_test_decode_ctx(|ctx| link_feature_sketch_history(ctx, scan, ir))
-        .expect("history link");
+    link_feature_sketch_history(scan, ir).expect("history link");
 }
 
 #[test]

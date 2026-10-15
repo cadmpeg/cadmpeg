@@ -37,11 +37,8 @@ fn body_pattern_adds_one_copy_per_non_original_occurrence() {
         1,
         FeatureDefinition::Operation(FeatureOperation::Pattern {
             seeds: vec![PatternSeed::Bodies(BodySelection::Bodies(
-                cadmpeg_ir::features::DistinctMembers::try_from(
-                    vec![seed.clone()],
-                    &cadmpeg_test_support::service_decode_context(),
-                )
-                .expect("distinct bodies"),
+                cadmpeg_ir::features::DistinctMembers::try_from(vec![seed.clone()])
+                    .expect("distinct bodies"),
             ))],
             pattern: PatternKind::new(PatternTransform::Linear {
                 direction: Some(
@@ -56,10 +53,10 @@ fn body_pattern_adds_one_copy_per_non_original_occurrence() {
         }),
     );
     pattern.evaluation.set_outputs(
-        cadmpeg_ir::features::DistinctMembers::try_from(
-            vec![first_copy.clone(), second_copy.clone()],
-            &cadmpeg_test_support::service_decode_context(),
-        )
+        cadmpeg_ir::features::DistinctMembers::try_from(vec![
+            first_copy.clone(),
+            second_copy.clone(),
+        ])
         .unwrap(),
     );
     ir.model.features.push(pattern);
@@ -110,11 +107,8 @@ fn body_pattern_requires_exact_copy_cardinality_and_new_identities() {
         seed.clone(),
         FeatureDefinition::Operation(FeatureOperation::Pattern {
             seeds: vec![PatternSeed::Bodies(BodySelection::Bodies(
-                cadmpeg_ir::features::DistinctMembers::try_from(
-                    vec![seed],
-                    &cadmpeg_test_support::service_decode_context(),
-                )
-                .expect("distinct bodies"),
+                cadmpeg_ir::features::DistinctMembers::try_from(vec![seed])
+                    .expect("distinct bodies"),
             ))],
             pattern: PatternKind::new(PatternTransform::Mirror {
                 plane_origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
@@ -165,14 +159,7 @@ fn feature_seed_pattern_remains_an_explicit_body_effect_boundary() {
             .unwrap(),
         }),
     );
-    pattern
-        .dependencies
-        .insert(
-            &cadmpeg_test_support::service_decode_context(),
-            seed,
-            "insert fixture member",
-        )
-        .expect("member insertion admission");
+    pattern.dependencies.insert(seed);
     ir.model.features.push(pattern);
 
     assert_eq!(
@@ -200,11 +187,7 @@ fn zero_occurrence_body_pattern_refuses_lineage() {
         .set_outputs(cadmpeg_ir::features::DistinctMembers::default());
     let mut bodies = std::collections::BTreeSet::from([seed.clone()]);
     let seeds = [PatternSeed::Bodies(BodySelection::Bodies(
-        cadmpeg_ir::features::DistinctMembers::try_from(
-            vec![seed],
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .unwrap(),
+        cadmpeg_ir::features::DistinctMembers::try_from(vec![seed]).unwrap(),
     ))];
     assert!(matches!(
         super::super::apply_complete_body_pattern(&feature, &mut bodies, &seeds, Some(0), false),

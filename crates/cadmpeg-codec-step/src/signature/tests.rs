@@ -33,7 +33,7 @@ impl SignatureView {
 
 fn sections(exchange: &crate::parse::Exchange, input: impl AsRef<[u8]>) -> Vec<SignatureView> {
     let input = input.as_ref();
-    let tokens = crate::test_support::with_service_context(input, crate::lex::lex_with_context)
+    let tokens = crate::test_support::with_service_context(input, crate::lex::lex)
         .expect("signature tokens");
     let exchange_start = tokens[0].span.start;
     exchange

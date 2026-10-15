@@ -89,7 +89,7 @@ pub(super) fn arrangement_region_containing_points(
         for point in points {
             let mut on_boundary = false;
             for use_ in &face.boundary {
-                if point_on_profile_boundary_use(ctx, *point, use_, entities, tolerance)? {
+                if point_on_profile_boundary_use(*point, use_, entities, tolerance)? {
                     on_boundary = true;
                     break;
                 }
@@ -119,7 +119,7 @@ pub(super) fn arrangement_region_containing_points(
         for point in points {
             let mut on_boundary = false;
             for use_ in &face.boundary {
-                if point_on_profile_boundary_use(ctx, *point, use_, entities, tolerance)? {
+                if point_on_profile_boundary_use(*point, use_, entities, tolerance)? {
                     on_boundary = true;
                     break;
                 }
@@ -1408,7 +1408,6 @@ fn sketch_geometry_point(
 }
 
 fn point_on_profile_boundary_use(
-    ctx: &DecodeContext<'_>,
     point: Point2,
     use_: &cadmpeg_ir::features::SketchProfileBoundaryUse,
     entities: &[cadmpeg_ir::sketches::SketchEntity],
@@ -1419,7 +1418,7 @@ fn point_on_profile_boundary_use(
     let Some(entity) = entities.iter().find(|entity| entity.id() == &use_.entity) else {
         return Ok(false);
     };
-    if !point_on_sketch_entity(ctx, point, entity, tolerance)? {
+    if !point_on_sketch_entity(point, entity, tolerance)? {
         return Ok(false);
     }
     Ok(match entity.geometry.definition() {
@@ -1485,7 +1484,7 @@ pub(super) fn region_containing_points(
                 else {
                     continue;
                 };
-                if point_on_sketch_entity(ctx, *point, entity, tolerance)? {
+                if point_on_sketch_entity(*point, entity, tolerance)? {
                     incident.insert(index);
                     break;
                 }
@@ -1524,8 +1523,7 @@ pub(super) fn region_containing_points(
         return Ok(SketchProfileRegion::loops(
             geometric!(u32::try_from(*outer).ok()),
             converted_holes,
-            ctx,
-        )?
+        )
         .ok());
     }
     if incidences.iter().any(|incident| !incident.is_empty()) {
@@ -1559,10 +1557,7 @@ pub(super) fn region_containing_points(
         let hole = geometric!(u32::try_from(hole).ok());
         converted_holes.push(hole);
     }
-    Ok(
-        SketchProfileRegion::loops(geometric!(u32::try_from(outer).ok()), converted_holes, ctx)?
-            .ok(),
-    )
+    Ok(SketchProfileRegion::loops(geometric!(u32::try_from(outer).ok()), converted_holes).ok())
 }
 
 /// Return true when every selected closed profile bounds a disjoint region.
@@ -2765,7 +2760,6 @@ pub(super) fn project_to_sketch(
 }
 
 pub(super) fn point_on_sketch_entity(
-    ctx: &DecodeContext<'_>,
     point: Point2,
     entity: &cadmpeg_ir::sketches::SketchEntity,
     tolerance: f64,
@@ -2778,7 +2772,6 @@ pub(super) fn point_on_sketch_entity(
         }
         let lanes = PcurveEvaluatorLanes::new(curve.pole_rows());
         return cadmpeg_ir::eval::nurbs_pcurve_contains_point(
-            ctx,
             curve.degree(),
             curve.knots(),
             lanes.points(),

@@ -394,14 +394,12 @@ fn feature_input_topology_projects_historical_vertices() {
     };
 
     let projected = super::super::project_feature_input_topologies(
-        &cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&feature),
         std::slice::from_ref(&scope),
         std::slice::from_ref(&history),
         &[],
         &std::collections::HashMap::new(),
-    )
-    .unwrap();
+    );
     let prefix = super::super::feature_input_prefix(&feature.id, 4);
     assert_eq!(projected.len(), 1);
     assert_eq!(
@@ -1021,7 +1019,6 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
     };
     let mut selection = BodySelection::Native(group_id.into());
     super::super::bind_direct_body_recipe_body_selection(
-        &cadmpeg_test_support::service_decode_context(),
         &mut selection,
         &scope,
         &inputs,
@@ -1032,15 +1029,14 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
             inputs.construction_recipes,
             inputs.persistent_design_links,
         ),
-    )
-    .unwrap();
+    );
     assert_eq!(
         selection,
         BodySelection::Resolved {
-            bodies: cadmpeg_ir::features::DistinctMembers::try_from(
-                vec![BodyId::mint("f3d:brep:body#1").expect("identity grammar")],
-                &cadmpeg_test_support::service_decode_context()
+            bodies: cadmpeg_ir::features::DistinctMembers::try_from(vec![BodyId::mint(
+                "f3d:brep:body#1"
             )
+            .expect("identity grammar")],)
             .expect("distinct bodies"),
             native: group_id.into(),
         }
@@ -1171,7 +1167,6 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
     );
     let mut selection = BodySelection::NativeSet(vec![native.clone()].try_into().unwrap());
     super::super::bind_direct_body_recipe_body_selection(
-        &cadmpeg_test_support::service_decode_context(),
         &mut selection,
         &scope,
         &direct_inputs,
@@ -1182,20 +1177,17 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
             inputs.construction_recipes,
             inputs.persistent_design_links,
         ),
-    )
-    .unwrap();
+    );
     assert_eq!(
         selection,
         BodySelection::ResolvedSet {
-            members: cadmpeg_ir::features::BodyMembers::try_from_rows(
-                vec![cadmpeg_ir::features::BodyMember::new(
+            members: cadmpeg_ir::features::BodyMembers::try_from_rows(vec![
+                cadmpeg_ir::features::BodyMember::new(
                     body.id.clone(),
                     cadmpeg_core::text::NonBlankString::new(native)
                         .expect("non-blank native fixture"),
-                ),],
-                &cadmpeg_test_support::service_decode_context()
-            )
-            .expect("selection storage is admitted")
+                ),
+            ],)
             .expect("valid body selection rows"),
         }
     );
@@ -1248,12 +1240,8 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         native_ref: None,
     };
     feature.native_ref = Some(scale_scope.id.clone());
-    super::super::bind_feature_body_selections(
-        &cadmpeg_test_support::service_decode_context(),
-        std::slice::from_mut(&mut feature),
-        &scale_inputs,
-    )
-    .unwrap();
+    super::super::bind_feature_body_selections(std::slice::from_mut(&mut feature), &scale_inputs)
+        .unwrap();
     assert!(matches!(
         feature.evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Scale {
@@ -1316,7 +1304,6 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
     };
     move_feature.native_ref = Some(move_scope.id.clone());
     super::super::bind_feature_body_selections(
-        &cadmpeg_test_support::service_decode_context(),
         std::slice::from_mut(&mut move_feature),
         &move_inputs,
     )
@@ -1352,22 +1339,15 @@ fn base_feature_body_selection_uses_active_transition_outputs() {
             FeatureDefinition::Operation(FeatureOperation::BaseFeature {
                 bodies: BodySelection::Native("native:scope".into()),
             }),
-            cadmpeg_ir::features::DistinctMembers::try_from(
-                vec![
-                    BodyId::mint("test:model:body#2").expect("identity grammar"),
-                    BodyId::mint("test:model:body#1").expect("identity grammar"),
-                ],
-                &cadmpeg_test_support::service_decode_context(),
-            )
+            cadmpeg_ir::features::DistinctMembers::try_from(vec![
+                BodyId::mint("test:model:body#2").expect("identity grammar"),
+                BodyId::mint("test:model:body#1").expect("identity grammar"),
+            ])
             .unwrap(),
         ),
         native_ref: Some("native:scope".into()),
     };
-    super::super::bind_base_feature_output_selection(
-        &cadmpeg_test_support::service_decode_context(),
-        &mut feature,
-    )
-    .unwrap();
+    super::super::bind_base_feature_output_selection(&mut feature).unwrap();
     assert!(matches!(
         feature.evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::BaseFeature {

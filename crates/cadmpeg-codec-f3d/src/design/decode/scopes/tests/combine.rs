@@ -247,12 +247,7 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
         *slot = Some(operation);
     }
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| project_combine(
-            decode_ctx,
-            &scope,
-            "Design1/BulkStream.dat"
-        ))
-        .unwrap(),
+        project_combine(&scope, "Design1/BulkStream.dat"),
         Some(cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::Combine {
                 operands: cadmpeg_ir::features::CombineOperands::new(
@@ -267,9 +262,7 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
                         .try_into()
                         .unwrap()
                     ),
-                    &cadmpeg_test_support::service_decode_context(),
                 )
-                .expect("operand admission")
                 .unwrap(),
 
                 op: cadmpeg_ir::features::BooleanKind::Join,

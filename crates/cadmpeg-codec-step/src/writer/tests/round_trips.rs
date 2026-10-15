@@ -110,7 +110,6 @@ fn curve_geometry_for_sheet_pcurve(
         }
         PcurveGeometry::Nurbs { nurbs } => Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
             NurbsCurve::from_lanes(
-                &cadmpeg_test_support::service_decode_context(),
                 nurbs.degree(),
                 nurbs.knots().to_vec(),
                 nurbs
@@ -121,8 +120,7 @@ fn curve_geometry_for_sheet_pcurve(
                     .collect(),
                 nurbs.pole_rows().weights(),
                 nurbs.periodic(),
-            )
-            .expect("fixture constructor admission")?,
+            )?,
         ))),
         PcurveGeometry::Transformed(placed) => {
             let Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve))) =
@@ -493,7 +491,6 @@ pub(crate) fn writer_round_trips_rational_nurbs_pcurves(
         .0;
     ir.model.pcurves[0].geometry = cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs {
         nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![
@@ -503,7 +500,6 @@ pub(crate) fn writer_round_trips_rational_nurbs_pcurves(
             Some(vec![1.0, 2.0]),
             false,
         )
-        .expect("fixture pcurve construction admission")
         .unwrap(),
     };
     let geometry = ir.model.pcurves[0].geometry.clone();
@@ -1491,7 +1487,6 @@ fn analytic_surface_placements_preserve_orientation() {
 #[test]
 fn nurbs_curve_non_rational_uses_with_knots() {
     let n = NurbsCurve::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         2,
         vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
         vec![
@@ -1502,7 +1497,6 @@ fn nurbs_curve_non_rational_uses_with_knots() {
         None,
         false,
     )
-    .expect("fixture constructor admission")
     .unwrap();
     let s = emit_curve_only(&CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(n)));
     assert!(s.contains("B_SPLINE_CURVE_WITH_KNOTS"));
@@ -1514,7 +1508,6 @@ fn nurbs_curve_non_rational_uses_with_knots() {
 #[test]
 fn nurbs_curve_rational_uses_complex_form() {
     let n = NurbsCurve::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         2,
         vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
         vec![
@@ -1525,7 +1518,6 @@ fn nurbs_curve_rational_uses_complex_form() {
         Some(vec![1.0, 0.5, 1.0]),
         false,
     )
-    .expect("fixture constructor admission")
     .unwrap();
     let s = emit_curve_only(&CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(n)));
     assert!(s.contains("RATIONAL_B_SPLINE_CURVE"));
@@ -1535,7 +1527,6 @@ fn nurbs_curve_rational_uses_complex_form() {
 #[test]
 pub(crate) fn nurbs_surface_grid_orientation_is_u_major() {
     let n = NurbsSurface::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
@@ -1547,7 +1538,6 @@ pub(crate) fn nurbs_surface_grid_orientation_is_u_major() {
         ),
         false,
     )
-    .expect("fixture constructor admission")
     .unwrap();
     let s = emit_surface_only(&SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(n)));
     assert!(s.contains("B_SPLINE_SURFACE_WITH_KNOTS"));

@@ -24,10 +24,9 @@ use crate::records::{
     feature::scope::DesignParameterScope,
     references::{LostEdgeReference, PersistentReference, PersistentReferenceKind},
     sketch_geometry::{
-        SketchCurveGeometry, SketchCurveIdentity, SketchGeometryError, SketchPoint,
-        SketchPointClosure, SketchPointCompanion, SketchPointCompanionReferenceEncoding,
-        SketchPointRecordForm, SketchSurface, SketchSurfaceGeometry, SketchText,
-        SketchTextAlignment, SketchTextLayout,
+        SketchCurveGeometry, SketchCurveIdentity, SketchPoint, SketchPointClosure,
+        SketchPointCompanion, SketchPointCompanionReferenceEncoding, SketchPointRecordForm,
+        SketchSurface, SketchSurfaceGeometry, SketchText, SketchTextAlignment, SketchTextLayout,
     },
     sketch_placement::{DesignSketchPlacement, DesignSketchVisibility},
     sketch_relations::{SketchGlyphTransform, SketchRelation, SketchRelationOperand},
@@ -3168,16 +3167,14 @@ fn parse_sketch_surface(
         row_points.extend_from_slice(row);
         control_points.push(row_points);
     }
-    let geometry = match SketchSurfaceGeometry::from_checked_parts(
+    let Ok(geometry) = SketchSurfaceGeometry::from_checked_parts(
         frame.u_degree,
         frame.v_degree,
         u_knots,
         v_knots,
         control_points,
-    ) {
-        Ok(geometry) => geometry,
-        Err(SketchGeometryError::Invalid(_)) => return Ok(None),
-        Err(SketchGeometryError::Resource(error)) => return Err(error),
+    ) else {
+        return Ok(None);
     };
     Ok(Some(ParsedSketchSurface {
         entity_genesis: frame.entity_genesis,
@@ -3838,16 +3835,15 @@ fn admit_source_sketch_nurbs(
     ) else {
         return Ok(None);
     };
-    match crate::records::sketch_geometry::SketchNurbsGeometry::from_checked_parts(
-        degree,
-        fit_tolerance_mm,
-        knots,
-        poles,
-    ) {
-        Ok(geometry) => Ok(Some(geometry)),
-        Err(SketchGeometryError::Invalid(_)) => Ok(None),
-        Err(SketchGeometryError::Resource(error)) => Err(error),
-    }
+    Ok(
+        crate::records::sketch_geometry::SketchNurbsGeometry::from_checked_parts(
+            degree,
+            fit_tolerance_mm,
+            knots,
+            poles,
+        )
+        .ok(),
+    )
 }
 
 fn decode_line(

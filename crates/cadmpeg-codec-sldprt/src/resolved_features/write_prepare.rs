@@ -297,18 +297,7 @@ fn patch_spatial_sketches(
         }
     }
 
-    let projection_bytes = native
-        .feature_input_lanes
-        .iter()
-        .flat_map(|lane| lane.native_payload.iter().copied())
-        .collect::<Vec<_>>();
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &projection_bytes,
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )?;
-    let mut features = crate::history::project::project_features(&ctx, &native.feature_histories)?;
+    let mut features = crate::history::project::project_features(&native.feature_histories)?;
     let (projected_sketches, mut projected_entities) = spatial_sketches(
         &mut features,
         &native.feature_histories,

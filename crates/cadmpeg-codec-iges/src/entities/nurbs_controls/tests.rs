@@ -11,7 +11,6 @@ const EPS_TRIM_POINT: f64 = 1.0e-12;
 
 fn rational_surface() -> NurbsSurface {
     NurbsSurface::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 0.5, 1.0, 1.0, 1.0], false),
         NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0], false),
         NurbsSurfaceLanes::new(
@@ -31,7 +30,6 @@ fn rational_surface() -> NurbsSurface {
         ),
         true,
     )
-    .unwrap()
     .unwrap()
 }
 
@@ -80,7 +78,6 @@ fn surface_crop_refuses_ranges_outside_the_basis() {
 fn surface_crop_refuses_a_discontinuous_terminal_boundary() {
     let ctx = cadmpeg_test_support::service_decode_context();
     let source = NurbsSurface::from_lanes(
-        &ctx,
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 0.5, 0.5, 1.0, 1.0], false),
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         NurbsSurfaceLanes::new(
@@ -96,7 +93,6 @@ fn surface_crop_refuses_a_discontinuous_terminal_boundary() {
         ),
         false,
     )
-    .unwrap()
     .unwrap();
     let source_endpoint =
         nurbs_surface_point(EvaluationAdmission::Standard, &source, 0.5, 0.5).unwrap();

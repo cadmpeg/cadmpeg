@@ -5,7 +5,6 @@ use crate::test_support::container::{make_block, sldprt_with_body};
 use crate::test_support::history::resolved_feature_classes_with_ids;
 use crate::test_support::parasolid::triangle_body;
 use crate::SldprtCodec;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::features::{
     FeatureDefinition, FeatureOperation, PlanarProfileRef, SweepMode, SweepSection, SweepShape,
@@ -79,17 +78,12 @@ fn surface_sweep_projection_binds_the_helix_profile() {
             feature.dependencies.clear();
         }
     }
-    let arena = DecodeArena::new();
-    let (service, _) =
-        DecodeContext::from_root_bytes(&resolved, &arena, &DecodePolicy::service()).unwrap();
     let mut admitted = features.clone();
     project_surface_sweep_profiles(
-        &service,
         &mut admitted,
         &native.feature_histories,
         &native.feature_input_lanes,
-    )
-    .unwrap();
+    );
     let helix = admitted
         .iter()
         .find(|feature| feature.name.as_deref() == Some("Helix1"))

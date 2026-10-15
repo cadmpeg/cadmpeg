@@ -79,26 +79,10 @@ fn typed_reference_walk_treats_historical_members_as_state_local() {
     let state = FeatureInputTopology {
         id: state_id.clone(),
         input_of: feature_id.clone(),
-        bodies: crate::features::DistinctMembers::try_from(
-            Vec::new(),
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .unwrap(),
-        faces: crate::features::DistinctMembers::try_from(
-            Vec::new(),
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .unwrap(),
-        edges: crate::features::DistinctMembers::try_from(
-            vec![historical_edge.clone()],
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .unwrap(),
-        vertices: crate::features::DistinctMembers::try_from(
-            Vec::new(),
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .unwrap(),
+        bodies: crate::features::DistinctMembers::try_from(Vec::new()).unwrap(),
+        faces: crate::features::DistinctMembers::try_from(Vec::new()).unwrap(),
+        edges: crate::features::DistinctMembers::try_from(vec![historical_edge.clone()]).unwrap(),
+        vertices: crate::features::DistinctMembers::try_from(Vec::new()).unwrap(),
         native_ref: None,
     };
     let feature = Feature {
@@ -119,9 +103,7 @@ fn typed_reference_walk_treats_historical_members_as_state_local() {
                         state_id.clone(),
                         vec![historical_edge],
                         "edge:local".into(),
-                        &cadmpeg_test_support::service_decode_context(),
                     )
-                    .expect("selection storage is admitted")
                     .unwrap(),
                     radius: RadiusSpec::Constant {
                         radius: crate::scalar::PositiveLength::new(1.0).unwrap(),

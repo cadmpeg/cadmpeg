@@ -47,20 +47,8 @@ fn boundary_parameter_ranges_reject_invalid_values_and_preserve_direction() {
 #[test]
 fn region_loops_reject_repeated_and_outer_holes() {
     for holes in [vec![1, 1], vec![0], vec![1, 0]] {
-        assert!(SketchProfileLoops::new(
-            0,
-            holes.clone(),
-            &cadmpeg_test_support::service_decode_context()
-        )
-        .expect("fixture loop-region admission")
-        .is_err());
-        assert!(SketchProfileRegion::loops(
-            0,
-            holes.clone(),
-            &cadmpeg_test_support::service_decode_context()
-        )
-        .expect("fixture loop-region admission")
-        .is_err());
+        assert!(SketchProfileLoops::new(0, holes.clone(),).is_err());
+        assert!(SketchProfileRegion::loops(0, holes.clone(),).is_err());
         let wire = serde_json::json!({"outer": 0, "holes": holes});
         assert!(serde_json::from_value::<SketchProfileLoops>(wire.clone())
             .unwrap_err()
@@ -73,13 +61,7 @@ fn region_loops_reject_repeated_and_outer_holes() {
             .contains("holes"));
     }
     for holes in [vec![], vec![2, 1]] {
-        let region = SketchProfileRegion::loops(
-            0,
-            holes.clone(),
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .expect("fixture loop-region admission")
-        .unwrap();
+        let region = SketchProfileRegion::loops(0, holes.clone()).unwrap();
         let SketchProfileRegion::Loops { loops } = &region else {
             panic!("loop region")
         };
@@ -124,10 +106,7 @@ fn trimmed_regions_require_nonempty_rings_and_region_selections_are_distinct() {
         vec![repeated_ring.clone(), repeated_ring],
     )
     .unwrap();
-    let loops =
-        SketchProfileRegion::loops(2, vec![], &cadmpeg_test_support::service_decode_context())
-            .expect("fixture loop-region admission")
-            .unwrap();
+    let loops = SketchProfileRegion::loops(2, vec![]).unwrap();
     let sketch = SketchId::mint("test:test:sketch#one").unwrap();
     for regions in [
         vec![],
@@ -158,10 +137,7 @@ fn a_sketch_profile_region_states_which_boundary_form_it_uses() {
         parameter_range: DirectedParameterRange::new([5.0, 2.0]).unwrap(),
         reversed: false,
     };
-    let loops =
-        SketchProfileRegion::loops(0, vec![2], &cadmpeg_test_support::service_decode_context())
-            .expect("fixture loop-region admission")
-            .unwrap();
+    let loops = SketchProfileRegion::loops(0, vec![2]).unwrap();
     let trimmed = SketchProfileRegion::trimmed(vec![boundary.clone()], Vec::new()).unwrap();
 
     let loops_wire = serde_json::to_value(&loops).unwrap();

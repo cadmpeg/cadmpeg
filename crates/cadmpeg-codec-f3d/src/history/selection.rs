@@ -200,7 +200,6 @@ pub(super) fn incident_loop_counts_satisfy_sides(counts: &[i64], required: &[Opt
 }
 
 pub(super) fn bind_face_selection(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     selection: &mut cadmpeg_ir::features::FaceSelection,
     scope: &crate::records::feature::scope::DesignParameterScope,
     groups: &[crate::records::topology::construction::DesignConstructionOperandGroup],
@@ -212,7 +211,7 @@ pub(super) fn bind_face_selection(
     };
     if native == &scope.id {
         if let Some(resolved) =
-            crate::design::feature_project::direct_face_selection(ctx, scope, operands)?
+            crate::design::feature_project::direct_face_selection(scope, operands)?
         {
             if !matches!(resolved, cadmpeg_ir::features::FaceSelection::Native(_)) {
                 *selection = resolved;
@@ -232,7 +231,6 @@ pub(super) fn bind_face_selection(
     }
     if let Some(resolved) =
         crate::design::face_resolve::resolved_historical_split_face_target_group_with_updated_faces(
-            ctx,
             scope,
             scope.previous_history_state_id(),
             group,
@@ -289,18 +287,17 @@ pub(super) fn bind_face_selection(
 }
 
 pub(super) fn bind_body_recipe_face_selection(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     selection: &mut cadmpeg_ir::features::FaceSelection,
     feature_id: &cadmpeg_ir::features::FeatureId,
     previous_state_id: i64,
     scope: &crate::records::feature::scope::DesignParameterScope,
     groups: &[crate::records::topology::construction::DesignConstructionOperandGroup],
     operands: &[crate::records::topology::body_recipe::DesignBodyRecipeOperand],
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     use cadmpeg_ir::features::FaceSelection;
 
     let FaceSelection::Native(native) = selection else {
-        return Ok(());
+        return;
     };
     let mut matching_groups = groups.iter().filter(|group| {
         group.id == *native
@@ -309,10 +306,10 @@ pub(super) fn bind_body_recipe_face_selection(
             && crate::ids::native_stream(&group.id) == crate::ids::native_stream(&scope.id)
     });
     let Some(group) = matching_groups.next() else {
-        return Ok(());
+        return;
     };
     if matching_groups.next().is_some() || group.members().is_empty() {
-        return Ok(());
+        return;
     }
     let stream = crate::ids::native_stream(&scope.id);
     let mut slots = Vec::new();
@@ -323,7 +320,7 @@ pub(super) fn bind_body_recipe_face_selection(
         .enumerate()
     {
         let Ok(ordinal) = u32::try_from(ordinal) else {
-            return Ok(());
+            return;
         };
         let mut matching_operands = operands.iter().filter(|operand| {
             operand.owner.group() == Some((group.record_index, ordinal))
@@ -331,32 +328,30 @@ pub(super) fn bind_body_recipe_face_selection(
                 && crate::ids::native_stream(&operand.id) == stream
         });
         let Some(operand) = matching_operands.next() else {
-            return Ok(());
+            return;
         };
         if matching_operands.next().is_some() {
-            return Ok(());
+            return;
         }
         let Some(slot) = operand.resolved_face_slot else {
-            return Ok(());
+            return;
         };
         if !slots.contains(&slot) {
             slots.push(slot);
         }
     }
-    let state = crate::ids::history_input_state_id_charged(feature_id, previous_state_id)?;
+    let prefix = crate::ids::history_input_prefix(&feature_id.key(), previous_state_id);
+    let state = crate::ids::history_input_state_id(&prefix);
     let mut faces = Vec::new();
     for slot in slots {
-        let face = crate::ids::history_input_face_id_charged(feature_id, previous_state_id, slot)?;
+        let face = crate::ids::history_input_face_id(&prefix, slot);
 
         faces.push(face);
     }
     let native = native.to_owned();
-    if let Ok(historical) =
-        cadmpeg_ir::features::FaceSelection::historical(state, faces, native, ctx)?
-    {
+    if let Ok(historical) = cadmpeg_ir::features::FaceSelection::historical(state, faces, native) {
         *selection = historical;
     }
-    Ok(())
 }
 
 pub(super) fn faces_in_topology<'a>(

@@ -612,7 +612,7 @@ pub fn decode_with_header(
         },
         format,
     )?;
-    emit_pcurves(ctx, &mut out, records, &mut carriers, &reach, format)?;
+    emit_pcurves(&mut out, records, &mut carriers, &reach, format)?;
     emit_points(&mut out, records, &reach, format)?;
     emit_vertices(&mut out, records, &by_index, &reach, format)?;
     emit_edges(
@@ -627,7 +627,6 @@ pub fn decode_with_header(
         format,
     )?;
     emit_coedges(
-        ctx,
         &mut out,
         records,
         CoedgeDecodeInputs {

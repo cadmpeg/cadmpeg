@@ -9,7 +9,6 @@ use crate::math::Point3;
 
 fn surface(rational: bool) -> NurbsSurface {
     NurbsSurface::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         NurbsSurfaceLanes::new(
@@ -21,7 +20,6 @@ fn surface(rational: bool) -> NurbsSurface {
         ),
         false,
     )
-    .unwrap()
     .unwrap()
 }
 

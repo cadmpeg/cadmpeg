@@ -31,7 +31,6 @@ macro_rules! e5_test_context {
 
 #[test]
 fn e5_circle_parser_reads_framed_carrier() {
-    e5_test_context!(ctx);
     let stream = e5_circle_stream();
     let circles = crate::families::e5::records::e5_circles(&stream);
     assert_eq!(circles.len(), 1);
@@ -46,12 +45,9 @@ fn e5_circle_parser_reads_framed_carrier() {
         }
         other => panic!("expected circle, got {other:?}"),
     }
-    let surfaces = crate::families::e5::records::e5_surfaces(
-        &ctx,
-        &stream,
-        &mut crate::nurbs::LaneRefusals::new(),
-    )
-    .expect("service resource budget");
+    let surfaces =
+        crate::families::e5::records::e5_surfaces(&stream, &mut crate::nurbs::LaneRefusals::new())
+            .expect("service resource budget");
     assert!(
         matches!(surfaces[0].geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) if { cylinder_surface.radius().get() == 2.5 })
     );
@@ -60,7 +56,6 @@ fn e5_circle_parser_reads_framed_carrier() {
     small[86..94].copy_from_slice(&f64::from_bits(1).to_le_bytes());
     assert_eq!(crate::families::e5::records::e5_circles(&small).len(), 1);
     assert!(crate::families::e5::records::e5_surfaces(
-        &ctx,
         &small,
         &mut crate::nurbs::LaneRefusals::new()
     )
@@ -71,7 +66,6 @@ fn e5_circle_parser_reads_framed_carrier() {
     zero[86..94].copy_from_slice(&0.0_f64.to_le_bytes());
     assert!(crate::families::e5::records::e5_circles(&zero).is_empty());
     assert!(crate::families::e5::records::e5_surfaces(
-        &ctx,
         &zero,
         &mut crate::nurbs::LaneRefusals::new()
     )
@@ -328,9 +322,7 @@ fn e5_topology_follows_face_loop_and_serialized_edge_members() {
 
 #[test]
 fn e5_surface_parser_reads_framed_torus() {
-    e5_test_context!(ctx);
     let surfaces = crate::families::e5::records::e5_surfaces(
-        &ctx,
         &e5_torus_stream(),
         &mut crate::nurbs::LaneRefusals::new(),
     )
@@ -358,7 +350,7 @@ fn e5_surface_parser_reads_framed_torus() {
     large[110..118].copy_from_slice(&2_000_000.0_f64.to_le_bytes());
     large[118..126].copy_from_slice(&1_500_000.0_f64.to_le_bytes());
     assert!(
-        matches!(crate::families::e5::records::e5_surfaces(&ctx, &large, &mut crate::nurbs::LaneRefusals::new()).expect("service resource budget")[0].geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface))
+        matches!(crate::families::e5::records::e5_surfaces(&large, &mut crate::nurbs::LaneRefusals::new()).expect("service resource budget")[0].geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface))
         if {
             (torus_surface.major_radius().get() == 2_000_000.0)
                 && (torus_surface.minor_radius().get() == 1_500_000.0)
@@ -369,7 +361,6 @@ fn e5_surface_parser_reads_framed_torus() {
     tiny[110..118].copy_from_slice(&f64::from_bits(1).to_le_bytes());
     tiny[118..126].copy_from_slice(&f64::from_bits(1).to_le_bytes());
     assert!(crate::families::e5::records::e5_surfaces(
-        &ctx,
         &tiny,
         &mut crate::nurbs::LaneRefusals::new()
     )

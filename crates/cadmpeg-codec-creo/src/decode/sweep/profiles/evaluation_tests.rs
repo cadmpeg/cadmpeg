@@ -9,7 +9,6 @@ fn profile_sampling_evaluates_a_spline_beyond_the_inline_basis_window() {
     // Degree 16 is the smallest support that exceeds the inline basis window.
     let poles = 17_usize;
     let nurbs = NurbsCurve::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         16,
         std::iter::repeat_n(0.0, poles)
             .chain(std::iter::repeat_n(1.0, poles))
@@ -26,7 +25,6 @@ fn profile_sampling_evaluates_a_spline_beyond_the_inline_basis_window() {
         None,
         false,
     )
-    .expect("fixture constructor admission")
     .expect("line spline");
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();

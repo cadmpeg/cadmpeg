@@ -30,26 +30,11 @@ fn historical_vertex_selection_requires_input_state_membership() {
         .push(FeatureInputTopology {
             id: state_id.clone(),
             input_of: feature_id.clone(),
-            bodies: crate::features::DistinctMembers::try_from(
-                Vec::new(),
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .unwrap(),
-            faces: crate::features::DistinctMembers::try_from(
-                Vec::new(),
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .unwrap(),
-            edges: crate::features::DistinctMembers::try_from(
-                Vec::new(),
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .unwrap(),
-            vertices: crate::features::DistinctMembers::try_from(
-                vec![historical_vertex.clone()],
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .unwrap(),
+            bodies: crate::features::DistinctMembers::try_from(Vec::new()).unwrap(),
+            faces: crate::features::DistinctMembers::try_from(Vec::new()).unwrap(),
+            edges: crate::features::DistinctMembers::try_from(Vec::new()).unwrap(),
+            vertices: crate::features::DistinctMembers::try_from(vec![historical_vertex.clone()])
+                .unwrap(),
             native_ref: None,
         });
     ir.model.features.push(Feature {
@@ -231,11 +216,7 @@ fn feature_history_rejects_dangling_and_forward_dependencies() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: crate::features::DistinctMembers::try_from(
-            vec![feature_id.clone()],
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .unwrap(),
+        dependencies: crate::features::DistinctMembers::try_from(vec![feature_id.clone()]).unwrap(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
@@ -275,10 +256,10 @@ fn feature_history_rejects_dangling_and_forward_dependencies() {
                 length_along_profile_normal: None,
                 allow_multi_profile_faces: None,
             }),
-            crate::features::DistinctMembers::try_from(
-                vec![BodyId::mint("synthetic:test:body#missing").expect("valid identity")],
-                &cadmpeg_test_support::service_decode_context(),
+            crate::features::DistinctMembers::try_from(vec![BodyId::mint(
+                "synthetic:test:body#missing",
             )
+            .expect("valid identity")])
             .unwrap(),
         ),
         native_ref: None,
@@ -426,11 +407,7 @@ fn parameter_dependencies_must_exist_and_precede_consumers() {
             expression: String::new(),
             display: None,
             value: None,
-            dependencies: crate::features::DistinctMembers::try_from(
-                dependencies,
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .unwrap(),
+            dependencies: crate::features::DistinctMembers::try_from(dependencies).unwrap(),
             properties: BTreeMap::new(),
             pmi: None,
             native_ref: None,
@@ -500,11 +477,7 @@ fn document_parameters_can_feed_feature_parameters() {
         expression: "Width / 2".into(),
         display: None,
         value: None,
-        dependencies: crate::features::DistinctMembers::try_from(
-            vec![document],
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .unwrap(),
+        dependencies: crate::features::DistinctMembers::try_from(vec![document]).unwrap(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -701,14 +674,7 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
         )]),
         native_ref: None,
     });
-    ir.model.features[1]
-        .dependencies
-        .insert(
-            &cadmpeg_test_support::service_decode_context(),
-            source.clone(),
-            "insert fixture member",
-        )
-        .expect("member insertion admission");
+    ir.model.features[1].dependencies.insert(source.clone());
     assert!(!validate_neutral(&ir, Vec::new())
         .expect("resource allocation did not fail")
         .findings
@@ -729,14 +695,7 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
         .feature_states
         .get_mut(&extrude)
         .expect("configured extrude");
-    state
-        .dependencies
-        .insert(
-            &cadmpeg_test_support::service_decode_context(),
-            source,
-            "insert fixture member",
-        )
-        .expect("member insertion admission");
+    state.dependencies.insert(source);
     assert!(validate_neutral(&ir, Vec::new())
         .expect("resource allocation did not fail")
         .is_ok());
@@ -807,14 +766,7 @@ fn pattern_feature_seeds_must_be_declared_dependencies() {
         .iter()
         .any(|finding| finding.message == message));
 
-    ir.model.features[1]
-        .dependencies
-        .insert(
-            &cadmpeg_test_support::service_decode_context(),
-            seed,
-            "insert fixture member",
-        )
-        .expect("member insertion admission");
+    ir.model.features[1].dependencies.insert(seed);
     assert!(!validate_neutral(&ir, Vec::new())
         .expect("resource allocation did not fail")
         .findings
@@ -948,30 +900,9 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
             }),
         ),
     ];
-    ir.model.features[2]
-        .dependencies
-        .insert(
-            &cadmpeg_test_support::service_decode_context(),
-            source.clone(),
-            "insert fixture member",
-        )
-        .expect("member insertion admission");
-    ir.model.features[3]
-        .dependencies
-        .insert(
-            &cadmpeg_test_support::service_decode_context(),
-            source.clone(),
-            "insert fixture member",
-        )
-        .expect("member insertion admission");
-    ir.model.features[6]
-        .dependencies
-        .insert(
-            &cadmpeg_test_support::service_decode_context(),
-            source.clone(),
-            "insert fixture member",
-        )
-        .expect("member insertion admission");
+    ir.model.features[2].dependencies.insert(source.clone());
+    ir.model.features[3].dependencies.insert(source.clone());
+    ir.model.features[6].dependencies.insert(source.clone());
     ir.model.configurations.push(DesignConfiguration {
         id: ConfigurationId::mint("synthetic:test:configuration#offset-plane")
             .expect("identity grammar"),
@@ -1035,46 +966,22 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
         block.as_str()
     )));
 
-    ir.model.features[1]
-        .dependencies
-        .insert(
-            &cadmpeg_test_support::service_decode_context(),
-            source.clone(),
-            "insert fixture member",
-        )
-        .expect("member insertion admission");
-    ir.model.features[5]
-        .dependencies
-        .insert(
-            &cadmpeg_test_support::service_decode_context(),
-            block.clone(),
-            "insert fixture member",
-        )
-        .expect("member insertion admission");
+    ir.model.features[1].dependencies.insert(source.clone());
+    ir.model.features[5].dependencies.insert(block.clone());
     for feature in [&offset, &derived, &pattern, &profile] {
         ir.model.configurations[0]
             .feature_states
             .get_mut(feature)
             .expect("configuration feature state")
             .dependencies
-            .insert(
-                &cadmpeg_test_support::service_decode_context(),
-                source.clone(),
-                "insert fixture member",
-            )
-            .expect("member insertion admission");
+            .insert(source.clone());
     }
     ir.model.configurations[0]
         .feature_states
         .get_mut(&instance)
         .expect("block-instance state")
         .dependencies
-        .insert(
-            &cadmpeg_test_support::service_decode_context(),
-            block,
-            "insert fixture member",
-        )
-        .expect("member insertion admission");
+        .insert(block);
     let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     assert!(report.is_ok(), "{:#?}", report.findings);
 }
@@ -1114,10 +1021,7 @@ fn generated_body_selection_must_name_a_declared_producer_result() {
             Vec::new(),
             Vec::new(),
             Vec::new(),
-            &cadmpeg_test_support::service_decode_context(),
-            "validate feature result members",
         )
-        .expect("result membership admission")
         .map(|members| {
             FeatureResultTopology::new(
                 FeatureResultTopologyId::mint("synthetic:test:feature-result-topology#producer")
@@ -1134,11 +1038,7 @@ fn generated_body_selection_must_name_a_declared_producer_result() {
         ordinal: 1,
         name: None,
         suppressed: Some(false),
-        dependencies: crate::features::DistinctMembers::try_from(
-            vec![producer.clone()],
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .unwrap(),
+        dependencies: crate::features::DistinctMembers::try_from(vec![producer.clone()]).unwrap(),
         source_properties: BTreeMap::default(),
         source_tag: None,
         source_text: None,
@@ -1152,9 +1052,7 @@ fn generated_body_selection_must_name_a_declared_producer_result() {
                         local_id: "body#declared".to_owned().try_into().unwrap(),
                     }],
                     "synthetic:native-selection#0".into(),
-                    &cadmpeg_test_support::service_decode_context(),
                 )
-                .expect("body selection admission")
                 .unwrap(),
             }),
         ),

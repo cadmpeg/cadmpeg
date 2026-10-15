@@ -111,7 +111,7 @@ use crate::container::EntryContent;
 use crate::decode::ids::{extended_id, native_entity_key, IdScope};
 use crate::decode::Scan;
 use crate::native::history::{
-    active_feature_closure_for_decode, BodyWriterHistory, NATIVE_PRIMARY_BODY_CLOSURE_WITNESS,
+    active_feature_closure, BodyWriterHistory, NATIVE_PRIMARY_BODY_CLOSURE_WITNESS,
     NATIVE_PRIMARY_BODY_OBJECT_INDEX,
 };
 use crate::native::om::display_color::{
@@ -365,7 +365,6 @@ pub(super) fn attach(
     NATIVE_CATALOGUE.note_phase(NotePhase::GroupB, model, annotations);
     attach_indexed_om_unknowns(ctx, scan, annotations, unknowns)?;
     attach_configurations(
-        ctx,
         ir,
         model.om.configurations.iter().map(|configuration| {
             (
@@ -399,7 +398,7 @@ pub(super) fn attach(
         annotations,
     )?;
     attach_current_feature_states(ir, annotations)?;
-    attach_active_configuration_feature_states(ctx, ir, annotations)?;
+    attach_active_configuration_feature_states(ir, annotations)?;
     ir.model
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
@@ -455,7 +454,6 @@ fn attach_part_attributes<'a>(
 }
 
 fn attach_configurations<'a>(
-    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     configurations: impl IntoIterator<Item = (&'a str, &'a str, u64, Option<&'a str>)>,
     annotations: &mut AnnotationBuilder,
@@ -478,7 +476,7 @@ fn attach_configurations<'a>(
                 selected.push(body.id.clone());
             }
             Some(
-                cadmpeg_ir::features::DistinctMembers::try_from(selected, ctx)
+                cadmpeg_ir::features::DistinctMembers::try_from(selected)
                     .map_err(cadmpeg_core::CodecError::from)?,
             )
         } else {
@@ -1262,7 +1260,7 @@ fn attach_current_feature_states(
     for body in &ir.model.bodies {
         current_bodies.push(body.id.clone());
     }
-    let Ok(active_features) = active_feature_closure_for_decode(ir, &current_bodies) else {
+    let Ok(active_features) = active_feature_closure(ir, &current_bodies) else {
         return Ok(());
     };
     for index in active_features.into_values() {
@@ -1276,7 +1274,6 @@ fn attach_current_feature_states(
 }
 
 fn attach_active_configuration_feature_states(
-    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
 ) -> Result<(), cadmpeg_core::CodecError> {
@@ -1296,7 +1293,7 @@ fn attach_active_configuration_feature_states(
     {
         return Ok(());
     }
-    let Ok(active_features) = active_feature_closure_for_decode(ir, configuration_bodies) else {
+    let Ok(active_features) = active_feature_closure(ir, configuration_bodies) else {
         return Ok(());
     };
     let mut states = BTreeMap::new();
@@ -1310,10 +1307,10 @@ fn attach_active_configuration_feature_states(
             state_id,
             ConfigurationFeatureState {
                 evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
-                    outputs: cadmpeg_ir::features::DistinctMembers::try_from(outputs, ctx)
+                    outputs: cadmpeg_ir::features::DistinctMembers::try_from(outputs)
                         .map_err(cadmpeg_core::CodecError::from)?,
                 },
-                dependencies: cadmpeg_ir::features::DistinctMembers::try_from(dependencies, ctx)
+                dependencies: cadmpeg_ir::features::DistinctMembers::try_from(dependencies)
                     .map_err(cadmpeg_core::CodecError::from)?,
                 definition,
             },
@@ -1347,7 +1344,6 @@ fn unique_active_configuration_index(configurations: &[DesignConfiguration]) -> 
 
 /// Materialize the exact body set present when retained feature replay begins.
 fn attach_initial_segment_bodies(
-    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     body_bindings: &[crate::native::segments::SegmentBodyBinding],
     annotations: &mut AnnotationBuilder,
@@ -1422,12 +1418,12 @@ fn attach_initial_segment_bodies(
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
             FeatureDefinition::Operation(FeatureOperation::BaseFeature {
                 bodies: BodySelection::Resolved {
-                    bodies: cadmpeg_ir::features::DistinctMembers::try_from(selection_bodies, ctx)
+                    bodies: cadmpeg_ir::features::DistinctMembers::try_from(selection_bodies)
                         .map_err(cadmpeg_core::CodecError::from)?,
                     native: "nx:segment-body-bindings".to_string(),
                 },
             }),
-            cadmpeg_ir::features::DistinctMembers::try_from(feature_outputs, ctx)
+            cadmpeg_ir::features::DistinctMembers::try_from(feature_outputs)
                 .map_err(cadmpeg_core::CodecError::from)?,
         ),
         native_ref: None,
@@ -1600,8 +1596,7 @@ fn attach_feature_operations(
         data_blocks,
     );
     let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
-    let initial_body_id =
-        attach_initial_segment_bodies(ctx, ir, body_bindings, annotations, &stream)?;
+    let initial_body_id = attach_initial_segment_bodies(ir, body_bindings, annotations, &stream)?;
     let base_ordinal = cadmpeg_core::decode::u64_from_index(ir.model.features.len());
     let booleans = booleans
         .iter()
@@ -2263,7 +2258,6 @@ fn attach_feature_operations(
             .zip(boolean_offset_store_resolution.as_ref())
             .map(|(operation, resolution)| {
                 boolean_feature_definition(
-                    ctx,
                     operation,
                     &body_alias_roots,
                     resolution,
@@ -3857,7 +3851,6 @@ fn attach_feature_operations(
         });
         let sew_projection = if label.value == "SEW" {
             sew_body_feature_definition(
-                ctx,
                 body_references.get(label.id.as_str()).copied(),
                 offset_store_bodies_by_operation
                     .get(label.id.as_str())
@@ -3867,14 +3860,13 @@ fn attach_feature_operations(
                     .map_or([].as_slice(), Vec::as_slice),
                 &body_alias_roots,
                 &bodies_by_object_index,
-            )?
+            )
         } else {
             None
         };
         let trim_body_projection = if label.value == "TRIM BODY" {
             if let Some(primary) = body_references.get(label.id.as_str()) {
                 Some(trim_body_feature_definition(
-                    ctx,
                     *primary,
                     operation_body_operands_by_operation
                         .get(label.id.as_str())
@@ -3884,14 +3876,13 @@ fn attach_feature_operations(
                 )?)
             } else {
                 offset_store_trim_body_feature_definition(
-                    ctx,
                     offset_store_bodies_by_operation
                         .get(label.id.as_str())
                         .map_or([].as_slice(), Vec::as_slice),
                     operation_body_operands_by_operation
                         .get(label.id.as_str())
                         .map_or([].as_slice(), Vec::as_slice),
-                )?
+                )
             }
         } else {
             None
@@ -3930,7 +3921,7 @@ fn attach_feature_operations(
             _ => None,
         };
         let blend_projection = if let Some(family) = blend_family {
-            blend_feature_definition(ctx, ir, &outputs, family)?
+            blend_feature_definition(ir, &outputs, family)
         } else {
             None
         };
@@ -3989,29 +3980,21 @@ fn attach_feature_operations(
                             _ => None,
                         })
                 });
-            field
-                .map(|field| {
-                    delete_body_feature_definition(
-                        ctx,
-                        field,
-                        &body_alias_roots,
-                        &bodies_by_object_index,
-                    )
-                })
-                .transpose()?
+            field.map(|field| {
+                delete_body_feature_definition(field, &body_alias_roots, &bodies_by_object_index)
+            })
         } else {
             None
         };
         let extract_body_projection = if label.value == "EXTRACT_BODY" {
             Some(extract_body_feature_definition(
-                ctx,
                 body_references.get(label.id.as_str()).copied(),
                 offset_store_bodies_by_operation
                     .get(label.id.as_str())
                     .map_or([].as_slice(), Vec::as_slice),
                 &body_alias_roots,
                 &bodies_by_object_index,
-            )?)
+            ))
         } else {
             None
         };
@@ -4080,11 +4063,9 @@ fn attach_feature_operations(
             );
             let fallback_definition = match history_definition {
                 Some(definition) => Some(definition),
-                None => body_writing_unresolved_feature_definition(
-                    ctx,
-                    &label.value,
-                    &source_properties,
-                )?,
+                None => {
+                    body_writing_unresolved_feature_definition(&label.value, &source_properties)?
+                }
             };
             let mut definition = if let Some(definition) = fallback_definition {
                 definition
@@ -4110,7 +4091,6 @@ fn attach_feature_operations(
                     }
                 }
                 non_boolean_feature_definition_with_parameters(
-                    ctx,
                     &label.value,
                     &operation_payload_strings,
                     block_dimension_values,
@@ -4146,7 +4126,7 @@ fn attach_feature_operations(
         };
         annotations.note(&id, &stream, label.source_offset, Some("FEATURE_OPERATION"));
         annotations.exactness(&id, Exactness::Derived);
-        let source_content = feature_source_content(ctx, operation_payload_string_records)?;
+        let source_content = feature_source_content(operation_payload_string_records)?;
         let mut referenced_parameters = Vec::new();
         for parameter_use in operation_parameter_uses {
             push_referenced_parameter(&mut referenced_parameters, &parameter_use.expression);
@@ -4195,7 +4175,7 @@ fn attach_feature_operations(
             ordinal: base_ordinal + cadmpeg_core::decode::u64_from_index(ordinal),
             name: Some(label.value.clone()),
             suppressed: None,
-            dependencies: cadmpeg_ir::features::DistinctMembers::try_from(dependencies, ctx)
+            dependencies: cadmpeg_ir::features::DistinctMembers::try_from(dependencies)
                 .map_err(cadmpeg_core::CodecError::from)?,
             source_properties: cadmpeg_core::text::named_entries(&label.id, source_properties)?,
             source_tag: Some(label.value.clone()),
@@ -4204,7 +4184,7 @@ fn attach_feature_operations(
 
             evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
                 definition,
-                DistinctMembers::try_from(outputs, ctx).map_err(CodecError::from)?,
+                DistinctMembers::try_from(outputs).map_err(CodecError::from)?,
             ),
             native_ref: Some(label.id.clone()),
         });
@@ -4227,7 +4207,6 @@ fn attach_feature_operations(
                 ))
                 .ok_or_else(|| CodecError::malformed("NX feature result body identity is blank"))?;
                 append_feature_result_topology(
-                    ctx,
                     ir,
                     PendingFeatureResult {
                         result_id: result_topology_id(key, Some(write.ordinal))?,
@@ -4237,7 +4216,7 @@ fn attach_feature_operations(
                         native_ref: write.id.clone(),
                     },
                     losses,
-                )?;
+                );
             }
         } else if !deletes_body {
             let result_body = native_result_body_identity(
@@ -4252,7 +4231,6 @@ fn attach_feature_operations(
                     .strip_prefix("nx:feature-history:operation-label#")
                     .unwrap_or(label.id.as_str());
                 append_feature_result_topology(
-                    ctx,
                     ir,
                     PendingFeatureResult {
                         result_id: result_topology_id(key, None)?,
@@ -4262,7 +4240,7 @@ fn attach_feature_operations(
                         native_ref,
                     },
                     losses,
-                )?;
+                );
             }
         }
     }
@@ -4343,11 +4321,10 @@ struct PendingFeatureResult<'feature> {
 }
 
 fn append_feature_result_topology(
-    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     pending: PendingFeatureResult<'_>,
     losses: &mut Vec<LossNote>,
-) -> Result<(), CodecError> {
+) {
     let PendingFeatureResult {
         result_id,
         output_of,
@@ -4360,22 +4337,19 @@ fn append_feature_result_topology(
         members.faces,
         members.edges,
         members.vertices,
-        ctx,
-        "NX result topology member validation",
-    )?;
+    );
     let members = match members {
         Ok(members) => members,
         Err(error) => {
             let message = format!("Feature result {result_id} has unusable member claims: {error}; native result {native_ref} is retained");
             losses.push(NxLossCode::FeatureOutputLineageIncomplete.note(message));
-            return Ok(());
+            return;
         }
     };
 
     let result =
         FeatureResultTopology::new(result_id, output_of.clone(), members, Some(native_ref));
     ir.model.feature_result_topologies.push(result);
-    Ok(())
 }
 
 fn operation_body_write_result_group_members(
@@ -5867,7 +5841,6 @@ fn extrude_boolean_op(
 }
 
 pub(super) fn boolean_feature_definition(
-    ctx: &DecodeContext<'_>,
     operation: &crate::native::features::FeatureBooleanOperation,
     body_alias_roots: &BTreeMap<u32, u32>,
     offset_store_resolution: &BooleanOffsetStoreResolution,
@@ -5893,7 +5866,6 @@ pub(super) fn boolean_feature_definition(
                 tool_indices.push(tool.token.value());
             }
             atomic_disjoint_body_selections(
-                ctx,
                 feature_body_selection_with_offset_blocks(
                     &[operation.target.token.value()],
                     body_alias_roots,
@@ -5908,11 +5880,11 @@ pub(super) fn boolean_feature_definition(
                     bodies_by_object_index,
                     native_tools,
                 ),
-            )?
+            )
         }
     };
     Ok(FeatureDefinition::Operation(FeatureOperation::Combine {
-        operands: cadmpeg_ir::features::CombineOperands::new(target, tools, ctx)?
+        operands: cadmpeg_ir::features::CombineOperands::new(target, tools)
             .map_err(cadmpeg_core::CodecError::malformed)?,
 
         op: match operation.kind {
@@ -5943,11 +5915,10 @@ enum DeleteBodyField<'a> {
 /// carries a primary-body field. Other `DELETE` payloads target a different
 /// object family and remain native until that family is decoded.
 fn delete_body_feature_definition(
-    ctx: &DecodeContext<'_>,
     field: DeleteBodyField<'_>,
     body_alias_roots: &BTreeMap<u32, u32>,
     bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
-) -> Result<FeatureDefinition, CodecError> {
+) -> FeatureDefinition {
     let bodies = match field {
         DeleteBodyField::Native(body) => match feature_body_selection(
             &[body],
@@ -5956,35 +5927,33 @@ fn delete_body_feature_definition(
             format!("nx:om-object-index#{body}"),
         ) {
             FeatureBodySelection::Native(native) => {
-                local_body_selection(ctx, &[format!("nx:om-body-object#{body}")], native)?
+                local_body_selection(&[format!("nx:om-body-object#{body}")], native)
             }
-            selection => selection.into_selection(ctx)?,
+            selection => selection.into_selection(),
         },
         DeleteBodyField::OffsetStore {
             object_index,
             data_block,
         } => local_body_selection(
-            ctx,
             &[data_block.to_owned()],
             format!("nx:om-object-index#{object_index}"),
-        )?,
+        ),
     };
-    Ok(FeatureDefinition::Operation(FeatureOperation::DeleteBody {
+    FeatureDefinition::Operation(FeatureOperation::DeleteBody {
         // A typed DELETE primary-body field names one exact feature input. It
         // needs no cross-selection alias proof when it has no segment binding.
         bodies,
         mode: BodyRetentionMode::DeleteSelected,
-    }))
+    })
 }
 
 /// Project the exact source body of an `EXTRACT_BODY` operation.
 fn extract_body_feature_definition(
-    ctx: &DecodeContext<'_>,
     body_object_index: Option<u32>,
     offset_store_bodies: &[(u32, String)],
     body_alias_roots: &BTreeMap<u32, u32>,
     bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
-) -> Result<FeatureDefinition, CodecError> {
+) -> FeatureDefinition {
     let source = if let Some(body) = body_object_index {
         feature_body_selection(
             &[body],
@@ -5992,30 +5961,26 @@ fn extract_body_feature_definition(
             bodies_by_object_index,
             format!("nx:om-object-index#{body}"),
         )
-        .into_selection(ctx)?
+        .into_selection()
     } else if let [(object_index, data_block)] = offset_store_bodies {
         local_body_selection(
-            ctx,
             std::slice::from_ref(data_block),
             format!("nx:om-object-index#{object_index}"),
-        )?
+        )
     } else {
         BodySelection::Unresolved
     };
-    Ok(FeatureDefinition::Operation(
-        FeatureOperation::ExtractBody { source },
-    ))
+    FeatureDefinition::Operation(FeatureOperation::ExtractBody { source })
 }
 
 /// Project exact feature-local input-store identities for a trim target and
 /// every complete, distinct tool operand. Retained-side semantics stay unresolved.
 fn offset_store_trim_body_feature_definition(
-    ctx: &DecodeContext<'_>,
     offset_store_bodies: &[(u32, String)],
     operands: &[&crate::native::features::FeatureOperationBodyOperand],
-) -> Result<Option<FeatureDefinition>, CodecError> {
+) -> Option<FeatureDefinition> {
     let [(object_index, data_block)] = offset_store_bodies else {
-        return Ok(None);
+        return None;
     };
     let primary_store = data_block.rsplit_once(":block#").map(|(store, _)| store);
     let mut tool_data_blocks = Vec::new();
@@ -6060,7 +6025,7 @@ fn offset_store_trim_body_feature_definition(
             let native = selection_indices_native(
                 operands.iter().map(|operand| operand.operand.atom.value()),
             );
-            local_body_selection(ctx, &bodies, native)?
+            local_body_selection(&bodies, native)
         } else {
             BodySelection::Unresolved
         }
@@ -6068,41 +6033,34 @@ fn offset_store_trim_body_feature_definition(
         BodySelection::Unresolved
     };
     let target = local_body_selection(
-        ctx,
         std::slice::from_ref(data_block),
         format!("nx:om-object-index#{object_index}"),
-    )?;
-    let Ok(operands) = cadmpeg_ir::features::TrimBodyOperands::new(target, tools, ctx)? else {
-        return Ok(None);
+    );
+    let Ok(operands) = cadmpeg_ir::features::TrimBodyOperands::new(target, tools) else {
+        return None;
     };
-    Ok(Some(FeatureDefinition::Operation(
-        FeatureOperation::TrimBodies {
-            operands,
-            keep: BodyTrimSide::Unresolved,
-        },
-    )))
+    Some(FeatureDefinition::Operation(FeatureOperation::TrimBodies {
+        operands,
+        keep: BodyTrimSide::Unresolved,
+    }))
 }
 
 fn sew_body_feature_definition(
-    ctx: &DecodeContext<'_>,
     primary_segment_body_object_index: Option<u32>,
     offset_store_bodies: &[(u32, String)],
     operands: &[&crate::native::features::FeatureOperationBodyOperand],
     body_alias_roots: &BTreeMap<u32, u32>,
     bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
-) -> Result<Option<FeatureDefinition>, CodecError> {
+) -> Option<FeatureDefinition> {
     if operands.is_empty() {
-        return Ok(None);
+        return None;
     }
     let primary_offset_store_body = match offset_store_bodies {
         [(object_index, data_block)] => Some((*object_index, data_block.as_str())),
         _ => None,
     };
-    let Some(primary_body_object_index) = primary_segment_body_object_index
-        .or_else(|| primary_offset_store_body.map(|(object_index, _)| object_index))
-    else {
-        return Ok(None);
-    };
+    let primary_body_object_index = primary_segment_body_object_index
+        .or_else(|| primary_offset_store_body.map(|(object_index, _)| object_index))?;
     let indices = std::iter::once(primary_body_object_index)
         .chain(operands.iter().map(|operand| operand.operand.atom.value()));
     let native = selection_indices_native(indices.clone());
@@ -6116,12 +6074,11 @@ fn sew_body_feature_definition(
             .all(|operand| !operand.segment_body_bindings.is_empty())
         {
             feature_body_set_selection(
-                ctx,
                 &object_indices,
                 body_alias_roots,
                 bodies_by_object_index,
                 native,
-            )?
+            )
         } else {
             BodySelection::Native(native)
         }
@@ -6157,7 +6114,7 @@ fn sew_body_feature_definition(
                 .chain(blocks)
                 .map(str::to_owned)
                 .collect::<Vec<_>>();
-            local_body_selection(ctx, &bodies, native)?
+            local_body_selection(&bodies, native)
         } else {
             BodySelection::Native(native)
         }
@@ -6165,18 +6122,15 @@ fn sew_body_feature_definition(
         BodySelection::Native(native)
     };
     let Ok(bodies) = bodies.try_into() else {
-        return Ok(None);
+        return None;
     };
-    Ok(Some(FeatureDefinition::Operation(
-        FeatureOperation::SewBodies {
-            bodies,
-            gap_tolerance: None,
-        },
-    )))
+    Some(FeatureDefinition::Operation(FeatureOperation::SewBodies {
+        bodies,
+        gap_tolerance: None,
+    }))
 }
 
 fn trim_body_feature_definition(
-    ctx: &DecodeContext<'_>,
     target_object_index: u32,
     operands: &[&crate::native::features::FeatureOperationBodyOperand],
     body_alias_roots: &BTreeMap<u32, u32>,
@@ -6192,10 +6146,9 @@ fn trim_body_feature_definition(
                     bodies_by_object_index,
                     native_target,
                 )
-                .into_selection(ctx)?,
+                .into_selection(),
                 BodySelection::Unresolved,
-                ctx,
-            )?
+            )
             .map_err(cadmpeg_core::CodecError::malformed)?,
 
             keep: BodyTrimSide::Unresolved,
@@ -6214,15 +6167,13 @@ fn trim_body_feature_definition(
             operands: cadmpeg_ir::features::TrimBodyOperands::new(
                 BodySelection::Native(native_target),
                 BodySelection::Native(native_tools),
-                ctx,
-            )?
+            )
             .map_err(cadmpeg_core::CodecError::malformed)?,
 
             keep: BodyTrimSide::Unresolved,
         }));
     }
     let (targets, tools) = atomic_disjoint_body_selections(
-        ctx,
         feature_body_selection(
             &[target_object_index],
             body_alias_roots,
@@ -6235,9 +6186,9 @@ fn trim_body_feature_definition(
             bodies_by_object_index,
             native_tools,
         ),
-    )?;
+    );
     Ok(FeatureDefinition::Operation(FeatureOperation::TrimBodies {
-        operands: cadmpeg_ir::features::TrimBodyOperands::new(targets, tools, ctx)?
+        operands: cadmpeg_ir::features::TrimBodyOperands::new(targets, tools)
             .map_err(cadmpeg_core::CodecError::malformed)?,
 
         keep: BodyTrimSide::Unresolved,

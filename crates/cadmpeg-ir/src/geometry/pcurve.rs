@@ -3,7 +3,6 @@
 
 use super::nurbs::{
     admit_finite_weight, admit_weight, KnotVector, NurbsCurve, NurbsError, PoleValue,
-    StandardNurbsAdmission,
 };
 use super::{FitTolerance, MAX_GEOMETRY_NESTING};
 use crate::ids::PcurveId;
@@ -124,31 +123,20 @@ impl<P> PcurveNurbsPoles<P> {
     ///
     /// Refuses a weight lane that does not cover the poles, naming both counts,
     /// and a weight that is zero or non-finite, naming its index.
-    pub fn from_lanes(
-        ctx: &DecodeContext<'_>,
-        points: Vec<P>,
-        weights: Option<Vec<f64>>,
-    ) -> Result<Result<Self, NurbsError>, CodecError> {
-        super::nurbs::admitted::finish(construction::pair_pcurve_lanes(
-            ctx,
-            points,
-            weights,
-            |index, weight| admit_weight(ctx, "pcurve poles", index, weight),
-        ))
+    pub fn from_lanes(points: Vec<P>, weights: Option<Vec<f64>>) -> Result<Self, NurbsError> {
+        construction::pair_pcurve_lanes(points, weights, |index, weight| {
+            admit_weight("pcurve poles", index, weight)
+        })
     }
 
     /// Pair parameter poles with finite weights, checking lane length and nonzero weights.
     pub fn from_finite_lanes(
-        ctx: &DecodeContext<'_>,
         points: Vec<P>,
         weights: Option<Vec<FiniteReal>>,
-    ) -> Result<Result<Self, NurbsError>, CodecError> {
-        super::nurbs::admitted::finish(construction::pair_pcurve_lanes(
-            ctx,
-            points,
-            weights,
-            |index, weight| admit_finite_weight(ctx, "pcurve poles", index, weight),
-        ))
+    ) -> Result<Self, NurbsError> {
+        construction::pair_pcurve_lanes(points, weights, |index, weight| {
+            admit_finite_weight("pcurve poles", index, weight)
+        })
     }
 
     /// Pair a pole lane with an admitted weight lane. The weight type states
@@ -159,16 +147,10 @@ impl<P> PcurveNurbsPoles<P> {
     /// Refuses a weight lane that does not cover the poles, naming both
     /// counts.
     pub fn from_checked_lanes(
-        ctx: &DecodeContext<'_>,
         points: Vec<P>,
         weights: Option<Vec<NonZeroReal>>,
-    ) -> Result<Result<Self, NurbsError>, CodecError> {
-        super::nurbs::admitted::finish(construction::pair_pcurve_lanes(
-            ctx,
-            points,
-            weights,
-            |_, weight| Ok(weight),
-        ))
+    ) -> Result<Self, NurbsError> {
+        construction::pair_pcurve_lanes(points, weights, |_, weight| Ok(weight))
     }
 
     /// Count poles.
@@ -1497,16 +1479,12 @@ impl<P, S> PolarNurbsPoles<P, S> {
     /// Refuses a weight lane that does not cover the poles, naming both counts,
     /// and a weight that is zero or non-finite, naming its index.
     pub fn from_lanes(
-        ctx: &DecodeContext<'_>,
         poles: Vec<PolarNurbsPole<P, S>>,
         weights: Option<Vec<f64>>,
-    ) -> Result<Result<Self, NurbsError>, CodecError> {
-        super::nurbs::admitted::finish(construction::pair_polar_lanes(
-            ctx,
-            poles,
-            weights,
-            |index, weight| admit_weight(ctx, "polar poles", index, weight),
-        ))
+    ) -> Result<Self, NurbsError> {
+        construction::pair_polar_lanes(poles, weights, |index, weight| {
+            admit_weight("polar poles", index, weight)
+        })
     }
 
     /// Pair a pole lane with an admitted weight lane. The weight type states
@@ -1517,16 +1495,10 @@ impl<P, S> PolarNurbsPoles<P, S> {
     /// Refuses a weight lane that does not cover the poles, naming both
     /// counts.
     pub fn from_checked_lanes(
-        ctx: &DecodeContext<'_>,
         poles: Vec<PolarNurbsPole<P, S>>,
         weights: Option<Vec<NonZeroReal>>,
-    ) -> Result<Result<Self, NurbsError>, CodecError> {
-        super::nurbs::admitted::finish(construction::pair_polar_lanes(
-            ctx,
-            poles,
-            weights,
-            |_, weight| Ok(weight),
-        ))
+    ) -> Result<Self, NurbsError> {
+        construction::pair_polar_lanes(poles, weights, |_, weight| Ok(weight))
     }
 
     /// Count poles.
@@ -1619,15 +1591,12 @@ impl PolarPcurveNurbs {
     /// zero degree, a non-finite raw pole value and then a non-finite or
     /// decreasing knot.
     pub fn new<P: PoleValue<FinitePoint2>, S: PoleValue<FiniteReal>, K: super::nurbs::KnotValue>(
-        ctx: &DecodeContext<'_>,
         degree: u32,
         knots: K,
         poles: PolarNurbsPoles<P, S>,
         periodic: bool,
-    ) -> Result<Result<Self, NurbsError>, CodecError> {
-        super::nurbs::admitted::finish(construction::build_polar(
-            ctx, degree, knots, poles, periodic,
-        ))
+    ) -> Result<Self, NurbsError> {
+        construction::build_polar(degree, knots, poles, periodic)
     }
 
     /// Polynomial degree shared by every component.
@@ -1646,19 +1615,16 @@ impl PolarPcurveNurbs {
         S: PoleValue<FiniteReal>,
         K: super::nurbs::KnotValue,
     >(
-        ctx: &DecodeContext<'_>,
         degree: u32,
         knots: K,
         poles: Vec<PolarNurbsPole<P, S>>,
         weights: Option<Vec<f64>>,
         periodic: bool,
-    ) -> Result<Result<Self, NurbsError>, CodecError> {
-        super::nurbs::admitted::finish((|| {
-            let poles = construction::pair_polar_lanes(ctx, poles, weights, |index, weight| {
-                admit_weight(ctx, "polar poles", index, weight)
-            })?;
-            construction::build_polar(ctx, degree, knots, poles, periodic)
-        })())
+    ) -> Result<Self, NurbsError> {
+        let poles = construction::pair_polar_lanes(poles, weights, |index, weight| {
+            admit_weight("polar poles", index, weight)
+        })?;
+        construction::build_polar(degree, knots, poles, periodic)
     }
 
     /// Build a polar NURBS from admitted knots, a pole lane and an admitted weight lane.
@@ -1672,18 +1638,14 @@ impl PolarPcurveNurbs {
         S: PoleValue<FiniteReal>,
         K: super::nurbs::KnotValue,
     >(
-        ctx: &DecodeContext<'_>,
         degree: u32,
         knots: K,
         poles: Vec<PolarNurbsPole<P, S>>,
         weights: Option<Vec<NonZeroReal>>,
         periodic: bool,
-    ) -> Result<Result<Self, NurbsError>, CodecError> {
-        super::nurbs::admitted::finish((|| {
-            let poles =
-                construction::pair_polar_lanes(ctx, poles, weights, |_, weight| Ok(weight))?;
-            construction::build_polar(ctx, degree, knots, poles, periodic)
-        })())
+    ) -> Result<Self, NurbsError> {
+        let poles = construction::pair_polar_lanes(poles, weights, |_, weight| Ok(weight))?;
+        construction::build_polar(degree, knots, poles, periodic)
     }
 
     /// Paired radial and axial poles.
@@ -1756,14 +1718,8 @@ impl<'de> Deserialize<'de> for PolarPcurveNurbs {
         D: serde::Deserializer<'de>,
     {
         let wire = PolarPcurveNurbsWire::deserialize(deserializer)?;
-        construction::build_polar(
-            &StandardNurbsAdmission,
-            wire.degree,
-            wire.knots,
-            wire.poles,
-            wire.periodic,
-        )
-        .map_err(serde::de::Error::custom)
+        construction::build_polar(wire.degree, wire.knots, wire.poles, wire.periodic)
+            .map_err(serde::de::Error::custom)
     }
 }
 
@@ -1845,15 +1801,12 @@ impl PcurveNurbs {
     /// zero degree, a non-finite raw pole coordinate and then a non-finite or
     /// decreasing knot.
     pub fn new<P: PoleValue<FinitePoint2>, K: super::nurbs::KnotValue>(
-        ctx: &DecodeContext<'_>,
         degree: u32,
         knots: K,
         poles: PcurveNurbsPoles<P>,
         periodic: bool,
-    ) -> Result<Result<Self, NurbsError>, CodecError> {
-        super::nurbs::admitted::finish(construction::build_pcurve(
-            ctx, degree, knots, poles, periodic,
-        ))
+    ) -> Result<Self, NurbsError> {
+        construction::build_pcurve(degree, knots, poles, periodic)
     }
 
     /// Lift each two-dimensional pole into model space, keeping its weight.
@@ -1868,19 +1821,8 @@ impl PcurveNurbs {
             .into_iter()
             .map(|point| lift(point.get()))
             .collect();
-        let poles = super::nurbs::pair_curve_lanes(
-            &StandardNurbsAdmission,
-            points,
-            self.weights(),
-            |_, weight| Ok(weight),
-        )?;
-        super::nurbs::build_curve(
-            &StandardNurbsAdmission,
-            self.degree,
-            self.knots.clone(),
-            poles,
-            self.periodic,
-        )
+        let poles = super::nurbs::pair_curve_lanes(points, self.weights(), |_, weight| Ok(weight))?;
+        NurbsCurve::new(self.degree, self.knots.clone(), poles, self.periodic)
     }
 
     /// Curve degree.
@@ -1895,39 +1837,31 @@ impl PcurveNurbs {
 
     /// Build a parameter-space NURBS from a source's pole and weight lanes.
     pub fn from_lanes<P: PoleValue<FinitePoint2>, K: super::nurbs::KnotValue>(
-        ctx: &DecodeContext<'_>,
         degree: u32,
         knots: K,
         control_points: Vec<P>,
         weights: Option<Vec<f64>>,
         periodic: bool,
-    ) -> Result<Result<Self, NurbsError>, CodecError> {
-        super::nurbs::admitted::finish((|| {
-            let poles =
-                construction::pair_pcurve_lanes(ctx, control_points, weights, |index, weight| {
-                    admit_weight(ctx, "pcurve poles", index, weight)
-                })?;
-            construction::build_pcurve(ctx, degree, knots, poles, periodic)
-        })())
+    ) -> Result<Self, NurbsError> {
+        let poles = construction::pair_pcurve_lanes(control_points, weights, |index, weight| {
+            admit_weight("pcurve poles", index, weight)
+        })?;
+        construction::build_pcurve(degree, knots, poles, periodic)
     }
 
     /// Build from finite knot, pole, and weight lanes. Only relationships and
     /// the nonzero weight condition are checked.
     pub fn from_finite_lanes(
-        ctx: &DecodeContext<'_>,
         degree: u32,
         knots: Vec<FiniteReal>,
         control_points: Vec<FinitePoint2>,
         weights: Option<Vec<FiniteReal>>,
         periodic: bool,
-    ) -> Result<Result<Self, NurbsError>, CodecError> {
-        super::nurbs::admitted::finish((|| {
-            let poles =
-                construction::pair_pcurve_lanes(ctx, control_points, weights, |index, weight| {
-                    admit_finite_weight(ctx, "pcurve poles", index, weight)
-                })?;
-            construction::build_pcurve(ctx, degree, knots, poles, periodic)
-        })())
+    ) -> Result<Self, NurbsError> {
+        let poles = construction::pair_pcurve_lanes(control_points, weights, |index, weight| {
+            admit_finite_weight("pcurve poles", index, weight)
+        })?;
+        construction::build_pcurve(degree, knots, poles, periodic)
     }
 
     /// Build a parameter-space NURBS from admitted knots, a pole lane and an
@@ -1938,20 +1872,15 @@ impl PcurveNurbs {
     /// Refuses a weight lane that does not cover the poles, invalid
     /// cardinalities, or a non-finite raw pole coordinate.
     pub fn from_checked_lanes<P: PoleValue<FinitePoint2>, K: super::nurbs::KnotValue>(
-        ctx: &DecodeContext<'_>,
         degree: u32,
         knots: K,
         control_points: Vec<P>,
         weights: Option<Vec<NonZeroReal>>,
         periodic: bool,
-    ) -> Result<Result<Self, NurbsError>, CodecError> {
-        super::nurbs::admitted::finish((|| {
-            let poles =
-                construction::pair_pcurve_lanes(ctx, control_points, weights, |_, weight| {
-                    Ok(weight)
-                })?;
-            construction::build_pcurve(ctx, degree, knots, poles, periodic)
-        })())
+    ) -> Result<Self, NurbsError> {
+        let poles =
+            construction::pair_pcurve_lanes(control_points, weights, |_, weight| Ok(weight))?;
+        construction::build_pcurve(degree, knots, poles, periodic)
     }
 
     /// Poles in parameter order, with the pcurve's rational form and admitted
@@ -2065,14 +1994,8 @@ impl<'de> Deserialize<'de> for PcurveNurbs {
         }
 
         let wire = Wire::deserialize(deserializer)?;
-        construction::build_pcurve(
-            &StandardNurbsAdmission,
-            wire.degree,
-            wire.knots,
-            wire.poles,
-            wire.periodic,
-        )
-        .map_err(serde::de::Error::custom)
+        construction::build_pcurve(wire.degree, wire.knots, wire.poles, wire.periodic)
+            .map_err(serde::de::Error::custom)
     }
 }
 

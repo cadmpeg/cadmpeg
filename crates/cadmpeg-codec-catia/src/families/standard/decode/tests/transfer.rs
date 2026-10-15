@@ -836,14 +836,11 @@ fn standard_decode_transfers_resolved_consolidated_nurbs_surface_curves() {
 #[test]
 fn decode_standard_transfers_exact_offset_construction() {
     let surface_bytes = a5_surface_stream();
-    let carriers = crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a5_surfaces(
-            ctx,
-            &surface_bytes,
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-        .expect("service decode")
-    });
+    let carriers = crate::families::a5a8::records::a5_surfaces(
+        &surface_bytes,
+        &mut crate::nurbs::LaneRefusals::new(),
+    )
+    .expect("service decode");
     let surface = &carriers[0].geometry;
     let domain = [
         surface.u_knots()[0],
@@ -903,14 +900,11 @@ fn decode_standard_transfers_exact_offset_construction() {
 #[test]
 fn decode_standard_transfers_construction_use_offset() {
     let surface_bytes = a5_surface_stream();
-    let carriers = crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a5_surfaces(
-            ctx,
-            &surface_bytes,
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-        .expect("service decode")
-    });
+    let carriers = crate::families::a5a8::records::a5_surfaces(
+        &surface_bytes,
+        &mut crate::nurbs::LaneRefusals::new(),
+    )
+    .expect("service decode");
     let surface = &carriers[0].geometry;
     let domain = [
         surface.u_knots()[0],
@@ -1076,14 +1070,12 @@ fn standard_initial_carrier_identity_result() {
 #[test]
 fn standard_revolution_procedure_copy_result() {
     let directrix = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
         None,
         false,
     )
-    .expect("fixture constructor admission")
     .expect("valid directrix");
     let procedure = super::super::StandardSurfaceProcedure::Revolution(Box::new(
         crate::families::b5::transfer::ResolvedRevolutionSurface {

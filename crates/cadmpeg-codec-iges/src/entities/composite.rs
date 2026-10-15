@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Ordered composite-curve projection.
 
-use super::curve_conversion::{
-    circular_arc_nurbs, elliptical_arc_nurbs, parabolic_arc_nurbs, CurveConversionError,
-};
+use super::curve_conversion::{circular_arc_nurbs, elliptical_arc_nurbs, parabolic_arc_nurbs};
 use super::geometry::{resolve_transform, source_object, WireProjectionOutcome};
 use super::nurbs_controls::{
     euclidean_control_points, homogeneous_control_points, homogeneous_point_is_valid,
@@ -474,7 +472,6 @@ impl<T> ConcatenatedSegments<T> {
 /// read are the child's own stated degree, knots and interval, so a reader that
 /// cannot reflect them states which of them it refused.
 fn reverse_nurbs(
-    ctx: &DecodeContext<'_>,
     curve: NurbsCurve,
     interval: [f64; 2],
 ) -> Result<(NurbsCurve, [f64; 2]), CompositeCurveError> {
@@ -536,7 +533,7 @@ fn reverse_nurbs(
         *knot = reflect(finite)?;
     }
     poles.reverse();
-    let reversed = NurbsCurve::new(ctx, source_degree, knots, poles, periodic)??;
+    let reversed = NurbsCurve::new(source_degree, knots, poles, periodic)?;
     Ok((reversed, reversed_range))
 }
 
@@ -558,13 +555,12 @@ fn trim_nurbs_to_interval(
             .collect()
     });
     Ok(Some(NurbsCurve::from_checked_lanes(
-        ctx,
         curve.degree(),
         trimmed_knots,
         control_points,
         weights,
         false,
-    )??))
+    )?))
 }
 
 /// Why a child curve could not be raised to the composite's degree.
@@ -673,9 +669,6 @@ pub(super) enum CompositeCurveError {
     /// A carrier the IR refuses.
     #[error(transparent)]
     Carrier(#[from] cadmpeg_ir::geometry::nurbs::NurbsError),
-    /// A bounded analytic carrier could not be built.
-    #[error(transparent)]
-    Conversion(#[from] CurveConversionError),
     /// A child that does not raise to the composite degree.
     #[error("{0}")]
     Elevation(#[from] DegreeElevationError),
@@ -810,9 +803,7 @@ impl CompositeCurveError {
     /// Return a decode resource refusal before a caller considers geometric fallback.
     pub(super) fn non_resource(self) -> Result<Self, CodecError> {
         match self {
-            Self::Budget(error)
-            | Self::ChildWeightAllocation(error)
-            | Self::Conversion(CurveConversionError::Resource(error)) => Err(error),
+            Self::Budget(error) | Self::ChildWeightAllocation(error) => Err(error),
             Self::Elevation(DegreeElevationError::Allocation(error)) => Err(error),
             error => Ok(error),
         }
@@ -979,7 +970,6 @@ fn elevate_nurbs_to_degree(
                 .collect()
         });
         let piece = NurbsCurve::from_checked_lanes(
-            ctx,
             u32::try_from(target_degree).map_err(|_| DegreeElevationError::TargetDegree {
                 degree: stated_target,
                 bound: MAX_COMPOSITE_DEGREE,
@@ -988,8 +978,7 @@ fn elevate_nurbs_to_degree(
             control_points,
             weights,
             false,
-        )
-        .map_err(DegreeElevationError::Allocation)??;
+        )?;
         pieces.push((piece, [start, end], ()));
     }
     let Some(concatenated) = concatenate_nurbs(ctx, pieces, join_tolerance)? else {
@@ -1005,8 +994,7 @@ fn elevate_nurbs_to_degree(
     elevated_knots[..=target_degree].fill(interval[0]);
     let end_start = elevated_knots.len() - target_degree - 1;
     elevated_knots[end_start..].fill(interval[1]);
-    let elevated = NurbsCurve::new(ctx, elevated_degree, elevated_knots, poles, false)
-        .map_err(DegreeElevationError::Allocation)??;
+    let elevated = NurbsCurve::new(elevated_degree, elevated_knots, poles, false)?;
     *curve = elevated;
     Ok(())
 }
@@ -1188,7 +1176,7 @@ fn concatenate_nurbs<T>(
             points: control_points,
         }
     };
-    let nurbs = NurbsCurve::new(ctx, degree, knots, poles, false)??;
+    let nurbs = NurbsCurve::new(degree, knots, poles, false)?;
     // The joined carrier evaluates at both of its own endpoints: reading the
     // two points is the statement, and each names its own parameter when the
     // carrier does not answer.
@@ -1281,7 +1269,7 @@ fn bounded_nurbs_for_id(
             let (curve, range) = if segment.same_sense {
                 child
             } else {
-                reverse_nurbs(ctx, child.0, child.1)?
+                reverse_nurbs(child.0, child.1)?
             };
             children.push((curve, range, ()));
         }
@@ -1316,7 +1304,7 @@ fn bounded_nurbs_for_id(
             let knots = vec![0.0, 0.0, 1.0, 1.0];
             let points = vec![start, end];
             Some((
-                NurbsCurve::new(ctx, 1, knots, NurbsPoles3::Polynomial { points }, false)??,
+                NurbsCurve::new(1, knots, NurbsPoles3::Polynomial { points }, false)?,
                 [0.0, 1.0],
             ))
         }
@@ -1325,8 +1313,7 @@ fn bounded_nurbs_for_id(
             let axis = circle_curve.frame().axis().as_raw();
             let ref_direction = circle_curve.frame().reference().as_raw();
             let radius = circle_curve.radius();
-            let Some(nurbs) =
-                circular_arc_nurbs(center, *axis, *ref_direction, radius, interval, ctx)?
+            let Some(nurbs) = circular_arc_nurbs(center, *axis, *ref_direction, radius, interval)?
             else {
                 return Ok(None);
             };
@@ -1357,7 +1344,6 @@ fn bounded_nurbs_for_id(
                 major_radius,
                 minor_radius,
                 interval,
-                ctx,
             )?
             else {
                 return Ok(None);
@@ -1381,14 +1367,8 @@ fn bounded_nurbs_for_id(
             let axis = parabola_curve.frame().axis().as_raw();
             let major_direction = parabola_curve.frame().reference().as_raw();
             let focal_distance = parabola_curve.focal_distance();
-            let Some(nurbs) = parabolic_arc_nurbs(
-                vertex,
-                *axis,
-                *major_direction,
-                focal_distance,
-                interval,
-                ctx,
-            )?
+            let Some(nurbs) =
+                parabolic_arc_nurbs(vertex, *axis, *major_direction, focal_distance, interval)?
             else {
                 return Ok(None);
             };

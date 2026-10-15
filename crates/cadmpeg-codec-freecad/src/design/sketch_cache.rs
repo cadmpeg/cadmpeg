@@ -88,7 +88,7 @@ pub(super) fn project(
         let native_kind = native_kind.to_owned();
         let attributes = sketch_attributes(carrier);
         let geometry = match carrier
-            .map(|carrier| sketch_nurbs(ctx, &native_kind, carrier))
+            .map(|carrier| sketch_nurbs(&native_kind, carrier))
             .transpose()?
             .flatten()
         {

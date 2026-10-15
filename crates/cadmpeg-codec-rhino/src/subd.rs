@@ -6,7 +6,6 @@ use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::ops::Range;
 
-use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::scalar::{FiniteReal, NonNegativeReal};
@@ -224,7 +223,6 @@ pub(crate) fn supported_class(class_uuid: crate::wire::Uuid) -> bool {
 
 /// Decodes one bounded `ON_SubD` class payload.
 pub(crate) fn decode(
-    ctx: &DecodeContext<'_>,
     data: &[u8],
     range: Range<usize>,
     archive: ArchiveVersion,
@@ -258,7 +256,7 @@ pub(crate) fn decode(
                 &mut enum_diagnostics,
                 &mut warnings,
             )?;
-            let surface = materialize(ctx, level, scale, id)?;
+            let surface = materialize(level, scale, id)?;
             finish_chunk_children(&mut reader, &chunk, child, &children, &mut warnings)?;
             finish_payload(&mut reader)?;
             Ok(Some(DecodedSubd {
@@ -277,7 +275,6 @@ pub(crate) fn decode(
 
 /// Decodes and admits one `ON_SubDMeshProxyUserData` payload.
 pub(crate) fn decode_mesh_proxy(
-    ctx: &DecodeContext<'_>,
     data: &[u8],
     extra: &ClassUserdata,
     archive: ArchiveVersion,
@@ -314,7 +311,7 @@ pub(crate) fn decode_mesh_proxy(
 
     let embedded_start = reader.position();
     let embedded_end = embedded_subd_end(&reader, archive)?;
-    let decoded = decode(ctx, data, embedded_start..embedded_end, archive, scale, id)?;
+    let decoded = decode(data, embedded_start..embedded_end, archive, scale, id)?;
     reader.skip(embedded_end - reader.position())?;
     let face_count = reader.i32()?;
     let vertex_count = reader.i32()?;
@@ -1145,7 +1142,6 @@ fn resolve_all(
 }
 
 fn materialize(
-    ctx: &DecodeContext<'_>,
     level: RawLevel,
     scale: MillimeterScale,
     id: cadmpeg_ir::ids::SubdId,
@@ -1239,8 +1235,7 @@ fn materialize(
         id,
         scheme: SubdScheme::CatmullClark,
         source_object: None,
-        cage: cadmpeg_ir::subd::SubdCage::new(vertices, edges, faces, Vec::new(), ctx)
-            .map_err(SubdError::from)?
+        cage: cadmpeg_ir::subd::SubdCage::new(vertices, edges, faces, Vec::new())
             .map_err(|error| malformed(level.source_offset, error.to_string()))?,
     })
 }

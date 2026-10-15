@@ -157,7 +157,7 @@ fn inspect_exchange(
     if codec.detect_impl(ctx, root)? == Confidence::No {
         return Err(CodecError::WrongFormat("missing ISO-10303-21 magic".into()));
     }
-    let (mut exchange, diagnostics) = parse::parse_with_context(bytes, ctx)?;
+    let (mut exchange, diagnostics) = parse::parse(bytes, ctx)?;
     inspect_parsed_exchange(bytes, ctx, &mut exchange, &diagnostics)
 }
 
@@ -395,7 +395,7 @@ fn inspect_zip(
     if StepCodec::default().detect_impl(ctx, root_view)? == Confidence::No {
         return Err(CodecError::WrongFormat("missing ISO-10303-21 magic".into()));
     }
-    let (mut exchange, diagnostics) = parse::parse_with_context(root_bytes, ctx)?;
+    let (mut exchange, diagnostics) = parse::parse(root_bytes, ctx)?;
     let resource_notes = archive::root_reference_notes(&archive, &exchange);
     let mut inspected = inspect_parsed_exchange(root_bytes, ctx, &mut exchange, &diagnostics)?;
     let resource_notes = resource_notes?;
@@ -446,7 +446,7 @@ fn decode_zip(
         view: root_view,
         data_start: root_data_offset,
     } = archive::open_root(ctx, root)?;
-    let (exchange, diagnostics) = parse::parse_with_context(root_view.window(), ctx)?;
+    let (exchange, diagnostics) = parse::parse(root_view.window(), ctx)?;
     let resource_notes = archive::root_reference_notes(&archive, &exchange)?;
     let entry_count = archive.entries().len();
     let mut decoded = reader::decode_exchange(

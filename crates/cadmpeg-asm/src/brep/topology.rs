@@ -355,8 +355,8 @@ pub(super) fn walk_reachable_topology(
                                             5,
                                             "exp_par_cur",
                                         ) {
-                                            nurbs::pcurve::explicit_pcurve_cache(ctx, span)
-                                                .map(|pcurve| pcurve.map(|pcurve| (pcurve, true)))
+                                            nurbs::pcurve::explicit_pcurve_cache(span)
+                                                .map(|pcurve| Ok((pcurve, true)))
                                         } else if let Some(span) =
                                             nurbs::toks::payload_subtype_toks(prec, 5, "ref")
                                         {
@@ -365,11 +365,11 @@ pub(super) fn walk_reachable_topology(
                                             // index is the field after it.
                                             match span.interior() {
                                                 [_name, Token::Long(index), ..] =>
-                                                    nurbs::pcurve::explicit_pcurve_cache_from_subtype_ref(ctx,
+                                                    nurbs::pcurve::explicit_pcurve_cache_from_subtype_ref(
                                                         *index,
                                                         token_table,
                                                     )
-                                                    .map(|pcurve| pcurve.map(|pcurve| (pcurve, true))),
+                                                    .map(|pcurve| Ok((pcurve, true))),
                                                 _ => None,
                                             }
                                         } else {
@@ -407,7 +407,7 @@ pub(super) fn walk_reachable_topology(
                                             .ref_at(7)
                                             .and_then(|surface| by_index.get(&surface))
                                         {
-                                            let Some(()) = nurbs::proc_curve::normalize_pcurve_for_surface_record(surface.head(), &surface.tokens, &mut decoded).transpose()? else { return Ok(None); };
+                                            let Some(()) = nurbs::proc_curve::normalize_pcurve_for_surface_record(surface.head(), &surface.tokens, &mut decoded) else { return Ok(None); };
                                         }
                                     }
                                     Ok(pcurve_ranges_on_domain(&decoded, edge)

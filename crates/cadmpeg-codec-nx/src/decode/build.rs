@@ -259,7 +259,7 @@ pub(super) fn try_decode_geometry(
             curves: nurbs_curves,
             pcurves: nurbs_pcurves,
             refusals: nurbs_refusals,
-        } = parsed.parse_nurbs(ctx, si)?;
+        } = parsed.parse_nurbs(si);
         for refusal in nurbs_refusals {
             carrier_refusals.push(NxLossCode::CarrierLanesUnpaired.note(format!(
                 "parasolid#{si} {} at byte {} states no carrier: {}",
@@ -813,13 +813,12 @@ pub(super) fn try_decode_geometry(
                 geometry: if let Some(charted) = charted {
                     CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                         cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
-                            ctx,
                             1,
                             linear_knots(&charted.samples.parameters()),
                             charted.samples.points(),
                             None,
                             false,
-                        )?
+                        )
                         .map_err(|error| CodecError::Malformed(error.to_string()))?,
                     ))
                 } else if uncharted.is_some() {
@@ -883,7 +882,6 @@ pub(super) fn try_decode_geometry(
                 };
                 let parameters = charted.samples.parameters();
                 let first = intersection_side(
-                    ctx,
                     &ir,
                     &surfaces_by_xmt,
                     Some(charted.primary_support),
@@ -892,7 +890,6 @@ pub(super) fn try_decode_geometry(
                         .map(|uv| (uv, parameters.as_slice())),
                 )?;
                 let second = intersection_side(
-                    ctx,
                     &ir,
                     &surfaces_by_xmt,
                     charted.secondary_support,
@@ -1141,7 +1138,6 @@ pub(super) fn try_decode_geometry(
         let newly_validated_endpoint_witnesses = support_uv_validation.endpoint_witnesses;
         serialized_support_uv_geometry_budget.clear_blend_frame_cache();
         complete_ext11_support_uv_with_budget(
-            ctx,
             &mut ir,
             &pending_ext11_support_uv,
             &serialized_support_uv_geometry_budget,
@@ -1152,7 +1148,6 @@ pub(super) fn try_decode_geometry(
         let mut completed_endpoint_witnesses = BTreeMap::new();
         support_uv_lane_geometry_exhausted |=
             complete_support_uv_with_budget_and_endpoint_witnesses(
-                ctx,
                 &mut ir,
                 &pending_ext11_support_uv,
                 (&support_budget, &support_uv_geometry_budget),

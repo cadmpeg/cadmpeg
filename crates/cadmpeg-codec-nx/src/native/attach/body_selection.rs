@@ -1,6 +1,6 @@
 use super::{
-    BTreeMap, BodyId, BodySelection, BodyWriterHistory, CodecError, DecodeContext,
-    FeatureDefinition, FeatureId, FeatureOperation,
+    BTreeMap, BodyId, BodySelection, BodyWriterHistory, FeatureDefinition, FeatureId,
+    FeatureOperation,
 };
 
 /// Identity namespace used to prove that two Boolean selections are disjoint.
@@ -31,37 +31,25 @@ pub(super) enum FeatureBodySelection {
     },
 }
 
-pub(super) fn local_body_selection(
-    ctx: &DecodeContext<'_>,
-    bodies: &[String],
-    native: String,
-) -> Result<BodySelection, CodecError> {
-    Ok(BodySelection::local(bodies.to_vec(), native.clone(), ctx)?
-        .unwrap_or(BodySelection::Native(native)))
+pub(super) fn local_body_selection(bodies: &[String], native: String) -> BodySelection {
+    BodySelection::local(bodies.to_vec(), native.clone()).unwrap_or(BodySelection::Native(native))
 }
 
 impl FeatureBodySelection {
-    pub(super) fn into_selection(
-        self,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<BodySelection, CodecError> {
+    pub(super) fn into_selection(self) -> BodySelection {
         match self {
-            Self::Native(native) => Ok(BodySelection::Native(native)),
-            Self::Local { bodies, native, .. } => local_body_selection(ctx, &bodies, native),
+            Self::Native(native) => BodySelection::Native(native),
+            Self::Local { bodies, native, .. } => local_body_selection(&bodies, native),
             Self::Resolved { bodies, native, .. } => {
                 if bodies.is_empty() {
-                    return Ok(BodySelection::Native(native));
+                    return BodySelection::Native(native);
                 }
-                let bodies = match cadmpeg_ir::features::DistinctMembers::try_from(bodies, ctx) {
-                    Ok(bodies) => bodies,
-                    Err(cadmpeg_ir::features::FeatureCollectionError::Resource(limit)) => {
-                        return Err(limit.into())
-                    }
+                match cadmpeg_ir::features::DistinctMembers::try_from(bodies) {
+                    Ok(bodies) => BodySelection::Resolved { bodies, native },
                     Err(cadmpeg_ir::features::FeatureCollectionError::Invalid(_)) => {
-                        return Ok(BodySelection::Native(native))
+                        BodySelection::Native(native)
                     }
-                };
-                Ok(BodySelection::Resolved { bodies, native })
+                }
             }
         }
     }
@@ -199,12 +187,11 @@ pub(super) fn feature_body_selection_with_offset_blocks(
 /// input-local object identity. A body set needs no cross-role disjointness
 /// proof, so an identity outside the segment alias table remains its own root.
 pub(super) fn feature_body_set_selection(
-    ctx: &DecodeContext<'_>,
     object_indices: &[u32],
     body_alias_roots: &BTreeMap<u32, u32>,
     bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
     native: String,
-) -> Result<BodySelection, CodecError> {
+) -> BodySelection {
     let mut roots = Vec::new();
     for index in object_indices {
         let root = body_alias_roots.get(index).copied().unwrap_or(*index);
@@ -233,7 +220,7 @@ pub(super) fn feature_body_set_selection(
             native,
             identity_keys: Vec::new(),
         }
-        .into_selection(ctx);
+        .into_selection();
     }
     let mut bodies = Vec::new();
     for root in roots {
@@ -244,14 +231,13 @@ pub(super) fn feature_body_set_selection(
         native,
         identity_keys: Vec::new(),
     }
-    .into_selection(ctx)
+    .into_selection()
 }
 
 pub(super) fn atomic_disjoint_body_selections(
-    ctx: &DecodeContext<'_>,
     left: FeatureBodySelection,
     right: FeatureBodySelection,
-) -> Result<(BodySelection, BodySelection), CodecError> {
+) -> (BodySelection, BodySelection) {
     let complete = match (&left, &right) {
         (
             FeatureBodySelection::Local {
@@ -287,9 +273,9 @@ pub(super) fn atomic_disjoint_body_selections(
         _ => false,
     };
     if complete {
-        Ok((left.into_selection(ctx)?, right.into_selection(ctx)?))
+        (left.into_selection(), right.into_selection())
     } else {
-        Ok((left.into_native(), right.into_native()))
+        (left.into_native(), right.into_native())
     }
 }
 

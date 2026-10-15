@@ -1457,14 +1457,12 @@ fn collect_claimed_hole_profiles<'a>(
 }
 
 pub(crate) fn project_hole_position_sketches(
-    ctx: &DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
     sketches: &[Sketch],
     sketch_entities: &[SketchEntity],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) -> Result<(), CodecError> {
-    const OPERATION: &str = "project SLDPRT hole position sketches";
     const NATIVE_TO_IR: f64 = 1000.0;
     const QUANTUM: f64 = EPS_HOLE_POSITION;
     let mut native_features = HashMap::new();
@@ -1700,10 +1698,7 @@ pub(crate) fn project_hole_position_sketches(
                     *placements = Some(resolved);
                 }
             });
-            if !feature.dependencies.contains(dependency) {
-                let dependency = dependency.clone();
-                feature.dependencies.insert(ctx, dependency, OPERATION)?;
-            }
+            feature.dependencies.insert(dependency.clone());
         }
     }
     Ok(())

@@ -50,7 +50,7 @@ fn validation_admits_ordinal_one_placement_outside_class_256() {
         .extend([placed_339, placed_256]);
 
     let findings = crate::test_support::with_decode_context(|ctx| {
-        crate::validate::validate_native_charged(ctx, &ir).expect("service native validation")
+        crate::validate::validate_native(ctx, &ir).expect("service native validation")
     });
     let flagged = |id: &str| {
         findings.iter().any(|finding| {
@@ -93,7 +93,7 @@ fn validation_names_a_repeated_occurrence_guid() {
         .extend([occurrence(100), occurrence(101)]);
 
     let findings = crate::test_support::with_decode_context(|ctx| {
-        crate::validate::validate_native_charged(ctx, &ir).expect("service native validation")
+        crate::validate::validate_native(ctx, &ir).expect("service native validation")
     });
     let messages: Vec<_> = findings
         .iter()

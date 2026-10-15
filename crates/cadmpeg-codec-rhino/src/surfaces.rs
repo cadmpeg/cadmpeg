@@ -228,7 +228,7 @@ pub(crate) fn decode(
         NURBS_SURFACE | NURBS_SURFACE_TL | NURBS_SURFACE_LEGACY
     ) {
         DecodedSurface::Typed {
-            geometry: TypedSurface::Nurbs(read_nurbs_surface(ctx, &mut reader, scale)?),
+            geometry: TypedSurface::Nurbs(read_nurbs_surface(&mut reader, scale)?),
             derived: true,
         }
     } else if class == PLANE_SURFACE {
@@ -657,13 +657,11 @@ fn revolution_nurbs(
     let weight_rows = copy_rows(&weights, row_len)?;
     let profile_knots = profile.knots().to_vec();
     let mut result = cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes(
-        ctx,
         NurbsSurfaceAxis::new(2, knots, false),
         NurbsSurfaceAxis::new(profile.degree(), profile_knots, profile.periodic()),
         NurbsSurfaceLanes::new(point_rows, Some(weight_rows)),
         false,
     )
-    .map_err(GeometryError::from)?
     .map_err(|error| GeometryError::malformed(offset, error.to_string()))?;
     if transposed {
         result.transpose_parameter_axes();
@@ -723,12 +721,11 @@ fn sum_nurbs(
     let u_knots = first.knots().clone();
     let v_knots = second.knots().clone();
     NurbsSurface::from_checked_lanes(
-        ctx,
         NurbsSurfaceAxis::new(first.degree(), u_knots, first.periodic()),
         NurbsSurfaceAxis::new(second.degree(), v_knots, second.periodic()),
         NurbsSurfaceLanes::new(point_rows, weight_rows),
         false,
-    )?
+    )
     .map_err(|error| GeometryError::malformed(offset, error.to_string()))
 }
 
@@ -743,7 +740,6 @@ fn copy_rows<T: Copy>(values: &[T], row_len: usize) -> Result<Vec<Vec<T>>, Geome
 
 /// Constructs the exact degree-one tensor interpolation between two profile curves.
 pub(crate) fn extrusion_nurbs(
-    ctx: &DecodeContext<'_>,
     start: &NurbsCurve,
     end: &NurbsCurve,
     path_domain: FiniteVector<2>,
@@ -785,15 +781,14 @@ pub(crate) fn extrusion_nurbs(
     let u_knots = start.knots().clone();
     let [path_start, path_end] = path_domain.finite_components();
     let path_knots =
-        KnotVector::from_finite_lanes(ctx, vec![path_start, path_start, path_end, path_end])?
+        KnotVector::from_finite_lanes(vec![path_start, path_start, path_end, path_end])
             .map_err(|error| GeometryError::malformed(offset, error.to_string()))?;
     let mut surface = NurbsSurface::new(
-        ctx,
         NurbsSurfaceAxis::new(start.degree(), u_knots, start.periodic()),
         NurbsSurfaceAxis::new(1, path_knots, false),
         poles,
         false,
-    )?
+    )
     .map_err(|error| GeometryError::malformed(offset, error.to_string()))?;
     if transposed {
         surface.transpose_parameter_axes();
@@ -831,23 +826,20 @@ fn rodrigues(value: Vector3, axis: Vector3, angle: f64) -> Vector3 {
 }
 
 pub(crate) fn read_nurbs_curve(
-    ctx: &DecodeContext<'_>,
     reader: &mut BoundedReader<'_>,
     scale: MillimeterScale,
 ) -> Result<NurbsCurve, GeometryError> {
-    read_nurbs_curve_inner(ctx, reader, scale, None)
+    read_nurbs_curve_inner(reader, scale, None)
 }
 
 /// Reads a Rhino NURBS curve whose poles are two-dimensional UV values.
 pub(crate) fn read_nurbs_curve_2d(
-    ctx: &DecodeContext<'_>,
     reader: &mut BoundedReader<'_>,
 ) -> Result<NurbsCurve, GeometryError> {
-    read_nurbs_curve_inner(ctx, reader, MillimeterScale::IDENTITY, Some(2))
+    read_nurbs_curve_inner(reader, MillimeterScale::IDENTITY, Some(2))
 }
 
 fn read_nurbs_curve_inner(
-    ctx: &DecodeContext<'_>,
     reader: &mut BoundedReader<'_>,
     scale: MillimeterScale,
     expected_dimension: Option<i32>,
@@ -901,33 +893,30 @@ fn read_nurbs_curve_inner(
         reader.bool()?;
     }
     let periodic = periodic_knots_checked(&knots, order, cv_count);
-    let full_knots = reconstruct_checked_knots(ctx, &knots, order, cv_count)?;
+    let full_knots = reconstruct_checked_knots(&knots, order, cv_count)?;
     reader.skip_remaining()?;
-    let poles = NurbsPoles3::from_checked_lanes(ctx, control_points, weights)?
+    let poles = NurbsPoles3::from_checked_lanes(control_points, weights)
         .map_err(|error| GeometryError::malformed(reader.position(), error.to_string()))?;
     NurbsCurve::new(
-        ctx,
         u32::try_from(order - 1).map_err(|_| error(reader.position(), "NURBS order overflow"))?,
         full_knots,
         poles,
         periodic,
-    )?
+    )
     .map_err(|error| GeometryError::malformed(reader.position(), error.to_string()))
 }
 
 pub(crate) fn read_nurbs_surface(
-    ctx: &DecodeContext<'_>,
     reader: &mut BoundedReader<'_>,
     scale: MillimeterScale,
 ) -> Result<NurbsSurface, GeometryError> {
-    let surface = read_nurbs_surface_prefix(ctx, reader, scale)?;
+    let surface = read_nurbs_surface_prefix(reader, scale)?;
     reader.skip_remaining()?;
     Ok(surface)
 }
 
 /// Reads one NURBS surface without consuming bytes after its final pole.
 pub(crate) fn read_nurbs_surface_prefix(
-    ctx: &DecodeContext<'_>,
     reader: &mut BoundedReader<'_>,
     scale: MillimeterScale,
 ) -> Result<NurbsSurface, GeometryError> {
@@ -991,18 +980,17 @@ pub(crate) fn read_nurbs_surface_prefix(
     }
     let (control_points, weights) =
         read_poles(reader, stored_cv_count, rational != 0, dimension, scale)?;
-    let u_knots = reconstruct_checked_knots(ctx, &u_knots, u_order, u_count)?;
-    let v_knots = reconstruct_checked_knots(ctx, &v_knots, v_order, v_count)?;
+    let u_knots = reconstruct_checked_knots(&u_knots, u_order, u_count)?;
+    let v_knots = reconstruct_checked_knots(&v_knots, v_order, v_count)?;
     let row_len = v_count;
     let point_rows = copy_rows(&control_points, row_len)?;
     let weight_rows = weights
         .as_deref()
         .map(|values| copy_rows(values, row_len))
         .transpose()?;
-    let poles = NurbsPoleGrid::from_checked_lanes(ctx, point_rows, weight_rows)?
+    let poles = NurbsPoleGrid::from_checked_lanes(point_rows, weight_rows)
         .map_err(|error| GeometryError::malformed(reader.position(), error.to_string()))?;
     NurbsSurface::new(
-        ctx,
         NurbsSurfaceAxis::new(
             u32::try_from(u_order - 1)
                 .map_err(|_| error(reader.position(), "surface U order overflow"))?,
@@ -1017,7 +1005,7 @@ pub(crate) fn read_nurbs_surface_prefix(
         ),
         poles,
         false,
-    )?
+    )
     .map_err(|error| GeometryError::malformed(reader.position(), error.to_string()))
 }
 
@@ -1170,14 +1158,13 @@ pub(crate) fn reconstruct_knots(
 }
 
 fn reconstruct_checked_knots(
-    ctx: &DecodeContext<'_>,
     knots: &[FiniteReal],
     order: usize,
     cv_count: usize,
 ) -> Result<KnotVector, GeometryError> {
     let endpoints =
         reconstructed_endpoints(knots.len(), order, cv_count, |index| knots[index].get())?;
-    KnotVector::from_finite_lanes(ctx, reconstructed_knots(knots, endpoints))?
+    KnotVector::from_finite_lanes(reconstructed_knots(knots, endpoints))
         .map_err(|_| GeometryError::unpositioned("NURBS reconstructed knots are invalid"))
 }
 

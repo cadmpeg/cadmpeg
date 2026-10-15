@@ -533,14 +533,12 @@ fn affine_plane_lift_preserves_pcurve_weights() {
 fn affine_lift_range_orients_and_trims_the_nurbs_carrier() {
     let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
         NurbsCurve::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 10.0, 10.0],
             vec![Point3::new(0.0, 0.0, 2.0), Point3::new(10.0, 0.0, 2.0)],
             None,
             false,
         )
-        .expect("fixture constructor admission")
         .expect("valid affine lift curve"),
     ));
     let forward = oriented_nurbs_range(&geometry, [2.0, 8.0], [2.0, 0.0, 2.0], [8.0, 0.0, 2.0])
@@ -566,14 +564,12 @@ fn affine_lift_range_orients_and_trims_the_nurbs_carrier() {
     let tolerant = oriented_nurbs_range(
         &CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
             NurbsCurve::from_lanes(
-                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![0.0, 0.0, 10.0, 10.0],
                 vec![Point3::new(0.0, 0.0, 2.0), Point3::new(10.0, 0.0, 2.0)],
                 None,
                 false,
             )
-            .expect("fixture constructor admission")
             .expect("valid tolerant lift curve"),
         )),
         [2.0, 8.0],
@@ -1549,7 +1545,6 @@ fn torus_chart_lifts_meridians_and_latitudes_exactly() {
 #[test]
 fn tensor_surface_contraction_preserves_exact_isocurve() {
     let surface = cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
@@ -1561,7 +1556,6 @@ fn tensor_surface_contraction_preserves_exact_isocurve() {
         ),
         false,
     )
-    .expect("fixture constructor admission")
     .expect("valid tensor surface");
     let curve = cadmpeg_ir::eval::nurbs_surface_isocurve(
         cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
@@ -1717,7 +1711,6 @@ fn nurbs_isocurve_result() {
         lifted_endpoints: None,
     };
     let surface = NurbsSurface::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         NurbsSurfaceLanes::new(
@@ -1729,7 +1722,6 @@ fn nurbs_isocurve_result() {
         ),
         false,
     )
-    .expect("fixture constructor admission")
     .expect("valid bilinear surface");
     let curve = crate::test_support::with_service_context(|ctx| {
         super::super::pcurves::nurbs_isocurve(ctx, &pcurve, &surface)

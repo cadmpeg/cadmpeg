@@ -274,16 +274,11 @@ pub(crate) fn bind_configuration_parameter_overrides(
 /// Replace name-keyed suppression properties with stable feature references
 /// when exactly one neutral feature has the named source identity.
 pub(crate) fn bind_configuration_suppressed_features(
-    ctx: &DecodeContext<'_>,
     configurations: &mut [cadmpeg_ir::features::DesignConfiguration],
     features: &[cadmpeg_ir::features::Feature],
-) -> Result<(), CodecError> {
+) {
     for configuration in configurations {
-        let mut refusal = None;
         configuration.properties.retain(|key, _| {
-            if refusal.is_some() {
-                return true;
-            }
             let Some(name) = key.as_str().strip_prefix("suppressed:") else {
                 return true;
             };
@@ -296,37 +291,17 @@ pub(crate) fn bind_configuration_suppressed_features(
             if matches.next().is_some() {
                 return true;
             }
-            let projected = (|| -> Result<_, CodecError> {
-                let id = feature.id.clone();
-                let mut dependencies = cadmpeg_ir::features::DistinctMembers::default();
-                for dependency in &feature.dependencies {
-                    let copied = dependency.clone();
-                    dependencies.insert(ctx, copied, "f3d configuration suppressed dependency")?;
-                }
-                Ok((
-                    id,
-                    cadmpeg_ir::features::ConfigurationFeatureState {
-                        evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Suppressed {},
-                        dependencies,
-                        definition: feature.evaluation.definition().clone(),
-                    },
-                ))
-            })();
-            let (id, state) = match projected {
-                Ok(projected) => projected,
-                Err(error) => {
-                    refusal = Some(error);
-                    return true;
-                }
-            };
-            configuration.feature_states.insert(id, state);
+            configuration.feature_states.insert(
+                feature.id.clone(),
+                cadmpeg_ir::features::ConfigurationFeatureState {
+                    evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Suppressed {},
+                    dependencies: feature.dependencies.clone(),
+                    definition: feature.evaluation.definition().clone(),
+                },
+            );
             false
         });
-        if let Some(error) = refusal {
-            return Err(error);
-        }
     }
-    Ok(())
 }
 
 pub(crate) fn unresolved_configuration_parameter_override_count(
@@ -604,84 +579,71 @@ mod tests {
 
     #[test]
     fn configuration_suppression_binds_only_unique_feature_names() {
-        crate::test_support::with_decode_context(|decode_ctx| {
-            let table = DesignConfiguration::try_new(
-                "table.dsgcfg".into(),
-                DesignConfigurationKind::Table,
-                vec!["alternate".into()],
-                (serde_json::json!({
-                    "configurations": {"alternate": {"suppressed": ["Fillet 1"]}}
-                }))
-                .as_object()
-                .unwrap()
-                .clone(),
-            )
-            .unwrap();
-            let feature = Feature {
-                id: FeatureId::mint("f3d:model:feature#fillet-1").expect("identity grammar"),
-                ordinal: 0,
-                name: Some("Fillet 1".into()),
-                suppressed: Some(false),
-                dependencies: cadmpeg_ir::features::DistinctMembers::default(),
-                source_properties: BTreeMap::new(),
-                source_tag: None,
-                source_text: None,
-                source_content: cadmpeg_ir::features::FeatureContent::default(),
+        let table = DesignConfiguration::try_new(
+            "table.dsgcfg".into(),
+            DesignConfigurationKind::Table,
+            vec!["alternate".into()],
+            (serde_json::json!({
+                "configurations": {"alternate": {"suppressed": ["Fillet 1"]}}
+            }))
+            .as_object()
+            .unwrap()
+            .clone(),
+        )
+        .unwrap();
+        let feature = Feature {
+            id: FeatureId::mint("f3d:model:feature#fillet-1").expect("identity grammar"),
+            ordinal: 0,
+            name: Some("Fillet 1".into()),
+            suppressed: Some(false),
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: cadmpeg_ir::features::FeatureContent::default(),
 
-                evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-                    FeatureDefinition::Operation(FeatureOperation::Native {
-                        kind: "Fillet".into(),
-                        parameters: BTreeMap::new(),
-                    }),
-                ),
-                native_ref: None,
-            };
-            let mut projected =
-                project_configurations(&[table]).expect("ordered configuration table");
-            bind_configuration_suppressed_features(
-                decode_ctx,
-                &mut projected,
-                std::slice::from_ref(&feature),
-            )
-            .unwrap();
-            assert_eq!(
-                projected[0].suppressed_features().collect::<Vec<_>>(),
-                [&feature.id]
-            );
-            assert!(projected[0].properties.is_empty());
-            assert_eq!(
-                unresolved_configuration_suppressed_feature_count(&projected),
-                0
-            );
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                FeatureDefinition::Operation(FeatureOperation::Native {
+                    kind: "Fillet".into(),
+                    parameters: BTreeMap::new(),
+                }),
+            ),
+            native_ref: None,
+        };
+        let mut projected = project_configurations(&[table]).expect("ordered configuration table");
+        bind_configuration_suppressed_features(&mut projected, std::slice::from_ref(&feature));
+        assert_eq!(
+            projected[0].suppressed_features().collect::<Vec<_>>(),
+            [&feature.id]
+        );
+        assert!(projected[0].properties.is_empty());
+        assert_eq!(
+            unresolved_configuration_suppressed_feature_count(&projected),
+            0
+        );
 
-            let duplicate = Feature {
-                id: FeatureId::mint("f3d:model:feature#other-fillet-1").expect("identity grammar"),
-                ..feature.clone()
-            };
-            let mut ambiguous = project_configurations(&[DesignConfiguration::try_new(
-                "other.dsgcfg".into(),
-                DesignConfigurationKind::Table,
-                vec!["alternate".into()],
-                (serde_json::json!({
-                    "configurations": {"alternate": {"suppressed": ["Fillet 1"]}}
-                }))
-                .as_object()
-                .unwrap()
-                .clone(),
-            )
-            .unwrap()])
-            .expect("ordered configuration table");
-            bind_configuration_suppressed_features(
-                decode_ctx,
-                &mut ambiguous,
-                &[feature, duplicate],
-            )
-            .unwrap();
-            assert!(ambiguous[0].suppressed_features().next().is_none());
-            assert_eq!(
-                unresolved_configuration_suppressed_feature_count(&ambiguous),
-                1
-            );
-        });
+        let duplicate = Feature {
+            id: FeatureId::mint("f3d:model:feature#other-fillet-1").expect("identity grammar"),
+            ..feature.clone()
+        };
+        let mut ambiguous = project_configurations(&[DesignConfiguration::try_new(
+            "other.dsgcfg".into(),
+            DesignConfigurationKind::Table,
+            vec!["alternate".into()],
+            (serde_json::json!({
+                "configurations": {"alternate": {"suppressed": ["Fillet 1"]}}
+            }))
+            .as_object()
+            .unwrap()
+            .clone(),
+        )
+        .unwrap()])
+        .expect("ordered configuration table");
+        bind_configuration_suppressed_features(&mut ambiguous, &[feature, duplicate]);
+        assert!(ambiguous[0].suppressed_features().next().is_none());
+        assert_eq!(
+            unresolved_configuration_suppressed_feature_count(&ambiguous),
+            1
+        );
     }
 }

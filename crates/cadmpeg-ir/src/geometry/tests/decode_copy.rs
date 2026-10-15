@@ -15,7 +15,6 @@ fn context_with_limit<'a>(arena: &'a DecodeArena, policy: &'a DecodePolicy) -> D
 #[test]
 fn pcurve_coordinate_scale_scales_nurbs_controls() {
     let nurbs = PcurveNurbs::new(
-        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         PcurveNurbsPoles::Polynomial {
@@ -23,7 +22,6 @@ fn pcurve_coordinate_scale_scales_nurbs_controls() {
         },
         false,
     )
-    .expect("fixture pcurve construction admission")
     .expect("valid pcurve NURBS");
     let mut geometry = PcurveGeometry::Nurbs { nurbs };
     let arena = DecodeArena::new();

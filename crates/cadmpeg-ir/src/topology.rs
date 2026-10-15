@@ -689,29 +689,6 @@ impl std::fmt::Display for LoopRingError {
 
 impl std::error::Error for LoopRingError {}
 
-/// Failure to admit the structure or resources of a loop ring.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum LoopRingAdmissionError {
-    /// The ring has invalid membership or anchors.
-    #[error("{0}")]
-    Invalid(LoopRingError),
-    /// The decode budget or allocator refused admission.
-    #[error("decode resource limit: {0:?}")]
-    Resource(cadmpeg_core::decode::ResourceLimit),
-}
-
-impl From<cadmpeg_core::decode::ResourceLimit> for LoopRingAdmissionError {
-    fn from(limit: cadmpeg_core::decode::ResourceLimit) -> Self {
-        Self::Resource(limit)
-    }
-}
-
-impl From<LoopRingError> for LoopRingAdmissionError {
-    fn from(error: LoopRingError) -> Self {
-        Self::Invalid(error)
-    }
-}
-
 /// A checked, ordered coedge ring and its anchored pole occurrences.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -734,11 +711,11 @@ struct LoopRingWire {
 }
 
 impl TryFrom<LoopRingWire> for LoopRing {
-    type Error = LoopRingAdmissionError;
+    type Error = LoopRingError;
 
     fn try_from(wire: LoopRingWire) -> Result<Self, Self::Error> {
         if wire.coedges.is_empty() {
-            return Err(LoopRingError("loop ring must contain a coedge").into());
+            return Err(LoopRingError("loop ring must contain a coedge"));
         }
         let mut members = std::collections::HashSet::new();
         members
@@ -746,15 +723,14 @@ impl TryFrom<LoopRingWire> for LoopRing {
             .map_err(|_| LoopRingError("loop ring member allocation failed"))?;
         for coedge in &wire.coedges {
             if !members.insert(coedge) {
-                return Err(LoopRingError("loop ring coedges must be distinct").into());
+                return Err(LoopRingError("loop ring coedges must be distinct"));
             }
         }
         for vertex_use in &wire.vertex_uses {
             if !members.contains(&vertex_use.after) {
                 return Err(LoopRingError(
                     "loop ring vertex-use after must name a coedge in the ring",
-                )
-                .into());
+                ));
             }
         }
         Ok(Self {
@@ -858,9 +834,11 @@ impl Loop {
         &mut self,
         coedges: Vec<CoedgeId>,
         vertex_uses: Vec<AnchoredVertexUse>,
-    ) -> Result<(), LoopRingAdmissionError> {
+    ) -> Result<(), LoopRingError> {
         if !matches!(&self.boundary, LoopBoundary::Ring(_)) {
-            return Err(LoopRingError("cannot replace the ring of a vertex-only loop").into());
+            return Err(LoopRingError(
+                "cannot replace the ring of a vertex-only loop",
+            ));
         }
         self.boundary = LoopBoundary::Ring(LoopRing::new(coedges, vertex_uses)?);
         Ok(())
@@ -1540,12 +1518,8 @@ mod tests {
 
     #[test]
     fn knot_spans_read_finite_intervals_between_knots() {
-        let knots = crate::geometry::nurbs::KnotVector::new(
-            &cadmpeg_test_support::service_decode_context(),
-            vec![0.0, 0.0, 1.0, 1.0, 2.5, 4.0],
-        )
-        .expect("fixture knot admission")
-        .expect("non-decreasing knots");
+        let knots = crate::geometry::nurbs::KnotVector::new(vec![0.0, 0.0, 1.0, 1.0, 2.5, 4.0])
+            .expect("non-decreasing knots");
         assert_eq!(
             knots.span(1, 4).map(super::ParameterInterval::endpoints),
             Some([0.0, 2.5])

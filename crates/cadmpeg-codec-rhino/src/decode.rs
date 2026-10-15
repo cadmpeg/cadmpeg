@@ -757,7 +757,6 @@ impl<'a> DecodeContext<'a> {
                                 ))
                             }?;
                             match crate::subd::decode_mesh_proxy(
-                                self.expand.ctx(),
                                 self.scan.data,
                                 &extra,
                                 self.archive(),
@@ -1312,7 +1311,6 @@ impl<'a> DecodeContext<'a> {
 
         let identity = &object.identity;
         let detail = match crate::detail::decode(
-            self.expand.ctx(),
             self.scan.data,
             object.class_data_range.clone(),
             self.archive(),
@@ -2126,7 +2124,6 @@ impl<'a> DecodeContext<'a> {
         before: &ModelCheckpoint,
         transform: Transform,
     ) -> Result<Vec<String>, ReferenceFailure> {
-        let ctx = self.expand.ctx();
         let model = self.session.edit_appended_model(before)?;
         let mut links = Vec::new();
         let mut derived_ids = Vec::new();
@@ -2224,22 +2221,19 @@ impl<'a> DecodeContext<'a> {
             .ok_or_else(|| "instance decode removed existing subdivision surfaces".to_string())?
         {
             subd.cage
-                .edit_vertices(
-                    |vertices| {
-                        for vertex in vertices {
-                            let moved =
-                                transform.apply_point(vertex.point().get()).ok_or_else(|| {
-                                    cadmpeg_ir::subd::SubdError::EditRefused(
+                .edit_vertices(|vertices| {
+                    for vertex in vertices {
+                        let moved =
+                            transform.apply_point(vertex.point().get()).ok_or_else(|| {
+                                cadmpeg_ir::subd::SubdError::EditRefused(
                                 "instance cage vertex transform produced a non-finite coordinate"
                                     .to_string(),
                             )
-                                })?;
-                            vertex.set_point(moved);
-                        }
-                        Ok(())
-                    },
-                    ctx,
-                )?
+                            })?;
+                        vertex.set_point(moved);
+                    }
+                    Ok(())
+                })
                 .map_err(|error| error.to_string())?;
 
             let id = subd.id.as_str().to_string();
@@ -2289,7 +2283,6 @@ impl<'a> DecodeContext<'a> {
             key,
         );
         match crate::subd::decode(
-            self.expand.ctx(),
             self.scan.data,
             object.class_data_range.clone(),
             self.archive(),
@@ -3277,7 +3270,6 @@ impl<'a> DecodeContext<'a> {
             }
             if extrusion.caps[0] || extrusion.caps[1] {
                 links.push(stage_extrusion_caps(
-                    session,
                     candidate,
                     candidate_annotations,
                     key.as_str(),
@@ -3818,7 +3810,6 @@ struct CommittedExtrusionBoundary<'a> {
 }
 
 fn stage_extrusion_caps(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut CadIr,
     annotations: &mut impl ExactnessTarget,
     key: &str,
@@ -3991,13 +3982,12 @@ fn stage_extrusion_caps(
                     pcurve.knots.len()
                 ))?;
             let nurbs = PcurveNurbs::from_lanes(
-                ctx,
                 pcurve.degree,
                 pcurve.knots.clone(),
                 pcurve.control_points.clone(),
                 pcurve.weights.clone(),
                 pcurve.periodic,
-            )?
+            )
             .map_err(|error| format!("extrusion cap staging: {error}"))?;
             let carrier =
                 cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id), Some(parameter_range))
@@ -5433,7 +5423,7 @@ fn decode_pcurves(
             ))
         }?;
         let knots = nurbs.knots().clone();
-        let nurbs = match PcurveNurbs::new(ctx, nurbs.degree(), knots, poles, nurbs.periodic())? {
+        let nurbs = match PcurveNurbs::new(nurbs.degree(), knots, poles, nurbs.periodic()) {
             Ok(nurbs) => nurbs,
             Err(error) => {
                 warnings.push(format_args!(
@@ -5500,7 +5490,6 @@ fn c2_curve_to_nurbs_join(
                 let mut joined = c2_curve_to_nurbs_join(ctx, child, offset)?;
                 warnings.append(&mut joined.warnings);
                 segments.push(crate::curves::remap_nurbs_domain(
-                    ctx,
                     joined.curve,
                     target,
                     offset,

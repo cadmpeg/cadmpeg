@@ -20,9 +20,7 @@ fn polygonal_construction_moves_typed_storage_and_admits_raw_conversion_once() {
     policy.limits.max_retained_bytes =
         u64::try_from(3 * std::mem::size_of::<FinitePoint3>()).expect("bytes");
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    let raw = PolygonalSurface::new(vertices(), vec![[0, 1, 2]], 0.5, &ctx)
-        .expect("exact limits")
-        .expect("valid");
+    let raw = PolygonalSurface::new(vertices(), vec![[0, 1, 2]], 0.5).expect("valid");
     ctx.finish_session().expect("one conversion per vertex");
     assert_eq!(
         serde_json::from_str::<PolygonalSurface>(&serde_json::to_string(&raw).expect("wire"))
@@ -45,9 +43,7 @@ fn polygonal_construction_moves_typed_storage_and_admits_raw_conversion_once() {
         triangles,
         NonNegativeReal::new(0.25).expect("deflection"),
         PositiveReal::new(2.).expect("scale"),
-        &ctx,
     )
-    .expect("layout only")
     .expect("valid");
     assert_eq!(typed.vertices().as_ptr(), vertex_address);
     assert_eq!(typed.triangles().as_ptr(), triangle_address);
@@ -57,11 +53,9 @@ fn polygonal_construction_moves_typed_storage_and_admits_raw_conversion_once() {
 
 #[test]
 fn polygonal_construction_keeps_geometric_failure_order() {
-    let ctx = cadmpeg_test_support::service_decode_context();
     let mut points = vertices();
     points[0].x = f64::INFINITY;
-    let error = PolygonalSurface::new(points.clone(), vec![[0, 1, 3]], -1., &ctx)
-        .expect("admission")
+    let error = PolygonalSurface::new(points.clone(), vec![[0, 1, 3]], -1.)
         .expect_err("bad index precedes coordinate and deflection");
     assert_eq!(
         error,
@@ -69,8 +63,7 @@ fn polygonal_construction_keeps_geometric_failure_order() {
             "polygonal surface contains an out-of-range triangle index".into()
         )
     );
-    let error = PolygonalSurface::new(points, vec![[0, 1, 2]], -1., &ctx)
-        .expect("admission")
+    let error = PolygonalSurface::new(points, vec![[0, 1, 2]], -1.)
         .expect_err("coordinate precedes deflection");
     assert_eq!(
         error,

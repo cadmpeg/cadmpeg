@@ -273,11 +273,7 @@ fn configuration_lane_does_not_inherit_shared_hole_semantics() {
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
             base_definition,
-            cadmpeg_ir::features::DistinctMembers::try_from(
-                Vec::new(),
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .unwrap(),
+            cadmpeg_ir::features::DistinctMembers::try_from(Vec::new()).unwrap(),
         ),
         native_ref: None,
     });

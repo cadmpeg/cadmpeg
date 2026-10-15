@@ -68,11 +68,7 @@ fn geometry_edit_replaces_each_generated_configuration_partition() {
             material: None,
             properties: BTreeMap::new(),
             bodies: Some(
-                cadmpeg_ir::features::DistinctMembers::try_from(
-                    vec![body.clone()],
-                    &cadmpeg_test_support::service_decode_context(),
-                )
-                .unwrap(),
+                cadmpeg_ir::features::DistinctMembers::try_from(vec![body.clone()]).unwrap(),
             ),
             parameter_values: BTreeMap::new(),
             parameter_overrides: BTreeMap::new(),
@@ -242,11 +238,8 @@ fn encoder_writes_source_less_neutral_configurations() {
         material: Some("Steel".into()),
         properties: BTreeMap::from([(cadmpeg_core::nonblank_literal!("Finish"), "Ground".into())]),
         bodies: Some(
-            cadmpeg_ir::features::DistinctMembers::try_from(
-                vec![ir.model.bodies[0].id.clone()],
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .unwrap(),
+            cadmpeg_ir::features::DistinctMembers::try_from(vec![ir.model.bodies[0].id.clone()])
+                .unwrap(),
         ),
         parameter_values: BTreeMap::new(),
         parameter_overrides: BTreeMap::new(),
@@ -472,11 +465,7 @@ fn encoder_partitions_source_less_bodies_by_configuration() {
             material: None,
             properties: BTreeMap::new(),
             bodies: Some(
-                cadmpeg_ir::features::DistinctMembers::try_from(
-                    vec![body.clone()],
-                    &cadmpeg_test_support::service_decode_context(),
-                )
-                .unwrap(),
+                cadmpeg_ir::features::DistinctMembers::try_from(vec![body.clone()]).unwrap(),
             ),
             parameter_values: BTreeMap::new(),
             parameter_overrides: BTreeMap::new(),

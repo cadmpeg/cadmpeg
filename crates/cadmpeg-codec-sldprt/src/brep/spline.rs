@@ -11,7 +11,7 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::report::loss::LossNote;
 
-use cadmpeg_core::decode::{index_from_u32, DecodeContext, View};
+use cadmpeg_core::decode::{index_from_u32, View};
 
 use super::{CurveCarrier, SurfaceCarrier, LEN_TO_MM};
 
@@ -800,10 +800,9 @@ pub(crate) fn patch_nurbs_surface(
 /// the attribute id it belongs to, so the decode reports it rather than
 /// deleting the carrier in silence.
 pub(crate) fn scan_curve_carriers(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     refusals: &mut Vec<LossNote>,
-) -> Result<HashMap<u16, CurveCarrier>, cadmpeg_core::CodecError> {
+) -> HashMap<u16, CurveCarrier> {
     let descriptors = scan_curve_descriptors(bytes);
     let referenced_attrs = descriptors
         .values()
@@ -887,17 +886,13 @@ pub(crate) fn scan_curve_carriers(
             continue;
         }
         let nurbs = match cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
-            ctx,
             descriptor.degree,
             knots,
             points,
             weights,
             false,
-        )? {
+        ) {
             Ok(nurbs) => nurbs,
-            Err(cadmpeg_ir::geometry::nurbs::NurbsError::ResourceLimit(limit)) => {
-                return Err(limit.into())
-            }
             Err(error) => {
                 let note = crate::loss::spline_lane_refusal(format_args!(
                     "curve carrier attribute {attr}: {error}"
@@ -914,7 +909,7 @@ pub(crate) fn scan_curve_carriers(
             parameter_range: None,
         });
     }
-    Ok(out)
+    out
 }
 
 fn scan_surface_descriptors(bytes: &[u8]) -> HashMap<u16, SurfaceDescriptor> {
@@ -996,10 +991,9 @@ fn surface_knot_values(
 ///
 /// `refusals` carries the same meaning as in [`scan_curve_carriers`].
 pub(crate) fn scan_surface_carriers(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     refusals: &mut Vec<LossNote>,
-) -> Result<HashMap<u16, SurfaceCarrier>, cadmpeg_core::CodecError> {
+) -> HashMap<u16, SurfaceCarrier> {
     let descriptors = scan_surface_descriptors(bytes);
     let compact_attrs = descriptors
         .values()
@@ -1146,7 +1140,6 @@ pub(crate) fn scan_surface_carriers(
                 .collect::<Vec<_>>()
         });
         let nurbs = match cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes(
-            ctx,
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                 descriptor.u_degree,
                 u_knots,
@@ -1159,11 +1152,8 @@ pub(crate) fn scan_surface_carriers(
             ),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(pole_rows, weight_rows),
             false,
-        )? {
+        ) {
             Ok(nurbs) => nurbs,
-            Err(cadmpeg_ir::geometry::nurbs::NurbsError::ResourceLimit(limit)) => {
-                return Err(limit.into())
-            }
             Err(error) => {
                 let note = crate::loss::spline_lane_refusal(format_args!(
                     "surface carrier attribute {attr}: {error}"
@@ -1180,7 +1170,7 @@ pub(crate) fn scan_surface_carriers(
             orientation_reversed: false,
         });
     }
-    Ok(out)
+    out
 }
 
 #[cfg(test)]
@@ -1240,19 +1230,13 @@ mod tests {
     #[test]
     fn parasolid_curve_carrier_decodes() {
         let bytes = crate::test_support::parasolid::nurbs_curve_carrier(170, 171);
-        let ctx = cadmpeg_test_support::service_decode_context();
-        assert!(scan_curve_carriers(&ctx, &bytes, &mut Vec::new())
-            .expect("service scan")
-            .contains_key(&170));
+        assert!(scan_curve_carriers(&bytes, &mut Vec::new()).contains_key(&170));
     }
 
     #[test]
     fn parasolid_surface_carrier_decodes() {
         let bytes = crate::test_support::parasolid::nurbs_surface_carrier(180, 181, 10);
-        let ctx = cadmpeg_test_support::service_decode_context();
-        assert!(scan_surface_carriers(&ctx, &bytes, &mut Vec::new())
-            .expect("service scan")
-            .contains_key(&180));
+        assert!(scan_surface_carriers(&bytes, &mut Vec::new()).contains_key(&180));
     }
 
     #[test]

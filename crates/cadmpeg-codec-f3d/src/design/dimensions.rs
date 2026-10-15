@@ -200,12 +200,11 @@ pub(crate) fn container_only_dimension_companions<'a>(
 /// resolution. Two-locus dimensions have neutral semantics; aggregate and
 /// role-dependent forms remain explicit native constraints.
 pub(crate) fn project_dimension_constraints(
-    ctx: &DecodeContext<'_>,
     inputs: &DimensionConstraintInputs<'_>,
     spatial_sketches: &[cadmpeg_ir::sketches::SpatialSketch],
     linear_tolerance: f64,
 ) -> Result<Vec<cadmpeg_ir::sketches::SketchConstraint>, CodecError> {
-    let constraints = project_all_dimension_constraints(ctx, inputs, &[], linear_tolerance)?;
+    let constraints = project_all_dimension_constraints(inputs, &[], linear_tolerance)?;
     retain_planar_dimension_constraints(inputs.placements, spatial_sketches, constraints)
 }
 
@@ -214,14 +213,13 @@ pub(crate) fn project_dimension_constraints(
 /// callers that construct dimension fixtures do not need to synthesize an
 /// unrelated native arena.
 pub(crate) fn project_dimension_constraints_with_presentations(
-    ctx: &DecodeContext<'_>,
     inputs: &DimensionConstraintInputs<'_>,
     presentation_frames: &[crate::records::dimensions::DesignDimensionPresentationFrame],
     spatial_sketches: &[cadmpeg_ir::sketches::SpatialSketch],
     linear_tolerance: f64,
 ) -> Result<Vec<cadmpeg_ir::sketches::SketchConstraint>, CodecError> {
     let constraints =
-        project_all_dimension_constraints(ctx, inputs, presentation_frames, linear_tolerance)?;
+        project_all_dimension_constraints(inputs, presentation_frames, linear_tolerance)?;
     retain_planar_dimension_constraints(inputs.placements, spatial_sketches, constraints)
 }
 
@@ -253,7 +251,6 @@ fn retain_planar_dimension_constraints(
 }
 
 fn project_all_dimension_constraints(
-    ctx: &DecodeContext<'_>,
     inputs: &DimensionConstraintInputs<'_>,
     presentation_frames: &[crate::records::dimensions::DesignDimensionPresentationFrame],
     linear_tolerance: f64,
@@ -613,8 +610,7 @@ fn project_all_dimension_constraints(
             if let Some(definition) = counted_definition {
                 return Some(Ok(definition));
             }
-            if let Some(definition) =
-                exact_counted_dimension_relation(ctx, &locus_entities).transpose()
+            if let Some(definition) = exact_counted_dimension_relation(&locus_entities).transpose()
             {
                 return Some(definition);
             }
@@ -2724,7 +2720,6 @@ pub(crate) fn bind_offset_dimension_parameters(
 /// Project dimensions owned by model-space sketches without assigning them
 /// planar relation semantics.
 pub(crate) fn project_spatial_dimension_constraints(
-    ctx: &DecodeContext<'_>,
     inputs: &DimensionConstraintInputs<'_>,
     spatial_sketches: &[cadmpeg_ir::sketches::SpatialSketch],
     spatial_entities: &[cadmpeg_ir::sketches::SpatialSketchEntity],
@@ -2813,7 +2808,7 @@ pub(crate) fn project_spatial_dimension_constraints(
             parameter,
         );
     }
-    let source_constraints = project_all_dimension_constraints(ctx, inputs, &[], linear_tolerance)?;
+    let source_constraints = project_all_dimension_constraints(inputs, &[], linear_tolerance)?;
     let mut parameter_constraint_counts = HashMap::new();
     for parameter in source_constraints
         .iter()
@@ -5628,7 +5623,6 @@ fn exact_centered_entity_relation(
 }
 
 fn exact_counted_dimension_relation(
-    ctx: &DecodeContext<'_>,
     entities: &[&cadmpeg_ir::sketches::SketchEntity],
 ) -> Result<Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput>, CodecError> {
     use cadmpeg_ir::sketches::{
@@ -5657,7 +5651,7 @@ fn exact_counted_dimension_relation(
         let SketchGeometryDefinition::Point { position } = *point.geometry.definition() else {
             return Ok(false);
         };
-        point_lies_on_sketch_geometry(ctx, position.get(), &geometry.geometry)
+        point_lies_on_sketch_geometry(position.get(), &geometry.geometry)
     };
     if point_on_geometry(first, second)? || point_on_geometry(second, first)? {
         return Ok(Some(Definition::Coincident {
@@ -5734,7 +5728,6 @@ fn exact_counted_dimension_relation(
 }
 
 pub(super) fn point_lies_on_sketch_geometry(
-    ctx: &DecodeContext<'_>,
     point: Point2,
     geometry: &cadmpeg_ir::sketches::SketchGeometry,
 ) -> Result<bool, CodecError> {
@@ -5748,7 +5741,6 @@ pub(super) fn point_lies_on_sketch_geometry(
             * (1.0 + point.u.abs().max(point.v.abs()));
         let lanes = PcurveEvaluatorLanes::new(curve.pole_rows());
         return cadmpeg_ir::eval::nurbs_pcurve_contains_point(
-            ctx,
             curve.degree(),
             curve.knots(),
             lanes.points(),

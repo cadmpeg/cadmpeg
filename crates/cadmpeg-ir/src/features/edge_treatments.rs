@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Fillet and chamfer operands, dimensions, and radius laws.
 
-use super::selection_overlap::{face_selections_overlap, standard_result, OverlapAdmission};
+use super::selection_overlap::face_selections_overlap;
 use super::{EdgeSelection, FaceSelection};
 use crate::scalar::{
     FiniteReal, Fraction, InteriorAngle, Length, NonNegativeLength, PositiveLength,
@@ -119,24 +119,13 @@ impl FullRoundFilletGroup {
         center_faces: FaceSelection,
         side_one_faces: FullRoundSideSelection,
         side_two_faces: FullRoundSideSelection,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ) -> Result<Result<Self, &'static str>, cadmpeg_core::decode::ResourceLimit> {
-        Self::build(ctx, center_faces, side_one_faces, side_two_faces)
-    }
-
-    fn build<S: OverlapAdmission>(
-        admission: &S,
-        center_faces: FaceSelection,
-        side_one_faces: FullRoundSideSelection,
-        side_two_faces: FullRoundSideSelection,
-    ) -> Result<Result<Self, &'static str>, S::Error> {
+    ) -> Result<Self, &'static str> {
         fn explicit(side: &FullRoundSideSelection) -> Option<&FaceSelection> {
             match side {
                 FullRoundSideSelection::Explicit(faces) => Some(faces),
                 FullRoundSideSelection::Automatic | FullRoundSideSelection::Unresolved => None,
             }
         }
-        admission.work(0)?;
         let first = explicit(&side_one_faces);
         let second = explicit(&side_two_faces);
         for (first, second) in [
@@ -147,17 +136,17 @@ impl FullRoundFilletGroup {
         .into_iter()
         .flatten()
         {
-            if face_selections_overlap(admission, first, second)? {
-                return Ok(Err(
+            if face_selections_overlap(first, second) {
+                return Err(
                     "center_faces, side_one_faces and side_two_faces must be pairwise disjoint",
-                ));
+                );
             }
         }
-        Ok(Ok(Self {
+        Ok(Self {
             center: center_faces,
             side_one: side_one_faces,
             side_two: side_two_faces,
-        }))
+        })
     }
 
     /// Return the center-face selection.
@@ -179,13 +168,7 @@ impl FullRoundFilletGroup {
 impl<'de> Deserialize<'de> for FullRoundFilletGroup {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let wire = FullRoundFilletGroupWire::deserialize(deserializer)?;
-        standard_result(Self::build(
-            &super::selection_overlap::StandardAdmission,
-            wire.center,
-            wire.side_one,
-            wire.side_two,
-        ))
-        .map_err(serde::de::Error::custom)
+        Self::new(wire.center, wire.side_one, wire.side_two).map_err(serde::de::Error::custom)
     }
 }
 

@@ -547,9 +547,7 @@ mod tests {
                 ],
                 vec![[0, 1, 2]],
                 0.0,
-                &cadmpeg_test_support::service_decode_context(),
             )
-            .expect("polygonal construction admission")
             .expect("finite polygonal geometry is admitted"),
         ));
         let error = transform_surface(&mut surface, maximum_translation())
@@ -564,9 +562,7 @@ mod tests {
                         .expect("the polyline has samples"),
                 },
                 0.0,
-                &cadmpeg_test_support::service_decode_context(),
             )
-            .expect("polyline construction admission")
             .expect("finite polyline geometry is admitted"),
         ));
         let error = transform_curve(&mut curve, maximum_translation())

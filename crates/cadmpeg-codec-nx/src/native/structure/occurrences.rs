@@ -47,7 +47,7 @@ impl FastLoadOccurrences {
         })
     }
 
-    pub(crate) fn from_namespace_with_context(
+    pub(crate) fn from_namespace(
         ctx: &DecodeContext<'_>,
         namespace: &NativeNamespace,
     ) -> Result<Self, NativeConvertError> {

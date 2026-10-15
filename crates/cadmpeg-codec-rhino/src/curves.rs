@@ -483,7 +483,6 @@ pub(crate) fn decode_inner(
         LINE => DecodedGeometry::Curve {
             curve: DecodedCurve::leaf(
                 CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(read_line(
-                    ctx,
                     &mut reader,
                     scale,
                     None,
@@ -492,7 +491,7 @@ pub(crate) fn decode_inner(
             ),
         },
         ARC => {
-            let (geometry, warnings) = read_arc(ctx, &mut reader, scale, None, false)?;
+            let (geometry, warnings) = read_arc(&mut reader, scale, None, false)?;
             DecodedGeometry::Curve {
                 curve: DecodedCurve::leaf(geometry, warnings),
             }
@@ -500,7 +499,6 @@ pub(crate) fn decode_inner(
         POLYLINE => DecodedGeometry::Curve {
             curve: DecodedCurve::leaf(
                 CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(read_polyline(
-                    ctx,
                     &mut reader,
                     scale,
                     None,
@@ -515,7 +513,7 @@ pub(crate) fn decode_inner(
         NURBS_CURVE | NURBS_CURVE_TL | NURBS_CURVE_LEGACY => DecodedGeometry::Curve {
             curve: DecodedCurve::leaf(
                 CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                    crate::surfaces::read_nurbs_curve(ctx, &mut reader, scale)?,
+                    crate::surfaces::read_nurbs_curve(&mut reader, scale)?,
                 )),
                 Diagnostics::new(),
             ),
@@ -753,7 +751,7 @@ pub(crate) fn exact_nurbs(
                     yaxis,
                     radius,
                 };
-                arc_nurbs(ctx, &circle, [0.0, TAU], [0.0, TAU], TAU, offset)
+                arc_nurbs(&circle, [0.0, TAU], [0.0, TAU], TAU, offset)
             }
             _ => Err(error(offset, "curve has no exact NURBS representation")),
         },
@@ -772,7 +770,6 @@ pub(crate) fn exact_nurbs(
                     return Err(error(offset, "polycurve segment domain is invalid"));
                 }
                 segments.push(remap_nurbs_domain(
-                    ctx,
                     exact_nurbs(ctx, child, offset)?,
                     target,
                     offset,
@@ -784,7 +781,6 @@ pub(crate) fn exact_nurbs(
 }
 
 pub(crate) fn remap_nurbs_domain(
-    ctx: &DecodeContext<'_>,
     curve: NurbsCurve,
     target: [FiniteReal; 2],
     offset: usize,
@@ -830,7 +826,7 @@ pub(crate) fn remap_nurbs_domain(
         );
     }
     curve
-        .with_knots(ctx, remapped)?
+        .with_knots(remapped)
         .map_err(|error| GeometryError::malformed(offset, error.to_string()))
 }
 
@@ -1088,13 +1084,12 @@ fn elevate_to_degree(
     let target = u32::try_from(target)
         .map_err(|_| GeometryError::unpositioned("polycurve degree exceeds u32"))?;
     NurbsCurve::from_checked_lanes(
-        ctx,
         target,
         elevated_knots,
         control_points,
         rational.then_some(output_weights),
         false,
-    )?
+    )
     .map_err(|error| GeometryError::malformed(offset, error.to_string()))
 }
 
@@ -1253,7 +1248,7 @@ pub(crate) fn join_nurbs_segments(
         );
     }
     Ok(NurbsJoin {
-        curve: NurbsCurve::from_checked_lanes(ctx, degree, knots, control_points, weights, false)?
+        curve: NurbsCurve::from_checked_lanes(degree, knots, control_points, weights, false)
             .map_err(|error| GeometryError::malformed(offset, error.to_string()))?,
         warnings,
     })
@@ -1279,7 +1274,7 @@ pub(crate) fn decode_inner_2d(
         NURBS_CURVE | NURBS_CURVE_TL | NURBS_CURVE_LEGACY => DecodedGeometry::Curve {
             curve: DecodedCurve::leaf(
                 CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                    crate::surfaces::read_nurbs_curve_2d(ctx, &mut reader)?,
+                    crate::surfaces::read_nurbs_curve_2d(&mut reader)?,
                 )),
                 Diagnostics::new(),
             ),
@@ -1287,7 +1282,6 @@ pub(crate) fn decode_inner_2d(
         LINE => DecodedGeometry::Curve {
             curve: DecodedCurve::leaf(
                 CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(read_line(
-                    ctx,
                     &mut reader,
                     MillimeterScale::IDENTITY,
                     Some(2),
@@ -1298,7 +1292,6 @@ pub(crate) fn decode_inner_2d(
         POLYLINE => DecodedGeometry::Curve {
             curve: DecodedCurve::leaf(
                 CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(read_polyline(
-                    ctx,
                     &mut reader,
                     MillimeterScale::IDENTITY,
                     Some(2),
@@ -1308,7 +1301,7 @@ pub(crate) fn decode_inner_2d(
         },
         ARC => {
             let (geometry, warnings) =
-                read_arc(ctx, &mut reader, MillimeterScale::IDENTITY, Some(2), true)?;
+                read_arc(&mut reader, MillimeterScale::IDENTITY, Some(2), true)?;
             DecodedGeometry::Curve {
                 curve: DecodedCurve::leaf(geometry, warnings),
             }
@@ -1487,7 +1480,6 @@ fn read_cloud(
 }
 
 fn read_line(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     reader: &mut BoundedReader<'_>,
     scale: MillimeterScale,
     expected_dimension: Option<i32>,
@@ -1510,19 +1502,16 @@ fn read_line(
         return Err(error(reader.position(), "invalid bounded line"));
     }
     cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
-        ctx,
         1,
         vec![domain[0], domain[0], domain[1], domain[1]],
         vec![from, to],
         None,
         false,
     )
-    .map_err(GeometryError::from)?
     .map_err(|error| GeometryError::malformed(reader.position(), error.to_string()))
 }
 
 fn read_polyline(
-    ctx: &DecodeContext<'_>,
     reader: &mut BoundedReader<'_>,
     scale: MillimeterScale,
     expected_dimension: Option<i32>,
@@ -1583,14 +1572,13 @@ fn read_polyline(
     knots.extend_from_slice(&parameters[1..point_count - 1]);
     knots.push(parameters[point_count - 1]);
     knots.push(parameters[point_count - 1]);
-    let knots = cadmpeg_ir::geometry::nurbs::KnotVector::from_finite_lanes(ctx, knots)?
+    let knots = cadmpeg_ir::geometry::nurbs::KnotVector::from_finite_lanes(knots)
         .map_err(|error| GeometryError::malformed(reader.position(), error.to_string()))?;
-    NurbsCurve::from_checked_lanes(ctx, 1, knots, points, None, false)?
+    NurbsCurve::from_checked_lanes(1, knots, points, None, false)
         .map_err(|error| GeometryError::malformed(reader.position(), error.to_string()))
 }
 
 fn read_arc(
-    ctx: &DecodeContext<'_>,
     reader: &mut BoundedReader<'_>,
     scale: MillimeterScale,
     expected_dimension: Option<i32>,
@@ -1637,7 +1625,6 @@ fn read_arc(
     }
     Ok((
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(arc_nurbs(
-            ctx,
             &circle,
             angle,
             domain,
@@ -1844,7 +1831,6 @@ fn checked_polycurve_parameter(
 }
 
 fn arc_nurbs(
-    ctx: &DecodeContext<'_>,
     circle: &Circle,
     angle: [f64; 2],
     domain: [f64; 2],
@@ -1912,14 +1898,12 @@ fn arc_nurbs(
         }
     }
     cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
-        ctx,
         2,
         knots,
         control_points,
         Some(weights),
         false,
     )
-    .map_err(GeometryError::from)?
     .map_err(|error| GeometryError::malformed(offset, error.to_string()))
 }
 
@@ -1992,7 +1976,6 @@ mod tests {
         use cadmpeg_ir::geometry::SolvedCurveGeometry;
         let cases = [
             NurbsCurve::from_lanes(
-                &cadmpeg_test_support::service_decode_context(),
                 2,
                 vec![-1.0, -1.0, 0.0, 1.0, 2.0, 2.0],
                 vec![
@@ -2003,10 +1986,8 @@ mod tests {
                 None,
                 false,
             )
-            .expect("fixture constructor admission")
             .unwrap(),
             NurbsCurve::from_lanes(
-                &cadmpeg_test_support::service_decode_context(),
                 2,
                 vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 2.0, 2.0, 2.0],
                 (0..6)
@@ -2015,7 +1996,6 @@ mod tests {
                 None,
                 false,
             )
-            .expect("fixture constructor admission")
             .unwrap(),
         ];
         for curve in cases {
@@ -2052,7 +2032,6 @@ mod tests {
     fn numerical_audit_join_preserves_independently_scaled_rational_segments() {
         use cadmpeg_ir::geometry::SolvedCurveGeometry;
         let first = NurbsCurve::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             2,
             vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
             vec![
@@ -2063,10 +2042,8 @@ mod tests {
             Some(vec![2.0; 3]),
             false,
         )
-        .expect("fixture constructor admission")
         .unwrap();
         let second = NurbsCurve::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             2,
             vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
             vec![
@@ -2077,7 +2054,6 @@ mod tests {
             Some(vec![1.0; 3]),
             false,
         )
-        .expect("fixture constructor admission")
         .unwrap();
         let joined =
             with_test_context(|ctx| super::join_nurbs_segments(ctx, vec![first, second], 0))
@@ -2094,23 +2070,18 @@ mod tests {
     #[test]
     fn numerical_audit_remap_and_join_keep_large_finite_values() {
         let curve = NurbsCurve::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 1.0e-200, 1.0e-200],
             vec![Point3::new(f64::MAX, 0.0, 0.0); 2],
             None,
             false,
         )
-        .expect("fixture constructor admission")
         .unwrap();
-        let remapped = with_test_context(|ctx| {
-            super::remap_nurbs_domain(
-                ctx,
-                curve,
-                [FiniteReal::ZERO, FiniteReal::new(1.0e200).unwrap()],
-                0,
-            )
-        })
+        let remapped = super::remap_nurbs_domain(
+            curve,
+            [FiniteReal::ZERO, FiniteReal::new(1.0e200).unwrap()],
+            0,
+        )
         .unwrap();
         assert_eq!(remapped.knots().as_slice(), &[0.0, 0.0, 1.0e200, 1.0e200]);
         let joined = with_test_context(|ctx| {
@@ -2152,14 +2123,12 @@ mod tests {
 
     fn rational_line_for_limits() -> NurbsCurve {
         NurbsCurve::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
             Some(vec![2.0, 1.0]),
             false,
         )
-        .expect("fixture constructor admission")
         .expect("valid rational line")
     }
 
@@ -2169,10 +2138,8 @@ mod tests {
             FiniteReal::new(2.0).expect("finite"),
             FiniteReal::new(3.0).expect("finite"),
         ];
-        let remapped = with_test_context(|ctx| {
-            super::remap_nurbs_domain(ctx, rational_line_for_limits(), target, 0)
-        })
-        .expect("service profile admits remapped knots");
+        let remapped = super::remap_nurbs_domain(rational_line_for_limits(), target, 0)
+            .expect("service profile admits remapped knots");
         assert_eq!(remapped.knots().as_slice(), &[2.0, 2.0, 3.0, 3.0]);
     }
 
@@ -2426,8 +2393,7 @@ mod tests {
     #[test]
     fn arc_nurbs_preserves_endpoints_midpoint_and_weights() {
         let circle = unit_circle();
-        let arc = with_test_context(|ctx| arc_nurbs(ctx, &circle, [0.0, PI], [10.0, 20.0], PI, 0))
-            .expect("valid arc");
+        let arc = arc_nurbs(&circle, [0.0, PI], [10.0, 20.0], PI, 0).expect("valid arc");
         assert_eq!(arc.degree(), 2);
         assert_eq!(
             arc.pole_rows().raw_points().first(),
@@ -2450,10 +2416,8 @@ mod tests {
 
     #[test]
     fn arc_nurbs_maps_a_wide_finite_parameter_domain() {
-        let arc = with_test_context(|ctx| {
-            arc_nurbs(ctx, &unit_circle(), [0.0, PI], [-f64::MAX, f64::MAX], PI, 0)
-        })
-        .expect("wide arc domain has finite knots");
+        let arc = arc_nurbs(&unit_circle(), [0.0, PI], [-f64::MAX, f64::MAX], PI, 0)
+            .expect("wide arc domain has finite knots");
         let knots = arc.knots().as_slice();
         assert_eq!(knots.first(), Some(&-f64::MAX));
         assert!(knots.contains(&0.0));
@@ -2481,10 +2445,7 @@ mod tests {
     #[test]
     fn arc_spans_never_exceed_quarter_turn() {
         let circle = unit_circle();
-        let arc = with_test_context(|ctx| {
-            arc_nurbs(ctx, &circle, [0.0, 3.0 * PI], [0.0, 3.0], 3.0 * PI, 0)
-        })
-        .expect("valid arc");
+        let arc = arc_nurbs(&circle, [0.0, 3.0 * PI], [0.0, 3.0], 3.0 * PI, 0).expect("valid arc");
         assert_eq!(arc.control_points().len(), 2 * 6 + 1);
         assert_eq!(arc.knots().len(), arc.control_points().len() + 3);
     }
@@ -2498,17 +2459,8 @@ mod tests {
             }
             bytes.extend(dimension.to_le_bytes());
             let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded");
-            let curve = ({
-                let arena = cadmpeg_core::decode::DecodeArena::new();
-                let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-                    &[],
-                    &arena,
-                    &cadmpeg_core::decode::DecodePolicy::service(),
-                )
-                .expect("root");
-                read_line(&ctx, &mut reader, MillimeterScale::IDENTITY, None)
-            })
-            .expect("valid line");
+            let curve =
+                read_line(&mut reader, MillimeterScale::IDENTITY, None).expect("valid line");
             assert_eq!(curve.knots().as_slice(), vec![2.0, 2.0, 5.0, 5.0]);
         }
     }
@@ -2526,10 +2478,8 @@ mod tests {
             bytes.extend(12.0_f64.to_le_bytes());
             bytes.extend(dimension.to_le_bytes());
             let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded");
-            let curve = with_test_context(|ctx| {
-                read_polyline(ctx, &mut reader, MillimeterScale::IDENTITY, None)
-            })
-            .expect("valid polyline");
+            let curve = read_polyline(&mut reader, MillimeterScale::IDENTITY, None)
+                .expect("valid polyline");
             assert_eq!(curve.control_points().len(), 2);
             assert_eq!(curve.knots().as_slice(), vec![10.0, 10.0, 12.0, 12.0]);
         }
@@ -2549,9 +2499,7 @@ mod tests {
             }
             bytes.extend(3_i32.to_le_bytes());
             let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded");
-            let result = with_test_context(|ctx| {
-                read_polyline(ctx, &mut reader, MillimeterScale::IDENTITY, None)
-            });
+            let result = read_polyline(&mut reader, MillimeterScale::IDENTITY, None);
             assert!(matches!(
                 result,
                 Err(GeometryError::Malformed(FramingError::Structural { offset, message }))
@@ -2563,14 +2511,12 @@ mod tests {
     #[test]
     fn plane_space_curve_scaling_preserves_depth_refusals() {
         let original = NurbsCurve::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0., 0., 1., 1.],
             vec![Point3::new(1., 2., 3.); 2],
             None,
             false,
         )
-        .expect("admission")
         .expect("curve");
         let leaf = || {
             DecodedCurve::leaf(
@@ -2617,14 +2563,12 @@ mod tests {
     #[test]
     fn plane_space_nurbs_scaling_rejects_coordinate_overflow() {
         let curve = NurbsCurve::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point3::new(2.0, 0.0, 0.0), Point3::new(3.0, 0.0, 0.0)],
             None,
             false,
         )
-        .expect("fixture constructor admission")
         .expect("valid test curve");
         let mut decoded = DecodedCurve::leaf(
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
@@ -2806,14 +2750,12 @@ mod tests {
             DecodedCurve::leaf(
                 CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                     NurbsCurve::from_lanes(
-                        &cadmpeg_test_support::service_decode_context(),
                         1,
                         vec![start, start, end, end],
                         vec![Point3::new(start, 0.0, 0.0), Point3::new(end, 0.0, 0.0)],
                         None,
                         false,
                     )
-                    .expect("fixture constructor admission")
                     .expect("valid test line"),
                 )),
                 Diagnostics::new(),
@@ -2834,17 +2776,14 @@ mod tests {
     #[test]
     fn join_elevates_degree_and_midpoints_a_gap() {
         let line = NurbsCurve::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
             None,
             false,
         )
-        .expect("fixture constructor admission")
         .expect("valid test line");
         let quadratic = NurbsCurve::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             2,
             vec![5.0, 5.0, 5.0, 7.0, 7.0, 7.0],
             vec![
@@ -2855,7 +2794,6 @@ mod tests {
             None,
             false,
         )
-        .expect("fixture constructor admission")
         .expect("valid test quadratic");
         let joined = with_test_context(|ctx| join_nurbs_segments(ctx, vec![line, quadratic], 0))
             .expect("join");
@@ -2873,14 +2811,12 @@ mod tests {
     fn audit_regression_degree_elevation_normalizes_large_common_weights() {
         let line = |weight| {
             NurbsCurve::from_lanes(
-                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![0., 0., 1., 1.],
                 vec![Point3::new(1e200, 0., 0.), Point3::new(1e200, 1., 0.)],
                 Some(vec![weight, weight]),
                 false,
             )
-            .expect("fixture constructor admission")
             .unwrap()
         };
         for degree in [1, 2] {
@@ -2904,18 +2840,14 @@ mod tests {
     fn numerical_0922b_wide_curve_domain_remap() {
         for domain in [[0., 1.], [-1e308, 1e308]] {
             let n = NurbsCurve::from_lanes(
-                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![domain[0], domain[0], domain[1], domain[1]],
                 vec![Point3::new(0., 0., 0.), Point3::new(1., 0., 0.)],
                 None,
                 false,
             )
-            .expect("fixture constructor admission")
             .unwrap();
-            let r = with_test_context(|ctx| {
-                super::remap_nurbs_domain(ctx, n, [FiniteReal::ZERO, FiniteReal::ONE], 0)
-            });
+            let r = super::remap_nurbs_domain(n, [FiniteReal::ZERO, FiniteReal::ONE], 0);
             println!("Rhino remap{domain:?}: {r:?}");
             assert_eq!(r.unwrap().knots().as_slice(), &[0., 0., 1., 1.]);
         }

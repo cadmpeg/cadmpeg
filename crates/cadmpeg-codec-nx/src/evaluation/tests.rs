@@ -55,11 +55,7 @@ fn complete_block_ir() -> CadIr {
                 placement: Some(cadmpeg_ir::features::FeatureRigidPlacement::identity()),
                 op: BooleanOp::NewBody,
             }),
-            cadmpeg_ir::features::DistinctMembers::try_from(
-                vec![body],
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .unwrap(),
+            cadmpeg_ir::features::DistinctMembers::try_from(vec![body]).unwrap(),
         ),
         native_ref: None,
     });
@@ -78,7 +74,6 @@ fn attach_complete_active_configuration(ir: &mut CadIr) {
                     evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
                         outputs: cadmpeg_ir::features::DistinctMembers::try_from(
                             feature.evaluation.outputs().clone(),
-                            &cadmpeg_test_support::service_decode_context(),
                         )
                         .unwrap(),
                     },
@@ -105,7 +100,6 @@ fn attach_complete_active_configuration(ir: &mut CadIr) {
                     .iter()
                     .map(|body| body.id.clone())
                     .collect::<Vec<_>>(),
-                &cadmpeg_test_support::service_decode_context(),
             )
             .unwrap(),
         ),
@@ -153,11 +147,7 @@ fn complete_hole(body: BodyId) -> Feature {
                 taper_angle: None,
                 allow_multi_profile_faces: None,
             }),
-            cadmpeg_ir::features::DistinctMembers::try_from(
-                vec![body],
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .unwrap(),
+            cadmpeg_ir::features::DistinctMembers::try_from(vec![body]).unwrap(),
         ),
         native_ref: None,
     }
@@ -182,11 +172,7 @@ fn body_preserving_feature(
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
             definition,
-            cadmpeg_ir::features::DistinctMembers::try_from(
-                vec![body],
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .unwrap(),
+            cadmpeg_ir::features::DistinctMembers::try_from(vec![body]).unwrap(),
         ),
         native_ref: None,
     }
@@ -239,21 +225,10 @@ fn complete_extrude_feature(
             allow_multi_profile_faces: None,
         }),
     );
+    feature.dependencies.insert(profile);
     feature
-        .dependencies
-        .insert(
-            &cadmpeg_test_support::service_decode_context(),
-            profile,
-            "insert fixture member",
-        )
-        .expect("member insertion admission");
-    feature.evaluation.set_outputs(
-        cadmpeg_ir::features::DistinctMembers::try_from(
-            outputs,
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .unwrap(),
-    );
+        .evaluation
+        .set_outputs(cadmpeg_ir::features::DistinctMembers::try_from(outputs).unwrap());
     feature
 }
 

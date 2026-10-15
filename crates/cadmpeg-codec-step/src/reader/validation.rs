@@ -12,7 +12,7 @@ use cadmpeg_ir::report::loss::LossNote;
 use crate::loss::StepLossCode;
 use crate::parse::{Exchange, RawRecord, Value};
 
-use super::decode_text_charged;
+use super::decode_text;
 use super::geometry::GeometryData;
 use super::StageOutcome;
 use super::{RecordExt, ValueExt};
@@ -60,7 +60,7 @@ pub(super) fn decode(
             continue;
         };
         let name = property.parameters.first().and_then(|value| {
-            decode_text_charged(
+            decode_text(
                 exchange,
                 value,
                 &mut losses,
@@ -77,7 +77,7 @@ pub(super) fn decode(
                 .parameters
                 .get(1)
                 .and_then(|value| {
-                    decode_text_charged(
+                    decode_text(
                         exchange,
                         value,
                         &mut losses,

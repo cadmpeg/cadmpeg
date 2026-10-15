@@ -371,17 +371,6 @@ impl Coverage {
         Ok(())
     }
 
-    /// Build a coverage map through the charged insertion operation.
-    pub fn from_iter_for_decode(
-        entries: impl IntoIterator<Item = (CoverageKey, usize)>,
-    ) -> Result<Self, cadmpeg_core::CodecError> {
-        let mut coverage = Self::default();
-        for (key, count) in entries {
-            coverage.record(key, count);
-        }
-        Ok(coverage)
-    }
-
     /// Returns all recorded counts by their wire names.
     #[must_use]
     fn as_map(&self) -> &BTreeMap<String, usize> {
