@@ -1247,6 +1247,27 @@ fn current_compact_curve_resolves_complete_marker_roster_endpoints() {
         .unwrap()
         .expect("complete marker roster endpoints");
         assert_eq!([pair[0].id(), pair[1].id()], ["first", "second"]);
+        for matched_groups in [false, true] {
+            let first = first.with_test_identity(Some(if matched_groups { 2 } else { 99 }), None);
+            let second =
+                second.with_test_identity(Some(if matched_groups { 3 } else { 100 }), None);
+            let markers = [&curve, &first, &second];
+            let ctx = cadmpeg_test_support::service_decode_context();
+            let geometry =
+                crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(
+                    &ctx,
+                    &markers,
+                    crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(
+                        &ctx, &payload,
+                    )
+                    .unwrap(),
+                )
+                .unwrap();
+            let selected =
+                roster_curve_endpoint_markers(&ctx, &payload, &curve, &markers, &geometry, None)
+                    .unwrap();
+            assert_eq!([selected[0].id(), selected[1].id()], ["first", "second"]);
+        }
     }
 
     let mut terminal = payload[..84].to_vec();

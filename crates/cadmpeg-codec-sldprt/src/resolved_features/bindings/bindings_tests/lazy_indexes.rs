@@ -1,4 +1,4 @@
-//! Pattern preparation starts only when an assignment can consume it.
+//! Pattern source, thread, generated-identity and line views wait for their readers.
 
 use super::*;
 use cadmpeg_core::decode::refusal_probe::RefusalProbe;
@@ -204,3 +204,104 @@ fn pattern_source_index_has_a_first_reader_boundary() {
     solve(&cadmpeg_test_support::service_decode_context()).unwrap();
     crate::test_support::work_refusal_at(SOURCES, solve);
 }
+
+#[test]
+fn pattern_lane_views_wait_for_their_specific_readers() {
+    for class in ["moCirPattern_c", "moLPattern_c", "moMirrorPattern_c"] {
+        let (history, mut lane, mut model) = inputs(class);
+        lane.classes.push(FeatureInputClass {
+            id: "line-class".into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset: 16,
+            name: "moLineRef_w".into(),
+        });
+        for selected in [false, true] {
+            model[0].native_ref = Some(
+                if selected {
+                    "pattern"
+                } else {
+                    "unselected-pattern"
+                }
+                .into(),
+            );
+            // Only circular seeds consume identities. The unresolved linear form
+            // has no admitted direction, and mirrors consume neither lane view.
+            let operations = if selected && class == "moCirPattern_c" {
+                &["scan SLDPRT pattern line declarations"][..]
+            } else {
+                &[
+                    "decode SLDPRT generated surface identities",
+                    "scan SLDPRT pattern line declarations",
+                ][..]
+            };
+            for operation in operations {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = u64::MAX;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let probe = RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None);
+                let mut candidates = model.clone();
+                bind_pattern_inputs(
+                    &ctx,
+                    &mut candidates,
+                    std::slice::from_ref(&history),
+                    std::slice::from_ref(&lane),
+                )
+                .unwrap();
+                assert_eq!(candidates, model);
+                let CodecError::ResourceLimit(limit) = ctx.charge_work(1, operation).unwrap_err()
+                else {
+                    panic!("unused lane preparation must leave the probe armed");
+                };
+                assert_eq!(limit.operation, *operation);
+                drop(probe);
+            }
+        }
+    }
+}
+
+#[test]
+fn pattern_lane_views_have_first_reader_boundaries() {
+    for (class, operation) in [
+        (
+            "moCirPattern_c",
+            "decode SLDPRT generated surface identities",
+        ),
+        ("moLPattern_c", "scan SLDPRT pattern line declarations"),
+    ] {
+        let (history, mut lane, mut model) = inputs(class);
+        lane.classes.push(FeatureInputClass {
+            id: "line-class".into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset: 16,
+            name: "moLineRef_w".into(),
+        });
+        if class == "moLPattern_c" {
+            model[0]
+                .evaluation
+                .set_definition(FeatureDefinition::Operation(FeatureOperation::Pattern {
+                    seeds: Vec::new(),
+                    pattern: PatternKind::new(PatternTransform::Linear {
+                        direction: None,
+                        spacing: cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap(),
+                        count: 2,
+                        second: None,
+                    })
+                    .unwrap(),
+                }));
+        }
+        crate::test_support::work_refusal_at(operation, |ctx| {
+            let mut candidates = model.clone();
+            bind_pattern_inputs(
+                ctx,
+                &mut candidates,
+                std::slice::from_ref(&history),
+                std::slice::from_ref(&lane),
+            )
+        });
+    }
+}
+
+mod scratch_lifetimes;

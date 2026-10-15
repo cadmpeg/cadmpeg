@@ -20,6 +20,7 @@ use crate::brep::LEN_TO_MM;
 use crate::parasolid::StreamHeader;
 use cadmpeg_core::decode::u64_from_index;
 use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::ScopedReservation;
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::geometry::pcurve::Pcurve;
 use cadmpeg_ir::geometry::Curve;
@@ -676,23 +677,25 @@ fn id_closed_vertex(edge: u16) -> VertexId {
 }
 
 /// One face-use's decoded loops: ordered coedge rings, keyed by loop attr.
-#[derive(Clone, PartialEq, Eq)]
-struct WalkedFace {
+struct WalkedFace<'ctx> {
     bridge_attr: u16,
     surface_attr: u16,
     sense: Sense,
     /// `(loop_attr, ordered_coedge_attrs)` in sibling order.
     loops: Vec<(u16, Vec<u16>)>,
+    /// Closed-ring and loop-vector backing, released with this face use.
+    _storage: ScopedReservation<'ctx>,
 }
 
 /// Follow the sibling loop-head chain of a bridge and each loop's coedge ring,
 /// returning the ordered structure with cycles guarded.
-fn walk_face(
-    ctx: &DecodeContext<'_>,
+fn walk_face<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     bridge: &topology::Bridge,
     t: &topology::Tables,
-) -> Result<WalkedFace, cadmpeg_core::CodecError> {
+) -> Result<WalkedFace<'ctx>, cadmpeg_core::CodecError> {
     let surface_attr = bridge.refs[4];
+    let mut face_storage = ctx.reserve_scoped(0, "hold Parasolid walked face")?;
     let mut loops = Vec::new();
     let mut loop_ref = bridge.refs[2];
     let mut loop_guard_storage = ctx.reserve_scoped(0, "hold Parasolid loop walk guard")?;
@@ -755,8 +758,14 @@ fn walk_face(
         }
         drop((ce_guard, ce_guard_storage));
         if ring_closed {
-            ctx.reserve_vec(&mut loops, 1, "walk Parasolid face loops")?;
-            loops.push((loop_ref, ring_storage.commit_value(ring)?));
+            ctx.reserve_scoped_vec(
+                &mut face_storage,
+                &mut loops,
+                1,
+                "walk Parasolid face loops",
+            )?;
+            face_storage.absorb(&mut ring_storage)?;
+            loops.push((loop_ref, ring));
         }
         loop_ref = lp.refs[3];
     }
@@ -765,6 +774,7 @@ fn walk_face(
         surface_attr,
         sense: bridge.sense,
         loops,
+        _storage: face_storage,
     })
 }
 
@@ -1381,18 +1391,9 @@ fn typed_body_records(
     }
     let hierarchy_storage;
     let hierarchies;
-    (hierarchies, hierarchy_storage) =
-        ctx.with_scoped_storage("hold typed Parasolid hierarchies", || {
-            let _bridge_attrs_storage;
-            let bridge_attrs;
-            (bridge_attrs, _bridge_attrs_storage) =
-                ctx.with_scoped_storage("index Parasolid body bridges", || {
-                    ctx.collect_btree_set(
-                        tables.bridges().keys().copied(),
-                        "index Parasolid body bridges",
-                    )
-                })?;
-            facts.hierarchies(ctx, &bridge_attrs)
+    (hierarchies, hierarchy_storage) = ctx
+        .with_scoped_storage("hold typed Parasolid hierarchies", || {
+            facts.hierarchies(ctx, tables.bridges())
         })?;
     let Some(hierarchies) = hierarchies else {
         return Ok(None);
@@ -1567,7 +1568,7 @@ fn bind_bridges(
     ctx: &DecodeContext<'_>,
     t: &topology::Tables,
     body_records: &[BodyRecord],
-    faces: &[WalkedFace],
+    faces: &[WalkedFace<'_>],
 ) -> Result<BridgeBindings, cadmpeg_core::CodecError> {
     const INDEX: &str = "index Parasolid body references";
     const BIND: &str = "bind Parasolid face bridges";
@@ -1810,6 +1811,63 @@ mod walk_storage_tests {
         assert_eq!(limit.used, expected_bytes);
         assert_eq!(limit.additional, 4096);
     }
+
+    #[test]
+    fn face_walk_releases_closed_ring_storage_when_body_claims_reject_it() {
+        const PROBE: &str = "probe rejected walked face storage";
+        let (bridge, tables) = fixture(2, true);
+        let records = [super::BodyRecord {
+            attr: 1,
+            kind: cadmpeg_ir::topology::BodyKind::Sheet,
+            refs: Vec::new(),
+            offset: 0,
+            regions: Vec::new(),
+        }];
+        let mut vector_bytes = 0;
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::MaterializedBytes,
+            PROBE,
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_materialized_bytes = cap;
+                policy.limits.max_retained_bytes = 0;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+                let mut graph_storage = ctx.reserve_scoped(0, "test graph scratch")?;
+                let mut faces = Vec::new();
+                let face = graph_storage.with_storage(|| walk_face(&ctx, &bridge, &tables))?;
+                assert_eq!(face.loops.len(), 2);
+                graph_storage
+                    .with_storage(|| ctx.push_vec(&mut faces, face, "collect Parasolid faces"))?;
+                let (groups, shells) = graph_storage
+                    .with_storage(|| super::bind_bridges(&ctx, &tables, &records, &faces))?;
+                assert!(groups.is_empty() && shells.is_empty());
+                ctx.retain_vec(
+                    &mut faces,
+                    |face| {
+                        ctx.contains_key_btree_map(
+                            &groups,
+                            &face.bridge_attr,
+                            "lookup Parasolid bridge_group",
+                        )
+                    },
+                    "select claimed Parasolid faces",
+                )?;
+                assert!(faces.is_empty());
+                vector_bytes =
+                    u64::try_from(faces.capacity() * std::mem::size_of::<super::WalkedFace<'_>>())
+                        .unwrap();
+                let _probe = ctx.reserve_scoped(65536, PROBE)?;
+                drop((faces, graph_storage));
+                Ok(())
+            },
+        );
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("storage refusal")
+        };
+        assert_eq!(limit.used, vector_bytes);
+        assert_eq!(limit.additional, 65536);
+    }
 }
 
 #[cfg(test)]
@@ -2008,6 +2066,7 @@ mod binding_color_storage_tests {
                 surface_attr: 20,
                 sense: Sense::Forward,
                 loops: Vec::new(),
+                _storage: ctx.reserve_scoped(0, "fixture walked face")?,
             };
             let bindings = bind_bridges(ctx, &topology::Tables::default(), &[], &[face])?;
             assert!(bindings.0.is_empty() && bindings.1.is_empty());
@@ -2084,6 +2143,7 @@ mod binding_color_storage_tests {
                 surface_attr: 20,
                 sense: Sense::Forward,
                 loops: Vec::new(),
+                _storage: ctx.reserve_scoped(0, "fixture walked face")?,
             };
             let bindings = bind_bridges(ctx, &topology::Tables::default(), &bodies(), &[face])?;
             assert_eq!(bindings.0, BTreeMap::from([(10, 0)]));
@@ -2125,6 +2185,18 @@ mod binding_color_storage_tests {
             cap = cap.max(boundary.used + boundary.additional);
         }
         storage_run(cap, select_color).expect("consumed color stages release their storage");
+
+        // The scalar agreement maps overlap while resolving colors. Output
+        // allocation starts after the color-identity map is released.
+        let boundary = storage_boundary(|ctx| {
+            let mut faces = BTreeMap::<u16, Option<usize>>::new();
+            let mut colors = BTreeMap::<u16, Option<Color>>::new();
+            ctx.insert_btree_map(&mut faces, 10, Some(0), "test scalar face agreement")?;
+            ctx.insert_btree_map(&mut colors, 20, Some(color().color), PROBE)?;
+            Ok(())
+        });
+        storage_run(boundary.used + boundary.additional, select_color)
+            .expect("color agreement storage ends before output allocation");
     }
 
     #[test]

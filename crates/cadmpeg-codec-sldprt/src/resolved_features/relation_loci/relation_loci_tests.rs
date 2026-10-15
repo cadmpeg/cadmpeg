@@ -27,6 +27,7 @@ fn profile(entities: &[SketchEntity]) -> super::ProfileEntities<'_> {
     super::ProfileEntities::new(&cadmpeg_test_support::service_decode_context(), entities)
         .expect("test entities fit the service budget")
 }
+mod candidate_borrows;
 mod definition_storage;
 mod direct_points;
 mod relation_geometry;

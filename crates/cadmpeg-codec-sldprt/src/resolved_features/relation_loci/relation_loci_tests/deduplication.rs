@@ -89,7 +89,7 @@ fn dynamic_marker_line_deduplication_preserves_candidates_and_refusal() {
         fixture
             .entities
             .iter()
-            .map(|entity| entity.id().clone())
+            .map(cadmpeg_ir::sketches::SketchEntity::id)
             .collect::<Vec<_>>()
     );
     crate::test_support::work_refusal_at("deduplicate SLDPRT marker line candidates", solve);
@@ -141,6 +141,16 @@ fn dynamic_line_operand_deduplication_preserves_candidates_and_refusal() {
                 markers: &markers,
                 loci_by_marker: &fixture.loci,
             },
+            &|_| Ok(Some("root")),
+            &|operand| {
+                super::super::solver_line_entity(
+                    ctx,
+                    &relation,
+                    operand,
+                    &fixture.sketch,
+                    &entities,
+                )
+            },
         )
     };
     assert_eq!(
@@ -148,7 +158,7 @@ fn dynamic_line_operand_deduplication_preserves_candidates_and_refusal() {
         fixture
             .entities
             .iter()
-            .map(|entity| entity.id().clone())
+            .map(cadmpeg_ir::sketches::SketchEntity::id)
             .collect::<Vec<_>>()
     );
     crate::test_support::work_refusal_at("deduplicate SLDPRT marker entities", solve);

@@ -199,7 +199,7 @@ fn compact_body_state_token(
     let ambiguous = ctx.any_by(
         &lane.classes,
         |class| {
-            if !ctx.equal(class.name.as_str(), "moDeleteBodyData_c", OPERATION)? {
+            if class.name.as_str() != "moDeleteBodyData_c" {
                 return Ok(false);
             }
             if selected.is_some() {
@@ -358,11 +358,7 @@ pub(crate) fn compact_edge_reference_list_for_feature(
     if let Some(references) = compact_component_reference_list_at(ctx, payload, offset)? {
         return Ok(Some(references));
     }
-    if !ctx.eq_ignore_ascii_case(
-        feature_kind,
-        "VarFillet",
-        "decode SLDPRT variable fillet references",
-    )? {
+    if !feature_kind.eq_ignore_ascii_case("VarFillet") {
         return Ok(None);
     }
     let count = offset
@@ -402,27 +398,8 @@ pub(super) fn compact_edge_selections(
         .rsplit_once(&lane.id, "#", "split SLDPRT feature-input lane key")?
         .map_or(lane.id.as_str(), |(_, key)| key);
     let mut result = Vec::new();
-    let dimension_classes = fillet_dimension_classes(ctx, lane)?;
-    let mut compact_edge_class = None;
-    if ctx.any_by(
-        &lane.classes,
-        |class| {
-            if !ctx.equal(class.name.as_str(), "moCompEdge_c", OPERATION)? {
-                return Ok(false);
-            }
-            Ok(compact_edge_class.replace(class).is_some())
-        },
-        OPERATION,
-    )? {
-        compact_edge_class = None;
-    }
-    let class_name_end = compact_edge_class.and_then(|class| {
-        usize::try_from(class.offset)
-            .ok()?
-            .checked_add(6 + class.name.len())
-    });
-    let compact_edge_token =
-        class_name_end.and_then(|offset| View::u16_le_at(&lane.native_payload, offset));
+    let mut dimension_classes = None;
+    let mut compact_edge = None;
     for (object_index, &(name, feature, _)) in ctx.admit_iter(&objects, OPERATION)?.enumerate() {
         let kind = native_object_class(feature.input_class.as_deref().unwrap_or_default());
         if !matches!(kind, NativeClassKind::Fillet | NativeClassKind::Chamfer) {
@@ -436,10 +413,39 @@ pub(super) fn compact_edge_selections(
             .and_then(|(next, _, _)| usize::try_from(next.offset).ok())
             .unwrap_or(lane.native_payload.len());
         let end = if kind == NativeClassKind::Fillet {
-            fillet_edge_roster_end(ctx, lane, &dimension_classes, start, object_end)?
-                .unwrap_or(object_end)
+            let classes = match &mut dimension_classes {
+                Some(classes) => classes,
+                slot @ None => slot.insert(fillet_dimension_classes(ctx, lane)?),
+            };
+            fillet_edge_roster_end(ctx, lane, classes, start, object_end)?.unwrap_or(object_end)
         } else {
             object_end
+        };
+        let (compact_edge_class, compact_edge_token) = *match &mut compact_edge {
+            Some(class) => class,
+            slot @ None => {
+                let mut compact_edge_class = None;
+                if ctx.any_by(
+                    &lane.classes,
+                    |class| {
+                        if class.name.as_str() != "moCompEdge_c" {
+                            return Ok(false);
+                        }
+                        Ok(compact_edge_class.replace(class).is_some())
+                    },
+                    "find SLDPRT compact edge class",
+                )? {
+                    compact_edge_class = None;
+                }
+                let class_name_end = compact_edge_class.and_then(|class| {
+                    usize::try_from(class.offset)
+                        .ok()?
+                        .checked_add(6 + class.name.len())
+                });
+                let compact_edge_token =
+                    class_name_end.and_then(|offset| View::u16_le_at(&lane.native_payload, offset));
+                slot.insert((compact_edge_class, compact_edge_token))
+            }
         };
         let direct_child = compact_edge_class
             .and_then(|class| usize::try_from(class.offset).ok())
@@ -583,7 +589,7 @@ impl<'ctx> ClassObjects<'ctx> {
         let mut offsets = Vec::new();
         let mut tokens = Vec::new();
         for class in ctx.admit_iter(&lane.classes, OPERATION)? {
-            if !ctx.equal(class.name.as_str(), class_name, OPERATION)? {
+            if class.name.as_str() != class_name {
                 continue;
             }
             let Some(offset) = usize::try_from(class.offset).ok() else {
@@ -795,11 +801,7 @@ pub(super) fn compact_surface_selections(
                                     if ctx.any_by(
                                         &lane.classes,
                                         |class| {
-                                            if !ctx.equal(
-                                                class.name.as_str(),
-                                                "moCompSurfaceBody_c",
-                                                TOKEN_LOOKUP,
-                                            )? {
+                                            if class.name.as_str() != "moCompSurfaceBody_c" {
                                                 return Ok(false);
                                             }
                                             Ok(surface_class.replace(class).is_some())
@@ -889,11 +891,7 @@ pub(super) fn compact_surface_selections(
                             slot @ None => {
                                 let mut tokens = HashSet::new();
                                 for class in ctx.admit_iter(&lane.classes, OPERATION)? {
-                                    if !ctx.equal(
-                                        class.name.as_str(),
-                                        "moCylinderRef_w",
-                                        OPERATION,
-                                    )? {
+                                    if class.name.as_str() != "moCylinderRef_w" {
                                         continue;
                                     }
                                     let Some(body) =
@@ -1385,7 +1383,7 @@ impl<'identities, 'ctx> OperationSurfaceClasses<'identities, 'ctx> {
         for required in ["moPLineProjIdRep_c", "moPLineSurfIdRep_c"] {
             if !self.ctx.any_by(
                 &lane.classes,
-                |class| self.ctx.equal(class.name.as_str(), required, OPERATION),
+                |class| Ok(class.name.as_str() == required),
                 OPERATION,
             )? {
                 present = false;
@@ -1755,7 +1753,7 @@ fn cosmetic_thread_component_references(
 
     let mut class_ranges = Vec::<Range<usize>>::new();
     for (index, &(class_offset, class)) in ctx.admit_iter(&classes, OPERATION)?.enumerate() {
-        if !ctx.equal(class.name.as_str(), "moCompEdge_c", OPERATION)? {
+        if class.name.as_str() != "moCompEdge_c" {
             continue;
         }
         let Some(body) = class_offset.checked_add(6 + class.name.len()) else {
@@ -1772,11 +1770,8 @@ fn cosmetic_thread_component_references(
         let Some((edge_ref_offset, edge_ref)) = classes.get(index + 1) else {
             continue;
         };
-        if !ctx.equal(
-            edge_ref.name.as_str(),
-            "moEdgeRef_c",
-            "compare SLDPRT cosmetic edge reference class name",
-        )? || !cosmetic_thread_component_edge_wrapper_at(&lane.native_payload, body)
+        if edge_ref.name.as_str() != "moEdgeRef_c"
+            || !cosmetic_thread_component_edge_wrapper_at(&lane.native_payload, body)
         {
             continue;
         }
@@ -2917,7 +2912,7 @@ fn mirror_surface_type_prefix(
     let ambiguous = ctx.any_by(
         &lane.classes,
         |class| {
-            if !ctx.equal(class.name.as_str(), "moMirPatternSurfIdRep_c", OPERATION)? {
+            if class.name.as_str() != "moMirPatternSurfIdRep_c" {
                 return Ok(false);
             }
             if selected.is_some() {
@@ -3188,6 +3183,9 @@ pub(crate) fn generated_surface_identities(
         scratch.with_storage(|| ctx.insert_hash_set(&mut prefixes, prefix, OPERATION))?;
     }
 
+    if prefixes.is_empty() {
+        return Ok(Vec::new());
+    }
     let mut result = Vec::<SurfaceIdentityFields>::new();
     let Some(last) = lane.native_payload.len().checked_sub(16) else {
         return Ok(Vec::new());
@@ -3635,7 +3633,7 @@ pub(super) fn variable_fillet_control_references(
     object_end: usize,
 ) -> Result<Option<Vec<VariableFilletControl>>, cadmpeg_core::CodecError> {
     const OPERATION: &str = "collect SLDPRT variable fillet controls";
-    if !ctx.eq_ignore_ascii_case(&feature.kind, "VarFillet", OPERATION)? {
+    if !feature.kind.eq_ignore_ascii_case("VarFillet") {
         return Ok(None);
     }
     let classes = fillet_dimension_classes(ctx, lane)?;

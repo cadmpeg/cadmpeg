@@ -1208,9 +1208,9 @@ pub(crate) fn project_compact_body_selections(
 /// Each model feature identity keyed by the native record it names; a later feature replaces an
 /// earlier one with the same native reference. Keys and identities are copies so the model
 /// features stay editable.
-fn model_feature_ids_by_native<'ctx>(
+fn model_feature_ids_by_native<'a, 'ctx>(
     ctx: &'ctx DecodeContext<'_>,
-    features: &[cadmpeg_ir::features::Feature],
+    features: impl IntoIterator<Item = (&'a cadmpeg_ir::features::FeatureId, Option<&'a str>)>,
     operation: &'static str,
 ) -> Result<
     (
@@ -1219,18 +1219,32 @@ fn model_feature_ids_by_native<'ctx>(
     ),
     cadmpeg_core::CodecError,
 > {
-    let mut storage = ctx.reserve_scoped(0, operation)?;
-    let mut ids = HashMap::new();
-    for feature in ctx.admit_iter(features, operation)? {
-        let Some(native_ref) = feature.native_ref.as_deref() else {
+    let mut positions_storage = ctx.reserve_scoped(0, operation)?;
+    let mut positions = HashMap::new();
+    let mut winners_storage = ctx.reserve_scoped(0, operation)?;
+    let mut winners = Vec::new();
+    let mut features = features.into_iter();
+    while let Some((feature_id, native_ref)) = ctx.next_charged(&mut features, operation)? {
+        let Some(native_ref) = native_ref else {
             continue;
         };
+        if let Some(&position) = ctx.get_hash_map(&positions, native_ref, operation)? {
+            winners[position] = (native_ref, feature_id);
+            continue;
+        }
+        positions_storage.with_storage(|| {
+            ctx.insert_hash_map(&mut positions, native_ref, winners.len(), operation)
+        })?;
+        winners_storage
+            .with_storage(|| ctx.push_vec(&mut winners, (native_ref, feature_id), operation))?;
+    }
+    drop(positions);
+    drop(positions_storage);
+    let mut storage = ctx.reserve_scoped(0, operation)?;
+    let mut ids = HashMap::new();
+    for (native_ref, feature_id) in ctx.admit_iter(winners, operation)? {
         storage.with_storage(|| {
-            let id = feature.id.try_clone_for_decode(ctx, operation)?;
-            if let Some(previous) = ctx.get_mut_hash_map(&mut ids, native_ref, operation)? {
-                *previous = id;
-                return Ok(());
-            }
+            let id = feature_id.try_clone_for_decode(ctx, operation)?;
             ctx.insert_hash_map(
                 &mut ids,
                 ctx.copy_retained_text(native_ref, operation)?,
@@ -1240,6 +1254,7 @@ fn model_feature_ids_by_native<'ctx>(
             Ok::<(), cadmpeg_core::CodecError>(())
         })?;
     }
+    drop(winners_storage);
     Ok((ids, storage))
 }
 
@@ -1283,6 +1298,7 @@ pub(crate) fn project_compact_edge_selections(
 ) -> Result<(), cadmpeg_core::CodecError> {
     const DEPENDENCY_OPERATION: &str = "add SLDPRT compact edge dependency";
     const INDEX_OPERATION: &str = "index SLDPRT compact edge selections";
+    const ID_OPERATION: &str = "index SLDPRT compact edge feature identities";
     let _selections_storage;
     let selections;
     (selections, _selections_storage) = selections_by_feature(
@@ -1295,11 +1311,11 @@ pub(crate) fn project_compact_edge_selections(
     if selections.is_empty() {
         return Ok(());
     }
-    let _feature_ids_storage;
-    let feature_ids_by_native;
-    (feature_ids_by_native, _feature_ids_storage) =
-        model_feature_ids_by_native(ctx, features, INDEX_OPERATION)?;
-    for feature in ctx.admit_iter(features, INDEX_OPERATION)? {
+    let feature_ids_by_native = std::cell::OnceCell::new();
+    for index in ctx.admit_iter(0..features.len(), INDEX_OPERATION)? {
+        let (before, remaining) = features.split_at_mut(index);
+        let (current, after) = remaining.split_at_mut(1);
+        let feature = &mut current[0];
         let feature_id = &feature.id;
         let dependencies = &mut feature.dependencies;
         let native_ref = feature.native_ref.as_deref();
@@ -1315,6 +1331,19 @@ pub(crate) fn project_compact_edge_selections(
             else {
                 return Ok(());
             };
+            let identities = || -> Result<&HashMap<String, cadmpeg_ir::features::FeatureId>, cadmpeg_core::CodecError> {
+                if let Some((ids, _)) = feature_ids_by_native.get() {
+                    return Ok(ids);
+                }
+                let indexed = model_feature_ids_by_native(
+                    ctx,
+                    before.iter().map(|feature| (&feature.id, feature.native_ref.as_deref()))
+                        .chain(std::iter::once((feature_id, Some(native_ref))))
+                        .chain(after.iter().map(|feature| (&feature.id, feature.native_ref.as_deref()))),
+                    ID_OPERATION,
+                )?;
+                Ok(&feature_ids_by_native.get_or_init(|| indexed).0)
+            };
             let projected_edges = |selections: &[&FeatureInputEdgeSelection]| -> Result<_, cadmpeg_core::CodecError> {
                 const OPERATION: &str = "project SLDPRT compact generated edges";
                 let native = compact_edge_selection_set_value_charged(ctx, selections)?;
@@ -1328,7 +1357,7 @@ pub(crate) fn project_compact_edge_selections(
                         break;
                     };
                     let Some(feature_id) =
-                        ctx.get_hash_map(&feature_ids_by_native, native_feature, OPERATION)?
+                        ctx.get_hash_map(identities()?, native_feature, OPERATION)?
                     else {
                         complete = false;
                         break;
@@ -1422,9 +1451,12 @@ pub(crate) fn project_compact_edge_selections(
                 _ => return Ok(()),
             }
             for selection in ctx.admit_iter(edge_selections, DEPENDENCY_OPERATION)? {
+                if selection.producer_feature_refs.is_empty() {
+                    continue;
+                }
                 add_producer_dependencies(
                     ctx,
-                    &feature_ids_by_native,
+                    identities()?,
                     &selection.producer_feature_refs,
                     feature_id,
                     dependencies,
@@ -1922,8 +1954,13 @@ pub(crate) fn project_compact_surface_selections(
     )?;
     let _feature_ids_storage;
     let feature_ids_by_native;
-    (feature_ids_by_native, _feature_ids_storage) =
-        model_feature_ids_by_native(ctx, features, INDEX_OPERATION)?;
+    (feature_ids_by_native, _feature_ids_storage) = model_feature_ids_by_native(
+        ctx,
+        features
+            .iter()
+            .map(|feature| (&feature.id, feature.native_ref.as_deref())),
+        INDEX_OPERATION,
+    )?;
     let mut history_storage = ctx.reserve_scoped(0, INDEX_OPERATION)?;
     let mut history_features = Vec::new();
     for history in ctx.admit_iter(histories, INDEX_OPERATION)? {
@@ -2638,8 +2675,13 @@ pub(crate) fn project_draft_operands(
     }
     let _feature_ids_storage;
     let feature_ids_by_native;
-    (feature_ids_by_native, _feature_ids_storage) =
-        model_feature_ids_by_native(ctx, features, INDEX_OPERATION)?;
+    (feature_ids_by_native, _feature_ids_storage) = model_feature_ids_by_native(
+        ctx,
+        features
+            .iter()
+            .map(|feature| (&feature.id, feature.native_ref.as_deref())),
+        INDEX_OPERATION,
+    )?;
     for feature in ctx.admit_iter(features, INDEX_OPERATION)? {
         let native_ref = feature.native_ref.as_deref();
         let dependencies = &mut feature.dependencies;
@@ -3082,8 +3124,13 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
     )?;
     let _feature_ids_storage;
     let feature_ids_by_native;
-    (feature_ids_by_native, _feature_ids_storage) =
-        model_feature_ids_by_native(ctx, features, ID_OPERATION)?;
+    (feature_ids_by_native, _feature_ids_storage) = model_feature_ids_by_native(
+        ctx,
+        features
+            .iter()
+            .map(|feature| (&feature.id, feature.native_ref.as_deref())),
+        ID_OPERATION,
+    )?;
     let face_surfaces = FaceSurfaces::new(ctx, faces, surfaces)?;
     // Each lane's key, feature byte ranges and cylinder reference tokens.
     let mut lane_contexts = Vec::new();
