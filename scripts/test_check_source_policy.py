@@ -1168,6 +1168,16 @@ class SaturatingArithmetic(TempSourceCase):
 """)
         self.assertEqual([f.line for f in self.findings("saturating_arithmetic")], [2, 3, 4, 5])
 
+    def test_saturating_path_values_require_checked_branches(self) -> None:
+        self.write("crates/demo/src/lib.rs", """fn f() {
+    sizes.fold(0usize, usize::saturating_add);
+    sizes.fold(0_u64, core::primitive::u64::saturating_mul);
+    usize::saturating_sub(count, 1);
+    sizes.try_fold(0usize, usize::checked_add);
+}
+""")
+        self.assertEqual([f.line for f in self.findings("saturating_arithmetic")], [2, 3, 4])
+
     def test_checked_arithmetic_and_test_code_are_exempt(self) -> None:
         self.write("crates/demo/src/lib.rs", """fn f() {
     count.checked_add(1).ok_or(error)?;
