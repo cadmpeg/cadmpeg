@@ -52,6 +52,20 @@ record states which lane it is in.
 | `134` | B_CURVE | 23 B | logical fixed record length | §4.1 |
 | `137` | SP_CURVE | variable | 33 bytes plus escape and large-index shifts | §4.1 |
 
+## `parasolid_transmit_prefix`
+
+Spec §6.3 · layout: byte offsets · size: 6 B
+
+The counted description starts immediately after this fixed prefix. Its byte length excludes the prefix and the following counted schema.
+
+Parsed by:
+- `crates/cadmpeg-codec-nx/src/parasolid.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `signature` | `bytes[2]` | big | spec | The big-endian u32 at offset 2 after `PS` counts the description bytes that start at offset 6. · value `[80, 83]` |
+| 2 | 4 | `description_length` | `u32` | big | spec | The big-endian u32 at offset 2 after `PS` counts the description bytes that start at offset 6. |
+
 ## `studio_post_branch_prefix`
 
 Spec §7.1 · layout: byte offsets · size: 22 B

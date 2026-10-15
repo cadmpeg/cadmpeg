@@ -282,17 +282,17 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Note.** The closure changes the specification to say that `V`, `I`, and `U` are status values and that neither field affects parameter direction. The tests only mutate synthetic bytes and assert that the decoder leaves senses unset. No serialized comparison establishes either field's meaning or rules out an orientation role.
 
-### PS-33. Chart point layout selection
+### PS-33. MESH FILE chart layout
 
-**Question.** Which field selects the `Hvec` layout of a `CHART_s` point array?
+**Question.** Which layout, if any, applies to `CHART_s` and `LIMIT` Hvec rows in a `MESH FILE` payload?
 
-**Known.** `siemens_nx.md` §6.3 "Hvec form depends on the stream: partition streams use **`xyz3`** (`x,y,z` meters); delt" gives the rule: the stream kind selects the layout. `siemens_nx.md` §6 "All geometric doubles are finite binary64 values in meters" states that the format imposes no model-magnitude bound.
+**Known.** The counted `TRANSMIT FILE` description distinguishes 24-byte transmitted point rows from 88-byte expanded Hvec rows. A `MESH FILE` description does not select either form.
 
-**Need.** We must decide the layout selector so that a wide record is not read as narrow triples that cross field boundaries, and so that a charted intersection of a larger model is not dropped by the magnitude test.
+**Need.** Serialized MESH FILE chart or terminal nodes with independently established physical boundaries and field declarations are required to determine their Hvec representation.
 
-**Conflict.** The decoder does not apply the stream rule. `chart_points` in `crates/cadmpeg-codec-nx/src/intersection.rs` tries the wide layout first, accepts it when every tangent is near unit norm and the native parameters ascend, and otherwise reads the same bytes with the narrow stride. The caller separates partition bytes from replacement-stream bytes already, so the stream kind is available and unused. A wide record that fails the norm test is then read as narrow triples that cross field boundaries, and the resulting point sequence is transferred as curve geometry. The same function rejects any coordinate at or above one hundred meters, which contradicts §6 and drops every charted intersection of a larger model.
+**Conflict.** None.
 
-**Note.** The closure passes a `StreamKind` into the parser, but the ext11 branch still admits points through tangent and parameter plausibility checks. The stream-kind mapping and the synthetic fixtures were introduced together; a serialized chart from corpus records has not yet verified that outer stream kind is the layout discriminator.
+**Note.** Preserve the payload without assigning a Hvec layout from a broad plain-stream classification.
 
 ### PS-34. B-spline form-code semantics
 
@@ -363,7 +363,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Known.** `siemens_nx.md` §6.3 "**LIMIT (`0x29`, inserted field `term_use`)** records contain a leading count," defines the complete extended layout. The classic LIMIT layout has one type byte (`L`, `H`, or `T`) before its count-selected Hvec rows. A classic INTERSECTION has five construction references: two surfaces, chart, start, and end. Its final end reference does not imply a following support-UV reference. Complete one-character LIMIT rows can meet the next CHART at their exact byte boundary.
 
-**Need.** We must bind field presence to the owning schema and its edits before admitting classic records or assigning a following type tag to an optional field. The Hvec width also needs the selector in PS-33.
+**Need.** We must bind field presence to the owning schema and its edits before admitting classic records or assigning a following type tag to an optional field. The counted TRANSMIT description selects the Hvec width independently of those field edits; MESH FILE layout remains open in PS-33.
 
 **Conflict.** Reading a classic LIMIT as type plus `term_use` shifts every scalar by one byte. Reading a classic INTERSECTION with a sixth construction reference consumes the next record's tag. Finite shifted values do not establish either extended layout.
 

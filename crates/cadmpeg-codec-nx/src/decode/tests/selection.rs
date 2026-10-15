@@ -819,7 +819,10 @@ fn directory_retained_bytes(name: &str) -> u64 {
 
 #[test]
 fn metadata_fallback_does_not_retain_discarded_geometry_unknown_copies() {
-    let mut stream = b"PS\0\0 (partition) SCH_TEST_1_9999".to_vec();
+    let mut stream = crate::test_support::test_bytes::transmit_preamble(
+        ": TRANSMIT FILE (partition)",
+        "SCH_TEST_1_9999",
+    );
     stream.resize(8192, b'.');
     let file = prt_with_partition(&stream);
     let mut options = DecodeOptions::default();
@@ -868,7 +871,10 @@ fn metadata_fallback_does_not_retain_discarded_geometry_unknown_copies() {
 fn metadata_fallback_old_retained_limit_refuses_inflated_stream_after_directory() {
     use cadmpeg_core::decode::ResourceDimension;
 
-    let mut stream = b"PS\0\0 (partition) SCH_TEST_1_9999".to_vec();
+    let mut stream = crate::test_support::test_bytes::transmit_preamble(
+        ": TRANSMIT FILE (partition)",
+        "SCH_TEST_1_9999",
+    );
     stream.resize(64, b'.');
     let file = prt_with_partition(&stream);
     let mut options = DecodeOptions::default();

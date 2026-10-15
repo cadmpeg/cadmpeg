@@ -234,13 +234,15 @@ pub(super) fn build_geometry_report(
 
     if counts.intersection_rejections.total() > 0 {
         push_report_loss(ctx, &mut losses, NxLossCode::IntersectionRecordsOpaque, format_args!(
-            "{} surface-intersection record(s) without a complete validated CHART_s and \
+            "{} surface-intersection record(s) without a unique identity, unambiguous supports, and a complete validated CHART_s and \
                  term-endpoint witness remain opaque constructions. Support-UV values govern \
                  optional pcurve attachment and do not invalidate a witnessed 3D carrier. Each \
                  Parasolid stream is preserved verbatim as an unknown passthrough record so the \
-                 unresolved source bytes remain available. Rejections: {} missing chart, {} missing \
+                 unresolved source bytes remain available. Rejections: {} missing support, {} duplicate identity, {} missing chart, {} missing \
                  start term, {} missing end term, {} endpoint mismatch.",
             counts.intersection_rejections.total(),
+            counts.intersection_rejections.missing_support,
+            counts.intersection_rejections.duplicate_identity,
             counts.intersection_rejections.missing_chart,
             counts.intersection_rejections.missing_start_term,
             counts.intersection_rejections.missing_end_term,

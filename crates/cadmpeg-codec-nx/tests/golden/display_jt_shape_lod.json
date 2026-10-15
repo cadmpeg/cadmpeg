@@ -154,7 +154,7 @@
               "index_row": "nx:display-jt:index#0-row-0",
               "lsg_segment_id": "01010101010101010101010101010101",
               "physical_byte_len": 236,
-              "source_offset": 368,
+              "source_offset": 369,
               "toc_entries": [
                 {
                   "attributes": "00000007",
@@ -163,7 +163,7 @@
                   "segment_byte_len": 99,
                   "segment_id": "02020202020202020202020202020202",
                   "segment_offset": 137,
-                  "source_offset": 477
+                  "source_offset": 478
                 }
               ],
               "toc_offset": 105,
@@ -179,11 +179,11 @@
                   "header_offset": 28,
                   "id": "nx:display-jt:index#0-row-0",
                   "ordinal": 0,
-                  "source_offset": 348,
+                  "source_offset": 349,
                   "value": 100
                 }
               ],
-              "source_offset": 340,
+              "source_offset": 341,
               "version": 9
             }
           ],
@@ -196,7 +196,7 @@
               "segment_byte_len": 99,
               "segment_id": "02020202020202020202020202020202",
               "segment_type": 7,
-              "source_offset": 505,
+              "source_offset": 506,
               "toc_entry": "nx:display-jt:toc-entry#0-row-0-0"
             }
           ],
@@ -210,7 +210,7 @@
               "object_type_id": "ab10dd10c82ad1119b6b0080c7bb5997",
               "ordinal": 0,
               "segment": "nx:display-jt:segment#0-row-0-0",
-              "source_offset": 529
+              "source_offset": 530
             }
           ],
           "display_jt_tri_strip_lod_headers": [
@@ -221,7 +221,7 @@
               "compressed_representation_sha256": "8d70d691c822d55638b6e7fd54cd94170c87d19eb1f628b757506ede5688d297",
               "element": "nx:display-jt:segment#0-row-0-0-element-0",
               "id": "nx:display-jt:segment#0-row-0-0-element-0-tri-strip-header",
-              "source_offset": 554,
+              "source_offset": 555,
               "topological_mesh_version": 1,
               "vertex_bindings": 0,
               "vertex_records_object_id": 0,
@@ -244,10 +244,10 @@
         "attributes": {
           "deltas_streams": "0",
           "directory_entries": "2",
-          "file_size": "618",
+          "file_size": "619",
           "footer_entry_count": "0",
           "footer_fingerprint": "00000000",
-          "footer_offset": "604",
+          "footer_offset": "605",
           "header_entry_count": "2",
           "jpeg_preview_count": "0",
           "partition_streams": "1",
@@ -342,7 +342,7 @@
         }
       ],
       "notes": [
-        "SPLMSSTR container: file tag 0, footer offset 604, 2 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+        "SPLMSSTR container: file tag 0, footer offset 605, 2 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
         "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid"
       ],
       "transfer": {
@@ -428,22 +428,22 @@
             "tag": "derived_point_topology"
           },
           "nx:s0:crv#0": {
-            "offset": 316,
+            "offset": 319,
             "stream": "nx:parasolid#0:partition",
             "tag": "LINE"
           },
           "nx:s0:pt#0": {
-            "offset": 86,
+            "offset": 89,
             "stream": "nx:parasolid#0:partition",
             "tag": "POINT"
           },
           "nx:s0:surf#0": {
-            "offset": 126,
+            "offset": 129,
             "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#1": {
-            "offset": 217,
+            "offset": 220,
             "stream": "nx:parasolid#0:partition",
             "tag": "CYLINDER"
           }
@@ -452,7 +452,7 @@
       "retained_records": {
         "nx:container:parasolid#0": {
           "bytes": {
-            "data": "UFMAAFhYOiBUUkFOU01JVCBGSUxFIChwYXJ0aXRpb24pIGNyZWF0ZWQgYnkgbW9kZWxsZXIgdmVyc2lvbiAzNDAwMTc2AFNDSF9URVNUXzFfOTk5OQAAHQACAAAAAAAAAAAAAAAAP7AAAAAAAAAAAAAAAAAAAD+KAnUlRgqmADIAAwAAAAAAAAAAAAAAAAAAKz+zgdfb9If9AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/8AAAAAAAAD/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAzAAQAAAAAAAAAAAAAAAAAACsAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/AAAAAAAAA/cJa7mMfigj/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAeAAUAAAAAAAAAAAAAAAAAACs/hHrhR64Uez+UeuFHrhR7P564UeuFHrg/8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+            "data": "UFMAAAA/OiBUUkFOU01JVCBGSUxFIChwYXJ0aXRpb24pIGNyZWF0ZWQgYnkgbW9kZWxsZXIgdmVyc2lvbiAzNDAwMTc2AAAAD1NDSF9URVNUXzFfOTk5OQAAHQACAAAAAAAAAAAAAAAAP7AAAAAAAAAAAAAAAAAAAD+KAnUlRgqmADIAAwAAAAAAAAAAAAAAAAAAKz+zgdfb9If9AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/8AAAAAAAAD/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAzAAQAAAAAAAAAAAAAAAAAACsAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/AAAAAAAAA/cJa7mMfigj/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAeAAUAAAAAAAAAAAAAAAAAACs/hHrhR64Uez+UeuFHrhR7P564UeuFHrg/8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
             "retention": "inline"
           },
           "offset": 119,
@@ -474,12 +474,12 @@
         "role": "part-payload",
         "size": {
           "form": "exact",
-          "size": 221
+          "size": 222
         }
       },
       {
         "attributes": {
-          "file_offset": "340",
+          "file_offset": "341",
           "region": "HEADER"
         },
         "compression": "none",
@@ -513,7 +513,7 @@
           "schema": "SCH_TEST_1_9999"
         },
         "compression": "zlib",
-        "expanded": 383,
+        "expanded": 386,
         "name": "parasolid#0",
         "role": "parasolid-stream"
       }
@@ -554,7 +554,7 @@
       }
     ],
     "notes": [
-      "SPLMSSTR container: file tag 0, footer offset 604, 2 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+      "SPLMSSTR container: file tag 0, footer offset 605, 2 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
       "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid"
     ]
   }

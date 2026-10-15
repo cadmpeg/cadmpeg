@@ -160,7 +160,7 @@
               "record_id": 6,
               "sha256": "19c498cde8ddcfdc9f593e4f532ff5653aa0b5c77187203390a33de4ec092292",
               "source_entry": "/Root/ExternalReferences",
-              "source_offset": 392
+              "source_offset": 393
             },
             {
               "byte_len": 6,
@@ -168,7 +168,7 @@
               "record_id": 7,
               "sha256": "11635df4532364e5fa01ac9540563d9a833f881994f4d2f3ae2a2e9c87680163",
               "source_entry": "/Root/ExternalReferences",
-              "source_offset": 386
+              "source_offset": 387
             }
           ],
           "external_reference_record_children": [
@@ -185,7 +185,7 @@
               "external_reference": "nx:external-reference:/Root/ExternalReferences#0",
               "id": "nx:external-reference:record-string-use#6-0",
               "slot": 0,
-              "source_offset": 399,
+              "source_offset": 400,
               "string_index": 0
             },
             {
@@ -193,7 +193,7 @@
               "external_reference": "nx:external-reference:/Root/ExternalReferences#1",
               "id": "nx:external-reference:record-string-use#6-1",
               "slot": 1,
-              "source_offset": 403,
+              "source_offset": 404,
               "string_index": 1
             },
             {
@@ -201,7 +201,7 @@
               "external_reference": "nx:external-reference:/Root/ExternalReferences#2",
               "id": "nx:external-reference:record-string-use#6-2",
               "slot": 2,
-              "source_offset": 407,
+              "source_offset": 408,
               "string_index": 2
             },
             {
@@ -209,7 +209,7 @@
               "external_reference": "nx:external-reference:/Root/ExternalReferences#3",
               "id": "nx:external-reference:record-string-use#6-3",
               "slot": 3,
-              "source_offset": 411,
+              "source_offset": 412,
               "string_index": 3
             }
           ],
@@ -231,7 +231,7 @@
               "prefix_byte_len": 36,
               "record_id": 6,
               "source_entry": "/Root/ExternalReferences",
-              "source_offset": 392,
+              "source_offset": 393,
               "tail_byte_len": 9
             }
           ],
@@ -241,7 +241,7 @@
               "id": "nx:external-reference:tail-reference-pair#6-0",
               "ordinal": 0,
               "persistent_handle": 5,
-              "source_offset": 428,
+              "source_offset": 429,
               "tagged_reference": 1
             }
           ],
@@ -251,28 +251,28 @@
               "ordinal": 0,
               "path": "child.prt",
               "source_entry": "/Root/ExternalReferences",
-              "source_offset": 444
+              "source_offset": 445
             },
             {
               "id": "nx:external-reference:/Root/ExternalReferences#1",
               "ordinal": 1,
               "path": "dirA",
               "source_entry": "/Root/ExternalReferences",
-              "source_offset": 455
+              "source_offset": 456
             },
             {
               "id": "nx:external-reference:/Root/ExternalReferences#2",
               "ordinal": 2,
               "path": "dirB",
               "source_entry": "/Root/ExternalReferences",
-              "source_offset": 461
+              "source_offset": 462
             },
             {
               "id": "nx:external-reference:/Root/ExternalReferences#3",
               "ordinal": 3,
               "path": "extra",
               "source_entry": "/Root/ExternalReferences",
-              "source_offset": 467
+              "source_offset": 468
             }
           ],
           "persistent_handles": [
@@ -327,10 +327,10 @@
           "external_reference.1": "dirA",
           "external_reference.2": "dirB",
           "external_reference.3": "extra",
-          "file_size": "486",
+          "file_size": "487",
           "footer_entry_count": "0",
           "footer_fingerprint": "00000000",
-          "footer_offset": "472",
+          "footer_offset": "473",
           "header_entry_count": "2",
           "jpeg_preview_count": "0",
           "partition_streams": "1",
@@ -425,7 +425,7 @@
         }
       ],
       "notes": [
-        "SPLMSSTR container: file tag 0, footer offset 472, 2 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+        "SPLMSSTR container: file tag 0, footer offset 473, 2 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
         "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid"
       ],
       "transfer": {
@@ -511,22 +511,22 @@
             "tag": "derived_point_topology"
           },
           "nx:s0:crv#0": {
-            "offset": 316,
+            "offset": 319,
             "stream": "nx:parasolid#0:partition",
             "tag": "LINE"
           },
           "nx:s0:pt#0": {
-            "offset": 86,
+            "offset": 89,
             "stream": "nx:parasolid#0:partition",
             "tag": "POINT"
           },
           "nx:s0:surf#0": {
-            "offset": 126,
+            "offset": 129,
             "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#1": {
-            "offset": 217,
+            "offset": 220,
             "stream": "nx:parasolid#0:partition",
             "tag": "CYLINDER"
           }
@@ -535,7 +535,7 @@
       "retained_records": {
         "nx:container:parasolid#0": {
           "bytes": {
-            "data": "UFMAAFhYOiBUUkFOU01JVCBGSUxFIChwYXJ0aXRpb24pIGNyZWF0ZWQgYnkgbW9kZWxsZXIgdmVyc2lvbiAzNDAwMTc2AFNDSF9URVNUXzFfOTk5OQAAHQACAAAAAAAAAAAAAAAAP7AAAAAAAAAAAAAAAAAAAD+KAnUlRgqmADIAAwAAAAAAAAAAAAAAAAAAKz+zgdfb9If9AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/8AAAAAAAAD/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAzAAQAAAAAAAAAAAAAAAAAACsAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/AAAAAAAAA/cJa7mMfigj/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAeAAUAAAAAAAAAAAAAAAAAACs/hHrhR64Uez+UeuFHrhR7P564UeuFHrg/8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+            "data": "UFMAAAA/OiBUUkFOU01JVCBGSUxFIChwYXJ0aXRpb24pIGNyZWF0ZWQgYnkgbW9kZWxsZXIgdmVyc2lvbiAzNDAwMTc2AAAAD1NDSF9URVNUXzFfOTk5OQAAHQACAAAAAAAAAAAAAAAAP7AAAAAAAAAAAAAAAAAAAD+KAnUlRgqmADIAAwAAAAAAAAAAAAAAAAAAKz+zgdfb9If9AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/8AAAAAAAAD/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAzAAQAAAAAAAAAAAAAAAAAACsAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/AAAAAAAAA/cJa7mMfigj/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAeAAUAAAAAAAAAAAAAAAAAACs/hHrhR64Uez+UeuFHrhR7P564UeuFHrg/8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
             "retention": "inline"
           },
           "offset": 120,
@@ -557,12 +557,12 @@
         "role": "part-payload",
         "size": {
           "form": "exact",
-          "size": 221
+          "size": 222
         }
       },
       {
         "attributes": {
-          "file_offset": "341",
+          "file_offset": "342",
           "region": "HEADER"
         },
         "compression": "none",
@@ -596,7 +596,7 @@
           "schema": "SCH_TEST_1_9999"
         },
         "compression": "zlib",
-        "expanded": 383,
+        "expanded": 386,
         "name": "parasolid#0",
         "role": "parasolid-stream"
       }
@@ -637,7 +637,7 @@
       }
     ],
     "notes": [
-      "SPLMSSTR container: file tag 0, footer offset 472, 2 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+      "SPLMSSTR container: file tag 0, footer offset 473, 2 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
       "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid"
     ]
   }

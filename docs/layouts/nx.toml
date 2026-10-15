@@ -32,6 +32,31 @@ section = "3.1"
 anchor = "| Small index | `uint16` BE, 2 bytes |"
 
 [[record]]
+name = "parasolid_transmit_prefix"
+parsed_by = "crates/cadmpeg-codec-nx/src/parasolid.rs"
+kind = "byte"
+section = "6.3"
+anchor = "The counted description in the physical Parasolid transmit header selects the Hvec row width."
+size = 6
+endianness = "big"
+note = "The counted description starts immediately after this fixed prefix. Its byte length excludes the prefix and the following counted schema."
+
+[[record.field]]
+name = "signature"
+offset = 0
+type = "bytes[2]"
+source = "spec"
+anchor = "The big-endian u32 at offset 2 after `PS` counts the description bytes that start at offset 6."
+value = [80, 83]
+
+[[record.field]]
+name = "description_length"
+offset = 2
+type = "u32"
+source = "spec"
+anchor = "The big-endian u32 at offset 2 after `PS` counts the description bytes that start at offset 6."
+
+[[record]]
 name = "studio_post_branch_prefix"
 parsed_by = "crates/cadmpeg-codec-nx/src/om/studio_references.rs"
 kind = "byte"

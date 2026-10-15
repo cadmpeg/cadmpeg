@@ -125,10 +125,10 @@
         "attributes": {
           "deltas_streams": "0",
           "directory_entries": "1",
-          "file_size": "261",
+          "file_size": "257",
           "footer_entry_count": "0",
           "footer_fingerprint": "00000000",
-          "footer_offset": "247",
+          "footer_offset": "243",
           "header_entry_count": "1",
           "jpeg_preview_count": "0",
           "partition_streams": "1",
@@ -213,7 +213,7 @@
         }
       ],
       "notes": [
-        "SPLMSSTR container: file tag 0, footer offset 247, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+        "SPLMSSTR container: file tag 0, footer offset 243, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
         "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid"
       ],
       "transfer": {
@@ -279,7 +279,7 @@
       "retained_records": {
         "nx:container:parasolid#0": {
           "bytes": {
-            "data": "UFMAACAocGFydGl0aW9uKSBTQ0hfdGVzdCBzZWdtZW50IGJvZHkgYmluZGluZyBwYXlsb2FkIHdpdGggbW9yZSB0aGFuIHNpeHR5LWZvdXIgaW5mbGF0ZWQgYnl0ZXMuLi4uLi4uLg==",
+            "data": "UFMAAABIOiBUUkFOU01JVCBGSUxFIChwYXJ0aXRpb24pIGNyZWF0ZWQgYnkgdGVzdCBzZWdtZW50IGJvZHkgYmluZGluZyBwYXlsb2FkAAAACFNDSF90ZXN0AA==",
             "retention": "inline"
           },
           "offset": 148,
@@ -301,7 +301,7 @@
         "role": "part-payload",
         "size": {
           "form": "exact",
-          "size": 171
+          "size": 167
         }
       },
       {
@@ -327,7 +327,7 @@
           "schema": "SCH_test"
         },
         "compression": "zlib",
-        "expanded": 103,
+        "expanded": 91,
         "name": "parasolid#0",
         "role": "parasolid-stream"
       }
@@ -368,7 +368,7 @@
       }
     ],
     "notes": [
-      "SPLMSSTR container: file tag 0, footer offset 247, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+      "SPLMSSTR container: file tag 0, footer offset 243, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
       "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid"
     ]
   }

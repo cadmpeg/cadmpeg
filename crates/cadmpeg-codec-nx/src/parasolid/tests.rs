@@ -20,6 +20,99 @@ fn token(text: &str) -> cadmpeg_parasolid::OwnedSchemaToken {
 }
 
 #[test]
+fn chart_layout_requires_a_recognized_counted_transmit_description() {
+    use super::ParasolidSubtype;
+    use crate::intersection::ChartPointLayout;
+
+    for (description, expected) in [
+        (
+            ": TRANSMIT FILE (partition) created by test",
+            Some(ChartPointLayout::Xyz3),
+        ),
+        (
+            ": TRANSMIT FILE (deltas) created by test",
+            Some(ChartPointLayout::Ext11),
+        ),
+        (
+            ": TRANSMIT FILE created by test",
+            Some(ChartPointLayout::Xyz3),
+        ),
+        (": MESH FILE created by test", None),
+        (": UNKNOWN (deltas) created by test", None),
+        (": TRANSMIT FILE (deltas)unknown", None),
+    ] {
+        let mut bytes = b"PS".to_vec();
+        bytes.extend_from_slice(&u32::try_from(description.len()).unwrap().to_be_bytes());
+        bytes.extend_from_slice(description.as_bytes());
+        bytes.extend_from_slice(b"\0\0\0\x0fSCH_TEST_1_9999\0 (partition) (deltas)");
+        let super::StreamBody::Parasolid { subtype, .. } = super::classify(&bytes) else {
+            panic!("retained Parasolid payload");
+        };
+        assert_eq!(subtype.chart_point_layout(), expected, "{description}");
+        let truncated_count = u32::try_from(bytes.len() + 1).unwrap().to_be_bytes();
+        bytes[2..6].copy_from_slice(&truncated_count);
+        assert!(matches!(
+            super::classify(&bytes),
+            super::StreamBody::Parasolid {
+                subtype: ParasolidSubtype::Unresolved,
+                ..
+            }
+        ));
+    }
+}
+
+#[test]
+fn unresolved_chart_descriptions_preserve_bytes_without_admitting_hvecs() {
+    let original =
+        crate::test_support::test_streams::two_support_charted_intersection_curve_stream();
+    let description_end =
+        6 + usize::try_from(cadmpeg_core::decode::View::u32_be_at(&original, 2).unwrap()).unwrap();
+    for description in [": MESH FILE created by test", ": UNKNOWN created by test"] {
+        let mut stream = b"PS".to_vec();
+        stream.extend_from_slice(&u32::try_from(description.len()).unwrap().to_be_bytes());
+        stream.extend_from_slice(description.as_bytes());
+        stream.extend_from_slice(&original[description_end..]);
+        let bytes = prt_with_partition(&stream);
+        crate::test_support::with_decode_context_over(
+            &bytes,
+            |_| {},
+            |ctx| {
+                let decoded =
+                    crate::decode::decode(ctx, cadmpeg_core::decode::View::over_retained(&bytes))
+                        .unwrap();
+                let ir = serde_json::to_value(&decoded.ir).unwrap();
+                assert!(ir["native"]["nx"].is_object());
+                for arena in ["parasolid_chart_records", "parasolid_term_use_records"] {
+                    assert!(
+                        ir["native"]["nx"][arena]
+                            .as_array()
+                            .is_none_or(Vec::is_empty),
+                        "{description}: {arena}"
+                    );
+                }
+                assert!(!decoded
+                    .ir
+                    .model
+                    .procedural_curves
+                    .iter()
+                    .any(|curve| matches!(
+                        curve.definition(),
+                        cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { .. }
+                    )));
+                assert_eq!(
+                    decoded
+                        .source_fidelity
+                        .retained_record("nx:container:parasolid#0")
+                        .unwrap()
+                        .data(),
+                    Some(stream.as_slice())
+                );
+            },
+        );
+    }
+}
+
+#[test]
 fn legacy_stream_boundaries_require_complete_transmit_headers() {
     crate::test_support::with_decode_context(|ctx| {
         let mut bytes = b"prefix".to_vec();
@@ -519,9 +612,10 @@ fn extraction_uses_ordered_segment_wrappers_in_indexed_payloads() {
     let decoy = zlib_compress(
         b"PS\0\0 (partition) SCH_DECOY_1_9999 unindexed payload with more than sixty-four inflated bytes........",
     );
-    let real = zlib_compress(
-        b"PS\0\0 (deltas) SCH_REAL_1_9999 indexed payload with more than sixty-four inflated bytes..........",
-    );
+    let real = zlib_compress(&crate::test_support::test_bytes::transmit_preamble(
+        ": TRANSMIT FILE (deltas) created by test indexed payload",
+        "SCH_REAL_1_9999",
+    ));
     let mut payload = Vec::new();
     for word in [0_u32, 9, 11, 1, 1, 24] {
         payload.extend_from_slice(&word.to_le_bytes());

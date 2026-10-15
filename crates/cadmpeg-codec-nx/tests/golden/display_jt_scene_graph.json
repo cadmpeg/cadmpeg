@@ -157,7 +157,7 @@
               "id": "nx:display-jt:segment#0-row-0-0-base-node-0",
               "object_id": 1,
               "object_type_id": "2a10dd10c82ad1119b6b0080c7bb5997",
-              "source_offset": 529,
+              "source_offset": 530,
               "version": 1
             },
             {
@@ -169,7 +169,7 @@
               "id": "nx:display-jt:segment#0-row-0-0-base-node-1",
               "object_id": 2,
               "object_type_id": "11111111111111111111111111111111",
-              "source_offset": 529,
+              "source_offset": 530,
               "version": 1
             },
             {
@@ -181,7 +181,7 @@
               "id": "nx:display-jt:segment#0-row-0-0-base-node-2",
               "object_id": 3,
               "object_type_id": "3e10dd10c82ad1119b6b0080c7bb5997",
-              "source_offset": 529,
+              "source_offset": 530,
               "version": 1
             },
             {
@@ -193,7 +193,7 @@
               "id": "nx:display-jt:segment#0-row-0-0-base-node-3",
               "object_id": 4,
               "object_type_id": "4c10dd10c82ad1119b6b0080c7bb5997",
-              "source_offset": 529,
+              "source_offset": 530,
               "version": 1
             },
             {
@@ -205,7 +205,7 @@
               "id": "nx:display-jt:segment#0-row-0-0-base-node-4",
               "object_id": 5,
               "object_type_id": "7710dd10c82ad1119b6b0080c7bb5997",
-              "source_offset": 529,
+              "source_offset": 530,
               "version": 1
             }
           ],
@@ -223,7 +223,7 @@
               "id": "nx:display-jt:segment#0-row-0-0-inflated-sequence",
               "segment": "nx:display-jt:segment#0-row-0-0",
               "segment_type": 1,
-              "source_offset": 529,
+              "source_offset": 530,
               "tail": "",
               "tail_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
             }
@@ -240,7 +240,7 @@
               "ordinal": 0,
               "segment": "nx:display-jt:segment#0-row-0-0",
               "segment_type": 1,
-              "source_offset": 529
+              "source_offset": 530
             },
             {
               "body_byte_len": 28,
@@ -253,7 +253,7 @@
               "ordinal": 1,
               "segment": "nx:display-jt:segment#0-row-0-0",
               "segment_type": 1,
-              "source_offset": 529
+              "source_offset": 530
             },
             {
               "body_byte_len": 106,
@@ -266,7 +266,7 @@
               "ordinal": 2,
               "segment": "nx:display-jt:segment#0-row-0-0",
               "segment_type": 1,
-              "source_offset": 529
+              "source_offset": 530
             },
             {
               "body_byte_len": 64,
@@ -279,7 +279,7 @@
               "ordinal": 3,
               "segment": "nx:display-jt:segment#0-row-0-0",
               "segment_type": 1,
-              "source_offset": 529
+              "source_offset": 530
             },
             {
               "body_byte_len": 118,
@@ -292,7 +292,7 @@
               "ordinal": 4,
               "segment": "nx:display-jt:segment#0-row-0-0",
               "segment_type": 1,
-              "source_offset": 529
+              "source_offset": 530
             },
             {
               "body_byte_len": 23,
@@ -305,7 +305,7 @@
               "ordinal": 5,
               "segment": "nx:display-jt:segment#0-row-0-0",
               "segment_type": 1,
-              "source_offset": 529
+              "source_offset": 530
             }
           ],
           "display_jt_documents": [
@@ -317,7 +317,7 @@
               "index_row": "nx:display-jt:index#0-row-0",
               "lsg_segment_id": "01010101010101010101010101010101",
               "physical_byte_len": 428,
-              "source_offset": 368,
+              "source_offset": 369,
               "toc_entries": [
                 {
                   "attributes": "00000001",
@@ -326,7 +326,7 @@
                   "segment_byte_len": 291,
                   "segment_id": "02020202020202020202020202020202",
                   "segment_offset": 137,
-                  "source_offset": 477
+                  "source_offset": 478
                 }
               ],
               "toc_offset": 105,
@@ -365,7 +365,7 @@
                 ]
               ],
               "object_id": 6,
-              "source_offset": 529,
+              "source_offset": 530,
               "state_flags": 8,
               "stored_values_mask": 14
             }
@@ -381,7 +381,7 @@
               "family_data_sha256": "ee10da4aefe61a37df1dee937ca3221afa3b2351f9ea34edbbb769573c6785f7",
               "id": "nx:display-jt:segment#0-row-0-0-group-node-data-1",
               "object_id": 2,
-              "source_offset": 529,
+              "source_offset": 530,
               "version": 1
             },
             {
@@ -393,7 +393,7 @@
               "family_data_sha256": "f592769b90ad61ae2b837cf9c9603a3087963ff76bb28dc3b27d293e842dce32",
               "id": "nx:display-jt:segment#0-row-0-0-group-node-data-2",
               "object_id": 3,
-              "source_offset": 529,
+              "source_offset": 530,
               "version": 1
             },
             {
@@ -406,7 +406,7 @@
               "family_data_sha256": "f1b62c7634dac33059f4857804efbc74e391c06cb9974ccdc3a1435e115d82d7",
               "id": "nx:display-jt:segment#0-row-0-0-group-node-data-3",
               "object_id": 4,
-              "source_offset": 529,
+              "source_offset": 530,
               "version": 1
             }
           ],
@@ -419,11 +419,11 @@
                   "header_offset": 28,
                   "id": "nx:display-jt:index#0-row-0",
                   "ordinal": 0,
-                  "source_offset": 348,
+                  "source_offset": 349,
                   "value": 100
                 }
               ],
-              "source_offset": 340,
+              "source_offset": 341,
               "version": 9
             }
           ],
@@ -433,7 +433,7 @@
               "child_object_id": 9,
               "id": "nx:display-jt:segment#0-row-0-0-instance-node-0",
               "object_id": 1,
-              "source_offset": 529,
+              "source_offset": 530,
               "version": 1
             }
           ],
@@ -461,7 +461,7 @@
                 6
               ],
               "reserved_bounds": null,
-              "source_offset": 529,
+              "source_offset": 530,
               "transformed_bounds": [
                 [
                   0.0,
@@ -517,7 +517,7 @@
               "reserved_values": [
                 0.25
               ],
-              "source_offset": 529
+              "source_offset": 530
             }
           ],
           "display_jt_segments": [
@@ -535,7 +535,7 @@
               "segment_byte_len": 291,
               "segment_id": "02020202020202020202020202020202",
               "segment_type": 1,
-              "source_offset": 505,
+              "source_offset": 506,
               "toc_entry": "nx:display-jt:toc-entry#0-row-0-0"
             }
           ],
@@ -569,7 +569,7 @@
                   5.0
                 ]
               ],
-              "source_offset": 529,
+              "source_offset": 530,
               "texture_quantization_bits": 16,
               "untransformed_bounds": [
                 [
@@ -609,10 +609,10 @@
         "attributes": {
           "deltas_streams": "0",
           "directory_entries": "2",
-          "file_size": "810",
+          "file_size": "811",
           "footer_entry_count": "0",
           "footer_fingerprint": "00000000",
-          "footer_offset": "796",
+          "footer_offset": "797",
           "header_entry_count": "2",
           "jpeg_preview_count": "0",
           "partition_streams": "1",
@@ -707,7 +707,7 @@
         }
       ],
       "notes": [
-        "SPLMSSTR container: file tag 0, footer offset 796, 2 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+        "SPLMSSTR container: file tag 0, footer offset 797, 2 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
         "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid"
       ],
       "transfer": {
@@ -793,22 +793,22 @@
             "tag": "derived_point_topology"
           },
           "nx:s0:crv#0": {
-            "offset": 316,
+            "offset": 319,
             "stream": "nx:parasolid#0:partition",
             "tag": "LINE"
           },
           "nx:s0:pt#0": {
-            "offset": 86,
+            "offset": 89,
             "stream": "nx:parasolid#0:partition",
             "tag": "POINT"
           },
           "nx:s0:surf#0": {
-            "offset": 126,
+            "offset": 129,
             "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#1": {
-            "offset": 217,
+            "offset": 220,
             "stream": "nx:parasolid#0:partition",
             "tag": "CYLINDER"
           }
@@ -817,7 +817,7 @@
       "retained_records": {
         "nx:container:parasolid#0": {
           "bytes": {
-            "data": "UFMAAFhYOiBUUkFOU01JVCBGSUxFIChwYXJ0aXRpb24pIGNyZWF0ZWQgYnkgbW9kZWxsZXIgdmVyc2lvbiAzNDAwMTc2AFNDSF9URVNUXzFfOTk5OQAAHQACAAAAAAAAAAAAAAAAP7AAAAAAAAAAAAAAAAAAAD+KAnUlRgqmADIAAwAAAAAAAAAAAAAAAAAAKz+zgdfb9If9AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/8AAAAAAAAD/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAzAAQAAAAAAAAAAAAAAAAAACsAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/AAAAAAAAA/cJa7mMfigj/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAeAAUAAAAAAAAAAAAAAAAAACs/hHrhR64Uez+UeuFHrhR7P564UeuFHrg/8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+            "data": "UFMAAAA/OiBUUkFOU01JVCBGSUxFIChwYXJ0aXRpb24pIGNyZWF0ZWQgYnkgbW9kZWxsZXIgdmVyc2lvbiAzNDAwMTc2AAAAD1NDSF9URVNUXzFfOTk5OQAAHQACAAAAAAAAAAAAAAAAP7AAAAAAAAAAAAAAAAAAAD+KAnUlRgqmADIAAwAAAAAAAAAAAAAAAAAAKz+zgdfb9If9AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/8AAAAAAAAD/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAzAAQAAAAAAAAAAAAAAAAAACsAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/AAAAAAAAA/cJa7mMfigj/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAeAAUAAAAAAAAAAAAAAAAAACs/hHrhR64Uez+UeuFHrhR7P564UeuFHrg/8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
             "retention": "inline"
           },
           "offset": 119,
@@ -839,12 +839,12 @@
         "role": "part-payload",
         "size": {
           "form": "exact",
-          "size": 221
+          "size": 222
         }
       },
       {
         "attributes": {
-          "file_offset": "340",
+          "file_offset": "341",
           "region": "HEADER"
         },
         "compression": "none",
@@ -878,7 +878,7 @@
           "schema": "SCH_TEST_1_9999"
         },
         "compression": "zlib",
-        "expanded": 383,
+        "expanded": 386,
         "name": "parasolid#0",
         "role": "parasolid-stream"
       }
@@ -919,7 +919,7 @@
       }
     ],
     "notes": [
-      "SPLMSSTR container: file tag 0, footer offset 796, 2 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+      "SPLMSSTR container: file tag 0, footer offset 797, 2 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
       "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid"
     ]
   }

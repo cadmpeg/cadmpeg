@@ -49,7 +49,8 @@ pub(crate) enum StreamKind {
     Partition,
     /// A Parasolid `(deltas)` edit overlay.
     Deltas,
-    /// A cached Parasolid body without a partition or deltas subtype.
+    /// A retained Parasolid body without a recognized partition or deltas label.
+    /// This summary kind does not select the CHART or LIMIT row layout.
     Plain,
     /// An inflated non-Parasolid payload, such as preview or metadata data.
     Preview,
@@ -79,15 +80,18 @@ pub(crate) enum ParasolidSubtype {
     Partition,
     /// Edit overlay.
     Deltas,
-    /// Body without a named subtype.
+    /// A recognized TRANSMIT body without a named subtype.
     Plain,
+    /// A retained Parasolid payload without a recognized transmit description.
+    Unresolved,
 }
 
 impl ParasolidSubtype {
-    pub(crate) fn chart_point_layout(self) -> crate::intersection::ChartPointLayout {
+    pub(crate) fn chart_point_layout(self) -> Option<crate::intersection::ChartPointLayout> {
         match self {
-            Self::Partition | Self::Plain => crate::intersection::ChartPointLayout::Xyz3,
-            Self::Deltas => crate::intersection::ChartPointLayout::Ext11,
+            Self::Partition | Self::Plain => Some(crate::intersection::ChartPointLayout::Xyz3),
+            Self::Deltas => Some(crate::intersection::ChartPointLayout::Ext11),
+            Self::Unresolved => None,
         }
     }
 }
@@ -118,7 +122,7 @@ impl StreamBody {
                 ..
             } => StreamKind::Deltas,
             Self::Parasolid {
-                subtype: ParasolidSubtype::Plain,
+                subtype: ParasolidSubtype::Plain | ParasolidSubtype::Unresolved,
                 ..
             } => StreamKind::Plain,
             Self::Preview => StreamKind::Preview,
@@ -1257,12 +1261,30 @@ fn classify(inflated: &[u8]) -> StreamBody {
         return StreamBody::Preview;
     }
     let window = &inflated[..inflated.len().min(512)];
-    let subtype = if contains(window, b"(partition)") {
+    let description = View::u32_be_at(inflated, 2)
+        .and_then(|count| usize::try_from(count).ok())
+        .and_then(|count| inflated.get(6..6usize.checked_add(count)?))
+        .filter(|description| {
+            description
+                .iter()
+                .all(|byte| byte.is_ascii_graphic() || *byte == b' ')
+        });
+    let subtype = if description.is_some_and(|description| {
+        description == b": TRANSMIT FILE (partition)"
+            || description.starts_with(b": TRANSMIT FILE (partition) ")
+    }) {
         ParasolidSubtype::Partition
-    } else if contains(window, b"(deltas)") {
+    } else if description.is_some_and(|description| {
+        description == b": TRANSMIT FILE (deltas)"
+            || description.starts_with(b": TRANSMIT FILE (deltas) ")
+    }) {
         ParasolidSubtype::Deltas
-    } else {
+    } else if description
+        .is_some_and(|description| description.starts_with(b": TRANSMIT FILE created "))
+    {
         ParasolidSubtype::Plain
+    } else {
+        ParasolidSubtype::Unresolved
     };
     StreamBody::Parasolid {
         subtype,

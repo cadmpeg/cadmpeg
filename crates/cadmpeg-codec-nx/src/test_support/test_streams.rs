@@ -19,9 +19,7 @@ use super::test_prt::prt_with_streams;
 /// CYLINDER, and one LINE record laid out back-to-back at their fixed lengths.
 pub(crate) fn partition_stream() -> Vec<u8> {
     let mut s = Vec::new();
-    s.extend_from_slice(b"PS\x00\x00");
-    s.extend_from_slice(b"XX: TRANSMIT FILE (partition) created by modeller version 3400176\x00");
-    s.extend_from_slice(b"SCH_TEST_1_9999\x00");
+    s.extend_from_slice(b"PS\x00\x00\x00?: TRANSMIT FILE (partition) created by modeller version 3400176\x00\x00\x00\x0fSCH_TEST_1_9999\x00");
 
     // POINT (type 29): xyz at +16, metres.
     let mut pt = record(0x1d, 40);
@@ -488,10 +486,7 @@ pub(crate) fn display_jt_scene_graph_stream() -> Vec<u8> {
 /// `parasolid_attribute_class_uses`) are populated as well.
 pub(crate) fn parasolid_entity_records_stream() -> Vec<u8> {
     let mut s = Vec::new();
-    s.extend_from_slice(b"PS\x00\x00");
-    s.extend_from_slice(
-        b"XX: TRANSMIT FILE (partition) created by modeller\x00SCH_TEST_1_9999\x00",
-    );
+    s.extend_from_slice(b"PS\x00\x00\x00/: TRANSMIT FILE (partition) created by modeller\x00\x00\x00\x0fSCH_TEST_1_9999\x00");
 
     // `00 4f` attribute identifier with identity xmt 201, followed by its
     // `00 50` definition record with identity xmt 202 and one field.
@@ -551,10 +546,7 @@ pub(crate) fn parasolid_entity_records_stream() -> Vec<u8> {
 /// connected-B-rep path without depending on an external CAD file.
 pub(crate) fn topology_partition_stream() -> Vec<u8> {
     let mut s = Vec::new();
-    s.extend_from_slice(b"PS\x00\x00");
-    s.extend_from_slice(
-        b"XX: TRANSMIT FILE (partition) created by modeller\x00SCH_TEST_1_9999\x00",
-    );
+    s.extend_from_slice(b"PS\x00\x00\x00/: TRANSMIT FILE (partition) created by modeller\x00\x00\x00\x0fSCH_TEST_1_9999\x00");
 
     let mut body = record(12, 24);
     put_ref(&mut body, 2, 2);

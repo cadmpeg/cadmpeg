@@ -234,7 +234,7 @@ impl StreamView {
     fn parse_uniform(
         ctx: &DecodeContext<'_>,
         bytes: &[u8],
-        point_layout: crate::intersection::ChartPointLayout,
+        point_layout: Option<crate::intersection::ChartPointLayout>,
     ) -> Result<Self, CodecError> {
         let graph = Rc::new(Graph::parse(ctx, bytes)?);
         Ok(StreamView {
@@ -242,7 +242,10 @@ impl StreamView {
             blend_surfaces: graph.blend_surfaces(ctx)?,
             trimmed_curves: graph.trimmed_curves(ctx)?,
             surface_curves: graph.surface_curves(ctx)?,
-            intersections: intersection::scan_with_graph(ctx, bytes, &graph, point_layout)?,
+            intersections: match point_layout {
+                Some(layout) => intersection::scan_with_graph(ctx, bytes, &graph, layout)?,
+                None => CurveScan::default(),
+            },
             graph,
         })
     }
@@ -257,7 +260,7 @@ impl StreamView {
         semantic_bytes: &[u8],
         scan: &Scan,
         paired_deltas: Option<&Vec<usize>>,
-        point_layout: crate::intersection::ChartPointLayout,
+        point_layout: Option<crate::intersection::ChartPointLayout>,
     ) -> Result<(Self, Rc<Graph>), CodecError> {
         let semantic_graph = if semantic_bytes == topology_bytes {
             None
@@ -281,8 +284,10 @@ impl StreamView {
                 &replacement_streams,
                 scan_graph,
             )?
+        } else if let Some(layout) = point_layout {
+            intersection::scan_with_graph(ctx, semantic_bytes, scan_graph, layout)?
         } else {
-            intersection::scan_with_graph(ctx, semantic_bytes, scan_graph, point_layout)?
+            CurveScan::default()
         };
         Ok((
             StreamView {

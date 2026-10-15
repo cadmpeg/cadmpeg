@@ -293,9 +293,9 @@ pub(crate) struct UnchartedIntersection {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct RejectionCounts {
     /// The construction did not resolve a valid primary support relation.
-    missing_support: usize,
+    pub(crate) missing_support: usize,
     /// Two construction forms used one stream-local XMT identity.
-    duplicate_identity: usize,
+    pub(crate) duplicate_identity: usize,
     /// The construction's `CHART_s` reference did not resolve to a valid chart.
     pub(crate) missing_chart: usize,
     /// The start term-use reference did not resolve.

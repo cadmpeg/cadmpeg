@@ -1913,23 +1913,27 @@ fn census_accumulates_overlapping_tombstone_and_terminal_trailer_bytes() {
 #[test]
 fn census_accumulator_differs_from_coverage_on_overlapping_events() {
     let stream = deltas_intersection_curve_stream();
+    let prefix = crate::test_support::test_deltas::DELTAS_PREAMBLE.len();
     let census =
         crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(ctx, &stream))
             .unwrap();
     let record = census
         .records
         .iter()
-        .find(|record| record.offset == 145)
+        .find(|record| record.offset == prefix + 78)
         .unwrap();
     let trailer = census.terminal_null_references.unwrap();
-    assert_eq!(record.end, 175);
-    assert_eq!((trailer.offset(), trailer.end()), (167, 175));
+    assert_eq!(record.end, prefix + 108);
+    assert_eq!(
+        (trailer.offset(), trailer.end()),
+        (prefix + 100, prefix + 108)
+    );
     assert_eq!(
         crate::test_support::with_decode_context(|ctx| census.covered_spans(ctx)).unwrap(),
-        vec![(67, 175)]
+        vec![(prefix, prefix + 108)]
     );
     assert_eq!(census.bytes_decoded(), 78 + 30 + 8);
-    assert_ne!(census.bytes_decoded(), 175 - 67);
+    assert_ne!(census.bytes_decoded(), 108);
 
     for stream in [
         two_support_ext11_charted_intersection_curve_stream(false),
@@ -1941,16 +1945,22 @@ fn census_accumulator_differs_from_coverage_on_overlapping_events() {
             crate::deltas::census::walk(ctx, &deltas)
         })
         .unwrap();
-        // Prologue67 + CHART236 + two complete LIMIT98 + values73.
+        // Counted prologue + CHART236 + two complete LIMIT98 + values73.
         let terms: Vec<_> = census.records.iter().filter(|r| r.kind() == 41).collect();
         assert_eq!(terms.len(), 2);
-        assert_eq!((terms[0].offset, terms[0].end), (303, 401));
-        assert_eq!((terms[1].offset, terms[1].end), (401, 499));
+        assert_eq!(
+            (terms[0].offset, terms[0].end),
+            (prefix + 236, prefix + 334)
+        );
+        assert_eq!(
+            (terms[1].offset, terms[1].end),
+            (prefix + 334, prefix + 432)
+        );
         assert_eq!(
             crate::test_support::with_decode_context(|ctx| census.covered_spans(ctx)).unwrap(),
-            vec![(67, 572)]
+            vec![(prefix, prefix + 505)]
         );
         assert_eq!(census.bytes_decoded(), 236 + 98 + 98 + 73);
-        assert_eq!(census.bytes_decoded(), 572 - 67);
+        assert_eq!(census.bytes_decoded(), 505);
     }
 }

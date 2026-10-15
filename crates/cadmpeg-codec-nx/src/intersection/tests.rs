@@ -423,6 +423,52 @@ fn intersection_chart_rejects_unresolved_support_relation() {
 }
 
 #[test]
+fn intersection_rejection_report_includes_support_and_identity_counts() {
+    for duplicate in [false, true] {
+        let mut stream = two_support_charted_intersection_curve_stream();
+        let construction = stream
+            .windows(4)
+            .position(|window| window == [0, 38, 0, 12])
+            .unwrap();
+        let (total, categories) = if duplicate {
+            let payload = stream[construction + 2..construction + 31].to_vec();
+            stream.extend_from_slice(crate::topology::TYPE_38_SCHEMA_HEADER);
+            stream.extend_from_slice(&payload);
+            (2, "2 duplicate identity")
+        } else {
+            put_ref(&mut stream, construction + 19, 998);
+            (1, "1 missing support")
+        };
+        let bytes = crate::test_support::test_prt::prt_with_partition(&stream);
+        crate::test_support::with_decode_context_over(
+            &bytes,
+            |_| {},
+            |ctx| {
+                let decoded =
+                    crate::decode::decode(ctx, cadmpeg_core::decode::View::over_retained(&bytes))
+                        .unwrap();
+                let note = decoded
+                    .body
+                    .losses
+                    .iter()
+                    .find(|loss| loss.code.local_code() == "intersection.records-opaque")
+                    .unwrap();
+                assert!(note
+                    .message
+                    .starts_with(&format!("{total} surface-intersection record(s)")));
+                assert!(note.message.contains(categories));
+                assert!(note.message.ends_with("0 missing chart, 0 missing start term, 0 missing end term, 0 endpoint mismatch."));
+                assert!(note.message.contains(if duplicate {
+                    "0 missing support"
+                } else {
+                    "0 duplicate identity"
+                }));
+            },
+        );
+    }
+}
+
+#[test]
 fn intersection_rejects_cross_form_xmt_collision_atomically() {
     let construction = |delta_twin, pos| crate::topology::CompositeCurve {
         xmt: 12,
@@ -789,7 +835,7 @@ fn intersection_chart_rejects_nonfinite_millimeter_tolerance() {
 }
 
 #[test]
-fn intersection_chart_layout_is_selected_by_stream_kind() {
+fn intersection_chart_parser_uses_only_the_explicit_row_layout() {
     let ext11 = ext11_charted_intersection_curve_stream();
 
     crate::test_support::with_decode_context(|ctx| {

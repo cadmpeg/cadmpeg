@@ -1195,9 +1195,11 @@ fn topology_list_reference_limit_error(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> CodecError {
     let mut stream = topology_partition_stream();
-    let prefix_len = b"PS\x00\x00".len()
-        + b"XX: TRANSMIT FILE (partition) created by modeller\x00SCH_TEST_1_9999\x00".len();
-    put_ref(&mut stream, prefix_len + 24 + 8, 50);
+    let shell = stream
+        .windows(4)
+        .position(|window| window == [0, 13, 0, 3])
+        .expect("shell record");
+    put_ref(&mut stream, shell + 8, 50);
     let bytes = prt_with_partition(&stream);
 
     crate::test_support::with_decode_context_over(
@@ -1300,10 +1302,16 @@ fn attribute_field_names_refuse_work_limit() {
 #[test]
 fn topology_retains_entity_attribute_list_references() {
     let mut stream = topology_partition_stream();
-    for (kind, attribute) in [(14, 41), (15, 42), (17, 43), (16, 44), (18, 45)] {
+    for (kind, identity, attribute) in [
+        (14, 4, 41),
+        (15, 5, 42),
+        (17, 7, 43),
+        (16, 8, 44),
+        (18, 10, 45),
+    ] {
         let at = stream
-            .windows(2)
-            .position(|window| window == [0, kind])
+            .windows(4)
+            .position(|window| window == [0, kind, 0, identity])
             .expect("topology record");
         put_ref(&mut stream, at + if kind == 17 { 4 } else { 8 }, attribute);
     }

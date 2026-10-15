@@ -204,7 +204,7 @@
           "parasolid_blend_surface_records": [
             {
               "id": "nx:s0:blend-surface-record#12",
-              "inflated_offset": 470,
+              "inflated_offset": 473,
               "offsets": [
                 -3.0,
                 3.0
@@ -238,10 +238,10 @@
         "attributes": {
           "deltas_streams": "0",
           "directory_entries": "1",
-          "file_size": "387",
+          "file_size": "388",
           "footer_entry_count": "0",
           "footer_fingerprint": "00000000",
-          "footer_offset": "373",
+          "footer_offset": "374",
           "header_entry_count": "1",
           "jpeg_preview_count": "0",
           "partition_streams": "1",
@@ -325,7 +325,7 @@
         }
       ],
       "notes": [
-        "SPLMSSTR container: file tag 0, footer offset 373, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+        "SPLMSSTR container: file tag 0, footer offset 374, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
         "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid"
       ],
       "transfer": {
@@ -405,67 +405,67 @@
             "tag": "partition"
           },
           "nx:s0:blend#0": {
-            "offset": 470,
+            "offset": 473,
             "stream": "nx:parasolid#0:partition",
             "tag": "BLEND_SURF"
           },
           "nx:s0:blend-surf#0": {
-            "offset": 470,
+            "offset": 473,
             "stream": "nx:parasolid#0:partition",
             "tag": "BLEND_SURF"
           },
           "nx:s0:body#2": {
-            "offset": 70,
+            "offset": 73,
             "stream": "nx:parasolid#0:partition",
             "tag": "BODY"
           },
           "nx:s0:crv#0": {
-            "offset": 319,
+            "offset": 322,
             "stream": "nx:parasolid#0:partition",
             "tag": "LINE"
           },
           "nx:s0:edge#8": {
-            "offset": 196,
+            "offset": 199,
             "stream": "nx:parasolid#0:partition",
             "tag": "EDGE"
           },
           "nx:s0:face#4": {
-            "offset": 118,
+            "offset": 121,
             "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
           "nx:s0:fin#7": {
-            "offset": 173,
+            "offset": 176,
             "stream": "nx:parasolid#0:partition",
             "tag": "FIN"
           },
           "nx:s0:loop#5": {
-            "offset": 157,
+            "offset": 160,
             "stream": "nx:parasolid#0:partition",
             "tag": "LOOP"
           },
           "nx:s0:pt#0": {
-            "offset": 430,
+            "offset": 433,
             "stream": "nx:parasolid#0:partition",
             "tag": "POINT"
           },
           "nx:s0:region#12": {
-            "offset": 414,
+            "offset": 417,
             "stream": "nx:parasolid#0:partition",
             "tag": "REGION"
           },
           "nx:s0:shell#3": {
-            "offset": 94,
+            "offset": 97,
             "stream": "nx:parasolid#0:partition",
             "tag": "SHELL"
           },
           "nx:s0:surf#0": {
-            "offset": 228,
+            "offset": 231,
             "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:vertex#10": {
-            "offset": 386,
+            "offset": 389,
             "stream": "nx:parasolid#0:partition",
             "tag": "VERTEX"
           }
@@ -474,7 +474,7 @@
       "retained_records": {
         "nx:container:parasolid#0": {
           "bytes": {
-            "data": "UFMAAFhYOiBUUkFOU01JVCBGSUxFIChwYXJ0aXRpb24pIGNyZWF0ZWQgYnkgbW9kZWxsZXIAU0NIX1RFU1RfMV85OTk5AAAMAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAANAAMAAAAAAAEAAgABAAQAAQABAAwAAQAOAAQAAAAAAAA/Kjbi6xxDLQABAAEABQADAAwrAAAAAAAAAAAAAAAPAAUAAAAAAAAABwAEAAEAEQAHAAAABQAHAAcACgABAAgACQAAKwAQAAgAAAAAAAA/M6kqMFUyYQAHAAAAAAAJAAAAAAAAADIABgAAAAAAAAAAAAAAAAAAKwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/8AAAAAAAAD/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAeAAkAAAAAAAAAAAAAAAAAACsAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEgAKAAAAAAAAAAAAAAAAAAs/Gjbi6xxDLQAAABMADAAAAAAAAAAAAAAAAAAdAAsAAAAAAAAAAAAAAAA/hHrhR64Uez+UeuFHrhR7P564UeuFHrgAOAAMAAAAAAAAAAAAAAAAAAArUv/6AAAABgABv2iTdLxqfvo/aJN0vGp++j/wAAAAAAAAP/AAAAAAAAAAAQABAAEAAQ==",
+            "data": "UFMAAAAvOiBUUkFOU01JVCBGSUxFIChwYXJ0aXRpb24pIGNyZWF0ZWQgYnkgbW9kZWxsZXIAAAAPU0NIX1RFU1RfMV85OTk5AAAMAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAANAAMAAAAAAAEAAgABAAQAAQABAAwAAQAOAAQAAAAAAAA/Kjbi6xxDLQABAAEABQADAAwrAAAAAAAAAAAAAAAPAAUAAAAAAAAABwAEAAEAEQAHAAAABQAHAAcACgABAAgACQAAKwAQAAgAAAAAAAA/M6kqMFUyYQAHAAAAAAAJAAAAAAAAADIABgAAAAAAAAAAAAAAAAAAKwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/8AAAAAAAAD/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAeAAkAAAAAAAAAAAAAAAAAACsAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEgAKAAAAAAAAAAAAAAAAAAs/Gjbi6xxDLQAAABMADAAAAAAAAAAAAAAAAAAdAAsAAAAAAAAAAAAAAAA/hHrhR64Uez+UeuFHrhR7P564UeuFHrgAOAAMAAAAAAAAAAAAAAAAAAArUv/6AAAABgABv2iTdLxqfvo/aJN0vGp++j/wAAAAAAAAP/AAAAAAAAAAAQABAAEAAQ==",
             "retention": "inline"
           },
           "offset": 76,
@@ -496,7 +496,7 @@
         "role": "part-payload",
         "size": {
           "form": "exact",
-          "size": 297
+          "size": 298
         }
       },
       {
@@ -522,7 +522,7 @@
           "schema": "SCH_TEST_1_9999"
         },
         "compression": "zlib",
-        "expanded": 538,
+        "expanded": 541,
         "name": "parasolid#0",
         "role": "parasolid-stream"
       }
@@ -563,7 +563,7 @@
       }
     ],
     "notes": [
-      "SPLMSSTR container: file tag 0, footer offset 373, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+      "SPLMSSTR container: file tag 0, footer offset 374, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
       "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid"
     ]
   }

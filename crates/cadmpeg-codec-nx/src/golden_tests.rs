@@ -1019,6 +1019,19 @@ fn golden_snapshots_are_byte_identical() {
     harness().check_inputs(&inputs(), &[Branch::root(snapshot)]);
 }
 
+/// Export only the code-built inputs for independent executable comparisons.
+#[test]
+#[ignore = "requires CADMPEG_NX_FIXTURE_DIR for explicit fixture export"]
+fn export_golden_fixture_inputs() {
+    let directory = std::path::PathBuf::from(
+        std::env::var_os("CADMPEG_NX_FIXTURE_DIR").expect("CADMPEG_NX_FIXTURE_DIR"),
+    );
+    std::fs::create_dir_all(&directory).expect("create fixture directory");
+    for (name, bytes) in fixtures() {
+        std::fs::write(directory.join(format!("{name}.prt")), bytes).expect("write fixture");
+    }
+}
+
 /// Guards against nondeterministic codec output (`HashMap` iteration order,
 /// timestamps): decoding the same bytes twice must produce identical JSON.
 #[test]

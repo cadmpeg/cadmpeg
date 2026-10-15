@@ -30,7 +30,10 @@ pub(crate) fn segment_stream_payload() -> Vec<u8> {
     payload.extend_from_slice(&0u32.to_le_bytes());
     let mut encoder = ZlibEncoder::new(Vec::new(), Compression::fast());
     encoder
-        .write_all(b"PS\0\0 (deltas) SCH_test segment stream payload with more than sixty-four inflated bytes........")
+        .write_all(&super::test_bytes::transmit_preamble(
+            ": TRANSMIT FILE (deltas) created by test segment stream payload",
+            "SCH_test",
+        ))
         .unwrap();
     payload.extend_from_slice(&encoder.finish().unwrap());
     payload
@@ -46,12 +49,12 @@ pub(crate) fn segment_body_binding_payload(stream_kind: &str) -> Vec<u8> {
     payload.extend_from_slice(&0u32.to_le_bytes());
     let mut encoder = ZlibEncoder::new(Vec::new(), Compression::fast());
     encoder
-        .write_all(
-            format!(
-                "PS\0\0 ({stream_kind}) SCH_test segment body binding payload with more than sixty-four inflated bytes........"
-            )
-            .as_bytes(),
-        )
+        .write_all(&super::test_bytes::transmit_preamble(
+            &format!(
+                ": TRANSMIT FILE ({stream_kind}) created by test segment body binding payload"
+            ),
+            "SCH_test",
+        ))
         .unwrap();
     payload.extend_from_slice(&encoder.finish().unwrap());
     payload
@@ -83,9 +86,10 @@ pub(crate) fn segment_body_binding_repeated_link_payload() -> Vec<u8> {
     payload.extend_from_slice(&0u32.to_le_bytes());
     let mut encoder = ZlibEncoder::new(Vec::new(), Compression::fast());
     encoder
-        .write_all(
-            b"PS\0\0 (partition) SCH_test repeated stream-link payload with more than sixty-four inflated bytes........",
-        )
+        .write_all(&super::test_bytes::transmit_preamble(
+            ": TRANSMIT FILE (partition) created by test repeated stream-link payload",
+            "SCH_test",
+        ))
         .unwrap();
     payload.extend_from_slice(&encoder.finish().unwrap());
     payload
@@ -101,7 +105,10 @@ pub(crate) fn segment_extended_wrapper_payload() -> Vec<u8> {
     payload.resize(64 + 38, 0);
     let mut encoder = ZlibEncoder::new(Vec::new(), Compression::fast());
     encoder
-        .write_all(b"PS\0\0 (partition) SCH_test extended wrapper payload with more than sixty-four inflated bytes........")
+        .write_all(&super::test_bytes::transmit_preamble(
+            ": TRANSMIT FILE (partition) created by test extended wrapper payload",
+            "SCH_test",
+        ))
         .unwrap();
     payload.extend_from_slice(&encoder.finish().unwrap());
     payload

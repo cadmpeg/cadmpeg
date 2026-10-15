@@ -262,7 +262,7 @@ pub(crate) fn rmfastload_prt() -> Vec<u8> {
 pub(crate) fn many_face_partition_stream(node_id_start: u32) -> Vec<u8> {
     let mut stream = Vec::new();
     stream.extend_from_slice(
-        b"PS\x00\x00XX: TRANSMIT FILE (partition) created by modeller\x00SCH_TEST_1_9999\x00",
+        b"PS\x00\x00\x00/: TRANSMIT FILE (partition) created by modeller\x00\x00\x00\x0fSCH_TEST_1_9999\x00",
     );
     let mut body = record(12, 24);
     put_ref(&mut body, 2, 2);

@@ -46,8 +46,8 @@
           "parasolid_deltas_inline_schema_declarations": [
             {
               "byte_len": 78,
-              "id": "nx:s0:deltas-inline-schema#67",
-              "inflated_offset": 67,
+              "id": "nx:s0:deltas-inline-schema#70",
+              "inflated_offset": 70,
               "leading_references": [
                 1,
                 1,
@@ -77,8 +77,8 @@
             {
               "byte_len": 30,
               "family": "INTERSECTION_DATA",
-              "id": "nx:s0:deltas-record#145-12",
-              "inflated_offset": 145,
+              "id": "nx:s0:deltas-record#148-12",
+              "inflated_offset": 148,
               "kind": 90,
               "node_id": null,
               "position": null,
@@ -101,18 +101,18 @@
           ],
           "parasolid_deltas_residual_spans": [
             {
-              "byte_len": 67,
+              "byte_len": 70,
               "id": "nx:s0:deltas-residual#0",
               "inflated_offset": 0,
-              "sha256": "b01e0f1bbecc6116af143073421185dfbddb9b35ec76aa1c8958391ab066efa3",
+              "sha256": "894857f2f9b776a00dadb52f361df957a104fa45d2d42d162ce8ead227d37b87",
               "stream_ordinal": 0
             }
           ],
           "parasolid_deltas_terminal_null_references": [
             {
               "byte_len": 8,
-              "id": "nx:s0:deltas-terminal-null-references#167",
-              "inflated_offset": 167,
+              "id": "nx:s0:deltas-terminal-null-references#170",
+              "inflated_offset": 170,
               "references": [
                 1,
                 1,
@@ -142,7 +142,7 @@
                 1
               ],
               "id": "nx:s0:intersection-record#12",
-              "inflated_offset": 145,
+              "inflated_offset": 148,
               "sense": true,
               "stream_ordinal": 0,
               "xmt": 12
@@ -163,10 +163,10 @@
           "deltas.0.inline_schema_declarations": "1",
           "deltas_streams": "1",
           "directory_entries": "1",
-          "file_size": "233",
+          "file_size": "237",
           "footer_entry_count": "0",
           "footer_fingerprint": "00000000",
-          "footer_offset": "219",
+          "footer_offset": "223",
           "header_entry_count": "1",
           "jpeg_preview_count": "0",
           "partition_streams": "0",
@@ -251,7 +251,7 @@
         }
       ],
       "notes": [
-        "SPLMSSTR container: file tag 0, footer offset 219, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+        "SPLMSSTR container: file tag 0, footer offset 223, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
         "embedded streams: 0 partition, 1 deltas, 0 plain (cached body), 0 preview/non-Parasolid"
       ],
       "transfer": {
@@ -273,13 +273,13 @@
             "stream": "nx:container",
             "tag": "deltas"
           },
-          "nx:s0:deltas-inline-schema#67": {
-            "offset": 67,
+          "nx:s0:deltas-inline-schema#70": {
+            "offset": 70,
             "stream": "nx:s0",
             "tag": "DELTAS_INLINE_SCHEMA"
           },
-          "nx:s0:deltas-record#145-12": {
-            "offset": 145,
+          "nx:s0:deltas-record#148-12": {
+            "offset": 148,
             "stream": "nx:s0",
             "tag": "DELTAS_RECORD"
           },
@@ -288,13 +288,13 @@
             "stream": "nx:s0",
             "tag": "DELTAS_RESIDUAL"
           },
-          "nx:s0:deltas-terminal-null-references#167": {
-            "offset": 167,
+          "nx:s0:deltas-terminal-null-references#170": {
+            "offset": 170,
             "stream": "nx:s0",
             "tag": "DELTAS_TERMINAL_NULL_REFERENCES"
           },
           "nx:s0:intersection-record#12": {
-            "offset": 145,
+            "offset": 148,
             "stream": "nx:s0",
             "tag": "INTERSECTION_DATA"
           }
@@ -303,7 +303,7 @@
       "retained_records": {
         "nx:container:parasolid#0": {
           "bytes": {
-            "data": "UFMAAFhYOiBUUkFOU01JVCBGSUxFIChkZWx0YXMpIGNyZWF0ZWQgYnkgbW9kZWxsZXIAU0NIX1RFU1RfMV85OTk5AAAmDENDQ0NDQ0NDQ0NDQRFpbnRlcnNlY3Rpb25fZGF0YQDMAAFaAAwAAAAHAAEBAAEBAAEBAAEBAAEBLQAGAQAHAQAPAAAOAAANAAABAVoADAAAAAcAAQABAAEAAQABKwAGAAYAAQABAAEAAQ==",
+            "data": "UFMAAAAsOiBUUkFOU01JVCBGSUxFIChkZWx0YXMpIGNyZWF0ZWQgYnkgbW9kZWxsZXIAAAAPU0NIX1RFU1RfMV85OTk5AAAmDENDQ0NDQ0NDQ0NDQRFpbnRlcnNlY3Rpb25fZGF0YQDMAAFaAAwAAAAHAAEBAAEBAAEBAAEBAAEBLQAGAQAHAQAPAAAOAAANAAABAVoADAAAAAcAAQABAAEAAQABKwAGAAYAAQABAAEAAQ==",
             "retention": "inline"
           },
           "offset": 76,
@@ -325,7 +325,7 @@
         "role": "part-payload",
         "size": {
           "form": "exact",
-          "size": 143
+          "size": 147
         }
       },
       {
@@ -345,7 +345,7 @@
           "schema": "SCH_TEST_1_9999"
         },
         "compression": "zlib",
-        "expanded": 175,
+        "expanded": 178,
         "name": "parasolid#0",
         "role": "parasolid-stream"
       }
@@ -386,7 +386,7 @@
       }
     ],
     "notes": [
-      "SPLMSSTR container: file tag 0, footer offset 219, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+      "SPLMSSTR container: file tag 0, footer offset 223, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
       "embedded streams: 0 partition, 1 deltas, 0 plain (cached body), 0 preview/non-Parasolid"
     ]
   }

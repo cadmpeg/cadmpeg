@@ -2252,11 +2252,10 @@ pub(super) fn parasolid_term_use_records(
         let crate::parasolid::StreamBody::Parasolid { subtype, .. } = &stream.body else {
             continue;
         };
-        let rows = crate::intersection::term_use_records(
-            ctx,
-            &stream.inflated,
-            subtype.chart_point_layout(),
-        )?;
+        let Some(point_layout) = subtype.chart_point_layout() else {
+            continue;
+        };
+        let rows = crate::intersection::term_use_records(ctx, &stream.inflated, point_layout)?;
         if rows.is_empty() {
             continue;
         }
@@ -2401,7 +2400,9 @@ pub(super) fn parasolid_chart_records(
         let crate::parasolid::StreamBody::Parasolid { subtype, .. } = &stream.body else {
             continue;
         };
-        let point_layout = subtype.chart_point_layout();
+        let Some(point_layout) = subtype.chart_point_layout() else {
+            continue;
+        };
         for chart in crate::intersection::chart_source_records(ctx, &stream.inflated, point_layout)?
         {
             ctx.reserve_vec(&mut records, 1, "NX Parasolid chart records")?;

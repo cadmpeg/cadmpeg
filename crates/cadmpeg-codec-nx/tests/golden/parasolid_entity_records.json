@@ -47,8 +47,8 @@
             {
               "attribute_definition": "nx:s0:attribute-definition#202",
               "definition_xmt": 202,
-              "entity_51_record": "nx:s0:entity-51#50-178",
-              "id": "nx:s0:attribute-class-use#50-178",
+              "entity_51_record": "nx:s0:entity-51#50-181",
+              "id": "nx:s0:attribute-class-use#50-181",
               "stream_ordinal": 0
             }
           ],
@@ -70,9 +70,9 @@
               "field_count": 1,
               "field_names_xmt": 1,
               "id": "nx:s0:attribute-definition#202",
-              "identifier_inflated_offset": 70,
+              "identifier_inflated_offset": 73,
               "identifier_xmt": 201,
-              "inflated_offset": 88,
+              "inflated_offset": 91,
               "legal_owner_flags": "00000000000000000000000000000000",
               "name": "ATTR_CLASS",
               "next_definition_xmt": 1,
@@ -86,8 +86,8 @@
               "byte_len": 26,
               "definition_xmt": 202,
               "flags": 1,
-              "id": "nx:s0:entity-51#50-178",
-              "inflated_offset": 178,
+              "id": "nx:s0:entity-51#50-181",
+              "inflated_offset": 181,
               "leading_references": [
                 100,
                 101,
@@ -114,10 +114,10 @@
         "attributes": {
           "deltas_streams": "0",
           "directory_entries": "1",
-          "file_size": "261",
+          "file_size": "263",
           "footer_entry_count": "0",
           "footer_fingerprint": "00000000",
-          "footer_offset": "247",
+          "footer_offset": "249",
           "header_entry_count": "1",
           "jpeg_preview_count": "0",
           "partition_streams": "1",
@@ -202,7 +202,7 @@
         }
       ],
       "notes": [
-        "SPLMSSTR container: file tag 0, footer offset 247, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+        "SPLMSSTR container: file tag 0, footer offset 249, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
         "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid"
       ],
       "transfer": {
@@ -217,7 +217,7 @@
             "entity": "derived",
             "scope": "entity"
           },
-          "nx:s0:attribute-class-use#50-178": {
+          "nx:s0:attribute-class-use#50-181": {
             "entity": "derived",
             "scope": "entity"
           }
@@ -228,18 +228,18 @@
             "stream": "nx:container",
             "tag": "partition"
           },
-          "nx:s0:attribute-class-use#50-178": {
-            "offset": 178,
+          "nx:s0:attribute-class-use#50-181": {
+            "offset": 181,
             "stream": "nx:s0",
             "tag": "ATTRIBUTE_CLASS_USE"
           },
           "nx:s0:attribute-definition#202": {
-            "offset": 88,
+            "offset": 91,
             "stream": "nx:s0",
             "tag": "ATTRIBUTE_DEFINITION"
           },
-          "nx:s0:entity-51#50-178": {
-            "offset": 178,
+          "nx:s0:entity-51#50-181": {
+            "offset": 181,
             "stream": "nx:s0",
             "tag": "ENTITY_51"
           }
@@ -248,7 +248,7 @@
       "retained_records": {
         "nx:container:parasolid#0": {
           "bytes": {
-            "data": "UFMAAFhYOiBUUkFOU01JVCBGSUxFIChwYXJ0aXRpb24pIGNyZWF0ZWQgYnkgbW9kZWxsZXIAU0NIX1RFU1RfMV85OTk5AABPAAAACgDJQVRUUl9DTEFTUwBQAAAAAQDKAAEAyQAAIygAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAEAUgAAAAEAZQAAAAcAUwAAAAEAZj/4AAAAAAAAAFQAAAAKAGRBVFRSX0xBQkVMAABRAAAAAQAyAAAAAgDKAGQAZQBmAJYAlwCYqqo=",
+            "data": "UFMAAAAvOiBUUkFOU01JVCBGSUxFIChwYXJ0aXRpb24pIGNyZWF0ZWQgYnkgbW9kZWxsZXIAAAAPU0NIX1RFU1RfMV85OTk5AABPAAAACgDJQVRUUl9DTEFTUwBQAAAAAQDKAAEAyQAAIygAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAEAUgAAAAEAZQAAAAcAUwAAAAEAZj/4AAAAAAAAAFQAAAAKAGRBVFRSX0xBQkVMAABRAAAAAQAyAAAAAgDKAGQAZQBmAJYAlwCYqqo=",
             "retention": "inline"
           },
           "offset": 76,
@@ -270,7 +270,7 @@
         "role": "part-payload",
         "size": {
           "form": "exact",
-          "size": 171
+          "size": 173
         }
       },
       {
@@ -296,7 +296,7 @@
           "schema": "SCH_TEST_1_9999"
         },
         "compression": "zlib",
-        "expanded": 206,
+        "expanded": 209,
         "name": "parasolid#0",
         "role": "parasolid-stream"
       }
@@ -337,7 +337,7 @@
       }
     ],
     "notes": [
-      "SPLMSSTR container: file tag 0, footer offset 247, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+      "SPLMSSTR container: file tag 0, footer offset 249, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
       "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid"
     ]
   }
