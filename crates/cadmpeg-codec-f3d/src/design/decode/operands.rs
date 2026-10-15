@@ -274,7 +274,6 @@ pub(crate) fn decode_edge_treatment_vertex_operands(
             let Some(recipe) = parse_vertex_recipe(bytes, records, stream, header, recipes) else {
                 continue;
             };
-            let recipe = recipe?;
             let (Ok(scope_reference_ordinal), Ok(group_member_ordinal)) = (
                 u32::try_from(scope_reference_ordinal),
                 u32::try_from(group_member_ordinal),
@@ -372,14 +371,13 @@ pub(crate) fn bind_work_point_input_carriers(
             if let Some(recipe) = parse_vertex_recipe(bytes, records, &stream, header, recipes) {
                 input
                     .try_set_carrier(Some(Box::new(DesignWorkPointInputCarrier::VertexRecipe {
-                        recipe: recipe?,
+                        recipe,
                     })))
                     .map_err(CodecError::Malformed)?;
                 continue;
             }
             if let Some(selection) =
                 parse_work_point_sketch_point_frame(bytes, input.record_index(), header.byte_offset)
-                    .transpose()?
             {
                 let mut point_matches = sketch_points.iter().filter(|point| {
                     native_stream(&point.id) == Some(stream.as_str())
@@ -428,9 +426,7 @@ pub(crate) fn bind_work_point_input_carriers(
                 input.record_index(),
                 header.byte_offset,
                 header.class_tag.as_str(),
-            )
-            .transpose()?
-            else {
+            ) else {
                 continue;
             };
             let Ok(primary_identity) = u32::try_from(selection.primary_identity) else {
@@ -556,7 +552,7 @@ pub(crate) fn bind_work_plane_constructions(
         else {
             continue;
         };
-        let inputs = [first_input?, second_input?, third_input?];
+        let inputs = [first_input, second_input, third_input];
         let placement_record_index = *placement_record_index;
         if let Some(frame) = scope.work_plane_frame_mut() {
             frame.work_plane_construction = Some(
@@ -2889,7 +2885,7 @@ pub(crate) fn decode_construction_operand_identities(
         };
         let bytes = scan.entry_bytes(&entry.name)?;
         if let Some(mut identity) =
-            parse_construction_operand_identity(bytes, group, wrapper_header).transpose()?
+            parse_construction_operand_identity(bytes, group, wrapper_header)
         {
             identity.id = design_record_id(
                 &entry.name,
@@ -2993,7 +2989,7 @@ fn parse_construction_operand_identity(
     bytes: &[u8],
     group: &DesignConstructionOperandGroup,
     wrapper_header: &DesignRecordHeader,
-) -> Option<Result<DesignConstructionOperandIdentity, CodecError>> {
+) -> Option<DesignConstructionOperandIdentity> {
     let mut current_at = usize::try_from(wrapper_header.byte_offset).ok()?;
     let mut current_record_index = wrapper_header.record_index;
     let mut current_class_tag = wrapper_header.class_tag.clone();
@@ -3089,7 +3085,6 @@ fn parse_construction_operand_identity(
         },
     )
     .ok()
-    .map(Ok)
 }
 
 fn parse_construction_tracking_path(
@@ -3327,8 +3322,7 @@ pub(crate) fn decode_extrude_selection_members(
             let Some(header) = headers.get(&(stream, record_index)) else {
                 continue;
             };
-            if let Some(mut member) =
-                parse_extrude_selection_member(bytes, group, ordinal, header).transpose()?
+            if let Some(mut member) = parse_extrude_selection_member(bytes, group, ordinal, header)
             {
                 member.id = design_record_id(
                     &entry.name,
@@ -3373,8 +3367,7 @@ pub(crate) fn decode_entity_selection_operands(
             let Some(header) = headers.get(&(stream, record_index)) else {
                 continue;
             };
-            if let Some(mut operand) =
-                parse_entity_selection_operand(bytes, group, ordinal, header).transpose()?
+            if let Some(mut operand) = parse_entity_selection_operand(bytes, group, ordinal, header)
             {
                 operand.id = design_record_id(
                     &entry.name,
@@ -3395,16 +3388,13 @@ pub(super) fn parse_entity_selection_operand(
     group: &DesignConstructionOperandGroup,
     group_member_ordinal: u32,
     header: &DesignRecordHeader,
-) -> Option<Result<DesignEntitySelectionOperand, CodecError>> {
-    let frame = match parse_entity_selection_frame(
+) -> Option<DesignEntitySelectionOperand> {
+    let frame = parse_entity_selection_frame(
         bytes,
         header.record_index,
         header.byte_offset,
         header.class_tag.as_str(),
-    )? {
-        Ok(frame) => frame,
-        Err(error) => return Some(Err(error)),
-    };
+    )?;
     DesignEntitySelectionOperand::try_new(
         crate::records::topology::entity_selection::DesignEntitySelectionOperandDraft {
             id: String::new(),
@@ -3431,7 +3421,6 @@ pub(super) fn parse_entity_selection_operand(
         },
     )
     .ok()
-    .map(Ok)
 }
 
 /// Persistent identity payload shared by entity-selection consumers that do
@@ -3561,7 +3550,7 @@ fn parse_work_point_sketch_point_frame(
     bytes: &[u8],
     record_index: u32,
     byte_offset: u64,
-) -> Option<Result<WorkPointSketchPointFrame, CodecError>> {
+) -> Option<WorkPointSketchPointFrame> {
     let start = usize::try_from(byte_offset).ok()?;
     let prefix = parse_entity_selection_prefix(bytes, start, record_index)?;
     let paired_at = next_indexed_record_offset(bytes, prefix.after_context_id + 8)?;
@@ -3609,7 +3598,7 @@ fn parse_work_point_sketch_point_frame(
         bytes,
         identity_at + sketch_point_identity::POINT_PERSISTENT_ID,
     )?);
-    Some(Ok(WorkPointSketchPointFrame {
+    Some(WorkPointSketchPointFrame {
         asset_id: prefix.asset_id,
         asset_id_offset: prefix.asset_id_offset,
         context_id: prefix.context_id,
@@ -3628,7 +3617,7 @@ fn parse_work_point_sketch_point_frame(
         .ok()?,
         next_record_index,
         next_byte_offset: u64::try_from(next_at).ok()?,
-    }))
+    })
 }
 
 /// Parse the nested persistent-entity frame without assigning group ownership.
@@ -3637,7 +3626,7 @@ pub(super) fn parse_entity_selection_frame(
     record_index: u32,
     byte_offset: u64,
     class_tag: &str,
-) -> Option<Result<EntitySelectionFrame, CodecError>> {
+) -> Option<EntitySelectionFrame> {
     let start = usize::try_from(byte_offset).ok()?;
     let prefix = parse_entity_selection_prefix(bytes, start, record_index)?;
     let paired_at = next_indexed_record_offset(bytes, prefix.after_context_id + 8)?;
@@ -3736,7 +3725,7 @@ pub(super) fn parse_entity_selection_frame(
     } else {
         return None;
     };
-    Some(Ok(EntitySelectionFrame {
+    Some(EntitySelectionFrame {
         record_index,
         byte_offset,
         class_tag: crate::design::decode::text::class_tag_from_view(class_tag).ok()?,
@@ -3751,7 +3740,7 @@ pub(super) fn parse_entity_selection_frame(
         secondary,
         next_record_index,
         next_byte_offset: u64::try_from(next_at).ok()?,
-    }))
+    })
 }
 
 /// Decode whole-body construction operands that contain one persistent body recipe.
@@ -4332,7 +4321,7 @@ fn parse_extrude_selection_member(
     group: &DesignExtrudeSelectionGroup,
     group_member_ordinal: u32,
     header: &DesignRecordHeader,
-) -> Option<Result<DesignExtrudeSelectionMember, CodecError>> {
+) -> Option<DesignExtrudeSelectionMember> {
     let start = usize::try_from(header.byte_offset).ok()?;
     let member = parse_extrude_identity_member(bytes, start)?;
     DesignExtrudeSelectionMember::try_new(
@@ -4359,7 +4348,6 @@ fn parse_extrude_selection_member(
         },
     )
     .ok()
-    .map(Ok)
 }
 
 struct ParsedExtrudeIdentityMember {
@@ -4797,7 +4785,7 @@ fn parse_vertex_recipe(
     stream: &str,
     header: &DesignRecordHeader,
     recipes: &[ConstructionRecipe],
-) -> Option<Result<DesignVertexRecipe, CodecError>> {
+) -> Option<DesignVertexRecipe> {
     let parsed = parse_recipe_operand(
         bytes,
         records,
@@ -4830,7 +4818,6 @@ fn parse_vertex_recipe(
         },
     )
     .ok()
-    .map(Ok)
 }
 
 /// Parse the indexed-record envelope shared by topology recipe operands.

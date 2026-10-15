@@ -9,22 +9,21 @@ use crate::records::feature::body_ops::DesignCopyPasteBodiesOperation;
 use crate::records::feature::scope;
 use crate::records::feature::scope::DesignParameterScope;
 use cadmpeg_core::decode::View;
-use cadmpeg_core::CodecError;
 
 pub(super) fn exact_copy_paste_bodies_operation(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
-) -> Result<Option<DesignCopyPasteBodiesOperation>, CodecError> {
+) -> Option<DesignCopyPasteBodiesOperation> {
     if scope.kind() != scope::DesignFeatureKind::CopyPasteBodies
         || scope.reference_members().len() < 2
     {
-        return Ok(None);
+        return None;
     }
     let body_count = scope.reference_members().len() - 1;
     let mut operands = Vec::new();
     let mut bodies = Vec::new();
-    let parsed = (|| -> Option<Result<DesignCopyPasteBodiesOperation, CodecError>> {
+    let parsed = (|| -> Option<DesignCopyPasteBodiesOperation> {
         let start = usize::try_from(scope.byte_offset()).ok()?;
         let body_group_record_index = marked_record_reference(bytes, start + 29)?;
         let relation_record_index = marked_record_reference(bytes, start + 40)?;
@@ -104,7 +103,7 @@ pub(super) fn exact_copy_paste_bodies_operation(
                 },
             });
         }
-        Some(DesignCopyPasteBodiesOperation::try_new(
+        DesignCopyPasteBodiesOperation::try_new(
             bodies,
             body_ops::CopyPasteRecordLocation {
                 record_index: body_group_record_index,
@@ -118,10 +117,8 @@ pub(super) fn exact_copy_paste_bodies_operation(
                     .ok()?,
                 byte_offset: u64::try_from(relation_at).ok()?,
             },
-        ))
+        )
+        .ok()
     })();
-    match parsed.transpose() {
-        Err(CodecError::Malformed(_)) => Ok(None),
-        result => result,
-    }
+    parsed
 }

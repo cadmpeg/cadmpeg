@@ -34,7 +34,7 @@ fn exact_surface_trim_operation(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
-) -> Result<Option<DesignSurfaceTrimOperation>, CodecError> {
+) -> Option<DesignSurfaceTrimOperation> {
     let parsed_prefix = (|| {
         if scope.kind() != crate::records::feature::scope::DesignFeatureKind::SurfaceTrim
             || scope.reference_members().len() != 4
@@ -45,15 +45,12 @@ fn exact_surface_trim_operation(
         let (selection_byte_offset, _) = records.frames(selection_record_index).next()?;
         let selection_class_tag =
             exact_indexed_header_at(bytes, selection_byte_offset, selection_record_index)?;
-        let selection = match parse_entity_selection_frame(
+        let selection = parse_entity_selection_frame(
             bytes,
             selection_record_index,
             u64::try_from(selection_byte_offset).ok()?,
             &selection_class_tag,
-        )? {
-            Ok(selection) => selection,
-            Err(error) => return Some(Err(error)),
-        };
+        )?;
 
         let mut chain_start = usize::try_from(selection.next_byte_offset).ok()?;
         let mut next_chain_record = || {
@@ -102,7 +99,7 @@ fn exact_surface_trim_operation(
             return None;
         }
         let total_cells = u64::from(trailing_value);
-        Some(Ok((
+        Some((
             selection_record_index,
             selection_byte_offset,
             selection,
@@ -119,11 +116,9 @@ fn exact_surface_trim_operation(
             total_cells,
             primary,
             paired,
-        )))
+        ))
     })();
-    let Some(parsed_prefix) = parsed_prefix else {
-        return Ok(None);
-    };
+    let parsed_prefix = parsed_prefix?;
     let (
         selection_record_index,
         selection_byte_offset,
@@ -141,7 +136,7 @@ fn exact_surface_trim_operation(
         total_cells,
         primary,
         paired,
-    ) = parsed_prefix?;
+    ) = parsed_prefix;
 
     let mut cell_entries = Vec::new();
 
@@ -198,7 +193,7 @@ fn exact_surface_trim_operation(
         )
         .ok()
     })();
-    Ok(parsed)
+    parsed
 }
 
 /// Decode every exact `SurfaceTrim` BRep-cell carrier into its own native arena.
@@ -220,7 +215,7 @@ pub(crate) fn decode_surface_trim_operations(
         };
         let bytes = scan.entry_bytes(&entry.name)?;
         let records = cached_owned_record_offsets(&mut record_offsets, stream, bytes);
-        let Some(mut operation) = exact_surface_trim_operation(bytes, records, scope)? else {
+        let Some(mut operation) = exact_surface_trim_operation(bytes, records, scope) else {
             continue;
         };
         operation.id = design_record_id(

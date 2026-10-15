@@ -312,8 +312,7 @@ fn extrude_operand_identity_walks_shared_wrapper_grammar_to_a_fixed_leaf() {
     indexed_header(&mut bytes, *b"301", 900);
 
     let identity = parse_construction_operand_identity(&bytes, &group, &wrapper_header)
-        .expect("identity chain")
-        .unwrap();
+        .expect("identity chain");
     assert_eq!(
         identity
             .wrappers()
@@ -346,8 +345,7 @@ fn extrude_operand_identity_walks_shared_wrapper_grammar_to_a_fixed_leaf() {
     expanded_bytes.extend_from_slice(&[0; 6]);
     indexed_header(&mut expanded_bytes, *b"301", 900);
     let expanded = parse_construction_operand_identity(&expanded_bytes, &group, &wrapper_header)
-        .expect("identity chain with expanded tail reference")
-        .unwrap();
+        .expect("identity chain with expanded tail reference");
     let persistent = expanded
         .persistent_identity()
         .expect("expanded persistent identity leaf");
@@ -501,8 +499,7 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
     indexed_header(&mut bytes, *b"311", 104);
 
     let operand = parse_entity_selection_operand(&bytes, &group, 0, &record)
-        .expect("nested entity-selection frame")
-        .unwrap();
+        .expect("nested entity-selection frame");
     assert_eq!(operand.primary_identity, 1331);
     assert_eq!(
         operand
@@ -523,8 +520,7 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
     let compact_next_at = compact.len();
     indexed_header(&mut compact, *b"311", 109);
     let compact_operand = parse_entity_selection_operand(&compact, &group, 0, &record)
-        .expect("compact nested entity-selection frame")
-        .unwrap();
+        .expect("compact nested entity-selection frame");
     assert_eq!(compact_operand.primary_identity, 1331);
     assert_eq!(
         compact_operand
@@ -551,8 +547,7 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
     let curve_next_at = curve_identity.len();
     indexed_header(&mut curve_identity, *b"311", 104);
     let curve_operand = parse_entity_selection_operand(&curve_identity, &group, 0, &record)
-        .expect("expanded Sketch-curve entity-selection frame")
-        .unwrap();
+        .expect("expanded Sketch-curve entity-selection frame");
     assert_eq!(curve_operand.primary_identity, 1331);
     assert_eq!(
         curve_operand
@@ -597,8 +592,7 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
     };
     let class_338_operand =
         parse_entity_selection_operand(&class_338_curve_identity, &group, 0, &class_338_record)
-            .expect("class-338 Sketch-curve entity-selection frame")
-            .unwrap();
+            .expect("class-338 Sketch-curve entity-selection frame");
     assert_eq!(class_338_operand.primary_identity, 949);
     assert_eq!(
         class_338_operand

@@ -141,8 +141,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         indexed_header(&mut member_bytes, *b"290", 201);
 
         let mut member = parse_extrude_selection_member(&member_bytes, &group, 0, &member_record)
-            .expect("fixed Extrude selection member")
-            .unwrap();
+            .expect("fixed Extrude selection member");
         assert_eq!(member.local_id, 586);
         assert_eq!(member.next_byte_offset(), 190);
         assert_eq!(member.next_record_index, 201);
@@ -152,15 +151,13 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         member_bytes[185] = 1;
         let member_with_slot =
             parse_extrude_selection_member(&member_bytes, &group, 0, &member_record)
-                .expect("Extrude selection member with present tail slot")
-                .unwrap();
+                .expect("Extrude selection member with present tail slot");
         assert!(member_with_slot.tail_slot_present);
         assert_eq!(member_with_slot.tail_slot_offset, 185);
 
         let terminal_member =
             parse_extrude_selection_member(&member_bytes[..190], &group, 0, &member_record)
-                .expect("terminal fixed Extrude selection member")
-                .unwrap();
+                .expect("terminal fixed Extrude selection member");
         assert_eq!(terminal_member.next_byte_offset(), 190);
         assert_eq!(terminal_member.next_record_index, 0);
 

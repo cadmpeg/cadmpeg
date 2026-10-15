@@ -674,8 +674,7 @@ fn dimension_annotation_frame_links_nullable_loci_to_governing_owner() {
         &HashSet::from([354, 376]),
         &HashSet::from([201]),
     )
-    .expect("annotated dimension frame")
-    .expect("admitted annotation frame");
+    .expect("annotated dimension frame");
     assert_eq!(frame.companion_record_index, Some(383));
     assert_eq!(frame.governing_companion_record_index, 391);
     assert_eq!(frame.entity_genesis, 0x202);
@@ -712,8 +711,7 @@ fn dimension_annotation_frame_links_nullable_loci_to_governing_owner() {
         &HashSet::from([354, 376]),
         &HashSet::from([201]),
     )
-    .expect("scope-prefix dimension frame")
-    .expect("admitted scope-prefix frame");
+    .expect("scope-prefix dimension frame");
     assert_eq!(leading.companion_record_index, None);
     assert_eq!(leading.governing_owner_record_index, 390);
 }
