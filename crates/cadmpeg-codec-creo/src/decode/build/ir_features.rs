@@ -112,15 +112,6 @@ fn ordered_row_feature_ids(rows: &[crate::feature::rows::FeatureRow]) -> Vec<u32
     ids
 }
 
-fn merge_feature_source_properties(
-    target: &mut BTreeMap<cadmpeg_core::text::NonBlankString, String>,
-    incoming: BTreeMap<cadmpeg_core::text::NonBlankString, String>,
-) {
-    for (key, value) in incoming {
-        target.insert(key, value);
-    }
-}
-
 pub(super) fn emit_model_features(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
@@ -399,13 +390,12 @@ pub(super) fn emit_model_features(
                 existing.name = name;
             }
             existing.dependencies.extend(dependencies);
-            merge_feature_source_properties(
-                &mut existing.source_properties,
-                cadmpeg_core::text::named_entries(
+            existing
+                .source_properties
+                .extend(cadmpeg_core::text::named_entries(
                     format_args!("creo:model:feature#{}", operation.feature_id),
                     source_properties,
-                )?,
-            );
+                )?);
             if source_tag.is_some() {
                 existing.source_tag = source_tag;
             }

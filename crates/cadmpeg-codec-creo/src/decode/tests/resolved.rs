@@ -16,27 +16,9 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use cadmpeg_ir::sketches::SketchConstraintDefinitionInput;
 
+use crate::decode::sketch::coordinates::section_linear_distance_coordinate;
 use crate::loss::CreoLossCode;
 use crate::CreoCodec;
-
-fn section_linear_distance_coordinate(
-    definition: &crate::feature::definitions::FeatureDefinition,
-    segments: &[&crate::feature::definitions::FeatureSegment],
-    first: u32,
-    second: u32,
-    coordinates: &BTreeMap<u32, [Option<f64>; 2]>,
-    saved_segment_points: &[(u32, [f64; 2])],
-    ambiguous_point_ids: &BTreeSet<u32>,
-) -> Option<crate::decode::sketch::axis::SectionAxis> {
-    crate::decode::sketch::coordinates::section_linear_distance_coordinate(
-        definition,
-        segments,
-        [first, second],
-        coordinates,
-        saved_segment_points,
-        ambiguous_point_ids,
-    )
-}
 
 #[test]
 fn decode_retains_repeated_sketch_snapshots_with_offset_identities() {
@@ -531,8 +513,7 @@ fn signed_distance_with_spanning_line_rejects_conflicting_fixed_coordinate() {
         section_linear_distance_coordinate(
             &definition,
             &segments,
-            1,
-            2,
+            [1, 2],
             &valid,
             &[],
             &BTreeSet::new(),
@@ -544,8 +525,7 @@ fn signed_distance_with_spanning_line_rejects_conflicting_fixed_coordinate() {
         section_linear_distance_coordinate(
             &definition,
             &segments,
-            1,
-            2,
+            [1, 2],
             &conflicting,
             &[],
             &BTreeSet::new(),
@@ -556,8 +536,7 @@ fn signed_distance_with_spanning_line_rejects_conflicting_fixed_coordinate() {
         section_linear_distance_coordinate(
             &definition,
             &segments,
-            1,
-            2,
+            [1, 2],
             &BTreeMap::new(),
             &[(1, [2.0, 0.0]), (2, [4.0, 3.0])],
             &BTreeSet::new(),

@@ -78,10 +78,6 @@ fn feature(id: &str) -> Feature {
     }
 }
 
-fn link_service(scan: &crate::container::ContainerScan<'_>, ir: &mut CadIr) {
-    link_feature_sketch_history(scan, ir).expect("history link");
-}
-
 #[test]
 fn history_link_rejects_duplicate_owner_feature_ids() {
     let scan = section_scan();
@@ -92,7 +88,7 @@ fn history_link_rejects_duplicate_owner_feature_ids() {
         feature("creo:model:sketch_feature#7"),
     ]);
 
-    link_service(&scan, &mut ir);
+    link_feature_sketch_history(&scan, &mut ir).expect("history link");
 
     assert!(ir.model.features[..2]
         .iter()
@@ -109,7 +105,7 @@ fn history_link_rejects_duplicate_sketch_feature_ids() {
         feature("creo:model:sketch_feature#7"),
     ]);
 
-    link_service(&scan, &mut ir);
+    link_feature_sketch_history(&scan, &mut ir).expect("history link");
 
     assert!(ir.model.features[0].dependencies.is_empty());
 }
@@ -124,7 +120,7 @@ fn history_link_records_sketch_dependency() {
     ]);
     let sketch_feature = ir.model.features[1].id.clone();
 
-    link_service(&scan, &mut ir);
+    link_feature_sketch_history(&scan, &mut ir).expect("history link");
 
     assert_eq!(
         ir.model.features[0].dependencies.as_slice(),

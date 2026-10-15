@@ -21,26 +21,7 @@ use crate::decode::feature_history::selections::{
 };
 use crate::decode::holes::placement::{cylinder_from_complementary_outline_bounds, hole_placement};
 use crate::decode::holes::sweep::extrusion_extent_and_direction;
-use crate::decode::sketch::coordinates::section_linear_distance_coordinate as section_linear_distance_coordinate_admitted;
-
-fn section_linear_distance_coordinate(
-    definition: &crate::feature::definitions::FeatureDefinition,
-    segments: &[&crate::feature::definitions::FeatureSegment],
-    first: u32,
-    second: u32,
-    coordinates: &std::collections::BTreeMap<u32, [Option<f64>; 2]>,
-    saved_segment_points: &[(u32, [f64; 2])],
-    ambiguous_point_ids: &std::collections::BTreeSet<u32>,
-) -> Option<SectionAxis> {
-    section_linear_distance_coordinate_admitted(
-        definition,
-        segments,
-        [first, second],
-        coordinates,
-        saved_segment_points,
-        ambiguous_point_ids,
-    )
-}
+use crate::decode::sketch::coordinates::section_linear_distance_coordinate;
 use crate::decode::sketch::equations_coordinate::{
     solve_section_coordinate_equations, solve_unsigned_dimension_coordinates,
     SectionCoordinateEquation, SectionEquationFixture,
@@ -191,8 +172,7 @@ fn signed_distance_without_a_spanning_line_requires_equal_endpoint_coordinate() 
         section_linear_distance_coordinate(
             &definition,
             &segments,
-            1,
-            2,
+            [1, 2],
             &coordinates,
             &[],
             &BTreeSet::new(),
@@ -233,8 +213,7 @@ fn signed_distance_without_a_spanning_line_requires_equal_endpoint_coordinate() 
         section_linear_distance_coordinate(
             &endpoint_carriers,
             &[],
-            1,
-            2,
+            [1, 2],
             &BTreeMap::from([(1, [Some(0.0), Some(1.0)]), (2, [Some(2.0), Some(1.0)])]),
             &[],
             &BTreeSet::new(),
@@ -261,8 +240,7 @@ fn signed_distance_without_a_spanning_line_requires_equal_endpoint_coordinate() 
         section_linear_distance_coordinate(
             &centered_endpoint_carrier,
             &[],
-            0,
-            1,
+            [0, 1],
             &BTreeMap::from([(0, [Some(0.0), Some(1.0)]), (1, [Some(2.0), Some(1.0)])]),
             &[],
             &BTreeSet::new(),

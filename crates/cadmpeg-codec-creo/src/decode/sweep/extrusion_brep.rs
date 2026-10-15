@@ -60,13 +60,6 @@ where
     crate::identity::compose_checked(&crate::identity::FEATURE_EXTRUSION, key)
 }
 
-fn copy_extrusion_identity<I>(source: &str) -> Result<I, cadmpeg_core::CodecError>
-where
-    I: TryFrom<String, Error = cadmpeg_ir::ids::IdentityError>,
-{
-    crate::identity::copy_checked_id(source)
-}
-
 fn push_rejected_extrusion(
     diagnostics: &mut crate::decode::surfaces::brep::BrepTransferDiagnostics,
     body_id: BodyId,
@@ -205,7 +198,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
         }
         macro_rules! copy_id {
             ($source:expr) => {
-                copy_extrusion_identity(($source).as_str())?
+                crate::identity::copy_checked_id(($source).as_str())?
             };
         }
         let length = span.upper() - span.lower();

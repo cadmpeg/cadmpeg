@@ -909,7 +909,7 @@ mod tests {
     use super::super::equations_scalar::resolved_section_scalar_values;
     use super::resolved_section_points;
     use super::{
-        append_point_on_line_equations as append_point_on_line_equations_checked, SectionAxis,
+        append_point_on_line_equations, section_linear_distance_coordinate, SectionAxis,
         SectionCoordinateEquation,
     };
     use crate::feature::definitions::FeatureSolverTableHeader;
@@ -920,33 +920,6 @@ mod tests {
         FeatureSegment, FeatureSegmentKind, FeatureSegmentTable, FeatureSkamp, FeatureSkampItem,
         FeatureVariableRow,
     };
-
-    fn section_linear_distance_coordinate(
-        definition: &FeatureDefinition,
-        segments: &[&FeatureSegment],
-        first: u32,
-        second: u32,
-        coordinates: &BTreeMap<u32, [Option<f64>; 2]>,
-        saved_segment_points: &[(u32, [f64; 2])],
-        ambiguous_point_ids: &BTreeSet<u32>,
-    ) -> Option<SectionAxis> {
-        super::section_linear_distance_coordinate(
-            definition,
-            segments,
-            [first, second],
-            coordinates,
-            saved_segment_points,
-            ambiguous_point_ids,
-        )
-    }
-
-    fn append_point_on_line_equations(
-        constraints: &[(u32, u32, u32)],
-        coordinates: &BTreeMap<u32, [Option<f64>; 2]>,
-        equations: &mut Vec<SectionCoordinateEquation>,
-    ) -> bool {
-        append_point_on_line_equations_checked(constraints, coordinates, equations)
-    }
 
     #[test]
     fn infinite_point_on_line_rhs_is_not_admitted() {
@@ -1198,8 +1171,7 @@ mod tests {
             section_linear_distance_coordinate(
                 &definition,
                 &segments,
-                1,
-                2,
+                [1, 2],
                 &std::collections::BTreeMap::new(),
                 &[],
                 &std::collections::BTreeSet::new(),
@@ -1234,8 +1206,7 @@ mod tests {
             section_linear_distance_coordinate(
                 &duplicate,
                 &duplicate_segments,
-                1,
-                2,
+                [1, 2],
                 &std::collections::BTreeMap::new(),
                 &[],
                 &std::collections::BTreeSet::new(),
@@ -1277,8 +1248,7 @@ mod tests {
             section_linear_distance_coordinate(
                 &definition,
                 &segments,
-                3,
-                4,
+                [3, 4],
                 &coordinates,
                 &[],
                 &BTreeSet::new(),
@@ -1306,8 +1276,7 @@ mod tests {
             section_linear_distance_coordinate(
                 &circle_definition,
                 &segments,
-                3,
-                4,
+                [3, 4],
                 &coordinates,
                 &[],
                 &BTreeSet::new(),

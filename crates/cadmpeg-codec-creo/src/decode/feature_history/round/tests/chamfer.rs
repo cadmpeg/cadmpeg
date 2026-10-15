@@ -132,22 +132,24 @@ fn chamfer_requires_every_affected_support_plane_to_be_placed() {
     let empty_ir = CadIr::empty();
 
     assert_eq!(
-        super::chamfer_distance_with_service_ctx(
+        super::super::chamfer_constant_distance(
             &scan,
             &empty_ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             914
-        ),
+        )
+        .expect("chamfer witnesses admitted"),
         Some(0.5)
     );
     scan.features.affected_ids[0].ids.extend([98, 99]);
     assert_eq!(
-        super::chamfer_distance_with_service_ctx(
+        super::super::chamfer_constant_distance(
             &scan,
             &empty_ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             914
-        ),
+        )
+        .expect("chamfer witnesses admitted"),
         Some(0.5)
     );
 
@@ -162,12 +164,13 @@ fn chamfer_requires_every_affected_support_plane_to_be_placed() {
         offset: 32,
     });
     assert_eq!(
-        super::chamfer_distance_with_service_ctx(
+        super::super::chamfer_constant_distance(
             &scan,
             &empty_ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             914
-        ),
+        )
+        .expect("chamfer witnesses admitted"),
         None
     );
 }
