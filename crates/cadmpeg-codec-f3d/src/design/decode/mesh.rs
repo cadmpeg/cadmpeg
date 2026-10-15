@@ -1538,12 +1538,12 @@ where
                 mesh_feature_id(&stream, scope_offset),
                 scope.scope,
                 collection.collection,
-                DesignMeshTextureTable::new_charged(texture_table.identity, textures).map_err(
-                    |error| match error {
+                DesignMeshTextureTable::new(texture_table.identity, textures).map_err(|error| {
+                    match error {
                         CodecError::Malformed(message) => malformed_mesh_graph(&stream, &message),
                         other => other,
-                    },
-                )?,
+                    }
+                })?,
                 collection_owner.owner,
                 feature_bodies,
             )
@@ -1745,9 +1745,7 @@ mod tests {
         SCENE_AUXILIARY_BASE_TYPE_GUID, SCENE_AUXILIARY_TYPE_GUID, SCENE_AUXILIARY_TYPE_VERSION,
         SCENE_MODULE, SCENE_NODE_BASE_TYPE_GUID, SCENE_NODE_TYPE_GUID, SCENE_NODE_TYPE_VERSION,
     };
-    use crate::design::decode::meta::{
-        typed_primary_frames as typed_primary_frames_with_context, TypedPrimaryFrame,
-    };
+    use crate::design::decode::meta::{typed_primary_frames, TypedPrimaryFrame};
     use crate::design::test_support::{design_type, primary_record};
     use crate::layout::{
         paramesh_collection_owner_backlink_prefix as collection_owner,
@@ -1763,15 +1761,6 @@ mod tests {
     use cadmpeg_core::CodecError;
     use cadmpeg_ir::features::FinitePoint3;
     use cadmpeg_ir::units::UnitVector3;
-
-    fn typed_primary_frames<'a>(
-        bytes: &[u8],
-        meta: &'a crate::metastream::MetaStream,
-        type_guid: &str,
-        record_kind: &str,
-    ) -> Result<Vec<TypedPrimaryFrame<'a>>, CodecError> {
-        typed_primary_frames_with_context(bytes, meta, type_guid, record_kind)
-    }
 
     fn parse_mesh_design_records<F>(
         bytes: &[u8],

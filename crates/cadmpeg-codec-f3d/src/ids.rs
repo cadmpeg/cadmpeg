@@ -4,16 +4,15 @@
 //! Segment vocabulary, separators, ordering, escaping, and `#{len}:{key}`
 //! length-prefixes. Callers build IDs through the named functions below.
 
-use crate::records::{
-    feature::combine::DesignCombineExternalBodyIdentity, parameters::DesignParameter,
-    sketch_placement::DesignSketchPlacement,
-};
+use crate::records::feature::combine::DesignCombineExternalBodyIdentity;
 
 #[cfg(test)]
 use crate::records::feature::{
     assembly::{DesignAssemblyAxialSelectorIdentity, DesignAssemblyLegacySelection},
     scope::DesignParameterScope,
 };
+#[cfg(test)]
+use crate::records::{parameters::DesignParameter, sketch_placement::DesignSketchPlacement};
 
 /// The scheme prefix shared by every `f3d:` URN. Used to strip or test the
 /// scheme when parsing an identity key back into its stream and tail.
@@ -98,7 +97,7 @@ pub(crate) fn appearance_id(key: cadmpeg_ir::ids::IdentityKey) -> cadmpeg_ir::id
 pub(crate) fn appearance_id_charged(
     key: &str,
 ) -> Result<cadmpeg_ir::ids::AppearanceId, cadmpeg_core::CodecError> {
-    let id = native_scoped_id_charged("design", "appearance", key)?;
+    let id = native_scoped_id("design", "appearance", key);
     cadmpeg_ir::ids::AppearanceId::mint(id).map_err(|error| {
         cadmpeg_core::CodecError::malformed(format_args!(
             "F3D appearance identity is invalid: {error}"
@@ -123,11 +122,11 @@ pub(crate) fn body_appearance_binding_id_charged(
     entity_suffix: u64,
     visual_guid: &str,
 ) -> Result<cadmpeg_ir::ids::AppearanceBindingId, cadmpeg_core::CodecError> {
-    let id = native_scoped_id_charged(
+    let id = native_scoped_id(
         "appearance",
         "body",
         format_args!("{entity_suffix}:{visual_guid}"),
-    )?;
+    );
     cadmpeg_ir::ids::AppearanceBindingId::mint(id).map_err(cadmpeg_core::CodecError::malformed)
 }
 
@@ -151,11 +150,11 @@ pub(crate) fn assignment_appearance_binding_id_charged(
     entity_id: &str,
     visual_guid: &str,
 ) -> Result<cadmpeg_ir::ids::AppearanceBindingId, cadmpeg_core::CodecError> {
-    let id = native_scoped_id_charged(
+    let id = native_scoped_id(
         "appearance",
         "binding",
         format_args!("{entity_id}:{visual_guid}"),
-    )?;
+    );
     cadmpeg_ir::ids::AppearanceBindingId::mint(id).map_err(|error| {
         cadmpeg_core::CodecError::malformed(format_args!(
             "F3D appearance binding identity is invalid: {error}"
@@ -226,7 +225,7 @@ pub(crate) fn face_appearance_binding_id_charged(
     face: &cadmpeg_ir::ids::FaceId,
 ) -> Result<cadmpeg_ir::ids::AppearanceBindingId, cadmpeg_core::CodecError> {
     let escaped_face_len = escaped_scope_len(face.as_str());
-    let id = native_scoped_id_charged(
+    let id = native_scoped_id(
         "appearance",
         "face",
         FaceBindingKey {
@@ -235,7 +234,7 @@ pub(crate) fn face_appearance_binding_id_charged(
             face: face.as_str(),
             escaped_face_len,
         },
-    )?;
+    );
     cadmpeg_ir::ids::AppearanceBindingId::mint(id).map_err(|error| {
         cadmpeg_core::CodecError::malformed(format_args!(
             "F3D face appearance binding identity is invalid: {error}"
@@ -260,24 +259,6 @@ pub(crate) fn identity_key_component(value: &str) -> String {
     cadmpeg_ir::ids::IdentityKeyTail::percent_encode(value)
         .as_str()
         .to_owned()
-}
-
-fn identity_key_component_charged(value: &str) -> String {
-    let mut encoded = String::new();
-    for character in value.chars() {
-        if matches!(character, ':' | '#' | '%') || character.is_whitespace() {
-            let mut scalar = [0; 4];
-            for byte in character.encode_utf8(&mut scalar).as_bytes() {
-                const HEX: &[u8; 16] = b"0123456789ABCDEF";
-                encoded.push('%');
-                encoded.push(char::from(HEX[usize::from(byte >> 4)]));
-                encoded.push(char::from(HEX[usize::from(byte & 0x0f)]));
-            }
-        } else {
-            encoded.push(character);
-        }
-    }
-    encoded
 }
 
 /// Reverse [`identity_key_component`] for a complete encoded component.
@@ -386,7 +367,7 @@ pub(crate) fn neutral_assembly_joint_id(
     let stream = native_stream(&scope.id).unwrap_or(DEFAULT_STREAM);
 
     let encoded_len = escaped_scope_len(stream);
-    let id = native_scoped_id_charged(
+    let id = native_scoped_id(
         "model",
         "joint",
         JointKey {
@@ -394,7 +375,7 @@ pub(crate) fn neutral_assembly_joint_id(
             encoded_len,
             record_index: scope.record_index,
         },
-    )?;
+    );
     cadmpeg_ir::products::JointId::mint(id).map_err(cadmpeg_core::CodecError::malformed)
 }
 
@@ -417,19 +398,6 @@ pub(crate) fn configuration_entry_id(
         scope.as_str(),
         identity_key_component(entry_name)
     )
-}
-
-pub(crate) fn configuration_entry_id_charged(
-    entry_name: &str,
-    scope: &cadmpeg_ir::ids::IdentityComponent,
-) -> String {
-    struct EscapedEntry<'a>(&'a str);
-    impl std::fmt::Display for EscapedEntry<'_> {
-        fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            write_escaped_identity_component(formatter, self.0)
-        }
-    }
-    format!("f3d:{}:entry#{}", scope.as_str(), EscapedEntry(entry_name))
 }
 
 /// The neutral configuration key for `variant_name` under `entry_name`, with
@@ -490,20 +458,20 @@ pub(crate) fn neutral_feature_id_parts(
 }
 
 /// Feature-input-local body key for one complete external `Combine` selector path.
-pub(crate) fn neutral_combine_external_body_id_charged(
+pub(crate) fn neutral_combine_external_body_id(
     identity: &DesignCombineExternalBodyIdentity,
 ) -> String {
-    let selector_asset = identity_key_component_charged(identity.selector_asset_id().as_str());
-    let selector_context = identity_key_component_charged(identity.selector_context_id().as_str());
-    let external_asset = identity_key_component_charged(identity.external_asset_id().as_str());
-    let link_name = identity_key_component_charged(identity.external_link_name());
+    let selector_asset = identity_key_component(identity.selector_asset_id().as_str());
+    let selector_context = identity_key_component(identity.selector_context_id().as_str());
+    let external_asset = identity_key_component(identity.external_asset_id().as_str());
+    let link_name = identity_key_component(identity.external_link_name());
     let property_key = identity
         .external_version()
-        .map(|version| identity_key_component_charged(version.property_key.value.as_str()))
+        .map(|version| identity_key_component(version.property_key.value.as_str()))
         .unwrap_or_default();
     let version_urn = identity
         .external_version()
-        .map(|version| identity_key_component_charged(version.version_urn.value.as_str()))
+        .map(|version| identity_key_component(version.version_urn.value.as_str()))
         .unwrap_or_default();
     format!(
             "f3d:feature-input:body#combine-external:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}",
@@ -607,38 +575,6 @@ pub(crate) fn neutral_parameter_id(
     )
 }
 
-struct EncodedParameterKey<'a> {
-    stream: &'a str,
-    encoded_len: usize,
-    record_index: u32,
-}
-
-impl std::fmt::Display for EncodedParameterKey<'_> {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(formatter, "{}:", self.encoded_len)?;
-        write_escaped_identity_component(formatter, self.stream)?;
-        write!(formatter, "{}", self.record_index)
-    }
-}
-
-/// Compose a neutral parameter identity after admitting its complete text.
-pub(crate) fn neutral_parameter_id_charged(
-    parameter: &DesignParameter,
-) -> Result<cadmpeg_ir::features::ParameterId, cadmpeg_core::CodecError> {
-    let stream = native_stream(&parameter.id).unwrap_or(DEFAULT_STREAM);
-    let encoded_len = escaped_scope_len(stream);
-    let id = native_scoped_id_charged(
-        "model",
-        "parameter",
-        EncodedParameterKey {
-            stream,
-            encoded_len,
-            record_index: parameter.record_index,
-        },
-    )?;
-    cadmpeg_ir::features::ParameterId::mint(id).map_err(cadmpeg_core::CodecError::malformed)
-}
-
 /// The neutral parameter key from its `stream` and indexed-record identity, with
 /// `stream` length-prefixed into a `#{len}:{key}` segment.
 #[cfg(test)]
@@ -677,44 +613,6 @@ pub(crate) fn neutral_spatial_sketch_id(
         &cadmpeg_ir::identity_namespace!("f3d", "model", "spatial-sketch"),
         sketch_placement_key(placement),
     )
-}
-
-struct EncodedSketchKey<'a> {
-    stream: &'a str,
-    suffix: u64,
-}
-
-impl std::fmt::Display for EncodedSketchKey<'_> {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write_escaped_identity_component(formatter, self.stream)?;
-        write!(formatter, "@{}", self.suffix)
-    }
-}
-
-fn neutral_sketch_key_charged(
-    stream: &str,
-    suffix: u64,
-    kind: &str,
-) -> Result<String, cadmpeg_core::CodecError> {
-    native_scoped_id_charged("model", kind, EncodedSketchKey { stream, suffix })
-}
-
-/// Compose a planar sketch annotation identity under the caller's budget.
-pub(crate) fn neutral_sketch_id_charged(
-    placement: &DesignSketchPlacement,
-) -> Result<cadmpeg_ir::sketches::SketchId, cadmpeg_core::CodecError> {
-    let stream = native_stream(&placement.id).unwrap_or(DEFAULT_STREAM);
-    let id = neutral_sketch_key_charged(stream, placement.entity_id.suffix(), "sketch")?;
-    cadmpeg_ir::sketches::SketchId::mint(id).map_err(cadmpeg_core::CodecError::malformed)
-}
-
-/// Compose a spatial sketch annotation identity under the caller's budget.
-pub(crate) fn neutral_spatial_sketch_id_charged(
-    placement: &DesignSketchPlacement,
-) -> Result<cadmpeg_ir::sketches::SpatialSketchId, cadmpeg_core::CodecError> {
-    let stream = native_stream(&placement.id).unwrap_or(DEFAULT_STREAM);
-    let id = neutral_sketch_key_charged(stream, placement.entity_id.suffix(), "spatial-sketch")?;
-    cadmpeg_ir::sketches::SpatialSketchId::mint(id).map_err(cadmpeg_core::CodecError::malformed)
 }
 
 /// The shared body of a sketch or spatial-sketch placement key: the placement's
@@ -901,16 +799,6 @@ pub(crate) fn neutral_sketch_constraint_id(
     )
 }
 
-/// Compose a sketch constraint annotation identity under the caller's budget.
-pub(crate) fn neutral_sketch_constraint_id_charged(
-    native_ref: &str,
-    record_index: u32,
-) -> Result<cadmpeg_ir::sketches::SketchConstraintId, cadmpeg_core::CodecError> {
-    let stream = native_stream(native_ref).unwrap_or(DEFAULT_STREAM);
-    let id = neutral_sketch_key_charged(stream, u64::from(record_index), "sketch-constraint")?;
-    cadmpeg_ir::sketches::SketchConstraintId::mint(id).map_err(cadmpeg_core::CodecError::malformed)
-}
-
 /// The neutral dimension-constraint key derived from a `parameter` key and a
 /// dimension `form`, with the parameter key tail and form length-prefixed.
 #[cfg(test)]
@@ -1011,7 +899,7 @@ pub(crate) fn history_input_body_id(
 }
 
 /// Compose one history-input entity identity without copying an intermediate key.
-fn history_input_entity_id_charged(
+fn history_input_entity_id(
     feature: &cadmpeg_ir::features::FeatureId,
     previous_state_id: i64,
     kind: &'static str,
@@ -1035,7 +923,7 @@ macro_rules! charged_history_input_entity_id {
             previous_state_id: i64,
             slot: impl std::fmt::Display,
         ) -> Result<$type, cadmpeg_core::CodecError> {
-            <$type>::mint(history_input_entity_id_charged(
+            <$type>::mint(history_input_entity_id(
                 feature,
                 previous_state_id,
                 $kind,
@@ -1158,24 +1046,6 @@ pub(crate) fn native_scoped_id(scope: &str, kind: &str, key: impl std::fmt::Disp
     format!("{}:{kind}#{key}", native_scope(scope))
 }
 
-/// Build a native record ID after admitting its exact retained byte length.
-pub(crate) fn native_scoped_id_charged(
-    scope: &str,
-    kind: &str,
-    key: impl std::fmt::Display,
-) -> Result<String, cadmpeg_core::CodecError> {
-    let mut id = String::new();
-    id.push_str("f3d:");
-    push_escaped_scope(&mut id, scope);
-    id.push(':');
-    id.push_str(kind);
-    id.push('#');
-    std::fmt::Write::write_fmt(&mut id, format_args!("{key}")).map_err(|_| {
-        cadmpeg_core::CodecError::malformed("F3D native record ID key formatting failed")
-    })?;
-    Ok(id)
-}
-
 /// The byte length of `scope` after escaping.
 fn escaped_scope_len(scope: &str) -> usize {
     scope
@@ -1188,22 +1058,6 @@ fn escaped_scope_len(scope: &str) -> usize {
             }
         })
         .sum()
-}
-
-fn push_escaped_scope(id: &mut String, scope: &str) {
-    for character in scope.chars() {
-        if matches!(character, ':' | '#' | '%') || character.is_whitespace() {
-            let mut bytes = [0; 4];
-            for byte in character.encode_utf8(&mut bytes).as_bytes() {
-                const HEX: &[u8; 16] = b"0123456789ABCDEF";
-                id.push('%');
-                id.push(char::from(HEX[usize::from(byte >> 4)]));
-                id.push(char::from(HEX[usize::from(byte & 0x0f)]));
-            }
-        } else {
-            id.push(character);
-        }
-    }
 }
 
 /// Macro defining one `f3d:{scope}:{kind}#{offset}` native-record builder.
@@ -1326,7 +1180,7 @@ mod tests {
     #[test]
     fn charged_native_id_matches_escaped_identity_bytes() {
         let scope = "A B:#%\u{2003}é";
-        let actual = super::native_scoped_id_charged(scope, "act-guid", 42).unwrap();
+        let actual = super::native_scoped_id(scope, "act-guid", 42);
         assert_eq!(actual, super::native_scoped_id(scope, "act-guid", 42));
     }
 

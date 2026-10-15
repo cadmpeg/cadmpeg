@@ -423,23 +423,6 @@ impl std::fmt::Display for SketchRelationPayloadError {
 
 impl std::error::Error for SketchRelationPayloadError {}
 
-enum SketchRelationWireError {
-    Payload(SketchRelationPayloadError),
-    Resource(CodecError),
-}
-
-impl From<CodecError> for SketchRelationWireError {
-    fn from(error: CodecError) -> Self {
-        Self::Resource(error)
-    }
-}
-
-impl From<SketchRelationPayloadError> for SketchRelationWireError {
-    fn from(error: SketchRelationPayloadError) -> Self {
-        Self::Payload(error)
-    }
-}
-
 /// Counted constraint relation owned by a sketch container.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(try_from = "SketchRelationSerde")]
@@ -838,7 +821,7 @@ fn zip_relation_members(
     offsets: Vec<u32>,
     ordinals: Vec<u32>,
     resolved: Vec<SketchRelationOperand>,
-) -> Result<SketchRelationMembers, SketchRelationWireError> {
+) -> Result<SketchRelationMembers, SketchRelationPayloadError> {
     let len = members.len();
     let offsets = pad_or_check("member_offsets", offsets, len)?;
     let resolved = pad_resolved("resolved_members", resolved, len)?;
@@ -849,8 +832,7 @@ fn zip_relation_members(
     } else {
         return Err(SketchRelationPayloadError(
             "sketch relation member_relation_ordinals length does not match members".into(),
-        )
-        .into());
+        ));
     };
     (members
         .into_iter()
@@ -868,17 +850,15 @@ fn zip_relation_members(
                 relation_ordinal,
             })
         }))
-    .map(|item| item.map_err(SketchRelationWireError::Payload))
     .collect::<Result<Vec<_>, _>>()?
     .try_into()
-    .map_err(Into::into)
 }
 
 fn zip_return_members(
     members: Vec<u32>,
     offsets: Vec<u32>,
     resolved: Vec<SketchRelationOperand>,
-) -> Result<SketchRelationReturnMembers, SketchRelationWireError> {
+) -> Result<SketchRelationReturnMembers, SketchRelationPayloadError> {
     let len = members.len();
     let offsets = pad_or_check("return_member_offsets", offsets, len)?;
     let resolved = pad_resolved("resolved_return_members", resolved, len)?;
@@ -896,17 +876,15 @@ fn zip_return_members(
                 offset,
             })
         }))
-    .map(|item| item.map_err(SketchRelationWireError::Payload))
     .collect::<Result<Vec<_>, _>>()?
     .try_into()
-    .map_err(Into::into)
 }
 
 fn pad_or_check(
     name: &str,
     values: Vec<u32>,
     len: usize,
-) -> Result<Vec<u32>, SketchRelationWireError> {
+) -> Result<Vec<u32>, SketchRelationPayloadError> {
     if values.is_empty() {
         Ok((0..len).map(|_| 0).collect())
     } else if values.len() == len {
@@ -915,8 +893,7 @@ fn pad_or_check(
         Err(SketchRelationPayloadError(format!(
             "sketch relation {name} length {} does not match members {len}",
             values.len()
-        ))
-        .into())
+        )))
     }
 }
 
@@ -924,7 +901,7 @@ fn pad_resolved(
     name: &str,
     values: Vec<SketchRelationOperand>,
     len: usize,
-) -> Result<Vec<Option<SketchRelationOperand>>, SketchRelationWireError> {
+) -> Result<Vec<Option<SketchRelationOperand>>, SketchRelationPayloadError> {
     if values.is_empty() {
         Ok((0..len).map(|_| None).collect())
     } else if values.len() == len {
@@ -933,8 +910,7 @@ fn pad_resolved(
         Err(SketchRelationPayloadError(format!(
             "sketch relation {name} length {} does not match members {len}",
             values.len()
-        ))
-        .into())
+        )))
     }
 }
 
@@ -989,42 +965,27 @@ impl TryFrom<SketchRelationSerde> for SketchRelation {
     type Error = SketchRelationPayloadError;
 
     fn try_from(wire: SketchRelationSerde) -> Result<Self, Self::Error> {
-        Self::from_wire_inner(wire).map_err(|error| match error {
-            SketchRelationWireError::Payload(error) => error,
-            SketchRelationWireError::Resource(error) => {
-                SketchRelationPayloadError(error.to_string())
-            }
-        })
+        Self::from_wire_inner(wire)
     }
 }
 
 impl SketchRelation {
-    pub(crate) fn from_wire_charged(wire: SketchRelationSerde) -> Result<Self, CodecError> {
-        Self::from_wire_inner(wire).map_err(|error| match error {
-            SketchRelationWireError::Payload(error) => CodecError::Malformed(error.0),
-            SketchRelationWireError::Resource(error) => error,
-        })
-    }
-
-    fn from_wire_inner(wire: SketchRelationSerde) -> Result<Self, SketchRelationWireError> {
+    fn from_wire_inner(wire: SketchRelationSerde) -> Result<Self, SketchRelationPayloadError> {
         let (derived_kinds, derived_unknown) = constraint_kinds_from_state(wire.state);
         if !wire.constraint_kinds.is_empty() && wire.constraint_kinds != derived_kinds {
             return Err(SketchRelationPayloadError(
                 "sketch relation constraint_kinds disagrees with state".into(),
-            )
-            .into());
+            ));
         }
         if wire.unknown_constraint_bits != 0 && wire.unknown_constraint_bits != derived_unknown {
             return Err(SketchRelationPayloadError(
                 "sketch relation unknown_constraint_bits disagrees with state".into(),
-            )
-            .into());
+            ));
         }
         if wire.auxiliary_references.len() != wire.auxiliary_reference_offsets.len() {
             return Err(SketchRelationPayloadError(
                 "sketch relation auxiliary_reference_offsets must locate every reference".into(),
-            )
-            .into());
+            ));
         }
         let definition = SketchRelationDefinition::new(wire.state, wire.pattern)?;
         Self::try_new(SketchRelationDraft {
@@ -1060,7 +1021,6 @@ impl SketchRelation {
             )?,
             raw_bytes: wire.raw_bytes.into_inner(),
         })
-        .map_err(Into::into)
     }
 }
 

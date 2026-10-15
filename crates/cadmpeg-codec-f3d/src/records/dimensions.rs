@@ -659,7 +659,7 @@ pub(crate) struct DesignDimensionAnnotationFrameDraft {
 
 impl DesignDimensionAnnotationFrame {
     /// Admit an annotation frame using the source decode budget.
-    pub(crate) fn try_new_charged(
+    pub(crate) fn try_new(
         draft: DesignDimensionAnnotationFrameDraft,
     ) -> Result<Self, cadmpeg_core::CodecError> {
         Self::try_new_inner(draft).map_err(cadmpeg_core::CodecError::malformed)

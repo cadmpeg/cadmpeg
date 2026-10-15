@@ -16,7 +16,7 @@ fn copied_wire() -> serde_json::Value {
 fn copied_bodies_reject_empty_aliased_and_misaligned_rows() {
     let admitted: DesignCopyPasteBodiesOperation = serde_json::from_value(copied_wire()).unwrap();
     let construct = |bodies| {
-        DesignCopyPasteBodiesOperation::try_new_charged(
+        DesignCopyPasteBodiesOperation::try_new(
             bodies,
             crate::records::feature::body_ops::CopyPasteRecordLocation {
                 record_index: 501,

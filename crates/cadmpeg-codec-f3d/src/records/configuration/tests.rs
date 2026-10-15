@@ -183,7 +183,7 @@ fn configuration_scalar_projection_preserves_exact_text() {
     let (_, variant) = &admitted.variants()[0];
     let actual: Vec<_> = variant
         .parameters()
-        .map(|(key, value)| (key.as_str(), value.text_charged()))
+        .map(|(key, value)| (key.as_str(), value.text()))
         .collect();
     assert_eq!(
         actual,

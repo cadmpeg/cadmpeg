@@ -51,15 +51,15 @@ fn annotation_placement() -> crate::records::sketch_placement::DesignSketchPlace
 fn charged_sketch_annotation_ids_preserve_identity_text() {
     let placement = annotation_placement();
     assert_eq!(
-        crate::ids::neutral_sketch_id_charged(&placement).unwrap(),
+        crate::design::identity::neutral_sketch_id(&placement).unwrap(),
         crate::ids::neutral_sketch_id(&placement)
     );
     assert_eq!(
-        crate::ids::neutral_spatial_sketch_id_charged(&placement).unwrap(),
+        crate::design::identity::neutral_spatial_sketch_id(&placement).unwrap(),
         crate::ids::neutral_spatial_sketch_id(&placement)
     );
     assert_eq!(
-        crate::ids::neutral_sketch_constraint_id_charged(&placement.id, 4).unwrap(),
+        crate::design::identity::neutral_sketch_constraint_id(&placement.id, 4).unwrap(),
         crate::ids::neutral_sketch_constraint_id(&placement.id, 4)
     );
 }
@@ -178,7 +178,7 @@ fn container_only_neutral_parameter_id_matches_identity_shape() {
     let native = dimension_native();
     let parameter = native.design_parameters.first().unwrap();
     assert_eq!(
-        crate::ids::neutral_parameter_id_charged(parameter).unwrap(),
+        crate::design::identity::neutral_parameter_id(parameter).unwrap(),
         crate::ids::neutral_parameter_id(parameter),
     );
 }

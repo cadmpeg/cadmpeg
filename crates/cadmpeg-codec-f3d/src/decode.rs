@@ -106,7 +106,7 @@ fn container_only_dimension_parameters(
             continue;
         };
         if parameters.next().is_none() {
-            let id = crate::ids::neutral_parameter_id_charged(parameter)?;
+            let id = crate::design::identity::neutral_parameter_id(parameter)?;
             parameters_by_id.insert(id);
         }
     }
@@ -1430,7 +1430,7 @@ fn design_projection_gaps(
                     {
                         return Ok(count);
                     }
-                    let id = crate::ids::neutral_parameter_id_charged(parameter)?;
+                    let id = crate::design::identity::neutral_parameter_id(parameter)?;
                     Ok::<_, CodecError>(count + usize::from(
                         !projected_dimension_parameters.contains(&id)
                             && !container_only.contains(&id),
@@ -3307,11 +3307,11 @@ fn decode_scanned_document<'a>(
                             .map(|visibility| (*selector, visibility))
                     })
                 {
-                    let id = crate::ids::native_scoped_id_charged(
+                    let id = crate::ids::native_scoped_id(
                         &candidate.name,
                         "body-visibility",
                         body_selector,
-                    )?;
+                    );
 
                     let visibility = crate::records::bodies::BodyVisibility::try_from(
                         crate::records::bodies::BodyVisibilityWire {
@@ -4348,11 +4348,11 @@ fn populate_annotations(
         }
         for entity in &native.design_sketch_placements {
             note!(&entity.id, "design_sketch_placement");
-            let planar = crate::ids::neutral_sketch_id_charged(entity)?;
+            let planar = crate::design::identity::neutral_sketch_id(entity)?;
             if planar_sketches.contains(planar.as_str()) {
                 note!(planar.as_str(), "sketch");
             }
-            let spatial = crate::ids::neutral_spatial_sketch_id_charged(entity)?;
+            let spatial = crate::design::identity::neutral_spatial_sketch_id(entity)?;
             if spatial_sketches.contains(spatial.as_str()) {
                 note!(spatial.as_str(), "spatial_sketch");
             }
@@ -4372,7 +4372,7 @@ fn populate_annotations(
         for entity in &native.sketch_relations {
             note!(&entity.id, "sketch_relation");
             if constraints_by_native.contains_key(entity.id.as_str()) {
-                let constraint = crate::ids::neutral_sketch_constraint_id_charged(
+                let constraint = crate::design::identity::neutral_sketch_constraint_id(
                     &entity.id,
                     entity.record_index,
                 )?;
@@ -5376,14 +5376,13 @@ fn append_metadata_unknown(
     unknowns: &mut Vec<UnknownRecord>,
     brep: &BrepFacts,
 ) -> Result<(), CodecError> {
-    let id = UnknownId::mint(crate::ids::native_scoped_id_charged(
-        &brep.name, "unknown", 0_u64,
-    )?)
-    .map_err(|error| {
-        CodecError::malformed(format_args!(
-            "F3D BREP name cannot form an unknown-record identity: {error}"
-        ))
-    })?;
+    let id = UnknownId::mint(crate::ids::native_scoped_id(&brep.name, "unknown", 0_u64)).map_err(
+        |error| {
+            CodecError::malformed(format_args!(
+                "F3D BREP name cannot form an unknown-record identity: {error}"
+            ))
+        },
+    )?;
     let digest = brep.sha256.as_str().to_owned();
     unknowns.push(UnknownRecord::unavailable(
         id,

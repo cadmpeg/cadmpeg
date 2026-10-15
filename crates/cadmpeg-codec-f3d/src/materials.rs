@@ -76,10 +76,7 @@ fn named_act_channels(
     )?)
 }
 
-fn lp_ascii_printable_charged(
-    bytes: &[u8],
-    at: usize,
-) -> Result<Option<(String, usize)>, CodecError> {
+fn lp_ascii_printable(bytes: &[u8], at: usize) -> Result<Option<(String, usize)>, CodecError> {
     let Some(length) = View::u32_le_at(bytes, at).and_then(|value| usize::try_from(value).ok())
     else {
         return Ok(None);
@@ -949,11 +946,11 @@ pub(crate) fn decode_design_assignments(
                 continue;
             };
             let assignment = DesignMaterialAssignment {
-                id: crate::ids::native_scoped_id_charged(
+                id: crate::ids::native_scoped_id(
                     &entry.name,
                     "material-assignment",
                     presentation.byte_offset,
-                )?,
+                ),
                 asm_body_key: body_binding.asm_key,
                 asm_body_key_offset: u64_from_index(body_binding.asm_key_offset),
 
@@ -1638,8 +1635,7 @@ fn decode_design_object_types(
         let bytes = scan.entry_bytes(&entry.name)?;
         let mut position = 0usize;
         while position + 8 <= bytes.len() {
-            let Some((object_type, after_type)) = lp_ascii_printable_charged(bytes, position)?
-            else {
+            let Some((object_type, after_type)) = lp_ascii_printable(bytes, position)? else {
                 position += 1;
                 continue;
             };
@@ -1684,7 +1680,7 @@ fn decode_act_channels(
         let bytes = scan.entry_bytes(&entry.name)?;
         let mut position = 0usize;
         while position + 4 <= bytes.len() {
-            let Some((tag, after_tag)) = lp_ascii_printable_charged(bytes, position)? else {
+            let Some((tag, after_tag)) = lp_ascii_printable(bytes, position)? else {
                 position += 1;
                 continue;
             };
@@ -1707,7 +1703,7 @@ fn decode_act_channels(
             let mut channels = BTreeMap::new();
             let mut valid = true;
             for _ in 0..count {
-                let Some((name, after_name)) = lp_ascii_printable_charged(bytes, cursor)? else {
+                let Some((name, after_name)) = lp_ascii_printable(bytes, cursor)? else {
                     valid = false;
                     break;
                 };

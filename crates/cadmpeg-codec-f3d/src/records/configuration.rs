@@ -71,7 +71,7 @@ pub(crate) enum ConfigurationScalar {
 }
 
 impl ConfigurationScalar {
-    pub(crate) fn text_charged(&self) -> String {
+    pub(crate) fn text(&self) -> String {
         struct ScalarText<'a>(&'a ConfigurationScalar);
         impl std::fmt::Display for ScalarText<'_> {
             fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -419,7 +419,7 @@ pub(crate) enum DesignConfigurationKind {
 }
 
 impl DesignConfiguration {
-    pub(crate) fn try_new_charged(
+    pub(crate) fn try_new(
         entry_name: String,
         kind: DesignConfigurationKind,
         variant_order: Vec<String>,
@@ -535,10 +535,6 @@ impl DesignConfiguration {
 
     pub(crate) fn id(&self) -> String {
         crate::ids::configuration_entry_id(&self.entry_name, &self.identity_scope)
-    }
-
-    pub(crate) fn id_charged(&self) -> String {
-        crate::ids::configuration_entry_id_charged(&self.entry_name, &self.identity_scope)
     }
 
     pub(crate) fn entry_name(&self) -> &String {

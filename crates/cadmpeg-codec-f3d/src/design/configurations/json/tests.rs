@@ -78,5 +78,5 @@ fn configuration_numeric_scalar_text_formats_the_number() {
     let scalar = crate::records::configuration::ConfigurationScalar::Number(
         serde_json::Number::from_f64(2.5).unwrap(),
     );
-    assert_eq!(scalar.text_charged(), "2.5");
+    assert_eq!(scalar.text(), "2.5");
 }

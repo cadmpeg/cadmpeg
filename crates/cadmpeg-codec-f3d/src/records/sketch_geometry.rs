@@ -880,18 +880,6 @@ impl SketchPointCompanion {
         }
         Ok(())
     }
-
-    fn validate_charged(&self) -> Result<(), CodecError> {
-        let mut unique = std::collections::HashSet::new();
-        for curve in &self.incident_curves {
-            if !unique.insert(curve) {
-                return Err(CodecError::Malformed(
-                    "sketch point companion.incident_curves must be distinct".into(),
-                ));
-            }
-        }
-        Ok(())
-    }
 }
 
 /// Borrowed companion payload with the prefix derived for older point forms.
@@ -1074,19 +1062,6 @@ impl TryFrom<SketchPointDraft> for SketchPoint {
 }
 
 impl SketchPoint {
-    pub(crate) fn try_from_charged(draft: SketchPointDraft) -> Result<Self, CodecError> {
-        let coordinates = FinitePoint2::new(draft.coordinates).ok_or_else(|| {
-            CodecError::Malformed("sketch point coordinates must be finite".into())
-        })?;
-        let record_form = draft
-            .record_form
-            .clone()
-            .try_checked()
-            .map_err(CodecError::Malformed)?;
-        draft.companion.validate_charged()?;
-        Ok(Self::from_validated(draft, coordinates, record_form))
-    }
-
     fn from_validated(
         draft: SketchPointDraft,
         coordinates: FinitePoint2,

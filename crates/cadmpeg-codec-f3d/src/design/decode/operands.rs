@@ -3295,11 +3295,7 @@ fn parse_extrude_selection_group(
     let Some(wire) = wire else {
         return Ok(None);
     };
-    match DesignExtrudeSelectionGroup::from_wire_charged(wire?) {
-        Ok(group) => Ok(Some(group)),
-        Err(error @ CodecError::ResourceLimit(_)) => Err(error),
-        Err(_) => Ok(None),
-    }
+    Ok(DesignExtrudeSelectionGroup::try_from(wire?).ok())
 }
 
 /// Decode the fixed-width records named by Extrude selection groups.
@@ -4997,10 +4993,7 @@ fn parse_edge_operand(
     };
     let surface_patch_recipe_structure =
         if scope.kind() == crate::records::feature::scope::DesignFeatureKind::SurfacePatch {
-            surface_patch_recipe_structure_with_context(
-                &parsed.recipe_program,
-                parsed.recipe_references.len(),
-            )
+            surface_patch_recipe_structure(&parsed.recipe_program, parsed.recipe_references.len())
         } else {
             None
         };
@@ -5129,7 +5122,7 @@ pub(crate) fn edge_recipe_structure_within(
 /// second fields name face references, the third and fifth fields name edge
 /// references, and the fourth and sixth fields are zero pairs. The final field
 /// is a counted sequence of the standard eight-word topology entries.
-pub(crate) fn surface_patch_recipe_structure_with_context(
+pub(crate) fn surface_patch_recipe_structure(
     program: &[i32],
     reference_count: usize,
 ) -> Option<crate::records::topology::edge_recipe::DesignSurfacePatchRecipeStructure> {

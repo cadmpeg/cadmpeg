@@ -318,7 +318,7 @@ fn rescope_fidelity(
     annotations
         .map_ids(
             ctx,
-            |id| match rescope_charged(id, occurrence) {
+            |id| match rescope(id, occurrence) {
                 Some(id) => Ok(id),
                 None => Ok(id.to_string()),
             },
@@ -349,7 +349,7 @@ fn rescope_fidelity(
     }
     let mut rescoped = SourceFidelity::with_annotations(builder.build());
     for (id, record) in records {
-        let id_text = match rescope_charged(id.as_str(), occurrence) {
+        let id_text = match rescope(id.as_str(), occurrence) {
             Some(id) => id,
             None => {
                 format!("{id}")
@@ -432,7 +432,7 @@ fn compose_transforms(
     })
 }
 
-fn rescope_charged(text: &str, occurrence: &str) -> Option<String> {
+fn rescope(text: &str, occurrence: &str) -> Option<String> {
     text.strip_prefix("f3d:")
         .map(|rest| format!("f3d:xref/{occurrence}/{rest}"))
 }
@@ -454,7 +454,7 @@ impl EntityRewrite for OccurrenceScope<'_, '_> {
             self.ctx,
             "rewrite F3Z model identity",
             entity,
-            |id: &str| match rescope_charged(id, self.occurrence) {
+            |id: &str| match rescope(id, self.occurrence) {
                 Some(rewritten) => Ok(rewritten),
                 None => Ok(id.to_owned()),
             },
@@ -502,7 +502,7 @@ fn rescope_record(
 ) -> Result<NativeRecord, CodecError> {
     let mut fields = typed_fields(ctx, record, arena, occurrence)?;
     rescope_native_reference_fields(ctx, arena, &mut fields, occurrence)?;
-    let id = rescope_charged(record.id(), occurrence).unwrap_or_else(|| record.id().to_string());
+    let id = rescope(record.id(), occurrence).unwrap_or_else(|| record.id().to_string());
     NativeRecord::new(
         cadmpeg_ir::ids::Identity::new(id).map_err(CodecError::malformed)?,
         fields,
@@ -525,7 +525,7 @@ fn typed_fields(
 ) -> Result<Map<String, Value>, CodecError> {
     macro_rules! typed {
         ($type:path) => {
-            record.rewrite_fields::<$type, _>(ctx, |id| match rescope_charged(id, occurrence) {
+            record.rewrite_fields::<$type, _>(ctx, |id| match rescope(id, occurrence) {
                 Some(rewritten) => Ok(rewritten),
                 None => Ok(id.to_owned()),
             })?
@@ -644,14 +644,14 @@ fn rescope_native_reference_fields(
 fn scope_identity_value(value: &mut Value, occurrence: &str) {
     match value {
         Value::String(text) => {
-            if let Some(rescoped) = rescope_charged(text, occurrence) {
+            if let Some(rescoped) = rescope(text, occurrence) {
                 *text = rescoped;
             }
         }
         Value::Array(items) => {
             for item in items {
                 if let Value::String(text) = item {
-                    if let Some(rescoped) = rescope_charged(text, occurrence) {
+                    if let Some(rescoped) = rescope(text, occurrence) {
                         *text = rescoped;
                     }
                 }
@@ -661,7 +661,7 @@ fn scope_identity_value(value: &mut Value, occurrence: &str) {
         // typed identity and all other members are its discriminator/value.
         Value::Object(fields) => {
             if let Some(Value::String(text)) = fields.get_mut("id") {
-                if let Some(rescoped) = rescope_charged(text, occurrence) {
+                if let Some(rescoped) = rescope(text, occurrence) {
                     *text = rescoped;
                 }
             }

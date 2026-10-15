@@ -72,7 +72,7 @@ fn copied_body_fixture() -> (DesignParameterScope, DesignBodyBinding) {
         scope.payload_mut()
     {
         *slot = Some(
-            DesignCopyPasteBodiesOperation::try_new_charged(
+            DesignCopyPasteBodiesOperation::try_new(
                 vec![DesignCopiedBody {
                     operand: crate::records::identity::Located {
                         value: 502,

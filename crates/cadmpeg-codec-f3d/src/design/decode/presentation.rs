@@ -623,11 +623,7 @@ fn preceding_lp_utf16(bytes: &[u8], start: usize, marker_at: usize) -> Option<(u
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        bare_presentation_material as bare_presentation_material_with_context,
-        body_presentations as body_presentations_with_context,
-        browser_node_records as browser_node_records_with_context, BodyPresentationOwner,
-    };
+    use super::{body_presentations, browser_node_records, BodyPresentationOwner};
     use crate::bytes::lp_utf16_bytes;
     use crate::design::presentation::{
         APPEARANCE_LIBRARY_ID, BODY_PRESENTATION_BASE_TYPE_GUID,
@@ -647,21 +643,7 @@ mod tests {
         end: usize,
         entity_suffix: u64,
     ) -> Option<super::PresentationMaterial> {
-        { bare_presentation_material_with_context(bytes, start, end, entity_suffix) }.unwrap()
-    }
-
-    fn body_presentations(
-        bytes: &[u8],
-        meta: &crate::metastream::MetaStream,
-    ) -> Result<Vec<super::BodyPresentation>, cadmpeg_core::CodecError> {
-        body_presentations_with_context(bytes, meta)
-    }
-
-    fn browser_node_records(
-        bytes: &[u8],
-        meta: &crate::metastream::MetaStream,
-    ) -> Result<Vec<super::BrowserNodeRecord>, cadmpeg_core::CodecError> {
-        browser_node_records_with_context(bytes, meta)
+        super::bare_presentation_material(bytes, start, end, entity_suffix).unwrap()
     }
 
     #[test]
@@ -697,7 +679,7 @@ mod tests {
             records: vec![primary_record(43, 0)],
             secondary_records: Vec::new(),
         };
-        let nodes = browser_node_records_with_context(&bytes, &meta).unwrap();
+        let nodes = browser_node_records(&bytes, &meta).unwrap();
         assert_eq!(nodes.len(), 1);
         assert_eq!(nodes[0].entity_suffix, 42);
     }

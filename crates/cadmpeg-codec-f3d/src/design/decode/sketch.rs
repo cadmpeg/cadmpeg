@@ -1697,8 +1697,8 @@ fn decode_sketch_points_from_stream(
                 ))
             })?;
 
-        out.push(SketchPoint::try_from_charged(
-            crate::records::sketch_geometry::SketchPointDraft {
+        out.push(
+            SketchPoint::try_from(crate::records::sketch_geometry::SketchPointDraft {
                 id: design_record_id(stream, ":sketch-point#", u64_from_index(frame.start)),
                 record_index,
                 owner_reference: decoded.owner_reference,
@@ -1709,8 +1709,9 @@ fn decode_sketch_points_from_stream(
                 companion,
                 paired_reference: decoded.paired_reference,
                 coordinates: Point2::new(u, v),
-            },
-        )?);
+            })
+            .map_err(CodecError::Malformed)?,
+        );
     }
     Ok(out)
 }

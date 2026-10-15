@@ -153,7 +153,7 @@ pub(crate) fn decode_configurations(
             Vec::new()
         };
         let configuration =
-            DesignConfiguration::try_new_charged(entry.name.clone(), kind, variant_order, payload)?;
+            DesignConfiguration::try_new(entry.name.clone(), kind, variant_order, payload)?;
         configurations.push(configuration);
     }
     let mut names = HashSet::new();
@@ -195,7 +195,7 @@ pub(crate) fn project_configurations(
             let mut properties = BTreeMap::new();
             for (parameter, value) in definition.parameters() {
                 let key = configuration_property_key("parameter:", parameter)?;
-                properties.insert(key, value.text_charged());
+                properties.insert(key, value.text());
             }
             for feature in definition.suppressed() {
                 let key = configuration_property_key("suppressed:", feature)?;
@@ -404,7 +404,7 @@ mod tests {
         let variant_order = parse_configuration_variant_order("table.dsgcfg", bytes).unwrap();
         assert_eq!(variant_order, ["Small", "Medium", "Large"]);
 
-        let table = DesignConfiguration::try_new_charged(
+        let table = DesignConfiguration::try_new(
             "table.dsgcfg".into(),
             DesignConfigurationKind::Table,
             variant_order,
@@ -447,7 +447,7 @@ mod tests {
     #[test]
     fn configuration_unknown_members_are_counted_at_each_semantic_level() {
         let native = [
-            DesignConfiguration::try_new_charged(
+            DesignConfiguration::try_new(
                 "table.dsgcfg".into(),
                 DesignConfigurationKind::Table,
                 vec!["variant".into()],
@@ -468,7 +468,7 @@ mod tests {
                 .clone(),
             )
             .unwrap(),
-            DesignConfiguration::try_new_charged(
+            DesignConfiguration::try_new(
                 "rule.dsgcfgrule".into(),
                 DesignConfigurationKind::Rule,
                 Vec::new(),
@@ -488,7 +488,7 @@ mod tests {
 
     #[test]
     fn configuration_rule_without_the_typed_pair_is_retained_not_rejected() {
-        let native = [DesignConfiguration::try_new_charged(
+        let native = [DesignConfiguration::try_new(
             "partial.dsgcfgrule".into(),
             DesignConfigurationKind::Rule,
             Vec::new(),
@@ -506,7 +506,7 @@ mod tests {
     #[test]
     fn configuration_rules_bind_only_one_named_variant() {
         let table = |entry_name: &str, variant_name: &str| {
-            DesignConfiguration::try_new_charged(
+            DesignConfiguration::try_new(
                 entry_name.into(),
                 DesignConfigurationKind::Table,
                 vec![variant_name.into()],
@@ -517,7 +517,7 @@ mod tests {
             )
             .unwrap()
         };
-        let rule = DesignConfiguration::try_new_charged(
+        let rule = DesignConfiguration::try_new(
             "rule.dsgcfgrule".into(),
             DesignConfigurationKind::Rule,
             Vec::new(),
@@ -549,7 +549,7 @@ mod tests {
 
     #[test]
     fn configuration_parameter_overrides_bind_only_unique_parameter_names() {
-        let table = DesignConfiguration::try_new_charged(
+        let table = DesignConfiguration::try_new(
             "table.dsgcfg".into(),
             DesignConfigurationKind::Table,
             vec!["wide".into()],
@@ -587,7 +587,7 @@ mod tests {
             id: ParameterId::mint("f3d:model:parameter#other-width").expect("identity grammar"),
             ..parameter.clone()
         };
-        let mut ambiguous = project_configurations(&[DesignConfiguration::try_new_charged(
+        let mut ambiguous = project_configurations(&[DesignConfiguration::try_new(
             "other.dsgcfg".into(),
             DesignConfigurationKind::Table,
             vec!["wide".into()],
@@ -611,7 +611,7 @@ mod tests {
     #[test]
     fn configuration_suppression_binds_only_unique_feature_names() {
         crate::test_support::with_decode_context(|decode_ctx| {
-            let table = DesignConfiguration::try_new_charged(
+            let table = DesignConfiguration::try_new(
                 "table.dsgcfg".into(),
                 DesignConfigurationKind::Table,
                 vec!["alternate".into()],
@@ -664,7 +664,7 @@ mod tests {
                 id: FeatureId::mint("f3d:model:feature#other-fillet-1").expect("identity grammar"),
                 ..feature.clone()
             };
-            let mut ambiguous = project_configurations(&[DesignConfiguration::try_new_charged(
+            let mut ambiguous = project_configurations(&[DesignConfiguration::try_new(
                 "other.dsgcfg".into(),
                 DesignConfigurationKind::Table,
                 vec!["alternate".into()],
