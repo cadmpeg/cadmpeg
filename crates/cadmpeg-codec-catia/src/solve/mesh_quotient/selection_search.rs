@@ -304,15 +304,6 @@ impl MeshSelectionSearch<'_, '_> {
         Ok(signature)
     }
 
-    #[cfg(test)]
-    pub(super) fn propagate_forced_face_equations(
-        &self,
-        quotient: &mut MeshQuotient,
-    ) -> Result<bool, CodecError> {
-        let budget = WorkBudget::new(usize::MAX);
-        self.propagate_forced_face_equations_from(quotient, None, &budget)
-    }
-
     pub(super) fn propagate_forced_face_equations_from(
         &self,
         quotient: &mut MeshQuotient,
