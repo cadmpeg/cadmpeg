@@ -154,38 +154,133 @@ impl TryFrom<RmCreationDisplayDataRelationWire> for RmCreationDisplayDataRelatio
         if wire.class_name != CLASS_NAME {
             return Err("class_name must be UGS::RM_creation_display_data".into());
         }
-        let encoding = match (wire.encoding, wire.first_index, wire.raw_first_index, wire.first_index_source_offset, wire.target_object_id) {
-            (RmCreationDisplayDataEncodingWire::Index { indices, raw_indices, index_source_offsets, flag }, Some(first_index), Some(raw_first_index), Some(first_index_source_offset), None) => {
+        let encoding = match (
+            wire.encoding,
+            wire.first_index,
+            wire.raw_first_index,
+            wire.first_index_source_offset,
+            wire.target_object_id,
+        ) {
+            (
+                RmCreationDisplayDataEncodingWire::Index {
+                    indices,
+                    raw_indices,
+                    index_source_offsets,
+                    flag,
+                },
+                Some(first_index),
+                Some(raw_first_index),
+                Some(first_index_source_offset),
+                None,
+            ) => {
                 let [a, b, c, d] = row_indices(&indices, &raw_indices);
                 let indices = [a?.into(), b?.into(), c?.into(), d?.into()];
                 let first = atom(first_index, &raw_first_index, "first_index/raw_first_index")?;
-                let flag = crate::om::discriminators::LinkedIndexFlag::try_from(flag).map_err(|_| "flag: must be 3 or 7")?;
-                let row = IndexRow::<(), u64>::new(first, flag, indices, wire.source_offset).ok_or("source_offset: row extent overflows")?;
-                if row.first_index().offset != first_index_source_offset { return Err("first_index_source_offset differs from row layout".into()); }
-                if row.indices().map(|index| index.offset) != index_source_offsets { return Err("index_source_offsets differ from row layout".into()); }
+                let flag = crate::om::discriminators::LinkedIndexFlag::try_from(flag)
+                    .map_err(|_| "flag: must be 3 or 7")?;
+                let row = IndexRow::<(), u64>::new(first, flag, indices, wire.source_offset)
+                    .ok_or("source_offset: row extent overflows")?;
+                if row.first_index().offset != first_index_source_offset {
+                    return Err("first_index_source_offset differs from row layout".into());
+                }
+                if row.indices().map(|index| index.offset) != index_source_offsets {
+                    return Err("index_source_offsets differ from row layout".into());
+                }
                 RmCreationDisplayDataEncoding::Index(row)
             }
-            (RmCreationDisplayDataEncodingWire::Linked { indices, raw_indices, index_source_offsets, flag, target_index, raw_target_index, target_index_source_offset, mode, discriminator }, Some(first_index), Some(raw_first_index), Some(first_index_source_offset), target_object_id) => {
+            (
+                RmCreationDisplayDataEncodingWire::Linked {
+                    indices,
+                    raw_indices,
+                    index_source_offsets,
+                    flag,
+                    target_index,
+                    raw_target_index,
+                    target_index_source_offset,
+                    mode,
+                    discriminator,
+                },
+                Some(first_index),
+                Some(raw_first_index),
+                Some(first_index_source_offset),
+                target_object_id,
+            ) => {
                 let [a, b, c] = row_indices(&indices, &raw_indices);
                 let indices = [a?.into(), b?.into(), c?.into()];
                 let first = atom(first_index, &raw_first_index, "first_index/raw_first_index")?;
-                let target = atom(target_index, &raw_target_index, "target_index/raw_target_index")?.into();
-                let row = LinkedRow::<(), u64>::new(first, discriminator, target, indices, flag, mode, wire.source_offset).ok_or("source_offset: row extent overflows")?;
-                if row.first_index().offset != first_index_source_offset { return Err("first_index_source_offset differs from row layout".into()); }
-                if row.target_index().offset != target_index_source_offset { return Err("target_index_source_offset differs from row layout".into()); }
-                if row.indices().map(|index| index.offset) != index_source_offsets { return Err("index_source_offsets differ from row layout".into()); }
-                RmCreationDisplayDataEncoding::Linked { row, target_object_id }
+                let target = atom(
+                    target_index,
+                    &raw_target_index,
+                    "target_index/raw_target_index",
+                )?
+                .into();
+                let row = LinkedRow::<(), u64>::new(
+                    first,
+                    discriminator,
+                    target,
+                    indices,
+                    flag,
+                    mode,
+                    wire.source_offset,
+                )
+                .ok_or("source_offset: row extent overflows")?;
+                if row.first_index().offset != first_index_source_offset {
+                    return Err("first_index_source_offset differs from row layout".into());
+                }
+                if row.target_index().offset != target_index_source_offset {
+                    return Err("target_index_source_offset differs from row layout".into());
+                }
+                if row.indices().map(|index| index.offset) != index_source_offsets {
+                    return Err("index_source_offsets differ from row layout".into());
+                }
+                RmCreationDisplayDataEncoding::Linked {
+                    row,
+                    target_object_id,
+                }
             }
-            (RmCreationDisplayDataEncodingWire::Target { indices, raw_indices, index_source_offsets, target_index, raw_target_index, target_index_source_offset, mode }, None, None, None, target_object_id) => {
+            (
+                RmCreationDisplayDataEncodingWire::Target {
+                    indices,
+                    raw_indices,
+                    index_source_offsets,
+                    target_index,
+                    raw_target_index,
+                    target_index_source_offset,
+                    mode,
+                },
+                None,
+                None,
+                None,
+                target_object_id,
+            ) => {
                 let [a, b, c] = row_indices(&indices, &raw_indices);
                 let indices = [a?.into(), b?.into(), c?.into()];
-                let target = atom(target_index, &raw_target_index, "target_index/raw_target_index")?.into();
-                let row = TargetRow::<(), u64>::new(target, indices, mode, wire.source_offset).ok_or("source_offset: row extent overflows")?;
-                if row.target_index().offset != target_index_source_offset { return Err("target_index_source_offset differs from row layout".into()); }
-                if row.indices().map(|index| index.offset) != index_source_offsets { return Err("index_source_offsets differ from row layout".into()); }
-                RmCreationDisplayDataEncoding::Target { row, target_object_id }
+                let target = atom(
+                    target_index,
+                    &raw_target_index,
+                    "target_index/raw_target_index",
+                )?
+                .into();
+                let row = TargetRow::<(), u64>::new(target, indices, mode, wire.source_offset)
+                    .ok_or("source_offset: row extent overflows")?;
+                if row.target_index().offset != target_index_source_offset {
+                    return Err("target_index_source_offset differs from row layout".into());
+                }
+                if row.indices().map(|index| index.offset) != index_source_offsets {
+                    return Err("index_source_offsets differ from row layout".into());
+                }
+                RmCreationDisplayDataEncoding::Target {
+                    row,
+                    target_object_id,
+                }
             }
-            _ => return Err("first_index/raw_first_index/first_index_source_offset/target_object_id: incompatible row family".into()),
+            _ => {
+                return Err(
+                    "first_index/raw_first_index/first_index_source_offset/target_object_id: \
+                 incompatible row family"
+                        .into(),
+                )
+            }
         };
         Ok(Self {
             id: wire.id,

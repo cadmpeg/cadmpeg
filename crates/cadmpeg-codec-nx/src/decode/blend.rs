@@ -2146,7 +2146,7 @@ fn blend_boundary_parameter_from_support_pcurve_with_geometry_and_budget(
     else {
         return Ok(None);
     };
-    blend_boundary_parameter_from_contact_pcurve_with_geometry_and_budget(
+    blend_boundary_parameter_from_contact_pcurve(
         index,
         &ContactCurveSample {
             support,
@@ -2170,7 +2170,7 @@ pub(super) struct ContactCurveSample<'inputs> {
     pub(super) curve_parameter: f64,
 }
 
-pub(super) fn blend_boundary_parameter_from_contact_pcurve_with_geometry_and_budget(
+pub(super) fn blend_boundary_parameter_from_contact_pcurve(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     contact_curve_sample: &ContactCurveSample<'_>,
     target: BoundaryInverseTarget,
@@ -2258,7 +2258,7 @@ pub(super) struct SourcePcurveSample<'inputs> {
 /// analytic and offset supports, the serialized spine contact chart remains
 /// the fast path, with a bounded 3D closest-point fallback.  Every result is
 /// certified by reproducing the source sample on the target support.
-pub(super) fn blend_support_parameter_from_source_pcurve_with_index_and_budget_and_seed_cache(
+pub(super) fn blend_support_parameter_from_source_pcurve(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     source_pcurve_sample: &SourcePcurveSample<'_>,
     target: BoundaryInverseTarget,

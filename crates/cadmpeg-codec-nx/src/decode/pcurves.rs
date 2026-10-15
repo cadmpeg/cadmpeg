@@ -2,10 +2,10 @@
 //! Intersection pcurve completion, edge incidence, and boundary transfer.
 
 use super::blend::{
-    blend_boundary_parameter_from_contact_pcurve_with_geometry_and_budget,
+    blend_boundary_parameter_from_contact_pcurve,
     blend_boundary_parameter_from_support_pcurve_with_budget,
-    blend_support_parameter_from_source_pcurve_with_index_and_budget_and_seed_cache,
-    blend_surface_definition_with_index, blend_surface_parameter_grid_with_index_and_budget,
+    blend_support_parameter_from_source_pcurve, blend_surface_definition_with_index,
+    blend_surface_parameter_grid_with_index_and_budget,
     blend_surface_parameters_for_fit_with_grid_and_budget,
     blend_surface_point_inner_with_index_and_budget, closest_spine_parameter_with_index_and_budget,
     decoded_surface_point_inner_with_budget, decoded_surface_point_with_geometry_and_budget,
@@ -3404,7 +3404,7 @@ fn transferred_pcurve_sample_with_budget<'a>(
     // returns. Keep its result separate from fallback boundary inversion so a
     // fallback cannot accidentally inherit that certification.
     let contact_target_uv = if let Some(contact) = blend_contact {
-        blend_boundary_parameter_from_contact_pcurve_with_geometry_and_budget(
+        blend_boundary_parameter_from_contact_pcurve(
             index,
             &crate::decode::blend::ContactCurveSample {
                 support: contact.support,
@@ -3420,19 +3420,18 @@ fn transferred_pcurve_sample_with_budget<'a>(
     } else {
         None
     };
-    let reverse_contact_target_uv =
-        blend_support_parameter_from_source_pcurve_with_index_and_budget_and_seed_cache(
-            index,
-            &crate::decode::blend::SourcePcurveSample {
-                blend: source_surface,
-                support: target_surface,
-                source_pcurve,
-                curve_parameter: parameter,
-            },
-            target,
-            contact_seeds,
-            geometry_budget,
-        )?;
+    let reverse_contact_target_uv = blend_support_parameter_from_source_pcurve(
+        index,
+        &crate::decode::blend::SourcePcurveSample {
+            blend: source_surface,
+            support: target_surface,
+            source_pcurve,
+            curve_parameter: parameter,
+        },
+        target,
+        contact_seeds,
+        geometry_budget,
+    )?;
     let (target_uv, target_certified) = if reverse_contact_target_uv.is_some() {
         (reverse_contact_target_uv, true)
     } else if contact_target_uv.is_some() {

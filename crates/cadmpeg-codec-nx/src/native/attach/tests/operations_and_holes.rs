@@ -550,32 +550,40 @@ fn nx_trim_body_projects_distinct_target_and_ordered_tools() {
 
     let same_body = BTreeMap::from([(10, 10), (20, 10)]);
     assert!(matches!(
-        trim_body_feature_definition(
-            10,
-            &references,
-            &same_body,
-            &BTreeMap::new(),
-        ).unwrap(), FeatureDefinition::Operation(FeatureOperation::TrimBodies {
-            operands,
+    trim_body_feature_definition(
+        10,
+        &references,
+        &same_body,
+        &BTreeMap::new(),
+    ).unwrap(), FeatureDefinition::Operation(FeatureOperation::TrimBodies {
+        operands,
 
-            ..
-        }) if matches!((operands.targets(), operands.tools(),), (BodySelection::Native(target), BodySelection::Native(tools),) if target == "nx:om-object-index#10" && tools == "nx:om-object-indices#20")));
+        ..
+    }) if matches!(
+        (operands.targets(), operands.tools(),),
+        (BodySelection::Native(target), BodySelection::Native(tools),)
+            if target == "nx:om-object-index#10" && tools == "nx:om-object-indices#20"
+    )));
 
     let mut mixed_operand = operands[0].clone();
     mixed_operand.operand_data_block = Some("nx:om-data-blocks-2:block#20".to_string());
     mixed_operand.segment_body_bindings.clear();
     let mixed_references = vec![&mixed_operand];
     assert!(matches!(
-        trim_body_feature_definition(
-            10,
-            &mixed_references,
-            &roots,
-            &BTreeMap::new(),
-        ).unwrap(), FeatureDefinition::Operation(FeatureOperation::TrimBodies {
-            operands,
+    trim_body_feature_definition(
+        10,
+        &mixed_references,
+        &roots,
+        &BTreeMap::new(),
+    ).unwrap(), FeatureDefinition::Operation(FeatureOperation::TrimBodies {
+        operands,
 
-            ..
-        }) if matches!((operands.targets(), operands.tools(),), (BodySelection::Native(target), BodySelection::Native(tools),) if target == "nx:om-object-index#10" && tools == "nx:om-object-indices#20")));
+        ..
+    }) if matches!(
+        (operands.targets(), operands.tools(),),
+        (BodySelection::Native(target), BodySelection::Native(tools),)
+            if target == "nx:om-object-index#10" && tools == "nx:om-object-indices#20"
+    )));
 }
 
 #[test]
