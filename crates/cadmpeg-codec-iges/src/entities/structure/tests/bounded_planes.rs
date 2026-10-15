@@ -65,7 +65,7 @@ fn bounded_plane_builds_a_sheet_face_in_v4_and_v5() {
         assert_eq!(coedge.edge.as_str(), "iges:model:edge#bounded-plane-D1");
         assert!(!has_entity_projection_loss(&result), "{expected_version}");
         let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail");
+            .expect("validate the neutral model");
         assert!(
             validation.is_ok(),
             "{expected_version}: {:#?}",
@@ -125,8 +125,8 @@ fn bounded_plane_accepts_a_simple_piecewise_linear_nurbs_boundary() {
         "{:#?}",
         result.report().losses
     );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+    let validation =
+        cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -218,8 +218,8 @@ fn bounded_plane_accepts_a_simple_composite_line_boundary() {
         "{:#?}",
         result.report().losses
     );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+    let validation =
+        cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
