@@ -814,25 +814,19 @@ fn exact_hem_operation(
     let mut resolved = None;
     for header_shift in SHEET_METAL_HEADER_SHIFTS {
         for candidate in [
-            hem_gap_length_operation_at(
-                bytes,
-                start,
-                paired_at,
-                (*references).clone(),
-                header_shift,
-            ),
+            hem_gap_length_operation_at(bytes, start, paired_at, references.clone(), header_shift),
             hem_radius_angle_operation_at(
                 bytes,
                 start,
                 paired_at,
-                (*references).clone(),
+                references.clone(),
                 header_shift,
             ),
             hem_gap_length_radius_operation_at(
                 bytes,
                 start,
                 paired_at,
-                (*references).clone(),
+                references.clone(),
                 header_shift,
             ),
         ]

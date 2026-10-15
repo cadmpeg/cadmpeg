@@ -559,8 +559,7 @@ pub(crate) fn bind_extrude_profile_selections(
                             } else {
                                 let mut group_ids = Vec::new();
                                 for group in &matching_groups {
-                                    let id = group.id.clone();
-                                    group_ids.push(id);
+                                    group_ids.push(group.id.clone());
                                 }
                                 let sketch_id = spatial_sketch.id.clone();
                                 *profile = match ProfileRef::spatial_sketch_selection(
@@ -591,7 +590,7 @@ pub(crate) fn bind_extrude_profile_selections(
                             curve_resolution.curve_identities,
                             curve_resolution.sketch_entities,
                         )? {
-                            let sketch_id = (sketch_id).clone();
+                            let sketch_id = sketch_id.clone();
                             *profile = ProfileRef::Planar(match PlanarProfileRef::sketch_profiles(
                                 sketch_id, profiles,
                             ) {
@@ -624,10 +623,9 @@ pub(crate) fn bind_extrude_profile_selections(
                     } else {
                         let mut group_ids = Vec::new();
                         for group in &matching_groups {
-                            let id = group.id.clone();
-                            group_ids.push(id);
+                            group_ids.push(group.id.clone());
                         }
-                        let sketch_id = (sketch_id).clone();
+                        let sketch_id = sketch_id.clone();
                         let fallback =
                             match PlanarProfileRef::sketch_selection(sketch_id, group_ids) {
                                 Ok(profile) => profile,
@@ -837,8 +835,7 @@ fn historical_face_profile_selection(
     }
     let mut group_ids = Vec::new();
     for group in groups {
-        let id = group.id.clone();
-        group_ids.push(id);
+        group_ids.push(group.id.clone());
     }
     Ok(PlanarProfileRef::historical_faces(
         crate::design::identity::feature_input_topology_id(feature_id, previous_state_id)?,
@@ -1036,9 +1033,9 @@ fn merge_resolved_profile_selections(
         }
     }
     let selected = if !profiles.is_empty() {
-        PlanarProfileRef::sketch_profiles((sketch).clone(), profiles).ok()
+        PlanarProfileRef::sketch_profiles(sketch.clone(), profiles).ok()
     } else if !regions.is_empty() {
-        PlanarProfileRef::sketch_regions((sketch).clone(), regions).ok()
+        PlanarProfileRef::sketch_regions(sketch.clone(), regions).ok()
     } else {
         return None;
     };
@@ -1180,13 +1177,13 @@ pub(super) fn resolved_extrude_profile_selection(
     }
     let profile = match resolved_profiles {
         Some(ResolvedProfileSelection::Loops(profiles)) => {
-            match PlanarProfileRef::sketch_profiles((sketch_id).clone(), profiles) {
+            match PlanarProfileRef::sketch_profiles(sketch_id.clone(), profiles) {
                 Ok(profile) => profile,
                 Err(_) => PlanarProfileRef::Native(group.id.clone()),
             }
         }
         Some(ResolvedProfileSelection::Regions(regions)) => {
-            match PlanarProfileRef::sketch_regions((sketch_id).clone(), regions) {
+            match PlanarProfileRef::sketch_regions(sketch_id.clone(), regions) {
                 Ok(profile) => profile,
                 Err(_) => PlanarProfileRef::Native(group.id.clone()),
             }
@@ -1194,7 +1191,7 @@ pub(super) fn resolved_extrude_profile_selection(
         None => {
             let id = group.id.clone();
             let ids = vec![id];
-            match PlanarProfileRef::sketch_selection((sketch_id).clone(), ids) {
+            match PlanarProfileRef::sketch_selection(sketch_id.clone(), ids) {
                 Ok(profile) => profile,
                 Err(_) => PlanarProfileRef::Native(group.id.clone()),
             }

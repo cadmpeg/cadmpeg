@@ -134,7 +134,7 @@ pub(crate) fn project_sketch_constraints(
             let Some(sketch) = sketches.get(&(scope, relation.owner_reference)) else {
                 return Ok(None);
             };
-            let sketch = (sketch).clone();
+            let sketch = sketch.clone();
             let mut input_entities = Vec::new();
             for member in relation.members().iter() {
                 if let Some(entity) = projected.get(&(scope, member.reference.record_index())) {
@@ -211,8 +211,7 @@ pub(crate) fn project_sketch_constraints(
                     .chain(return_indices)
                 {
                     if let Some(entity) = projected.get(&(scope, record_index)) {
-                        let id = (entity.id()).clone();
-                        native_entities.push(id);
+                        native_entities.push(entity.id().clone());
                     }
                 }
                 let mut operands = Vec::new();
@@ -513,8 +512,7 @@ fn exact_rectangular_pattern_instances(
         }
         let mut entity_ids = Vec::new();
         for entity in instance {
-            let id = (entity.id()).clone();
-            entity_ids.push(id);
+            entity_ids.push(entity.id().clone());
         }
         if position % column_count == 0 {
             rows.push(Vec::new());
@@ -586,14 +584,13 @@ fn exact_text_relation(
                 {
                     return Ok(None);
                 }
-                let id = (entity.id()).clone();
-                frame.push(id);
+                frame.push(entity.id().clone());
             }
             if frame.is_empty() {
                 return Ok(None);
             }
             Some(Definition::TextFrame {
-                text: (text.id()).clone(),
+                text: text.id().clone(),
                 frame,
             })
         }
@@ -650,8 +647,8 @@ fn exact_text_relation(
                 glyphs.push(glyph);
             }
             Some(Definition::TextPath {
-                text: (text.id()).clone(),
-                path: (path.id()).clone(),
+                text: text.id().clone(),
+                path: path.id().clone(),
                 glyph_transforms: glyphs,
             })
         }
@@ -782,8 +779,7 @@ fn exact_circular_pattern(
                 };
                 let mut entity_ids = Vec::new();
                 for entity in instance {
-                    let id = (entity.id()).clone();
-                    entity_ids.push(id);
+                    entity_ids.push(entity.id().clone());
                 }
                 instances.push(SketchCircularPatternInstance {
                     angle,
@@ -793,10 +789,9 @@ fn exact_circular_pattern(
             if valid {
                 let mut seed_entities = Vec::new();
                 for entity in seed {
-                    let id = (entity.id()).clone();
-                    seed_entities.push(id);
+                    seed_entities.push(entity.id().clone());
                 }
-                let center = (center.id()).clone();
+                let center = center.id().clone();
                 candidates.push((center, seed_entities, instances));
             }
         }

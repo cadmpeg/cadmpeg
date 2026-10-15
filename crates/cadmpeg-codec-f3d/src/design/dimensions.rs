@@ -422,8 +422,7 @@ fn project_all_dimension_constraints(
             let mut native_operands = Vec::new();
             for (field, role, record_index) in operands {
                 if let Some(entity) = projected.get(&(scope, *record_index)) {
-                    let id = (entity.id()).clone();
-                    entity_ids.push(id);
+                    entity_ids.push(entity.id().clone());
                 }
                 let operand = native_operand(scope, field.clone(), *role, *record_index)?;
                 native_operands.push(operand);
@@ -494,8 +493,7 @@ fn project_all_dimension_constraints(
             {
                 let mut ids = Vec::new();
                 for entity in &entities {
-                    let id = (entity.id()).clone();
-                    ids.push(id);
+                    ids.push(entity.id().clone());
                 }
                 return Ok(Some(Definition::Distance {
                     entities: ids,
@@ -520,8 +518,8 @@ fn project_all_dimension_constraints(
                 (first_position.u - second_position.u).hypot(first_position.v - second_position.v);
             if linear_measurement_matches(measured, evaluated_mm, linear_tolerance) {
                 return Ok(Some(Definition::DistanceLoci {
-                    first: cadmpeg_ir::sketches::SketchLocus::Entity((entities[0].id()).clone()),
-                    second: cadmpeg_ir::sketches::SketchLocus::Entity((entities[1].id()).clone()),
+                    first: cadmpeg_ir::sketches::SketchLocus::Entity(entities[0].id().clone()),
+                    second: cadmpeg_ir::sketches::SketchLocus::Entity(entities[1].id().clone()),
                     parameter,
                 }));
             }
@@ -542,8 +540,8 @@ fn project_all_dimension_constraints(
             )
         {
             return Ok(Some(Definition::Angle {
-                first: (entities[0].id()).clone(),
-                second: (entities[1].id()).clone(),
+                first: entities[0].id().clone(),
+                second: entities[1].id().clone(),
                 parameter,
             }));
         }
@@ -969,7 +967,7 @@ fn project_all_dimension_constraints(
                     indices.push(index.get());
                 }
             }
-            let sketch = (sketches.get(&(scope, frame.owner_reference))?).clone();
+            let sketch = sketches.get(&(scope, frame.owner_reference))?.clone();
             let constraint_id =
                 dimension_resource!(crate::design::identity::neutral_dimension_constraint_id(
                     &parameter_id,
@@ -1020,8 +1018,7 @@ fn project_all_dimension_constraints(
                     let mut entity_ids = Vec::new();
                     for record_index in &indices {
                         if let Some(entity) = projected.get(&(scope, *record_index)) {
-                            let id = (entity.id()).clone();
-                            entity_ids.push(id);
+                            entity_ids.push(entity.id().clone());
                         }
                     }
                     Ok(Definition::Native {
@@ -1133,8 +1130,7 @@ fn project_all_dimension_constraints(
                 let mut entity_ids = Vec::new();
                 for record_index in &indices {
                     if let Some(entity) = projected.get(&(scope, *record_index)) {
-                        let id = (entity.id()).clone();
-                        entity_ids.push(id);
+                        entity_ids.push(entity.id().clone());
                     }
                 }
                 let Ok(definition) = cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
@@ -1220,7 +1216,7 @@ fn project_all_dimension_constraints(
         let Some(sketch) = sketches_by_scope.get(&(scope, owner.scope_record_index())) else {
             continue;
         };
-        let sketch = (sketch).clone();
+        let sketch = sketch.clone();
         let linear_candidates = if parameter.source_kind().starts_with("Linear Dimension")
             && design_dimension_unit(parameter)
         {
@@ -1315,7 +1311,7 @@ fn project_all_dimension_constraints(
     for constraint in &constraints {
         for parameter in constraint_parameters(constraint.definition.kind()) {
             if !projected_parameters.contains(parameter) {
-                let id = (parameter).clone();
+                let id = parameter.clone();
                 projected_parameters.insert(id);
             }
         }
@@ -1339,7 +1335,9 @@ fn project_all_dimension_constraints(
             {
                 return None;
             }
-            let sketch = (sketches_by_scope.get(&(scope, owner.scope_record_index()))?).clone();
+            let sketch = sketches_by_scope
+                .get(&(scope, owner.scope_record_index()))?
+                .clone();
             let mut parallel_axis_angle = None;
             let mut saw_parallel_axis_angle = false;
             let mut multiple_parallel_axis_angles = false;
@@ -1582,7 +1580,7 @@ fn presentation_dimension_definition(
             entity,
             parameter.source_kind(),
             parameter.evaluated_value().get(),
-            (parameter_id).clone(),
+            parameter_id.clone(),
             linear_tolerance,
         )
         .or_else(|| {
@@ -1600,9 +1598,9 @@ fn presentation_dimension_definition(
             )
             .then(|| -> Result<_, CodecError> {
                 Ok(Definition::DistanceLoci {
-                    first: cadmpeg_ir::sketches::SketchLocus::Start((entity.id()).clone()),
-                    second: cadmpeg_ir::sketches::SketchLocus::End((entity.id()).clone()),
-                    parameter: (parameter_id).clone(),
+                    first: cadmpeg_ir::sketches::SketchLocus::Start(entity.id().clone()),
+                    second: cadmpeg_ir::sketches::SketchLocus::End(entity.id().clone()),
+                    parameter: parameter_id.clone(),
                 })
             })
         }),
@@ -1632,9 +1630,9 @@ fn presentation_dimension_definition(
             )
             .then(|| -> Result<_, CodecError> {
                 Ok(Definition::Angle {
-                    first: (first.id()).clone(),
-                    second: (second.id()).clone(),
-                    parameter: (parameter_id).clone(),
+                    first: first.id().clone(),
+                    second: second.id().clone(),
+                    parameter: parameter_id.clone(),
                 })
             })
         }
@@ -1664,8 +1662,8 @@ fn tangent_radius_dimension_definition(
     )
     .then(|| -> Result<_, CodecError> {
         Ok(Definition::Radius {
-            entity: (entity.id()).clone(),
-            parameter: (parameter_id).clone(),
+            entity: entity.id().clone(),
+            parameter: parameter_id.clone(),
         })
     })
 }
@@ -1754,8 +1752,8 @@ fn tangent_entity_distance_definition(
         return None;
     }
     Some(Ok(Definition::Distance {
-        entities: vec![(first.id()).clone(), (second.id()).clone()],
-        parameter: (parameter_id).clone(),
+        entities: vec![first.id().clone(), second.id().clone()],
+        parameter: parameter_id.clone(),
     }))
 }
 
@@ -1774,7 +1772,7 @@ fn explicit_linear_dimension_definition(
     if let Some(definition) = directional_point_dimension(
         &[first, second],
         expected,
-        (parameter_id).clone(),
+        parameter_id.clone(),
         linear_tolerance,
     ) {
         return Some(definition);
@@ -1784,8 +1782,8 @@ fn explicit_linear_dimension_definition(
         || concentric_circle_separation(first, second, expected, linear_tolerance)
     {
         return Some(Ok(Definition::Distance {
-            entities: vec![(first.id()).clone(), (second.id()).clone()],
-            parameter: (parameter_id).clone(),
+            entities: vec![first.id().clone(), second.id().clone()],
+            parameter: parameter_id.clone(),
         }));
     }
     let (
@@ -1804,9 +1802,9 @@ fn explicit_linear_dimension_definition(
     linear_measurement_matches(measured, expected, linear_tolerance).then(
         || -> Result<_, CodecError> {
             Ok(Definition::DistanceLoci {
-                first: SketchLocus::Entity((first.id()).clone()),
-                second: SketchLocus::Entity((second.id()).clone()),
-                parameter: (parameter_id).clone(),
+                first: SketchLocus::Entity(first.id().clone()),
+                second: SketchLocus::Entity(second.id().clone()),
+                parameter: parameter_id.clone(),
             })
         },
     )
@@ -1895,9 +1893,9 @@ fn preceding_incident_angular_dimension_definition(
     }
     let (_, _, first, second) = matched?;
     Some(Ok(Definition::Angle {
-        first: (first.id()).clone(),
-        second: (second.id()).clone(),
-        parameter: (parameter_id).clone(),
+        first: first.id().clone(),
+        second: second.id().clone(),
+        parameter: parameter_id.clone(),
     }))
 }
 
@@ -1952,9 +1950,9 @@ fn owner_scoped_angular_dimension_definition(
     }
     let (first, second) = matched?;
     Some(Ok(Definition::Angle {
-        first: (first.id()).clone(),
-        second: (second.id()).clone(),
-        parameter: (parameter_id).clone(),
+        first: first.id().clone(),
+        second: second.id().clone(),
+        parameter: parameter_id.clone(),
     }))
 }
 
@@ -1995,9 +1993,9 @@ fn parallel_group_axis_angle_definition(
     ))
     .then(|| -> Result<_, CodecError> {
         Ok(Definition::AngleToAxis {
-            entity: (first.id()).clone(),
+            entity: first.id().clone(),
             axis: SketchAxis::Horizontal,
-            parameter: (parameter_id).clone(),
+            parameter: parameter_id.clone(),
         })
     })
 }
@@ -2059,21 +2057,21 @@ fn concentric_circle_dimension_definition(
     match pairs.as_slice() {
         [] => None,
         [(first, second)] => Some(Ok(Definition::Distance {
-            entities: vec![(first.id()).clone(), (second.id()).clone()],
-            parameter: (parameter_id).clone(),
+            entities: vec![first.id().clone(), second.id().clone()],
+            parameter: parameter_id.clone(),
         })),
         _ => {
             let mut measurements = Vec::new();
             for (first, second) in pairs {
                 let measurement = Measurement::Distance {
-                    first: SketchLocus::Entity((first.id()).clone()),
-                    second: SketchLocus::Entity((second.id()).clone()),
+                    first: SketchLocus::Entity(first.id().clone()),
+                    second: SketchLocus::Entity(second.id().clone()),
                 };
                 measurements.push(measurement);
             }
             Some(Ok(Definition::RepeatedDistance {
                 measurements,
-                parameter: (parameter_id).clone(),
+                parameter: parameter_id.clone(),
             }))
         }
     }
@@ -2129,8 +2127,8 @@ fn unique_point_line_dimension_definition(
     }
     let (point, line) = matched?;
     Some(Ok(Definition::Distance {
-        entities: vec![(point.id()).clone(), (line.id()).clone()],
-        parameter: (parameter_id).clone(),
+        entities: vec![point.id().clone(), line.id().clone()],
+        parameter: parameter_id.clone(),
     }))
 }
 
@@ -2177,8 +2175,8 @@ fn unique_parallel_line_dimension_definition(
     }
     let (first, second) = matched?;
     Some(Ok(Definition::Distance {
-        entities: vec![(first.id()).clone(), (second.id()).clone()],
-        parameter: (parameter_id).clone(),
+        entities: vec![first.id().clone(), second.id().clone()],
+        parameter: parameter_id.clone(),
     }))
 }
 
@@ -2278,7 +2276,7 @@ fn owner_scoped_parallel_line_set_dimension_definition(
             .iter()
             .map(|entity| entity.id().clone())
             .collect(),
-        parameter: (parameter_id).clone(),
+        parameter: parameter_id.clone(),
     }))
 }
 
@@ -2325,13 +2323,13 @@ fn owner_scoped_line_length_dimension_definition(
     match matches.as_slice() {
         [] => None,
         [entity] => Some(Ok(Definition::DistanceLoci {
-            first: SketchLocus::Start((entity.id()).clone()),
-            second: SketchLocus::End((entity.id()).clone()),
-            parameter: (parameter_id).clone(),
+            first: SketchLocus::Start(entity.id().clone()),
+            second: SketchLocus::End(entity.id().clone()),
+            parameter: parameter_id.clone(),
         })),
         _ => Some(Ok(Definition::RepeatedLength {
             entities: matches.iter().map(|entity| entity.id().clone()).collect(),
-            parameter: (parameter_id).clone(),
+            parameter: parameter_id.clone(),
         })),
     }
 }
@@ -2425,25 +2423,25 @@ fn unique_point_class_dimension_definition(
         }
     }
     let (first, second, du, dv, tolerance) = matched?;
-    let first = SketchLocus::Entity((first.id()).clone());
-    let second = SketchLocus::Entity((second.id()).clone());
+    let first = SketchLocus::Entity(first.id().clone());
+    let second = SketchLocus::Entity(second.id().clone());
     Some(Ok(if du.abs() <= tolerance {
         Definition::VerticalDistance {
             first,
             second,
-            parameter: (parameter_id).clone(),
+            parameter: parameter_id.clone(),
         }
     } else if dv.abs() <= tolerance {
         Definition::HorizontalDistance {
             first,
             second,
-            parameter: (parameter_id).clone(),
+            parameter: parameter_id.clone(),
         }
     } else {
         Definition::DistanceLoci {
             first,
             second,
-            parameter: (parameter_id).clone(),
+            parameter: parameter_id.clone(),
         }
     }))
 }
@@ -2469,7 +2467,7 @@ fn owner_scoped_radial_dimension_definition(
             entity,
             parameter.source_kind(),
             parameter.evaluated_value().get(),
-            (parameter_id).clone(),
+            parameter_id.clone(),
             linear_tolerance,
         ) {
             definitions.push(dimension_resource!(result));
@@ -2495,7 +2493,7 @@ fn owner_scoped_radial_dimension_definition(
         };
         members.push(entity);
     }
-    let parameter = (parameter_id).clone();
+    let parameter = parameter_id.clone();
     Some(Ok(if radius {
         Definition::RepeatedRadius {
             entities: members,
@@ -2757,7 +2755,7 @@ pub(crate) fn project_spatial_dimension_constraints(
         if let Some(sketch) =
             spatial_by_planar_id.get(&crate::design::identity::neutral_sketch_id(placement)?)
         {
-            let sketch = (sketch).clone();
+            let sketch = sketch.clone();
             spatial_by_scope.insert((scope, scope_record_index), sketch);
         }
     }
@@ -2811,7 +2809,7 @@ pub(crate) fn project_spatial_dimension_constraints(
         if let Some(count) = parameter_constraint_counts.get_mut(parameter) {
             *count += 1;
         } else {
-            let id = (parameter).clone();
+            let id = parameter.clone();
             parameter_constraint_counts.insert(id, 1usize);
         }
     }
@@ -2822,9 +2820,9 @@ pub(crate) fn project_spatial_dimension_constraints(
             let Some(sketch) = spatial_by_planar_id.get(&constraint.sketch) else {
                 return Ok(None);
             };
-            let sketch = (sketch).clone();
+            let sketch = sketch.clone();
             for parameter in constraint_parameters(constraint.definition.kind()) {
-                let id = (parameter).clone();
+                let id = parameter.clone();
                 source_parameters.insert(id);
             }
             let definition = match constraint.definition.into_kind() {
@@ -2889,9 +2887,9 @@ pub(crate) fn project_spatial_dimension_constraints(
                             expected,
                         ) {
                             Some(SpatialSketchConstraintDefinitionInput::PointDistance {
-                                first: (first.id()).clone(),
-                                second: (second.id()).clone(),
-                                parameter: (parameter).clone(),
+                                first: first.id().clone(),
+                                second: second.id().clone(),
+                                parameter: parameter.clone(),
                             })
                         } else if spatial_parallel_line_distance_matches(
                             &first.geometry,
@@ -2900,9 +2898,9 @@ pub(crate) fn project_spatial_dimension_constraints(
                         ) {
                             Some(
                                 SpatialSketchConstraintDefinitionInput::ParallelLineDistance {
-                                    first: (first.id()).clone(),
-                                    second: (second.id()).clone(),
-                                    parameter: (parameter).clone(),
+                                    first: first.id().clone(),
+                                    second: second.id().clone(),
+                                    parameter: parameter.clone(),
                                 },
                             )
                         } else {
@@ -2994,7 +2992,7 @@ pub(crate) fn project_spatial_dimension_constraints(
             });
     let mut retained_parameters = HashSet::new();
     for parameter in retained_parameter_ids {
-        let id = (parameter).clone();
+        let id = parameter.clone();
         retained_parameters.insert(id);
     }
     let mut owners_by_record = HashMap::new();
@@ -3041,7 +3039,7 @@ pub(crate) fn project_spatial_dimension_constraints(
             SpatialSketchConstraintDefinitionInput::Native {
                 native_kind: copy_dimension_source_kind(parameter)?,
                 native_state: None,
-                parameter: Some((parameter_id).clone()),
+                parameter: Some(parameter_id.clone()),
                 operands: vec![SketchNativeOperand {
                     native_kind: cadmpeg_core::nonblank_literal!("dimension_companion"),
                     field: Some(NativeOperandField {
@@ -3120,18 +3118,17 @@ fn owner_scoped_spatial_line_length_dimension_definition(
             (measured - expected).abs() <= tolerance
         })
     {
-        let id = (entity.id()).clone();
-        matches.push(id);
+        matches.push(entity.id().clone());
     }
     match matches.len() {
         0 => None,
         1 => Some(Definition::LineLength {
             entity: matches.remove(0),
-            parameter: (parameter_id).clone(),
+            parameter: parameter_id.clone(),
         }),
         _ => Some(Definition::RepeatedLineLength {
             entities: matches,
-            parameter: (parameter_id).clone(),
+            parameter: parameter_id.clone(),
         }),
     }
 }
@@ -3181,9 +3178,9 @@ fn unique_spatial_parallel_line_dimension_definition(
     }
     let (first, second) = matched?;
     Some(Ok(Definition::ParallelLineDistance {
-        first: (first.id()).clone(),
-        second: (second.id()).clone(),
-        parameter: (parameter_id).clone(),
+        first: first.id().clone(),
+        second: second.id().clone(),
+        parameter: parameter_id.clone(),
     }))
 }
 
@@ -3242,15 +3239,15 @@ fn owner_scoped_spatial_repeated_profile_line_distance_definition(
             used_entities.insert(first_id);
             used_entities.insert(second_id);
             pairs.push(SpatialSketchEntityPair {
-                first: (first_id).clone(),
-                second: (second_id).clone(),
+                first: first_id.clone(),
+                second: second_id.clone(),
             });
         }
     }
     (pairs.len() >= 2).then(|| -> Result<_, CodecError> {
         Ok(Definition::RepeatedParallelLineDistance {
             pairs,
-            parameter: (parameter_id).clone(),
+            parameter: parameter_id.clone(),
         })
     })
 }
@@ -3357,7 +3354,7 @@ fn owner_scoped_spatial_parallel_line_set_dimension_definition(
             .iter()
             .map(|entity| entity.id().clone())
             .collect(),
-        parameter: (parameter_id).clone(),
+        parameter: parameter_id.clone(),
     }))
 }
 
@@ -3447,9 +3444,9 @@ fn spatial_reflection_symmetry(
     )
     .then(|| -> Result<_, CodecError> {
         Ok(Definition::Symmetric {
-            first: (first.id()).clone(),
-            second: (second.id()).clone(),
-            axis: (axis.id()).clone(),
+            first: first.id().clone(),
+            second: second.id().clone(),
+            axis: axis.id().clone(),
         })
     })
 }
@@ -3579,8 +3576,8 @@ fn spatial_counted_offset_dimension_definition(
         {
             return None;
         }
-        sources.push((source.id()).clone());
-        results.push((result.id()).clone());
+        sources.push(source.id().clone());
+        results.push(result.id().clone());
     }
     if used.len() != loci.len() {
         return None;
@@ -3591,7 +3588,7 @@ fn spatial_counted_offset_dimension_definition(
         normal: normal.into(),
         distance: Length::new(distance)?,
         parameter: Some(cadmpeg_ir::sketches::OffsetParameter {
-            id: (parameter).clone(),
+            id: parameter.clone(),
             negated: parameter_factor.is_sign_negative(),
         }),
     }))
@@ -3730,8 +3727,8 @@ fn repeated_linear_dimension(
                     first,
                     second,
                     Measurement::Distance {
-                        first: SketchLocus::Entity((first).clone()),
-                        second: SketchLocus::Entity((second).clone()),
+                        first: SketchLocus::Entity(first.clone()),
+                        second: SketchLocus::Entity(second.clone()),
                     },
                 )
             }
@@ -3818,7 +3815,7 @@ pub(super) fn null_locus_dimension_definition(
     line_angle_matches(&entity.geometry, &horizontal_axis, evaluated_value).then(
         || -> Result<_, CodecError> {
             Ok(Definition::AngleToAxis {
-                entity: (entity.id()).clone(),
+                entity: entity.id().clone(),
                 axis: SketchAxis::Horizontal,
                 parameter,
             })
@@ -3872,12 +3869,12 @@ fn radial_dimension_definition_at_tolerance(
     }
     Some(Ok(if is_radius {
         Definition::Radius {
-            entity: (entity.id()).clone(),
+            entity: entity.id().clone(),
             parameter,
         }
     } else {
         Definition::Diameter {
-            entity: (entity.id()).clone(),
+            entity: entity.id().clone(),
             parameter,
         }
     }))
@@ -4015,13 +4012,13 @@ fn annotation_offset_dimension_definition(
     let parameter_factor = offset_parameter_factor(distance.abs(), expected)?;
     Some(Ok(Definition::Offset {
         pairs: vec![SketchOffsetPair {
-            source: (source.id()).clone(),
-            result: (result.id()).clone(),
+            source: source.id().clone(),
+            result: result.id().clone(),
             source_reversed: distance.is_sign_negative(),
         }],
         distance: Length::new(distance.abs())?,
         parameter: Some(cadmpeg_ir::sketches::OffsetParameter {
-            id: (parameter_id).clone(),
+            id: parameter_id.clone(),
             negated: parameter_factor.is_sign_negative(),
         }),
     }))
@@ -4043,7 +4040,7 @@ fn radial_locus_dimension_definition(
     let mut direct = Vec::new();
     for entity in loci {
         if let Some(result) =
-            radial_dimension_definition(entity, source_kind, evaluated_value, (parameter).clone())
+            radial_dimension_definition(entity, source_kind, evaluated_value, parameter.clone())
         {
             direct.push(dimension_resource!(result));
         }
@@ -4077,7 +4074,7 @@ fn radial_locus_dimension_definition(
             }
             unique.insert(id);
         }
-        let parameter = (parameter).clone();
+        let parameter = parameter.clone();
         return Some(Ok(if radius {
             Definition::RepeatedRadius {
                 entities: ids,
@@ -4128,7 +4125,7 @@ fn radial_locus_dimension_definition(
     let mut multiple = false;
     for entity in candidates {
         if let Some(result) =
-            radial_dimension_definition(entity, source_kind, evaluated_value, (parameter).clone())
+            radial_dimension_definition(entity, source_kind, evaluated_value, parameter.clone())
         {
             let definition = dimension_resource!(result);
             if matched.is_some() {
@@ -4477,9 +4474,9 @@ pub(super) fn exact_atomic_constraint(
                 return Ok(None);
             };
             Some(Definition::Symmetric {
-                first: SketchLocus::Entity((first.id()).clone()),
-                second: SketchLocus::Entity((second.id()).clone()),
-                axis: (axis.id()).clone(),
+                first: SketchLocus::Entity(first.id().clone()),
+                second: SketchLocus::Entity(second.id().clone()),
+                axis: axis.id().clone(),
             })
         }
         SketchConstraintKind::Symmetry => {
@@ -4487,9 +4484,9 @@ pub(super) fn exact_atomic_constraint(
                 return Ok(None);
             };
             Some(Definition::Symmetric {
-                first: SketchLocus::Entity((first.id()).clone()),
-                second: SketchLocus::Entity((second.id()).clone()),
-                axis: (axis.id()).clone(),
+                first: SketchLocus::Entity(first.id().clone()),
+                second: SketchLocus::Entity(second.id().clone()),
+                axis: axis.id().clone(),
             })
         }
         SketchConstraintKind::EqualLength => {
@@ -4507,7 +4504,7 @@ pub(super) fn exact_atomic_constraint(
                 && matches!(*entities[0].geometry.definition(), Geometry::Line { .. }) =>
         {
             Some(Definition::Horizontal {
-                entity: (entities[0].id()).clone(),
+                entity: entities[0].id().clone(),
             })
         }
         SketchConstraintKind::Horizontal
@@ -4532,7 +4529,7 @@ pub(super) fn exact_atomic_constraint(
                 && matches!(*entities[0].geometry.definition(), Geometry::Line { .. }) =>
         {
             Some(Definition::Vertical {
-                entity: (entities[0].id()).clone(),
+                entity: entities[0].id().clone(),
             })
         }
         SketchConstraintKind::Vertical
@@ -4594,18 +4591,18 @@ pub(super) fn exact_coincident_loci(
     let loci = |entity: &cadmpeg_ir::sketches::SketchEntity| {
         let mut loci = Vec::new();
         if let Some([start, end]) = sketch_entity_endpoints(entity, ctx)? {
-            loci.push((SketchLocus::Start((entity.id()).clone()), start));
-            loci.push((SketchLocus::End((entity.id()).clone()), end));
+            loci.push((SketchLocus::Start(entity.id().clone()), start));
+            loci.push((SketchLocus::End(entity.id().clone()), end));
         }
         match entity.geometry.definition() {
             Geometry::Point { position } => {
-                loci.push((SketchLocus::Entity((entity.id()).clone()), position.get()));
+                loci.push((SketchLocus::Entity(entity.id().clone()), position.get()));
             }
             Geometry::Circle { center, .. }
             | Geometry::Arc { center, .. }
             | Geometry::Ellipse { center, .. }
             | Geometry::Hyperbola { center, .. } => {
-                loci.push((SketchLocus::Center((entity.id()).clone()), center.get()));
+                loci.push((SketchLocus::Center(entity.id().clone()), center.get()));
             }
             Geometry::Line { .. }
             | Geometry::ReferenceLine { .. }
@@ -4691,8 +4688,8 @@ fn midpoint_constraint(
         return None;
     }
     Some(Definition::Midpoint {
-        point: SketchLocus::Entity((point.id()).clone()),
-        entity: (line.id()).clone(),
+        point: SketchLocus::Entity(point.id().clone()),
+        entity: line.id().clone(),
     })
 }
 
@@ -4766,7 +4763,7 @@ fn indirect_angular_lines(
         })
     })();
     let (first, second) = pair?;
-    Some(((first).clone(), (second).clone()))
+    Some((first.clone(), second.clone()))
 }
 
 fn directional_point_dimension(
@@ -4794,8 +4791,8 @@ fn directional_point_dimension(
     else {
         return None;
     };
-    let first_locus = SketchLocus::Entity((first.id()).clone());
-    let second_locus = SketchLocus::Entity((second.id()).clone());
+    let first_locus = SketchLocus::Entity(first.id().clone());
+    let second_locus = SketchLocus::Entity(second.id().clone());
     let horizontal = linear_measurement_matches(
         first_position.u - second_position.u,
         evaluated_mm,
@@ -4899,7 +4896,7 @@ fn recipe_linear_dimension_candidates(
             if let Some(definition) = directional_point_dimension(
                 &[points[first].0, points[second].0],
                 evaluated_mm,
-                (parameter).clone(),
+                parameter.clone(),
                 0.0,
             )
             .transpose()?
@@ -4911,7 +4908,7 @@ fn recipe_linear_dimension_candidates(
     for (first, second) in line_pairs {
         let definition = Definition::Distance {
             entities: vec![first.id().clone(), second.id().clone()],
-            parameter: (parameter).clone(),
+            parameter: parameter.clone(),
         };
         candidates.push(definition);
     }
@@ -4926,8 +4923,7 @@ fn recipe_dimension_candidate_entities(
     let mut entities = Vec::new();
     let mut add = |entity: &cadmpeg_ir::sketches::SketchEntityId| -> Result<(), CodecError> {
         if !entities.contains(entity) {
-            let copied = (entity).clone();
-            entities.push(copied);
+            entities.push(entity.clone());
         }
         Ok(())
     };
@@ -5112,7 +5108,7 @@ fn symmetric_parallel_line_dimension_definition(
     linear_measurement_matches(2.0 * separation, expected, linear_tolerance).then(
         || -> Result<_, CodecError> {
             Ok(Definition::Distance {
-                entities: vec![(first.id()).clone(), (second.id()).clone()],
+                entities: vec![first.id().clone(), second.id().clone()],
                 parameter: parameter_id,
             })
         },
@@ -5312,7 +5308,7 @@ fn counted_role_relation_at_tolerance(
                         <= EPS_DIMENSIONS_COUNTED_ROLE_RELATION_AT_TOLERANCE_E9 * length =>
                 {
                     Some(Ok(Definition::Horizontal {
-                        entity: (entity.id()).clone(),
+                        entity: entity.id().clone(),
                     }))
                 }
                 SketchConstraintKind::Vertical
@@ -5320,7 +5316,7 @@ fn counted_role_relation_at_tolerance(
                         <= EPS_DIMENSIONS_COUNTED_ROLE_RELATION_AT_TOLERANCE_E9 * length =>
                 {
                     Some(Ok(Definition::Vertical {
-                        entity: (entity.id()).clone(),
+                        entity: entity.id().clone(),
                     }))
                 }
                 _ => None,
@@ -5331,14 +5327,14 @@ fn counted_role_relation_at_tolerance(
                 || exact_circular_tangency(entities, linear_tolerance) =>
         {
             Some(Ok(Definition::Tangent {
-                first: (first.id()).clone(),
-                second: (second.id()).clone(),
+                first: first.id().clone(),
+                second: second.id().clone(),
             }))
         }
         (SketchConstraintKind::Equal, [first, second]) if exact_equal_size(entities) => {
             Some(Ok(Definition::Equal {
-                first: (first.id()).clone(),
-                second: (second.id()).clone(),
+                first: first.id().clone(),
+                second: second.id().clone(),
             }))
         }
         _ => None,
@@ -5611,14 +5607,14 @@ fn exact_centered_entity_relation(
         let scale = 1.0 + first_radius.abs().max(second_radius.abs());
         if (first_radius - second_radius).abs() <= EPS_CENTERED_RELATION * scale {
             return Some(Ok(Definition::Coradial {
-                first: (first.id()).clone(),
-                second: (second.id()).clone(),
+                first: first.id().clone(),
+                second: second.id().clone(),
             }));
         }
     }
     Some(Ok(Definition::Concentric {
-        first: (first.id()).clone(),
-        second: (second.id()).clone(),
+        first: first.id().clone(),
+        second: second.id().clone(),
     }))
 }
 
@@ -5634,9 +5630,9 @@ fn exact_counted_dimension_relation(
     }
     if let Some((first, second, axis)) = reflected_symmetry(entities) {
         return Ok(Some(Definition::Symmetric {
-            first: SketchLocus::Entity((first.id()).clone()),
-            second: SketchLocus::Entity((second.id()).clone()),
-            axis: (axis.id()).clone(),
+            first: SketchLocus::Entity(first.id().clone()),
+            second: SketchLocus::Entity(second.id().clone()),
+            axis: axis.id().clone(),
         }));
     }
     let [first, second] = entities else {
@@ -5655,7 +5651,7 @@ fn exact_counted_dimension_relation(
     };
     if point_on_geometry(first, second)? || point_on_geometry(second, first)? {
         return Ok(Some(Definition::Coincident {
-            entities: vec![(first.id()).clone(), (second.id()).clone()],
+            entities: vec![first.id().clone(), second.id().clone()],
         }));
     }
     let (
@@ -5703,13 +5699,13 @@ fn exact_counted_dimension_relation(
                 <= EPS_DIMENSIONS_EXACT_COUNTED_DIMENSION_RELATION_E9 * (1.0 + first_length)
             {
                 Definition::Collinear {
-                    first: (first.id()).clone(),
-                    second: (second.id()).clone(),
+                    first: first.id().clone(),
+                    second: second.id().clone(),
                 }
             } else {
                 Definition::Parallel {
-                    first: (first.id()).clone(),
-                    second: (second.id()).clone(),
+                    first: first.id().clone(),
+                    second: second.id().clone(),
                 }
             },
         ));
@@ -5720,8 +5716,8 @@ fn exact_counted_dimension_relation(
     (dot.abs() <= EPS_DIMENSIONS_EXACT_COUNTED_DIMENSION_RELATION_E9)
         .then(|| -> Result<_, CodecError> {
             Ok(Definition::Perpendicular {
-                first: (first.id()).clone(),
-                second: (second.id()).clone(),
+                first: first.id().clone(),
+                second: second.id().clone(),
             })
         })
         .transpose()
@@ -6106,8 +6102,8 @@ pub(super) fn exact_offset_constraint(
         }
         let source_reversed = offset_source_reversed(distance, &mut canonical_distance)?;
         pairs.push(SketchOffsetPair {
-            source: (source.id()).clone(),
-            result: (result.id()).clone(),
+            source: source.id().clone(),
+            result: result.id().clone(),
             source_reversed,
         });
     }

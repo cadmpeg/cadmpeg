@@ -274,8 +274,7 @@ pub(super) fn bind_face_selection(
             return Ok(());
         }
 
-        let face = candidate.clone();
-        faces.push(face);
+        faces.push(candidate.clone());
     }
     if !faces.is_empty() {
         *selection = cadmpeg_ir::features::FaceSelection::Resolved {

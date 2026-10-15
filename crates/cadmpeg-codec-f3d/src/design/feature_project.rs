@@ -1115,8 +1115,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                             let bodies = match selection {
                                 cadmpeg_ir::features::BodySelection::Resolved { bodies, native } => {
                                     for body in bodies.as_slice() {
-                                        let id = (body).clone();
-                                        inserted_bodies.push(id);
+                                        inserted_bodies.push(body.clone());
                                     }
                                     cadmpeg_ir::features::InsertedBodies::Resolved { native }
                                 }
@@ -1326,7 +1325,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
             if let Some(candidate) = history_state_features.get_mut(&key) {
                 *candidate = None;
             } else {
-                let id = (feature_id).clone();
+                let id = feature_id.clone();
                 // discarded-value: the vacant-key check admits this state.
                 let _ = history_state_features.insert(key, Some(id));
             }
@@ -1451,7 +1450,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
         for parameter in &parameters {
             let scope = parameter_scopes[&parameter.id];
             if let Some(owner) = &parameter.owner {
-                let key = (scope, (owner).clone(), parameter.name.clone());
+                let key = (scope, owner.clone(), parameter.name.clone());
                 if let Some(candidate) = feature_aliases.get_mut(&key) {
                     *candidate = None;
                 } else {
@@ -1460,8 +1459,10 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     let _ = feature_aliases.insert(key, Some(value));
                 }
                 let key = (scope, parameter.name.clone());
-                let id = parameter.id.clone();
-                owned_aliases.entry(key).or_default().push(id);
+                owned_aliases
+                    .entry(key)
+                    .or_default()
+                    .push(parameter.id.clone());
             } else {
                 let key = (scope, parameter.name.clone());
                 if let Some(candidate) = document_aliases.get_mut(&key) {
@@ -1518,7 +1519,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 candidates.next().is_none().then_some(candidate)
             };
             let candidate = if let Some(owner) = &parameter.owner {
-                let owner_key = (owner).clone();
+                let owner_key = owner.clone();
                 let feature_identifier = alias_key.1.clone();
                 match feature_aliases.get(&(scope, owner_key, feature_identifier)) {
                     Some(None) => None,
@@ -2297,8 +2298,7 @@ fn project_thread_face_selection(
         state.get_or_insert(group_state);
         for face in group_faces.as_slice() {
             if !faces.contains(face) {
-                let face = (face).clone();
-                faces.push(face);
+                faces.push(face.clone());
             }
         }
     }
@@ -2413,8 +2413,7 @@ fn design_body_selection(
         if matches.any(|candidate| candidate != body) {
             return BodySelection::Native(scope.id.clone());
         }
-        let body = (body).clone();
-        bodies.push(body);
+        bodies.push(body.clone());
     }
     if bodies.len() == expected_count {
         if let Ok(bodies) = cadmpeg_ir::features::DistinctMembers::try_from(bodies) {
@@ -2796,8 +2795,8 @@ pub(crate) fn bind_work_point_sketch_point_constructions(
                 let native = format!("{}{}{}", stream, ":design-record#", u64::from(record_index));
                 *construction = Some(Box::new(DatumPointConstruction::SketchPoint {
                     point: SketchPointSelection::Planar {
-                        sketch: (entity.sketch).clone(),
-                        point: (entity.id()).clone(),
+                        sketch: entity.sketch.clone(),
+                        point: entity.id().clone(),
                         native,
                     },
                 }));
@@ -2807,8 +2806,8 @@ pub(crate) fn bind_work_point_sketch_point_constructions(
                 let native = format!("{}{}{}", stream, ":design-record#", u64::from(record_index));
                 *construction = Some(Box::new(DatumPointConstruction::SketchPoint {
                     point: SketchPointSelection::Spatial {
-                        sketch: (entity.sketch).clone(),
-                        point: (entity.id()).clone(),
+                        sketch: entity.sketch.clone(),
+                        point: entity.id().clone(),
                         native,
                     },
                 }));
@@ -2877,8 +2876,7 @@ fn project_surface_offset(
         };
         for face in &group_faces {
             if !faces.contains(face) {
-                let face = (face).clone();
-                faces.push(face);
+                faces.push(face.clone());
             }
         }
     }
@@ -4225,8 +4223,7 @@ fn merge_edge_selections(
                 if resolved.contains(edge) {
                     return native();
                 }
-                let edge = (edge).clone();
-                resolved.push(edge);
+                resolved.push(edge.clone());
             }
         }
         return EdgeSelection::Resolved {
@@ -4239,7 +4236,7 @@ fn merge_edge_selections(
             matches!(selection,
             EdgeSelection::Historical { state: candidate, .. } if candidate == state)
         }) {
-            let state = (state).clone();
+            let state = state.clone();
             let mut resolved = Vec::new();
             for selection in selections {
                 let EdgeSelection::Historical { edges, .. } = selection else {
@@ -4249,8 +4246,7 @@ fn merge_edge_selections(
                     if resolved.contains(edge) {
                         return native();
                     }
-                    let edge = (edge).clone();
-                    resolved.push(edge);
+                    resolved.push(edge.clone());
                 }
             }
             let selected_native = scope.id.clone();
@@ -5746,7 +5742,7 @@ fn resolved_surface_patch_path(
             matches!(path,
             PathRef::HistoricalEdges { state: candidate, .. } if candidate == state)
         }) {
-            let state = (state).clone();
+            let state = state.clone();
             let mut edges = Vec::new();
             for path in &paths {
                 if let PathRef::HistoricalEdges {
@@ -5754,8 +5750,7 @@ fn resolved_surface_patch_path(
                 } = path
                 {
                     for edge in group_edges {
-                        let edge = (edge).clone();
-                        edges.push(edge);
+                        edges.push(edge.clone());
                     }
                 }
             }
@@ -5777,8 +5772,7 @@ fn resolved_surface_patch_path(
         for path in &paths {
             if let PathRef::Edges(group_edges) = path {
                 for edge in group_edges {
-                    let edge = (edge).clone();
-                    edges.push(edge);
+                    edges.push(edge.clone());
                 }
             }
         }
@@ -8194,7 +8188,7 @@ pub(super) fn closed_spatial_sketch_profiles(
                 ..
             } => {
                 let boundary = vec![SpatialSketchEntityUse {
-                    entity: (entity.id()).clone(),
+                    entity: entity.id().clone(),
                     reversed: false,
                 }];
                 if let Ok(profile) = SpatialSketchProfile::try_new(
@@ -8295,7 +8289,7 @@ pub(super) fn closed_spatial_sketch_profiles(
         let mut boundary = Vec::new();
         for (index, reversed) in uses {
             boundary.push(SpatialSketchEntityUse {
-                entity: (edges[index].0.id()).clone(),
+                entity: edges[index].0.id().clone(),
                 reversed,
             });
         }
