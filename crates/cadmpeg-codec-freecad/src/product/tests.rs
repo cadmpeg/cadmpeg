@@ -227,7 +227,7 @@ pub(crate) fn recovers_product_prototypes_occurrences_and_placements() {
             .expect("identity grammar"),
     };
     assert!(cadmpeg_ir::validate_neutral(&corrupted, Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .findings
         .iter()
         .any(|finding| finding.message.contains("invalid occurrence reference")));

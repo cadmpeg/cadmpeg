@@ -124,7 +124,7 @@ fn x62_object_envelope_is_admitted_before_the_xml_tree() {
     };
     FcstdCodec
         .inspect(&mut Cursor::new(&bytes), &options)
-        .expect("service profile admits the XML envelope");
+        .expect("inspect the container");
 
     options.limits.max_entities = 0;
     let error = FcstdCodec
@@ -147,7 +147,7 @@ fn x62_prefixed_object_envelope_is_admitted_before_the_xml_tree() {
     };
     FcstdCodec
         .inspect(&mut Cursor::new(&bytes), &options)
-        .expect("service profile admits the prefixed XML envelope");
+        .expect("inspect the container");
 
     options.limits.max_entities = 0;
     let error = FcstdCodec

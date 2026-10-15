@@ -67,7 +67,7 @@ fn x63_decode_counts_object_copies_in_retained_budget() {
     let bytes = archive(document);
     FcstdCodec
         .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
-        .expect("service profile admits the object");
+        .expect("decode the persistence document");
 
     let limit = cadmpeg_test_support::decode::resource_refusal_at(
         &FcstdCodec,
