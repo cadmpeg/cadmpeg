@@ -4407,8 +4407,9 @@ fn normalize_parameter_ordinals(
 ///
 /// Returns `false` when the ordering exhausts `budget`. The scope then keeps
 /// its source ordinals and loses its same-scope dependency edges, so the
-/// projection stays valid. Decode reports the skipped scope and the dropped
-/// edges as unbound expression symbols.
+/// projection stays valid. Decode reports the skipped scope as
+/// `parameter.order-budget-exceeded` and the dropped edges as unbound
+/// expression symbols.
 fn order_parameter_scope(
     parameters: &mut [cadmpeg_ir::features::DesignParameter],
     owners: &HashMap<cadmpeg_ir::features::ParameterId, Option<cadmpeg_ir::features::FeatureId>>,
