@@ -263,7 +263,7 @@ impl ScalarCache {
         }
     }
 
-    /// Build a scalar dictionary under the caller's decode budget.
+    /// Build the scalar dictionary of one section.
     pub(crate) fn from_section_checked(section: &[u8]) -> Self {
         let mut entries = Vec::<f64>::new();
         let mut seen = HashSet::<[u8; 8]>::new();
