@@ -3469,6 +3469,42 @@ fn insert_mesh_scope_tessellations<'a>(
     Ok(())
 }
 
+/// Embed the archive entry of one mesh texture file as a neutral asset.
+fn mesh_texture_asset(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan,
+    file: &crate::records::mesh::DesignMeshTextureFile,
+    asset: &cadmpeg_ir::assets::AssetId,
+) -> Result<cadmpeg_ir::assets::Asset, CodecError> {
+    let media_type = std::path::Path::new(file.filename())
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .and_then(|extension| {
+            if extension.eq_ignore_ascii_case("jpg") || extension.eq_ignore_ascii_case("jpeg") {
+                Some("image/jpeg")
+            } else if extension.eq_ignore_ascii_case("png") {
+                Some("image/png")
+            } else {
+                None
+            }
+        })
+        .map(str::to_owned);
+    let bytes = scan.entry_bytes(file.archive_entry_name())?;
+    // The asset keeps a decoded copy of the source texture bytes.
+    ctx.retain_bytes(u64_from_index(bytes.len()), "retain F3D mesh texture bytes")?;
+    cadmpeg_ir::assets::Asset::try_new(
+        asset.clone(),
+        Some(file.filename().to_owned()),
+        media_type,
+        cadmpeg_ir::assets::AssetContent::Embedded {
+            data: cadmpeg_ir::assets::AssetData::new(bytes.to_vec())
+                .ok_or_else(|| CodecError::Malformed("asset data must not be empty".into()))?,
+        },
+        Some(crate::ids::native_scope(file.archive_entry_name())),
+    )
+    .map_err(CodecError::Malformed)
+}
+
 /// Project each mesh body's container geometry into the tessellation arena.
 ///
 /// A mesh body carries no B-rep topology: its geometry is a triangle list, and
@@ -3499,34 +3535,12 @@ fn project_mesh_bodies(
         {
             continue;
         }
-        let media_type = std::path::Path::new(texture.file.filename())
-            .extension()
-            .and_then(|extension| extension.to_str())
-            .and_then(|extension| {
-                if extension.eq_ignore_ascii_case("jpg") || extension.eq_ignore_ascii_case("jpeg") {
-                    Some("image/jpeg")
-                } else if extension.eq_ignore_ascii_case("png") {
-                    Some("image/png")
-                } else {
-                    None
-                }
-            })
-            .map(str::to_owned);
-        let bytes = scan.entry_bytes(texture.file.archive_entry_name())?;
-        // The asset keeps a decoded copy of the source texture bytes.
-        ctx.retain_bytes(u64_from_index(bytes.len()), "retain F3D mesh texture bytes")?;
-        let asset = cadmpeg_ir::assets::Asset::try_new(
-            texture.asset.clone(),
-            Some(texture.file.filename().to_owned()),
-            media_type,
-            cadmpeg_ir::assets::AssetContent::Embedded {
-                data: cadmpeg_ir::assets::AssetData::new(bytes.to_vec())
-                    .ok_or_else(|| CodecError::Malformed("asset data must not be empty".into()))?,
-            },
-            Some(crate::ids::native_scope(texture.file.archive_entry_name())),
-        )
-        .map_err(CodecError::Malformed)?;
-        texture_assets.push(asset);
+        texture_assets.push(mesh_texture_asset(
+            ctx,
+            scan,
+            &texture.file,
+            &texture.asset,
+        )?);
     }
     extend_unique_assets(&mut ir.model.assets, texture_assets)?;
     let mut texture_tables = std::collections::HashMap::new();
