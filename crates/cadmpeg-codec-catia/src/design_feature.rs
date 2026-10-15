@@ -3,7 +3,6 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
@@ -201,12 +200,7 @@ impl DesignFeatureTransfer {
     /// structural dependencies. A target may resolve through its complete
     /// owner-design-object chain. Storage selectors, unresolved targets,
     /// self-links, and forward targets do not establish history edges.
-    fn assign_feature_dependencies(
-        &self,
-        ctx: &DecodeContext<'_>,
-        ir: &mut CadIr,
-        native: &CatiaNative,
-    ) -> Result<(), CodecError> {
+    fn assign_feature_dependencies(&self, ir: &mut CadIr, native: &CatiaNative) {
         let design_objects = native
             .design_objects
             .iter()
@@ -271,14 +265,9 @@ impl DesignFeatureTransfer {
 
         for feature in &mut ir.model.features {
             if let Some(dependencies) = dependencies_by_feature.remove(&feature.id) {
-                feature.dependencies.append(
-                    ctx,
-                    dependencies,
-                    "catia_feature_dependency_values",
-                )?;
+                feature.dependencies.extend(dependencies);
             }
         }
-        Ok(())
     }
 }
 
@@ -631,7 +620,7 @@ pub(crate) fn transfer_design_features(
     }
 
     transfer.assign_feature_parents(ir, native)?;
-    transfer.assign_feature_dependencies(ctx, ir, native)?;
+    transfer.assign_feature_dependencies(ir, native);
     Ok(transfer)
 }
 

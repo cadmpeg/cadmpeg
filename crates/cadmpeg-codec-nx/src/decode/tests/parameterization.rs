@@ -262,7 +262,6 @@ fn offset_surface_parameter_solver_retries_a_bad_continuation_seed() {
             id: support.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
                 NurbsSurface::from_lanes(
-                    &cadmpeg_test_support::service_decode_context(),
                     cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                         3,
                         vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
@@ -284,7 +283,6 @@ fn offset_surface_parameter_solver_retries_a_bad_continuation_seed() {
                     ),
                     false,
                 )
-                .expect("fixture constructor admission")
                 .expect("valid wavy support"),
             )),
             source_object: None,
@@ -818,14 +816,12 @@ fn completed_intersection_support_lane_attaches_after_topology_emission() {
                                 pcurve: Some(
                                     PcurveGeometry::Nurbs {
                                         nurbs: PcurveNurbs::from_lanes(
-                                            &cadmpeg_test_support::service_decode_context(),
                                             1,
                                             vec![0.0, 0.0, 1.0, 1.0],
                                             vec![Point2::new(0.0, 0.0), Point2::new(10.0, 0.0)],
                                             None,
                                             false,
                                         )
-                                        .expect("fixture pcurve construction admission")
                                         .expect("valid support pcurve"),
                                     }
                                     .into(),
@@ -923,14 +919,12 @@ fn linear_intersection_endpoint_witness_requires_a_clamped_linear_curve() {
         id: curve_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
             cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
-                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![first, last],
                 None,
                 false,
             )
-            .expect("fixture constructor admission")
             .expect("valid clamped witness curve"),
         )),
         source_object: None,
@@ -944,14 +938,12 @@ fn linear_intersection_endpoint_witness_requires_a_clamped_linear_curve() {
 
     ir.model.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
         cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.5, 1.0, 1.0],
             vec![first, last],
             None,
             false,
         )
-        .expect("fixture constructor admission")
         .expect("cardinality-valid unclamped witness curve"),
     ));
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
@@ -1134,7 +1126,6 @@ fn support_uv_completion_uses_a_finite_serialized_lane_as_a_nurbs_seed() {
                 id: surface_id.clone(),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
                     NurbsSurface::from_lanes(
-                        &cadmpeg_test_support::service_decode_context(),
                         cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                             1,
                             vec![0.0, 0.0, 1.0, 1.0],
@@ -1154,7 +1145,6 @@ fn support_uv_completion_uses_a_finite_serialized_lane_as_a_nurbs_seed() {
                         ),
                         false,
                     )
-                    .expect("fixture constructor admission")
                     .expect("valid serialized-seed surface"),
                 )),
                 source_object: None,

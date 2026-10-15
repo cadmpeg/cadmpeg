@@ -1665,10 +1665,9 @@ fn sketch_block_compact_local_id(
 
 /// Add the two serialized construction-plane operands to plane-intersection axes.
 pub(crate) fn enrich_history_reference_axes(
-    ctx: &DecodeContext<'_>,
     histories: &mut [crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-) -> Result<(), CodecError> {
+) {
     let mut known_sources = HashSet::new();
     for source in histories
         .iter()
@@ -1788,10 +1787,8 @@ pub(crate) fn enrich_history_reference_axes(
         }
     }
 
-    let projected = match crate::history::project::project_features(ctx, histories) {
-        Ok(projected) => projected,
-        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-        Err(_) => return Ok(()),
+    let Ok(projected) = crate::history::project::project_features(histories) else {
+        return;
     };
     let plane_frames = sketch_plane_frames(&projected, histories);
     for feature in histories
@@ -1866,7 +1863,6 @@ pub(crate) fn enrich_history_reference_axes(
             );
         }
     }
-    Ok(())
 }
 
 fn complete_reference_axis_triad(

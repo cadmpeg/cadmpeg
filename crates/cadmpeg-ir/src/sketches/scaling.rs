@@ -29,7 +29,7 @@ impl From<cadmpeg_core::CodecError> for SketchLengthScaleError {
     fn from(error: cadmpeg_core::CodecError) -> Self {
         match error {
             cadmpeg_core::CodecError::ResourceLimit(limit) => Self::Resource(limit),
-            error => Self::CurveControlPoints(NurbsError::from(error)),
+            error => Self::CurveControlPoints(NurbsError::Structure(error.to_string())),
         }
     }
 }
@@ -408,7 +408,6 @@ mod tests {
 
         let original = SketchGeometry::nurbs(
             PcurveNurbs::from_lanes(
-                &cadmpeg_test_support::service_decode_context(),
                 2,
                 vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
                 vec![
@@ -419,7 +418,6 @@ mod tests {
                 Some(vec![1.0, 2.0, 3.0]),
                 false,
             )
-            .expect("fixture pcurve construction admission")
             .expect("rational source sketch curve"),
         );
         let scaled = original
@@ -551,14 +549,12 @@ mod tests {
         let make = |x: f64, rational: bool| {
             SketchGeometry::nurbs(
                 crate::geometry::pcurve::PcurveNurbs::from_lanes(
-                    &cadmpeg_test_support::service_decode_context(),
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![Point2::new(x, 0.0); 2],
                     rational.then(|| vec![1.0, 2.0]),
                     false,
                 )
-                .expect("fixture pcurve construction admission")
                 .expect("curve"),
             )
         };

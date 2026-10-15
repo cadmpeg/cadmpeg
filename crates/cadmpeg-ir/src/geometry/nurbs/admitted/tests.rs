@@ -2,7 +2,6 @@
 
 use crate::geometry::nurbs::NurbsCurve;
 use crate::math::Point3;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
 #[test]
 fn raw_curve_constructor_refuses_weights_then_cardinality_then_poles_then_knots() {
@@ -50,17 +49,9 @@ fn raw_curve_constructor_refuses_weights_then_cardinality_then_poles_then_knots(
             "knots must be non-decreasing",
         ),
     ] {
-        let actual = NurbsCurve::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
-            degree,
-            knots,
-            points,
-            weights,
-            false,
-        )
-        .expect("fixture constructor admission")
-        .expect_err("invalid lanes")
-        .to_string();
+        let actual = NurbsCurve::from_lanes(degree, knots, points, weights, false)
+            .expect_err("invalid lanes")
+            .to_string();
         assert_eq!(actual, expected);
     }
 }
@@ -68,29 +59,21 @@ fn raw_curve_constructor_refuses_weights_then_cardinality_then_poles_then_knots(
 #[test]
 fn raw_curve_constructor_converts_rational_poles() {
     let curve = NurbsCurve::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![Point3::new(0.0, 0.0, 0.0); 2],
         Some(vec![1.0; 2]),
         false,
     )
-    .unwrap()
     .unwrap();
     assert_eq!(curve.pole_count(), 2);
 }
 
 #[test]
 fn admitted_curve_constructor_keeps_polynomial_pole_storage() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let points = vec![crate::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(); 2];
     let address = points.as_ptr();
-    let curve = NurbsCurve::from_lanes(&ctx, 1, vec![0.0, 0.0, 1.0, 1.0], points, None, false)
-        .unwrap()
-        .unwrap();
+    let curve = NurbsCurve::from_lanes(1, vec![0.0, 0.0, 1.0, 1.0], points, None, false).unwrap();
     let super::super::NurbsPoles3::Polynomial { points } = curve.into_parts().2 else {
         panic!("polynomial poles");
     };

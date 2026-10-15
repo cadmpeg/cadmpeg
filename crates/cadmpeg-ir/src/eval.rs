@@ -2940,41 +2940,7 @@ pub fn nurbs_surface_isocurve<'ctx, 'arena: 'ctx>(
         } else {
             None
         };
-        let curve = match scratch.admission.context() {
-            Some(ctx) => NurbsCurve::from_lanes(
-                ctx,
-                degree,
-                admitted_knots,
-                control_points,
-                weights,
-                periodic,
-            )
-            .map_err(crate::geometry::nurbs::NurbsError::from)
-            .and_then(|curve| curve),
-            None => (|| {
-                use crate::geometry::nurbs::{
-                    admit_weight, build_curve, pair_curve_lanes, StandardNurbsAdmission,
-                };
-                let poles = pair_curve_lanes(
-                    &StandardNurbsAdmission,
-                    control_points,
-                    weights,
-                    |index, weight| admit_weight(&StandardNurbsAdmission, "poles", index, weight),
-                )?;
-                build_curve(
-                    &StandardNurbsAdmission,
-                    degree,
-                    admitted_knots,
-                    poles,
-                    periodic,
-                )
-            })(),
-        };
-        match curve {
-            Ok(curve) => Ok(Some(curve)),
-            Err(crate::geometry::nurbs::NurbsError::ResourceLimit(limit)) => Err(limit.into()),
-            Err(_) => Ok(None),
-        }
+        Ok(NurbsCurve::from_lanes(degree, admitted_knots, control_points, weights, periodic).ok())
     })();
     scratch
         .settle_option(result)

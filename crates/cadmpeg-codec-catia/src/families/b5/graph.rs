@@ -1046,7 +1046,6 @@ fn parse_from_records_with_class21(
     }
     for frame in frames {
         let Some(surface) = crate::families::a5a8::records::resolved_a8_surface_from_object_frame(
-            ctx,
             bytes,
             frame.start,
             frame.end,
@@ -1898,7 +1897,6 @@ pub(in crate::families) fn targeted_surfaces_from_frames(
     let mut resolved = HashMap::<u32, Option<B5Surface>>::new();
     for frame in frames {
         let Some(surface) = crate::families::a5a8::records::resolved_a8_surface_from_object_frame(
-            ctx,
             bytes,
             frame.start,
             frame.end,

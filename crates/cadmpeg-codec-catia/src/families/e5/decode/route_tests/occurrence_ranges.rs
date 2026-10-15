@@ -150,14 +150,12 @@ fn occurrence_intersection_cache_requires_one_admitted_exact_carrier() {
     ));
     let nurbs = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
         NurbsCurve::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
             None,
             false,
         )
-        .expect("fixture constructor admission")
         .expect("valid linear NURBS"),
     ));
     let mut sides = vec![
@@ -250,12 +248,7 @@ fn occurrence_intersection_cache_requires_one_admitted_exact_carrier() {
 
 #[test]
 fn quintic_jet_reproduces_endpoint_second_order_data() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("fixture fits input limit");
     let curve = quintic_jet_pcurve(
-        &ctx,
         5,
         &[0.0, 2.0],
         &[[0.0, 0.0], [2.0, 0.0]],
@@ -263,7 +256,6 @@ fn quintic_jet_reproduces_endpoint_second_order_data() {
         &mut crate::nurbs::LaneRefusals::new(),
         "test record",
     )
-    .expect("service resource budget")
     .expect("linear quintic segment");
     for parameter in [0.0, 0.5, 1.0, 2.0] {
         let point = cadmpeg_ir::eval::decode::pcurve_uv(
@@ -282,26 +274,20 @@ fn reversing_nurbs_preserves_tiny_knot_domain() {
     let tiny = 1e-200;
     let curve = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
         NurbsCurve::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![tiny, tiny, 2.0 * tiny, 2.0 * tiny],
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
             None,
             false,
         )
-        .expect("fixture constructor admission")
         .expect("valid tiny-domain NURBS"),
     ));
-    let (reversed, range) = crate::test_support::with_service_context(|ctx| {
-        crate::nurbs::reverse_curve_geometry(
-            ctx,
-            &curve,
-            [tiny, 2.0 * tiny],
-            &mut crate::nurbs::LaneRefusals::new(),
-            "test record",
-        )
-    })
-    .expect("service profile admits range operation")
+    let (reversed, range) = crate::nurbs::reverse_curve_geometry(
+        &curve,
+        [tiny, 2.0 * tiny],
+        &mut crate::nurbs::LaneRefusals::new(),
+        "test record",
+    )
     .expect("reversed NURBS");
     let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(reversed)) = reversed else {
         panic!("expected NURBS");

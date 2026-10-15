@@ -1,13 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Shared construction algorithms with an explicit refusal policy.
+//! Pole pairing and construction shared by the parameter-space NURBS carriers.
 
 use super::{
     PcurveNurbs, PcurveNurbsPoles, PolarNurbsPole, PolarNurbsPoles, PolarPcurveNurbs,
     WeightedPolarNurbsPole, WeightedPole2,
 };
 use crate::geometry::nurbs::{
-    admit_knots, require_curve_cardinality, require_weight_lane, KnotValue, NurbsAdmission,
-    PoleValue,
+    admit_knots, require_curve_cardinality, require_weight_lane, KnotValue, NurbsError, PoleValue,
 };
 use crate::scalar::{FiniteReal, NonZeroReal};
 use crate::units::FinitePoint2;
@@ -25,19 +24,18 @@ fn pair_weights<P, W, T, E>(
         .collect()
 }
 
-pub(super) fn pair_pcurve_lanes<P, W, A: NurbsAdmission>(
-    admission: &A,
+pub(super) fn pair_pcurve_lanes<P, W>(
     points: Vec<P>,
     weights: Option<Vec<W>>,
-    mut weight: impl FnMut(usize, W) -> Result<NonZeroReal, A::Error>,
-) -> Result<PcurveNurbsPoles<P>, A::Error> {
+    mut weight: impl FnMut(usize, W) -> Result<NonZeroReal, NurbsError>,
+) -> Result<PcurveNurbsPoles<P>, NurbsError> {
     let Some(weights) = weights else {
         return Ok(PcurveNurbsPoles::Polynomial { points });
     };
-    require_weight_lane(admission, "pcurve poles", points.len(), weights.len())?;
+    require_weight_lane("pcurve poles", points.len(), weights.len())?;
     Ok(PcurveNurbsPoles::Rational {
         points: pair_weights(points, weights, |index, point, value| {
-            Ok::<_, A::Error>(WeightedPole2 {
+            Ok::<_, NurbsError>(WeightedPole2 {
                 point,
                 weight: weight(index, value)?,
             })
@@ -45,19 +43,18 @@ pub(super) fn pair_pcurve_lanes<P, W, A: NurbsAdmission>(
     })
 }
 
-pub(super) fn pair_polar_lanes<P, S, W, A: NurbsAdmission>(
-    admission: &A,
+pub(super) fn pair_polar_lanes<P, S, W>(
     poles: Vec<PolarNurbsPole<P, S>>,
     weights: Option<Vec<W>>,
-    mut weight: impl FnMut(usize, W) -> Result<NonZeroReal, A::Error>,
-) -> Result<PolarNurbsPoles<P, S>, A::Error> {
+    mut weight: impl FnMut(usize, W) -> Result<NonZeroReal, NurbsError>,
+) -> Result<PolarNurbsPoles<P, S>, NurbsError> {
     let Some(weights) = weights else {
         return Ok(PolarNurbsPoles::Polynomial { poles });
     };
-    require_weight_lane(admission, "polar poles", poles.len(), weights.len())?;
+    require_weight_lane("polar poles", poles.len(), weights.len())?;
     Ok(PolarNurbsPoles::Rational {
         poles: pair_weights(poles, weights, |index, pole, value| {
-            Ok::<_, A::Error>(WeightedPolarNurbsPole {
+            Ok::<_, NurbsError>(WeightedPolarNurbsPole {
                 radial: pole.radial,
                 axial: pole.axial,
                 weight: weight(index, value)?,
@@ -66,62 +63,53 @@ pub(super) fn pair_polar_lanes<P, S, W, A: NurbsAdmission>(
     })
 }
 
-fn map_pcurve_pole<P: PoleValue<FinitePoint2>, A: NurbsAdmission>(
-    admission: &A,
-    point: P,
-) -> Result<FinitePoint2, A::Error> {
+fn map_pcurve_pole<P: PoleValue<FinitePoint2>>(point: P) -> Result<FinitePoint2, NurbsError> {
     match point.admit() {
         Some(point) => Ok(point),
-        None => {
-            Err(admission.structure(format_args!("control_points contains a non-finite point")))
-        }
+        None => Err(NurbsError::Structure(
+            "control_points contains a non-finite point".to_owned(),
+        )),
     }
 }
 
-fn map_pcurve_poles<P: PoleValue<FinitePoint2>, A: NurbsAdmission>(
-    admission: &A,
+fn map_pcurve_poles<P: PoleValue<FinitePoint2>>(
     poles: PcurveNurbsPoles<P>,
-) -> Result<PcurveNurbsPoles<FinitePoint2>, A::Error> {
+) -> Result<PcurveNurbsPoles<FinitePoint2>, NurbsError> {
     Ok(match poles {
         PcurveNurbsPoles::Polynomial { points } => PcurveNurbsPoles::Polynomial {
             points: points
                 .into_iter()
-                .map(|point| map_pcurve_pole(admission, point))
-                .collect::<Result<Vec<_>, A::Error>>()?,
+                .map(|point| map_pcurve_pole(point))
+                .collect::<Result<Vec<_>, NurbsError>>()?,
         },
         PcurveNurbsPoles::Rational { points } => PcurveNurbsPoles::Rational {
             points: points
                 .into_iter()
                 .map(|pole| {
                     Ok(WeightedPole2 {
-                        point: map_pcurve_pole(admission, pole.point)?,
+                        point: map_pcurve_pole(pole.point)?,
                         weight: pole.weight,
                     })
                 })
-                .collect::<Result<Vec<_>, A::Error>>()?,
+                .collect::<Result<Vec<_>, NurbsError>>()?,
         },
     })
 }
 
-pub(super) fn build_pcurve<P: PoleValue<FinitePoint2>, K: KnotValue, A: NurbsAdmission>(
-    admission: &A,
+pub(super) fn build_pcurve<P: PoleValue<FinitePoint2>, K: KnotValue>(
     degree: u32,
     knots: K,
     poles: PcurveNurbsPoles<P>,
     periodic: bool,
-) -> Result<PcurveNurbs, A::Error> {
-    require_curve_cardinality(
-        admission,
-        degree,
-        knots.knot_count(),
-        poles.count(),
-        "control_points",
-    )?;
+) -> Result<PcurveNurbs, NurbsError> {
+    require_curve_cardinality(degree, knots.knot_count(), poles.count(), "control_points")?;
     if degree == 0 {
-        return Err(admission.structure(format_args!("pcurve NURBS degree must be positive")));
+        return Err(NurbsError::Structure(
+            "pcurve NURBS degree must be positive".to_owned(),
+        ));
     }
-    let poles = P::admit_pcurve_poles(poles, |poles| map_pcurve_poles(admission, poles))?;
-    let knots = admit_knots(admission, knots, "")?;
+    let poles = P::admit_pcurve_poles(poles, |poles| map_pcurve_poles(poles))?;
+    let knots = admit_knots(knots, "")?;
     Ok(PcurveNurbs {
         degree,
         knots,
@@ -130,64 +118,55 @@ pub(super) fn build_pcurve<P: PoleValue<FinitePoint2>, K: KnotValue, A: NurbsAdm
     })
 }
 
-fn map_polar_pole<P: PoleValue<FinitePoint2>, S: PoleValue<FiniteReal>, A: NurbsAdmission>(
-    admission: &A,
+fn map_polar_pole<P: PoleValue<FinitePoint2>, S: PoleValue<FiniteReal>>(
     radial: P,
     axial: S,
-) -> Result<(FinitePoint2, FiniteReal), A::Error> {
+) -> Result<(FinitePoint2, FiniteReal), NurbsError> {
     match radial.admit().zip(axial.admit()) {
         Some(pole) => Ok(pole),
-        None => Err(admission.structure(format_args!("poles contain a non-finite value"))),
+        None => Err(NurbsError::Structure(
+            "poles contain a non-finite value".to_owned(),
+        )),
     }
 }
 
-pub(super) fn build_polar<
-    P: PoleValue<FinitePoint2>,
-    S: PoleValue<FiniteReal>,
-    K: KnotValue,
-    A: NurbsAdmission,
->(
-    admission: &A,
+pub(super) fn build_polar<P: PoleValue<FinitePoint2>, S: PoleValue<FiniteReal>, K: KnotValue>(
     degree: u32,
     knots: K,
     poles: PolarNurbsPoles<P, S>,
     periodic: bool,
-) -> Result<PolarPcurveNurbs, A::Error> {
-    require_curve_cardinality(
-        admission,
-        degree,
-        knots.knot_count(),
-        poles.count(),
-        "poles",
-    )?;
+) -> Result<PolarPcurveNurbs, NurbsError> {
+    require_curve_cardinality(degree, knots.knot_count(), poles.count(), "poles")?;
     if degree == 0 {
-        return Err(admission.structure(format_args!("polar NURBS degree must be positive")));
+        return Err(NurbsError::Structure(
+            "polar NURBS degree must be positive".to_owned(),
+        ));
     }
     let poles = match poles {
         PolarNurbsPoles::Polynomial { poles } => PolarNurbsPoles::Polynomial {
             poles: poles
                 .into_iter()
                 .map(|pole| {
-                    let (radial, axial) = map_polar_pole(admission, pole.radial, pole.axial)?;
+                    let (radial, axial) = map_polar_pole(pole.radial, pole.axial)?;
                     Ok(PolarNurbsPole { radial, axial })
                 })
-                .collect::<Result<Vec<_>, A::Error>>()?,
+                .collect::<Result<Vec<_>, NurbsError>>()?,
         },
         PolarNurbsPoles::Rational { poles } => PolarNurbsPoles::Rational {
             poles: poles
                 .into_iter()
                 .map(|pole| {
-                    let (radial, axial) = map_polar_pole(admission, pole.radial, pole.axial)?;
+                    let (radial, axial) = map_polar_pole(pole.radial, pole.axial)?;
                     Ok(WeightedPolarNurbsPole {
                         radial,
                         axial,
                         weight: pole.weight,
                     })
                 })
-                .collect::<Result<Vec<_>, A::Error>>()?,
+                .collect::<Result<Vec<_>, NurbsError>>()?,
         },
     };
-    let knots = admit_knots(admission, knots, "")?;
+    let knots = admit_knots(knots, "")?;
     Ok(PolarPcurveNurbs {
         degree,
         knots,

@@ -83,8 +83,7 @@ fn configuration_dependencies_participate_in_the_shared_regeneration_order() {
         ],
     };
     let mut ir = cadmpeg_ir::CadIr::empty();
-    ir.model.features =
-        project_features(&cadmpeg_test_support::service_decode_context(), &[history]).unwrap();
+    ir.model.features = project_features(&[history]).unwrap();
     let predecessor = ir.model.features[1].id.clone();
     let consumer = ir.model.features[0].id.clone();
     ir.model
@@ -107,10 +106,9 @@ fn configuration_dependencies_participate_in_the_shared_regeneration_order() {
                     evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
                         outputs: cadmpeg_ir::features::DistinctMembers::default(),
                     },
-                    dependencies: cadmpeg_ir::features::DistinctMembers::try_from(
-                        vec![predecessor.clone()],
-                        &cadmpeg_test_support::service_decode_context(),
-                    )
+                    dependencies: cadmpeg_ir::features::DistinctMembers::try_from(vec![
+                        predecessor.clone(),
+                    ])
                     .unwrap(),
                     definition: ir.model.features[0].evaluation.definition().clone(),
                 },
@@ -219,8 +217,7 @@ fn legacy_history_extrusion_uses_preceding_profile_and_sole_source_depth() {
         features: vec![extrusion, profile],
     };
 
-    let projected =
-        project_features(&cadmpeg_test_support::service_decode_context(), &[history]).unwrap();
+    let projected = project_features(&[history]).unwrap();
     let extrusion = projected
         .iter()
         .find(|feature| feature.native_ref.as_deref() == Some("sldprt:history:feature#1:1"))
@@ -287,8 +284,7 @@ fn root_history_extrusion_uses_preceding_profile_without_overriding_cut() {
         features: vec![extrusion, early_profile, origin_profile, preceding_profile],
     };
 
-    let projected =
-        project_features(&cadmpeg_test_support::service_decode_context(), &[history]).unwrap();
+    let projected = project_features(&[history]).unwrap();
     let extrusion = projected
         .iter()
         .find(|feature| feature.native_ref.as_deref() == Some("sldprt:history:feature#1:3"))
@@ -344,7 +340,6 @@ fn spatial_profile_class_projects_a_spatial_sketch() {
 
     assert_eq!(
         project_definition(
-            &cadmpeg_test_support::service_decode_context(),
             &spatial,
             &HashMap::new(),
             &HashMap::new(),
@@ -364,7 +359,6 @@ fn base_body_class_projects_stored_geometry_independently_of_display_name() {
 
     assert_eq!(
         project_definition(
-            &cadmpeg_test_support::service_decode_context(),
             &base_body,
             &HashMap::new(),
             &HashMap::new(),
@@ -1084,7 +1078,6 @@ fn angular_plane_parameter_does_not_claim_offset_semantics() {
     assert!(!is_offset_plane(&plane));
     assert_eq!(
         project_definition(
-            &cadmpeg_test_support::service_decode_context(),
             &plane,
             &HashMap::new(),
             &HashMap::new(),
@@ -1114,7 +1107,6 @@ fn length_plane_parameter_claims_offset_semantics() {
     assert!(is_offset_plane(&plane));
     assert_eq!(
         project_definition(
-            &cadmpeg_test_support::service_decode_context(),
             &plane,
             &HashMap::new(),
             &HashMap::new(),
@@ -1136,7 +1128,6 @@ fn frameless_reference_plane_remains_typed_unresolved() {
 
     assert_eq!(
         project_definition(
-            &cadmpeg_test_support::service_decode_context(),
             &plane,
             &HashMap::new(),
             &HashMap::new(),
@@ -1242,11 +1233,7 @@ fn native_attribute_records_are_metadata_not_model_features() {
         features: vec![definition, attribute, comments, alignment, model],
     };
 
-    let projected = project_features(
-        &cadmpeg_test_support::service_decode_context(),
-        std::slice::from_ref(&history),
-    )
-    .unwrap();
+    let projected = project_features(std::slice::from_ref(&history)).unwrap();
     assert_eq!(projected.len(), 1);
     assert_eq!(projected[0].native_ref.as_deref(), Some("model"));
     assert!(
@@ -1274,12 +1261,9 @@ fn native_attribute_definition_type_is_metadata_without_an_instance_name_match()
         features: vec![definition],
     };
 
-    assert!(project_features(
-        &cadmpeg_test_support::service_decode_context(),
-        std::slice::from_ref(&history)
-    )
-    .unwrap()
-    .is_empty());
+    assert!(project_features(std::slice::from_ref(&history))
+        .unwrap()
+        .is_empty());
     assert!(
         project_parameters(&cadmpeg_test_support::service_decode_context(), &[history])
             .unwrap()
@@ -1298,11 +1282,7 @@ fn configuration_snapshots_preserve_base_tree_node_roles() {
         configurations: Vec::new(),
         features: vec![light],
     };
-    let mut configured = project_features(
-        &cadmpeg_test_support::service_decode_context(),
-        std::slice::from_ref(&history),
-    )
-    .unwrap();
+    let mut configured = project_features(std::slice::from_ref(&history)).unwrap();
     assert!(matches!(
         configured[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Native { .. })

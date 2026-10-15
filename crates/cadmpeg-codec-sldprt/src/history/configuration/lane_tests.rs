@@ -299,11 +299,7 @@ fn configuration_sketch_state_reuses_projected_neutral_sketch() {
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
             unresolved.clone(),
-            cadmpeg_ir::features::DistinctMembers::try_from(
-                Vec::new(),
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .unwrap(),
+            cadmpeg_ir::features::DistinctMembers::try_from(Vec::new()).unwrap(),
         ),
         native_ref: Some("sketch-native".into()),
     });
@@ -325,11 +321,7 @@ fn configuration_sketch_state_reuses_projected_neutral_sketch() {
             FeatureDefinition::Operation(FeatureOperation::SpatialSketch {
                 sketch: Some(spatial_sketch_id.clone()),
             }),
-            cadmpeg_ir::features::DistinctMembers::try_from(
-                Vec::new(),
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .unwrap(),
+            cadmpeg_ir::features::DistinctMembers::try_from(Vec::new()).unwrap(),
         ),
         native_ref: Some("spatial-native".into()),
     });
@@ -527,11 +519,7 @@ fn dissected_sketch_alias_inherits_an_omitted_class_without_solved_geometry() {
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
             }),
-            cadmpeg_ir::features::DistinctMembers::try_from(
-                Vec::new(),
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .unwrap(),
+            cadmpeg_ir::features::DistinctMembers::try_from(Vec::new()).unwrap(),
         ),
         native_ref: Some(native_ref.into()),
     };
@@ -539,10 +527,7 @@ fn dissected_sketch_alias_inherits_an_omitted_class_without_solved_geometry() {
         neutral("synthetic:test:id#owner", "Sketch1", "owner-native", 0),
         neutral("synthetic:test:id#alias", "Sketch1<3>", "alias-native", 1),
     ];
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::default();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).unwrap();
-    bind_unique_sketch_feature(&ctx, &mut features, &[], std::slice::from_ref(&history)).unwrap();
+    bind_unique_sketch_feature(&mut features, &[], std::slice::from_ref(&history));
     assert!(matches!(
         features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Sketch {
@@ -557,12 +542,10 @@ fn dissected_sketch_alias_inherits_an_omitted_class_without_solved_geometry() {
     );
 
     crate::resolved_features::component_paths::project_dissected_sketches(
-        &cadmpeg_test_support::service_decode_context(),
         &mut features,
         &[],
         &[history],
-    )
-    .unwrap();
+    );
     assert!(matches!(
         features[1].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::TreeNode {
@@ -602,11 +585,7 @@ fn configuration_sketch_states_reuse_shared_geometry_across_lanes() {
             FeatureDefinition::Operation(FeatureOperation::SpatialSketch {
                 sketch: Some(sketch_id.clone()),
             }),
-            cadmpeg_ir::features::DistinctMembers::try_from(
-                Vec::new(),
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .unwrap(),
+            cadmpeg_ir::features::DistinctMembers::try_from(Vec::new()).unwrap(),
         ),
         native_ref: Some("spatial-native".into()),
     });
@@ -625,11 +604,7 @@ fn configuration_sketch_states_reuse_shared_geometry_across_lanes() {
             FeatureDefinition::Operation(FeatureOperation::SpatialSketch {
                 sketch: Some(planar_sketch_id.clone()),
             }),
-            cadmpeg_ir::features::DistinctMembers::try_from(
-                Vec::new(),
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .unwrap(),
+            cadmpeg_ir::features::DistinctMembers::try_from(Vec::new()).unwrap(),
         ),
         native_ref: Some("planar-state-native".into()),
     });
@@ -744,11 +719,7 @@ fn configuration_sketch_state_reuses_scoped_spatial_sketch() {
             FeatureDefinition::Operation(FeatureOperation::SpatialSketch {
                 sketch: Some(sketch_id.clone()),
             }),
-            cadmpeg_ir::features::DistinctMembers::try_from(
-                Vec::new(),
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .unwrap(),
+            cadmpeg_ir::features::DistinctMembers::try_from(Vec::new()).unwrap(),
         ),
         native_ref: Some("scoped-spatial-native".into()),
     });
@@ -822,11 +793,7 @@ fn supplemental_edge_paths_project_into_matching_configuration_state() {
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
             definition,
-            cadmpeg_ir::features::DistinctMembers::try_from(
-                Vec::new(),
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .unwrap(),
+            cadmpeg_ir::features::DistinctMembers::try_from(Vec::new()).unwrap(),
         ),
         native_ref: Some(native_ref.into()),
     };
@@ -897,9 +864,7 @@ fn supplemental_edge_paths_project_into_matching_configuration_state() {
             terminal_feature_ref: Some("producer-native".into()),
         });
 
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    project_configuration_supplemental_edge_selections(&ctx, &mut ir, &[lane]).unwrap();
+    project_configuration_supplemental_edge_selections(&mut ir, &[lane]).unwrap();
 
     let state = &ir.model.configurations[0].feature_states[&consumer_id];
     assert_eq!(state.dependencies.as_slice(), vec![producer_id.clone()]);
@@ -1016,11 +981,7 @@ fn scoped_offset_plane_inherits_only_a_frame_matching_reference() {
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
             definition,
-            cadmpeg_ir::features::DistinctMembers::try_from(
-                Vec::new(),
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .unwrap(),
+            cadmpeg_ir::features::DistinctMembers::try_from(Vec::new()).unwrap(),
         ),
         native_ref: None,
     };
@@ -1135,11 +1096,7 @@ fn scoped_offset_plane_inherits_an_omitted_resolved_reference() {
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
             definition,
-            cadmpeg_ir::features::DistinctMembers::try_from(
-                Vec::new(),
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .unwrap(),
+            cadmpeg_ir::features::DistinctMembers::try_from(Vec::new()).unwrap(),
         ),
         native_ref: None,
     };
@@ -1245,11 +1202,7 @@ fn scoped_offset_plane_does_not_merge_a_resolved_plane_with_a_face() {
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
             definition,
-            cadmpeg_ir::features::DistinctMembers::try_from(
-                Vec::new(),
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .unwrap(),
+            cadmpeg_ir::features::DistinctMembers::try_from(Vec::new()).unwrap(),
         ),
         native_ref: None,
     };
@@ -1489,8 +1442,6 @@ fn configuration_topology_binding_updates_snapshot_face_selection() {
         type_signature: type_signature.into(),
         local_id: Some(11),
     }];
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let native =
         crate::resolved_features::terminations::compact_surface_selection_value(&components);
     let selection = || crate::records::FeatureInputSurfaceSelection {
@@ -1527,11 +1478,7 @@ fn configuration_topology_binding_updates_snapshot_face_selection() {
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
             definition(),
-            cadmpeg_ir::features::DistinctMembers::try_from(
-                Vec::new(),
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .unwrap(),
+            cadmpeg_ir::features::DistinctMembers::try_from(Vec::new()).unwrap(),
         ),
         native_ref: Some(feature_ref.into()),
     };
@@ -1568,7 +1515,6 @@ fn configuration_topology_binding_updates_snapshot_face_selection() {
     lane.surface_selections.push(selection());
 
     bind_configuration_topology_selections(
-        &ctx,
         &mut ir,
         &[],
         &[lane],
@@ -1635,11 +1581,7 @@ fn configuration_frame_alias_binds_without_body_membership() {
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
             definition(),
-            cadmpeg_ir::features::DistinctMembers::try_from(
-                Vec::new(),
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .unwrap(),
+            cadmpeg_ir::features::DistinctMembers::try_from(Vec::new()).unwrap(),
         ),
         native_ref: None,
     };
@@ -1688,9 +1630,7 @@ fn configuration_frame_alias_binds_without_body_membership() {
     );
 
     let lane = feature_input_lane("lane", Some("3"));
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    bind_configuration_topology_selections(&ctx, &mut ir, &[], &[lane], &[]).unwrap();
+    bind_configuration_topology_selections(&mut ir, &[], &[lane], &[]).unwrap();
 
     assert!(matches!(
         &ir.model.configurations[0].feature_states.values().next().unwrap().definition,

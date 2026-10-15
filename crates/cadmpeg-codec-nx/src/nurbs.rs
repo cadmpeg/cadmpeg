@@ -17,8 +17,7 @@ pub(crate) mod curve_references;
 use crate::layout::nurbs_curve_descriptor_prefix as curve_desc;
 use crate::layout::nurbs_surface_descriptor_prefix as surf_desc;
 use crate::topology::Graph;
-use cadmpeg_core::decode::{DecodeContext, View};
-use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::View;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
     nurbs::{NurbsCurve, NurbsError, NurbsPoleGrid, NurbsSurface, NurbsSurfaceAxis},
@@ -61,30 +60,26 @@ pub(crate) struct Pcurve {
 ///
 /// The returned geometry uses millimetre control points. Malformed references,
 /// knots, dimensions, control points, and weights are skipped.
-pub(crate) fn surfaces(
-    ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-) -> Result<(Vec<Surface>, Vec<CarrierRefusal>), CodecError> {
+pub(crate) fn surfaces(bytes: &[u8]) -> (Vec<Surface>, Vec<CarrierRefusal>) {
     let arrays = arrays(bytes);
     let payloads = surface_payloads(bytes);
     let descriptors = surface_descriptors(bytes);
     let graph = Graph::parse(bytes);
     let mut refusals = Vec::new();
-    let surfaces = decode_surfaces(ctx, &graph, &arrays, &payloads, &descriptors, &mut refusals)?;
-    Ok((surfaces, refusals))
+    let surfaces = decode_surfaces(&graph, &arrays, &payloads, &descriptors, &mut refusals);
+    (surfaces, refusals)
 }
 
 fn decode_surfaces(
-    ctx: &DecodeContext<'_>,
     graph: &Graph,
     arrays: &Arrays<'_>,
     payloads: &BTreeMap<u32, Option<Payload<'_>>>,
     descriptors: &BTreeMap<u32, Option<SurfaceDescriptor>>,
     refusals: &mut Vec<CarrierRefusal>,
-) -> Result<Vec<Surface>, CodecError> {
+) -> Vec<Surface> {
     let mut records = Vec::new();
     for node in graph.of_kind(NodeKind::BSurface) {
-        let candidate: Option<Result<_, CodecError>> = (|| {
+        let candidate = (|| {
             let refs = node.compact_tail_references::<2>()?;
             let descriptor = descriptors.get(&refs[0])?.as_ref()?;
             descriptor
@@ -174,8 +169,7 @@ fn decode_surfaces(
                 NurbsPoleGrid::Polynomial { rows }
             };
             let normal_reversed = node.common_header()?.0 == cadmpeg_ir::topology::Sense::Reversed;
-            let surface = propagate_resource!(NurbsSurface::new(
-                ctx,
+            let surface = NurbsSurface::new(
                 NurbsSurfaceAxis::new(
                     u32::from(descriptor.u_degree),
                     full_u,
@@ -188,7 +182,7 @@ fn decode_surfaces(
                 ),
                 poles,
                 normal_reversed,
-            ));
+            );
             let surface = match surface {
                 Ok(surface) => surface,
                 Err(error) => {
@@ -200,44 +194,40 @@ fn decode_surfaces(
                     return None;
                 }
             };
-            Some(Ok(Surface {
+            Some(Surface {
                 pos: node.pos(),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
-            }))
+            })
         })();
-        if let Some(record) = candidate.transpose()? {
+        if let Some(record) = candidate {
             records.push(record);
         }
     }
-    Ok(records)
+    records
 }
 
 /// Decode dimension-2 `B_CURVE` families as surface parameter-space curves.
 #[cfg(test)]
-pub(crate) fn pcurves(
-    ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-) -> Result<(Vec<Pcurve>, Vec<CarrierRefusal>), CodecError> {
+pub(crate) fn pcurves(bytes: &[u8]) -> (Vec<Pcurve>, Vec<CarrierRefusal>) {
     let arrays = arrays(bytes);
     let controls = curve_payloads(bytes);
     let descriptors = curve_descriptors(bytes);
     let graph = Graph::parse(bytes);
     let mut refusals = Vec::new();
-    let pcurves = decode_pcurves(ctx, &graph, &arrays, &controls, &descriptors, &mut refusals)?;
-    Ok((pcurves, refusals))
+    let pcurves = decode_pcurves(&graph, &arrays, &controls, &descriptors, &mut refusals);
+    (pcurves, refusals)
 }
 
 fn decode_pcurves(
-    ctx: &DecodeContext<'_>,
     graph: &Graph,
     arrays: &Arrays<'_>,
     controls: &BTreeMap<u32, Option<Payload<'_>>>,
     descriptors: &BTreeMap<u32, Option<CurveDescriptor>>,
     refusals: &mut Vec<CarrierRefusal>,
-) -> Result<Vec<Pcurve>, CodecError> {
+) -> Vec<Pcurve> {
     let mut records = Vec::new();
     for node in graph.of_kind(NodeKind::BCurve) {
-        let candidate: Option<Result<_, CodecError>> = (|| {
+        let candidate = (|| {
             let refs = node.compact_tail_references::<2>()?;
             let descriptor = descriptors.get(&refs[0])?.as_ref()?;
             (descriptor.basis.dimension == 2).then_some(())?;
@@ -294,13 +284,12 @@ fn decode_pcurves(
                 }
                 cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Polynomial { points }
             };
-            let nurbs = propagate_resource!(cadmpeg_ir::geometry::pcurve::PcurveNurbs::new(
-                ctx,
+            let nurbs = cadmpeg_ir::geometry::pcurve::PcurveNurbs::new(
                 u32::from(descriptor.basis.degree),
                 knots,
                 poles,
                 descriptor.basis.periodic,
-            ));
+            );
             let nurbs = match nurbs {
                 Ok(nurbs) => nurbs,
                 Err(error) => {
@@ -312,46 +301,42 @@ fn decode_pcurves(
                     return None;
                 }
             };
-            Some(Ok(Pcurve {
+            Some(Pcurve {
                 pos: node.pos(),
                 geometry: PcurveGeometry::Nurbs { nurbs },
-            }))
+            })
         })();
-        if let Some(record) = candidate.transpose()? {
+        if let Some(record) = candidate {
             records.push(record);
         }
     }
-    Ok(records)
+    records
 }
 
 /// Decode valid NURBS curve record families in source order.
 ///
 /// The returned geometry uses millimetre control points. Malformed references,
 /// knots, dimensions, control points, and weights are skipped.
-pub(crate) fn curves(
-    ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-) -> Result<(Vec<Curve>, Vec<CarrierRefusal>), CodecError> {
+pub(crate) fn curves(bytes: &[u8]) -> (Vec<Curve>, Vec<CarrierRefusal>) {
     let arrays = arrays(bytes);
     let controls = curve_payloads(bytes);
     let descriptors = curve_descriptors(bytes);
     let graph = Graph::parse(bytes);
     let mut refusals = Vec::new();
-    let curves = decode_curves(ctx, &graph, &arrays, &controls, &descriptors, &mut refusals)?;
-    Ok((curves, refusals))
+    let curves = decode_curves(&graph, &arrays, &controls, &descriptors, &mut refusals);
+    (curves, refusals)
 }
 
 fn decode_curves(
-    ctx: &DecodeContext<'_>,
     graph: &Graph,
     arrays: &Arrays<'_>,
     controls: &BTreeMap<u32, Option<Payload<'_>>>,
     descriptors: &BTreeMap<u32, Option<CurveDescriptor>>,
     refusals: &mut Vec<CarrierRefusal>,
-) -> Result<Vec<Curve>, CodecError> {
+) -> Vec<Curve> {
     let mut records = Vec::new();
     for node in graph.of_kind(NodeKind::BCurve) {
-        let candidate: Option<Result<_, CodecError>> = (|| {
+        let candidate = (|| {
             let refs = node.compact_tail_references::<2>()?;
             let descriptor = descriptors.get(&refs[0])?.as_ref()?;
             matches!(descriptor.basis.dimension, 3 | 4).then_some(())?;
@@ -411,13 +396,12 @@ fn decode_curves(
                 }
                 cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { points }
             };
-            let curve = propagate_resource!(NurbsCurve::new(
-                ctx,
+            let curve = NurbsCurve::new(
                 u32::from(descriptor.basis.degree),
                 knots,
                 poles,
                 descriptor.basis.periodic,
-            ));
+            );
             let curve = match curve {
                 Ok(curve) => curve,
                 Err(error) => {
@@ -429,16 +413,16 @@ fn decode_curves(
                     return None;
                 }
             };
-            Some(Ok(Curve {
+            Some(Curve {
                 pos: node.pos(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
-            }))
+            })
         })();
-        if let Some(record) = candidate.transpose()? {
+        if let Some(record) = candidate {
             records.push(record);
         }
     }
-    Ok(records)
+    records
 }
 
 /// All NURBS geometry families decoded from one graph and one byte view.
@@ -466,44 +450,37 @@ pub(crate) struct CarrierRefusal {
     pub(crate) error: NurbsError,
 }
 
-pub(crate) fn parse_with_graph(
-    ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-    graph: &Graph,
-) -> Result<Parsed, CodecError> {
+pub(crate) fn parse_with_graph(bytes: &[u8], graph: &Graph) -> Parsed {
     let arrays = arrays(bytes);
     let surface_payloads = surface_payloads(bytes);
     let curve_payloads = curve_payloads(bytes);
     let surface_descriptors = surface_descriptors(bytes);
     let curve_descriptors = curve_descriptors(bytes);
     let mut refusals = Vec::new();
-    Ok(Parsed {
+    Parsed {
         surfaces: decode_surfaces(
-            ctx,
             graph,
             &arrays,
             &surface_payloads,
             &surface_descriptors,
             &mut refusals,
-        )?,
+        ),
         curves: decode_curves(
-            ctx,
             graph,
             &arrays,
             &curve_payloads,
             &curve_descriptors,
             &mut refusals,
-        )?,
+        ),
         pcurves: decode_pcurves(
-            ctx,
             graph,
             &arrays,
             &curve_payloads,
             &curve_descriptors,
             &mut refusals,
-        )?,
+        ),
         refusals,
-    })
+    }
 }
 
 /// The Euclidean pole of a homogeneous pole in millimetres, absent when a

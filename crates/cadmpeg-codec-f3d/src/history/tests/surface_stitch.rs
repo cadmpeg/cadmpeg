@@ -224,26 +224,10 @@ fn surface_stitch_fixture() -> StitchFixture {
     let input_topologies = vec![FeatureInputTopology {
         id: crate::ids::feature_input_topology_id(&feature_id, 1),
         input_of: feature_id.clone(),
-        bodies: cadmpeg_ir::features::DistinctMembers::try_from(
-            Vec::new(),
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .unwrap(),
-        faces: cadmpeg_ir::features::DistinctMembers::try_from(
-            Vec::new(),
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .unwrap(),
-        edges: cadmpeg_ir::features::DistinctMembers::try_from(
-            Vec::new(),
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .unwrap(),
-        vertices: cadmpeg_ir::features::DistinctMembers::try_from(
-            Vec::new(),
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .unwrap(),
+        bodies: cadmpeg_ir::features::DistinctMembers::try_from(Vec::new()).unwrap(),
+        faces: cadmpeg_ir::features::DistinctMembers::try_from(Vec::new()).unwrap(),
+        edges: cadmpeg_ir::features::DistinctMembers::try_from(Vec::new()).unwrap(),
+        vertices: cadmpeg_ir::features::DistinctMembers::try_from(Vec::new()).unwrap(),
         native_ref: None,
     }];
     StitchFixture {
@@ -290,7 +274,6 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
     let mut ambiguous_topologies = input_topologies.clone();
 
     bind_feature_face_selections(
-        &cadmpeg_test_support::service_decode_context(),
         std::slice::from_mut(&mut feature),
         &mut input_topologies,
         crate::history::FeatureFaceSelectionInputs {
@@ -332,7 +315,6 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
     assert_eq!(input_topologies[0].faces.as_slice(), faces.as_slice());
 
     bind_feature_face_selections(
-        &cadmpeg_test_support::service_decode_context(),
         std::slice::from_mut(&mut ambiguous_feature),
         &mut ambiguous_topologies,
         crate::history::FeatureFaceSelectionInputs {

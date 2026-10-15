@@ -61,7 +61,6 @@ pub(super) fn history_metadata_ids(histories: &[crate::records::FeatureHistory])
 
 /// Bind pattern operands carried by adjacent feature-input objects.
 pub(crate) fn bind_pattern_inputs(
-    ctx: &DecodeContext<'_>,
     model_features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
@@ -534,11 +533,7 @@ pub(crate) fn bind_pattern_inputs(
         };
         if !model_features[index].dependencies.contains(&seed) {
             let dependency = seed.clone();
-            model_features[index].dependencies.insert(
-                ctx,
-                dependency,
-                "collect SLDPRT pattern dependencies",
-            )?;
+            model_features[index].dependencies.insert(dependency);
         }
         model_features[index].evaluation.edit(|definition, _| {
             if let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. }) =
@@ -570,11 +565,7 @@ pub(crate) fn bind_pattern_inputs(
             continue;
         };
         if !model_features[index].dependencies.contains(&dependency) {
-            model_features[index].dependencies.insert(
-                ctx,
-                dependency,
-                "collect SLDPRT pattern dependencies",
-            )?;
+            model_features[index].dependencies.insert(dependency);
         }
         model_features[index].evaluation.edit(|definition, _| {
             if let FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. }) =
@@ -699,11 +690,7 @@ pub(crate) fn bind_pattern_inputs(
         for seed in &seeds {
             if !model_features[index].dependencies.contains(seed) {
                 let dependency = seed.clone();
-                model_features[index].dependencies.insert(
-                    ctx,
-                    dependency,
-                    "collect SLDPRT pattern dependencies",
-                )?;
+                model_features[index].dependencies.insert(dependency);
             }
         }
         model_features[index].evaluation.edit(|definition, _| {
@@ -933,11 +920,10 @@ pub(crate) fn bind_mirror_surface_planes(
 }
 
 pub(crate) fn bind_sweep_adjacent_profiles(
-    ctx: &DecodeContext<'_>,
     model_features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     let metadata_ids = history_metadata_ids(histories);
     let history_features = histories
         .iter()
@@ -1058,23 +1044,16 @@ pub(crate) fn bind_sweep_adjacent_profiles(
                 .dependencies
                 .contains(&profile_dependency)
         {
-            model_features[index].dependencies.insert(
-                ctx,
-                profile_dependency,
-                "collect SLDPRT sweep profile dependencies",
-            )?;
+            model_features[index]
+                .dependencies
+                .insert(profile_dependency);
         }
         if let Some(dependency) = path_dependency {
             if !model_features[index].dependencies.contains(&dependency) {
-                model_features[index].dependencies.insert(
-                    ctx,
-                    dependency,
-                    "collect SLDPRT sweep profile dependencies",
-                )?;
+                model_features[index].dependencies.insert(dependency);
             }
         }
     }
-    Ok(())
 }
 
 pub(crate) fn bind_scalar_operands(

@@ -200,7 +200,6 @@ pub(super) fn incident_loop_counts_satisfy_sides(counts: &[i64], required: &[Opt
 }
 
 pub(super) fn bind_face_selection(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     selection: &mut cadmpeg_ir::features::FaceSelection,
     scope: &crate::records::feature::scope::DesignParameterScope,
     groups: &[crate::records::topology::construction::DesignConstructionOperandGroup],
@@ -212,7 +211,7 @@ pub(super) fn bind_face_selection(
     };
     if native == &scope.id {
         if let Some(resolved) =
-            crate::design::feature_project::direct_face_selection(ctx, scope, operands)?
+            crate::design::feature_project::direct_face_selection(scope, operands)?
         {
             if !matches!(resolved, cadmpeg_ir::features::FaceSelection::Native(_)) {
                 *selection = resolved;
@@ -232,7 +231,6 @@ pub(super) fn bind_face_selection(
     }
     if let Some(resolved) =
         crate::design::face_resolve::resolved_historical_split_face_target_group_with_updated_faces(
-            ctx,
             scope,
             scope.previous_history_state_id(),
             group,
@@ -289,7 +287,6 @@ pub(super) fn bind_face_selection(
 }
 
 pub(super) fn bind_body_recipe_face_selection(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     selection: &mut cadmpeg_ir::features::FaceSelection,
     feature_id: &cadmpeg_ir::features::FeatureId,
     previous_state_id: i64,
@@ -351,9 +348,7 @@ pub(super) fn bind_body_recipe_face_selection(
         faces.push(face);
     }
     let native = native.to_owned();
-    if let Ok(historical) =
-        cadmpeg_ir::features::FaceSelection::historical(state, faces, native, ctx)?
-    {
+    if let Ok(historical) = cadmpeg_ir::features::FaceSelection::historical(state, faces, native) {
         *selection = historical;
     }
     Ok(())

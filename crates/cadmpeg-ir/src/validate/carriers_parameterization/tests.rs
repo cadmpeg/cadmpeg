@@ -190,14 +190,12 @@ fn periodic_nurbs_rejects_an_edge_wider_than_its_large_finite_period() {
         .unwrap()
         .geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
         crate::geometry::nurbs::NurbsCurve::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, f64::MAX, f64::MAX],
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
             None,
             true,
         )
-        .expect("fixture constructor admission")
         .unwrap(),
     ));
     ir.model.edges[0].carrier =
@@ -212,7 +210,6 @@ fn periodic_nurbs_rejects_an_edge_wider_than_its_large_finite_period() {
 fn nurbs_pcurve_leaf() -> PcurveGeometry {
     PcurveGeometry::Nurbs {
         nurbs: crate::geometry::pcurve::PcurveNurbs::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![
@@ -222,7 +219,6 @@ fn nurbs_pcurve_leaf() -> PcurveGeometry {
             None,
             false,
         )
-        .expect("fixture pcurve construction admission")
         .unwrap(),
     }
 }
@@ -342,7 +338,6 @@ fn a_coedge_range_outside_an_offset_pcurve_basis_domain_is_out_of_domain() {
 fn undomained_nurbs_pcurve_leaf() -> PcurveGeometry {
     PcurveGeometry::Nurbs {
         nurbs: crate::geometry::pcurve::PcurveNurbs::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 0.0, 0.0],
             vec![
@@ -352,7 +347,6 @@ fn undomained_nurbs_pcurve_leaf() -> PcurveGeometry {
             None,
             false,
         )
-        .expect("fixture pcurve construction admission")
         .unwrap(),
     }
 }

@@ -346,9 +346,7 @@ fn a_scaled_polyline_keeps_its_parameters_and_refuses_only_overflow() {
                     .expect("two samples"),
                 },
                 deflection,
-                &cadmpeg_test_support::service_decode_context(),
             )
-            .expect("polyline construction admission")
             .expect("a polyline fixture"),
         )
     };
@@ -407,9 +405,7 @@ fn a_scaled_polygonal_surface_keeps_its_triangles_and_refuses_only_overflow() {
                 ],
                 vec![[0, 1, 2]],
                 deflection,
-                &cadmpeg_test_support::service_decode_context(),
             )
-            .expect("polygonal construction admission")
             .expect("a polygonal fixture"),
         )
     };
@@ -426,9 +422,7 @@ fn a_scaled_polygonal_surface_keeps_its_triangles_and_refuses_only_overflow() {
                 ],
                 vec![[0, 1, 2]],
                 0.0,
-                &cadmpeg_test_support::service_decode_context()
             )
-            .expect("polygonal construction admission")
             .expect("a polygonal fixture"),
         ))
     );
@@ -466,14 +460,12 @@ fn with_depth_limit<T>(
 fn scaling_curve(x: f64, rational: bool) -> SolvedCurveGeometry {
     SolvedCurveGeometry::Nurbs(
         crate::geometry::nurbs::NurbsCurve::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point3::new(x, 0.0, 0.0); 2],
             rational.then(|| vec![1.0, 2.0]),
             false,
         )
-        .expect("fixture constructor admission")
         .expect("curve"),
     )
 }
@@ -482,7 +474,6 @@ fn scaling_surface(x: f64, rational: bool) -> SolvedSurfaceGeometry {
     use crate::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
     SolvedSurfaceGeometry::Nurbs(
         NurbsSurface::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
             NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
             NurbsSurfaceLanes::new(
@@ -491,7 +482,6 @@ fn scaling_surface(x: f64, rational: bool) -> SolvedSurfaceGeometry {
             ),
             false,
         )
-        .expect("fixture constructor admission")
         .expect("surface"),
     )
 }
@@ -555,9 +545,7 @@ fn owned_sample_scaling_matches_borrowed_scaling() {
                         }
                     },
                     deflection,
-                    &cadmpeg_test_support::service_decode_context(),
                 )
-                .expect("polyline construction admission")
                 .expect("polyline"),
             )
         };
@@ -590,9 +578,7 @@ fn owned_sample_scaling_matches_borrowed_scaling() {
                 ],
                 vec![[0, 1, 2]],
                 deflection,
-                &cadmpeg_test_support::service_decode_context(),
             )
-            .expect("polygonal construction admission")
             .expect("polygonal"),
         )
     };

@@ -814,12 +814,10 @@ mod idless_history_binding_tests {
         ];
 
         project_adjacent_extrusion_profiles(
-            &cadmpeg_test_support::service_decode_context(),
             &mut features,
             std::slice::from_ref(&history),
             std::slice::from_ref(&lane),
-        )
-        .unwrap();
+        );
 
         assert!(matches!(
             features[1].evaluation.definition(),

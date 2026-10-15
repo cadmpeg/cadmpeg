@@ -148,9 +148,7 @@ fn sync_neutral_parameters(
             &feature_names,
         );
     }
-    if parameters_with_incoherent_dependencies(&ctx, &parameters, &feature_names, &global_owners)?
-        > 0
-    {
+    if parameters_with_incoherent_dependencies(&parameters, &feature_names, &global_owners) > 0 {
         return Err(CodecError::Malformed(
             "SLDPRT parameter dependencies are inconsistent with their expressions".into(),
         ));

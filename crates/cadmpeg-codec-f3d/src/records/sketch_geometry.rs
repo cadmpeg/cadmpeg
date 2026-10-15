@@ -5,7 +5,6 @@ use cadmpeg_ir::native::bytes::NativeBytes;
 
 use super::references::DesignClassTag;
 use super::serde_column::SliceColumn;
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::scalar::{
@@ -1561,33 +1560,6 @@ fn knots_nondecreasing(knots: &[f64]) -> bool {
     knots.windows(2).all(|pair| pair[0] <= pair[1])
 }
 
-#[derive(Debug)]
-pub(crate) enum SketchGeometryError {
-    Invalid(&'static str),
-    Resource(CodecError),
-}
-
-impl From<&'static str> for SketchGeometryError {
-    fn from(message: &'static str) -> Self {
-        Self::Invalid(message)
-    }
-}
-
-impl From<CodecError> for SketchGeometryError {
-    fn from(error: CodecError) -> Self {
-        Self::Resource(error)
-    }
-}
-
-impl std::fmt::Display for SketchGeometryError {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Invalid(message) => formatter.write_str(message),
-            Self::Resource(error) => error.fmt(formatter),
-        }
-    }
-}
-
 impl SketchSurfaceGeometry {
     pub(crate) fn from_parts(
         u_degree: u32,
@@ -1607,7 +1579,7 @@ impl SketchSurfaceGeometry {
             })
             .collect::<Result<Vec<_>, String>>()?;
         Self::from_checked_parts(u_degree, v_degree, u_knots, v_knots, control_points)
-            .map_err(|error| error.to_string())
+            .map_err(ToString::to_string)
     }
 
     pub(crate) fn from_checked_parts(
@@ -1616,7 +1588,7 @@ impl SketchSurfaceGeometry {
         u_knots: Vec<f64>,
         v_knots: Vec<f64>,
         control_points: Vec<Vec<FinitePoint3>>,
-    ) -> Result<Self, SketchGeometryError> {
+    ) -> Result<Self, &'static str> {
         let u_degree = std::num::NonZeroU32::new(u_degree).ok_or("surface u_degree is zero")?;
         let v_degree = std::num::NonZeroU32::new(v_degree).ok_or("surface v_degree is zero")?;
         let row_count = control_points.len();
@@ -1625,11 +1597,11 @@ impl SketchSurfaceGeometry {
             .checked_mul(column_count)
             .ok_or("surface control grid exceeds address space")?;
         if row_count == 0 || column_count == 0 || point_count > 100_000 {
-            return Err("surface control grid must be nonempty and rectangular".into());
+            return Err("surface control grid must be nonempty and rectangular");
         }
         for row in &control_points {
             if row.len() != column_count {
-                return Err("surface control grid must be nonempty and rectangular".into());
+                return Err("surface control grid must be nonempty and rectangular");
             }
         }
         let expected_u_knots = row_count
@@ -1647,10 +1619,10 @@ impl SketchSurfaceGeometry {
             .and_then(|count| count.checked_add(1))
             .ok_or("surface v knot count overflows")?;
         if u_knots.len() != expected_u_knots || v_knots.len() != expected_v_knots {
-            return Err("surface knot counts disagree with degrees and grid".into());
+            return Err("surface knot counts disagree with degrees and grid");
         }
         if !knots_nondecreasing(&u_knots) || !knots_nondecreasing(&v_knots) {
-            return Err("surface knots must be nondecreasing".into());
+            return Err("surface knots must be nondecreasing");
         }
         let mut finite_u_knots = Vec::new();
         for value in u_knots {
@@ -2093,8 +2065,7 @@ impl SketchNurbsGeometry {
         }
         let fit_tolerance = NonNegativeLength::new(fit_tolerance)
             .ok_or("sketch NURBS fit_tolerance must be finite and nonnegative")?;
-        Self::from_checked_parts(degree, fit_tolerance, knots, poles)
-            .map_err(|error| error.to_string())
+        Self::from_checked_parts(degree, fit_tolerance, knots, poles).map_err(ToString::to_string)
     }
 
     pub(crate) fn from_checked_parts(
@@ -2102,10 +2073,10 @@ impl SketchNurbsGeometry {
         fit_tolerance: NonNegativeLength,
         knots: Vec<f64>,
         poles: SketchNurbsPoles,
-    ) -> Result<Self, SketchGeometryError> {
+    ) -> Result<Self, &'static str> {
         if knots.len() > 100_000 || poles.point_count() > 100_000 || poles.weights().len() > 100_000
         {
-            return Err("sketch NURBS lane count exceeds source limit".into());
+            return Err("sketch NURBS lane count exceeds source limit");
         }
         let expected_knots = poles
             .point_count()
@@ -2113,14 +2084,14 @@ impl SketchNurbsGeometry {
             .and_then(|count| count.checked_add(1))
             .ok_or("sketch NURBS knot count overflows")?;
         if knots.len() != expected_knots {
-            return Err("sketch NURBS knot count must equal control points + degree + 1".into());
+            return Err("sketch NURBS knot count must equal control points + degree + 1");
         }
         if !knots_nondecreasing(&knots) {
-            return Err("sketch NURBS knots must be nondecreasing".into());
+            return Err("sketch NURBS knots must be nondecreasing");
         }
         for knot in &knots {
             if !knot.is_finite() {
-                return Err("sketch NURBS knot is not finite".into());
+                return Err("sketch NURBS knot is not finite");
             }
         }
         Ok(Self {

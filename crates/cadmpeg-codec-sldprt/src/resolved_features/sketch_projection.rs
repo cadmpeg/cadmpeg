@@ -49,7 +49,6 @@ pub(crate) fn sketches(
                 crate::brep::graph::decode(ctx, &stream.payload, &stream.header, source_stream)?;
             let configuration = configuration(section);
             project_brep(
-                ctx,
                 &brep,
                 &BrepSketchSource {
                     block_offset: source.ordinal(),
@@ -86,7 +85,6 @@ struct BrepSketchSource<'a> {
 }
 
 fn project_brep(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     brep: &crate::brep::graph::Brep,
     source: &BrepSketchSource<'_>,
     annotations: &mut Annotations,
@@ -188,7 +186,6 @@ fn project_brep(
                     )) else { continue };
                     let mut edge_refusal = crate::lane_refusal::LaneRefusals::new();
                     let projected = project_edge(
-                        ctx,
                         edge,
                         &vertices,
                         &points,
@@ -199,7 +196,7 @@ fn project_brep(
                             v_axis,
                         },
                         &mut edge_refusal,
-                    )?;
+                    );
                     let edge_refusals = edge_refusal.take_records();
                     if !edge_refusals.is_empty() {
                         return Err(cadmpeg_core::CodecError::Malformed(
@@ -445,7 +442,6 @@ mod projected_profile_orientation_tests {
 #[cfg(test)]
 mod projected_brep_output_tests {
     use super::{project_brep, BrepSketchSource};
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use cadmpeg_ir::geometry::{
         analytic::PlaneSurface, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
     };
@@ -532,12 +528,8 @@ mod projected_brep_output_tests {
         let mut sketches = Vec::new();
         let mut constraints = Vec::new();
         let mut annotations = cadmpeg_ir::annotations::Annotations::default();
-        let arena = DecodeArena::new();
-        let policy = DecodePolicy::service();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let stream = cadmpeg_ir::stream_name!("test:sketch-projection");
         project_brep(
-            &ctx,
             &brep,
             &BrepSketchSource {
                 block_offset: 7,
@@ -572,16 +564,12 @@ mod projected_brep_output_tests {
     #[test]
     fn sketch_projection_output_projects_point_sketch() {
         let brep = point_brep();
-        let arena = DecodeArena::new();
         let stream = cadmpeg_ir::stream_name!("test:sketch-projection");
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-            .expect("empty root fits service policy");
         let mut annotations = cadmpeg_ir::annotations::Annotations::default();
         let mut sketches = Vec::new();
         let mut entities = Vec::new();
         let mut constraints = Vec::new();
         project_brep(
-            &ctx,
             &brep,
             &BrepSketchSource {
                 block_offset: 0,

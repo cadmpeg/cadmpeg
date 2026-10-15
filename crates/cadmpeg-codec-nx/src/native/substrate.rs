@@ -10,7 +10,6 @@ use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 
-use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
 use crate::decode::Scan;
@@ -414,13 +413,9 @@ impl<'a> ParsedStreams<'a> {
     }
 
     /// Parse NURBS geometry for the selected semantic stream when requested.
-    pub(crate) fn parse_nurbs(
-        &self,
-        ctx: &DecodeContext<'_>,
-        ordinal: usize,
-    ) -> Result<crate::nurbs::Parsed, CodecError> {
+    pub(crate) fn parse_nurbs(&self, ordinal: usize) -> crate::nurbs::Parsed {
         let stream = &self.streams[ordinal];
-        crate::nurbs::parse_with_graph(ctx, &stream.semantic_bytes, &stream.nurbs_graph)
+        crate::nurbs::parse_with_graph(&stream.semantic_bytes, &stream.nurbs_graph)
     }
 }
 
@@ -567,16 +562,11 @@ mod tests {
 
         let parsed = ParsedStreams::parse(&scan).expect("test parsed streams");
 
-        let expected = crate::test_support::with_decode_context(|ctx| {
-            crate::nurbs::parse_with_graph(
-                ctx,
-                &parsed.streams[1].semantic_bytes,
-                &parsed.streams[1].nurbs_graph,
-            )
-        })
-        .unwrap();
-        let actual =
-            crate::test_support::with_decode_context(|ctx| parsed.parse_nurbs(ctx, 1)).unwrap();
+        let expected = crate::nurbs::parse_with_graph(
+            &parsed.streams[1].semantic_bytes,
+            &parsed.streams[1].nurbs_graph,
+        );
+        let actual = parsed.parse_nurbs(1);
         assert_eq!(actual.surfaces.len(), expected.surfaces.len());
         assert_eq!(actual.curves.len(), expected.curves.len());
         assert_eq!(actual.pcurves.len(), expected.pcurves.len());

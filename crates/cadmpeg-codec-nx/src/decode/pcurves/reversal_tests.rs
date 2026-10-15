@@ -18,14 +18,12 @@ fn reversal_limit_error(
 ) -> cadmpeg_core::CodecError {
     let pcurve = PcurveGeometry::Nurbs {
         nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
             None,
             false,
         )
-        .expect("fixture pcurve construction admission")
         .expect("test pcurve"),
     };
 
@@ -50,7 +48,6 @@ fn pcurve_reversal_route_refuses_nesting_limit() {
 fn reversed_nurbs_pcurve_preserves_the_selected_interval() {
     let pcurve = PcurveGeometry::Nurbs {
         nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             2,
             vec![0.0, 0.0, 0.0, 2.0, 2.0, 2.0],
             vec![
@@ -61,7 +58,6 @@ fn reversed_nurbs_pcurve_preserves_the_selected_interval() {
             Some(vec![1.0, 2.0, 1.5]),
             false,
         )
-        .expect("fixture pcurve construction admission")
         .unwrap(),
     };
     let range = [0.25, 1.75];
@@ -424,14 +420,12 @@ fn numerical_ranges_nurbs_reversal_avoids_reflection_sum_overflow() {
     let range = [1e308, 1.4e308];
     let pcurve = PcurveGeometry::Nurbs {
         nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![range[0], range[0], range[1], range[1]],
             vec![Point2::new(0., 0.), Point2::new(1., 1.)],
             None,
             false,
         )
-        .expect("fixture pcurve construction admission")
         .unwrap(),
     };
     let reversed = crate::test_support::with_decode_context(|ctx| {

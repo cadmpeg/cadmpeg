@@ -69,7 +69,6 @@ fn mutated_parent_graphs_refuse_writing_and_produce_located_validation_findings(
                         children: TreeChildren::new(
                             vec!["test:parent-wire:feature#1-child".try_into().unwrap()],
                             None,
-                            &cadmpeg_test_support::service_decode_context(),
                         )
                         .unwrap(),
                     }));

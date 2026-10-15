@@ -62,60 +62,25 @@ fn local_collection_admission_preserves_order_and_rejects_invalid_membership() {
         serde_json::to_value(&planes).unwrap(),
         serde_json::json!([second, first])
     );
-    assert!(TreeChildren::new(
-        vec![first.clone(), first.clone()],
-        None,
-        &cadmpeg_test_support::service_decode_context()
-    )
-    .is_err());
-    assert!(TreeChildren::new(
-        vec![first.clone()],
-        Some(second.clone()),
-        &cadmpeg_test_support::service_decode_context()
-    )
-    .is_err());
-    let mut children = TreeChildren::new(
-        vec![first.clone()],
-        Some(first),
-        &cadmpeg_test_support::service_decode_context(),
-    )
-    .unwrap();
+    assert!(TreeChildren::new(vec![first.clone(), first.clone()], None,).is_err());
+    assert!(TreeChildren::new(vec![first.clone()], Some(second.clone()),).is_err());
+    let mut children = TreeChildren::new(vec![first.clone()], Some(first)).unwrap();
     let before = children.clone();
     assert!({
         let active = Some(second.clone());
         edit::replace(&mut children, |previous| {
-            crate::features::TreeChildren::new(
-                previous.to_vec(),
-                active,
-                &cadmpeg_test_support::service_decode_context(),
-            )
+            crate::features::TreeChildren::new(previous.to_vec(), active)
         })
     }
     .is_err());
     assert_eq!(children, before);
-    children
-        .insert(
-            &cadmpeg_test_support::service_decode_context(),
-            second.clone(),
-            "insert fixture member",
-        )
-        .expect("member insertion admission");
-    children
-        .insert(
-            &cadmpeg_test_support::service_decode_context(),
-            second.clone(),
-            "insert fixture member",
-        )
-        .expect("member insertion admission");
+    children.insert(second.clone());
+    children.insert(second.clone());
     assert_eq!(children.len(), 2);
     {
         let active = Some(second);
         edit::replace(&mut children, |previous| {
-            crate::features::TreeChildren::new(
-                previous.to_vec(),
-                active,
-                &cadmpeg_test_support::service_decode_context(),
-            )
+            crate::features::TreeChildren::new(previous.to_vec(), active)
         })
     }
     .unwrap();
@@ -124,65 +89,26 @@ fn local_collection_admission_preserves_order_and_rejects_invalid_membership() {
 #[test]
 fn selection_owners_enforce_local_arity_and_atomic_nonoverlap() {
     let first = BodySelection::Bodies(
-        crate::features::DistinctMembers::try_from(
-            vec![body_id("first")],
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .expect("distinct bodies"),
+        crate::features::DistinctMembers::try_from(vec![body_id("first")])
+            .expect("distinct bodies"),
     );
     let second = BodySelection::Bodies(
-        crate::features::DistinctMembers::try_from(
-            vec![body_id("second")],
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .expect("distinct bodies"),
+        crate::features::DistinctMembers::try_from(vec![body_id("second")])
+            .expect("distinct bodies"),
     );
     let pair = BodySelection::Bodies(
-        crate::features::DistinctMembers::try_from(
-            vec![body_id("first"), body_id("second")],
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .expect("distinct bodies"),
+        crate::features::DistinctMembers::try_from(vec![body_id("first"), body_id("second")])
+            .expect("distinct bodies"),
     );
     assert!(SewBodySelection::try_from(first.clone()).is_err());
     assert!(SewBodySelection::try_from(pair.clone()).is_ok());
     assert!(SewBodySelection::try_from(BodySelection::Unresolved).is_ok());
     assert!(SewBodySelection::try_from(BodySelection::Native("native".into())).is_ok());
-    assert!(CombineOperands::new(
-        pair,
-        BodySelection::Unresolved,
-        &cadmpeg_test_support::service_decode_context(),
-    )
-    .expect("operand admission")
-    .is_err());
-    assert!(CombineOperands::new(
-        first.clone(),
-        first.clone(),
-        &cadmpeg_test_support::service_decode_context(),
-    )
-    .expect("operand admission")
-    .is_err());
-    assert!(SectionOperands::new(
-        first.clone(),
-        first.clone(),
-        &cadmpeg_test_support::service_decode_context(),
-    )
-    .expect("operand admission")
-    .is_err());
-    assert!(TrimBodyOperands::new(
-        first.clone(),
-        first.clone(),
-        &cadmpeg_test_support::service_decode_context(),
-    )
-    .expect("operand admission")
-    .is_err());
-    let mut operands = CombineOperands::new(
-        first,
-        second,
-        &cadmpeg_test_support::service_decode_context(),
-    )
-    .expect("operand admission")
-    .unwrap();
+    assert!(CombineOperands::new(pair, BodySelection::Unresolved,).is_err());
+    assert!(CombineOperands::new(first.clone(), first.clone(),).is_err());
+    assert!(SectionOperands::new(first.clone(), first.clone(),).is_err());
+    assert!(TrimBodyOperands::new(first.clone(), first.clone(),).is_err());
+    let mut operands = CombineOperands::new(first, second).unwrap();
     let before = operands.clone();
     assert!(operands
         .try_edit(|first, second| *second = first.clone())
@@ -214,46 +140,22 @@ fn resolved_body_selection_wire_rejects_repeated_bodies_before_sew_arity() {
 fn feature_evaluation_rejects_duplicate_outputs_at_admission() {
     let body = body_id("output");
     let duplicate = vec![body.clone(), body.clone()];
-    assert!(crate::features::DistinctMembers::try_from(
-        duplicate.clone(),
-        &cadmpeg_test_support::service_decode_context()
-    )
-    .is_err());
+    assert!(crate::features::DistinctMembers::try_from(duplicate.clone(),).is_err());
 
     let definition = FeatureDefinition::Operation(FeatureOperation::BaseFeature {
         bodies: BodySelection::Unresolved,
     });
     let mut evaluation = crate::features::FeatureEvaluation::new(
         definition.clone(),
-        crate::features::DistinctMembers::try_from(
-            vec![body.clone()],
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .unwrap(),
+        crate::features::DistinctMembers::try_from(vec![body.clone()]).unwrap(),
     );
     evaluation.edit(|_, outputs| {
-        assert!(!outputs
-            .insert(
-                &cadmpeg_test_support::service_decode_context(),
-                body.clone(),
-                "insert fixture output"
-            )
-            .expect("output insertion admission"));
+        assert!(!outputs.insert(body.clone(),));
     });
     assert_eq!(evaluation.outputs(), &vec![body.clone()]);
-    evaluation.set_outputs(
-        crate::features::DistinctMembers::try_from(
-            vec![body.clone()],
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .unwrap(),
-    );
+    evaluation.set_outputs(crate::features::DistinctMembers::try_from(vec![body.clone()]).unwrap());
     let prior = evaluation.clone();
-    assert!(crate::features::DistinctMembers::try_from(
-        duplicate,
-        &cadmpeg_test_support::service_decode_context()
-    )
-    .is_err());
+    assert!(crate::features::DistinctMembers::try_from(duplicate,).is_err());
     assert_eq!(evaluation, prior);
 }
 
@@ -301,58 +203,36 @@ fn historical_body_overlap_spans_direct_and_paired_member_selections() {
         state.clone(),
         vec![HistoricalBodyId::mint("test:body:4").expect("valid identity")],
         "target".into(),
-        &cadmpeg_test_support::service_decode_context(),
     )
-    .expect("selection storage is admitted")
     .unwrap();
     let overlapping = BodySelection::HistoricalSet {
         state: state.clone(),
-        members: BodyMembers::try_from_rows(
-            vec![
-                crate::features::BodyMember::new(
-                    HistoricalBodyId::mint("test:body:2").expect("valid identity"),
-                    cadmpeg_core::text::NonBlankString::new("tool-a")
-                        .expect("valid historical body selection row"),
-                ),
-                crate::features::BodyMember::new(
-                    HistoricalBodyId::mint("test:body:4").expect("valid identity"),
-                    cadmpeg_core::text::NonBlankString::new("tool-b")
-                        .expect("valid historical body selection row"),
-                ),
-            ],
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .expect("selection storage is admitted")
+        members: BodyMembers::try_from_rows(vec![
+            crate::features::BodyMember::new(
+                HistoricalBodyId::mint("test:body:2").expect("valid identity"),
+                cadmpeg_core::text::NonBlankString::new("tool-a")
+                    .expect("valid historical body selection row"),
+            ),
+            crate::features::BodyMember::new(
+                HistoricalBodyId::mint("test:body:4").expect("valid identity"),
+                cadmpeg_core::text::NonBlankString::new("tool-b")
+                    .expect("valid historical body selection row"),
+            ),
+        ])
         .expect("valid historical body selection rows"),
     };
     let disjoint = BodySelection::HistoricalSet {
         state,
-        members: BodyMembers::try_from_rows(
-            vec![crate::features::BodyMember::new(
-                HistoricalBodyId::mint("test:body:5").expect("valid identity"),
-                cadmpeg_core::text::NonBlankString::new("tool")
-                    .expect("valid historical body selection row"),
-            )],
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .expect("selection storage is admitted")
+        members: BodyMembers::try_from_rows(vec![crate::features::BodyMember::new(
+            HistoricalBodyId::mint("test:body:5").expect("valid identity"),
+            cadmpeg_core::text::NonBlankString::new("tool")
+                .expect("valid historical body selection row"),
+        )])
         .expect("valid historical body selection rows"),
     };
 
-    assert!(SectionOperands::new(
-        target.clone(),
-        overlapping,
-        &cadmpeg_test_support::service_decode_context(),
-    )
-    .expect("operand admission")
-    .is_err());
-    assert!(SectionOperands::new(
-        target,
-        disjoint,
-        &cadmpeg_test_support::service_decode_context(),
-    )
-    .expect("operand admission")
-    .is_ok());
+    assert!(SectionOperands::new(target.clone(), overlapping,).is_err());
+    assert!(SectionOperands::new(target, disjoint,).is_ok());
 }
 
 #[test]
@@ -367,35 +247,23 @@ fn three_point_admission_compares_targets_and_historical_states() {
         )
         .unwrap()
     };
-    assert!(ThreePointSelection::new(
-        Box::new([
-            vertex(&state, "a", "one"),
-            vertex(&state, "a", "two"),
-            vertex(&state, "b", "three"),
-        ]),
-        &cadmpeg_test_support::service_decode_context()
-    )
-    .expect("three point admission")
+    assert!(ThreePointSelection::try_from(Box::new([
+        vertex(&state, "a", "one"),
+        vertex(&state, "a", "two"),
+        vertex(&state, "b", "three"),
+    ]),)
     .is_err());
-    assert!(ThreePointSelection::new(
-        Box::new([
-            vertex(&state, "a", "one"),
-            vertex(&state, "b", "two"),
-            vertex(&other, "c", "three"),
-        ]),
-        &cadmpeg_test_support::service_decode_context()
-    )
-    .expect("three point admission")
+    assert!(ThreePointSelection::try_from(Box::new([
+        vertex(&state, "a", "one"),
+        vertex(&state, "b", "two"),
+        vertex(&other, "c", "three"),
+    ]),)
     .is_err());
-    let mixed = ThreePointSelection::new(
-        Box::new([
-            vertex(&state, "a", "one"),
-            VertexSelection::native("two".into()).unwrap(),
-            VertexSelection::Unresolved,
-        ]),
-        &cadmpeg_test_support::service_decode_context(),
-    )
-    .expect("three point admission")
+    let mixed = ThreePointSelection::try_from(Box::new([
+        vertex(&state, "a", "one"),
+        VertexSelection::native("two".into()).unwrap(),
+        VertexSelection::Unresolved,
+    ]))
     .unwrap();
     assert_eq!(
         serde_json::from_value::<ThreePointSelection>(serde_json::to_value(&mixed).unwrap())
@@ -426,13 +294,9 @@ fn an_inserted_body_selection_does_not_restate_the_feature_outputs() {
         native_ref: None,
     };
     assert!(feature.evaluation.outputs().is_empty());
-    feature.evaluation.set_outputs(
-        crate::features::DistinctMembers::try_from(
-            vec![body.clone()],
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .unwrap(),
-    );
+    feature
+        .evaluation
+        .set_outputs(crate::features::DistinctMembers::try_from(vec![body.clone()]).unwrap());
     let wire = serde_json::to_value(&feature).unwrap();
     assert!(wire.get("evaluation").is_none());
     assert_eq!(wire["outputs"], serde_json::json!([body.as_str()]));
@@ -587,9 +451,7 @@ fn selection_operand_parts_move_retained_storage() {
     let operands = CombineOperands::new(
         BodySelection::Native(target_text),
         BodySelection::Native(tools_text),
-        &cadmpeg_test_support::service_decode_context(),
     )
-    .expect("operand admission")
     .unwrap();
     let (target, tools) = operands.into_parts();
     let BodySelection::Native(target) = target else {
@@ -608,9 +470,7 @@ fn selection_operand_parts_move_retained_storage() {
     let operands = crate::features::ReplaceFaceOperands::new(
         crate::features::FaceSelection::Native(targets_text),
         crate::features::FaceSelection::Native(replacements_text),
-        &cadmpeg_test_support::service_decode_context(),
     )
-    .expect("operand admission")
     .unwrap();
     let (targets, replacements) = operands.into_parts();
     let crate::features::FaceSelection::Native(targets) = targets else {
@@ -652,11 +512,11 @@ fn tree_children_wire_and_decode_share_membership_validation() {
             .to_string();
         assert!(error.contains(message), "{error}");
         assert_eq!(
-            TreeChildren::new(children, active, &ctx).unwrap_err(),
+            TreeChildren::new(children, active).unwrap_err(),
             FeatureCollectionError::Invalid(message)
         );
     }
-    let children = TreeChildren::new(vec![second, first.clone()], Some(first), &ctx).unwrap();
+    let children = TreeChildren::new(vec![second, first.clone()], Some(first)).unwrap();
     let wire = serde_json::to_value(&children).unwrap();
     assert_eq!(
         serde_json::from_value::<TreeChildren>(wire).unwrap(),
@@ -668,7 +528,6 @@ fn tree_children_wire_and_decode_share_membership_validation() {
 #[test]
 fn feature_result_members_keep_lane_order_and_name_the_repeated_lane() {
     use crate::features::{FeatureResultMemberError, FeatureResultMembers, FeatureResultTopology};
-    let ctx = cadmpeg_test_support::service_decode_context();
     for lane in 0..4 {
         let mut lanes = [Vec::new(), Vec::new(), Vec::new(), Vec::new()];
         lanes[lane] = vec![
@@ -676,10 +535,7 @@ fn feature_result_members_keep_lane_order_and_name_the_repeated_lane() {
             cadmpeg_core::nonblank_literal!("first"),
         ];
         let [bodies, faces, edges, vertices] = lanes;
-        let members =
-            FeatureResultMembers::new(bodies, faces, edges, vertices, &ctx, "result membership")
-                .unwrap()
-                .unwrap();
+        let members = FeatureResultMembers::new(bodies, faces, edges, vertices).unwrap();
         let result = FeatureResultTopology::new(
             crate::ids::FeatureResultTopologyId::mint("test:model:feature-result#one").unwrap(),
             feature_id("producer"),
@@ -704,10 +560,7 @@ fn feature_result_members_keep_lane_order_and_name_the_repeated_lane() {
             cadmpeg_core::nonblank_literal!("same"),
         ];
         let [bodies, faces, edges, vertices] = lanes;
-        let error =
-            FeatureResultMembers::new(bodies, faces, edges, vertices, &ctx, "result membership")
-                .unwrap()
-                .unwrap_err();
+        let error = FeatureResultMembers::new(bodies, faces, edges, vertices).unwrap_err();
         assert_eq!(
             error,
             [
@@ -723,7 +576,6 @@ fn feature_result_members_keep_lane_order_and_name_the_repeated_lane() {
 #[test]
 fn three_point_selection_moves_its_points_and_names_a_repeated_target() {
     use crate::features::GeneratedVertexRef;
-    let ctx = cadmpeg_test_support::service_decode_context();
     let producer = feature_id("producer");
     let state = FeatureInputTopologyId::mint("test:model:feature-input#state").unwrap();
     for kind in 0..3 {
@@ -748,20 +600,16 @@ fn three_point_selection_moves_its_points_and_names_a_repeated_target() {
             }
         }));
         let pointer = points.as_ptr();
-        let points = ThreePointSelection::new(points, &ctx).unwrap().unwrap();
+        let points = ThreePointSelection::try_from(points).unwrap();
         assert_eq!(points.as_ptr(), pointer);
     }
     let selection = |text: String| VertexSelection::native(text).unwrap();
     assert_eq!(
-        ThreePointSelection::new(
-            Box::new([
-                selection("same".into()),
-                selection("same".into()),
-                selection("long".repeat(1000)),
-            ]),
-            &ctx,
-        )
-        .unwrap()
+        ThreePointSelection::try_from(Box::new([
+            selection("same".into()),
+            selection("same".into()),
+            selection("long".repeat(1000)),
+        ]),)
         .unwrap_err(),
         "points must select three distinct vertex targets"
     );
@@ -772,17 +620,12 @@ fn tree_children_keep_source_order_and_the_active_child() {
     use crate::features::FeatureCollectionError;
     let first = feature_id("left");
     let second = feature_id("next");
-    let ctx = cadmpeg_test_support::service_decode_context();
-    let children = TreeChildren::new(
-        vec![second.clone(), first.clone()],
-        Some(first.clone()),
-        &ctx,
-    )
-    .unwrap();
+    let children =
+        TreeChildren::new(vec![second.clone(), first.clone()], Some(first.clone())).unwrap();
     assert_eq!(&children[..], &[second.clone(), first.clone()]);
     assert_eq!(children.active_child(), &Some(first.clone()));
     assert_eq!(
-        TreeChildren::new(vec![first], Some(second), &ctx).unwrap_err(),
+        TreeChildren::new(vec![first], Some(second)).unwrap_err(),
         FeatureCollectionError::Invalid("active_child must belong to children")
     );
 }

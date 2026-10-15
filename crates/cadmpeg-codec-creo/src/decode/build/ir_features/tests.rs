@@ -4,8 +4,7 @@ use std::collections::BTreeMap;
 
 use super::{
     append_regeneration_edge, commit_regeneration_edges, compose_feature_id, emit_model_features,
-    merge_feature_dependencies, merge_feature_source_properties, ordered_row_feature_ids,
-    refresh_feature_outputs,
+    merge_feature_source_properties, ordered_row_feature_ids, refresh_feature_outputs,
 };
 
 #[test]
@@ -105,15 +104,9 @@ fn existing_feature_dependency_merge_preserves_first_order_and_uniqueness() {
         .expect("first dependency identity");
     let second = cadmpeg_ir::features::FeatureId::mint("creo:model:feature#40")
         .expect("second dependency identity");
-    let mut target = crate::decode::with_test_decode_ctx(|ctx| {
-        cadmpeg_ir::features::DistinctMembers::try_from(vec![first.clone()], ctx)
-            .map_err(cadmpeg_core::CodecError::from)
-    })
-    .expect("one member is distinct");
-    crate::decode::with_test_decode_ctx(|ctx| {
-        merge_feature_dependencies(ctx, &mut target, vec![first.clone(), second.clone()])
-    })
-    .expect("dependency merge");
+    let mut target = cadmpeg_ir::features::DistinctMembers::try_from(vec![first.clone()])
+        .expect("one member is distinct");
+    target.extend([first.clone(), second.clone()]);
     assert_eq!(target.as_slice(), &[first, second]);
 }
 

@@ -1645,7 +1645,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         })
         .unwrap();
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::direct_face_selection(decode_ctx, &historical_face_scope, std::slice::from_ref(&operand))).expect("projection resource budget"),
+        crate::design::feature_project::direct_face_selection(&historical_face_scope, std::slice::from_ref(&operand)).expect("projection resource budget"),
         Some(FaceSelection::Historical { state, faces, native })
             if state == feature_input_topology_id(&crate::ids::neutral_feature_id(&historical_face_scope), 49)
                 && faces.len() == 1
@@ -1772,7 +1772,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     );
     split_context.changed_candidate_faces.clear();
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| resolved_historical_split_face_target_group(decode_ctx, &split_scope, split_scope.previous_history_state_id(), &split_group, &[split_selected.clone(), split_context.clone()])),
+        resolved_historical_split_face_target_group(&split_scope, split_scope.previous_history_state_id(), &split_group, &[split_selected.clone(), split_context.clone()]),
         Ok(Some(FaceSelection::Historical { state, faces, native }))
             if state == feature_input_topology_id(&crate::ids::neutral_feature_id(&split_scope), 49)
                 && faces.len() == 1
@@ -1788,15 +1788,14 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         .recipe_nodes
         .push(candidate_context.recipe_nodes[0].clone());
     candidate_context.recipe_program = vec![0, -1, 2];
-    assert!(crate::test_support::with_decode_context(|decode_ctx| {
+    assert!({
         resolved_historical_split_face_target_group(
-            decode_ctx,
             &split_scope,
             split_scope.previous_history_state_id(),
             &split_group,
             &[split_selected.clone(), candidate_context],
         )
-    })
+    }
     .unwrap()
     .is_some());
     let mut unresolved_context = split_context;
@@ -1804,15 +1803,14 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         reference.candidate_faces.clear();
         reference.alternate_selector_faces.clear();
     }
-    assert!(crate::test_support::with_decode_context(|decode_ctx| {
+    assert!({
         resolved_historical_split_face_target_group(
-            decode_ctx,
             &split_scope,
             split_scope.previous_history_state_id(),
             &split_group,
             &[split_selected, unresolved_context],
         )
-    })
+    }
     .unwrap()
     .is_none());
 }

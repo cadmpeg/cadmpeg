@@ -412,7 +412,6 @@ pub(in super::super) fn reconcile_feature_links(
         };
         let outputs = cadmpeg_ir::features::DistinctMembers::try_from(
             super::outputs::feature_output_bodies(ctx, scan, ir, feature_id)?,
-            ctx,
         )
         .map_err(cadmpeg_core::CodecError::from)?;
         output_updates.push((index, outputs));
@@ -475,16 +474,14 @@ pub(in super::super) fn reconcile_feature_links(
                 .map_err(cadmpeg_core::CodecError::malformed)?;
             generated_ids.push(id);
         }
-        feature.dependencies = cadmpeg_ir::features::DistinctMembers::try_from(
-            reconciled_dependencies(
+        feature.dependencies =
+            cadmpeg_ir::features::DistinctMembers::try_from(reconciled_dependencies(
                 &feature.id,
                 &feature.dependencies,
                 native_dependencies.into_iter().chain(generated_ids),
                 &emitted,
-            )?,
-            ctx,
-        )
-        .map_err(cadmpeg_core::CodecError::from)?;
+            )?)
+            .map_err(cadmpeg_core::CodecError::from)?;
         if let Some(parent_id) =
             current_feature_recipe_parent(&scan.features.operations, feature_id)
         {

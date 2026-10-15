@@ -160,7 +160,6 @@ fn a_nurbs_curve_whose_projection_overflows_reports_the_point_it_reached() {
     // zero.
     let curve = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
         crate::geometry::nurbs::NurbsCurve::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![
@@ -170,7 +169,6 @@ fn a_nurbs_curve_whose_projection_overflows_reports_the_point_it_reached() {
             Some(vec![1.0, -1.0 + 2.0_f64.powi(-40)]),
             false,
         )
-        .expect("fixture constructor admission")
         .expect("NURBS curve fixture"),
     ));
     assert_eq!(

@@ -12,7 +12,6 @@ use crate::ids::{CurveId, ProceduralSurfaceId, SurfaceId};
 
 fn bilinear(domain: [f64; 2], scale: f64) -> NurbsSurface {
     NurbsSurface::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         NurbsSurfaceAxis::new(1, vec![domain[0], domain[0], domain[1], domain[1]], false),
         NurbsSurfaceAxis::new(1, vec![0., 0., 1., 1.], false),
         NurbsSurfaceLanes::new(
@@ -24,7 +23,6 @@ fn bilinear(domain: [f64; 2], scale: f64) -> NurbsSurface {
         ),
         false,
     )
-    .expect("fixture constructor admission")
     .unwrap()
 }
 fn fixture(scale: f64) -> (crate::CadIr, SurfaceId) {
@@ -42,14 +40,12 @@ fn fixture(scale: f64) -> (crate::CadIr, SurfaceId) {
             id: profile_id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                 NurbsCurve::from_lanes(
-                    &cadmpeg_test_support::service_decode_context(),
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![Point3::new(1.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
                     None,
                     false,
                 )
-                .expect("fixture constructor admission")
                 .unwrap(),
             )),
             source_object: None,
@@ -59,14 +55,12 @@ fn fixture(scale: f64) -> (crate::CadIr, SurfaceId) {
             id: spine_id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                 NurbsCurve::from_lanes(
-                    &cadmpeg_test_support::service_decode_context(),
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![Point3::new(4.0, 5.0, 6.0), Point3::new(4.0, 5.0, 7.0)],
                     None,
                     false,
                 )
-                .expect("fixture constructor admission")
                 .unwrap(),
             )),
             source_object: None,
@@ -249,7 +243,6 @@ fn numerical_0922_sweep_evaluation_ignores_profile_units() {
 fn numerical_0922b_finite_chord_bound() {
     for s in [1., 1e200] {
         let surf = NurbsSurface::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             NurbsSurfaceAxis::new(1, vec![0., 0., 1., 1.], false),
             NurbsSurfaceAxis::new(1, vec![0., 0., 1., 1.], false),
             NurbsSurfaceLanes::new(
@@ -261,7 +254,6 @@ fn numerical_0922b_finite_chord_bound() {
             ),
             false,
         )
-        .expect("fixture constructor admission")
         .unwrap();
         let r = nurbs_surface_parameter_segment_chord_bound(
             &cadmpeg_test_support::service_decode_context(),

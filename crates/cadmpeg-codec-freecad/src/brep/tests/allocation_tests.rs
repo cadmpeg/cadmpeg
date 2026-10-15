@@ -16,7 +16,6 @@ use cadmpeg_ir::SourceObjectAssociation;
 fn transferred_nurbs_curve_keeps_one_geometry_copy() {
     use cadmpeg_ir::geometry::nurbs::NurbsCurve;
     let nurbs = NurbsCurve::from_finite_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![
             FiniteReal::ZERO,
@@ -28,7 +27,6 @@ fn transferred_nurbs_curve_keeps_one_geometry_copy() {
         None,
         false,
     )
-    .unwrap()
     .unwrap();
     let curve = TextCurve::Nurbs(nurbs.clone());
     let arena = DecodeArena::new();
@@ -68,7 +66,6 @@ fn transferred_nurbs_surface_keeps_one_geometry_copy() {
         )
     };
     let nurbs = NurbsSurface::from_finite_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         axis(),
         axis(),
         NurbsSurfaceLanes::new(
@@ -80,7 +77,6 @@ fn transferred_nurbs_surface_keeps_one_geometry_copy() {
         ),
         false,
     )
-    .unwrap()
     .unwrap();
     let surface = TextSurface::Nurbs(nurbs.clone());
     let arena = DecodeArena::new();

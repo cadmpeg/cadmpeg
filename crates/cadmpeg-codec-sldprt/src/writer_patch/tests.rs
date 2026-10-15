@@ -34,17 +34,8 @@ use crate::SldprtCodec;
 fn native_patch_edits_compact_counted_nurbs_surface_arrays() {
     use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )
-    .unwrap();
-
     let mut bytes = compact_counted_nurbs_surface_carrier(180, 181, 10);
-    let carrier = crate::brep::spline::scan_surface_carriers(&ctx, &bytes, &mut Vec::new())
-        .expect("surface scan")
+    let carrier = crate::brep::spline::scan_surface_carriers(&bytes, &mut Vec::new())
         .remove(&180)
         .expect("compact NURBS carrier");
     let Some(SolvedSurfaceGeometry::Nurbs(old)) = carrier.geometry.solved() else {
@@ -71,7 +62,6 @@ fn native_patch_edits_compact_counted_nurbs_surface_arrays() {
             knots[2..].fill(2.0);
         };
         cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
-            &cadmpeg_test_support::service_decode_context(),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                 previous.u_degree(),
                 knots,
@@ -85,7 +75,6 @@ fn native_patch_edits_compact_counted_nurbs_surface_arrays() {
             previous.pole_grid().clone(),
             previous.normal_reversed(),
         )
-        .expect("fixture final NURBS admission")
     })
     .unwrap();
     edit::replace(&mut new, |previous| {
@@ -95,7 +84,6 @@ fn native_patch_edits_compact_counted_nurbs_surface_arrays() {
             knots[2..].fill(3.0);
         };
         cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
-            &cadmpeg_test_support::service_decode_context(),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                 previous.u_degree(),
                 previous.u_knots().to_vec(),
@@ -109,7 +97,6 @@ fn native_patch_edits_compact_counted_nurbs_surface_arrays() {
             previous.pole_grid().clone(),
             previous.normal_reversed(),
         )
-        .expect("fixture final NURBS admission")
     })
     .unwrap();
     let dirty_slots = [
@@ -121,8 +108,7 @@ fn native_patch_edits_compact_counted_nurbs_surface_arrays() {
         .expect("compact NURBS patch fits policy")
         .expect("compact NURBS patch");
 
-    let patched = crate::brep::spline::scan_surface_carriers(&ctx, &bytes, &mut Vec::new())
-        .expect("surface scan")
+    let patched = crate::brep::spline::scan_surface_carriers(&bytes, &mut Vec::new())
         .remove(&180)
         .expect("patched compact NURBS carrier");
     let Some(SolvedSurfaceGeometry::Nurbs(patched)) = patched.geometry.solved() else {
@@ -200,10 +186,9 @@ fn native_patch_edits_nurbs_carriers_beside_untyped_surfaces() {
             })
             .unwrap();
         curve
-            .edit_knots(&cadmpeg_test_support::service_decode_context(), |knots| {
+            .edit_knots(|knots| {
                 knots[3..].fill(2.0);
             })
-            .expect("knot edit admission")
             .unwrap();
         let expected_curve = curve.clone();
         let surface = ir_edit
@@ -236,7 +221,6 @@ fn native_patch_edits_nurbs_carriers_beside_untyped_surfaces() {
                 knots[2..].fill(2.0);
             };
             cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
-                &cadmpeg_test_support::service_decode_context(),
                 cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                     previous.u_degree(),
                     knots,
@@ -250,7 +234,6 @@ fn native_patch_edits_nurbs_carriers_beside_untyped_surfaces() {
                 previous.pole_grid().clone(),
                 previous.normal_reversed(),
             )
-            .expect("fixture final NURBS admission")
         })
         .unwrap();
         edit::replace(surface, |previous| {
@@ -260,7 +243,6 @@ fn native_patch_edits_nurbs_carriers_beside_untyped_surfaces() {
                 knots[2..].fill(3.0);
             };
             cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
-                &cadmpeg_test_support::service_decode_context(),
                 cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                     previous.u_degree(),
                     previous.u_knots().to_vec(),
@@ -274,7 +256,6 @@ fn native_patch_edits_nurbs_carriers_beside_untyped_surfaces() {
                 previous.pole_grid().clone(),
                 previous.normal_reversed(),
             )
-            .expect("fixture final NURBS admission")
         })
         .unwrap();
         let expected_surface = surface.clone();

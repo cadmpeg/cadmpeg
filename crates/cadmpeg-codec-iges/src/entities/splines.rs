@@ -589,12 +589,9 @@ pub(super) fn project(
             knots.extend([breakpoint.get(); 3]);
         }
         knots.extend([breakpoints[segment_count].get(); 4]);
-        let construction = match KnotVector::new(ctx, knots)? {
-            Err(error) => Err(error),
-            Ok(knots) => {
-                NurbsCurve::from_checked_lanes(ctx, 3, knots, control_points, None, false)?
-            }
-        };
+        let construction = KnotVector::new(knots).and_then(|knots| {
+            NurbsCurve::from_checked_lanes(3, knots, control_points, None, false)
+        });
         let nurbs = match construction {
             Ok(nurbs) => nurbs,
             Err(error) => {
@@ -931,19 +928,16 @@ pub(super) fn project(
             );
             continue;
         }
-        let construction = match KnotVector::new(ctx, u_knots)? {
-            Err(error) => Err(error),
-            Ok(u_knots) => match KnotVector::new(ctx, v_knots)? {
-                Err(error) => Err(error),
-                Ok(v_knots) => NurbsSurface::from_checked_lanes(
-                    ctx,
+        let construction = KnotVector::new(u_knots).and_then(|u_knots| {
+            KnotVector::new(v_knots).and_then(|v_knots| {
+                NurbsSurface::from_checked_lanes(
                     NurbsSurfaceAxis::new(3, u_knots, false),
                     NurbsSurfaceAxis::new(3, v_knots, false),
                     cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(rows, None),
                     false,
-                )?,
-            },
-        };
+                )
+            })
+        });
         let nurbs = match construction {
             Ok(nurbs) => nurbs,
             Err(error) => {

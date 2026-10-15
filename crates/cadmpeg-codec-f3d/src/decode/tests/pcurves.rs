@@ -432,7 +432,6 @@ fn generated_deformable_curves_decode_and_write_source_less() {
             .expect("deformable source carrier")
             .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
             cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
-                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![
@@ -442,7 +441,6 @@ fn generated_deformable_curves_decode_and_write_source_less() {
                 None,
                 false,
             )
-            .expect("fixture constructor admission")
             .unwrap(),
         ));
         let mut encoded = Vec::new();
@@ -680,14 +678,12 @@ fn generated_f3d_rewrites_topology_bound_nurbs_curve() {
     control_points[1].x = 14.0;
     control_points[1].z = -3.0;
     nurbs = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![-1.0, -1.0, 2.0, 2.0, 2.0],
         control_points,
         nurbs.pole_rows().weights(),
         nurbs.periodic(),
     )
-    .expect("fixture constructor admission")
     .unwrap();
     *cache = SolvedCurveGeometry::Nurbs(nurbs.clone());
     let expected = curve.clone();
@@ -1155,14 +1151,12 @@ fn generated_f3d_rewrites_nurbs_pcurve_control_points() {
     control_points[0].u = -0.5;
     control_points[1].v = 2.25;
     *nurbs = cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![-1.0, -1.0, 2.0, 2.0],
         control_points,
         nurbs.pole_rows().weights(),
         true,
     )
-    .expect("fixture pcurve construction admission")
     .unwrap();
     let cadmpeg_ir::geometry::pcurve::PcurveMetadata::AsmInline { form: inline } =
         &mut pcurve.metadata
@@ -1259,22 +1253,18 @@ fn generated_f3d_rewrites_rational_pcurve_weights() {
         weights[1] = 0.75;
     }
     let poles = cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         nurbs.pole_rows().raw_points(),
         weights,
-    )
-    .expect("fixture pcurve construction admission");
+    );
     {
         let replacement = poles.unwrap();
         edit::replace(nurbs, |previous| {
             cadmpeg_ir::geometry::pcurve::PcurveNurbs::new(
-                &cadmpeg_test_support::service_decode_context(),
                 previous.degree(),
                 previous.knots().to_vec(),
                 replacement,
                 previous.periodic(),
             )
-            .expect("fixture pcurve construction admission")
         })
     }
     .unwrap();
@@ -1327,13 +1317,11 @@ fn generated_f3d_rewrites_ref_form_pcurve_geometry_and_range() {
             knots.copy_from_slice(&[-1.0, -1.0, 2.0, 2.0]);
         };
         cadmpeg_ir::geometry::pcurve::PcurveNurbs::new(
-            &cadmpeg_test_support::service_decode_context(),
             previous.degree(),
             knots,
             previous.pole_rows().clone(),
             previous.periodic(),
         )
-        .expect("fixture pcurve construction admission")
     })
     .unwrap();
     let cadmpeg_ir::geometry::pcurve::PcurveMetadata::General { form: metadata } =

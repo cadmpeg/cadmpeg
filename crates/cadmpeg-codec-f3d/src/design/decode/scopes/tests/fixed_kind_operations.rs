@@ -1187,7 +1187,6 @@ fn fixed_kind_edge_and_revolve_operations(
             face_axis_definition.clone(),
             cadmpeg_ir::features::DistinctMembers::try_from(
                 (feature.clone()).evaluation.outputs().clone(),
-                &cadmpeg_test_support::service_decode_context(),
             )
             .unwrap(),
         ),
@@ -1274,11 +1273,8 @@ fn fixed_kind_edge_and_revolve_operations(
     let mut conflicting_face_axis_feature = cadmpeg_ir::features::Feature {
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
             face_axis_definition,
-            cadmpeg_ir::features::DistinctMembers::try_from(
-                (feature).evaluation.outputs().clone(),
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .unwrap(),
+            cadmpeg_ir::features::DistinctMembers::try_from((feature).evaluation.outputs().clone())
+                .unwrap(),
         ),
         ..feature
     };

@@ -60,24 +60,20 @@ fn run() -> Result<(), CodecError> {
             ordinal,
             name: None,
             suppressed: Some(false),
-            dependencies: cadmpeg_ir::features::DistinctMembers::try_from(
-                vec![dependency.clone()],
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .unwrap(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::try_from(vec![dependency.clone()])
+                .unwrap(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
             source_content: FeatureContent::default(),
             evaluation: FeatureEvaluation::new(
                 definition,
-                cadmpeg_ir::features::DistinctMembers::try_from(
-                    vec![cadmpeg_ir::ids::BodyId::mint(format!(
+                cadmpeg_ir::features::DistinctMembers::try_from(vec![
+                    cadmpeg_ir::ids::BodyId::mint(format!(
                         "synthetic:test:id#snapshot-body-{ordinal}"
                     ))
-                    .unwrap()],
-                    &cadmpeg_test_support::service_decode_context(),
-                )
+                    .unwrap(),
+                ])
                 .unwrap(),
             ),
             native_ref: None,

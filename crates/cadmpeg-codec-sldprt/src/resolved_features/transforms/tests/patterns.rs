@@ -67,16 +67,7 @@ fn bind_pattern_inputs_test(
     histories: &[FeatureHistory],
     lanes: &[FeatureInputLane],
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let bytes = lanes
-        .first()
-        .map_or(&[][..], |lane| lane.native_payload.as_slice());
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        bytes,
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )?;
-    bind_pattern_inputs(&ctx, features, histories, lanes)
+    bind_pattern_inputs(features, histories, lanes)
 }
 
 fn linear_pattern_display_directions(
@@ -984,13 +975,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
             scale: None,
             allow_multi_profile_faces: None,
         }));
-    bind_sweep_adjacent_profiles(
-        &cadmpeg_test_support::service_decode_context(),
-        &mut features,
-        &[sweep_history],
-        std::slice::from_ref(&lane),
-    )
-    .unwrap();
+    bind_sweep_adjacent_profiles(&mut features, &[sweep_history], std::slice::from_ref(&lane));
     assert!(matches!(
         features[0].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Sweep {
             shape,

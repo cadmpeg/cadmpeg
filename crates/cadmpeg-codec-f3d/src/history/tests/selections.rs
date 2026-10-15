@@ -42,16 +42,6 @@ use crate::records::topology::body_recipe::AsmHistoricalEntityKind;
 use crate::records::topology::edge_identity::DesignEdgeIdentityOperand;
 use std::collections::{HashMap, HashSet};
 
-fn with_history_decode_context<T>(
-    f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T,
-) -> T {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    f(&ctx)
-}
-
 #[test]
 fn entity_selection_face_proofs_preserve_history_namespaces() {
     let state = |parent: &str, state_id, topology| AsmDeltaState {
@@ -724,9 +714,7 @@ fn combine_external_tools_retain_complete_occurrence_local_identities() {
     };
     let mut scope = combine_external_scope();
     let BodySelection::Local { bodies, native } =
-        with_history_decode_context(|ctx| super::super::combine_external_local_tools(ctx, &scope))
-            .unwrap()
-            .expect("complete local tool identity")
+        super::super::combine_external_local_tools(&scope).expect("complete local tool identity")
     else {
         panic!("local body selection");
     };
@@ -739,11 +727,7 @@ fn combine_external_tools_retain_complete_occurrence_local_identities() {
         .expect("Combine operation")
         .tools
         .additional[0] = tool(13, 500);
-    assert!(
-        with_history_decode_context(|ctx| super::super::combine_external_local_tools(ctx, &scope))
-            .unwrap()
-            .is_none()
-    );
+    assert!(super::super::combine_external_local_tools(&scope).is_none());
 }
 
 #[test]

@@ -18,9 +18,7 @@ use cadmpeg_ir::{CadIr, Codec, SourceGeometryRole, SourceObjectAssociation};
 use std::io::Cursor;
 
 fn rectangle() -> CadIr {
-    let ctx = cadmpeg_test_support::service_decode_context();
     let basis = NurbsSurface::from_lanes(
-        &ctx,
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 5.0, 5.0], false),
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 5.0, 5.0], false),
         NurbsSurfaceLanes::new(
@@ -32,7 +30,6 @@ fn rectangle() -> CadIr {
         ),
         false,
     )
-    .unwrap()
     .unwrap();
     let mut ir = CadIr::empty();
     let id = "test:model:surface#rectangle".try_into().unwrap();

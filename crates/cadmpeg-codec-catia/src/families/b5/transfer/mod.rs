@@ -492,14 +492,7 @@ fn build_plan(
                 });
                 let geometry = PcurveGeometry::Nurbs {
                     nurbs: crate::nurbs::note_refusal(
-                        admitted!(PcurveNurbs::from_lanes(
-                            ctx,
-                            pcurve.degree,
-                            knots,
-                            points,
-                            weights,
-                            false
-                        )),
+                        PcurveNurbs::from_lanes(pcurve.degree, knots, points, weights, false),
                         refusal,
                         format_args!("b5 object-stream pcurve record #{}", pcurve.object_id),
                     )?,
@@ -941,7 +934,6 @@ pub(in crate::families) fn resolved_object_stream_pcurve(
     };
     let Some(nurbs) = crate::nurbs::note_refusal(
         PcurveNurbs::from_lanes(
-            ctx,
             crate::families::a5a8::records::A8Pcurve::DEGREE,
             knots,
             control_points
@@ -950,7 +942,7 @@ pub(in crate::families) fn resolved_object_stream_pcurve(
                 .collect::<Vec<_>>(),
             None,
             false,
-        )?,
+        ),
         refusal,
         format_args!("a8 object-stream pcurve record #{}", pcurve.support_id),
     ) else {
@@ -1169,64 +1161,58 @@ pub(in crate::families) fn resolved_extrusion_surface(
         let construction_id = graph.canonical_surface_id(surface_id)?;
         let extrusion = graph.extrusion_surfaces.get(&construction_id)?;
         let active = extrusion.parameter_bounds[1];
-        let mut resolve_support = |(
-            surface_object_id,
-            pcurve_object_id,
-            pcurve_parameter_range,
-        ): (u32, u32, [FiniteReal; 2])|
-         -> Result<
-            Option<ResolvedExtrusionSupport>,
-            cadmpeg_core::CodecError,
-        > {
-            (|| -> Option<Result<ResolvedExtrusionSupport, cadmpeg_core::CodecError>> {
-                let source_surface = graph.surfaces.get(&surface_object_id)?;
-                let surface =
-                    match resolved_surface_geometry(ctx, graph, surface_object_id, refusal) {
-                        Ok(Some(surface)) => surface,
-                        Ok(None) => return None,
+        let mut resolve_support =
+            |(surface_object_id, pcurve_object_id, pcurve_parameter_range): (
+                u32,
+                u32,
+                [FiniteReal; 2],
+            )|
+             -> Result<Option<ResolvedExtrusionSupport>, cadmpeg_core::CodecError> {
+                (|| -> Option<Result<ResolvedExtrusionSupport, cadmpeg_core::CodecError>> {
+                    let source_surface = graph.surfaces.get(&surface_object_id)?;
+                    let surface =
+                        match resolved_surface_geometry(ctx, graph, surface_object_id, refusal) {
+                            Ok(Some(surface)) => surface,
+                            Ok(None) => return None,
+                            Err(error) => return Some(Err(error)),
+                        };
+                    let pcurve = graph.pcurves.get(&pcurve_object_id)?;
+                    let knots = pcurve_nurbs_knots(pcurve)?;
+                    let knots = knots.into_iter().map(FiniteReal::get).collect::<Vec<_>>();
+                    let domain = pcurve_parameter_domain(pcurve)?;
+                    bounded_occurrence_range(pcurve_parameter_range, domain)?;
+                    let points = pcurve
+                        .control_points
+                        .iter()
+                        .map(|point| neutral_pcurve_point(point.get(), source_surface))
+                        .collect::<Vec<_>>();
+                    let weights = pcurve.weights.as_ref().map(|weights| {
+                        weights
+                            .iter()
+                            .copied()
+                            .map(PositiveReal::get)
+                            .collect::<Vec<_>>()
+                    });
+                    let nurbs = crate::nurbs::note_refusal(
+                        PcurveNurbs::from_lanes(pcurve.degree, knots, points, weights, false),
+                        refusal,
+                        format_args!("b5 extrusion pcurve record #{pcurve_object_id}"),
+                    )?;
+                    let pcurve_geometry = PcurveGeometry::Nurbs { nurbs };
+                    let curve = match lifted_curve_geometry(ctx, pcurve, source_surface) {
+                        Ok(curve) => curve,
                         Err(error) => return Some(Err(error)),
                     };
-                let pcurve = graph.pcurves.get(&pcurve_object_id)?;
-                let knots = pcurve_nurbs_knots(pcurve)?;
-                let knots = knots.into_iter().map(FiniteReal::get).collect::<Vec<_>>();
-                let domain = pcurve_parameter_domain(pcurve)?;
-                bounded_occurrence_range(pcurve_parameter_range, domain)?;
-                let points = pcurve
-                    .control_points
-                    .iter()
-                    .map(|point| neutral_pcurve_point(point.get(), source_surface))
-                    .collect::<Vec<_>>();
-                let weights = pcurve.weights.as_ref().map(|weights| {
-                    weights
-                        .iter()
-                        .copied()
-                        .map(PositiveReal::get)
-                        .collect::<Vec<_>>()
-                });
-                let nurbs = crate::nurbs::note_refusal(
-                    match PcurveNurbs::from_lanes(ctx, pcurve.degree, knots, points, weights, false)
-                    {
-                        Ok(result) => result,
-                        Err(error) => return Some(Err(error)),
-                    },
-                    refusal,
-                    format_args!("b5 extrusion pcurve record #{pcurve_object_id}"),
-                )?;
-                let pcurve_geometry = PcurveGeometry::Nurbs { nurbs };
-                let curve = match lifted_curve_geometry(ctx, pcurve, source_surface) {
-                    Ok(curve) => curve,
-                    Err(error) => return Some(Err(error)),
-                };
-                Some(Ok(ResolvedExtrusionSupport {
-                    surface_object_id,
-                    surface,
-                    pcurve: pcurve_geometry,
-                    pcurve_parameter_range: pcurve_parameter_range.map(FiniteReal::get),
-                    curve,
-                }))
-            })()
-            .transpose()
-        };
+                    Some(Ok(ResolvedExtrusionSupport {
+                        surface_object_id,
+                        surface,
+                        pcurve: pcurve_geometry,
+                        pcurve_parameter_range: pcurve_parameter_range.map(FiniteReal::get),
+                        curve,
+                    }))
+                })()
+                .transpose()
+            };
         let directrix = match &extrusion.directrix {
             B5ExtrusionDirectrix::Intersection {
                 supports,
@@ -1261,8 +1247,7 @@ pub(in crate::families) fn resolved_extrusion_surface(
                     Ok(curve) => curve,
                     Err(error) => return Some(Err(error)),
                 };
-                let curve = match curve_on_parameter_range(
-                    ctx,
+                let curve = curve_on_parameter_range(
                     curve,
                     support.pcurve_parameter_range,
                     active,
@@ -1271,11 +1256,7 @@ pub(in crate::families) fn resolved_extrusion_surface(
                         support.surface_object_id
                     ),
                     refusal,
-                ) {
-                    Ok(Some(curve)) => curve,
-                    Ok(None) => return None,
-                    Err(error) => return Some(Err(error)),
-                };
+                )?;
                 ResolvedExtrusionDirectrix::SurfaceCurve { support, curve }
             }
             B5ExtrusionDirectrix::Offset {
@@ -1300,8 +1281,7 @@ pub(in crate::families) fn resolved_extrusion_surface(
                     Ok(curve) => curve,
                     Err(error) => return Some(Err(error)),
                 };
-                let source_curve = match curve_on_parameter_range(
-                    ctx,
+                let source_curve = curve_on_parameter_range(
                     source_curve,
                     source_parameter_range.endpoints(),
                     active,
@@ -1310,11 +1290,7 @@ pub(in crate::families) fn resolved_extrusion_surface(
                         support.surface_object_id
                     ),
                     refusal,
-                ) {
-                    Ok(Some(curve)) => curve,
-                    Ok(None) => return None,
-                    Err(error) => return Some(Err(error)),
-                };
+                )?;
                 ResolvedExtrusionDirectrix::Offset {
                     source_object_id: *object_id,
                     support,
@@ -1357,23 +1333,20 @@ fn copy_lifted_curve(curve: &CurveGeometry) -> Result<CurveGeometry, cadmpeg_cor
 }
 
 fn curve_on_parameter_range(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     curve: CurveGeometry,
     source: [f64; 2],
     target: IncreasingParameterInterval,
     record: &dyn std::fmt::Display,
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> Result<Option<CurveGeometry>, cadmpeg_core::CodecError> {
-    let Some(source_interval) = IncreasingParameterInterval::new(source) else {
-        return Ok(None);
-    };
+) -> Option<CurveGeometry> {
+    let source_interval = IncreasingParameterInterval::new(source)?;
     let target_interval = target;
     let target = target_interval.endpoints();
     if target
         .into_iter()
         .all(|value| cadmpeg_ir::math::parameter_in_domain(value, source, 64.0 * f64::EPSILON))
     {
-        return Ok(Some(curve));
+        return Some(curve);
     }
     let source_span = source[1] - source[0];
     let target_span = target[1] - target[0];
@@ -1389,7 +1362,7 @@ fn curve_on_parameter_range(
             let mapped = if mapped.iter().all(|knot| knot.is_finite()) {
                 mapped
             } else {
-                let mapped = curve
+                curve
                     .knots()
                     .iter()
                     .map(|knot| {
@@ -1402,29 +1375,22 @@ fn curve_on_parameter_range(
                             .ok()
                             .map(cadmpeg_ir::scalar::FiniteReal::get)
                     })
-                    .collect::<Option<Vec<_>>>();
-                let Some(mapped) = mapped else {
-                    return Ok(None);
-                };
-                mapped
+                    .collect::<Option<Vec<_>>>()?
             };
             if curve
-                .edit_knots(ctx, |knots| knots.copy_from_slice(&mapped))?
+                .edit_knots(|knots| knots.copy_from_slice(&mapped))
                 .is_err()
             {
-                return Ok(None);
+                return None;
             }
-            Ok(Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                curve,
-            ))))
+            Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)))
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
             let origin = line_curve.origin().get();
             let direction = *line_curve.direction().as_raw();
             if source_per_target != 1.0 {
-                return Ok(crate::nurbs::note_refusal(
+                return crate::nurbs::note_refusal(
                     cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
-                        ctx,
                         1,
                         vec![target[0], target[0], target[1], target[1]],
                         source
@@ -1439,30 +1405,27 @@ fn curve_on_parameter_range(
                             .collect::<Vec<_>>(),
                         None,
                         false,
-                    )?,
+                    ),
                     refusal,
                     format_args!(
                         "b5 line curve reparameterized onto its occurrence range: {record}"
                     ),
                 )
                 .map(SolvedCurveGeometry::Nurbs)
-                .map(CurveGeometry::Solved));
+                .map(CurveGeometry::Solved);
             }
-            Ok(Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(
+            Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::analytic::LineCurve::new(
-                    match FinitePoint3::new(Point3::new(
+                    FinitePoint3::new(Point3::new(
                         origin.x + (source[0] - target[0] * source_per_target) * direction.x,
                         origin.y + (source[0] - target[0] * source_per_target) * direction.y,
                         origin.z + (source[0] - target[0] * source_per_target) * direction.z,
-                    )) {
-                        Some(point) => point,
-                        None => return Ok(None),
-                    },
+                    ))?,
                     line_curve.direction(),
                 ),
-            ))))
+            )))
         }
-        _ => Ok(None),
+        _ => None,
     }
 }
 

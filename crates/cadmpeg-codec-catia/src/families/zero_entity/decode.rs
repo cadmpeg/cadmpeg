@@ -452,20 +452,18 @@ fn transfer_closed_wire_loops(
                                     "zero-entity helix edge reversed onto its coedge",
                                 )
                                 .map(|(definition, edge_range)| {
-                                    Ok::<_, cadmpeg_core::CodecError>((
+                                    (
                                         geometry.clone(),
                                         edge_range,
                                         Some((definition, procedural.cache_fit_tolerance)),
-                                    ))
-                                })
-                                .transpose()?,
+                                    )
+                                }),
                                 None => crate::nurbs::reverse_curve_geometry(
-                                    admission.context(),
                                     &geometry,
                                     source_range,
                                     refusal,
                                     "zero-entity edge curve reversed onto its edge",
-                                )?
+                                )
                                 .map(|(geometry, edge_range)| (geometry, edge_range, None)),
                             }
                         } else {
@@ -815,12 +813,7 @@ pub(in crate::families) fn try_decode_zero_entity(
         };
     }
     let preamble = container::outer_preamble_range(&scan.data)?;
-    let surfaces = match crate::families::zero_entity::records::zero_entity_surfaces_in_range(
-        ctx, &scan.data, preamble.clone(), refusal,
-    ) {
-        Ok(surfaces) => surfaces,
-        Err(error) => return Some(Err(error)),
-    };
+    let surfaces = crate::families::zero_entity::records::zero_entity_surfaces_in_range(&scan.data, preamble.clone(), refusal);
     if surfaces.is_empty() {
         return None;
     }
@@ -905,19 +898,18 @@ pub(in crate::families) fn try_decode_zero_entity(
                     else {
                         continue;
                     };
-                    let pcurve = match crate::families::zero_entity::records::zero_entity_neutral_pcurve(
-                        ctx,
-                        surface_geometry,
-                        pcurve,
-                        &format_args!(
-                            "zero-entity support record #{} at byte {}",
-                            support.record_ordinal, support.pos
-                        ),
-                        refusal,
-                    ) {
-                        Ok(Some(pcurve)) => pcurve,
-                        Ok(None) => continue,
-                        Err(error) => return Some(Err(error)),
+                    let Some(pcurve) =
+                        crate::families::zero_entity::records::zero_entity_neutral_pcurve(
+                            surface_geometry,
+                            pcurve,
+                            &format_args!(
+                                "zero-entity support record #{} at byte {}",
+                                support.record_ordinal, support.pos
+                            ),
+                            refusal,
+                        )
+                    else {
+                        continue;
                     };
                     let PcurveGeometry::Nurbs { nurbs } = &pcurve else {
                         continue;
@@ -1167,14 +1159,12 @@ mod tests {
             id: CurveId::mint("catia:test:nurbs#0".to_string()).expect("identity grammar"),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                 NurbsCurve::from_lanes(
-                    &cadmpeg_test_support::service_decode_context(),
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![first, corner],
                     None,
                     false,
                 )
-                .expect("fixture constructor admission")
                 .expect("valid linear NURBS"),
             )),
             source_object: None,
@@ -1852,14 +1842,12 @@ mod tests {
     #[test]
     fn zero_entity_wire_nurbs_copy_result() {
         let nurbs = NurbsCurve::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
             None,
             false,
         )
-        .expect("fixture constructor admission")
         .expect("valid linear NURBS");
         let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs));
         let service = { geometry.clone() };
