@@ -61,7 +61,7 @@ pub fn record_count(bytes: &[u8]) -> Option<u32> {
 /// Parse the header of a decompressed ASM stream. Returns `None` if the magic
 /// is absent. Fields that cannot be read (short stream or unexpected tags) are
 /// left `None` rather than guessed.
-pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Option<BinaryHeader>, CodecError> {
+pub fn parse(_ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Option<BinaryHeader>, CodecError> {
     let Some(width) = declared_width(bytes) else {
         return Ok(None);
     };
@@ -100,7 +100,7 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Option<BinaryHeade
     let HeaderRegion {
         strings: [family, version, date],
         doubles: [scale, linear, angular],
-    } = read_string_region(ctx, bytes, start)?;
+    } = read_string_region(bytes, start);
     header.product_family = family;
     header.product_version = version;
     header.save_date = date;
@@ -148,11 +148,8 @@ fn record_stream_start_with_width(bytes: &[u8], width: RefWidth) -> Option<usize
 /// unframed record after the solved sequence is accepted only when its exact
 /// identifier token is `delta_state`. Raw substring search is deliberately not
 /// used because string payloads can contain the same bytes.
-pub fn solved_record_limit(
-    ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-) -> Result<Option<usize>, CodecError> {
-    let Some((start, width)) = (|| {
+pub fn solved_record_limit(bytes: &[u8]) -> Option<usize> {
+    let (start, width) = (|| {
         let width = declared_width(bytes)?;
         let flags = match width {
             RefWidth::Four => View::u32_le_at(bytes, bf4::FLAGS).map(u64::from),
@@ -163,11 +160,8 @@ pub fn solved_record_limit(
         }
         let start = record_stream_start_with_width(bytes, width)?;
         Some((start, width))
-    })() else {
-        return Ok(None);
-    };
+    })()?;
     crate::sab::scan_history_boundary(
-        ctx,
         bytes,
         start,
         width,
@@ -177,7 +171,7 @@ pub fn solved_record_limit(
 
 /// Exact solved-record boundary, using an already-parsed ASM header.
 pub fn solved_record_limit_with_header(
-    ctx: &DecodeContext<'_>,
+    _ctx: &DecodeContext<'_>,
     bytes: &[u8],
     header: &BinaryHeader,
 ) -> Result<Option<usize>, CodecError> {
@@ -187,38 +181,23 @@ pub fn solved_record_limit_with_header(
     let Some(start) = record_stream_start_with_header(bytes, header) else {
         return Ok(None);
     };
-    crate::sab::scan_history_boundary(
-        ctx,
+    Ok(crate::sab::scan_history_boundary(
         bytes,
         start,
         header.width,
         Some(&["Begin", "of", "ASM", "History", "Data"]),
-    )
+    ))
 }
 
 #[cfg(test)]
 mod tests {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
     #[test]
-    fn asm_product_string_refuses_retained_limit_before_copy() {
+    fn asm_header_reads_the_product_string() {
         let mut bytes = b"ASM BinaryFile4".to_vec();
         bytes.resize(crate::layout::asmheader_binaryfile4::LEN, 0);
         bytes.extend_from_slice(&[7, 3]);
         bytes.extend_from_slice(b"ASM");
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 2;
-        let (limited, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-        assert!(matches!(
-            super::parse(&limited, &bytes),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "retain kernel header product string"
-        ));
-        let (service, _) =
-            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
+        let service = cadmpeg_test_support::service_decode_context();
         assert_eq!(
             super::parse(&service, &bytes)
                 .unwrap()
