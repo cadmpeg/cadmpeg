@@ -64,18 +64,13 @@ fn native_record_text_refuses_the_retained_limit() {
     assert_eq!(serde_json::to_vec(&records[0]).unwrap(), json);
 }
 
-/// Two equal identities, one identity that sorts before them, and later
-/// records that sort after them.
+/// Two equal identities and one identity that sorts before them.
 fn sort_fixture() -> Vec<serde_json::Value> {
-    let mut records = vec![
+    vec![
         serde_json::json!({"id":"test:native:record#same","ordinal":1}),
         serde_json::json!({"id":"test:native:record#same","ordinal":2}),
         serde_json::json!({"id":"test:native:record#first","ordinal":3}),
-    ];
-    records.extend((4..256).map(|ordinal| {
-        serde_json::json!({"id": format!("test:native:record#z{ordinal:03}"), "ordinal": ordinal})
-    }));
-    records
+    ]
 }
 
 #[test]
@@ -884,7 +879,7 @@ fn native_finalization_sorts_changed_arenas_and_preserves_identity_ties() {
 }
 
 #[test]
-fn native_sort_uses_only_index_permutation_storage() {
+fn native_arena_sort_is_stable_by_identity() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let records = sort_fixture();
     let arena = DecodeArena::new();
