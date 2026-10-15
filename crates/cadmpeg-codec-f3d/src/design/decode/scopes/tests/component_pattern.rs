@@ -16,7 +16,7 @@ use crate::records::sketch_placement::SketchPlacementMatrix;
 use std::num::NonZeroU32;
 
 #[test]
-fn component_pattern_generated_instances_refuse_collection_limit() {
+fn component_pattern_keeps_seed_and_generated_instances() {
     const COMPONENT: &str = "11111111-2222-4333-8444-555555555555";
     const SEED: &str = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
     const GENERATED: &str = "aaaaaaaa-bbbb-4ccc-8ddd-ffffffffffff";

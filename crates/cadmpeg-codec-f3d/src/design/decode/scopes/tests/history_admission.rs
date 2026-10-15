@@ -80,7 +80,7 @@ fn scope(
 }
 
 #[test]
-fn equivalent_scope_json_refuses_nested_collection_depth_and_text_limits() {
+fn equivalent_scope_json_refuses_nested_depth_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
     let dimension = ResourceDimension::RecursionDepth;

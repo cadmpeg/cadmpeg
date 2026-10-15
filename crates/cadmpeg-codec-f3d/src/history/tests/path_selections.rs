@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Decode limits for historical path selection binding.
+//! Historical path selection binding.
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::features::{FeatureId, PathRef};

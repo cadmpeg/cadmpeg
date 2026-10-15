@@ -957,4 +957,4 @@ fn paired_dimensions_bind_geometry_with_stream_local_record_indices() {
     );
 }
 
-mod refusal_counted_role_relation_at_tolerance;
+mod counted_role_relation;

@@ -15,7 +15,7 @@ use crate::test_support::lp_utf16;
 use crate::test_support::push_reference_u64;
 
 #[test]
-fn external_reference_text_fields_refuse_retained_limits() {
+fn external_reference_text_fields_keep_link_and_version() {
     let asset = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
     let link = "component-body-link";
     let property = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
@@ -40,7 +40,7 @@ fn external_reference_text_fields_refuse_retained_limits() {
 }
 
 #[test]
-fn combine_tools_refuse_collection_limit() {
+fn combine_tools_keep_first_and_additional_records() {
     fn operation_record(bytes: &mut Vec<u8>, record_index: u32, selection_record_index: u32) {
         indexed_header(bytes, *b"283", record_index);
         bytes.extend_from_slice(&[0; 9]);

@@ -10,7 +10,7 @@ use crate::records::sketch_relations::{SketchPatternDefinition, SketchPatternDir
 use crate::test_support::push_reference_u64;
 
 #[test]
-fn sketch_relation_assembly_refuses_collection_and_retained_limits() {
+fn sketch_relation_assembly_admits_a_plain_relation() {
     use crate::records::decal::DesignRecordHeader;
     use crate::records::sketch_relations::SketchRelationDefinition;
 

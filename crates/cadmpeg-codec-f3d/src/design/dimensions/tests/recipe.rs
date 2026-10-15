@@ -1233,6 +1233,6 @@ fn expression_dependency_audit_counts_only_unprojected_same_stream_names() {
     );
 }
 
-mod refusal_recipe_dimension_candidate_entities;
+mod candidate_entities;
 
-mod refusal_recipe_extension_point_dimension;
+mod extension_points;

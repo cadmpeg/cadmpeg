@@ -1406,4 +1406,4 @@ fn repeated_linear_dimension_requires_disjoint_measurement_pairs() {
     );
 }
 
-mod refusal_spatial_distance;
+mod spatial_distance;

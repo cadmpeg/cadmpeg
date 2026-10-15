@@ -58,7 +58,7 @@ fn compact_mirror_reference_uses_the_identity_record_lane() {
 }
 
 #[test]
-fn compact_mirror_reference_refuses_guid_text_limits() {
+fn compact_mirror_reference_reads_its_guid_text() {
     let (bytes, header, identity, reference) = compact_reference_fixture();
     assert_eq!(
         compact_feature_reference(&bytes, &header),

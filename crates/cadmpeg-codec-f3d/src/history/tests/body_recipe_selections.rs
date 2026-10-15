@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Decode limits for historical body recipe selections.
+//! Historical body recipe selections.
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::features::{BodySelection, FeatureId};

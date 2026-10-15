@@ -268,7 +268,7 @@ fn feature_admission_keeps_extrude_face_operands_native_without_an_input_topolog
 }
 
 #[test]
-fn feature_gate_changes_hole_namespace_and_propagates_index_refusal() {
+fn feature_gate_changes_hole_namespace() {
     use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureEvaluation, FeatureOperation};
     let ctx = cadmpeg_test_support::service_decode_context();
     let id = FeatureId::mint("f3d:model:feature#hole").unwrap();

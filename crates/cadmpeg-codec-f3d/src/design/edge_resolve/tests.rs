@@ -1742,7 +1742,7 @@ fn edge_assignment_pairs_single_candidates() {
     );
 }
 
-mod assignment_limits;
+mod assignment_recursion;
 
 #[test]
 fn sweep_recipe_edge_requires_incidence_and_two_reference_faces() {

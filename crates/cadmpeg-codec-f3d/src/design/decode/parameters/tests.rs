@@ -884,7 +884,7 @@ fn parameter_companion_prefix_has_owner_backlink_and_timestamp() {
 }
 
 #[test]
-fn parameter_companion_decode_refuses_index_output_and_identifier_limits() {
+fn parameter_companion_decode_emits_one_identified_companion() {
     const STREAM: &str = "FusionAssetName[Active]/Design1/BulkStream.dat";
     let mut prefix = vec![0; 58];
     prefix[0..4].copy_from_slice(&3u32.to_le_bytes());
@@ -1137,7 +1137,7 @@ fn parameter_companion_orders_recipes_by_payload_byte_offset() {
 }
 
 #[test]
-fn parameter_companion_binding_refuses_output_recipe_and_id_limits() {
+fn parameter_companion_binding_owns_its_recipe() {
     let companion = DesignParameterCompanion::unbound(
         "f3d:native:design-parameter-companion#0".into(),
         0,
@@ -1279,7 +1279,7 @@ fn frame_relative_offsets_refuse_to_saturate_at_the_end_of_the_address_space() {
 }
 
 #[test]
-fn design_parameter_text_fields_refuse_each_retained_limit() {
+fn design_parameter_text_fields_keep_the_name() {
     let payload = parameter_record(Some(44), "1", "AlongDistance", Some("mm"), "d71", 1.0);
     let parsed = super::parse_design_parameter(&payload).unwrap().unwrap();
     assert_eq!(parsed.name, "d71");
