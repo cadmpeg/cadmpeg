@@ -80,7 +80,7 @@ impl Variant {
 /// How this codec admitted a document identified as `variant`.
 ///
 /// The one admission predicate in this crate. Both [`classify`] and
-/// [`dialect_loss`] read it, so a report's `admission` and its charged loss
+/// [`dialect_loss`] read it, so a report's `admission` and its recorded loss
 /// cannot disagree.
 ///
 /// Each of the six decoding families has at least one applicable route in
@@ -105,7 +105,7 @@ fn matched(variant: Variant) -> DialectMatch {
     }
 }
 
-/// The dialect-unverified loss, charged exactly on [`Admission::Residual`].
+/// The dialect-unverified loss, recorded exactly on [`Admission::Residual`].
 ///
 /// `None` exactly when the classified match is [`Admission::Admitted`]. The
 /// loss reads the admission already built by [`classify`] and does not

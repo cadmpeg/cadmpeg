@@ -1094,7 +1094,6 @@ fn source_order_pairs_only_source_closed_populations_with_matching_cardinalities
 
     let pairs =
         { crate::families::standard::records::pair_standard_populations(&layouts, &populations) }
-            .expect("service resource budget")
             .expect("source-ordered population relation");
     let pairs = std::iter::once(pairs.first)
         .chain(pairs.rest)
@@ -1116,23 +1115,16 @@ fn source_order_pairs_only_source_closed_populations_with_matching_cardinalities
     assert!({
         crate::families::standard::records::pair_standard_populations(&layouts, &mismatched)
     }
-    .expect("service resource budget")
     .is_none());
     assert!({
         crate::families::standard::records::pair_standard_populations(&layouts[..1], &populations)
     }
-    .expect("service resource budget")
     .is_none());
-    assert!(
-        { crate::families::standard::records::pair_standard_populations(&[], &[]) }
-            .expect("service resource budget")
-            .is_none()
-    );
+    assert!({ crate::families::standard::records::pair_standard_populations(&[], &[]) }.is_none());
     let one = crate::families::standard::records::pair_standard_populations(
         &layouts[..1],
         &populations[..1],
     )
-    .expect("service resource budget")
     .expect("single source-closed population");
     assert!(one.rest.is_empty());
     assert_eq!(one.first.0.face_run.face_start(), 10);

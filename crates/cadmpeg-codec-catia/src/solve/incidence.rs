@@ -35,16 +35,8 @@ type MeshEndpointSolutionVisitor<'a> =
     &'a mut dyn FnMut(&[MeshEndpointPair]) -> Result<ControlFlow<()>, CodecError>;
 type DegreeSupportWitnesses = RefCell<HashMap<(usize, usize), Vec<(usize, [usize; 2])>>>;
 
-fn singleton_incidence_pairs(
-    ctx: &DecodeContext<'_>,
-    pairs: &[[usize; 2]],
-) -> Result<Vec<Vec<[usize; 2]>>, CodecError> {
-    let mut singleton = Vec::new();
-
-    for &pair in pairs {
-        singleton.push(ctx.alloc_filled(1, pair, "catia_incidence_singleton_pair")?);
-    }
-    Ok(singleton)
+fn singleton_incidence_pairs(pairs: &[[usize; 2]]) -> Vec<Vec<[usize; 2]>> {
+    pairs.iter().map(|&pair| vec![pair]).collect()
 }
 
 fn prune_incidence_choices(
@@ -4268,7 +4260,7 @@ where
                 return Ok(ControlFlow::Continue(()));
             }
             if let Some(quotient) = mesh_quotient {
-                let singleton = singleton_incidence_pairs(ctx, &pairs)?;
+                let singleton = singleton_incidence_pairs(&pairs);
                 let mut quotient = quotient.clone();
                 let Some(domains) = mesh_assignments else {
                     if !quotient.point_assignment_exists(
@@ -4347,7 +4339,7 @@ where
                     let mut candidates = Vec::new();
                     for (edge, pair) in assignment.iter().enumerate() {
                         candidates.push(if let Some(pair) = pair {
-                            ctx.alloc_filled(1, *pair, "catia_incidence_fixed_candidate")?
+                            vec![*pair]
                         } else {
                             choices[edge].clone()
                         });
@@ -4630,7 +4622,7 @@ where
                 return Ok(None);
             }
             if let Some(quotient) = mesh_quotient {
-                let singleton = singleton_incidence_pairs(ctx, &pairs)?;
+                let singleton = singleton_incidence_pairs(&pairs);
                 let mut quotient = quotient.clone();
                 let Some(closure_limit) =
                     quotient.coordinate_domain_preparation_limit(point_count, &singleton)?

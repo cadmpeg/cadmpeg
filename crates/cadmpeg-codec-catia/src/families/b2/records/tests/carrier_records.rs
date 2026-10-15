@@ -452,8 +452,7 @@ fn an_offset_support_holds_only_increasing_domains_and_binds_them() {
         .expect("service decode")
     });
     assert_eq!(
-        crate::families::b2::records::offset_support_carriers(&[offset], &carriers)
-            .expect("service decode"),
+        crate::families::b2::records::offset_support_carriers(&[offset], &carriers),
         [Some(0)]
     );
     assert!(IncreasingParameterInterval::new([0.0, 0.0]).is_none());

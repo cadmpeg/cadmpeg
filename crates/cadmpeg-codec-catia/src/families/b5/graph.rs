@@ -3,7 +3,7 @@
 
 use cadmpeg_core::convert::{f64_from_index, truncate_f64_to_i64, truncate_f64_to_usize};
 
-type VertexComponentOutput = Result<(HashMap<u32, usize>, Vec<usize>, bool), CodecError>;
+type VertexComponentOutput = (HashMap<u32, usize>, Vec<usize>, bool);
 type CirclePcurveFields = Option<(u32, [f64; 2], f64, [f64; 2], [f64; 2])>;
 type Class1aPcurveFields = Option<(u32, [f64; 2], [f64; 2], [f64; 2], f64, [f64; 2], [f64; 2])>;
 type LoopReferencesOutput = Option<(Vec<u32>, B5LoopMetadata, Vec<[i16; 3]>)>;
@@ -1335,7 +1335,7 @@ fn parse_from_records_with_class21(
         }
     }
     let implicit_pcurves =
-        implicit_pcurve_bindings(records, by_id, &pcurves, &opaque_pcurves, &surfaces)?;
+        implicit_pcurve_bindings(records, by_id, &pcurves, &opaque_pcurves, &surfaces);
     for pcurve in pcurves.values_mut() {
         pcurve.lifted_endpoints = if let (Some(surface), Some(first), Some(last)) = (
             surfaces.get(&pcurve.surface),
@@ -2408,7 +2408,7 @@ fn implicit_pcurve_bindings(
     pcurves: &BTreeMap<u32, B5Pcurve>,
     opaque_pcurves: &BTreeMap<u32, B5OpaquePcurve>,
     surfaces: &BTreeMap<u32, B5Surface>,
-) -> Result<BTreeMap<u32, u32>, CodecError> {
+) -> BTreeMap<u32, u32> {
     let mut bindings = BTreeMap::new();
     let mut ambiguous = HashSet::new();
     for record in records.iter().filter(|record| record.class == 0x62) {
@@ -2432,21 +2432,21 @@ fn implicit_pcurve_bindings(
             let Some(edge) = by_id.get(&occurrence[1]).and_then(|edge| parse_edge(edge)) else {
                 continue;
             };
-            let endpoint_incidence_contains = |reference_id| -> Result<bool, CodecError> {
-                let Some(record) = by_id.get(&reference_id) else {
-                    return Ok(false);
-                };
-                Ok(parameter_incidence(record).is_some_and(|incidence| {
-                    incidence.lanes.iter().any(|lane| lane.curve == pcurve)
-                }))
+            let endpoint_incidence_contains = |reference_id| {
+                by_id
+                    .get(&reference_id)
+                    .and_then(|record| parameter_incidence(record))
+                    .is_some_and(|incidence| {
+                        incidence.lanes.iter().any(|lane| lane.curve == pcurve)
+                    })
             };
             let curve_wrapper_contains = by_id.get(&edge.support).is_some_and(|wrapper| {
                 matches!(wrapper.class, 0x23..=0x25)
                     && record_references(wrapper).any(|reference| reference == pcurve)
             });
             if !(curve_wrapper_contains
-                || endpoint_incidence_contains(edge.parameter_incidences[0])?
-                    && endpoint_incidence_contains(edge.parameter_incidences[1])?)
+                || endpoint_incidence_contains(edge.parameter_incidences[0])
+                    && endpoint_incidence_contains(edge.parameter_incidences[1]))
             {
                 continue;
             }
@@ -2459,7 +2459,7 @@ fn implicit_pcurve_bindings(
         }
     }
     bindings.retain(|pcurve, _| !ambiguous.contains(pcurve));
-    Ok(bindings)
+    bindings
 }
 
 pub(super) fn evaluate_pcurve(
@@ -2618,7 +2618,7 @@ fn bind_native_vertices(
             adjacency.entry(*vertex).or_default().push(index);
         }
     }
-    let vertex_points = propagate_vertex_points(&constraints, &adjacency, points)?;
+    let vertex_points = propagate_vertex_points(&constraints, &adjacency, points);
     let mut logical_coordinates = HashMap::new();
     for (vertex, point) in vertex_points {
         logical_coordinates.insert(vertex, points[point]);
@@ -2722,7 +2722,7 @@ fn propagate_vertex_points(
     constraints: &[([u32; 2], [usize; 2])],
     adjacency: &HashMap<u32, Vec<usize>>,
     points: &[FinitePoint3],
-) -> Result<HashMap<u32, usize>, CodecError> {
+) -> HashMap<u32, usize> {
     let mut mapping = HashMap::<u32, usize>::new();
     let mut completed = HashSet::new();
     for seed in 0..constraints.len() {
@@ -2730,7 +2730,7 @@ fn propagate_vertex_points(
             continue;
         }
         let (component, members, consistent) =
-            propagate_vertex_component(seed, constraints, adjacency, points)?;
+            propagate_vertex_component(seed, constraints, adjacency, points);
         for member in members {
             completed.insert(member);
         }
@@ -2740,7 +2740,7 @@ fn propagate_vertex_points(
             }
         }
     }
-    Ok(mapping)
+    mapping
 }
 
 fn propagate_vertex_component(
@@ -2758,8 +2758,7 @@ fn propagate_vertex_component(
                   pending: &mut std::collections::VecDeque<u32>,
                   consistent: &mut bool,
                   vertex,
-                  locus|
-     -> Result<(), CodecError> {
+                  locus| {
         if let Some(&previous) = mapping.get(&vertex) {
             let residual =
                 distance_squared(coordinates(points[previous]), coordinates(points[locus]));
@@ -2770,7 +2769,6 @@ fn propagate_vertex_component(
             mapping.insert(vertex, locus);
             pending.push_back(vertex);
         }
-        Ok(())
     };
     let (seed_vertices, seed_loci) = constraints[seed];
     assign(
@@ -2779,14 +2777,14 @@ fn propagate_vertex_component(
         &mut consistent,
         seed_vertices[0],
         seed_loci[0],
-    )?;
+    );
     assign(
         &mut mapping,
         &mut pending,
         &mut consistent,
         seed_vertices[1],
         seed_loci[1],
-    )?;
+    );
     while let Some(vertex) = pending.pop_front() {
         for &index in adjacency.get(&vertex).into_iter().flatten() {
             if !visited.insert(index) {
@@ -2801,11 +2799,11 @@ fn propagate_vertex_component(
                     &mut consistent,
                     vertices[lane],
                     loci[lane],
-                )?;
+                );
             }
         }
     }
-    Ok((mapping, members, consistent))
+    (mapping, members, consistent)
 }
 
 fn vertex_coordinate(

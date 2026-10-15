@@ -44,14 +44,7 @@ pub(crate) fn transfer_dimensions(
             continue;
         };
         let id = pmi_id(entity.byte_offset)?;
-        let mut duplicate = false;
-        for annotation in &ir.model.pmi {
-            if annotation.id == id {
-                duplicate = true;
-                break;
-            }
-        }
-        if duplicate {
+        if ir.model.pmi.iter().any(|annotation| annotation.id == id) {
             continue;
         }
         ctx.charge_entities(1, "admit CATIA PMI dimension")?;

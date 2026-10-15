@@ -38,16 +38,6 @@ fn main_data_stream_service(data: &[u8], dir: &InnerDir) -> Option<Vec<u8>> {
         .expect("service budget admits main stream")
 }
 
-fn record_sources_service(
-    scan: &ContainerScan<'_>,
-) -> Vec<Vec<crate::wire::records::SourceExtent>> {
-    super::consolidated_record_sources(scan).expect("service budget admits record sources")
-}
-
-fn record_ranges_service(scan: &ContainerScan<'_>) -> Vec<std::ops::Range<usize>> {
-    super::consolidated_record_ranges(scan).expect("service budget admits record ranges")
-}
-
 #[test]
 fn logical_stream_bytes_refuse_retained_limit() {
     let descriptor = test_descriptor("MainDataStream", 1, 3);
@@ -1091,9 +1081,9 @@ fn consolidated_record_sources_follow_physical_stream_extents() {
                 .collect::<Vec<_>>()
         })
         .collect::<Vec<_>>();
-    assert_eq!(record_ranges_service(&scan), expected);
+    assert_eq!(super::consolidated_record_ranges(&scan), expected);
     assert_eq!(
-        record_sources_service(&scan)
+        super::consolidated_record_sources(&scan)
             .into_iter()
             .map(|source| source
                 .into_iter()
@@ -1102,7 +1092,7 @@ fn consolidated_record_sources_follow_physical_stream_extents() {
             .collect::<Vec<_>>(),
         expected_sources
     );
-    assert!(record_ranges_service(&scan)
+    assert!(super::consolidated_record_ranges(&scan)
         .iter()
         .all(|range| !range.contains(&inner.inner)));
 }

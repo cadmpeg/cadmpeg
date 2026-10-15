@@ -402,43 +402,31 @@ pub(super) fn standard_surface_populations(
 pub(super) fn pair_standard_populations(
     layouts: &[FbbPopulationLayout],
     populations: &[StandardSurfacePopulation],
-) -> Result<Option<StandardPopulationPairs>, CodecError> {
+) -> Option<StandardPopulationPairs> {
     if layouts.len() != populations.len() {
-        return Ok(None);
+        return None;
     }
-    let Some((first_layout, layouts)) = layouts.split_first() else {
-        return Ok(None);
+    let (first_layout, layouts) = layouts.split_first()?;
+    let (first_population, populations) = populations.split_first()?;
+    let pair = |layout: FbbPopulationLayout, population: &StandardSurfacePopulation| {
+        (layout.face_run.face_count() == population.records.len()
+            && layout.edge_count == population.supports.len())
+        .then(|| {
+            (
+                layout,
+                StandardSurfacePopulation {
+                    records: population.records.clone(),
+                    supports: population.supports.clone(),
+                },
+            )
+        })
     };
-    let Some((first_population, populations)) = populations.split_first() else {
-        return Ok(None);
-    };
-    let pair = |layout: FbbPopulationLayout,
-                population: &StandardSurfacePopulation|
-     -> Result<Option<StandardPopulationPair>, CodecError> {
-        if layout.face_run.face_count() != population.records.len()
-            || layout.edge_count != population.supports.len()
-        {
-            return Ok(None);
-        }
-        Ok(Some((
-            layout,
-            StandardSurfacePopulation {
-                records: population.records.clone(),
-                supports: population.supports.clone(),
-            },
-        )))
-    };
-    let Some(first) = pair(*first_layout, first_population)? else {
-        return Ok(None);
-    };
+    let first = pair(*first_layout, first_population)?;
     let mut rest = Vec::new();
     for (layout, population) in layouts.iter().copied().zip(populations) {
-        let Some(next) = pair(layout, population)? else {
-            return Ok(None);
-        };
-        rest.push(next);
+        rest.push(pair(layout, population)?);
     }
-    Ok(Some(StandardPopulationPairs { first, rest }))
+    Some(StandardPopulationPairs { first, rest })
 }
 
 /// Walk the complete face-local surface roster. Records are accepted only as a

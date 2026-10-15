@@ -1703,7 +1703,7 @@ fn standard_population_selections(
     let layouts = fbb::fbb_population_layouts(standard_spine);
     let populations = crate::families::standard::records::standard_surface_populations(ctx, brep)?;
     let Some(pairs) =
-        crate::families::standard::records::pair_standard_populations(&layouts, &populations)?
+        crate::families::standard::records::pair_standard_populations(&layouts, &populations)
     else {
         return Ok(None);
     };
@@ -2088,7 +2088,6 @@ fn try_decode_standard_population(
         };
     }
     let mut admission = FamilyEntityAdmission::new(ctx);
-    let work_budget = WorkBudget::new(mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS);
     let brep = scan.brep.as_ref()?;
     let default_spine = scan.main_data_stream().unwrap_or(brep);
     let standard_spine = selection.map_or(default_spine, |selection| selection.spine.as_slice());
@@ -2099,13 +2098,7 @@ fn try_decode_standard_population(
         },
         |selection| selection.edge_table_form,
     );
-    if !work_budget.charge() {
-        return None;
-    }
-    let sources = match container::consolidated_record_sources(scan) {
-        Ok(sources) => sources,
-        Err(error) => return Some(Err(error)),
-    };
+    let sources = container::consolidated_record_sources(scan);
     let consolidated_records = match crate::wire::records::consolidated_records_in_sources(&scan.data, sources) {
         Ok(records) => records,
         Err(error) => return Some(Err(error)),
@@ -4288,6 +4281,10 @@ fn split_bezier_half(control: BezierSpan) -> (BezierSpan, BezierSpan) {
     (left, right)
 }
 
+/// Collect the parameters of one quintic span within `tolerance` of `point`.
+///
+/// Returns `false` when the subdivision search reaches its node cap; the span
+/// then states no complete parameter set.
 fn collect_bezier_point_parameters(
     control: BezierSpan,
     range: [f64; 2],
@@ -4295,7 +4292,11 @@ fn collect_bezier_point_parameters(
     tolerance: f64,
     parameter_resolution: f64,
     parameters: &mut Vec<(f64, f64)>,
-) {
+) -> bool {
+    /// Bounds the best-first subdivision of one span. A span whose control
+    /// polygon stays within tolerance of the point is never pruned, so its
+    /// search would otherwise expand a full binary tree.
+    const MAX_BEZIER_SEARCH_NODES: usize = 1 << 16;
     use std::cmp::Reverse;
     use std::collections::BinaryHeap;
 
@@ -4333,7 +4334,7 @@ fn collect_bezier_point_parameters(
 
     let root_lower_bound = lower_bound(&control);
     if root_lower_bound > tolerance {
-        return;
+        return true;
     }
     let root_midpoint = midpoint(&control);
     let mut best = (range[0].midpoint(range[1]), root_midpoint.distance(point));
@@ -4355,7 +4356,12 @@ fn collect_bezier_point_parameters(
     let mut queue = BinaryHeap::new();
 
     queue.push((Reverse(root_lower_bound.to_bits()), 0usize));
+    let mut visited = 0usize;
     while let Some((Reverse(lower_bits), node_index)) = queue.pop() {
+        visited += 1;
+        if visited > MAX_BEZIER_SEARCH_NODES {
+            return false;
+        }
         let lower = f64::from_bits(lower_bits);
         if lower > tolerance || lower > best.1 {
             continue;
@@ -4404,6 +4410,7 @@ fn collect_bezier_point_parameters(
     if best.1 <= tolerance {
         parameters.push(best);
     }
+    true
 }
 
 fn standard_limit_curve_point_parameter(
@@ -4454,14 +4461,16 @@ fn standard_limit_curve_point_parameter(
     let mut parameters = Vec::new();
     for (span, control_points) in points.chunks_exact(6).enumerate() {
         let control: BezierSpan = std::array::from_fn(|index| control_points[index].get());
-        collect_bezier_point_parameters(
+        if !collect_bezier_point_parameters(
             control,
             [curve.knots()[span * 6], curve.knots()[(span + 1) * 6]],
             point,
             tolerance,
             parameter_resolution,
             &mut parameters,
-        );
+        ) {
+            return None;
+        }
     }
     parameters.sort_by(|left, right| left.1.total_cmp(&right.1));
     let &(parameter, _) = parameters.first()?;
@@ -5035,18 +5044,14 @@ fn attach_standard_topology(
                 .iter()
                 .any(|candidate| missing_edge::same_unordered_pair(*candidate, pair))
             {
-                options[edge] = ctx
-                    .alloc_filled(1, pair, "catia_native_support_singleton_pair")
-                    .map_err(StandardTopologyError::Codec)?;
+                options[edge] = vec![pair];
             }
         }
     }
     if let (Some(options), Some(pairs)) = (&mut endpoint_options, &native_endpoint_evidence) {
         for (options, pair) in options.iter_mut().zip(pairs) {
             if let Some(pair) = pair {
-                *options = ctx
-                    .alloc_filled(1, *pair, "catia_native_evidence_singleton_pair")
-                    .map_err(StandardTopologyError::Codec)?;
+                *options = vec![*pair];
             }
         }
     }
@@ -5074,9 +5079,7 @@ fn attach_standard_topology(
     {
         for (options, pair) in options.iter_mut().zip(pairs) {
             if let Some(pair) = pair {
-                *options = ctx
-                    .alloc_filled(1, *pair, "catia_propagated_singleton_pair")
-                    .map_err(StandardTopologyError::Codec)?;
+                *options = vec![*pair];
             }
         }
     }
@@ -5378,15 +5381,14 @@ fn attach_standard_topology(
     }
     if let Some(options) = &mut endpoint_options {
         loop {
-            let seeds = Ok(options
+            let seeds = options
                 .iter()
                 .map(|pairs| {
                     <[[usize; 2]; 1]>::try_from(pairs.as_slice())
                         .ok()
                         .map(|[pair]| pair)
                 })
-                .collect::<Vec<_>>())
-            .map_err(StandardTopologyError::Codec)?;
+                .collect::<Vec<_>>();
             let mut changed = false;
             if let Some(placement_domains) = missing_edge::standard_mesh_placement_endpoint_pairs(
                 ctx,
@@ -5566,15 +5568,14 @@ fn attach_standard_topology(
         .as_ref()
         .zip(missing_edge::edge_port_identities(ctx, spine).map_err(StandardTopologyError::Codec)?)
     {
-        let pairs = Ok(options
+        let pairs = options
             .iter()
             .map(|pairs| {
                 <[[usize; 2]; 1]>::try_from(pairs.as_slice())
                     .ok()
                     .map(|pair| pair[0])
             })
-            .collect::<Vec<_>>())
-        .map_err(StandardTopologyError::Codec)?;
+            .collect::<Vec<_>>();
         missing_edge::propagate_edge_port_points_with_ordered_seeds_and_deferred(
             ctx,
             &ports,
@@ -5604,15 +5605,14 @@ fn attach_standard_topology(
             missing_edge::standard_mesh_edge_ports(ctx, spine)
                 .map_err(StandardTopologyError::Codec)?,
         ) {
-        let pairs = Ok(options
+        let pairs = options
             .iter()
             .map(|pairs| {
                 <[[usize; 2]; 1]>::try_from(pairs.as_slice())
                     .ok()
                     .map(|pair| pair[0])
             })
-            .collect::<Vec<_>>())
-        .map_err(StandardTopologyError::Codec)?;
+            .collect::<Vec<_>>();
         missing_edge::propagate_edge_port_points_with_ordered_seeds_and_deferred(
             ctx,
             &ports,
@@ -5635,8 +5635,7 @@ fn attach_standard_topology(
                 .as_ref()
                 .and_then(|propagated| propagated.get(edge).copied().flatten())
             {
-                ctx.alloc_filled(1, pair, "catia_endpoint_propagated_pair")
-                    .map_err(StandardTopologyError::Codec)?
+                vec![pair]
             } else {
                 pairs.clone()
             };
@@ -5773,7 +5772,7 @@ fn attach_standard_topology(
         Ok(bound) => bound,
         Err(error) => return Err(StandardTopologyError::Codec(error)),
     };
-    let circle_anchors = Ok(supports
+    let circle_anchors = supports
         .iter()
         .zip(&endpoint_candidates)
         .map(|(support, candidates)| match &support.geometry {
@@ -5783,8 +5782,7 @@ fn attach_standard_topology(
             crate::families::standard::records::StandardCurveGeometry::Line
             | crate::families::standard::records::StandardCurveGeometry::Bspline => None,
         })
-        .collect::<Vec<_>>())
-    .map_err(StandardTopologyError::Codec)?;
+        .collect::<Vec<_>>();
     let native_fbb_topology = if edge_table_form == EdgeTableForm::FbbOnly && !has_open_face_domains
     {
         if let Some(pairs) = native_endpoint_pairs.as_ref() {
@@ -6170,7 +6168,6 @@ fn attach_standard_topology(
     };
     let Some(topology) =
         crate::families::standard::topology::admitted::StandardTopology::new(topology)
-            .map_err(StandardTopologyError::Codec)?
     else {
         return Err(StandardTopologyFailure::InvalidTopologySolution.into());
     };
@@ -6849,7 +6846,7 @@ fn resolve_standard_endpoint_pairs(
 
     for points in candidates {
         let row = if let Ok(pair) = <[usize; 2]>::try_from(points.as_slice()) {
-            ctx.alloc_filled(1, pair, "catia_standard_initial_endpoint_pair")?
+            vec![pair]
         } else {
             Vec::new()
         };
@@ -7022,8 +7019,7 @@ fn resolve_standard_endpoint_pairs(
         // binds the row; lexicographic row assignment can break a serialized
         // boundary even when the resulting analytic edge set is equivalent.
         if pairs.len() == edges.len() && edges.len() == 1 {
-            resolved[edges[0]] =
-                ctx.alloc_filled(1, pairs[0], "catia_standard_line_singleton_pair")?;
+            resolved[edges[0]] = vec![pairs[0]];
         } else {
             for edge in edges {
                 resolved[edge].clone_from(&pairs);
