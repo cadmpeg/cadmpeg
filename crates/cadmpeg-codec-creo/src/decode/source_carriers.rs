@@ -3,8 +3,6 @@
 
 use std::collections::BTreeMap;
 
-use crate::decode::build::units::{malformed_refusal, not_implemented_refusal};
-
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
@@ -47,8 +45,9 @@ impl SourceUnitCarriers {
     fn scale_product_translation(&self, transform: &mut Transform) -> Result<(), CodecError> {
         if let Some(scale) = self.length_scale_mm {
             *transform = transform.scaled_translation(scale).ok_or_else(|| {
-                not_implemented_refusal(
-                    "Creo product transform translation cannot be represented in millimeters",
+                CodecError::NotImplemented(
+                    "Creo product transform translation cannot be represented in millimeters"
+                        .into(),
                 )
             })?;
         }
@@ -139,7 +138,9 @@ impl SourceUnitCarriers {
             (self.length_scale_mm, sketch.resolved_placement())
         {
             let origin = origin.scaled(scale).ok_or_else(|| {
-                not_implemented_refusal("sketch origin cannot be represented in millimeters")
+                CodecError::NotImplemented(
+                    "sketch origin cannot be represented in millimeters".into(),
+                )
             })?;
             sketch.placement = sketch.placement.with_origin(origin);
         }
@@ -185,10 +186,10 @@ impl SourceUnitCarriers {
             if let Some(scale) = self.length_scale_mm {
                 constraint.definition.scale_lengths(scale).map_err(|error| match error {
                     cadmpeg_ir::sketches::scaling::SketchConstraintScaleError::LengthOverflow => {
-                        not_implemented_refusal("Creo scaled length must be finite")
+                        CodecError::NotImplemented("Creo scaled length must be finite".into())
                     }
                     cadmpeg_ir::sketches::scaling::SketchConstraintScaleError::InvalidLocalValue => {
-                        malformed_refusal("invalid sketch constraint local arity or scalar value")
+                        CodecError::malformed("invalid sketch constraint local arity or scalar value")
                     }
                 })?;
             }
@@ -302,10 +303,9 @@ impl SourceUnitCarriers {
         mut point: Point,
     ) -> Result<(), CodecError> {
         if let Some(scale) = self.length_scale_mm {
-            let position = point
-                .position()
-                .scaled(scale)
-                .ok_or_else(|| not_implemented_refusal("Creo scaled model point must be finite"))?;
+            let position = point.position().scaled(scale).ok_or_else(|| {
+                CodecError::NotImplemented("Creo scaled model point must be finite".into())
+            })?;
             point.set_position(position);
         }
         ir.model.points.push(point);
@@ -315,7 +315,9 @@ impl SourceUnitCarriers {
     fn scale_tolerance(&self, tolerance: &mut Option<PositiveReal>) -> Result<(), CodecError> {
         if let (Some(scale), Some(current)) = (self.length_scale_mm, tolerance) {
             *current = PositiveReal::new(current.get() * scale.get()).ok_or_else(|| {
-                not_implemented_refusal("scaled topology tolerance must be positive and finite")
+                CodecError::NotImplemented(
+                    "scaled topology tolerance must be positive and finite".into(),
+                )
             })?;
         }
         Ok(())
@@ -358,7 +360,7 @@ impl SourceUnitCarriers {
                 .flatten();
             if let Some(parameter_scale) = parameter_scale {
                 *interval = interval.scaled(parameter_scale).ok_or_else(|| {
-                    not_implemented_refusal("edge param_range must be finite and ordered")
+                    CodecError::NotImplemented("edge param_range must be finite and ordered".into())
                 })?;
             }
         }
@@ -406,7 +408,9 @@ impl SourceUnitCarriers {
                     .parameter_range
                     .scaled(parameter_scale)
                     .ok_or_else(|| {
-                        not_implemented_refusal("parameter_range must be finite and ordered")
+                        CodecError::NotImplemented(
+                            "parameter_range must be finite and ordered".into(),
+                        )
                     })?;
             }
         }
@@ -426,7 +430,7 @@ impl SourceUnitCarriers {
             .surfaces
             .iter()
             .find(|surface| &surface.id == surface_id)
-            .ok_or_else(|| malformed_refusal("Creo pcurve has no owning surface"))?;
+            .ok_or_else(|| CodecError::malformed("Creo pcurve has no owning surface"))?;
         let scales = self
             .length_scale_mm
             .and_then(|scale| {

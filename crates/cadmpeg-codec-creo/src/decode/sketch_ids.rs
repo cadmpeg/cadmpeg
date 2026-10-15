@@ -261,17 +261,6 @@ pub(super) fn sketch_identity_key(sketch: &SketchId) -> Option<IdentityKey> {
     IdentityKey::try_new(sketch_identity_scope(sketch).to_owned()).ok()
 }
 
-#[cfg(test)]
-pub(super) fn sketch_entity_id(
-    sketch: &SketchId,
-    suffix: impl std::fmt::Display,
-) -> Option<SketchEntityId> {
-    Some(SketchEntityId::compose(
-        &crate::identity::FEATDEFS_SKETCH_ENTITY,
-        sketch_identity_key(sketch)?.colon(IdentityKey::try_new(suffix.to_string()).ok()?),
-    ))
-}
-
 pub(super) fn sketch_entity_id_admitted(
     sketch: &SketchId,
     suffix: impl std::fmt::Display,

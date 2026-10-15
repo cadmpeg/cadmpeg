@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use super::definition_revolution_extents;
 use crate::feature::definitions::bind_definition_owners;
 use crate::feature::definitions::bind_replay_definition_owners;
 use crate::feature::definitions::bind_section_owners;
@@ -34,13 +35,6 @@ use crate::feature::operations::OperationName;
 use crate::feature::rows::FeatureGeometryTable;
 use crate::feature::rows::FeatureGeometryTableKind;
 use std::collections::BTreeSet;
-
-fn definition_revolution_extents(
-    definitions: &[FeatureDefinition],
-    operations: &[FeatureOperation],
-) -> Vec<crate::feature::rows::FeatureRevolutionExtent> {
-    super::definition_revolution_extents(definitions, operations)
-}
 
 #[test]
 fn binds_missing_definition_owner_from_unique_generated_datum_table() {

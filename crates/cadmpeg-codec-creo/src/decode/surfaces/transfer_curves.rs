@@ -230,17 +230,10 @@ fn extrusion_plane_boundary_curve(
         cubic_extrusion_plane_generator_curve(nurbs, surface_id, plane, &mut fallback_losses)
             .map(|geometry| (geometry, NurbsBoundaryKind::ExtrusionPlaneSectionGenerator));
     if fallback.is_none() {
-        append_boundary_fallback_losses(losses, fallback_losses);
+        losses.extend(fallback_losses);
         note_boundary_lane_records(curve_row_id, &refused, losses);
     }
     fallback
-}
-
-fn append_boundary_fallback_losses(
-    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-    fallback_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
-) {
-    losses.extend(fallback_losses);
 }
 
 /// Drain every refused boundary lane into one loss note per record.
@@ -426,7 +419,7 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
 
 #[cfg(test)]
 mod tests {
-    use super::resolve_carrier_intersection_curve as resolve_carrier_intersection_curve_admitted;
+    use super::resolve_carrier_intersection_curve;
     use std::collections::BTreeSet;
 
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
@@ -441,20 +434,6 @@ mod tests {
 
     use super::transfer_carrier_intersection_curves;
     use super::transfer_nurbs_boundary_curves;
-
-    fn resolve_carrier_intersection_curve(
-        first: CarrierEquation,
-        second: CarrierEquation,
-        points: Option<[[f64; 3]; 2]>,
-        allow_unresolved_endpoint_witness: bool,
-    ) -> Option<(CurveGeometry, &'static str)> {
-        resolve_carrier_intersection_curve_admitted(
-            first,
-            second,
-            points,
-            allow_unresolved_endpoint_witness,
-        )
-    }
     use crate::decode::analytic::equations::{CarrierEquation, PlaneEquation};
     use crate::topology::{HalfEdge, HalfEdgeId, HalfEdgeVertexIncidence};
     use crate::{container, curve, surface};
@@ -802,14 +781,5 @@ mod tests {
         super::note_boundary_lane_records(41, &["surface row 7".to_owned()], &mut service);
         assert_eq!(service.len(), 1);
         assert!(service[0].message.contains("row 41"));
-    }
-
-    #[test]
-    fn boundary_fallback_losses_are_appended() {
-        let mut losses = Vec::new();
-        let fallback =
-            crate::loss::CreoLossCode::NurbsBoundaryCarrierUnresolved.note("fallback failure");
-        super::append_boundary_fallback_losses(&mut losses, vec![fallback]);
-        assert_eq!(losses.len(), 1);
     }
 }

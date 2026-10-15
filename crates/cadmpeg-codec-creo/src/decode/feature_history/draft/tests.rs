@@ -15,16 +15,6 @@ use cadmpeg_ir::ids::{FaceId, ShellId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{Face, FaceLoops, Sense};
 
-fn service_unbounded_feature_plane_definition(
-    scan: &crate::container::ContainerScan<'_>,
-    ir: &CadIr,
-    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
-    feature_id: u32,
-) -> Option<IrFeatureDefinition> {
-    { unbounded_feature_plane_definition(scan, ir, source_carriers, feature_id) }
-        .expect("service unbounded plane admitted")
-}
-
 fn resolved_hole_face() -> Face {
     Face {
         id: FaceId::mint("creo:visibgeom:face#11").expect("identity grammar"),
@@ -272,12 +262,13 @@ fn unbounded_plane_uses_its_placed_carrier_without_model_surface() {
     scan.planes.positional_frames.push(placed_plane());
 
     assert_eq!(
-        service_unbounded_feature_plane_definition(
+        unbounded_feature_plane_definition(
             &scan,
             &CadIr::empty(),
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             5
-        ),
+        )
+        .expect("unbounded plane admitted"),
         Some(IrFeatureDefinition::Operation(
             IrFeatureOperation::DatumPlane {
                 frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
@@ -298,12 +289,13 @@ fn unbounded_plane_uses_its_model_carrier_without_placed_surface() {
     ir.model.surfaces.push(plane_surface(1.0));
 
     assert_eq!(
-        service_unbounded_feature_plane_definition(
+        unbounded_feature_plane_definition(
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             5
-        ),
+        )
+        .expect("unbounded plane admitted"),
         Some(IrFeatureDefinition::Operation(
             IrFeatureOperation::DatumPlane {
                 frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
@@ -324,12 +316,13 @@ fn unbounded_plane_rejects_conflicting_carriers() {
     let mut ir = CadIr::empty();
     ir.model.surfaces.push(plane_surface(2.0));
 
-    assert!(service_unbounded_feature_plane_definition(
+    assert!(unbounded_feature_plane_definition(
         &scan,
         &ir,
         &crate::decode::source_carriers::SourceUnitCarriers::default(),
         5
     )
+    .expect("unbounded plane admitted")
     .is_none());
     assert!(matches!(
         crate::decode::with_test_decode_ctx(|ctx| schema_feature_definition(
