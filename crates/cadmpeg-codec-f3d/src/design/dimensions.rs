@@ -33,12 +33,6 @@ macro_rules! dimension_resource {
     };
 }
 
-fn copy_spatial_entity_members(
-    entities: &[&cadmpeg_ir::sketches::SpatialSketchEntity],
-) -> Vec<cadmpeg_ir::sketches::SpatialSketchEntityId> {
-    entities.iter().map(|entity| entity.id().clone()).collect()
-}
-
 fn copy_dimension_source_kind(
     parameter: &DesignParameter,
 ) -> Result<cadmpeg_core::text::NonBlankString, CodecError> {
@@ -56,12 +50,6 @@ fn dimension_entity_ids_distinct(entities: &[&cadmpeg_ir::sketches::SketchEntity
         unique.insert(entity.id());
     }
     true
-}
-
-fn copy_dimension_entity_members(
-    entities: &[&cadmpeg_ir::sketches::SketchEntity],
-) -> Vec<cadmpeg_ir::sketches::SketchEntityId> {
-    entities.iter().map(|entity| entity.id().clone()).collect()
 }
 
 const EPS_DIMENSIONS_OWNER_SCOPED_PARALLEL_LINE_SET_DIMENSION_DEFINITION_E9: f64 = 1.0e-9;
@@ -2282,8 +2270,14 @@ fn owner_scoped_parallel_line_set_dimension_definition(
     }
     let (first, second) = matched?;
     Some(Ok(Definition::ParallelLineSetDistance {
-        first: copy_dimension_entity_members(&carriers[first]),
-        second: copy_dimension_entity_members(&carriers[second]),
+        first: carriers[first]
+            .iter()
+            .map(|entity| entity.id().clone())
+            .collect(),
+        second: carriers[second]
+            .iter()
+            .map(|entity| entity.id().clone())
+            .collect(),
         parameter: (parameter_id).clone(),
     }))
 }
@@ -2336,7 +2330,7 @@ fn owner_scoped_line_length_dimension_definition(
             parameter: (parameter_id).clone(),
         })),
         _ => Some(Ok(Definition::RepeatedLength {
-            entities: copy_dimension_entity_members(&matches),
+            entities: matches.iter().map(|entity| entity.id().clone()).collect(),
             parameter: (parameter_id).clone(),
         })),
     }
@@ -3355,8 +3349,14 @@ fn owner_scoped_spatial_parallel_line_set_dimension_definition(
     }
     let (first, second) = matched?;
     Some(Ok(Definition::ParallelLineSetDistance {
-        first: copy_spatial_entity_members(&carriers[first]),
-        second: copy_spatial_entity_members(&carriers[second]),
+        first: carriers[first]
+            .iter()
+            .map(|entity| entity.id().clone())
+            .collect(),
+        second: carriers[second]
+            .iter()
+            .map(|entity| entity.id().clone())
+            .collect(),
         parameter: (parameter_id).clone(),
     }))
 }
@@ -4454,7 +4454,7 @@ pub(super) fn exact_atomic_constraint(
             if entities.len() >= 2 && dimension_entity_ids_distinct(entities) =>
         {
             Some(Definition::Coincident {
-                entities: copy_dimension_entity_members(entities),
+                entities: entities.iter().map(|entity| entity.id().clone()).collect(),
             })
         }
         SketchConstraintKind::Colinear => {
@@ -4565,7 +4565,7 @@ pub(super) fn exact_atomic_constraint(
         SketchConstraintKind::Polygon
             if entities.len() >= 3 && dimension_entity_ids_distinct(entities) =>
         {
-            let members = copy_dimension_entity_members(entities);
+            let members = entities.iter().map(|entity| entity.id().clone()).collect();
             let Ok(polygon) = cadmpeg_ir::sketches::SketchPolygon::try_new(members) else {
                 return Ok(None);
             };
@@ -4575,7 +4575,7 @@ pub(super) fn exact_atomic_constraint(
             if entities.len() >= 2 && dimension_entity_ids_distinct(entities) =>
         {
             Some(Definition::SplineGroup {
-                entities: copy_dimension_entity_members(entities),
+                entities: entities.iter().map(|entity| entity.id().clone()).collect(),
             })
         }
         _ => None,
@@ -4910,7 +4910,7 @@ fn recipe_linear_dimension_candidates(
     }
     for (first, second) in line_pairs {
         let definition = Definition::Distance {
-            entities: copy_dimension_entity_members(&[first, second]),
+            entities: vec![first.id().clone(), second.id().clone()],
             parameter: (parameter).clone(),
         };
         candidates.push(definition);
@@ -5268,7 +5268,7 @@ fn two_locus_distance_dimension(
         return None;
     }
     Some(Ok(Definition::Distance {
-        entities: copy_dimension_entity_members(entities),
+        entities: entities.iter().map(|entity| entity.id().clone()).collect(),
         parameter,
     }))
 }
