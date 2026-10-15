@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed assembly occurrence and placement records.
 
+use cadmpeg_core::decode::unique_index;
 use std::collections::{BTreeMap, HashSet};
 use std::num::NonZeroUsize;
 
@@ -130,27 +131,15 @@ pub(crate) fn project_occurrences(
     assembly_occurrences: &[AssemblyOccurrenceRecord],
     assembly_placements: &[AssemblyPlacementRecord],
 ) -> Result<AssemblyProjection, CodecError> {
-    let (references, _references_storage) = ctx.unique_index(
-        external_references
+    let references = unique_index(external_references
             .iter()
-            .map(|record| (record.reference_id, record)),
-        |_| Ok(4),
-        "index Inventor external references",
-    )?;
-    let (occurrence_records, _occurrence_records_storage) = ctx.unique_index(
-        assembly_occurrences
+            .map(|record| (record.reference_id, record)));
+    let occurrence_records = unique_index(assembly_occurrences
             .iter()
-            .map(|record| (record.occurrence_id, record)),
-        |_| Ok(4),
-        "index Inventor assembly occurrences",
-    )?;
-    let (placements, _placements_storage) = ctx.unique_index(
-        assembly_placements
+            .map(|record| (record.occurrence_id, record)));
+    let placements = unique_index(assembly_placements
             .iter()
-            .map(|record| (record.occurrence_id, record)),
-        |_| Ok(4),
-        "index Inventor assembly placements",
-    )?;
+            .map(|record| (record.occurrence_id, record)));
     let mut emitted_ids = HashSet::new();
     let mut occurrences = Vec::new();
     let mut unresolved_placements = BTreeMap::new();

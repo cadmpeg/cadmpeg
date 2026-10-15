@@ -391,11 +391,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                         triangulation.triangles().to_vec(),
                         triangulation
                             .normals()
-                            .map(|normals| {
-                                self.ctx
-                                    .copy_slice(normals, "FreeCAD unowned triangulation normals")
-                            })
-                            .transpose()?,
+                            .map(<[_]>::to_vec),
                     )?,
                     Vec::new(),
                 )
@@ -1189,20 +1185,8 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             TextEdgeRepresentation::Polygon3d { polygon, .. } => {
                 let polygon = &self.tables.polygons3d[polygon - 1];
                 IndexedPolygon::try_new(
-                    if polygon.parameters.is_some() {
-                        self.ctx
-                            .copy_slice(&polygon.nodes, "FreeCAD standalone polygon nodes")?
-                    } else {
-                        polygon.nodes.clone()
-                    },
-                    polygon
-                        .parameters
-                        .as_ref()
-                        .map(|parameters| {
-                            self.ctx
-                                .copy_slice(parameters, "FreeCAD standalone polygon parameters")
-                        })
-                        .transpose()?,
+                    polygon.nodes.clone(),
+                    polygon.parameters.clone(),
                     polygon.deflection,
                 )?
             }
@@ -1288,14 +1272,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                 })?;
             points.push(point);
         }
-        let parameters = polygon
-            .parameters
-            .as_ref()
-            .map(|parameters| {
-                self.ctx
-                    .copy_slice(parameters, "FreeCAD indexed polygon parameters")
-            })
-            .transpose()?;
+        let parameters = polygon.parameters.clone();
         IndexedPolygon::try_new(points, parameters, polygon.deflection)
     }
 

@@ -420,7 +420,7 @@ impl CodecBackend for SldprtCodec {
             &scan,
             classification
                 .layers()
-                .try_clone_for_decode(ctx, "copy dialect layers")?,
+                .clone(),
         );
         classification.append_losses(ctx, &mut summary.losses)?;
         Ok(summary)

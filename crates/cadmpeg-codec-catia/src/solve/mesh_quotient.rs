@@ -2096,7 +2096,7 @@ impl MeshQuotient {
             'input5,
             'input6,
             'input7,
-            'input8,
+            
             'input9,
         > {
             boundaries: &'input0 [Vec<MeshBoundaryEdgeCandidate>],
@@ -2111,12 +2111,12 @@ impl MeshQuotient {
             oriented: &'input6 mut HashSet<usize>,
             gaugeable_edges: &'input7 HashSet<usize>,
             limit: usize,
-            budget: Option<&'input9 WorkBudget<'input8>>,
+            budget: Option<&'input9 WorkBudget>,
         }
 
         fn walk(
             ctx: &DecodeContext<'_>,
-            inputs: BoundaryOrientationSearch<'_, '_, '_, '_, '_, '_, '_, '_, '_, '_>,
+            inputs: BoundaryOrientationSearch< '_, '_, '_, '_, '_, '_, '_, '_, '_>,
         ) -> Result<(), CodecError> {
             let BoundaryOrientationSearch {
                 boundaries,
@@ -2690,7 +2690,7 @@ impl MeshQuotient {
             'input5,
             'input6,
             'input7,
-            'input8,
+            
             'input9,
         > {
             domains: &'input0 [Arc<HashSet<usize>>],
@@ -2702,12 +2702,12 @@ impl MeshQuotient {
             used: &'input6 mut HashSet<usize>,
             solutions: &'input7 mut Vec<Vec<usize>>,
             solution_limit: usize,
-            budget: Option<&'input9 WorkBudget<'input8>>,
+            budget: Option<&'input9 WorkBudget>,
         }
 
         fn walk(
             ctx: &DecodeContext<'_>,
-            inputs: CoordinateAssignmentSearch<'_, '_, '_, '_, '_, '_, '_, '_, '_, '_>,
+            inputs: CoordinateAssignmentSearch< '_, '_, '_, '_, '_, '_, '_, '_, '_>,
         ) -> Result<(), CodecError> {
             fn rollback(
                 assigned: &mut [Option<usize>],
@@ -3017,7 +3017,7 @@ fn deferred_face_quotient_options_limited(
         'input4,
         'input5,
         'input6,
-        'input7,
+        
         'input8,
     > {
         gaps: &'input0 [Gap],
@@ -3034,12 +3034,12 @@ fn deferred_face_quotient_options_limited(
         base_nodes: &'input5 [usize],
         output: &'input6 mut Vec<MeshQuotient>,
         limit: usize,
-        budget: &'input8 WorkBudget<'input7>,
+        budget: &'input8 WorkBudget,
     }
 
     fn fill_gap(
         ctx: &DecodeContext<'_>,
-        inputs: DeferredGapFill<'_, '_, '_, '_, '_, '_, '_, '_, '_>,
+        inputs: DeferredGapFill< '_, '_, '_, '_, '_, '_, '_, '_>,
     ) -> Result<(), CodecError> {
         let DeferredGapFill {
             gaps,
@@ -3152,7 +3152,7 @@ fn deferred_face_quotient_options_limited(
         'input5,
         'input6,
         'input7,
-        'input8,
+        
         'input9,
     > {
         gaps: &'input0 [Gap],
@@ -3166,12 +3166,12 @@ fn deferred_face_quotient_options_limited(
         base_nodes: &'input6 [usize],
         output: &'input7 mut Vec<MeshQuotient>,
         limit: usize,
-        budget: &'input9 WorkBudget<'input8>,
+        budget: &'input9 WorkBudget,
     }
 
     fn walk_gaps(
         ctx: &DecodeContext<'_>,
-        inputs: DeferredGapWalk<'_, '_, '_, '_, '_, '_, '_, '_, '_, '_>,
+        inputs: DeferredGapWalk< '_, '_, '_, '_, '_, '_, '_, '_, '_>,
     ) -> Result<(), CodecError> {
         let DeferredGapWalk {
             gaps,
@@ -3938,7 +3938,7 @@ pub(super) fn bounded_unordered_cycle_assignments(
     limit: usize,
     budget: &WorkBudget,
 ) -> Result<Option<Vec<MeshFaceBoundaryAssignment>>, CodecError> {
-    struct Search<'a, 'b, 'c> {
+    struct Search<'a, 'b> {
         edges: &'a [usize],
         compatible: &'a HashSet<(usize, usize)>,
         ctx: &'a DecodeContext<'b>,
@@ -3947,7 +3947,7 @@ pub(super) fn bounded_unordered_cycle_assignments(
         assignments: Vec<MeshFaceBoundaryAssignment>,
     }
 
-    impl Search<'_, '_, '_> {
+    impl Search< '_, '_> {
         fn walk(
             &mut self,
             first_start: usize,
@@ -5962,7 +5962,7 @@ fn propagate_endpoint_relation_domains(
 struct WalkEndpointRelationDomainsInputs<
     'input0,
     'input1,
-    'input2,
+    
     'input3,
     'input4,
     'input5,
@@ -5970,7 +5970,7 @@ struct WalkEndpointRelationDomainsInputs<
     'input7,
     'input8,
     'input9,
-    'input10,
+    
     'input11,
     'input12,
     F,
@@ -5982,21 +5982,19 @@ struct WalkEndpointRelationDomainsInputs<
     assigned: Vec<Option<[usize; 2]>>,
     constraints: &'input1 MeshEndpointRelationConstraints,
     point_count: usize,
-    budget: &'input3 WorkBudget<'input2>,
+    budget: &'input3 WorkBudget,
     state_memo: &'input4 mut HashSet<MeshEndpointRelationStateSignature>,
     candidate_gauge: Option<MeshCandidateGauge<'input5>>,
     priority_edges: Option<&'input6 [bool]>,
     partial_solution_valid: Option<&'input8 MeshEndpointSolutionPredicate<'input7>>,
     coordinate_domains: Option<&'input9 MeshCoordinateRootDomains>,
-    coordinate_budget: Option<&'input11 WorkBudget<'input10>>,
+    coordinate_budget: Option<&'input11 WorkBudget>,
     evaluate: &'input12 mut F,
 }
 
 fn walk_endpoint_relation_domains<F>(
     ctx: &DecodeContext<'_>,
     inputs: WalkEndpointRelationDomainsInputs<
-        '_,
-        '_,
         '_,
         '_,
         '_,
@@ -6371,7 +6369,7 @@ struct ResolveEndpointConfigurationRelationStreamingInputs<
     'input3,
     'input4,
     'input5,
-    'input6,
+    
     'input7,
     'input8,
     'input9,
@@ -6387,7 +6385,7 @@ struct ResolveEndpointConfigurationRelationStreamingInputs<
     edge_rows: &'input3 [EdgeRow],
     vertex_points: &'input4 [[f64; 3]],
     port_identities: &'input5 [[u32; 2]],
-    budget: &'input7 WorkBudget<'input6>,
+    budget: &'input7 WorkBudget,
     partial_solution_valid: Option<&'input9 MeshEndpointSolutionPredicate<'input8>>,
     complete_solution_valid: Option<&'input11 MeshEndpointSolutionPredicate<'input10>>,
     candidate_gauge: Option<MeshCandidateGauge<'input12>>,
@@ -6398,7 +6396,6 @@ struct ResolveEndpointConfigurationRelationStreamingInputs<
 fn resolve_endpoint_configuration_relation_streaming(
     ctx: &DecodeContext<'_>,
     inputs: ResolveEndpointConfigurationRelationStreamingInputs<
-        '_,
         '_,
         '_,
         '_,
@@ -7278,7 +7275,7 @@ fn resolve_fixed_mesh_endpoint_assignment_domains(
         'input3,
         'input4,
         'input5,
-        'input6,
+        
         'input7,
         'input8,
         'input9,
@@ -7290,13 +7287,13 @@ fn resolve_fixed_mesh_endpoint_assignment_domains(
         vertex_points: &'input3 [[f64; 3]],
         edge_candidates: &'input4 [Vec<[usize; 2]>],
         port_identities: &'input5 [[u32; 2]],
-        budget: &'input7 WorkBudget<'input6>,
+        budget: &'input7 WorkBudget,
         candidate_gauge: Option<MeshCandidateGauge<'input8>>,
         outcome: &'input9 mut SearchOutcome<(StandardTopologyDraft, Vec<usize>)>,
     }
     fn visit(
         ctx: &DecodeContext<'_>,
-        inputs: FixedEndpointAssignmentSearch<'_, '_, '_, '_, '_, '_, '_, '_, '_, '_>,
+        inputs: FixedEndpointAssignmentSearch< '_, '_, '_, '_, '_, '_, '_, '_, '_>,
     ) -> Result<(), CodecError> {
         let FixedEndpointAssignmentSearch {
             face,
@@ -7537,7 +7534,7 @@ struct ResolveSingletonMeshEndpointCandidatesInputs<
     'input3,
     'input4,
     'input5,
-    'input6,
+    
     'input7,
     'input8,
 > {
@@ -7547,13 +7544,13 @@ struct ResolveSingletonMeshEndpointCandidatesInputs<
     assignments: &'input3 [Vec<MeshFaceBoundaryAssignment>],
     port_identities: &'input4 [[u32; 2]],
     edge_direction_evidence: Option<&'input5 [bool]>,
-    budget: &'input7 WorkBudget<'input6>,
+    budget: &'input7 WorkBudget,
     candidate_gauge: Option<MeshCandidateGauge<'input8>>,
 }
 
 fn resolve_singleton_mesh_endpoint_candidates(
     ctx: &DecodeContext<'_>,
-    inputs: ResolveSingletonMeshEndpointCandidatesInputs<'_, '_, '_, '_, '_, '_, '_, '_, '_>,
+    inputs: ResolveSingletonMeshEndpointCandidatesInputs< '_, '_, '_, '_, '_, '_, '_, '_>,
 ) -> Result<Option<MeshEndpointResolve>, CodecError> {
     let ResolveSingletonMeshEndpointCandidatesInputs {
         edge_rows,
@@ -7697,7 +7694,7 @@ struct ResolveStandardMeshEndpointCandidatesInputs<
     'input3,
     'input4,
     'input5,
-    'input6,
+    
     'input7,
     'input8,
     'input9,
@@ -7713,7 +7710,7 @@ struct ResolveStandardMeshEndpointCandidatesInputs<
     port_identities: &'input3 [[u32; 2]],
     prepared_quotient: Option<&'input4 MeshQuotient>,
     edge_direction_evidence: Option<&'input5 [bool]>,
-    budget: &'input7 WorkBudget<'input6>,
+    budget: &'input7 WorkBudget,
     partial_solution_valid: Option<&'input9 MeshEndpointSolutionPredicate<'input8>>,
     complete_solution_valid: Option<&'input11 MeshEndpointSolutionPredicate<'input10>>,
     candidate_gauge: Option<MeshCandidateGauge<'input12>>,
@@ -7723,7 +7720,6 @@ struct ResolveStandardMeshEndpointCandidatesInputs<
 fn resolve_standard_mesh_endpoint_candidates(
     ctx: &DecodeContext<'_>,
     inputs: ResolveStandardMeshEndpointCandidatesInputs<
-        '_,
         '_,
         '_,
         '_,
@@ -7943,7 +7939,7 @@ pub(crate) struct ParseStandardMeshCandidateOutcomeInputs<
     'input8,
     'input9,
     'input10,
-    'input11,
+    
     'input12,
     FP,
     FC,
@@ -7963,7 +7959,7 @@ pub(crate) struct ParseStandardMeshCandidateOutcomeInputs<
     pub(crate) preferred_assignment_edges: &'input8 [bool],
     pub(crate) priority_edges: Option<&'input9 [bool]>,
     pub(crate) assignment_dependencies: Option<&'input10 [Vec<usize>]>,
-    pub(crate) budget: &'input12 WorkBudget<'input11>,
+    pub(crate) budget: &'input12 WorkBudget,
     pub(crate) partial_solution_valid: FP,
     pub(crate) complete_solution_valid: FC,
 }
@@ -7971,7 +7967,6 @@ pub(crate) struct ParseStandardMeshCandidateOutcomeInputs<
 pub(crate) fn parse_standard_mesh_candidate_outcome<FP, FC>(
     ctx: &DecodeContext<'_>,
     inputs: ParseStandardMeshCandidateOutcomeInputs<
-        '_,
         '_,
         '_,
         '_,

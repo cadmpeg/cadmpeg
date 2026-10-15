@@ -170,9 +170,7 @@ pub(crate) fn transfer_neutral(
                 CodecError::malformed(format_args!("FreeCAD ordinal {order} exceeds u32"))
             })?,
             text: record.text.clone(),
-            references: cadmpeg_core::text::named_entries_for_decode(
-                ctx,
-                &record.object,
+            references: cadmpeg_core::text::named_entries(&record.object,
                 references,
             )?,
             value: None,
@@ -183,9 +181,7 @@ pub(crate) fn transfer_neutral(
                 _ => None,
             },
             position: annotation_position(ctx, &owned, schema.position)?,
-            parameters: cadmpeg_core::text::named_entries_for_decode(
-                ctx,
-                &record.object,
+            parameters: cadmpeg_core::text::named_entries(&record.object,
                 parameters,
             )?,
             assets,
@@ -503,7 +499,7 @@ fn direct_value_attributes(
     expected_tag: &str,
     allowed_attributes: &[&str],
 ) -> Result<BTreeMap<String, String>, CodecError> {
-    let admitted_document = ctx
+    let document = ctx
         .parse_xml(property.xml.text(), "FreeCAD XML tree")
         .map_err(|error| {
             let CodecError::Malformed(error) = error else {
@@ -514,7 +510,6 @@ fn direct_value_attributes(
                 property.id
             ))
         })?;
-    let document = admitted_document.document();
     let root = document.root_element();
     if has_non_whitespace_text(root) {
         return Err(CodecError::malformed(format_args!(
@@ -578,7 +573,7 @@ fn strict_text_values(
         }
         return Ok(values);
     }
-    let admitted_document = ctx
+    let document = ctx
         .parse_xml(property.xml.text(), "FreeCAD XML tree")
         .map_err(|error| {
             let CodecError::Malformed(error) = error else {
@@ -589,7 +584,6 @@ fn strict_text_values(
                 property.id
             ))
         })?;
-    let document = admitted_document.document();
     let root = document.root_element();
     if has_non_whitespace_text(root) {
         return Err(CodecError::malformed(format_args!(

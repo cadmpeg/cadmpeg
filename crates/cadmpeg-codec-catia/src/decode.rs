@@ -3676,7 +3676,7 @@ fn decode_result(
     annotations: Annotations,
     unknowns: Vec<UnknownRecord>,
 ) -> Result<Decoded, CodecError> {
-    ir.source = Some(crate::assemble::source_meta(ctx, scan, matched)?);
+    ir.source = Some(crate::assemble::source_meta(scan, matched)?);
     body.notes = crate::container::notes(scan);
     if let Some(loss) = crate::dialect::dialect_loss(matched) {
         body.losses.push(loss);

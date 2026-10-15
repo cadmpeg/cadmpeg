@@ -970,9 +970,7 @@ pub(in super::super) fn schema_feature_definition(
     }
     Ok(IrFeatureDefinition::Operation(IrFeatureOperation::Native {
         kind: kind.into(),
-        parameters: cadmpeg_core::text::named_entries_for_decode(
-            ctx,
-            format_args!("creo:model:feature#{feature_id}"),
+        parameters: cadmpeg_core::text::named_entries(format_args!("creo:model:feature#{feature_id}"),
             feature_parameters(scan, feature_id),
         )?,
     }))

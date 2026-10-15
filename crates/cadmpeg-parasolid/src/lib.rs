@@ -302,9 +302,6 @@ pub fn push_extras(
                     rejected.format()
                 ));
             }
-            Err(cadmpeg_core::dialect::DialectLayerError::ResourceLimit(limit)) => {
-                return Err(limit.into())
-            }
         }
     }
     Ok(collisions)

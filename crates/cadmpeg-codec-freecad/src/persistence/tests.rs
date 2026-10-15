@@ -81,7 +81,7 @@ fn parse_document_graph(document: &str) -> Result<super::Graph, cadmpeg_core::Co
         cadmpeg_core::decode::DecodeContext::from_root_bytes(document.as_bytes(), &arena, &policy)?;
     let xml = crate::container::admit_document(&ctx, document.as_bytes())?;
     let (_facts, schema_version) =
-        crate::container::parse_document(xml.document(), &mut Vec::new()).map_err(|error| {
+        crate::container::parse_document(&xml, &mut Vec::new()).map_err(|error| {
             match error {
                 cadmpeg_core::CodecError::WrongFormat(message) => {
                     cadmpeg_core::CodecError::Malformed(message)

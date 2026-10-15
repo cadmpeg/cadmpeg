@@ -712,7 +712,7 @@ fn persistent_surface_references(
             at += 1;
             continue;
         };
-        let (text, _text_reservation) = match ctx.utf16le_scoped_text(
+        let text = match ctx.utf16le_text(
             raw,
             count,
             false,

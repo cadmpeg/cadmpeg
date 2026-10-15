@@ -13,19 +13,19 @@ use cadmpeg_core::decode::work_units;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 #[derive(Clone, Copy)]
-struct PartialCompactAssignmentViableInputs<'input0, 'input1, 'input2, 'input3, 'input4, 'input5> {
+struct PartialCompactAssignmentViableInputs<'input0, 'input1, 'input2, 'input3, 'input5> {
     domain: &'input0 MeshFaceBoundaryDomain,
     local_edge_by_id: &'input1 HashMap<usize, usize>,
     edges: &'input2 [[usize; 2]],
     global_edge_count: usize,
     assigned: &'input3 [Option<usize>],
     candidate: (usize, usize),
-    budget: Option<&'input5 WorkBudget<'input4>>,
+    budget: Option<&'input5 WorkBudget>,
 }
 
 fn partial_compact_assignment_viable(
     ctx: &DecodeContext<'_>,
-    inputs: PartialCompactAssignmentViableInputs<'_, '_, '_, '_, '_, '_>,
+    inputs: PartialCompactAssignmentViableInputs< '_, '_, '_, '_, '_>,
 ) -> Result<bool, CodecError> {
     fn augment(
         ctx: &DecodeContext<'_>,
@@ -191,7 +191,7 @@ pub(super) struct CloseCoordinateRootsWithIncidenceInputs<
     'input1,
     'input2,
     'input3,
-    'input4,
+    
     'input5,
     'input6,
     'input7,
@@ -200,7 +200,7 @@ pub(super) struct CloseCoordinateRootsWithIncidenceInputs<
     pub(super) point_count: usize,
     pub(super) edge_candidates: &'input1 [Vec<[usize; 2]>],
     pub(super) incidence: Option<(&'input2 [[usize; 2]], &'input3 [MeshFaceBoundaryDomain])>,
-    pub(super) budget: Option<&'input5 WorkBudget<'input4>>,
+    pub(super) budget: Option<&'input5 WorkBudget>,
     pub(super) component_search_budget: Option<usize>,
     pub(super) ambiguous: &'input6 Cell<bool>,
     pub(super) exhausted: &'input7 Cell<bool>,
@@ -208,7 +208,7 @@ pub(super) struct CloseCoordinateRootsWithIncidenceInputs<
 
 pub(super) fn close_coordinate_roots_with_incidence(
     ctx: &DecodeContext<'_>,
-    inputs: CloseCoordinateRootsWithIncidenceInputs<'_, '_, '_, '_, '_, '_, '_, '_>,
+    inputs: CloseCoordinateRootsWithIncidenceInputs< '_, '_, '_, '_, '_, '_, '_>,
 ) -> Result<Option<HashMap<usize, usize>>, CodecError> {
     const MAX_COORDINATE_CLOSURE_STATES: usize = 256;
     struct LocalIncidence<'a> {
@@ -382,7 +382,7 @@ pub(super) fn close_coordinate_roots_with_incidence(
         'input12,
         'input13,
         'input14,
-        'input15,
+        
         'input16,
     > {
         domains: &'input0 [Vec<usize>],
@@ -400,12 +400,11 @@ pub(super) fn close_coordinate_roots_with_incidence(
         state_limit: usize,
         exhausted: &'input13 mut bool,
         base_degrees: &'input14 mut HashMap<(usize, usize), usize>,
-        budget: Option<&'input16 WorkBudget<'input15>>,
+        budget: Option<&'input16 WorkBudget>,
     }
     fn walk(
         ctx: &DecodeContext<'_>,
         inputs: CoordinateClosureSearch<
-            '_,
             '_,
             '_,
             '_,
@@ -492,7 +491,7 @@ pub(super) fn close_coordinate_roots_with_incidence(
             'input3,
             'input4,
             'input5,
-            'input6,
+            
             'input7,
         > {
             root: usize,
@@ -502,10 +501,10 @@ pub(super) fn close_coordinate_roots_with_incidence(
             root_edges: &'input2 [Vec<usize>],
             incidence: Option<&'input4 LocalIncidence<'input3>>,
             degrees: &'input5 mut HashMap<(usize, usize), usize>,
-            budget: Option<&'input7 WorkBudget<'input6>>,
+            budget: Option<&'input7 WorkBudget>,
         }
         fn assign(
-            inputs: CoordinateAssignment<'_, '_, '_, '_, '_, '_, '_, '_>,
+            inputs: CoordinateAssignment< '_, '_, '_, '_, '_, '_, '_>,
         ) -> Result<Option<DegreeUndo>, CodecError> {
             let CoordinateAssignment {
                 root,

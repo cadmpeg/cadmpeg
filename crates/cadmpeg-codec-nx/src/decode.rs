@@ -262,7 +262,7 @@ fn build_metadata_ir(
     CodecError,
 > {
     let mut unknowns = Vec::new();
-    let mut ir = CadIr::decoded(source_meta(ctx, scan, dialects, None)?);
+    let mut ir = CadIr::decoded(source_meta(scan, dialects, None)?);
     let mut annotations = AnnotationBuilder::new();
     let mut losses = Vec::new();
     let source_stream = StreamHandle::new(

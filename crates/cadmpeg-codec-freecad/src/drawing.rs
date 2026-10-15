@@ -233,9 +233,7 @@ pub(crate) fn transfer_neutral(
                 CodecError::malformed(format_args!("FreeCAD ordinal {order} exceeds u32"))
             })?,
             visible: None,
-            relationships: cadmpeg_core::text::named_entries_for_decode(
-                ctx,
-                &record.object,
+            relationships: cadmpeg_core::text::named_entries(&record.object,
                 relationships,
             )?,
             template,
@@ -243,9 +241,7 @@ pub(crate) fn transfer_neutral(
             scale,
             direction,
             rotation_degrees,
-            parameters: cadmpeg_core::text::named_entries_for_decode(
-                ctx,
-                &record.object,
+            parameters: cadmpeg_core::text::named_entries(&record.object,
                 parameters,
             )?,
             assets,
@@ -609,7 +605,7 @@ fn root_value<'a>(
         "LockPosition" | "Perspective" => ("Bool", &[]),
         _ => return Ok(None),
     };
-    let admitted_xml = ctx
+    let xml = ctx
         .parse_xml(property.xml.text(), "FreeCAD XML tree")
         .map_err(|error| {
             let CodecError::Malformed(error) = error else {
@@ -620,7 +616,6 @@ fn root_value<'a>(
                 property.id
             ))
         })?;
-    let xml = admitted_xml.document();
     let property_node = xml.root_element();
     let mut selected_order = None;
     let mut order = 0;

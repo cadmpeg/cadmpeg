@@ -401,7 +401,6 @@ fn unsupported_unframed(evidence: &StreamEvidence<'_>, message: impl Into<String
                 cadmpeg_core::dialect::DialectLayerError::Duplicate(layer) => {
                     CodecError::malformed(format_args!("SAT repeated dialect layer key: {layer:?}"))
                 }
-                cadmpeg_core::dialect::DialectLayerError::ResourceLimit(limit) => limit.into(),
             };
         }
     };
@@ -422,18 +421,13 @@ fn build_result(
 ) -> Result<Decoded, CodecError> {
     let mut ir = CadIr::decoded(SourceMeta::classified(
         DialectLayers::of(matched)
-            .with_for_decode(
-                ctx,
-                kernel.try_clone_for_decode(ctx, "copy SAT kernel dialect")?,
-                "collect SAT dialect layers",
-            )
+            .with(kernel.clone())
             .map_err(|rejected| match rejected {
                 cadmpeg_core::dialect::DialectLayerError::Duplicate(layer) => {
                     CodecError::malformed(format_args!("SAT repeated dialect layer key: {layer:?}"))
                 }
-                cadmpeg_core::dialect::DialectLayerError::ResourceLimit(limit) => limit.into(),
             })?,
-        cadmpeg_core::text::named_entries_for_decode(ctx, "the acis header", attributes)?,
+        cadmpeg_core::text::named_entries("the acis header", attributes)?,
     ));
     let mut losses = Vec::new();
     if text_dialect.is_none() {

@@ -2344,7 +2344,7 @@ fn direct_shape_entry(
     ctx: &DecodeContext<'_>,
     property: &PropertyRecord,
 ) -> Result<Option<String>, CodecError> {
-    let admitted_document = ctx
+    let document = ctx
         .parse_xml(property.xml.text(), "FreeCAD XML tree")
         .map_err(|error| {
             let CodecError::Malformed(error) = error else {
@@ -2355,7 +2355,6 @@ fn direct_shape_entry(
                 property.id
             ))
         })?;
-    let document = admitted_document.document();
     let root = document.root_element();
     if !matches!(root.tag_name().name(), "Property" | "_Property") {
         return Err(CodecError::malformed(format_args!(

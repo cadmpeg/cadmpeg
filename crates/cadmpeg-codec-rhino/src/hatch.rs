@@ -211,11 +211,7 @@ pub(crate) fn decode(
         .ok_or_else(|| {
             GeometryError::malformed(count_offset, "hatch loop count exceeds remaining window")
         })?;
-    let mut loops = match ExactVec::<HatchLoop>::new(expand.ctx(), loop_bound, "Rhino hatch loops")
-    {
-        Ok(loops) => loops,
-        Err(error) => return Err(refused(body.position(), &error)),
-    };
+    let mut loops = ExactVec::<HatchLoop>::new(loop_bound);
     let mut warnings = Diagnostics::new();
     for loop_index in 0..count {
         let loop_offset = body.position();

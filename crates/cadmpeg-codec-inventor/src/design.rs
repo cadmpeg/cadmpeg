@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed `PmDc` parameters, expression nodes, and unit records.
 
+use cadmpeg_core::decode::unique_index;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt::Write;
 
@@ -450,8 +451,7 @@ pub(crate) fn project_parameters(
     inventory: &DesignInventory,
     admitted_entities: &mut u64,
 ) -> Result<(Vec<DesignParameter>, usize), CodecError> {
-    let (expressions, _expressions_storage) = ctx.unique_index(
-        inventory.expressions.iter().map(|record| {
+    let expressions = unique_index(inventory.expressions.iter().map(|record| {
             (
                 {
                     (
@@ -461,12 +461,8 @@ pub(crate) fn project_parameters(
                 },
                 record,
             )
-        }),
-        |_| Ok(0),
-        "index Inventor expressions",
-    )?;
-    let (units, _units_storage) = ctx.unique_index(
-        inventory.units.iter().map(|record| {
+        }));
+    let units = unique_index(inventory.units.iter().map(|record| {
             (
                 {
                     (
@@ -476,12 +472,8 @@ pub(crate) fn project_parameters(
                 },
                 record,
             )
-        }),
-        |_| Ok(0),
-        "index Inventor units",
-    )?;
-    let (parameters, _parameters_storage) = ctx.unique_index(
-        inventory.parameters.iter().map(|record| {
+        }));
+    let parameters = unique_index(inventory.parameters.iter().map(|record| {
             (
                 {
                     (
@@ -491,10 +483,7 @@ pub(crate) fn project_parameters(
                 },
                 record,
             )
-        }),
-        |_| Ok(0),
-        "index Inventor parameters",
-    )?;
+        }));
     let mut projected = Vec::new();
     let mut unresolved = 0usize;
     for parameter in &inventory.parameters {

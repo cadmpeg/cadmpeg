@@ -436,7 +436,6 @@ pub(crate) struct GeometryReportCounts {
 }
 
 pub(crate) fn source_meta(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     matched: &DialectMatch,
 ) -> Result<SourceMeta, cadmpeg_core::CodecError> {
@@ -546,7 +545,7 @@ pub(crate) fn source_meta(
     }
     Ok(SourceMeta::classified(
         cadmpeg_core::dialect::DialectLayers::of(
-            matched.try_clone_for_decode(ctx, "catia_dialect_copy")?,
+            matched.clone(),
         ),
         attributes,
     ))
@@ -1546,7 +1545,7 @@ mod route_tests {
         let matched =
             crate::dialect::classify(&scan).expect("service budget admits dialect classification");
         let source =
-            crate::test_support::with_service_context(|ctx| source_meta(ctx, &scan, &matched))
+            source_meta(&scan, &matched)
                 .expect("service budget admits source metadata");
         assert_eq!(source.attributes["file_size"], scan.data.len().to_string());
     }
