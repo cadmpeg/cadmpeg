@@ -16,7 +16,7 @@ fn empty_link_alias_attributes_need_no_work() {
     policy.limits.max_materialized_bytes = 0;
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    super::super::reject_link_aliases(xml.root_element(), &["obj"], &ctx).unwrap();
+    super::super::reject_link_aliases(xml.root_element(), &["obj"], &ctx, &mut None).unwrap();
     assert_eq!(ctx.resource_refusal(), None);
 }
 
@@ -27,7 +27,7 @@ fn link_alias_exhaustion_costs_only_actual_attribute_visits() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    super::super::reject_link_aliases(xml.root_element(), &["obj"], &ctx).unwrap();
+    super::super::reject_link_aliases(xml.root_element(), &["obj"], &ctx, &mut None).unwrap();
     assert_eq!(ctx.resource_refusal(), None);
     let CodecError::ResourceLimit(limit) = ctx.charge_work(1, "after attribute scan").unwrap_err()
     else {
@@ -51,7 +51,7 @@ fn first_link_alias_error_does_not_visit_later_attributes() {
     policy.limits.max_work_units = 1 + 2 * cadmpeg_core::decode::u64_from_index(message.len());
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(
-        matches!(super::super::reject_link_aliases(xml.root_element(), &["obj"], &ctx),
+        matches!(super::super::reject_link_aliases(xml.root_element(), &["obj"], &ctx, &mut None),
         Err(CodecError::Malformed(actual)) if actual == message)
     );
     assert_eq!(ctx.resource_refusal(), None);
