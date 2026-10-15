@@ -8,7 +8,7 @@ use crate::geometry::{
     SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use crate::ids::{ProceduralCurveId, ProceduralSurfaceId};
-use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
+use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
 
 fn curves(count: usize) -> (Model, Vec<(CurveId, ProceduralCurve)>) {
     let mut model = Model::default();
@@ -53,70 +53,6 @@ fn surfaces(count: usize) -> (Model, Vec<(SurfaceId, ProceduralSurface)>) {
         })
         .collect();
     (model, rows)
-}
-
-#[test]
-fn indexed_procedural_batches_admit_thousands_below_repeated_scan_work() {
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 8_000_000;
-    let (mut model, rows) = curves(4096);
-    let mut scanned = model.clone();
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = rows
-        .iter()
-        .try_for_each(|(owner, procedural)| {
-            scanned
-                .add_procedural_curve(&ctx, owner, procedural.clone())?
-                .map_err(CodecError::malformed)
-        })
-        .unwrap_err();
-    assert!(
-        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::WorkUnits)
-    );
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    model.add_procedural_curves(&ctx, rows).unwrap().unwrap();
-    assert_eq!(model.procedural_curves.len(), 4096);
-    for (curve, procedural) in model.curves.iter().zip(&model.procedural_curves) {
-        assert_eq!(
-            curve.geometry.procedural_construction(),
-            Some(&procedural.id)
-        );
-        assert!(matches!(
-            curve.geometry.solved_cache(),
-            Some(SolvedCurveGeometry::Unknown { record: None })
-        ));
-    }
-    ctx.finish_session().unwrap();
-
-    let (mut model, rows) = surfaces(4096);
-    let mut scanned = model.clone();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = rows
-        .iter()
-        .try_for_each(|(owner, procedural)| {
-            scanned
-                .add_procedural_surface(&ctx, owner, procedural.clone())?
-                .map_err(CodecError::malformed)
-        })
-        .unwrap_err();
-    assert!(
-        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::WorkUnits)
-    );
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    model.add_procedural_surfaces(&ctx, rows).unwrap().unwrap();
-    assert_eq!(model.procedural_surfaces.len(), 4096);
-    for (surface, procedural) in model.surfaces.iter().zip(&model.procedural_surfaces) {
-        assert_eq!(
-            surface.geometry.procedural_construction(),
-            Some(&procedural.id)
-        );
-        assert!(matches!(
-            surface.geometry.solved_cache(),
-            Some(SolvedSurfaceGeometry::Unknown { record: None })
-        ));
-    }
-    ctx.finish_session().unwrap();
 }
 
 #[test]
@@ -199,66 +135,6 @@ fn indexed_batch_rejects_repeated_constructions_and_owners_after_the_accepted_pr
 }
 
 #[test]
-fn indexed_batch_preserves_storage_and_work_refusals() {
-    for dimension in [
-        ResourceDimension::WorkUnits,
-        ResourceDimension::MaterializedBytes,
-        ResourceDimension::CollectionItems,
-    ] {
-        let mut policy = DecodePolicy::service();
-        match dimension {
-            ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
-            ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
-            ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
-            _ => unreachable!(),
-        }
-        let (mut model, rows) = curves(2);
-        let before = model.clone();
-        let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let CodecError::ResourceLimit(original) =
-            model.add_procedural_curves(&ctx, rows).unwrap_err()
-        else {
-            panic!("resource refusal");
-        };
-        assert_eq!(original.dimension, dimension);
-        assert_eq!(model, before);
-        assert!(
-            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original)
-        );
-    }
-}
-
-#[test]
-fn indexed_admission_tracks_appended_carriers_and_releases_its_storage() {
-    let (mut model, rows) = curves(4096);
-    let carriers = std::mem::take(&mut model.curves);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 8_000_000;
-    policy.limits.max_materialized_bytes = 8_000_000;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut admission = ProceduralAdmission::new(&ctx, &model).unwrap();
-    for (carrier, (owner, procedural)) in carriers.into_iter().zip(rows) {
-        model.curves.push(carrier);
-        admission
-            .add_curve(&mut model, &owner, procedural)
-            .unwrap()
-            .unwrap();
-    }
-    assert_eq!(model.procedural_curves.len(), 4096);
-    drop(admission);
-    drop(
-        ctx.reserve_scoped(
-            policy.limits.max_materialized_bytes,
-            "procedural indexes released",
-        )
-        .unwrap(),
-    );
-    ctx.finish_session().unwrap();
-}
-
-#[test]
 fn indexed_admission_rejects_another_model_and_a_changed_owner_slot() {
     for another_model in [false, true] {
         let (mut model, mut rows) = curves(2);
@@ -289,26 +165,6 @@ fn indexed_admission_rejects_another_model_and_a_changed_owner_slot() {
 }
 
 #[test]
-fn text_index_compares_fingerprint_collisions_before_accepting_a_key() {
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    let mut index = TextIndex::default();
-    let hash = index.fingerprint(&ctx, "requested").unwrap();
-    // All three entries share a fingerprint; only the byte-equal key matches.
-    index.buckets.insert(
-        hash,
-        vec![
-            ("different".to_owned(), 1),
-            ("request".to_owned(), 2),
-            ("requested".to_owned(), 3),
-        ],
-    );
-    assert_eq!(index.get(&ctx, "requested").unwrap(), Some(&3));
-    *index.get_mut(&ctx, "requested").unwrap().unwrap() = 4;
-    assert_eq!(index.get(&ctx, "requested").unwrap(), Some(&4));
-}
-
-#[test]
 fn procedural_round_trip_and_snapshot_keep_thousands_of_owner_rows() {
     let (mut model, rows) = curves(4096);
     model
@@ -325,8 +181,7 @@ fn procedural_round_trip_and_snapshot_keep_thousands_of_owner_rows() {
     let reconstructed: Model = serde_json::from_value(encoded.clone()).unwrap();
     assert_eq!(reconstructed, model);
     let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 2_000_000;
+    let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let snapshot = serde_json::to_value(model.geometry_snapshot(&ctx, "brep").unwrap()).unwrap();
     assert_eq!(snapshot["procedural_curves"], encoded["procedural_curves"]);
@@ -335,4 +190,53 @@ fn procedural_round_trip_and_snapshot_keep_thousands_of_owner_rows() {
         encoded["procedural_surfaces"]
     );
     ctx.finish_session().unwrap();
+}
+
+#[test]
+fn procedural_batches_link_every_carrier_to_its_construction() {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let (mut model, rows) = curves(4096);
+    model.add_procedural_curves(&ctx, rows).unwrap().unwrap();
+    assert_eq!(model.procedural_curves.len(), 4096);
+    for (curve, procedural) in model.curves.iter().zip(&model.procedural_curves) {
+        assert_eq!(
+            curve.geometry.procedural_construction(),
+            Some(&procedural.id)
+        );
+        assert!(matches!(
+            curve.geometry.solved_cache(),
+            Some(SolvedCurveGeometry::Unknown { record: None })
+        ));
+    }
+    let (mut model, rows) = surfaces(4096);
+    model.add_procedural_surfaces(&ctx, rows).unwrap().unwrap();
+    assert_eq!(model.procedural_surfaces.len(), 4096);
+    for (surface, procedural) in model.surfaces.iter().zip(&model.procedural_surfaces) {
+        assert_eq!(
+            surface.geometry.procedural_construction(),
+            Some(&procedural.id)
+        );
+        assert!(matches!(
+            surface.geometry.solved_cache(),
+            Some(SolvedSurfaceGeometry::Unknown { record: None })
+        ));
+    }
+}
+
+#[test]
+fn indexed_admission_tracks_carriers_appended_after_it_was_built() {
+    let (mut model, rows) = curves(4096);
+    let carriers = std::mem::take(&mut model.curves);
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let mut admission = ProceduralAdmission::new(&ctx, &model).unwrap();
+    for (carrier, (owner, procedural)) in carriers.into_iter().zip(rows) {
+        model.curves.push(carrier);
+        admission
+            .add_curve(&mut model, &owner, procedural)
+            .unwrap()
+            .unwrap();
+    }
+    assert_eq!(model.procedural_curves.len(), 4096);
 }

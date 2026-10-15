@@ -270,57 +270,13 @@ fn cacheless_helix_curve_inversion_is_seeded_and_forward_validated() {
 }
 
 #[test]
-fn helix_inverse_preserves_iteration_and_depth_refusals() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    let (ir, _) = helix_fixture();
-    let definition = ir.model.procedural_curves[0].definition();
-    let target = expected_helix(1.7).0;
-    for dimension in [
-        ResourceDimension::WorkUnits,
-        ResourceDimension::RecursionDepth,
-    ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        match dimension {
-            ResourceDimension::WorkUnits => policy.limits.max_work_units = 1,
-            ResourceDimension::RecursionDepth => policy.limits.max_recursion_depth = 0,
-            _ => panic!("helix inverse dimensions"),
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let cadmpeg_core::CodecError::ResourceLimit(first) =
-            super::super::helix_parameter_near_point(
-                &ctx,
-                target,
-                1.5,
-                ir.tolerances.linear.into(),
-                definition,
-            )
-            .unwrap_err()
-        else {
-            panic!("helix inversion must refuse");
-        };
-        assert_eq!(first.dimension, dimension);
-        if dimension == ResourceDimension::WorkUnits {
-            assert_eq!(first.operation, "IR helix inverse iteration");
-            assert_eq!(first.used, 1);
-            assert_eq!(first.additional, 1);
-        }
-        assert!(
-            matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit == first)
-        );
-    }
-}
-
-#[test]
-fn helix_inverse_uses_borrowed_definition_without_temporary_storage() {
+fn helix_inverse_finds_the_witness_without_retained_storage() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let (ir, curve_id) = helix_fixture();
     let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_materialized_bytes = 0;
     policy.limits.max_retained_bytes = 0;
-    policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let target = expected_helix(1.7).0;
     let inverse = crate::eval::model_curve_parameter_near_point_in_index(
@@ -333,4 +289,29 @@ fn helix_inverse_uses_borrowed_definition_without_temporary_storage() {
             .unwrap();
     assert!(evaluated.point.distance(target) <= ir.tolerances.linear.get());
     ctx.finish_session().unwrap();
+}
+
+#[test]
+fn helix_inverse_returns_the_session_depth_refusal() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let (ir, _) = helix_fixture();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_recursion_depth = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let cadmpeg_core::CodecError::ResourceLimit(first) = super::super::helix_parameter_near_point(
+        &ctx,
+        expected_helix(1.7).0,
+        1.5,
+        ir.tolerances.linear.into(),
+        ir.model.procedural_curves[0].definition(),
+    )
+    .unwrap_err() else {
+        panic!("helix inversion must refuse");
+    };
+    assert_eq!(first.dimension, ResourceDimension::RecursionDepth);
+    assert_eq!(first.operation, "IR helix inverse evaluation");
+    assert!(
+        matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit == first)
+    );
 }

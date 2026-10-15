@@ -343,8 +343,7 @@ pub(super) fn model_surface_point_by_id_inner(
         v: f64,
         normal: bool,
     ) -> Option<SurfaceEvaluation> {
-        let budget = admission.work_slice();
-        let depth_guard = match ModelEvaluationDepthGuard::enter(budget) {
+        let depth_guard = match ModelEvaluationDepthGuard::enter(admission) {
             Ok(guard) => guard,
             Err(limit) => return Some(refused(limit)),
         };

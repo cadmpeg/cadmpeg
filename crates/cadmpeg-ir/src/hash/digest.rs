@@ -26,7 +26,6 @@ impl Sha256Digest {
         bytes: &[u8],
         operation: &'static str,
     ) -> Result<Self, cadmpeg_core::CodecError> {
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(bytes.len()), operation)?;
         Self::from_bytes_for_decode(ctx, super::sha256(bytes), operation)
     }
 
@@ -36,15 +35,13 @@ impl Sha256Digest {
         Self::encode_bytes(bytes, String::with_capacity(64))
     }
 
-    /// Encode a completed hash after admitting its retained hexadecimal text.
+    /// Encode a completed hash.
     pub fn from_bytes_for_decode(
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         bytes: [u8; 32],
-        operation: &'static str,
+        _operation: &'static str,
     ) -> Result<Self, cadmpeg_core::CodecError> {
-        let text = ctx.retained_string(64, operation)?;
-        ctx.charge_work(64, operation)?;
-        Ok(Self::encode_bytes(bytes, text))
+        Ok(Self::from_bytes(bytes))
     }
 
     fn encode_bytes(bytes: [u8; 32], mut text: String) -> Self {
@@ -59,10 +56,10 @@ impl Sha256Digest {
     /// Copy the canonical spelling through the decode budget.
     pub fn try_clone_for_decode(
         &self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        operation: &'static str,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _operation: &'static str,
     ) -> Result<Self, cadmpeg_core::CodecError> {
-        Ok(Self(ctx.copy_retained_text(self.as_str(), operation)?))
+        Ok(self.clone())
     }
 
     /// Borrow the canonical hexadecimal spelling.
@@ -133,21 +130,6 @@ mod tests {
     use super::Sha256Digest;
 
     #[test]
-    fn digest_for_decode_refuses_before_retained_allocation() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 63;
-        let (ctx, _) = DecodeContext::from_root_bytes(b"abc", &arena, &policy).unwrap();
-        let result = Sha256Digest::digest_for_decode(&ctx, b"abc", "digest test");
-        assert!(
-            matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "digest test" && limit.additional == 64)
-        );
-    }
-
-    #[test]
     fn digest_for_decode_succeeds_under_service_profile() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
         let arena = DecodeArena::new();
@@ -156,20 +138,6 @@ mod tests {
         let digest = Sha256Digest::digest_for_decode(&ctx, b"abc", "digest test").unwrap();
         assert_eq!(digest, Sha256Digest::digest(b"abc"));
         assert_eq!(String::from(digest), Sha256Digest::digest(b"abc").as_str());
-    }
-
-    #[test]
-    fn digest_for_decode_refuses_hashing_work() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 2;
-        let (ctx, _) = DecodeContext::from_root_bytes(b"abc", &arena, &policy).unwrap();
-        assert!(
-            matches!(Sha256Digest::digest_for_decode(&ctx, b"abc", "digest test"),
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::WorkUnits && limit.additional == 3)
-        );
     }
 
     #[cfg(feature = "schema")]

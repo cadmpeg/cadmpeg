@@ -1158,10 +1158,7 @@ fn spatial_sketch_endpoint_helper_preserves_session_depth_refusal() {
     assert_eq!(limit, original);
     assert_eq!(limit.dimension, ResourceDimension::RecursionDepth);
     assert_eq!((limit.limit, limit.used, limit.additional), (0, 0, 1));
-    assert_eq!(
-        ctx.charge_work_limit(0, "observe endpoint refusal"),
-        Err(limit)
-    );
+    assert_eq!(ctx.resource_refusal(), Some(limit));
     assert_eq!(
         super::spatial_oriented_endpoints(&ctx, &geometry, true),
         Err(limit)

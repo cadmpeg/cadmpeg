@@ -1,41 +1,30 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Copy admitted feature fields under the caller decode resource policy.
+//! Identity rewrite implementations for feature records.
 
 use super::{
-    AngularTermination, AxisAngle, BinderConstruction, BinderCopyOnChange, BinderLifecycle,
-    BinderOffset, BinderPlacement, BinderSource, BinderTarget, BodyMember, BodyMembers,
-    BodyRetentionMode, BodySelection, BodyTrimSide, BooleanKind, BooleanOp, CoilConstruction,
-    CoilExtent, CoilPlacement, CoilResult, CoilSection, CoilSectionPlacement, CombineOperands,
-    CosmeticThreadExtent, CurveProjectionDirection, DatumPlaneReference, DatumPointConstruction,
-    DecalMapping, DistinctMembers, DraftAnchor, DraftPull, EdgeSelection, ExtrudeDirection,
-    ExtrudeExtent, ExtrudeSide, ExtrudeStart, ExtrusionDirectionSource, FaceBlendOperands,
-    FaceMaker, FaceMotion, FaceSelection, FeatureCircularArc, FeatureCoordinateFrame,
-    FeatureDefinition, FeatureEllipticArc, FeatureEquationCurve, FeatureImageBounds,
-    FeatureLineSegment, FeatureOperation, FeaturePolyline, FeatureTreeNodeRole,
-    FeatureUnitPlaneFrame, FilledSurfaceContinuity, FilledSurfaceContinuityState, FlexMode,
-    FuzzyTolerance, GeneratedBodyRef, GeneratedCurveRef, GeneratedEdgeRef, GeneratedFaceRef,
-    GeneratedSweepSection, GeneratedVertexRef, GeometryImportFormat, GeometryImportPath,
-    HelicalSweepConstruction, HelicalSweepLaw, HelicalSweepTravel, HelixConstructionStyle,
-    HelixShape, InnerWireTaper, InsertedBodies, LinearTermination, LoftGuidance, LoftPointSection,
-    LoftSection, NativeFeatureKind, NativeSelections, NoGeneratedSection, NonEmptyMembers,
-    PartialRevolveConstruction, PathRef, PlanarProfileRef, PolygonSideCount, PrimitiveSolid,
-    PrimitiveSolidKind, PrincipalPlane, ProfileRef, ReplaceFaceOperands, RevolutionAxis,
-    RevolutionFuseOrder, RevolveConstruction, RevolveExtent, RibConstruction, RibDraft, RibSide,
-    RuledCurveOrientation, RuledSurfaceCorner, RuledSurfaceMode, ScaleCenter, ScaleFactors,
-    SectionOperands, SelectionMembers, SelectionReference, SewBodySelection,
-    SheetMetalBendPosition, SheetMetalFlangeEdgeWidths, SheetMetalFlangeHeight,
+    AngularTermination, AxisAngle, BinderConstruction, BinderSource, BinderTarget, BodyMember,
+    BodyMembers, BodySelection, CoilConstruction, CoilPlacement, CoilResult, CombineOperands,
+    DatumPlaneReference, DatumPointConstruction, DistinctMembers, DraftAnchor, DraftPull,
+    EdgeSelection, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart,
+    ExtrusionDirectionSource, FaceBlendOperands, FaceMaker, FaceMotion, FaceSelection,
+    FeatureDefinition, FeatureEquationCurve, FeatureOperation, FeaturePolyline,
+    FilledSurfaceContinuity, FilledSurfaceContinuityState, GeneratedBodyRef, GeneratedCurveRef,
+    GeneratedEdgeRef, GeneratedFaceRef, GeneratedSweepSection, GeneratedVertexRef,
+    GeometryImportPath, HelicalSweepConstruction, InsertedBodies, LinearTermination, LoftGuidance,
+    LoftPointSection, LoftSection, NativeFeatureKind, NativeSelections, NonEmptyMembers,
+    PartialRevolveConstruction, PathRef, PlanarProfileRef, PrimitiveSolid, PrimitiveSolidKind,
+    ProfileRef, ReplaceFaceOperands, RevolutionAxis, RevolveConstruction, RevolveExtent,
+    RibConstruction, RuledSurfaceMode, ScaleCenter, SectionOperands, SelectionMembers,
+    SelectionReference, SewBodySelection, SheetMetalFlangeEdgeWidths, SheetMetalFlangeHeight,
     SheetMetalFlangeHeightTarget, SheetMetalFlangeTwoSidedWidth, SheetMetalFlangeWidth,
-    SheetMetalHeightDatum, SheetMetalHemDirection, SheetMetalHemForm, SheetMetalThicknessSide,
-    ShellJoin, ShellMode, SketchFeatureBinding, SketchPointSelection, SketchProfileBoundaryUse,
-    SketchProfileLoops, SketchProfileRegion, SketchProfileRegions, SolidSweepOperation,
-    SplitFacePlanes, SplitFaceTool, SurfaceBoundary, SurfaceContinuity, SurfaceExtension,
-    SurfaceProjectionMode, SweepCircularRegion, SweepGuideRail, SweepOrientation, SweepPathExtent,
-    SweepSection, SweepShape, SweepTransformation, SweepTransition, ThickenSide,
+    SheetMetalHemForm, SketchFeatureBinding, SketchPointSelection, SketchProfileBoundaryUse,
+    SketchProfileLoops, SketchProfileRegion, SketchProfileRegions, SplitFacePlanes, SplitFaceTool,
+    SurfaceBoundary, SweepGuideRail, SweepOrientation, SweepSection, SweepShape,
     ThreePointSelection, TreeChildren, TrimBodyOperands, TrimCellSelection, TrimRegion,
-    UnresolvedFamily, VertexSelection, WrapMode,
+    VertexSelection,
 };
 
-clone_enum_for_decode!(AngularTermination; {
+rewrite_enum!(AngularTermination, []; {
     Unresolved {  },
     ThroughAll {  },
     ThroughNext {  },
@@ -48,36 +37,26 @@ clone_enum_for_decode!(AngularTermination; {
     Angle { angle },
 });
 
-clone_record_for_decode!(AxisAngle; { origin, direction, angle });
+rewrite_record!(AxisAngle, []; { origin, direction, angle });
 
-clone_enum_for_decode!(BinderConstruction; {
+rewrite_enum!(BinderConstruction, []; {
     Shape { trace_support },
     SubShape { lifecycle, placement, copy_on_change, claim_children, fuse, make_face, partial_load, refine, offset, context },
 });
 
-clone_copy_for_decode!(BinderCopyOnChange);
+rewrite_record!(BinderSource, []; { target, subelements });
 
-clone_copy_for_decode!(BinderLifecycle);
-
-clone_copy_for_decode!(BinderOffset);
-
-clone_copy_for_decode!(BinderPlacement);
-
-clone_record_for_decode!(BinderSource; { target, subelements });
-
-clone_enum_for_decode!(BinderTarget; {
+rewrite_enum!(BinderTarget, []; {
     Feature { feature },
     External { document, object },
     Native { reference },
 });
 
-clone_record_for_decode!(BodyMember<B>, [B]; { body, native });
+rewrite_record!(BodyMember<B>, [B]; { body, native });
 
-clone_record_for_decode!(BodyMembers<B>, [B]; (field0));
+rewrite_record!(BodyMembers<B>, [B]; (field0));
 
-clone_copy_for_decode!(BodyRetentionMode);
-
-clone_enum_for_decode!(BodySelection; {
+rewrite_enum!(BodySelection, []; {
     Unresolved,
     Bodies(field0),
     Resolved { bodies, native },
@@ -90,43 +69,27 @@ clone_enum_for_decode!(BodySelection; {
     NativeSet(field0),
 });
 
-clone_copy_for_decode!(BodyTrimSide);
+rewrite_record!(CoilConstruction, []; { placement, diameter, extent, section, section_placement, clockwise, taper });
 
-clone_copy_for_decode!(BooleanKind);
-
-clone_copy_for_decode!(BooleanOp);
-
-clone_record_for_decode!(CoilConstruction; { placement, diameter, extent, section, section_placement, clockwise, taper });
-
-clone_copy_for_decode!(CoilExtent);
-
-clone_enum_for_decode!(CoilPlacement; {
+rewrite_enum!(CoilPlacement, []; {
     Explicit { frame },
     Native { native_ref },
 });
 
-clone_enum_for_decode!(CoilResult; {
+rewrite_enum!(CoilResult, []; {
     NewBody {  },
     Boolean { operation, targets },
 });
 
-clone_copy_for_decode!(CoilSection);
+rewrite_record!(CombineOperands, []; { target, tools });
 
-clone_copy_for_decode!(CoilSectionPlacement);
-
-clone_record_for_decode!(CombineOperands; { target, tools });
-
-clone_copy_for_decode!(CosmeticThreadExtent);
-
-clone_copy_for_decode!(CurveProjectionDirection);
-
-clone_enum_for_decode!(DatumPlaneReference; {
+rewrite_enum!(DatumPlaneReference, []; {
     Feature { feature },
     Face { face },
     ResolvedPlane { frame },
 });
 
-clone_enum_for_decode!(DatumPointConstruction; {
+rewrite_enum!(DatumPointConstruction, []; {
     CircleCenter { edge },
     TwoEdgeIntersection { edges },
     ThreePlaneIntersection { planes },
@@ -136,18 +99,16 @@ clone_enum_for_decode!(DatumPointConstruction; {
     DistanceOnEdge { edge, fraction },
 });
 
-clone_copy_for_decode!(DecalMapping);
+rewrite_record!(DistinctMembers<T>, [T]; (field0));
 
-clone_record_for_decode!(DistinctMembers<T>, [T]; (field0));
-
-clone_enum_for_decode!(DraftAnchor; {
+rewrite_enum!(DraftAnchor, []; {
     NeutralPlane { plane, pull },
     PartingLine { tool, pull },
 });
 
-clone_record_for_decode!(DraftPull; { direction, plane });
+rewrite_record!(DraftPull, []; { direction, plane });
 
-clone_enum_for_decode!(EdgeSelection; {
+rewrite_enum!(EdgeSelection, []; {
     Unresolved,
     All,
     Edges(field0),
@@ -158,37 +119,37 @@ clone_enum_for_decode!(EdgeSelection; {
     Native(field0),
 });
 
-clone_enum_for_decode!(ExtrudeDirection; {
+rewrite_enum!(ExtrudeDirection, []; {
     Unresolved {  },
     ProfileNormal {  },
     ReversedProfileNormal {  },
     Explicit { vector, source },
 });
 
-clone_enum_for_decode!(ExtrudeExtent; {
+rewrite_enum!(ExtrudeExtent, []; {
     OneSided { side },
     TwoSided { first, second },
     Symmetric { side },
 });
 
-clone_record_for_decode!(ExtrudeSide; { termination, draft });
+rewrite_record!(ExtrudeSide, []; { termination, draft });
 
-clone_enum_for_decode!(ExtrudeStart; {
+rewrite_enum!(ExtrudeStart, []; {
     Unresolved {  },
     ProfilePlane {  },
     OffsetProfilePlane { offset },
     FromFace { face, offset },
 });
 
-clone_enum_for_decode!(ExtrusionDirectionSource; {
+rewrite_enum!(ExtrusionDirectionSource, []; {
     Custom {  },
     Edge { reference },
     ProfileNormal {  },
 });
 
-clone_record_for_decode!(FaceBlendOperands; { first_faces, second_faces });
+rewrite_record!(FaceBlendOperands, []; { first_faces, second_faces });
 
-clone_enum_for_decode!(FaceMaker; {
+rewrite_enum!(FaceMaker, []; {
     Simple,
     Cheese,
     Extrusion,
@@ -197,13 +158,13 @@ clone_enum_for_decode!(FaceMaker; {
     Other(field0),
 });
 
-clone_enum_for_decode!(FaceMotion; {
+rewrite_enum!(FaceMotion, []; {
     Offset { distance },
     Translate { direction, distance },
     Rotate { axis_origin, axis_dir, angle },
 });
 
-clone_enum_for_decode!(FaceSelection; {
+rewrite_enum!(FaceSelection, []; {
     Unresolved,
     Faces(field0),
     Resolved { faces, native },
@@ -213,24 +174,14 @@ clone_enum_for_decode!(FaceSelection; {
     Native(field0),
 });
 
-clone_copy_for_decode!(FeatureCircularArc);
-
-clone_copy_for_decode!(FeatureCoordinateFrame);
-
-clone_enum_for_decode!(FeatureDefinition; {
+rewrite_enum!(FeatureDefinition, []; {
     PostProcess { operation, refine, fuzzy_tolerance },
     Operation(field0),
 });
 
-clone_copy_for_decode!(FeatureEllipticArc);
+rewrite_record!(FeatureEquationCurve, []; { parameter, x_expression, y_expression, z_expression, domain });
 
-clone_record_for_decode!(FeatureEquationCurve; { parameter, x_expression, y_expression, z_expression, domain });
-
-clone_copy_for_decode!(FeatureImageBounds);
-
-clone_copy_for_decode!(FeatureLineSegment);
-
-clone_enum_for_decode!(FeatureOperation; {
+rewrite_enum!(FeatureOperation, []; {
     TreeNode { role, children },
     BaseFeature { bodies },
     MeshImport { tessellations },
@@ -327,56 +278,36 @@ clone_enum_for_decode!(FeatureOperation; {
     Loft { sections, guidance, op, closed, solid, ruled, linearize, max_degree, allow_multi_profile_faces },
 });
 
-clone_record_for_decode!(FeaturePolyline; { points, closed });
+rewrite_record!(FeaturePolyline, []; { points, closed });
 
-clone_copy_for_decode!(FeatureTreeNodeRole);
+rewrite_record!(FilledSurfaceContinuity, []; { conditions });
 
-clone_copy_for_decode!(FeatureUnitPlaneFrame);
+rewrite_record!(FilledSurfaceContinuityState, []; (field0));
 
-clone_record_for_decode!(FilledSurfaceContinuity; { conditions });
+rewrite_record!(GeneratedBodyRef, []; { feature, local_id });
 
-clone_record_for_decode!(FilledSurfaceContinuityState; (field0));
+rewrite_record!(GeneratedCurveRef, []; { feature, local_id });
 
-clone_copy_for_decode!(FlexMode);
+rewrite_record!(GeneratedEdgeRef, []; { feature, local_id });
 
-clone_copy_for_decode!(FuzzyTolerance);
+rewrite_record!(GeneratedFaceRef, []; { feature, local_id });
 
-clone_record_for_decode!(GeneratedBodyRef; { feature, local_id });
-
-clone_record_for_decode!(GeneratedCurveRef; { feature, local_id });
-
-clone_record_for_decode!(GeneratedEdgeRef; { feature, local_id });
-
-clone_record_for_decode!(GeneratedFaceRef; { feature, local_id });
-
-clone_enum_for_decode!(GeneratedSweepSection; {
+rewrite_enum!(GeneratedSweepSection, []; {
     CircularRegion { region },
 });
 
-clone_record_for_decode!(GeneratedVertexRef; { feature, local_id });
+rewrite_record!(GeneratedVertexRef, []; { feature, local_id });
 
-clone_copy_for_decode!(GeometryImportFormat);
+rewrite_record!(GeometryImportPath, []; (field0));
 
-clone_record_for_decode!(GeometryImportPath; (field0));
+rewrite_record!(HelicalSweepConstruction, []; { profile, axis_origin, axis_direction, law, pitch, travel, turns, cone_angle, left_handed, reversed, tolerance, allow_multi_profile_faces });
 
-clone_record_for_decode!(HelicalSweepConstruction; { profile, axis_origin, axis_direction, law, pitch, travel, turns, cone_angle, left_handed, reversed, tolerance, allow_multi_profile_faces });
-
-clone_copy_for_decode!(HelicalSweepLaw);
-
-clone_copy_for_decode!(HelicalSweepTravel);
-
-clone_copy_for_decode!(HelixConstructionStyle);
-
-clone_copy_for_decode!(HelixShape);
-
-clone_copy_for_decode!(InnerWireTaper);
-
-clone_enum_for_decode!(InsertedBodies; {
+rewrite_enum!(InsertedBodies, []; {
     Native(field0),
     Resolved { native },
 });
 
-clone_enum_for_decode!(LinearTermination; {
+rewrite_enum!(LinearTermination, []; {
     Unresolved {  },
     Blind { length },
     ThroughAll {  },
@@ -389,23 +320,23 @@ clone_enum_for_decode!(LinearTermination; {
     ToShape { target },
 });
 
-clone_enum_for_decode!(LoftGuidance; {
+rewrite_enum!(LoftGuidance, []; {
     Guides(field0),
     Centerline(field0),
 });
 
-clone_enum_for_decode!(LoftPointSection; {
+rewrite_enum!(LoftPointSection, []; {
     Native(field0),
     Point(field0),
     Vertex(field0),
 });
 
-clone_enum_for_decode!(LoftSection; {
+rewrite_enum!(LoftSection, []; {
     Profile(field0),
     Point(field0),
 });
 
-clone_enum_for_decode!(NativeFeatureKind; {
+rewrite_enum!(NativeFeatureKind, []; {
     Canvas,
     Decal,
     Draft,
@@ -417,19 +348,17 @@ clone_enum_for_decode!(NativeFeatureKind; {
     Other(field0),
 });
 
-clone_record_for_decode!(NativeSelections; (field0));
+rewrite_record!(NativeSelections, []; (field0));
 
-clone_copy_for_decode!(NoGeneratedSection);
+rewrite_record!(NonEmptyMembers<T>, [T]; (field0));
 
-clone_record_for_decode!(NonEmptyMembers<T>, [T]; (field0));
-
-clone_enum_for_decode!(PartialRevolveConstruction; {
+rewrite_enum!(PartialRevolveConstruction, []; {
     Profile { axis, extent, solid, face_maker, fuse_order, allow_multi_profile_faces },
     Axis { profile, extent, solid, face_maker, fuse_order, allow_multi_profile_faces },
     Extent { profile, axis, solid, face_maker, fuse_order, allow_multi_profile_faces },
 });
 
-clone_enum_for_decode!(PathRef; {
+rewrite_enum!(PathRef, []; {
     Unresolved(field0),
     Native(field0),
     Sketch(field0),
@@ -441,7 +370,7 @@ clone_enum_for_decode!(PathRef; {
     HistoricalEdges { state, edges, native },
 });
 
-clone_enum_for_decode!(PlanarProfileRef; {
+rewrite_enum!(PlanarProfileRef, []; {
     Unresolved(field0),
     Native(field0),
     Sketch(field0),
@@ -455,11 +384,9 @@ clone_enum_for_decode!(PlanarProfileRef; {
     Faces(field0),
 });
 
-clone_copy_for_decode!(PolygonSideCount);
+rewrite_record!(PrimitiveSolid, []; (field0));
 
-clone_record_for_decode!(PrimitiveSolid; (field0));
-
-clone_enum_for_decode!(PrimitiveSolidKind; {
+rewrite_enum!(PrimitiveSolidKind, []; {
     Box { length, width, height },
     Cylinder { radius, height, angle },
     Cone { radius1, radius2, height, angle },
@@ -470,92 +397,72 @@ clone_enum_for_decode!(PrimitiveSolidKind; {
     Wedge { xmin, ymin, zmin, x2min, z2min, xmax, ymax, zmax, x2max, z2max },
 });
 
-clone_copy_for_decode!(PrincipalPlane);
-
-clone_enum_for_decode!(ProfileRef; {
+rewrite_enum!(ProfileRef, []; {
     SpatialSketchProfiles { sketch, profiles },
     SpatialSketchSelection { sketch, selections },
     Planar(field0),
 });
 
-clone_record_for_decode!(ReplaceFaceOperands; { targets, replacements });
+rewrite_record!(ReplaceFaceOperands, []; { targets, replacements });
 
-clone_record_for_decode!(RevolutionAxis; { origin, direction, reference });
+rewrite_record!(RevolutionAxis, []; { origin, direction, reference });
 
-clone_copy_for_decode!(RevolutionFuseOrder);
-
-clone_enum_for_decode!(RevolveConstruction; {
+rewrite_enum!(RevolveConstruction, []; {
     Unresolved(field0),
     Resolved { profile, axis, extent, solid, face_maker, fuse_order, allow_multi_profile_faces },
 });
 
-clone_enum_for_decode!(RevolveExtent; {
+rewrite_enum!(RevolveExtent, []; {
     OneSided { termination },
     TwoSided { first, second },
     Symmetric { termination },
 });
 
-clone_record_for_decode!(RibConstruction; { profile, direction, thickness, side, draft });
+rewrite_record!(RibConstruction, []; { profile, direction, thickness, side, draft });
 
-clone_copy_for_decode!(RibDraft);
-
-clone_copy_for_decode!(RibSide);
-
-clone_copy_for_decode!(RuledCurveOrientation);
-
-clone_copy_for_decode!(RuledSurfaceCorner);
-
-clone_enum_for_decode!(RuledSurfaceMode; {
+rewrite_enum!(RuledSurfaceMode, []; {
     Normal { distance },
     Tangent { distance },
     Direction { direction, distance },
 });
 
-clone_enum_for_decode!(ScaleCenter; {
+rewrite_enum!(ScaleCenter, []; {
     Centroid,
     ModelOrigin,
     Point(field0),
     Native(field0),
 });
 
-clone_copy_for_decode!(ScaleFactors);
+rewrite_record!(SectionOperands, []; { first, second });
 
-clone_record_for_decode!(SectionOperands; { first, second });
+rewrite_record!(SelectionMembers<T>, [T]; (field0));
 
-clone_record_for_decode!(SelectionMembers<T>, [T]; (field0));
+rewrite_record!(SelectionReference, []; (field0));
 
-clone_record_for_decode!(SelectionReference; (field0));
+rewrite_record!(SewBodySelection, []; (field0));
 
-clone_record_for_decode!(SewBodySelection; (field0));
+rewrite_record!(SheetMetalFlangeEdgeWidths, []; (field0));
 
-clone_copy_for_decode!(SheetMetalBendPosition);
-
-clone_record_for_decode!(SheetMetalFlangeEdgeWidths; (field0));
-
-clone_enum_for_decode!(SheetMetalFlangeHeight; {
+rewrite_enum!(SheetMetalFlangeHeight, []; {
     Distance(field0),
     ToObject { target, offset },
 });
 
-clone_enum_for_decode!(SheetMetalFlangeHeightTarget; {
+rewrite_enum!(SheetMetalFlangeHeightTarget, []; {
     Feature(field0),
     Native(field0),
 });
 
-clone_record_for_decode!(SheetMetalFlangeTwoSidedWidth; { first, second });
+rewrite_record!(SheetMetalFlangeTwoSidedWidth, []; { first, second });
 
-clone_enum_for_decode!(SheetMetalFlangeWidth; {
+rewrite_enum!(SheetMetalFlangeWidth, []; {
     FullEdge,
     Symmetric { width },
     TwoSides { first, second },
     TwoSidesPerEdge { widths },
 });
 
-clone_copy_for_decode!(SheetMetalHeightDatum);
-
-clone_copy_for_decode!(SheetMetalHemDirection);
-
-clone_enum_for_decode!(SheetMetalHemForm; {
+rewrite_enum!(SheetMetalHemForm, []; {
     Flat { length },
     Open { gap, length },
     GapLength { gap, length },
@@ -563,61 +470,45 @@ clone_enum_for_decode!(SheetMetalHemForm; {
     Teardrop { gap, length, radius },
 });
 
-clone_copy_for_decode!(SheetMetalThicknessSide);
-
-clone_copy_for_decode!(ShellJoin);
-
-clone_copy_for_decode!(ShellMode);
-
-clone_enum_for_decode!(SketchFeatureBinding; {
+rewrite_enum!(SketchFeatureBinding, []; {
     Unresolved,
     Planar(field0),
 });
 
-clone_enum_for_decode!(SketchPointSelection; {
+rewrite_enum!(SketchPointSelection, []; {
     Unresolved,
     Planar { sketch, point, native },
     Spatial { sketch, point, native },
     Native(field0),
 });
 
-clone_record_for_decode!(SketchProfileBoundaryUse; { entity, parameter_range, reversed });
+rewrite_record!(SketchProfileBoundaryUse, []; { entity, parameter_range, reversed });
 
-clone_record_for_decode!(SketchProfileLoops; { outer, holes });
+rewrite_record!(SketchProfileLoops, []; { outer, holes });
 
-clone_enum_for_decode!(SketchProfileRegion; {
+rewrite_enum!(SketchProfileRegion, []; {
     Loops { loops },
     Trimmed { outer_boundary, hole_boundaries },
 });
 
-clone_record_for_decode!(SketchProfileRegions; (field0));
+rewrite_record!(SketchProfileRegions, []; (field0));
 
-clone_copy_for_decode!(SolidSweepOperation);
+rewrite_record!(SplitFacePlanes, []; (field0));
 
-clone_record_for_decode!(SplitFacePlanes; (field0));
-
-clone_enum_for_decode!(SplitFaceTool; {
+rewrite_enum!(SplitFaceTool, []; {
     Path(field0),
     Plane { plane },
     Planes { planes },
 });
 
-clone_enum_for_decode!(SurfaceBoundary; {
+rewrite_enum!(SurfaceBoundary, []; {
     Edges(field0),
     Path(field0),
 });
 
-clone_copy_for_decode!(SurfaceContinuity);
+rewrite_record!(SweepGuideRail, []; { path, extent });
 
-clone_copy_for_decode!(SurfaceExtension);
-
-clone_copy_for_decode!(SurfaceProjectionMode);
-
-clone_copy_for_decode!(SweepCircularRegion);
-
-clone_record_for_decode!(SweepGuideRail; { path, extent });
-
-clone_enum_for_decode!(SweepOrientation; {
+rewrite_enum!(SweepOrientation, []; {
     CorrectedFrenet {  },
     Fixed {  },
     Frenet {  },
@@ -626,258 +517,47 @@ clone_enum_for_decode!(SweepOrientation; {
     Binormal { direction },
 });
 
-clone_copy_for_decode!(SweepPathExtent);
-
-clone_enum_for_decode!(SweepSection<G>, [G]; {
+rewrite_enum!(SweepSection<G>, [G]; {
     Unresolved(field0),
     Profile(field0),
     Generated(field0),
 });
 
-clone_enum_for_decode!(SweepShape; {
+rewrite_enum!(SweepShape, []; {
     Unresolved { section, sections },
     Solid { op, section, sections },
     Surface { section, sections },
 });
 
-clone_copy_for_decode!(SweepTransformation);
+rewrite_record!(ThreePointSelection, []; (field0));
 
-clone_copy_for_decode!(SweepTransition);
+rewrite_record!(TreeChildren, []; { children, active_child });
 
-clone_copy_for_decode!(ThickenSide);
+rewrite_record!(TrimBodyOperands, []; { targets, tools });
 
-clone_record_for_decode!(ThreePointSelection; (field0));
+rewrite_record!(TrimCellSelection, []; { removed, total });
 
-clone_record_for_decode!(TreeChildren; { children, active_child });
-
-clone_record_for_decode!(TrimBodyOperands; { targets, tools });
-
-clone_record_for_decode!(TrimCellSelection; { removed, total });
-
-clone_enum_for_decode!(TrimRegion; {
+rewrite_enum!(TrimRegion, []; {
     Unresolved,
     Inside,
     Outside,
     Cells(field0),
 });
 
-clone_copy_for_decode!(UnresolvedFamily);
-
-clone_enum_for_decode!(VertexSelection; {
+rewrite_enum!(VertexSelection, []; {
     Unresolved,
     Generated { vertex, native },
     Historical { state, vertex, native },
     Native(field0),
 });
 
-clone_copy_for_decode!(WrapMode);
-use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_core::CodecError;
-use std::collections::BTreeMap;
-
-pub(super) trait CloneForDecode: Sized {
-    fn try_clone_for_decode(
-        &self,
-        ctx: &DecodeContext<'_>,
-        operation: &'static str,
-    ) -> Result<Self, CodecError>;
-}
-
-impl CloneForDecode for String {
-    fn try_clone_for_decode(
-        &self,
-        ctx: &DecodeContext<'_>,
-        operation: &'static str,
-    ) -> Result<Self, CodecError> {
-        ctx.copy_retained_text(self, operation)
-    }
-}
-
-impl<T: CloneForDecode> CloneForDecode for Vec<T> {
-    fn try_clone_for_decode(
-        &self,
-        ctx: &DecodeContext<'_>,
-        operation: &'static str,
-    ) -> Result<Self, CodecError> {
-        let mut copied = ctx.collection_vec(self.len(), operation)?;
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(self.len()), operation)?;
-        for member in self {
-            copied.push(member.try_clone_for_decode(ctx, operation)?);
-        }
-        Ok(copied)
-    }
-}
-
-impl<T: CloneForDecode> CloneForDecode for Option<T> {
-    fn try_clone_for_decode(
-        &self,
-        ctx: &DecodeContext<'_>,
-        operation: &'static str,
-    ) -> Result<Self, CodecError> {
-        self.as_ref()
-            .map(|value| value.try_clone_for_decode(ctx, operation))
-            .transpose()
-    }
-}
-
-impl<T: CloneForDecode> CloneForDecode for Box<T> {
-    fn try_clone_for_decode(
-        &self,
-        ctx: &DecodeContext<'_>,
-        operation: &'static str,
-    ) -> Result<Self, CodecError> {
-        copy_box(self.as_ref(), ctx, operation)
-    }
-}
-
-impl<T: CloneForDecode> CloneForDecode for [T; 2] {
-    fn try_clone_for_decode(
-        &self,
-        ctx: &DecodeContext<'_>,
-        operation: &'static str,
-    ) -> Result<Self, CodecError> {
-        Ok([
-            self[0].try_clone_for_decode(ctx, operation)?,
-            self[1].try_clone_for_decode(ctx, operation)?,
-        ])
-    }
-}
-
-impl<T: CloneForDecode> CloneForDecode for [T; 3] {
-    fn try_clone_for_decode(
-        &self,
-        ctx: &DecodeContext<'_>,
-        operation: &'static str,
-    ) -> Result<Self, CodecError> {
-        Ok([
-            self[0].try_clone_for_decode(ctx, operation)?,
-            self[1].try_clone_for_decode(ctx, operation)?,
-            self[2].try_clone_for_decode(ctx, operation)?,
-        ])
-    }
-}
-
-impl<K: CloneForDecode + Ord, V: CloneForDecode> CloneForDecode for BTreeMap<K, V> {
-    fn try_clone_for_decode(
-        &self,
-        ctx: &DecodeContext<'_>,
-        operation: &'static str,
-    ) -> Result<Self, CodecError> {
-        let mut copied = BTreeMap::new();
-        for (key, value) in self {
-            ctx.admit_retained_btree_record::<K, V>(0, operation)?;
-            let key = key.try_clone_for_decode(ctx, operation)?;
-            let value = value.try_clone_for_decode(ctx, operation)?;
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(copied.len())
-                    .checked_add(1)
-                    .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?,
-                operation,
-            )?;
-            copied.insert(key, value);
-        }
-        Ok(copied)
-    }
-}
-
-impl CloneForDecode for cadmpeg_core::text::NonBlankString {
-    fn try_clone_for_decode(
-        &self,
-        ctx: &DecodeContext<'_>,
-        operation: &'static str,
-    ) -> Result<Self, CodecError> {
-        let text = ctx.copy_retained_text(self.as_str(), operation)?;
-        cadmpeg_core::text::NonBlankString::new(text)
-            .ok_or_else(|| CodecError::malformed("admitted feature text is blank"))
-    }
-}
-
-macro_rules! clone_id_for_decode {
-    ($type:ty) => {
-        impl CloneForDecode for $type {
-            fn try_clone_for_decode(
-                &self,
-                ctx: &DecodeContext<'_>,
-                operation: &'static str,
-            ) -> Result<Self, CodecError> {
-                <$type>::try_clone_for_decode(self, ctx, operation)
-            }
-        }
-    };
-}
-
-clone_copy_for_decode!(bool);
-clone_copy_for_decode!(u32);
-clone_copy_for_decode!(u64);
-clone_copy_for_decode!(f64);
-clone_copy_for_decode!(std::num::NonZeroU32);
-clone_copy_for_decode!(crate::scalar::Angle);
-clone_copy_for_decode!(crate::scalar::FiniteReal);
-clone_copy_for_decode!(crate::scalar::Fraction);
-clone_copy_for_decode!(crate::scalar::InteriorAngle);
-clone_copy_for_decode!(crate::scalar::Length);
-clone_copy_for_decode!(crate::scalar::NonNegativeLength);
-clone_copy_for_decode!(crate::scalar::NonZeroLength);
-clone_copy_for_decode!(crate::scalar::PositiveAngle);
-clone_copy_for_decode!(crate::scalar::PositiveLength);
-clone_copy_for_decode!(crate::scalar::PositiveReal);
-clone_copy_for_decode!(crate::scalar::SlopeAngle);
-clone_copy_for_decode!(crate::features::FinitePoint3);
-clone_copy_for_decode!(crate::features::FiniteVector3);
-clone_copy_for_decode!(crate::features::FeatureDirection3);
-clone_copy_for_decode!(crate::features::FeatureDatumPlaneFrame);
-clone_copy_for_decode!(crate::features::FeatureRigidPlacement);
-clone_copy_for_decode!(crate::features::FeatureSupportPlaneFrame);
-clone_copy_for_decode!(crate::transform::Transform);
-clone_copy_for_decode!(crate::units::UnitVector3);
-clone_copy_for_decode!(crate::geometry::DirectedParameterRange);
-clone_copy_for_decode!(crate::topology::IncreasingParameterInterval);
-
-clone_id_for_decode!(crate::assets::AssetId);
-clone_id_for_decode!(crate::features::FeatureId);
-clone_id_for_decode!(crate::ids::BodyId);
-clone_id_for_decode!(crate::ids::CurveId);
-clone_id_for_decode!(crate::ids::EdgeId);
-clone_id_for_decode!(crate::ids::FaceId);
-clone_id_for_decode!(crate::ids::FeatureInputTopologyId);
-clone_id_for_decode!(crate::ids::HistoricalBodyId);
-clone_id_for_decode!(crate::ids::HistoricalEdgeId);
-clone_id_for_decode!(crate::ids::HistoricalFaceId);
-clone_id_for_decode!(crate::ids::HistoricalVertexId);
-clone_id_for_decode!(crate::ids::OccurrenceId);
-clone_id_for_decode!(crate::ids::SubdId);
-clone_id_for_decode!(crate::ids::VertexId);
-clone_id_for_decode!(crate::products::JointId);
-clone_id_for_decode!(crate::sketches::SketchEntityId);
-clone_id_for_decode!(crate::sketches::SketchId);
-clone_id_for_decode!(crate::sketches::SpatialSketchEntityId);
-clone_id_for_decode!(crate::sketches::SpatialSketchId);
-
 #[cfg(test)]
 mod tests;
 
-clone_enum_for_decode!(super::ConfigurationEvaluation; { Suppressed {}, Active { outputs } });
-clone_record_for_decode!(super::ConfigurationFeatureState; { evaluation, dependencies, definition });
-clone_record_for_decode!(super::FeatureEvaluation; { definition, outputs });
-clone_record_for_decode!(super::Feature; { id, ordinal, name, suppressed, dependencies, source_properties, source_tag, source_text, source_content, evaluation, native_ref });
-clone_record_for_decode!(super::FeatureContent; (field0));
-clone_enum_for_decode!(super::FeatureSourceContent; { Text(value), Parameter(value), Feature(value) });
-clone_enum_for_decode!(super::ParameterValue; { Length(value), Angle(value), Real(value), Integer(value), Boolean(value), String(value) });
-clone_id_for_decode!(super::ParameterId);
-clone_copy_for_decode!(i64);
-
-/// Copy a boxed field after admitting its retained allocation.
-pub(super) fn copy_box<T: CloneForDecode>(
-    value: &T,
-    ctx: &DecodeContext<'_>,
-    operation: &'static str,
-) -> Result<Box<T>, CodecError> {
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<T>()),
-        operation,
-    )?;
-    ctx.charge_collection_items(1, operation)?;
-    Ok(Box::new(CloneForDecode::try_clone_for_decode(
-        value, ctx, operation,
-    )?))
-}
+rewrite_enum!(super::ConfigurationEvaluation, []; { Suppressed {}, Active { outputs } });
+rewrite_record!(super::ConfigurationFeatureState, []; { evaluation, dependencies, definition });
+rewrite_record!(super::FeatureEvaluation, []; { definition, outputs });
+rewrite_record!(super::Feature, []; { id, ordinal, name, suppressed, dependencies, source_properties, source_tag, source_text, source_content, evaluation, native_ref });
+rewrite_record!(super::FeatureContent, []; (field0));
+rewrite_enum!(super::FeatureSourceContent, []; { Text(value), Parameter(value), Feature(value) });
+rewrite_enum!(super::ParameterValue, []; { Length(value), Angle(value), Real(value), Integer(value), Boolean(value), String(value) });
