@@ -113,12 +113,9 @@ fn selection_fixture() -> (
     )
 }
 
-fn bind(max_retained_bytes: u64) -> Result<BodySelection, cadmpeg_core::CodecError> {
+fn bind() -> Result<BodySelection, cadmpeg_core::CodecError> {
     let (scope, groups, operands, mut selection) = selection_fixture();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = max_retained_bytes;
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let ctx = cadmpeg_test_support::service_decode_context();
     let feature = FeatureId::mint("f3d:model:feature#body").unwrap();
     super::super::bind_body_recipe_body_selection(
         &ctx,
@@ -241,7 +238,7 @@ fn external_body(
     .external(&ctx, &operands[0], source)
 }
 
-fn linked_body(warm: bool) -> Result<Option<cadmpeg_ir::ids::BodyId>, cadmpeg_core::CodecError> {
+fn linked_body() -> Result<Option<cadmpeg_ir::ids::BodyId>, cadmpeg_core::CodecError> {
     use crate::records::identity::RecordedValue;
     use crate::records::recipes::{
         ConstructionRecipe, ConstructionRecipeDesign, ConstructionRecipeKind,
@@ -290,23 +287,12 @@ fn linked_body(warm: bool) -> Result<Option<cadmpeg_ir::ids::BodyId>, cadmpeg_co
     let links = [link];
     let mut candidates =
         crate::history::body_candidates::BodyCandidates::new(&bodies, &[], &[], &recipes, &links);
-    if warm {
-        assert!(candidates
-            .linked(
-                &cadmpeg_test_support::service_decode_context(),
-                &operands[0],
-            )?
-            .is_some());
-    }
     candidates.linked(&ctx, &operands[0])
 }
 
 #[test]
 fn body_recipe_keeps_historical_selection() {
-    assert!(matches!(
-        bind(u64::MAX).unwrap(),
-        BodySelection::Historical { .. }
-    ));
+    assert!(matches!(bind().unwrap(), BodySelection::Historical { .. }));
 }
 
 #[test]
@@ -324,10 +310,7 @@ fn direct_body_recipe_keeps_resolved_selection() {
 
 #[test]
 fn persistent_body_link_preserves_identity() {
-    assert_eq!(
-        linked_body(false).unwrap().unwrap().as_str(),
-        "f3d:brep:body#1"
-    );
+    assert_eq!(linked_body().unwrap().unwrap().as_str(), "f3d:brep:body#1");
 }
 
 #[test]

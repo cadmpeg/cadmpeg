@@ -122,22 +122,3 @@ fn source_rescoping_preserves_absent_provenance_tag() {
         None
     );
 }
-
-#[test]
-fn fidelity_append_charged_preserves_source_metadata() {
-    let mut charged = SourceFidelity::default();
-    charged
-        .append(
-            &cadmpeg_test_support::service_decode_context(),
-            source("member"),
-        )
-        .unwrap();
-    let mut plain = SourceFidelity::default();
-    plain
-        .append(
-            &cadmpeg_test_support::service_decode_context(),
-            source("member"),
-        )
-        .unwrap();
-    assert_eq!(charged, plain);
-}
