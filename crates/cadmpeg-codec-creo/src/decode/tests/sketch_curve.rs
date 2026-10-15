@@ -3,7 +3,7 @@
 
 use super::{extruded_segment_surface, placed_section_curve_geometry};
 use crate::decode::feature_history::dimensions::{
-    feature_dimension_display, feature_dimension_parameter_id, feature_dimension_parameter_layout,
+    feature_dimension_display, feature_dimension_parameter_layout,
     feature_dimension_parameter_row_id, resolved_feature_dimension_parameter,
 };
 use crate::decode::feature_history::outputs::{
@@ -250,11 +250,14 @@ fn dimension_identity_includes_its_feature_definition() {
     let sketch_1200 =
         SketchId::mint("creo:model:sketch#1200".to_string()).expect("valid test fixture");
     assert_ne!(
-        feature_dimension_parameter_id(&sketch_917, 3),
-        feature_dimension_parameter_id(&sketch_1104, 3)
+        feature_dimension_parameter_row_id(&sketch_917, 3, None)
+            .expect("build the dimension parameter identity"),
+        feature_dimension_parameter_row_id(&sketch_1104, 3, None)
+            .expect("build the dimension parameter identity")
     );
     assert_eq!(
-        feature_dimension_parameter_id(&sketch_917, 3)
+        feature_dimension_parameter_row_id(&sketch_917, 3, None)
+            .expect("build the dimension parameter identity")
             .expect("valid test identity")
             .as_str(),
         "creo:featdefs:parameter#917:3"
@@ -283,8 +286,10 @@ fn dimension_identity_includes_its_feature_definition() {
         ])
     );
     assert_ne!(
-        feature_dimension_parameter_row_id(&sketch_917, 3, Some(0)),
+        feature_dimension_parameter_row_id(&sketch_917, 3, Some(0))
+            .expect("build the dimension parameter identity"),
         feature_dimension_parameter_row_id(&sketch_917, 3, Some(1))
+            .expect("build the dimension parameter identity")
     );
     let dimension = crate::feature::definitions::FeatureDimension {
         dimension_type: 2,
@@ -327,7 +332,8 @@ fn dimension_identity_includes_its_feature_definition() {
             &sketch_917,
             definition.dimensions.as_ref().expect("dimension table"),
             0,
-        ),
+        )
+        .expect("resolve the dimension parameter"),
         Some((
             &dimension,
             ParameterId::mint("creo:featdefs:parameter#917:3".to_string())
@@ -653,7 +659,8 @@ fn dimension_identity_includes_its_feature_definition() {
         ..table.clone()
     };
     assert_eq!(
-        resolved_feature_dimension_parameter(&sketch_917, &unresolved_table, 0),
+        resolved_feature_dimension_parameter(&sketch_917, &unresolved_table, 0)
+            .expect("resolve the dimension parameter"),
         Some((
             &unresolved_dimension,
             ParameterId::mint("creo:featdefs:parameter#917:4".to_string())
@@ -665,7 +672,8 @@ fn dimension_identity_includes_its_feature_definition() {
         ..unresolved_table
     };
     assert_eq!(
-        resolved_feature_dimension_parameter(&sketch_917, &incomplete_table, 0),
+        resolved_feature_dimension_parameter(&sketch_917, &incomplete_table, 0)
+            .expect("resolve the dimension parameter"),
         None
     );
     table.rows.push(dimension);
@@ -675,7 +683,8 @@ fn dimension_identity_includes_its_feature_definition() {
             &sketch_917,
             definition.dimensions.as_ref().expect("dimension table"),
             0,
-        ),
+        )
+        .expect("resolve the dimension parameter"),
         None
     );
     assert_eq!(
@@ -683,7 +692,8 @@ fn dimension_identity_includes_its_feature_definition() {
             &sketch_917,
             definition.dimensions.as_ref().expect("dimension table"),
             1,
-        ),
+        )
+        .expect("resolve the dimension parameter"),
         None
     );
 }
