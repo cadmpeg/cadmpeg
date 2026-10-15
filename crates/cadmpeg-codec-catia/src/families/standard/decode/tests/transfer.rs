@@ -15,6 +15,16 @@ use cadmpeg_ir::geometry::{
 
 use cadmpeg_ir::math::{Point3, Vector3};
 
+use crate::coverage::{
+    STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_BOUNDARY_RECONSTRUCTION_COUNT,
+    STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_COUNT,
+    STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_NO_ASSIGNMENT_COUNT,
+    STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_CHOICE_PRUNING_COUNT,
+    STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_COMPONENT_COMPOSITION_COUNT,
+    STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_COMPONENT_DOMAIN_COUNT,
+    STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_FIXED_ASSIGNMENT_COUNT,
+    STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_INPUT_SHAPE_COUNT,
+};
 use crate::test_support::test_a5_bound::{a5_native_edge_run_stream, a5_nurbs_bound_edge_stream};
 use crate::test_support::test_a5a8::{
     a5_freeform_curve_stream, a5_guide_curve_stream, a5_native_edge_identity_stream,
@@ -331,17 +341,40 @@ fn decode_standard_transfers_vertices_and_cylinder() {
             <= 1
     );
     assert_eq!(
-        wire::coverage_count(result.report(), crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_COUNT.as_str()),
-        wire::coverage_count(result.report(), crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_NO_ASSIGNMENT_COUNT.as_str())
-            + wire::coverage_count(result.report(), crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_BOUNDARY_RECONSTRUCTION_COUNT.as_str())
+        wire::coverage_count(
+            result.report(),
+            STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_COUNT.as_str()
+        ),
+        wire::coverage_count(
+            result.report(),
+            STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_NO_ASSIGNMENT_COUNT.as_str()
+        ) + wire::coverage_count(
+            result.report(),
+            STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_BOUNDARY_RECONSTRUCTION_COUNT
+                .as_str()
+        )
     );
     assert_eq!(
-        wire::coverage_count(result.report(), crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_NO_ASSIGNMENT_COUNT.as_str()),
-        wire::coverage_count(result.report(), crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_INPUT_SHAPE_COUNT.as_str())
-            + wire::coverage_count(result.report(), crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_CHOICE_PRUNING_COUNT.as_str())
-            + wire::coverage_count(result.report(), crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_FIXED_ASSIGNMENT_COUNT.as_str())
-            + wire::coverage_count(result.report(), crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_COMPONENT_DOMAIN_COUNT.as_str())
-            + wire::coverage_count(result.report(), crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_COMPONENT_COMPOSITION_COUNT.as_str())
+        wire::coverage_count(
+            result.report(),
+            STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_NO_ASSIGNMENT_COUNT.as_str()
+        ),
+        wire::coverage_count(
+            result.report(),
+            STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_INPUT_SHAPE_COUNT.as_str()
+        ) + wire::coverage_count(
+            result.report(),
+            STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_CHOICE_PRUNING_COUNT.as_str()
+        ) + wire::coverage_count(
+            result.report(),
+            STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_FIXED_ASSIGNMENT_COUNT.as_str()
+        ) + wire::coverage_count(
+            result.report(),
+            STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_COMPONENT_DOMAIN_COUNT.as_str()
+        ) + wire::coverage_count(
+            result.report(),
+            STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_COMPONENT_COMPOSITION_COUNT.as_str()
+        )
     );
 
     // The produced IR validates (free carriers, no dangling references).
@@ -529,17 +562,40 @@ fn decode_standard_builds_surface_bound_topology_graph() {
         0
     );
     assert_eq!(
-        wire::coverage_count(decoded.report(), crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_COUNT.as_str()),
-        wire::coverage_count(decoded.report(), crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_NO_ASSIGNMENT_COUNT.as_str())
-            + wire::coverage_count(decoded.report(), crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_BOUNDARY_RECONSTRUCTION_COUNT.as_str())
+        wire::coverage_count(
+            decoded.report(),
+            STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_COUNT.as_str()
+        ),
+        wire::coverage_count(
+            decoded.report(),
+            STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_NO_ASSIGNMENT_COUNT.as_str()
+        ) + wire::coverage_count(
+            decoded.report(),
+            STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_BOUNDARY_RECONSTRUCTION_COUNT
+                .as_str()
+        )
     );
     assert_eq!(
-        wire::coverage_count(decoded.report(), crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_NO_ASSIGNMENT_COUNT.as_str()),
-        wire::coverage_count(decoded.report(), crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_INPUT_SHAPE_COUNT.as_str())
-            + wire::coverage_count(decoded.report(), crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_CHOICE_PRUNING_COUNT.as_str())
-            + wire::coverage_count(decoded.report(), crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_FIXED_ASSIGNMENT_COUNT.as_str())
-            + wire::coverage_count(decoded.report(), crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_COMPONENT_DOMAIN_COUNT.as_str())
-            + wire::coverage_count(decoded.report(), crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_COMPONENT_COMPOSITION_COUNT.as_str())
+        wire::coverage_count(
+            decoded.report(),
+            STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_NO_ASSIGNMENT_COUNT.as_str()
+        ),
+        wire::coverage_count(
+            decoded.report(),
+            STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_INPUT_SHAPE_COUNT.as_str()
+        ) + wire::coverage_count(
+            decoded.report(),
+            STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_CHOICE_PRUNING_COUNT.as_str()
+        ) + wire::coverage_count(
+            decoded.report(),
+            STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_FIXED_ASSIGNMENT_COUNT.as_str()
+        ) + wire::coverage_count(
+            decoded.report(),
+            STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_COMPONENT_DOMAIN_COUNT.as_str()
+        ) + wire::coverage_count(
+            decoded.report(),
+            STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_COMPONENT_COMPOSITION_COUNT.as_str()
+        )
     );
 }
 

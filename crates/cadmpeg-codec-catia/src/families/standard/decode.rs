@@ -23,7 +23,7 @@ use edge_geometry::{
 };
 
 use crate::families::standard::fbb::EdgeTableForm;
-use crate::families::standard::records::AnalyticSurfaceKind;
+use crate::families::standard::records::{AnalyticSurfaceKind, StandardSurfaceRecord};
 use cadmpeg_core::decode::{DecodeContext, WorkBudget};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::{CadIr, EntityRewrite, Model};
@@ -31,6 +31,9 @@ use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::geometry::{
     nurbs::{NurbsCurve, NurbsPoleGrid, NurbsSurface},
     pcurve::{Pcurve, PcurveGeometry},
+    surface_payloads::{
+        ExtrusionSurfaceConstruction, OffsetSurfaceConstruction, RevolutionSurfaceConstruction,
+    },
     Curve, CurveGeometry, DirectedParameterRange, IntcurveSupportContext, IntcurveSupportSide,
     ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition,
     SolvedCurveGeometry, SolvedSurfaceGeometry, SupportPcurve, Surface, SurfaceGeometry,
@@ -59,7 +62,10 @@ use crate::assemble::{
     rational_pcurve_arc, unwrap_angle, TypedCounts,
 };
 use crate::container::{self, ContainerScan};
-use crate::families::b5::transfer::parameter_record_bounds;
+use crate::coverage::{
+    self, STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_BOUNDARY_RECONSTRUCTION_COUNT,
+};
+use crate::families::b5::transfer::{parameter_record_bounds, ResolvedOffsetSupport};
 use crate::families::freeform::{
     append_consolidated_revolutions, append_freeform_surface_pools, ConsolidatedRevolutionBinding,
 };
@@ -1193,10 +1199,7 @@ fn emit_standard_extrusion_definition(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
     (surfaces, procedural_supports): (&mut Vec<Surface>, &mut HashMap<u32, SurfaceId>),
-    extrusion_definitions: &mut HashMap<
-        u32,
-        cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction,
-    >,
+    extrusion_definitions: &mut HashMap<u32, ExtrusionSurfaceConstruction>,
     extrusion: crate::families::b5::transfer::ResolvedExtrusionSurface,
     admission: &mut FamilyEntityAdmission<'_, '_>,
 ) -> Result<ProceduralSurfaceDefinition, cadmpeg_core::CodecError> {
@@ -1387,7 +1390,7 @@ fn emit_standard_extrusion_definition(
                 ));
         }
     }
-    let definition = cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::legacy(
+    let definition = ExtrusionSurfaceConstruction::legacy(
         directrix_id,
         Some(parameter_range.into()),
         direction.into(),
@@ -1400,18 +1403,16 @@ fn emit_standard_extrusion_definition(
 }
 
 fn copy_standard_extrusion_definition(
-    definition: &cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction,
+    definition: &ExtrusionSurfaceConstruction,
 ) -> ProceduralSurfaceDefinition {
     let directrix = definition.directrix().clone();
-    ProceduralSurfaceDefinition::Extrusion(
-        cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::legacy(
-            directrix,
-            definition.parameter_interval(),
-            *definition.direction(),
-            definition.native_position(),
-            None,
-        ),
-    )
+    ProceduralSurfaceDefinition::Extrusion(ExtrusionSurfaceConstruction::legacy(
+        directrix,
+        definition.parameter_interval(),
+        *definition.direction(),
+        definition.native_position(),
+        None,
+    ))
 }
 
 fn standard_freeform_e5_carrier_ids(data: &[u8]) -> HashMap<u32, u32> {
@@ -1455,7 +1456,7 @@ fn standard_freeform_e5_carrier_ids(data: &[u8]) -> HashMap<u32, u32> {
 /// standard tag names one E5 face, that face names one valid `0xf1` wrapper,
 /// and the wrapper's first reference names one supported E5 surface carrier.
 fn associate_standard_freeform_e5_surfaces(
-    records: &[crate::families::standard::records::StandardSurfaceRecord],
+    records: &[StandardSurfaceRecord],
     data: &[u8],
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<HashMap<u32, SurfaceGeometry>, CodecError> {
@@ -1476,9 +1477,7 @@ fn associate_standard_freeform_e5_surfaces(
     }
     let mut associated = HashMap::new();
     for record in records {
-        let crate::families::standard::records::StandardSurfaceRecord::Freeform { tag, .. } =
-            record
-        else {
+        let StandardSurfaceRecord::Freeform { tag, .. } = record else {
             continue;
         };
         let Some(geometry) = carrier_ids
@@ -1517,7 +1516,7 @@ fn copy_standard_procedure(
             parameter_bounds,
         } => {
             let support = match support {
-                crate::families::b5::transfer::ResolvedOffsetSupport::Geometry(geometry) => {
+                ResolvedOffsetSupport::Geometry(geometry) => {
                     let geometry = match geometry {
                         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) => {
                             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs.clone()))
@@ -1535,10 +1534,10 @@ fn copy_standard_procedure(
                             ))
                         }
                     };
-                    crate::families::b5::transfer::ResolvedOffsetSupport::Geometry(geometry)
+                    ResolvedOffsetSupport::Geometry(geometry)
                 }
-                crate::families::b5::transfer::ResolvedOffsetSupport::Extrusion(extrusion) => {
-                    crate::families::b5::transfer::ResolvedOffsetSupport::Extrusion(Box::new(
+                ResolvedOffsetSupport::Extrusion(extrusion) => {
+                    ResolvedOffsetSupport::Extrusion(Box::new(
                         crate::families::b5::transfer::copy_resolved_extrusion_surface(extrusion)?,
                     ))
                 }
@@ -1572,7 +1571,7 @@ fn copy_standard_procedure(
 /// E5 carriers; only the underlying carrier decoder differs. The carrier's
 /// signed sense must agree with the owning face orientation before admission.
 fn associate_standard_freeform_e5_rolling_ball_jets(
-    records: &[crate::families::standard::records::StandardSurfaceRecord],
+    records: &[StandardSurfaceRecord],
     data: &[u8],
     decoded_jets: &[crate::families::e5::records::E5RollingBallJet],
 ) -> HashMap<u32, StandardSurfaceProcedure> {
@@ -1589,12 +1588,7 @@ fn associate_standard_freeform_e5_rolling_ball_jets(
     }
     let mut associated = HashMap::new();
     for record in records {
-        let crate::families::standard::records::StandardSurfaceRecord::Freeform {
-            tag,
-            forward,
-            ..
-        } = record
-        else {
+        let StandardSurfaceRecord::Freeform { tag, forward, .. } = record else {
             continue;
         };
         let Some(jet) = carrier_ids
@@ -1626,7 +1620,7 @@ fn associate_standard_freeform_e5_rolling_ball_jets(
 #[derive(Debug, Clone)]
 struct StandardPopulationSelection {
     spine: Vec<u8>,
-    records: Vec<crate::families::standard::records::StandardSurfaceRecord>,
+    records: Vec<StandardSurfaceRecord>,
     supports: Vec<crate::families::standard::records::StandardCurveSupport>,
     edge_table_form: EdgeTableForm,
     vertex_roster_compatible: bool,
@@ -1868,13 +1862,13 @@ fn try_decode_standard_populations(
         })
         .sum::<usize>();
     let population_coverage = [
-        crate::coverage::ATTEMPTED_STANDARD_TOPOLOGY_COUNT,
-        crate::coverage::STANDARD_TOPOLOGY_CURVE_SUPPORT_COUNT,
-        crate::coverage::STANDARD_TOPOLOGY_NATIVE_ENDPOINT_PAIR_COUNT,
-        crate::coverage::STANDARD_TOPOLOGY_EMPTY_ENDPOINT_DOMAIN_COUNT,
-        crate::coverage::STANDARD_TOPOLOGY_SINGLETON_ENDPOINT_DOMAIN_COUNT,
-        crate::coverage::STANDARD_TOPOLOGY_MULTIPLE_ENDPOINT_DOMAIN_COUNT,
-        crate::coverage::STANDARD_TOPOLOGY_ENDPOINT_DOMAIN_CHOICE_COUNT,
+        coverage::ATTEMPTED_STANDARD_TOPOLOGY_COUNT,
+        coverage::STANDARD_TOPOLOGY_CURVE_SUPPORT_COUNT,
+        coverage::STANDARD_TOPOLOGY_NATIVE_ENDPOINT_PAIR_COUNT,
+        coverage::STANDARD_TOPOLOGY_EMPTY_ENDPOINT_DOMAIN_COUNT,
+        coverage::STANDARD_TOPOLOGY_SINGLETON_ENDPOINT_DOMAIN_COUNT,
+        coverage::STANDARD_TOPOLOGY_MULTIPLE_ENDPOINT_DOMAIN_COUNT,
+        coverage::STANDARD_TOPOLOGY_ENDPOINT_DOMAIN_CHOICE_COUNT,
     ]
     .map(|key| {
         (
@@ -1933,24 +1927,24 @@ fn try_decode_standard_populations(
     for (key, value) in population_coverage {
         merged.report.coverage.record(key, value);
     }
+    merged
+        .report
+        .coverage
+        .record(coverage::STANDARD_FBB_RUN_COUNT, scan.census.fbb_runs);
     merged.report.coverage.record(
-        crate::coverage::STANDARD_FBB_RUN_COUNT,
-        scan.census.fbb_runs,
-    );
-    merged.report.coverage.record(
-        crate::coverage::STANDARD_FBB_CANDIDATE_FACE_ROW_COUNT,
+        coverage::STANDARD_FBB_CANDIDATE_FACE_ROW_COUNT,
         scan.census.fbb_face_rows,
     );
     merged.report.coverage.record(
-        crate::coverage::STANDARD_FBB_ADMITTED_FACE_ROW_COUNT,
+        coverage::STANDARD_FBB_ADMITTED_FACE_ROW_COUNT,
         admitted_face_rows,
     );
     merged.report.coverage.record(
-        crate::coverage::STANDARD_FBB_WITHHELD_FACE_ROW_COUNT,
+        coverage::STANDARD_FBB_WITHHELD_FACE_ROW_COUNT,
         scan.census.fbb_face_rows - scan.census.fbb_face_rows.min(admitted_face_rows),
     );
     merged.report.coverage.record(
-        crate::coverage::ATTACHED_STANDARD_TOPOLOGY_COUNT,
+        coverage::ATTACHED_STANDARD_TOPOLOGY_COUNT,
         attached_topology_count,
     );
 
@@ -2006,463 +2000,541 @@ fn try_decode_standard_population(
     surface_alias_tags: &HashMap<u32, Option<u32>>,
 ) -> Result<Option<FamilyOutput>, cadmpeg_core::CodecError> {
     (|| -> Option<Result<FamilyOutput, cadmpeg_core::CodecError>> {
-    macro_rules! admitted {
-        ($value:expr) => {
-            match $value {
-                Ok(value) => value,
-                Err(error) => return Some(Err(error)),
-            }
-        };
-    }
-    let mut admission = FamilyEntityAdmission::new(ctx);
-    let brep = scan.brep.as_ref()?;
-    let default_spine = scan.main_data_stream().unwrap_or(brep);
-    let standard_spine = selection.map_or(default_spine, |selection| selection.spine.as_slice());
-    let edge_table_form = selection.map_or_else(
-        || match scan.variant {
-            Variant::FbbOnly => EdgeTableForm::FbbOnly,
-            _ => EdgeTableForm::Standard,
-        },
-        |selection| selection.edge_table_form,
-    );
-    let sources = container::consolidated_record_sources(scan);
-    let consolidated_records = match crate::wire::records::consolidated_records_in_sources(&scan.data, sources) {
-        Ok(records) => records,
-        Err(error) => return Some(Err(error)),
-    };
-    let vertex_points = match edge_table_form {
-        EdgeTableForm::FbbOnly => fbb::fbb_only_vertex_points(standard_spine),
-        EdgeTableForm::Standard => match fbb::standard_vertex_points(ctx, standard_spine) {
-            Ok(points) => points,
-            Err(error) => return Some(Err(error)),
-        },
-    };
-    let points = vertex_points.unwrap_or_default();
-    let vertex_roster = if selection.is_none_or(|selection| selection.vertex_roster_compatible) {
-        crate::families::standard::records::standard_vertex_roster(&scan.data, points.len())
-    } else {
-        None
-    };
-    let face_count = if let Some(selection) = selection {
-        selection.records.len()
-    } else {
-        match fbb::standard_face_count(ctx, standard_spine) {
-            Ok(count) => count.unwrap_or_default(),
-            Err(error) => return Some(Err(error)),
-        }
-    };
-    let records = if let Some(selection) = selection {
-        selection.records.clone()
-    } else {
-        let parsed = crate::families::standard::records::standard_surface_records(brep, face_count);
-        if let Some(records) = parsed {
-            records
-        } else {
-            let prefixes = crate::families::standard::records::surface_prefixes(brep);
-            let mut records = Vec::new();
-            for prefix in prefixes {
-                records.push(crate::families::standard::records::StandardSurfaceRecord::Analytic(prefix));
-            }
-            records
-        }
-    };
-    let analytic_record_count = records
-        .iter()
-        .filter(|record| {
-            matches!(
-                record,
-                crate::families::standard::records::StandardSurfaceRecord::Analytic(_)
-            )
-        })
-        .count();
-    let mut freeform_tags = HashSet::new();
-    for record in &records {
-        if let crate::families::standard::records::StandardSurfaceRecord::Freeform { tag, .. } = record {
-            freeform_tags.insert(*tag);
-        }
-    }
-    let standard_edge_count = if let Some(selection) = selection {
-        (!selection.supports.is_empty()).then_some(selection.supports.len())
-    } else {
-        let count = if edge_table_form == EdgeTableForm::FbbOnly {
-            fbb::fbb_only_edge_count(standard_spine)
-        } else {
-            match fbb::standard_edge_count(ctx, standard_spine) {
-                Ok(count) => count,
-                Err(error) => return Some(Err(error)),
-            }
-        };
-        count.filter(|count| *count > 0)
-    };
-    let curve_supports = if let Some(selection) = selection {
-        selection.supports.clone()
-    } else {
-        match crate::families::standard::records::standard_curve_supports(ctx, brep, face_count, standard_edge_count) {
-            Ok(supports) => supports,
-            Err(error) => return Some(Err(error)),
-        }
-    };
-    let mut edge_tags = HashSet::new();
-    for support in &curve_supports {
-        edge_tags.insert(support.tag);
-    }
-    let mut object_evidence = match standard_object_evidence(
-        ctx,
-        scan,
-        &freeform_tags,
-        &edge_tags,
-        &consolidated_records,
-        refusal,
-    ) {
-        Ok(evidence) => evidence,
-        Err(error) => return Some(Err(error)),
-    };
-    let standard_limit_curve_count = object_evidence.limit_curves.len();
-    let revolution_record_count = crate::families::b2::records::b2_revolutions_from_records(
-        &scan.data,
-        &consolidated_records,
-    )
-    .count();
-    let face_frame_vectors = match fbb::standard_face_frame_vectors(ctx, standard_spine, records.len()) {
-        Ok(vectors) => vectors,
-        Err(error) => return Some(Err(error)),
-    };
-    let mut curved_surfaces = Vec::new();
-    for record in &records {
-        let surface = match record {
-            crate::families::standard::records::StandardSurfaceRecord::Analytic(prefix)
-                if prefix.kind != AnalyticSurfaceKind::Plane =>
-            {
-                crate::families::standard::records::decode_curved(brep, prefix)
-            }
-            crate::families::standard::records::StandardSurfaceRecord::Analytic(_)
-            | crate::families::standard::records::StandardSurfaceRecord::Freeform { .. } => None,
-        };
-        curved_surfaces.push(surface);
-    }
-    let refined_analytic_surfaces = refine_consolidated_analytic_surfaces(&scan.data, &consolidated_records, &mut curved_surfaces);
-    let plane_normals = standard_plane_normals_from_face_frames(&records, &face_frame_vectors);
-    let plane_rows = crate::families::standard::records::plane_params(brep, &plane_normals);
-    let mut planes = HashMap::new();
-    for plane in plane_rows {
-        planes.insert(plane.target, plane);
-    }
-    let mut face_bounds = Vec::new();
-    for record in &records {
-        let bounds = crate::families::standard::records::standard_face_bounds(brep, record);
-        face_bounds.push(bounds);
-    }
-    let mut freeform_geometries = std::mem::take(&mut object_evidence.surface_geometries);
-    let e5_freeform_geometries = match associate_standard_freeform_e5_surfaces(&records, &scan.data, refusal) {
-        Ok(geometries) => geometries,
-        Err(error) => return Some(Err(error)),
-    };
-    let mut e5_freeform_tags = HashSet::new();
-    for (tag, geometry) in e5_freeform_geometries {
-        freeform_geometries.insert(tag, geometry);
-        e5_freeform_tags.insert(tag);
-    }
-    let mut freeform_procedural_surfaces = std::mem::take(&mut object_evidence.procedural_surfaces);
-    let e5_freeform_procedural_surfaces = associate_standard_freeform_e5_rolling_ball_jets(&records, &scan.data, e5_jets);
-    for (tag, procedure) in e5_freeform_procedural_surfaces {
-        match freeform_procedural_surfaces.get(&tag) {
-            Some(existing) if existing != &procedure => {
-                freeform_procedural_surfaces.remove(&tag);
-            }
-            Some(_) => {}
-            None => {
-                freeform_procedural_surfaces.insert(tag, procedure);
-            }
-        }
-    }
-    let unresolved_freeform_record_count = records
-        .iter()
-        .filter(|record| {
-            matches!(
-                record,
-                crate::families::standard::records::StandardSurfaceRecord::Freeform { tag, .. }
-                    if !freeform_geometries.contains_key(tag)
-                        && !freeform_procedural_surfaces.contains_key(tag)
-            )
-        })
-        .count();
-    if points.is_empty() && records.is_empty() {
-        return None;
-    }
-    let mut ir = CadIr::empty();
-    let mut annotations = AnnotationBuilder::new();
-    let mut unknowns = Vec::new();
-    let payload_index = match preserve_raw_payload(
-        ctx,
-        &mut unknowns,
-        &mut annotations,
-        scan,
-        admitted!(UnknownId::mint("catia:payload:unknown#brep-stream".to_owned()).map_err(cadmpeg_core::CodecError::malformed)),
-    ) {
-        Ok(index) => index,
-        Err(error) => return Some(Err(error)),
-    };
-    let mut surfaces = Vec::new();
-    let mut surface_annotations = Vec::new();
-    let mut face_bindings = Vec::new();
-    let mut procedural_surface_plans = Vec::new();
-    let mut decoded_plane_targets = HashSet::new();
-    let mut plane_faces = 0usize;
-    let mut typed = TypedCounts::default();
-    for (i, record) in records.iter().enumerate() {
-        let prefix = match record {
-            crate::families::standard::records::StandardSurfaceRecord::Analytic(prefix) => prefix,
-            crate::families::standard::records::StandardSurfaceRecord::Freeform {
-                pos,
-                tag,
-                forward,
-                ..
-            } => {
-                let id = admitted!(crate::resource::compose_index_id(&cadmpeg_ir::identity_namespace!("catia", "standard", "surf"), i, SurfaceId::mint));
-                let geometry = freeform_geometries.get(tag).cloned()
-                    .unwrap_or(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
-                        record: None,
-                    }));
-                face_bindings.push((id.clone(), *forward, *pos));
-                surface_annotations.push((
-                    id.clone(),
-                    "MainDataStream+SurfacicReps",
-                    *pos,
-                    ("surfacic_reps_freeform_alias").to_owned(),
-                    if freeform_procedural_surfaces.contains_key(tag)
-                        || e5_freeform_tags.contains(tag)
-                    {
-                        Exactness::ByteExact
-                    } else if matches!(
-                        geometry,
-                        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
-                    ) {
-                        Exactness::Unknown
-                    } else {
-                        Exactness::ByteExact
-                    },
-                ));
-                if let Err(error) = admission.charge() {
-                    return Some(Err(error));
+        macro_rules! admitted {
+            ($value:expr) => {
+                match $value {
+                    Ok(value) => value,
+                    Err(error) => return Some(Err(error)),
                 }
-                surfaces.push(Surface {
-                    id: id.clone(),
-                    geometry,
-                    source_object: Some(admitted!(cgm_source("carrier", *tag))),
-                });
-                if let Some(procedure) = admitted!(freeform_procedural_surfaces.get(tag)
-                    .map(copy_standard_procedure).transpose()) {
-                    procedural_surface_plans.push((i, id, *tag, procedure));
-                }
-                continue;
-            }
+            };
+        }
+        let mut admission = FamilyEntityAdmission::new(ctx);
+        let brep = scan.brep.as_ref()?;
+        let default_spine = scan.main_data_stream().unwrap_or(brep);
+        let standard_spine =
+            selection.map_or(default_spine, |selection| selection.spine.as_slice());
+        let edge_table_form = selection.map_or_else(
+            || match scan.variant {
+                Variant::FbbOnly => EdgeTableForm::FbbOnly,
+                _ => EdgeTableForm::Standard,
+            },
+            |selection| selection.edge_table_form,
+        );
+        let sources = container::consolidated_record_sources(scan);
+        let consolidated_records =
+            match crate::wire::records::consolidated_records_in_sources(&scan.data, sources) {
+                Ok(records) => records,
+                Err(error) => return Some(Err(error)),
+            };
+        let vertex_points = match edge_table_form {
+            EdgeTableForm::FbbOnly => fbb::fbb_only_vertex_points(standard_spine),
+            EdgeTableForm::Standard => match fbb::standard_vertex_points(ctx, standard_spine) {
+                Ok(points) => points,
+                Err(error) => return Some(Err(error)),
+            },
         };
-        // A bridged plane parameter record contains the same `00 33 32`
-        // marker as its SurfacicReps carrier.  One carrier exists per tag.
-        if prefix.kind == AnalyticSurfaceKind::Plane
-            && !decoded_plane_targets.insert(prefix.target)
+        let points = vertex_points.unwrap_or_default();
+        let vertex_roster = if selection.is_none_or(|selection| selection.vertex_roster_compatible)
         {
-            continue;
-        }
-        let decoded = if prefix.kind == AnalyticSurfaceKind::Plane {
-            planes
-                .get(&prefix.target)
-                .and_then(crate::families::standard::records::decode_plane)
+            crate::families::standard::records::standard_vertex_roster(&scan.data, points.len())
         } else {
-            curved_surfaces[i].clone()
+            None
         };
-        match decoded {
-            Some(geom) => {
-                typed.record(&geom);
-                let id = admitted!(crate::resource::compose_index_id(&cadmpeg_ir::identity_namespace!("catia", "standard", "surf"), i, SurfaceId::mint));
-                if let Some(forward) = crate::families::standard::records::face_sense(brep, prefix)
-                {
-                    face_bindings.push((id.clone(), forward, prefix.pos));
-                }
-                let (annotation_stream, annotation_offset, annotation_tag) =
-                    if let Some(source_pos) = refined_analytic_surfaces.get(&i) {
-                        ("consolidated_b2_03", *source_pos,
-                            ("consolidated_exact_analytic_surface").to_owned())
-                    } else {
-                        ("MainDataStream+SurfacicReps", prefix.pos,
-                            format!("surfacic_reps_{:02x}", prefix.kind.marker()))
-                    };
-                surface_annotations.push((
-                    id.clone(),
-                    annotation_stream,
-                    annotation_offset,
-                    annotation_tag,
-                    Exactness::ByteExact,
-                ));
-                if let Err(error) = admission.charge() {
-                    return Some(Err(error));
-                }
-                surfaces.push(Surface {
-                    id,
-                    geometry: geom,
-                    source_object: Some(admitted!(cgm_source("carrier", prefix.target))),
-                });
+        let face_count = if let Some(selection) = selection {
+            selection.records.len()
+        } else {
+            match fbb::standard_face_count(ctx, standard_spine) {
+                Ok(count) => count.unwrap_or_default(),
+                Err(error) => return Some(Err(error)),
             }
-            None => {
-                if prefix.kind == AnalyticSurfaceKind::Plane {
-                    plane_faces += 1;
+        };
+        let records = if let Some(selection) = selection {
+            selection.records.clone()
+        } else {
+            let parsed =
+                crate::families::standard::records::standard_surface_records(brep, face_count);
+            if let Some(records) = parsed {
+                records
+            } else {
+                let prefixes = crate::families::standard::records::surface_prefixes(brep);
+                let mut records = Vec::new();
+                for prefix in prefixes {
+                    records.push(StandardSurfaceRecord::Analytic(prefix));
                 }
-                let id = admitted!(crate::resource::compose_index_id(&cadmpeg_ir::identity_namespace!("catia", "standard", "surf"), i, SurfaceId::mint));
-                if let Some(forward) = crate::families::standard::records::face_sense(brep, prefix)
-                {
-                    face_bindings.push((id.clone(), forward, prefix.pos));
-                }
-                surface_annotations.push((
-                    id.clone(),
-                    "MainDataStream+SurfacicReps",
-                    prefix.pos,
-                    format!("surfacic_reps_{:02x}", prefix.kind.marker()),
-                    Exactness::Unknown,
-                ));
-                if let Err(error) = admission.charge() {
-                    return Some(Err(error));
-                }
-                surfaces.push(Surface {
-                    id,
-                    geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
-                        record: Some(admitted!(UnknownId::mint("catia:payload:unknown#brep-stream".to_owned()).map_err(cadmpeg_core::CodecError::malformed))),
-                    }),
-                    source_object: Some(admitted!(cgm_source("carrier", prefix.target))),
-                });
+                records
+            }
+        };
+        let analytic_record_count = records
+            .iter()
+            .filter(|record| matches!(record, StandardSurfaceRecord::Analytic(_)))
+            .count();
+        let mut freeform_tags = HashSet::new();
+        for record in &records {
+            if let StandardSurfaceRecord::Freeform { tag, .. } = record {
+                freeform_tags.insert(*tag);
             }
         }
-    }
-
-    let mut procedural_supports = HashMap::<u32, SurfaceId>::new();
-    let mut extrusion_definitions = HashMap::new();
-    for (index, surface, tag, procedure) in procedural_surface_plans {
-        let procedural_id = admitted!(crate::resource::compose_index_id(&cadmpeg_ir::identity_namespace!("catia", "standard", "procedural-surf"), index, ProceduralSurfaceId::mint));
-        let record_bounds = match &procedure {
-            StandardSurfaceProcedure::Extrusion(extrusion) => {
-                Some(parameter_record_bounds(extrusion.parameter_bounds))
-            }
-            StandardSurfaceProcedure::Offset {
-                parameter_bounds, ..
-            } => Some(parameter_record_bounds(*parameter_bounds)),
-            StandardSurfaceProcedure::RollingBall { .. }
-            | StandardSurfaceProcedure::Revolution(_) => None,
+        let standard_edge_count = if let Some(selection) = selection {
+            (!selection.supports.is_empty()).then_some(selection.supports.len())
+        } else {
+            let count = if edge_table_form == EdgeTableForm::FbbOnly {
+                fbb::fbb_only_edge_count(standard_spine)
+            } else {
+                match fbb::standard_edge_count(ctx, standard_spine) {
+                    Ok(count) => count,
+                    Err(error) => return Some(Err(error)),
+                }
+            };
+            count.filter(|count| *count > 0)
         };
-        let (source, carrier, definition, exactness) = match procedure {
-            StandardSurfaceProcedure::RollingBall {
-                carrier_object_id,
-                definition,
-                source: procedure_source,
-            } => (
-                match procedure_source {
-                    StandardRollingBallSource::ObjectStreamA8 => "object_stream_a8_03_32",
-                    StandardRollingBallSource::E5D8 => "e5_0d_03_d8",
-                },
-                carrier_object_id,
-                *definition,
-                Exactness::ByteExact,
+        let curve_supports = if let Some(selection) = selection {
+            selection.supports.clone()
+        } else {
+            match crate::families::standard::records::standard_curve_supports(
+                ctx,
+                brep,
+                face_count,
+                standard_edge_count,
+            ) {
+                Ok(supports) => supports,
+                Err(error) => return Some(Err(error)),
+            }
+        };
+        let mut edge_tags = HashSet::new();
+        for support in &curve_supports {
+            edge_tags.insert(support.tag);
+        }
+        let mut object_evidence = match standard_object_evidence(
+            ctx,
+            scan,
+            &freeform_tags,
+            &edge_tags,
+            &consolidated_records,
+            refusal,
+        ) {
+            Ok(evidence) => evidence,
+            Err(error) => return Some(Err(error)),
+        };
+        let standard_limit_curve_count = object_evidence.limit_curves.len();
+        let revolution_record_count = crate::families::b2::records::b2_revolutions_from_records(
+            &scan.data,
+            &consolidated_records,
+        )
+        .count();
+        let face_frame_vectors =
+            match fbb::standard_face_frame_vectors(ctx, standard_spine, records.len()) {
+                Ok(vectors) => vectors,
+                Err(error) => return Some(Err(error)),
+            };
+        let mut curved_surfaces = Vec::new();
+        for record in &records {
+            let surface = match record {
+                StandardSurfaceRecord::Analytic(prefix)
+                    if prefix.kind != AnalyticSurfaceKind::Plane =>
+                {
+                    crate::families::standard::records::decode_curved(brep, prefix)
+                }
+                StandardSurfaceRecord::Analytic(_) | StandardSurfaceRecord::Freeform { .. } => None,
+            };
+            curved_surfaces.push(surface);
+        }
+        let refined_analytic_surfaces = refine_consolidated_analytic_surfaces(
+            &scan.data,
+            &consolidated_records,
+            &mut curved_surfaces,
+        );
+        let plane_normals = standard_plane_normals_from_face_frames(&records, &face_frame_vectors);
+        let plane_rows = crate::families::standard::records::plane_params(brep, &plane_normals);
+        let mut planes = HashMap::new();
+        for plane in plane_rows {
+            planes.insert(plane.target, plane);
+        }
+        let mut face_bounds = Vec::new();
+        for record in &records {
+            let bounds = crate::families::standard::records::standard_face_bounds(brep, record);
+            face_bounds.push(bounds);
+        }
+        let mut freeform_geometries = std::mem::take(&mut object_evidence.surface_geometries);
+        let e5_freeform_geometries =
+            match associate_standard_freeform_e5_surfaces(&records, &scan.data, refusal) {
+                Ok(geometries) => geometries,
+                Err(error) => return Some(Err(error)),
+            };
+        let mut e5_freeform_tags = HashSet::new();
+        for (tag, geometry) in e5_freeform_geometries {
+            freeform_geometries.insert(tag, geometry);
+            e5_freeform_tags.insert(tag);
+        }
+        let mut freeform_procedural_surfaces =
+            std::mem::take(&mut object_evidence.procedural_surfaces);
+        let e5_freeform_procedural_surfaces =
+            associate_standard_freeform_e5_rolling_ball_jets(&records, &scan.data, e5_jets);
+        for (tag, procedure) in e5_freeform_procedural_surfaces {
+            match freeform_procedural_surfaces.get(&tag) {
+                Some(existing) if existing != &procedure => {
+                    freeform_procedural_surfaces.remove(&tag);
+                }
+                Some(_) => {}
+                None => {
+                    freeform_procedural_surfaces.insert(tag, procedure);
+                }
+            }
+        }
+        let unresolved_freeform_record_count = records
+            .iter()
+            .filter(|record| {
+                matches!(
+                    record,
+                    StandardSurfaceRecord::Freeform { tag, .. }
+                        if !freeform_geometries.contains_key(tag)
+                            && !freeform_procedural_surfaces.contains_key(tag)
+                )
+            })
+            .count();
+        if points.is_empty() && records.is_empty() {
+            return None;
+        }
+        let mut ir = CadIr::empty();
+        let mut annotations = AnnotationBuilder::new();
+        let mut unknowns = Vec::new();
+        let payload_index = match preserve_raw_payload(
+            ctx,
+            &mut unknowns,
+            &mut annotations,
+            scan,
+            admitted!(
+                UnknownId::mint("catia:payload:unknown#brep-stream".to_owned())
+                    .map_err(cadmpeg_core::CodecError::malformed)
             ),
-            StandardSurfaceProcedure::Offset {
-                carrier_object_id,
-                support_object_id,
-                support,
-                distance,
-                parameter_bounds: _,
-            } => {
-                let support_id = match support {
-                    crate::families::b5::transfer::ResolvedOffsetSupport::Geometry(support) => {
-                        let source_object = admitted!(cgm_source("surface", support_object_id));
-                        if let Some(id) = procedural_supports.get(&support_object_id) {
-                            id.clone()
-                        } else {
-                            let id = admitted!(crate::resource::compose_u32_id(&cadmpeg_ir::identity_namespace!(
-                                    "catia",
-                                    "standard",
-                                    "procedural-support"
-                                ), support_object_id, SurfaceId::mint));
-                            admitted!(annotate(&mut annotations, &id, "object_stream_b5_03", 0, format_args!("surface:{support_object_id:08x}"), Exactness::ByteExact));
-                            if let Err(error) = admission.charge() {
-                                return Some(Err(error));
-                            }
-                            surfaces.push(Surface {
-                                id: id.clone(),
-                                geometry: support,
-                                source_object: Some(source_object),
-                            });
-                            procedural_supports.insert(support_object_id, id.clone());
-                            id
-                        }
-                    }
-                    crate::families::b5::transfer::ResolvedOffsetSupport::Extrusion(extrusion) => {
-                        let record_bounds = parameter_record_bounds(extrusion.parameter_bounds);
-                        let support_id = admitted!(crate::resource::compose_u32_id(&cadmpeg_ir::identity_namespace!(
-                                "catia",
-                                "standard",
-                                "procedural-support"
-                            ), support_object_id, SurfaceId::mint));
-                        admitted!(annotate(&mut annotations, &support_id, "object_stream_b5_03_2c", 0, format_args!("surface:{support_object_id:08x}"), Exactness::ByteExact));
+        ) {
+            Ok(index) => index,
+            Err(error) => return Some(Err(error)),
+        };
+        let mut surfaces = Vec::new();
+        let mut surface_annotations = Vec::new();
+        let mut face_bindings = Vec::new();
+        let mut procedural_surface_plans = Vec::new();
+        let mut decoded_plane_targets = HashSet::new();
+        let mut plane_faces = 0usize;
+        let mut typed = TypedCounts::default();
+        for (i, record) in records.iter().enumerate() {
+            let prefix =
+                match record {
+                    StandardSurfaceRecord::Analytic(prefix) => prefix,
+                    StandardSurfaceRecord::Freeform {
+                        pos, tag, forward, ..
+                    } => {
+                        let id = admitted!(crate::resource::compose_index_id(
+                            &cadmpeg_ir::identity_namespace!("catia", "standard", "surf"),
+                            i,
+                            SurfaceId::mint
+                        ));
+                        let geometry = freeform_geometries.get(tag).cloned().unwrap_or(
+                            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
+                                record: None,
+                            }),
+                        );
+                        face_bindings.push((id.clone(), *forward, *pos));
+                        surface_annotations.push((
+                            id.clone(),
+                            "MainDataStream+SurfacicReps",
+                            *pos,
+                            ("surfacic_reps_freeform_alias").to_owned(),
+                            if freeform_procedural_surfaces.contains_key(tag)
+                                || e5_freeform_tags.contains(tag)
+                            {
+                                Exactness::ByteExact
+                            } else if matches!(
+                                geometry,
+                                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
+                            ) {
+                                Exactness::Unknown
+                            } else {
+                                Exactness::ByteExact
+                            },
+                        ));
                         if let Err(error) = admission.charge() {
                             return Some(Err(error));
                         }
                         surfaces.push(Surface {
-                            id: support_id.clone(),
-                            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
-                                record: None,
-                            }),
-                            source_object: Some(admitted!(cgm_source("surface", support_object_id))),
+                            id: id.clone(),
+                            geometry,
+                            source_object: Some(admitted!(cgm_source("carrier", *tag))),
                         });
-                        let definition = match emit_standard_extrusion_definition(&mut ir, &mut annotations, (&mut surfaces, &mut procedural_supports), &mut extrusion_definitions, *extrusion, &mut admission) {
-                            Ok(definition) => definition,
-                            Err(error) => return Some(Err(error)),
-                        };
-                        let construction = admitted!(crate::resource::compose_u32_id(&cadmpeg_ir::identity_namespace!(
-                                "catia",
-                                "standard",
-                                "procedural-support-definition"
-                            ), support_object_id, ProceduralSurfaceId::mint));
-                        let attached = if let Some(surface) =
-                            surfaces.iter_mut().find(|surface| surface.id == support_id)
+                        if let Some(procedure) = admitted!(freeform_procedural_surfaces
+                            .get(tag)
+                            .map(copy_standard_procedure)
+                            .transpose())
                         {
-                            let cache = std::mem::replace(
-                                &mut surface.geometry,
-                                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
-                                    record: None,
-                                }),
-                            );
-                            match cache {
-                                SurfaceGeometry::Solved(cache) => {
-                                    surface.geometry = SurfaceGeometry::Procedural {
-                                        construction: construction.clone(),
-                                        cache: Some(cache),
-                                    };
-                                    true
-                                }
-                                cache @ SurfaceGeometry::Procedural { .. } => {
-                                    surface.geometry = cache;
-                                    false
-                                }
-                            }
+                            procedural_surface_plans.push((i, id, *tag, procedure));
+                        }
+                        continue;
+                    }
+                };
+            // A bridged plane parameter record contains the same `00 33 32`
+            // marker as its SurfacicReps carrier.  One carrier exists per tag.
+            if prefix.kind == AnalyticSurfaceKind::Plane
+                && !decoded_plane_targets.insert(prefix.target)
+            {
+                continue;
+            }
+            let decoded = if prefix.kind == AnalyticSurfaceKind::Plane {
+                planes
+                    .get(&prefix.target)
+                    .and_then(crate::families::standard::records::decode_plane)
+            } else {
+                curved_surfaces[i].clone()
+            };
+            match decoded {
+                Some(geom) => {
+                    typed.record(&geom);
+                    let id = admitted!(crate::resource::compose_index_id(
+                        &cadmpeg_ir::identity_namespace!("catia", "standard", "surf"),
+                        i,
+                        SurfaceId::mint
+                    ));
+                    if let Some(forward) =
+                        crate::families::standard::records::face_sense(brep, prefix)
+                    {
+                        face_bindings.push((id.clone(), forward, prefix.pos));
+                    }
+                    let (annotation_stream, annotation_offset, annotation_tag) =
+                        if let Some(source_pos) = refined_analytic_surfaces.get(&i) {
+                            (
+                                "consolidated_b2_03",
+                                *source_pos,
+                                ("consolidated_exact_analytic_surface").to_owned(),
+                            )
                         } else {
-                            false
+                            (
+                                "MainDataStream+SurfacicReps",
+                                prefix.pos,
+                                format!("surfacic_reps_{:02x}", prefix.kind.marker()),
+                            )
                         };
-                        if attached {
+                    surface_annotations.push((
+                        id.clone(),
+                        annotation_stream,
+                        annotation_offset,
+                        annotation_tag,
+                        Exactness::ByteExact,
+                    ));
+                    if let Err(error) = admission.charge() {
+                        return Some(Err(error));
+                    }
+                    surfaces.push(Surface {
+                        id,
+                        geometry: geom,
+                        source_object: Some(admitted!(cgm_source("carrier", prefix.target))),
+                    });
+                }
+                None => {
+                    if prefix.kind == AnalyticSurfaceKind::Plane {
+                        plane_faces += 1;
+                    }
+                    let id = admitted!(crate::resource::compose_index_id(
+                        &cadmpeg_ir::identity_namespace!("catia", "standard", "surf"),
+                        i,
+                        SurfaceId::mint
+                    ));
+                    if let Some(forward) =
+                        crate::families::standard::records::face_sense(brep, prefix)
+                    {
+                        face_bindings.push((id.clone(), forward, prefix.pos));
+                    }
+                    surface_annotations.push((
+                        id.clone(),
+                        "MainDataStream+SurfacicReps",
+                        prefix.pos,
+                        format!("surfacic_reps_{:02x}", prefix.kind.marker()),
+                        Exactness::Unknown,
+                    ));
+                    if let Err(error) = admission.charge() {
+                        return Some(Err(error));
+                    }
+                    surfaces.push(Surface {
+                        id,
+                        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
+                            record: Some(admitted!(UnknownId::mint(
+                                "catia:payload:unknown#brep-stream".to_owned()
+                            )
+                            .map_err(cadmpeg_core::CodecError::malformed))),
+                        }),
+                        source_object: Some(admitted!(cgm_source("carrier", prefix.target))),
+                    });
+                }
+            }
+        }
+
+        let mut procedural_supports = HashMap::<u32, SurfaceId>::new();
+        let mut extrusion_definitions = HashMap::new();
+        for (index, surface, tag, procedure) in procedural_surface_plans {
+            let procedural_id = admitted!(crate::resource::compose_index_id(
+                &cadmpeg_ir::identity_namespace!("catia", "standard", "procedural-surf"),
+                index,
+                ProceduralSurfaceId::mint
+            ));
+            let record_bounds = match &procedure {
+                StandardSurfaceProcedure::Extrusion(extrusion) => {
+                    Some(parameter_record_bounds(extrusion.parameter_bounds))
+                }
+                StandardSurfaceProcedure::Offset {
+                    parameter_bounds, ..
+                } => Some(parameter_record_bounds(*parameter_bounds)),
+                StandardSurfaceProcedure::RollingBall { .. }
+                | StandardSurfaceProcedure::Revolution(_) => None,
+            };
+            let (source, carrier, definition, exactness) = match procedure {
+                StandardSurfaceProcedure::RollingBall {
+                    carrier_object_id,
+                    definition,
+                    source: procedure_source,
+                } => (
+                    match procedure_source {
+                        StandardRollingBallSource::ObjectStreamA8 => "object_stream_a8_03_32",
+                        StandardRollingBallSource::E5D8 => "e5_0d_03_d8",
+                    },
+                    carrier_object_id,
+                    *definition,
+                    Exactness::ByteExact,
+                ),
+                StandardSurfaceProcedure::Offset {
+                    carrier_object_id,
+                    support_object_id,
+                    support,
+                    distance,
+                    parameter_bounds: _,
+                } => {
+                    let support_id = match support {
+                        ResolvedOffsetSupport::Geometry(support) => {
+                            let source_object = admitted!(cgm_source("surface", support_object_id));
+                            if let Some(id) = procedural_supports.get(&support_object_id) {
+                                id.clone()
+                            } else {
+                                let id = admitted!(crate::resource::compose_u32_id(
+                                    &cadmpeg_ir::identity_namespace!(
+                                        "catia",
+                                        "standard",
+                                        "procedural-support"
+                                    ),
+                                    support_object_id,
+                                    SurfaceId::mint
+                                ));
+                                admitted!(annotate(
+                                    &mut annotations,
+                                    &id,
+                                    "object_stream_b5_03",
+                                    0,
+                                    format_args!("surface:{support_object_id:08x}"),
+                                    Exactness::ByteExact
+                                ));
+                                if let Err(error) = admission.charge() {
+                                    return Some(Err(error));
+                                }
+                                surfaces.push(Surface {
+                                    id: id.clone(),
+                                    geometry: support,
+                                    source_object: Some(source_object),
+                                });
+                                procedural_supports.insert(support_object_id, id.clone());
+                                id
+                            }
+                        }
+                        ResolvedOffsetSupport::Extrusion(extrusion) => {
+                            let record_bounds = parameter_record_bounds(extrusion.parameter_bounds);
+                            let support_id = admitted!(crate::resource::compose_u32_id(
+                                &cadmpeg_ir::identity_namespace!(
+                                    "catia",
+                                    "standard",
+                                    "procedural-support"
+                                ),
+                                support_object_id,
+                                SurfaceId::mint
+                            ));
+                            admitted!(annotate(
+                                &mut annotations,
+                                &support_id,
+                                "object_stream_b5_03_2c",
+                                0,
+                                format_args!("surface:{support_object_id:08x}"),
+                                Exactness::ByteExact
+                            ));
                             if let Err(error) = admission.charge() {
                                 return Some(Err(error));
                             }
-                            ir.model.procedural_surfaces.push(ProceduralSurface::new(
-                                construction,
-                                definition,
-                                Some(record_bounds),
+                            surfaces.push(Surface {
+                                id: support_id.clone(),
+                                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
+                                    record: None,
+                                }),
+                                source_object: Some(admitted!(cgm_source(
+                                    "surface",
+                                    support_object_id
+                                ))),
+                            });
+                            let definition = match emit_standard_extrusion_definition(
+                                &mut ir,
+                                &mut annotations,
+                                (&mut surfaces, &mut procedural_supports),
+                                &mut extrusion_definitions,
+                                *extrusion,
+                                &mut admission,
+                            ) {
+                                Ok(definition) => definition,
+                                Err(error) => return Some(Err(error)),
+                            };
+                            let construction = admitted!(crate::resource::compose_u32_id(
+                                &cadmpeg_ir::identity_namespace!(
+                                    "catia",
+                                    "standard",
+                                    "procedural-support-definition"
+                                ),
+                                support_object_id,
+                                ProceduralSurfaceId::mint
                             ));
+                            let attached = if let Some(surface) =
+                                surfaces.iter_mut().find(|surface| surface.id == support_id)
+                            {
+                                let cache = std::mem::replace(
+                                    &mut surface.geometry,
+                                    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
+                                        record: None,
+                                    }),
+                                );
+                                match cache {
+                                    SurfaceGeometry::Solved(cache) => {
+                                        surface.geometry = SurfaceGeometry::Procedural {
+                                            construction: construction.clone(),
+                                            cache: Some(cache),
+                                        };
+                                        true
+                                    }
+                                    cache @ SurfaceGeometry::Procedural { .. } => {
+                                        surface.geometry = cache;
+                                        false
+                                    }
+                                }
+                            } else {
+                                false
+                            };
+                            if attached {
+                                if let Err(error) = admission.charge() {
+                                    return Some(Err(error));
+                                }
+                                ir.model.procedural_surfaces.push(ProceduralSurface::new(
+                                    construction,
+                                    definition,
+                                    Some(record_bounds),
+                                ));
+                            }
+                            procedural_supports.insert(support_object_id, support_id.clone());
+                            support_id
                         }
-                        procedural_supports.insert(support_object_id, support_id.clone());
-                        support_id
-                    }
-                };
-                (
-                    "object_stream_b5_03_30",
-                    carrier_object_id,
-                    ProceduralSurfaceDefinition::Offset(
-                        cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::legacy(
+                    };
+                    (
+                        "object_stream_b5_03_30",
+                        carrier_object_id,
+                        ProceduralSurfaceDefinition::Offset(OffsetSurfaceConstruction::legacy(
                             support_id,
                             distance,
                             None,
@@ -2470,418 +2542,635 @@ fn try_decode_standard_population(
                             false,
                             cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
                             None,
-                        ),
-                    ),
-                    Exactness::Derived,
-                )
-            }
-            StandardSurfaceProcedure::Extrusion(extrusion) => {
-                let carrier = extrusion.surface_object_id;
-                let definition = match emit_standard_extrusion_definition(&mut ir, &mut annotations, (&mut surfaces, &mut procedural_supports), &mut extrusion_definitions, *extrusion, &mut admission) {
-                    Ok(definition) => definition,
-                    Err(error) => return Some(Err(error)),
-                };
-                (
-                    "object_stream_b5_03_2c",
-                    carrier,
-                    definition,
-                    Exactness::ByteExact,
-                )
-            }
-            StandardSurfaceProcedure::Revolution(revolution) => {
-                let directrix_id = admitted!(crate::resource::compose_u32_id(&cadmpeg_ir::identity_namespace!("catia", "standard", "revolution-profile"), tag, CurveId::mint));
-                admitted!(annotate(&mut annotations, &directrix_id, "object_stream_b5_03_2d", 0, "profile_curve", Exactness::Derived));
-                admitted!(annotations.derived(&directrix_id, "geometry").map(|_| ()).map_err(cadmpeg_core::CodecError::from));
-                if let Err(error) = admission.charge() {
-                    return Some(Err(error));
+                        )),
+                        Exactness::Derived,
+                    )
                 }
-                ir.model.curves.push(Curve {
-                    parameter_range: None,
-                    id: directrix_id.clone(),
-                    geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                        revolution.directrix,
-                    )),
-                    source_object: None,
-                });
-                (
-                    "object_stream_b5_03_2d",
-                    tag,
-                    ProceduralSurfaceDefinition::Revolution(cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(directrix_id, (revolution.axis_origin, revolution.axis_direction), revolution.angular_interval, Some(revolution.angular_parameter_interval), Some(revolution.parameter_interval), false, cadmpeg_ir::geometry::CacheContract::from_form(None)).ok()?),
-                    Exactness::Derived,
-                )
-            }
-        };
-        let cacheless = matches!(&definition, ProceduralSurfaceDefinition::RollingBallJet(_));
-        let attached = if let Some(surface_record) = surfaces.iter_mut()
-            .find(|candidate| candidate.id == surface) {
-            if cacheless {
-                surface_record.geometry = SurfaceGeometry::Procedural {
-                    construction: procedural_id.clone(),
-                    cache: None,
-                };
-                true
-            } else if matches!(surface_record.geometry, SurfaceGeometry::Solved(_)) {
-                let construction = procedural_id.clone();
-                let cache = std::mem::replace(
-                    &mut surface_record.geometry,
-                    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
-                );
-                if let SurfaceGeometry::Solved(cache) = cache {
+                StandardSurfaceProcedure::Extrusion(extrusion) => {
+                    let carrier = extrusion.surface_object_id;
+                    let definition = match emit_standard_extrusion_definition(
+                        &mut ir,
+                        &mut annotations,
+                        (&mut surfaces, &mut procedural_supports),
+                        &mut extrusion_definitions,
+                        *extrusion,
+                        &mut admission,
+                    ) {
+                        Ok(definition) => definition,
+                        Err(error) => return Some(Err(error)),
+                    };
+                    (
+                        "object_stream_b5_03_2c",
+                        carrier,
+                        definition,
+                        Exactness::ByteExact,
+                    )
+                }
+                StandardSurfaceProcedure::Revolution(revolution) => {
+                    let directrix_id = admitted!(crate::resource::compose_u32_id(
+                        &cadmpeg_ir::identity_namespace!("catia", "standard", "revolution-profile"),
+                        tag,
+                        CurveId::mint
+                    ));
+                    admitted!(annotate(
+                        &mut annotations,
+                        &directrix_id,
+                        "object_stream_b5_03_2d",
+                        0,
+                        "profile_curve",
+                        Exactness::Derived
+                    ));
+                    admitted!(annotations
+                        .derived(&directrix_id, "geometry")
+                        .map(|_| ())
+                        .map_err(cadmpeg_core::CodecError::from));
+                    if let Err(error) = admission.charge() {
+                        return Some(Err(error));
+                    }
+                    ir.model.curves.push(Curve {
+                        parameter_range: None,
+                        id: directrix_id.clone(),
+                        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                            revolution.directrix,
+                        )),
+                        source_object: None,
+                    });
+                    (
+                        "object_stream_b5_03_2d",
+                        tag,
+                        ProceduralSurfaceDefinition::Revolution(
+                            RevolutionSurfaceConstruction::try_new(
+                                directrix_id,
+                                (revolution.axis_origin, revolution.axis_direction),
+                                revolution.angular_interval,
+                                Some(revolution.angular_parameter_interval),
+                                Some(revolution.parameter_interval),
+                                false,
+                                cadmpeg_ir::geometry::CacheContract::from_form(None),
+                            )
+                            .ok()?,
+                        ),
+                        Exactness::Derived,
+                    )
+                }
+            };
+            let cacheless = matches!(&definition, ProceduralSurfaceDefinition::RollingBallJet(_));
+            let attached = if let Some(surface_record) = surfaces
+                .iter_mut()
+                .find(|candidate| candidate.id == surface)
+            {
+                if cacheless {
                     surface_record.geometry = SurfaceGeometry::Procedural {
-                        construction,
-                        cache: Some(cache),
+                        construction: procedural_id.clone(),
+                        cache: None,
                     };
                     true
+                } else if matches!(surface_record.geometry, SurfaceGeometry::Solved(_)) {
+                    let construction = procedural_id.clone();
+                    let cache = std::mem::replace(
+                        &mut surface_record.geometry,
+                        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+                    );
+                    if let SurfaceGeometry::Solved(cache) = cache {
+                        surface_record.geometry = SurfaceGeometry::Procedural {
+                            construction,
+                            cache: Some(cache),
+                        };
+                        true
+                    } else {
+                        surface_record.geometry = cache;
+                        false
+                    }
                 } else {
-                    surface_record.geometry = cache;
                     false
                 }
             } else {
                 false
+            };
+            admitted!(annotate(
+                &mut annotations,
+                &procedural_id,
+                source,
+                0,
+                format_args!("face_object_id:{tag:08x}:result_carrier:{carrier:08x}"),
+                exactness
+            ));
+            if attached {
+                if let Err(error) = admission.charge() {
+                    return Some(Err(error));
+                }
+                ir.model.procedural_surfaces.push(ProceduralSurface::new(
+                    procedural_id,
+                    definition,
+                    record_bounds,
+                ));
             }
-        } else {
-            false
+        }
+        ir.model.surfaces = surfaces;
+        let resolved_consolidated_revolutions =
+            crate::families::b2::records::b2_resolved_revolutions_from_records(
+                &scan.data,
+                &consolidated_records,
+            );
+        let resolved_revolution_count = resolved_consolidated_revolutions.len();
+        // The bindings this call returns are read below, through
+        // `bind_consolidated_revolution_faces_and_seams`.
+        let consolidated_revolutions = match append_consolidated_revolutions(
+            &mut ir,
+            &mut annotations,
+            &resolved_consolidated_revolutions,
+            &mut admission,
+        ) {
+            Ok(bindings) => bindings,
+            Err(error) => return Some(Err(error)),
         };
-        admitted!(annotate(&mut annotations, &procedural_id, source, 0, format_args!("face_object_id:{tag:08x}:result_carrier:{carrier:08x}"), exactness));
-        if attached {
+
+        for (i, p) in points.iter().enumerate() {
+            let point_id = admitted!(crate::resource::compose_index_id(
+                &cadmpeg_ir::identity_namespace!("catia", "standard", "pt"),
+                i,
+                PointId::mint
+            ));
+            admitted!(annotate(
+                &mut annotations,
+                &point_id,
+                "MainDataStream+SurfacicReps",
+                0,
+                "vertex_05_08_01",
+                Exactness::ByteExact
+            ));
             if let Err(error) = admission.charge() {
                 return Some(Err(error));
             }
-            ir.model.procedural_surfaces.push(ProceduralSurface::new(
-                procedural_id,
-                definition,
-                record_bounds,
+            let source_object = match vertex_roster.as_ref() {
+                Some(roster) => Some(admitted!(cgm_source("vertex", roster[i]))),
+                None => None,
+            };
+            ir.model
+                .points
+                .push(Point::new(point_id.clone(), *p, source_object));
+            let vertex_id = admitted!(crate::resource::compose_index_id(
+                &cadmpeg_ir::identity_namespace!("catia", "standard", "v"),
+                i,
+                VertexId::mint
+            ));
+            admitted!(annotate(
+                &mut annotations,
+                &vertex_id,
+                "MainDataStream+SurfacicReps",
+                0,
+                "vertex_05_08_01",
+                Exactness::ByteExact
+            ));
+            admitted!(annotations
+                .derived(&vertex_id, "point")
+                .map(|_| ())
+                .map_err(cadmpeg_core::CodecError::from));
+            if let Err(error) = admission.charge() {
+                return Some(Err(error));
+            }
+            ir.model.vertices.push(Vertex {
+                id: vertex_id,
+                point: point_id,
+                tolerance: None,
+            });
+        }
+        for (id, stream, offset, tag, exactness) in surface_annotations {
+            admitted!(annotate(
+                &mut annotations,
+                &id,
+                stream,
+                u64_from_index(offset),
+                tag,
+                exactness
             ));
         }
-    }
-    ir.model.surfaces = surfaces;
-    let resolved_consolidated_revolutions =
-        crate::families::b2::records::b2_resolved_revolutions_from_records(&scan.data, &consolidated_records);
-    let resolved_revolution_count = resolved_consolidated_revolutions.len();
-    // The bindings this call returns are read below, through
-    // `bind_consolidated_revolution_faces_and_seams`.
-    let consolidated_revolutions = match append_consolidated_revolutions(
-        &mut ir,
-        &mut annotations,
-        &resolved_consolidated_revolutions,
-        &mut admission,
-    ) {
-        Ok(bindings) => bindings,
-        Err(error) => return Some(Err(error)),
-    };
-
-    for (i, p) in points.iter().enumerate() {
-        let point_id = admitted!(crate::resource::compose_index_id(&cadmpeg_ir::identity_namespace!("catia", "standard", "pt"), i, PointId::mint));
-        admitted!(annotate(&mut annotations, &point_id, "MainDataStream+SurfacicReps", 0, "vertex_05_08_01", Exactness::ByteExact));
-        if let Err(error) = admission.charge() {
-            return Some(Err(error));
-        }
-        let source_object = match vertex_roster.as_ref() {
-            Some(roster) => Some(admitted!(cgm_source("vertex", roster[i]))),
-            None => None,
-        };
-        ir.model.points.push(Point::new(
-            point_id.clone(),
-            *p,
-            source_object,
-        ));
-        let vertex_id = admitted!(crate::resource::compose_index_id(&cadmpeg_ir::identity_namespace!("catia", "standard", "v"), i, VertexId::mint));
-        admitted!(annotate(&mut annotations, &vertex_id, "MainDataStream+SurfacicReps", 0, "vertex_05_08_01", Exactness::ByteExact));
-        admitted!(annotations.derived(&vertex_id, "point").map(|_| ()).map_err(cadmpeg_core::CodecError::from));
-        if let Err(error) = admission.charge() {
-            return Some(Err(error));
-        }
-        ir.model.vertices.push(Vertex {
-            id: vertex_id,
-            point: point_id,
-            tolerance: None,
-        });
-    }
-    for (id, stream, offset, tag, exactness) in surface_annotations {
-        admitted!(annotate(&mut annotations, &id, stream, u64_from_index(offset), tag, exactness));
-    }
-    let mut topology_ir = std::mem::replace(&mut ir, CadIr::empty());
-    let mut topology_annotations = annotations.copy_transaction();
-    match attach_standard_faces(
-        ctx,
-        &mut topology_ir,
-        &mut topology_annotations,
-        &face_bindings,
-        standard_spine,
-        &mut admission,
-    ) {
-        Ok(()) => {}
-        Err(error) => return Some(Err(error)),
-    }
-    let mut bound_standard_limit_curve_count = 0;
-    let mut topology_diagnostics = StandardTopologyDiagnostics::default();
-    let topology_budget = WorkBudget::new(mesh_quotient::MAX_MESH_TOPOLOGY_OPERATIONS);
-    let topology_result = attach_standard_topology(ctx, crate::families::standard::decode::AttachStandardTopologyInputs { ir: &mut topology_ir, annotations: &mut topology_annotations, bindings: &face_bindings, records: &records, face_bounds: &face_bounds, spine: standard_spine, edge_table_form, brep, support_override: selection.map(|selection| selection.supports.as_slice()), source: &scan.data, e5_record_range: scan.e5_record_range.clone(), use_vertex_roster: selection.is_none_or(|selection| selection.vertex_roster_compatible), native_edge_faces: &object_evidence.edge_owner_faces, native_edge_supports: &object_evidence.edge_supports, limit_curves: &object_evidence.limit_curves, work_budget: &topology_budget, diagnostics: &mut topology_diagnostics, bound_limit_curve_count: &mut bound_standard_limit_curve_count, refusal, admission: &mut admission })
-    .and_then(|()| {
-        neutral_model_is_admissible(ctx, &mut topology_ir, &unknowns).map_err(StandardTopologyError::Codec)?
-            .then_some(())
-            .ok_or(StandardTopologyError::Semantic(
-                StandardTopologyFailure::InadmissibleNeutralModel,
-            ))
-    });
-    let topology_failure = match topology_result {
-        Ok(()) => None,
-        Err(StandardTopologyError::Semantic(failure)) => Some(failure),
-        Err(StandardTopologyError::Codec(error)) => return Some(Err(error)),
-    };
-    let topology_attached = topology_failure.is_none();
-    if topology_attached {
-        ir = topology_ir;
-        annotations = topology_annotations.into_retained();
-    } else {
-        // The candidate adds only topology and native edge-support carriers.
-        // Restore the source carriers for the analytic fallback by discarding
-        // those candidate-owned rows before moving the model back.
-        topology_ir.model.bodies.clear();
-        topology_ir.model.regions.clear();
-        topology_ir.model.shells.clear();
-        topology_ir.model.faces.clear();
-        topology_ir.model.loops.clear();
-        topology_ir.model.coedges.clear();
-        topology_ir.model.edges.clear();
-        topology_ir.model.pcurves.clear();
-        topology_ir.model.surfaces.retain(|surface| {
-            !surface.id.as_str().starts_with("catia:standard:edge-support-surface#")
-        });
-        topology_ir.model.procedural_surfaces.retain(|surface| {
-            !surface.id.as_str().starts_with("catia:standard:edge-support-definition#")
-        });
-        ir = topology_ir;
-        let fallback_result = (|| -> Result<(), cadmpeg_core::CodecError> {
-            attach_standard_circles(
-                &mut ir, &mut annotations, &face_bindings, &curve_supports, &mut admission,
-            )?;
-            attach_standard_lines(
-                &mut ir, &mut annotations, &face_bindings, &curve_supports, &mut admission,
-            )?;
-            attach_free_vertices(&mut ir, &mut annotations, &mut admission)
-        })();
-        match fallback_result {
+        let mut topology_ir = std::mem::replace(&mut ir, CadIr::empty());
+        let mut topology_annotations = annotations.copy_transaction();
+        match attach_standard_faces(
+            ctx,
+            &mut topology_ir,
+            &mut topology_annotations,
+            &face_bindings,
+            standard_spine,
+            &mut admission,
+        ) {
             Ok(()) => {}
+            Err(error) => return Some(Err(error)),
+        }
+        let mut bound_standard_limit_curve_count = 0;
+        let mut topology_diagnostics = StandardTopologyDiagnostics::default();
+        let topology_budget = WorkBudget::new(mesh_quotient::MAX_MESH_TOPOLOGY_OPERATIONS);
+        let topology_result = attach_standard_topology(
+            ctx,
+            AttachStandardTopologyInputs {
+                ir: &mut topology_ir,
+                annotations: &mut topology_annotations,
+                bindings: &face_bindings,
+                records: &records,
+                face_bounds: &face_bounds,
+                spine: standard_spine,
+                edge_table_form,
+                brep,
+                support_override: selection.map(|selection| selection.supports.as_slice()),
+                source: &scan.data,
+                e5_record_range: scan.e5_record_range.clone(),
+                use_vertex_roster: selection
+                    .is_none_or(|selection| selection.vertex_roster_compatible),
+                native_edge_faces: &object_evidence.edge_owner_faces,
+                native_edge_supports: &object_evidence.edge_supports,
+                limit_curves: &object_evidence.limit_curves,
+                work_budget: &topology_budget,
+                diagnostics: &mut topology_diagnostics,
+                bound_limit_curve_count: &mut bound_standard_limit_curve_count,
+                refusal,
+                admission: &mut admission,
+            },
+        )
+        .and_then(|()| {
+            neutral_model_is_admissible(ctx, &mut topology_ir, &unknowns)
+                .map_err(StandardTopologyError::Codec)?
+                .then_some(())
+                .ok_or(StandardTopologyError::Semantic(
+                    StandardTopologyFailure::InadmissibleNeutralModel,
+                ))
+        });
+        let topology_failure = match topology_result {
+            Ok(()) => None,
+            Err(StandardTopologyError::Semantic(failure)) => Some(failure),
+            Err(StandardTopologyError::Codec(error)) => return Some(Err(error)),
+        };
+        let topology_attached = topology_failure.is_none();
+        if topology_attached {
+            ir = topology_ir;
+            annotations = topology_annotations.into_retained();
+        } else {
+            // The candidate adds only topology and native edge-support carriers.
+            // Restore the source carriers for the analytic fallback by discarding
+            // those candidate-owned rows before moving the model back.
+            topology_ir.model.bodies.clear();
+            topology_ir.model.regions.clear();
+            topology_ir.model.shells.clear();
+            topology_ir.model.faces.clear();
+            topology_ir.model.loops.clear();
+            topology_ir.model.coedges.clear();
+            topology_ir.model.edges.clear();
+            topology_ir.model.pcurves.clear();
+            topology_ir.model.surfaces.retain(|surface| {
+                !surface
+                    .id
+                    .as_str()
+                    .starts_with("catia:standard:edge-support-surface#")
+            });
+            topology_ir.model.procedural_surfaces.retain(|surface| {
+                !surface
+                    .id
+                    .as_str()
+                    .starts_with("catia:standard:edge-support-definition#")
+            });
+            ir = topology_ir;
+            let fallback_result = (|| -> Result<(), cadmpeg_core::CodecError> {
+                attach_standard_circles(
+                    &mut ir,
+                    &mut annotations,
+                    &face_bindings,
+                    &curve_supports,
+                    &mut admission,
+                )?;
+                attach_standard_lines(
+                    &mut ir,
+                    &mut annotations,
+                    &face_bindings,
+                    &curve_supports,
+                    &mut admission,
+                )?;
+                attach_free_vertices(&mut ir, &mut annotations, &mut admission)
+            })();
+            match fallback_result {
+                Ok(()) => {}
+                Err(error @ cadmpeg_core::CodecError::ResourceLimit(_)) => return Some(Err(error)),
+                Err(_) => return None,
+            }
+        }
+        let (bound_revolution_face_surface_count, resolved_revolution_seam_curve_count) =
+            match bind_consolidated_revolution_faces_and_seams(
+                ctx,
+                &mut ir,
+                &mut annotations,
+                &consolidated_revolutions,
+            ) {
+                Ok(bound) => bound,
+                Err(error @ cadmpeg_core::CodecError::ResourceLimit(_)) => return Some(Err(error)),
+                Err(_) => return None,
+            };
+        let mut consolidated_curve_bindings = match append_freeform_surface_pools(
+            &mut ir,
+            &mut annotations,
+            &scan.data,
+            &consolidated_records,
+            surface_alias_tags,
+            refusal,
+            &mut admission,
+        ) {
+            Ok(bindings) => bindings,
             Err(error @ cadmpeg_core::CodecError::ResourceLimit(_)) => return Some(Err(error)),
             Err(_) => return None,
-        }
-    }
-    let (bound_revolution_face_surface_count, resolved_revolution_seam_curve_count) =
-        match bind_consolidated_revolution_faces_and_seams(
+        };
+        let owner_binding_budget = WorkBudget::new(mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS);
+        consolidated_curve_bindings.standard_face_surfaces += match bind_standard_a5_owner_surfaces(
             ctx,
             &mut ir,
             &mut annotations,
-            &consolidated_revolutions,
+            StandardConsolidatedSource {
+                data: &scan.data,
+                records: &consolidated_records,
+            },
+            &face_bounds,
+            &owner_binding_budget,
+            refusal,
         ) {
             Ok(bound) => bound,
             Err(error @ cadmpeg_core::CodecError::ResourceLimit(_)) => return Some(Err(error)),
             Err(_) => return None,
         };
-    let mut consolidated_curve_bindings = match append_freeform_surface_pools(
-        &mut ir,
-        &mut annotations,
-        &scan.data,
-        &consolidated_records,
-        surface_alias_tags,
-        refusal,
-        &mut admission,
-    ) {
-        Ok(bindings) => bindings,
-        Err(error @ cadmpeg_core::CodecError::ResourceLimit(_)) => return Some(Err(error)),
-        Err(_) => return None,
-    };
-    let owner_binding_budget =
-        WorkBudget::new(mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS);
-    consolidated_curve_bindings.standard_face_surfaces += match bind_standard_a5_owner_surfaces(
-        ctx,
-        &mut ir,
-        &mut annotations,
-        StandardConsolidatedSource {
-            data: &scan.data,
-            records: &consolidated_records,
-        },
-        &face_bounds,
-        &owner_binding_budget,
-        refusal,
-    ) {
-        Ok(bound) => bound,
-        Err(error @ cadmpeg_core::CodecError::ResourceLimit(_)) => return Some(Err(error)),
-        Err(_) => return None,
-    };
-    if let Err(error) = link_payload_carriers(&ir, &mut unknowns[payload_index], &mut annotations) {
-        return Some(Err(error));
-    }
-    let annotations = annotations.build();
+        if let Err(error) =
+            link_payload_carriers(&ir, &mut unknowns[payload_index], &mut annotations)
+        {
+            return Some(Err(error));
+        }
+        let annotations = annotations.build();
 
-    let (Some(face_local_freeform), Some(unbound_revolution), Some(withheld_face_rows)) = (
-        unresolved_freeform_record_count
-            .checked_sub(bound_revolution_face_surface_count)
-            .and_then(|count| count.checked_sub(consolidated_curve_bindings.standard_face_surfaces)),
-        revolution_record_count.checked_sub(resolved_revolution_count),
-        scan.census.fbb_face_rows.checked_sub(face_count),
-    ) else {
-        return Some(Err(cadmpeg_core::CodecError::malformed(
-            "CATIA geometry report counts are inconsistent",
-        )));
-    };
+        let (Some(face_local_freeform), Some(unbound_revolution), Some(withheld_face_rows)) = (
+            unresolved_freeform_record_count
+                .checked_sub(bound_revolution_face_surface_count)
+                .and_then(|count| {
+                    count.checked_sub(consolidated_curve_bindings.standard_face_surfaces)
+                }),
+            revolution_record_count.checked_sub(resolved_revolution_count),
+            scan.census.fbb_face_rows.checked_sub(face_count),
+        ) else {
+            return Some(Err(cadmpeg_core::CodecError::malformed(
+                "CATIA geometry report counts are inconsistent",
+            )));
+        };
 
-    let mut report = build_geometry_report(&ir, scan, &typed, (plane_faces, analytic_record_count), &crate::assemble::GeometryReportCounts {
-            face_local_freeform,
-            unbound_revolution,
-            admitted_standard_face_rows: face_count,
-        }, topology_failure.map(StandardTopologyFailure::message));
-    if consolidated_curve_bindings.rechart_numeric_failures != 0 {
-        report.losses.push(CatiaLossCode::GeometryPcurveRechartNonFinite.note(format!(
-            "{} pcurve rechart attempts produced non-finite coordinates; native records remain retained",
-            consolidated_curve_bindings.rechart_numeric_failures,
-        )));
-    }
-    report.coverage.record(crate::coverage::ATTEMPTED_STANDARD_TOPOLOGY_COUNT, usize::from(true));
-    report.coverage.record(crate::coverage::STANDARD_FBB_RUN_COUNT, scan.census.fbb_runs);
-    report.coverage.record(crate::coverage::STANDARD_FBB_CANDIDATE_FACE_ROW_COUNT, scan.census.fbb_face_rows);
-    report.coverage.record(crate::coverage::STANDARD_FBB_ADMITTED_FACE_ROW_COUNT, face_count);
-    report.coverage.record(crate::coverage::STANDARD_FBB_WITHHELD_FACE_ROW_COUNT, withheld_face_rows);
-    report.coverage.record(crate::coverage::ATTACHED_STANDARD_TOPOLOGY_COUNT, usize::from(topology_attached));
-    for failure in StandardTopologyFailure::ALL {
-        report.coverage.record(failure.coverage_key(), usize::from(topology_failure == Some(failure)));
-    }
-    report.coverage.record(crate::coverage::STANDARD_TOPOLOGY_CURVE_SUPPORT_COUNT, topology_diagnostics.curve_supports);
-    report.coverage.record(crate::coverage::STANDARD_TOPOLOGY_NATIVE_ENDPOINT_PAIR_COUNT, topology_diagnostics.native_endpoint_pairs);
-    report.coverage.record(crate::coverage::STANDARD_TOPOLOGY_EMPTY_ENDPOINT_DOMAIN_COUNT, topology_diagnostics.empty_endpoint_domains);
-    report.coverage.record(crate::coverage::STANDARD_TOPOLOGY_SINGLETON_ENDPOINT_DOMAIN_COUNT, topology_diagnostics.singleton_endpoint_domains);
-    report.coverage.record(crate::coverage::STANDARD_TOPOLOGY_MULTIPLE_ENDPOINT_DOMAIN_COUNT, topology_diagnostics.multiple_endpoint_domains);
-    report.coverage.record(crate::coverage::STANDARD_TOPOLOGY_ENDPOINT_DOMAIN_CHOICE_COUNT, topology_diagnostics.endpoint_domain_choices);
-    for (key, rejection) in [
-        (
-            crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INPUT_STRUCTURE_COUNT,
-            mesh_quotient::MeshCandidateRejection::InputStructure,
-        ),
-        (
-            crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INPUT_CARDINALITY_COUNT,
-            mesh_quotient::MeshCandidateRejection::InputCardinality,
-        ),
-        (
-            crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_FACE_BOUNDARY_CARDINALITY_COUNT,
-            mesh_quotient::MeshCandidateRejection::FaceBoundaryCardinality,
-        ),
-        (
-            crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_PORT_CARDINALITY_COUNT,
-            mesh_quotient::MeshCandidateRejection::PortCardinality,
-        ),
-        (
-            crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_QUOTIENT_PREPARATION_COUNT,
-            mesh_quotient::MeshCandidateRejection::QuotientPreparation,
-        ),
-        (
-            crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_EDGE_CLASS_CONSTRAINT_COUNT,
-            mesh_quotient::MeshCandidateRejection::EdgeClassConstraint,
-        ),
-    ] {
-        report.coverage.record(key, usize::from(
-                topology_diagnostics.mesh_failure
-                    == Some(mesh_quotient::MeshCandidateFailure::Rejected(rejection)),
-            ));
-    }
-    let endpoint_incidence_rejection = match topology_diagnostics.mesh_failure {
-        Some(mesh_quotient::MeshCandidateFailure::Rejected(
-            mesh_quotient::MeshCandidateRejection::EndpointIncidence(rejection),
-        )) => Some(rejection),
-        _ => None,
-    };
-    report.coverage.record(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_COUNT, usize::from(endpoint_incidence_rejection.is_some()));
-    report.coverage.record(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_NO_ASSIGNMENT_COUNT, usize::from(matches!(
-            endpoint_incidence_rejection,
-            Some(mesh_quotient::MeshEndpointIncidenceRejection::NoAssignment(
-                _
-            ))
-        )));
-    report.coverage.record(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_BOUNDARY_RECONSTRUCTION_COUNT, usize::from(
-            endpoint_incidence_rejection
-                == Some(mesh_quotient::MeshEndpointIncidenceRejection::BoundaryReconstruction),
-        ));
-    let incidence_rejection = endpoint_incidence_rejection.and_then(|rejection| match rejection {
-        mesh_quotient::MeshEndpointIncidenceRejection::NoAssignment(rejection) => Some(rejection),
-        mesh_quotient::MeshEndpointIncidenceRejection::BoundaryReconstruction => None,
-    });
-    for (key, rejection) in [
-        (
-            crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_INPUT_SHAPE_COUNT,
-            crate::solve::incidence::IncidenceRejection::InputShape,
-        ),
-        (
-            crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_CHOICE_PRUNING_COUNT,
-            crate::solve::incidence::IncidenceRejection::ChoicePruning,
-        ),
-        (
-            crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_FIXED_ASSIGNMENT_COUNT,
-            crate::solve::incidence::IncidenceRejection::FixedAssignment,
-        ),
-        (
-            crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_COMPONENT_DOMAIN_COUNT,
-            crate::solve::incidence::IncidenceRejection::ComponentDomain,
-        ),
-        (
-            crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_COMPONENT_COMPOSITION_COUNT,
-            crate::solve::incidence::IncidenceRejection::ComponentComposition,
-        ),
-    ] {
+        let mut report = build_geometry_report(
+            &ir,
+            scan,
+            &typed,
+            (plane_faces, analytic_record_count),
+            &crate::assemble::GeometryReportCounts {
+                face_local_freeform,
+                unbound_revolution,
+                admitted_standard_face_rows: face_count,
+            },
+            topology_failure.map(StandardTopologyFailure::message),
+        );
+        if consolidated_curve_bindings.rechart_numeric_failures != 0 {
+            report
+                .losses
+                .push(CatiaLossCode::GeometryPcurveRechartNonFinite.note(format!(
+                    "{} pcurve rechart attempts produced non-finite coordinates; \
+             native records remain retained",
+                    consolidated_curve_bindings.rechart_numeric_failures,
+                )));
+        }
+        report.coverage.record(
+            coverage::ATTEMPTED_STANDARD_TOPOLOGY_COUNT,
+            usize::from(true),
+        );
         report
             .coverage
-            .record(key, usize::from(incidence_rejection == Some(rejection)));
-    }
-    for (key, ambiguity) in [
-        (
-            crate::coverage::STANDARD_TOPOLOGY_MESH_AMBIGUITY_COORDINATE_ROOT_CLOSURE_COUNT,
-            mesh_quotient::MeshCandidateAmbiguity::CoordinateRootClosure,
-        ),
-        (
-            crate::coverage::STANDARD_TOPOLOGY_MESH_AMBIGUITY_ENDPOINT_RESOLUTION_COUNT,
-            mesh_quotient::MeshCandidateAmbiguity::EndpointResolution,
-        ),
-        (
-            crate::coverage::STANDARD_TOPOLOGY_MESH_AMBIGUITY_DISTINCT_TOPOLOGY_SOLUTIONS_COUNT,
-            mesh_quotient::MeshCandidateAmbiguity::DistinctTopologySolutions,
-        ),
-    ] {
-        report.coverage.record(key, usize::from(
-                topology_diagnostics.mesh_failure
-                    == Some(mesh_quotient::MeshCandidateFailure::Ambiguous(ambiguity)),
-            ));
-    }
-    report.coverage.record(crate::coverage::STANDARD_TOPOLOGY_MESH_EXHAUSTION_QUOTIENT_PREPARATION_COUNT, 0);
-    for (key, exhaustion) in [
-        (
-            crate::coverage::STANDARD_TOPOLOGY_MESH_EXHAUSTION_INCIDENCE_ENUMERATION_COUNT,
-            mesh_quotient::MeshCandidateExhaustion::IncidenceEnumeration,
-        ),
-        (
-            crate::coverage::STANDARD_TOPOLOGY_MESH_EXHAUSTION_ENDPOINT_RESOLUTION_COUNT,
-            mesh_quotient::MeshCandidateExhaustion::EndpointResolution,
-        ),
-    ] {
-        report.coverage.record(key, usize::from(
-                topology_diagnostics.mesh_failure
-                    == Some(mesh_quotient::MeshCandidateFailure::Exhausted(exhaustion)),
-            ));
-    }
-    report.coverage.record(crate::coverage::REFINED_CONSOLIDATED_ANALYTIC_SURFACE_COUNT, refined_analytic_surfaces.len());
-    report.coverage.record(crate::coverage::DECODED_STANDARD_LIMIT_CURVE_COUNT, standard_limit_curve_count);
-    report.coverage.record(crate::coverage::BOUND_STANDARD_LIMIT_CURVE_COUNT, bound_standard_limit_curve_count);
-    report.coverage.record(crate::coverage::BOUND_CONSOLIDATED_REVOLUTION_FACE_SURFACE_COUNT, bound_revolution_face_surface_count);
-    report.coverage.record(crate::coverage::RESOLVED_CONSOLIDATED_REVOLUTION_SEAM_CURVE_COUNT, resolved_revolution_seam_curve_count);
-    report.coverage.record(crate::coverage::BOUND_CONSOLIDATED_STANDARD_EDGE_COUNT, consolidated_curve_bindings.standard_edges);
-    report.coverage.record(crate::coverage::BOUND_CONSOLIDATED_PARTNER_SUPPORT_COUNT, consolidated_curve_bindings.partner_supports);
-    report.coverage.record(crate::coverage::BOUND_CONSOLIDATED_PARTNER_FACE_PCURVE_PAIR_COUNT, consolidated_curve_bindings.partner_face_pcurve_pairs);
-    report.coverage.record(crate::coverage::BOUND_CONSOLIDATED_STANDARD_FACE_SURFACE_COUNT, consolidated_curve_bindings.standard_face_surfaces);
-    report.coverage.record(crate::coverage::BOUND_CONSOLIDATED_STANDARD_FACE_PCURVE_COUNT, consolidated_curve_bindings.standard_face_pcurves);
-    Some(Ok(FamilyOutput {
-        ir,
-        report,
-        annotations,
-        unknowns,
-        admitted_model_entities: admission.admitted(),
-    }))
+            .record(coverage::STANDARD_FBB_RUN_COUNT, scan.census.fbb_runs);
+        report.coverage.record(
+            coverage::STANDARD_FBB_CANDIDATE_FACE_ROW_COUNT,
+            scan.census.fbb_face_rows,
+        );
+        report
+            .coverage
+            .record(coverage::STANDARD_FBB_ADMITTED_FACE_ROW_COUNT, face_count);
+        report.coverage.record(
+            coverage::STANDARD_FBB_WITHHELD_FACE_ROW_COUNT,
+            withheld_face_rows,
+        );
+        report.coverage.record(
+            coverage::ATTACHED_STANDARD_TOPOLOGY_COUNT,
+            usize::from(topology_attached),
+        );
+        for failure in StandardTopologyFailure::ALL {
+            report.coverage.record(
+                failure.coverage_key(),
+                usize::from(topology_failure == Some(failure)),
+            );
+        }
+        report.coverage.record(
+            coverage::STANDARD_TOPOLOGY_CURVE_SUPPORT_COUNT,
+            topology_diagnostics.curve_supports,
+        );
+        report.coverage.record(
+            coverage::STANDARD_TOPOLOGY_NATIVE_ENDPOINT_PAIR_COUNT,
+            topology_diagnostics.native_endpoint_pairs,
+        );
+        report.coverage.record(
+            coverage::STANDARD_TOPOLOGY_EMPTY_ENDPOINT_DOMAIN_COUNT,
+            topology_diagnostics.empty_endpoint_domains,
+        );
+        report.coverage.record(
+            coverage::STANDARD_TOPOLOGY_SINGLETON_ENDPOINT_DOMAIN_COUNT,
+            topology_diagnostics.singleton_endpoint_domains,
+        );
+        report.coverage.record(
+            coverage::STANDARD_TOPOLOGY_MULTIPLE_ENDPOINT_DOMAIN_COUNT,
+            topology_diagnostics.multiple_endpoint_domains,
+        );
+        report.coverage.record(
+            coverage::STANDARD_TOPOLOGY_ENDPOINT_DOMAIN_CHOICE_COUNT,
+            topology_diagnostics.endpoint_domain_choices,
+        );
+        for (key, rejection) in [
+            (
+                coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INPUT_STRUCTURE_COUNT,
+                mesh_quotient::MeshCandidateRejection::InputStructure,
+            ),
+            (
+                coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INPUT_CARDINALITY_COUNT,
+                mesh_quotient::MeshCandidateRejection::InputCardinality,
+            ),
+            (
+                coverage::STANDARD_TOPOLOGY_MESH_REJECTION_FACE_BOUNDARY_CARDINALITY_COUNT,
+                mesh_quotient::MeshCandidateRejection::FaceBoundaryCardinality,
+            ),
+            (
+                coverage::STANDARD_TOPOLOGY_MESH_REJECTION_PORT_CARDINALITY_COUNT,
+                mesh_quotient::MeshCandidateRejection::PortCardinality,
+            ),
+            (
+                coverage::STANDARD_TOPOLOGY_MESH_REJECTION_QUOTIENT_PREPARATION_COUNT,
+                mesh_quotient::MeshCandidateRejection::QuotientPreparation,
+            ),
+            (
+                coverage::STANDARD_TOPOLOGY_MESH_REJECTION_EDGE_CLASS_CONSTRAINT_COUNT,
+                mesh_quotient::MeshCandidateRejection::EdgeClassConstraint,
+            ),
+        ] {
+            report.coverage.record(
+                key,
+                usize::from(
+                    topology_diagnostics.mesh_failure
+                        == Some(mesh_quotient::MeshCandidateFailure::Rejected(rejection)),
+                ),
+            );
+        }
+        let endpoint_incidence_rejection = match topology_diagnostics.mesh_failure {
+            Some(mesh_quotient::MeshCandidateFailure::Rejected(
+                mesh_quotient::MeshCandidateRejection::EndpointIncidence(rejection),
+            )) => Some(rejection),
+            _ => None,
+        };
+        report.coverage.record(
+            coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_COUNT,
+            usize::from(endpoint_incidence_rejection.is_some()),
+        );
+        report.coverage.record(
+            coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_NO_ASSIGNMENT_COUNT,
+            usize::from(matches!(
+                endpoint_incidence_rejection,
+                Some(mesh_quotient::MeshEndpointIncidenceRejection::NoAssignment(
+                    _
+                ))
+            )),
+        );
+        report.coverage.record(
+            STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_BOUNDARY_RECONSTRUCTION_COUNT,
+            usize::from(
+                endpoint_incidence_rejection
+                    == Some(mesh_quotient::MeshEndpointIncidenceRejection::BoundaryReconstruction),
+            ),
+        );
+        let incidence_rejection =
+            endpoint_incidence_rejection.and_then(|rejection| match rejection {
+                mesh_quotient::MeshEndpointIncidenceRejection::NoAssignment(rejection) => {
+                    Some(rejection)
+                }
+                mesh_quotient::MeshEndpointIncidenceRejection::BoundaryReconstruction => None,
+            });
+        for (key, rejection) in [
+            (
+                coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_INPUT_SHAPE_COUNT,
+                crate::solve::incidence::IncidenceRejection::InputShape,
+            ),
+            (
+                coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_CHOICE_PRUNING_COUNT,
+                crate::solve::incidence::IncidenceRejection::ChoicePruning,
+            ),
+            (
+                coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_FIXED_ASSIGNMENT_COUNT,
+                crate::solve::incidence::IncidenceRejection::FixedAssignment,
+            ),
+            (
+                coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_COMPONENT_DOMAIN_COUNT,
+                crate::solve::incidence::IncidenceRejection::ComponentDomain,
+            ),
+            (
+                coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_COMPONENT_COMPOSITION_COUNT,
+                crate::solve::incidence::IncidenceRejection::ComponentComposition,
+            ),
+        ] {
+            report
+                .coverage
+                .record(key, usize::from(incidence_rejection == Some(rejection)));
+        }
+        for (key, ambiguity) in [
+            (
+                coverage::STANDARD_TOPOLOGY_MESH_AMBIGUITY_COORDINATE_ROOT_CLOSURE_COUNT,
+                mesh_quotient::MeshCandidateAmbiguity::CoordinateRootClosure,
+            ),
+            (
+                coverage::STANDARD_TOPOLOGY_MESH_AMBIGUITY_ENDPOINT_RESOLUTION_COUNT,
+                mesh_quotient::MeshCandidateAmbiguity::EndpointResolution,
+            ),
+            (
+                coverage::STANDARD_TOPOLOGY_MESH_AMBIGUITY_DISTINCT_TOPOLOGY_SOLUTIONS_COUNT,
+                mesh_quotient::MeshCandidateAmbiguity::DistinctTopologySolutions,
+            ),
+        ] {
+            report.coverage.record(
+                key,
+                usize::from(
+                    topology_diagnostics.mesh_failure
+                        == Some(mesh_quotient::MeshCandidateFailure::Ambiguous(ambiguity)),
+                ),
+            );
+        }
+        report.coverage.record(
+            coverage::STANDARD_TOPOLOGY_MESH_EXHAUSTION_QUOTIENT_PREPARATION_COUNT,
+            0,
+        );
+        for (key, exhaustion) in [
+            (
+                coverage::STANDARD_TOPOLOGY_MESH_EXHAUSTION_INCIDENCE_ENUMERATION_COUNT,
+                mesh_quotient::MeshCandidateExhaustion::IncidenceEnumeration,
+            ),
+            (
+                coverage::STANDARD_TOPOLOGY_MESH_EXHAUSTION_ENDPOINT_RESOLUTION_COUNT,
+                mesh_quotient::MeshCandidateExhaustion::EndpointResolution,
+            ),
+        ] {
+            report.coverage.record(
+                key,
+                usize::from(
+                    topology_diagnostics.mesh_failure
+                        == Some(mesh_quotient::MeshCandidateFailure::Exhausted(exhaustion)),
+                ),
+            );
+        }
+        report.coverage.record(
+            coverage::REFINED_CONSOLIDATED_ANALYTIC_SURFACE_COUNT,
+            refined_analytic_surfaces.len(),
+        );
+        report.coverage.record(
+            coverage::DECODED_STANDARD_LIMIT_CURVE_COUNT,
+            standard_limit_curve_count,
+        );
+        report.coverage.record(
+            coverage::BOUND_STANDARD_LIMIT_CURVE_COUNT,
+            bound_standard_limit_curve_count,
+        );
+        report.coverage.record(
+            coverage::BOUND_CONSOLIDATED_REVOLUTION_FACE_SURFACE_COUNT,
+            bound_revolution_face_surface_count,
+        );
+        report.coverage.record(
+            coverage::RESOLVED_CONSOLIDATED_REVOLUTION_SEAM_CURVE_COUNT,
+            resolved_revolution_seam_curve_count,
+        );
+        report.coverage.record(
+            coverage::BOUND_CONSOLIDATED_STANDARD_EDGE_COUNT,
+            consolidated_curve_bindings.standard_edges,
+        );
+        report.coverage.record(
+            coverage::BOUND_CONSOLIDATED_PARTNER_SUPPORT_COUNT,
+            consolidated_curve_bindings.partner_supports,
+        );
+        report.coverage.record(
+            coverage::BOUND_CONSOLIDATED_PARTNER_FACE_PCURVE_PAIR_COUNT,
+            consolidated_curve_bindings.partner_face_pcurve_pairs,
+        );
+        report.coverage.record(
+            coverage::BOUND_CONSOLIDATED_STANDARD_FACE_SURFACE_COUNT,
+            consolidated_curve_bindings.standard_face_surfaces,
+        );
+        report.coverage.record(
+            coverage::BOUND_CONSOLIDATED_STANDARD_FACE_PCURVE_COUNT,
+            consolidated_curve_bindings.standard_face_pcurves,
+        );
+        Some(Ok(FamilyOutput {
+            ir,
+            report,
+            annotations,
+            unknowns,
+            admitted_model_entities: admission.admitted(),
+        }))
     })()
     .transpose()
 }
@@ -2976,38 +3265,34 @@ impl StandardTopologyFailure {
 
     const fn coverage_key(self) -> cadmpeg_ir::report::decode::CoverageKey {
         match self {
-            Self::NoCurveSupports => {
-                crate::coverage::STANDARD_TOPOLOGY_FAILURE_NO_CURVE_SUPPORTS_COUNT
-            }
+            Self::NoCurveSupports => coverage::STANDARD_TOPOLOGY_FAILURE_NO_CURVE_SUPPORTS_COUNT,
             Self::EdgeFaceAssignment => {
-                crate::coverage::STANDARD_TOPOLOGY_FAILURE_EDGE_FACE_ASSIGNMENT_COUNT
+                coverage::STANDARD_TOPOLOGY_FAILURE_EDGE_FACE_ASSIGNMENT_COUNT
             }
             Self::MissingFaceSurface => {
-                crate::coverage::STANDARD_TOPOLOGY_FAILURE_MISSING_FACE_SURFACE_COUNT
+                coverage::STANDARD_TOPOLOGY_FAILURE_MISSING_FACE_SURFACE_COUNT
             }
             Self::ConflictingNativeEndpoints => {
-                crate::coverage::STANDARD_TOPOLOGY_FAILURE_CONFLICTING_NATIVE_ENDPOINTS_COUNT
+                coverage::STANDARD_TOPOLOGY_FAILURE_CONFLICTING_NATIVE_ENDPOINTS_COUNT
             }
             Self::NativeEndpointPropagation => {
-                crate::coverage::STANDARD_TOPOLOGY_FAILURE_NATIVE_ENDPOINT_PROPAGATION_COUNT
+                coverage::STANDARD_TOPOLOGY_FAILURE_NATIVE_ENDPOINT_PROPAGATION_COUNT
             }
             Self::EmptyEndpointDomain => {
-                crate::coverage::STANDARD_TOPOLOGY_FAILURE_EMPTY_ENDPOINT_DOMAIN_COUNT
+                coverage::STANDARD_TOPOLOGY_FAILURE_EMPTY_ENDPOINT_DOMAIN_COUNT
             }
-            Self::NoTopologySolution => {
-                crate::coverage::STANDARD_TOPOLOGY_FAILURE_NO_SOLUTION_COUNT
-            }
+            Self::NoTopologySolution => coverage::STANDARD_TOPOLOGY_FAILURE_NO_SOLUTION_COUNT,
             Self::AmbiguousTopologySolution => {
-                crate::coverage::STANDARD_TOPOLOGY_FAILURE_AMBIGUOUS_SOLUTION_COUNT
+                coverage::STANDARD_TOPOLOGY_FAILURE_AMBIGUOUS_SOLUTION_COUNT
             }
             Self::TopologySearchExhausted => {
-                crate::coverage::STANDARD_TOPOLOGY_FAILURE_SEARCH_EXHAUSTED_COUNT
+                coverage::STANDARD_TOPOLOGY_FAILURE_SEARCH_EXHAUSTED_COUNT
             }
             Self::InvalidTopologySolution => {
-                crate::coverage::STANDARD_TOPOLOGY_FAILURE_INVALID_SOLUTION_COUNT
+                coverage::STANDARD_TOPOLOGY_FAILURE_INVALID_SOLUTION_COUNT
             }
             Self::InadmissibleNeutralModel => {
-                crate::coverage::STANDARD_TOPOLOGY_FAILURE_INADMISSIBLE_MODEL_COUNT
+                coverage::STANDARD_TOPOLOGY_FAILURE_INADMISSIBLE_MODEL_COUNT
             }
         }
     }
@@ -3083,7 +3368,7 @@ pub(super) enum StandardSurfaceProcedure {
     Offset {
         carrier_object_id: u32,
         support_object_id: u32,
-        support: crate::families::b5::transfer::ResolvedOffsetSupport,
+        support: ResolvedOffsetSupport,
         distance: FiniteReal,
         parameter_bounds: [cadmpeg_ir::topology::IncreasingParameterInterval; 2],
     },
@@ -3110,13 +3395,12 @@ enum StandardSupportLocation {
 }
 
 enum StandardSupportRef<'a> {
-    Offset(&'a crate::families::b5::transfer::ResolvedOffsetSupport),
+    Offset(&'a ResolvedOffsetSupport),
     Geometry(&'a SurfaceGeometry),
 }
 
 impl StandardSupportRef<'_> {
     fn equivalent(&self, other: &Self) -> bool {
-        use crate::families::b5::transfer::ResolvedOffsetSupport;
         match (self, other) {
             (Self::Offset(left), Self::Offset(right)) => *left == *right,
             (Self::Geometry(left), Self::Geometry(right)) => *left == *right,
@@ -3963,7 +4247,7 @@ fn partition_standard_face_components(
 pub(super) fn apply_standard_native_edge_faces(
     edge_faces: &mut [[usize; 2]],
     supports: &[crate::families::standard::records::StandardCurveSupport],
-    records: &[crate::families::standard::records::StandardSurfaceRecord],
+    records: &[StandardSurfaceRecord],
     native_edge_faces: &HashMap<u32, HashSet<u32>>,
 ) {
     if edge_faces.len() != supports.len() {
@@ -3972,10 +4256,8 @@ pub(super) fn apply_standard_native_edge_faces(
     let mut face_by_carrier = HashMap::<u32, Option<usize>>::new();
     for (face, record) in records.iter().enumerate() {
         let carrier = match record {
-            crate::families::standard::records::StandardSurfaceRecord::Analytic(prefix) => {
-                prefix.target
-            }
-            crate::families::standard::records::StandardSurfaceRecord::Freeform { tag, .. } => *tag,
+            StandardSurfaceRecord::Analytic(prefix) => prefix.target,
+            StandardSurfaceRecord::Freeform { tag, .. } => *tag,
         };
         if let Some(stored) = face_by_carrier.get_mut(&carrier) {
             *stored = None;
@@ -4408,7 +4690,7 @@ struct AttachStandardTopologyInputs<
     ir: &'input0 mut CadIr,
     annotations: &'input1 mut AnnotationBuilder<AnnotationAccount>,
     bindings: &'input2 [(SurfaceId, bool, usize)],
-    records: &'input3 [crate::families::standard::records::StandardSurfaceRecord],
+    records: &'input3 [StandardSurfaceRecord],
     face_bounds: &'input4 [Option<crate::families::standard::records::StandardFaceBounds>],
     spine: &'input5 [u8],
     edge_table_form: EdgeTableForm,
@@ -7282,13 +7564,12 @@ fn same_cone_generator_pair(
 /// stored normal's signed sense. A target with conflicting frame vectors stays
 /// unresolved.
 fn standard_plane_normals_from_face_frames(
-    records: &[crate::families::standard::records::StandardSurfaceRecord],
+    records: &[StandardSurfaceRecord],
     face_frame_vectors: &[Option<FiniteVector<3>>],
 ) -> HashMap<u32, FiniteVector<3>> {
     let mut candidates = HashMap::<u32, Option<FiniteVector<3>>>::new();
     for (face, record) in records.iter().enumerate() {
-        let crate::families::standard::records::StandardSurfaceRecord::Analytic(prefix) = record
-        else {
+        let StandardSurfaceRecord::Analytic(prefix) = record else {
             continue;
         };
         if prefix.kind != AnalyticSurfaceKind::Plane {
