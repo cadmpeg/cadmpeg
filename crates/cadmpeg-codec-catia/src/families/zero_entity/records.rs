@@ -3749,6 +3749,3 @@ mod tests {
         assert!(face.loops.is_none());
     }
 }
-
-#[cfg(test)]
-mod knot_work_tests {}

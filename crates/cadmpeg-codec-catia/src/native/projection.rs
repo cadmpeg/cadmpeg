@@ -1048,6 +1048,3 @@ impl CatiaOuterContainerBinding {
         }
     }
 }
-
-#[cfg(test)]
-mod consolidated_edge_run_limit_tests {}

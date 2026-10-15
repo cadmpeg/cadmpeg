@@ -29,20 +29,6 @@ fn parsed_b2_nurbs_curves(data: &[u8]) -> Vec<crate::families::b2::records::B2Nu
     })
 }
 
-fn parsed_owner_identity_targets(
-    data: &[u8],
-    records: &[crate::wire::records::ConsolidatedRecord],
-) -> Vec<crate::families::b2::records::B2OwnerIdentityTarget> {
-    super::b2_owner_identity_targets_from_records(data, records)
-}
-
-fn parsed_owner_charts(
-    data: &[u8],
-    records: &[crate::wire::records::ConsolidatedRecord],
-) -> Vec<crate::families::b2::records::B2OwnerChart> {
-    super::b2_owner_charts_from_records(data, records)
-}
-
 #[test]
 fn b_family_pcurve_parser_reads_six_channel_uv_jet() {
     let pcurves = crate::families::b2::records::b2_pcurves(&b2_pcurve_stream());
@@ -332,7 +318,7 @@ fn b2_owner_packet_parser_rejects_invalid_numeric_tail_framing() {
 fn fixed_owner_backward_identities_resolve_in_the_local_allocation_sequence() {
     let (mut bytes, target_positions, owner_pos) = b2_width_coded_owner_with_allocation_stream();
     let records = crate::wire::records::consolidated_records(&bytes);
-    let targets = parsed_owner_identity_targets(&bytes, &records);
+    let targets = super::b2_owner_identity_targets_from_records(&bytes, &records);
 
     assert_eq!(
         targets
@@ -367,11 +353,11 @@ fn fixed_owner_backward_identities_resolve_in_the_local_allocation_sequence() {
         panic!("one source-scoped owner packet")
     };
     assert_eq!(packet.source_index, 1);
-    assert!(parsed_owner_identity_targets(&bytes, &records).is_empty());
+    assert!(super::b2_owner_identity_targets_from_records(&bytes, &records).is_empty());
 
     bytes.insert(owner_pos, 0x00);
     let records = crate::wire::records::consolidated_records(&bytes);
-    assert!(parsed_owner_identity_targets(&bytes, &records).is_empty());
+    assert!(super::b2_owner_identity_targets_from_records(&bytes, &records).is_empty());
 }
 
 #[test]
@@ -380,7 +366,7 @@ fn fixed_owner_backward_identities_do_not_cross_group_separator() {
     bytes.splice(owner_pos..owner_pos, b2_group_stream());
     let records = crate::wire::records::consolidated_records(&bytes);
 
-    assert!(parsed_owner_identity_targets(&bytes, &records).is_empty());
+    assert!(super::b2_owner_identity_targets_from_records(&bytes, &records).is_empty());
 }
 
 #[test]
@@ -452,7 +438,7 @@ fn owner_chart_requires_exact_source_closed_selector_rectangle() {
     ] {
         let bytes = b2_owner_chart_stream(carrier_class);
         let records = crate::wire::records::consolidated_records(&bytes);
-        let [chart] = parsed_owner_charts(&bytes, &records)
+        let [chart] = super::b2_owner_charts_from_records(&bytes, &records)
             .try_into()
             .unwrap_or_else(|charts: Vec<_>| {
                 panic!("one class-{carrier_class:02x} owner chart, got {charts:?}")
@@ -521,7 +507,7 @@ fn owner_chart_requires_exact_source_closed_selector_rectangle() {
                 std::iter::once(owner_pos..bytes.len()),
             ],
         );
-        assert!(parsed_owner_charts(&bytes, &records).is_empty());
+        assert!(super::b2_owner_charts_from_records(&bytes, &records).is_empty());
     }
 }
 
@@ -544,7 +530,7 @@ fn owner_chart_applies_to_width_coded_identity_dialect() {
         assert_eq!(packets[0].references, [278, 1, 276, 2, 277, 3, 199, 4, 279]);
 
         let records = crate::wire::records::consolidated_records(&bytes);
-        let [chart] = parsed_owner_charts(&bytes, &records)
+        let [chart] = super::b2_owner_charts_from_records(&bytes, &records)
             .try_into()
             .unwrap_or_else(|charts: Vec<_>| {
                 panic!("one width-coded class-{carrier_class:02x} owner chart, got {charts:?}")
@@ -570,7 +556,7 @@ fn owner_chart_admits_the_scalar_free_eight_reference_bridge() {
 
     let bytes = b2_owner_chart_stream_with_extended_bridge();
     let records = crate::wire::records::consolidated_records(&bytes);
-    let [chart] = parsed_owner_charts(&bytes, &records)
+    let [chart] = super::b2_owner_charts_from_records(&bytes, &records)
         .try_into()
         .unwrap_or_else(|charts: Vec<_>| panic!("one extended owner chart, got {charts:?}"));
     let B2OwnerChartBridge::Extended { references, .. } = chart.bridge else {
@@ -610,18 +596,18 @@ fn owner_chart_rejects_selector_order_bound_mismatch_and_unframed_gap() {
     let mut wrong_selector = valid.clone();
     wrong_selector[side_05.payload().unwrap().start] = 0x09;
     let records = crate::wire::records::consolidated_records(&wrong_selector);
-    assert!(parsed_owner_charts(&wrong_selector, &records).is_empty());
+    assert!(super::b2_owner_charts_from_records(&wrong_selector, &records).is_empty());
 
     let mut wrong_bound = valid.clone();
     wrong_bound[side_05.payload().unwrap().start + 2..side_05.payload().unwrap().start + 10]
         .copy_from_slice(&8.0f64.to_le_bytes());
     let records = crate::wire::records::consolidated_records(&wrong_bound);
-    assert!(parsed_owner_charts(&wrong_bound, &records).is_empty());
+    assert!(super::b2_owner_charts_from_records(&wrong_bound, &records).is_empty());
 
     let mut separated = valid;
     separated.insert(side_05.byte_offset(), 0x00);
     let records = crate::wire::records::consolidated_records(&separated);
-    assert!(parsed_owner_charts(&separated, &records).is_empty());
+    assert!(super::b2_owner_charts_from_records(&separated, &records).is_empty());
 }
 
 #[test]
@@ -706,10 +692,9 @@ fn b2_class5b5c_parser_retains_bounded_source_coordinates() {
             std::iter::once(split..bytes.len()),
         ],
     );
-    let controls = {
+    let controls =
         crate::families::b2::records::b2_class5b5c_records_from_records(&bytes, &records)
-            .expect("service decode")
-    };
+            .expect("service decode");
     assert_eq!(
         controls
             .iter()
@@ -858,7 +843,7 @@ fn b2_counted_owner_maps_mixed_tokens_to_local_edge_ordinals() {
 
 #[test]
 fn b2_cone_face_parser_reads_program_scale_and_half_angle() {
-    let records = { crate::families::b2::records::b2_cone_faces(&b2_cone_face_stream()) };
+    let records = crate::families::b2::records::b2_cone_faces(&b2_cone_face_stream());
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].program.len(), 16);
     assert_eq!(records[0].angular_scale, finite(1.5));
@@ -884,7 +869,7 @@ fn b2_cone_face_parser_reads_a_complete_nested_frame() {
     );
     bytes.push(0x05);
     bytes.extend(nested);
-    let records = { crate::families::b2::records::b2_cone_faces(&bytes) };
+    let records = crate::families::b2::records::b2_cone_faces(&bytes);
     let [record] = records.as_slice() else {
         panic!("one nested cone-face chart")
     };

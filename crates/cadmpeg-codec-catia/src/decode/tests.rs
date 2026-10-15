@@ -35,13 +35,6 @@ fn graph(id: &str, stream_name: &str, class_name: &str) -> CatiaObjectGraph {
     }
 }
 
-fn service_modeling_scope(
-    has_outer_declarations: bool,
-    graphs: &[CatiaObjectGraph],
-) -> super::ModelingGraphScope {
-    modeling_graph_scope(has_outer_declarations, graphs)
-}
-
 #[test]
 fn modeling_scope_includes_only_the_declared_part_graph() {
     let graphs = vec![
@@ -52,7 +45,7 @@ fn modeling_scope_includes_only_the_declared_part_graph() {
     ];
 
     assert_eq!(
-        service_modeling_scope(true, &graphs),
+        modeling_graph_scope(true, &graphs),
         super::ModelingGraphScope::Scoped("part-graph".to_string())
     );
 }
@@ -65,7 +58,7 @@ fn modeling_scope_does_not_promote_application_extension_graphs() {
     ];
 
     assert_eq!(
-        service_modeling_scope(true, &graphs),
+        modeling_graph_scope(true, &graphs),
         super::ModelingGraphScope::Unresolved
     );
 }
@@ -78,7 +71,7 @@ fn modeling_scope_rejects_multiple_graphs_in_one_part_stream() {
     ];
 
     assert_eq!(
-        service_modeling_scope(true, &graphs),
+        modeling_graph_scope(true, &graphs),
         super::ModelingGraphScope::Unresolved
     );
 }
@@ -91,7 +84,7 @@ fn modeling_scope_rejects_multiple_declared_part_graphs() {
     ];
 
     assert_eq!(
-        service_modeling_scope(true, &graphs),
+        modeling_graph_scope(true, &graphs),
         super::ModelingGraphScope::Unresolved
     );
 }
@@ -101,7 +94,7 @@ fn modeling_scope_without_outer_declarations_remains_unbounded() {
     let graphs = vec![graph("fragment-graph", "part", "CATPrtCont")];
 
     assert_eq!(
-        service_modeling_scope(false, &graphs),
+        modeling_graph_scope(false, &graphs),
         super::ModelingGraphScope::Unscoped
     );
 }

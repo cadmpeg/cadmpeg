@@ -47,9 +47,7 @@ fn inline_bytes_retained_limit_refuses_json_record() {
 }
 use crate::test_support::test_object_graph::{catalog_stream, value_block_stream};
 
-fn parse(bytes: &[u8]) -> Vec<ValueBlock> {
-    super::parse(bytes)
-}
+use super::parse;
 
 #[test]
 fn typed_payloads_hide_embedded_schema_marker_bytes() {

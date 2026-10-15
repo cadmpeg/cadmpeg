@@ -1578,6 +1578,3 @@ pub(super) fn close_coordinate_roots_with_incidence(
     }
     quotient.point_assignment(ctx, point_count, edge_candidates, None)
 }
-
-#[cfg(test)]
-mod tests {}

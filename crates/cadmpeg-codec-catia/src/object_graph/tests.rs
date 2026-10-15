@@ -72,28 +72,15 @@ use crate::test_support::test_object_graph::{
     sequential_entity_backed_object_graph, value_block_stream,
 };
 
-fn parse(data: &[u8]) -> Option<super::ObjectGraph> {
-    super::parse(data)
-}
+use super::parse;
 
-fn parse_all(data: &[u8]) -> Vec<super::ObjectGraph> {
-    super::parse_all(data)
-}
+use super::parse_all;
 
-fn parse_all_with_paired_roots(
-    data: &[u8],
-    paired_roots: &std::collections::HashMap<usize, usize>,
-) -> Vec<super::ObjectGraph> {
-    super::parse_all_with_paired_roots(data, paired_roots)
-}
+use super::parse_all_with_paired_roots;
 
-fn surface_aliases(data: &[u8]) -> Vec<super::SurfaceAlias> {
-    super::surface_aliases(data)
-}
+use super::surface_aliases;
 
-fn decode_payload(data: &[u8]) -> Option<super::ObjectPayload> {
-    super::decode_payload(data)
-}
+use super::decode_payload;
 
 fn owner_ref(record: &ObjectRecord) -> Option<u32> {
     match record.roles().owner {

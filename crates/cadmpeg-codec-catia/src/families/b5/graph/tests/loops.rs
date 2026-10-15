@@ -17,14 +17,7 @@ use crate::families::b5::tests::test_loop_metadata;
 use cadmpeg_ir::geometry::{nurbs::NurbsSurface, ProceduralSurfaceDefinition};
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-fn parse_face(
-    record: &B5FaceRecord,
-    loops: &BTreeMap<u32, B5Loop>,
-    surfaces: &BTreeMap<u32, B5Surface>,
-    aliases: &BTreeMap<u32, u32>,
-) -> Option<super::super::B5Face> {
-    super::super::parse_face(record, loops, surfaces, aliases)
-}
+use super::super::parse_face;
 
 fn evaluate_pcurve(pcurve: &B5Pcurve, parameter: f64) -> Option<[f64; 2]> {
     crate::test_support::with_service_context(|ctx| {
@@ -33,9 +26,7 @@ fn evaluate_pcurve(pcurve: &B5Pcurve, parameter: f64) -> Option<[f64; 2]> {
     .expect("service budget")
 }
 
-fn pcurve_nurbs_knots(pcurve: &B5Pcurve) -> Option<Vec<cadmpeg_ir::scalar::FiniteReal>> {
-    super::super::pcurve_nurbs_knots(pcurve)
-}
+use super::super::pcurve_nurbs_knots;
 
 fn pcurve_endpoints(
     pcurve_id: u32,
@@ -104,14 +95,7 @@ fn merge_pcurve_candidate(
     super::super::merge_pcurve_candidate(pcurves, conflicts, candidate);
 }
 
-fn merge_surface_candidate(
-    surfaces: &mut BTreeMap<u32, B5Surface>,
-    conflicts: &mut HashSet<u32>,
-    object_id: u32,
-    candidate: B5Surface,
-) -> bool {
-    super::super::merge_surface_candidate(surfaces, conflicts, object_id, candidate)
-}
+use super::super::merge_surface_candidate;
 
 fn resolve_surface_aliases(
     records: &[B5Record],
@@ -149,10 +133,6 @@ fn resolve_targeted_surface(
     .expect("service budget")
 }
 
-fn loop_metadata(bytes: &[u8], edge_count: usize) -> Option<(B5LoopMetadata, Vec<[i16; 3]>)> {
-    parse_loop_metadata(bytes, edge_count)
-}
-
 #[test]
 fn loop_metadata_accepts_exact_base_and_extended_forms() {
     let base = [
@@ -160,7 +140,7 @@ fn loop_metadata_accepts_exact_base_and_extended_forms() {
         0x01,
     ];
     assert_eq!(
-        loop_metadata(&base, 2),
+        parse_loop_metadata(&base, 2),
         Some((
             B5LoopMetadata {
                 framing_controls: [B5FramingControl::Control05; 2],
@@ -173,7 +153,7 @@ fn loop_metadata_accepts_exact_base_and_extended_forms() {
     for metadata_control in [0x05, 0x09, 0x21, 0x41, 0x71] {
         let extended = extended_loop_metadata(metadata_control);
         let (metadata, edge_controls) =
-            loop_metadata(&extended, 1).expect("complete extended metadata");
+            parse_loop_metadata(&extended, 1).expect("complete extended metadata");
         assert_eq!(
             metadata.framing_controls.map(B5FramingControl::as_byte),
             [0x03, 0x05]
@@ -199,7 +179,7 @@ fn loop_metadata_accepts_exact_base_and_extended_forms() {
         0x01,
     ];
     let (metadata, edge_controls) =
-        loop_metadata(&alternate_framing_control, 2).expect("alternate framing control");
+        parse_loop_metadata(&alternate_framing_control, 2).expect("alternate framing control");
     assert_eq!(
         metadata.framing_controls.map(B5FramingControl::as_byte),
         [0x05, 0x03]
@@ -236,28 +216,28 @@ fn loop_references_require_exact_matching_edge_count_and_metadata() {
 
 #[test]
 fn loop_metadata_rejects_every_malformed_boundary_and_numeric_domain() {
-    assert!(loop_metadata(&[], 0).is_none());
-    assert!(loop_metadata(&[0x05, 0x05, 0x03], 0).is_none());
-    assert!(loop_metadata(&[0x05, 0x05, 0x03, 0x01, 0x00, 0x01], 0).is_none());
-    assert!(loop_metadata(&[0x09, 0x05, 0x03, 0x01], 0).is_none());
-    assert!(loop_metadata(&[0x05, 0x03, 0x05, 0x01], 0).is_none());
-    assert!(loop_metadata(
+    assert!(parse_loop_metadata(&[], 0).is_none());
+    assert!(parse_loop_metadata(&[0x05, 0x05, 0x03], 0).is_none());
+    assert!(parse_loop_metadata(&[0x05, 0x05, 0x03, 0x01, 0x00, 0x01], 0).is_none());
+    assert!(parse_loop_metadata(&[0x09, 0x05, 0x03, 0x01], 0).is_none());
+    assert!(parse_loop_metadata(&[0x05, 0x03, 0x05, 0x01], 0).is_none());
+    assert!(parse_loop_metadata(
         &[0x05, 0x05, 0x03, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x01],
         1
     )
     .is_none());
 
     for metadata_control in [0x00, 0x04, 0x20, 0x70] {
-        assert!(loop_metadata(&extended_loop_metadata(metadata_control), 1).is_none());
+        assert!(parse_loop_metadata(&extended_loop_metadata(metadata_control), 1).is_none());
     }
 
     let mut non_finite_scalar = extended_loop_metadata(0x05);
     non_finite_scalar[10..18].copy_from_slice(&f64::NAN.to_le_bytes());
-    assert!(loop_metadata(&non_finite_scalar, 1).is_none());
+    assert!(parse_loop_metadata(&non_finite_scalar, 1).is_none());
 
     let mut non_finite_float = extended_loop_metadata(0x05);
     non_finite_float[47..51].copy_from_slice(&f32::INFINITY.to_le_bytes());
-    assert!(loop_metadata(&non_finite_float, 1).is_none());
+    assert!(parse_loop_metadata(&non_finite_float, 1).is_none());
 }
 
 #[test]

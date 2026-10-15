@@ -7837,12 +7837,6 @@ fn consolidated_class5b5c_records(
     Ok(output)
 }
 
-#[cfg(test)]
-mod consolidated_class_record_limit_tests {}
-
-#[cfg(test)]
-mod consolidated_cone_face_limit_tests {}
-
 fn consolidated_cone_faces(
     bytes: &[u8],
     records: &[ConsolidatedRecord],
@@ -8019,12 +8013,6 @@ fn consolidated_cylinder_groups(
     (groups, cylinders)
 }
 
-#[cfg(test)]
-mod consolidated_cylinder_limit_tests {}
-
-#[cfg(test)]
-mod consolidated_analytic_limit_tests {}
-
 fn consolidated_parameter_points(
     bytes: &[u8],
     records: &[ConsolidatedRecord],
@@ -8184,9 +8172,6 @@ fn consolidated_pcurves(
     }
     native
 }
-
-#[cfg(test)]
-mod consolidated_pcurve_limit_tests {}
 
 fn consolidated_revolutions(
     bytes: &[u8],

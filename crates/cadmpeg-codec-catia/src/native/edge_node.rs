@@ -403,7 +403,7 @@ mod tests {
         node.endpoint_records = None;
         node.allocation = Some(("allocation-owner".to_owned(), 0));
         assert!(node.uses.is_some());
-        let expected = { super::consolidated_vertex_identities(std::slice::from_ref(&node)) };
+        let expected = super::consolidated_vertex_identities(std::slice::from_ref(&node));
         let nodes = (0..64).map(|_| node.clone()).collect::<Vec<_>>();
         assert_eq!(super::consolidated_vertex_identities(&nodes), expected);
     }

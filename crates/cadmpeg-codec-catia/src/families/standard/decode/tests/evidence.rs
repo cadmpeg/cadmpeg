@@ -1497,7 +1497,7 @@ mod surface_intersections;
 
 #[test]
 fn line_pair_constraint_rejects_pairs_beyond_edge_roles() {
-    let constraint = { super::super::StandardLinePairConstraint::new(&[], &[], &[]) };
+    let constraint = super::super::StandardLinePairConstraint::new(&[], &[], &[]);
     assert!(constraint.edge_pairs(&[None]).is_none());
 }
 
