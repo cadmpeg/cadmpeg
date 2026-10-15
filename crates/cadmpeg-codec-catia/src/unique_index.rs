@@ -47,16 +47,11 @@ mod tests {
 
     #[test]
     fn duplicates_remain_ambiguous_after_further_insertions() {
-        let mut index = crate::test_support::with_service_context(|ctx| {
-            UniqueIndex::collect([("one".to_string(), 1), ("two".to_string(), 2)])
-        })
-        .expect("service profile admits index");
+        let mut index = { UniqueIndex::collect([("one".to_string(), 1), ("two".to_string(), 2)]) };
         assert_eq!(index.get("one"), Some(&1));
-        crate::test_support::with_service_context(|ctx| index.insert("one".to_string(), 3))
-            .expect("duplicate does not grow index");
+        index.insert("one".to_string(), 3);
         assert_eq!(index.get("one"), None);
-        crate::test_support::with_service_context(|ctx| index.insert("one".to_string(), 4))
-            .expect("duplicate remains ambiguous");
+        index.insert("one".to_string(), 4);
         assert_eq!(index.get("one"), None);
         assert_eq!(index.get("two"), Some(&2));
         assert_eq!(index.get("missing"), None);

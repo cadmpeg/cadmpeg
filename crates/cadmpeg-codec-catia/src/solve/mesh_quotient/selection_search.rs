@@ -1396,10 +1396,10 @@ pub(in crate::solve) fn parse_standard_mesh_endpoint_candidates(
     };
     let face_count = face_run.face_count();
     let after_faces = face_run.after_faces();
-    let Some((edge_rows, vertex_header)) = parse_edge_tables(bytes, after_faces)? else {
+    let Some((edge_rows, vertex_header)) = parse_edge_tables(bytes, after_faces) else {
         return Ok(None);
     };
-    let Some(vertex_points) = parse_vertex_table(bytes, vertex_header)? else {
+    let Some(vertex_points) = parse_vertex_table(bytes, vertex_header) else {
         return Ok(None);
     };
     if edge_rows.len() != edge_faces.len() || edge_rows.len() != edge_candidates.len() {
@@ -1725,13 +1725,11 @@ struct DistinctAssignment {
 
 impl DistinctAssignment {
     fn new(points: Vec<usize>, point_count: usize) -> Option<Self> {
-        let mut seen = vec![false; point_count];
+        let mut seen = HashSet::new();
         for &point in &points {
-            let used = seen.get_mut(point)?;
-            if *used {
+            if point >= point_count || !seen.insert(point) {
                 return None;
             }
-            *used = true;
         }
         Some(Self { points })
     }

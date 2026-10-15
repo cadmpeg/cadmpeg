@@ -47,7 +47,7 @@ pub(super) fn standard_face_count(
     let Some(selected) = selected_standard_run(ctx, bytes)? else {
         return Ok(None);
     };
-    let layouts = fbb_population_layouts(bytes)?;
+    let layouts = fbb_population_layouts(bytes);
     if layouts.is_empty() || layouts.iter().any(|layout| layout.face_run == selected) {
         Ok(Some(selected.face_count()))
     } else {
@@ -67,14 +67,12 @@ pub(crate) fn standard_edge_count(
         return Ok(None);
     };
     let after_faces = face_run.after_faces();
-    Ok(parse_standard_edge_tables(bytes, after_faces)?.map(|(rows, _)| rows.len()))
+    Ok(parse_standard_edge_tables(bytes, after_faces).map(|(rows, _)| rows.len()))
 }
 
 /// Number of physical edge rows in the width-selected FBB-only tables.
 pub(crate) fn fbb_only_edge_count(bytes: &[u8]) -> Option<usize> {
-    let Some(face_run) = largest_fbb_run(bytes) else {
-        return None;
-    };
+    let face_run = largest_fbb_run(bytes)?;
     let after_faces = face_run.after_faces();
     parse_fbb_edge_tables(bytes, after_faces).map(|(rows, _, _, _)| rows.len())
 }
@@ -118,22 +116,22 @@ fn trim_frame_vectors(
     bytes: &[u8],
     face_start: usize,
     face_count: usize,
-) -> Result<Option<Vec<Option<FiniteVector<3>>>>, CodecError> {
+) -> Option<Vec<Option<FiniteVector<3>>>> {
     let mut solutions = Vec::new();
     for width in [1, 2, 3] {
-        if let Some(records) = parse_trim_chain(bytes, face_start, face_count, width)? {
+        if let Some(records) = parse_trim_chain(bytes, face_start, face_count, width) {
             solutions.push(records);
         }
     }
     let Ok([records]) = <[Vec<TrimRecord>; 1]>::try_from(solutions) else {
-        return Ok(None);
+        return None;
     };
     let mut vectors = Vec::new();
 
     for record in records {
         vectors.push(record.frame_vector);
     }
-    Ok(Some(vectors))
+    Some(vectors)
 }
 
 /// Unit frame vector for each positional standard trim packet. The result is
@@ -153,7 +151,7 @@ pub(super) fn standard_face_frame_vectors(
         let mut combined = Vec::new();
         let mut complete = true;
         for range in &runs {
-            let Some(vectors) = trim_frame_vectors(bytes, range.start, range.len() / fbb_row::LEN)?
+            let Some(vectors) = trim_frame_vectors(bytes, range.start, range.len() / fbb_row::LEN)
             else {
                 complete = false;
                 break;
@@ -172,10 +170,7 @@ pub(super) fn standard_face_frame_vectors(
     let Some(face_run) = selected_standard_run(ctx, bytes)? else {
         return Ok(Vec::new());
     };
-    Ok(
-        trim_frame_vectors(bytes, face_run.face_start(), face_run.face_count())?
-            .unwrap_or_default(),
-    )
+    Ok(trim_frame_vectors(bytes, face_run.face_start(), face_run.face_count()).unwrap_or_default())
 }
 
 /// Return the counted vertex table of an admitted standard nested spine.
@@ -187,7 +182,7 @@ pub(super) fn standard_vertex_points(
         return Ok(None);
     };
     let after_faces = face_run.after_faces();
-    let Some((_, vertex_header)) = parse_standard_edge_tables(bytes, after_faces)? else {
+    let Some((_, vertex_header)) = parse_standard_edge_tables(bytes, after_faces) else {
         return Ok(None);
     };
     Ok(parse_vertex_points(bytes, vertex_header))
@@ -196,13 +191,9 @@ pub(super) fn standard_vertex_points(
 /// Coordinates from the counted vertex table following a complete FBB-only
 /// edge-table walk.
 pub(super) fn fbb_only_vertex_points(bytes: &[u8]) -> Option<Vec<FinitePoint3>> {
-    let Some(face_run) = largest_fbb_run(bytes) else {
-        return None;
-    };
+    let face_run = largest_fbb_run(bytes)?;
     let after_faces = face_run.after_faces();
-    let Some((_, _, vertex_header, _)) = parse_fbb_edge_tables(bytes, after_faces) else {
-        return None;
-    };
+    let (_, _, vertex_header, _) = parse_fbb_edge_tables(bytes, after_faces)?;
     parse_vertex_points(bytes, vertex_header)
 }
 
@@ -227,7 +218,7 @@ pub(crate) fn parse_standard(
     let Some(vertex_points) = parse_vertex_table(bytes, vertex_header) else {
         return Ok(None);
     };
-    let Some(trims) = parse_trim_chain(bytes, face_start, face_count, handle_width)? else {
+    let Some(trims) = parse_trim_chain(bytes, face_start, face_count, handle_width) else {
         return Ok(None);
     };
     reconstruct(ctx, edge_rows, vertex_points, &trims)
@@ -260,7 +251,7 @@ pub(super) fn parse_standard_motif(
     if edge_rows.len() != edge_faces.len() || edge_rows.len() != circle_anchors.len() {
         return Ok(None);
     }
-    let Some(trims) = parse_trim_chain(bytes, face_start, face_count, handle_width)? else {
+    let Some(trims) = parse_trim_chain(bytes, face_start, face_count, handle_width) else {
         return Ok(None);
     };
     let Some(port_points) = motif_port_points(&trims, vertex_points.len()) else {
@@ -319,7 +310,7 @@ pub(super) fn parse_standard_endpoints_with_edge_classes(
     };
     let face_count = face_run.face_count();
     let after_faces = face_run.after_faces();
-    let Some((edge_rows, vertex_header)) = parse_standard_edge_tables(bytes, after_faces)? else {
+    let Some((edge_rows, vertex_header)) = parse_standard_edge_tables(bytes, after_faces) else {
         return Ok(None);
     };
     let Some(vertex_points) = parse_vertex_table(bytes, vertex_header) else {
@@ -486,7 +477,7 @@ pub(super) fn parse_standard_endpoint_candidates(
     };
     let face_count = face_run.face_count();
     let after_faces = face_run.after_faces();
-    let Some((edge_rows, vertex_header)) = parse_standard_edge_tables(bytes, after_faces)? else {
+    let Some((edge_rows, vertex_header)) = parse_standard_edge_tables(bytes, after_faces) else {
         return Ok(None);
     };
     let Some(vertex_points) = parse_vertex_table(bytes, vertex_header) else {
@@ -534,7 +525,7 @@ pub(super) fn parse_standard_port_endpoint_candidates(
     };
     let face_count = face_run.face_count();
     let after_faces = face_run.after_faces();
-    let Some((edge_rows, vertex_header)) = parse_standard_edge_tables(bytes, after_faces)? else {
+    let Some((edge_rows, vertex_header)) = parse_standard_edge_tables(bytes, after_faces) else {
         return Ok(None);
     };
     let Some(vertex_points) = parse_vertex_table(bytes, vertex_header) else {
@@ -874,7 +865,7 @@ fn vertex_table_end(bytes: &[u8], position: usize) -> Option<usize> {
 pub(super) fn population_spine<'a>(
     bytes: &'a [u8],
     layout: &FbbPopulationLayout,
-) -> Result<Option<&'a [u8]>, CodecError> {
+) -> Option<&'a [u8]> {
     let parsed = match layout.edge_table_form {
         EdgeTableForm::Standard => {
             parse_standard_edge_tables_with_width(bytes, layout.face_run.after_faces())
@@ -882,27 +873,20 @@ pub(super) fn population_spine<'a>(
         EdgeTableForm::FbbOnly => parse_fbb_edge_tables(bytes, layout.face_run.after_faces())
             .map(|(_, _, vertex_header, handle_width)| (Vec::new(), vertex_header, handle_width)),
     };
-    let Some((_, vertex_header, handle_width)) = parsed else {
-        return Ok(None);
-    };
-    let Some((trim_start, _)) = parse_trim_chain_start(
+    let (_, vertex_header, handle_width) = parsed?;
+    let (trim_start, _) = parse_trim_chain_start(
         bytes,
         layout.face_run.face_start(),
         layout.face_run.face_count(),
         handle_width,
-    )?
-    else {
-        return Ok(None);
-    };
-    let Some(end) = vertex_table_end(bytes, vertex_header) else {
-        return Ok(None);
-    };
-    Ok(bytes.get(trim_start..end))
+    )?;
+    let end = vertex_table_end(bytes, vertex_header)?;
+    bytes.get(trim_start..end)
 }
 
 /// Find every FBB face run with a complete local trim, edge-table, and vertex
 /// walk, without requiring endpoint incidence to be solved.
-pub(super) fn fbb_population_layouts(bytes: &[u8]) -> Result<Vec<FbbPopulationLayout>, CodecError> {
+pub(super) fn fbb_population_layouts(bytes: &[u8]) -> Vec<FbbPopulationLayout> {
     let mut layouts = Vec::new();
     for range in crate::container::fbb_run_ranges(bytes) {
         let Some(face_run) = FbbFaceRun::try_new(range.start, range.len() / fbb_row::LEN) else {
@@ -938,7 +922,7 @@ pub(super) fn fbb_population_layouts(bytes: &[u8]) -> Result<Vec<FbbPopulationLa
             face_run.face_start(),
             face_run.face_count(),
             handle_width,
-        )?
+        )
         .is_none()
         {
             continue;
@@ -950,7 +934,7 @@ pub(super) fn fbb_population_layouts(bytes: &[u8]) -> Result<Vec<FbbPopulationLa
             edge_table_form,
         });
     }
-    Ok(layouts)
+    layouts
 }
 
 fn parse_standard_group(
@@ -971,7 +955,7 @@ fn parse_standard_group(
     let Some(vertex_points) = parse_vertex_table(bytes, vertex_header) else {
         return Ok(None);
     };
-    let Some(trims) = parse_trim_chain(bytes, face_start, face_count, handle_width)? else {
+    let Some(trims) = parse_trim_chain(bytes, face_start, face_count, handle_width) else {
         return Ok(None);
     };
     Ok(reconstruct(ctx, edge_rows, vertex_points, &trims)?.map(|_| face_run))
@@ -1060,23 +1044,16 @@ fn parse_count(bytes: &[u8], position: &mut usize) -> Option<usize> {
     usize::try_from(value).ok()
 }
 
-pub(crate) fn parse_edge_tables(
-    bytes: &[u8],
-    position: usize,
-) -> Result<Option<(Vec<EdgeRow>, usize)>, CodecError> {
-    if let Some(result) = parse_standard_edge_tables(bytes, position)? {
-        return Ok(Some(result));
-    }
-    Ok(parse_fbb_edge_tables(bytes, position)
-        .map(|(rows, _, vertex_header, _)| (rows, vertex_header)))
+pub(crate) fn parse_edge_tables(bytes: &[u8], position: usize) -> Option<(Vec<EdgeRow>, usize)> {
+    parse_standard_edge_tables(bytes, position).or_else(|| {
+        parse_fbb_edge_tables(bytes, position)
+            .map(|(rows, _, vertex_header, _)| (rows, vertex_header))
+    })
 }
 
-fn parse_standard_edge_tables(
-    bytes: &[u8],
-    position: usize,
-) -> Result<Option<(Vec<EdgeRow>, usize)>, CodecError> {
-    Ok(parse_standard_edge_tables_with_width(bytes, position)
-        .map(|(rows, vertex_header, _)| (rows, vertex_header)))
+fn parse_standard_edge_tables(bytes: &[u8], position: usize) -> Option<(Vec<EdgeRow>, usize)> {
+    parse_standard_edge_tables_with_width(bytes, position)
+        .map(|(rows, vertex_header, _)| (rows, vertex_header))
 }
 
 pub(crate) fn parse_standard_edge_tables_with_width(
@@ -1108,11 +1085,8 @@ pub(crate) fn parse_standard_edge_tables_scoped(
     if bytes.get(position..position + 2) != Some(&[0x01, 0x01]) {
         return None;
     }
-    let Some((rows, scopes, vertex_header, handle_width)) =
-        parse_edge_tables_scoped_at_with_width(bytes, position)
-    else {
-        return None;
-    };
+    let (rows, scopes, vertex_header, handle_width) =
+        parse_edge_tables_scoped_at_with_width(bytes, position)?;
     (!rows.is_empty()
         && scopes.iter().all(|scope| *scope == 0)
         && rows
@@ -1122,17 +1096,14 @@ pub(crate) fn parse_standard_edge_tables_scoped(
 }
 
 #[cfg(test)]
-pub(super) fn parse_edge_tables_at(
-    bytes: &[u8],
-    position: usize,
-) -> Result<Option<(Vec<EdgeRow>, usize)>, CodecError> {
-    Ok(parse_edge_tables_scoped_at(bytes, position)?
-        .map(|(rows, _, vertex_header)| (rows, vertex_header)))
+pub(super) fn parse_edge_tables_at(bytes: &[u8], position: usize) -> Option<(Vec<EdgeRow>, usize)> {
+    parse_edge_tables_scoped_at(bytes, position)
+        .map(|(rows, _, vertex_header)| (rows, vertex_header))
 }
 
 #[cfg(test)]
 pub(super) fn parse_edge_tables_scoped_at(bytes: &[u8], position: usize) -> ScopedEdgeTableOutput {
-    parse_edge_tables_scoped_at_with_width(bytes, position)?
+    parse_edge_tables_scoped_at_with_width(bytes, position)
         .map(|(rows, scopes, vertex_header, _)| (rows, scopes, vertex_header))
 }
 
@@ -1262,8 +1233,8 @@ pub(crate) fn parse_trim_chain(
     end: usize,
     record_count: usize,
     width: usize,
-) -> Result<Option<Vec<TrimRecord>>, CodecError> {
-    Ok(parse_trim_chain_start(bytes, end, record_count, width)?.map(|(_, records)| records))
+) -> Option<Vec<TrimRecord>> {
+    parse_trim_chain_start(bytes, end, record_count, width).map(|(_, records)| records)
 }
 
 fn parse_trim_chain_start(
@@ -1271,14 +1242,14 @@ fn parse_trim_chain_start(
     end: usize,
     record_count: usize,
     width: usize,
-) -> Result<Option<(usize, Vec<TrimRecord>)>, CodecError> {
+) -> Option<(usize, Vec<TrimRecord>)> {
     let compact = parse_trim_chain_with_length_encoding(bytes, end, record_count, width, false);
     let wide_u16be = if width == 2 {
         parse_trim_chain_with_length_encoding(bytes, end, record_count, width, true)
     } else {
         None
     };
-    Ok(match (compact, wide_u16be) {
+    match (compact, wide_u16be) {
         (Some((compact_start, compact)), Some((wide_start, wide)))
             if compact_start == wide_start && compact == wide =>
         {
@@ -1286,7 +1257,7 @@ fn parse_trim_chain_start(
         }
         (Some(records), None) | (None, Some(records)) => Some(records),
         (None, None) | (Some(_), Some(_)) => None,
-    })
+    }
 }
 
 fn parse_trim_chain_with_length_encoding(
@@ -1310,9 +1281,7 @@ fn parse_trim_chain_with_length_encoding(
         }
     }
 
-    let Some(prefix) = bytes.get(..end) else {
-        return None;
-    };
+    let prefix = bytes.get(..end)?;
     let mut predecessors = HashMap::<usize, Vec<usize>>::new();
     for (start, marker) in prefix.windows(2).enumerate() {
         if marker[0] != 0x01 || !TRIM_KINDS.contains(&marker[1]) {
@@ -1406,10 +1375,10 @@ pub(super) fn parse_trim_record_layout(
     bytes: &[u8],
     start: usize,
     width: usize,
-) -> Result<Option<TrimRecordLayout>, CodecError> {
-    let compact = parse_trim_record_layout_with_length_encoding(bytes, start, width, false)?;
+) -> Option<TrimRecordLayout> {
+    let compact = parse_trim_record_layout_with_length_encoding(bytes, start, width, false);
     let wide_u16be = if width == 2 {
-        parse_trim_record_layout_with_length_encoding(bytes, start, width, true)?
+        parse_trim_record_layout_with_length_encoding(bytes, start, width, true)
     } else {
         None
     };
@@ -1452,11 +1421,11 @@ pub(super) fn parse_trim_record_layout(
         }
         _ => false,
     };
-    Ok(match (compact, wide_u16be) {
+    match (compact, wide_u16be) {
         (Some(compact), Some(_)) if equivalent => Some(compact),
         (Some(layout), None) | (None, Some(layout)) => Some(layout),
         (None, None) | (Some(_), Some(_)) => None,
-    })
+    }
 }
 
 fn read_trim_length(bytes: &[u8], position: &mut usize, wide_u16be: bool) -> Option<usize> {
@@ -1583,22 +1552,18 @@ fn parse_trim_record_layout_with_length_encoding(
 }
 
 #[cfg(test)]
-pub(super) fn parse_trim_record(
-    bytes: &[u8],
-    start: usize,
-    width: usize,
-) -> Result<Option<TrimRecord>, CodecError> {
-    let compact = parse_trim_record_with_length_encoding(bytes, start, width, false)?;
+pub(super) fn parse_trim_record(bytes: &[u8], start: usize, width: usize) -> Option<TrimRecord> {
+    let compact = parse_trim_record_with_length_encoding(bytes, start, width, false);
     let wide_u16be = if width == 2 {
-        parse_trim_record_with_length_encoding(bytes, start, width, true)?
+        parse_trim_record_with_length_encoding(bytes, start, width, true)
     } else {
         None
     };
-    Ok(match (compact, wide_u16be) {
+    match (compact, wide_u16be) {
         (Some(compact), Some(wide)) if compact == wide => Some(compact),
         (Some(record), None) | (None, Some(record)) => Some(record),
         (None, None) | (Some(_), Some(_)) => None,
-    })
+    }
 }
 
 fn parse_trim_record_with_length_encoding(
@@ -1885,7 +1850,6 @@ mod endpoint_tests {
 #[cfg(test)]
 mod tests {
     use super::{boundary_cycles, fbb_row, FbbFaceRun};
-    use std::collections::HashSet;
 
     #[test]
     fn face_run_admission_checks_byte_bounds() {
@@ -1903,21 +1867,13 @@ mod tests {
     #[test]
     fn boundary_cycles_cancel_opposite_triangle_edges() {
         let triangles = [[0, 1, 2], [0, 2, 3]];
-        assert_eq!(
-            crate::test_support::with_service_context(|ctx| boundary_cycles(&triangles))
-                .expect("service resource budget"),
-            Some(vec![vec![0, 1, 2, 3]])
-        );
+        assert_eq!(boundary_cycles(&triangles), Some(vec![vec![0, 1, 2, 3]]));
     }
 
     #[test]
     fn boundary_cycles_reject_duplicate_directed_edges() {
         let triangles = [[0, 1, 2], [0, 1, 3]];
-        assert_eq!(
-            crate::test_support::with_service_context(|ctx| boundary_cycles(&triangles))
-                .expect("service resource budget"),
-            None
-        );
+        assert_eq!(boundary_cycles(&triangles), None);
     }
 }
 

@@ -35,7 +35,7 @@ pub(crate) fn standard_edge_rows(
         return Ok(None);
     };
     let after_faces = face_run.after_faces();
-    Ok(parse_edge_tables(bytes, after_faces)?.map(|(rows, _)| rows))
+    Ok(parse_edge_tables(bytes, after_faces).map(|(rows, _)| rows))
 }
 
 fn standard_edge_port_identities(
@@ -93,13 +93,9 @@ fn standard_edge_port_identities(
 }
 
 pub(crate) fn fbb_edge_port_identities(bytes: &[u8], global: bool) -> Option<Vec<[u32; 2]>> {
-    let Some(face_run) = largest_fbb_run(bytes) else {
-        return None;
-    };
+    let face_run = largest_fbb_run(bytes)?;
     let after_faces = face_run.after_faces();
-    let Some((edge_rows, scopes, _, _)) = parse_fbb_edge_tables(bytes, after_faces) else {
-        return None;
-    };
+    let (edge_rows, scopes, _, _) = parse_fbb_edge_tables(bytes, after_faces)?;
     let mut identity_by_handle = HashMap::new();
     let mut pairs = Vec::new();
     for (row, scope) in edge_rows.iter().zip(scopes) {
@@ -108,9 +104,7 @@ pub(crate) fn fbb_edge_port_identities(bytes: &[u8], global: bool) -> Option<Vec
         };
         let mut pair = [0; 2];
         for (port, handle) in [first, last].into_iter().enumerate() {
-            let Some(next) = u32::try_from(identity_by_handle.len()).ok() else {
-                return None;
-            };
+            let next = u32::try_from(identity_by_handle.len()).ok()?;
             let key = (if global { 0 } else { scope }, handle);
             pair[port] = if let Some(&identity) = identity_by_handle.get(&key) {
                 identity
@@ -609,7 +603,7 @@ fn standard_mesh_analysis(
     let Some((edge_rows, handle_width, fixed_complete_row_spans)) = parsed else {
         return Ok(None);
     };
-    let Some(trims) = parse_trim_chain(bytes, face_start, face_count, handle_width)? else {
+    let Some(trims) = parse_trim_chain(bytes, face_start, face_count, handle_width) else {
         return Ok(None);
     };
     let mut cycles = Vec::new();
@@ -783,7 +777,7 @@ pub(crate) fn standard_repeated_edge_face_handle_candidates(
     let Some((edge_rows, handle_width)) = parsed else {
         return Ok(None);
     };
-    let Some(trims) = parse_trim_chain(bytes, face_start, face_count, handle_width)? else {
+    let Some(trims) = parse_trim_chain(bytes, face_start, face_count, handle_width) else {
         return Ok(None);
     };
     let face_handles = {
@@ -3049,10 +3043,10 @@ fn parse_standard_mesh_selection(
     };
     let face_count = face_run.face_count();
     let after_faces = face_run.after_faces();
-    let Some((edge_rows, vertex_header)) = parse_edge_tables(bytes, after_faces)? else {
+    let Some((edge_rows, vertex_header)) = parse_edge_tables(bytes, after_faces) else {
         return Ok(None);
     };
-    let Some(vertex_points) = parse_vertex_table(bytes, vertex_header)? else {
+    let Some(vertex_points) = parse_vertex_table(bytes, vertex_header) else {
         return Ok(None);
     };
     let Some(assignments) = standard_mesh_boundary_assignments(ctx, bytes, edge_faces, None)?
@@ -3232,7 +3226,7 @@ pub(crate) fn standard_mesh_prune_endpoint_candidates(
         return Ok(None);
     };
     let after_faces = face_run.after_faces();
-    let Some((_, vertex_header)) = parse_edge_tables(bytes, after_faces)? else {
+    let Some((_, vertex_header)) = parse_edge_tables(bytes, after_faces) else {
         return Ok(None);
     };
     let Some(vertex_points) = parse_vertex_table(bytes, vertex_header) else {

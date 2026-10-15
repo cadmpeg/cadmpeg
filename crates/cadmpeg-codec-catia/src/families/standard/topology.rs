@@ -1210,7 +1210,7 @@ pub(crate) fn parse_fbb(
     let Some(vertex_points) = parse_vertex_table(bytes, vertex_header) else {
         return Ok(None);
     };
-    let Some(trims) = parse_trim_chain(bytes, face_start, face_count, handle_width)? else {
+    let Some(trims) = parse_trim_chain(bytes, face_start, face_count, handle_width) else {
         return Ok(None);
     };
     if classify_fbb_edge_layouts(&mut edge_rows, &trims).is_none() {

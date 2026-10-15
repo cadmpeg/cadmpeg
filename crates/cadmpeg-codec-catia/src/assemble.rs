@@ -241,11 +241,8 @@ fn unresolved_carrier_ids(ir: &CadIr) -> (Vec<&str>, Vec<&str>) {
 /// How many curve and surface carriers the transfer left unresolved.
 #[cfg(test)]
 fn unresolved_carrier_counts(ir: &CadIr) -> (usize, usize) {
-    crate::test_support::with_service_context(|ctx| {
-        let (curves, surfaces) = unresolved_carrier_ids(ir);
-        Ok::<_, cadmpeg_core::CodecError>((curves.len(), surfaces.len()))
-    })
-    .expect("service budget admits carrier count fixture")
+    let (curves, surfaces) = unresolved_carrier_ids(ir);
+    (curves.len(), surfaces.len())
 }
 
 /// The sentence naming one carrier kind, or nothing when none is unresolved.
@@ -952,7 +949,7 @@ pub(crate) fn quintic_jet_pcurve(
 #[cfg(test)]
 mod route_tests {
     use crate::assemble::{
-        circle_parameter_range_from_surface_branch, neutral_model_is_admissible, source_meta,
+        circle_parameter_range_from_surface_branch, neutral_model_is_admissible,
         unresolved_carrier_counts,
     };
 
@@ -984,20 +981,15 @@ mod route_tests {
             unbound_revolution: 0,
             admitted_standard_face_rows: 0,
         };
-        let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-            super::build_geometry_report(
-                &ir,
-                &scan,
-                &super::TypedCounts::default(),
-                (0, 0),
-                &counts,
-                None,
-            )
-        };
-        assert!(!crate::test_support::with_service_context(run)
-            .expect("service resource budget")
-            .losses
-            .is_empty());
+        let report = super::build_geometry_report(
+            &ir,
+            &scan,
+            &super::TypedCounts::default(),
+            (0, 0),
+            &counts,
+            None,
+        );
+        assert!(!report.losses.is_empty());
     }
 
     fn rational_pcurve_arc(

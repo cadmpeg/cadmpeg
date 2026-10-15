@@ -498,12 +498,9 @@ fn zero_entity_face_roster_logical_end(data: &[u8], record: usize) -> Option<usi
         .then_some(end)
 }
 
-fn zero_entity_records_in_range(
-    data: &[u8],
-    range: Range<usize>,
-) -> Result<Vec<ZeroEntityRecord>, CodecError> {
+fn zero_entity_records_in_range(data: &[u8], range: Range<usize>) -> Vec<ZeroEntityRecord> {
     if data.get(range.clone()).is_none() {
-        return Ok(Vec::new());
+        return Vec::new();
     }
     let mut records = Vec::new();
     let mut position = range.start;
@@ -529,7 +526,7 @@ fn zero_entity_records_in_range(
             };
             end
         } else if matches!(tag, [0x34, 0xc8 | 0x5e]) {
-            let Some(end) = zero_entity_nurbs_logical_end(data, position)? else {
+            let Some(end) = zero_entity_nurbs_logical_end(data, position) else {
                 break;
             };
             end
@@ -558,107 +555,90 @@ fn zero_entity_records_in_range(
         });
         position = end;
     }
-    Ok(records)
+    records
 }
 
 #[cfg(test)]
 fn zero_entity_records(data: &[u8]) -> Vec<ZeroEntityRecord> {
-    crate::test_support::with_service_context(|ctx| {
-        zero_entity_records_in_range(data, 0..data.len())
-    })
-    .expect("test zero-entity records fit the service profile")
+    zero_entity_records_in_range(data, 0..data.len())
 }
 
-fn zero_entity_nurbs_logical_end(data: &[u8], record: usize) -> Result<Option<usize>, CodecError> {
-    Ok(zero_entity_nurbs_layout(data, record)?.map(|layout| layout.end))
+fn zero_entity_nurbs_logical_end(data: &[u8], record: usize) -> Option<usize> {
+    zero_entity_nurbs_layout(data, record).map(|layout| layout.end)
 }
 
-fn zero_entity_nurbs_layout(
-    data: &[u8],
-    record: usize,
-) -> Result<Option<ZeroEntityNurbsLayout>, CodecError> {
-    (|| -> Option<Result<ZeroEntityNurbsLayout, CodecError>> {
-        let tag = [
-            *data.get(record.checked_add(a9_03::TAG_HI)?)?,
-            *data.get(record.checked_add(a9_03::TAG_LO_LENGTH_DRIVER)?)?,
-        ];
-        let (grid_offset, expected_u_count, expected_v_count) = zero_entity_nurbs_shape(tag)?;
-        let knot_start = record.checked_add(23)?;
-        let grid = record.checked_add(grid_offset)?;
-        let pole_count = crate::nurbs_surface_control_count(expected_u_count, expected_v_count)?;
-        let pole_bytes = pole_count.checked_mul(24)?;
-        let end = grid.checked_add(pole_bytes)?;
-        data.get(grid..end)?;
+fn zero_entity_nurbs_layout(data: &[u8], record: usize) -> Option<ZeroEntityNurbsLayout> {
+    let tag = [
+        *data.get(record.checked_add(a9_03::TAG_HI)?)?,
+        *data.get(record.checked_add(a9_03::TAG_LO_LENGTH_DRIVER)?)?,
+    ];
+    let (grid_offset, expected_u_count, expected_v_count) = zero_entity_nurbs_shape(tag)?;
+    let knot_start = record.checked_add(23)?;
+    let grid = record.checked_add(grid_offset)?;
+    let pole_count = crate::nurbs_surface_control_count(expected_u_count, expected_v_count)?;
+    let pole_bytes = pole_count.checked_mul(24)?;
+    let end = grid.checked_add(pole_bytes)?;
+    data.get(grid..end)?;
 
-        // The carrier has no count word for either distinct-knot lane. Its fixed
-        // pole boundary makes the two lanes a bounded parse: U knots, two tagged
-        // V-dimension words, one V marker, V knots, V multiplicities, and the
-        // three-byte pole marker. Enumerate the possible U lane widths and retain
-        // exactly one structural interpretation. A value range or a first
-        // terminator would turn ordinary model parameters into framing bytes.
-        let pole_marker_start = grid.checked_sub(3)?;
-        let available = pole_marker_start.checked_sub(knot_start)?;
-        let minimum_after_u = 2usize.checked_mul(5)?.checked_add(1)?.checked_add(2 * 13)?;
-        let max_u_distinct = available.checked_sub(minimum_after_u)?.checked_div(13)?;
-        if max_u_distinct < 2 {
+    // The carrier has no count word for either distinct-knot lane. Its fixed
+    // pole boundary makes the two lanes a bounded parse: U knots, two tagged
+    // V-dimension words, one V marker, V knots, V multiplicities, and the
+    // three-byte pole marker. Enumerate the possible U lane widths and retain
+    // exactly one structural interpretation. A value range or a first
+    // terminator would turn ordinary model parameters into framing bytes.
+    let pole_marker_start = grid.checked_sub(3)?;
+    let available = pole_marker_start.checked_sub(knot_start)?;
+    let minimum_after_u = 2usize.checked_mul(5)?.checked_add(1)?.checked_add(2 * 13)?;
+    let max_u_distinct = available.checked_sub(minimum_after_u)?.checked_div(13)?;
+    if max_u_distinct < 2 {
+        return None;
+    }
+    let mut candidate = None;
+    for u_distinct_count in 2..=max_u_distinct {
+        let u_after = knot_start.checked_add(u_distinct_count.checked_mul(13)?)?;
+        let Some(u_lane) =
+            zero_entity_nurbs_knot_lane(data, knot_start, u_distinct_count, expected_u_count)
+        else {
+            continue;
+        };
+        let Some((_, after_dimensions)) = u32_tokens(data, u_after, 2) else {
+            continue;
+        };
+        let v_start = after_dimensions.checked_add(1)?;
+        if v_start > pole_marker_start {
+            continue;
+        }
+        let v_bytes = pole_marker_start.checked_sub(v_start)?;
+        if v_bytes % 13 != 0 {
+            continue;
+        }
+        let v_distinct_count = v_bytes / 13;
+        if v_distinct_count < 2 {
+            continue;
+        }
+        let Some(v_lane) =
+            zero_entity_nurbs_knot_lane(data, v_start, v_distinct_count, expected_v_count)
+        else {
+            continue;
+        };
+        if candidate.is_some() {
             return None;
         }
-        let mut candidate = None;
-        for u_distinct_count in 2..=max_u_distinct {
-            let u_after = knot_start.checked_add(u_distinct_count.checked_mul(13)?)?;
-            let u_lane = match zero_entity_nurbs_knot_lane(
-                data,
-                knot_start,
-                u_distinct_count,
-                expected_u_count,
-            ) {
-                Some(lane) => lane,
-                None => continue,
-            };
-            let Some((_, after_dimensions)) = u32_tokens(data, u_after, 2) else {
-                continue;
-            };
-            let v_start = after_dimensions.checked_add(1)?;
-            if v_start > pole_marker_start {
-                continue;
-            }
-            let v_bytes = pole_marker_start.checked_sub(v_start)?;
-            if v_bytes % 13 != 0 {
-                continue;
-            }
-            let v_distinct_count = v_bytes / 13;
-            if v_distinct_count < 2 {
-                continue;
-            }
-            let v_lane = match zero_entity_nurbs_knot_lane(
-                data,
-                v_start,
-                v_distinct_count,
-                expected_v_count,
-            ) {
-                Some(lane) => lane,
-                None => continue,
-            };
-            if candidate.is_some() {
-                return None;
-            }
-            candidate = Some((u_lane, v_lane));
-        }
-        let (u_lane, v_lane) = candidate?;
-        Some(Ok(ZeroEntityNurbsLayout {
-            u_distinct: u_lane.distinct,
-            u_mults: u_lane.multiplicities,
-            u_degree: u_lane.degree,
-            u_count: u_lane.control_count,
-            v_distinct: v_lane.distinct,
-            v_mults: v_lane.multiplicities,
-            v_degree: v_lane.degree,
-            v_count: v_lane.control_count,
-            grid,
-            end,
-        }))
-    })()
-    .transpose()
+        candidate = Some((u_lane, v_lane));
+    }
+    let (u_lane, v_lane) = candidate?;
+    Some(ZeroEntityNurbsLayout {
+        u_distinct: u_lane.distinct,
+        u_mults: u_lane.multiplicities,
+        u_degree: u_lane.degree,
+        u_count: u_lane.control_count,
+        v_distinct: v_lane.distinct,
+        v_mults: v_lane.multiplicities,
+        v_degree: v_lane.degree,
+        v_count: v_lane.control_count,
+        grid,
+        end,
+    })
 }
 
 fn zero_entity_nurbs_knot_lane(
@@ -697,9 +677,7 @@ fn zero_entity_nurbs_knot_lane(
 }
 
 /// Inventory every complete framed record in the one-based global namespace.
-pub(crate) fn zero_entity_record_inventory(
-    data: &[u8],
-) -> Result<Vec<ZeroEntityRecordIdentity>, CodecError> {
+pub(crate) fn zero_entity_record_inventory(data: &[u8]) -> Vec<ZeroEntityRecordIdentity> {
     zero_entity_record_inventory_in_range(data, 0..data.len())
 }
 
@@ -707,8 +685,8 @@ pub(crate) fn zero_entity_record_inventory(
 pub(crate) fn zero_entity_record_inventory_in_range(
     data: &[u8],
     range: Range<usize>,
-) -> Result<Vec<ZeroEntityRecordIdentity>, CodecError> {
-    let records = zero_entity_records_in_range(data, range)?;
+) -> Vec<ZeroEntityRecordIdentity> {
+    let records = zero_entity_records_in_range(data, range);
     let mut output = Vec::new();
 
     for record in records {
@@ -719,46 +697,40 @@ pub(crate) fn zero_entity_record_inventory_in_range(
             record_ordinal: record.ordinal,
         });
     }
-    Ok(output)
+    output
 }
 
 /// Decode the terminal face-roster, shell, and body ownership roots.
 #[cfg(test)]
 #[must_use]
 fn zero_entity_ownership_root(data: &[u8]) -> Option<ZeroEntityOwnershipRoot> {
-    crate::test_support::with_service_context(|ctx| {
-        zero_entity_ownership_root_in_range(data, 0..data.len())
-    })
-    .expect("test ownership root fits the service profile")
+    zero_entity_ownership_root_in_range(data, 0..data.len())
 }
 
 /// Decode every complete ownership hierarchy in the zero-entity stream.
 #[cfg(test)]
 #[must_use]
 fn zero_entity_ownership_roots(data: &[u8]) -> Vec<ZeroEntityOwnershipRoot> {
-    crate::test_support::with_service_context(|ctx| {
-        zero_entity_ownership_roots_in_range(data, 0..data.len())
-    })
-    .expect("test ownership roots fit the service profile")
+    zero_entity_ownership_roots_in_range(data, 0..data.len())
 }
 
 /// Decode ownership roots whose records stay inside `range`.
 pub(super) fn zero_entity_ownership_root_in_range(
     data: &[u8],
     range: Range<usize>,
-) -> Result<Option<ZeroEntityOwnershipRoot>, CodecError> {
-    let roots = zero_entity_ownership_roots_in_range(data, range)?;
-    Ok((roots.len() == 1)
+) -> Option<ZeroEntityOwnershipRoot> {
+    let roots = zero_entity_ownership_roots_in_range(data, range);
+    (roots.len() == 1)
         .then(|| roots.into_iter().next())
-        .flatten())
+        .flatten()
 }
 
 /// Decode every ownership root whose records stay inside `range`.
 pub(crate) fn zero_entity_ownership_roots_in_range(
     data: &[u8],
     range: Range<usize>,
-) -> Result<Vec<ZeroEntityOwnershipRoot>, CodecError> {
-    let records = zero_entity_records_in_range(data, range)?;
+) -> Vec<ZeroEntityOwnershipRoot> {
+    let records = zero_entity_records_in_range(data, range);
     let mut roots = Vec::new();
     for window in records.windows(3) {
         let candidate = (|| {
@@ -818,7 +790,7 @@ pub(crate) fn zero_entity_ownership_roots_in_range(
             body_pos: body.pos,
         });
     }
-    Ok(roots)
+    roots
 }
 
 /// Decode analytic surface carriers in a zero-entity `a9 03` stream.  The
@@ -844,7 +816,7 @@ pub(super) fn zero_entity_surfaces_in_range(
     range: Range<usize>,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Vec<ZeroEntitySurface>, CodecError> {
-    let records = zero_entity_records_in_range(data, range)?;
+    let records = zero_entity_records_in_range(data, range);
     let mut surfaces = Vec::new();
     for record in records {
         if let Some(geometry) = zero_entity_surface_at(ctx, data, record.pos, refusal)? {
@@ -879,7 +851,7 @@ pub(crate) fn zero_entity_support_runs_in_range(
     range: Range<usize>,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Vec<ZeroEntitySupportRun>, CodecError> {
-    let records = zero_entity_records_in_range(data, range)?;
+    let records = zero_entity_records_in_range(data, range);
     let mut runs = Vec::new();
     let mut index = 0usize;
     while index + 1 < records.len() {
@@ -2151,18 +2123,15 @@ fn zero_entity_surface_point(
 #[cfg(test)]
 #[must_use]
 fn zero_entity_edge_strides(data: &[u8]) -> Vec<ZeroEntityEdgeStride> {
-    crate::test_support::with_service_context(|ctx| {
-        zero_entity_edge_strides_in_range(data, 0..data.len())
-    })
-    .expect("test edge strides fit the service profile")
+    zero_entity_edge_strides_in_range(data, 0..data.len())
 }
 
 /// Decode edge strides whose records stay inside `range`.
 pub(crate) fn zero_entity_edge_strides_in_range(
     data: &[u8],
     range: Range<usize>,
-) -> Result<Vec<ZeroEntityEdgeStride>, CodecError> {
-    let records = zero_entity_records_in_range(data, range)?;
+) -> Vec<ZeroEntityEdgeStride> {
+    let records = zero_entity_records_in_range(data, range);
     let mut output = Vec::new();
     for record in records {
         let parsed = (|| {
@@ -2197,25 +2166,22 @@ pub(crate) fn zero_entity_edge_strides_in_range(
             output.push(record);
         }
     }
-    Ok(output)
+    output
 }
 
 /// Decode complete `2569` headers with their adjacent `(1, 2)` oriented uses.
 #[cfg(test)]
 #[must_use]
 fn zero_entity_oriented_use_pairs(data: &[u8]) -> Vec<ZeroEntityOrientedUsePair> {
-    crate::test_support::with_service_context(|ctx| {
-        zero_entity_oriented_use_pairs_in_range(data, 0..data.len())
-    })
-    .expect("test oriented uses fit the service profile")
+    zero_entity_oriented_use_pairs_in_range(data, 0..data.len())
 }
 
 /// Decode oriented-use pairs whose records stay inside `range`.
 pub(crate) fn zero_entity_oriented_use_pairs_in_range(
     data: &[u8],
     range: Range<usize>,
-) -> Result<Vec<ZeroEntityOrientedUsePair>, CodecError> {
-    let records = zero_entity_records_in_range(data, range)?;
+) -> Vec<ZeroEntityOrientedUsePair> {
+    let records = zero_entity_records_in_range(data, range);
     let mut output = Vec::new();
     for records in records.windows(3) {
         let parsed = (|| {
@@ -2268,25 +2234,22 @@ pub(crate) fn zero_entity_oriented_use_pairs_in_range(
             output.push(pair);
         }
     }
-    Ok(output)
+    output
 }
 
 /// Decode complete counted `050b`, `0510`, and `0515` incidence records.
 #[cfg(test)]
 #[must_use]
 fn zero_entity_vertex_incidences(data: &[u8]) -> Vec<ZeroEntityVertexIncidence> {
-    crate::test_support::with_service_context(|ctx| {
-        zero_entity_vertex_incidences_in_range(data, 0..data.len())
-    })
-    .expect("test vertex incidences fit the service profile")
+    zero_entity_vertex_incidences_in_range(data, 0..data.len())
 }
 
 /// Decode vertex incidences whose records stay inside `range`.
 pub(crate) fn zero_entity_vertex_incidences_in_range(
     data: &[u8],
     range: Range<usize>,
-) -> Result<Vec<ZeroEntityVertexIncidence>, CodecError> {
-    let records = zero_entity_records_in_range(data, range)?;
+) -> Vec<ZeroEntityVertexIncidence> {
+    let records = zero_entity_records_in_range(data, range);
     let mut output = Vec::new();
     for records in records.windows(2) {
         let parsed = (|| {
@@ -2328,7 +2291,7 @@ pub(crate) fn zero_entity_vertex_incidences_in_range(
             output.push(incidence);
         }
     }
-    Ok(output)
+    output
 }
 
 fn zero_entity_vertex_owner(data: &[u8], record: ZeroEntityRecord) -> bool {
@@ -2411,7 +2374,7 @@ fn zero_entity_nurbs_surface(
     record: usize,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Option<SurfaceGeometry>, CodecError> {
-    let Some(layout) = zero_entity_nurbs_layout(data, record)? else {
+    let Some(layout) = zero_entity_nurbs_layout(data, record) else {
         return Ok(None);
     };
     let Some(pole_count) = crate::nurbs_surface_control_count(
@@ -2557,18 +2520,14 @@ mod tests {
     use std::num::NonZeroUsize;
 
     fn zero_entity_record_inventory(data: &[u8]) -> Vec<super::ZeroEntityRecordIdentity> {
-        crate::test_support::with_service_context(|ctx| inventory_with_context(ctx, data))
-            .expect("test record inventory fits the service profile")
+        inventory_with_context(data)
     }
 
     fn zero_entity_nurbs_layout(
         data: &[u8],
         record: usize,
     ) -> Option<super::ZeroEntityNurbsLayout> {
-        crate::test_support::with_service_context(|ctx| {
-            nurbs_layout_with_context(ctx, data, record)
-        })
-        .expect("test NURBS layout fits the service profile")
+        nurbs_layout_with_context(data, record)
     }
 
     fn zero_entity_surface_at(
@@ -2622,18 +2581,14 @@ mod tests {
         data: &[u8],
         records: &[super::ZeroEntityRecord],
     ) -> Vec<super::ZeroEntityLoop> {
-        crate::test_support::with_service_context(|ctx| loops_with_context(ctx, data, records))
-            .expect("test loops fit the service profile")
+        loops_with_context(data, records).expect("test loops fit the service profile")
     }
 
     fn oriented_closed_model_endpoints(
         endpoints: &[Option<[FinitePoint3; 2]>],
         forward_senses: &[bool],
     ) -> Option<Vec<[FinitePoint3; 2]>> {
-        crate::test_support::with_service_context(|ctx| {
-            oriented_endpoints_with_context(ctx, endpoints, forward_senses)
-        })
-        .expect("test oriented endpoints fit the service profile")
+        oriented_endpoints_with_context(endpoints, forward_senses)
     }
 
     #[test]

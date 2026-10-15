@@ -1152,10 +1152,8 @@ fn endpoint_indices(reference: [FinitePoint3; 2], target: [FinitePoint3; 2]) -> 
 mod tests {
     use std::collections::HashMap;
 
-    use cadmpeg_core::decode::{
-        DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, WorkBudget,
-    };
-    use cadmpeg_core::CodecError;
+    use cadmpeg_core::decode::WorkBudget;
+
     use cadmpeg_ir::geometry::{
         Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
     };

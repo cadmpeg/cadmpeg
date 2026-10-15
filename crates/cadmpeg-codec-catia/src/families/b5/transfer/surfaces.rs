@@ -227,12 +227,7 @@ pub(in crate::families) fn copy_rolling_ball_definition(
 }
 
 #[cfg(test)]
-mod carrier_resource_tests {
-    use super::{surface_carrier, B5SurfaceCarrier};
-    use crate::families::b5::graph::B5Surface;
-    use cadmpeg_ir::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
-    use cadmpeg_ir::math::Point3;
-}
+mod carrier_resource_tests {}
 
 pub(super) fn revolution_surface(
     ctx: &DecodeContext<'_>,
@@ -1060,7 +1055,7 @@ fn emit_extrusion_procedure(
 
 #[cfg(test)]
 mod tests {
-    use super::{append_quadratic_span_knots, emit_extrusion_procedure, revolve_nurbs};
+    use super::{append_quadratic_span_knots, emit_extrusion_procedure};
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::geometry::CurveGeometry;
     use cadmpeg_ir::geometry::ProceduralCurveDefinition;

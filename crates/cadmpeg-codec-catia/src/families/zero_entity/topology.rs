@@ -477,13 +477,10 @@ mod tests {
         endpoint_locus_candidates, endpoint_pair_candidates, endpoint_pair_candidates_with_budget,
         ZeroEntityEndpointPairCandidate, ZeroEntityOrientedOccurrence,
     };
-    use cadmpeg_core::decode::{
-        DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, WorkBudget,
-    };
-    use cadmpeg_core::CodecError;
+    use cadmpeg_core::decode::WorkBudget;
+
     use cadmpeg_ir::features::FinitePoint3;
     use cadmpeg_ir::math::Point3;
-    use std::collections::HashSet;
 
     fn finite(point: Point3) -> FinitePoint3 {
         FinitePoint3::new(point).expect("finite test point")

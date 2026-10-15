@@ -1870,12 +1870,7 @@ mod tests {
             tail: Vec::new(),
         };
         let supports = BTreeMap::from([(1, support([2, 3])), (2, support([1, 3]))]);
-        assert!(
-            !crate::test_support::with_service_context(|ctx| curve_support_reference_closes(
-                1, &pcurves, &supports
-            ))
-            .expect("service resource budget")
-        );
+        assert!(!{ curve_support_reference_closes(1, &pcurves, &supports) });
     }
 
     #[test]
@@ -1898,11 +1893,7 @@ mod tests {
         payload.extend_from_slice(&[0; 37]);
         let mut truncated = payload.clone();
         truncated.pop();
-        assert!(
-            crate::test_support::with_service_context(|ctx| parse_nurbs_pcurve(&truncated, 2, 7))
-                .expect("service resource budget")
-                .is_none()
-        );
+        assert!(parse_nurbs_pcurve(&truncated, 2, 7).is_none());
 
         let E5Pcurve::Nurbs {
             surface,
@@ -1910,9 +1901,7 @@ mod tests {
             knots,
             control_points,
             range,
-        } = crate::test_support::with_service_context(|ctx| parse_nurbs_pcurve(&payload, 2, 7))
-            .expect("service resource budget")
-            .expect("AA NURBS pcurve")
+        } = parse_nurbs_pcurve(&payload, 2, 7).expect("AA NURBS pcurve")
         else {
             panic!("AA record did not produce a NURBS pcurve");
         };
@@ -1938,14 +1927,11 @@ mod tests {
             for value in [radius, 0.0, 1.0, 0.0, 0.0] {
                 payload.extend_from_slice(&value.to_le_bytes());
             }
-            crate::test_support::with_service_context(|ctx| {
-                parse_pcurve(&Record {
-                    class: 0x97,
-                    id: 20,
-                    payload: &payload,
-                })
+            parse_pcurve(&Record {
+                class: 0x97,
+                id: 20,
+                payload: &payload,
             })
-            .expect("service resource budget")
         };
         assert!(matches!(
             parse(0.5),
@@ -1971,9 +1957,7 @@ mod tests {
             ]
             .concat(),
         );
-        let faces = crate::test_support::with_service_context(|ctx| parse_body_root(&payload))
-            .expect("service resource budget")
-            .expect("widened body root");
+        let faces = parse_body_root(&payload).expect("widened body root");
         assert_eq!(faces, [0x1600, 0x1601]);
     }
 
@@ -1999,8 +1983,7 @@ mod tests {
         payload.extend_from_slice(&final_knot.to_le_bytes());
 
         assert!(matches!(
-            crate::test_support::with_service_context(|ctx| parse_jet_pcurve(&payload, 0, 7))
-                .expect("service resource budget"),
+            parse_jet_pcurve(&payload, 0, 7),
             Some(E5Pcurve::Jet { range, .. }) if range == finite_pair([0.0, final_knot])
         ));
 
@@ -2008,32 +1991,16 @@ mod tests {
         let lower_offset = nonzero_lower.len() - 16;
         nonzero_lower[lower_offset..lower_offset + 8]
             .copy_from_slice(&(0.5 * final_knot).to_le_bytes());
-        assert!(
-            crate::test_support::with_service_context(|ctx| parse_jet_pcurve(&nonzero_lower, 0, 7))
-                .expect("service resource budget")
-                .is_none()
-        );
+        assert!(parse_jet_pcurve(&nonzero_lower, 0, 7).is_none());
 
         let mut wrong_upper = payload.clone();
         let upper_offset = wrong_upper.len() - 8;
         wrong_upper[upper_offset..].copy_from_slice(&(2.0 * final_knot).to_le_bytes());
-        assert!(
-            crate::test_support::with_service_context(|ctx| parse_jet_pcurve(&wrong_upper, 0, 7))
-                .expect("service resource budget")
-                .is_none()
-        );
+        assert!(parse_jet_pcurve(&wrong_upper, 0, 7).is_none());
 
         let mut nonfinite_knot = payload;
         nonfinite_knot[28..36].copy_from_slice(&f64::NAN.to_le_bytes());
-        assert!(
-            crate::test_support::with_service_context(|ctx| parse_jet_pcurve(
-                &nonfinite_knot,
-                0,
-                7
-            ))
-            .expect("service resource budget")
-            .is_none()
-        );
+        assert!(parse_jet_pcurve(&nonfinite_knot, 0, 7).is_none());
     }
 
     #[test]
@@ -2062,11 +2029,7 @@ mod tests {
                 },
             ),
         ]);
-        assert_eq!(
-            crate::test_support::with_service_context(|ctx| solve_loop_chain(&[1, 2], &edges))
-                .expect("service resource budget"),
-            Some(vec![false, false])
-        );
+        assert_eq!(solve_loop_chain(&[1, 2], &edges), Some(vec![false, false]));
     }
 
     #[test]

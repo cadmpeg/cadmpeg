@@ -40,19 +40,6 @@ pub(crate) fn compose_u32_id<T>(
     compose_index_id(namespace, index_from_u32(value), construct)
 }
 
-#[cfg(test)]
-mod id_format_tests {
-    #[test]
-    fn b5_numeric_identity_preserves_spelling() {
-        use cadmpeg_ir::ids::CurveId;
-
-        let namespace = cadmpeg_ir::identity_namespace!("catia", "b5", "profile");
-        let id = super::compose_u32_id(&namespace, 42, CurveId::mint)
-            .expect("identity spelling is valid");
-        assert_eq!(id.as_str(), "catia:b5:profile#42");
-    }
-}
-
 pub(crate) fn copy_intcurve_support_context(
     ctx: &DecodeContext<'_>,
     context: &cadmpeg_ir::geometry::IntcurveSupportContext,
@@ -89,4 +76,17 @@ pub(crate) fn copy_intcurve_support_context(
         [first, second, third],
     )
     .map_err(CodecError::malformed)
+}
+
+#[cfg(test)]
+mod id_format_tests {
+    #[test]
+    fn b5_numeric_identity_preserves_spelling() {
+        use cadmpeg_ir::ids::CurveId;
+
+        let namespace = cadmpeg_ir::identity_namespace!("catia", "b5", "profile");
+        let id = super::compose_u32_id(&namespace, 42, CurveId::mint)
+            .expect("identity spelling is valid");
+        assert_eq!(id.as_str(), "catia:b5:profile#42");
+    }
 }

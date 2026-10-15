@@ -30,12 +30,12 @@ mod tests {
 
     #[test]
     fn history_kind_replacement_preserves_colon_keys() {
-        let result = crate::test_support::with_service_context(|ctx| {
+        let result = {
             neutral_history_id(
                 "catia:graph:object#owner:child",
                 &cadmpeg_ir::identity_component!("feature"),
             )
-        });
+        };
         assert_eq!(
             result.expect("valid native identity").as_str(),
             "catia:graph:feature#owner:child"
@@ -46,10 +46,7 @@ mod tests {
     fn malformed_native_history_identity_is_refused() {
         for value in ["short", "catia:graph:object#", "catia:graph:object#a#b"] {
             assert!(matches!(
-                crate::test_support::with_service_context(|ctx| neutral_history_id(
-                    value,
-                    &cadmpeg_ir::identity_component!("feature")
-                )),
+                neutral_history_id(value, &cadmpeg_ir::identity_component!("feature")),
                 Err(CodecError::Malformed(_))
             ));
         }
