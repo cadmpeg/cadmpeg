@@ -4,7 +4,6 @@ use crate::test_support::test_prt::many_face_partition_stream;
 use crate::topology::Graph;
 use std::collections::BTreeMap;
 
-use super::group_records::group_record;
 use super::{record, stream};
 use crate::native::parasolid::group_member::GroupMemberTarget;
 
@@ -161,4 +160,18 @@ fn group_records_assign_only_paired_deltas_to_a_partition_scope() {
     assert_eq!(groups[1].origin.partition_stream_ordinal(), Some(0));
     assert_eq!(groups[2].origin.partition_stream_ordinal(), None);
     assert_eq!(groups[1].origin.stream_kind().label(), "deltas");
+}
+
+fn group_record(xmt: u16, node_id: u32, linked_reference: u16) -> Vec<u8> {
+    let mut bytes = vec![0, 90];
+    bytes.extend_from_slice(&xmt.to_be_bytes());
+    bytes.extend_from_slice(&node_id.to_be_bytes());
+    for reference in [3u16, 4, 5, 6] {
+        bytes.extend_from_slice(&reference.to_be_bytes());
+        bytes.push(1);
+    }
+    bytes.push(4);
+    bytes.extend_from_slice(&linked_reference.to_be_bytes());
+    bytes.push(0);
+    bytes
 }
