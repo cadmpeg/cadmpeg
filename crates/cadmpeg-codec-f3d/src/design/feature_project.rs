@@ -7798,6 +7798,14 @@ fn project_extrude(
         .transpose()
         .ok();
     let fixed_along = or_none!(fixed_along);
+    // A fixed symmetric distance lane does not state whether it is the half
+    // or the whole travel (open item DR-78), so it defines no neutral length.
+    if parameter_along.is_none()
+        && fixed_along.is_some()
+        && prologue.extent() == Some(DesignExtrudeExtent::SymmetricDistance)
+    {
+        return Ok(None);
+    }
     let along = match (parameter_along, fixed_along) {
         (Some(parameter), Some((fixed, AlongDirection::SignedDistance)))
             if (parameter.get() - fixed.get()).abs() <= EPS_FEATURE_PROJECT_PROJECT_EXTRUDE_E9 =>
