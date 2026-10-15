@@ -1318,7 +1318,7 @@ pub(crate) fn bind_feature_body_selections(
                         let Some(body) = singleton_revised_input_body_across_state_chain(state, previous_state_id, &history_states) else {
                             return;
                         };
-                        let prefix = crate::ids::history_input_prefix(&feature_id.key(), previous_state_id);
+                        let prefix = crate::ids::feature_input_prefix(feature_id, previous_state_id);
                         let input_state = crate::ids::history_input_state_id(&prefix);
                         let body_id = crate::ids::history_input_body_id(&prefix, body);
                         let native_id = native.to_owned();
@@ -1577,7 +1577,7 @@ pub(crate) fn bind_feature_body_selections(
             let Some(body) = body else {
                 break 'feature_edit;
             };
-            let prefix = crate::ids::history_input_prefix(&feature_id.key(), previous_state_id);
+            let prefix = crate::ids::feature_input_prefix(feature_id, previous_state_id);
             let state_id = crate::ids::history_input_state_id(&prefix);
             let body_id = crate::ids::history_input_body_id(&prefix, body);
             let native = group_id.to_owned();
@@ -1929,7 +1929,7 @@ fn bind_body_recipe_body_selection(
         }
     }
 
-    let prefix = crate::ids::history_input_prefix(&feature_id.key(), previous_state_id);
+    let prefix = crate::ids::feature_input_prefix(feature_id, previous_state_id);
     let mut body_ids = Vec::new();
 
     for slot in body_slots {
@@ -2615,7 +2615,7 @@ fn bind_entity_face_groups(
             }
         }
     }
-    let prefix = crate::ids::history_input_prefix(&feature_id.key(), previous_state_id);
+    let prefix = crate::ids::feature_input_prefix(feature_id, previous_state_id);
     let state_id = crate::ids::history_input_state_id(&prefix);
     let mut topologies = input_topologies
         .iter_mut()
@@ -2685,7 +2685,7 @@ fn bind_hole_face_selection(
     let Some(source) = historical_brep_source(&candidate.history_id) else {
         return;
     };
-    let prefix = crate::ids::history_input_prefix(&feature_id.key(), previous_state_id);
+    let prefix = crate::ids::feature_input_prefix(feature_id, previous_state_id);
     let state_id = crate::ids::history_input_state_id(&prefix);
     let mut topologies = input_topologies
         .iter_mut()
@@ -2864,7 +2864,7 @@ fn bind_entity_selection_path(
         edge_slots.push(edge_slot);
     }
 
-    let prefix = crate::ids::history_input_prefix(&feature_id.key(), previous_state_id);
+    let prefix = crate::ids::feature_input_prefix(feature_id, previous_state_id);
     let mut edge_ids = Vec::new();
 
     for slot in edge_slots {
@@ -2932,7 +2932,7 @@ pub(crate) fn project_feature_input_topologies(
         let Some(topology) = state.topology() else {
             continue;
         };
-        let prefix = crate::ids::history_input_prefix(&feature.id.key(), previous_state_id);
+        let prefix = crate::ids::feature_input_prefix(&feature.id, previous_state_id);
         let Some(bodies) = project_input_members(&topology.bodies, |slot| {
             crate::ids::history_input_body_id(&prefix, slot)
         }) else {
@@ -3338,15 +3338,6 @@ fn point_matches(left: cadmpeg_ir::math::Point3, right: cadmpeg_ir::math::Point3
         })
 }
 
-#[cfg(test)]
-fn feature_input_prefix(
-    feature: &cadmpeg_ir::features::FeatureId,
-    previous_state_id: i64,
-) -> cadmpeg_ir::ids::IdentityKey {
-    let feature_key = feature.key();
-    crate::ids::history_input_prefix(&feature_key, previous_state_id)
-}
-
 fn unique_history_state(
     histories: &[AsmHistory],
     state_id: i64,
@@ -3516,7 +3507,7 @@ fn hem_direction_from_transition<'a>(
     previous: &AsmHistoricalTopology,
     transition: &AsmHistoricalTransition,
 ) -> Option<cadmpeg_ir::features::SheetMetalHemDirection> {
-    (*cylinders).clone().next()?;
+    cylinders.clone().next()?;
     let edge_context = selection::historical_edge_context(edge_slot, previous);
     let mut candidate = None;
     for (ordinal, incident) in edge_context.incident_loops.iter().enumerate() {
@@ -3555,7 +3546,7 @@ fn hem_direction_from_transition<'a>(
             continue;
         }
         let normal = plane.normal.scale(1.0 / length);
-        let Some(first_cylinder) = (*cylinders).clone().next() else {
+        let Some(first_cylinder) = cylinders.clone().next() else {
             continue;
         };
         let first = normal.dot(first_cylinder.origin.vector_from(plane.origin));
@@ -3567,14 +3558,14 @@ fn hem_direction_from_transition<'a>(
                 + plane.origin.x.abs()
                 + plane.origin.y.abs()
                 + plane.origin.z.abs()
-                + (*cylinders).clone().fold(0.0_f64, |scale, cylinder| {
+                + cylinders.clone().fold(0.0_f64, |scale, cylinder| {
                     scale
                         .max(cylinder.origin.x.abs())
                         .max(cylinder.origin.y.abs())
                         .max(cylinder.origin.z.abs())
                 }));
         if first.abs() <= sign_tolerance
-            || (*cylinders).clone().any(|cylinder| {
+            || cylinders.clone().any(|cylinder| {
                 let offset = normal.dot(cylinder.origin.vector_from(plane.origin));
                 !offset.is_finite()
                     || offset.abs() <= sign_tolerance
@@ -4015,7 +4006,7 @@ fn direct_face_recipe_candidates(
         .filter(|reference| reference.design_reference == i64::from(recipe_record_index))
         .flat_map(|reference| &reference.candidate_faces)
     {
-        faces.push((face).clone());
+        faces.push(face.clone());
     }
     faces.sort_by(|left, right| left.as_str().cmp(right.as_str()));
     faces.dedup();
@@ -6585,7 +6576,7 @@ fn terminal_edge_recipe_reference_faces(
         } else {
             &reference.candidate_faces
         };
-        let faces = (faces).clone();
+        let faces = faces.clone();
 
         selected.push(faces);
         Ok::<(), cadmpeg_core::CodecError>(())

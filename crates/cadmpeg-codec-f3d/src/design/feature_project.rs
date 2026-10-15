@@ -655,7 +655,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     .map_or_else(
                         || native_scope_definition(scope, &parameters),
                         |_| Ok(FeatureDefinition::Operation(FeatureOperation::AssemblyJoint {
-                            joint: crate::design::identity::neutral_assembly_joint_id(scope)?,
+                            joint: crate::ids::neutral_assembly_joint_id(scope),
                         })),
                     )?,
                 Some(DesignFeatureFamily::Extrude) => project_extrude(
@@ -1115,8 +1115,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                             let bodies = match selection {
                                 cadmpeg_ir::features::BodySelection::Resolved { bodies, native } => {
                                     for body in bodies.as_slice() {
-                                        let id = (body).clone();
-                                        inserted_bodies.push(id);
+                                        inserted_bodies.push(body.clone());
                                     }
                                     cadmpeg_ir::features::InsertedBodies::Resolved { native }
                                 }
@@ -1326,7 +1325,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
             if let Some(candidate) = history_state_features.get_mut(&key) {
                 *candidate = None;
             } else {
-                let id = (feature_id).clone();
+                let id = feature_id.clone();
                 // discarded-value: the vacant-key check admits this state.
                 let _ = history_state_features.insert(key, Some(id));
             }
@@ -1451,7 +1450,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
         for parameter in &parameters {
             let scope = parameter_scopes[&parameter.id];
             if let Some(owner) = &parameter.owner {
-                let key = (scope, (owner).clone(), parameter.name.clone());
+                let key = (scope, owner.clone(), parameter.name.clone());
                 if let Some(candidate) = feature_aliases.get_mut(&key) {
                     *candidate = None;
                 } else {
@@ -1460,8 +1459,10 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     let _ = feature_aliases.insert(key, Some(value));
                 }
                 let key = (scope, parameter.name.clone());
-                let id = parameter.id.clone();
-                owned_aliases.entry(key).or_default().push(id);
+                owned_aliases
+                    .entry(key)
+                    .or_default()
+                    .push(parameter.id.clone());
             } else {
                 let key = (scope, parameter.name.clone());
                 if let Some(candidate) = document_aliases.get_mut(&key) {
@@ -1518,7 +1519,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 candidates.next().is_none().then_some(candidate)
             };
             let candidate = if let Some(owner) = &parameter.owner {
-                let owner_key = (owner).clone();
+                let owner_key = owner.clone();
                 let feature_identifier = alias_key.1.clone();
                 match feature_aliases.get(&(scope, owner_key, feature_identifier)) {
                     Some(None) => None,
@@ -1766,13 +1767,10 @@ fn project_work_point_construction(
             return Ok(Some(EdgeSelection::Native(operand.id.clone())));
         };
         let feature_id = crate::design::identity::neutral_feature_id(scope)?;
-        let feature_key = crate::design::identity::identity_key(feature_id.as_str())?;
-        let prefix = crate::design::identity::history_input_prefix(feature_key, state_id)?;
+        let prefix = crate::ids::feature_input_prefix(&feature_id, state_id);
         Ok(Some(match cadmpeg_ir::features::EdgeSelection::historical(
-            crate::design::identity::feature_input_topology_id(&feature_id, state_id)?,
-            vec![crate::design::identity::history_input_edge_id(
-                &prefix, edge_slot,
-            )?],
+            crate::ids::feature_input_topology_id(&feature_id, state_id),
+            vec![crate::ids::history_input_edge_id(&prefix, edge_slot)],
             operand.id.clone(),
         ) {
             Ok(selection) => selection,
@@ -1819,12 +1817,10 @@ fn project_work_point_construction(
                     let state_id = resolution.state_id;
                     let vertex_slot = resolution.vertex_slot();
                     let feature_id = crate::design::identity::neutral_feature_id(scope)?;
-                    let feature_key = crate::design::identity::identity_key(feature_id.as_str())?;
-                    let prefix =
-                        crate::design::identity::history_input_prefix(feature_key, state_id)?;
+                    let prefix = crate::ids::feature_input_prefix(&feature_id, state_id);
                     VertexSelection::historical(
-                        crate::design::identity::feature_input_topology_id(&feature_id, state_id)?,
-                        crate::design::identity::history_input_vertex_id(&prefix, vertex_slot)?,
+                        crate::ids::feature_input_topology_id(&feature_id, state_id),
+                        crate::ids::history_input_vertex_id(&prefix, vertex_slot),
                         recipe.recipe_id.clone(),
                     )
                     .unwrap_or(VertexSelection::Unresolved)
@@ -1892,15 +1888,14 @@ fn project_work_plane(
         }));
     };
     let feature_id = crate::design::identity::neutral_feature_id(scope)?;
-    let feature_key = crate::design::identity::identity_key(feature_id.as_str())?;
-    let prefix = crate::design::identity::history_input_prefix(feature_key, state_id)?;
+    let prefix = crate::ids::feature_input_prefix(&feature_id, state_id);
     let vertex = |recipe: &crate::records::feature::work_geometry::DesignVertexRecipe|
         -> Result<Option<VertexSelection>, CodecError> {
             let Some(resolution) = recipe.resolution else { return Ok(None); };
             let native = recipe.recipe_id.clone();
             let selection = VertexSelection::historical(
-                crate::design::identity::feature_input_topology_id(&feature_id, state_id)?,
-                crate::design::identity::history_input_vertex_id(&prefix, resolution.vertex_slot())?,
+                crate::ids::feature_input_topology_id(&feature_id, state_id),
+                crate::ids::history_input_vertex_id(&prefix, resolution.vertex_slot()),
                 native,
             )
             .unwrap_or(VertexSelection::Unresolved);
@@ -2297,8 +2292,7 @@ fn project_thread_face_selection(
         state.get_or_insert(group_state);
         for face in group_faces.as_slice() {
             if !faces.contains(face) {
-                let face = (face).clone();
-                faces.push(face);
+                faces.push(face.clone());
             }
         }
     }
@@ -2413,8 +2407,7 @@ fn design_body_selection(
         if matches.any(|candidate| candidate != body) {
             return BodySelection::Native(scope.id.clone());
         }
-        let body = (body).clone();
-        bodies.push(body);
+        bodies.push(body.clone());
     }
     if bodies.len() == expected_count {
         if let Ok(bodies) = cadmpeg_ir::features::DistinctMembers::try_from(bodies) {
@@ -2796,8 +2789,8 @@ pub(crate) fn bind_work_point_sketch_point_constructions(
                 let native = format!("{}{}{}", stream, ":design-record#", u64::from(record_index));
                 *construction = Some(Box::new(DatumPointConstruction::SketchPoint {
                     point: SketchPointSelection::Planar {
-                        sketch: (entity.sketch).clone(),
-                        point: (entity.id()).clone(),
+                        sketch: entity.sketch.clone(),
+                        point: entity.id().clone(),
                         native,
                     },
                 }));
@@ -2807,8 +2800,8 @@ pub(crate) fn bind_work_point_sketch_point_constructions(
                 let native = format!("{}{}{}", stream, ":design-record#", u64::from(record_index));
                 *construction = Some(Box::new(DatumPointConstruction::SketchPoint {
                     point: SketchPointSelection::Spatial {
-                        sketch: (entity.sketch).clone(),
-                        point: (entity.id()).clone(),
+                        sketch: entity.sketch.clone(),
+                        point: entity.id().clone(),
                         native,
                     },
                 }));
@@ -2877,8 +2870,7 @@ fn project_surface_offset(
         };
         for face in &group_faces {
             if !faces.contains(face) {
-                let face = (face).clone();
-                faces.push(face);
+                faces.push(face.clone());
             }
         }
     }
@@ -3106,13 +3098,10 @@ fn selected_historical_face_selection(
         return Ok(None);
     }
     let feature = crate::design::identity::neutral_feature_id(scope)?;
-    let feature_key = crate::design::identity::identity_key(feature.as_str())?;
-    let prefix = crate::design::identity::history_input_prefix(feature_key, previous_state_id)?;
+    let prefix = crate::ids::feature_input_prefix(&feature, previous_state_id);
     Ok(Some(match cadmpeg_ir::features::FaceSelection::historical(
-        crate::design::identity::feature_input_topology_id(&feature, previous_state_id)?,
-        vec![crate::design::identity::history_input_face_id(
-            &prefix, face_slot,
-        )?],
+        crate::ids::feature_input_topology_id(&feature, previous_state_id),
+        vec![crate::ids::history_input_face_id(&prefix, face_slot)],
         group.id.clone(),
     ) {
         Ok(selection) => selection,
@@ -3287,8 +3276,7 @@ fn resolved_split_face_path(
     ));
     let stream = or_none!(native_stream(&scope.id));
     let feature = crate::design::identity::neutral_feature_id(scope)?;
-    let feature_key = crate::design::identity::identity_key(feature.as_str())?;
-    let prefix = crate::design::identity::history_input_prefix(feature_key, previous_state_id)?;
+    let prefix = crate::ids::feature_input_prefix(&feature, previous_state_id);
     let mut edge_slots = Vec::new();
     for (ordinal, member) in group
         .members()
@@ -3316,11 +3304,11 @@ fn resolved_split_face_path(
     }
     let mut edges = Vec::new();
     for edge_slot in edge_slots {
-        let edge = crate::design::identity::history_input_edge_id(&prefix, edge_slot)?;
+        let edge = crate::ids::history_input_edge_id(&prefix, edge_slot);
         edges.push(edge);
     }
     Ok(PathRef::historical_edges(
-        crate::design::identity::feature_input_topology_id(&feature, previous_state_id)?,
+        crate::ids::feature_input_topology_id(&feature, previous_state_id),
         edges,
         group.id.clone(),
     )
@@ -4215,6 +4203,7 @@ fn merge_edge_selections(
             EdgeSelection::Edges(_) | EdgeSelection::Resolved { .. }
         )
     }) {
+        let mut seen = HashSet::new();
         let mut resolved = Vec::new();
         for selection in selections {
             let (EdgeSelection::Edges(edges) | EdgeSelection::Resolved { edges, .. }) = selection
@@ -4222,11 +4211,10 @@ fn merge_edge_selections(
                 return native();
             };
             for edge in edges {
-                if resolved.contains(edge) {
+                if !seen.insert(edge) {
                     return native();
                 }
-                let edge = (edge).clone();
-                resolved.push(edge);
+                resolved.push(edge.clone());
             }
         }
         return EdgeSelection::Resolved {
@@ -4239,18 +4227,18 @@ fn merge_edge_selections(
             matches!(selection,
             EdgeSelection::Historical { state: candidate, .. } if candidate == state)
         }) {
-            let state = (state).clone();
+            let state = state.clone();
+            let mut seen = HashSet::new();
             let mut resolved = Vec::new();
             for selection in selections {
                 let EdgeSelection::Historical { edges, .. } = selection else {
                     return native();
                 };
                 for edge in edges {
-                    if resolved.contains(edge) {
+                    if !seen.insert(edge) {
                         return native();
                     }
-                    let edge = (edge).clone();
-                    resolved.push(edge);
+                    resolved.push(edge.clone());
                 }
             }
             let selected_native = scope.id.clone();
@@ -4356,12 +4344,11 @@ pub(crate) fn direct_face_selection(
         members.push((operand.id.as_str(), operand.resolved_face_slots.as_slice()));
     }
     let feature_id = crate::design::identity::neutral_feature_id(scope)?;
-    let feature_key = crate::design::identity::identity_key(feature_id.as_str())?;
     let historical_face = |previous_state_id, slot| -> Result<_, CodecError> {
-        let face = crate::design::identity::history_input_face_id(
-            &crate::design::identity::history_input_prefix(feature_key, previous_state_id)?,
+        let face = crate::ids::history_input_face_id(
+            &crate::ids::feature_input_prefix(&feature_id, previous_state_id),
             slot,
-        )?;
+        );
         Ok(face)
     };
     let faces = match scope.previous_history_state_id() {
@@ -4374,7 +4361,7 @@ pub(crate) fn direct_face_selection(
                 }
             }
             match cadmpeg_ir::features::FaceSelection::historical(
-                crate::design::identity::feature_input_topology_id(&feature_id, previous_state_id)?,
+                crate::ids::feature_input_topology_id(&feature_id, previous_state_id),
                 resolved,
                 scope.id.clone(),
             ) {
@@ -4398,7 +4385,7 @@ pub(crate) fn direct_face_selection(
                 }
             }
             match cadmpeg_ir::features::FaceSelection::historical_partial(
-                crate::design::identity::feature_input_topology_id(&feature_id, previous_state_id)?,
+                crate::ids::feature_input_topology_id(&feature_id, previous_state_id),
                 faces,
                 unresolved,
                 scope.id.clone(),
@@ -4412,101 +4399,139 @@ pub(crate) fn direct_face_selection(
     Ok(Some(faces))
 }
 
+/// Local work cap for ordering the parameters of one owner scope.
+///
+/// Each ordering round scans every unresolved parameter and its dependencies,
+/// so a dependency chain makes the ordering quadratic in the scope's
+/// parameter count.
+const PARAMETER_ORDER_WORK: usize = 1 << 22;
+
 fn normalize_parameter_ordinals(
     parameters: &mut [cadmpeg_ir::features::DesignParameter],
     owners: &HashMap<cadmpeg_ir::features::ParameterId, Option<cadmpeg_ir::features::FeatureId>>,
 ) {
-    {
-        use cadmpeg_ir::features::{FeatureId, ParameterId};
+    let mut groups = HashMap::<Option<cadmpeg_ir::features::FeatureId>, Vec<usize>>::new();
+    for (index, parameter) in parameters.iter().enumerate() {
+        if let Some(indices) = groups.get_mut(&parameter.owner) {
+            indices.push(index);
+        } else {
+            let owner = parameter.owner.clone();
+            let indices = vec![index];
+            // discarded-value: a new owner group has no previous member list.
+            let _ = groups.insert(owner, indices);
+        }
+    }
+    for (owner, indices) in groups {
+        order_parameter_scope(
+            parameters,
+            owners,
+            owner.as_ref(),
+            &indices,
+            &cadmpeg_core::decode::WorkBudget::new(PARAMETER_ORDER_WORK),
+        );
+    }
+}
 
-        let mut groups = HashMap::<Option<FeatureId>, Vec<usize>>::new();
-        for (index, parameter) in parameters.iter().enumerate() {
-            if let Some(indices) = groups.get_mut(&parameter.owner) {
-                indices.push(index);
-            } else {
-                let owner = parameter.owner.clone();
-                let indices = vec![index];
-                // discarded-value: a new owner group has no previous member list.
-                let _ = groups.insert(owner, indices);
+/// Reassign the ordinals of one owner scope so each parameter follows its
+/// same-scope dependencies, breaking cycles at their lowest-ordinal member.
+///
+/// When the ordering exhausts `budget`, the scope keeps its source ordinals
+/// and loses its same-scope dependency edges, so the projection stays valid.
+/// Decode reports the dropped edges as unbound expression symbols.
+fn order_parameter_scope(
+    parameters: &mut [cadmpeg_ir::features::DesignParameter],
+    owners: &HashMap<cadmpeg_ir::features::ParameterId, Option<cadmpeg_ir::features::FeatureId>>,
+    owner: Option<&cadmpeg_ir::features::FeatureId>,
+    indices: &[usize],
+    budget: &cadmpeg_core::decode::WorkBudget,
+) {
+    let mut ordinals = Vec::new();
+    for index in indices {
+        ordinals.push(parameters[*index].ordinal);
+    }
+    ordinals.sort_unstable_by(Ord::cmp);
+    let mut unresolved = HashSet::new();
+    for index in indices {
+        // discarded-value: each parameter index occurs once in its owner group.
+        let _ = unresolved.insert(*index);
+    }
+    let mut resolved = HashSet::<cadmpeg_ir::features::ParameterId>::new();
+    let mut order = Vec::new();
+    while !unresolved.is_empty() {
+        let mut ready = Vec::new();
+        for index in &unresolved {
+            let dependencies = &parameters[*index].dependencies;
+            // The round charge also covers the component search of a
+            // cycle-breaking round, which walks the same graph.
+            if !budget.charge_by(1 + dependencies.len()) {
+                break;
+            }
+            if dependencies.iter().all(|dependency| {
+                owners.get(dependency).map(Option::as_ref) != Some(owner)
+                    || resolved.contains(dependency)
+            }) {
+                ready.push(*index);
             }
         }
-        for (owner, indices) in groups {
-            let mut ordinals = Vec::new();
-            for index in &indices {
-                ordinals.push(parameters[*index].ordinal);
-            }
-            ordinals.sort_unstable_by(Ord::cmp);
-            let mut unresolved = HashSet::new();
+        if budget.exhausted() {
             for index in indices {
-                // discarded-value: each parameter index occurs once in its owner group.
-                let _ = unresolved.insert(index);
+                parameters[*index]
+                    .dependencies
+                    .retain(|dependency| owners.get(dependency).map(Option::as_ref) != Some(owner));
             }
-            let mut resolved = HashSet::<ParameterId>::new();
-            let mut order = Vec::new();
-            while !unresolved.is_empty() {
-                let mut ready = Vec::new();
-                for index in &unresolved {
-                    if parameters[*index].dependencies.iter().all(|dependency| {
-                        owners.get(dependency) != Some(&owner) || resolved.contains(dependency)
-                    }) {
-                        ready.push(*index);
-                    }
-                }
-                ready.sort_by(|a, b| {
-                    let pa = &parameters[*a];
-                    let pb = &parameters[*b];
-                    pa.ordinal.cmp(&pb.ordinal).then_with(|| pa.id.cmp(&pb.id))
-                });
-                if ready.is_empty() {
-                    // Every blocked parameter has an unresolved dependency, so the
-                    // remaining graph contains a cycle. Break its lowest-ordinal
-                    // member, then resume ordering before selecting another cycle.
-                    let cycle = cyclic_parameter_components(parameters, &unresolved)
-                        .into_iter()
-                        .map(|(first, remaining)| {
-                            let breaker = remaining.iter().copied().fold(first, |best, index| {
-                                let candidate = &parameters[index];
-                                let current = &parameters[best];
-                                if (candidate.ordinal, &candidate.id)
-                                    < (current.ordinal, &current.id)
-                                {
-                                    index
-                                } else {
-                                    best
-                                }
-                            });
-                            (breaker, first, remaining)
-                        })
-                        .min_by(|(a, _, _), (b, _, _)| {
-                            let a = &parameters[*a];
-                            let b = &parameters[*b];
-                            (a.ordinal, &a.id).cmp(&(b.ordinal, &b.id))
-                        });
-                    if let Some((breaker, first, remaining)) = cycle {
-                        let mut members = HashSet::new();
-                        for index in std::iter::once(first).chain(remaining) {
-                            let id = parameters[index].id.clone();
-                            // discarded-value: component indices are distinct.
-                            let _ = members.insert(id);
-                        }
-                        parameters[breaker]
-                            .dependencies
-                            .retain(|dependency| !members.contains(dependency));
-                    }
-                    continue;
-                }
-                for index in ready {
-                    unresolved.remove(&index);
-                    let id = parameters[index].id.clone();
-                    // discarded-value: a parameter is resolved once.
-                    let _ = resolved.insert(id);
-                    order.push(index);
-                }
-            }
-            for (index, ordinal) in order.into_iter().zip(ordinals) {
-                parameters[index].ordinal = ordinal;
-            }
+            return;
         }
+        ready.sort_by(|a, b| {
+            let pa = &parameters[*a];
+            let pb = &parameters[*b];
+            pa.ordinal.cmp(&pb.ordinal).then_with(|| pa.id.cmp(&pb.id))
+        });
+        if ready.is_empty() {
+            // Every blocked parameter has an unresolved dependency, so the
+            // remaining graph contains a cycle. Break its lowest-ordinal
+            // member, then resume ordering before selecting another cycle.
+            let cycle = cyclic_parameter_components(parameters, &unresolved)
+                .into_iter()
+                .map(|(first, remaining)| {
+                    let breaker = remaining.iter().copied().fold(first, |best, index| {
+                        let candidate = &parameters[index];
+                        let current = &parameters[best];
+                        if (candidate.ordinal, &candidate.id) < (current.ordinal, &current.id) {
+                            index
+                        } else {
+                            best
+                        }
+                    });
+                    (breaker, first, remaining)
+                })
+                .min_by(|(a, _, _), (b, _, _)| {
+                    let a = &parameters[*a];
+                    let b = &parameters[*b];
+                    (a.ordinal, &a.id).cmp(&(b.ordinal, &b.id))
+                });
+            if let Some((breaker, first, remaining)) = cycle {
+                let mut members = HashSet::new();
+                for index in std::iter::once(first).chain(remaining) {
+                    let id = parameters[index].id.clone();
+                    // discarded-value: component indices are distinct.
+                    let _ = members.insert(id);
+                }
+                parameters[breaker]
+                    .dependencies
+                    .retain(|dependency| !members.contains(dependency));
+            }
+            continue;
+        }
+        for index in ready {
+            unresolved.remove(&index);
+            let id = parameters[index].id.clone();
+            // discarded-value: a parameter is resolved once.
+            let _ = resolved.insert(id);
+            order.push(index);
+        }
+    }
+    for (index, ordinal) in order.into_iter().zip(ordinals) {
+        parameters[index].ordinal = ordinal;
     }
 }
 
@@ -5746,7 +5771,7 @@ fn resolved_surface_patch_path(
             matches!(path,
             PathRef::HistoricalEdges { state: candidate, .. } if candidate == state)
         }) {
-            let state = (state).clone();
+            let state = state.clone();
             let mut edges = Vec::new();
             for path in &paths {
                 if let PathRef::HistoricalEdges {
@@ -5754,8 +5779,7 @@ fn resolved_surface_patch_path(
                 } = path
                 {
                     for edge in group_edges {
-                        let edge = (edge).clone();
-                        edges.push(edge);
+                        edges.push(edge.clone());
                     }
                 }
             }
@@ -5777,8 +5801,7 @@ fn resolved_surface_patch_path(
         for path in &paths {
             if let PathRef::Edges(group_edges) = path {
                 for edge in group_edges {
-                    let edge = (edge).clone();
-                    edges.push(edge);
+                    edges.push(edge.clone());
                 }
             }
         }
@@ -8167,18 +8190,28 @@ fn spatial_sketch_entity_endpoints(
     }
 }
 
+/// Local work cap for the closed-profile chain search of one spatial sketch.
+///
+/// Each chain step scans every unused open edge, so the search is quadratic
+/// in the sketch's open edges. An exhausted cap leaves the sketch with no
+/// derived profiles.
+pub(super) const SPATIAL_PROFILE_SEARCH_WORK: usize = 1 << 24;
+
+/// Closed profiles of one spatial sketch, or `None` when the chain search
+/// exhausts `budget`.
 pub(super) fn closed_spatial_sketch_profiles(
     ctx: &DecodeContext<'_>,
     sketch: &cadmpeg_ir::sketches::SpatialSketchId,
     entities: &[cadmpeg_ir::sketches::SpatialSketchEntity],
     tolerance: f64,
-) -> Result<Vec<cadmpeg_ir::sketches::SpatialSketchProfile>, CodecError> {
+    budget: &cadmpeg_core::decode::WorkBudget,
+) -> Result<Option<Vec<cadmpeg_ir::sketches::SpatialSketchProfile>>, CodecError> {
     use cadmpeg_ir::sketches::{
         SpatialSketchEntityUse, SpatialSketchGeometryDefinition, SpatialSketchProfile,
     };
 
     if !tolerance.is_finite() || tolerance <= 0.0 {
-        return Ok(Vec::new());
+        return Ok(Some(Vec::new()));
     }
     let mut profiles = Vec::new();
     let mut edges = Vec::new();
@@ -8194,7 +8227,7 @@ pub(super) fn closed_spatial_sketch_profiles(
                 ..
             } => {
                 let boundary = vec![SpatialSketchEntityUse {
-                    entity: (entity.id()).clone(),
+                    entity: entity.id().clone(),
                     reversed: false,
                 }];
                 if let Ok(profile) = SpatialSketchProfile::try_new(
@@ -8218,16 +8251,25 @@ pub(super) fn closed_spatial_sketch_profiles(
     for index in 0..edges.len() {
         unused.insert(index);
     }
-    while let Some(&first) = unused
-        .iter()
-        .min_by(|a, b| edges[**a].0.id().cmp(edges[**b].0.id()))
-    {
+    loop {
+        if !budget.charge_by(unused.len()) {
+            return Ok(None);
+        }
+        let Some(&first) = unused
+            .iter()
+            .min_by(|a, b| edges[**a].0.id().cmp(edges[**b].0.id()))
+        else {
+            break;
+        };
         unused.remove(&first);
         let mut uses = Vec::new();
         uses.push((first, false));
         let start = edges[first].1[0];
         let mut end = edges[first].1[1];
         while !close(end, start) {
+            if !budget.charge_by(unused.len()) {
+                return Ok(None);
+            }
             let mut candidate = None;
             let mut ambiguous = false;
             for &index in &unused {
@@ -8259,6 +8301,9 @@ pub(super) fn closed_spatial_sketch_profiles(
             } else {
                 edges[next.0].1[1]
             };
+        }
+        if !budget.charge_by(edges.len()) {
+            return Ok(None);
         }
         let start_degree = edges
             .iter()
@@ -8295,7 +8340,7 @@ pub(super) fn closed_spatial_sketch_profiles(
         let mut boundary = Vec::new();
         for (index, reversed) in uses {
             boundary.push(SpatialSketchEntityUse {
-                entity: (edges[index].0.id()).clone(),
+                entity: edges[index].0.id().clone(),
                 reversed,
             });
         }
@@ -8304,7 +8349,7 @@ pub(super) fn closed_spatial_sketch_profiles(
         }
     }
     profiles.sort_by(|a, b| a.boundary()[0].entity.cmp(&b.boundary()[0].entity));
-    Ok(profiles)
+    Ok(Some(profiles))
 }
 
 fn project_coil(

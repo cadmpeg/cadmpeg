@@ -9,6 +9,7 @@ use crate::records::feature::scope::{
 use crate::records::topology::construction::DesignConstructionOperandGroup;
 use crate::records::topology::extrude_selection::DesignOperandRole;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::features::{BodySelection, FaceSelection, FeatureDefinition, FeatureOperation};
 
 fn scope(kind: DesignFeatureKind) -> DesignParameterScope {
     let mut scope = DesignParameterScope::empty("f3d:test:scope#12", kind, 12);
@@ -67,51 +68,75 @@ fn group(role: DesignOperandRole) -> DesignConstructionOperandGroup {
     .unwrap()
 }
 
-fn assert_projects(projected: Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError>) {
-    assert!(projected.unwrap().is_some());
+fn projected_operation(
+    projected: Result<Option<FeatureDefinition>, CodecError>,
+) -> FeatureOperation {
+    let Some(FeatureDefinition::Operation(operation)) = projected.unwrap() else {
+        panic!("expected a projected operation");
+    };
+    operation
 }
 
 #[test]
 fn offset_faces_projects_native_group() {
     let scope = scope(DesignFeatureKind::OffsetFaces);
     let group = group(DesignOperandRole::ROLE_0X10);
-    assert_projects(super::super::project_offset_faces(
-        &scope,
-        &[],
-        &[],
-        std::slice::from_ref(&group),
-    ));
+    let FeatureOperation::MoveFace { faces, .. } = projected_operation(
+        super::super::project_offset_faces(&scope, &[], &[], std::slice::from_ref(&group)),
+    ) else {
+        panic!("expected a face move");
+    };
+    assert_eq!(faces, FaceSelection::Native(group.id.clone()));
 }
 
 #[test]
 fn thicken_projects_native_group() {
     let scope = scope(DesignFeatureKind::Thicken);
     let group = group(DesignOperandRole::ROLE_0X5);
-    assert_projects(super::super::project_thicken(
-        &scope,
-        &[],
-        std::slice::from_ref(&group),
-    ));
+    let FeatureOperation::Thicken { faces, .. } = projected_operation(
+        super::super::project_thicken(&scope, &[], std::slice::from_ref(&group)),
+    ) else {
+        panic!("expected a thicken");
+    };
+    assert_eq!(faces, FaceSelection::Native(group.id.clone()));
 }
 
 #[test]
 fn shell_projects_native_face_group() {
     let scope = scope(DesignFeatureKind::Shell);
     let group = group(DesignOperandRole::ROLE_0X10);
-    assert_projects(super::super::project_shell(
+    let FeatureOperation::Shell {
+        bodies,
+        removed_faces,
+        ..
+    } = projected_operation(super::super::project_shell(
         &scope,
         &[],
         std::slice::from_ref(&group),
-    ));
+    ))
+    else {
+        panic!("expected a shell");
+    };
+    assert_eq!(removed_faces, FaceSelection::Native(group.id.clone()));
+    assert_eq!(bodies, None);
 }
 
 #[test]
 fn shell_projects_native_body_group() {
     let scope = scope(DesignFeatureKind::Shell);
     let group = group(DesignOperandRole::BODIES_A);
-    assert_projects(super::super::project_shell(
+    let FeatureOperation::Shell {
+        bodies,
+        removed_faces,
+        ..
+    } = projected_operation(super::super::project_shell(
         &scope,
         &[],
         std::slice::from_ref(&group),
-    ));
+    ))
+    else {
+        panic!("expected a shell");
+    };
+    assert_eq!(bodies, Some(BodySelection::Native(group.id.clone())));
+    assert_eq!(removed_faces, FaceSelection::Faces(Vec::new()));
 }

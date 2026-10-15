@@ -92,6 +92,8 @@ pub(crate) enum F3dLossCode {
     SketchTextUnprojected,
     /// Decoded sketch relations have no neutral constraint.
     SketchRelationUnprojected,
+    /// A spatial sketch's closed-profile search stopped at a local cap.
+    SketchProfileSearchCapped,
     /// Design dimension parameters have no parameter-backed sketch constraint.
     DimensionUnprojected,
     /// Feature profile selections retain native identities; no unique profile.
@@ -236,6 +238,7 @@ impl F3dLossCode {
         Self::SketchSurfaceUnprojected,
         Self::SketchTextUnprojected,
         Self::SketchRelationUnprojected,
+        Self::SketchProfileSearchCapped,
         Self::DimensionUnprojected,
         Self::FeatureProfileSelectionNative,
         Self::FeaturePathSelectionNative,
@@ -332,6 +335,7 @@ impl F3dLossCode {
             Self::SketchSurfaceUnprojected => "sketch.surface-unprojected",
             Self::SketchTextUnprojected => "sketch.text-unprojected",
             Self::SketchRelationUnprojected => "sketch.relation-unprojected",
+            Self::SketchProfileSearchCapped => "sketch.profile-search-capped",
             Self::DimensionUnprojected => "dimension.unprojected",
             Self::FeatureProfileSelectionNative => "feature.profile-selection-native",
             Self::FeaturePathSelectionNative => "feature.path-selection-native",
@@ -442,6 +446,7 @@ impl F3dLossCode {
             | Self::SketchSurfaceUnprojected
             | Self::SketchTextUnprojected
             | Self::SketchRelationUnprojected
+            | Self::SketchProfileSearchCapped
             | Self::DimensionUnprojected
             | Self::FeatureProfileSelectionNative
             | Self::FeaturePathSelectionNative
@@ -524,6 +529,7 @@ impl F3dLossCode {
             | Self::SketchSurfaceUnprojected
             | Self::SketchTextUnprojected
             | Self::SketchRelationUnprojected
+            | Self::SketchProfileSearchCapped
             | Self::DimensionUnprojected
             | Self::FeatureProfileSelectionNative
             | Self::FeaturePathSelectionNative
@@ -644,6 +650,7 @@ mod tests {
                 "sketch.surface-unprojected",
                 "sketch.text-unprojected",
                 "sketch.relation-unprojected",
+                "sketch.profile-search-capped",
                 "dimension.unprojected",
                 "feature.profile-selection-native",
                 "feature.path-selection-native",

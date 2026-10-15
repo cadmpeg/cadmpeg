@@ -711,8 +711,7 @@ fn resolved_extrude_profile_active_faces(
         }
         for face in &operand.candidate_faces {
             if !faces.contains(face) {
-                let face = (face).clone();
-                faces.push(face);
+                faces.push(face.clone());
             }
         }
     }
@@ -1025,17 +1024,16 @@ fn historical_face_selection_with_native(
         return Ok(None);
     }
     let feature = crate::design::identity::neutral_feature_id(scope)?;
-    let feature_key = crate::design::identity::identity_key(feature.as_str())?;
-    let prefix = crate::design::identity::history_input_prefix(feature_key, previous_state_id)?;
+    let prefix = crate::ids::feature_input_prefix(&feature, previous_state_id);
     let mut historical_faces = Vec::new();
     for face in faces {
-        let id = crate::design::identity::history_input_face_id(&prefix, face)?;
+        let id = crate::ids::history_input_face_id(&prefix, face);
         historical_faces.push(id);
     }
     let fallback_native = native.clone();
     Ok(Some(
         cadmpeg_ir::features::FaceSelection::historical(
-            crate::design::identity::feature_input_topology_id(&feature, previous_state_id)?,
+            crate::ids::feature_input_topology_id(&feature, previous_state_id),
             historical_faces,
             native,
         )
@@ -1284,10 +1282,7 @@ fn resolved_face_operand(
     operand: &DesignFaceOperand,
 ) -> Result<Option<Vec<cadmpeg_ir::ids::FaceId>>, CodecError> {
     if let Some(face) = &operand.resolved_active_face {
-        let mut faces = Vec::new();
-        let face = (face).clone();
-        faces.push(face);
-        return Ok(Some(faces));
+        return Ok(Some(vec![face.clone()]));
     }
     if !operand.resolved_face_slots.is_empty() {
         let active_candidates = || {
@@ -1310,7 +1305,7 @@ fn resolved_face_operand(
                 }) else {
                     return Ok(None);
                 };
-                (face).clone()
+                face.clone()
             };
             faces.push(face);
         }
@@ -1320,8 +1315,7 @@ fn resolved_face_operand(
     if !operand.alternate_selector_candidate_faces.is_empty() {
         let mut faces = Vec::new();
         for face in candidates {
-            let face = (face).clone();
-            faces.push(face);
+            faces.push(face.clone());
         }
         return Ok(Some(faces));
     }
@@ -1330,8 +1324,7 @@ fn resolved_face_operand(
         for reference in &operand.recipe_references {
             for face in &reference.candidate_faces {
                 if !referenced.contains(face) {
-                    let face = (face).clone();
-                    referenced.push(face);
+                    referenced.push(face.clone());
                 }
             }
         }
@@ -1344,16 +1337,12 @@ fn resolved_face_operand(
     {
         let mut faces = Vec::new();
         for face in candidates {
-            let face = (face).clone();
-            faces.push(face);
+            faces.push(face.clone());
         }
         return Ok(Some(faces));
     }
     let [face] = candidates else { return Ok(None) };
-    let mut faces = Vec::new();
-    let face = (face).clone();
-    faces.push(face);
-    Ok(Some(faces))
+    Ok(Some(vec![face.clone()]))
 }
 
 fn explicit_bounded_face_candidates(
@@ -1370,8 +1359,7 @@ fn explicit_bounded_face_candidates(
     if !operand.candidate_faces.is_empty() && operand.unreferenced_candidate_faces.is_empty() {
         let mut candidates = Vec::new();
         for face in &operand.candidate_faces {
-            let face = (face).clone();
-            candidates.push(face);
+            candidates.push(face.clone());
         }
         return Some(candidates);
     }
@@ -1388,8 +1376,7 @@ fn explicit_bounded_face_candidates(
             if operand.candidate_faces.is_empty() || operand.candidate_faces.contains(face) {
                 let lane = lanes.entry(reference.design_reference).or_default();
                 if !lane.contains(face) {
-                    let face = (face).clone();
-                    lane.push(face);
+                    lane.push(face.clone());
                 }
             }
         }
@@ -1411,8 +1398,7 @@ fn explicit_bounded_face_candidates(
     }
     let mut selected = Vec::new();
     for face in lane {
-        let face = (face).clone();
-        selected.push(face);
+        selected.push(face.clone());
     }
     Some(selected)
 }
@@ -1479,8 +1465,7 @@ pub(crate) fn legacy_face_recipe_reference_candidates(
             }
         })
     {
-        let face = (face).clone();
-        candidates.push(face);
+        candidates.push(face.clone());
     }
     candidates.sort_by(|left, right| left.as_str().cmp(right.as_str()));
     candidates.dedup();
@@ -1971,8 +1956,7 @@ pub(crate) fn historical_face_operand_candidates(
                 .iter()
                 .chain(&reference.alternate_selector_faces)
         }) {
-            let candidate = (candidate).clone();
-            referenced.push(candidate);
+            referenced.push(candidate.clone());
         }
         referenced.sort_by(|left, right| left.as_str().cmp(right.as_str()));
         referenced.dedup();
@@ -1982,8 +1966,7 @@ pub(crate) fn historical_face_operand_candidates(
     }
     let mut candidates = Vec::new();
     for candidate in face_operand_candidates(operand) {
-        let candidate = (candidate).clone();
-        candidates.push(candidate);
+        candidates.push(candidate.clone());
     }
     candidates
 }
@@ -2034,8 +2017,7 @@ pub(crate) fn nested_bounded_face_history_candidates(
             .iter()
             .chain(&reference.alternate_selector_faces)
     }) {
-        let candidate = (candidate).clone();
-        candidates.push(candidate);
+        candidates.push(candidate.clone());
     }
     candidates.sort_by(|left, right| left.as_str().cmp(right.as_str()));
     candidates.dedup();
@@ -2086,8 +2068,7 @@ fn extrude_start_plane_geometry_candidates(
     }
     let mut candidates = Vec::new();
     for face in faces {
-        let id = face.id.clone();
-        candidates.push(id);
+        candidates.push(face.id.clone());
     }
     Some(candidates)
 }
@@ -2184,8 +2165,7 @@ pub(crate) fn bind_extrude_start_planes(
                     break;
                 }
                 for face in face_operand_candidates(operand) {
-                    let id = (face).clone();
-                    candidates.push(id);
+                    candidates.push(face.clone());
                 }
             }
             candidates.sort_by(|left, right| left.as_str().cmp(right.as_str()));
@@ -2213,7 +2193,7 @@ pub(crate) fn bind_extrude_start_planes(
                 }
             }
             if let [face] = coincident.as_slice() {
-                let selected = (face).clone();
+                let selected = face.clone();
                 let native = native.to_owned();
                 if retain_face_operand_resolution(group, resolution.operands, face) {
                     *start = ExtrudeStart::FromFace {
@@ -2461,7 +2441,7 @@ pub(super) fn retain_face_operand_resolution(
         && operand.resolved_active_face.is_none()
         && has_nested_bounded_face_history_candidates(operand);
     if geometry_bound {
-        operand.resolved_active_face = Some((face).clone());
+        operand.resolved_active_face = Some(face.clone());
         return true;
     }
     let Some(slot) = face
