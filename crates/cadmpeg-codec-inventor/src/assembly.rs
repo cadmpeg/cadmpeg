@@ -131,15 +131,21 @@ pub(crate) fn project_occurrences(
     assembly_occurrences: &[AssemblyOccurrenceRecord],
     assembly_placements: &[AssemblyPlacementRecord],
 ) -> Result<AssemblyProjection, CodecError> {
-    let references = unique_index(external_references
+    let references = unique_index(
+        external_references
             .iter()
-            .map(|record| (record.reference_id, record)));
-    let occurrence_records = unique_index(assembly_occurrences
+            .map(|record| (record.reference_id, record)),
+    );
+    let occurrence_records = unique_index(
+        assembly_occurrences
             .iter()
-            .map(|record| (record.occurrence_id, record)));
-    let placements = unique_index(assembly_placements
+            .map(|record| (record.occurrence_id, record)),
+    );
+    let placements = unique_index(
+        assembly_placements
             .iter()
-            .map(|record| (record.occurrence_id, record)));
+            .map(|record| (record.occurrence_id, record)),
+    );
     let mut emitted_ids = HashSet::new();
     let mut occurrences = Vec::new();
     let mut unresolved_placements = BTreeMap::new();

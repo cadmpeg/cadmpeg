@@ -495,10 +495,7 @@ pub(super) fn record_reversed(rec: &Record) -> bool {
 /// Lines negate their direction, conics negate their plane normal (flipping
 /// the angular sweep while keeping the zero-angle direction), and B-splines
 /// reverse poles and knots. Carriers without an orientation pass through.
-pub(super) fn reverse_curve_geometry(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    geometry: &mut CurveGeometry,
-) -> Result<(), cadmpeg_core::CodecError> {
+pub(super) fn reverse_curve_geometry(geometry: &mut CurveGeometry) {
     match geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
             line_curve.reverse_parameterization();
@@ -510,11 +507,10 @@ pub(super) fn reverse_curve_geometry(
             ellipse_curve.reverse_parameterization();
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) => {
-            curve.reverse_parameterization(ctx)?;
+            curve.reverse_parameterization();
         }
         _ => {}
     }
-    Ok(())
 }
 
 pub(super) fn reverse_procedural_curve_definition(
@@ -1011,7 +1007,6 @@ fn point_sum_difference(first: Point3, second: Point3, subtract: Point3) -> Poin
 /// ranges and cache knot vectors are stored independently and can disagree in
 /// their last few bits; a genuine domain violation is left for validation.
 pub(super) fn clamp_edge_ranges_to_carrier_domains(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     out: &mut AsmBrep,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let domains: HashMap<&str, [f64; 2]> = out
@@ -1041,13 +1036,9 @@ pub(super) fn clamp_edge_ranges_to_carrier_domains(
         if end > *last && end - *last <= tolerance {
             end = *last;
         }
-        edge.carrier = cadmpeg_ir::topology::EdgeCarrier::new(
-            edge.curve()
-                .map(|curve| curve.try_clone_for_decode(ctx, "ASM edge carrier identity"))
-                .transpose()?,
-            Some([start, end]),
-        )
-        .map_err(cadmpeg_core::CodecError::malformed)?;
+        edge.carrier =
+            cadmpeg_ir::topology::EdgeCarrier::new(edge.curve().cloned(), Some([start, end]))
+                .map_err(cadmpeg_core::CodecError::malformed)?;
     }
     Ok(())
 }
@@ -1338,13 +1329,6 @@ mod tests {
         use cadmpeg_ir::ids::{CurveId, EdgeId, VertexId};
         use cadmpeg_ir::topology::{Edge, EdgeCarrier};
 
-        let resource_arena = cadmpeg_core::decode::DecodeArena::new();
-        let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[],
-            &resource_arena,
-            &cadmpeg_core::decode::DecodePolicy::default(),
-        )
-        .expect("test decode context");
         let id = CurveId::mint("sat:audit:curve#domain").unwrap();
         let curve = NurbsCurve::from_lanes(
             &cadmpeg_test_support::service_decode_context(),
@@ -1373,7 +1357,7 @@ mod tests {
             edges: vec![edge],
             ..Default::default()
         };
-        super::clamp_edge_ranges_to_carrier_domains(&resource_ctx, &mut out).unwrap();
+        super::clamp_edge_ranges_to_carrier_domains(&mut out).unwrap();
         assert_eq!(
             out.edges[0]
                 .param_range()
@@ -1383,7 +1367,7 @@ mod tests {
         out.edges[0].set_param_range(Some(
             cadmpeg_ir::topology::ParameterInterval::new([-1e-23, 5e-13]).unwrap(),
         ));
-        super::clamp_edge_ranges_to_carrier_domains(&resource_ctx, &mut out).unwrap();
+        super::clamp_edge_ranges_to_carrier_domains(&mut out).unwrap();
         assert_eq!(
             out.edges[0]
                 .param_range()

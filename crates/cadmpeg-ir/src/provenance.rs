@@ -259,17 +259,6 @@ pub struct SourceObjectAssociation {
     pub instance_path: Vec<String>,
 }
 
-impl SourceObjectAssociation {
-    /// Copy source identity and display text under the caller's limits.
-    pub fn try_clone_for_decode(
-        &self,
-        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        _operation: &'static str,
-    ) -> Result<Self, cadmpeg_core::CodecError> {
-        Ok(self.clone())
-    }
-}
-
 crate::units::named_field!(
     deserialize_object_id,
     cadmpeg_core::text::NonBlankString,
@@ -348,17 +337,10 @@ impl StreamName {
 
     /// Append a value to an admitted stream-name prefix.
     ///
-    /// The prefix proves non-empty output. The caller admits the formatted storage.
-    pub fn with_suffix(
-        self,
-        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        suffix: impl fmt::Display,
-        _operation: &'static str,
-    ) -> Result<Self, cadmpeg_core::CodecError> {
-        Ok(Self(std::borrow::Cow::Owned(format!(
-            "{}{}",
-            self.0, suffix
-        ))))
+    /// The prefix proves non-empty output.
+    #[must_use]
+    pub fn with_suffix(self, suffix: impl fmt::Display) -> Self {
+        Self(std::borrow::Cow::Owned(format!("{}{}", self.0, suffix)))
     }
 }
 
@@ -720,23 +702,9 @@ mod tests {
 
     #[test]
     fn stream_name_composition_keeps_the_admitted_prefix() {
-        let ctx = cadmpeg_test_support::service_decode_context();
         let prefix = crate::stream_name!("codec:");
-        assert_eq!(
-            prefix
-                .clone()
-                .with_suffix(&ctx, "", "stream suffix")
-                .unwrap()
-                .as_str(),
-            "codec:"
-        );
-        assert_eq!(
-            prefix
-                .with_suffix(&ctx, 7, "stream suffix")
-                .unwrap()
-                .as_str(),
-            "codec:7"
-        );
+        assert_eq!(prefix.clone().with_suffix("").as_str(), "codec:");
+        assert_eq!(prefix.with_suffix(7).as_str(), "codec:7");
     }
 
     #[test]
@@ -745,9 +713,7 @@ mod tests {
         let arena = DecodeArena::new();
         let policy = DecodePolicy::service();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let name = crate::stream_name!("codec:")
-            .with_suffix(&ctx, 7, "stream suffix")
-            .unwrap();
+        let name = crate::stream_name!("codec:").with_suffix(7);
         assert_eq!(name.as_str(), "codec:7");
         ctx.finish_session().unwrap();
     }

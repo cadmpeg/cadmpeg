@@ -119,7 +119,6 @@ pub(super) fn preserve_passthrough_sections(
         };
         let id = crate::identity::compose_checked::<UnknownId>(&namespace, offset)?;
         annotate(
-            ctx,
             annotations,
             &id,
             section.name(),
@@ -163,7 +162,6 @@ where
 {
     emit_arena(ctx, ir, annotations, key, records, |annotations, record| {
         annotate(
-            ctx,
             annotations,
             record.id(),
             legacy_source_stream(scan, record.offset),
@@ -192,7 +190,6 @@ pub(super) fn emit_legacy_arenas(
         &legacy.persistence.objects,
         |annotations, record| {
             annotate(
-                ctx,
                 annotations,
                 record.id(),
                 legacy_source_stream(scan, record.offset),
@@ -302,7 +299,6 @@ pub(super) fn emit_legacy_arenas(
             std::slice::from_ref(table),
             |annotations, record| {
                 annotate(
-                    ctx,
                     annotations,
                     record.id(),
                     legacy_source_stream(scan, record.offset),

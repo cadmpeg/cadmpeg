@@ -52,7 +52,6 @@ pub(super) struct EndpointConstraintSource<'a> {
 }
 
 pub(super) fn project_endpoint_constraints(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     source: EndpointConstraintSource<'_>,
     annotations: &mut Annotations,
     constraints: &mut Vec<SketchConstraint>,
@@ -105,7 +104,6 @@ pub(super) fn project_endpoint_constraints(
             continue;
         };
         crate::annotations::note(
-            ctx,
             annotations,
             id.as_str(),
             stream,
@@ -182,8 +180,7 @@ pub(super) fn project_edge(
     if let Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs))) =
         edge.curve().and_then(|id| curves.get(id).copied())
     {
-        let operation = "project SLDPRT sketch NURBS edge";
-        let knots = nurbs.knots().try_clone_for_decode(ctx, operation)?;
+        let knots = nurbs.knots().clone();
         let mut projected = Vec::new();
         match nurbs.pole_rows() {
             cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { points } => {

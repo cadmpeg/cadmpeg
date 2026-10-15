@@ -71,12 +71,7 @@ fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
         let graph = crate::topology::Graph::parse(&stream);
         let mut off_support_ir = ir.clone();
         let mut annotations = cadmpeg_ir::annotations::AnnotationBuilder::new();
-        let stream = StreamHandle::new(
-            &cadmpeg_test_support::service_decode_context(),
-            cadmpeg_ir::stream_name!("nx:test"),
-            "fixture stream handle",
-        )
-        .unwrap();
+        let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:test"));
 
         attach_tolerant_edge_intersections(
             geometry_ctx,
@@ -168,12 +163,7 @@ fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
             .expect("a finite position is a point"),
         );
         let mut annotations = cadmpeg_ir::annotations::AnnotationBuilder::new();
-        let stream = StreamHandle::new(
-            &cadmpeg_test_support::service_decode_context(),
-            cadmpeg_ir::stream_name!("nx:test"),
-            "fixture stream handle",
-        )
-        .unwrap();
+        let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:test"));
         attach_tolerant_edge_intersections(
             geometry_ctx,
             &mut off_support_ir,
@@ -205,12 +195,7 @@ fn tolerant_edge_does_not_replace_a_serialized_fin_curve() {
         put_ref(&mut stream, edge + 24, 1);
         let graph = crate::topology::Graph::parse(&stream);
         let mut annotations = cadmpeg_ir::annotations::AnnotationBuilder::new();
-        let source_stream = StreamHandle::new(
-            &cadmpeg_test_support::service_decode_context(),
-            cadmpeg_ir::stream_name!("nx:test"),
-            "fixture stream handle",
-        )
-        .unwrap();
+        let source_stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:test"));
 
         attach_tolerant_edge_intersections(
             geometry_ctx,
@@ -711,7 +696,6 @@ fn blend_contact_transfer_fixture(
         other_support.clone()
     };
     let _attached = ir.model.add_procedural_curve(
-        &cadmpeg_ir::document::admission::StandardAdmission,
         &spine,
         ProceduralCurve::new(
             ProceduralCurveId::mint("test:model:entity#synthetic:blend-contact-spine-construction")
@@ -806,14 +790,7 @@ fn blend_contact_transfer_fixture(
                 ),
             },
         );
-        ir.model
-            .add_procedural_curve(
-                &cadmpeg_ir::document::admission::StandardAdmission,
-                &curve,
-                procedural,
-            )
-            .unwrap()
-            .unwrap();
+        ir.model.add_procedural_curve(&curve, procedural).unwrap();
     }
     ir
 }
@@ -924,7 +901,6 @@ fn blend_boundary_chart_uses_the_solved_curve_when_the_source_blend_is_unevaluab
             source_object: None,
         });
         let _attached = ir.model.add_procedural_curve(
-            &cadmpeg_ir::document::admission::StandardAdmission,
             &curve,
             ProceduralCurve::new(
                 construction,
@@ -1077,7 +1053,6 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
             source_object: None,
         });
         let _attached = ir.model.add_procedural_curve(
-            &cadmpeg_ir::document::admission::StandardAdmission,
             &curve,
             ProceduralCurve::new(
                 construction,
@@ -1365,14 +1340,7 @@ fn exact_boundary_completion_preserves_existing_cache_fit_tolerance() {
                 ),
             },
         );
-        ir.model
-            .add_procedural_curve(
-                &cadmpeg_ir::document::admission::StandardAdmission,
-                &curve,
-                procedural,
-            )
-            .unwrap()
-            .unwrap();
+        ir.model.add_procedural_curve(&curve, procedural).unwrap();
 
         crate::decode::pcurves::complete_exact_boundary_intersection_pcurves(
             geometry_ctx,

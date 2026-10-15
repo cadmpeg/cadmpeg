@@ -100,7 +100,7 @@ fn frame_fixture(route: FrameRoute) -> (crate::container::Container<'static>, Fr
     let file =
         crate::test_support::test_prt::prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", part)]);
     let container = crate::container::scan_bytes(file).expect("synthetic frame container");
-    let payload = crate::test_support::with_decode_context(|ctx| {
+    let payload = crate::test_support::with_decode_context(|_| {
         let blocks = offset_data_block_bytes(&container)?;
         let id = blocks
             .keys()
@@ -110,7 +110,7 @@ fn frame_fixture(route: FrameRoute) -> (crate::container::Container<'static>, Fr
         Ok::<FramePayload, CodecError>(match route {
             FrameRoute::CsysPair | FrameRoute::CsysFixed | FrameRoute::CsysScalar => {
                 let content: FeaturePayloadContent<[FeaturePayloadBlock; 2]> =
-                    FeaturePayloadContent::from_source(ctx, [id.clone(), id], &blocks)?
+                    FeaturePayloadContent::from_source([id.clone(), id], &blocks)?
                         .expect("two-block payload");
                 FramePayload::Csys(FeatureDatumCsysPayload {
                     id: "csys-payload".into(),
@@ -121,7 +121,7 @@ fn frame_fixture(route: FrameRoute) -> (crate::container::Container<'static>, Fr
             }
             FrameRoute::PlanePair => {
                 let content: FeaturePayloadContent<Vec<FeaturePayloadBlock>> =
-                    FeaturePayloadContent::from_source(ctx, [id], &blocks)?.expect("plane payload");
+                    FeaturePayloadContent::from_source([id], &blocks)?.expect("plane payload");
                 FramePayload::Plane(FeatureDatumPlanePayload {
                     id: "plane-payload".into(),
                     operation_label: "operation".into(),
@@ -135,8 +135,7 @@ fn frame_fixture(route: FrameRoute) -> (crate::container::Container<'static>, Fr
             | FrameRoute::SketchMixed
             | FrameRoute::SketchLane => {
                 let content: FeaturePayloadContent<Vec<FeaturePayloadBlock>> =
-                    FeaturePayloadContent::from_source(ctx, [id], &blocks)?
-                        .expect("sketch payload");
+                    FeaturePayloadContent::from_source([id], &blocks)?.expect("sketch payload");
                 FramePayload::Sketch(FeatureConstructionPayload {
                     id: "sketch-payload".into(),
                     operation_label: "operation".into(),
@@ -148,7 +147,7 @@ fn frame_fixture(route: FrameRoute) -> (crate::container::Container<'static>, Fr
             }
             FrameRoute::SketchName | FrameRoute::SketchRecord => {
                 let content: FeaturePayloadContent<Vec<FeaturePayloadBlock>> =
-                    FeaturePayloadContent::from_source(ctx, [id.clone()], &blocks)?
+                    FeaturePayloadContent::from_source([id.clone()], &blocks)?
                         .expect("sketch named record payload");
                 let inputs = serde_json::json!({
                     "id": "nx:feature-history:sketch-construction-inputs#0-0000000000",
@@ -175,7 +174,7 @@ fn frame_fixture(route: FrameRoute) -> (crate::container::Container<'static>, Fr
             }
             FrameRoute::SurfacePair | FrameRoute::SurfaceString => {
                 let content: FeaturePayloadContent<[FeaturePayloadBlock; 14]> =
-                    FeaturePayloadContent::from_source(ctx, vec![id; 14], &blocks)?
+                    FeaturePayloadContent::from_source(vec![id; 14], &blocks)?
                         .expect("surface payload");
                 FramePayload::Surface(Box::new(FeatureSurfaceConstructionPayload {
                     id: "surface-payload".into(),

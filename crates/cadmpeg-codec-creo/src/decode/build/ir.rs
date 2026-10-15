@@ -237,7 +237,6 @@ fn transfer_reference_lines(
             }
         };
         annotate(
-            ctx,
             annotations,
             &id,
             "MdlRefInfo",
@@ -310,7 +309,6 @@ fn transfer_reference_circles(
             )
         };
         annotate(
-            ctx,
             annotations,
             &id,
             "MdlRefInfo",
@@ -392,7 +390,6 @@ fn transfer_reference_ellipses(
             )
         };
         annotate(
-            ctx,
             annotations,
             &id,
             "MdlRefInfo",
@@ -483,7 +480,6 @@ fn transfer_display_tessellations(
             strip.offset,
         )?;
         annotate(
-            ctx,
             annotations,
             id.as_str(),
             "SolidPrimdata",
@@ -568,7 +564,6 @@ fn transfer_datum_plane_surfaces(
             plane.id,
         )?;
         annotate(
-            ctx,
             annotations,
             &id,
             "ActDatums",
@@ -656,7 +651,6 @@ fn transfer_placed_plane_surfaces_into_ir(
             "plane_local_system"
         };
         annotate(
-            ctx,
             annotations,
             &id,
             "VisibGeom",
@@ -746,14 +740,13 @@ pub(in super::super) fn build_ir(
     attach_expanded_sections(ctx, scan, &mut ir, &mut annotations)?;
     emit_geometry_arenas(ctx, scan, &mut ir, &mut annotations, &brep_diagnostics)?;
     collect_feature_coverage(
-        ctx,
         scan,
         &ir,
         geometry_generator_feature_count,
         feature_result_topology_count,
         feature_result_edge_count,
         &mut coverage,
-    )?;
+    );
     Ok(BuiltIr {
         ir,
         annotations: annotations.build(),

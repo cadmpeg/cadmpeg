@@ -518,9 +518,7 @@ fn standard_spline_retains_a_procedural_rolling_ball_support() {
                     },
                 })
                 .collect(),
-            &cadmpeg_test_support::service_decode_context(),
         )
-        .expect("fixture rolling-ball admission")
         .expect("valid RollingBallJetStations fixture"),
     );
     let native = StandardEdgeSupport {

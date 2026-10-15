@@ -498,8 +498,7 @@ pub(in super::super) fn reconcile_feature_links(
         }
     }
     for (child, parent) in regeneration_edges {
-        ir.model
-            .set_feature_regeneration_parent(ctx, &child, &parent)?;
+        ir.model.set_feature_regeneration_parent(&child, &parent)?;
     }
     let mut remaining = Vec::new();
     remaining.extend(0..ir.model.features.len());

@@ -30,12 +30,8 @@ fn plane_pcurve_scaling_keeps_the_plane_surface() {
         source_object: None,
     });
     let scale = crate::test_support::millimeter_scale(25.4);
-    super::super::scale_plane_pcurves(
-        &cadmpeg_test_support::service_decode_context(),
-        &mut staged,
-        scale,
-    )
-    .expect("service profile admits plane lookup");
+    super::super::scale_plane_pcurves(&mut staged, scale)
+        .expect("service profile admits plane lookup");
     assert_eq!(staged.draft.model().surfaces[0].id, surface_id);
 }
 
@@ -78,12 +74,7 @@ fn fallback_discards_topology_and_unknown_record_self_link() {
         color: None,
         visible: None,
     });
-    staged = staged
-        .free_carrier_fallback(
-            &cadmpeg_test_support::service_decode_context(),
-            "C2 failure",
-        )
-        .expect("service profile admits fallback IDs and warning");
+    staged = staged.free_carrier_fallback("C2 failure");
     assert_eq!(staged.kind, BrepTransferKind::FreeCarrierFallback);
     assert!(staged.draft.model().bodies.is_empty());
     assert_eq!(
@@ -132,12 +123,7 @@ fn failed_brep_retains_its_mathematics_as_support_geometry() {
             == Some(cadmpeg_ir::SourceGeometryRole::Support)
     }));
     let geometry = staged.draft.model().surfaces[0].geometry.clone();
-    let staged = staged
-        .free_carrier_fallback(
-            &cadmpeg_test_support::service_decode_context(),
-            "unreadable trim",
-        )
-        .expect("bounded fallback");
+    let staged = staged.free_carrier_fallback("unreadable trim");
     let retained = &staged.draft.model().surfaces[0];
     assert_eq!(retained.geometry, geometry);
     let source = retained.source_object.as_ref().expect("source metadata");
@@ -690,14 +676,9 @@ fn fallback_keeps_thousands_of_free_carriers() {
             source_object: None,
         });
         staged.links.push(id.to_string());
-        staged
-            .draft
-            .exactness(&ctx, &id, cadmpeg_ir::Exactness::Derived)
-            .unwrap();
+        staged.draft.exactness(&id, cadmpeg_ir::Exactness::Derived);
     }
-    let staged = staged
-        .free_carrier_fallback(&ctx, "synthetic topology rejection")
-        .unwrap();
+    let staged = staged.free_carrier_fallback("synthetic topology rejection");
     assert_eq!(staged.draft.model().curves.len(), 4096);
     assert_eq!(staged.links.len(), 4096);
     ctx.finish_session().unwrap();

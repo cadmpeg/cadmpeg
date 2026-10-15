@@ -712,12 +712,7 @@ fn persistent_surface_references(
             at += 1;
             continue;
         };
-        let text = match ctx.utf16le_text(
-            raw,
-            count,
-            false,
-            "decode display-list reference text",
-        ) {
+        let text = match ctx.utf16le_text(raw, count, false, "decode display-list reference text") {
             Ok(text) => text,
             Err(cadmpeg_core::CodecError::Malformed(_)) => {
                 at = end;

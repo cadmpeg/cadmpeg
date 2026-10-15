@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::decode::snapshot_active_configuration;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::patterns::{
     CompositePattern, PatternKind, PatternSeed, PatternStage, PatternTransform,
@@ -99,9 +98,7 @@ fn run() -> Result<(), CodecError> {
         native_ref: None,
     });
     let features = ir.model.features.clone();
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())?;
-    snapshot_active_configuration(&ctx, &mut ir)?;
+    snapshot_active_configuration(&mut ir)?;
     assert_eq!(ir.model.features, features);
     assert_eq!(
         ir.model.configurations[0].feature_states.len(),

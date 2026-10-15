@@ -1288,13 +1288,6 @@ fn nested_profile_must_contain_its_declared_entity_handle_circular_carrier() {
 
 #[test]
 fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        b"relation test",
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )
-    .unwrap();
     let native_feature = NativeFeature {
         id: "feature-native".into(),
         parent: "history".into(),
@@ -1472,21 +1465,9 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
         native_ref: None,
     }];
     let mut builder = AnnotationBuilder::new();
-    let stream = cadmpeg_ir::annotations::StreamHandle::new(
-        &cadmpeg_test_support::service_decode_context(),
-        cadmpeg_ir::stream_name!("test:support"),
-        "fixture stream handle",
-    )
-    .unwrap();
-    builder
-        .note(
-            &cadmpeg_test_support::service_decode_context(),
-            sketch_id.as_str(),
-            &stream,
-            200,
-            Some("support"),
-        )
-        .unwrap();
+    let stream =
+        cadmpeg_ir::annotations::StreamHandle::new(cadmpeg_ir::stream_name!("test:support"));
+    builder.note(sketch_id.as_str(), &stream, 200, Some("support"));
     let mut annotations = builder.build();
     let mut builder = AnnotationBuilder::resume(annotations);
     for id in [
@@ -1494,18 +1475,11 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
         entity_id.as_str(),
         constraint_id.as_str(),
     ] {
-        builder
-            .exactness(
-                &cadmpeg_test_support::service_decode_context(),
-                id,
-                cadmpeg_ir::Exactness::Derived,
-            )
-            .unwrap();
+        builder.exactness(id, cadmpeg_ir::Exactness::Derived);
     }
     annotations = builder.build();
 
     bind_sketch_profiles(
-        &ctx,
         &mut features,
         crate::resolved_features::profiles::SketchArenas {
             sketches: &mut sketches,
@@ -1516,8 +1490,7 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
         &[parameter],
         &[history],
         &[lane],
-    )
-    .unwrap();
+    );
 
     assert!(sketches.is_empty());
     assert!(entities.is_empty());
@@ -1600,7 +1573,6 @@ fn dimensioned_sketch_projection_projects_circle() {
 
 #[test]
 fn marker_circle_projection_leaves_fixture_unchanged() {
-    let ctx = cadmpeg_test_support::service_decode_context();
     let DimensionedCircleFixture {
         mut entities,
         feature,
@@ -1609,7 +1581,6 @@ fn marker_circle_projection_leaves_fixture_unchanged() {
     } = dimensioned_circle_fixture();
     let expected = entities.clone();
     crate::resolved_features::dimensions::project_marker_dimensioned_circles(
-        &ctx,
         &mut entities,
         &mut [],
         &[feature],

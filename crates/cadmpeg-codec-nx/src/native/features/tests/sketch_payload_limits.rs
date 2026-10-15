@@ -32,19 +32,18 @@ fn assert_sketch_payload_admits(route: SketchPayloadRoute) {
         crate::container::scan_bytes(crate::test_support::test_prt::composed_feature_history_prt())
     }
     .expect("composed feature-history container");
-    let constructions = crate::test_support::with_decode_context(|ctx| {
+    let constructions = crate::test_support::with_decode_context(|_| {
         let labels = feature_operation_labels(&container)?;
-        let records = feature_operation_records(ctx, &container)?;
+        let records = feature_operation_records(&container)?;
         let inputs = feature_input_blocks(&container)?;
         let references = feature_sketch_references(&container)?;
         let sketches = feature_sketch_records(&labels, &records, &inputs, &references);
         feature_sketch_construction_inputs(&sketches, &references)
     })
     .expect("sketch payload construction inputs");
-    let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| match route {
+    let decode = |_: &cadmpeg_core::decode::DecodeContext<'_>| match route {
         SketchPayloadRoute::Construction => {
-            feature_sketch_construction_payloads(ctx, &container, &constructions)
-                .map(|rows| rows.len())
+            feature_sketch_construction_payloads(&container, &constructions).map(|rows| rows.len())
         }
         SketchPayloadRoute::Scalar => {
             feature_sketch_payload_scalars(&container, &constructions).map(|rows| rows.len())

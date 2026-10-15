@@ -474,20 +474,12 @@ fn appending_source_metadata_is_atomic_across_annotations_and_bytes() {
             .insert_retained_record(id("existing"), record(b"original"))
             .unwrap();
         let mut existing = AnnotationBuilder::new();
-        existing
-            .note(
-                &cadmpeg_test_support::service_decode_context(),
-                id("annotated"),
-                &StreamHandle::new(
-                    &cadmpeg_test_support::service_decode_context(),
-                    crate::stream_name!("original"),
-                    "fixture stream handle",
-                )
-                .unwrap(),
-                7,
-                None,
-            )
-            .unwrap();
+        existing.note(
+            id("annotated"),
+            &StreamHandle::new(crate::stream_name!("original")),
+            7,
+            None,
+        );
         target.annotations = existing.build();
         let before = target.clone();
         let mut incoming = SourceFidelity::default();
@@ -503,24 +495,14 @@ fn appending_source_metadata_is_atomic_across_annotations_and_bytes() {
         } else {
             "annotated"
         });
-        annotations
-            .note(
-                &cadmpeg_test_support::service_decode_context(),
-                annotation_id,
-                &StreamHandle::new(
-                    &cadmpeg_test_support::service_decode_context(),
-                    crate::stream_name!("incoming"),
-                    "fixture stream handle",
-                )
-                .unwrap(),
-                9,
-                None,
-            )
-            .unwrap();
+        annotations.note(
+            annotation_id,
+            &StreamHandle::new(crate::stream_name!("incoming")),
+            9,
+            None,
+        );
         incoming.annotations = annotations.build();
-        let error =
-            crate::test_support::with_service_decode_context(|ctx| target.append(ctx, incoming))
-                .unwrap_err();
+        let error = (target.append(incoming)).unwrap_err();
         let conflicting = id(if record_collision {
             "existing"
         } else {

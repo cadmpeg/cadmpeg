@@ -73,7 +73,7 @@ impl RewriteIdentities for FaceSidedness {
 
         self.source_namespace =
             self.source_namespace
-                .rewrite(ctx, "face-sidedness", self.record_index, map)?;
+                .rewrite("face-sidedness", self.record_index, map)?;
         self.face = self.face.rewrite_identities(ctx, map)?;
         Ok(self)
     }
@@ -94,13 +94,12 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-        let mut map = IdentityMap::new(&ctx, "qualify ASM typed record", |source: &str| {
+        let mut map = IdentityMap::new(|source: &str| {
             Ok(format!(
                 "f3d:brep/source/{}",
                 source.strip_prefix("f3d:").unwrap()
             ))
-        })
-        .unwrap();
+        });
         let value = record().rewrite_identities(&ctx, &mut map).unwrap();
         assert_eq!(
             serde_json::to_value(value).unwrap(),
@@ -116,10 +115,7 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_recursion_depth = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let mut map = IdentityMap::new(&ctx, "qualify ASM typed record", |source: &str| {
-            Ok(source.to_owned())
-        })
-        .unwrap();
+        let mut map = IdentityMap::new(|source: &str| Ok(source.to_owned()));
         let CodecError::ResourceLimit(limit) =
             record().rewrite_identities(&ctx, &mut map).unwrap_err()
         else {
@@ -142,10 +138,7 @@ mod tests {
             let arena = DecodeArena::new();
             let (ctx, _) =
                 DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-            let mut map = IdentityMap::new(&ctx, "qualify ASM typed record", |_source: &str| {
-                Ok(target.to_owned())
-            })
-            .unwrap();
+            let mut map = IdentityMap::new(|_source: &str| Ok(target.to_owned()));
             let error = record().rewrite_identities(&ctx, &mut map).unwrap_err();
             assert!(
                 matches!(error, CodecError::Malformed(message) if message == "ASM identity rewrite must preserve record kind and index")

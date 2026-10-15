@@ -699,21 +699,18 @@ fn blend_value_name<'a>(cur: &mut Cur<'a>) -> Option<&'a str> {
 }
 
 fn radius_function_geometry(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     mut function: PcurveNurbs,
 ) -> Option<Result<PcurveGeometry, cadmpeg_core::CodecError>> {
-    propagate_resource!(function.try_map_control_points(
-        |_, point| {
+    function
+        .try_map_control_points(|_, point| {
             let point = point.get();
             cadmpeg_ir::units::FinitePoint2::new(cadmpeg_ir::math::Point2::new(
                 point.u * LEN_TO_MM,
                 point.v,
             ))
             .ok_or(())
-        },
-        ctx
-    ))
-    .ok()?;
+        })
+        .ok()?;
     Some(Ok(PcurveGeometry::Nurbs { nurbs: function }))
 }
 
@@ -773,7 +770,7 @@ fn variable_blend_value(
                 discriminator,
                 parameter,
                 radius,
-                function: propagate_resource!(radius_function_geometry(ctx, function)?),
+                function: propagate_resource!(radius_function_geometry(function)?),
                 terminal,
             }
         }
@@ -833,7 +830,7 @@ fn variable_blend_value(
                 discriminator,
                 parameter,
                 radius,
-                function: propagate_resource!(radius_function_geometry(ctx, function)?),
+                function: propagate_resource!(radius_function_geometry(function)?),
                 enum_count,
                 enum_tagged,
                 points,
@@ -1411,9 +1408,7 @@ pub(super) fn full_rb_blend_spl_sur(
         DecodedProceduralSurfaceDefinition::Blend {
             supports: Box::new([None, None]),
             spine: match &slice.curve {
-                CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) => Some(
-                    propagate_resource!(curve.try_clone_for_decode(ctx, "ASM rolling ball spine")),
-                ),
+                CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) => Some(curve.clone()),
                 _ => None,
             },
             radius_offsets: offsets,

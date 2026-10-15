@@ -378,15 +378,9 @@ pub(crate) fn curve_by_attr(
     attr: u16,
 ) -> Result<Option<CurveGeometry>, cadmpeg_core::CodecError> {
     let carriers = scan_carriers(ctx, body)?;
-    carriers
+    Ok(carriers
         .curve(attr)
-        .map(|indexed| {
-            indexed
-                .carrier()
-                .geometry
-                .try_clone_for_decode(ctx, "SLDPRT patch curve geometry copy")
-        })
-        .transpose()
+        .map(|indexed| indexed.carrier().geometry.clone()))
 }
 
 /// Replace the scalar run of one compact analytic carrier.

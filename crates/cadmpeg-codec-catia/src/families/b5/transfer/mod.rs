@@ -648,11 +648,9 @@ fn build_plan(
                         &mut conflicting_edge_curves,
                         edge_id,
                         CurvePlan {
-                            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(admitted!(
-                                helix
-                                    .cache
-                                    .try_clone_for_decode(ctx, "catia_b5_helix_plan_curve")
-                            ))),
+                            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                                helix.cache.clone(),
+                            )),
                             parameter_range: Some(helix.parameter_range),
                             edge_tolerance: Some(cadmpeg_ir::scalar::PositiveReal::new(
                                 helix.fit_tolerance.get(),
@@ -876,10 +874,9 @@ pub(in crate::families) enum ResolvedPcurveSurface {
 
 /// Lower one resolved object-stream surface to an exact neutral carrier.
 pub(in crate::families) fn resolved_surface_carrier(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     surface: &B5Surface,
 ) -> Result<Option<ResolvedPcurveSurface>, cadmpeg_core::CodecError> {
-    Ok(match surfaces::surface_carrier(ctx, surface)? {
+    Ok(match surfaces::surface_carrier(surface) {
         surfaces::B5SurfaceCarrier::Analytic(geometry) => {
             Some(ResolvedPcurveSurface::Geometry(geometry))
         }
@@ -889,7 +886,7 @@ pub(in crate::families) fn resolved_surface_carrier(
         }) => Some(ResolvedPcurveSurface::RollingBall {
             carrier_object_id,
             definition: {
-                let copy = surfaces::copy_rolling_ball_definition(ctx, definition)?;
+                let copy = surfaces::copy_rolling_ball_definition(definition)?;
 
                 Box::new(copy)
             },
@@ -912,7 +909,7 @@ pub(in crate::families) fn resolved_surface_carrier_in_graph(
     let Some(surface) = graph.surfaces.get(&surface_object_id) else {
         return Ok(None);
     };
-    if let Some(carrier) = resolved_surface_carrier(ctx, surface)? {
+    if let Some(carrier) = resolved_surface_carrier(surface)? {
         return Ok(Some(carrier));
     }
     Ok(
@@ -935,7 +932,7 @@ pub(in crate::families) fn resolved_object_stream_pcurve(
     };
     let Some(carrier) = (match graph_carrier {
         Some(carrier) => Some(carrier),
-        None => resolved_surface_carrier(ctx, surface)?,
+        None => resolved_surface_carrier(surface)?,
     }) else {
         return Ok(None);
     };
@@ -1070,29 +1067,19 @@ impl ResolvedExtrusionSurface {
 }
 
 fn copy_resolved_extrusion_support(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     support: &ResolvedExtrusionSupport,
 ) -> Result<ResolvedExtrusionSupport, cadmpeg_core::CodecError> {
-    let surface = support
-        .surface
-        .try_clone_for_decode(ctx, "catia_b5_extrusion_support_surface_copy")?;
+    let surface = support.surface.clone();
     Ok(ResolvedExtrusionSupport {
         surface_object_id: support.surface_object_id,
         surface,
-        pcurve: support
-            .pcurve
-            .try_clone_for_decode(ctx, "catia_b5_extrusion_support_pcurve_copy")?,
+        pcurve: support.pcurve.clone(),
         pcurve_parameter_range: support.pcurve_parameter_range,
-        curve: support
-            .curve
-            .as_ref()
-            .map(|curve| copy_lifted_curve(ctx, curve))
-            .transpose()?,
+        curve: support.curve.as_ref().map(copy_lifted_curve).transpose()?,
     })
 }
 
 pub(in crate::families) fn copy_resolved_extrusion_surface(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     value: &ResolvedExtrusionSurface,
 ) -> Result<ResolvedExtrusionSurface, cadmpeg_core::CodecError> {
     let directrix = match &value.directrix {
@@ -1101,15 +1088,15 @@ pub(in crate::families) fn copy_resolved_extrusion_surface(
             cache_fit_tolerance,
         } => ResolvedExtrusionDirectrix::Intersection {
             supports: Box::new([
-                copy_resolved_extrusion_support(ctx, &supports[0])?,
-                copy_resolved_extrusion_support(ctx, &supports[1])?,
+                copy_resolved_extrusion_support(&supports[0])?,
+                copy_resolved_extrusion_support(&supports[1])?,
             ]),
             cache_fit_tolerance: *cache_fit_tolerance,
         },
         ResolvedExtrusionDirectrix::SurfaceCurve { support, curve } => {
             ResolvedExtrusionDirectrix::SurfaceCurve {
-                support: copy_resolved_extrusion_support(ctx, support)?,
-                curve: copy_lifted_curve(ctx, curve)?,
+                support: copy_resolved_extrusion_support(support)?,
+                curve: copy_lifted_curve(curve)?,
             }
         }
         ResolvedExtrusionDirectrix::Offset {
@@ -1121,8 +1108,8 @@ pub(in crate::families) fn copy_resolved_extrusion_surface(
             direction,
         } => ResolvedExtrusionDirectrix::Offset {
             source_object_id: *source_object_id,
-            support: copy_resolved_extrusion_support(ctx, support)?,
-            source_curve: copy_lifted_curve(ctx, source_curve)?,
+            support: copy_resolved_extrusion_support(support)?,
+            source_curve: copy_lifted_curve(source_curve)?,
             source_parameter_range: *source_parameter_range,
             distance: *distance,
             direction: *direction,
@@ -1270,7 +1257,7 @@ pub(in crate::families) fn resolved_extrusion_surface(
                     Ok(None) => return None,
                     Err(error) => return Some(Err(error)),
                 };
-                let curve = match copy_lifted_curve(ctx, support.curve.as_ref()?) {
+                let curve = match copy_lifted_curve(support.curve.as_ref()?) {
                     Ok(curve) => curve,
                     Err(error) => return Some(Err(error)),
                 };
@@ -1309,7 +1296,7 @@ pub(in crate::families) fn resolved_extrusion_surface(
                     Ok(None) => return None,
                     Err(error) => return Some(Err(error)),
                 };
-                let source_curve = match copy_lifted_curve(ctx, support.curve.as_ref()?) {
+                let source_curve = match copy_lifted_curve(support.curve.as_ref()?) {
                     Ok(curve) => curve,
                     Err(error) => return Some(Err(error)),
                 };
@@ -1350,15 +1337,10 @@ pub(in crate::families) fn resolved_extrusion_surface(
     .transpose()
 }
 
-fn copy_lifted_curve(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    curve: &CurveGeometry,
-) -> Result<CurveGeometry, cadmpeg_core::CodecError> {
+fn copy_lifted_curve(curve: &CurveGeometry) -> Result<CurveGeometry, cadmpeg_core::CodecError> {
     Ok(match curve {
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
-            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                nurbs.try_clone_for_decode(ctx, "catia_b5_extrusion_lifted_curve_copy")?,
-            ))
+            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs.clone()))
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Line(line)) => {
             CurveGeometry::Solved(SolvedCurveGeometry::Line(*line))
@@ -1517,14 +1499,13 @@ pub(in crate::families) fn resolved_offset_surface(
 }
 
 fn annotate(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
     id: impl std::fmt::Display,
     stream: &str,
     tag: &str,
     exactness: Exactness,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    annotations.annotate(ctx, id, format_args!("catia:{stream}"), 0, tag, exactness)
+    annotations.annotate(id, format_args!("catia:{stream}"), 0, tag, exactness)
 }
 
 fn vector(value: [f64; 3]) -> Vector3 {

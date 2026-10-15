@@ -57,7 +57,6 @@ pub(crate) fn cgm_source_key(
 }
 
 pub(crate) fn annotate(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
     id: impl std::fmt::Display,
     stream_name: &str,
@@ -67,7 +66,6 @@ pub(crate) fn annotate(
 ) -> Result<(), cadmpeg_core::CodecError> {
     let tag = tag.to_string();
     annotations.annotate(
-        ctx,
         id,
         format_args!("catia:{stream_name}"),
         offset,
@@ -86,7 +84,7 @@ pub(crate) fn neutral_model_is_admissible(
     ir: &mut CadIr,
     pending_unknowns: &[UnknownRecord],
 ) -> Result<bool, cadmpeg_core::CodecError> {
-    ir.model.finalize(ctx)?;
+    ir.model.finalize();
     Ok(cadmpeg_ir::admit_with_additional_native_identities(
         ctx,
         ir,
@@ -544,9 +542,7 @@ pub(crate) fn source_meta(
         )?;
     }
     Ok(SourceMeta::classified(
-        cadmpeg_core::dialect::DialectLayers::of(
-            matched.clone(),
-        ),
+        cadmpeg_core::dialect::DialectLayers::of(matched.clone()),
         attributes,
     ))
 }
@@ -691,7 +687,6 @@ pub(crate) fn build_metadata_fallback(
     )?;
     let bytes = bytes.to_vec();
     annotate(
-        ctx,
         &mut annotations,
         &id,
         stream,
@@ -724,7 +719,6 @@ pub(crate) fn preserve_raw_payload(
     )?;
     let bytes = bytes.to_vec();
     annotate(
-        ctx,
         annotations,
         &id,
         stream,
@@ -740,7 +734,6 @@ pub(crate) fn preserve_raw_payload(
 /// layer was not recovered. The raw payload is their byte-backed owner; this
 /// avoids inventing topology or procedural relationships.
 pub(crate) fn link_payload_carriers(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
     payload: &mut UnknownRecord,
     annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
@@ -760,7 +753,7 @@ pub(crate) fn link_payload_carriers(
         return Ok(());
     }
     *payload.links_mut() = links;
-    annotations.derived(ctx, payload.id().as_str(), "links")?;
+    annotations.derived(payload.id().as_str(), "links")?;
     Ok(())
 }
 
@@ -1304,7 +1297,6 @@ mod route_tests {
         });
         ir.model
             .add_procedural_curve(
-                &cadmpeg_ir::document::admission::StandardAdmission,
                 &curve_id,
                 ProceduralCurve::new(
                     ProceduralCurveId::mint("catia:test:procedural-curve#0")
@@ -1316,7 +1308,6 @@ mod route_tests {
                     },
                 ),
             )
-            .unwrap()
             .unwrap();
         let unknowns = [UnknownRecord::retained(
             record_id,
@@ -1362,7 +1353,6 @@ mod route_tests {
 
         ir.model
             .add_procedural_curve(
-                &cadmpeg_ir::document::admission::StandardAdmission,
                 &curve_id,
                 ProceduralCurve::new(
                     ProceduralCurveId::mint(
@@ -1379,11 +1369,9 @@ mod route_tests {
                     },
                 ),
             )
-            .expect("procedural curve admission")
             .expect("attach construction to its fixture carrier");
         ir.model
             .add_procedural_surface(
-                &cadmpeg_ir::document::admission::StandardAdmission,
                 &surface_id,
                 ProceduralSurface::new(
                     ProceduralSurfaceId::mint(
@@ -1400,11 +1388,9 @@ mod route_tests {
                     None,
                 ),
             )
-            .expect("procedural surface admission")
             .expect("attach construction to its fixture carrier");
         ir.model
             .add_procedural_surface(
-                &cadmpeg_ir::document::admission::StandardAdmission,
                 &offset_id,
                 cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
                     surface_id,
@@ -1429,7 +1415,6 @@ mod route_tests {
                 })
                 .expect("valid ProceduralSurface fixture"),
             )
-            .expect("offset surface admission")
             .expect("attach construction to its fixture carrier");
         assert_eq!(unresolved_carrier_counts(&ir), (1, 2));
 
@@ -1452,10 +1437,9 @@ mod route_tests {
 
     #[test]
     fn annotation_result() {
-        let annotations = crate::test_support::with_service_context(|ctx| {
+        let annotations = {
             let mut builder = cadmpeg_ir::AnnotationBuilder::new();
             super::annotate(
-                ctx,
                 &mut builder,
                 "catia:test:curve#0",
                 "CATPart",
@@ -1465,7 +1449,7 @@ mod route_tests {
             )
             .expect("service profile admits annotation");
             builder.build()
-        });
+        };
         let note = &annotations.provenance["catia:test:curve#0"];
         assert_eq!(note.stream(), "catia:CATPart");
         assert_eq!(note.offset, 17);
@@ -1499,7 +1483,7 @@ mod route_tests {
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
             source_object: None,
         });
-        let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        let run = |_: &cadmpeg_core::decode::DecodeContext<'_>| {
             let mut payload = UnknownRecord::retained(
                 UnknownId::mint("catia:test:unknown#payload".to_string())
                     .expect("identity grammar"),
@@ -1508,7 +1492,7 @@ mod route_tests {
                 Vec::new(),
             );
             let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
-            super::link_payload_carriers(ctx, &ir, &mut payload, &mut annotations)?;
+            super::link_payload_carriers(&ir, &mut payload, &mut annotations)?;
             Ok::<_, cadmpeg_core::CodecError>(payload.links().to_vec())
         };
         assert_eq!(
@@ -1544,9 +1528,7 @@ mod route_tests {
         .expect("service budget admits container scan");
         let matched =
             crate::dialect::classify(&scan).expect("service budget admits dialect classification");
-        let source =
-            source_meta(&scan, &matched)
-                .expect("service budget admits source metadata");
+        let source = source_meta(&scan, &matched).expect("service budget admits source metadata");
         assert_eq!(source.attributes["file_size"], scan.data.len().to_string());
     }
 

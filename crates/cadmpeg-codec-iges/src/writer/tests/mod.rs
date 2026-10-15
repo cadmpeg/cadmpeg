@@ -1054,12 +1054,10 @@ fn face_loop_order_places_the_explicit_outer_loop_first() {
             face: face_id.clone(),
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
                 cadmpeg_ir::topology::LoopRing::new(
-                    &cadmpeg_test_support::service_decode_context(),
                     vec![cadmpeg_ir::ids::CoedgeId::mint("test:model:coedge#dummy")
                         .expect("identity grammar")],
                     Vec::new(),
                 )
-                .expect("fixture ring admission")
                 .expect("valid loop ring"),
             ),
         },
@@ -1068,12 +1066,10 @@ fn face_loop_order_places_the_explicit_outer_loop_first() {
             face: face_id,
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
                 cadmpeg_ir::topology::LoopRing::new(
-                    &cadmpeg_test_support::service_decode_context(),
                     vec![cadmpeg_ir::ids::CoedgeId::mint("test:model:coedge#dummy")
                         .expect("identity grammar")],
                     Vec::new(),
                 )
-                .expect("fixture ring admission")
                 .expect("valid loop ring"),
             ),
         },
@@ -1111,12 +1107,10 @@ fn face_loop_order_does_not_promote_an_unclassified_loop() {
             face: face_id.clone(),
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
                 cadmpeg_ir::topology::LoopRing::new(
-                    &cadmpeg_test_support::service_decode_context(),
                     vec![cadmpeg_ir::ids::CoedgeId::mint("test:model:coedge#dummy")
                         .expect("identity grammar")],
                     Vec::new(),
                 )
-                .expect("fixture ring admission")
                 .expect("valid loop ring"),
             ),
         },
@@ -1125,12 +1119,10 @@ fn face_loop_order_does_not_promote_an_unclassified_loop() {
             face: face_id,
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
                 cadmpeg_ir::topology::LoopRing::new(
-                    &cadmpeg_test_support::service_decode_context(),
                     vec![cadmpeg_ir::ids::CoedgeId::mint("test:model:coedge#dummy")
                         .expect("identity grammar")],
                     Vec::new(),
                 )
-                .expect("fixture ring admission")
                 .expect("valid loop ring"),
             ),
         },

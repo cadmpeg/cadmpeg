@@ -657,14 +657,11 @@ fn scale_decoded_curve(
         }
         DecodedCurve::Leaf { geometry, .. } => match geometry {
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
-                if let Err(message) = nurbs.try_map_control_points(
-                    |_, point| {
-                        point
-                            .scaled(scale.positive())
-                            .ok_or("scaled plane-space curve is invalid")
-                    },
-                    ctx,
-                )? {
+                if let Err(message) = nurbs.try_map_control_points(|_, point| {
+                    point
+                        .scaled(scale.positive())
+                        .ok_or("scaled plane-space curve is invalid")
+                }) {
                     return Err(GeometryError::malformed(offset, message.to_owned()));
                 }
             }
@@ -742,9 +739,7 @@ pub(crate) fn exact_nurbs(
 ) -> Result<NurbsCurve, GeometryError> {
     match curve {
         DecodedCurve::Leaf { geometry, .. } => match geometry {
-            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
-                Ok(nurbs.try_clone_for_decode(ctx, "Rhino exact NURBS copy")?)
-            }
+            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => Ok(nurbs.clone()),
             CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
                 let center = circle_curve.center();
                 let axis = circle_curve.frame().axis().as_raw();

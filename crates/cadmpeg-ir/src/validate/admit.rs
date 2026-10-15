@@ -153,7 +153,7 @@ pub(crate) fn admit_annotation_delta(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
     (format, records): (&str, &[crate::unknown::UnknownRecord]),
-    annotations: &crate::annotations::SparseAnnotationTransaction<'_, '_>,
+    annotations: &crate::annotations::SparseAnnotationTransaction<'_>,
     allowed: &[Check],
 ) -> Result<Result<ValidationReport, crate::native::NativeConvertError>, CodecError> {
     let positions = match native_unknown_order(records) {

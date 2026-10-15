@@ -1818,7 +1818,6 @@ pub(super) struct ResolveSingletonMeshSelectionInputs<
     'input3,
     'input4,
     'input5,
-    
     'input7,
     'input8,
 > {
@@ -1834,7 +1833,7 @@ pub(super) struct ResolveSingletonMeshSelectionInputs<
 
 pub(super) fn resolve_singleton_mesh_selection(
     ctx: &DecodeContext<'_>,
-    inputs: ResolveSingletonMeshSelectionInputs< '_, '_, '_, '_, '_, '_, '_, '_>,
+    inputs: ResolveSingletonMeshSelectionInputs<'_, '_, '_, '_, '_, '_, '_, '_>,
 ) -> Result<Option<MeshEndpointResolve>, CodecError> {
     let ResolveSingletonMeshSelectionInputs {
         edge_rows,

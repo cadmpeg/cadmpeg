@@ -289,13 +289,7 @@ fn add_face(
         id: loop_id.clone(),
         face: face_id.clone(),
         boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-            cadmpeg_ir::topology::LoopRing::new(
-                &cadmpeg_test_support::service_decode_context(),
-                coedge_ids,
-                Vec::new(),
-            )
-            .expect("fixture ring admission")
-            .expect("valid loop ring"),
+            cadmpeg_ir::topology::LoopRing::new(coedge_ids, Vec::new()).expect("valid loop ring"),
         ),
     });
     model.faces.push(Face {
@@ -395,19 +389,15 @@ fn test_nurbs_surface() -> NurbsSurface {
 fn flat_test_nurbs_surface() -> NurbsSurface {
     let mut surface = test_nurbs_surface();
     surface
-        .try_map_control_points(
-            |_, point| {
-                let mut point = point.get();
-                point.z = 0.0;
-                cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
-                    cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
-                        "control_points contains a non-finite point".into(),
-                    )
-                })
-            },
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .expect("pole edit admission")
+        .try_map_control_points(|_, point| {
+            let mut point = point.get();
+            point.z = 0.0;
+            cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                    "control_points contains a non-finite point".into(),
+                )
+            })
+        })
         .unwrap();
     surface
 }
@@ -569,13 +559,7 @@ fn add_cylindrical_patch_face(
         id: loop_id.clone(),
         face: face_id.clone(),
         boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-            cadmpeg_ir::topology::LoopRing::new(
-                &cadmpeg_test_support::service_decode_context(),
-                coedge_ids,
-                Vec::new(),
-            )
-            .expect("fixture ring admission")
-            .expect("valid loop ring"),
+            cadmpeg_ir::topology::LoopRing::new(coedge_ids, Vec::new()).expect("valid loop ring"),
         ),
     });
     model.faces.push(Face {

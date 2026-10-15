@@ -243,10 +243,6 @@ fn direct_circle_dimension_without_typed_replacement_keeps_native_carrier() {
 
 #[test]
 fn marker_circle_projection_adds_the_typed_circle_profile() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    let arena = DecodeArena::new();
-    let (service, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let DirectCircleFixture {
         typed_id,
         feature,
@@ -256,7 +252,6 @@ fn marker_circle_projection_adds_the_typed_circle_profile() {
         ..
     } = direct_circle_fixture();
     super::super::project_marker_dimensioned_circles(
-        &service,
         &mut entities,
         &mut sketches,
         &[feature],

@@ -8,7 +8,6 @@ use crate::parasolid::name_references::NameReferences;
 use crate::parasolid::{Stream, StreamKind};
 use crate::topology::blend_surface_state::BlendSurfaceState;
 use crate::topology::offset_surface_state::OffsetSurfaceState;
-use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
 
@@ -1097,7 +1096,7 @@ pub(in crate::native) struct ParasolidDeltasEvents {
 /// Retain every completely bounded event in every Parasolid deltas stream.
 #[cfg(test)]
 fn parasolid_deltas_events(streams: &[Stream]) -> ParasolidDeltasEvents {
-    crate::test_support::with_decode_context(|ctx| {
+    crate::test_support::with_decode_context(|_| {
         let delta_censuses = streams
             .iter()
             .map(|stream| {
@@ -1108,7 +1107,7 @@ fn parasolid_deltas_events(streams: &[Stream]) -> ParasolidDeltasEvents {
                 }
             })
             .collect::<Result<Vec<_>, CodecError>>()?;
-        parasolid_deltas_events_with_censuses(ctx, streams, delta_censuses)
+        parasolid_deltas_events_with_censuses(streams, delta_censuses)
     })
     .expect("bounded test deltas")
 }
@@ -1132,7 +1131,6 @@ fn deltas_event_id(
 /// finished, so the large record walk is performed once and its owned records
 /// are moved directly into native output.
 pub(super) fn parasolid_deltas_events_with_censuses(
-    ctx: &DecodeContext<'_>,
     streams: &[Stream],
     mut delta_censuses: Vec<Option<Census>>,
 ) -> Result<ParasolidDeltasEvents, CodecError> {
@@ -1170,7 +1168,6 @@ pub(super) fn parasolid_deltas_events_with_censuses(
         for (covered_start, covered_end) in census.covered_spans() {
             if residual_start < covered_start {
                 push_deltas_residual_span(
-                    ctx,
                     &mut events.residual_spans,
                     stream_ordinal,
                     &stream.inflated,
@@ -1182,7 +1179,6 @@ pub(super) fn parasolid_deltas_events_with_censuses(
         }
         if residual_start < stream.inflated.len() {
             push_deltas_residual_span(
-                ctx,
                 &mut events.residual_spans,
                 stream_ordinal,
                 &stream.inflated,
@@ -1198,11 +1194,7 @@ pub(super) fn parasolid_deltas_events_with_censuses(
                 stream_ordinal: stream_ordinal_u32,
                 state: header.state,
                 byte_len: cadmpeg_core::decode::u64_from_index(bytes.len()),
-                sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
-                    ctx,
-                    bytes,
-                    "NX retained record digest",
-                )?,
+                sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(bytes),
             });
         }
         if let Some(trailer) = census.terminal_null_references {
@@ -1266,11 +1258,7 @@ pub(super) fn parasolid_deltas_events_with_censuses(
                     &stream.inflated[revision.offset..revision.prefix_end],
                     state_tail,
                 ),
-                state_tail_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
-                    ctx,
-                    state_tail,
-                    "NX retained record digest",
-                )?,
+                state_tail_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(state_tail),
                 inflated_offset: cadmpeg_core::decode::u64_from_index(revision.offset),
             });
         }
@@ -1304,11 +1292,7 @@ pub(super) fn parasolid_deltas_events_with_censuses(
                     stream_ordinal: stream_ordinal_u32,
                     references: lane.references,
                     byte_len: cadmpeg_core::decode::u64_from_index(bytes.len()),
-                    sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
-                        ctx,
-                        bytes,
-                        "NX retained record digest",
-                    )?,
+                    sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(bytes),
                     inflated_offset: cadmpeg_core::decode::u64_from_index(lane.offset),
                 });
         }
@@ -1327,11 +1311,7 @@ pub(super) fn parasolid_deltas_events_with_censuses(
                     entries: map.entries,
                     target_kind: map.target_kind,
                     byte_len: cadmpeg_core::decode::u64_from_index(bytes.len()),
-                    sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
-                        ctx,
-                        bytes,
-                        "NX retained record digest",
-                    )?,
+                    sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(bytes),
                     inflated_offset: cadmpeg_core::decode::u64_from_index(map.offset),
                 });
         }
@@ -1350,11 +1330,7 @@ pub(super) fn parasolid_deltas_events_with_censuses(
                     frames: packet.frames,
                     terminal: packet.terminal,
                     byte_len: cadmpeg_core::decode::u64_from_index(bytes.len()),
-                    sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
-                        ctx,
-                        bytes,
-                        "NX retained record digest",
-                    )?,
+                    sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(bytes),
                     inflated_offset: cadmpeg_core::decode::u64_from_index(packet.offset),
                 });
         }
@@ -1372,11 +1348,7 @@ pub(super) fn parasolid_deltas_events_with_censuses(
                     stream_ordinal: stream_ordinal_u32,
                     state: preamble.state,
                     byte_len: cadmpeg_core::decode::u64_from_index(bytes.len()),
-                    sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
-                        ctx,
-                        bytes,
-                        "NX retained record digest",
-                    )?,
+                    sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(bytes),
                     inflated_offset: cadmpeg_core::decode::u64_from_index(preamble.offset),
                 });
         }
@@ -1395,11 +1367,7 @@ pub(super) fn parasolid_deltas_events_with_censuses(
                     reference: packet.reference,
                     marker: packet.marker,
                     byte_len: cadmpeg_core::decode::u64_from_index(bytes.len()),
-                    sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
-                        ctx,
-                        bytes,
-                        "NX retained record digest",
-                    )?,
+                    sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(bytes),
                     inflated_offset: cadmpeg_core::decode::u64_from_index(packet.offset),
                 });
         }
@@ -1417,11 +1385,7 @@ pub(super) fn parasolid_deltas_events_with_censuses(
                     stream_ordinal: stream_ordinal_u32,
                     state: packet.state,
                     byte_len: cadmpeg_core::decode::u64_from_index(bytes.len()),
-                    sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
-                        ctx,
-                        bytes,
-                        "NX retained record digest",
-                    )?,
+                    sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(bytes),
                     inflated_offset: cadmpeg_core::decode::u64_from_index(packet.offset),
                 });
         }
@@ -1439,11 +1403,7 @@ pub(super) fn parasolid_deltas_events_with_censuses(
                     stream_ordinal: stream_ordinal_u32,
                     fields: declaration.fields,
                     byte_len: cadmpeg_core::decode::u64_from_index(bytes.len()),
-                    sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
-                        ctx,
-                        bytes,
-                        "NX retained record digest",
-                    )?,
+                    sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(bytes),
                     inflated_offset: cadmpeg_core::decode::u64_from_index(declaration.offset),
                 });
         }
@@ -1461,11 +1421,7 @@ pub(super) fn parasolid_deltas_events_with_censuses(
                     stream_ordinal: stream_ordinal_u32,
                     fields: state.fields,
                     byte_len: cadmpeg_core::decode::u64_from_index(bytes.len()),
-                    sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
-                        ctx,
-                        bytes,
-                        "NX retained record digest",
-                    )?,
+                    sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(bytes),
                     inflated_offset: cadmpeg_core::decode::u64_from_index(state.offset),
                 });
         }
@@ -1517,7 +1473,6 @@ pub(super) fn parasolid_deltas_events_with_censuses(
 }
 
 fn push_deltas_residual_span(
-    ctx: &DecodeContext<'_>,
     residual_spans: &mut Vec<ParasolidDeltasResidualSpan>,
     stream_ordinal: usize,
     bytes: &[u8],
@@ -1530,11 +1485,7 @@ fn push_deltas_residual_span(
         stream_ordinal: u32::try_from(stream_ordinal)
             .map_err(|_| CodecError::malformed("NX deltas stream ordinal exceeds u32"))?,
         byte_len: cadmpeg_core::decode::u64_from_index(residual.len()),
-        sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
-            ctx,
-            residual,
-            "NX retained record digest",
-        )?,
+        sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(residual),
         inflated_offset: cadmpeg_core::decode::u64_from_index(start),
     });
     Ok(())

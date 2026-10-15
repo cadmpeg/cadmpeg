@@ -20,7 +20,7 @@ fn standard_empty_vertex_population_creates_no_owner_or_annotations() {
     let mut annotations = AnnotationBuilder::new();
     crate::test_support::with_service_context(|ctx| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
-        attach_free_vertices(ctx, &mut ir, &mut annotations, &mut admission)
+        attach_free_vertices(&mut ir, &mut annotations, &mut admission)
     })
     .expect("service profile admits free vertex owner");
     assert_eq!(ir, before);
@@ -67,7 +67,7 @@ fn standard_free_vertex_owner_limit_refuses_before_shell_creation() {
     crate::test_support::with_entity_limit(0, |ctx| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
         let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) =
-            attach_free_vertices(ctx, &mut ir, &mut annotations, &mut admission)
+            attach_free_vertices(&mut ir, &mut annotations, &mut admission)
         else {
             panic!("free-vertex owner must exceed the entity limit");
         };
@@ -93,7 +93,7 @@ fn standard_unbound_vertices_receive_one_free_vertex_owner() {
     let mut annotations = AnnotationBuilder::new();
     crate::test_support::with_service_context(|ctx| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
-        attach_free_vertices(ctx, &mut ir, &mut annotations, &mut admission)
+        attach_free_vertices(&mut ir, &mut annotations, &mut admission)
     })
     .expect("service profile admits free vertex owner");
     assert_eq!(ir.model.bodies.len(), 1);
@@ -540,7 +540,7 @@ fn standard_free_vertex_members_result() {
     });
     crate::test_support::with_service_context(|ctx| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
-        attach_free_vertices(ctx, &mut ir, &mut AnnotationBuilder::new(), &mut admission)
+        attach_free_vertices(&mut ir, &mut AnnotationBuilder::new(), &mut admission)
     })
     .expect("service context admits the free vertex");
     assert_eq!(ir.model.shells[0].free_vertices().len(), 1);
@@ -555,7 +555,6 @@ fn standard_extrusion_support_result() {
     crate::test_support::with_service_context(|ctx| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
         standard_extrusion_support_id(
-            ctx,
             &mut AnnotationBuilder::new(),
             &mut surfaces,
             &mut supports,
@@ -646,9 +645,8 @@ fn standard_face_partition_result() {
     .expect("service context admits the initial face");
     let mut second = base_ir.model.faces[0].clone();
     second.id = cadmpeg_ir::ids::FaceId::mint("catia:standard:face#1").expect("identity grammar");
-    crate::test_support::with_service_context(|ctx| {
+    ({
         crate::assemble::annotate(
-            ctx,
             &mut base_annotations,
             &second.id,
             "MainDataStream+SurfacicReps",
@@ -663,7 +661,6 @@ fn standard_face_partition_result() {
     let result = crate::test_support::with_service_context(|ctx| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
         crate::families::standard::decode::partition_standard_face_components(
-            ctx,
             &mut base_ir,
             &mut base_annotations,
             &components,
@@ -697,10 +694,7 @@ fn standard_extrusion_definition_copy_result() {
     let definition = cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::legacy(
         directrix, None, direction, None, None,
     );
-    let copied = crate::test_support::with_service_context(|ctx| {
-        copy_standard_extrusion_definition(ctx, &definition)
-    })
-    .expect("service context admits the retained directrix identity");
+    let copied = { copy_standard_extrusion_definition(&definition) };
     assert_eq!(
         copied,
         cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(definition),

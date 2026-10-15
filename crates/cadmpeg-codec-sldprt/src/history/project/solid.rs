@@ -3,7 +3,6 @@
 
 use crate::classification::{classify, native_object_class, FeatureClass, NativeClassKind};
 use crate::records::{Feature, FeatureContent};
-use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::{
     features::{
@@ -23,11 +22,10 @@ use crate::history::literals::{
 };
 
 pub(super) fn project_extrude(
-    ctx: &DecodeContext<'_>,
     feature: &Feature,
     native_by_source: &HashMap<String, &str>,
     features_by_source: &HashMap<crate::records::FeatureSource, &Feature>,
-) -> Result<Option<FeatureDefinition>, CodecError> {
+) -> Option<FeatureDefinition> {
     let mut source_dimensions = feature.content.iter().filter_map(|content| match content {
         FeatureContent::Dimension(name) => Some(name.as_str()),
         FeatureContent::Feature(_) | FeatureContent::Text(_) => None,
@@ -106,11 +104,8 @@ pub(super) fn project_extrude(
     };
     let draft = match feature.parameters.get("Draft") {
         Some(value) => {
-            let Some(angle) = parse_angle_rad(value)
-                .and_then(|angle| cadmpeg_ir::scalar::SlopeAngle::try_from(angle).ok())
-            else {
-                return Ok(None);
-            };
+            let angle = parse_angle_rad(value)
+                .and_then(|angle| cadmpeg_ir::scalar::SlopeAngle::try_from(angle).ok())?;
             Some(angle)
         }
         None => None,
@@ -148,7 +143,7 @@ pub(super) fn project_extrude(
         },
         Some("TwoSided") => {
             let (Some(first), Some(second)) = (length("Depth"), length("Depth2")) else {
-                return Ok(None);
+                return None;
             };
             ExtrudeExtent::TwoSided {
                 first: ExtrudeSide {
@@ -178,28 +173,22 @@ pub(super) fn project_extrude(
         },
         Some("ThroughNext") => one_sided(LinearTermination::ThroughNext {}),
         Some("ToFace") => {
-            let Some(face) = feature.properties.get("Face") else {
-                return Ok(None);
-            };
+            let face = feature.properties.get("Face")?;
             one_sided(LinearTermination::ToFace {
                 face: FaceSelection::Native(face.to_owned()),
                 offset: None,
             })
         }
         Some("ToVertex") => {
-            let Some(vertex) = feature.properties.get("Vertex") else {
-                return Ok(None);
-            };
+            let vertex = feature.properties.get("Vertex")?;
             one_sided(LinearTermination::ToVertex {
-                vertex: VertexSelection::native(vertex.to_owned(), ctx)?
+                vertex: VertexSelection::native(vertex.to_owned())
                     .unwrap_or(VertexSelection::Unresolved),
             })
         }
         Some("OffsetFromFace") => match length("Depth").or_else(sole_length) {
             Some(offset) => {
-                let Some(face) = feature.properties.get("Face") else {
-                    return Ok(None);
-                };
+                let face = feature.properties.get("Face")?;
                 one_sided(LinearTermination::OffsetFromFace {
                     face: FaceSelection::Native(face.to_owned()),
                     offset,
@@ -211,11 +200,8 @@ pub(super) fn project_extrude(
     };
     let direction = match feature.properties.get("Direction") {
         Some(value) => {
-            let Some(vector) =
-                parse_vector3(value).and_then(cadmpeg_ir::features::FeatureDirection3::new)
-            else {
-                return Ok(None);
-            };
+            let vector =
+                parse_vector3(value).and_then(cadmpeg_ir::features::FeatureDirection3::new)?;
             cadmpeg_ir::features::ExtrudeDirection::Explicit {
                 vector,
                 source: None,
@@ -225,7 +211,7 @@ pub(super) fn project_extrude(
     };
     if matches!(direction, cadmpeg_ir::features::ExtrudeDirection::Explicit { vector, .. } if !valid_direction(vector.get()))
     {
-        return Ok(None);
+        return None;
     }
     let profile = if let Some(source) = feature.properties.get("Profile") {
         ProfileRef::Planar(PlanarProfileRef::Native(
@@ -252,33 +238,30 @@ pub(super) fn project_extrude(
     } else {
         ProfileRef::Planar(PlanarProfileRef::Unresolved(feature.id.clone()))
     };
-    Ok(Some(FeatureDefinition::Operation(
-        FeatureOperation::Extrude {
-            profile,
-            direction,
-            start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane {},
-            extent,
-            op,
-            solid: Some(!matches!(
-                feature.input_class.as_deref().map(native_object_class),
-                Some(NativeClassKind::SurfaceExtrusion)
-            )),
-            face_maker: None,
-            inner_wire_taper: None,
-            length_along_profile_normal: None,
-            allow_multi_profile_faces: None,
-        },
-    )))
+    Some(FeatureDefinition::Operation(FeatureOperation::Extrude {
+        profile,
+        direction,
+        start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane {},
+        extent,
+        op,
+        solid: Some(!matches!(
+            feature.input_class.as_deref().map(native_object_class),
+            Some(NativeClassKind::SurfaceExtrusion)
+        )),
+        face_maker: None,
+        inner_wire_taper: None,
+        length_along_profile_normal: None,
+        allow_multi_profile_faces: None,
+    }))
 }
 
 pub(super) fn project_hole(
-    ctx: &DecodeContext<'_>,
     feature: &Feature,
     features_by_source: &HashMap<crate::records::FeatureSource, &Feature>,
     history_features: &[Feature],
 ) -> Result<Option<FeatureDefinition>, CodecError> {
     let Some((shape, profile)) =
-        hole_shape_and_profile(ctx, feature, features_by_source, history_features)?
+        hole_shape_and_profile(feature, features_by_source, history_features)?
     else {
         return Ok(None);
     };
@@ -336,7 +319,6 @@ pub(super) fn project_hole(
     })))
 }
 fn hole_shape_and_profile(
-    ctx: &DecodeContext<'_>,
     feature: &Feature,
     features_by_source: &HashMap<crate::records::FeatureSource, &Feature>,
     history_features: &[Feature],
@@ -440,9 +422,7 @@ fn hole_shape_and_profile(
         hole_form(HoleKind::SimpleDrilled { drill_point_angle })
     } else {
         match &profile {
-            Some(profile) => profile
-                .construction
-                .try_clone_for_decode(ctx, "copy SLDPRT hole profile construction")?,
+            Some(profile) => profile.construction.clone(),
             None => hole_form(HoleKind::Simple),
         }
     };
@@ -457,7 +437,6 @@ fn hole_shape_and_profile(
 }
 
 pub(crate) fn threaded_hole_major_diameter(
-    ctx: &DecodeContext<'_>,
     feature: &Feature,
     features_by_source: &HashMap<crate::records::FeatureSource, &Feature>,
     history_features: &[Feature],
@@ -465,8 +444,7 @@ pub(crate) fn threaded_hole_major_diameter(
     if classify(feature) != Some(FeatureClass::Hole) {
         return Ok(None);
     }
-    let Some((shape, _)) =
-        hole_shape_and_profile(ctx, feature, features_by_source, history_features)?
+    let Some((shape, _)) = hole_shape_and_profile(feature, features_by_source, history_features)?
     else {
         return Ok(None);
     };

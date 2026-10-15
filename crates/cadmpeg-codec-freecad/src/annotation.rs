@@ -170,9 +170,7 @@ pub(crate) fn transfer_neutral(
                 CodecError::malformed(format_args!("FreeCAD ordinal {order} exceeds u32"))
             })?,
             text: record.text.clone(),
-            references: cadmpeg_core::text::named_entries(&record.object,
-                references,
-            )?,
+            references: cadmpeg_core::text::named_entries(&record.object, references)?,
             value: None,
             format: match schema.text {
                 Some(carrier) if carrier.has_format_spec => {
@@ -181,9 +179,7 @@ pub(crate) fn transfer_neutral(
                 _ => None,
             },
             position: annotation_position(ctx, &owned, schema.position)?,
-            parameters: cadmpeg_core::text::named_entries(&record.object,
-                parameters,
-            )?,
+            parameters: cadmpeg_core::text::named_entries(&record.object, parameters)?,
             assets,
             native_ref: record.id.clone(),
         });

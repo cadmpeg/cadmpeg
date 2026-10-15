@@ -39,19 +39,13 @@ macro_rules! rewrite_scalar {
 // identity semantics. Ordinary display/source text remains ordinary text.
 macro_rules! rewrite_record_field {
     (native_ref, $value:expr, $ctx:expr, $map:expr) => {
-        crate::schema::rewrite::typed::native_fields::FullFidelityReference::rewrite(
-            $value, $ctx, $map,
-        )
+        crate::schema::rewrite::typed::native_fields::FullFidelityReference::rewrite($value, $map)
     };
     (geometry_ref, $value:expr, $ctx:expr, $map:expr) => {
-        crate::schema::rewrite::typed::native_fields::FullFidelityReference::rewrite(
-            $value, $ctx, $map,
-        )
+        crate::schema::rewrite::typed::native_fields::FullFidelityReference::rewrite($value, $map)
     };
     (endpoint_refs, $value:expr, $ctx:expr, $map:expr) => {
-        crate::schema::rewrite::typed::native_fields::FullFidelityReference::rewrite(
-            $value, $ctx, $map,
-        )
+        crate::schema::rewrite::typed::native_fields::FullFidelityReference::rewrite($value, $map)
     };
     ($field:ident, $value:expr, $ctx:expr, $map:expr) => {
         crate::schema::rewrite::typed::RewriteIdentities::rewrite_identities($value, $ctx, $map)
@@ -60,16 +54,10 @@ macro_rules! rewrite_record_field {
 
 macro_rules! rewrite_native_record_field {
     (native_ref, $ctx:expr, $value:expr, $map:expr, $owner:ty) => {
-        crate::schema::rewrite::typed::native_fields::rewrite_reference(
-            $ctx,
-            $value,
-            "native_ref",
-            $map,
-        )
+        crate::schema::rewrite::typed::native_fields::rewrite_reference($value, "native_ref", $map)
     };
     (geometry_ref, $ctx:expr, $value:expr, $map:expr, $owner:ty) => {
         crate::schema::rewrite::typed::native_fields::rewrite_reference(
-            $ctx,
             $value,
             "geometry_ref",
             $map,
@@ -77,7 +65,6 @@ macro_rules! rewrite_native_record_field {
     };
     (endpoint_refs, $ctx:expr, $value:expr, $map:expr, $owner:ty) => {
         crate::schema::rewrite::typed::native_fields::rewrite_reference(
-            $ctx,
             $value,
             "endpoint_refs",
             $map,

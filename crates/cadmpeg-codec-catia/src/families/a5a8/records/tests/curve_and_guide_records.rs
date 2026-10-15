@@ -141,11 +141,7 @@ fn a8_curve_parser_reads_common_form_rolling_ball_jet() {
 fn a8_jet_stations_result() {
     let jet =
         crate::families::a5a8::records::a8_freeform_curves(&a8_freeform_curve_stream()).remove(0);
-    assert!(crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::rolling_ball_jet_definition(ctx, &jet)
-    })
-    .expect("service decode")
-    .is_some());
+    assert!(({ crate::families::a5a8::records::rolling_ball_jet_definition(&jet) }).is_some());
 }
 
 #[test]

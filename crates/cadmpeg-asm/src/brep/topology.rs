@@ -389,11 +389,11 @@ pub(super) fn walk_reachable_topology(
                                                     *selector,
                                                     token_table,
                                                 )
-                                                .map(|result| result.and_then(|(mut curve, native_chart)| {
+                                                .map(|result| result.map(|(mut curve, native_chart)| {
                                                     if (*selector < 0) ^ record_reversed(intcurve) {
-                                                        curve.reverse_parameterization(ctx)?;
+                                                        curve.reverse_parameterization();
                                                     }
-                                                    Ok((curve, native_chart))
+                                                    (curve, native_chart)
                                                 }))
                                             })
                                     }
@@ -407,12 +407,7 @@ pub(super) fn walk_reachable_topology(
                                             .ref_at(7)
                                             .and_then(|surface| by_index.get(&surface))
                                         {
-                                            let Some(()) = nurbs::proc_curve::normalize_pcurve_for_surface_record(
-                                                ctx,
-                                                surface.head(),
-                                                &surface.tokens,
-                                                &mut decoded,
-                                            ).transpose()? else { return Ok(None); };
+                                            let Some(()) = nurbs::proc_curve::normalize_pcurve_for_surface_record(surface.head(), &surface.tokens, &mut decoded).transpose()? else { return Ok(None); };
                                         }
                                     }
                                     Ok(pcurve_ranges_on_domain(&decoded, edge)
@@ -478,7 +473,7 @@ pub(super) fn walk_reachable_topology(
                                                 // edge's stored range is on the
                                                 // reversed parameterization.
                                                 if record_reversed(crec) {
-                                                    curve.reverse_parameterization(ctx)?;
+                                                    curve.reverse_parameterization();
                                                 }
                                                 curve_geo.insert(cv, CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)));
                                                 procedural_curve_defs.insert(cv, super::ProceduralCurveSource::Cached {
@@ -758,7 +753,7 @@ fn keep_wire_edge(
             let parsed_domain = nurbs::proc_curve::nurbs_curve_parameter_domain(&decoded.curve);
             let mut curve = decoded.curve;
             if record_reversed(curve_record) {
-                curve.reverse_parameterization(ctx)?;
+                curve.reverse_parameterization();
             }
             curve_geo.insert(
                 curve_index,

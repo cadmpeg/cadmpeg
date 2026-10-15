@@ -13,7 +13,6 @@ use std::collections::{hash_map::RandomState, HashMap, HashSet};
 /// Follow `entity`'s attribute chain, emitting each record not yet in
 /// `emitted` as a [`SourceAttribute`] bound to `target`.
 pub fn collect_attributes(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     entity: &Record,
     target: &AttributeTarget,
     by_index: &HashMap<i64, &Record, RandomState>,
@@ -31,11 +30,7 @@ pub fn collect_attributes(
             break;
         };
         if emitted.insert(index) {
-            out.push(source_attribute(
-                record,
-                target.try_clone_for_decode(ctx, "ASM source attribute target")?,
-                format,
-            )?);
+            out.push(source_attribute(record, target.clone(), format)?);
         }
         current = attribute_next(record);
     }

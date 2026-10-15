@@ -111,29 +111,21 @@ fn fixture() -> SketchEntity {
 
 #[test]
 fn emitted_entity_views_hold_one_geometry() {
-    let (_, geometry) =
-        crate::decode::with_test_decode_ctx(|ctx| emitted_entity_views(ctx, &[fixture()]))
-            .expect("service views");
+    let (_, geometry) = emitted_entity_views(&[fixture()]);
     assert_eq!(geometry.len(), 1);
 }
 
 #[test]
 fn available_parameter_ids_include_existing_ids() {
     let id = ParameterId::mint("creo:featdefs:parameter#1").expect("parameter ID");
-    let ids = crate::decode::with_test_decode_ctx(|ctx| {
-        available_parameter_ids(ctx, [&id], BTreeSet::new())
-    })
-    .expect("service IDs admitted");
+    let ids = { available_parameter_ids([&id], BTreeSet::new()) };
     assert_eq!(ids, BTreeSet::from([id]));
 }
 
 #[test]
 fn available_parameter_ids_include_planned_ids() {
     let id = ParameterId::mint("creo:featdefs:parameter#1").expect("parameter ID");
-    let ids = crate::decode::with_test_decode_ctx(|ctx| {
-        available_parameter_ids(ctx, std::iter::empty(), BTreeSet::from([id.clone()]))
-    })
-    .expect("service IDs admitted");
+    let ids = { available_parameter_ids(std::iter::empty(), BTreeSet::from([id.clone()])) };
     assert_eq!(ids, BTreeSet::from([id]));
 }
 

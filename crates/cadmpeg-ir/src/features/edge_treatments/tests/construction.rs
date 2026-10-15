@@ -26,9 +26,7 @@ fn radius_construction_moves_typed_storage_and_shares_serde_admission() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = bytes;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    let law = VariableRadii::new(raw(), &ctx)
-        .expect("one allocation and exact visits")
-        .expect("valid");
+    let law = VariableRadii::new(raw()).expect("valid");
     ctx.finish_session().expect("no scratch or duplicate scan");
     assert_eq!(
         serde_json::from_str::<VariableRadii>(&serde_json::to_string(&law).expect("wire"))
@@ -40,9 +38,7 @@ fn radius_construction_moves_typed_storage_and_shares_serde_admission() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     let points = typed();
     let address = points.as_ptr();
-    let checked = VariableRadii::from_parts(points, &ctx)
-        .expect("scan only")
-        .expect("valid");
+    let checked = VariableRadii::from_parts(points).expect("valid");
     assert_eq!(checked.as_slice().as_ptr(), address);
     assert_eq!(checked, law);
     ctx.finish_session().expect("source rows moved");
@@ -55,11 +51,11 @@ fn radius_construction_keeps_geometry_absence_distinct_from_refusal() {
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     assert_eq!(
-        VariableRadii::new(Vec::new(), &ctx).expect("no allocation or scan"),
+        VariableRadii::new(Vec::new()),
         Err(super::super::INVALID_VARIABLE_RADII)
     );
     assert_eq!(
-        VariableRadii::from_parts(typed()[..1].to_vec(), &ctx).expect("fixed shape only"),
+        VariableRadii::from_parts(typed()[..1].to_vec()),
         Err(super::super::INVALID_VARIABLE_RADII)
     );
     ctx.finish_session()
@@ -71,7 +67,7 @@ fn radius_construction_keeps_geometry_absence_distinct_from_refusal() {
         point.radius = NonNegativeLength::ZERO;
     }
     assert_eq!(
-        VariableRadii::from_parts(points, &ctx).expect("three positivity visits"),
+        VariableRadii::from_parts(points),
         Err(super::super::INVALID_VARIABLE_RADII)
     );
     ctx.finish_session()

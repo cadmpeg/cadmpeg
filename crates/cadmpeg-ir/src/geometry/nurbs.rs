@@ -5,8 +5,6 @@
 pub mod bezier;
 /// Rational control-polygon speed bounds.
 pub mod bounds;
-/// Immutable temporary rows with scoped storage ownership.
-pub mod scoped;
 
 pub(super) mod admitted;
 
@@ -57,15 +55,6 @@ impl KnotVector {
     #[must_use]
     pub fn as_slice(&self) -> &[f64] {
         &self.0
-    }
-
-    /// Copy the admitted knots.
-    pub fn try_clone_for_decode(
-        &self,
-        _ctx: &DecodeContext<'_>,
-        _operation: &'static str,
-    ) -> Result<Self, CodecError> {
-        Ok(self.clone())
     }
 
     /// Reverse the order and negate every value, the knots of the reversed
@@ -792,15 +781,6 @@ pub struct BsplineSurface {
 }
 
 impl BsplineSurface {
-    /// Copy the retained knot vectors and control grid through the decode budget.
-    pub fn try_clone_for_decode(
-        &self,
-        _ctx: &DecodeContext<'_>,
-        _operation: &'static str,
-    ) -> Result<Self, CodecError> {
-        Ok(self.clone())
-    }
-
     /// Build a rectangular grid with full knot vectors for both parameters.
     pub fn new(
         ctx: &DecodeContext<'_>,
@@ -838,17 +818,14 @@ impl BsplineSurface {
     pub fn try_map_control_points<E>(
         &mut self,
         map: impl Fn(usize, FinitePoint3) -> Result<FinitePoint3, E>,
-        _ctx: &DecodeContext<'_>,
-    ) -> Result<Result<(), E>, CodecError> {
-        Ok((|| {
-            for (index, point) in self.control_points.iter().flatten().copied().enumerate() {
-                map(index, point)?;
-            }
-            for (index, point) in self.control_points.iter_mut().flatten().enumerate() {
-                *point = map(index, *point)?;
-            }
-            Ok(())
-        })())
+    ) -> Result<(), E> {
+        for (index, point) in self.control_points.iter().flatten().copied().enumerate() {
+            map(index, point)?;
+        }
+        for (index, point) in self.control_points.iter_mut().flatten().enumerate() {
+            *point = map(index, *point)?;
+        }
+        Ok(())
     }
 }
 
@@ -1300,15 +1277,6 @@ fn require_surface_shape<P, S: NurbsAdmission>(
 }
 
 impl NurbsSurface {
-    /// Copy the admitted lanes through the decode collection budget.
-    pub fn try_clone_for_decode(
-        &self,
-        _ctx: &DecodeContext<'_>,
-        _operation: &'static str,
-    ) -> Result<Self, CodecError> {
-        Ok(self.clone())
-    }
-
     /// Build a tensor-product NURBS surface with consistent cardinalities.
     ///
     /// Raw pole positions are admitted; admitted positions are kept, so a
@@ -1447,35 +1415,32 @@ impl NurbsSurface {
     pub fn try_map_control_points<E>(
         &mut self,
         map: impl Fn(usize, FinitePoint3) -> Result<FinitePoint3, E>,
-        _ctx: &DecodeContext<'_>,
-    ) -> Result<Result<(), E>, CodecError> {
-        Ok((|| {
-            match &self.poles {
-                NurbsPoleGrid::Polynomial { rows } => {
-                    for (index, point) in rows.iter().flatten().copied().enumerate() {
-                        map(index, point)?;
-                    }
-                }
-                NurbsPoleGrid::Rational { rows } => {
-                    for (index, pole) in rows.iter().flatten().enumerate() {
-                        map(index, pole.point)?;
-                    }
+    ) -> Result<(), E> {
+        match &self.poles {
+            NurbsPoleGrid::Polynomial { rows } => {
+                for (index, point) in rows.iter().flatten().copied().enumerate() {
+                    map(index, point)?;
                 }
             }
-            match &mut self.poles {
-                NurbsPoleGrid::Polynomial { rows } => {
-                    for (index, point) in rows.iter_mut().flatten().enumerate() {
-                        *point = map(index, *point)?;
-                    }
-                }
-                NurbsPoleGrid::Rational { rows } => {
-                    for (index, pole) in rows.iter_mut().flatten().enumerate() {
-                        pole.point = map(index, pole.point)?;
-                    }
+            NurbsPoleGrid::Rational { rows } => {
+                for (index, pole) in rows.iter().flatten().enumerate() {
+                    map(index, pole.point)?;
                 }
             }
-            Ok(())
-        })())
+        }
+        match &mut self.poles {
+            NurbsPoleGrid::Polynomial { rows } => {
+                for (index, point) in rows.iter_mut().flatten().enumerate() {
+                    *point = map(index, *point)?;
+                }
+            }
+            NurbsPoleGrid::Rational { rows } => {
+                for (index, pole) in rows.iter_mut().flatten().enumerate() {
+                    pole.point = map(index, pole.point)?;
+                }
+            }
+        }
+        Ok(())
     }
 
     /// Rational weight rows in control-grid order.
@@ -1512,7 +1477,7 @@ impl NurbsSurface {
 
     /// Exchange the u and v parameter axes and transpose pole storage.
     /// The natural normal changes sign; `normal_reversed` remains unchanged.
-    pub fn transpose_parameter_axes(&mut self, _ctx: &DecodeContext<'_>) -> Result<(), CodecError> {
+    pub fn transpose_parameter_axes(&mut self) {
         // Surface admission and every grid mutation preserve nonempty,
         // rectangular rows. Raw pole grids do not expose this operation.
         fn transpose<T: Copy>(rows: &[Vec<T>], width: usize) -> Vec<Vec<T>> {
@@ -1529,7 +1494,6 @@ impl NurbsSurface {
         std::mem::swap(&mut self.u_degree, &mut self.v_degree);
         std::mem::swap(&mut self.u_knots, &mut self.v_knots);
         std::mem::swap(&mut self.u_periodic, &mut self.v_periodic);
-        Ok(())
     }
 }
 
@@ -1593,25 +1557,14 @@ pub struct NurbsCurve {
 }
 
 impl NurbsCurve {
-    /// Copy the admitted lanes through the decode collection budget.
-    pub fn try_clone_for_decode(
-        &self,
-        _ctx: &DecodeContext<'_>,
-        _operation: &'static str,
-    ) -> Result<Self, CodecError> {
-        Ok(self.clone())
-    }
-
     /// Copy a curve after charging its knot and pole lanes, then map the
     /// copied positions without another allocation. A non-finite result leaves
     /// the source untouched and returns no curve.
     pub fn map_control_points(
         &self,
-        ctx: &DecodeContext<'_>,
-        operation: &'static str,
         mut map: impl FnMut(Point3) -> Point3,
     ) -> Result<Option<Self>, CodecError> {
-        let mut mapped = self.try_clone_for_decode(ctx, operation)?;
+        let mut mapped = self.clone();
         match &mut mapped.poles {
             NurbsPoles3::Polynomial { points } => {
                 for point in points {
@@ -1769,35 +1722,32 @@ impl NurbsCurve {
     pub fn try_map_control_points<E>(
         &mut self,
         map: impl Fn(usize, FinitePoint3) -> Result<FinitePoint3, E>,
-        _ctx: &DecodeContext<'_>,
-    ) -> Result<Result<(), E>, CodecError> {
-        Ok((|| {
-            match &self.poles {
-                NurbsPoles3::Polynomial { points } => {
-                    for (index, point) in points.iter().copied().enumerate() {
-                        map(index, point)?;
-                    }
-                }
-                NurbsPoles3::Rational { points } => {
-                    for (index, pole) in points.iter().enumerate() {
-                        map(index, pole.point)?;
-                    }
+    ) -> Result<(), E> {
+        match &self.poles {
+            NurbsPoles3::Polynomial { points } => {
+                for (index, point) in points.iter().copied().enumerate() {
+                    map(index, point)?;
                 }
             }
-            match &mut self.poles {
-                NurbsPoles3::Polynomial { points } => {
-                    for (index, point) in points.iter_mut().enumerate() {
-                        *point = map(index, *point)?;
-                    }
-                }
-                NurbsPoles3::Rational { points } => {
-                    for (index, pole) in points.iter_mut().enumerate() {
-                        pole.point = map(index, pole.point)?;
-                    }
+            NurbsPoles3::Rational { points } => {
+                for (index, pole) in points.iter().enumerate() {
+                    map(index, pole.point)?;
                 }
             }
-            Ok(())
-        })())
+        }
+        match &mut self.poles {
+            NurbsPoles3::Polynomial { points } => {
+                for (index, point) in points.iter_mut().enumerate() {
+                    *point = map(index, *point)?;
+                }
+            }
+            NurbsPoles3::Rational { points } => {
+                for (index, pole) in points.iter_mut().enumerate() {
+                    pole.point = map(index, pole.point)?;
+                }
+            }
+        }
+        Ok(())
     }
 
     /// Rational weights in pole order.
@@ -1816,10 +1766,9 @@ impl NurbsCurve {
     }
 
     /// Reverse poles, weights, and the signed knot parameterization together.
-    pub fn reverse_parameterization(&mut self, _ctx: &DecodeContext<'_>) -> Result<(), CodecError> {
+    pub fn reverse_parameterization(&mut self) {
         self.knots.reverse_negated();
         self.poles.reverse();
-        Ok(())
     }
 
     /// Reverse poles and reflect knots within an admitted parameter range.
@@ -1827,19 +1776,15 @@ impl NurbsCurve {
     /// resulting knot lane is decreasing.
     pub fn reverse_parameterization_in_range(
         &mut self,
-        _ctx: &DecodeContext<'_>,
         start: FiniteReal,
         end: FiniteReal,
-    ) -> Result<Option<()>, CodecError> {
+    ) -> Option<()> {
         let mut previous = None;
         for knot in self.knots.0.iter().rev() {
-            let Some(reflected) = FiniteReal::new(*knot)
-                .and_then(|knot| crate::math::reflect_parameter(knot, start, end))
-            else {
-                return Ok(None);
-            };
+            let reflected = FiniteReal::new(*knot)
+                .and_then(|knot| crate::math::reflect_parameter(knot, start, end))?;
             if previous.is_some_and(|previous| previous > reflected) {
-                return Ok(None);
+                return None;
             }
             previous = Some(reflected);
         }
@@ -1847,14 +1792,11 @@ impl NurbsCurve {
         self.knots.0.reverse();
         for knot in &mut self.knots.0 {
             // The validation pass reached the same original knot before mutation.
-            let Some(reflected) = FiniteReal::new(*knot)
-                .and_then(|knot| crate::math::reflect_parameter(knot, start, end))
-            else {
-                return Ok(None);
-            };
+            let reflected = FiniteReal::new(*knot)
+                .and_then(|knot| crate::math::reflect_parameter(knot, start, end))?;
             *knot = reflected.get();
         }
-        Ok(Some(()))
+        Some(())
     }
 }
 
@@ -1884,22 +1826,16 @@ impl<'de> Deserialize<'de> for NurbsCurve {
     }
 }
 
-/// Tests adjacent knot pairs. `_work` is not called.
+/// Tests adjacent knot pairs.
 /// A NaN pair fails this predicate.
-pub fn knots_nondecreasing<E>(
-    knots: &[f64],
-    _work: impl FnMut(u64) -> Result<(), E>,
-) -> Result<bool, E> {
-    Ok(knots_ordered(knots, true))
+pub fn knots_nondecreasing(knots: &[f64]) -> bool {
+    knots_ordered(knots, true)
 }
 
-/// Tests strict adjacent knot order. `_work` is not called.
+/// Tests strict adjacent knot order.
 /// A repeated knot or NaN pair fails this predicate.
-pub fn knots_strictly_increasing<E>(
-    knots: &[f64],
-    _work: impl FnMut(u64) -> Result<(), E>,
-) -> Result<bool, E> {
-    Ok(knots_ordered(knots, false))
+pub fn knots_strictly_increasing(knots: &[f64]) -> bool {
+    knots_ordered(knots, false)
 }
 
 fn knots_ordered(knots: &[f64], repeats: bool) -> bool {

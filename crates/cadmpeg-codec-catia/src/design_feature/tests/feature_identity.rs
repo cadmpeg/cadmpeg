@@ -178,10 +178,7 @@ fn parameter_owner_follows_one_exact_child_design_object() {
             native_ref: Some(child_entity_id),
         });
 
-    crate::test_support::with_service_context(|ctx| {
-        transfer.assign_parameter_owners(ctx, &mut ir, &native)
-    })
-    .unwrap();
+    ({ transfer.assign_parameter_owners(&mut ir, &native) }).unwrap();
 
     assert_eq!(ir.model.features.len(), 1);
     assert_eq!(
@@ -463,8 +460,7 @@ fn normalizes_scopes_containing_only_unnamed_parameters() {
             ir.model.parameters.push(value);
         }
     }
-    crate::test_support::with_service_context(|ctx| normalize_parameter_names(ctx, &mut ir))
-        .unwrap();
+    (normalize_parameter_names(&mut ir));
     assert_eq!(
         ir.model
             .parameters

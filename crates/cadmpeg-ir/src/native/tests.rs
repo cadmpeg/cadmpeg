@@ -988,16 +988,10 @@ fn native_attribute_target_rewrite_preserves_every_wire_kind() {
                 id.strip_prefix("test:model:").unwrap()
             ))
         };
-        let mut map = IdentityMap::new(&ctx, "test native identity", remap).unwrap();
+        let mut map = IdentityMap::new(remap);
         AttributeTarget::rewrite_native_value(&ctx, &mut value, &mut map).unwrap();
-        map.finish(&ctx).unwrap();
-        let expected = crate::schema::rewrite::identities(
-            &ctx,
-            "test typed attribute target",
-            expected,
-            remap,
-        )
-        .unwrap();
+        map.finish().unwrap();
+        let expected = crate::schema::rewrite::identities(&ctx, expected, remap).unwrap();
         assert_eq!(value, serde_json::to_value(expected).unwrap());
     }
     ctx.finish_session().unwrap();

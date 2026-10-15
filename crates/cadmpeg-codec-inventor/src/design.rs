@@ -452,38 +452,38 @@ pub(crate) fn project_parameters(
     admitted_entities: &mut u64,
 ) -> Result<(Vec<DesignParameter>, usize), CodecError> {
     let expressions = unique_index(inventory.expressions.iter().map(|record| {
-            (
-                {
-                    (
-                        record.identity.segment_token.as_str(),
-                        record.identity.record_ordinal,
-                    )
-                },
-                record,
-            )
-        }));
+        (
+            {
+                (
+                    record.identity.segment_token.as_str(),
+                    record.identity.record_ordinal,
+                )
+            },
+            record,
+        )
+    }));
     let units = unique_index(inventory.units.iter().map(|record| {
-            (
-                {
-                    (
-                        record.identity.segment_token.as_str(),
-                        record.identity.record_ordinal,
-                    )
-                },
-                record,
-            )
-        }));
+        (
+            {
+                (
+                    record.identity.segment_token.as_str(),
+                    record.identity.record_ordinal,
+                )
+            },
+            record,
+        )
+    }));
     let parameters = unique_index(inventory.parameters.iter().map(|record| {
-            (
-                {
-                    (
-                        record.identity.segment_token.as_str(),
-                        record.identity.record_ordinal,
-                    )
-                },
-                record,
-            )
-        }));
+        (
+            {
+                (
+                    record.identity.segment_token.as_str(),
+                    record.identity.record_ordinal,
+                )
+            },
+            record,
+        )
+    }));
     let mut projected = Vec::new();
     let mut unresolved = 0usize;
     for parameter in &inventory.parameters {

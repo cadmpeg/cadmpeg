@@ -474,7 +474,7 @@ fn decode_with_occurrence_limits(
     )?;
     // The transfer ledger is verified before DecodeResult construction, so its
     // identity checks require the same canonical arena order as the result.
-    ir.finalize(ctx)?;
+    ir.finalize();
     let geometry_transferred = !projection.decoded.is_empty();
     let mut losses = parse.admission_losses();
     if invalid_resolution
@@ -653,14 +653,8 @@ fn decode_with_occurrence_limits(
     let mut notes = directory::summary_notes(&parse.directory);
     notes.extend(parameter::summary_notes(&parse.parameters));
     notes.extend(graph::summary_notes(&parse.references));
-    let document_digest = document_local_sha256(
-        ctx,
-        &ir,
-        ir.source.as_ref(),
-        "iges",
-        crate::SOURCE_IMAGE_ID,
-        "iges_document_digest",
-    )?;
+    let document_digest =
+        document_local_sha256(ctx, &ir, ir.source.as_ref(), "iges", crate::SOURCE_IMAGE_ID)?;
     drop(verification_index);
     if let Some(source) = &mut ir.source {
         source.attributes.insert(

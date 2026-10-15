@@ -10,10 +10,8 @@ fn material_asset_attachment_preserves_tiff() {
         texture.to_vec(),
     )]);
     let container = crate::container::scan_bytes(file.as_slice()).unwrap();
-    let textures = crate::test_support::with_decode_context(|ctx| {
-        crate::native::om::material_texture::material_texture_assets(ctx, &container)
-    })
-    .unwrap();
+    let textures =
+        ({ crate::native::om::material_texture::material_texture_assets(&container) }).unwrap();
     assert_eq!(textures.len(), 1);
     let scan = crate::decode::Scan {
         container,
@@ -44,10 +42,8 @@ fn material_asset_attachment_retains_the_tiff_copy() {
         texture.to_vec(),
     )]);
     let container = crate::container::scan_bytes(file.as_slice()).unwrap();
-    let textures = crate::test_support::with_decode_context(|ctx| {
-        crate::native::om::material_texture::material_texture_assets(ctx, &container)
-    })
-    .unwrap();
+    let textures =
+        ({ crate::native::om::material_texture::material_texture_assets(&container) }).unwrap();
     let scan = crate::decode::Scan {
         container,
         streams: Vec::new(),

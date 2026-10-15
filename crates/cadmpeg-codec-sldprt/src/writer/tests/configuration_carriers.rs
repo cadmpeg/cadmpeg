@@ -268,8 +268,7 @@ fn encoder_writes_source_less_neutral_configurations() {
         feature_states: BTreeMap::new(),
         native_ref: None,
     });
-    ir.finalize(&cadmpeg_test_support::service_decode_context())
-        .expect("fixture ordering is admitted");
+    ir.finalize();
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -1455,21 +1454,17 @@ fn semantic_writer_regenerates_modified_nurbs_carriers() {
             panic!("expected NURBS curve");
         };
         curve
-            .try_map_control_points(
-                |index, point| {
-                    let mut point = point.get();
-                    if index == 1 {
-                        point.y += 250.0;
-                    }
-                    cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
-                        cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
-                            "control_points contains a non-finite point".into(),
-                        )
-                    })
-                },
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .expect("pole edit admission")
+            .try_map_control_points(|index, point| {
+                let mut point = point.get();
+                if index == 1 {
+                    point.y += 250.0;
+                }
+                cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                    cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                        "control_points contains a non-finite point".into(),
+                    )
+                })
+            })
             .unwrap();
         let expected_curve = curve.clone();
         let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) =
@@ -1479,21 +1474,17 @@ fn semantic_writer_regenerates_modified_nurbs_carriers() {
         };
         let target = surface.v_count() + 1;
         surface
-            .try_map_control_points(
-                |index, pole| {
-                    let mut pole = pole.get();
-                    if index == target {
-                        pole.z += 500.0;
-                    }
-                    cadmpeg_ir::features::FinitePoint3::new(pole).ok_or_else(|| {
-                        cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
-                            "control_points contains a non-finite point".into(),
-                        )
-                    })
-                },
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .expect("pole edit admission")
+            .try_map_control_points(|index, pole| {
+                let mut pole = pole.get();
+                if index == target {
+                    pole.z += 500.0;
+                }
+                cadmpeg_ir::features::FinitePoint3::new(pole).ok_or_else(|| {
+                    cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                        "control_points contains a non-finite point".into(),
+                    )
+                })
+            })
             .unwrap();
         let expected_surface = surface.clone();
         (expected_curve, expected_surface)

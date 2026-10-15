@@ -160,7 +160,6 @@ pub(in crate::decode) fn transfer_topology_bound_planes(
                 });
             }
             annotate(
-                ctx,
                 annotations,
                 &id,
                 "VisibGeom",
@@ -183,7 +182,6 @@ pub(in crate::decode) fn transfer_topology_bound_planes(
             continue;
         };
         annotate(
-            ctx,
             annotations,
             &id,
             "VisibGeom",
@@ -259,7 +257,6 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
                 continue;
             }
             annotate(
-                ctx,
                 annotations,
                 &id,
                 if namespace.is_visible() {
@@ -313,7 +310,6 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
             continue;
         }
         annotate(
-            ctx,
             annotations,
             &id,
             "VisibGeom",

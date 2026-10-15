@@ -59,19 +59,15 @@ pub struct IdentityMap<'ctx, F> {
 
 impl<'ctx, F: FnMut(&str) -> Result<String, CodecError>> IdentityMap<'ctx, F> {
     /// Create the identity cache.
-    pub fn new(
-        _ctx: &'ctx DecodeContext<'_>,
-        _operation: &'static str,
-        map: F,
-    ) -> Result<Self, CodecError> {
-        Ok(Self {
+    pub fn new(map: F) -> Self {
+        Self {
             map,
             text_index: None,
             targets: HashMap::new(),
             occupied: HashSet::new(),
             refused: None,
             resource_refusal: None,
-        })
+        }
     }
 
     /// Also rewrite ordinary text that exactly names an owned source identity.
@@ -101,7 +97,7 @@ impl<'ctx, F: FnMut(&str) -> Result<String, CodecError>> IdentityMap<'ctx, F> {
     }
 
     /// Return any mapping refusal that an enclosing field walk intercepted.
-    pub fn finish(&self, _ctx: &DecodeContext<'_>) -> Result<(), CodecError> {
+    pub fn finish(&self) -> Result<(), CodecError> {
         if let Some(limit) = self.resource_refusal {
             return Err(CodecError::ResourceLimit(limit));
         }
@@ -113,11 +109,7 @@ impl<'ctx, F: FnMut(&str) -> Result<String, CodecError>> IdentityMap<'ctx, F> {
     }
 
     /// Replace an identity once and refuse invalid or colliding targets.
-    pub fn identity(
-        &mut self,
-        _ctx: &DecodeContext<'_>,
-        source: &str,
-    ) -> Result<String, CodecError> {
+    pub fn identity(&mut self, source: &str) -> Result<String, CodecError> {
         self.identity_value(source)
             .map(crate::ids::Identity::into_string)
     }
@@ -172,7 +164,7 @@ impl RewriteIdentities for crate::ids::Identity {
         let serde_json::Value::String(source) = value else {
             return Err(CodecError::malformed("native identity must be text"));
         };
-        *source = map.identity(ctx, source)?;
+        *source = map.identity(source)?;
         Ok(())
     }
 

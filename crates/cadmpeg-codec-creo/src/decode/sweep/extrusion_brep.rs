@@ -370,7 +370,6 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
             (&top_surface, span.upper()),
         ] {
             annotate(
-                ctx,
                 annotations,
                 id,
                 "FeatDefs",
@@ -523,11 +522,10 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                             else {
                                 continue;
                             };
-                            let Some(placed) = placed_section_nurbs(ctx, transform, &nurbs)? else {
+                            let Some(placed) = placed_section_nurbs(transform, &nurbs)? else {
                                 continue;
                             };
                             let Some(translated) = translated_nurbs_curve(
-                                ctx,
                                 &placed,
                                 [
                                     offset * transform.normal()[0],
@@ -652,11 +650,9 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                 face: copy_id!(bottom_face),
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
                     cadmpeg_ir::topology::LoopRing::new(
-                        ctx,
                         copy_ring_coedges(&bottom_coedges)?,
                         Vec::new(),
                     )
-                    .map_err(cadmpeg_core::CodecError::from)?
                     .map_err(cadmpeg_core::CodecError::malformed)?,
                 ),
             });
@@ -666,11 +662,9 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                 face: copy_id!(top_face),
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
                     cadmpeg_ir::topology::LoopRing::new(
-                        ctx,
                         copy_ring_coedges(&top_coedges)?,
                         Vec::new(),
                     )
-                    .map_err(cadmpeg_core::CodecError::from)?
                     .map_err(cadmpeg_core::CodecError::malformed)?,
                 ),
             });
@@ -820,11 +814,9 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     face: copy_id!(face_id),
                     boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
                         cadmpeg_ir::topology::LoopRing::new(
-                            ctx,
                             copy_ring_coedges(&coedges)?,
                             Vec::new(),
                         )
-                        .map_err(cadmpeg_core::CodecError::from)?
                         .map_err(cadmpeg_core::CodecError::malformed)?,
                     ),
                 });

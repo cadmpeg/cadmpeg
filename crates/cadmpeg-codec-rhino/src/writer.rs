@@ -1194,25 +1194,22 @@ fn generated_projected_brep_c2_curve(
         WritableEdgeCurve::Nurbs(nurbs) => {
             let mut projected = nurbs.clone();
             projected
-                .try_map_control_points(
-                    |_, point| {
-                        let mut point = point.get();
-                        let uv = plane_uv(point, origin, u_axis, v_axis);
-                        point = cadmpeg_ir::math::Point3::new(uv[0], uv[1], 0.0);
-                        cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
-                            cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
-                                "control_points contains a non-finite point".into(),
-                            )
-                        })
-                    },
-                    &writer_ctx,
-                )?
+                .try_map_control_points(|_, point| {
+                    let mut point = point.get();
+                    let uv = plane_uv(point, origin, u_axis, v_axis);
+                    point = cadmpeg_ir::math::Point3::new(uv[0], uv[1], 0.0);
+                    cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                        cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                            "control_points contains a non-finite point".into(),
+                        )
+                    })
+                })
                 .map_err(|error| CodecError::NotImplemented(error.to_string()))?;
             if sense == Sense::Reversed {
                 let sum = projected.knots()[usize::try_from(projected.degree()).map_err(|_| {
                     CodecError::Malformed("Rhino count exceeds address space".into())
                 })?] + projected.knots()[projected.pole_count()];
-                projected.reverse_parameterization(&writer_ctx)?;
+                projected.reverse_parameterization();
                 projected
                     .edit_knots(&writer_ctx, |knots| {
                         for knot in knots {

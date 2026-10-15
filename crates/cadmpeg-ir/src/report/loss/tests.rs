@@ -288,8 +288,6 @@ fn loss_clone_preserves_provenance() {
         "source geometry omitted",
     )
     .with_provenance(crate::SourceProvenance::root("rhino", 7).with_tag("object"));
-    let copied = original
-        .try_clone_for_decode(&cadmpeg_test_support::service_decode_context(), "loss copy")
-        .expect("service profile admits all copied fields");
+    let copied = original.clone();
     assert_eq!(copied, original);
 }

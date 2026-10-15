@@ -74,7 +74,6 @@ pub(super) fn add_extrusion_pcurve(
         _ => [0.0, 1.0],
     };
     annotate(
-        ctx,
         annotations,
         &id,
         "FeatDefs",
@@ -84,7 +83,7 @@ pub(super) fn add_extrusion_pcurve(
     )?;
     ctx.charge_entities(1, "admit Creo model pcurves")?;
     let pcurve = Pcurve {
-        id: id.try_clone_for_decode(ctx, "creo extrusion pcurve identity copy")?,
+        id: id.clone(),
         geometry,
         metadata: PcurveMetadata::general(
             None,
@@ -281,7 +280,7 @@ pub(in super::super) fn revolved_brep_surface(
         let Some(directrix) = oriented_sketch_nurbs_curve(ctx, geometry, reversed)? else {
             return Ok(None);
         };
-        let Some(placed_directrix) = placed_section_nurbs(ctx, transform, &directrix)? else {
+        let Some(placed_directrix) = placed_section_nurbs(transform, &directrix)? else {
             return Ok(None);
         };
         let Some(surface) = revolved_nurbs_surface(ctx, &placed_directrix, axis, record, refusal)?

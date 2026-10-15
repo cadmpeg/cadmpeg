@@ -238,8 +238,7 @@ fn native_external_record_route_preserves_indexed_record() {
     assert_eq!(records[0].record_id, 6);
 }
 
-fn native_external_indexed_result(
-) -> Result<Vec<super::super::ExternalReferenceIndexedRecord>, CodecError> {
+fn native_external_indexed_result() -> Vec<super::super::ExternalReferenceIndexedRecord> {
     let file = prt_with_named_payloads(&[(
         "/Root/ExternalReferences",
         crate::test_support::test_streams::external_reference_stream(),
@@ -248,14 +247,14 @@ fn native_external_indexed_result(
         .expect("indexed external-reference container");
     let decoded = super::super::external_reference_records(&container).expect("handle-set record");
 
-    crate::test_support::with_decode_context(|ctx| {
-        super::super::external_reference_indexed_records(ctx, &container, &decoded)
-    })
+    {
+        super::super::external_reference_indexed_records(&container, &decoded)
+    }
 }
 
 #[test]
 fn native_external_indexed_route_preserves_record_links() {
-    let records = native_external_indexed_result().expect("native indexed records");
+    let records = native_external_indexed_result();
     assert_eq!(records.len(), 2);
     assert_eq!(records[0].record_id, 7);
     assert_eq!(records[1].record_id, 6);
@@ -273,15 +272,10 @@ fn native_external_empty_result() -> Vec<crate::native::om::ExternalReferenceEmp
     )]);
     let container = crate::container::scan_bytes(file.as_slice())
         .expect("indexed external-reference container");
-    let indexed = crate::test_support::with_decode_context(|ctx| {
-        let records = super::super::external_reference_records(&container)?;
-        super::super::external_reference_indexed_records(ctx, &container, &records)
-    })
-    .expect("native indexed records");
-
-    {
-        super::super::external_reference_empty_records(&container, &indexed)
-    }
+    let records = super::super::external_reference_records(&container)
+        .expect("native external-reference records");
+    let indexed = super::super::external_reference_indexed_records(&container, &records);
+    super::super::external_reference_empty_records(&container, &indexed)
 }
 
 #[test]

@@ -77,10 +77,7 @@ fn active_body_selection_accepts_a_complete_singleton_membership() {
         (second, BTreeSet::from([8])),
     ]);
 
-    assert!(crate::test_support::with_decode_context(|ctx| {
-        select_active_body(ctx, &mut ir, &body_node_ids, &[7])
-    })
-    .unwrap());
+    assert!(({ select_active_body(&mut ir, &body_node_ids, &[7]) }));
     assert_eq!(ir.model.bodies.len(), 1);
     assert_eq!(ir.model.bodies[0].id, first);
     assert_eq!(
@@ -101,8 +98,8 @@ fn rmfastload_preselection_keeps_only_streams_with_selected_body_images() {
         (second, BTreeSet::from([8, 9])),
     ]);
 
-    crate::test_support::with_decode_context(|ctx| {
-        let selected = rmfastload_selected_bodies(ctx, &body_node_ids, &[7, 8]).unwrap();
+    ({
+        let selected = rmfastload_selected_bodies(&body_node_ids, &[7, 8]);
         assert_eq!(selected, BTreeSet::from([first]));
         assert_eq!(
             rmfastload_stream_indices(&selected),
@@ -316,7 +313,6 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
         let construction = ProceduralCurveId::mint("test:model:entity#nx:test:closed-intersection")
             .expect("identity grammar");
         let _attached = ir.model.add_procedural_curve(
-            &cadmpeg_ir::document::admission::StandardAdmission,
             &sphere_circle,
             ProceduralCurve::new(
                 construction,
@@ -934,21 +930,17 @@ fn planar_offset_cache_fit_is_certified_over_the_control_net() {
             unreachable!();
         };
         candidate
-            .try_map_control_points(
-                |index, pole| {
-                    let mut pole = pole.get();
-                    if index == 2 {
-                        pole.z += 0.000_5;
-                    }
-                    cadmpeg_ir::features::FinitePoint3::new(pole).ok_or_else(|| {
-                        cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
-                            "control_points contains a non-finite point".into(),
-                        )
-                    })
-                },
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .expect("pole edit admission")
+            .try_map_control_points(|index, pole| {
+                let mut pole = pole.get();
+                if index == 2 {
+                    pole.z += 0.000_5;
+                }
+                cadmpeg_ir::features::FinitePoint3::new(pole).ok_or_else(|| {
+                    cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                        "control_points contains a non-finite point".into(),
+                    )
+                })
+            })
             .unwrap();
 
         let fit = certified_offset_cache_fit(
@@ -1309,21 +1301,17 @@ fn curved_offset_cache_fit_rejects_an_uncertified_fold() {
             .map(|v| surface.control_grid()[1][v])
             .collect::<Vec<_>>();
         surface
-            .try_map_control_points(
-                |index, pole| {
-                    let mut pole = pole.get();
-                    if let Some(source) = index.checked_sub(6).and_then(|v| replacement.get(v)) {
-                        pole = source.get();
-                    }
-                    cadmpeg_ir::features::FinitePoint3::new(pole).ok_or_else(|| {
-                        cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
-                            "control_points contains a non-finite point".into(),
-                        )
-                    })
-                },
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .expect("pole edit admission")
+            .try_map_control_points(|index, pole| {
+                let mut pole = pole.get();
+                if let Some(source) = index.checked_sub(6).and_then(|v| replacement.get(v)) {
+                    pole = source.get();
+                }
+                cadmpeg_ir::features::FinitePoint3::new(pole).ok_or_else(|| {
+                    cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                        "control_points contains a non-finite point".into(),
+                    )
+                })
+            })
             .unwrap();
         assert!(certified_offset_cache_fit(
             geometry_ctx,
@@ -1344,21 +1332,17 @@ fn curved_offset_cache_fit_accepts_a_regular_turning_control_net() {
             unreachable!();
         };
         surface
-            .try_map_control_points(
-                |index, pole| {
-                    let mut pole = pole.get();
-                    if (6..9).contains(&index) {
-                        pole.x = 0.0;
-                    }
-                    cadmpeg_ir::features::FinitePoint3::new(pole).ok_or_else(|| {
-                        cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
-                            "control_points contains a non-finite point".into(),
-                        )
-                    })
-                },
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .expect("pole edit admission")
+            .try_map_control_points(|index, pole| {
+                let mut pole = pole.get();
+                if (6..9).contains(&index) {
+                    pole.x = 0.0;
+                }
+                cadmpeg_ir::features::FinitePoint3::new(pole).ok_or_else(|| {
+                    cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                        "control_points contains a non-finite point".into(),
+                    )
+                })
+            })
             .unwrap();
         assert_eq!(
             certified_offset_cache_fit(
@@ -1501,21 +1485,17 @@ fn rational_offset_cache_bounds_are_translation_invariant() {
             unreachable!();
         };
         surface
-            .try_map_control_points(
-                |_, point| {
-                    let mut point = point.get();
-                    point.x += 1.0e12;
-                    point.y -= 2.0e12;
-                    point.z += 3.0e12;
-                    cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
-                        cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
-                            "control_points contains a non-finite point".into(),
-                        )
-                    })
-                },
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .expect("pole edit admission")
+            .try_map_control_points(|_, point| {
+                let mut point = point.get();
+                point.x += 1.0e12;
+                point.y -= 2.0e12;
+                point.z += 3.0e12;
+                cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                    cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                        "control_points contains a non-finite point".into(),
+                    )
+                })
+            })
             .unwrap();
         let axis_weights = [1.0, 1.01, 1.02];
         let weight_grid = (0..3)
@@ -1661,14 +1641,7 @@ fn saved_offset_cache_retains_its_procedural_lineage() {
         ),
         None,
     );
-    ir.model
-        .add_procedural_surface(
-            &cadmpeg_ir::document::admission::StandardAdmission,
-            &cache,
-            procedural,
-        )
-        .unwrap()
-        .unwrap();
+    ir.model.add_procedural_surface(&cache, procedural).unwrap();
 
     assert_eq!(surface_offset_lineage(&ir, &cache, 0), Some((support, 4.0)));
 }
@@ -1720,12 +1693,7 @@ fn edge_incidence_uses_only_declared_tolerances_at_large_scale() {
             },
         );
         ir.model
-            .add_procedural_curve(
-                &cadmpeg_ir::document::admission::StandardAdmission,
-                &curve_id,
-                procedural,
-            )
-            .unwrap()
+            .add_procedural_curve(&curve_id, procedural)
             .unwrap();
 
         let start_point = PointId::mint("nx:test:point#0").expect("identity grammar");
@@ -1919,21 +1887,17 @@ fn boundary_coincidence_is_certified_between_uniform_samples() {
             unreachable!()
         };
         second
-            .try_map_control_points(
-                |index, pole| {
-                    let mut pole = pole.get();
-                    if index == 1 {
-                        pole.z = 1.0;
-                    }
-                    cadmpeg_ir::features::FinitePoint3::new(pole).ok_or_else(|| {
-                        cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
-                            "control_points contains a non-finite point".into(),
-                        )
-                    })
-                },
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .expect("pole edit admission")
+            .try_map_control_points(|index, pole| {
+                let mut pole = pole.get();
+                if index == 1 {
+                    pole.z = 1.0;
+                }
+                cadmpeg_ir::features::FinitePoint3::new(pole).ok_or_else(|| {
+                    cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                        "control_points contains a non-finite point".into(),
+                    )
+                })
+            })
             .unwrap();
         assert!(!coincident_pcurve_pair(
             geometry_ctx,

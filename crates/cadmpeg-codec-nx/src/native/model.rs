@@ -631,26 +631,23 @@ pub(crate) fn extract_segment_lineage(
 /// status. The mapping must cover every emitted body image before selection is
 /// admitted; a partial mapping is not a body-selection proof.
 pub(crate) fn terminal_feature_body_ids(
-    ctx: &DecodeContext<'_>,
     emitted: &BTreeSet<BodyId>,
     bindings: &[SegmentBodyBinding],
     statuses: &[SegmentBodyLineageStatus],
-) -> Result<Option<BTreeSet<BodyId>>, CodecError> {
+) -> Option<BTreeSet<BodyId>> {
     let mut statuses_by_binding = BTreeMap::new();
     for status in statuses {
         if statuses_by_binding
             .insert(status.segment_body_binding.as_str(), status)
             .is_some()
         {
-            return Ok(None);
+            return None;
         }
     }
     let mut mapped = BTreeSet::new();
     let mut selected = BTreeSet::new();
     for binding in bindings {
-        let Some(status) = statuses_by_binding.remove(binding.id.as_str()) else {
-            return Ok(None);
-        };
+        let status = statuses_by_binding.remove(binding.id.as_str())?;
         let prefix = format!("nx:s{}:", binding.stream_ordinal);
         for body in emitted
             .iter()
@@ -658,16 +655,13 @@ pub(crate) fn terminal_feature_body_ids(
         {
             mapped.insert(body);
             if status.terminal && !selected.contains(body) {
-                let body_id =
-                    body.try_clone_for_decode(ctx, "nx selected terminal body identity")?;
+                let body_id = body.clone();
                 selected.insert(body_id);
             }
         }
     }
-    Ok(
-        (statuses_by_binding.is_empty() && mapped.len() == emitted.len() && !selected.is_empty())
-            .then_some(selected),
-    )
+    (statuses_by_binding.is_empty() && mapped.len() == emitted.len() && !selected.is_empty())
+        .then_some(selected)
 }
 
 impl NativeModel {
@@ -724,7 +718,7 @@ impl NativeModel {
             (!segment_stream_links.is_empty()).then_some(&linked_deltas),
         );
         let deltas_events =
-            parasolid_deltas_events_with_censuses(ctx, streams, parsed.take_delta_censuses())?;
+            parasolid_deltas_events_with_censuses(streams, parsed.take_delta_censuses())?;
         let parasolid_group_records =
             parasolid_group_records(streams, &delta_pairs, &deltas_events.records)?;
         let parasolid_group_members = parasolid_group_members(streams, &delta_pairs, parsed)?;
@@ -794,7 +788,7 @@ impl NativeModel {
             &parasolid_entity_51_records,
             &parasolid_attribute_class_uses,
         );
-        let om_record_areas = om_record_areas(ctx, container)?;
+        let om_record_areas = om_record_areas(container)?;
         let audit_trail_rows = audit_trail_rows(container)?;
         let operation_state_journal_groups = operation_state_journal_groups(container)?;
         let operation_state_counters = operation_state_counters(container)?;
@@ -802,7 +796,7 @@ impl NativeModel {
         let operation_state_messages = operation_state_messages(ctx, container)?;
         let operation_state_statuses = operation_state_statuses(ctx, container)?;
         let operation_state_slot_lanes = operation_state_slot_lanes(ctx, container)?;
-        let feature_operation_records = feature_operation_records(ctx, container)?;
+        let feature_operation_records = feature_operation_records(container)?;
         let feature_unlabeled_operation_records =
             feature_unlabeled_operation_records(ctx, container)?;
         let feature_unlabeled_operation_body_writes =
@@ -993,7 +987,7 @@ impl NativeModel {
         )?;
         let feature_datum_csys_constructions = feature_datum_csys_constructions(container)?;
         let feature_datum_csys_payloads =
-            feature_datum_csys_payloads(ctx, container, &feature_datum_csys_constructions)?;
+            feature_datum_csys_payloads(container, &feature_datum_csys_constructions)?;
         let feature_datum_csys_payload_scalar_pairs =
             feature_datum_csys_payload_scalar_pairs(container, &feature_datum_csys_payloads)?;
         let feature_datum_csys_payload_fixed_pairs =
@@ -1006,7 +1000,7 @@ impl NativeModel {
         let feature_datum_plane_block_uses =
             feature_datum_plane_block_uses(&feature_datum_plane_headers, &feature_input_blocks)?;
         let feature_datum_plane_payloads =
-            feature_datum_plane_payloads(ctx, container, &feature_datum_plane_headers)?;
+            feature_datum_plane_payloads(container, &feature_datum_plane_headers)?;
         let feature_datum_plane_payload_scalar_pairs =
             feature_datum_plane_payload_scalar_pairs(container, &feature_datum_plane_payloads)?;
         let feature_datum_plane_descriptors =
@@ -1021,7 +1015,6 @@ impl NativeModel {
         let feature_projected_curve_references = feature_projected_curve_references(container)?;
         let feature_projected_curve_construction_payloads =
             feature_projected_curve_construction_payloads(
-                ctx,
                 container,
                 &feature_operation_labels,
                 &feature_projected_curve_references,
@@ -1033,15 +1026,14 @@ impl NativeModel {
             )?;
         let feature_fset_reference_graphs = feature_fset_reference_graphs(container)?;
         let feature_fset_construction_payloads =
-            feature_fset_construction_payloads(ctx, container, &feature_fset_reference_graphs)?;
+            feature_fset_construction_payloads(container, &feature_fset_reference_graphs)?;
         let feature_delete_reference_fields = feature_delete_reference_fields(container)?;
         let feature_delete_construction_payloads =
-            feature_delete_construction_payloads(ctx, container, &feature_delete_reference_fields)?;
+            feature_delete_construction_payloads(container, &feature_delete_reference_fields)?;
         let feature_pattern_references = feature_pattern_references(container)?;
         let feature_pattern_counted_reference_lanes =
             feature_pattern_counted_reference_lanes(container)?;
         let feature_pattern_construction_payloads = feature_pattern_construction_payloads(
-            ctx,
             container,
             &feature_operation_labels,
             &feature_pattern_references,
@@ -1068,12 +1060,10 @@ impl NativeModel {
         let feature_draft_construction_index_lanes =
             feature_draft_construction_index_lanes(container)?;
         let feature_draft_construction_payloads = feature_draft_construction_payloads(
-            ctx,
             container,
             &feature_draft_construction_index_lanes,
         )?;
         let feature_draft_construction_graph_payloads = feature_draft_construction_graph_payloads(
-            ctx,
             container,
             &feature_draft_construction_index_lanes,
             &feature_draft_construction_references,
@@ -1100,7 +1090,6 @@ impl NativeModel {
         let feature_surface_construction_references =
             feature_surface_construction_references(container)?;
         let feature_surface_construction_payloads = feature_surface_construction_payloads(
-            ctx,
             container,
             &feature_surface_construction_references,
         )?;
@@ -1139,7 +1128,7 @@ impl NativeModel {
         let feature_block_constructions =
             feature_block_constructions(&feature_block_construction_references);
         let feature_block_construction_payloads =
-            feature_block_construction_payloads(ctx, container, &feature_block_constructions)?;
+            feature_block_construction_payloads(container, &feature_block_constructions)?;
         let feature_block_payload_scalars =
             feature_block_payload_scalars(container, &feature_block_construction_payloads)?;
         let feature_block_payload_names =
@@ -1166,11 +1155,8 @@ impl NativeModel {
             &feature_sketch_records,
             &feature_sketch_references,
         )?;
-        let feature_sketch_construction_payloads = feature_sketch_construction_payloads(
-            ctx,
-            container,
-            &feature_sketch_construction_inputs,
-        )?;
+        let feature_sketch_construction_payloads =
+            feature_sketch_construction_payloads(container, &feature_sketch_construction_inputs)?;
         let feature_sketch_payload_coordinate_pairs = feature_sketch_payload_coordinate_pairs(
             container,
             &feature_sketch_construction_payloads,
@@ -1228,7 +1214,7 @@ impl NativeModel {
         let expressions = expressions(container, &expression_declarations)?;
         let classes = class_definitions(container)?;
         let fields = field_definitions(container)?;
-        let object_records = object_records(ctx, container)?;
+        let object_records = object_records(container)?;
         let (rmfastload_object_id_tables, rmfastload_object_ids) =
             match rmfastload_object_id_table(ctx, container)? {
                 Some((table, object_ids)) => (vec![table], object_ids),
@@ -1302,7 +1288,7 @@ impl NativeModel {
         let external_references = external_references(container)?;
         let external_reference_records = external_reference_records(container)?;
         let external_reference_indexed_records =
-            external_reference_indexed_records(ctx, container, &external_reference_records)?;
+            external_reference_indexed_records(container, &external_reference_records);
         let external_reference_empty_records =
             external_reference_empty_records(container, &external_reference_indexed_records);
         let external_reference_tail_reference_pairs =
@@ -1316,7 +1302,7 @@ impl NativeModel {
             &external_references,
             &external_reference_record_string_uses,
         );
-        let material_texture_assets = material_texture_assets(ctx, container)?;
+        let material_texture_assets = material_texture_assets(container)?;
         let material_texture_catalog_entries =
             material_texture_catalog_entries(ctx, container, &material_texture_assets)?;
         let persistent_handles = persistent_handles(

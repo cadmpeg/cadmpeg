@@ -1985,15 +1985,7 @@ pub(crate) fn project(
             if let Some(producer) = producers.get_mut(descendant) {
                 *producer = None;
             } else {
-                producers.insert(
-                    *descendant,
-                    Some((
-                        index,
-                        ids[index]
-                            .try_clone_for_decode(ctx, "Rhino history producer identity")
-                            .map_err(ProjectionError::Codec)?,
-                    )),
-                );
+                producers.insert(*descendant, Some((index, ids[index].clone())));
             }
         }
     }
@@ -2019,14 +2011,8 @@ pub(crate) fn project(
             if *producer_index >= index || dependency_seen.contains(id) {
                 continue;
             }
-            dependency_seen.insert(
-                id.try_clone_for_decode(ctx, "Rhino history seen dependency identity")
-                    .map_err(ProjectionError::Codec)?,
-            );
-            dependencies.push(
-                id.try_clone_for_decode(ctx, "Rhino history dependency identity")
-                    .map_err(ProjectionError::Codec)?,
-            );
+            dependency_seen.insert(id.clone());
+            dependencies.push(id.clone());
         }
         let mut parameters = BTreeMap::new();
         let mut properties = BTreeMap::new();

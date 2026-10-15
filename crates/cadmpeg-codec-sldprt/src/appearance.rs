@@ -102,12 +102,11 @@ fn definition_at(
     else {
         return Ok(None);
     };
-    let decoded =
-        match ctx.utf16le_text(raw_name, count, false, "decode SLDPRT appearance name") {
-            Ok(text) => text,
-            Err(cadmpeg_core::CodecError::Malformed(_)) => return Ok(None),
-            Err(error) => return Err(error),
-        };
+    let decoded = match ctx.utf16le_text(raw_name, count, false, "decode SLDPRT appearance name") {
+        Ok(text) => text,
+        Err(cadmpeg_core::CodecError::Malformed(_)) => return Ok(None),
+        Err(error) => return Err(error),
+    };
     let trimmed = decoded.trim();
     if trimmed.is_empty() {
         return Ok(None);

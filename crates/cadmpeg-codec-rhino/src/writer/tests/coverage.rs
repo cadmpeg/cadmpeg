@@ -92,8 +92,7 @@ fn placed_point_product() -> CadIr {
             native_ref: None,
         });
     }
-    ir.finalize(&cadmpeg_test_support::service_decode_context())
-        .expect("fixture ordering is admitted");
+    ir.finalize();
     ir
 }
 

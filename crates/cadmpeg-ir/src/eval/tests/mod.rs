@@ -264,9 +264,7 @@ fn rolling_ball_jet_evaluation_interpolates_spine_and_sweeps_arc() {
                     },
                 },
             ],
-            &cadmpeg_test_support::service_decode_context(),
         )
-        .expect("fixture rolling-ball admission")
         .unwrap(),
     );
 
@@ -324,9 +322,7 @@ fn rolling_ball_jet_evaluation_uses_fixed_radius_frame() {
                     },
                 },
             ],
-            &cadmpeg_test_support::service_decode_context(),
         )
-        .expect("fixture rolling-ball admission")
         .unwrap(),
     );
 
@@ -439,9 +435,7 @@ fn budgeted_model_surface_charges_nurbs_directrix_work() {
         source_object: None,
     });
     ir.model
-        .add_procedural_surface(&crate::document::admission::StandardAdmission,
-            &surface_id,
-            procedural_surface! {
+        .add_procedural_surface(&surface_id, procedural_surface! {
                 id: ProceduralSurfaceId::mint("test:model:entity#budgeted-sweep-construction").expect("valid identity"),
                 definition: ProceduralSurfaceDefinition::LinearSweep(
                     crate::geometry::surface_payloads::LinearSweepSurfaceConstruction::try_new(
@@ -452,9 +446,7 @@ fn budgeted_model_surface_charges_nurbs_directrix_work() {
                 ),
                 cache_fit_tolerance: None,
                 record_bounds: None,
-            },
-        ).unwrap()
-        .unwrap();
+            }).unwrap();
     let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
     let budget = WorkBudget::new(5);
     assert_eq!(
@@ -1279,26 +1271,20 @@ fn offset_of_reversed_subset_uses_the_local_surface_normal() {
         },
     ];
     ir.model
-        .add_procedural_surface(&crate::document::admission::StandardAdmission,
-            &subset_id,
-            procedural_surface! {
+        .add_procedural_surface(&subset_id, procedural_surface! {
                 id: subset_construction,
                 definition: ProceduralSurfaceDefinition::Subset(crate::geometry::surface_payloads::SubsetSurfaceConstruction::try_new(base_id, [[0.0, 1.0], [0.0, 1.0]], Some(false), Some(true), None).unwrap()),
                 cache_fit_tolerance: None,
                 record_bounds: None,
-            },
-        ).unwrap()
+            })
         .expect("subset surface exists and has no procedural construction");
     ir.model
-        .add_procedural_surface(&crate::document::admission::StandardAdmission,
-            &offset_id,
-            procedural_surface! {
+        .add_procedural_surface(&offset_id, procedural_surface! {
                 id: offset_construction,
                 definition: ProceduralSurfaceDefinition::Offset(crate::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(subset_id, 2.0, None, None, false, OffsetExtension::Legacy { flags: LegacyExtensionFlags::Absent {}, cache: None }).unwrap()),
                 cache_fit_tolerance: None,
                 record_bounds: None,
-            },
-        ).unwrap()
+            })
         .expect("offset surface exists and has no procedural construction");
     let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
     assert_eq!(
@@ -1351,9 +1337,7 @@ fn curve_bounded_surface_delegates_evaluation_to_its_support() {
         },
     ];
     ir.model
-        .add_procedural_surface(&crate::document::admission::StandardAdmission,
-            &bounded_id,
-            procedural_surface! {
+        .add_procedural_surface(&bounded_id, procedural_surface! {
                 id: ProceduralSurfaceId::mint("test:model:entity#curve-bounded-construction").expect("valid identity"),
                 definition: ProceduralSurfaceDefinition::CurveBounded {
                     support: support_id,
@@ -1363,9 +1347,7 @@ fn curve_bounded_surface_delegates_evaluation_to_its_support() {
                 },
                 cache_fit_tolerance: None,
                 record_bounds: None,
-            },
-        ).unwrap()
-        .unwrap();
+            }).unwrap();
     let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
     assert_eq!(
         model_surface_point_by_id(
@@ -1425,9 +1407,7 @@ fn linear_sweep_surface_evaluation_uses_directrix_and_sweep_parameters() {
         source_object: None,
     });
     ir.model
-        .add_procedural_surface(&crate::document::admission::StandardAdmission,
-            &surface_id,
-            procedural_surface! {
+        .add_procedural_surface(&surface_id, procedural_surface! {
                 id: ProceduralSurfaceId::mint("test:model:entity#sweep-construction").expect("valid identity"),
                 definition: ProceduralSurfaceDefinition::LinearSweep(
                     crate::geometry::surface_payloads::LinearSweepSurfaceConstruction::try_new(
@@ -1438,9 +1418,7 @@ fn linear_sweep_surface_evaluation_uses_directrix_and_sweep_parameters() {
                 ),
                 cache_fit_tolerance: None,
                 record_bounds: None,
-            },
-        ).unwrap()
-        .unwrap();
+            }).unwrap();
     let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
     let point = model_surface_point_by_id(
         crate::eval::admission::EvaluationAdmission::Standard,
@@ -1614,9 +1592,7 @@ fn axis_revolution_surface_evaluation_rotates_the_profile_parameterization() {
         source_object: None,
     });
     ir.model
-        .add_procedural_surface(&crate::document::admission::StandardAdmission,
-            &surface_id,
-            procedural_surface! {
+        .add_procedural_surface(&surface_id, procedural_surface! {
                 id: ProceduralSurfaceId::mint("test:model:entity#revolution-construction").expect("valid identity"),
                 definition: ProceduralSurfaceDefinition::AxisRevolution(
                     crate::geometry::surface_payloads::AxisRevolutionSurfaceConstruction::try_new(
@@ -1628,9 +1604,7 @@ fn axis_revolution_surface_evaluation_rotates_the_profile_parameterization() {
                 ),
                 cache_fit_tolerance: None,
                 record_bounds: None,
-            },
-        ).unwrap()
-        .unwrap();
+            }).unwrap();
     let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
     let point = model_surface_point_by_id(
         crate::eval::admission::EvaluationAdmission::Standard,
@@ -1692,16 +1666,12 @@ fn revolution_surface_maps_its_angular_parameter_interval() {
         source_object: None,
     });
     ir.model
-        .add_procedural_surface(&crate::document::admission::StandardAdmission,
-            &surface_id,
-            procedural_surface! {
+        .add_procedural_surface(&surface_id, procedural_surface! {
                 id: ProceduralSurfaceId::mint("test:model:entity#mapped-revolution-construction").expect("valid identity"),
                 definition: ProceduralSurfaceDefinition::Revolution(crate::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(directrix_id, (crate::features::FinitePoint3::ZERO, crate::units::UnitVector3::Z_AXIS), [0.0, std::f64::consts::PI], Some([10.0, 14.0]), None, false, crate::geometry::CacheContract::from_form(None)).unwrap()),
                 cache_fit_tolerance: None,
                 record_bounds: None,
-            },
-        ).unwrap()
-        .unwrap();
+            }).unwrap();
     let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
     let partials = model_surface_second_partials_by_id(
         crate::eval::admission::EvaluationAdmission::Standard,
@@ -1746,9 +1716,7 @@ fn revolution_over_wide_angular_parameter_interval_maps_interior_angle() {
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
         source_object: None,
     });
-    ir.model.add_procedural_surface(&crate::document::admission::StandardAdmission,
-        &surface_id,
-        procedural_surface! {
+    ir.model.add_procedural_surface(&surface_id, procedural_surface! {
             id: ProceduralSurfaceId::mint("test:model:entity#wide-angle-construction").expect("valid identity"),
             definition: ProceduralSurfaceDefinition::Revolution(
                 crate::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
@@ -1763,8 +1731,7 @@ fn revolution_over_wide_angular_parameter_interval_maps_interior_angle() {
             ),
             cache_fit_tolerance: None,
             record_bounds: None,
-        },
-    ).unwrap().unwrap();
+        }).unwrap();
     let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
     let point = model_surface_point_by_id(
         crate::eval::admission::EvaluationAdmission::Standard,
@@ -1847,9 +1814,7 @@ fn revolution_surface_maps_a_normalized_line_domain_to_its_distance_carrier() {
         source_object: None,
     });
     ir.model
-        .add_procedural_surface(&crate::document::admission::StandardAdmission,
-            &surface_id,
-            procedural_surface! {
+        .add_procedural_surface(&surface_id, procedural_surface! {
                 id: ProceduralSurfaceId::mint("test:model:entity#normalized-revolution-construction").expect("valid identity"),
                 definition: ProceduralSurfaceDefinition::Revolution(crate::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(directrix_id, (crate::features::FinitePoint3::ZERO, crate::units::UnitVector3::Z_AXIS), [0.0, std::f64::consts::TAU], None, Some([0.0, 1.0]), false, crate::geometry::CacheContract::from_form(None)).unwrap()),
                 cache_fit_tolerance: None,
@@ -1860,9 +1825,7 @@ fn revolution_surface_maps_a_normalized_line_domain_to_its_distance_carrier() {
                     None,
                 ])
                 .expect("finite record bounds")),
-            },
-        ).unwrap()
-        .unwrap();
+            }).unwrap();
     let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
     let point = model_surface_point_by_id(
         crate::eval::admission::EvaluationAdmission::Standard,
@@ -1937,11 +1900,7 @@ fn nurbs_curve_inverse_uses_the_seed_to_select_an_ambiguous_witness() {
         .expect("resource allocation did not fail"),
         None
     );
-    assert!(
-        nurbs_curve_speed_bound(&cadmpeg_test_support::service_decode_context(), &curve)
-            .expect("speed bound admission")
-            .is_some_and(|bound| bound.get() >= 2.0)
-    );
+    assert!(nurbs_curve_speed_bound(&curve).is_some_and(|bound| bound.get() >= 2.0));
 }
 
 mod bounded_nurbs;

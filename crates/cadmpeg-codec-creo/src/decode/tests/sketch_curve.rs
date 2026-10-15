@@ -39,10 +39,8 @@ fn section_segment_radius_constraints(
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
 ) -> Vec<(cadmpeg_ir::sketches::SketchConstraint, usize)> {
-    crate::decode::with_test_decode_ctx(|ctx| {
-        checked_section_segment_radius_constraints(ctx, definition, sketch)
-    })
-    .expect("service profile admits segment radius constraints")
+    ({ checked_section_segment_radius_constraints(definition, sketch) })
+        .expect("service profile admits segment radius constraints")
 }
 
 fn section_segment_radius_constraints_for_emitted(
@@ -51,9 +49,8 @@ fn section_segment_radius_constraints_for_emitted(
     emitted: &BTreeSet<SketchEntityId>,
     available_parameters: &BTreeSet<ParameterId>,
 ) -> Vec<(cadmpeg_ir::sketches::SketchConstraint, usize)> {
-    crate::decode::with_test_decode_ctx(|ctx| {
+    ({
         checked_section_segment_radius_constraints_for_emitted(
-            ctx,
             definition,
             sketch,
             emitted,

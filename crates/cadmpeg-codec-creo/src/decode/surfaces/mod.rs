@@ -186,7 +186,6 @@ pub(super) fn transfer_part_product(
         "root",
     )?;
     annotate(
-        ctx,
         annotations,
         &product_id,
         "archive_header",
@@ -195,7 +194,6 @@ pub(super) fn transfer_part_product(
         Exactness::Derived,
     )?;
     annotate(
-        ctx,
         annotations,
         &occurrence_id,
         "archive_header",
@@ -469,7 +467,6 @@ pub(super) fn transfer_fc05_cap_circles(
                 continue;
             };
             annotate(
-                ctx,
                 annotations,
                 &id,
                 "VisibGeom",
@@ -527,7 +524,6 @@ pub(super) fn transfer_fc05_cap_circles(
             continue;
         };
         annotate(
-            ctx,
             annotations,
             &surface_id,
             "VisibGeom",

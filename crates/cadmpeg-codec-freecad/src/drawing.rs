@@ -205,9 +205,7 @@ pub(crate) fn transfer_neutral(
         } else {
             None
         };
-        let template = template_id
-            .map(|id| id.try_clone_for_decode(ctx, "fcstd drawing template identity"))
-            .transpose()?;
+        let template = template_id.cloned();
         let mut parameters = BTreeMap::new();
         for (name, value) in &record.parameters {
             parameters.insert(name.to_owned(), value.to_owned());
@@ -225,7 +223,7 @@ pub(crate) fn transfer_neutral(
                         record.id
                     ))
                 })
-                .and_then(|id| id.try_clone_for_decode(ctx, "fcstd drawing neutral identity"))?,
+                .cloned()?,
             object: record.object.clone(),
             kind: classify(record.kind.as_str()),
             runtime_type: record.kind.as_str().to_owned(),
@@ -233,17 +231,13 @@ pub(crate) fn transfer_neutral(
                 CodecError::malformed(format_args!("FreeCAD ordinal {order} exceeds u32"))
             })?,
             visible: None,
-            relationships: cadmpeg_core::text::named_entries(&record.object,
-                relationships,
-            )?,
+            relationships: cadmpeg_core::text::named_entries(&record.object, relationships)?,
             template,
             position,
             scale,
             direction,
             rotation_degrees,
-            parameters: cadmpeg_core::text::named_entries(&record.object,
-                parameters,
-            )?,
+            parameters: cadmpeg_core::text::named_entries(&record.object, parameters)?,
             assets,
             native_ref: record.id.clone(),
         });

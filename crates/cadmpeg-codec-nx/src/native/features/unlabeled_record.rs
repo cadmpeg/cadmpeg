@@ -4,8 +4,7 @@
 use crate::om::header_references::{HeaderReferences, OperationHeader};
 use crate::om::reference_index::FeatureReferenceToken;
 use crate::om::UnlabeledOperationRecord;
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
-use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::u64_from_index;
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
 #[serde(try_from = "UnlabeledRecordWire")]
@@ -52,41 +51,23 @@ impl serde::Serialize for FeatureUnlabeledOperationRecord {
 
 impl FeatureUnlabeledOperationRecord {
     pub(super) fn from_source(
-        ctx: &DecodeContext<'_>,
         id: String,
         ordinal: u32,
         entry_offset: u64,
         record: UnlabeledOperationRecord<'_>,
-    ) -> Result<Option<Self>, CodecError> {
-        let Some(header_offset) =
-            entry_offset.checked_add(u64_from_index(record.header().offset()))
-        else {
-            return Ok(None);
-        };
-        let Some(header) = OperationHeader::<u64>::new(header_offset, record.header().objects())
-        else {
-            return Ok(None);
-        };
+    ) -> Option<Self> {
+        let header_offset = entry_offset.checked_add(u64_from_index(record.header().offset()))?;
+        let header = OperationHeader::<u64>::new(header_offset, record.header().objects())?;
         let payload_byte_len = u64_from_index(record.payload().len());
-        if header.end_offset().checked_add(payload_byte_len).is_none() {
-            return Ok(None);
-        }
-        Ok(Some(Self {
+        header.end_offset().checked_add(payload_byte_len)?;
+        Some(Self {
             id,
             ordinal,
             header,
-            sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
-                ctx,
-                record.bytes(),
-                "retain source digest",
-            )?,
+            sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(record.bytes()),
             payload_byte_len,
-            payload_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
-                ctx,
-                record.payload(),
-                "retain source digest",
-            )?,
-        }))
+            payload_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(record.payload()),
+        })
     }
 
     pub(in crate::native) fn source_offset(&self) -> u64 {

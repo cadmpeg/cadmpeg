@@ -25,13 +25,11 @@ fn feature_body_selection_retains_complete_input_local_identities_atomically() {
         let roots = BTreeMap::from([(94, 94), (122, 122)]);
         assert_eq!(
             feature_body_selection(
-                ctx,
                 &[94, 122],
                 &roots,
                 &BTreeMap::new(),
-                "nx:om-object-indices#94,122".to_string(),
+                "nx:om-object-indices#94,122".to_string()
             )
-            .expect("resource admission")
             .into_selection(ctx)
             .expect("resource admission"),
             BodySelection::local(
@@ -47,13 +45,11 @@ fn feature_body_selection_retains_complete_input_local_identities_atomically() {
         );
         assert!(matches!(
             feature_body_selection(
-                ctx,
                 &[94, 123],
                 &roots,
                 &BTreeMap::new(),
-                "nx:om-object-indices#94,123".to_string(),
+                "nx:om-object-indices#94,123".to_string()
             )
-            .expect("resource admission")
             .into_selection(ctx)
             .expect("resource admission"),
             BodySelection::Native(_)
@@ -61,13 +57,11 @@ fn feature_body_selection_retains_complete_input_local_identities_atomically() {
         let aliases = BTreeMap::from([(94, 94), (150, 94)]);
         assert_eq!(
             feature_body_selection(
-                ctx,
                 &[94, 150],
                 &aliases,
                 &BTreeMap::new(),
-                "nx:om-object-indices#94,150".to_string(),
+                "nx:om-object-indices#94,150".to_string()
             )
-            .expect("resource admission")
             .into_selection(ctx)
             .expect("resource admission"),
             BodySelection::local(
@@ -94,13 +88,11 @@ fn feature_body_selection_retains_complete_input_local_identities_atomically() {
         let segment_bindings = [segment_binding("binding#0", 0, 94, 150)];
         assert_eq!(
             feature_body_selection(
-                ctx,
                 &[94],
                 &roots,
                 &bindings,
-                "nx:om-object-index#94".to_string(),
+                "nx:om-object-index#94".to_string()
             )
-            .expect("resource admission")
             .into_selection(ctx)
             .expect("resource admission"),
             BodySelection::Resolved {
@@ -113,7 +105,7 @@ fn feature_body_selection_retains_complete_input_local_identities_atomically() {
             }
         );
         assert_eq!(
-            feature_body_outputs(ctx, 94, &segment_bindings, &bindings).unwrap(),
+            feature_body_outputs(94, &segment_bindings, &bindings),
             vec![first]
         );
         let ambiguous_body_bindings = BTreeMap::from([(
@@ -123,23 +115,13 @@ fn feature_body_selection_retains_complete_input_local_identities_atomically() {
                 BodyId::mint("nx:s2:body#4".to_string()).expect("identity grammar"),
             ],
         )]);
-        assert!(
-            feature_body_outputs(ctx, 94, &segment_bindings, &ambiguous_body_bindings)
-                .unwrap()
-                .is_empty()
-        );
-        assert!(feature_body_outputs(ctx, 123, &segment_bindings, &bindings)
-            .unwrap()
-            .is_empty());
+        assert!(feature_body_outputs(94, &segment_bindings, &ambiguous_body_bindings).is_empty());
+        assert!(feature_body_outputs(123, &segment_bindings, &bindings).is_empty());
         let ambiguous_bindings = [
             segment_binding("binding#0", 0, 94, 150),
             segment_binding("binding#1", 1, 94, 151),
         ];
-        assert!(
-            feature_body_outputs(ctx, 94, &ambiguous_bindings, &bindings)
-                .unwrap()
-                .is_empty()
-        );
+        assert!(feature_body_outputs(94, &ambiguous_bindings, &bindings).is_empty());
     });
 }
 
@@ -149,7 +131,6 @@ fn feature_body_selection_uses_complete_offset_store_proof_for_colliding_index()
 
     crate::test_support::with_decode_context(|ctx| {
         let selection = feature_body_selection_with_offset_blocks(
-            ctx,
             &[94],
             &BTreeMap::from([(94, 94)]),
             &BTreeMap::from([(94, "nx:om-data-blocks-3:block#94".to_string())]),
@@ -157,10 +138,7 @@ fn feature_body_selection_uses_complete_offset_store_proof_for_colliding_index()
             "nx:om-object-index#94".to_string(),
         );
         assert_eq!(
-            selection
-                .expect("resource admission")
-                .into_selection(ctx)
-                .expect("resource admission"),
+            selection.into_selection(ctx).expect("resource admission"),
             BodySelection::local(
                 vec!["nx:om-data-blocks-3:block#94".to_string()],
                 "nx:om-object-index#94".to_string(),
@@ -349,12 +327,7 @@ fn segment_bound_bodies_form_the_exact_retained_history_input() {
         source_offset: 100,
     };
     let mut annotations = AnnotationBuilder::new();
-    let stream = StreamHandle::new(
-        &cadmpeg_test_support::service_decode_context(),
-        cadmpeg_ir::stream_name!("nx:container"),
-        "fixture stream handle",
-    )
-    .unwrap();
+    let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
 
     let id = crate::test_support::with_decode_context(|ctx| {
         attach_initial_segment_bodies(ctx, &mut ir, &[binding], &mut annotations, &stream)
@@ -407,12 +380,7 @@ fn body_write_does_not_materialize_missing_neutral_geometry() {
         source_offset: 100,
     };
     let mut annotations = AnnotationBuilder::new();
-    let stream = StreamHandle::new(
-        &cadmpeg_test_support::service_decode_context(),
-        cadmpeg_ir::stream_name!("nx:container"),
-        "fixture stream handle",
-    )
-    .unwrap();
+    let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
 
     assert!(
         crate::test_support::with_decode_context(|ctx| attach_initial_segment_bodies(
@@ -612,15 +580,9 @@ fn nx_boolean_writers_follow_selected_identity_namespace() {
         let offset_prior = FeatureId::mint("synthetic:test:id#offset-prior".to_string())
             .expect("identity grammar");
         let mut history = BodyWriterHistory::default();
-        history
-            .record_writer(ctx, Some(401), None, &[], &native_prior)
-            .expect("admitted writer history");
-        history
-            .record_writer(ctx, None, Some(&blocks[&401]), &[], &offset_prior)
-            .expect("admitted writer history");
-        history
-            .record_writer(ctx, None, Some(&blocks[&402]), &[], &offset_prior)
-            .expect("admitted writer history");
+        history.record_writer(Some(401), None, &[], &native_prior);
+        history.record_writer(None, Some(&blocks[&401]), &[], &offset_prior);
+        history.record_writer(None, Some(&blocks[&402]), &[], &offset_prior);
 
         assert_eq!(
             boolean_participant_writer(target, 401, Some(&blocks), &BTreeMap::new(), &history,),

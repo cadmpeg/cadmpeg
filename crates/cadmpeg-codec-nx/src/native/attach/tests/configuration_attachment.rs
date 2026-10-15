@@ -8,12 +8,7 @@ fn configuration_attachment_preserves_active_relation() {
     let ir = crate::test_support::with_decode_context(|ctx| {
         let mut ir = CadIr::empty();
         let mut annotations = AnnotationBuilder::new();
-        let stream = StreamHandle::new(
-            &cadmpeg_test_support::service_decode_context(),
-            cadmpeg_ir::stream_name!("nx:container"),
-            "fixture stream handle",
-        )
-        .unwrap();
+        let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
         super::super::attach_configurations(
             ctx,
             &mut ir,

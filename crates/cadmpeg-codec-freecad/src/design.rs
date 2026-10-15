@@ -114,7 +114,7 @@ pub(crate) fn transfer(
     }
     let mut body_ids = Vec::new();
     for body in &ir.model.bodies {
-        body_ids.push(body.id.try_clone_for_decode(ctx, "fcstd design body id")?);
+        body_ids.push(body.id.clone());
     }
     let (feature_ordinals, mut cycle_affected) =
         feature_ordinals(objects, &properties_by_owner, &parent_by_member)?;
@@ -156,13 +156,8 @@ pub(crate) fn transfer(
         } else if is_sketch(&object.type_name) {
             let decoded = parse_sketch(ctx, object, &owned, &mut losses)?;
             let sketch = decoded.sketch;
-            let sketch_id = sketch
-                .id
-                .try_clone_for_decode(ctx, "fcstd design sketch identity")?;
-            sketch_ids.insert(
-                object.id().as_str(),
-                sketch_id.try_clone_for_decode(ctx, "fcstd design sketch index identity")?,
-            );
+            let sketch_id = sketch.id.clone();
+            sketch_ids.insert(object.id().as_str(), sketch_id.clone());
 
             ir.model.sketches.push(sketch);
             ir.model.sketch_entities.extend(decoded.entities);
@@ -174,7 +169,7 @@ pub(crate) fn transfer(
         } else if is_stored_geometry_feature(&object.type_name) {
             FeatureDefinition::Operation(FeatureOperation::StoredGeometry {})
         } else if object.type_name == "PartDesign::FeatureBase" {
-            feature_base_definition(ctx, &owned, &feature_ids)?
+            feature_base_definition(&owned, &feature_ids)
                 .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if is_imported_geometry(&object.type_name) {
             imported_geometry_definition(ctx, &object.type_name, &owned)?
@@ -246,7 +241,7 @@ pub(crate) fn transfer(
             )?
             .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if is_extrusion(&object.type_name) {
-            let profile = match profile_ref(ctx, object.id(), &owned, &sketch_ids)? {
+            let profile = match profile_ref(object.id(), &owned, &sketch_ids) {
                 ProfileRef::Planar(PlanarProfileRef::Unresolved(_)) => {
                     ["Profile", "Sketch", "Base", "Source"]
                         .iter()
@@ -336,9 +331,7 @@ pub(crate) fn transfer(
         if let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. }) = &definition {
             for seed in seeds {
                 if let PatternSeed::Feature(feature) = seed {
-                    semantic_dependencies.push(
-                        feature.try_clone_for_decode(ctx, "fcstd design pattern dependency")?,
-                    );
+                    semantic_dependencies.push(feature.clone());
                 }
             }
         }
@@ -354,7 +347,7 @@ pub(crate) fn transfer(
                 .iter()
                 .filter(|body| body.as_str().starts_with(&prefix))
             {
-                outputs.push(body.try_clone_for_decode(ctx, "fcstd design output body")?);
+                outputs.push(body.clone());
             }
         }
         let cycle_affected = cycle_affected.contains(object.id().as_str());
@@ -390,9 +383,7 @@ pub(crate) fn transfer(
                             *ordinal < feature_ordinals[object.id().as_str()]
                         })
                     {
-                        dependencies.push(
-                            feature.try_clone_for_decode(ctx, "fcstd design feature dependency")?,
-                        );
+                        dependencies.push(feature.clone());
                     }
                 }
             }
@@ -408,11 +399,6 @@ pub(crate) fn transfer(
             dependencies
         };
         let mut dependency_members = DistinctMembers::default();
-        dependency_members.reserve_for_decode(
-            ctx,
-            dependencies.len(),
-            "fcstd distinct feature dependencies",
-        )?;
         dependency_members.append(ctx, dependencies, "fcstd distinct feature dependencies")?;
         ir.model.features.push(Feature {
             id,
@@ -503,12 +489,11 @@ fn body_definition(
             .filter_map(|link| link.as_ref()?.object())
         {
             if let Some(feature) = feature_ids.get(target) {
-                children
-                    .push(feature.try_clone_for_decode(ctx, "fcstd body member feature identity")?);
+                children.push(feature.clone());
             }
         }
     }
-    let active_child = match body_tip(ctx, properties, feature_ids)? {
+    let active_child = match body_tip(properties, feature_ids)? {
         BodyTipResolution::Valid(active_child) => active_child,
         BodyTipResolution::Invalid => return Ok(None),
     };
@@ -535,7 +520,6 @@ enum BodyTipResolution {
 }
 
 fn body_tip(
-    ctx: &DecodeContext<'_>,
     properties: &[&PropertyRecord],
     feature_ids: &HashMap<&str, FeatureId>,
 ) -> Result<BodyTipResolution, CodecError> {
@@ -556,9 +540,7 @@ fn body_tip(
                 return Ok(BodyTipResolution::Valid(None));
             };
             match feature_ids.get(target) {
-                Some(feature) => BodyTipResolution::Valid(Some(
-                    feature.try_clone_for_decode(ctx, "fcstd body tip feature identity")?,
-                )),
+                Some(feature) => BodyTipResolution::Valid(Some(feature.clone())),
                 None => BodyTipResolution::Invalid,
             }
         }
@@ -892,7 +874,7 @@ fn append_spreadsheet(
         .map_err(CodecError::malformed)?;
         cell_ids.push(SpreadsheetCell {
             address: cell_address,
-            parameter: id.try_clone_for_decode(ctx, "fcstd spreadsheet cell parameter")?,
+            parameter: id.clone(),
         });
         if let Some(range) = merged_range(cell)? {
             if !merged_ranges
@@ -1191,7 +1173,7 @@ fn append_operation_parameters(
                 ),
             ))
             .map_err(CodecError::malformed)?,
-            owner: Some(owner.try_clone_for_decode(ctx, "fcstd operation parameter owner")?),
+            owner: Some(owner.clone()),
             ordinal: u32::try_from(property.order).map_err(|_| {
                 CodecError::malformed(format_args!(
                     "FreeCAD ordinal {} exceeds u32",
@@ -1458,7 +1440,7 @@ fn parse_sketch(
                         format_args!(":{}", index + 1),
                     ))
                     .map_err(CodecError::malformed)?,
-                    id.try_clone_for_decode(ctx, "fcstd sketch entity parent")?,
+                    id.clone(),
                     geometry_value,
                 )
                 .with_construction(node.descendants().any(|child| {
@@ -1517,7 +1499,7 @@ fn parse_sketch(
                         format_args!(":{entity_kind}:{external_index}"),
                     ))
                     .map_err(CodecError::malformed)?,
-                    id.try_clone_for_decode(ctx, "fcstd sketch entity parent")?,
+                    id.clone(),
                     SketchGeometry::try_from(SketchGeometryDefinition::ExternalReference {
                         document: reference.document_name().map(ToOwned::to_owned),
                         object: cadmpeg_core::text::NonBlankString::new(target_object.to_owned())
@@ -1545,7 +1527,7 @@ fn parse_sketch(
                     format_args!(":reference-horizontal-axis"),
                 ))
                 .map_err(CodecError::malformed)?,
-                id.try_clone_for_decode(ctx, "fcstd sketch entity parent")?,
+                id.clone(),
                 SketchGeometry::try_from(SketchGeometryDefinition::ReferenceLine {
                     origin: Point2::new(0.0, 0.0),
                     direction: Point2::new(1.0, 0.0),
@@ -1565,7 +1547,7 @@ fn parse_sketch(
                     format_args!(":reference-vertical-axis"),
                 ))
                 .map_err(CodecError::malformed)?,
-                id.try_clone_for_decode(ctx, "fcstd sketch entity parent")?,
+                id.clone(),
                 SketchGeometry::try_from(SketchGeometryDefinition::ReferenceLine {
                     origin: Point2::new(0.0, 0.0),
                     direction: Point2::new(0.0, 1.0),
@@ -1585,7 +1567,7 @@ fn parse_sketch(
                     format_args!(":reference-root-point"),
                 ))
                 .map_err(CodecError::malformed)?,
-                id.try_clone_for_decode(ctx, "fcstd sketch entity parent")?,
+                id.clone(),
                 SketchGeometry::try_from(SketchGeometryDefinition::Point {
                     position: Point2::new(0.0, 0.0),
                 })
@@ -1596,7 +1578,7 @@ fn parse_sketch(
         );
     }
     let (constraints, parameters) = parse_constraints(ctx, object, properties, &id, &entities)?;
-    let profiles = build_profiles(ctx, &entities, &constraints)?;
+    let profiles = build_profiles(&entities, &constraints);
     let (origin, normal, u_axis) = sketch_frame(properties)?;
     Ok(SketchTransfer {
         sketch: Sketch {
@@ -2115,12 +2097,12 @@ fn parse_constraints(
         let resolve = |entity, position| {
             if type_code == Some(9) {
                 match entity {
-                    -1 => return resolve_operand(ctx, -1, 0, entities),
-                    -2 => return resolve_operand(ctx, -2, 0, entities),
+                    -1 => return resolve_operand(-1, 0, entities),
+                    -2 => return resolve_operand(-2, 0, entities),
                     _ => {}
                 }
             }
-            resolve_operand(ctx, entity, position, entities)
+            resolve_operand(entity, position, entities)
         };
         let mut resolved = Vec::new();
         for (entity, position) in &operands {
@@ -2134,13 +2116,7 @@ fn parse_constraints(
                 .iter()
                 .find(|entity| entity.id().as_str().ends_with(":reference-root-point"))
             {
-                resolved.insert(
-                    0,
-                    SketchLocus::Entity(
-                        root.id()
-                            .try_clone_for_decode(ctx, "fcstd constraint root entity")?,
-                    ),
-                );
+                resolved.insert(0, SketchLocus::Entity(root.id().clone()));
             }
         }
         let parameter = if matches!(type_code, Some(6..=9 | 11 | 16 | 18 | 19)) {
@@ -2192,7 +2168,7 @@ fn parse_constraints(
                         None => node.attribute("Value").unwrap_or_default().to_owned(),
                     };
                     parameters.push(DesignParameter {
-                        id: id.try_clone_for_decode(ctx, "fcstd constraint parameter identity")?,
+                        id: id.clone(),
                         owner: Some(feature_id(object)?),
                         ordinal: u32::try_from(index).map_err(|_| {
                             CodecError::malformed(format_args!(
@@ -2247,10 +2223,8 @@ fn parse_constraints(
                     return Ok(None);
                 };
                 Ok(Some(SketchConstraintDefinitionInput::InternalAlignment {
-                    helper: locus_entity(helper)
-                        .try_clone_for_decode(ctx, "fcstd constraint entity identity")?,
-                    parent: locus_entity(parent)
-                        .try_clone_for_decode(ctx, "fcstd constraint entity identity")?,
+                    helper: locus_entity(helper).clone(),
+                    parent: locus_entity(parent).clone(),
                     alignment,
                 }))
             };
@@ -2260,7 +2234,7 @@ fn parse_constraints(
             }
             match type_code {
                 Some(20) => Ok(Some(SketchConstraintDefinitionInput::Group {
-                    elements: copy_constraint_loci(ctx, &resolved)?,
+                    elements: copy_constraint_loci(&resolved),
                 })),
                 Some(21) => {
                     let Some(metadata) = node.attribute("MetaData") else {
@@ -2278,7 +2252,7 @@ fn parse_constraints(
                         return Ok(None);
                     };
                     Ok(Some(SketchConstraintDefinitionInput::Text {
-                        elements: copy_constraint_loci(ctx, &resolved)?,
+                        elements: copy_constraint_loci(&resolved),
                         text: text.to_owned(),
                         font: metadata
                             .get("font")
@@ -2327,19 +2301,14 @@ fn parse_constraints(
         }
         if definition.is_none() {
             definition = type_code
-                .map(|kind| midpoint_constraint(ctx, kind, &operands, entities))
+                .map(|kind| midpoint_constraint(kind, &operands, entities))
                 .transpose()?
                 .flatten();
         }
         if definition.is_none() {
             if let Some(type_code) = type_code {
-                definition = neutral_constraint(
-                    ctx,
-                    type_code,
-                    &resolved,
-                    parameter.as_ref(),
-                    all_resolved,
-                )?;
+                definition =
+                    neutral_constraint(type_code, &resolved, parameter.as_ref(), all_resolved)?;
             }
         }
         let definition = if let Some(definition) = definition {
@@ -2347,10 +2316,7 @@ fn parse_constraints(
         } else {
             let mut entities = Vec::new();
             for locus in &resolved {
-                entities.push(
-                    locus_entity(locus)
-                        .try_clone_for_decode(ctx, "fcstd constraint entity identity")?,
-                );
+                entities.push(locus_entity(locus).clone());
             }
             SketchConstraintDefinitionInput::Native {
                 native_kind,
@@ -2369,7 +2335,7 @@ fn parse_constraints(
                 format_args!(":{}", index + 1),
             ))
             .map_err(CodecError::malformed)?,
-            sketch: sketch.try_clone_for_decode(ctx, "fcstd constraint sketch identity")?,
+            sketch: sketch.clone(),
             definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(definition)
                 .map_err(cadmpeg_core::CodecError::malformed)?,
             name: nonempty_attr(node, "Name"),
@@ -2390,7 +2356,6 @@ fn parse_constraints(
 }
 
 fn midpoint_constraint(
-    ctx: &DecodeContext<'_>,
     kind: i64,
     operands: &[(i64, i64)],
     entities: &[SketchEntity],
@@ -2403,7 +2368,7 @@ fn midpoint_constraint(
         if position != 3 {
             continue;
         }
-        let Some(midpoint) = resolve_operand(ctx, entity, position, entities)? else {
+        let Some(midpoint) = resolve_operand(entity, position, entities)? else {
             return Ok(None);
         };
         let Some(bounded) = entities
@@ -2419,7 +2384,7 @@ fn midpoint_constraint(
             continue;
         }
         let (entity, position) = operands[point_index];
-        let Some(point) = resolve_operand(ctx, entity, position, entities)? else {
+        let Some(point) = resolve_operand(entity, position, entities)? else {
             return Ok(None);
         };
         let Some(point_entity) = entities
@@ -2436,9 +2401,7 @@ fn midpoint_constraint(
         }
         return Ok(Some(SketchConstraintDefinitionInput::Midpoint {
             point,
-            entity: bounded
-                .id()
-                .try_clone_for_decode(ctx, "fcstd midpoint line identity")?,
+            entity: bounded.id().clone(),
         }));
     }
     Ok(None)
@@ -2504,33 +2467,20 @@ fn bind_parameter_dependencies(
         if let Some(source_name) = source_name {
             names.push(source_name.to_owned());
         }
-        candidates.push((
-            parameter
-                .id
-                .try_clone_for_decode(ctx, "fcstd parameter candidate identity")?,
-            parameter
-                .owner
-                .as_ref()
-                .map(|owner| owner.try_clone_for_decode(ctx, "fcstd parameter candidate owner"))
-                .transpose()?,
-            names,
-        ));
+        candidates.push((parameter.id.clone(), parameter.owner.clone(), names));
     }
     let mut local_candidates = HashMap::<(FeatureId, String), Vec<ParameterId>>::new();
     let mut qualified_candidates = HashMap::<String, Vec<ParameterId>>::new();
     for (id, owner, names) in &candidates {
         let Some(owner) = owner else { continue };
         for name in names {
-            let key = (
-                owner.try_clone_for_decode(ctx, "fcstd local candidate owner")?,
-                name.to_owned(),
-            );
+            let key = (owner.clone(), name.to_owned());
             let bucket = local_candidates.entry(key).or_default();
-            bucket.push(id.try_clone_for_decode(ctx, "fcstd local candidate identity")?);
+            bucket.push(id.clone());
             if let Some(object) = object_names.get(owner) {
                 let key = format!("{object}.{name}");
                 let bucket = qualified_candidates.entry(key).or_default();
-                bucket.push(id.try_clone_for_decode(ctx, "fcstd qualified candidate identity")?);
+                bucket.push(id.clone());
             }
         }
     }
@@ -2562,19 +2512,13 @@ fn bind_parameter_dependencies(
             let dependency = if let Some(qualified) = qualified.get(identifier) {
                 Some(qualified)
             } else if let Some(owner) = parameter.owner.as_ref() {
-                local.get(&(
-                    owner.try_clone_for_decode(ctx, "fcstd dependency lookup owner")?,
-                    identifier.to_owned(),
-                ))
+                local.get(&(owner.clone(), identifier.to_owned()))
             } else {
                 None
             };
             if let Some(dependency) = dependency.filter(|id| **id != parameter.id) {
                 if !dependencies.contains(dependency) {
-                    dependencies.insert(
-                        dependency
-                            .try_clone_for_decode(ctx, "fcstd parameter dependency identity")?,
-                    );
+                    dependencies.insert(dependency.clone());
                 }
             }
         }
@@ -2595,18 +2539,14 @@ fn bind_parameter_dependencies(
     }
     let mut owner_ordinals = HashMap::<Option<FeatureId>, Vec<u32>>::new();
     for parameter in parameters.iter() {
-        let owner = parameter
-            .owner
-            .as_ref()
-            .map(|owner| owner.try_clone_for_decode(ctx, "fcstd ordinal owner identity"))
-            .transpose()?;
+        let owner = parameter.owner.clone();
         let ordinals = owner_ordinals.entry(owner).or_default();
         ordinals.push(parameter.ordinal);
     }
     for ordinals in owner_ordinals.values_mut() {
         ordinals.sort_unstable_by(Ord::cmp);
     }
-    let parameter_cycle_features = order_parameters_by_dependencies(ctx, parameters)?;
+    let parameter_cycle_features = order_parameters_by_dependencies(parameters);
     for parameter in parameters.iter_mut() {
         if parameter
             .owner
@@ -2621,11 +2561,7 @@ fn bind_parameter_dependencies(
     }
     let mut next_ordinal = HashMap::<Option<FeatureId>, usize>::new();
     for parameter in parameters {
-        let owner = parameter
-            .owner
-            .as_ref()
-            .map(|owner| owner.try_clone_for_decode(ctx, "fcstd next ordinal owner"))
-            .transpose()?;
+        let owner = parameter.owner.clone();
         let index = next_ordinal.entry(owner).or_default();
         parameter.ordinal = owner_ordinals[&parameter.owner][*index];
         *index += 1;
@@ -2633,18 +2569,11 @@ fn bind_parameter_dependencies(
     Ok(parameter_cycle_features)
 }
 
-fn order_parameters_by_dependencies(
-    ctx: &DecodeContext<'_>,
-    parameters: &mut Vec<DesignParameter>,
-) -> Result<BTreeSet<FeatureId>, CodecError> {
+fn order_parameters_by_dependencies(parameters: &mut Vec<DesignParameter>) -> BTreeSet<FeatureId> {
     let mut known = BTreeSet::new();
     for parameter in parameters.iter() {
         if !known.contains(&parameter.id) {
-            known.insert(
-                parameter
-                    .id
-                    .try_clone_for_decode(ctx, "fcstd known parameter identity")?,
-            );
+            known.insert(parameter.id.clone());
         }
     }
     let mut remaining = std::mem::take(parameters);
@@ -2662,24 +2591,18 @@ fn order_parameters_by_dependencies(
                 .filter_map(|parameter| parameter.owner.as_ref())
             {
                 if !cycle_features.contains(owner) {
-                    cycle_features.insert(
-                        owner.try_clone_for_decode(ctx, "fcstd parameter cycle owner identity")?,
-                    );
+                    cycle_features.insert(owner.clone());
                 }
             }
             parameters.append(&mut remaining);
             break;
         };
         let parameter = remaining.remove(index);
-        emitted.insert(
-            parameter
-                .id
-                .try_clone_for_decode(ctx, "fcstd emitted parameter identity")?,
-        );
+        emitted.insert(parameter.id.clone());
 
         parameters.push(parameter);
     }
-    Ok(cycle_features)
+    cycle_features
 }
 
 fn expression_identifiers(expression: &str) -> impl Iterator<Item = &str> {
@@ -2691,7 +2614,6 @@ fn expression_identifiers(expression: &str) -> impl Iterator<Item = &str> {
 }
 
 fn neutral_constraint(
-    ctx: &DecodeContext<'_>,
     kind: i64,
     loci: &[SketchLocus],
     parameter: Option<&ParameterId>,
@@ -2700,45 +2622,31 @@ fn neutral_constraint(
     if !complete {
         return Ok(None);
     }
-    let entity = |index| {
-        loci.get(index)
-            .map(|locus| {
-                locus_entity(locus).try_clone_for_decode(ctx, "fcstd constraint entity identity")
-            })
-            .transpose()
-    };
-    let locus = |index| {
-        loci.get(index)
-            .map(|locus| copy_constraint_locus(ctx, locus))
-            .transpose()
-    };
+    let entity = |index| loci.get(index).map(|locus| locus_entity(locus).clone());
+    let locus = |index| loci.get(index).map(copy_constraint_locus);
     let pair = || -> Result<Option<(SketchEntityId, SketchEntityId)>, CodecError> {
-        let Some(first) = entity(0)? else {
+        let Some(first) = entity(0) else {
             return Ok(None);
         };
-        let Some(second) = entity(1)? else {
+        let Some(second) = entity(1) else {
             return Ok(None);
         };
         Ok(Some((first, second)))
     };
-    let parameter = || {
-        parameter
-            .map(|id| id.try_clone_for_decode(ctx, "fcstd constraint parameter identity copy"))
-            .transpose()
-    };
+    let parameter = || parameter.cloned();
     Ok(Some(match kind {
         0 => SketchConstraintDefinitionInput::Disabled {},
         1 => SketchConstraintDefinitionInput::CoincidentLoci {
-            loci: copy_constraint_loci(ctx, loci)?,
+            loci: copy_constraint_loci(loci),
         },
         2 => {
-            let Some(entity) = entity(0)? else {
+            let Some(entity) = entity(0) else {
                 return Ok(None);
             };
             SketchConstraintDefinitionInput::Horizontal { entity }
         }
         3 => {
-            let Some(entity) = entity(0)? else {
+            let Some(entity) = entity(0) else {
                 return Ok(None);
             };
             SketchConstraintDefinitionInput::Vertical { entity }
@@ -2768,28 +2676,28 @@ fn neutral_constraint(
             SketchConstraintDefinitionInput::Equal { first, second }
         }
         13 => {
-            let Some(point) = locus(0)? else {
+            let Some(point) = locus(0) else {
                 return Ok(None);
             };
-            let Some(entity) = entity(1)? else {
+            let Some(entity) = entity(1) else {
                 return Ok(None);
             };
             SketchConstraintDefinitionInput::PointOnObject { point, entity }
         }
         17 => {
-            let Some(entity) = entity(0)? else {
+            let Some(entity) = entity(0) else {
                 return Ok(None);
             };
             SketchConstraintDefinitionInput::Fixed { entity }
         }
         6 if loci.len() == 2 => {
-            let Some(first) = locus(0)? else {
+            let Some(first) = locus(0) else {
                 return Ok(None);
             };
-            let Some(second) = locus(1)? else {
+            let Some(second) = locus(1) else {
                 return Ok(None);
             };
-            let Some(parameter) = parameter()? else {
+            let Some(parameter) = parameter() else {
                 return Ok(None);
             };
             SketchConstraintDefinitionInput::DistanceLoci {
@@ -2801,12 +2709,9 @@ fn neutral_constraint(
         6 => {
             let mut entities = Vec::new();
             for locus in loci {
-                entities.push(
-                    locus_entity(locus)
-                        .try_clone_for_decode(ctx, "fcstd constraint entity identity")?,
-                );
+                entities.push(locus_entity(locus).clone());
             }
-            let Some(parameter) = parameter()? else {
+            let Some(parameter) = parameter() else {
                 return Ok(None);
             };
             SketchConstraintDefinitionInput::Distance {
@@ -2815,13 +2720,13 @@ fn neutral_constraint(
             }
         }
         7 => {
-            let Some(first) = locus(0)? else {
+            let Some(first) = locus(0) else {
                 return Ok(None);
             };
-            let Some(second) = locus(1)? else {
+            let Some(second) = locus(1) else {
                 return Ok(None);
             };
-            let Some(parameter) = parameter()? else {
+            let Some(parameter) = parameter() else {
                 return Ok(None);
             };
             SketchConstraintDefinitionInput::HorizontalDistance {
@@ -2831,13 +2736,13 @@ fn neutral_constraint(
             }
         }
         8 => {
-            let Some(first) = locus(0)? else {
+            let Some(first) = locus(0) else {
                 return Ok(None);
             };
-            let Some(second) = locus(1)? else {
+            let Some(second) = locus(1) else {
                 return Ok(None);
             };
-            let Some(parameter) = parameter()? else {
+            let Some(parameter) = parameter() else {
                 return Ok(None);
             };
             SketchConstraintDefinitionInput::VerticalDistance {
@@ -2847,10 +2752,10 @@ fn neutral_constraint(
             }
         }
         9 if loci.len() == 2 && sketch_axis(&loci[0]).is_some() => {
-            let Some(entity) = entity(1)? else {
+            let Some(entity) = entity(1) else {
                 return Ok(None);
             };
-            let Some(parameter) = parameter()? else {
+            let Some(parameter) = parameter() else {
                 return Ok(None);
             };
             let Some(axis) = sketch_axis(&loci[0]) else {
@@ -2863,10 +2768,10 @@ fn neutral_constraint(
             }
         }
         9 if loci.len() == 2 && sketch_axis(&loci[1]).is_some() => {
-            let Some(entity) = entity(0)? else {
+            let Some(entity) = entity(0) else {
                 return Ok(None);
             };
-            let Some(parameter) = parameter()? else {
+            let Some(parameter) = parameter() else {
                 return Ok(None);
             };
             let Some(axis) = sketch_axis(&loci[1]) else {
@@ -2879,10 +2784,10 @@ fn neutral_constraint(
             }
         }
         9 if loci.len() == 1 => {
-            let Some(entity) = entity(0)? else {
+            let Some(entity) = entity(0) else {
                 return Ok(None);
             };
-            let Some(parameter) = parameter()? else {
+            let Some(parameter) = parameter() else {
                 return Ok(None);
             };
             SketchConstraintDefinitionInput::AngleToAxis {
@@ -2892,13 +2797,13 @@ fn neutral_constraint(
             }
         }
         9 => {
-            let Some(first) = entity(0)? else {
+            let Some(first) = entity(0) else {
                 return Ok(None);
             };
-            let Some(second) = entity(1)? else {
+            let Some(second) = entity(1) else {
                 return Ok(None);
             };
-            let Some(parameter) = parameter()? else {
+            let Some(parameter) = parameter() else {
                 return Ok(None);
             };
             SketchConstraintDefinitionInput::Angle {
@@ -2908,34 +2813,34 @@ fn neutral_constraint(
             }
         }
         11 => {
-            let Some(entity) = entity(0)? else {
+            let Some(entity) = entity(0) else {
                 return Ok(None);
             };
-            let Some(parameter) = parameter()? else {
+            let Some(parameter) = parameter() else {
                 return Ok(None);
             };
             SketchConstraintDefinitionInput::Radius { entity, parameter }
         }
         18 => {
-            let Some(entity) = entity(0)? else {
+            let Some(entity) = entity(0) else {
                 return Ok(None);
             };
-            let Some(parameter) = parameter()? else {
+            let Some(parameter) = parameter() else {
                 return Ok(None);
             };
             SketchConstraintDefinitionInput::Diameter { entity, parameter }
         }
         16 => {
-            let Some(incident) = locus(0)? else {
+            let Some(incident) = locus(0) else {
                 return Ok(None);
             };
-            let Some(refracted) = locus(1)? else {
+            let Some(refracted) = locus(1) else {
                 return Ok(None);
             };
-            let Some(interface) = entity(2)? else {
+            let Some(interface) = entity(2) else {
                 return Ok(None);
             };
-            let Some(parameter) = parameter()? else {
+            let Some(parameter) = parameter() else {
                 return Ok(None);
             };
             SketchConstraintDefinitionInput::SnellsLaw {
@@ -2946,22 +2851,22 @@ fn neutral_constraint(
             }
         }
         19 => {
-            let Some(entity) = entity(0)? else {
+            let Some(entity) = entity(0) else {
                 return Ok(None);
             };
-            let Some(parameter) = parameter()? else {
+            let Some(parameter) = parameter() else {
                 return Ok(None);
             };
             SketchConstraintDefinitionInput::Weight { entity, parameter }
         }
         14 => {
-            let Some(first) = locus(0)? else {
+            let Some(first) = locus(0) else {
                 return Ok(None);
             };
-            let Some(second) = locus(1)? else {
+            let Some(second) = locus(1) else {
                 return Ok(None);
             };
-            let Some(axis) = entity(2)? else {
+            let Some(axis) = entity(2) else {
                 return Ok(None);
             };
             SketchConstraintDefinitionInput::Symmetric {
@@ -3137,7 +3042,6 @@ fn int_attr(node: roxmltree::Node<'_, '_>, name: &str) -> Option<i64> {
 }
 
 fn resolve_operand(
-    ctx: &DecodeContext<'_>,
     entity: i64,
     position: i64,
     entities: &[SketchEntity],
@@ -3175,7 +3079,7 @@ fn resolve_operand(
         else {
             return Ok(None);
         };
-        return sketch_locus(ctx, entity, position);
+        return sketch_locus(entity, position);
     }
     let Some(entity) = usize::try_from(entity)
         .ok()
@@ -3183,20 +3087,14 @@ fn resolve_operand(
     else {
         return Ok(None);
     };
-    sketch_locus(ctx, entity, position)
+    sketch_locus(entity, position)
 }
 
-fn sketch_locus(
-    ctx: &DecodeContext<'_>,
-    entity: &SketchEntity,
-    position: i64,
-) -> Result<Option<SketchLocus>, CodecError> {
+fn sketch_locus(entity: &SketchEntity, position: i64) -> Result<Option<SketchLocus>, CodecError> {
     if !matches!(position, 0..=3) {
         return Ok(None);
     }
-    let id = entity
-        .id()
-        .try_clone_for_decode(ctx, "fcstd resolved operand identity")?;
+    let id = entity.id().clone();
     if matches!(
         *entity.geometry.definition(),
         SketchGeometryDefinition::Point { .. }
@@ -3221,29 +3119,22 @@ fn locus_entity(locus: &SketchLocus) -> &SketchEntityId {
     }
 }
 
-fn copy_constraint_locus(
-    ctx: &DecodeContext<'_>,
-    locus: &SketchLocus,
-) -> Result<SketchLocus, CodecError> {
-    let entity =
-        locus_entity(locus).try_clone_for_decode(ctx, "fcstd constraint entity identity")?;
-    Ok(match locus {
+fn copy_constraint_locus(locus: &SketchLocus) -> SketchLocus {
+    let entity = locus_entity(locus).clone();
+    match locus {
         SketchLocus::Entity(_) => SketchLocus::Entity(entity),
         SketchLocus::Start(_) => SketchLocus::Start(entity),
         SketchLocus::End(_) => SketchLocus::End(entity),
         SketchLocus::Center(_) => SketchLocus::Center(entity),
-    })
+    }
 }
 
-fn copy_constraint_loci(
-    ctx: &DecodeContext<'_>,
-    loci: &[SketchLocus],
-) -> Result<Vec<SketchLocus>, CodecError> {
+fn copy_constraint_loci(loci: &[SketchLocus]) -> Vec<SketchLocus> {
     let mut copies = Vec::new();
     for locus in loci {
-        copies.push(copy_constraint_locus(ctx, locus)?);
+        copies.push(copy_constraint_locus(locus));
     }
-    Ok(copies)
+    copies
 }
 
 fn constraint_kind(kind: i64) -> &'static str {
@@ -3470,10 +3361,9 @@ fn sketch_geometry(
 }
 
 fn build_profiles(
-    ctx: &DecodeContext<'_>,
     entities: &[SketchEntity],
     constraints: &[SketchConstraint],
-) -> Result<Vec<Vec<SketchEntityUse>>, CodecError> {
+) -> std::vec::Vec<std::vec::Vec<cadmpeg_ir::SketchEntityUse>> {
     // Internal entities arrive in GeometryList order; appended external and built-in reference
     // entities are construction entries. Indices therefore preserve the persisted ordinal for
     // every eligible profile entity.
@@ -3509,9 +3399,7 @@ fn build_profiles(
     while let Some(first) = unused.pop_first() {
         let mut chain = VecDeque::new();
         chain.push_back(SketchEntityUse {
-            entity: entities[first]
-                .id()
-                .try_clone_for_decode(ctx, "FCStd profile use identity")?,
+            entity: entities[first].id().clone(),
             reversed: false,
         });
         if ambiguous.contains(&first) {
@@ -3556,9 +3444,7 @@ fn build_profiles(
             };
             unused.remove(&candidate.entity);
             chain.push_back(SketchEntityUse {
-                entity: entities[candidate.entity]
-                    .id()
-                    .try_clone_for_decode(ctx, "FCStd profile use identity")?,
+                entity: entities[candidate.entity].id().clone(),
                 reversed,
             });
             tail = next_tail;
@@ -3589,16 +3475,14 @@ fn build_profiles(
             };
             unused.remove(&candidate.entity);
             chain.push_front(SketchEntityUse {
-                entity: entities[candidate.entity]
-                    .id()
-                    .try_clone_for_decode(ctx, "FCStd profile use identity")?,
+                entity: entities[candidate.entity].id().clone(),
                 reversed,
             });
             head = next_head;
         }
         profiles.push(chain.into());
     }
-    Ok(profiles)
+    profiles
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -3807,22 +3691,17 @@ fn endpoints_match_by_roundoff(a: Point2, b: Point2) -> bool {
 }
 
 fn profile_ref(
-    ctx: &DecodeContext<'_>,
     owner: &str,
     properties: &[&PropertyRecord],
     sketches: &HashMap<&str, SketchId>,
-) -> Result<ProfileRef, CodecError> {
+) -> ProfileRef {
     let Some((property, target)) = profile_target(properties) else {
-        return Ok(ProfileRef::Planar(PlanarProfileRef::Unresolved(
-            owner.to_owned(),
-        )));
+        return ProfileRef::Planar(PlanarProfileRef::Unresolved(owner.to_owned()));
     };
-    Ok(ProfileRef::Planar(match sketches.get(target) {
-        Some(sketch) => PlanarProfileRef::Sketch(
-            sketch.try_clone_for_decode(ctx, "fcstd sketch profile reference")?,
-        ),
+    ProfileRef::Planar(match sketches.get(target) {
+        Some(sketch) => PlanarProfileRef::Sketch(sketch.clone()),
         None => PlanarProfileRef::Native(property.id.clone()),
-    }))
+    })
 }
 
 fn profile_target<'a>(properties: &'a [&PropertyRecord]) -> Option<(&'a PropertyRecord, &'a str)> {
@@ -3877,7 +3756,7 @@ fn revolution_definition(
     } else {
         None
     };
-    let profile = match profile_ref(ctx, owner, properties, sketches)? {
+    let profile = match profile_ref(owner, properties, sketches) {
         ProfileRef::Planar(PlanarProfileRef::Unresolved(_)) => None,
         profile => Some(profile),
     };
@@ -5692,12 +5571,11 @@ fn direct_root<T>(
     expected_tag: &str,
     use_root: impl FnOnce(roxmltree::Node<'_, '_>) -> T,
 ) -> Result<Option<T>, CodecError> {
-    let document =
-        match ctx.parse_xml(property.xml.text(), "FreeCAD direct property XML tree") {
-            Ok(tree) => tree,
-            Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-            Err(_) => return Ok(None),
-        };
+    let document = match ctx.parse_xml(property.xml.text(), "FreeCAD direct property XML tree") {
+        Ok(tree) => tree,
+        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+        Err(_) => return Ok(None),
+    };
     let mut roots = document
         .root_element()
         .children()
@@ -5981,9 +5859,7 @@ fn loft_definition(
     let mut profiles = Vec::new();
     for object in linked_objects() {
         let profile = match sketches.get(object) {
-            Some(sketch) => PlanarProfileRef::Sketch(
-                sketch.try_clone_for_decode(ctx, "fcstd loft sketch identity")?,
-            ),
+            Some(sketch) => PlanarProfileRef::Sketch(sketch.clone()),
             None => PlanarProfileRef::Native(object.to_owned()),
         };
         profiles.push(ProfileRef::Planar(profile));
@@ -6068,9 +5944,7 @@ fn sweep_definition(
     let mut profiles = Vec::new();
     for object in linked_objects() {
         let profile = match sketches.get(object) {
-            Some(sketch) => PlanarProfileRef::Sketch(
-                sketch.try_clone_for_decode(ctx, "fcstd sweep sketch identity")?,
-            ),
+            Some(sketch) => PlanarProfileRef::Sketch(sketch.clone()),
             None => PlanarProfileRef::Native(object.to_owned()),
         };
         profiles.push(ProfileRef::Planar(profile));
@@ -6250,7 +6124,7 @@ fn hole_definition(
     properties_by_owner: &HashMap<&str, Vec<&PropertyRecord>>,
     program_version: Option<&str>,
 ) -> Result<Option<FeatureDefinition>, CodecError> {
-    let profile = profile_ref(ctx, owner, properties, sketches)?;
+    let profile = profile_ref(owner, properties, sketches);
     let (designation_label, class_label, fit_label) = if enumeration_selector(
         ctx,
         properties,
@@ -6553,7 +6427,7 @@ fn helical_sweep_definition(
     else {
         return Ok(None);
     };
-    let profile = profile_ref(ctx, owner, properties, sketches)?;
+    let profile = profile_ref(owner, properties, sketches);
     let ProfileRef::Planar(planar_profile) = profile else {
         return Ok(None);
     };
@@ -6632,7 +6506,7 @@ fn binder_definition(
     };
     let mut sources = Vec::new();
     for link in source_links() {
-        let Some(target) = binder_target(ctx, link, features)? else {
+        let Some(target) = binder_target(link, features)? else {
             return Ok(None);
         };
         let mut subelements = Vec::new();
@@ -6718,7 +6592,7 @@ fn binder_definition(
                 .and_then(Option::as_ref)
                 .filter(|link| link.object().is_some_and(|object| !object.is_empty()))
             {
-                Some(link) => binder_target(ctx, link, features)?,
+                Some(link) => binder_target(link, features)?,
                 None => None,
             }
         } else {
@@ -6785,7 +6659,6 @@ fn binder_definition(
 }
 
 fn binder_target(
-    ctx: &DecodeContext<'_>,
     link: &crate::native::LinkTarget,
     features: &HashMap<&str, FeatureId>,
 ) -> Result<Option<BinderTarget>, CodecError> {
@@ -6804,7 +6677,7 @@ fn binder_target(
     }
     Ok(Some(match features.get(object) {
         Some(feature) => BinderTarget::Feature {
-            feature: feature.try_clone_for_decode(ctx, "fcstd binder feature target")?,
+            feature: feature.clone(),
         },
         None => BinderTarget::Native {
             reference: match cadmpeg_core::text::NonBlankString::new(object.to_owned()) {
@@ -6951,12 +6824,12 @@ fn pattern_definition(
         let mut seeds = Vec::new();
         for target in linked_objects() {
             if let Some(feature) = features.get(target) {
-                seeds.push(feature.try_clone_for_decode(ctx, "fcstd pattern seed identity")?);
+                seeds.push(feature.clone());
             }
         }
         seeds
     } else if let Some(seeds) =
-        multi_transform_stage_seeds(ctx, owner, features, objects, properties_by_owner)?
+        multi_transform_stage_seeds(owner, features, objects, properties_by_owner)
     {
         seeds
     } else {
@@ -6965,7 +6838,7 @@ fn pattern_definition(
         else {
             return Ok(None);
         };
-        vec![feature.try_clone_for_decode(ctx, "fcstd implicit pattern seed identity")?]
+        vec![feature.clone()]
     };
 
     let pattern =
@@ -7026,12 +6899,11 @@ fn pattern_definition(
 }
 
 fn multi_transform_stage_seeds(
-    ctx: &DecodeContext<'_>,
     stage: &str,
     features: &HashMap<&str, FeatureId>,
     objects: &[ObjectRecord],
     properties_by_owner: &HashMap<&str, Vec<&PropertyRecord>>,
-) -> Result<Option<Vec<FeatureId>>, CodecError> {
+) -> Option<Vec<FeatureId>> {
     for consumer in objects {
         let Some(owned) = properties_by_owner.get(consumer.id().as_str()) else {
             continue;
@@ -7070,11 +6942,11 @@ fn multi_transform_stage_seeds(
             let Some(feature) = features.get(object) else {
                 continue;
             };
-            seeds.push(feature.try_clone_for_decode(ctx, "fcstd multi-transform seed identity")?);
+            seeds.push(feature.clone());
         }
-        return Ok(Some(seeds));
+        return Some(seeds);
     }
-    Ok(None)
+    None
 }
 
 fn implicit_body_predecessor<'a>(
@@ -7761,37 +7633,29 @@ fn design_identity_text(
 }
 
 fn feature_base_definition(
-    ctx: &DecodeContext<'_>,
     properties: &[&PropertyRecord],
     feature_ids: &HashMap<&str, FeatureId>,
-) -> Result<Option<FeatureDefinition>, CodecError> {
+) -> Option<FeatureDefinition> {
     let mut base_properties = properties
         .iter()
         .filter(|property| property.name == "BaseFeature")
         .copied();
-    let Some(property) = base_properties.next() else {
-        return Ok(None);
-    };
+    let property = base_properties.next()?;
     if base_properties.next().is_some() {
-        return Ok(None);
+        return None;
     }
     if property.type_name != "App::PropertyLink" || property.links().len() != 1 {
-        return Ok(None);
+        return None;
     }
-    let Some(source) = property.links()[0]
+    let source = property.links()[0]
         .as_ref()
-        .and_then(crate::native::LinkTarget::object)
-    else {
-        return Ok(None);
-    };
-    let Some(feature) = feature_ids.get(source) else {
-        return Ok(None);
-    };
-    Ok(Some(FeatureDefinition::Operation(
+        .and_then(crate::native::LinkTarget::object)?;
+    let feature = feature_ids.get(source)?;
+    Some(FeatureDefinition::Operation(
         FeatureOperation::DerivedGeometry {
-            source: feature.try_clone_for_decode(ctx, "fcstd feature base source identity")?,
+            source: feature.clone(),
         },
-    )))
+    ))
 }
 
 fn imported_geometry_definition(
@@ -8090,11 +7954,7 @@ mod profile_tests {
         entities: &[SketchEntity],
         constraints: &[SketchConstraint],
     ) -> Vec<Vec<SketchEntityUse>> {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let policy = cadmpeg_core::decode::DecodePolicy::service();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("profile test context");
-        super::build_profiles(&ctx, entities, constraints).expect("profile projection")
+        super::build_profiles(entities, constraints)
     }
 
     #[test]

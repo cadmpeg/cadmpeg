@@ -226,11 +226,9 @@ fn decode_container<'a>(
                             raw_len: cadmpeg_core::decode::u64_from_index(
                                 property.raw.window().len(),
                             ),
-                            raw_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
-                                ctx,
+                            raw_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(
                                 property.raw.window(),
-                                "retain Inventor property raw digest",
-                            )?,
+                            ),
                         });
                     }
                 }
@@ -869,7 +867,7 @@ fn decode_container<'a>(
     let mut source_fidelity = SourceFidelity::default();
     let mut annotations = AnnotationBuilder::new();
     for record in kernel_annotations {
-        admit_kernel_annotation(ctx, &mut annotations, &record)?;
+        admit_kernel_annotation(&mut annotations, &record)?;
     }
     source_fidelity.annotations = annotations.build();
     if let ActiveCarrierState::Selected(carrier) = &container.rse.active_carrier {
@@ -1108,8 +1106,7 @@ fn decode_container<'a>(
             kernel_stats.unknown_surface_faces(),
         ),
     ];
-    let coverage =
-        cadmpeg_ir::report::decode::Coverage::from_iter_for_decode(ctx, coverage_entries)?;
+    let coverage = cadmpeg_ir::report::decode::Coverage::from_iter_for_decode(coverage_entries)?;
     let body = DecodeBody {
         transfer: if ctx.container_only() {
             cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {}
@@ -1163,7 +1160,8 @@ fn project_root_product(
         label,
         description,
         part_number,
-        bom_properties: cadmpeg_core::text::named_entries("inventor:document:product#root",
+        bom_properties: cadmpeg_core::text::named_entries(
+            "inventor:document:product#root",
             metadata.bom_properties.clone(),
         )?,
         bodies: Vec::new(),
@@ -1172,23 +1170,21 @@ fn project_root_product(
 }
 
 fn admit_kernel_annotation(
-    ctx: &DecodeContext<'_>,
     annotations: &mut AnnotationBuilder,
     record: &cadmpeg_asm::brep::annotations::AnnotationRecord,
 ) -> Result<(), CodecError> {
     let name = format!("inventor:{}", record.stream);
     let name = cadmpeg_ir::StreamName::try_from(name).map_err(CodecError::malformed)?;
-    let stream = StreamHandle::new(ctx, name, "collect Inventor kernel provenance")?;
+    let stream = StreamHandle::new(name);
     annotations.note(
-        ctx,
         &record.id,
         &stream,
         record.offset,
         Some(record.tag.as_str()),
-    )?;
+    );
     for field in &record.derived_fields {
         annotations
-            .derived(ctx, &record.id, field)
+            .derived(&record.id, field)
             .map_err(CodecError::from)?;
     }
     Ok(())
@@ -1369,11 +1365,7 @@ fn project_ufrx_state(
             schema: *schema,
             section_versions: section_versions.clone(),
             tail_len: cadmpeg_core::decode::u64_from_index(source.window().len()),
-            tail_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
-                ctx,
-                source.window(),
-                "retain Inventor UFRx unsupported tail digest",
-            )?,
+            tail_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(source.window()),
             detail: detail.to_owned(),
         },
         UfrxState::Parsed(document) => {
@@ -1426,11 +1418,9 @@ fn project_ufrx_state(
                 tail_len: cadmpeg_core::decode::u64_from_index(
                     document.unparsed_tail.window().len(),
                 ),
-                tail_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
-                    ctx,
+                tail_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(
                     document.unparsed_tail.window(),
-                    "retain Inventor UFRx tail digest",
-                )?,
+                ),
             }))
         }
     })
@@ -1466,12 +1456,9 @@ fn project_ufrx_model_state(
         prefix_count: state.prefix_count,
         parameters,
         suffix_len: cadmpeg_core::decode::u64_from_index(state.suffix.window().len()),
-        suffix_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
-            ctx,
+        suffix_sha256: String::from(cadmpeg_ir::hash::digest::Sha256Digest::digest(
             state.suffix.window(),
-            "retain Inventor UFRx model-state digest",
-        )
-        .map(String::from)?,
+        )),
     });
     let scope = format!("ufrx-model-state-{ordinal}");
     admit_ufrx_record(ctx, admitted, &scope, issues)
@@ -1524,12 +1511,9 @@ fn project_ufrx_embedded_reference(
         display_name: reference.display_name.clone(),
         state_values: reference.state_values.into(),
         record_len: cadmpeg_core::decode::u64_from_index(reference.source.window().len()),
-        record_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
-            ctx,
+        record_sha256: String::from(cadmpeg_ir::hash::digest::Sha256Digest::digest(
             reference.source.window(),
-            "retain Inventor UFRx embedded digest",
-        )
-        .map(String::from)?,
+        )),
     });
     let scope = format!("ufrx-embedded-reference-{ordinal}");
     admit_ufrx_record(ctx, admitted, &scope, issues)
@@ -1551,12 +1535,9 @@ fn project_ufrx_occurrence(
         title: occurrence.title.as_deref().map(str::to_owned),
         header_padding_words: occurrence.header_padding_words,
         record_len: cadmpeg_core::decode::u64_from_index(occurrence.source.window().len()),
-        record_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
-            ctx,
+        record_sha256: String::from(cadmpeg_ir::hash::digest::Sha256Digest::digest(
             occurrence.source.window(),
-            "retain Inventor UFRx occurrence digest",
-        )
-        .map(String::from)?,
+        )),
     });
     let scope = format!("ufrx-occurrence-{ordinal}");
     admit_ufrx_record(ctx, admitted, &scope, issues)

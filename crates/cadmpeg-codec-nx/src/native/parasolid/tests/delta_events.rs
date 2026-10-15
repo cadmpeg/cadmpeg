@@ -43,9 +43,8 @@ fn deltas_events_retain_bounded_records_tombstones_and_revisions() {
     }];
 
     let census = crate::deltas::census::walk(&streams[0].inflated).unwrap();
-    let events = crate::test_support::with_decode_context(|ctx| {
+    let events = ({
         crate::native::parasolid::parasolid_deltas_events_with_censuses(
-            ctx,
             &streams,
             vec![Some(census)],
         )

@@ -715,11 +715,7 @@ fn non_manifold_incidence_does_not_invent_a_radial_order() {
             }
         })
         .collect::<Vec<_>>();
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::default();
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
-    close_radial_rings(&ctx, &mut coedges).expect("radial map fits policy");
+    close_radial_rings(&mut coedges);
     assert!(coedges.iter().all(|coedge| coedge.radial_next == coedge.id));
 
     let mut four = (0..4)
@@ -742,7 +738,7 @@ fn non_manifold_incidence_does_not_invent_a_radial_order() {
         .iter()
         .map(|coedge| coedge.radial_next.clone())
         .collect::<Vec<_>>();
-    close_radial_rings(&ctx, &mut four).expect("radial map fits policy");
+    close_radial_rings(&mut four);
     assert_eq!(
         four.iter()
             .map(|coedge| &coedge.radial_next)
@@ -760,7 +756,7 @@ fn non_manifold_incidence_does_not_invent_a_radial_order() {
         use_curve: None,
         pcurves: Vec::new(),
     }];
-    close_radial_rings(&ctx, &mut singleton).expect("radial map fits policy");
+    close_radial_rings(&mut singleton);
     assert_eq!(singleton[0].radial_next, id);
 }
 

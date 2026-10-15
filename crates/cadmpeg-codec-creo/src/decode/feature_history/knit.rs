@@ -189,7 +189,6 @@ pub(in super::super) fn knit_operand_surface_ids(
 }
 
 pub(super) fn knit_surface_feature_definition(
-    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     feature_id: u32,
 ) -> Result<IrFeatureDefinition, CodecError> {
@@ -205,7 +204,6 @@ pub(super) fn knit_surface_feature_definition(
         );
         let generated = match knit_operand_surface_ids(scan, feature_id, &quilt_ids) {
             Some(surface_ids) => generated_surface_face_refs(
-                ctx,
                 &surface_ids,
                 &scan.surfaces.rows,
                 &result_surface_ids,
@@ -214,7 +212,7 @@ pub(super) fn knit_surface_feature_definition(
             None => None,
         };
         match generated {
-            Some(faces) => FaceSelection::generated(faces, native.clone(), ctx)?
+            Some(faces) => FaceSelection::generated(faces, native.clone())
                 .unwrap_or(FaceSelection::Native(native)),
             None => FaceSelection::Native(native),
         }
@@ -518,7 +516,6 @@ pub(in super::super) fn feature_result_topology(
 }
 
 pub(in super::super) fn generated_surface_face_refs(
-    ctx: &DecodeContext<'_>,
     source_ids: &[u32],
     rows: &[crate::surface::SurfaceRow],
     result_surface_ids: &BTreeMap<u32, Vec<u32>>,
@@ -540,7 +537,7 @@ pub(in super::super) fn generated_surface_face_refs(
             return Ok(None);
         }
         let local_id = format!("surface#{surface_id}");
-        let Some(face) = GeneratedFaceRef::new(feature, local_id, ctx)?.ok() else {
+        let Some(face) = GeneratedFaceRef::new(feature, local_id).ok() else {
             return Ok(None);
         };
         generated.push(face);

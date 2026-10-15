@@ -10,12 +10,7 @@ fn reflected_reversal_admits_invalid_reflection_before_geometric_absence() {
     let mut curve = super::curve();
     let original = curve.clone();
     let bound = FiniteReal::new(f64::MAX).expect("finite");
-    assert_eq!(
-        curve
-            .reverse_parameterization_in_range(&ctx, bound, bound)
-            .expect("one invalid reflected knot"),
-        None
-    );
+    assert_eq!(curve.reverse_parameterization_in_range(bound, bound), None);
     assert_eq!(curve, original);
     ctx.finish_session()
         .expect("semantic absence has no resource refusal");
@@ -23,15 +18,12 @@ fn reflected_reversal_admits_invalid_reflection_before_geometric_absence() {
 
 #[test]
 fn reflected_reversal_reverses_poles_and_reflects_knots() {
-    let ctx = cadmpeg_test_support::service_decode_context();
     let original = super::curve();
     let mut reversed = original.clone();
     let start = FiniteReal::new(2.0).expect("finite");
     let end = FiniteReal::new(5.0).expect("finite");
     assert_eq!(
-        reversed
-            .reverse_parameterization_in_range(&ctx, start, end)
-            .expect("reversal admission"),
+        reversed.reverse_parameterization_in_range(start, end),
         Some(())
     );
     assert_eq!(reversed.knots(), original.knots());

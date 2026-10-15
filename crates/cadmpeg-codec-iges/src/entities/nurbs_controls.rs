@@ -286,12 +286,12 @@ pub(crate) fn trim_surface(
         trimmed
     };
     if ranges[1] != v_domain {
-        result.transpose_parameter_axes(ctx)?;
+        result.transpose_parameter_axes();
         let Some(trimmed) = trim_surface_u(ctx, &result, ranges[1])? else {
             return Ok(None);
         };
         result = trimmed;
-        result.transpose_parameter_axes(ctx)?;
+        result.transpose_parameter_axes();
     }
     Ok(Some(result))
 }

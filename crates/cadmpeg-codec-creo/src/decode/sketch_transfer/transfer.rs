@@ -106,10 +106,9 @@ pub(in super::super) fn transfer_sketches(
 ) -> Result<SketchSegmentTransferCoverage, cadmpeg_core::CodecError> {
     let mut coverage = SketchSegmentTransferCoverage::default();
     let available_parameter_ids = available_parameter_ids(
-        ctx,
         ir.model.parameters.iter().map(|parameter| &parameter.id),
         planned_feature_dimension_parameter_ids(scan),
-    )?;
+    );
     for definition in &scan.features.definitions {
         if !feature_definition_has_sketch_design(definition) {
             continue;
@@ -226,10 +225,7 @@ pub(in super::super) fn transfer_sketches(
                 resolved_segment_geometries
                     .get(&segment.offset)
                     .and_then(Option::as_ref)
-                    .map(|geometry| {
-                        geometry.try_clone_for_decode(ctx, "creo resolved section geometry copy")
-                    })
-                    .transpose()?
+                    .cloned()
             };
             let geometry = match geometry {
                 Some(geometry) => Some(geometry),
@@ -433,10 +429,7 @@ pub(in super::super) fn transfer_sketches(
                 &scan.features.entity_tables,
                 &scan.surfaces.rows,
             ) {
-                generated_profile_geometries.push((
-                    segment.external_id,
-                    geometry.try_clone_for_decode(ctx, "creo generated profile geometry copy")?,
-                ));
+                generated_profile_geometries.push((segment.external_id, geometry.clone()));
             }
         }
         for segment in definition
@@ -461,20 +454,13 @@ pub(in super::super) fn transfer_sketches(
                 &scan.features.entity_tables,
                 &scan.surfaces.rows,
             ) {
-                generated_profile_geometries.push((
-                    segment.external_id,
-                    geometry.try_clone_for_decode(ctx, "creo generated profile geometry copy")?,
-                ));
+                generated_profile_geometries.push((segment.external_id, geometry.clone()));
             }
         }
         let mut profile_entities = BTreeSet::new();
         for entity_use in profiles.iter().flatten() {
             if !profile_entities.contains(&entity_use.entity) {
-                profile_entities.insert(
-                    entity_use
-                        .entity
-                        .try_clone_for_decode(ctx, "creo profile entity identities")?,
-                );
+                profile_entities.insert(entity_use.entity.clone());
             }
         }
         for profile in saved_profile_chains(ctx, &sketch_id, &generated_profile_geometries)? {
@@ -484,11 +470,7 @@ pub(in super::super) fn transfer_sketches(
             {
                 for entity_use in &profile {
                     if !profile_entities.contains(&entity_use.entity) {
-                        profile_entities.insert(
-                            entity_use
-                                .entity
-                                .try_clone_for_decode(ctx, "creo profile entity identities")?,
-                        );
+                        profile_entities.insert(entity_use.entity.clone());
                     }
                 }
                 profiles.push(profile);
@@ -532,7 +514,6 @@ pub(in super::super) fn transfer_sketches(
                 continue;
             }
             annotate(
-                ctx,
                 annotations,
                 id.as_str(),
                 "FeatDefs",
@@ -553,8 +534,7 @@ pub(in super::super) fn transfer_sketches(
             entities.push(
                 SketchEntity::new(
                     id,
-                    sketch_id
-                        .try_clone_for_decode(ctx, "creo solver-only entity sketch identity")?,
+                    sketch_id.clone(),
                     SketchGeometry::native(
                         cadmpeg_core::text::NonBlankString::new(native_kind.to_owned())
                             .ok_or_else(|| {
@@ -566,7 +546,7 @@ pub(in super::super) fn transfer_sketches(
                 .with_native_ref(Some(sketch_native_ref_admitted(&sketch_id))),
             );
         }
-        let (emitted_entity_ids, emitted_entity_geometry) = emitted_entity_views(ctx, &entities)?;
+        let (emitted_entity_ids, emitted_entity_geometry) = emitted_entity_views(&entities);
         let mut constraints = Vec::new();
         for segment in &segments {
             if segment.vertical_horizontal.is_none() {
@@ -739,7 +719,6 @@ pub(in super::super) fn transfer_sketches(
                 continue;
             }
             annotate(
-                ctx,
                 annotations,
                 constraint.id.as_str(),
                 "FeatDefs",
@@ -750,14 +729,12 @@ pub(in super::super) fn transfer_sketches(
             admit_constraint_row(ctx, &mut constraints, constraint)?;
         }
         for (constraint, offset) in section_segment_radius_constraints_for_emitted(
-            ctx,
             definition,
             &sketch_id,
             &emitted_entity_ids,
             &available_parameter_ids,
         )? {
             annotate(
-                ctx,
                 annotations,
                 constraint.id.as_str(),
                 "FeatDefs",
@@ -771,13 +748,13 @@ pub(in super::super) fn transfer_sketches(
             section_equation_axis_distance_constraints(ctx, definition, &sketch_id)?
                 .into_iter()
                 .chain(section_equation_unsigned_distance_constraints(
-                    ctx, definition, &sketch_id,
+                    definition, &sketch_id,
                 )?)
                 .chain(section_equation_point_on_line_constraints(
-                    ctx, definition, &sketch_id,
+                    definition, &sketch_id,
                 )?)
                 .chain(section_equation_same_coordinate_constraints(
-                    ctx, definition, &sketch_id,
+                    definition, &sketch_id,
                 )?)
                 .chain(
                     section_equation_function_thirty_one_point_coordinate_constraints(
@@ -790,15 +767,15 @@ pub(in super::super) fn transfer_sketches(
                     )?,
                 )
                 .chain(section_equation_function_five_scalar_equality_constraints(
-                    ctx, definition, &sketch_id,
+                    definition, &sketch_id,
                 )?)
                 .chain(
                     section_equation_function_sixteen_angle_difference_constraints(
-                        ctx, definition, &sketch_id,
+                        definition, &sketch_id,
                     )?,
                 )
                 .chain(section_equation_radius_dimension_constraints(
-                    ctx, definition, &sketch_id,
+                    definition, &sketch_id,
                 )?)
                 .chain(section_equation_polar_distance_constraints(
                     ctx, definition, &sketch_id,
@@ -807,7 +784,7 @@ pub(in super::super) fn transfer_sketches(
                     ctx, definition, &sketch_id,
                 )?)
                 .chain(section_equation_equal_distance_constraints(
-                    ctx, definition, &sketch_id,
+                    definition, &sketch_id,
                 )?)
                 .collect::<Vec<_>>();
         let equation_offsets =
@@ -836,7 +813,6 @@ pub(in super::super) fn transfer_sketches(
                 continue;
             }
             annotate(
-                ctx,
                 annotations,
                 constraint.id.as_str(),
                 "FeatDefs",
@@ -853,14 +829,10 @@ pub(in super::super) fn transfer_sketches(
                 .into_iter()
                 .filter(|offset| !rejected_equation_offsets.contains(offset)),
         );
-        for (constraint, offset) in section_equation_native_constraints(
-            ctx,
-            definition,
-            &sketch_id,
-            &typed_equation_offsets,
-        )? {
+        for (constraint, offset) in
+            section_equation_native_constraints(definition, &sketch_id, &typed_equation_offsets)?
+        {
             annotate(
-                ctx,
                 annotations,
                 constraint.id.as_str(),
                 "FeatDefs",
@@ -886,7 +858,6 @@ pub(in super::super) fn transfer_sketches(
                 continue;
             }
             annotate(
-                ctx,
                 annotations,
                 constraint.id.as_str(),
                 "FeatDefs",
@@ -896,11 +867,10 @@ pub(in super::super) fn transfer_sketches(
             )?;
             admit_constraint_row(ctx, &mut constraints, constraint)?;
         }
-        source_carriers.admit_sketch_entities(ctx, ir, entities)?;
+        source_carriers.admit_sketch_entities(ir, entities)?;
         source_carriers.admit_sketch_constraints(ir, constraints)?;
         let source_offset = transform.map_or(definition.offset, |transform| transform.offset);
         annotate(
-            ctx,
             annotations,
             sketch_id.as_str(),
             "FeatDefs",
@@ -916,7 +886,7 @@ pub(in super::super) fn transfer_sketches(
         source_carriers.admit_sketch(
             ir,
             Sketch {
-                id: sketch_id.try_clone_for_decode(ctx, "creo model sketch identity copy")?,
+                id: sketch_id.clone(),
                 name: None,
                 configuration: None,
                 visible: None,
@@ -930,7 +900,6 @@ pub(in super::super) fn transfer_sketches(
                 continue;
             };
             annotate(
-                ctx,
                 annotations,
                 feature_id.as_str(),
                 "FeatDefs",
@@ -953,10 +922,7 @@ pub(in super::super) fn transfer_sketches(
                 evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                     IrFeatureDefinition::Operation(IrFeatureOperation::Sketch {
                         sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(
-                            sketch_id.try_clone_for_decode(
-                                ctx,
-                                "creo sketch feature binding identity",
-                            )?,
+                            sketch_id.clone(),
                         )),
                     }),
                 ),
@@ -969,33 +935,18 @@ pub(in super::super) fn transfer_sketches(
 }
 
 fn emitted_entity_views(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     entities: &[SketchEntity],
-) -> Result<
-    (
-        BTreeSet<SketchEntityId>,
-        BTreeMap<SketchEntityId, SketchGeometry>,
-    ),
-    cadmpeg_core::CodecError,
-> {
+) -> (
+    std::collections::BTreeSet<cadmpeg_ir::SketchEntityId>,
+    std::collections::BTreeMap<cadmpeg_ir::SketchEntityId, cadmpeg_ir::SketchGeometry>,
+) {
     let mut ids = BTreeSet::new();
     let mut geometry = BTreeMap::new();
     for entity in entities {
-        ids.insert(
-            entity
-                .id()
-                .try_clone_for_decode(ctx, "creo emitted sketch entity IDs")?,
-        );
-        geometry.insert(
-            entity
-                .id()
-                .try_clone_for_decode(ctx, "creo emitted sketch geometry keys")?,
-            entity
-                .geometry
-                .try_clone_for_decode(ctx, "creo emitted sketch geometry")?,
-        );
+        ids.insert(entity.id().clone());
+        geometry.insert(entity.id().clone(), entity.geometry.clone());
     }
-    Ok((ids, geometry))
+    (ids, geometry)
 }
 
 fn admit_constraint_row(
@@ -1031,7 +982,6 @@ fn emit_verhor_constraint(
         return Ok(());
     };
     annotate(
-        ctx,
         annotations,
         id.as_str(),
         "FeatDefs",
@@ -1041,7 +991,7 @@ fn emit_verhor_constraint(
     )?;
     let constraint = SketchConstraint {
         id,
-        sketch: sketch.try_clone_for_decode(ctx, "creo constraint sketch identity")?,
+        sketch: sketch.clone(),
         definition,
         name: None,
         driving: None,
@@ -1058,20 +1008,19 @@ fn emit_verhor_constraint(
 }
 
 fn available_parameter_ids<'a>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     existing: impl IntoIterator<Item = &'a ParameterId>,
     planned: BTreeSet<ParameterId>,
-) -> Result<BTreeSet<ParameterId>, cadmpeg_core::CodecError> {
+) -> BTreeSet<ParameterId> {
     let mut ids = BTreeSet::new();
     for id in existing {
         if !ids.contains(id) {
-            ids.insert(id.try_clone_for_decode(ctx, "creo available parameter identities")?);
+            ids.insert(id.clone());
         }
     }
     for id in planned {
         ids.insert(id);
     }
-    Ok(ids)
+    ids
 }
 
 fn collect_numeric_set<T: Ord>(values: impl IntoIterator<Item = T>) -> BTreeSet<T> {

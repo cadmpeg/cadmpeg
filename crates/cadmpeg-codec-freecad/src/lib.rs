@@ -917,10 +917,7 @@ impl CodecBackend for FcstdCodec {
         // One `classify` call feeds the report identity, loss, and notes.
         let primary = dialect::FcstdDialect::classify(&scan.document, &scan.schema_version);
         let dialects = cadmpeg_core::dialect::DialectLayers::of(primary);
-        let mut ir = CadIr::decoded(SourceMeta::classified(
-            dialects.clone(),
-            attributes,
-        ));
+        let mut ir = CadIr::decoded(SourceMeta::classified(dialects.clone(), attributes));
         if let Some((name, bytes)) = thumbnail {
             ctx.retain_bytes(
                 cadmpeg_core::decode::u64_from_index(bytes.len()),
@@ -1014,11 +1011,11 @@ impl CodecBackend for FcstdCodec {
                 !curve_transfer.curves.is_empty() || !surface_transfer.surfaces.is_empty();
             ir.model.curves = curve_transfer.curves;
             ir.model
-                .add_procedural_curves(ctx, curve_transfer.procedural)?
+                .add_procedural_curves(curve_transfer.procedural)?
                 .map_err(CodecError::malformed)?;
             ir.model.surfaces = surface_transfer.surfaces;
             ir.model
-                .add_procedural_surfaces(ctx, surface_transfer.procedural)?
+                .add_procedural_surfaces(surface_transfer.procedural)?
                 .map_err(CodecError::malformed)?;
             geometry_transferred |= application_geometry::transfer(
                 ctx,
@@ -1057,7 +1054,7 @@ impl CodecBackend for FcstdCodec {
             ir.model.product_definitions = product_definitions;
             ir.model.occurrences = occurrences;
             ir.model.assembly_joints =
-                joint::transfer_neutral(ctx, &joint_records, &ir.model.occurrences)?;
+                joint::transfer_neutral(&joint_records, &ir.model.occurrences)?;
             ctx.admit_entities(
                 cadmpeg_core::decode::u64_from_index(ir.model.entity_count()),
                 &mut admitted_entities,
@@ -1184,8 +1181,7 @@ impl CodecBackend for FcstdCodec {
         losses.extend(scan.losses);
         let dialect_losses = dialect::FcstdDialect::dialect_loss(dialects.primary());
         losses.extend(dialect_losses);
-        let document_digest =
-            writer::target::document_local_sha256(ctx, &ir, "FCStd document digest")?;
+        let document_digest = writer::target::document_local_sha256(ctx, &ir)?;
         if let Some(source) = &mut ir.source {
             source.attributes.insert(
                 cadmpeg_core::nonblank_const!(cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE),

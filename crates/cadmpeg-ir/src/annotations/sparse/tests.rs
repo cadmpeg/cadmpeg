@@ -7,45 +7,35 @@ const ID: &str = "test:model:point#existing";
 
 #[test]
 fn sparse_replacement_preserves_fields_and_supports_deletion() {
-    let ctx = cadmpeg_test_support::service_decode_context();
     let mut builder = AnnotationBuilder::new();
-    builder.exactness(&ctx, ID, Exactness::Derived).unwrap();
+    builder.exactness(ID, Exactness::Derived);
     builder
-        .field_exactness(&ctx, ID, "position", Exactness::Inferred)
+        .field_exactness(ID, "position", Exactness::Inferred)
         .unwrap();
     let mut annotations = builder.build();
-    let mut transaction = annotations
-        .sparse_transaction(&ctx, "test sparse replacement")
-        .unwrap();
-    transaction.exactness(ID, Exactness::ByteExact).unwrap();
-    transaction.prepare().unwrap().apply(&mut annotations);
+    let mut transaction = annotations.sparse_transaction();
+    transaction.exactness(ID, Exactness::ByteExact);
+    transaction.prepare().apply(&mut annotations);
     assert_eq!(annotations.exactness()[ID].entity(), Exactness::ByteExact);
     assert_eq!(
         annotations.exactness()[ID].fields()["position"],
         Exactness::Inferred
     );
-    let mut transaction = annotations
-        .sparse_transaction(&ctx, "test sparse deletion")
-        .unwrap();
-    transaction.remove_entity(ID).unwrap();
-    transaction.prepare().unwrap().apply(&mut annotations);
+    let mut transaction = annotations.sparse_transaction();
+    transaction.remove_entity(ID);
+    transaction.prepare().apply(&mut annotations);
     assert!(annotations.exactness().is_empty());
 }
 
 #[test]
 fn discarded_sparse_edits_leave_all_annotations_unchanged() {
-    let ctx = cadmpeg_test_support::service_decode_context();
     let mut builder = AnnotationBuilder::new();
-    builder.exactness(&ctx, ID, Exactness::Inferred).unwrap();
+    builder.exactness(ID, Exactness::Inferred);
     let annotations = builder.build();
     let before = annotations.clone();
-    let mut transaction = annotations
-        .sparse_transaction(&ctx, "test sparse abort")
-        .unwrap();
-    transaction.exactness(ID, Exactness::Derived).unwrap();
-    transaction
-        .exactness("test:model:point#new", Exactness::Derived)
-        .unwrap();
+    let mut transaction = annotations.sparse_transaction();
+    transaction.exactness(ID, Exactness::Derived);
+    transaction.exactness("test:model:point#new", Exactness::Derived);
     drop(transaction);
     assert_eq!(annotations, before);
 }
@@ -54,30 +44,16 @@ fn discarded_sparse_edits_leave_all_annotations_unchanged() {
 fn sparse_provenance_edits_leave_unselected_entries_unchanged() {
     use crate::annotations::StreamHandle;
     use crate::provenance::StreamName;
-    let ctx = cadmpeg_test_support::service_decode_context();
-    let stream = StreamHandle::new(
-        &ctx,
-        StreamName::try_from("synthetic".to_owned()).unwrap(),
-        "test stream",
-    )
-    .unwrap();
+    let stream = StreamHandle::new(StreamName::try_from("synthetic".to_owned()).unwrap());
     let mut annotations = Annotations::default();
-    let mut transaction = annotations
-        .sparse_transaction(&ctx, "test provenance creation")
-        .unwrap();
-    transaction.note(ID, &stream, 7, Some("original")).unwrap();
-    transaction
-        .note("test:model:point#untouched", &stream, 9, Some("untouched"))
-        .unwrap();
-    transaction.prepare().unwrap().apply(&mut annotations);
+    let mut transaction = annotations.sparse_transaction();
+    transaction.note(ID, &stream, 7, Some("original"));
+    transaction.note("test:model:point#untouched", &stream, 9, Some("untouched"));
+    transaction.prepare().apply(&mut annotations);
     let before = annotations.provenance["test:model:point#untouched"].clone();
-    let mut transaction = annotations
-        .sparse_transaction(&ctx, "test provenance edit")
-        .unwrap();
-    transaction
-        .note(ID, &stream, 11, Some("replacement"))
-        .unwrap();
-    transaction.prepare().unwrap().apply(&mut annotations);
+    let mut transaction = annotations.sparse_transaction();
+    transaction.note(ID, &stream, 11, Some("replacement"));
+    transaction.prepare().apply(&mut annotations);
     assert_eq!(annotations.provenance["test:model:point#untouched"], before);
     assert_eq!(annotations.provenance[ID].offset, 11);
     assert_eq!(
@@ -95,26 +71,19 @@ fn sparse_long_identity_edits_admit_thousands_without_binary_tree_overbilling() 
     let identity = |index| {
         format!("test:model:point#annotation-transaction-key-with-a-long-prefix-{index:08}")
     };
-    let fixture = cadmpeg_test_support::service_decode_context();
     let mut builder = AnnotationBuilder::new();
     for index in 0..COUNT {
-        builder
-            .exactness(&fixture, identity(index), Exactness::Derived)
-            .unwrap();
+        builder.exactness(identity(index), Exactness::Derived);
     }
     let mut annotations = builder.build();
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut transaction = annotations
-        .sparse_transaction(&ctx, "long identity edits")
-        .unwrap();
+    let mut transaction = annotations.sparse_transaction();
     for index in 0..COUNT {
-        transaction
-            .exactness(&identity(index), Exactness::Inferred)
-            .unwrap();
+        transaction.exactness(&identity(index), Exactness::Inferred);
     }
-    transaction.prepare().unwrap().apply(&mut annotations);
+    transaction.prepare().apply(&mut annotations);
     assert_eq!(annotations.exactness().len(), COUNT);
     assert!(annotations
         .exactness()

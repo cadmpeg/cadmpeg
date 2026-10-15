@@ -195,7 +195,6 @@ impl CreoArena {
 /// records the transfer exactness. Shared by the model-transfer path and every
 /// arena emission.
 pub(super) fn annotate(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     annotations: &mut AnnotationBuilder,
     id: impl std::fmt::Display,
     source_stream: &str,
@@ -204,7 +203,6 @@ pub(super) fn annotate(
     exactness: Exactness,
 ) -> Result<(), CodecError> {
     annotations.annotate(
-        ctx,
         id,
         format_args!("creo:{source_stream}"),
         offset,
@@ -278,7 +276,6 @@ pub(super) fn emit_uniform<T: Serialize>(
         arena.records,
         |annotations, record| {
             annotate(
-                ctx,
                 annotations,
                 (arena.id)(record),
                 (arena.stream)(record),

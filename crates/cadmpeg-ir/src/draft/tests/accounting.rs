@@ -13,19 +13,10 @@ fn adding_accounting_preserves_entities_and_commits_exactness() {
     let mut draft = point_draft(identity).with_accounting();
     assert_eq!(draft.model().points, vec![point(identity)]);
     assert_eq!(
-        draft.insert(
-            point(identity),
-            &cadmpeg_test_support::service_decode_context()
-        ),
+        draft.insert(point(identity)),
         Err(DraftError::IdentityCollision(identity.into()))
     );
-    draft
-        .exactness(
-            &cadmpeg_test_support::service_decode_context(),
-            identity,
-            Exactness::Derived,
-        )
-        .unwrap();
+    draft.exactness(identity, Exactness::Derived);
     let mut base = CadIr::empty();
     let mut annotations = Annotations::default();
     draft
@@ -50,24 +41,12 @@ fn refused_accounted_draft_leaves_all_existing_destinations_unchanged() {
     let mut base = CadIr::empty();
     base.model.points.push(point(existing));
     let mut builder = crate::annotations::AnnotationBuilder::new();
-    builder
-        .exactness(
-            &cadmpeg_test_support::service_decode_context(),
-            existing,
-            Exactness::Inferred,
-        )
-        .unwrap();
+    builder.exactness(existing, Exactness::Inferred);
     let mut annotations = builder.build();
     let before = (base.clone(), annotations.clone());
 
     let mut draft = point_draft(existing).with_accounting();
-    draft
-        .exactness(
-            &cadmpeg_test_support::service_decode_context(),
-            existing,
-            Exactness::Derived,
-        )
-        .unwrap();
+    draft.exactness(existing, Exactness::Derived);
     assert_eq!(
         draft
             .commit(
@@ -88,23 +67,11 @@ fn rejected_accounted_draft_does_not_retain_the_annotation_copy() {
     let mut base = CadIr::empty();
     base.model.points.push(point(identity));
     let mut builder = crate::annotations::AnnotationBuilder::new();
-    builder
-        .exactness(
-            &cadmpeg_test_support::service_decode_context(),
-            identity,
-            Exactness::Inferred,
-        )
-        .unwrap();
+    builder.exactness(identity, Exactness::Inferred);
     let mut annotations = builder.build();
     let before = (base.clone(), annotations.clone());
     let mut draft = point_draft(identity).with_accounting();
-    draft
-        .exactness(
-            &cadmpeg_test_support::service_decode_context(),
-            identity,
-            Exactness::Derived,
-        )
-        .unwrap();
+    draft.exactness(identity, Exactness::Derived);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = u64::try_from(identity.len()).unwrap();
@@ -118,30 +85,13 @@ fn rejected_accounted_draft_does_not_retain_the_annotation_copy() {
 }
 
 #[test]
-fn draft_exactness_retention_keeps_selected_entries_and_a_failing_predicate_changes_nothing() {
-    use cadmpeg_core::CodecError;
+fn draft_exactness_retention_keeps_selected_entries() {
     let first = "test:model:point#first";
     let second = "test:model:point#second";
-    let ctx = cadmpeg_test_support::service_decode_context();
     let mut draft = point_draft(first).with_accounting();
-    draft.exactness(&ctx, first, Exactness::Derived).unwrap();
-    draft.exactness(&ctx, second, Exactness::Inferred).unwrap();
-    let before = draft.accounting.exactness.clone();
-    let mut calls = 0;
-    let error = draft
-        .retain_exactness(&ctx, |id| {
-            calls += 1;
-            if id == second {
-                Err(CodecError::malformed("predicate refusal"))
-            } else {
-                Ok(false)
-            }
-        })
-        .unwrap_err();
-    assert!(matches!(error, CodecError::Malformed(_)));
-    assert_eq!(calls, 2);
-    assert_eq!(draft.accounting.exactness, before);
-    draft.retain_exactness(&ctx, |id| Ok(id == second)).unwrap();
+    draft.exactness(first, Exactness::Derived);
+    draft.exactness(second, Exactness::Inferred);
+    draft.retain_exactness(|id| id == second);
     assert_eq!(
         draft.accounting.exactness,
         std::collections::BTreeMap::from([(second.into(), Exactness::Inferred)])

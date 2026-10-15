@@ -276,22 +276,16 @@ fn spatial_sketch_records_hold_their_admitted_frames_and_scalars() {
         origin,
         unit(0.0, 0.0, 1.0),
         unit(1.0, 0.0, 0.0),
-        boundary.clone(),
-        &cadmpeg_test_support::service_decode_context(),
-        "spatial profile uniqueness"
+        boundary.clone()
     )
-    .expect("fixture collection admission")
     .is_ok());
     assert_eq!(
         SpatialSketchProfile::from_parts(
             origin,
             unit(0.0, 0.0, 1.0),
             unit(0.0, 0.0, 1.0),
-            boundary,
-            &cadmpeg_test_support::service_decode_context(),
-            "spatial profile uniqueness"
+            boundary
         )
-        .expect("fixture collection admission")
         .unwrap_err()
         .to_string(),
         "spatial profile normal and u_axis must be unit and orthogonal"

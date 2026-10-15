@@ -90,8 +90,8 @@ fn body_image_outputs_require_one_body_per_binding() {
         ),
     ]);
 
-    crate::test_support::with_decode_context(|ctx| {
-        let outputs = operation_body_image_outputs_by_write(ctx, &uses, &bodies).unwrap();
+    ({
+        let outputs = operation_body_image_outputs_by_write(&uses, &bodies);
 
         assert_eq!(
             outputs.get("write-a"),
@@ -103,7 +103,7 @@ fn body_image_outputs_require_one_body_per_binding() {
 
 #[test]
 fn complete_body_image_outputs_reject_partial_and_duplicate_results() {
-    crate::test_support::with_decode_context(|ctx| {
+    ({
         let write_a = native_body_write("write-a");
         let write_b = native_body_write("write-b");
         let writes = [&write_a, &write_b];
@@ -118,7 +118,7 @@ fn complete_body_image_outputs_reject_partial_and_duplicate_results() {
             ),
         ]);
         assert_eq!(
-            complete_operation_body_image_outputs(ctx, &writes, &complete).unwrap(),
+            complete_operation_body_image_outputs(&writes, &complete),
             [
                 BodyId::mint("test:model:entity#body-a").expect("identity grammar"),
                 BodyId::mint("test:model:entity#body-b").expect("identity grammar")
@@ -129,11 +129,7 @@ fn complete_body_image_outputs_reject_partial_and_duplicate_results() {
             "write-a",
             BodyId::mint("test:model:entity#body-a").expect("identity grammar"),
         )]);
-        assert!(
-            complete_operation_body_image_outputs(ctx, &writes, &partial)
-                .unwrap()
-                .is_empty()
-        );
+        assert!(complete_operation_body_image_outputs(&writes, &partial).is_empty());
 
         let duplicate = BTreeMap::from([
             (
@@ -145,11 +141,7 @@ fn complete_body_image_outputs_reject_partial_and_duplicate_results() {
                 BodyId::mint("test:model:entity#body").expect("identity grammar"),
             ),
         ]);
-        assert!(
-            complete_operation_body_image_outputs(ctx, &writes, &duplicate)
-                .unwrap()
-                .is_empty()
-        );
+        assert!(complete_operation_body_image_outputs(&writes, &duplicate).is_empty());
     });
 }
 
@@ -214,10 +206,8 @@ fn duplicate_body_image_uses_do_not_assign_an_output() {
         vec![BodyId::mint("test:model:entity#body-a").expect("identity grammar")],
     )]);
 
-    crate::test_support::with_decode_context(|ctx| {
-        assert!(operation_body_image_outputs_by_write(ctx, &uses, &bodies)
-            .unwrap()
-            .is_empty());
+    ({
+        assert!(operation_body_image_outputs_by_write(&uses, &bodies).is_empty());
     });
 }
 
@@ -241,8 +231,8 @@ fn body_identity_outputs_require_one_body_per_unique_plain_binding() {
         ),
     ]);
 
-    crate::test_support::with_decode_context(|ctx| {
-        let outputs = operation_body_identity_outputs_by_write(ctx, &uses, &bodies).unwrap();
+    ({
+        let outputs = operation_body_identity_outputs_by_write(&uses, &bodies);
 
         assert_eq!(
             outputs.get("write-a"),
@@ -254,7 +244,7 @@ fn body_identity_outputs_require_one_body_per_unique_plain_binding() {
 
 #[test]
 fn conflicting_body_output_witnesses_remain_unresolved() {
-    crate::test_support::with_decode_context(|ctx| {
+    ({
         let mut outputs = BTreeMap::from([(
             "write",
             BodyId::mint("test:model:entity#body-a").expect("identity grammar"),
@@ -262,25 +252,21 @@ fn conflicting_body_output_witnesses_remain_unresolved() {
         let mut conflicts = BTreeSet::new();
 
         merge_operation_body_outputs(
-            ctx,
             &mut outputs,
             &mut conflicts,
             &BTreeMap::from([(
                 "write",
                 BodyId::mint("test:model:entity#body-b").expect("identity grammar"),
             )]),
-        )
-        .unwrap();
+        );
         merge_operation_body_outputs(
-            ctx,
             &mut outputs,
             &mut conflicts,
             &BTreeMap::from([(
                 "write",
                 BodyId::mint("test:model:entity#body-a").expect("identity grammar"),
             )]),
-        )
-        .unwrap();
+        );
 
         assert!(!outputs.contains_key("write"));
         assert!(conflicts.contains("write"));
@@ -320,9 +306,8 @@ fn group_partition_witness_projects_every_write_of_the_bound_body_identity() {
 
     let writes = [write_a, write_b];
 
-    crate::test_support::with_decode_context(|ctx| {
+    ({
         let outputs = operation_body_group_partition_outputs_by_write(
-            ctx,
             &writes,
             &[use_],
             std::slice::from_ref(&body),

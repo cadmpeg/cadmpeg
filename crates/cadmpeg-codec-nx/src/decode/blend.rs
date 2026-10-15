@@ -21,7 +21,6 @@ use cadmpeg_ir::features::FiniteVector3;
 use cadmpeg_ir::geometry::nurbs::bezier::{
     homogeneous_spans, positive_controls, HomogeneousBezierSpan,
 };
-use cadmpeg_ir::geometry::nurbs::scoped::ScopedRows;
 use cadmpeg_ir::geometry::{
     nurbs::NurbsCurve, pcurve::PcurveGeometry, BlendCrossSection, BlendRadiusLaw,
     ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry,
@@ -297,7 +296,6 @@ mod tests {
                         super::MAX_ADAPTIVE_GEOMETRY_WORK,
                     ),
                 )
-                .expect("evaluator allocation succeeds")
                 .unwrap();
                 assert!((parameter - 0.25).abs() <= 128.0 * f64::EPSILON);
             }
@@ -327,8 +325,7 @@ mod tests {
                 None,
                 &budget,
             );
-            let parameter = result.expect("zero local work skips the search");
-            assert_eq!(parameter, None);
+            assert_eq!(result, None);
             assert!(budget.exhausted());
             assert!(ctx.resource_refusal().is_none());
         });
@@ -2789,12 +2786,8 @@ pub(super) fn closest_pcurve_parameters(
         return Ok(None);
     }
     let search_seed = seed.map(|seed| canonical_periodic_parameter(domain, nurbs.periodic(), seed));
-    let lanes = cadmpeg_ir::geometry::pcurve::evaluator::PcurveEvaluatorLanes::new(
-        ctx,
-        nurbs.pole_rows(),
-        "IR pcurve control copy",
-        "IR pcurve weight copy",
-    )?;
+    let lanes =
+        cadmpeg_ir::geometry::pcurve::evaluator::PcurveEvaluatorLanes::new(nurbs.pole_rows());
     let Some(homogeneous) = homogeneous_pcurve_spans(
         ctx,
         degree,
@@ -2854,20 +2847,20 @@ pub(super) fn closest_pcurve_parameters(
         .map(|candidates| lift_periodic_parameters(candidates, domain, nurbs.periodic(), seed)))
 }
 
-struct HomogeneousCurveSpans<'ctx, const DIMENSION: usize> {
-    extraction: ScopedRows<'ctx, HomogeneousBezierSpan<DIMENSION>>,
+struct HomogeneousCurveSpans<const DIMENSION: usize> {
+    extraction: Vec<HomogeneousBezierSpan<DIMENSION>>,
     coordinate_tolerance: f64,
 }
 
 #[cfg(test)]
-fn homogeneous_pcurve_spans<'ctx>(
-    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
+fn homogeneous_pcurve_spans(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     degree: usize,
     knots: &[f64],
     control_points: &[Point2],
     weights: Option<&[f64]>,
     point: Point2,
-) -> Result<Option<HomogeneousCurveSpans<'ctx, 3>>, cadmpeg_core::CodecError> {
+) -> Result<Option<HomogeneousCurveSpans<3>>, cadmpeg_core::CodecError> {
     let count = control_points.len();
     let Some(expected_knots) = count
         .checked_add(degree)
@@ -2910,7 +2903,7 @@ fn homogeneous_pcurve_spans<'ctx>(
     if controls.iter().flatten().any(|value| !value.is_finite()) {
         return Ok(None);
     }
-    let Some(spans) = homogeneous_spans(ctx, degree, knots, &controls)? else {
+    let Some(spans) = homogeneous_spans(degree, knots, &controls) else {
         return Ok(None);
     };
     Ok(Some(HomogeneousCurveSpans {
@@ -2920,12 +2913,12 @@ fn homogeneous_pcurve_spans<'ctx>(
 }
 
 fn stationary_rational_distance_candidates<const DIMENSION: usize>(
-    homogeneous: &HomogeneousCurveSpans<'_, DIMENSION>,
+    homogeneous: &HomogeneousCurveSpans<DIMENSION>,
     seed: Option<f64>,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<Vec<(f64, f64)>> {
     let mut candidates = Vec::new();
-    for span in homogeneous.extraction.iter() {
+    for span in &homogeneous.extraction {
         let derivative = rational_squared_distance_derivative(&span.controls)?;
         let roots = scalar_bezier_roots_with_budget(
             ScalarBezierSpan {
@@ -4403,9 +4396,12 @@ pub(super) fn closest_spine_parameter_with_index_and_budget(
                 geometry_budget,
             ))
         }
-        Some(SolvedCurveGeometry::Nurbs(nurbs)) => {
-            closest_nurbs_curve_parameter_with_budget(nurbs, point, seed, geometry_budget)
-        }
+        Some(SolvedCurveGeometry::Nurbs(nurbs)) => Ok(closest_nurbs_curve_parameter_with_budget(
+            nurbs,
+            point,
+            seed,
+            geometry_budget,
+        )),
         _ => Ok(None),
     }
 }
@@ -4638,32 +4634,30 @@ pub(super) fn closest_nurbs_curve_parameter_with_budget(
     point: Point3,
     seed: Option<f64>,
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> Result<Option<f64>, cadmpeg_core::decode::ResourceLimit> {
+) -> Option<f64> {
     let Ok(degree) = usize::try_from(curve.degree()) else {
-        return Ok(None);
+        return None;
     };
     let count = curve.pole_rows().count();
     if !point.is_finite() {
-        return Ok(None);
+        return None;
     }
     let (Some(lower), Some(upper)) = (curve.knots().get(degree), curve.knots().get(count)) else {
-        return Ok(None);
+        return None;
     };
     let domain = [*lower, *upper];
     if domain[0] >= domain[1] || seed.is_some_and(|seed| !seed.is_finite()) {
-        return Ok(None);
+        return None;
     }
     let search_seed = seed.map(|seed| canonical_periodic_parameter(domain, curve.periodic(), seed));
     let mut weights = Vec::new();
     if curve.pole_rows().weight_at(0).is_some() {
         for index in 0..count {
-            let Some(weight) = curve.pole_rows().weight_at(index) else {
-                return Ok(None);
-            };
+            let weight = curve.pole_rows().weight_at(index)?;
             weights.push(weight);
         }
         if weights.iter().any(|weight| *weight <= 0.0) {
-            return Ok(None);
+            return None;
         }
     }
     let coordinate_scale = curve
@@ -4680,33 +4674,20 @@ pub(super) fn closest_nurbs_curve_parameter_with_budget(
             control.z - point.z,
         ));
     }
-    let Some(controls) = positive_controls(
-        geometry_budget.ctx,
+    let controls = positive_controls(
         &residuals,
         (!weights.is_empty()).then_some(weights.as_slice()),
-        "nx spine positive controls",
-    )?
-    else {
-        return Ok(None);
-    };
-    let Some(spans) = homogeneous_spans(geometry_budget.ctx, degree, curve.knots(), &controls)?
-    else {
-        return Ok(None);
-    };
+    )?;
+    let spans = homogeneous_spans(degree, curve.knots(), &controls)?;
     let homogeneous = HomogeneousCurveSpans {
         extraction: spans,
         coordinate_tolerance: 64.0 * f64::EPSILON * coordinate_scale,
     };
-    let Some(candidates) =
-        stationary_rational_distance_candidates(&homogeneous, search_seed, geometry_budget)
-    else {
-        return Ok(None);
-    };
-    let Some(parameters) = closest_parameter_candidates(candidates, search_seed) else {
-        return Ok(None);
-    };
+    let candidates =
+        stationary_rational_distance_candidates(&homogeneous, search_seed, geometry_budget)?;
+    let parameters = closest_parameter_candidates(candidates, search_seed)?;
     let parameters = lift_periodic_parameters(parameters, domain, curve.periodic(), seed);
-    Ok(parameters.into_iter().next())
+    parameters.into_iter().next()
 }
 
 fn signed_angle(first: Vector3, second: Vector3, axis: Vector3) -> f64 {

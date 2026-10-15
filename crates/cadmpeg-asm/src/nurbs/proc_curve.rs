@@ -216,39 +216,34 @@ fn native_support_chart(toks: &[Token], position: usize) -> NativeSupportChart {
 }
 
 fn normalize_support_pcurve(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     chart: NativeSupportChart,
     pcurve: &mut PcurveNurbs,
 ) -> Option<Result<(), cadmpeg_core::CodecError>> {
     match chart {
         NativeSupportChart::Canonical => {}
         NativeSupportChart::PlaneLengths => {
-            propagate_resource!(pcurve.try_map_control_points(
-                |_, point| {
+            pcurve
+                .try_map_control_points(|_, point| {
                     let point = point.get();
                     cadmpeg_ir::units::FinitePoint2::new(cadmpeg_ir::math::Point2::new(
                         point.u * LEN_TO_MM,
                         point.v * -LEN_TO_MM,
                     ))
                     .ok_or(())
-                },
-                ctx
-            ))
-            .ok()?;
+                })
+                .ok()?;
         }
         NativeSupportChart::Cone { axial_scale } => {
-            propagate_resource!(pcurve.try_map_control_points(
-                |_, point| {
+            pcurve
+                .try_map_control_points(|_, point| {
                     let native = point.get();
                     cadmpeg_ir::units::FinitePoint2::new(cadmpeg_ir::math::Point2::new(
                         native.v,
                         native.u * axial_scale,
                     ))
                     .ok_or(())
-                },
-                ctx
-            ))
-            .ok()?;
+                })
+                .ok()?;
         }
     }
     Some(Ok(()))
@@ -257,7 +252,6 @@ fn normalize_support_pcurve(
 /// Convert a pcurve stored in a standalone analytic surface's native chart to
 /// the neutral chart used by [`SurfaceGeometry`].
 pub(crate) fn normalize_pcurve_for_surface_record(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     surface_head: &str,
     surface_tokens: &[Token],
     pcurve: &mut PcurveNurbs,
@@ -279,7 +273,7 @@ pub(crate) fn normalize_pcurve_for_surface_record(
         }
         _ => return Some(Ok(())),
     };
-    normalize_support_pcurve(ctx, chart, pcurve)
+    normalize_support_pcurve(chart, pcurve)
 }
 
 struct RequiredSupportPair {
@@ -302,14 +296,12 @@ fn required_support_pair(
         propagate_resource!(pcurve_block_with_end(ctx, cur.toks(), cur.pos())?);
     cur.set_pos(second_end);
     propagate_resource!(normalize_support_pcurve(
-        ctx,
         native_support_chart(cur.toks(), first_surface_start),
-        &mut first_pcurve,
+        &mut first_pcurve
     )?);
     propagate_resource!(normalize_support_pcurve(
-        ctx,
         native_support_chart(cur.toks(), second_surface_start),
-        &mut second_pcurve,
+        &mut second_pcurve
     )?);
     Some(Ok(RequiredSupportPair {
         surfaces: [first_surface, second_surface],
@@ -701,9 +693,7 @@ fn pcurve_for_selector_recursive(
             Err(error) => return Some(Err(error)),
         };
         if let Some(pcurve) = selected_pcurve(&decoded, slot) {
-            let pcurve = propagate_resource!(
-                pcurve.try_clone_for_decode(ctx, "ASM selected support pcurve")
-            );
+            let pcurve = pcurve.clone();
             return Some(Ok((pcurve, false)));
         }
         if !matches!(&decoded.construction, ProceduralCurveConstruction::Unknown(kind) if kind == "intcurve")
@@ -726,9 +716,7 @@ fn pcurve_for_selector_recursive(
                     if let Some(pcurve) =
                         selected_support_pcurve(&context.surfaces, &context.pcurves, slot)
                     {
-                        let pcurve = propagate_resource!(
-                            pcurve.try_clone_for_decode(ctx, "ASM selected support pcurve")
-                        );
+                        let pcurve = pcurve.clone();
                         return Some(Ok((pcurve, false)));
                     }
                 }
@@ -1245,7 +1233,7 @@ fn embedded_law_curve(
         native_support_chart(toks, second_surface_start),
     ]) {
         if let Some(pcurve) = pcurve {
-            propagate_resource!(normalize_support_pcurve(ctx, chart, pcurve)?);
+            propagate_resource!(normalize_support_pcurve(chart, pcurve)?);
         }
     }
     let layout = if let Some((stamp, post_enum)) = stamp {
@@ -1351,11 +1339,11 @@ fn embedded_spring(
         Some(pcurve)
     };
     if let EmbeddedSpringPcurve::Pcurve(pcurve) = &mut first_pcurve {
-        propagate_resource!(normalize_support_pcurve(ctx, first_chart, pcurve)?);
+        propagate_resource!(normalize_support_pcurve(first_chart, pcurve)?);
     }
     let mut second_pcurve = second_pcurve;
     if let Some(pcurve) = &mut second_pcurve {
-        propagate_resource!(normalize_support_pcurve(ctx, second_chart, pcurve)?);
+        propagate_resource!(normalize_support_pcurve(second_chart, pcurve)?);
     }
     let parameter_range = [cur.take_range_value()?, cur.take_range_value()?];
     let discontinuities = [
@@ -2307,16 +2295,14 @@ fn cache_first_curve_context(
     ];
     if let Some(pcurve) = &mut pcurves[0] {
         propagate_resource!(normalize_support_pcurve(
-            ctx,
             native_support_chart(cur.toks(), first_surface_start),
-            pcurve,
+            pcurve
         )?);
     }
     if let Some(pcurve) = &mut pcurves[1] {
         propagate_resource!(normalize_support_pcurve(
-            ctx,
             native_support_chart(cur.toks(), second_surface_start),
-            pcurve,
+            pcurve
         )?);
     }
     let solved_range = [
@@ -2479,9 +2465,8 @@ fn embedded_three_surface_intersection(
     let third = propagate_resource!(embedded_surface(ctx, &mut cur)?);
     let (mut third_pcurve, _) = propagate_resource!(pcurve_block_with_end(ctx, toks, cur.pos())?);
     propagate_resource!(normalize_support_pcurve(
-        ctx,
         native_support_chart(toks, third_surface_start),
-        &mut third_pcurve,
+        &mut third_pcurve
     )?);
     Some(Ok(EmbeddedThreeSurfaceIntersection {
         surfaces: [first, second, third],
@@ -2746,14 +2731,12 @@ fn cache_first_intersection(
     ];
     if let Some(pcurve) = &mut pcurves[0] {
         propagate_resource!(normalize_support_pcurve(
-            ctx,
             native_support_chart(toks, first_surface_start),
             pcurve
         )?);
     }
     if let Some(pcurve) = &mut pcurves[1] {
         propagate_resource!(normalize_support_pcurve(
-            ctx,
             native_support_chart(toks, second_surface_start),
             pcurve
         )?);
@@ -2843,7 +2826,7 @@ fn embedded_two_sided_offset(
         native_support_chart(toks, second_surface_start),
     ]) {
         if let Some(pcurve) = pcurve {
-            propagate_resource!(normalize_support_pcurve(ctx, chart, pcurve)?);
+            propagate_resource!(normalize_support_pcurve(chart, pcurve)?);
         }
     }
     let parameter_range = [cur.take_range_value()?, cur.take_range_value()?];
@@ -3740,28 +3723,20 @@ mod cache_form_tests {
     #[test]
     fn analytic_support_charts_map_to_neutral_surface_parameters() {
         let mut plane = linear_pcurve([Point2::new(1.0, 2.0), Point2::new(3.0, 4.0)]);
-        normalize_support_pcurve(
-            &cadmpeg_test_support::service_decode_context(),
-            NativeSupportChart::PlaneLengths,
-            &mut plane,
-        )
-        .transpose()
-        .expect("support pole edit admission")
-        .unwrap();
+        normalize_support_pcurve(NativeSupportChart::PlaneLengths, &mut plane)
+            .transpose()
+            .expect("support pole edit admission")
+            .unwrap();
         assert_eq!(
             plane.control_points(),
             [Point2::new(10.0, -20.0), Point2::new(30.0, -40.0)]
         );
 
         let mut cone = linear_pcurve([Point2::new(2.0, 0.5), Point2::new(-3.0, -0.25)]);
-        normalize_support_pcurve(
-            &cadmpeg_test_support::service_decode_context(),
-            NativeSupportChart::Cone { axial_scale: 15.0 },
-            &mut cone,
-        )
-        .transpose()
-        .expect("support pole edit admission")
-        .unwrap();
+        normalize_support_pcurve(NativeSupportChart::Cone { axial_scale: 15.0 }, &mut cone)
+            .transpose()
+            .expect("support pole edit admission")
+            .unwrap();
         assert_eq!(
             cone.control_points(),
             [Point2::new(0.5, 30.0), Point2::new(-0.25, -45.0)]
@@ -3776,14 +3751,10 @@ mod cache_form_tests {
         ] {
             let mut pcurve = linear_pcurve([Point2::new(f64::MAX, 0.0), Point2::new(1.0, 1.0)]);
             let original = pcurve.clone();
-            assert!(normalize_support_pcurve(
-                &cadmpeg_test_support::service_decode_context(),
-                chart,
-                &mut pcurve
-            )
-            .transpose()
-            .expect("support pole edit admission")
-            .is_none());
+            assert!(normalize_support_pcurve(chart, &mut pcurve)
+                .transpose()
+                .expect("support pole edit admission")
+                .is_none());
             assert_eq!(pcurve, original);
         }
     }
@@ -3817,15 +3788,10 @@ mod cache_form_tests {
             Token::Double(2.0),
         ];
         let mut pcurve = linear_pcurve([Point2::new(-0.5, 1.25), Point2::new(0.75, -2.0)]);
-        normalize_pcurve_for_surface_record(
-            &cadmpeg_test_support::service_decode_context(),
-            "cone",
-            &surface,
-            &mut pcurve,
-        )
-        .transpose()
-        .expect("support pole edit admission")
-        .unwrap();
+        normalize_pcurve_for_surface_record("cone", &surface, &mut pcurve)
+            .transpose()
+            .expect("support pole edit admission")
+            .unwrap();
         assert_eq!(
             pcurve.control_points(),
             [Point2::new(1.25, -10.0), Point2::new(-2.0, 15.0)]

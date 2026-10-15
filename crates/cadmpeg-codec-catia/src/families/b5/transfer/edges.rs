@@ -10,7 +10,7 @@ use cadmpeg_ir::geometry::{
     IntcurveSupportSide, ProceduralCurve, ProceduralCurveDefinition, SolvedCurveGeometry,
     SupportPcurve, SurfaceCurveFamily,
 };
-use cadmpeg_ir::ids::{CurveId, EdgeId, IdentityNamespace, ProceduralCurveId, SurfaceId, VertexId};
+use cadmpeg_ir::ids::{CurveId, EdgeId, ProceduralCurveId, SurfaceId, VertexId};
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::topology::Edge;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
@@ -97,24 +97,24 @@ pub(super) fn ordered_subrange(
 }
 
 pub(super) fn b5_edge_support_definition(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     supports: &[B5Support],
     surface_ids: &HashMap<u32, SurfaceId>,
     pcurves: &BTreeMap<u32, (PcurveGeometry, bool, [FiniteReal; 2])>,
     solved_parameter_range: Option<[f64; 2]>,
-) -> Result<
-    Option<(IdentityNamespace, &'static str, ProceduralCurveDefinition)>,
-    cadmpeg_core::CodecError,
-> {
+) -> Option<(
+    cadmpeg_ir::ids::IdentityNamespace,
+    &'static str,
+    ProceduralCurveDefinition,
+)> {
     let ([first] | [first, _]) = supports else {
-        return Ok(None);
+        return None;
     };
     if supports.iter().any(|(_, pcurve, range)| {
         pcurves
             .get(pcurve)
             .is_none_or(|(_, _, domain)| bounded_occurrence_range(*range, *domain).is_none())
     }) {
-        return Ok(None);
+        return None;
     }
     let parameter_range = solved_parameter_range.unwrap_or_else(|| {
         if first.2[0] < first.2[1] && supports.iter().skip(1).all(|support| support.2 == first.2) {
@@ -128,22 +128,14 @@ pub(super) fn b5_edge_support_definition(
         pcurve: None,
     });
     for (side, (surface, pcurve, support_range)) in sides.iter_mut().zip(supports) {
-        let Some(surface_id) = surface_ids.get(surface) else {
-            return Ok(None);
-        };
-        side.surface =
-            Some(surface_id.try_clone_for_decode(ctx, "catia_b5_edge_support_surface_id")?);
+        let surface_id = surface_ids.get(surface)?;
+        side.surface = Some(surface_id.clone());
         let support_range = support_range.map(FiniteReal::get);
         let mapped_range = (support_range != parameter_range)
             .then(|| DirectedParameterRange::new(support_range).ok())
             .flatten();
-        let Some((geometry, _, _)) = pcurves.get(pcurve) else {
-            return Ok(None);
-        };
-        side.pcurve = Some(SupportPcurve::new(
-            geometry.try_clone_for_decode(ctx, "catia_b5_edge_support_pcurve")?,
-            mapped_range,
-        ));
+        let (geometry, _, _) = pcurves.get(pcurve)?;
+        side.pcurve = Some(SupportPcurve::new(geometry.clone(), mapped_range));
     }
     let context = IntcurveSupportContext::try_new(
         sides,
@@ -151,11 +143,9 @@ pub(super) fn b5_edge_support_definition(
         std::array::from_fn(|_| Vec::new()),
     )
     .ok();
-    let Some(context) = context else {
-        return Ok(None);
-    };
+    let context = context?;
     if supports.len() == 2 && supports[0].0 != supports[1].0 {
-        Ok(Some((
+        Some((
             cadmpeg_ir::identity_namespace!("catia", "b5", "intersection"),
             "two_surface_pcurve_intersection",
             ProceduralCurveDefinition::Intersection {
@@ -163,9 +153,9 @@ pub(super) fn b5_edge_support_definition(
                 discontinuity_flag: false,
                 cache: None,
             },
-        )))
+        ))
     } else {
-        Ok(Some((
+        Some((
             cadmpeg_ir::identity_namespace!("catia", "b5", "surface-curve"),
             "parametric_surface_curve",
             ProceduralCurveDefinition::SurfaceCurve {
@@ -174,7 +164,7 @@ pub(super) fn b5_edge_support_definition(
                     tail: None,
                 },
             },
-        )))
+        ))
     }
 }
 
@@ -371,22 +361,18 @@ pub(super) fn emit_edges(
         )?;
         let endpoints = graph.vertices.edges()[&edge_id]
             .map(|vertex| vertex.combined_index(graph.vertices.raw_points().len()));
-        let curve_plan =
-            if let Some(plan) = plan.edge_curve_plan.remove(&edge_id) {
-                plan
-            } else {
-                CurvePlan {
-                    geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
-                        record: Some(payload.try_clone_for_decode(
-                            admission.context(),
-                            "catia_b5_edge_unknown_id",
-                        )?),
-                    }),
-                    parameter_range: None,
-                    edge_tolerance: None,
-                    cache_fit_tolerance: None,
-                }
-            };
+        let curve_plan = if let Some(plan) = plan.edge_curve_plan.remove(&edge_id) {
+            plan
+        } else {
+            CurvePlan {
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
+                    record: Some(payload.clone()),
+                }),
+                parameter_range: None,
+                edge_tolerance: None,
+                cache_fit_tolerance: None,
+            }
+        };
 
         let helix = plan.edge_helix_plan.remove(&edge_id);
         let edge_range = curve_plan.parameter_range;
@@ -395,7 +381,6 @@ pub(super) fn emit_edges(
         let cache_fit_tolerance = curve_plan.cache_fit_tolerance;
         let geometry = curve_plan.geometry;
         annotate(
-            admission.context(),
             annotations,
             &curve_id,
             "object_stream_b5_03",
@@ -413,10 +398,9 @@ pub(super) fn emit_edges(
             geometry,
             CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
         ) {
-            annotations.derived(admission.context(), curve_id.as_str(), "geometry")?;
+            annotations.derived(curve_id.as_str(), "geometry")?;
         }
-        let model_curve_id =
-            curve_id.try_clone_for_decode(admission.context(), "catia_b5_model_edge_curve_id")?;
+        let model_curve_id = curve_id.clone();
         admission.charge()?;
         ir.model.curves.push(Curve {
             parameter_range: None,
@@ -435,12 +419,11 @@ pub(super) fn emit_edges(
         {
             if let Some(supports) = plan.edge_support_plan.get(&edge_id) {
                 b5_edge_support_definition(
-                    admission.context(),
                     supports,
                     surface_ids,
                     &plan.pcurve_plan,
                     support_curve_range,
-                )?
+                )
             } else {
                 None
             }
@@ -451,7 +434,6 @@ pub(super) fn emit_edges(
             let procedural_id =
                 crate::resource::compose_index_id(&namespace, index, ProceduralCurveId::mint)?;
             annotate(
-                admission.context(),
                 annotations,
                 &procedural_id,
                 "object_stream_b5_03",
@@ -459,14 +441,10 @@ pub(super) fn emit_edges(
                 Exactness::Derived,
             )?;
             for field in ["curve", "definition"] {
-                annotations.derived(admission.context(), procedural_id.as_str(), field)?;
+                annotations.derived(procedural_id.as_str(), field)?;
             }
             if cache_fit_tolerance.is_some() {
-                annotations.derived(
-                    admission.context(),
-                    procedural_id.as_str(),
-                    "cache_fit_tolerance",
-                )?;
+                annotations.derived(procedural_id.as_str(), "cache_fit_tolerance")?;
             }
             let mut definition = definition;
             if let Some(tolerance) = cache_fit_tolerance {
@@ -476,15 +454,11 @@ pub(super) fn emit_edges(
             }
             let procedural = ProceduralCurve::new(procedural_id, definition);
 
-            let owner = curve_id
-                .try_clone_for_decode(admission.context(), "catia_b5_edge_procedural_owner_id")?;
+            let owner = curve_id.clone();
             admission.charge()?;
-            let _attached =
-                ir.model
-                    .add_procedural_curve(admission.context(), &owner, procedural)?;
+            let _attached = ir.model.add_procedural_curve(&owner, procedural);
         }
         annotate(
-            admission.context(),
             annotations,
             &id,
             "object_stream_b5_03",
@@ -492,15 +466,15 @@ pub(super) fn emit_edges(
             Exactness::ByteExact,
         )?;
         for field in ["start", "end"] {
-            annotations.derived(admission.context(), id.as_str(), field)?;
+            annotations.derived(id.as_str(), field)?;
         }
         if edge_range.is_some() {
-            annotations.derived(admission.context(), id.as_str(), "param_range")?;
+            annotations.derived(id.as_str(), "param_range")?;
         }
         if edge_tolerance.is_some() {
-            annotations.derived(admission.context(), id.as_str(), "tolerance")?;
+            annotations.derived(id.as_str(), "tolerance")?;
         }
-        let map_id = id.try_clone_for_decode(admission.context(), "catia_b5_edge_map_id")?;
+        let map_id = id.clone();
         edge_id_map.insert(edge_id, map_id);
         let start = crate::resource::compose_index_id(
             &cadmpeg_ir::identity_namespace!("catia", "b5", "vertex"),

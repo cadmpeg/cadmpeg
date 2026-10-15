@@ -98,10 +98,8 @@ fn resolve_surface_aliases(
     surfaces: &mut BTreeMap<u32, B5Surface>,
     conflicts: &mut HashSet<u32>,
 ) -> bool {
-    crate::test_support::with_service_context(|ctx| {
-        super::super::resolve_surface_aliases(ctx, records, by_id, surfaces, conflicts)
-    })
-    .expect("service budget")
+    ({ super::super::resolve_surface_aliases(records, by_id, surfaces, conflicts) })
+        .expect("service budget")
 }
 
 fn surface_alias_carrier(
@@ -109,10 +107,7 @@ fn surface_alias_carrier(
     by_id: &HashMap<u32, &B5Record>,
     surfaces: &BTreeMap<u32, B5Surface>,
 ) -> Option<B5Surface> {
-    crate::test_support::with_service_context(|ctx| {
-        super::super::surface_alias_carrier(ctx, object_id, by_id, surfaces)
-    })
-    .expect("service budget")
+    ({ super::super::surface_alias_carrier(object_id, by_id, surfaces) }).expect("service budget")
 }
 
 fn resolve_targeted_surface(

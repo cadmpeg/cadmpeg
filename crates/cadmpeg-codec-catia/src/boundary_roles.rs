@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Geometry-backed boundary-role derivation shared by closed topology routes.
 
-use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::LoopId;
@@ -145,20 +144,19 @@ fn polygon_boundaries_intersect(
 /// deliberately declines disjoint, touching, nested-hole, malformed, and
 /// non-planar arrangements.
 pub(crate) fn classify_planar_boundaries(
-    ctx: &DecodeContext<'_>,
     surface: &SurfaceGeometry,
     rows: &[(LoopId, Vec<Point3>)],
 ) -> Result<FaceLoops, CodecError> {
     let unspecified = || -> Result<FaceLoops, CodecError> {
         let mut ids = Vec::new();
         for (id, _) in rows {
-            let id = id.try_clone_for_decode(ctx, "catia_boundary_unspecified_id_copy")?;
+            let id = id.clone();
             ids.push(id);
         }
         Ok(FaceLoops::unspecified(ids))
     };
     if let [(single, _)] = rows {
-        let id = single.try_clone_for_decode(ctx, "catia_boundary_single_id_copy")?;
+        let id = single.clone();
         return Ok(FaceLoops::classified(id, Vec::new()));
     }
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) = surface else {
@@ -266,11 +264,11 @@ pub(crate) fn classify_planar_boundaries(
     let mut inner = Vec::new();
     for (index, (id, _)) in rows.iter().enumerate() {
         if index != outer {
-            let id = id.try_clone_for_decode(ctx, "catia_boundary_inner_id_copy")?;
+            let id = id.clone();
             inner.push(id);
         }
     }
-    let outer_id = outer_id.try_clone_for_decode(ctx, "catia_boundary_outer_id_copy")?;
+    let outer_id = outer_id.clone();
     Ok(FaceLoops::classified(outer_id, inner))
 }
 
@@ -285,10 +283,8 @@ mod tests {
         surface: &SurfaceGeometry,
         rows: &[(cadmpeg_ir::ids::LoopId, Vec<Point3>)],
     ) -> FaceLoops {
-        crate::test_support::with_service_context(|ctx| {
-            super::classify_planar_boundaries(ctx, surface, rows)
-        })
-        .expect("service context admits boundary classification")
+        ({ super::classify_planar_boundaries(surface, rows) })
+            .expect("service context admits boundary classification")
     }
 
     fn plane() -> SurfaceGeometry {

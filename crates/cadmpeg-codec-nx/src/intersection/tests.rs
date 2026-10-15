@@ -56,7 +56,6 @@ fn intersection_support_completion_requires_one_unique_incident_complement() {
     assert_eq!(incident.len(), 2);
     let curve = edge.curve().cloned().expect("cube edge curve");
     let _attached = ir.model.add_procedural_curve(
-        &cadmpeg_ir::document::admission::StandardAdmission,
         &curve,
         ProceduralCurve::new(
             ProceduralCurveId::mint("nx:test:intersection#0").expect("identity grammar"),

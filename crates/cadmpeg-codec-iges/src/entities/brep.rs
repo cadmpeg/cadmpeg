@@ -1406,9 +1406,7 @@ pub(super) fn project(
                             valid = false;
                             break;
                         };
-                        let Ok(ring) =
-                            cadmpeg_ir::topology::LoopRing::new(ctx, coedge_ids, vertex_uses)
-                                .map_err(cadmpeg_core::CodecError::from)?
+                        let Ok(ring) = cadmpeg_ir::topology::LoopRing::new(coedge_ids, vertex_uses)
                         else {
                             super::push_geometry_loss(
                                 &mut losses,
@@ -1554,7 +1552,7 @@ pub(super) fn project(
             color: None,
             visible: None,
         });
-        candidate.model_mut().finalize(ctx)?;
+        candidate.model_mut().finalize();
         drop(model_index);
         if commit_session.commit_model(candidate)?.is_err() {
             super::push_geometry_loss(

@@ -96,7 +96,6 @@ pub(crate) fn histories(
                 .try_fold(Vec::new(), |mut configurations, (ordinal, node)| {
                     let id = format!("sldprt:history:configuration#{source}:{ordinal}");
                     crate::annotations::note(
-                        ctx,
                         annotations,
                         id.as_str(),
                         stream,
@@ -159,7 +158,6 @@ pub(crate) fn histories(
                     })?;
                     let id = source_id.clone();
                     crate::annotations::note(
-                        ctx,
                         annotations,
                         id.as_str(),
                         stream,
@@ -307,7 +305,6 @@ pub(crate) fn histories(
                 .collect::<Vec<_>>();
             let id = parent;
             crate::annotations::note(
-                ctx,
                 annotations,
                 id.as_str(),
                 stream,

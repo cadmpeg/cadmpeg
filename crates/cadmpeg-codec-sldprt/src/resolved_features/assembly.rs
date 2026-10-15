@@ -102,7 +102,6 @@ fn feature_input_lane(
                 }
             });
         crate::annotations::note(
-            ctx,
             annotations,
             entity.id(),
             source.source_stream(),
@@ -112,7 +111,6 @@ fn feature_input_lane(
         )?;
     }
     crate::annotations::note(
-        ctx,
         annotations,
         parent.as_str(),
         source.source_stream(),

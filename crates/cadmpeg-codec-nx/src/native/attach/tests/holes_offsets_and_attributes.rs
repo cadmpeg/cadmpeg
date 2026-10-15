@@ -41,14 +41,7 @@ fn insert_test_procedural_surface(
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
         source_object: None,
     });
-    ir.model
-        .add_procedural_surface(
-            &cadmpeg_ir::document::admission::StandardAdmission,
-            owner,
-            procedural,
-        )
-        .unwrap()
-        .unwrap();
+    ir.model.add_procedural_surface(owner, procedural).unwrap();
 }
 
 fn attach_test_body_procedural_surface(
@@ -243,7 +236,7 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
     let mut ir = CadIr::empty();
     ir.model = model;
 
-    crate::test_support::with_decode_context(|ctx| {
+    ({
         let operation_positions = BTreeMap::from([("blind", 0usize)]);
         assert_eq!(
             blind_hole_operations(std::slice::from_ref(&template), &operation_positions),
@@ -251,8 +244,7 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
         );
         let outputs = BTreeMap::from([(operation.clone(), vec![body.clone()])]);
         let projection =
-            blind_hole_body_projection(ctx, &ir, std::slice::from_ref(&operation), &outputs)
-                .expect("blind bore resource budget")
+            blind_hole_body_projection(&ir, std::slice::from_ref(&operation), &outputs)
                 .expect("complete blind-bore witness");
         assert_eq!(projection.outputs, outputs);
         assert_eq!(
@@ -268,12 +260,10 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
         );
         assert_eq!(
             blind_hole_axis_placements_for_operations(
-                ctx,
                 &ir,
                 std::slice::from_ref(&operation),
-                &outputs,
-            )
-            .unwrap(),
+                &outputs
+            ),
             BTreeMap::from([(
                 operation.clone(),
                 HolePlacement::Directed {
@@ -335,12 +325,10 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
             })
             .unwrap();
         assert!(blind_hole_body_projection(
-            ctx,
             &missing_cap,
             std::slice::from_ref(&operation),
-            &outputs,
+            &outputs
         )
-        .unwrap()
         .is_none());
         let mut duplicate_cap = ir.clone();
         duplicate_cap.model.faces.push(Face {
@@ -362,33 +350,25 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
             FaceId::mint("test:model:entity#blind-duplicate-cap-face").expect("identity grammar"),
         );
         assert!(blind_hole_body_projection(
-            ctx,
             &duplicate_cap,
             std::slice::from_ref(&operation),
-            &outputs,
+            &outputs
         )
-        .unwrap()
         .is_none());
         let mut sheet = ir.clone();
         sheet.model.bodies[0].kind = BodyKind::Sheet;
+        assert!(
+            blind_hole_body_projection(&sheet, std::slice::from_ref(&operation), &outputs)
+                .is_none()
+        );
         assert!(blind_hole_body_projection(
-            ctx,
-            &sheet,
-            std::slice::from_ref(&operation),
-            &outputs,
-        )
-        .unwrap()
-        .is_none());
-        assert!(blind_hole_body_projection(
-            ctx,
             &ir,
             &[operation.clone(), "second-operation".into()],
             &BTreeMap::from([
                 (operation, vec![body.clone()]),
                 ("second-operation".into(), vec![body]),
-            ]),
+            ])
         )
-        .unwrap()
         .is_none());
     });
 }
@@ -630,9 +610,7 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder_and_refuses_al
         let outputs = BTreeMap::from([(operation.clone(), vec![body.clone()])]);
         let body_faces = connected_solid_body_faces(&ir, &body).expect("solid body faces");
         assert_eq!(body_faces.len(), 3);
-        let cylinders = cylindrical_face_witnesses(default_ctx, &ir, &body_faces)
-            .unwrap()
-            .unwrap();
+        let cylinders = cylindrical_face_witnesses(&ir, &body_faces).unwrap();
         assert_eq!(cylinders.len(), 2);
         assert!(plane_annulus_witness(
             &ir,
@@ -758,9 +736,9 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder_and_refuses_al
 fn nx_offset_feature_requires_one_output_image_and_one_exact_distance() {
     use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
 
-    crate::test_support::with_decode_context(|ctx| {
+    ({
         let project_offset = |ir: &cadmpeg_ir::document::CadIr, outputs: &[BodyId]| {
-            offset_surface_feature_definition(ctx, ir, outputs).expect("offset resource admission")
+            offset_surface_feature_definition(ir, outputs)
         };
 
         let mut ir = cadmpeg_ir::document::CadIr::empty();
@@ -888,9 +866,9 @@ fn nx_offset_feature_requires_one_output_image_and_one_exact_distance() {
 
 #[test]
 fn nx_thicken_feature_uses_the_magnitude_of_one_owned_offset_distance() {
-    crate::test_support::with_decode_context(|ctx| {
+    ({
         let project_thicken = |ir: &cadmpeg_ir::document::CadIr, outputs: &[BodyId]| {
-            thicken_feature_definition(ctx, ir, outputs).expect("thicken resource admission")
+            thicken_feature_definition(ir, outputs)
         };
 
         let mut ir = cadmpeg_ir::document::CadIr::empty();
@@ -1008,9 +986,9 @@ fn nx_thicken_symmetric_offsets_require_identical_support_sets() {
     use cadmpeg_ir::geometry::ProceduralSurface;
     use cadmpeg_ir::ids::{BodyId, ProceduralSurfaceId, SurfaceId};
 
-    crate::test_support::with_decode_context(|ctx| {
+    ({
         let project_thicken = |ir: &cadmpeg_ir::document::CadIr, outputs: &[BodyId]| {
-            thicken_feature_definition(ctx, ir, outputs).expect("thicken resource admission")
+            thicken_feature_definition(ir, outputs)
         };
 
         let mut ir = cadmpeg_ir::document::CadIr::empty();
@@ -1120,9 +1098,7 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
             blend_feature_definition(ctx, ir, outputs, family).expect("blend resource admission")
         };
         let project_bipartition = |pairs: Vec<[SurfaceId; 2]>| {
-            blend_support_bipartition(ctx, &pairs)
-                .expect("blend graph resource admission")
-                .map(|sides| (sides.first, sides.second))
+            blend_support_bipartition(&pairs).map(|sides| (sides.first, sides.second))
         };
 
         let mut ir = cadmpeg_ir::document::CadIr::empty();

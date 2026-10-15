@@ -280,7 +280,7 @@ pub(super) fn project(
 ) -> Result<WireProjectionOutcome, CodecError> {
     // This scope appends carriers and preserves their identity and construction links.
     let mut procedural_admission =
-        cadmpeg_ir::document::procedural::ProceduralAdmission::new(ctx, &ir.model)?;
+        cadmpeg_ir::document::procedural::ProceduralAdmission::new(&ir.model);
 
     let mut records = BTreeMap::new();
     for record in parameters {

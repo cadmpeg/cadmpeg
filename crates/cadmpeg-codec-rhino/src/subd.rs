@@ -1215,9 +1215,7 @@ fn materialize(
                 tag,
                 None,
                 edge.sector_coefficients,
-                ctx,
             )
-            .map_err(SubdError::from)?
             .map_err(|error| malformed(edge.base.source_offset, error.to_string()))?,
         );
     }

@@ -43,13 +43,12 @@ impl NativeRecordNamespace {
 
     pub(super) fn rewrite<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(
         self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         kind: &str,
         record_index: u32,
         map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_, F>,
     ) -> Result<Self, cadmpeg_core::CodecError> {
         let source = self.serialized_id(kind, record_index).to_string();
-        let mut target = map.identity(ctx, &source)?;
+        let mut target = map.identity(&source)?;
 
         let (namespace, record) = target.rsplit_once(':').ok_or_else(|| {
             cadmpeg_core::CodecError::malformed("ASM identity has no record separator")

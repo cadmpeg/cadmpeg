@@ -5925,21 +5925,14 @@ fn append_text_curve(
                 ),
             ))
         }
-        TextCurve::Nurbs(nurbs) => CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            nurbs.try_clone_for_decode(ctx, "FreeCAD NURBS curve copy")?,
-        )),
+        TextCurve::Nurbs(nurbs) => CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs.clone())),
         TextCurve::Trimmed {
             parameter_range,
             basis,
         } => {
             let basis_id: CurveId = model_identity("curve", id.as_str(), "basis")?;
-            let basis_index = append_text_curve(
-                ctx,
-                basis.curve(),
-                basis_id.try_clone_for_decode(ctx, "FreeCAD curve basis identity copy")?,
-                association,
-                transfer,
-            )?;
+            let basis_index =
+                append_text_curve(ctx, basis.curve(), basis_id.clone(), association, transfer)?;
             let parameter_range = crate::topology_transfer::normalize_occt_curve_range(
                 transfer.curves[basis_index]
                     .geometry
@@ -5952,8 +5945,7 @@ fn append_text_curve(
                 Some(*parameter_range),
             )
             .unwrap_or(*parameter_range);
-            let procedural_id: CurveId =
-                id.try_clone_for_decode(ctx, "FreeCAD procedural curve identity copy")?;
+            let procedural_id: CurveId = id.clone();
             let admitted_payload =
                 cadmpeg_ir::geometry::curve_payloads::SubsetCurveConstruction::from_finite_parts(
                     basis_id,
@@ -5971,9 +5963,7 @@ fn append_text_curve(
                     ProceduralCurveDefinition::Subset(admitted_payload),
                 ),
             ));
-            transfer.curves[basis_index]
-                .geometry
-                .try_clone_for_decode(ctx, "FreeCAD curve geometry copy")?
+            transfer.curves[basis_index].geometry.clone()
         }
         TextCurve::Offset {
             distance,
@@ -5981,15 +5971,8 @@ fn append_text_curve(
             basis,
         } => {
             let basis_id: CurveId = model_identity("curve", id.as_str(), "basis")?;
-            append_text_curve(
-                ctx,
-                basis.curve(),
-                basis_id.try_clone_for_decode(ctx, "FreeCAD curve basis identity copy")?,
-                association,
-                transfer,
-            )?;
-            let procedural_id: CurveId =
-                id.try_clone_for_decode(ctx, "FreeCAD procedural curve identity copy")?;
+            append_text_curve(ctx, basis.curve(), basis_id.clone(), association, transfer)?;
+            let procedural_id: CurveId = id.clone();
             let admitted_payload = cadmpeg_ir::geometry::curve_payloads::OffsetCurveConstruction::from_admitted_direction(
                 basis_id, *distance, *direction,
             ).map_err(cadmpeg_core::CodecError::malformed)?;
@@ -6010,9 +5993,7 @@ fn append_text_curve(
         parameter_range: None,
         id,
         geometry,
-        source_object: Some(
-            (association).try_clone_for_decode(ctx, "FreeCAD geometry source association")?,
-        ),
+        source_object: Some((association).clone()),
     });
     Ok(index)
 }
@@ -6197,9 +6178,9 @@ fn append_text_surface(
                 ),
             ))
         }
-        TextSurface::Nurbs(nurbs) => SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-            nurbs.try_clone_for_decode(ctx, "FreeCAD NURBS surface copy")?,
-        )),
+        TextSurface::Nurbs(nurbs) => {
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs.clone()))
+        }
         TextSurface::Extrusion {
             direction,
             directrix,
@@ -6208,8 +6189,7 @@ fn append_text_surface(
             append_text_curve(
                 ctx,
                 directrix.curve(),
-                directrix_id
-                    .try_clone_for_decode(ctx, "FreeCAD surface directrix identity copy")?,
+                directrix_id.clone(),
                 association,
                 curve_transfer,
             )?;
@@ -6221,8 +6201,7 @@ fn append_text_surface(
                     None,
                     None,
                 );
-            let procedural_id: SurfaceId =
-                id.try_clone_for_decode(ctx, "FreeCAD procedural surface identity copy")?;
+            let procedural_id: SurfaceId = id.clone();
             let construction_id: ProceduralSurfaceId =
                 model_identity("surface", id.as_str(), "construction")?;
             transfer.procedural.push((
@@ -6244,13 +6223,11 @@ fn append_text_surface(
             append_text_curve(
                 ctx,
                 directrix.curve(),
-                directrix_id
-                    .try_clone_for_decode(ctx, "FreeCAD surface directrix identity copy")?,
+                directrix_id.clone(),
                 association,
                 curve_transfer,
             )?;
-            let procedural_id: SurfaceId =
-                id.try_clone_for_decode(ctx, "FreeCAD procedural surface identity copy")?;
+            let procedural_id: SurfaceId = id.clone();
             let admitted_payload =
                 cadmpeg_ir::geometry::surface_payloads::admit_revolution_axis_from_parts(
                     *axis_origin,
@@ -6301,13 +6278,12 @@ fn append_text_surface(
             let basis_index = append_text_surface(
                 ctx,
                 basis.surface(),
-                basis_id.try_clone_for_decode(ctx, "FreeCAD surface basis identity copy")?,
+                basis_id.clone(),
                 association,
                 curve_transfer,
                 transfer,
             )?;
-            let procedural_id: SurfaceId =
-                id.try_clone_for_decode(ctx, "FreeCAD procedural surface identity copy")?;
+            let procedural_id: SurfaceId = id.clone();
             let admitted_payload =
                 cadmpeg_ir::geometry::surface_payloads::SubsetSurfaceConstruction::try_new(
                     basis_id,
@@ -6327,16 +6303,14 @@ fn append_text_surface(
                     None,
                 ),
             ));
-            transfer.surfaces[basis_index]
-                .geometry
-                .try_clone_for_decode(ctx, "FreeCAD surface geometry copy")?
+            transfer.surfaces[basis_index].geometry.clone()
         }
         TextSurface::Offset { distance, basis } => {
             let basis_id: SurfaceId = model_identity("surface", id.as_str(), "basis")?;
             append_text_surface(
                 ctx,
                 basis.surface(),
-                basis_id.try_clone_for_decode(ctx, "FreeCAD surface basis identity copy")?,
+                basis_id.clone(),
                 association,
                 curve_transfer,
                 transfer,
@@ -6351,8 +6325,7 @@ fn append_text_surface(
                     cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
                     None,
                 );
-            let procedural_id: SurfaceId =
-                id.try_clone_for_decode(ctx, "FreeCAD procedural surface identity copy")?;
+            let procedural_id: SurfaceId = id.clone();
             let construction_id: ProceduralSurfaceId =
                 model_identity("surface", id.as_str(), "construction")?;
             transfer.procedural.push((
@@ -6370,9 +6343,7 @@ fn append_text_surface(
     transfer.surfaces.push(Surface {
         id,
         geometry,
-        source_object: Some(
-            (association).try_clone_for_decode(ctx, "FreeCAD geometry source association")?,
-        ),
+        source_object: Some((association).clone()),
     });
     Ok(index)
 }

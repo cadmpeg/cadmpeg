@@ -387,9 +387,7 @@ pub(in super::super) fn saved_spline_sketch_geometry(
     let Some(nurbs) = saved_spline_nurbs(ctx, spline, refusal)? else {
         return Ok(None);
     };
-    let knots = nurbs
-        .knots()
-        .try_clone_for_decode(ctx, "creo saved spline sketch knots")?;
+    let knots = nurbs.knots().clone();
     let mut controls = Vec::new();
     let weights = match nurbs.pole_rows() {
         cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { points } => {
@@ -567,21 +565,19 @@ pub(in super::super) fn interpolation_spline_surface(
 }
 
 pub(in super::super) fn placed_section_nurbs(
-    ctx: &DecodeContext<'_>,
     transform: &crate::placement::FeatureSectionTransform,
     nurbs: &NurbsCurve,
 ) -> Result<Option<NurbsCurve>, CodecError> {
-    nurbs.map_control_points(ctx, "creo placed section NURBS curve", |point| {
+    nurbs.map_control_points(|point| {
         Point3::from(section_xyz_in_model(transform, [point.x, point.y, point.z]))
     })
 }
 
 pub(super) fn translated_nurbs_curve(
-    ctx: &DecodeContext<'_>,
     curve: &NurbsCurve,
     translation: [f64; 3],
 ) -> Result<Option<NurbsCurve>, CodecError> {
-    curve.map_control_points(ctx, "creo translated NURBS curve", |point| {
+    curve.map_control_points(|point| {
         Point3::new(
             point.x + translation[0],
             point.y + translation[1],
@@ -659,9 +655,7 @@ pub(in super::super) fn extruded_nurbs_surface(
             rows: polynomial_rows,
         }
     };
-    let u_knots = directrix
-        .knots()
-        .try_clone_for_decode(ctx, "creo extruded NURBS U knots")?;
+    let u_knots = directrix.knots().clone();
     let mut v_knots = Vec::new();
     v_knots.extend([0.0, 0.0, 1.0, 1.0]);
     let v_knots = match cadmpeg_ir::geometry::nurbs::KnotVector::new(ctx, v_knots)? {
@@ -696,11 +690,10 @@ pub(in super::super) fn extruded_nurbs_surface(
 pub(super) fn copy_pcurve_nurbs(
     ctx: &DecodeContext<'_>,
     curve: &cadmpeg_ir::geometry::pcurve::PcurveNurbs,
-    knot_operation: &'static str,
 ) -> Result<cadmpeg_ir::geometry::pcurve::PcurveNurbs, CodecError> {
     use cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles;
 
-    let knots = curve.knots().try_clone_for_decode(ctx, knot_operation)?;
+    let knots = curve.knots().clone();
     let poles = match curve.pole_rows() {
         PcurveNurbsPoles::Polynomial { points } => PcurveNurbsPoles::Polynomial {
             points: points.clone(),
@@ -731,9 +724,7 @@ pub(super) fn sketch_nurbs_curve(
     let SketchGeometryDefinition::Nurbs { curve } = geometry.definition() else {
         return Ok(None);
     };
-    let knots = curve
-        .knots()
-        .try_clone_for_decode(ctx, "creo sketch NURBS lift knots")?;
+    let knots = curve.knots().clone();
     let poles = match curve.pole_rows() {
         PcurveNurbsPoles::Polynomial { points } => {
             let mut lifted = Vec::new();
@@ -777,7 +768,7 @@ pub(super) fn oriented_sketch_nurbs_curve(
         return Ok(None);
     };
     Ok(nurbs
-        .reverse_parameterization_in_range(ctx, lower, upper)?
+        .reverse_parameterization_in_range(lower, upper)
         .map(|()| nurbs))
 }
 
@@ -794,9 +785,7 @@ pub(super) fn sketch_nurbs_pcurve(
     let Some(nurbs) = oriented_sketch_nurbs_curve(ctx, geometry, reversed)? else {
         return Ok(None);
     };
-    let knots = nurbs
-        .knots()
-        .try_clone_for_decode(ctx, "creo sketch NURBS pcurve knots")?;
+    let knots = nurbs.knots().clone();
     let poles = match nurbs.pole_rows() {
         NurbsPoles3::Polynomial { points } => {
             let mut projected = Vec::new();
@@ -852,10 +841,10 @@ pub(in super::super) fn extrusion_brep_side_surface(
         let sweep = transform
             .normal()
             .map(|value| value * (span.upper() - span.lower()));
-        let Some(placed) = placed_section_nurbs(ctx, transform, &directrix)? else {
+        let Some(placed) = placed_section_nurbs(transform, &directrix)? else {
             return Ok(None);
         };
-        let Some(translated) = translated_nurbs_curve(ctx, &placed, lower_translation)? else {
+        let Some(translated) = translated_nurbs_curve(&placed, lower_translation)? else {
             return Ok(None);
         };
         let Some(surface) = extruded_nurbs_surface(
@@ -1261,11 +1250,9 @@ mod tests {
         .expect("fixture constructor admission")
         .expect("finite NURBS fixture");
 
-        assert!(crate::decode::with_test_decode_ctx(|ctx| {
-            translated_nurbs_curve(ctx, &curve, [f64::MAX, 0.0, 0.0])
-        })
-        .expect("translation resources")
-        .is_none());
+        assert!(({ translated_nurbs_curve(&curve, [f64::MAX, 0.0, 0.0]) })
+            .expect("translation resources")
+            .is_none());
         assert_eq!(curve.control_points()[0], Point3::new(f64::MAX, 0.0, 0.0));
     }
 
@@ -1290,11 +1277,9 @@ mod tests {
             0,
         )
         .expect("section frame");
-        assert!(crate::decode::with_test_decode_ctx(|ctx| {
-            placed_section_nurbs(ctx, &transform, &curve)
-        })
-        .expect("service resources")
-        .is_some());
+        assert!(({ placed_section_nurbs(&transform, &curve) })
+            .expect("service resources")
+            .is_some());
     }
 
     #[test]
@@ -1310,12 +1295,10 @@ mod tests {
         .expect("fixture constructor admission")
         .expect("finite curve");
         assert_eq!(
-            crate::decode::with_test_decode_ctx(|ctx| {
-                translated_nurbs_curve(ctx, &curve, [0.0, 0.0, 2.0])
-            })
-            .expect("service resources")
-            .expect("finite translation")
-            .control_points(),
+            ({ translated_nurbs_curve(&curve, [0.0, 0.0, 2.0]) })
+                .expect("service resources")
+                .expect("finite translation")
+                .control_points(),
             vec![Point3::new(1.0, 2.0, 2.0), Point3::new(3.0, 4.0, 2.0)]
         );
     }

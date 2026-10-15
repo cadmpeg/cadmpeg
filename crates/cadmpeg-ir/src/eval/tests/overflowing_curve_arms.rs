@@ -226,12 +226,7 @@ fn procedural_curve_model(
         source_object: None,
     });
     ir.model
-        .add_procedural_curve(
-            &crate::document::admission::StandardAdmission,
-            &owner,
-            ProceduralCurve::new(construction, definition(&ids)),
-        )
-        .unwrap()
+        .add_procedural_curve(&owner, ProceduralCurve::new(construction, definition(&ids)))
         .expect("procedural curve fixture");
     (ir, owner)
 }

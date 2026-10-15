@@ -364,38 +364,24 @@ impl SketchProfiles {
         self.0.is_empty()
     }
 
-    /// Append a profile containing one entity use after resource admission.
-    pub fn push_single(
-        &mut self,
-        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        entity: SketchEntityUse,
-    ) -> Result<(), cadmpeg_core::CodecError> {
+    /// Append a profile containing one entity use.
+    pub fn push_single(&mut self, entity: SketchEntityUse) {
         self.0.push(vec![entity]);
-        Ok(())
     }
 
     /// Retain matching uses and remove empty chains after every predicate returns.
-    pub fn retain_uses(
-        &mut self,
-        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        mut keep: impl FnMut(&SketchEntityUse) -> bool,
-    ) -> Result<(), cadmpeg_core::CodecError> {
+    pub fn retain_uses(&mut self, mut keep: impl FnMut(&SketchEntityUse) -> bool) {
         let mut decisions = Vec::new();
         for profile in &self.0 {
             for usage in profile {
                 decisions.push(keep(usage));
             }
         }
-        let mut decision_index = 0;
+        let mut decisions = decisions.into_iter();
         for profile in &mut self.0 {
-            profile.retain(|_| {
-                let decision = decisions[decision_index];
-                decision_index += 1;
-                decision
-            });
+            profile.retain(|_| decisions.next() == Some(true));
         }
         self.0.retain(|profile| !profile.is_empty());
-        Ok(())
     }
 
     /// Append a nonempty profile chain.
@@ -605,15 +591,6 @@ pub struct SketchGeometry(
 );
 
 impl SketchGeometry {
-    /// Copy geometry after charging each retained nested allocation.
-    pub fn try_clone_for_decode(
-        &self,
-        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        _operation: &'static str,
-    ) -> Result<Self, cadmpeg_core::CodecError> {
-        Ok(self.clone())
-    }
-
     /// Build from a definition whose field types already carry the admitted invariants.
     #[must_use]
     pub fn from_admitted_definition(
@@ -1368,52 +1345,44 @@ impl SpatialSketchProfile {
         normal: Vector3,
         u_axis: Vector3,
         boundary: Vec<SpatialSketchEntityUse>,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        operation: &'static str,
-    ) -> Result<Result<Self, &'static str>, cadmpeg_core::CodecError> {
+    ) -> Result<Self, &'static str> {
         let Some(origin) = FinitePoint3::new(origin) else {
-            return Ok(Err("spatial profile origin must be finite"));
+            return Err("spatial profile origin must be finite");
         };
         let Some(normal) = UnitVector3::new(normal) else {
-            return Ok(Err(SPATIAL_PROFILE_AXES_ERROR));
+            return Err(SPATIAL_PROFILE_AXES_ERROR);
         };
         let Some(u_axis) = UnitVector3::new(u_axis) else {
-            return Ok(Err(SPATIAL_PROFILE_AXES_ERROR));
+            return Err(SPATIAL_PROFILE_AXES_ERROR);
         };
-        Self::from_parts(origin, normal, u_axis, boundary, ctx, operation)
+        Self::from_parts(origin, normal, u_axis, boundary)
     }
 
-    /// Admit typed plane controls and charge temporary uniqueness storage.
+    /// Admit typed plane controls.
     pub fn from_parts(
         origin: FinitePoint3,
         normal: UnitVector3,
         u_axis: UnitVector3,
         boundary: Vec<SpatialSketchEntityUse>,
-        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        _operation: &'static str,
-    ) -> Result<Result<Self, &'static str>, cadmpeg_core::CodecError> {
+    ) -> Result<Self, &'static str> {
         let [n, u] = [normal.as_raw(), u_axis.as_raw()];
 
         let dot = n.x * u.x + n.y * u.y + n.z * u.z;
         if dot.abs() > EPS_SPATIAL_PROFILE_FRAME {
-            return Ok(Err(SPATIAL_PROFILE_AXES_ERROR));
+            return Err(SPATIAL_PROFILE_AXES_ERROR);
         }
         if boundary.is_empty() {
-            return Ok(Err(
-                "spatial profile boundary must be nonempty and contain distinct entities",
-            ));
+            return Err("spatial profile boundary must be nonempty and contain distinct entities");
         }
         if !distinct_sketch_members(boundary.iter().map(|use_| use_.entity.as_str())) {
-            return Ok(Err(
-                "spatial profile boundary must be nonempty and contain distinct entities",
-            ));
+            return Err("spatial profile boundary must be nonempty and contain distinct entities");
         }
-        Ok(Ok(Self {
+        Ok(Self {
             origin,
             normal,
             u_axis,
             boundary,
-        }))
+        })
     }
 
     /// Profile-plane origin in model space.
@@ -2000,9 +1969,8 @@ impl SpatialSketchNurbsCurve {
     pub fn try_map_control_points<E>(
         &mut self,
         map: impl Fn(usize, FinitePoint3) -> Result<FinitePoint3, E>,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ) -> Result<Result<(), E>, cadmpeg_core::CodecError> {
-        self.0.try_map_control_points(map, ctx)
+    ) -> Result<(), E> {
+        self.0.try_map_control_points(map)
     }
 }
 
@@ -2019,15 +1987,6 @@ pub struct SpatialSketchGeometry(
 );
 
 impl SpatialSketchGeometry {
-    /// Copy the retained geometry payload through the decode budget.
-    pub fn try_clone_for_decode(
-        &self,
-        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        _operation: &'static str,
-    ) -> Result<Self, cadmpeg_core::CodecError> {
-        Ok(self.clone())
-    }
-
     /// Borrow the admitted spatial geometry definition.
     #[must_use]
     pub fn definition(
@@ -3103,23 +3062,15 @@ impl TryFrom<SketchPolygonWire> for SketchPolygon {
 }
 
 impl SketchPolygon {
-    /// Admit decoded members and charge temporary uniqueness storage.
-    pub fn try_new(
-        entities: Vec<SketchEntityId>,
-        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        _operation: &'static str,
-    ) -> Result<Result<Self, &'static str>, cadmpeg_core::CodecError> {
+    /// Admit decoded members.
+    pub fn try_new(entities: Vec<SketchEntityId>) -> Result<Self, &'static str> {
         if entities.len() < 3 {
-            return Ok(Err(
-                "entities requires at least three distinct polygon members",
-            ));
+            return Err("entities requires at least three distinct polygon members");
         }
         if !distinct_sketch_members(entities.iter().map(SketchEntityId::as_str)) {
-            return Ok(Err(
-                "entities requires at least three distinct polygon members",
-            ));
+            return Err("entities requires at least three distinct polygon members");
         }
-        Ok(Ok(Self { entities }))
+        Ok(Self { entities })
     }
 
     /// Returns the ordered polygon members.

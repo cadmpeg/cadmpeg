@@ -20,7 +20,7 @@ use std::collections::BTreeSet;
 
 #[test]
 fn rm_appearance_is_created_once_per_definition() {
-    crate::test_support::with_decode_context(|ctx| {
+    ({
         let definition = crate::native::om::PartColorDefinition {
             id: "nx:test:color#201".into(),
             color_table: "nx:test:table#0".into(),
@@ -39,15 +39,10 @@ fn rm_appearance_is_created_once_per_definition() {
         let mut ir = cadmpeg_ir::document::CadIr::empty();
         let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
         let mut appearances = BTreeMap::new();
-        let stream = cadmpeg_ir::annotations::StreamHandle::new(
-            &cadmpeg_test_support::service_decode_context(),
-            cadmpeg_ir::stream_name!("nx:container"),
-            "fixture stream handle",
-        )
-        .unwrap();
+        let stream =
+            cadmpeg_ir::annotations::StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
         for _ in 0..2 {
             ensure_rm_color_appearance(
-                ctx,
                 &mut ir,
                 &mut annotations,
                 &mut appearances,

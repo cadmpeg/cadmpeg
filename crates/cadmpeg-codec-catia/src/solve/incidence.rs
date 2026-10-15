@@ -3870,7 +3870,6 @@ struct VisitComponentIncidencePairSolutionsWithCoordinateRootPolicyInputs<
     'input4,
     'input5,
     'input6,
-    
     'input8,
     F,
     V,
@@ -3920,13 +3919,9 @@ where
         'input6,
         'input7,
         'input8,
-        
         'input10,
-        
         'input12,
-        
         'input14,
-        
         'input16,
         'input17,
     > {
@@ -3948,22 +3943,7 @@ where
     }
     fn solve_component_domain(
         ctx: &DecodeContext<'_>,
-        inputs: SolveComponentDomainInputs<
-            '_,
-            '_,
-            '_,
-            '_,
-            '_,
-            '_,
-            '_,
-            '_,
-            '_,
-            '_,
-            '_,
-            '_,
-            '_,
-            '_,
-        >,
+        inputs: SolveComponentDomainInputs<'_, '_, '_, '_, '_, '_, '_, '_, '_, '_, '_, '_, '_, '_>,
     ) -> Result<bool, CodecError> {
         let SolveComponentDomainInputs {
             component,
@@ -4130,21 +4110,15 @@ where
         'input7,
         'input8,
         'input9,
-        
         'input11,
         'input12,
         'input13,
         'input14,
         'input15,
-        
         'input17,
-        
         'input19,
-        
         'input21,
-        
         'input23,
-        
         'input25,
         F,
         V,
@@ -4919,7 +4893,6 @@ struct VisitIncidenceEndpointPairSolutionsInputs<
     'input4,
     'input5,
     'input6,
-    
     'input8,
     'input9,
     'input10,
@@ -4944,20 +4917,7 @@ struct VisitIncidenceEndpointPairSolutionsInputs<
 
 fn visit_incidence_endpoint_pair_solutions<F, V>(
     ctx: &DecodeContext<'_>,
-    inputs: VisitIncidenceEndpointPairSolutionsInputs<
-        '_,
-        '_,
-        '_,
-        '_,
-        '_,
-        '_,
-        '_,
-        '_,
-        '_,
-        '_,
-        F,
-        V,
-    >,
+    inputs: VisitIncidenceEndpointPairSolutionsInputs<'_, '_, '_, '_, '_, '_, '_, '_, '_, '_, F, V>,
 ) -> Result<IncidenceSolve<usize>, CodecError>
 where
     F: Fn(&[[usize; 2]]) -> Result<bool, CodecError>,
@@ -4988,7 +4948,6 @@ pub(super) struct VisitIncidenceEndpointPairSolutionsWithCoordinateRootPolicyInp
     'input4,
     'input5,
     'input6,
-    
     'input8,
     'input9,
     'input10,

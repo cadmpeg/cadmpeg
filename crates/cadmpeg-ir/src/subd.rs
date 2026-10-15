@@ -933,47 +933,48 @@ impl SubdEdge {
         tag: SubdEdgeTag,
         knot_interval: Option<PositiveReal>,
         sector_coefficients: [FiniteReal; 2],
-        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ) -> Result<Result<Self, SubdError>, cadmpeg_core::CodecError> {
+    ) -> Result<Self, SubdError> {
         if vertices[0] == vertices[1] {
-            return Ok(Err(SubdError::Admission(
+            return Err(SubdError::Admission(
                 "vertices must name distinct endpoints".to_owned(),
-            )));
+            ));
         }
-        Ok(Ok(Self {
+        Ok(Self {
             vertices,
             sharpness,
             tag,
             knot_interval,
             sector_coefficients,
-        }))
+        })
     }
 
-    /// Admit raw numeric controls under the caller decode policy.
+    /// Admit raw numeric controls.
     pub fn new(
         vertices: [u32; 2],
         sharpness: [f64; 2],
         tag: SubdEdgeTag,
         knot_interval: Option<f64>,
         sector_coefficients: [f64; 2],
-        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ) -> Result<Result<Self, SubdError>, cadmpeg_core::CodecError> {
-        Self::admit_raw_controls(
+    ) -> Result<Self, SubdError> {
+        let Ok(edge) = Self::admit_raw_controls::<std::convert::Infallible>(
             vertices,
             sharpness,
             tag,
-            || match knot_interval {
-                None => Ok(Ok(None)),
-                Some(value) => match PositiveReal::new(value) {
-                    Some(value) => Ok(Ok(Some(value))),
-                    None => Ok(Err(SubdError::Admission(
-                        "knot_interval must be finite and positive".to_owned(),
-                    ))),
-                },
+            || {
+                Ok(knot_interval
+                    .map(|value| {
+                        PositiveReal::new(value).ok_or_else(|| {
+                            SubdError::Admission(
+                                "knot_interval must be finite and positive".to_owned(),
+                            )
+                        })
+                    })
+                    .transpose())
             },
             sector_coefficients,
             |message| Ok(SubdError::Admission(message.to_owned())),
-        )
+        );
+        edge
     }
 
     /// Admit raw endpoint controls and an already positive interval.
@@ -983,16 +984,16 @@ impl SubdEdge {
         tag: SubdEdgeTag,
         knot_interval: Option<PositiveReal>,
         sector_coefficients: [f64; 2],
-        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ) -> Result<Result<Self, SubdError>, cadmpeg_core::CodecError> {
-        Self::admit_raw_controls(
+    ) -> Result<Self, SubdError> {
+        let Ok(edge) = Self::admit_raw_controls::<std::convert::Infallible>(
             vertices,
             sharpness,
             tag,
             || Ok(Ok(knot_interval)),
             sector_coefficients,
             |message| Ok(SubdError::Admission(message.to_owned())),
-        )
+        );
+        edge
     }
 
     fn admit_raw_controls<E>(

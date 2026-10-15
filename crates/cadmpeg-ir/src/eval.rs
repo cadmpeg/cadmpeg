@@ -259,66 +259,47 @@ impl Ord for SurfacePatchQueueEntry {
 }
 
 fn rational_surface_patches_with_budget(
-    ctx: &DecodeContext<'_>,
     surface: &NurbsSurface,
     budget: &WorkBudget,
-) -> Result<Option<Vec<RationalBezierSurfacePatch>>, ResourceLimit> {
+) -> Option<Vec<RationalBezierSurfacePatch>> {
     if !budget.charge() {
-        return Ok(None);
+        return None;
     }
-    let Some(u_degree) = usize::try_from(surface.u_degree()).ok() else {
-        return Ok(None);
-    };
-    let Some(v_degree) = usize::try_from(surface.v_degree()).ok() else {
-        return Ok(None);
-    };
+    let u_degree = usize::try_from(surface.u_degree()).ok()?;
+    let v_degree = usize::try_from(surface.v_degree()).ok()?;
     let u_count = surface.u_count();
     let v_count = surface.v_count();
     if u_degree >= u_count || v_degree >= v_count {
-        return Ok(None);
+        return None;
     }
     let mut points = Vec::new();
     let mut weights = surface.weight(0, 0).is_some().then(Vec::new);
     for u in 0..u_count {
         for v in 0..v_count {
-            let Some(point) = surface.pole(u, v) else {
-                return Ok(None);
-            };
+            let point = surface.pole(u, v)?;
             points.push(point);
             if let Some(weights) = &mut weights {
-                let Some(weight) = surface.weight(u, v) else {
-                    return Ok(None);
-                };
+                let weight = surface.weight(u, v)?;
                 weights.push(weight.get());
             }
         }
     }
-    let Some(homogeneous_controls) =
-        positive_controls(ctx, &points, weights.as_deref(), "Bezier positive controls")?
-    else {
-        return Ok(None);
-    };
+    let homogeneous_controls = positive_controls(&points, weights.as_deref())?;
     // Every row and column has the same active knot intervals.
-    let Some(u_domains) = surface.u_knots().active_spans(u_degree, u_count) else {
-        return Ok(None);
-    };
-    let Some(v_domains) = surface.v_knots().active_spans(v_degree, v_count) else {
-        return Ok(None);
-    };
+    let u_domains = surface.u_knots().active_spans(u_degree, u_count)?;
+    let v_domains = surface.v_knots().active_spans(v_degree, v_count)?;
     let mut u_spans_by_v = Vec::new();
     for v in 0..v_count {
         let controls: Vec<_> = (0..u_count)
             .map(|u| homogeneous_controls[u * v_count + v])
             .collect();
-        let Some(spans) = homogeneous_spans(ctx, u_degree, surface.u_knots(), &controls)? else {
-            return Ok(None);
-        };
+        let spans = homogeneous_spans(u_degree, surface.u_knots(), &controls)?;
 
         u_spans_by_v.push(spans);
     }
     for spans in &u_spans_by_v {
         if spans.len() != u_domains.len() {
-            return Ok(None);
+            return None;
         }
     }
     let mut patches = Vec::new();
@@ -328,16 +309,13 @@ fn rational_surface_patches_with_budget(
             let controls: Vec<_> = (0..v_count)
                 .map(|v| u_spans_by_v[v][u_span].controls[u_control])
                 .collect();
-            let Some(spans) = homogeneous_spans(ctx, v_degree, surface.v_knots(), &controls)?
-            else {
-                return Ok(None);
-            };
+            let spans = homogeneous_spans(v_degree, surface.v_knots(), &controls)?;
 
             v_spans_by_u.push(spans);
         }
         for spans in &v_spans_by_u {
             if spans.len() != v_domains.len() {
-                return Ok(None);
+                return None;
             }
         }
         for (v_span, &v_domain) in v_domains.iter().enumerate() {
@@ -354,24 +332,21 @@ fn rational_surface_patches_with_budget(
             });
         }
     }
-    Ok((!patches.is_empty()).then_some(patches))
+    (!patches.is_empty()).then_some(patches)
 }
 
 fn rational_surface_residual_patches(
-    ctx: &DecodeContext<'_>,
     surface: &NurbsSurface,
     point: Point3,
     budget: &WorkBudget,
-) -> Result<Option<Vec<RationalBezierSurfacePatch>>, ResourceLimit> {
+) -> Option<Vec<RationalBezierSurfacePatch>> {
     if !point.is_finite() {
-        return Ok(None);
+        return None;
     }
-    let Some(mut patches) = rational_surface_patches_with_budget(ctx, surface, budget)? else {
-        return Ok(None);
-    };
+    let mut patches = rational_surface_patches_with_budget(surface, budget)?;
     for patch in &mut patches {
         if !budget.charge() {
-            return Ok(None);
+            return None;
         }
         for control in &mut patch.controls {
             for (axis, coordinate) in [point.x, point.y, point.z].into_iter().enumerate() {
@@ -379,7 +354,7 @@ fn rational_surface_residual_patches(
             }
         }
     }
-    Ok(Some(patches))
+    Some(patches)
 }
 
 fn rational_patch_parameter_segment(
@@ -475,7 +450,7 @@ pub fn nurbs_surface_parameter_segment_chord_bound_with_budget(
         if chord.iter().any(|point| !point.is_finite()) {
             return Ok(None);
         }
-        let Some(patches) = rational_surface_patches_with_budget(ctx, surface, budget)? else {
+        let Some(patches) = rational_surface_patches_with_budget(surface, budget) else {
             return Ok(None);
         };
         let [first_u, first_v] = first.coordinates();
@@ -783,7 +758,7 @@ fn complete_nurbs_surface_starts(
 ) -> Result<Option<Vec<FinitePoint2>>, ResourceLimit> {
     const MAX_PATCHES: usize = 1_000_000;
 
-    let Some(mut patches) = rational_surface_residual_patches(ctx, surface, point, budget)? else {
+    let Some(mut patches) = rational_surface_residual_patches(surface, point, budget) else {
         return Ok(None);
     };
     let mut coordinate_scale = 1.0_f64;
@@ -1632,8 +1607,7 @@ fn nurbs_curve_parameter_near_point_with_nonnegative_tolerance(
         let Some(weights) = validated_nurbs_curve_weights(curve) else {
             return Ok(None);
         };
-        let Some(speed_bound) =
-            nurbs_curve_speed_bound_about(ctx, curve, point)?.map(FiniteReal::get)
+        let Some(speed_bound) = nurbs_curve_speed_bound_about(curve, point).map(FiniteReal::get)
         else {
             return Ok(None);
         };
@@ -1795,14 +1769,9 @@ fn nurbs_curve_parameter_near_point_newton(
 
 /// Global model-space speed bound for a structurally valid rational NURBS
 /// curve over its effective knot domain.
-pub fn nurbs_curve_speed_bound(
-    ctx: &DecodeContext<'_>,
-    curve: &NurbsCurve,
-) -> Result<Option<FiniteReal>, ResourceLimit> {
-    if nurbs_curve_parameter_domain(curve).is_none() {
-        return Ok(None);
-    }
-    nurbs_curve_speed_bound_about(ctx, curve, Point3::new(0.0, 0.0, 0.0))
+pub fn nurbs_curve_speed_bound(curve: &NurbsCurve) -> Option<FiniteReal> {
+    nurbs_curve_parameter_domain(curve)?;
+    nurbs_curve_speed_bound_about(curve, Point3::new(0.0, 0.0, 0.0))
 }
 
 enum ValidatedNurbsWeights {
@@ -1836,13 +1805,8 @@ fn validated_nurbs_curve_weights(curve: &NurbsCurve) -> Option<ValidatedNurbsWei
     Some(ValidatedNurbsWeights::Rational(weights))
 }
 
-fn nurbs_curve_speed_bound_about(
-    ctx: &DecodeContext<'_>,
-    curve: &NurbsCurve,
-    origin: Point3,
-) -> Result<Option<FiniteReal>, ResourceLimit> {
+fn nurbs_curve_speed_bound_about(curve: &NurbsCurve, origin: Point3) -> Option<FiniteReal> {
     speed_bound_by(
-        ctx,
         curve.degree(),
         curve.knots(),
         curve.pole_count(),
@@ -2082,32 +2046,27 @@ pub fn nurbs_pcurve_uv(
 /// the boundary-frame invariant of a fitted offset relation; it does not assert
 /// pointwise equality between independently fitted interior parameterizations.
 pub fn fitted_nurbs_offset_frame_distance(
-    _ctx: &DecodeContext<'_>,
     source: &crate::sketches::SketchGeometry,
     result: &crate::sketches::SketchGeometry,
     linear_tolerance: f64,
-) -> Result<Option<FiniteReal>, ResourceLimit> {
+) -> Option<FiniteReal> {
     use crate::sketches::SketchGeometryDefinition;
 
     if !linear_tolerance.is_finite() || linear_tolerance < 0.0 {
-        return Ok(None);
+        return None;
     }
     let (
         SketchGeometryDefinition::Nurbs { curve: source },
         SketchGeometryDefinition::Nurbs { curve: result },
     ) = (source.definition(), result.definition())
     else {
-        return Ok(None);
+        return None;
     };
     if source.periodic() || result.periodic() {
-        return Ok(None);
+        return None;
     }
-    let Some(source_frames) = clamped_nurbs_pcurve_endpoint_frames(source) else {
-        return Ok(None);
-    };
-    let Some(result_frames) = clamped_nurbs_pcurve_endpoint_frames(result) else {
-        return Ok(None);
-    };
+    let source_frames = clamped_nurbs_pcurve_endpoint_frames(source)?;
+    let result_frames = clamped_nurbs_pcurve_endpoint_frames(result)?;
     let same = fitted_nurbs_offset_candidate(source_frames, result_frames, linear_tolerance);
     let reversed = fitted_nurbs_offset_candidate(
         source_frames,
@@ -2123,10 +2082,10 @@ pub fn fitted_nurbs_offset_frame_distance(
         ],
         linear_tolerance,
     );
-    Ok(match (same, reversed) {
+    match (same, reversed) {
         (Some(distance), None) | (None, Some(distance)) => Some(distance),
         _ => None,
-    })
+    }
 }
 
 struct PcurveDifferential {
@@ -2432,14 +2391,13 @@ pub fn nurbs_pcurve_contains_point(
         None => None,
     };
     let Some(speed_bound) = speed_bound_by(
-        ctx,
         degree,
         knots,
         control_points.len(),
         |index| control_points.get(index).map(|point| [point.u, point.v]),
         |index| weights.map_or(1.0, |weights| weights[index]),
         [point.u, point.v],
-    )?
+    )
     .map(FiniteReal::get) else {
         return Ok(None);
     };

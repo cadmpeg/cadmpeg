@@ -65,17 +65,16 @@ const ZERO_ENTITY_WIRE_TOLERANCE: PositiveReal = match PositiveReal::new(2e-3) {
 };
 
 fn closed_wire_loop_members<'a>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     run: &'a crate::families::zero_entity::records::ZeroEntitySupportRun,
     loop_record: &'a crate::families::zero_entity::records::ZeroEntityLoop,
     support_curve_ids: &'a HashMap<u32, CurveId>,
-) -> Result<Option<Vec<ClosedWireMember<'a>>>, cadmpeg_core::CodecError> {
+) -> Option<Vec<ClosedWireMember<'a>>> {
     let member_count = loop_record.support_record_ordinals.len();
     if member_count == 0
         || loop_record.forward_senses.len() != member_count
         || loop_record.oriented_model_endpoints.len() != member_count
     {
-        return Ok(None);
+        return None;
     }
     let mut supports_by_ordinal = HashMap::new();
 
@@ -90,35 +89,29 @@ fn closed_wire_loop_members<'a>(
         .zip(&loop_record.oriented_model_endpoints)
         .zip(&loop_record.forward_senses)
     {
-        let Some(support) = supports_by_ordinal.get(record_ordinal).copied() else {
-            return Ok(None);
-        };
-        let Some(curve) = support_curve_ids.get(record_ordinal) else {
-            return Ok(None);
-        };
-        if support.model_endpoints.is_none() {
-            return Ok(None);
-        }
+        let support = supports_by_ordinal.get(record_ordinal).copied()?;
+        let curve = support_curve_ids.get(record_ordinal)?;
+        support.model_endpoints?;
         let parameter_range = support
             .model_parameters
             .map(|parameters| parameters.map(FiniteReal::get))
             .filter(|parameters| parameters[0] != parameters[1]);
         members.push(ClosedWireMember {
             support,
-            curve: curve.try_clone_for_decode(ctx, "catia_zero_wire_member_curve_id")?,
+            curve: curve.clone(),
             endpoints: *endpoints,
             forward: *forward,
             parameter_range,
         });
     }
-    Ok(members
+    members
         .iter()
         .enumerate()
         .all(|(index, member)| {
             let next_start = members[(index + 1) % member_count].endpoints[0];
             member.endpoints[1].distance(next_start.get()) <= ZERO_ENTITY_WIRE_TOLERANCE.get()
         })
-        .then_some(members))
+        .then_some(members)
 }
 
 fn append_oriented_wire_curve(
@@ -138,7 +131,6 @@ fn append_oriented_wire_curve(
             ProceduralCurveId::mint(format!("{}-construction", curve_id.as_str()))
                 .map_err(cadmpeg_core::CodecError::malformed)?;
         annotate(
-            admission.context(),
             annotations,
             &construction_id,
             "zero_entity_a9_03",
@@ -146,8 +138,8 @@ fn append_oriented_wire_curve(
             "oriented_support_model_curve_construction",
             Exactness::Derived,
         )?;
-        annotations.derived(admission.context(), &construction_id, "curve")?;
-        annotations.derived(admission.context(), &construction_id, "definition")?;
+        annotations.derived(&construction_id, "curve")?;
+        annotations.derived(&construction_id, "definition")?;
         let mut definition = definition;
         let cached = match cache_fit_tolerance.map(cadmpeg_ir::geometry::LegacyCache::new) {
             Some(cache) => definition
@@ -159,11 +151,7 @@ fn append_oriented_wire_curve(
             }
         };
         let admitted = match cached {
-            Ok(()) => Ok(ProceduralCurve::new(
-                construction_id
-                    .try_clone_for_decode(admission.context(), "catia_zero_wire_procedural_id")?,
-                definition,
-            )),
+            Ok(()) => Ok(ProceduralCurve::new(construction_id.clone(), definition)),
             Err(error) => Err(error),
         };
         match admitted {
@@ -186,7 +174,6 @@ fn append_oriented_wire_curve(
         geometry
     };
     annotate(
-        admission.context(),
         annotations,
         &curve_id,
         "zero_entity_a9_03",
@@ -194,7 +181,7 @@ fn append_oriented_wire_curve(
         "oriented_support_model_curve",
         Exactness::Derived,
     )?;
-    annotations.derived(admission.context(), &curve_id, "geometry")?;
+    annotations.derived(&curve_id, "geometry")?;
     admission.charge()?;
     ir.model.curves.push(Curve {
         parameter_range: None,
@@ -206,7 +193,6 @@ fn append_oriented_wire_curve(
 }
 
 fn copy_zero_procedural_definition(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &ProceduralCurveDefinition,
 ) -> Result<ProceduralCurveDefinition, cadmpeg_core::CodecError> {
     match definition {
@@ -219,11 +205,7 @@ fn copy_zero_procedural_definition(
                 },
         } => Ok(ProceduralCurveDefinition::SurfaceCurve {
             family: SurfaceCurveFamily::Parametric {
-                context: crate::resource::copy_intcurve_support_context(
-                    ctx,
-                    context,
-                    "catia_zero_wire_procedural_context_copy",
-                )?,
+                context: context.clone(),
                 tail: None,
             },
         }),
@@ -234,7 +216,6 @@ fn copy_zero_procedural_definition(
 }
 
 fn source_wire_procedural(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
     geometry: &CurveGeometry,
 ) -> Result<Option<WireSourceProcedural>, cadmpeg_core::CodecError> {
@@ -247,10 +228,8 @@ fn source_wire_procedural(
         .find(|candidate| candidate.id == *construction)
         .map(|candidate| {
             Ok(WireSourceProcedural {
-                construction_id: candidate
-                    .id
-                    .try_clone_for_decode(ctx, "catia_zero_wire_source_procedural_id")?,
-                definition: copy_zero_procedural_definition(ctx, candidate.definition())?,
+                construction_id: candidate.id.clone(),
+                definition: copy_zero_procedural_definition(candidate.definition())?,
                 cache_fit_tolerance: candidate.definition().cache_fit_tolerance(),
             })
         })
@@ -285,8 +264,7 @@ fn transfer_closed_wire_loops(
         };
 
         for loop_record in face.loops.iter().flatten() {
-            let Some(members) =
-                closed_wire_loop_members(admission.context(), run, loop_record, support_curve_ids)?
+            let Some(members) = closed_wire_loop_members(run, loop_record, support_curve_ids)
             else {
                 continue;
             };
@@ -309,7 +287,6 @@ fn transfer_closed_wire_loops(
             .map_err(cadmpeg_core::CodecError::malformed)?;
             if !root_owns_support_runs {
                 annotate(
-                    admission.context(),
                     annotations,
                     &body_id,
                     "zero_entity_a9_03",
@@ -318,7 +295,6 @@ fn transfer_closed_wire_loops(
                     Exactness::Inferred,
                 )?;
                 annotate(
-                    admission.context(),
                     annotations,
                     &region_id,
                     "zero_entity_a9_03",
@@ -327,7 +303,6 @@ fn transfer_closed_wire_loops(
                     Exactness::Inferred,
                 )?;
                 annotate(
-                    admission.context(),
                     annotations,
                     &shell_id,
                     "zero_entity_a9_03",
@@ -344,7 +319,6 @@ fn transfer_closed_wire_loops(
                 let point_id = PointId::mint(format!("catia:zero-entity:wire-point#{carrier_ordinal}-{face_ordinal}-{loop_ordinal}-{index}")).map_err(cadmpeg_core::CodecError::malformed)?;
                 let vertex_id = VertexId::mint(format!("catia:zero-entity:wire-vertex#{carrier_ordinal}-{face_ordinal}-{loop_ordinal}-{index}")).map_err(cadmpeg_core::CodecError::malformed)?;
                 annotate(
-                    admission.context(),
                     annotations,
                     &point_id,
                     "zero_entity_a9_03",
@@ -353,7 +327,6 @@ fn transfer_closed_wire_loops(
                     Exactness::Derived,
                 )?;
                 annotate(
-                    admission.context(),
                     annotations,
                     &vertex_id,
                     "zero_entity_a9_03",
@@ -361,23 +334,15 @@ fn transfer_closed_wire_loops(
                     "standalone_wire_vertex",
                     Exactness::Derived,
                 )?;
-                annotations.derived(admission.context(), &point_id, "position")?;
-                annotations.derived(admission.context(), &vertex_id, "point")?;
+                annotations.derived(&point_id, "position")?;
+                annotations.derived(&vertex_id, "point")?;
                 admission.charge()?;
-                ir.model.points.push(Point::new(
-                    point_id.try_clone_for_decode(
-                        admission.context(),
-                        "catia_zero_wire_point_record_id",
-                    )?,
-                    start,
-                    None,
-                ));
+                ir.model
+                    .points
+                    .push(Point::new(point_id.clone(), start, None));
                 admission.charge()?;
                 ir.model.vertices.push(Vertex {
-                    id: vertex_id.try_clone_for_decode(
-                        admission.context(),
-                        "catia_zero_wire_vertex_record_id",
-                    )?,
+                    id: vertex_id.clone(),
                     point: point_id,
                     tolerance: Some(ZERO_ENTITY_WIRE_TOLERANCE),
                 });
@@ -415,31 +380,13 @@ fn transfer_closed_wire_loops(
                             .curves
                             .iter()
                             .find(|candidate| candidate.id == *curve)
-                            .map(|candidate| {
-                                candidate.geometry.try_clone_for_decode(
-                                    admission.context(),
-                                    "catia_zero_wire_curve_copy",
-                                )
-                            })
-                            .transpose()?;
-                        source_curve_geometries.insert(
-                            curve.try_clone_for_decode(
-                                admission.context(),
-                                "catia_zero_wire_geometry_key",
-                            )?,
-                            geometry,
-                        );
+                            .map(|candidate| candidate.geometry.clone());
+                        source_curve_geometries.insert(curve.clone(), geometry);
                     }
                     let source_geometry = source_curve_geometries
                         .get(curve)
                         .and_then(Option::as_ref)
-                        .map(|geometry| {
-                            (geometry).try_clone_for_decode(
-                                admission.context(),
-                                "catia_zero_wire_curve_copy",
-                            )
-                        })
-                        .transpose()?;
+                        .cloned();
                     let canonical_source_range = match source_geometry.as_ref() {
                         Some(geometry) => crate::nurbs::canonical_model_curve_range(
                             geometry,
@@ -452,54 +399,24 @@ fn transfer_closed_wire_loops(
                     let source_range = canonical_source_range.unwrap_or(raw_source_range);
                     let existing = source_curve_orientations.get(curve).copied();
                     if canonical_source_range.is_none() {
-                        (
-                            curve.try_clone_for_decode(
-                                admission.context(),
-                                "catia_zero_wire_curve_id",
-                            )?,
-                            None,
-                        )
+                        (curve.clone(), None)
                     } else if let Some(orientation) = existing.filter(|orientation| {
                         orientation.reversed == reversed && orientation.source_range == source_range
                     }) {
-                        (
-                            curve.try_clone_for_decode(
-                                admission.context(),
-                                "catia_zero_wire_curve_id",
-                            )?,
-                            Some(orientation.edge_range),
-                        )
+                        (curve.clone(), Some(orientation.edge_range))
                     } else if !reversed && existing.is_some_and(|orientation| !orientation.reversed)
                     {
-                        (
-                            curve.try_clone_for_decode(
-                                admission.context(),
-                                "catia_zero_wire_curve_id",
-                            )?,
-                            Some(source_range),
-                        )
+                        (curve.clone(), Some(source_range))
                     } else if existing.is_none() && !reversed {
                         let procedural_available =
                             if matches!(&source_geometry, Some(CurveGeometry::Procedural { .. })) {
                                 if !source_curve_procedurals.contains_key(curve) {
                                     let procedural = source_geometry
                                         .as_ref()
-                                        .map(|geometry| {
-                                            source_wire_procedural(
-                                                admission.context(),
-                                                ir,
-                                                geometry,
-                                            )
-                                        })
+                                        .map(|geometry| source_wire_procedural(ir, geometry))
                                         .transpose()?
                                         .flatten();
-                                    source_curve_procedurals.insert(
-                                        curve.try_clone_for_decode(
-                                            admission.context(),
-                                            "catia_zero_wire_procedural_key",
-                                        )?,
-                                        procedural,
-                                    );
+                                    source_curve_procedurals.insert(curve.clone(), procedural);
                                 }
                                 source_curve_procedurals
                                     .get(curve)
@@ -509,45 +426,20 @@ fn transfer_closed_wire_loops(
                                 true
                             };
                         if source_geometry.is_none() || !procedural_available {
-                            (
-                                curve.try_clone_for_decode(
-                                    admission.context(),
-                                    "catia_zero_wire_curve_id",
-                                )?,
-                                None,
-                            )
+                            (curve.clone(), None)
                         } else {
                             let orientation = WireCurveOrientation {
                                 reversed,
                                 source_range,
                                 edge_range: source_range,
                             };
-                            source_curve_orientations.insert(
-                                curve.try_clone_for_decode(
-                                    admission.context(),
-                                    "catia_zero_wire_curve_id",
-                                )?,
-                                orientation,
-                            );
-                            (
-                                curve.try_clone_for_decode(
-                                    admission.context(),
-                                    "catia_zero_wire_curve_id",
-                                )?,
-                                Some(source_range),
-                            )
+                            source_curve_orientations.insert(curve.clone(), orientation);
+                            (curve.clone(), Some(source_range))
                         }
                     } else if let Some(geometry) = source_geometry {
                         if !source_curve_procedurals.contains_key(curve) {
-                            let procedural =
-                                source_wire_procedural(admission.context(), ir, &geometry)?;
-                            source_curve_procedurals.insert(
-                                curve.try_clone_for_decode(
-                                    admission.context(),
-                                    "catia_zero_wire_procedural_key",
-                                )?,
-                                procedural,
-                            );
+                            let procedural = source_wire_procedural(ir, &geometry)?;
+                            source_curve_procedurals.insert(curve.clone(), procedural);
                         }
                         let source_procedural =
                             source_curve_procedurals.get(curve).and_then(Option::as_ref);
@@ -561,10 +453,7 @@ fn transfer_closed_wire_loops(
                                 )
                                 .map(|(definition, edge_range)| {
                                     Ok::<_, cadmpeg_core::CodecError>((
-                                        geometry.try_clone_for_decode(
-                                            admission.context(),
-                                            "catia_zero_wire_curve_copy",
-                                        )?,
+                                        geometry.clone(),
                                         edge_range,
                                         Some((definition, procedural.cache_fit_tolerance)),
                                     ))
@@ -587,7 +476,6 @@ fn transfer_closed_wire_loops(
                                     .map(|procedural| {
                                         Ok::<_, cadmpeg_core::CodecError>((
                                             copy_zero_procedural_definition(
-                                                admission.context(),
                                                 &procedural.definition,
                                             )?,
                                             procedural.cache_fit_tolerance,
@@ -611,10 +499,7 @@ fn transfer_closed_wire_loops(
                                             })
                                         {
                                             candidate.replace_definition(
-                                                copy_zero_procedural_definition(
-                                                    admission.context(),
-                                                    definition,
-                                                )?,
+                                                copy_zero_procedural_definition(definition)?,
                                             );
                                             true
                                         } else {
@@ -627,10 +512,7 @@ fn transfer_closed_wire_loops(
                                             .iter_mut()
                                             .find(|candidate| candidate.id == *curve)
                                         {
-                                            candidate.geometry = geometry.try_clone_for_decode(
-                                                admission.context(),
-                                                "catia_zero_wire_curve_copy",
-                                            )?;
+                                            candidate.geometry = geometry.clone();
                                             true
                                         } else {
                                             false
@@ -641,31 +523,16 @@ fn transfer_closed_wire_loops(
                                 };
                                 if carrier_updated {
                                     source_curve_orientations.insert(
-                                        curve.try_clone_for_decode(
-                                            admission.context(),
-                                            "catia_zero_wire_curve_id",
-                                        )?,
+                                        curve.clone(),
                                         WireCurveOrientation {
                                             reversed,
                                             source_range,
                                             edge_range,
                                         },
                                     );
-                                    (
-                                        curve.try_clone_for_decode(
-                                            admission.context(),
-                                            "catia_zero_wire_curve_id",
-                                        )?,
-                                        Some(edge_range),
-                                    )
+                                    (curve.clone(), Some(edge_range))
                                 } else {
-                                    (
-                                        curve.try_clone_for_decode(
-                                            admission.context(),
-                                            "catia_zero_wire_curve_id",
-                                        )?,
-                                        None,
-                                    )
+                                    (curve.clone(), None)
                                 }
                             } else {
                                 let oriented_curve_id = CurveId::mint(format!("catia:zero-entity:wire-curve#{carrier_ordinal}-{face_ordinal}-{loop_ordinal}-{index}"))
@@ -674,10 +541,7 @@ fn transfer_closed_wire_loops(
                                     admission,
                                     ir,
                                     annotations,
-                                    oriented_curve_id.try_clone_for_decode(
-                                        admission.context(),
-                                        "catia_zero_wire_oriented_curve_record_id",
-                                    )?,
+                                    oriented_curve_id.clone(),
                                     geometry,
                                     support.pos,
                                     procedural,
@@ -685,31 +549,13 @@ fn transfer_closed_wire_loops(
                                 (oriented_curve_id, Some(edge_range))
                             }
                         } else {
-                            (
-                                curve.try_clone_for_decode(
-                                    admission.context(),
-                                    "catia_zero_wire_curve_id",
-                                )?,
-                                None,
-                            )
+                            (curve.clone(), None)
                         }
                     } else {
-                        (
-                            curve.try_clone_for_decode(
-                                admission.context(),
-                                "catia_zero_wire_curve_id",
-                            )?,
-                            None,
-                        )
+                        (curve.clone(), None)
                     }
                 } else {
-                    (
-                        curve.try_clone_for_decode(
-                            admission.context(),
-                            "catia_zero_wire_curve_id",
-                        )?,
-                        None,
-                    )
+                    (curve.clone(), None)
                 };
                 let param_range = param_range.and_then(|range| {
                     ir.model
@@ -728,7 +574,6 @@ fn transfer_closed_wire_loops(
                     None => None,
                 };
                 annotate(
-                    admission.context(),
                     annotations,
                     &edge_id,
                     "zero_entity_a9_03",
@@ -736,27 +581,20 @@ fn transfer_closed_wire_loops(
                     "standalone_wire_edge",
                     Exactness::Derived,
                 )?;
-                annotations.derived(admission.context(), &edge_id, "curve")?;
-                annotations.derived(admission.context(), &edge_id, "start")?;
-                annotations.derived(admission.context(), &edge_id, "end")?;
+                annotations.derived(&edge_id, "curve")?;
+                annotations.derived(&edge_id, "start")?;
+                annotations.derived(&edge_id, "end")?;
                 admission.charge()?;
                 ir.model.edges.push(Edge {
-                    id: edge_id.try_clone_for_decode(
-                        admission.context(),
-                        "catia_zero_wire_edge_record_id",
-                    )?,
+                    id: edge_id.clone(),
                     carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id), param_range)
                         .map_err(cadmpeg_core::CodecError::malformed)?,
-                    start: vertex_ids[index].try_clone_for_decode(
-                        admission.context(),
-                        "catia_zero_wire_edge_start_id",
-                    )?,
-                    end: vertex_ids[(index + 1) % member_count]
-                        .try_clone_for_decode(admission.context(), "catia_zero_wire_edge_end_id")?,
+                    start: vertex_ids[index].clone(),
+                    end: vertex_ids[(index + 1) % member_count].clone(),
                     tolerance: Some(ZERO_ENTITY_WIRE_TOLERANCE),
                 });
                 if param_range.is_some() {
-                    annotations.derived(admission.context(), &edge_id, "param_range")?;
+                    annotations.derived(&edge_id, "param_range")?;
                 }
                 edge_ids.push(edge_id);
                 counts.edges += 1;
@@ -765,14 +603,10 @@ fn transfer_closed_wire_loops(
             if root_owns_support_runs {
                 owned_edge_ids.extend(edge_ids);
             } else {
-                let regions = vec![region_id
-                    .try_clone_for_decode(admission.context(), "catia_zero_wire_region_id_copy")?];
+                let regions = vec![region_id.clone()];
                 admission.charge()?;
                 ir.model.bodies.push(Body {
-                    id: body_id.try_clone_for_decode(
-                        admission.context(),
-                        "catia_zero_wire_body_id_copy",
-                    )?,
+                    id: body_id.clone(),
                     kind: BodyKind::Wire,
                     regions,
                     transform: None,
@@ -780,14 +614,10 @@ fn transfer_closed_wire_loops(
                     color: None,
                     visible: None,
                 });
-                let shells = vec![shell_id
-                    .try_clone_for_decode(admission.context(), "catia_zero_wire_shell_id_copy")?];
+                let shells = vec![shell_id.clone()];
                 admission.charge()?;
                 ir.model.regions.push(Region {
-                    id: region_id.try_clone_for_decode(
-                        admission.context(),
-                        "catia_zero_wire_region_id_copy",
-                    )?,
+                    id: region_id.clone(),
                     body: body_id,
                     shells,
                 });
@@ -827,7 +657,6 @@ fn transfer_closed_wire_loops(
             ShellId::mint,
         )?;
         annotate(
-            admission.context(),
             annotations,
             &body_id,
             "zero_entity_a9_03",
@@ -836,7 +665,6 @@ fn transfer_closed_wire_loops(
             Exactness::Derived,
         )?;
         annotate(
-            admission.context(),
             annotations,
             &region_id,
             "zero_entity_a9_03",
@@ -845,7 +673,6 @@ fn transfer_closed_wire_loops(
             Exactness::Derived,
         )?;
         annotate(
-            admission.context(),
             annotations,
             &shell_id,
             "zero_entity_a9_03",
@@ -853,12 +680,10 @@ fn transfer_closed_wire_loops(
             "owned_wire_shell",
             Exactness::Derived,
         )?;
-        let regions = vec![region_id
-            .try_clone_for_decode(admission.context(), "catia_zero_wire_region_id_copy")?];
+        let regions = vec![region_id.clone()];
         admission.charge()?;
         ir.model.bodies.push(Body {
-            id: body_id
-                .try_clone_for_decode(admission.context(), "catia_zero_wire_body_id_copy")?,
+            id: body_id.clone(),
             kind: BodyKind::Wire,
             regions,
             transform: None,
@@ -866,13 +691,10 @@ fn transfer_closed_wire_loops(
             color: None,
             visible: None,
         });
-        let shells =
-            vec![shell_id
-                .try_clone_for_decode(admission.context(), "catia_zero_wire_shell_id_copy")?];
+        let shells = vec![shell_id.clone()];
         admission.charge()?;
         ir.model.regions.push(Region {
-            id: region_id
-                .try_clone_for_decode(admission.context(), "catia_zero_wire_region_id_copy")?,
+            id: region_id.clone(),
             body: body_id,
             shells,
         });
@@ -893,14 +715,13 @@ fn transfer_closed_wire_loops(
 }
 
 fn zero_entity_coverage(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     transferred_support_curves: usize,
     transferred_parametric_surface_curves: usize,
     wire_counts: WireTransferCounts,
     topology_counts: Option<
         crate::families::zero_entity::topology_transfer::ZeroEntityTopologyCounts,
     >,
-) -> Result<cadmpeg_ir::report::decode::Coverage, cadmpeg_core::CodecError> {
+) -> cadmpeg_ir::report::decode::Coverage {
     let mut coverage = cadmpeg_ir::report::decode::Coverage::default();
     for (key, count) in [
         (
@@ -936,7 +757,7 @@ fn zero_entity_coverage(
             wire_counts.points,
         ),
     ] {
-        coverage.record(ctx, key, count)?;
+        coverage.record(key, count);
     }
     if let Some(counts) = topology_counts {
         for (key, count) in [
@@ -973,10 +794,10 @@ fn zero_entity_coverage(
                 counts.pcurves,
             ),
         ] {
-            coverage.record(ctx, key, count)?;
+            coverage.record(key, count);
         }
     }
-    Ok(coverage)
+    coverage
 }
 
 pub(in crate::families) fn try_decode_zero_entity(
@@ -1029,19 +850,12 @@ pub(in crate::families) fn try_decode_zero_entity(
     let mut surface_ids_by_position = HashMap::new();
     for (index, surface) in surfaces.into_iter().enumerate() {
         let id = admitted!(crate::resource::compose_index_id(&cadmpeg_ir::identity_namespace!("catia", "zero-entity", "surf"), index, SurfaceId::mint));
-        admitted!(annotate(
-            ctx,
-            &mut annotations,
-            &id,
-            "zero_entity_a9_03",
-            u64_from_index(surface.pos),
-            "analytic_surface",
-            Exactness::ByteExact));
+        admitted!(annotate(&mut annotations, &id, "zero_entity_a9_03", u64_from_index(surface.pos), "analytic_surface", Exactness::ByteExact));
         if let Err(error) = admission.charge() {
             return Some(Err(error));
         }
         ir.model.surfaces.push(Surface {
-            id: admitted!(id.try_clone_for_decode(ctx, "catia_zero_surface_record_id")),
+            id: id.clone(),
             geometry: surface.geometry,
             source_object: None,
         });
@@ -1055,26 +869,18 @@ pub(in crate::families) fn try_decode_zero_entity(
         let Some(surface) = surface_ids_by_position.get(&run.carrier_pos) else {
             continue;
         };
-        let surface = admitted!(surface.try_clone_for_decode(ctx, "catia_zero_support_surface_id"));
+        let surface = surface.clone();
         for support in &run.supports {
             let curve_id = admitted!(crate::resource::compose_u32_id(&cadmpeg_ir::identity_namespace!("catia", "zero-entity", "support-curve"), support.record_ordinal, CurveId::mint));
-            if let Some(geometry) = admitted!(support.model_curve.as_ref()
-                .map(|geometry| (geometry).try_clone_for_decode(ctx, "catia_zero_wire_curve_copy")).transpose()) {
-                admitted!(annotate(
-                    ctx,
-                    &mut annotations,
-                    &curve_id,
-                    "zero_entity_a9_03",
-                    u64_from_index(support.pos),
-                    "support_model_curve",
-                    Exactness::Derived));
-                admitted!(annotations.derived(ctx, &curve_id, "geometry").map(|_| ()).map_err(cadmpeg_core::CodecError::from));
+            if let Some(geometry) = support.model_curve.clone() {
+                admitted!(annotate(&mut annotations, &curve_id, "zero_entity_a9_03", u64_from_index(support.pos), "support_model_curve", Exactness::Derived));
+                admitted!(annotations.derived(&curve_id, "geometry").map(|_| ()).map_err(cadmpeg_core::CodecError::from));
                 if let Err(error) = admission.charge() {
                     return Some(Err(error));
                 }
                 ir.model.curves.push(Curve {
                     parameter_range: None,
-                    id: admitted!(curve_id.try_clone_for_decode(ctx, "catia_zero_support_curve_record_id")),
+                    id: curve_id.clone(),
                     geometry,
                     source_object: None,
                 });
@@ -1084,7 +890,7 @@ pub(in crate::families) fn try_decode_zero_entity(
             }
 
             let (definition, role) =
-                if let Some(definition) = admitted!(support.model_curve_construction.as_ref().map(|definition| copy_zero_procedural_definition(ctx, definition)).transpose()) {
+                if let Some(definition) = admitted!(support.model_curve_construction.as_ref().map(copy_zero_procedural_definition).transpose()) {
                     (definition, "support_model_curve_construction")
                 } else {
                     let Some(pcurve) = support.pcurve.as_ref() else {
@@ -1135,7 +941,7 @@ pub(in crate::families) fn try_decode_zero_entity(
                                 context: IntcurveSupportContext::try_new(
                                     [
                                         IntcurveSupportSide {
-                                            surface: Some(admitted!(surface.try_clone_for_decode(ctx, "catia_zero_parametric_surface_id"))),
+                                            surface: Some(surface.clone()),
                                             pcurve: Some(pcurve.into()),
                                         },
                                         IntcurveSupportSide {
@@ -1155,25 +961,18 @@ pub(in crate::families) fn try_decode_zero_entity(
                 };
             let construction_id = admitted!(crate::resource::compose_u32_id(&cadmpeg_ir::identity_namespace!(
                     "catia", "zero-entity", "support-curve-construction"), support.record_ordinal, ProceduralCurveId::mint));
-            admitted!(annotate(
-                ctx,
-                &mut annotations,
-                &curve_id,
-                "zero_entity_a9_03",
-                u64_from_index(support.pos),
-                role,
-                Exactness::Derived));
-            admitted!(annotations.derived(ctx, &curve_id, "geometry").map(|_| ()).map_err(cadmpeg_core::CodecError::from));
-            admitted!(annotations.derived(ctx, &construction_id, "curve").map(|_| ()).map_err(cadmpeg_core::CodecError::from));
-            admitted!(annotations.derived(ctx, &construction_id, "definition").map(|_| ()).map_err(cadmpeg_core::CodecError::from));
+            admitted!(annotate(&mut annotations, &curve_id, "zero_entity_a9_03", u64_from_index(support.pos), role, Exactness::Derived));
+            admitted!(annotations.derived(&curve_id, "geometry").map(|_| ()).map_err(cadmpeg_core::CodecError::from));
+            admitted!(annotations.derived(&construction_id, "curve").map(|_| ()).map_err(cadmpeg_core::CodecError::from));
+            admitted!(annotations.derived(&construction_id, "definition").map(|_| ()).map_err(cadmpeg_core::CodecError::from));
             if let Err(error) = admission.charge() {
                 return Some(Err(error));
             }
             ir.model.curves.push(Curve {
                 parameter_range: None,
-                id: admitted!(curve_id.try_clone_for_decode(ctx, "catia_zero_parametric_curve_record_id")),
+                id: curve_id.clone(),
                 geometry: CurveGeometry::Procedural {
-                    construction: admitted!(construction_id.try_clone_for_decode(ctx, "catia_zero_parametric_curve_construction_id")),
+                    construction: construction_id.clone(),
                     cache: None,
                 },
                 source_object: None,
@@ -1191,7 +990,7 @@ pub(in crate::families) fn try_decode_zero_entity(
 
     let topology_counts = {
         let mut candidate_ir = std::mem::replace(&mut ir, CadIr::empty());
-        let mut candidate_annotations = admitted!(annotations.copy_transaction(ctx, "catia_zero_topology_annotations"));
+        let mut candidate_annotations = annotations.copy_transaction();
         let topology_budget = cadmpeg_core::decode::WorkBudget::new(crate::families::zero_entity::topology::MAX_ZERO_ENTITY_TOPOLOGY_OPERATIONS);
         let counts = crate::families::zero_entity::topology_transfer::transfer_closed_face_topology(
             &mut admission,
@@ -1216,7 +1015,7 @@ pub(in crate::families) fn try_decode_zero_entity(
         match counts {
             Ok(Some(counts)) if admissible => {
                 ir = candidate_ir;
-                annotations = admitted!(candidate_annotations.into_retained());
+                annotations = candidate_annotations.into_retained();
                 Some(counts)
             }
             Err(error) => return Some(Err(error)),
@@ -1256,16 +1055,10 @@ pub(in crate::families) fn try_decode_zero_entity(
         }
     };
 
-    if let Err(error) = link_payload_carriers(ctx, &ir, &mut unknowns[payload_index], &mut annotations) {
+    if let Err(error) = link_payload_carriers(&ir, &mut unknowns[payload_index], &mut annotations) {
         return Some(Err(error));
     }
-    let coverage = admitted!(zero_entity_coverage(
-        ctx,
-        transferred_support_curves,
-        transferred_parametric_surface_curves,
-        wire_counts,
-        topology_counts,
-    ));
+    let coverage = zero_entity_coverage(transferred_support_curves, transferred_parametric_surface_curves, wire_counts, topology_counts);
     let topology_message = if topology_counts.is_some() && ownership_root.is_some() {
         "Complete zero-entity radial support pairs and endpoint loci lower into connected neutral faces, loops, coedges, edges, vertices, p-curves, and a body/region/shell hierarchy bound to the complete native ownership root; source allocation identities and native physical-edge identity remain retained as native records."
     } else if topology_counts.is_some() {
@@ -1835,11 +1628,9 @@ mod tests {
         });
         ir.model
             .add_procedural_curve(
-                &cadmpeg_ir::document::admission::StandardAdmission,
                 &curve_id,
                 ProceduralCurve::new(construction_id.clone(), definition.clone()),
             )
-            .unwrap()
             .unwrap();
         let support_runs = vec![
             crate::families::zero_entity::records::ZeroEntitySupportRun {
@@ -2019,11 +1810,10 @@ mod tests {
 
     #[test]
     fn zero_entity_coverage_result() {
-        let build = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-            super::zero_entity_coverage(ctx, 1, 1, WireTransferCounts::default(), None)
+        let build = |_: &cadmpeg_core::decode::DecodeContext<'_>| {
+            super::zero_entity_coverage(1, 1, WireTransferCounts::default(), None)
         };
-        let service = crate::test_support::with_service_context(build)
-            .expect("service profile admits zero-entity coverage");
+        let service = crate::test_support::with_service_context(build);
         assert_eq!(
             service.get(crate::coverage::TRANSFERRED_ZERO_ENTITY_SUPPORT_CURVE_COUNT.as_str()),
             Some(&1)
@@ -2055,16 +1845,8 @@ mod tests {
             7,
             CurveId::mint("catia:test:wire#0".to_string()).expect("identity grammar"),
         )]);
-        let service = crate::test_support::with_service_context(|ctx| {
-            closed_wire_loop_members(ctx, &run, &loop_record, &curve_ids)
-        });
-        assert_eq!(
-            service
-                .expect("service resource budget")
-                .expect("closed wire")
-                .len(),
-            1
-        );
+        let service = { closed_wire_loop_members(&run, &loop_record, &curve_ids) };
+        assert_eq!(service.expect("closed wire").len(), 1);
     }
 
     #[test]
@@ -2080,9 +1862,7 @@ mod tests {
         .expect("fixture constructor admission")
         .expect("valid linear NURBS");
         let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs));
-        let service = crate::test_support::with_service_context(|ctx| {
-            geometry.try_clone_for_decode(ctx, "catia_zero_wire_curve_copy")
-        });
-        assert_eq!(service.expect("service budget"), geometry);
+        let service = { geometry.clone() };
+        assert_eq!(service, geometry);
     }
 }

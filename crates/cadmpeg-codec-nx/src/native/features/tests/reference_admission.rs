@@ -306,8 +306,8 @@ fn projected_curve_payload_admits_fixture() {
     let labels = feature_operation_labels(&container).expect("projected curve labels");
     let references =
         feature_projected_curve_references(&container).expect("projected curve references");
-    let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-        feature_projected_curve_construction_payloads(ctx, &container, &labels, &references)
+    let decode = |_: &cadmpeg_core::decode::DecodeContext<'_>| {
+        feature_projected_curve_construction_payloads(&container, &labels, &references)
     };
     assert_eq!(
         crate::test_support::with_decode_context(|ctx| decode(ctx))
@@ -320,10 +320,10 @@ fn projected_curve_payload_admits_fixture() {
 #[test]
 fn projected_curve_string_admits_fixture() {
     let container = projected_curve_payload_container();
-    let payloads = crate::test_support::with_decode_context(|ctx| {
+    let payloads = crate::test_support::with_decode_context(|_| {
         let labels = feature_operation_labels(&container)?;
         let references = feature_projected_curve_references(&container)?;
-        feature_projected_curve_construction_payloads(ctx, &container, &labels, &references)
+        feature_projected_curve_construction_payloads(&container, &labels, &references)
     })
     .expect("projected curve construction payloads");
     let decode = || feature_projected_curve_construction_strings(&container, &payloads);
@@ -437,10 +437,8 @@ fn surface_payload_route_admits_fixture() {
     let references =
         feature_surface_construction_references(&container).expect("admitted surface references");
     assert_eq!(references.len(), 14);
-    let payloads = crate::test_support::with_decode_context(|ctx| {
-        feature_surface_construction_payloads(ctx, &container, &references)
-    })
-    .expect("admitted surface payload");
+    let payloads = ({ feature_surface_construction_payloads(&container, &references) })
+        .expect("admitted surface payload");
     assert_eq!(payloads.len(), 1);
 }
 
@@ -461,10 +459,9 @@ fn draft_small_store_container() -> crate::container::Container<'static> {
 fn draft_payload_route_admits_fixture() {
     let lane = draft_resolved_lane();
     let container = draft_small_store_container();
-    let payloads = crate::test_support::with_decode_context(|ctx| {
-        feature_draft_construction_payloads(ctx, &container, std::slice::from_ref(&lane))
-    })
-    .expect("admitted draft payload");
+    let payloads =
+        ({ feature_draft_construction_payloads(&container, std::slice::from_ref(&lane)) })
+            .expect("admitted draft payload");
     assert_eq!(payloads.len(), 1);
 }
 
@@ -496,10 +493,9 @@ fn draft_graph_fixture_with_content(
         crate::container::scan_bytes(file).expect("synthetic draft graph content container");
     let lane = draft_resolved_lane();
     let references = draft_graph_references();
-    let mut payloads = crate::test_support::with_decode_context(|ctx| {
-        feature_draft_construction_graph_payloads(ctx, &container, &[lane], &references)
-    })
-    .expect("admitted draft graph content");
+    let mut payloads =
+        ({ feature_draft_construction_graph_payloads(&container, &[lane], &references) })
+            .expect("admitted draft graph content");
     assert_eq!(payloads.len(), 1);
     (container, payloads.remove(0))
 }
@@ -564,10 +560,8 @@ fn draft_identity_route_admits_fixture() {
         crate::test_support::test_prt::prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", part)]);
     let container = crate::container::scan_bytes(file).expect("synthetic draft identity container");
     let lane = draft_resolved_lane();
-    let mut payloads = crate::test_support::with_decode_context(|ctx| {
-        feature_draft_construction_payloads(ctx, &container, &[lane])
-    })
-    .expect("admitted draft construction payload");
+    let mut payloads = ({ feature_draft_construction_payloads(&container, &[lane]) })
+        .expect("admitted draft construction payload");
     assert_eq!(payloads.len(), 1);
     let payload = payloads.remove(0);
     let frames =
@@ -590,10 +584,8 @@ fn draft_index_route_admits_fixture() {
     let lanes =
         feature_draft_construction_index_lanes(&container).expect("admitted draft index lane");
     assert_eq!(lanes.len(), 1);
-    let payloads = crate::test_support::with_decode_context(|ctx| {
-        feature_draft_construction_payloads(ctx, &container, &lanes)
-    })
-    .expect("resolved draft index target blocks");
+    let payloads = ({ feature_draft_construction_payloads(&container, &lanes) })
+        .expect("resolved draft index target blocks");
     assert_eq!(payloads.len(), 1);
 }
 
@@ -602,9 +594,8 @@ fn draft_graph_payload_route_admits_fixture() {
     let lane = draft_resolved_lane();
     let references = draft_graph_references();
     let container = draft_small_store_container();
-    let payloads = crate::test_support::with_decode_context(|ctx| {
+    let payloads = ({
         feature_draft_construction_graph_payloads(
-            ctx,
             &container,
             std::slice::from_ref(&lane),
             &references,

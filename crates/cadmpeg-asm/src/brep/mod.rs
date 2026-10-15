@@ -602,7 +602,6 @@ pub fn decode_with_header(
     let (reversed_curve_refs, forward_curve_refs) = classify_edge_curve_senses(records, &reach)?;
 
     emit_carrier_records(
-        ctx,
         &mut out,
         records,
         &mut carriers,
@@ -639,7 +638,7 @@ pub fn decode_with_header(
         &reach,
         format,
     )?;
-    emit_loops(ctx, &mut out, records, &by_index, &reach, format)?;
+    emit_loops(&mut out, records, &by_index, &reach, format)?;
     emit_faces(
         &mut out,
         records,
@@ -662,14 +661,14 @@ pub fn decode_with_header(
             format,
         },
     )?;
-    let emitted_attributes = emit_attributes(ctx, &mut out, records, &by_index, &reach, format)?;
+    let emitted_attributes = emit_attributes(&mut out, records, &by_index, &reach, format)?;
     if purpose == DecodePurpose::Model {
         emit_passthrough_unknowns(ctx, &mut out, records, bytes, &reach, format)?;
         count_other_records(&mut out, records, &reach, &emitted_attributes)?;
         emit_annotation_records(&mut out, records, &by_index, &carriers, stream, format)?;
 
         classify_body_kinds(&mut out);
-        clamp_edge_ranges_to_carrier_domains(ctx, &mut out)?;
+        clamp_edge_ranges_to_carrier_domains(&mut out)?;
     }
 
     Ok(out)

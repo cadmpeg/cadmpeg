@@ -24,20 +24,8 @@ fn model_entity_wins_when_native_id_collides() {
     let ctx = cadmpeg_test_support::service_decode_context();
     let all_ids = super::BorrowedIdentities::build(&ctx, |add| add(id.as_str(), ())).unwrap();
     let mut builder = crate::AnnotationBuilder::new();
-    builder
-        .derived(
-            &cadmpeg_test_support::service_decode_context(),
-            &id,
-            "position",
-        )
-        .unwrap();
-    builder
-        .derived(
-            &cadmpeg_test_support::service_decode_context(),
-            &id,
-            "native_only",
-        )
-        .unwrap();
+    builder.derived(&id, "position").unwrap();
+    builder.derived(&id, "native_only").unwrap();
     let mut findings = Vec::new();
     check_annotations(
         &ctx,
@@ -60,27 +48,10 @@ fn annotation_keys_and_field_paths_are_checked() {
     let ir = unit_cube().expect("valid unit cube fixture");
     let mut source_fidelity = crate::SourceFidelity::default();
     let mut annotations = crate::AnnotationBuilder::new();
-    let stream = crate::annotations::StreamHandle::new(
-        &cadmpeg_test_support::service_decode_context(),
-        crate::stream_name!("test:source"),
-        "fixture stream handle",
-    )
-    .unwrap();
+    let stream = crate::annotations::StreamHandle::new(crate::stream_name!("test:source"));
+    annotations.note("missing", &stream, 0, None);
     annotations
-        .note(
-            &cadmpeg_test_support::service_decode_context(),
-            "missing",
-            &stream,
-            0,
-            None,
-        )
-        .unwrap();
-    annotations
-        .derived(
-            &cadmpeg_test_support::service_decode_context(),
-            ir.model.edges[0].id.as_str(),
-            "not_a_serialized_field",
-        )
+        .derived(ir.model.edges[0].id.as_str(), "not_a_serialized_field")
         .expect("nonempty exactness field");
     source_fidelity.annotations = annotations.build();
     let findings = crate::validate_neutral_with_source_fidelity(&ir, &source_fidelity, Vec::new())
@@ -271,7 +242,6 @@ fn native_annotation_paths_report_only_unresolvable_paths() {
         )
         .unwrap()],
     );
-    let preparation = cadmpeg_test_support::service_decode_context();
     let mut builder = crate::AnnotationBuilder::new();
     for path in [
         "id",
@@ -282,7 +252,7 @@ fn native_annotation_paths_report_only_unresolvable_paths() {
         "missing",
         "id.child",
     ] {
-        builder.derived(&preparation, id, path).unwrap();
+        builder.derived(id, path).unwrap();
     }
     let annotations = builder.build();
     let arena = DecodeArena::new();
@@ -311,14 +281,11 @@ fn annotations_on_many_model_points_resolve_without_findings() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let mut ir = crate::CadIr::empty();
     let prototype = unit_cube().unwrap().model.points.remove(0);
-    let preparation = cadmpeg_test_support::service_decode_context();
     let mut builder = crate::AnnotationBuilder::new();
     for ordinal in 0..2_000 {
         let mut point = prototype.clone();
         point.id = crate::ids::PointId::mint(format!("test:model:point#{ordinal}")).unwrap();
-        builder
-            .derived(&preparation, point.id.as_str(), "position.x")
-            .unwrap();
+        builder.derived(point.id.as_str(), "position.x").unwrap();
         ir.model.points.push(point);
     }
     let annotations = builder.build();

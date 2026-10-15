@@ -208,14 +208,13 @@ pub(in crate::native) fn feature_delete_reference_fields(
 /// Reconstruct one ordered logical payload from each complete same-store
 /// non-null `DELETE` reference field.
 pub(in crate::native) fn feature_delete_construction_payloads(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
     fields: &[FeatureDeleteReferenceField],
 ) -> Result<Vec<FeatureDeleteConstructionPayload>, cadmpeg_core::CodecError> {
     let blocks = offset_data_block_bytes(container)?;
     let mut output = Vec::new();
     for field in fields {
-        let Some(payload) = delete_construction_payload_from_field(ctx, field, &blocks)? else {
+        let Some(payload) = delete_construction_payload_from_field(field, &blocks)? else {
             continue;
         };
 
@@ -225,7 +224,6 @@ pub(in crate::native) fn feature_delete_construction_payloads(
 }
 
 fn delete_construction_payload_from_field(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     field: &FeatureDeleteReferenceField,
     blocks: &BTreeMap<String, (&[u8], u64)>,
 ) -> Result<Option<FeatureDeleteConstructionPayload>, cadmpeg_core::CodecError> {
@@ -258,7 +256,7 @@ fn delete_construction_payload_from_field(
     }) {
         return Ok(None);
     }
-    let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, blocks)? else {
+    let Some(content) = FeaturePayloadContent::from_source(data_blocks, blocks)? else {
         return Ok(None);
     };
     let Some(operation_key) = field
@@ -301,8 +299,8 @@ mod tests {
     fn delete_construction_preserves_complete_source_order() {
         let (field, blocks) = delete_construction_fixture();
 
-        crate::test_support::with_decode_context(|ctx| {
-            let payload = super::delete_construction_payload_from_field(ctx, &field, &blocks)
+        ({
+            let payload = super::delete_construction_payload_from_field(&field, &blocks)
                 .expect("admitted source blocks")
                 .expect("complete DELETE payload");
             assert_eq!(

@@ -92,7 +92,6 @@ use std::collections::{BTreeMap, BTreeSet};
 const EPS_FEATURE_LOCAL_SYSTEM_ORTHOGONAL: f64 = 1.0e-12;
 
 pub(super) fn thicken_feature_definition(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &CadIr,
     feature_id: u32,
@@ -126,14 +125,12 @@ pub(super) fn thicken_feature_definition(
         {
             FaceSelection::Resolved { faces, native }
         } else if let Some(faces) = generated_surface_face_refs(
-            ctx,
             &source_ids,
             &scan.surfaces.rows,
             &result_surface_ids,
             &available_features,
         )? {
-            FaceSelection::generated(faces, native.clone(), ctx)?
-                .unwrap_or(FaceSelection::Native(native))
+            FaceSelection::generated(faces, native.clone()).unwrap_or(FaceSelection::Native(native))
         } else {
             FaceSelection::Native(native)
         }
@@ -157,7 +154,6 @@ pub(super) fn thicken_feature_definition(
 }
 
 fn hole_face_selection(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &CadIr,
     feature_id: u32,
@@ -186,13 +182,12 @@ fn hole_face_selection(
         return Ok(FaceSelection::Native(native));
     }
     if let Some(faces) = generated_surface_face_refs(
-        ctx,
         &[surface_id],
         &scan.surfaces.rows,
         result_surface_ids,
         available_features,
     )? {
-        return Ok(FaceSelection::generated(faces, native.clone(), ctx)?
+        return Ok(FaceSelection::generated(faces, native.clone())
             .unwrap_or(FaceSelection::Native(native)));
     }
     Ok(FaceSelection::Native(native))
@@ -289,10 +284,10 @@ pub(in super::super) fn schema_feature_definition(
         return Ok(filled_surface_feature_definition(scan, ir, feature_id));
     }
     if numbered_feature_name_has_family(kind, "Thicken") {
-        return thicken_feature_definition(ctx, scan, ir, feature_id);
+        return thicken_feature_definition(scan, ir, feature_id);
     }
     if numbered_feature_name_has_family(kind, "Merge") {
-        return knit_surface_feature_definition(ctx, scan, feature_id);
+        return knit_surface_feature_definition(scan, feature_id);
     }
     if let Some(definition) = reference_named_feature_definition(kind) {
         return Ok(definition);
@@ -334,18 +329,18 @@ pub(in super::super) fn schema_feature_definition(
             &scan.surfaces.rows,
         );
         let stepped_dimensions = if stepped_form == Some(HoleForm::Counterbore) {
-            counterbore_dimensions(ctx, scan, ir, feature_id)?
+            counterbore_dimensions(scan, ir, feature_id)
         } else {
             None
         };
         let stepped_directed = if stepped_form == Some(HoleForm::Counterbore) {
-            counterbore_directed_placement(ctx, scan, ir, source_carriers, feature_id)?
+            counterbore_directed_placement(scan, ir, source_carriers, feature_id)?
         } else {
             None
         };
         let stepped_axis =
             if stepped_form == Some(HoleForm::Counterbore) && stepped_directed.is_none() {
-                counterbore_axis_placement(ctx, scan, ir, feature_id)?
+                counterbore_axis_placement(scan, ir, feature_id)
             } else {
                 None
             };
@@ -385,7 +380,6 @@ pub(in super::super) fn schema_feature_definition(
         let available_features = model_feature_ids(scan)?;
         let face_selection = |surface_id| {
             hole_face_selection(
-                ctx,
                 scan,
                 ir,
                 feature_id,
@@ -582,7 +576,7 @@ pub(in super::super) fn schema_feature_definition(
         return Ok(IrFeatureDefinition::Operation(IrFeatureOperation::Fillet {
             groups: cadmpeg_ir::features::NonEmptyMembers::one(
                 cadmpeg_ir::features::edge_treatments::FilletGroup {
-                    edges: feature_edge_selection(ctx, scan, ir, feature_id)?
+                    edges: feature_edge_selection(scan, ir, feature_id)?
                         .unwrap_or(EdgeSelection::Unresolved),
                     radius,
                     tangency_weight: None,
@@ -595,7 +589,7 @@ pub(in super::super) fn schema_feature_definition(
             IrFeatureOperation::Chamfer {
                 groups: cadmpeg_ir::features::NonEmptyMembers::one(
                     cadmpeg_ir::features::edge_treatments::ChamferGroup {
-                        edges: feature_edge_selection(ctx, scan, ir, feature_id)?
+                        edges: feature_edge_selection(scan, ir, feature_id)?
                             .unwrap_or(EdgeSelection::Unresolved),
                         spec: chamfer_constant_distance(scan, ir, source_carriers, feature_id)?
                             .and_then(cadmpeg_ir::scalar::PositiveLength::new)
@@ -636,11 +630,9 @@ pub(in super::super) fn schema_feature_definition(
                     },
                 );
             let profile = match definition {
-                Some(definition) => section_profile_ref(
-                    ctx,
-                    ir,
-                    feature_sketch_record_id_in_scan(scan, definition),
-                )?,
+                Some(definition) => {
+                    section_profile_ref(ir, feature_sketch_record_id_in_scan(scan, definition))
+                }
                 None => unresolved_feature_profile_ref(feature_id),
             };
             let output_kind = sweep_output_kind(scan, ir, "extrusion", feature_id);
@@ -661,7 +653,7 @@ pub(in super::super) fn schema_feature_definition(
         == Some(crate::feature::operations::FeatureRecipeKind::Revolve)
     {
         let extent = feature_revolution_extent(scan, feature_id);
-        let profile = unique_feature_profile_ref(ctx, scan, ir, feature_id)?;
+        let profile = unique_feature_profile_ref(scan, ir, feature_id);
         let axis = feature_revolution_axis_for_transfer(
             ctx,
             scan,
@@ -747,14 +739,9 @@ pub(in super::super) fn schema_feature_definition(
             Some(None) => unique_owned_feature_definition(&scan.features.definitions, feature_id),
             None => None,
         };
-        let profile = match definition {
-            Some(definition) => Some(section_profile_ref(
-                ctx,
-                ir,
-                feature_sketch_record_id_in_scan(scan, definition),
-            )?),
-            None => None,
-        };
+        let profile = definition.map(|definition| {
+            section_profile_ref(ir, feature_sketch_record_id_in_scan(scan, definition))
+        });
         let output_kind = sweep_output_kind(scan, ir, "extrusion", feature_id);
         let op = section_sweep_boolean_operation(
             feature_recipe_effect(scan, feature_id),
@@ -876,7 +863,7 @@ pub(in super::super) fn schema_feature_definition(
         ));
     }
     if schema_class == Some(SchemaClass::SurfaceMerge) {
-        return knit_surface_feature_definition(ctx, scan, feature_id);
+        return knit_surface_feature_definition(scan, feature_id);
     }
     if schema_class == Some(SchemaClass::CoordinateSystem) && kind == "PRT_CSYS_DEF" {
         if let Some(definition) = exactly_one(
@@ -929,14 +916,7 @@ pub(in super::super) fn schema_feature_definition(
             output_kind.is_some(),
             preceding_features_establish_body(ir),
         );
-        return extrude_feature_definition_with_profile(
-            ctx,
-            scan,
-            ir,
-            source_carriers,
-            feature_id,
-            op,
-        );
+        return extrude_feature_definition_with_profile(scan, ir, source_carriers, feature_id, op);
     }
     if schema_class == Some(SchemaClass::Surface)
         && class_942_boundary_surface_entity_graph(
@@ -970,7 +950,8 @@ pub(in super::super) fn schema_feature_definition(
     }
     Ok(IrFeatureDefinition::Operation(IrFeatureOperation::Native {
         kind: kind.into(),
-        parameters: cadmpeg_core::text::named_entries(format_args!("creo:model:feature#{feature_id}"),
+        parameters: cadmpeg_core::text::named_entries(
+            format_args!("creo:model:feature#{feature_id}"),
             feature_parameters(scan, feature_id),
         )?,
     }))

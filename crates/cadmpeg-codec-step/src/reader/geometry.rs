@@ -402,7 +402,7 @@ pub(super) fn decode(
 ) -> Result<(StageOutcome<GeometryData>, CarrierIndex), CodecError> {
     // This scope appends carriers and preserves their identity and construction links.
     let mut procedural_admission =
-        cadmpeg_ir::document::procedural::ProceduralAdmission::new(ctx, &ir.model)?;
+        cadmpeg_ir::document::procedural::ProceduralAdmission::new(&ir.model);
 
     let mut losses = Vec::new();
     let scale = match length_scale(exchange, ctx)? {

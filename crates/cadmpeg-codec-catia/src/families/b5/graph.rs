@@ -1066,8 +1066,7 @@ fn parse_from_records_with_class21(
         }
     }
     for jet in crate::families::a5a8::records::a8_freeform_curves(bytes) {
-        if let Some(definition) =
-            crate::families::a5a8::records::rolling_ball_jet_definition(ctx, &jet)?
+        if let Some(definition) = crate::families::a5a8::records::rolling_ball_jet_definition(&jet)
         {
             merge_surface_candidate(
                 &mut surfaces,
@@ -1156,13 +1155,8 @@ fn parse_from_records_with_class21(
             if budget.is_some_and(|budget| !budget.charge_by(records.len())) {
                 return Ok(None);
             }
-            let mut changed = resolve_surface_aliases(
-                ctx,
-                records,
-                by_id,
-                &mut surfaces,
-                &mut conflicting_surfaces,
-            )?;
+            let mut changed =
+                resolve_surface_aliases(records, by_id, &mut surfaces, &mut conflicting_surfaces)?;
             for record in records {
                 let Some(offset) =
                     parse_offset_surface(record, &surfaces, &extrusion_surfaces, by_id)
@@ -1170,7 +1164,7 @@ fn parse_from_records_with_class21(
                     continue;
                 };
                 let carrier = if let Some(carrier) = surfaces.get(&offset.carrier_surface) {
-                    copy_surface(ctx, carrier)?
+                    copy_surface(carrier)?
                 } else {
                     let Some(record) = by_id.get(&offset.carrier_surface) else {
                         continue;
@@ -1186,7 +1180,7 @@ fn parse_from_records_with_class21(
                     &mut surfaces,
                     &mut conflicting_surfaces,
                     offset.carrier_surface,
-                    copy_surface(ctx, &carrier)?,
+                    copy_surface(&carrier)?,
                 ) || !merge_surface_candidate(
                     &mut surfaces,
                     &mut conflicting_surfaces,
@@ -1206,7 +1200,7 @@ fn parse_from_records_with_class21(
                 let Some(carrier) = surfaces.get(&construction.carrier_surface) else {
                     continue;
                 };
-                let carrier = copy_surface(ctx, carrier)?;
+                let carrier = copy_surface(carrier)?;
                 let parameters_match_carrier =
                     supported_surface_parameters_match_carrier(&construction.parameters, &carrier);
                 let surface_changed = surfaces.get(&record.object_id) != Some(&carrier);
@@ -1228,13 +1222,8 @@ fn parse_from_records_with_class21(
                     changed |= surface_changed || metadata_changed;
                 }
             }
-            changed |= resolve_surface_aliases(
-                ctx,
-                records,
-                by_id,
-                &mut surfaces,
-                &mut conflicting_surfaces,
-            )?;
+            changed |=
+                resolve_surface_aliases(records, by_id, &mut surfaces, &mut conflicting_surfaces)?;
             if !changed {
                 break;
             }
@@ -1537,7 +1526,7 @@ fn unresolved_surface_candidate(surface: &B5Surface) -> bool {
     )
 }
 
-fn copy_surface(ctx: &DecodeContext<'_>, surface: &B5Surface) -> Result<B5Surface, CodecError> {
+fn copy_surface(surface: &B5Surface) -> Result<B5Surface, CodecError> {
     Ok(match surface {
         B5Surface::UnresolvedNurbs { header, payload } => B5Surface::UnresolvedNurbs {
             header: header.clone(),
@@ -1552,9 +1541,7 @@ fn copy_surface(ctx: &DecodeContext<'_>, surface: &B5Surface) -> Result<B5Surfac
             class: *class,
             payload: payload.clone(),
         },
-        B5Surface::Nurbs(nurbs) => {
-            B5Surface::Nurbs(nurbs.try_clone_for_decode(ctx, "catia_b5_copied_nurbs_surface")?)
-        }
+        B5Surface::Nurbs(nurbs) => B5Surface::Nurbs(nurbs.clone()),
         B5Surface::RollingBall {
             carrier_object_id,
             definition,
@@ -1563,12 +1550,9 @@ fn copy_surface(ctx: &DecodeContext<'_>, surface: &B5Surface) -> Result<B5Surfac
                 return Ok(surface.clone());
             };
             let stations = jet.stations().to_vec();
-            let jet = cadmpeg_ir::geometry::RollingBallJetStations::from_parts(
-                jet.degree(),
-                stations,
-                ctx,
-            )?
-            .map_err(CodecError::malformed)?;
+            let jet =
+                cadmpeg_ir::geometry::RollingBallJetStations::from_parts(jet.degree(), stations)
+                    .map_err(CodecError::malformed)?;
 
             B5Surface::RollingBall {
                 carrier_object_id: *carrier_object_id,
@@ -1580,7 +1564,6 @@ fn copy_surface(ctx: &DecodeContext<'_>, surface: &B5Surface) -> Result<B5Surfac
 }
 
 fn resolve_surface_aliases(
-    ctx: &DecodeContext<'_>,
     records: &[B5Record],
     by_id: &HashMap<u32, &B5Record>,
     surfaces: &mut BTreeMap<u32, B5Surface>,
@@ -1591,7 +1574,7 @@ fn resolve_surface_aliases(
         if surface_alias_target(record).is_none() {
             continue;
         }
-        let Some(candidate) = surface_alias_carrier(ctx, record.object_id, by_id, surfaces)? else {
+        let Some(candidate) = surface_alias_carrier(record.object_id, by_id, surfaces)? else {
             continue;
         };
         let unchanged = surfaces.get(&record.object_id) == Some(&candidate);
@@ -1603,7 +1586,6 @@ fn resolve_surface_aliases(
 }
 
 fn surface_alias_carrier(
-    ctx: &DecodeContext<'_>,
     mut object_id: u32,
     by_id: &HashMap<u32, &B5Record>,
     surfaces: &BTreeMap<u32, B5Surface>,
@@ -1617,14 +1599,14 @@ fn surface_alias_carrier(
             return surfaces
                 .get(&object_id)
                 .filter(|surface| !unresolved_surface_candidate(surface))
-                .map(|surface| copy_surface(ctx, surface))
+                .map(copy_surface)
                 .transpose();
         };
         let Some(target) = surface_alias_target(record) else {
             return surfaces
                 .get(&object_id)
                 .filter(|surface| !unresolved_surface_candidate(surface))
-                .map(|surface| copy_surface(ctx, surface))
+                .map(copy_surface)
                 .transpose();
         };
         object_id = target;
@@ -1966,8 +1948,7 @@ pub(in crate::families) fn targeted_surfaces_from_frames(
     }
     let mut rolling = HashMap::<u32, Option<B5Surface>>::new();
     for jet in crate::families::a5a8::records::a8_freeform_curves(bytes) {
-        let Some(definition) =
-            crate::families::a5a8::records::rolling_ball_jet_definition(ctx, &jet)?
+        let Some(definition) = crate::families::a5a8::records::rolling_ball_jet_definition(&jet)
         else {
             continue;
         };
@@ -2119,12 +2100,12 @@ fn resolve_targeted_surface_inner(
         let rolling_surface = rolling
             .get(&object_id)
             .and_then(Option::as_ref)
-            .map(|surface| copy_surface(ctx, surface))
+            .map(copy_surface)
             .transpose()?;
         let resolved_surface = resolved
             .get(&object_id)
             .and_then(Option::as_ref)
-            .map(|surface| copy_surface(ctx, surface))
+            .map(copy_surface)
             .transpose()?;
         match (rolling_surface, resolved_surface) {
             (Some(left), Some(right)) if left != right => return Ok(None),
@@ -2183,7 +2164,7 @@ fn resolve_targeted_analytic_offset(
         return Ok(None);
     };
     let mut surfaces = BTreeMap::new();
-    surfaces.insert(carrier_id, copy_surface(ctx, &carrier)?);
+    surfaces.insert(carrier_id, copy_surface(&carrier)?);
     if !matches!(carrier, B5Surface::RollingBall { .. }) {
         let Some(source) = resolve_targeted_surface_inner(
             ctx,

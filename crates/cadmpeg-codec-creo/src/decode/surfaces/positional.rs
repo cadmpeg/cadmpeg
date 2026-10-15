@@ -113,7 +113,6 @@ pub(in super::super) fn transfer_paired_envelope_spheres(
                 continue;
             };
             annotate(
-                ctx,
                 annotations,
                 &id,
                 section.name(),
@@ -241,7 +240,6 @@ pub(in super::super) fn transfer_positional_tori(
             ))
         };
         annotate(
-            ctx,
             annotations,
             &id,
             section.name(),
@@ -347,7 +345,6 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
             continue;
         };
         annotate(
-            ctx,
             annotations,
             &curve_id,
             "VisibGeom",
@@ -356,7 +353,6 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
             Exactness::Derived,
         )?;
         annotate(
-            ctx,
             annotations,
             &surface_id,
             "VisibGeom",
@@ -365,7 +361,6 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
             Exactness::Derived,
         )?;
         annotate(
-            ctx,
             annotations,
             &procedural_id,
             "VisibGeom",
@@ -379,7 +374,7 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
             ir,
             Curve {
                 parameter_range: None,
-                id: curve_id.try_clone_for_decode(ctx, "creo construction curve identity copy")?,
+                id: curve_id.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)),
                 source_object: Some(SourceObjectAssociation {
                     geometry_role: None,
@@ -401,8 +396,7 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
             ctx,
             ir,
             Surface {
-                id: surface_id
-                    .try_clone_for_decode(ctx, "creo construction surface identity copy")?,
+                id: surface_id.clone(),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)),
                 source_object: Some(SourceObjectAssociation {
                     geometry_role: None,
@@ -420,7 +414,6 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
             },
         )?;
         source_carriers.admit_procedural_surface(
-            ctx,
             ir,
             &surface_id,
             cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
@@ -584,7 +577,6 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
             replay.surface_id,
         )?;
         annotate(
-            ctx,
             annotations,
             &curve_id,
             "VisibGeom",
@@ -593,7 +585,6 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
             Exactness::Derived,
         )?;
         annotate(
-            ctx,
             annotations,
             &surface_id,
             "VisibGeom",
@@ -602,7 +593,6 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
             Exactness::Derived,
         )?;
         annotate(
-            ctx,
             annotations,
             &procedural_id,
             "VisibGeom",
@@ -616,7 +606,7 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
             ir,
             Curve {
                 parameter_range: None,
-                id: curve_id.try_clone_for_decode(ctx, "creo construction curve identity copy")?,
+                id: curve_id.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(directrix)),
                 source_object: Some(SourceObjectAssociation {
                     geometry_role: None,
@@ -638,8 +628,7 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
             ctx,
             ir,
             Surface {
-                id: surface_id
-                    .try_clone_for_decode(ctx, "creo construction surface identity copy")?,
+                id: surface_id.clone(),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
                 source_object: Some(SourceObjectAssociation {
                     geometry_role: None,
@@ -657,7 +646,6 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
             },
         )?;
         source_carriers.admit_procedural_surface(
-            ctx,
             ir,
             &surface_id,
             cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(

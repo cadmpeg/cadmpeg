@@ -428,13 +428,9 @@ impl NativeRecord {
         let mut fields = self.fields();
         fields.insert("id".to_owned(), Value::String(self.id.as_str().to_owned()));
         let mut value = Value::Object(fields);
-        let mut identities = crate::schema::rewrite::typed::IdentityMap::new(
-            ctx,
-            "rewrite typed native identities",
-            map,
-        )?;
+        let mut identities = crate::schema::rewrite::typed::IdentityMap::new(map);
         T::rewrite_native_value(ctx, &mut value, &mut identities)?;
-        identities.finish(ctx)?;
+        identities.finish()?;
         let Value::Object(mut fields) = value else {
             return Err(
                 cadmpeg_core::CodecError::malformed("native record must be an object").into(),

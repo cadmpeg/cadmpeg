@@ -162,7 +162,6 @@ fn numerical_0922b_unclamped_curve_inverse() {
             .unwrap();
             let budget = GeometryWorkBudget::from_context(geometry_ctx, 100_000);
             let p = closest_nurbs_curve_parameter_with_budget(&curve, target.get(), None, &budget)
-                .expect("evaluator allocation succeeds")
                 .unwrap();
             let actual = cadmpeg_ir::eval::decode::nurbs_curve_point_at(
                 cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
@@ -205,7 +204,6 @@ fn numerical_0922b_small_domain_inverse() {
             .unwrap();
             let budget = GeometryWorkBudget::from_context(geometry_ctx, 100_000);
             let p = closest_nurbs_curve_parameter_with_budget(&curve, target.get(), None, &budget)
-                .expect("evaluator allocation succeeds")
                 .unwrap();
             let actual = cadmpeg_ir::eval::decode::nurbs_curve_point_at(
                 cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
@@ -245,7 +243,6 @@ fn numerical_0922b_discontinuous_curve_inverse() {
             None,
             &GeometryWorkBudget::from_context(geometry_ctx, 100_000),
         )
-        .expect("evaluator allocation succeeds")
         .unwrap();
         let actual = cadmpeg_ir::eval::decode::nurbs_curve_point_at(
             cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
@@ -277,8 +274,7 @@ fn numerical_0922b_common_weight_inverse() {
                 Point3::new(0., 0., 0.),
                 None,
                 &budget,
-            )
-            .expect("evaluator allocation succeeds");
+            );
             println!("NX commonweight{w:e}: inverse{p:?}");
             assert_eq!(p, Some(0.));
         }
@@ -345,7 +341,6 @@ fn numerical_audit_inverse_and_grid_keep_wide_finite_chart() {
                 None,
                 &GeometryWorkBudget::from_context(geometry_ctx, 100_000),
             )
-            .expect("evaluator allocation succeeds")
             .unwrap();
             assert!(
                 (cadmpeg_ir::eval::decode::nurbs_curve_point_at(

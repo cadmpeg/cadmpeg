@@ -167,25 +167,17 @@ pub(super) fn insert_parameter_property(
     Ok(())
 }
 
-pub(super) fn body_surface_ids(
-    ctx: &DecodeContext<'_>,
-    ir: &CadIr,
-    body_id: &BodyId,
-) -> Result<Option<BTreeSet<SurfaceId>>, CodecError> {
-    let Some(faces) = body_faces(ir, body_id) else {
-        return Ok(None);
-    };
+pub(super) fn body_surface_ids(ir: &CadIr, body_id: &BodyId) -> Option<BTreeSet<SurfaceId>> {
+    let faces = body_faces(ir, body_id)?;
     let mut ids = BTreeSet::new();
     for face in &faces {
         if ids.contains(&face.surface) {
             continue;
         }
-        let surface = face
-            .surface
-            .try_clone_for_decode(ctx, "NX body surface identity copy")?;
+        let surface = face.surface.clone();
         ids.insert(surface);
     }
-    Ok(Some(ids))
+    Some(ids)
 }
 
 /// Neutral operand family named by an NX rolling-ball blend operation.
@@ -207,7 +199,7 @@ pub(super) fn blend_feature_definition(
     let [body] = outputs else {
         return Ok(None);
     };
-    let Some(body_surfaces) = body_surface_ids(ctx, ir, body)? else {
+    let Some(body_surfaces) = body_surface_ids(ir, body) else {
         return Ok(None);
     };
     let mut surfaces = Vec::new();
@@ -235,7 +227,7 @@ pub(super) fn blend_feature_definition(
             return Ok(None);
         }
 
-        surfaces.push(owner.try_clone_for_decode(ctx, "NX feature projection surface identity")?);
+        surfaces.push(owner.clone());
         match radius {
             BlendRadiusLaw::Constant { signed_radius } if signed_radius.get() != 0.0 => {
                 let magnitude = signed_radius.get().abs();
@@ -258,14 +250,7 @@ pub(super) fn blend_feature_definition(
                 if first.surface == second.surface {
                     complete_pairs = false;
                 } else {
-                    pairs.push([
-                        first
-                            .surface
-                            .try_clone_for_decode(ctx, "NX blend first support identity copy")?,
-                        second
-                            .surface
-                            .try_clone_for_decode(ctx, "NX blend second support identity copy")?,
-                    ]);
+                    pairs.push([first.surface.clone(), second.surface.clone()]);
                 }
             } else {
                 complete_pairs = false;
@@ -299,26 +284,21 @@ pub(super) fn blend_feature_definition(
         RadiusSpec::Unresolved { form: None }
     };
     let face_blend = if matches!(family, NxBlendFamily::Face) && complete_pairs {
-        if let Some(sides) = blend_support_bipartition(ctx, &pairs)? {
+        if let Some(sides) = blend_support_bipartition(&pairs) {
             let first_native = format!("{body}:blend-first-support-surfaces");
             let second_native = format!("{body}:blend-second-support-surfaces");
-            let (first_faces, _) = support_face_projection(ctx, ir, &sides.first, first_native)?;
-            let (second_faces, _) = support_face_projection(ctx, ir, &sides.second, second_native)?;
+            let (first_faces, _) = support_face_projection(ir, &sides.first, first_native);
+            let (second_faces, _) = support_face_projection(ir, &sides.second, second_native);
             match (&first_faces, &second_faces) {
                 (FaceSelection::Resolved { .. }, FaceSelection::Resolved { .. }) => {
                     cadmpeg_ir::features::FaceBlendOperands::new(first_faces, second_faces, ctx)?
                         .ok()
                         .map(|operands| {
-                            radius
-                                .try_clone_for_decode(ctx, "NX face blend radius copy")
-                                .map(|radius| {
-                                    FeatureDefinition::Operation(FeatureOperation::FaceBlend {
-                                        operands,
-                                        radius,
-                                    })
-                                })
+                            FeatureDefinition::Operation(FeatureOperation::FaceBlend {
+                                operands,
+                                radius: radius.clone(),
+                            })
                         })
-                        .transpose()?
                 }
                 _ => None,
             }
@@ -364,14 +344,11 @@ pub(super) struct BlendSides {
     pub(super) second: Vec<SurfaceId>,
 }
 
-pub(super) fn blend_support_bipartition(
-    ctx: &DecodeContext<'_>,
-    pairs: &[[SurfaceId; 2]],
-) -> Result<Option<BlendSides>, CodecError> {
+pub(super) fn blend_support_bipartition(pairs: &[[SurfaceId; 2]]) -> Option<BlendSides> {
     let mut adjacent = BTreeMap::<&SurfaceId, BTreeSet<&SurfaceId>>::new();
     for [first, second] in pairs {
         if first == second {
-            return Ok(None);
+            return None;
         }
         for (from, to) in [(first, second), (second, first)] {
             let neighbors = adjacent.entry(from).or_default();
@@ -392,7 +369,7 @@ pub(super) fn blend_support_bipartition(
             let side = sides[&surface];
             for neighbor in &adjacent[&surface] {
                 match sides.get(neighbor) {
-                    Some(neighbor_side) if *neighbor_side == side => return Ok(None),
+                    Some(neighbor_side) if *neighbor_side == side => return None,
                     Some(_) => {}
                     None => {
                         sides.insert(*neighbor, !side);
@@ -407,33 +384,29 @@ pub(super) fn blend_support_bipartition(
     for (&surface, &second_side) in &sides {
         let output = if second_side { &mut second } else { &mut first };
 
-        output.push(surface.try_clone_for_decode(ctx, "NX blend support identity copy")?);
+        output.push(surface.clone());
     }
     for surface in &first {
         for other in &second {
             if !adjacent[surface].contains(other) {
-                return Ok(None);
+                return None;
             }
         }
     }
-    Ok(Some(BlendSides { first, second }))
+    Some(BlendSides { first, second })
 }
 
 pub(super) fn offset_surface_feature_definition(
-    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     outputs: &[BodyId],
-) -> Result<Option<(FeatureDefinition, Vec<SurfaceId>)>, CodecError> {
-    let Some(OwnedOffsetSurfaceData {
+) -> Option<(FeatureDefinition, Vec<SurfaceId>)> {
+    let OwnedOffsetSurfaceData {
         body,
         distance,
         supports,
-    }) = owned_offset_surface_data(ctx, ir, outputs)?
-    else {
-        return Ok(None);
-    };
+    } = owned_offset_surface_data(ir, outputs)?;
     let native = format!("{}:offset-support-surfaces", body.as_str());
-    let (faces, senses) = support_face_projection(ctx, ir, &supports, native)?;
+    let (faces, senses) = support_face_projection(ir, &supports, native);
     let distance = senses
         .as_deref()
         .and_then(uniform_face_sense)
@@ -441,13 +414,13 @@ pub(super) fn offset_surface_feature_definition(
             Sense::Forward => distance,
             Sense::Reversed => distance.negated(),
         });
-    Ok(Some((
+    Some((
         FeatureDefinition::Operation(FeatureOperation::OffsetSurface {
             faces,
             distance: distance.map(Length::from_assigned_real),
         }),
         supports,
-    )))
+    ))
 }
 
 pub(super) struct OwnedOffsetSurfaceData<'a> {
@@ -457,42 +430,36 @@ pub(super) struct OwnedOffsetSurfaceData<'a> {
 }
 
 pub(super) fn owned_offset_surface_data<'a>(
-    ctx: &DecodeContext<'_>,
     ir: &'a CadIr,
     outputs: &'a [BodyId],
-) -> Result<Option<OwnedOffsetSurfaceData<'a>>, CodecError> {
-    let Some((body, carriers)) = owned_offset_carriers(ctx, ir, outputs)? else {
-        return Ok(None);
-    };
+) -> Option<OwnedOffsetSurfaceData<'a>> {
+    let (body, carriers) = owned_offset_carriers(ir, outputs)?;
     let distance = carriers[0].1;
     if carriers
         .iter()
         .any(|(_, candidate)| candidate.get().to_bits() != distance.get().to_bits())
     {
-        return Ok(None);
+        return None;
     }
-    let supports = unique_carrier_supports(ctx, &carriers)?;
-    Ok(Some(OwnedOffsetSurfaceData {
+    let supports = unique_carrier_supports(&carriers);
+    Some(OwnedOffsetSurfaceData {
         body,
         distance,
         supports,
-    }))
+    })
 }
 
-pub(super) fn unique_carrier_supports(
-    ctx: &DecodeContext<'_>,
-    carriers: &[(&SurfaceId, FiniteReal)],
-) -> Result<Vec<SurfaceId>, CodecError> {
+pub(super) fn unique_carrier_supports(carriers: &[(&SurfaceId, FiniteReal)]) -> Vec<SurfaceId> {
     let mut supports = Vec::new();
     for &(support, _) in carriers {
         if supports.contains(support) {
             continue;
         }
 
-        supports.push(support.try_clone_for_decode(ctx, "NX feature projection surface identity")?);
+        supports.push(support.clone());
     }
     supports.sort_by(Ord::cmp);
-    Ok(supports)
+    supports
 }
 
 /// The single output body and the offset carriers it owns, each as its support
@@ -500,16 +467,13 @@ pub(super) fn unique_carrier_supports(
 type OwnedOffsetCarriers<'a> = (&'a BodyId, Vec<(&'a SurfaceId, FiniteReal)>);
 
 pub(super) fn owned_offset_carriers<'a>(
-    ctx: &DecodeContext<'_>,
     ir: &'a CadIr,
     outputs: &'a [BodyId],
-) -> Result<Option<OwnedOffsetCarriers<'a>>, CodecError> {
+) -> Option<OwnedOffsetCarriers<'a>> {
     let [body] = outputs else {
-        return Ok(None);
+        return None;
     };
-    let Some(body_surfaces) = body_surface_ids(ctx, ir, body)? else {
-        return Ok(None);
-    };
+    let body_surfaces = body_surface_ids(ir, body)?;
     let mut carriers = Vec::new();
     for procedural in &ir.model.procedural_surfaces {
         let Some(owner) = ir.model.procedural_surface_owner(&procedural.id) else {
@@ -526,25 +490,21 @@ pub(super) fn owned_offset_carriers<'a>(
         let candidate = definition_payload.distance();
         carriers.push((support, candidate));
     }
-    Ok((!carriers.is_empty()).then_some((body, carriers)))
+    (!carriers.is_empty()).then_some((body, carriers))
 }
 
 pub(super) fn thicken_feature_definition(
-    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     outputs: &[BodyId],
-) -> Result<Option<(FeatureDefinition, Vec<SurfaceId>)>, CodecError> {
-    let Some(OwnedThickenSurfaceData {
+) -> Option<(FeatureDefinition, Vec<SurfaceId>)> {
+    let OwnedThickenSurfaceData {
         body,
         thickness,
         supports,
         direction,
-    }) = owned_thicken_surface_data(ctx, ir, outputs)?
-    else {
-        return Ok(None);
-    };
+    } = owned_thicken_surface_data(ir, outputs)?;
     let native = format!("{}:thicken-support-surfaces", body.as_str());
-    let (faces, senses) = support_face_projection(ctx, ir, &supports, native)?;
+    let (faces, senses) = support_face_projection(ir, &supports, native);
     let side = match direction {
         ThickenDirection::Both => Some(ThickenSide::Both),
         ThickenDirection::Signed(distance) => senses
@@ -552,14 +512,14 @@ pub(super) fn thicken_feature_definition(
             .and_then(uniform_face_sense)
             .map(|sense| thicken_side(distance, sense)),
     };
-    Ok(Some((
+    Some((
         FeatureDefinition::Operation(FeatureOperation::Thicken {
             faces,
             thickness: Some(thickness),
             side,
         }),
         supports,
-    )))
+    ))
 }
 
 pub(super) enum ThickenDirection {
@@ -575,23 +535,17 @@ pub(super) struct OwnedThickenSurfaceData<'a> {
 }
 
 pub(super) fn owned_thicken_surface_data<'a>(
-    ctx: &DecodeContext<'_>,
     ir: &'a CadIr,
     outputs: &'a [BodyId],
-) -> Result<Option<OwnedThickenSurfaceData<'a>>, CodecError> {
-    let Some((body, carriers)) = owned_offset_carriers(ctx, ir, outputs)? else {
-        return Ok(None);
-    };
-    let Some(output_body) = ir
+) -> Option<OwnedThickenSurfaceData<'a>> {
+    let (body, carriers) = owned_offset_carriers(ir, outputs)?;
+    let output_body = ir
         .model
         .bodies
         .iter()
-        .find(|candidate| candidate.id == *body)
-    else {
-        return Ok(None);
-    };
+        .find(|candidate| candidate.id == *body)?;
     if output_body.kind != BodyKind::Solid {
-        return Ok(None);
+        return None;
     }
     let distance = carriers[0].1;
     if carriers
@@ -599,15 +553,15 @@ pub(super) fn owned_thicken_surface_data<'a>(
         .all(|(_, candidate)| candidate.get().to_bits() == distance.get().to_bits())
     {
         if let Ok(distance) = NonZeroLength::try_from(Length::from_assigned_real(distance)) {
-            let supports = unique_carrier_supports(ctx, &carriers)?;
-            return Ok(Some(OwnedThickenSurfaceData {
+            let supports = unique_carrier_supports(&carriers);
+            return Some(OwnedThickenSurfaceData {
                 body,
                 thickness: distance.abs(),
                 supports,
                 direction: ThickenDirection::Signed(distance),
-            }));
+            });
         }
-        return Ok(None);
+        return None;
     }
 
     let mut magnitude = None::<PositiveLength>;
@@ -615,12 +569,12 @@ pub(super) fn owned_thicken_surface_data<'a>(
     let mut negative = BTreeSet::new();
     for &(support, distance) in &carriers {
         let Ok(distance) = NonZeroLength::try_from(Length::from_assigned_real(distance)) else {
-            return Ok(None);
+            return None;
         };
         let candidate = distance.abs();
         if magnitude.is_some_and(|magnitude| magnitude.get().to_bits() != candidate.get().to_bits())
         {
-            return Ok(None);
+            return None;
         }
         magnitude = Some(candidate);
         if distance.get().is_sign_positive() {
@@ -630,32 +584,30 @@ pub(super) fn owned_thicken_surface_data<'a>(
         }
     }
     if positive.is_empty() || positive != negative {
-        return Ok(None);
+        return None;
     }
-    let Some(magnitude) = magnitude else {
-        return Ok(None);
-    };
-    let Some(thickness) = PositiveLength::new(magnitude.get() * 2.0) else {
-        return Ok(None);
-    };
+    let magnitude = magnitude?;
+    let thickness = PositiveLength::new(magnitude.get() * 2.0)?;
     let mut supports = Vec::new();
     for support in positive {
-        supports.push(support.try_clone_for_decode(ctx, "NX feature projection surface identity")?);
+        supports.push(support.clone());
     }
-    Ok(Some(OwnedThickenSurfaceData {
+    Some(OwnedThickenSurfaceData {
         body,
         thickness,
         supports,
         direction: ThickenDirection::Both,
-    }))
+    })
 }
 
 pub(super) fn support_face_projection(
-    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     supports: &[SurfaceId],
     native: String,
-) -> Result<(FaceSelection, Option<Vec<Sense>>), CodecError> {
+) -> (
+    cadmpeg_ir::features::FaceSelection,
+    std::option::Option<std::vec::Vec<cadmpeg_ir::topology::Sense>>,
+) {
     let mut selected = Vec::new();
     for support in supports {
         let mut matches = ir
@@ -664,24 +616,20 @@ pub(super) fn support_face_projection(
             .iter()
             .filter(|face| face.surface == *support);
         let Some(face) = matches.next() else {
-            return Ok((FaceSelection::Native(native), None));
+            return (FaceSelection::Native(native), None);
         };
         if matches.next().is_some() {
-            return Ok((FaceSelection::Native(native), None));
+            return (FaceSelection::Native(native), None);
         }
 
         if selected.iter().any(|(id, _)| *id == face.id) {
-            return Ok((FaceSelection::Native(native), None));
+            return (FaceSelection::Native(native), None);
         }
 
-        selected.push((
-            face.id
-                .try_clone_for_decode(ctx, "NX support face identity copy")?,
-            face.sense,
-        ));
+        selected.push((face.id.clone(), face.sense));
     }
     let (faces, senses): (Vec<_>, Vec<_>) = selected.into_iter().unzip();
-    Ok((FaceSelection::Resolved { faces, native }, Some(senses)))
+    (FaceSelection::Resolved { faces, native }, Some(senses))
 }
 
 pub(super) fn thicken_side(distance: NonZeroLength, sense: Sense) -> ThickenSide {
@@ -755,11 +703,10 @@ pub(super) fn simple_hole_native_properties(
 }
 
 pub(super) fn block_placement(
-    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     dimensions: [f64; 3],
     outputs: &[BodyId],
-) -> Result<Option<(BodyId, Transform)>, CodecError> {
+) -> Option<(BodyId, Transform)> {
     struct PlaneBand {
         normal: Vector3,
         offsets: Vec<f64>,
@@ -827,7 +774,7 @@ pub(super) fn block_placement(
         .iter()
         .any(|dimension| *dimension <= linear_tolerance)
     {
-        return Ok(None);
+        return None;
     }
     let body = match outputs {
         [body] => body,
@@ -837,39 +784,29 @@ pub(super) fn block_placement(
                 if connected_solid_body_faces(ir, &candidate.id).is_some()
                     && unique.replace(&candidate.id).is_some()
                 {
-                    return Ok(None);
+                    return None;
                 }
             }
-            let Some(body) = unique else {
-                return Ok(None);
-            };
-            body
+
+            unique?
         }
-        _ => return Ok(None),
+        _ => return None,
     };
-    let Some(faces) = connected_solid_body_faces(ir, body) else {
-        return Ok(None);
-    };
+    let faces = connected_solid_body_faces(ir, body)?;
     let mut bands = Vec::<PlaneBand>::new();
     for face in faces.iter().copied() {
-        let Some(geometry) = ir
+        let geometry = ir
             .model
             .surfaces
             .iter()
             .rev()
             .find(|surface| surface.id == face.surface)
-            .map(|surface| &surface.geometry)
-        else {
-            return Ok(None);
-        };
+            .map(|surface| &surface.geometry)?;
         let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) = geometry else {
             continue;
         };
         let origin = plane_surface.origin().get();
-        let Some(normal) = canonical_normal(*plane_surface.frame().axis(), angular_tolerance)
-        else {
-            return Ok(None);
-        };
+        let normal = canonical_normal(*plane_surface.frame().axis(), angular_tolerance)?;
         let offset = normal.dot(Vector3::new(origin.x, origin.y, origin.z));
 
         let existing = bands
@@ -892,17 +829,17 @@ pub(super) fn block_placement(
             })
         })
     {
-        return Ok(None);
+        return None;
     }
     let [first, second, third] = bands.as_mut_slice() else {
-        return Ok(None);
+        return None;
     };
     let (Some(first), Some(second), Some(third)) = (
         plane_extent(first, linear_tolerance),
         plane_extent(second, linear_tolerance),
         plane_extent(third, linear_tolerance),
     ) else {
-        return Ok(None);
+        return None;
     };
     let mut extents = [first, second, third];
     extents.sort_by(|left, right| {
@@ -928,12 +865,10 @@ pub(super) fn block_placement(
             ((band.maximum - band.minimum) - dimensions[axis]).abs() <= linear_tolerance
         }) && matched.replace(permutation).is_some()
         {
-            return Ok(None);
+            return None;
         }
     }
-    let Some(permutation) = matched else {
-        return Ok(None);
-    };
+    let permutation = matched?;
     let mut ordered = permutation.map(|index| extents[index]);
     if ordered[0]
         .normal
@@ -960,18 +895,13 @@ pub(super) fn block_placement(
             .sum(),
     );
     let [x_axis, y_axis, z_axis] = ordered.map(|band| band.normal);
-    let Some(placement) = Transform::affine([
+    let placement = Transform::affine([
         [x_axis.x, y_axis.x, z_axis.x, origin.x],
         [x_axis.y, y_axis.y, z_axis.y, origin.y],
         [x_axis.z, y_axis.z, z_axis.z, origin.z],
-    ]) else {
-        return Ok(None);
-    };
+    ])?;
 
-    Ok(Some((
-        body.try_clone_for_decode(ctx, "NX block output body")?,
-        placement,
-    )))
+    Some((body.clone(), placement))
 }
 
 /// Return the complete primitive witness for an NX `SPHERE` operation.
@@ -982,17 +912,13 @@ pub(super) fn block_placement(
 /// one face whose surface is a finite positive-radius sphere. With no native
 /// output relation, the candidate must also be unique across the model.
 pub(super) fn sphere_body_projection(
-    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     outputs: &[BodyId],
-) -> Result<
-    Option<(
-        BodyId,
-        cadmpeg_ir::features::FinitePoint3,
-        cadmpeg_ir::scalar::PositiveLength,
-    )>,
-    CodecError,
-> {
+) -> Option<(
+    BodyId,
+    cadmpeg_ir::features::FinitePoint3,
+    cadmpeg_ir::scalar::PositiveLength,
+)> {
     let body = match outputs {
         [body] => body,
         [] => {
@@ -1015,44 +941,33 @@ pub(super) fn sphere_body_projection(
                     continue;
                 }
                 if unique.replace(&candidate.id).is_some() {
-                    return Ok(None);
+                    return None;
                 }
             }
-            let Some(body) = unique else {
-                return Ok(None);
-            };
-            body
+
+            unique?
         }
-        _ => return Ok(None),
+        _ => return None,
     };
-    let Some(faces) = connected_solid_body_faces(ir, body) else {
-        return Ok(None);
-    };
+    let faces = connected_solid_body_faces(ir, body)?;
     let [face] = &faces[..] else {
-        return Ok(None);
+        return None;
     };
 
-    let Some(surface) = ir
+    let surface = ir
         .model
         .surfaces
         .iter()
-        .find(|surface| surface.id == face.surface)
-    else {
-        return Ok(None);
-    };
+        .find(|surface| surface.id == face.surface)?;
     let Some(SolvedSurfaceGeometry::Sphere(sphere_surface)) = surface.geometry.solved() else {
-        return Ok(None);
+        return None;
     };
     let center = sphere_surface.center();
     let Ok(radius) = cadmpeg_ir::scalar::PositiveLength::try_from(sphere_surface.radius()) else {
-        return Ok(None);
+        return None;
     };
 
-    Ok(Some((
-        body.try_clone_for_decode(ctx, "NX sphere output body")?,
-        center,
-        radius,
-    )))
+    Some((body.clone(), center, radius))
 }
 
 pub(super) struct NewBodyEvidence<'a> {
@@ -1693,22 +1608,20 @@ pub(super) fn native_feature_parameters(
 /// Offset-store body fields remain absent so a complete unique-solid topology
 /// witness can apply the documented fallback.
 pub(super) fn primary_hole_outputs(
-    ctx: &DecodeContext<'_>,
     templates: &[crate::native::features::holes::FeatureSimpleHoleTemplate],
     body_references: &BTreeMap<&str, u32>,
     body_bindings: &[crate::native::segments::SegmentBodyBinding],
     bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
-) -> Result<BTreeMap<String, Vec<BodyId>>, CodecError> {
+) -> BTreeMap<String, Vec<BodyId>> {
     let mut outputs = BTreeMap::new();
     for template in templates {
         let Some(object_index) = body_references.get(template.operation_label.as_str()) else {
             continue;
         };
-        let bodies =
-            feature_body_outputs(ctx, *object_index, body_bindings, bodies_by_object_index)?;
+        let bodies = feature_body_outputs(*object_index, body_bindings, bodies_by_object_index);
         outputs.insert(template.operation_label.clone(), bodies);
     }
-    Ok(outputs)
+    outputs
 }
 
 pub(super) fn simple_hole_operations(
@@ -1871,13 +1784,12 @@ pub(super) struct HolePackageSources<'a> {
 }
 
 pub(super) fn hole_package_projection(
-    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     templates: &[crate::native::features::holes::FeatureSimpleHoleTemplate],
     groups: &[crate::native::features::holes::FeatureSimpleHoleConstructionGroup],
     uses: &[crate::native::features::holes::FeatureHolePackageConstructionGroupUse],
     sources: HolePackageSources<'_>,
-) -> Result<HolePackageProjection, CodecError> {
+) -> HolePackageProjection {
     let HolePackageSources {
         outputs,
         diameters,
@@ -2011,7 +1923,7 @@ pub(super) fn hole_package_projection(
                 .internal_operations
                 .insert(member.operation_label.clone());
         }
-        insert_hole_output_body(ctx, &mut projection.outputs, &use_.operation_label, body)?;
+        insert_hole_output_body(&mut projection.outputs, &use_.operation_label, body);
         projection
             .diameters
             .insert(use_.operation_label.clone(), diameter);
@@ -2020,14 +1932,14 @@ pub(super) fn hole_package_projection(
                 .chamfers
                 .insert(use_.operation_label.clone(), chamfer);
         }
-        let placements = hole_axis_placements_for_body(ctx, ir, body)?;
+        let placements = hole_axis_placements_for_body(ir, body);
         if placements.len() == group.members.len() {
             projection
                 .placements
                 .insert(use_.operation_label.clone(), placements);
         }
     }
-    Ok(projection)
+    projection
 }
 
 pub(super) struct HoleBodyProjection {
@@ -2045,64 +1957,48 @@ pub(super) fn hole_operations_are_unique(operations: &[String]) -> bool {
 }
 
 pub(super) fn insert_hole_output_body(
-    ctx: &DecodeContext<'_>,
     outputs: &mut BTreeMap<String, Vec<BodyId>>,
     operation: &str,
     body: &BodyId,
-) -> Result<(), CodecError> {
-    outputs.insert(
-        operation.to_owned(),
-        vec![body.try_clone_for_decode(ctx, "NX hole output body")?],
-    );
-    Ok(())
+) {
+    outputs.insert(operation.to_owned(), vec![body.clone()]);
 }
 
 pub(super) fn hole_body_projection(
-    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     operations: &[String],
     outputs: &BTreeMap<String, Vec<BodyId>>,
-) -> Result<Option<HoleBodyProjection>, CodecError> {
+) -> Option<HoleBodyProjection> {
     if operations.is_empty() || !hole_operations_are_unique(operations) {
-        return Ok(None);
+        return None;
     }
-    let Some(operations_by_body) = hole_operations_by_body(ctx, ir, operations, outputs)? else {
-        return Ok(None);
-    };
+    let operations_by_body = hole_operations_by_body(ir, operations, outputs)?;
 
     let mut projected_outputs = BTreeMap::new();
     let mut diameters = BTreeMap::new();
     for (body, operations) in operations_by_body {
-        let Some(body_faces) = connected_solid_body_faces(ir, &body) else {
-            return Ok(None);
-        };
-        let Some(bores) = cylindrical_face_witnesses(ctx, ir, &body_faces)? else {
-            return Ok(None);
-        };
-        let Some(radius) = bores.first().map(|bore| bore.radius) else {
-            return Ok(None);
-        };
+        let body_faces = connected_solid_body_faces(ir, &body)?;
+        let bores = cylindrical_face_witnesses(ir, &body_faces)?;
+        let radius = bores.first().map(|bore| bore.radius)?;
         if bores.len() != operations.len()
             || bores
                 .iter()
                 .any(|bore| bore.radius.to_bits() != radius.to_bits())
         {
-            return Ok(None);
+            return None;
         }
         for operation in operations {
-            insert_hole_output_body(ctx, &mut projected_outputs, &operation, &body)?;
-            let Some(diameter) = Length::new(radius * 2.0) else {
-                return Ok(None);
-            };
+            insert_hole_output_body(&mut projected_outputs, &operation, &body);
+            let diameter = Length::new(radius * 2.0)?;
             diameters.insert(operation, diameter);
         }
     }
-    Ok(Some(HoleBodyProjection {
+    Some(HoleBodyProjection {
         outputs: projected_outputs,
         diameters,
         blind_depths: BTreeMap::new(),
         counterbores: BTreeMap::new(),
-    }))
+    })
 }
 
 pub(super) fn counterbore_body_projection(
@@ -2114,7 +2010,7 @@ pub(super) fn counterbore_body_projection(
     if operations.is_empty() || !hole_operations_are_unique(operations) {
         return Ok(None);
     }
-    let Some(operations_by_body) = hole_operations_by_body(ctx, ir, operations, outputs)? else {
+    let Some(operations_by_body) = hole_operations_by_body(ir, operations, outputs) else {
         return Ok(None);
     };
     let mut projected_outputs = BTreeMap::new();
@@ -2136,7 +2032,7 @@ pub(super) fn counterbore_body_projection(
         let [witness] = witnesses.as_slice() else {
             return Ok(None);
         };
-        insert_hole_output_body(ctx, &mut projected_outputs, operation, &body)?;
+        insert_hole_output_body(&mut projected_outputs, operation, &body);
         let Some(diameter) = Length::new(witness.bore_radius * 2.0) else {
             return Ok(None);
         };
@@ -2158,49 +2054,38 @@ pub(super) fn counterbore_body_projection(
 }
 
 pub(super) fn blind_hole_body_projection(
-    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     operations: &[String],
     outputs: &BTreeMap<String, Vec<BodyId>>,
-) -> Result<Option<HoleBodyProjection>, CodecError> {
+) -> Option<HoleBodyProjection> {
     if operations.is_empty() || !hole_operations_are_unique(operations) {
-        return Ok(None);
+        return None;
     }
-    let Some(operations_by_body) = hole_operations_by_body(ctx, ir, operations, outputs)? else {
-        return Ok(None);
-    };
+    let operations_by_body = hole_operations_by_body(ir, operations, outputs)?;
     let mut projected_outputs = BTreeMap::new();
     let mut diameters = BTreeMap::new();
     let mut blind_depths = BTreeMap::new();
     for (body, operations) in operations_by_body {
         let [operation] = operations.as_slice() else {
-            return Ok(None);
+            return None;
         };
-        let Some(body_faces) = connected_solid_body_faces(ir, &body) else {
-            return Ok(None);
-        };
-        let Some(witnesses) = blind_bore_cylinders(ctx, ir, &body_faces)? else {
-            return Ok(None);
-        };
+        let body_faces = connected_solid_body_faces(ir, &body)?;
+        let witnesses = blind_bore_cylinders(ir, &body_faces)?;
         let [witness] = witnesses.as_slice() else {
-            return Ok(None);
+            return None;
         };
-        insert_hole_output_body(ctx, &mut projected_outputs, operation, &body)?;
-        let Some(diameter) = Length::new(witness.bore_radius * 2.0) else {
-            return Ok(None);
-        };
+        insert_hole_output_body(&mut projected_outputs, operation, &body);
+        let diameter = Length::new(witness.bore_radius * 2.0)?;
         diameters.insert(operation.clone(), diameter);
-        let Some(depth) = cadmpeg_ir::scalar::NonZeroLength::new(witness.depth) else {
-            return Ok(None);
-        };
+        let depth = cadmpeg_ir::scalar::NonZeroLength::new(witness.depth)?;
         blind_depths.insert(operation.clone(), depth);
     }
-    Ok(Some(HoleBodyProjection {
+    Some(HoleBodyProjection {
         outputs: projected_outputs,
         diameters,
         blind_depths,
         counterbores: BTreeMap::new(),
-    }))
+    })
 }
 
 /// Derive one complete unoriented placement when one operation owns exactly
@@ -2208,16 +2093,15 @@ pub(super) fn blind_hole_body_projection(
 /// axial shifts of the serialized cylinder origin. Canonical axis sign makes
 /// serialization deterministic but carries no drilling-direction semantics.
 pub(super) fn hole_axis_placements_for_operations(
-    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     operations: &[String],
     outputs: &BTreeMap<String, Vec<BodyId>>,
-) -> Result<BTreeMap<String, HolePlacement>, CodecError> {
+) -> BTreeMap<String, HolePlacement> {
     if operations.is_empty() || !hole_operations_are_unique(operations) {
-        return Ok(BTreeMap::new());
+        return BTreeMap::new();
     }
-    let Some(operations_by_body) = hole_operations_by_body(ctx, ir, operations, outputs)? else {
-        return Ok(BTreeMap::new());
+    let Some(operations_by_body) = hole_operations_by_body(ir, operations, outputs) else {
+        return BTreeMap::new();
     };
 
     let mut placements = BTreeMap::new();
@@ -2225,13 +2109,13 @@ pub(super) fn hole_axis_placements_for_operations(
         let [operation] = operations.as_slice() else {
             continue;
         };
-        let mut body_placements = hole_axis_placements_for_body(ctx, ir, &body)?;
+        let mut body_placements = hole_axis_placements_for_body(ir, &body);
         if body_placements.len() != 1 {
             continue;
         }
         placements.insert(operation.clone(), body_placements.remove(0));
     }
-    Ok(placements)
+    placements
 }
 
 pub(super) fn counterbore_axis_placements_for_operations(
@@ -2243,7 +2127,7 @@ pub(super) fn counterbore_axis_placements_for_operations(
     if operations.is_empty() || !hole_operations_are_unique(operations) {
         return Ok(BTreeMap::new());
     }
-    let Some(operations_by_body) = hole_operations_by_body(ctx, ir, operations, outputs)? else {
+    let Some(operations_by_body) = hole_operations_by_body(ir, operations, outputs) else {
         return Ok(BTreeMap::new());
     };
     let mut placements = BTreeMap::new();
@@ -2278,36 +2162,35 @@ pub(super) fn counterbore_axis_placements_for_operations(
 }
 
 pub(super) fn blind_hole_axis_placements_for_operations(
-    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     operations: &[String],
     outputs: &BTreeMap<String, Vec<BodyId>>,
-) -> Result<BTreeMap<String, HolePlacement>, CodecError> {
+) -> BTreeMap<String, HolePlacement> {
     if operations.is_empty() || !hole_operations_are_unique(operations) {
-        return Ok(BTreeMap::new());
+        return BTreeMap::new();
     }
-    let Some(operations_by_body) = hole_operations_by_body(ctx, ir, operations, outputs)? else {
-        return Ok(BTreeMap::new());
+    let Some(operations_by_body) = hole_operations_by_body(ir, operations, outputs) else {
+        return BTreeMap::new();
     };
     let mut placements = BTreeMap::new();
     for (body, operations) in operations_by_body {
         let [operation] = operations.as_slice() else {
-            return Ok(BTreeMap::new());
+            return BTreeMap::new();
         };
         let Some(body_faces) = connected_solid_body_faces(ir, &body) else {
-            return Ok(BTreeMap::new());
+            return BTreeMap::new();
         };
-        let Some(witnesses) = blind_bore_cylinders(ctx, ir, &body_faces)? else {
-            return Ok(BTreeMap::new());
+        let Some(witnesses) = blind_bore_cylinders(ir, &body_faces) else {
+            return BTreeMap::new();
         };
         let [witness] = witnesses.as_slice() else {
-            return Ok(BTreeMap::new());
+            return BTreeMap::new();
         };
         let (Some(point), Some(direction)) = (
             cadmpeg_ir::features::FinitePoint3::new(witness.position),
             cadmpeg_ir::features::FeatureDirection3::new(witness.direction),
         ) else {
-            return Ok(BTreeMap::new());
+            return BTreeMap::new();
         };
         placements.insert(
             operation.clone(),
@@ -2317,19 +2200,15 @@ pub(super) fn blind_hole_axis_placements_for_operations(
             },
         );
     }
-    Ok(placements)
+    placements
 }
 
-pub(super) fn hole_axis_placements_for_body(
-    ctx: &DecodeContext<'_>,
-    ir: &CadIr,
-    body: &BodyId,
-) -> Result<Vec<HolePlacement>, CodecError> {
+pub(super) fn hole_axis_placements_for_body(ir: &CadIr, body: &BodyId) -> Vec<HolePlacement> {
     let Some(body_faces) = connected_solid_body_faces(ir, body) else {
-        return Ok(Vec::new());
+        return Vec::new();
     };
-    let Some(bores) = cylindrical_face_witnesses(ctx, ir, &body_faces)? else {
-        return Ok(Vec::new());
+    let Some(bores) = cylindrical_face_witnesses(ir, &body_faces) else {
+        return Vec::new();
     };
     let angular_tolerance = ir.tolerances.angular.get();
     let mut placements = Vec::new();
@@ -2337,13 +2216,13 @@ pub(super) fn hole_axis_placements_for_body(
         let origin = bore.line_origin;
         let axis = bore.axis;
         let Some(mut axis) = FiniteVector3::new(axis).and_then(FiniteVector3::unit_nonzero) else {
-            return Ok(Vec::new());
+            return Vec::new();
         };
         let Some(leading) = [axis.x, axis.y, axis.z]
             .into_iter()
             .find(|component| component.abs() > angular_tolerance)
         else {
-            return Ok(Vec::new());
+            return Vec::new();
         };
         if leading < 0.0 {
             axis = Vector3::new(-axis.x, -axis.y, -axis.z);
@@ -2358,13 +2237,13 @@ pub(super) fn hole_axis_placements_for_body(
             cadmpeg_ir::features::FinitePoint3::new(origin),
             cadmpeg_ir::features::FeatureDirection3::new(axis),
         ) else {
-            return Ok(Vec::new());
+            return Vec::new();
         };
 
         placements.push(HolePlacement::Axis { origin, axis });
     }
     placements.sort_by_key(hole_placement_key);
-    Ok(placements)
+    placements
 }
 
 pub(super) fn hole_placement_key(placement: &HolePlacement) -> [u64; 6] {
@@ -2553,10 +2432,9 @@ pub(super) fn same_loop_edges(ir: &CadIr, first: &LoopId, second: &LoopId) -> bo
 }
 
 pub(super) fn cylindrical_face_witnesses(
-    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     body_faces: &[&Face],
-) -> Result<Option<Vec<CylindricalFaceWitness>>, CodecError> {
+) -> Option<Vec<CylindricalFaceWitness>> {
     let linear_tolerance = ir.tolerances.linear.get();
     let angular_tolerance = ir.tolerances.angular.get();
     let mut witnesses = Vec::new();
@@ -2583,25 +2461,18 @@ pub(super) fn cylindrical_face_witnesses(
         let origin = cylinder_surface.origin().get();
         let axis = cylinder_surface.frame().axis();
         let radius = cylinder_surface.radius().get();
-        let Some(axis) = canonical_axis(*axis, angular_tolerance) else {
-            return Ok(None);
-        };
+        let axis = canonical_axis(*axis, angular_tolerance)?;
         let axial_offset = Vector3::new(origin.x, origin.y, origin.z).dot(axis);
         let line_origin = Point3::new(
             origin.x - axial_offset * axis.x,
             origin.y - axial_offset * axis.y,
             origin.z - axial_offset * axis.z,
         );
-        let Some([first_loop, second_loop]) = face_two_loops(face) else {
-            return Ok(None);
-        };
+        let [first_loop, second_loop] = face_two_loops(face)?;
         let mut stations = [0.0; 2];
         for (ordinal, loop_id) in [first_loop, second_loop].into_iter().enumerate() {
-            let Some((center, circle_axis, circle_radius)) =
-                circular_loop_geometry(ir, loop_id, linear_tolerance, angular_tolerance)
-            else {
-                return Ok(None);
-            };
+            let (center, circle_axis, circle_radius) =
+                circular_loop_geometry(ir, loop_id, linear_tolerance, angular_tolerance)?;
             if (circle_radius - radius).abs() > linear_tolerance
                 || (1.0 - axis.dot(circle_axis).abs()) > angular_tolerance
                 || Vector3::new(
@@ -2613,19 +2484,19 @@ pub(super) fn cylindrical_face_witnesses(
                 .norm()
                     > linear_tolerance
             {
-                return Ok(None);
+                return None;
             }
             let station = Vector3::new(center.x, center.y, center.z).dot(axis);
             if !station.is_finite() {
-                return Ok(None);
+                return None;
             }
             stations[ordinal] = station;
         }
         let [first, second] = stations.as_slice() else {
-            return Ok(None);
+            return None;
         };
         if (first - second).abs() <= linear_tolerance {
-            return Ok(None);
+            return None;
         }
 
         witnesses.push(CylindricalFaceWitness {
@@ -2633,13 +2504,10 @@ pub(super) fn cylindrical_face_witnesses(
             axis,
             radius,
             stations: [*first, *second],
-            loop_ids: [
-                first_loop.try_clone_for_decode(ctx, "NX cylindrical first loop identity")?,
-                second_loop.try_clone_for_decode(ctx, "NX cylindrical second loop identity")?,
-            ],
+            loop_ids: [first_loop.clone(), second_loop.clone()],
         });
     }
-    Ok(Some(witnesses))
+    Some(witnesses)
 }
 
 pub(super) fn plane_annulus_witness(
@@ -2758,7 +2626,7 @@ pub(super) fn counterbore_cylinders(
     ir: &CadIr,
     body_faces: &[&Face],
 ) -> Result<Option<Vec<CounterboreCylinderWitness>>, CodecError> {
-    let Some(cylinders) = cylindrical_face_witnesses(ctx, ir, body_faces)? else {
+    let Some(cylinders) = cylindrical_face_witnesses(ir, body_faces) else {
         return Ok(None);
     };
     if cylinders.is_empty() || cylinders.len() % 2 != 0 {
@@ -2862,15 +2730,12 @@ pub(super) fn counterbore_cylinders(
 /// boundary and cap loop must share the exact edge identities; a radius or
 /// station match alone is not a topology relation.
 pub(super) fn blind_bore_cylinders(
-    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     body_faces: &[&Face],
-) -> Result<Option<Vec<BlindBoreCylinderWitness>>, CodecError> {
-    let Some(cylinders) = cylindrical_face_witnesses(ctx, ir, body_faces)? else {
-        return Ok(None);
-    };
+) -> Option<Vec<BlindBoreCylinderWitness>> {
+    let cylinders = cylindrical_face_witnesses(ir, body_faces)?;
     let [cylinder] = cylinders.as_slice() else {
-        return Ok(None);
+        return None;
     };
     let linear_tolerance = ir.tolerances.linear.get();
     let angular_tolerance = ir.tolerances.angular.get();
@@ -2885,7 +2750,7 @@ pub(super) fn blind_bore_cylinders(
             .iter()
             .any(|coedge| &coedge.owner_loop == cylinder_loop)
         {
-            return Ok(None);
+            return None;
         }
         for face in body_faces {
             let Some(cap_loop) = face_one_loop(face) else {
@@ -2941,14 +2806,12 @@ pub(super) fn blind_bore_cylinders(
             cap_station = Some((station_ordinal, *station));
         }
     }
-    let Some((cap_ordinal, cap_station)) = cap_station.filter(|_| cap_count == 1) else {
-        return Ok(None);
-    };
+    let (cap_ordinal, cap_station) = cap_station.filter(|_| cap_count == 1)?;
     let entry_ordinal = 1 - cap_ordinal;
     let entry_station = cylinder.stations[entry_ordinal];
     let depth = (cap_station - entry_station).abs();
     if !depth.is_finite() || depth <= linear_tolerance {
-        return Ok(None);
+        return None;
     }
     let position = Point3::new(
         cylinder.line_origin.x + entry_station * cylinder.axis.x,
@@ -2960,61 +2823,54 @@ pub(super) fn blind_bore_cylinders(
     } else {
         Vector3::new(-cylinder.axis.x, -cylinder.axis.y, -cylinder.axis.z)
     };
-    Ok(Some(vec![BlindBoreCylinderWitness {
+    Some(vec![BlindBoreCylinderWitness {
         position,
         direction,
         bore_radius: cylinder.radius,
         depth,
-    }]))
+    }])
 }
 
 /// Resolve hole operations to their explicit output bodies, or to the one
 /// connected solid when NX omits every operation-output relation. An output
 /// entry with no body is an explicit unresolved relation and blocks fallback.
 pub(super) fn hole_operations_by_body(
-    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     operations: &[String],
     outputs: &BTreeMap<String, Vec<BodyId>>,
-) -> Result<Option<BTreeMap<BodyId, Vec<String>>>, CodecError> {
+) -> Option<BTreeMap<BodyId, Vec<String>>> {
     let related = operations
         .iter()
         .filter(|operation| outputs.contains_key(*operation))
         .count();
     if related != 0 && related != operations.len() {
-        return Ok(None);
+        return None;
     }
     if related == operations.len() {
         let mut operations_by_body = BTreeMap::<BodyId, Vec<String>>::new();
         for operation in operations {
             let Some([body]) = outputs.get(operation).map(Vec::as_slice) else {
-                return Ok(None);
+                return None;
             };
             if let Some(group) = operations_by_body.get_mut(body) {
                 group.push(operation.clone());
             } else {
-                let body_key = body.try_clone_for_decode(ctx, "NX hole operation body identity")?;
+                let body_key = body.clone();
                 operations_by_body.insert(body_key, vec![operation.clone()]);
             }
         }
-        return Ok(Some(operations_by_body));
+        return Some(operations_by_body);
     }
 
     let mut selected = None;
     for body in &ir.model.bodies {
         if connected_solid_body_exists(ir, body) && selected.replace(body).is_some() {
-            return Ok(None);
+            return None;
         }
     }
-    let Some(body) = selected else {
-        return Ok(None);
-    };
+    let body = selected?;
 
-    Ok(Some(BTreeMap::from([(
-        body.id
-            .try_clone_for_decode(ctx, "NX hole operation body identity")?,
-        operations.to_vec(),
-    )])))
+    Some(BTreeMap::from([(body.id.clone(), operations.to_vec())]))
 }
 
 /// Derive identical entry and exit chamfer treatments only when every simple
@@ -3052,7 +2908,7 @@ pub(super) fn simple_hole_chamfers(
         return Ok(BTreeMap::new());
     }
     operations.sort_by(Ord::cmp);
-    let Some(operations_by_body) = hole_operations_by_body(ctx, ir, &operations, outputs)? else {
+    let Some(operations_by_body) = hole_operations_by_body(ir, &operations, outputs) else {
         return Ok(BTreeMap::new());
     };
 
@@ -3063,7 +2919,7 @@ pub(super) fn simple_hole_chamfers(
         let Some(body_faces) = connected_solid_body_faces(ir, &body) else {
             return Ok(BTreeMap::new());
         };
-        let Some(bores) = cylindrical_face_witnesses(ctx, ir, &body_faces)? else {
+        let Some(bores) = cylindrical_face_witnesses(ir, &body_faces) else {
             return Ok(BTreeMap::new());
         };
         let [first_bore, ..] = bores.as_slice() else {

@@ -264,8 +264,8 @@ fn quantity_property_result() -> Result<
 
 #[test]
 fn curve_expression_quantity_properties_keep_value_and_dimension() {
-    let properties = quantity_property_result()
-        .expect("service resources admit quantity properties");
+    let properties =
+        quantity_property_result().expect("service resources admit quantity properties");
     assert_eq!(properties.len(), 4);
     assert_eq!(
         properties[&cadmpeg_core::nonblank_literal!("evaluated_canonical_value")],

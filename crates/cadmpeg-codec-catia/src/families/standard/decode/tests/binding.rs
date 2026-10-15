@@ -911,17 +911,8 @@ fn standard_freeform_face_uses_exact_e5_d8_rolling_ball_identity() {
         forward: true,
     }];
 
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &stream,
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )
-    .expect("synthetic E5 stream fits the service profile");
     let jets = crate::families::e5::records::e5_rolling_ball_jets(&stream);
-    let associated =
-        associate_standard_freeform_e5_rolling_ball_jets(&ctx, &records, &stream, &jets)
-            .expect("service resource budget");
+    let associated = associate_standard_freeform_e5_rolling_ball_jets(&records, &stream, &jets);
     assert!(matches!(
         associated.get(&7),
         Some(StandardSurfaceProcedure::RollingBall {
@@ -937,14 +928,10 @@ fn standard_freeform_face_uses_exact_e5_d8_rolling_ball_identity() {
         unreachable!("synthetic D8 face record");
     };
     *forward = false;
-    assert!(associate_standard_freeform_e5_rolling_ball_jets(
-        &ctx,
-        &opposite_records,
-        &stream,
-        &jets
-    )
-    .expect("service resource budget")
-    .is_empty());
+    assert!(
+        associate_standard_freeform_e5_rolling_ball_jets(&opposite_records, &stream, &jets)
+            .is_empty()
+    );
 
     let mut reverse_stream = stream.clone();
     let d8_payload_size = usize::from(u16::from_le_bytes(
@@ -963,12 +950,10 @@ fn standard_freeform_face_uses_exact_e5_d8_rolling_ball_identity() {
         crate::families::e5::graph::Sign::Positive
     );
     assert!(associate_standard_freeform_e5_rolling_ball_jets(
-        &ctx,
         &opposite_records,
         &reverse_stream,
         &reverse_jets
     )
-    .expect("service resource budget")
     .contains_key(&7));
 }
 

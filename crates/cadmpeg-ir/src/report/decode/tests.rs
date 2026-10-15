@@ -11,11 +11,8 @@ use crate::report::decode::{TransferDisposition, TransferOutcome, TransferRecord
 fn hex_coverage_records_the_formatted_name() {
     use crate::report::decode::{Coverage, HexByteCoverageKey};
     let key = HexByteCoverageKey::new("type_", "_count");
-    let ctx = cadmpeg_test_support::service_decode_context();
     let mut coverage = Coverage::default();
-    coverage
-        .record_hex_byte(&ctx, key, 0x0a, 7)
-        .expect("service node");
+    coverage.record_hex_byte(key, 0x0a, 7);
     assert_eq!(coverage.get("type_0a_count"), Some(&7));
 }
 
@@ -23,11 +20,8 @@ fn hex_coverage_records_the_formatted_name() {
 fn indexed_coverage_records_the_decimal_name() {
     use crate::report::decode::{Coverage, IndexedCoverageKey};
     let key = IndexedCoverageKey::decimal("type_", "_count");
-    let ctx = cadmpeg_test_support::service_decode_context();
     let mut coverage = Coverage::default();
-    coverage
-        .record_indexed(&ctx, key, 4, 7)
-        .expect("service node");
+    coverage.record_indexed(key, 4, 7);
     assert_eq!(coverage.get("type_4_count"), Some(&7));
 }
 
@@ -249,9 +243,8 @@ fn a_decode_transfer_states_its_scope_and_carries_only_its_own_keys() {
 fn coverage_entry_replaces_its_count() {
     use crate::report::decode::{Coverage, CoverageKey};
     let key = CoverageKey::new("one_count");
-    let ctx = cadmpeg_test_support::service_decode_context();
     let mut coverage = Coverage::default();
-    coverage.record(&ctx, key, 7).expect("one admitted entry");
-    coverage.record(&ctx, key, 8).expect("replacement");
+    coverage.record(key, 7);
+    coverage.record(key, 8);
     assert_eq!(coverage.get(key.as_str()), Some(&8));
 }

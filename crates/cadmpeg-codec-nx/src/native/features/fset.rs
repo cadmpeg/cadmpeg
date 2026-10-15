@@ -242,7 +242,6 @@ pub(in crate::native) fn feature_fset_reference_graphs(
 /// Reconstruct the two ordered logical payloads selected by each complete
 /// same-store `FSET` reference graph.
 pub(in crate::native) fn feature_fset_construction_payloads(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
     graphs: &[FeatureFsetReferenceGraph],
 ) -> Result<Vec<FeatureConstructionPayload>, cadmpeg_core::CodecError> {
@@ -260,7 +259,7 @@ pub(in crate::native) fn feature_fset_construction_payloads(
             ),
         ] {
             let Some(payload) =
-                fset_construction_payload_from_group(ctx, graph, group, source_blocks, &blocks)?
+                fset_construction_payload_from_group(graph, group, source_blocks, &blocks)?
             else {
                 continue;
             };
@@ -272,7 +271,6 @@ pub(in crate::native) fn feature_fset_construction_payloads(
 }
 
 fn fset_construction_payload_from_group(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     graph: &FeatureFsetReferenceGraph,
     group: FeatureFsetReferenceGroup,
     source_blocks: &[(u16, Option<String>)],
@@ -301,7 +299,7 @@ fn fset_construction_payload_from_group(
     }) {
         return Ok(None);
     }
-    let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, blocks)? else {
+    let Some(content) = FeaturePayloadContent::from_source(data_blocks, blocks)? else {
         return Ok(None);
     };
     let group_name = match group {
@@ -351,7 +349,7 @@ mod tests {
     fn fset_construction_preserves_first_and_second_source_groups() {
         let (graph, blocks) = fset_construction_fixture();
 
-        crate::test_support::with_decode_context(|ctx| {
+        ({
             for (group, source_blocks, expected_count, first_id) in [
                 (
                     super::FeatureFsetReferenceGroup::First,
@@ -367,7 +365,6 @@ mod tests {
                 ),
             ] {
                 let payload = super::fset_construction_payload_from_group(
-                    ctx,
                     &graph,
                     group,
                     source_blocks,

@@ -32,17 +32,6 @@ pub enum AttributeTarget {
     Vertex(VertexId),
 }
 
-impl AttributeTarget {
-    /// Copy the owning identity under the decode budget.
-    pub fn try_clone_for_decode(
-        &self,
-        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        _operation: &'static str,
-    ) -> Result<Self, cadmpeg_core::CodecError> {
-        Ok(self.clone())
-    }
-}
-
 /// One ordered typed value from a source attribute record.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -102,20 +91,9 @@ mod tests {
 
     #[test]
     fn attribute_target_copy_preserves_the_target() {
-        let ctx = cadmpeg_test_support::service_decode_context();
         let target = AttributeTarget::Face(crate::ids::FaceId::mint("test:model:face#17").unwrap());
-        assert_eq!(
-            target
-                .try_clone_for_decode(&ctx, "attribute target copy")
-                .unwrap(),
-            target
-        );
-        assert_eq!(
-            AttributeTarget::Document
-                .try_clone_for_decode(&ctx, "document target copy")
-                .unwrap(),
-            AttributeTarget::Document
-        );
+        assert_eq!(target.clone(), target);
+        assert_eq!(AttributeTarget::Document.clone(), AttributeTarget::Document);
     }
 }
 

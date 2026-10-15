@@ -2096,7 +2096,6 @@ impl MeshQuotient {
             'input5,
             'input6,
             'input7,
-            
             'input9,
         > {
             boundaries: &'input0 [Vec<MeshBoundaryEdgeCandidate>],
@@ -2116,7 +2115,7 @@ impl MeshQuotient {
 
         fn walk(
             ctx: &DecodeContext<'_>,
-            inputs: BoundaryOrientationSearch< '_, '_, '_, '_, '_, '_, '_, '_, '_>,
+            inputs: BoundaryOrientationSearch<'_, '_, '_, '_, '_, '_, '_, '_, '_>,
         ) -> Result<(), CodecError> {
             let BoundaryOrientationSearch {
                 boundaries,
@@ -2690,7 +2689,6 @@ impl MeshQuotient {
             'input5,
             'input6,
             'input7,
-            
             'input9,
         > {
             domains: &'input0 [Arc<HashSet<usize>>],
@@ -2707,7 +2705,7 @@ impl MeshQuotient {
 
         fn walk(
             ctx: &DecodeContext<'_>,
-            inputs: CoordinateAssignmentSearch< '_, '_, '_, '_, '_, '_, '_, '_, '_>,
+            inputs: CoordinateAssignmentSearch<'_, '_, '_, '_, '_, '_, '_, '_, '_>,
         ) -> Result<(), CodecError> {
             fn rollback(
                 assigned: &mut [Option<usize>],
@@ -3009,17 +3007,7 @@ fn deferred_face_quotient_options_limited(
         capacity: usize,
     }
 
-    struct DeferredGapFill<
-        'input0,
-        'input1,
-        'input2,
-        'input3,
-        'input4,
-        'input5,
-        'input6,
-        
-        'input8,
-    > {
+    struct DeferredGapFill<'input0, 'input1, 'input2, 'input3, 'input4, 'input5, 'input6, 'input8> {
         gaps: &'input0 [Gap],
         gap: usize,
         at: usize,
@@ -3039,7 +3027,7 @@ fn deferred_face_quotient_options_limited(
 
     fn fill_gap(
         ctx: &DecodeContext<'_>,
-        inputs: DeferredGapFill< '_, '_, '_, '_, '_, '_, '_, '_>,
+        inputs: DeferredGapFill<'_, '_, '_, '_, '_, '_, '_, '_>,
     ) -> Result<(), CodecError> {
         let DeferredGapFill {
             gaps,
@@ -3152,7 +3140,6 @@ fn deferred_face_quotient_options_limited(
         'input5,
         'input6,
         'input7,
-        
         'input9,
     > {
         gaps: &'input0 [Gap],
@@ -3171,7 +3158,7 @@ fn deferred_face_quotient_options_limited(
 
     fn walk_gaps(
         ctx: &DecodeContext<'_>,
-        inputs: DeferredGapWalk< '_, '_, '_, '_, '_, '_, '_, '_, '_>,
+        inputs: DeferredGapWalk<'_, '_, '_, '_, '_, '_, '_, '_, '_>,
     ) -> Result<(), CodecError> {
         let DeferredGapWalk {
             gaps,
@@ -3947,7 +3934,7 @@ pub(super) fn bounded_unordered_cycle_assignments(
         assignments: Vec<MeshFaceBoundaryAssignment>,
     }
 
-    impl Search< '_, '_> {
+    impl Search<'_, '_> {
         fn walk(
             &mut self,
             first_start: usize,
@@ -5962,7 +5949,6 @@ fn propagate_endpoint_relation_domains(
 struct WalkEndpointRelationDomainsInputs<
     'input0,
     'input1,
-    
     'input3,
     'input4,
     'input5,
@@ -5970,7 +5956,6 @@ struct WalkEndpointRelationDomainsInputs<
     'input7,
     'input8,
     'input9,
-    
     'input11,
     'input12,
     F,
@@ -5994,20 +5979,7 @@ struct WalkEndpointRelationDomainsInputs<
 
 fn walk_endpoint_relation_domains<F>(
     ctx: &DecodeContext<'_>,
-    inputs: WalkEndpointRelationDomainsInputs<
-        '_,
-        '_,
-        '_,
-        '_,
-        '_,
-        '_,
-        '_,
-        '_,
-        '_,
-        '_,
-        '_,
-        F,
-    >,
+    inputs: WalkEndpointRelationDomainsInputs<'_, '_, '_, '_, '_, '_, '_, '_, '_, '_, '_, F>,
 ) -> Result<bool, CodecError>
 where
     F: FnMut(MeshEndpointRelationSelections, Vec<[usize; 2]>) -> Result<bool, CodecError>,
@@ -6369,7 +6341,6 @@ struct ResolveEndpointConfigurationRelationStreamingInputs<
     'input3,
     'input4,
     'input5,
-    
     'input7,
     'input8,
     'input9,
@@ -7275,7 +7246,6 @@ fn resolve_fixed_mesh_endpoint_assignment_domains(
         'input3,
         'input4,
         'input5,
-        
         'input7,
         'input8,
         'input9,
@@ -7293,7 +7263,7 @@ fn resolve_fixed_mesh_endpoint_assignment_domains(
     }
     fn visit(
         ctx: &DecodeContext<'_>,
-        inputs: FixedEndpointAssignmentSearch< '_, '_, '_, '_, '_, '_, '_, '_, '_>,
+        inputs: FixedEndpointAssignmentSearch<'_, '_, '_, '_, '_, '_, '_, '_, '_>,
     ) -> Result<(), CodecError> {
         let FixedEndpointAssignmentSearch {
             face,
@@ -7534,7 +7504,6 @@ struct ResolveSingletonMeshEndpointCandidatesInputs<
     'input3,
     'input4,
     'input5,
-    
     'input7,
     'input8,
 > {
@@ -7550,7 +7519,7 @@ struct ResolveSingletonMeshEndpointCandidatesInputs<
 
 fn resolve_singleton_mesh_endpoint_candidates(
     ctx: &DecodeContext<'_>,
-    inputs: ResolveSingletonMeshEndpointCandidatesInputs< '_, '_, '_, '_, '_, '_, '_, '_>,
+    inputs: ResolveSingletonMeshEndpointCandidatesInputs<'_, '_, '_, '_, '_, '_, '_, '_>,
 ) -> Result<Option<MeshEndpointResolve>, CodecError> {
     let ResolveSingletonMeshEndpointCandidatesInputs {
         edge_rows,
@@ -7694,7 +7663,6 @@ struct ResolveStandardMeshEndpointCandidatesInputs<
     'input3,
     'input4,
     'input5,
-    
     'input7,
     'input8,
     'input9,
@@ -7939,7 +7907,6 @@ pub(crate) struct ParseStandardMeshCandidateOutcomeInputs<
     'input8,
     'input9,
     'input10,
-    
     'input12,
     FP,
     FC,

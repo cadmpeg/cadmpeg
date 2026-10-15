@@ -121,7 +121,6 @@ pub(in super::super) fn transfer_active_datum_cylinders(
             radius,
         );
         annotate(
-            ctx,
             annotations,
             &id,
             "ActDatums",
@@ -246,7 +245,6 @@ pub(in super::super) fn transfer_constrained_slot_fillet_cylinders(
             continue;
         };
         annotate(
-            ctx,
             annotations,
             &id,
             "AllFeatur",
@@ -332,7 +330,6 @@ pub(in super::super) fn transfer_rowless_round_cylinders(
             continue;
         }
         annotate(
-            ctx,
             annotations,
             &id,
             "AllFeatur",
@@ -394,7 +391,7 @@ pub(in super::super) fn transfer_hole_cylinders(
         let counterbore = if simple.is_some() {
             None
         } else {
-            counterbore_patch_geometries(ctx, scan, ir, feature_id)?
+            counterbore_patch_geometries(scan, ir, feature_id)?
         };
         let simple_rows = simple.into_iter().flat_map(|hole| {
             hole.cylinder_rows
@@ -411,7 +408,6 @@ pub(in super::super) fn transfer_hole_cylinders(
                 continue;
             }
             annotate(
-                ctx,
                 annotations,
                 &id,
                 "AllFeatur",
@@ -553,7 +549,6 @@ pub(in super::super) fn transfer_split_outline_cylinders(
             }
             let row = rows[&cylinder_id];
             annotate(
-                ctx,
                 annotations,
                 &id,
                 "VisibGeom",
@@ -567,7 +562,7 @@ pub(in super::super) fn transfer_split_outline_cylinders(
                 ir,
                 Surface {
                     id,
-                    geometry: geometry.try_clone_for_decode(ctx, "creo split cylinder geometry")?,
+                    geometry: geometry.clone(),
                     source_object: Some(SourceObjectAssociation {
                         geometry_role: None,
                         format: cadmpeg_ir::CodecFormat::Creo,
@@ -1224,7 +1219,7 @@ pub(in super::super) fn transfer_positional_cylinders(
         let row_local_frame_selected = (stored_frame_agrees || witnessed_frame_replaces_stored)
             && (feature_class != Some(SchemaClass::Round) || mechanism.row_local_under_round());
         if feature_class == Some(SchemaClass::Hole)
-            && counterbore_dimensions(ctx, scan, ir, row.feature_id)?.is_some_and(|dimensions| {
+            && counterbore_dimensions(scan, ir, row.feature_id).is_some_and(|dimensions| {
                 !counterbore_dimension_tuple_matches_radius(dimensions, frame.radius().get())
             })
         {
@@ -1263,7 +1258,6 @@ pub(in super::super) fn transfer_positional_cylinders(
                         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)),
                     )?;
                     annotate(
-                        ctx,
                         annotations,
                         &id,
                         "VisibGeom",
@@ -1276,7 +1270,6 @@ pub(in super::super) fn transfer_positional_cylinders(
             continue;
         }
         annotate(
-            ctx,
             annotations,
             &id,
             "VisibGeom",
@@ -1526,7 +1519,6 @@ pub(in super::super) fn transfer_positional_cones(
         }
         let cone_surface = super::apex_cone(frame.frame(), frame.half_angle());
         annotate(
-            ctx,
             annotations,
             &id,
             "VisibGeom",
@@ -1603,7 +1595,6 @@ pub(in super::super) fn transfer_circular_sweep_cylinders(
                 continue;
             }
             annotate(
-                ctx,
                 annotations,
                 &id,
                 "AllFeatur",
@@ -1680,7 +1671,6 @@ pub(in super::super) fn transfer_cross_section_planes(
             continue;
         };
         annotate(
-            ctx,
             annotations,
             &id,
             "Xsections",
@@ -1731,7 +1721,6 @@ pub(in super::super) fn transfer_cross_section_planes(
             continue;
         };
         annotate(
-            ctx,
             annotations,
             &id,
             "Xsections",
