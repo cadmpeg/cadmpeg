@@ -226,7 +226,14 @@ parameter_range: None,
         for (index, jet) in rolling_ball_jets.iter().enumerate() {
             let surface_index = surfaces.len() + index;
             let surface_id = admitted!(crate::resource::compose_index_id(&cadmpeg_ir::identity_namespace!("catia", "e5", "surf"), surface_index, SurfaceId::mint));
-            let procedural_id = admitted!(crate::resource::compose_index_id(&cadmpeg_ir::identity_namespace!("catia", "e5", "procedural-surf"), surface_index, ProceduralSurfaceId::mint));
+            let procedural_id
+                = admitted!(
+                    crate::resource::compose_index_id(
+                        &cadmpeg_ir::identity_namespace!("catia", "e5", "procedural-surf"),
+                        surface_index,
+                        ProceduralSurfaceId::mint
+                    )
+                );
             admitted!(annotate(&mut annotations, &surface_id, "e5_0d_03", u64_from_index(jet.pos), "rolling_ball_jet_carrier", Exactness::ByteExact));
             admitted!(annotations.derived(&surface_id, "geometry").map(|_| ()).map_err(cadmpeg_core::CodecError::from));
             if let Err(error) = admission.charge() {

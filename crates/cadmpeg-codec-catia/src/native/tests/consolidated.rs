@@ -932,8 +932,16 @@ fn native_namespace_retains_resolved_consolidated_revolution_carriers() {
             .is_ok()
     );
     assert!(match revolution.definition() {
-        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution(matched_payload) =>
-            matches!((matched_payload.angular_interval().endpoints(), &matched_payload.parameter_interval().map(cadmpeg_ir::topology::IncreasingParameterInterval::endpoints),), (angular_interval, Some([-4.0, 9.0]),) if angular_interval == [0.5, 0.5 + std::f64::consts::TAU]),
+        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution(matched_payload) => matches!(
+            (
+                matched_payload.angular_interval().endpoints(),
+                &matched_payload.parameter_interval().map(
+                    cadmpeg_ir::topology::IncreasingParameterInterval::endpoints
+                ),
+            ),
+            (angular_interval, Some([-4.0, 9.0]),)
+                if angular_interval == [0.5, 0.5 + std::f64::consts::TAU]
+        ),
         _ => false,
     });
     assert_eq!(

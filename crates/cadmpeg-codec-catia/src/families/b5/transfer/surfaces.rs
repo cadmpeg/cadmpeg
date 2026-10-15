@@ -1135,8 +1135,17 @@ mod tests {
             Some(1e-5)
         );
         assert!(match ir.model.procedural_surfaces[0].definition() {
-            ProceduralSurfaceDefinition::Extrusion(matched_payload) =>
-                matches!((&matched_payload.parameter_interval().map(cadmpeg_ir::units::FiniteVector::get), matched_payload.direction(), &matched_payload.native_position(),), (Some([0.0, 1.0]), direction, None,) if *direction == Vector3::new(0.0, 0.0, 1.0)),
+            ProceduralSurfaceDefinition::Extrusion(matched_payload) => matches!(
+                (
+                    &matched_payload.parameter_interval().map(
+                        cadmpeg_ir::units::FiniteVector::get
+                    ),
+                    matched_payload.direction(),
+                    &matched_payload.native_position(),
+                ),
+                (Some([0.0, 1.0]), direction, None,)
+                    if *direction == Vector3::new(0.0, 0.0, 1.0)
+            ),
             _ => false,
         });
         assert_eq!(

@@ -8861,9 +8861,11 @@ fn endpoint_relation_keeps_stopped_face_assignments() {
     assert!(choices
         .iter()
         .any(|choice| { matches!(choice.selection, MeshEndpointRelationSelection::Deferred) }));
-    assert!(choices
-        .iter()
-        .any(|choice| matches!(&choice.selection, MeshEndpointRelationSelection::Enumerated { assignments, edge_pairs } if assignments == &[0] && edge_pairs == &[(0, [0, 0])])));
+    assert!(choices.iter().any(|choice| matches!(
+        &choice.selection,
+        MeshEndpointRelationSelection::Enumerated { assignments, edge_pairs }
+            if assignments == &[0] && edge_pairs == &[(0, [0, 0])]
+    )));
 }
 
 #[test]

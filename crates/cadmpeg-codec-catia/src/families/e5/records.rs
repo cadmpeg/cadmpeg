@@ -994,7 +994,11 @@ mod tests {
             (jet.definition())
                 
                 .expect("valid rolling-ball jet fixture"),
-            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet(jet) if jet.degree() == 5 && jet.stations().len() == 2 && jet.stations().iter().map(|station| station.multiplicity).collect::<Vec<_>>() == [6, 6]));
+            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet(jet)
+                if jet.degree() == 5
+                && jet.stations().len() == 2
+                && jet.stations().iter().map(|station| station.multiplicity).collect::<Vec<_>>()
+                == [6, 6]));
     }
 
     #[test]

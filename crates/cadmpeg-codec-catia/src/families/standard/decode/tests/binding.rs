@@ -902,7 +902,12 @@ fn standard_freeform_face_uses_exact_e5_d8_rolling_ball_identity() {
             carrier_object_id: 42,
             source: StandardRollingBallSource::E5D8,
             definition,
-    }) if matches!(definition.as_ref(), ProceduralSurfaceDefinition::RollingBallJet(jet) if jet.degree() == 5 && jet.stations().iter().map(|station| station.knot.get()).collect::<Vec<_>>() == vec![2.0, 5.0]
+    }) if matches!(
+        definition.as_ref(),
+        ProceduralSurfaceDefinition::RollingBallJet(jet)
+            if jet.degree() == 5
+            && jet.stations().iter().map(|station| station.knot.get()).collect::<Vec<_>>()
+            == vec![2.0, 5.0]
             && jet.stations().iter().map(|station| station.multiplicity).collect::<Vec<_>>() == vec![6, 6]
             && jet.stations().len() == 2)));
 
