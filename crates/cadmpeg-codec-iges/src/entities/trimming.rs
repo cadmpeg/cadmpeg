@@ -281,17 +281,11 @@ fn create_boundary_vertices(
     Ok((result_ids, derivations))
 }
 
-fn point_position(
-    index: &ModelIndex<'_>,
-    id: &VertexId,
-    ctx: &DecodeContext<'_>,
-) -> Result<Option<FinitePoint3>, CodecError> {
-    let Some(vertex) = index.vertices(id.as_str(), ctx)? else {
-        return Ok(None);
-    };
-    Ok(index
-        .points(vertex.point.as_str(), ctx)?
-        .map(Point::position))
+fn point_position(index: &ModelIndex<'_>, id: &VertexId) -> Option<FinitePoint3> {
+    let vertex = index.vertices(id.as_str(), cadmpeg_ir::index::StandardIndex)?;
+    index
+        .points(vertex.point.as_str(), cadmpeg_ir::index::StandardIndex)
+        .map(Point::position)
 }
 
 pub(super) struct PcurveSupport<'a> {
@@ -310,9 +304,11 @@ enum ProceduralSourceParameterMap {
 fn procedural_source_parameter_map(
     index: &ModelIndex<'_>,
     support: &PcurveSupport<'_>,
-    ctx: &DecodeContext<'_>,
-) -> Result<ProceduralSourceParameterMap, CodecError> {
-    let procedural = index.procedural_surface_for_surface(support.surface_id.as_str(), ctx)?;
+) -> ProceduralSourceParameterMap {
+    let procedural = index.procedural_surface_for_surface(
+        support.surface_id.as_str(),
+        cadmpeg_ir::index::StandardIndex,
+    );
     let procedural = match procedural.filter(|procedural| {
         matches!(
             procedural.definition(),
@@ -322,27 +318,25 @@ fn procedural_source_parameter_map(
         Some(procedural) => Some(procedural),
         None => match support.geometry {
             SurfaceGeometry::Procedural { construction, .. } => {
-                index.procedural_surfaces(construction.as_str(), ctx)?
+                index.procedural_surfaces(construction.as_str(), cadmpeg_ir::index::StandardIndex)
             }
-            SurfaceGeometry::Solved(_) => return Ok(ProceduralSourceParameterMap::NotApplicable),
+            SurfaceGeometry::Solved(_) => return ProceduralSourceParameterMap::NotApplicable,
         },
     };
     let Some(procedural) = procedural else {
-        return Ok(ProceduralSourceParameterMap::Unavailable);
+        return ProceduralSourceParameterMap::Unavailable;
     };
     let directrix = match procedural.definition() {
         ProceduralSurfaceDefinition::Extrusion(definition) => definition.directrix(),
         ProceduralSurfaceDefinition::Revolution(definition) => definition.directrix(),
-        _ => return Ok(ProceduralSourceParameterMap::Unavailable),
+        _ => return ProceduralSourceParameterMap::Unavailable,
     };
     let directrix_is_line = index
-        .curves(directrix.as_str(), ctx)?
+        .curves(directrix.as_str(), cadmpeg_ir::index::StandardIndex)
         .is_some_and(curve_is_line);
-    Ok(
-        procedural_pcurve_parameter_map(procedural, directrix_is_line).map_or(
-            ProceduralSourceParameterMap::Unavailable,
-            ProceduralSourceParameterMap::Mapped,
-        ),
+    procedural_pcurve_parameter_map(procedural, directrix_is_line).map_or(
+        ProceduralSourceParameterMap::Unavailable,
+        ProceduralSourceParameterMap::Mapped,
     )
 }
 
@@ -434,7 +428,7 @@ pub(super) fn pcurve_geometry(
     else {
         return Ok(None);
     };
-    let source_map = procedural_source_parameter_map(index, support, ctx)?;
+    let source_map = procedural_source_parameter_map(index, support);
     let source_parameter_map = match source_map {
         ProceduralSourceParameterMap::Mapped(parameter_map) => Some(parameter_map),
         ProceduralSourceParameterMap::NotApplicable | ProceduralSourceParameterMap::Unavailable => {
@@ -809,7 +803,7 @@ fn source_curve_control_polygon_within_bounds(
     let Some(bounds) = bounds else {
         return Ok(true);
     };
-    let source_map = procedural_source_parameter_map(index, support, ctx)?;
+    let source_map = procedural_source_parameter_map(index, support);
     let Some((u_factor, u_offset, v_factor, v_offset)) = pcurve_parameter_map(source_map, support)
     else {
         return Ok(false);
@@ -952,7 +946,8 @@ fn linear_boundary_model_points(
 ) -> Result<Option<Vec<Point3>>, CodecError> {
     let mut points = Vec::new();
     for item in items {
-        let Some(curve) = index.curves(item.model_curve.as_str(), ctx)? else {
+        let Some(curve) = index.curves(item.model_curve.as_str(), cadmpeg_ir::index::StandardIndex)
+        else {
             return Ok(None);
         };
         let mut curve_points = match curve.geometry.solved() {
@@ -1025,7 +1020,8 @@ fn linear_boundary_geometry(
     };
     let model_plane = (origin, *normal);
     for item in items {
-        let Some(curve) = index.curves(item.model_curve.as_str(), ctx)? else {
+        let Some(curve) = index.curves(item.model_curve.as_str(), cadmpeg_ir::index::StandardIndex)
+        else {
             return Ok(None);
         };
         let Some(geometry) = curve.geometry.solved() else {
@@ -1577,7 +1573,8 @@ fn surface_parameter_bounds(
         }
         let visited_id = surface_id.clone();
         visiting.insert(visited_id);
-        let Some(procedural) = index.procedural_surface_for_surface(surface_id.as_str(), ctx)?
+        let Some(procedural) = index
+            .procedural_surface_for_surface(surface_id.as_str(), cadmpeg_ir::index::StandardIndex)
         else {
             return Ok(None);
         };
@@ -1694,7 +1691,8 @@ fn edge_range_matches_curve(
     let Some(curve_id) = edge.curve() else {
         return Ok(false);
     };
-    let Some(curve) = carrier_index.curves(curve_id.as_str(), ctx)? else {
+    let Some(curve) = carrier_index.curves(curve_id.as_str(), cadmpeg_ir::index::StandardIndex)
+    else {
         return Ok(false);
     };
     let Some(range) = edge.param_range() else {
@@ -1747,14 +1745,10 @@ fn select_boundary_edge(
     let mut candidates_with_endpoints = 0;
     let mut matched = Vec::new();
     for &edge in candidates {
-        let Some(start) = point_position(carrier_index, &edge.start, ctx)
-            .map_err(BoundaryEdgeSelectionError::Resource)?
-        else {
+        let Some(start) = point_position(carrier_index, &edge.start) else {
             continue;
         };
-        let Some(end) = point_position(carrier_index, &edge.end, ctx)
-            .map_err(BoundaryEdgeSelectionError::Resource)?
-        else {
+        let Some(end) = point_position(carrier_index, &edge.end) else {
             continue;
         };
         candidates_with_endpoints += 1;
@@ -1862,7 +1856,7 @@ pub(super) fn project(
     let mut boundary_vertex_derivations = Vec::new();
     let mut boundaries = BTreeMap::new();
 
-    let carrier_index = ModelIndex::new_model_only(ir, ctx)?;
+    let carrier_index = ModelIndex::new_model_only(ir);
 
     let mut composite_index: Option<CompositeIndex> = None;
     let mut edges_by_curve = BTreeMap::<&CurveId, Vec<&Edge>>::new();
@@ -2274,7 +2268,7 @@ pub(super) fn project(
         }
         let surface_id = crate::ids::surface(&crate::ids::Stem::directory(surface_sequence));
         let Some(support_geometry) = carrier_index
-            .surfaces(surface_id.as_str(), ctx)?
+            .surfaces(surface_id.as_str(), cadmpeg_ir::index::StandardIndex)
             .map(|surface| match &surface.geometry {
                 SurfaceGeometry::Solved(solved) => {
                     Ok::<_, CodecError>(SurfaceGeometry::Solved(solved.clone()))

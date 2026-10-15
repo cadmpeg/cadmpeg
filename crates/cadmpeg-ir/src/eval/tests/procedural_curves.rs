@@ -54,7 +54,7 @@ fn cached_subset_retains_local_parameters_for_points_derivatives_and_inversion()
                 ),
             )
             .unwrap();
-        let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+        let index = crate::index::ModelIndex::build(&ir);
         let expected = Point3::new(if sense { 3.0 } else { 4.0 }, 0.0, 0.0);
         assert_eq!(
             model_curve_point_by_id(
@@ -143,7 +143,7 @@ fn subset_curve_over_wide_interval_maps_finite_local_parameter() {
             ),
         )
         .unwrap();
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir);
     assert_eq!(
         model_curve_point_by_id(
             crate::eval::admission::EvaluationAdmission::Standard,

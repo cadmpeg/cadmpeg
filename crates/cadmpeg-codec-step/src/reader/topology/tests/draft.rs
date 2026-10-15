@@ -118,7 +118,7 @@ fn trimmed_pcurve_fit_uses_declared_endpoints() {
 
     let fit = pcurve_declared_endpoint_fit(
         &cadmpeg_test_support::service_decode_context(),
-        &ModelIndex::build(&ir, cadmpeg_ir::index::StandardIndex),
+        &ModelIndex::build(&ir),
         &surface_id,
         &pcurve,
         [
@@ -175,7 +175,7 @@ fn bounded_pcurve_search_can_miss_an_unsampled_exact_point() {
     )
     .expect("witness pcurve is evaluable");
     let target = Point3::new(exact_uv.u, exact_uv.v, 0.0);
-    let index = ModelIndex::build(&ir, cadmpeg_ir::index::StandardIndex);
+    let index = ModelIndex::build(&ir);
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
     let (ctx, _) =
@@ -283,7 +283,7 @@ fn finite_pcurve_admission_marks_unsampled_global_divergence() {
             _ => None,
         })
         .expect("3D circle carrier");
-    let index = ModelIndex::build(decoded.ir(), cadmpeg_ir::index::StandardIndex);
+    let index = ModelIndex::build(decoded.ir());
     let point_set_residual = |fraction: f64| {
         let parameter = parameter_range[0].mul_add(1.0 - fraction, parameter_range[1] * fraction);
         let uv = cadmpeg_ir::eval::decode::pcurve_uv(

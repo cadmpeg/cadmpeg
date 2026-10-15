@@ -1168,7 +1168,9 @@ pub(super) fn curve_geometry_coplanar(
         SolvedCurveGeometry::Composite { segments, .. } => {
             let mut valid = true;
             for segment in segments {
-                let Some(curve) = index.curves(segment.curve.as_str(), ctx)? else {
+                let Some(curve) =
+                    index.curves(segment.curve.as_str(), cadmpeg_ir::index::StandardIndex)
+                else {
                     valid = false;
                     break;
                 };

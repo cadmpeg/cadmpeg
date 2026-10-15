@@ -71,15 +71,15 @@ fn plane() -> SurfaceGeometry {
 fn repeated_parameter_charts_preserve_normalized_line_and_length_coordinates() {
     let ir = extrusions(1024);
     let geometry = plane();
-    crate::test_support::with_policy_context(&[], &DecodePolicy::service(), |ctx| {
-        let index = ModelIndex::new_model_only(&ir, ctx).unwrap();
+    crate::test_support::with_policy_context(&[], &DecodePolicy::service(), |_| {
+        let index = ModelIndex::new_model_only(&ir);
         for surface in &ir.model.surfaces {
             let support = PcurveSupport {
                 surface_id: &surface.id,
                 geometry: &geometry,
                 factor: 2.0,
             };
-            let source = procedural_source_parameter_map(&index, &support, ctx).unwrap();
+            let source = procedural_source_parameter_map(&index, &support);
             // The normalized source interval [0,1] maps to the retained [2,5].
             let ProceduralSourceParameterMap::Mapped(map) = source else {
                 panic!("missing chart")
@@ -97,15 +97,15 @@ fn repeated_parameter_charts_preserve_normalized_line_and_length_coordinates() {
 fn missing_procedural_chart_does_not_become_a_solved_parameter_map() {
     let mut ir = extrusions(1);
     ir.model.procedural_surfaces.clear();
-    crate::test_support::with_service_context(&[], |ctx| {
-        let index = ModelIndex::new_model_only(&ir, ctx).unwrap();
+    ({
+        let index = ModelIndex::new_model_only(&ir);
         let surface = &ir.model.surfaces[0];
         let support = PcurveSupport {
             surface_id: &surface.id,
             geometry: &surface.geometry,
             factor: 1.0,
         };
-        let source = procedural_source_parameter_map(&index, &support, ctx).unwrap();
+        let source = procedural_source_parameter_map(&index, &support);
         assert!(matches!(source, ProceduralSourceParameterMap::Unavailable));
         assert_eq!(pcurve_parameter_map(source, &support), None);
     });

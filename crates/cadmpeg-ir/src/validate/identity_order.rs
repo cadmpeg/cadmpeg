@@ -2,7 +2,6 @@
 //! Focused validation checks for identity order.
 
 use crate::index::identities::BorrowedIdentities;
-use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use std::collections::BTreeMap;
 
@@ -13,8 +12,7 @@ use crate::report::{
 };
 
 fn push_identity<'a>(
-    ctx: &DecodeContext<'_>,
-    seen: &mut BorrowedIdentities<'_, 'a, bool>,
+    seen: &mut BorrowedIdentities<'a, bool>,
     findings: &mut Vec<Finding>,
     id: &'a str,
 ) -> Result<(), CodecError> {
@@ -27,7 +25,7 @@ fn push_identity<'a>(
             format_args!("entity id does not match `<format>:<scope>:<kind>#<key>`"),
         );
     }
-    let Some(visited) = seen.get_mut(ctx, id)? else {
+    let Some(visited) = seen.get_mut(id) else {
         return Err(CodecError::malformed(
             "validation identity index omits an entity",
         ));
@@ -68,15 +66,14 @@ fn check_order<'a>(
 macro_rules! define_model_identity_checks {
     ($( $field:ident: $element:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?; )*) => {
         fn check_model_identity_and_order<'a>(
-            ctx: &DecodeContext<'_>,
             ir: &'a CadIr,
-            seen: &mut BorrowedIdentities<'_, 'a, bool>,
+            seen: &mut BorrowedIdentities<'a, bool>,
             findings: &mut Vec<Finding>,
         ) -> Result<(), CodecError> {
             $(
                 check_order(stringify!($field), ir.model.$field.iter().map(crate::schema::EntitySchema::identity), findings);
                 for entity in &ir.model.$field {
-                    push_identity(ctx, seen, findings, crate::schema::EntitySchema::identity(entity))?;
+                    push_identity(seen, findings, crate::schema::EntitySchema::identity(entity))?;
                 }
             )*
             Ok(())
@@ -87,7 +84,6 @@ crate::document::arena_registry!(define_model_identity_checks);
 
 /// Check model and native identities and preserve arena-ordered findings.
 pub(super) fn check_identity_and_order(
-    ctx: &DecodeContext<'_>,
     view: crate::native::view::NativeView<'_>,
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
@@ -95,7 +91,7 @@ pub(super) fn check_identity_and_order(
     // would shift the existing slots quadratically on large models. Every
     // occurrence of an identity updates the same last slot, preserving which
     // visit first reports a duplicate and the original finding order.
-    let mut seen = BorrowedIdentities::build(ctx, |add| {
+    let mut seen = BorrowedIdentities::build(|add| {
         macro_rules! collect_model_identities {
             ($( $field:ident: $element:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?; )*) => {
                 $(for entity in &view.ir.model.$field {
@@ -111,11 +107,11 @@ pub(super) fn check_identity_and_order(
             Ok(())
         })
     })?;
-    check_model_identity_and_order(ctx, view.ir, &mut seen, findings)?;
+    check_model_identity_and_order(view.ir, &mut seen, findings)?;
     let mut by_arena: BTreeMap<String, Vec<&str>> = BTreeMap::new();
     view.visit::<cadmpeg_core::CodecError>(|format, arena, records| {
         for record in records.records() {
-            push_identity(ctx, &mut seen, findings, record.id())?;
+            push_identity(&mut seen, findings, record.id())?;
         }
         if records.len() == 0 {
             return Ok(());

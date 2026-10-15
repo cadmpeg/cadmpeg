@@ -578,11 +578,7 @@ fn decode_exchange_mode(
         {
             target_ids.insert(id);
         }
-        source_targets = record_targets(
-            &session.ir,
-            |record_id| target_ids.contains(&record_id),
-            session.ctx,
-        )?;
+        source_targets = record_targets(&session.ir, |record_id| target_ids.contains(&record_id));
     } else {
         for (&id, record) in exchange.records() {
             if session.typed_records.contains(id) {
@@ -1201,11 +1197,11 @@ fn opaque_record_id(id: u64, record: &RawRecord) -> Result<UnknownId, CodecError
 fn record_targets(
     ir: &CadIr,
     include_record: impl Fn(u64) -> bool,
-    ctx: &DecodeContext<'_>,
-) -> Result<BTreeMap<u64, BTreeSet<String>>, CodecError> {
+) -> BTreeMap<u64, BTreeSet<String>> {
     let mut targets = BTreeMap::<u64, BTreeSet<String>>::new();
-    for identity in cadmpeg_ir::index::ModelIndex::build(ir, ctx)?.identities(ctx) {
-        let identity = identity?;
+    for identity in
+        cadmpeg_ir::index::ModelIndex::build(ir).identities(cadmpeg_ir::index::StandardIndex)
+    {
         let Some(record_id) = source_record_id(identity) else {
             continue;
         };
@@ -1217,7 +1213,7 @@ fn record_targets(
             values.insert(identity.to_owned());
         }
     }
-    Ok(targets)
+    targets
 }
 
 fn source_record_id(identity: &str) -> Option<u64> {

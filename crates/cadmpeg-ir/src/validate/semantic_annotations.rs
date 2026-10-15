@@ -11,18 +11,17 @@ use crate::report::{
 };
 
 pub(super) fn check_semantic_annotations(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
-    all_ids: &BorrowedIdentities<'_, '_>,
+    all_ids: &BorrowedIdentities<'_>,
     findings: &mut Vec<Finding>,
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     let mut orders = std::collections::BTreeSet::new();
     for annotation in &ir.model.semantic_annotations {
-        let mut refs_valid = all_ids.contains(ctx, &annotation.object)?
-            && all_ids.contains(ctx, &annotation.native_ref)?;
+        let mut refs_valid =
+            all_ids.contains(&annotation.object) && all_ids.contains(&annotation.native_ref);
         if refs_valid {
             for id in &annotation.assets {
-                if !all_ids.contains(ctx, id)? {
+                if !all_ids.contains(id) {
                     refs_valid = false;
                     break;
                 }
@@ -32,7 +31,7 @@ pub(super) fn check_semantic_annotations(
             'groups: for targets in annotation.references.values() {
                 for target in targets {
                     if let Some(id) = target.local_target() {
-                        if !all_ids.contains(ctx, id)? {
+                        if !all_ids.contains(id) {
                             refs_valid = false;
                             break 'groups;
                         }
@@ -51,7 +50,6 @@ pub(super) fn check_semantic_annotations(
             );
         }
     }
-    Ok(())
 }
 
 #[cfg(test)]
@@ -79,12 +77,10 @@ mod tests {
     #[test]
     fn semantic_annotations_report_the_second_duplicate_order() {
         let ir = fixture();
-        let ctx = cadmpeg_test_support::service_decode_context();
         let ids =
-            super::BorrowedIdentities::build(&ctx, |add| add("test:source:unknown#record", ()))
-                .unwrap();
+            super::BorrowedIdentities::build(|add| add("test:source:unknown#record", ())).unwrap();
         let mut findings = Vec::new();
-        check_semantic_annotations(&ctx, &ir, &ids, &mut findings).unwrap();
+        check_semantic_annotations(&ir, &ids, &mut findings);
         assert_eq!(findings.len(), 1);
         assert_eq!(
             findings[0].entity.as_deref(),

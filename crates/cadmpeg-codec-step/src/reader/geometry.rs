@@ -112,7 +112,7 @@ pub(super) fn infer_edge_parameter_ranges(
     if !needed {
         return Ok(());
     }
-    let model_index = cadmpeg_ir::index::ModelIndex::build(ir, ctx)?;
+    let model_index = cadmpeg_ir::index::ModelIndex::build(ir);
     let mut inferred = Vec::new();
     for (edge_index, edge) in ir.model.edges.iter().enumerate() {
         if edge.param_range().is_some() {
@@ -121,21 +121,30 @@ pub(super) fn infer_edge_parameter_ranges(
         let Some(curve) = edge.curve() else {
             continue;
         };
-        let Some(start_vertex) = model_index.vertices(edge.start.as_str(), ctx)? else {
+        let Some(start_vertex) =
+            model_index.vertices(edge.start.as_str(), cadmpeg_ir::index::StandardIndex)
+        else {
             continue;
         };
-        let Some(end_vertex) = model_index.vertices(edge.end.as_str(), ctx)? else {
+        let Some(end_vertex) =
+            model_index.vertices(edge.end.as_str(), cadmpeg_ir::index::StandardIndex)
+        else {
             continue;
         };
-        let Some(start) = model_index.points(start_vertex.point.as_str(), ctx)? else {
+        let Some(start) = model_index.points(
+            start_vertex.point.as_str(),
+            cadmpeg_ir::index::StandardIndex,
+        ) else {
             continue;
         };
-        let Some(end) = model_index.points(end_vertex.point.as_str(), ctx)? else {
+        let Some(end) =
+            model_index.points(end_vertex.point.as_str(), cadmpeg_ir::index::StandardIndex)
+        else {
             continue;
         };
 
         let Some(geometry) = model_index
-            .curves(curve.as_str(), ctx)?
+            .curves(curve.as_str(), cadmpeg_ir::index::StandardIndex)
             .map(|curve| &curve.geometry)
         else {
             continue;

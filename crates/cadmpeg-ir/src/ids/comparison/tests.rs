@@ -4,7 +4,7 @@ use std::cmp::Ordering;
 
 #[test]
 fn identity_text_comparison_uses_length_and_byte_order() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = crate::index::StandardIndex;
     for (first, second, expected) in [
         ("alpha", "longer", false),
         ("alpha", "blope", false),

@@ -415,7 +415,7 @@ pub(super) fn blend_surface_parameters(
     point: Point3,
     seed: Option<Point2>,
 ) -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
-    let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir, ctx)?;
+    let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
     let geometry_budget = GeometryWorkBudget::from_context(ctx, MAX_ADAPTIVE_GEOMETRY_WORK);
     blend_surface_parameters_inner(
         &index,
@@ -441,7 +441,7 @@ pub(super) fn blend_surface_parameters_for_fit(
     seed: Option<Point2>,
     fit_tolerance: f64,
 ) -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
-    let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir, ctx)?;
+    let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
     blend_surface_parameters_for_fit_with_grid(
         ctx,
         &index,
@@ -600,13 +600,13 @@ fn blend_surface_parameters_inner(
         return Ok(None);
     }
     let Some(CircularBlendDefinition { spine, .. }) =
-        blend_surface_definition_with_index(index, surface, geometry_budget.ctx)?
+        blend_surface_definition_with_index(index, surface)
     else {
         return Ok(None);
     };
     if let (Some(seed), Some(fit_tolerance)) = (seed, fit_tolerance) {
         let seed_u_is_valid = index
-            .curves(spine.as_str(), geometry_budget.ctx)?
+            .curves(spine.as_str(), cadmpeg_ir::index::StandardIndex)
             .and_then(|curve| match curve.geometry.solved() {
                 Some(SolvedCurveGeometry::Nurbs(nurbs)) => {
                     let degree = usize::try_from(nurbs.degree()).ok()?;
@@ -668,7 +668,7 @@ fn blend_surface_parameters_inner(
         point,
         seed.map(|seed| seed.u),
         geometry_budget,
-    )?;
+    );
     let angular = if let Some(u) = angular_spine {
         if let Some((center, tangent, first, second, _)) =
             blend_surface_frame_with_index_and_budget(
@@ -863,7 +863,7 @@ pub(super) fn coarse_blend_surface_parameters(
     point: Point3,
     depth: usize,
 ) -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
-    let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir, ctx)?;
+    let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
     let geometry_budget = GeometryWorkBudget::from_context(ctx, MAX_ADAPTIVE_GEOMETRY_WORK);
     coarse_blend_surface_parameters_with_index_and_budget(
         &index,
@@ -900,11 +900,11 @@ pub(super) fn blend_surface_parameter_grid_with_index_and_budget(
         return Ok(None);
     }
     let Some(CircularBlendDefinition { spine, .. }) =
-        blend_surface_definition_with_index(index, surface, geometry_budget.ctx)?
+        blend_surface_definition_with_index(index, surface)
     else {
         return Ok(None);
     };
-    let Some(curve) = index.curves(spine.as_str(), geometry_budget.ctx)? else {
+    let Some(curve) = index.curves(spine.as_str(), cadmpeg_ir::index::StandardIndex) else {
         return Ok(None);
     };
     let Some(SolvedCurveGeometry::Nurbs(nurbs)) = curve.geometry.solved() else {
@@ -1062,7 +1062,7 @@ pub(super) fn refine_blend_surface_parameters(
     parameters: Point2,
     depth: usize,
 ) -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
-    let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir, ctx)?;
+    let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
     let geometry_budget = GeometryWorkBudget::from_context(ctx, MAX_ADAPTIVE_GEOMETRY_WORK);
     refine_blend_surface_parameters_with_section_domain_and_budget(
         &index,
@@ -1088,12 +1088,12 @@ fn refine_blend_surface_parameters_with_section_domain_and_budget(
         return Ok(None);
     }
     let Some(CircularBlendDefinition { spine, .. }) =
-        blend_surface_definition_with_index(index, surface, geometry_budget.ctx)?
+        blend_surface_definition_with_index(index, surface)
     else {
         return Ok(None);
     };
     let u_domain = index
-        .curves(spine.as_str(), geometry_budget.ctx)?
+        .curves(spine.as_str(), cadmpeg_ir::index::StandardIndex)
         .and_then(|curve| match curve.geometry.solved() {
             Some(SolvedCurveGeometry::Nurbs(nurbs)) => {
                 let degree = usize::try_from(nurbs.degree()).ok()?;
@@ -1273,7 +1273,7 @@ fn blend_surface_point_inner(
     v: f64,
     depth: usize,
 ) -> Result<Option<Point3>, cadmpeg_core::decode::ResourceLimit> {
-    let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir, ctx)?;
+    let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
     let geometry_budget = GeometryWorkBudget::from_context(ctx, MAX_ADAPTIVE_GEOMETRY_WORK);
     blend_surface_point_inner_with_index_and_budget(&index, surface, u, v, depth, &geometry_budget)
 }
@@ -1551,7 +1551,7 @@ pub(super) fn blend_surface_u_derivative(
     v: f64,
     depth: usize,
 ) -> Result<Option<Vector3>, cadmpeg_core::decode::ResourceLimit> {
-    let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir, ctx)?;
+    let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
     let geometry_budget = GeometryWorkBudget::from_context(ctx, MAX_ADAPTIVE_GEOMETRY_WORK);
     blend_surface_u_derivative_with_index_and_budget(&index, surface, u, v, depth, &geometry_budget)
 }
@@ -1572,11 +1572,11 @@ fn blend_surface_u_derivative_with_index_and_budget(
         spine,
         radius,
         ..
-    }) = blend_surface_definition_with_index(index, surface, geometry_budget.ctx)?
+    }) = blend_surface_definition_with_index(index, surface)
     else {
         return Ok(None);
     };
-    let Some(carrier) = index.curves(spine.as_str(), geometry_budget.ctx)? else {
+    let Some(carrier) = index.curves(spine.as_str(), cadmpeg_ir::index::StandardIndex) else {
         return Ok(None);
     };
     let Some(center) = cadmpeg_ir::eval::finite_or_refusal(
@@ -1846,7 +1846,7 @@ fn blend_surface_frame_with_index_and_budget_and_options(
             spine,
             radius,
             ..
-        }) = blend_surface_definition_with_index(index, surface, geometry_budget.ctx)?
+        }) = blend_surface_definition_with_index(index, surface)
         else {
             return Ok(None);
         };
@@ -1994,7 +1994,7 @@ fn blend_boundary_point_with_index_and_budget(
         spine,
         radius,
         ..
-    }) = blend_surface_definition_with_index(index, surface, geometry_budget.ctx)?
+    }) = blend_surface_definition_with_index(index, surface)
     else {
         return Ok(None);
     };
@@ -2049,14 +2049,14 @@ fn blend_boundary_parameter_with_index_and_budget(
         return Ok(None);
     }
     let Some(CircularBlendDefinition { spine, .. }) =
-        blend_surface_definition_with_index(index, surface, geometry_budget.ctx)?
+        blend_surface_definition_with_index(index, surface)
     else {
         return Ok(None);
     };
     // A circular blend's u parameter is its spine parameter. Invert that
     // defining carrier directly, then certify the requested boundary point.
     let Some(parameter) =
-        closest_spine_parameter_with_index_and_budget(index, spine, point, seed, geometry_budget)?
+        closest_spine_parameter_with_index_and_budget(index, spine, point, seed, geometry_budget)
     else {
         return Ok(None);
     };
@@ -2088,7 +2088,7 @@ pub(super) fn blend_boundary_parameter_from_support_pcurve_with_budget(
     target: BoundaryInverseTarget,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
-    let Some(carrier) = index.surfaces(support.as_str(), geometry_budget.ctx)? else {
+    let Some(carrier) = index.surfaces(support.as_str(), cadmpeg_ir::index::StandardIndex) else {
         return Ok(None);
     };
     let support_geometry = &carrier.geometry;
@@ -2132,18 +2132,14 @@ fn blend_boundary_parameter_from_support_pcurve_with_geometry_and_budget(
         spine,
         radius,
         ..
-    }) = blend_surface_definition_with_index(index, blend, geometry_budget.ctx)?
+    }) = blend_surface_definition_with_index(index, blend)
     else {
         return Ok(None);
     };
     let mut selected = None;
     for (boundary, candidate) in supports.into_iter().enumerate() {
-        if parameterization_equivalent_surfaces_with_index(
-            index,
-            candidate,
-            support,
-            geometry_budget.ctx,
-        )? && selected.replace(boundary).is_some()
+        if parameterization_equivalent_surfaces_with_index(index, candidate, support)?
+            && selected.replace(boundary).is_some()
         {
             return Ok(None);
         }
@@ -2283,18 +2279,13 @@ pub(super) fn blend_support_parameter_from_source_pcurve_with_index_and_budget_a
     } = source_pcurve_sample;
 
     let Some(CircularBlendDefinition { supports, .. }) =
-        blend_surface_definition_with_index(index, blend, geometry_budget.ctx)?
+        blend_surface_definition_with_index(index, blend)
     else {
         return Ok(None);
     };
     let mut matches = 0;
     for candidate in supports {
-        if parameterization_equivalent_surfaces_with_index(
-            index,
-            candidate,
-            support,
-            geometry_budget.ctx,
-        )? {
+        if parameterization_equivalent_surfaces_with_index(index, candidate, support)? {
             matches += 1;
         }
     }
@@ -2317,7 +2308,7 @@ pub(super) fn blend_support_parameter_from_source_pcurve_with_index_and_budget_a
     // source sample on the declared support and require point reproduction;
     // the support declaration is the relation proof and the fit is the
     // geometric certificate.
-    if blend_surface_definition_with_index(index, support, geometry_budget.ctx)?.is_some() {
+    if blend_surface_definition_with_index(index, support).is_some() {
         if let Some(parameters) = blend_surface_parameters_from_point_with_index_and_budget(
             index,
             support,
@@ -2332,7 +2323,7 @@ pub(super) fn blend_support_parameter_from_source_pcurve_with_index_and_budget_a
     }
 
     let Some(CircularBlendDefinition { spine, radius, .. }) =
-        blend_surface_definition_with_index(index, blend, geometry_budget.ctx)?
+        blend_surface_definition_with_index(index, blend)
     else {
         return Ok(None);
     };
@@ -2392,7 +2383,7 @@ pub(super) fn blend_surface_parameters_from_point_with_index_and_budget(
     // rail.  Keep both chart domains bounded and require point reproduction
     // before admitting the recovered section parameter.
     let Some(CircularBlendDefinition { spine, radius, .. }) =
-        blend_surface_definition_with_index(index, surface, geometry_budget.ctx)?
+        blend_surface_definition_with_index(index, surface)
     else {
         return Ok(None);
     };
@@ -2402,8 +2393,7 @@ pub(super) fn blend_surface_parameters_from_point_with_index_and_budget(
         point,
         seed.map(|seed| seed.u),
         geometry_budget,
-    )?
-    else {
+    ) else {
         return Ok(None);
     };
     let Some((center, tangent, first, second, _)) =
@@ -3422,10 +3412,7 @@ fn spine_contact_point_with_index_and_budget_and_options(
                 Err(limit) => return Some(Err(limit)),
             };
         let support_carrier = if let Some((base, _)) = lineage {
-            match index.surfaces(base.as_str(), geometry_budget.ctx) {
-                Ok(value) => value,
-                Err(limit) => return Some(Err(limit)),
-            }
+            index.surfaces(base.as_str(), cadmpeg_ir::index::StandardIndex)
         } else {
             None
         };
@@ -3493,10 +3480,7 @@ fn spine_contact_point_from_offset_side_with_index_and_budget(
             Err(limit) => return Some(Err(limit)),
         };
         let procedurals =
-            match index.procedural_curves_for_curve(spine.as_str(), geometry_budget.ctx) {
-                Ok(value) => value?,
-                Err(limit) => return Some(Err(limit)),
-            };
+            index.procedural_curves_for_curve(spine.as_str(), cadmpeg_ir::index::StandardIndex)?;
         let mut selected = None;
         for candidate in procedurals {
             if let ProceduralCurveDefinition::Intersection { context, .. } = candidate.definition()
@@ -3686,7 +3670,9 @@ pub(super) fn spine_contact_pcurve_with_index<'a>(
     if depth >= 32 {
         return Ok(None);
     }
-    let Some(procedural) = index.procedural_curves_for_curve(spine.as_str(), ctx)? else {
+    let Some(procedural) =
+        index.procedural_curves_for_curve(spine.as_str(), cadmpeg_ir::index::StandardIndex)
+    else {
         return Ok(None);
     };
     let mut context = None;
@@ -3733,7 +3719,7 @@ pub(super) fn constant_surface_offset_between(
     offset_surface: &SurfaceId,
     depth: usize,
 ) -> Option<f64> {
-    let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir, cadmpeg_ir::index::StandardIndex);
+    let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
     constant_surface_offset_between_with_index(
         &index,
         support,
@@ -3765,10 +3751,14 @@ fn constant_surface_offset_between_with_index(
     if support_base == offset_base {
         return Ok(Some(offset_distance - support_offset));
     }
-    let Some(support_carrier) = index.surfaces(support_base.as_str(), ctx)? else {
+    let Some(support_carrier) =
+        index.surfaces(support_base.as_str(), cadmpeg_ir::index::StandardIndex)
+    else {
         return Ok(None);
     };
-    let Some(offset_carrier) = index.surfaces(offset_base.as_str(), ctx)? else {
+    let Some(offset_carrier) =
+        index.surfaces(offset_base.as_str(), cadmpeg_ir::index::StandardIndex)
+    else {
         return Ok(None);
     };
     let base_offset =
@@ -3797,7 +3787,7 @@ fn blend_surface_offset_with_index(
         spine: support_spine,
         radius: support_radius,
         reversed: support_reversed,
-    }) = blend_surface_definition_with_index(index, support, ctx)?
+    }) = blend_surface_definition_with_index(index, support)
     else {
         return Ok(None);
     };
@@ -3806,7 +3796,7 @@ fn blend_surface_offset_with_index(
         spine: offset_spine,
         radius: offset_radius,
         reversed: offset_reversed,
-    }) = blend_surface_definition_with_index(index, offset, ctx)?
+    }) = blend_surface_definition_with_index(index, offset)
     else {
         return Ok(None);
     };
@@ -4038,7 +4028,7 @@ pub(super) fn surface_offset_lineage(
     surface: &SurfaceId,
     depth: usize,
 ) -> Option<(SurfaceId, f64)> {
-    let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir, cadmpeg_ir::index::StandardIndex);
+    let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
     surface_offset_lineage_with_index(
         &index,
         surface,
@@ -4059,10 +4049,15 @@ fn surface_offset_lineage_with_index<'a>(
     if depth >= 32 {
         return Ok(None);
     }
-    if index.surfaces(surface.as_str(), ctx)?.is_none() {
+    if index
+        .surfaces(surface.as_str(), cadmpeg_ir::index::StandardIndex)
+        .is_none()
+    {
         return Ok(None);
     }
-    let Some(procedural) = index.procedural_surface_for_surface(surface.as_str(), ctx)? else {
+    let Some(procedural) =
+        index.procedural_surface_for_surface(surface.as_str(), cadmpeg_ir::index::StandardIndex)
+    else {
         return Ok(Some((surface, 0.0)));
     };
     let ProceduralSurfaceDefinition::Offset(definition_payload) = procedural.definition() else {
@@ -4086,12 +4081,10 @@ pub(super) struct CircularBlendDefinition<'a> {
 pub(super) fn blend_surface_definition_with_index<'a>(
     index: &'a cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-) -> Result<Option<CircularBlendDefinition<'a>>, cadmpeg_core::decode::ResourceLimit> {
-    let Some(procedural) = index.procedural_surface_for_surface(surface.as_str(), ctx)? else {
-        return Ok(None);
-    };
-    Ok(blend_surface_definition_from_procedural(procedural))
+) -> Option<CircularBlendDefinition<'a>> {
+    let procedural =
+        index.procedural_surface_for_surface(surface.as_str(), cadmpeg_ir::index::StandardIndex)?;
+    blend_surface_definition_from_procedural(procedural)
 }
 
 fn blend_surface_definition_from_procedural(
@@ -4133,7 +4126,7 @@ pub(super) fn surface_contact_direction(
     radius: f64,
     depth: usize,
 ) -> Result<Option<Vector3>, cadmpeg_core::decode::ResourceLimit> {
-    let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir, ctx)?;
+    let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
     surface_contact_direction_with_index(ctx, &index, surface, center, radius, depth)
 }
 
@@ -4178,7 +4171,7 @@ fn surface_contact_direction_with_index_and_budget(
     )? {
         return Ok(Some(direction));
     }
-    let Some(carrier) = index.surfaces(surface.as_str(), geometry_budget.ctx)? else {
+    let Some(carrier) = index.surfaces(surface.as_str(), cadmpeg_ir::index::StandardIndex) else {
         return Ok(None);
     };
     let tolerance = ir.tolerances.linear.get();
@@ -4270,12 +4263,12 @@ fn blend_surface_contact_direction_with_budget(
         return Ok(None);
     }
     let Some(CircularBlendDefinition { spine, .. }) =
-        blend_surface_definition_with_index(index, surface, geometry_budget.ctx)?
+        blend_surface_definition_with_index(index, surface)
     else {
         return Ok(None);
     };
     let Some(u) =
-        closest_spine_parameter_with_index_and_budget(index, spine, point, None, geometry_budget)?
+        closest_spine_parameter_with_index_and_budget(index, spine, point, None, geometry_budget)
     else {
         return Ok(None);
     };
@@ -4325,7 +4318,7 @@ fn model_curve_point_with_index_and_budget(
     parameter: f64,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<Option<Point3>, cadmpeg_core::decode::ResourceLimit> {
-    let Some(carrier) = index.curves(curve.as_str(), geometry_budget.ctx)? else {
+    let Some(carrier) = index.curves(curve.as_str(), cadmpeg_ir::index::StandardIndex) else {
         return Ok(None);
     };
     cadmpeg_ir::eval::finite_or_refusal(
@@ -4343,7 +4336,7 @@ fn model_curve_tangent_with_index_and_budget(
     parameter: f64,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<Option<Vector3>, cadmpeg_core::decode::ResourceLimit> {
-    let Some(carrier) = index.curves(curve.as_str(), geometry_budget.ctx)? else {
+    let Some(carrier) = index.curves(curve.as_str(), cadmpeg_ir::index::StandardIndex) else {
         return Ok(None);
     };
     cadmpeg_ir::eval::finite_or_refusal(
@@ -4362,8 +4355,8 @@ pub(super) fn closest_spine_parameter(
     curve: &CurveId,
     point: Point3,
     seed: Option<f64>,
-) -> Result<Option<f64>, cadmpeg_core::decode::ResourceLimit> {
-    let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir, ctx)?;
+) -> Option<f64> {
+    let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
     let geometry_budget = GeometryWorkBudget::from_context(ctx, MAX_ADAPTIVE_GEOMETRY_WORK);
     closest_spine_parameter_with_index_and_budget(&index, curve, point, seed, &geometry_budget)
 }
@@ -4374,35 +4367,30 @@ pub(super) fn closest_spine_parameter_with_index_and_budget(
     point: Point3,
     seed: Option<f64>,
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> Result<Option<f64>, cadmpeg_core::decode::ResourceLimit> {
-    let Some(carrier) = index.curves(curve.as_str(), geometry_budget.ctx)? else {
-        return Ok(None);
-    };
+) -> Option<f64> {
+    let carrier = index.curves(curve.as_str(), cadmpeg_ir::index::StandardIndex)?;
     match carrier.geometry.solved() {
         Some(SolvedCurveGeometry::Line(line_curve)) => {
             let origin = line_curve.origin().get();
             let direction = *line_curve.direction().as_raw();
-            Ok(Some(
+            Some(
                 (point.x - origin.x) * direction.x
                     + (point.y - origin.y) * direction.y
                     + (point.z - origin.z) * direction.z,
-            ))
+            )
         }
         Some(geometry @ (SolvedCurveGeometry::Circle(_) | SolvedCurveGeometry::Ellipse(_))) => {
-            Ok(closest_periodic_analytic_curve_parameter_with_budget(
+            closest_periodic_analytic_curve_parameter_with_budget(
                 geometry,
                 point,
                 seed,
                 geometry_budget,
-            ))
+            )
         }
-        Some(SolvedCurveGeometry::Nurbs(nurbs)) => Ok(closest_nurbs_curve_parameter_with_budget(
-            nurbs,
-            point,
-            seed,
-            geometry_budget,
-        )),
-        _ => Ok(None),
+        Some(SolvedCurveGeometry::Nurbs(nurbs)) => {
+            closest_nurbs_curve_parameter_with_budget(nurbs, point, seed, geometry_budget)
+        }
+        _ => None,
     }
 }
 

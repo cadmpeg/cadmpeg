@@ -180,7 +180,7 @@ fn linear_extrusion_surface_selects_endpoint_continuous_pcurve() {
         1
     );
     let surface_id = SurfaceId::mint("step:data:surface#28").expect("identity grammar");
-    let index = ModelIndex::build(decoded.ir(), cadmpeg_ir::index::StandardIndex);
+    let index = ModelIndex::build(decoded.ir());
     assert_eq!(
         model_surface_point_by_id(
             cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
@@ -321,7 +321,7 @@ fn linear_extrusion_surface_evaluates_a_nurbs_directrix() {
         .expect("decode NURBS linear-extrusion sheet");
 
     let surface_id = SurfaceId::mint("step:data:surface#28").expect("identity grammar");
-    let index = ModelIndex::build(decoded.ir(), cadmpeg_ir::index::StandardIndex);
+    let index = ModelIndex::build(decoded.ir());
     assert_eq!(
         model_surface_point_by_id(
             cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
@@ -365,7 +365,7 @@ fn swept_surface_chart_ignores_pcurve_population() {
             .decode(&mut Cursor::new(source), &DecodeOptions::default())
             .expect("decode swept-surface chart witness");
         let surface_id = SurfaceId::mint("step:data:surface#9").expect("identity grammar");
-        let index = ModelIndex::build(decoded.ir(), cadmpeg_ir::index::StandardIndex);
+        let index = ModelIndex::build(decoded.ir());
         assert_eq!(
             model_surface_point_by_id(
                 cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
@@ -420,7 +420,7 @@ fn surface_of_revolution_selects_profile_parameter_pcurve() {
         .expect("decode surface of revolution sheet");
 
     let surface_id = SurfaceId::mint("step:data:surface#28").expect("identity grammar");
-    let index = ModelIndex::build(decoded.ir(), cadmpeg_ir::index::StandardIndex);
+    let index = ModelIndex::build(decoded.ir());
     assert_eq!(
         model_surface_point_by_id(
             cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
@@ -496,7 +496,7 @@ fn reversed_step_ellipse_trim_preserves_source_parameterization() {
 #7=GEOMETRIC_CURVE_SET('',(#6));
 #8=SHAPE_REPRESENTATION('',(#7),$);",
     );
-    let index = ModelIndex::build(result.ir(), cadmpeg_ir::index::StandardIndex);
+    let index = ModelIndex::build(result.ir());
     let start = model_curve_point_by_id(
         cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
         &index,
@@ -596,7 +596,7 @@ fn ellipse_witness_preserves_source_axes_through_canonical_carriers() {
 
     let numeric_start = model_curve_point_by_id(
         cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
-        &ModelIndex::build(decoded.ir(), cadmpeg_ir::index::StandardIndex),
+        &ModelIndex::build(decoded.ir()),
         &CurveId::mint("step:data:curve#13").expect("identity grammar"),
         0.0,
     )
@@ -605,7 +605,7 @@ fn ellipse_witness_preserves_source_axes_through_canonical_carriers() {
     assert!(numeric_start.y.abs() < 1.0e-12);
     let cartesian_end = model_curve_point_by_id(
         cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
-        &ModelIndex::build(decoded.ir(), cadmpeg_ir::index::StandardIndex),
+        &ModelIndex::build(decoded.ir()),
         &CurveId::mint("step:data:curve#14").expect("identity grammar"),
         std::f64::consts::FRAC_PI_2,
     )
@@ -613,7 +613,7 @@ fn ellipse_witness_preserves_source_axes_through_canonical_carriers() {
     assert!(cartesian_end.x.abs() < 1.0e-12);
     assert!((cartesian_end.y - 6.0).abs() < 1.0e-12);
 
-    let index = ModelIndex::build(decoded.ir(), cadmpeg_ir::index::StandardIndex);
+    let index = ModelIndex::build(decoded.ir());
     let replica_start = model_curve_point_by_id(
         cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
         &index,

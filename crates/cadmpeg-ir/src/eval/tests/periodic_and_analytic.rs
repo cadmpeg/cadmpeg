@@ -531,7 +531,7 @@ fn an_arena_surface_point_that_overflows_reports_the_non_finite_point() {
         geometry: SurfaceGeometry::Solved(overflowing_plane()),
         source_object: None,
     });
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir);
     let budget = cadmpeg_core::decode::WorkBudget::new(64);
     for point in [
         model_surface_point_by_id(
@@ -960,7 +960,7 @@ fn a_subset_whose_support_parameter_overflows_reports_the_support_evaluation() {
             })
         .expect("subset surface exists and has no procedural construction");
 
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir);
     assert!(
         matches!(
             crate::eval::model_surface_point_by_id(

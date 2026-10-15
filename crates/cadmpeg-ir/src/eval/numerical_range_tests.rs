@@ -232,7 +232,7 @@ fn numerical_0922_reflection_rejects_unrelated_points() {
 fn numerical_0922_sweep_evaluation_ignores_profile_units() {
     for scale in [1., 1e18] {
         let (ir, id) = fixture(scale);
-        let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+        let index = crate::index::ModelIndex::build(&ir);
         let r = crate::eval::model_surface_point_by_id(
             crate::eval::admission::EvaluationAdmission::Standard,
             &index,

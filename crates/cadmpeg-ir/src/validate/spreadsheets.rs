@@ -6,24 +6,23 @@ use crate::index::identities::BorrowedIdentities;
 use crate::report::check::Check;
 
 pub(super) fn check_spreadsheets(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
     findings: &mut Vec<Finding>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let features = BorrowedIdentities::build(ctx, |add| {
+    let features = BorrowedIdentities::build(|add| {
         for feature in &ir.model.features {
             add(feature.id.as_str(), ())?;
         }
         Ok(())
     })?;
-    let parameters = BorrowedIdentities::build(ctx, |add| {
+    let parameters = BorrowedIdentities::build(|add| {
         for parameter in &ir.model.parameters {
             add(parameter.id.as_str(), parameter)?;
         }
         Ok(())
     })?;
     for sheet in &ir.model.spreadsheets {
-        if !features.contains(ctx, sheet.feature.as_str())? {
+        if !features.contains(sheet.feature.as_str()) {
             record_finding(
                 findings,
                 Check::ReferentialIntegrity,
@@ -33,7 +32,7 @@ pub(super) fn check_spreadsheets(
             );
         }
         for cell in sheet.cells() {
-            let Some(parameter) = parameters.get(ctx, cell.parameter.as_str())? else {
+            let Some(parameter) = parameters.get(cell.parameter.as_str()) else {
                 record_finding(
                     findings,
                     Check::ReferentialIntegrity,
@@ -89,7 +88,7 @@ mod tests {
         );
         let ctx = cadmpeg_test_support::service_decode_context();
         let mut findings = Vec::new();
-        check_spreadsheets(&ctx, &ir, &mut findings).unwrap();
+        check_spreadsheets(&ir, &mut findings).unwrap();
         assert_eq!(
             findings
                 .iter()

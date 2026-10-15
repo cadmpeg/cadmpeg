@@ -585,7 +585,7 @@ fn offset_plane_references_form_an_acyclic_graph_independent_of_list_order() {
         .iter()
         .any(|finding| finding.message.contains("datum-plane reference cycle")));
 
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_recursion_depth = 0;

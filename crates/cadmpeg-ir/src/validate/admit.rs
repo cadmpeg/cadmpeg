@@ -112,7 +112,7 @@ pub fn admit_with_additional_native_identities<'a>(
     allowed: &[Check],
     losses: Vec<LossNote>,
 ) -> Result<ValidationReport, CodecError> {
-    let index = crate::index::ModelIndex::with_additional_native_identities(ir, additional, ctx)?;
+    let index = crate::index::ModelIndex::with_additional_native_identities(ir, additional);
     Ok(filter_checks(
         super::validate_model_with_index(ctx, ir, losses, &index)?,
         allowed,
@@ -133,8 +133,7 @@ pub fn admit_with_native_unknowns(
         Ok(positions) => positions,
         Err(error) => return Ok(Err(error)),
     };
-    let index =
-        crate::index::ModelIndex::with_native_unknowns(ir, format, records, &positions, ctx)?;
+    let index = crate::index::ModelIndex::with_native_unknowns(ir, format, records, &positions);
     let mut report = super::validate_model_with_index(ctx, ir, losses, &index)?;
     if let Some(annotations) = annotations {
         super::validate_annotations(
@@ -160,8 +159,7 @@ pub(crate) fn admit_annotation_delta(
         Ok(positions) => positions,
         Err(error) => return Ok(Err(error)),
     };
-    let index =
-        crate::index::ModelIndex::with_native_unknowns(ir, format, records, &positions, ctx)?;
+    let index = crate::index::ModelIndex::with_native_unknowns(ir, format, records, &positions);
     let mut report = super::validate_model_with_index(ctx, ir, Vec::new(), &index)?;
     let mut old = Vec::new();
     super::validate_annotations(

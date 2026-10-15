@@ -660,7 +660,7 @@ pub(super) fn try_decode_geometry(
             uncharted_intersections.insert(curve.xmt, curve);
         }
         let intersection_support_uv = {
-            let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir, ctx)?;
+            let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
             intersection_constructions
                 .iter()
                 .map(
@@ -1148,7 +1148,7 @@ pub(super) fn try_decode_geometry(
         )?;
         support_uv_geometry_budget.clear_blend_frame_cache();
         coupled_support_uv_geometry_budget.clear_blend_frame_cache();
-        complete_parameterization_equivalent_support_uv(ctx, &mut ir)?;
+        complete_parameterization_equivalent_support_uv(&mut ir)?;
         let mut completed_endpoint_witnesses = BTreeMap::new();
         support_uv_lane_geometry_exhausted |=
             complete_support_uv_with_budget_and_endpoint_witnesses(
@@ -1178,7 +1178,6 @@ pub(super) fn try_decode_geometry(
         );
         copy_endpoint_witnesses(&mut model_endpoint_witnesses, &validated_endpoint_witnesses);
         attach_completed_intersection_pcurves_for_stream_with_budget(
-            ctx,
             &mut ir,
             crate::decode::support_uv::IntersectionStream {
                 graph,
@@ -1224,7 +1223,6 @@ pub(super) fn try_decode_geometry(
         });
     }
     attach_completed_intersection_pcurves_for_model_with_budget(
-        ctx,
         &mut ir,
         &completion_sources,
         &mut annotations,

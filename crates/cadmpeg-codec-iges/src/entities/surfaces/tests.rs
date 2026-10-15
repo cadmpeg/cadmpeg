@@ -691,8 +691,7 @@ fn decode_solves_a_surface_of_revolution_from_an_exact_hyperbola_carrier() {
             parameter,
         )
         .expect("hyperbola directrix evaluates");
-        let index =
-            cadmpeg_ir::index::ModelIndex::build(result.ir(), cadmpeg_ir::index::StandardIndex);
+        let index = cadmpeg_ir::index::ModelIndex::build(result.ir());
         let quarter_turn = cadmpeg_ir::eval::model_surface_point_by_id(
             cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
             &index,

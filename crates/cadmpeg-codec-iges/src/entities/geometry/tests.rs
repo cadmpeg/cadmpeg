@@ -55,7 +55,7 @@ fn composite_coplanarity_refuses_recursion_depth() {
     };
     let mut ir = CadIr::empty();
     ir.model.curves.push(child);
-    let index = ModelIndex::build(&ir, cadmpeg_ir::index::StandardIndex);
+    let index = ModelIndex::build(&ir);
     let plane = (Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0));
 
     let arena = DecodeArena::new();

@@ -193,8 +193,7 @@ pub(super) fn decode(
         })?;
     }
 
-    let mut target_identities =
-        record_targets(ir, |record_id| known_typed.contains(record_id), ctx)?;
+    let mut target_identities = record_targets(ir, |record_id| known_typed.contains(record_id));
     for candidate in &candidates {
         let targets = target_identities.entry(candidate.id).or_default();
         targets.insert(candidate.identity.as_str().to_owned());

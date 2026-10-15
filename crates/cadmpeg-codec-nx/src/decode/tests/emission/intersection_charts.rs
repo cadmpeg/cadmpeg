@@ -469,7 +469,6 @@ fn opposite_intersection_chart_transfer_scopes_to_new_procedural_curves() {
         );
 
         crate::decode::pcurves::complete_intersection_pcurves_from_opposite_charts_with_budget(
-            ctx,
             &mut ir,
             1,
             &transfer_budget,
@@ -1157,14 +1156,14 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
                 .expect("tolerant intersection owner");
             let evaluated = cadmpeg_ir::eval::model_curve_point_by_id(
                 cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
-                &cadmpeg_ir::index::ModelIndex::build(&ir, cadmpeg_ir::index::StandardIndex),
+                &cadmpeg_ir::index::ModelIndex::build(&ir),
                 owner,
                 parameter,
             )
             .expect("charted tolerant intersection evaluates");
             let inverted = cadmpeg_ir::eval::model_curve_parameter_near_point_in_index(
                 &cadmpeg_test_support::service_decode_context(),
-                &cadmpeg_ir::index::ModelIndex::build(&ir, cadmpeg_ir::index::StandardIndex),
+                &cadmpeg_ir::index::ModelIndex::build(&ir),
                 owner,
                 evaluated.get(),
                 parameter,

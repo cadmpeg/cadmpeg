@@ -58,7 +58,7 @@ fn offset_surface_parameter_solver_preserves_support_parameters() {
         let expected = Point2::new(12.0, 7.0);
         let point = cadmpeg_ir::eval::model_surface_point_by_id(
             cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
-            &cadmpeg_ir::index::ModelIndex::build(result.ir(), cadmpeg_ir::index::StandardIndex),
+            &cadmpeg_ir::index::ModelIndex::build(result.ir()),
             &surface,
             expected.u,
             expected.v,
@@ -91,7 +91,7 @@ fn offset_surface_parameter_solver_preserves_support_parameters() {
         }
         let translated_point = cadmpeg_ir::eval::model_surface_point_by_id(
             cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
-            &cadmpeg_ir::index::ModelIndex::build(&translated, cadmpeg_ir::index::StandardIndex),
+            &cadmpeg_ir::index::ModelIndex::build(&translated),
             &surface,
             expected.u,
             expected.v,
@@ -151,7 +151,7 @@ fn offset_surface_parameter_solver_preserves_support_parameters() {
             ));
         let nested_point = cadmpeg_ir::eval::model_surface_point_by_id(
             cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
-            &cadmpeg_ir::index::ModelIndex::build(&translated, cadmpeg_ir::index::StandardIndex),
+            &cadmpeg_ir::index::ModelIndex::build(&translated),
             &nested_surface,
             expected.u,
             expected.v,
@@ -188,10 +188,7 @@ fn offset_surface_parameter_solver_accepts_a_seed_within_fit_tolerance() {
             let seed = Point2::new(12.0, 7.0);
             let mut point = cadmpeg_ir::eval::model_surface_point_by_id(
                 cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
-                &cadmpeg_ir::index::ModelIndex::build(
-                    result.ir(),
-                    cadmpeg_ir::index::StandardIndex,
-                ),
+                &cadmpeg_ir::index::ModelIndex::build(result.ir()),
                 &surface,
                 seed.u,
                 seed.v,
@@ -212,8 +209,7 @@ fn offset_surface_parameter_solver_accepts_a_seed_within_fit_tolerance() {
 
             assert_eq!(actual, seed);
 
-            let index =
-                cadmpeg_ir::index::ModelIndex::build(result.ir(), cadmpeg_ir::index::StandardIndex);
+            let index = cadmpeg_ir::index::ModelIndex::build(result.ir());
             let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::from_context(
                 geometry_ctx,
                 work_limit,
@@ -323,7 +319,7 @@ fn offset_surface_parameter_solver_retries_a_bad_continuation_seed() {
         let expected = Point2::new(0.2, 0.45);
         let point = cadmpeg_ir::eval::model_surface_point_by_id(
             cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
-            &cadmpeg_ir::index::ModelIndex::build(&ir, cadmpeg_ir::index::StandardIndex),
+            &cadmpeg_ir::index::ModelIndex::build(&ir),
             &offset,
             expected.u,
             expected.v,
@@ -377,7 +373,7 @@ fn offset_surface_parameter_solver_retries_a_bad_continuation_seed() {
         ));
         let nested_point = cadmpeg_ir::eval::model_surface_point_by_id(
             cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
-            &cadmpeg_ir::index::ModelIndex::build(&ir, cadmpeg_ir::index::StandardIndex),
+            &cadmpeg_ir::index::ModelIndex::build(&ir),
             &nested,
             expected.u,
             expected.v,
@@ -857,9 +853,8 @@ fn completed_intersection_support_lane_attaches_after_topology_emission() {
             usize::MAX,
         );
 
-        crate::test_support::with_decode_context(|ctx| {
+        ({
             crate::decode::support_uv::attach_completed_intersection_pcurves_for_stream_with_budget(
-                ctx,
                 &mut ir,
                 crate::decode::support_uv::IntersectionStream {
                     graph: &graph,
@@ -886,9 +881,8 @@ fn completed_intersection_support_lane_attaches_after_topology_emission() {
             coedge_start: 0,
             procedural_start: 0,
         };
-        crate::test_support::with_decode_context(|ctx| {
+        ({
             crate::decode::support_uv::attach_completed_intersection_pcurves_for_model_with_budget(
-                ctx,
                 &mut ir,
                 std::slice::from_ref(&source),
                 &mut annotations,
@@ -941,16 +935,10 @@ fn linear_intersection_endpoint_witness_requires_a_clamped_linear_curve() {
         )),
         source_object: None,
     });
-    let index =
-        cadmpeg_ir::index::ModelIndex::new_model_only(&ir, cadmpeg_ir::index::StandardIndex);
+    let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
 
     assert_eq!(
-        crate::decode::pcurves::linear_nurbs_curve_endpoint_witness_with_index(
-            &index,
-            &curve_id,
-            &cadmpeg_test_support::service_decode_context()
-        )
-        .unwrap(),
+        crate::decode::pcurves::linear_nurbs_curve_endpoint_witness_with_index(&index, &curve_id),
         Some([first, last])
     );
 
@@ -966,16 +954,10 @@ fn linear_intersection_endpoint_witness_requires_a_clamped_linear_curve() {
         .expect("fixture constructor admission")
         .expect("cardinality-valid unclamped witness curve"),
     ));
-    let index =
-        cadmpeg_ir::index::ModelIndex::new_model_only(&ir, cadmpeg_ir::index::StandardIndex);
+    let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
     assert!(
-        crate::decode::pcurves::linear_nurbs_curve_endpoint_witness_with_index(
-            &index,
-            &curve_id,
-            &cadmpeg_test_support::service_decode_context()
-        )
-        .unwrap()
-        .is_none()
+        crate::decode::pcurves::linear_nurbs_curve_endpoint_witness_with_index(&index, &curve_id)
+            .is_none()
     );
 }
 
@@ -1216,7 +1198,7 @@ fn support_uv_completion_uses_a_finite_serialized_lane_as_a_nurbs_seed() {
             );
 
             let parameters = [Point2::new(0.2, 0.3), Point2::new(0.7, 0.8)];
-            let index = cadmpeg_ir::index::ModelIndex::build(&ir, cadmpeg_ir::index::StandardIndex);
+            let index = cadmpeg_ir::index::ModelIndex::build(&ir);
             let points = parameters
                 .into_iter()
                 .map(|parameter| {
@@ -1430,7 +1412,7 @@ fn coupled_uv_completion_fills_both_missing_procedural_lanes_from_the_chart() {
             panic!("intersection");
         };
         assert!(context.sides().iter().all(|side| side.pcurve.is_some()));
-        let index = cadmpeg_ir::index::ModelIndex::build(&ir, cadmpeg_ir::index::StandardIndex);
+        let index = cadmpeg_ir::index::ModelIndex::build(&ir);
         for (side, surface) in procedural_surfaces.iter().enumerate() {
             for (parameter, expected) in parameters.iter().zip(&points) {
                 let uv = cadmpeg_ir::eval::decode::pcurve_uv(

@@ -93,7 +93,7 @@ fn law_sweep_maps_wide_profile_interval_into_finite_nurbs_domain() {
         )),
         source_object: None,
     });
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir);
     let range = [finite(-f64::MAX), finite(f64::MAX)];
     let parameter = finite(-f64::MAX * 0.5);
     let forward = sweep_profile_differential(
@@ -344,7 +344,7 @@ fn law_sweep_evaluation_applies_profile_scale_and_current_cache() {
         record_bounds: None,
     });
 
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir);
     let expected = Point3::new(-0.5, 0.5, 0.25);
     let point = model_surface_point_by_id(
         crate::eval::admission::EvaluationAdmission::Standard,
@@ -399,7 +399,7 @@ fn law_sweep_evaluation_applies_profile_scale_and_current_cache() {
         .unwrap();
     });
 
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir);
     assert_eq!(
         model_surface_point_by_id(
             crate::eval::admission::EvaluationAdmission::Standard,
@@ -453,7 +453,7 @@ fn law_sweep_evaluation_applies_profile_scale_and_current_cache() {
         )
         .unwrap();
     });
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir);
     assert_eq!(
         model_surface_point_by_id(
             crate::eval::admission::EvaluationAdmission::Standard,
@@ -635,7 +635,7 @@ fn a_law_sweep_whose_law_overflows_reaches_no_coordinate() {
             value: cadmpeg_core::nonblank_literal!("1000.0*X"),
         }],
     });
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir);
     for route in [
         model_surface_point_by_id(
             crate::eval::admission::EvaluationAdmission::Standard,
@@ -678,13 +678,13 @@ fn a_law_sweep_whose_law_derivative_has_no_value_keeps_its_point() {
     });
     let expected = model_surface_point_by_id(
         crate::eval::admission::EvaluationAdmission::Standard,
-        &crate::index::ModelIndex::build(&plain, crate::index::StandardIndex),
+        &crate::index::ModelIndex::build(&plain),
         &plain_id,
         0.5,
         0.0,
     )
     .expect("sweep of the law X");
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir);
     assert_eq!(
         model_surface_point_by_id(
             crate::eval::admission::EvaluationAdmission::Standard,

@@ -22,14 +22,14 @@ const EPS_CARRIERS_PARAMETERIZATION_PARAMETER_IN_DOMAIN_E12: f64 = 1.0e-12;
 
 fn collect_law_curves<'a, R, V, P>(
     expression: &'a crate::geometry::LawExpression<R, V, P>,
-    curves: &mut BorrowedIdentities<'_, 'a>,
+    curves: &mut BorrowedIdentities<'a>,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
     let _depth = ctx.enter_nested("carrier law nesting")?;
 
     match expression {
         crate::geometry::LawExpression::Edge { curve, .. } => {
-            curves.insert_unique(curve.id.as_str(), ())?;
+            curves.insert_unique(curve.id.as_str(), ());
         }
         crate::geometry::LawExpression::Algebraic { operands, .. } => {
             for operand in operands {
@@ -60,39 +60,39 @@ pub(super) fn check_carrier_reachability(
         }
         Ok(())
     })?;
-    let mut surfaces = BorrowedIdentities::build(ctx, |_| Ok(()))?;
-    let mut curves = BorrowedIdentities::build(ctx, |_| Ok(()))?;
-    let mut pcurves = BorrowedIdentities::build(ctx, |_| Ok(()))?;
-    let mut points = BorrowedIdentities::build(ctx, |_| Ok(()))?;
+    let mut surfaces = BorrowedIdentities::build(|_| Ok(()))?;
+    let mut curves = BorrowedIdentities::build(|_| Ok(()))?;
+    let mut pcurves = BorrowedIdentities::build(|_| Ok(()))?;
+    let mut points = BorrowedIdentities::build(|_| Ok(()))?;
     for face in &ir.model.faces {
-        surfaces.insert_unique(face.surface.as_str(), ())?;
+        surfaces.insert_unique(face.surface.as_str(), ());
     }
     for edge in &ir.model.edges {
         if let Some(curve) = edge.curve() {
-            curves.insert_unique(curve.as_str(), ())?;
+            curves.insert_unique(curve.as_str(), ());
         }
     }
     for coedge in &ir.model.coedges {
         if let Some(use_) = &coedge.use_curve {
-            curves.insert_unique(use_.curve.as_str(), ())?;
+            curves.insert_unique(use_.curve.as_str(), ());
         }
         for use_ in &coedge.pcurves {
-            pcurves.insert_unique(use_.pcurve.as_str(), ())?;
+            pcurves.insert_unique(use_.pcurve.as_str(), ());
         }
     }
     for surface in &ir.model.surfaces {
         if surface.source_object.is_some() {
-            surfaces.insert_unique(surface.id.as_str(), ())?;
+            surfaces.insert_unique(surface.id.as_str(), ());
         }
     }
     for curve in &ir.model.curves {
         if curve.source_object.is_some() {
-            curves.insert_unique(curve.id.as_str(), ())?;
+            curves.insert_unique(curve.id.as_str(), ());
         }
     }
     for loop_ in &ir.model.loops {
         for use_ in loop_.vertex_pcurves() {
-            pcurves.insert_unique(use_.pcurve.as_str(), ())?;
+            pcurves.insert_unique(use_.pcurve.as_str(), ());
         }
     }
     for surface in &ir.model.procedural_surfaces {
@@ -104,18 +104,18 @@ pub(super) fn check_carrier_reachability(
                 boundary_pcurves
                     .iter()
                     .map(super::super::ids::PcurveId::as_str),
-            )?;
+            );
         }
     }
     for vertex in &ir.model.vertices {
-        points.insert_unique(vertex.point.as_str(), ())?;
+        points.insert_unique(vertex.point.as_str(), ());
     }
     for point in &ir.model.points {
         if point.source_object.is_some() {
-            points.insert_unique(point.id.as_str(), ())?;
+            points.insert_unique(point.id.as_str(), ());
         }
     }
-    let surface_owners = BorrowedIdentities::build(ctx, |add| {
+    let surface_owners = BorrowedIdentities::build(|add| {
         for surface in &ir.model.surfaces {
             if let Some(procedural) = surface.geometry.procedural_construction() {
                 add(procedural.as_str(), &surface.id)?;
@@ -123,7 +123,7 @@ pub(super) fn check_carrier_reachability(
         }
         Ok(())
     })?;
-    let curve_owners = BorrowedIdentities::build(ctx, |add| {
+    let curve_owners = BorrowedIdentities::build(|add| {
         for curve in &ir.model.curves {
             if let Some(procedural) = curve.geometry.procedural_construction() {
                 add(procedural.as_str(), &curve.id)?;
@@ -134,13 +134,13 @@ pub(super) fn check_carrier_reachability(
     for binding in &ir.model.appearance_bindings {
         match &binding.target {
             crate::appearance::AppearanceTarget::Surface(id) => {
-                surfaces.insert_unique(id.as_str(), ())?;
+                surfaces.insert_unique(id.as_str(), ());
             }
             crate::appearance::AppearanceTarget::Curve(id) => {
-                curves.insert_unique(id.as_str(), ())?;
+                curves.insert_unique(id.as_str(), ());
             }
             crate::appearance::AppearanceTarget::Point(id) => {
-                points.insert_unique(id.as_str(), ())?;
+                points.insert_unique(id.as_str(), ());
             }
             _ => {}
         }
@@ -154,24 +154,21 @@ pub(super) fn check_carrier_reachability(
     {
         match item {
             crate::presentation::PresentationItem::Surface { surface } => {
-                surfaces.insert_unique(surface.as_str(), ())?;
+                surfaces.insert_unique(surface.as_str(), ());
             }
             crate::presentation::PresentationItem::Curve { curve } => {
-                curves.insert_unique(curve.as_str(), ())?;
+                curves.insert_unique(curve.as_str(), ());
             }
             crate::presentation::PresentationItem::Point { point } => {
-                points.insert_unique(point.as_str(), ())?;
+                points.insert_unique(point.as_str(), ());
             }
             _ => {}
         }
     }
 
     for procedural in &ir.model.procedural_surfaces {
-        if let Some(surface) = surface_owners
-            .get_unique(ctx, procedural.id.as_str())?
-            .copied()
-        {
-            surfaces.insert_unique(surface.as_str(), ())?;
+        if let Some(surface) = surface_owners.get_unique(procedural.id.as_str()).copied() {
+            surfaces.insert_unique(surface.as_str(), ());
         }
         match procedural.definition() {
             ProceduralSurfaceDefinition::Exact(..) => {}
@@ -182,20 +179,20 @@ pub(super) fn check_carrier_reachability(
                     components
                         .iter()
                         .map(|component| component.component.as_str()),
-                )?;
+                );
             }
             ProceduralSurfaceDefinition::SubSurface(definition_payload) => {
                 let support = definition_payload.support();
                 {
-                    surfaces.insert_unique(support.as_str(), ())?;
+                    surfaces.insert_unique(support.as_str(), ());
                 }
             }
             ProceduralSurfaceDefinition::Taper(definition_payload) => {
                 let support = definition_payload.support();
                 let reference = definition_payload.reference();
                 {
-                    surfaces.insert_unique(support.as_str(), ())?;
-                    curves.insert_unique(reference.as_str(), ())?;
+                    surfaces.insert_unique(support.as_str(), ());
+                    curves.insert_unique(reference.as_str(), ());
                 }
             }
             ProceduralSurfaceDefinition::Loft(definition_payload) => {
@@ -203,7 +200,7 @@ pub(super) fn check_carrier_reachability(
 
                 for entry in sections.iter().flat_map(|section| &section.entries) {
                     if let Some(curve) = &entry.path.path {
-                        curves.insert_unique(curve.id.as_str(), ())?;
+                        curves.insert_unique(curve.id.as_str(), ());
                     }
                     curves.extend_unique(
                         entry
@@ -211,11 +208,11 @@ pub(super) fn check_carrier_reachability(
                             .auxiliaries
                             .iter()
                             .map(super::super::ids::CurveId::as_str),
-                    )?;
+                    );
                     for member in &entry.profile {
-                        curves.insert_unique(member.profile.id.as_str(), ())?;
+                        curves.insert_unique(member.profile.id.as_str(), ());
                         if let Some(surface) = member.form.surface() {
-                            surfaces.insert_unique(surface.as_str(), ())?;
+                            surfaces.insert_unique(surface.as_str(), ());
                         }
                     }
                 }
@@ -227,7 +224,7 @@ pub(super) fn check_carrier_reachability(
                 match &construction.tail {
                     crate::geometry::CompoundLoftTail::Six { scale, curve, .. } => {
                         extra_scales[0] = Some(scale.as_ref());
-                        curves.insert_unique(curve.as_str(), ())?;
+                        curves.insert_unique(curve.as_str(), ());
                     }
                     crate::geometry::CompoundLoftTail::Seven {
                         first_scale,
@@ -241,7 +238,7 @@ pub(super) fn check_carrier_reachability(
                         if let crate::geometry::CompoundLoftDirection::Curve { curve, .. } =
                             direction
                         {
-                            curves.insert_unique(curve.as_str(), ())?;
+                            curves.insert_unique(curve.as_str(), ());
                         }
                     }
                 }
@@ -251,16 +248,16 @@ pub(super) fn check_carrier_reachability(
                     .iter()
                     .chain(extra_scales.into_iter().flatten())
                 {
-                    curves.insert_unique(scale.path.as_str(), ())?;
+                    curves.insert_unique(scale.path.as_str(), ());
                     curves.extend_unique(
                         scale
                             .auxiliaries
                             .iter()
                             .map(super::super::ids::CurveId::as_str),
-                    )?;
+                    );
                     for member in &scale.members {
-                        curves.insert_unique(member.curve.as_str(), ())?;
-                        surfaces.insert_unique(member.data.surface.as_str(), ())?;
+                        curves.insert_unique(member.curve.as_str(), ());
+                        surfaces.insert_unique(member.data.surface.as_str(), ());
                     }
                 }
             }
@@ -283,33 +280,33 @@ pub(super) fn check_carrier_reachability(
                         ..
                     } => {
                         extra_scales[0] = scale.as_deref();
-                        curves.insert_unique(curve.as_str(), ())?;
+                        curves.insert_unique(curve.as_str(), ());
                     }
                     crate::geometry::ScaledCompoundLoftBranch::Direct { direction, .. } => {
                         if let crate::geometry::CompoundLoftDirection::Curve { curve, .. } =
                             direction
                         {
-                            curves.insert_unique(curve.as_str(), ())?;
+                            curves.insert_unique(curve.as_str(), ());
                         }
                     }
                 }
-                curves.insert_unique(construction.tail_curve.as_str(), ())?;
+                curves.insert_unique(construction.tail_curve.as_str(), ());
                 for scale in construction
                     .scales
                     .as_slice()
                     .iter()
                     .chain(extra_scales.into_iter().flatten())
                 {
-                    curves.insert_unique(scale.path.as_str(), ())?;
+                    curves.insert_unique(scale.path.as_str(), ());
                     curves.extend_unique(
                         scale
                             .auxiliaries
                             .iter()
                             .map(super::super::ids::CurveId::as_str),
-                    )?;
+                    );
                     for member in &scale.members {
-                        curves.insert_unique(member.curve.as_str(), ())?;
-                        surfaces.insert_unique(member.data.surface.as_str(), ())?;
+                        curves.insert_unique(member.curve.as_str(), ());
+                        surfaces.insert_unique(member.data.surface.as_str(), ());
                     }
                 }
             }
@@ -317,10 +314,10 @@ pub(super) fn check_carrier_reachability(
                 let construction = definition_payload.construction();
                 match &construction.layout {
                     crate::geometry::SkinSurfaceLayout::Profiles { profiles, path, .. } => {
-                        curves.insert_unique(path.as_str(), ())?;
+                        curves.insert_unique(path.as_str(), ());
                         for profile in profiles {
-                            curves.insert_unique(profile.curve.as_str(), ())?;
-                            surfaces.insert_unique(profile.data.surface.as_str(), ())?;
+                            curves.insert_unique(profile.curve.as_str(), ());
+                            surfaces.insert_unique(profile.data.surface.as_str(), ());
                         }
                     }
                     crate::geometry::SkinSurfaceLayout::Compact {
@@ -328,11 +325,11 @@ pub(super) fn check_carrier_reachability(
                         secondary_curve,
                         ..
                     } => {
-                        curves.insert_unique(curve.as_str(), ())?;
-                        curves.insert_unique(secondary_curve.as_str(), ())?;
+                        curves.insert_unique(curve.as_str(), ());
+                        curves.insert_unique(secondary_curve.as_str(), ());
                     }
                 }
-                curves.insert_unique(construction.parameter_curve.as_str(), ())?;
+                curves.insert_unique(construction.parameter_curve.as_str(), ());
                 for variable in construction.formula.variables() {
                     collect_law_curves(variable, &mut curves, ctx)?;
                 }
@@ -356,7 +353,7 @@ pub(super) fn check_carrier_reachability(
                     .flat_map(|section| &section.entries)
                 {
                     if let Some(curve) = &entry.path.path {
-                        curves.insert_unique(curve.id.as_str(), ())?;
+                        curves.insert_unique(curve.id.as_str(), ());
                     }
                     curves.extend_unique(
                         entry
@@ -364,11 +361,11 @@ pub(super) fn check_carrier_reachability(
                             .auxiliaries
                             .iter()
                             .map(super::super::ids::CurveId::as_str),
-                    )?;
+                    );
                     for member in &entry.profile {
-                        curves.insert_unique(member.profile.id.as_str(), ())?;
+                        curves.insert_unique(member.profile.id.as_str(), ());
                         if let Some(surface) = member.form.surface() {
-                            surfaces.insert_unique(surface.as_str(), ())?;
+                            surfaces.insert_unique(surface.as_str(), ());
                         }
                     }
                 }
@@ -382,16 +379,16 @@ pub(super) fn check_carrier_reachability(
                 let construction = definition_payload.construction();
 
                 for side in [&construction.first, &construction.second] {
-                    surfaces.insert_unique(side.surface.as_str(), ())?;
-                    curves.insert_unique(side.curve.as_str(), ())?;
+                    surfaces.insert_unique(side.surface.as_str(), ());
+                    curves.insert_unique(side.curve.as_str(), ());
                 }
-                surfaces.insert_unique(construction.second_exact_surface.as_str(), ())?;
-                curves.insert_unique(construction.center_curve.as_str(), ())?;
+                surfaces.insert_unique(construction.second_exact_surface.as_str(), ());
+                curves.insert_unique(construction.center_curve.as_str(), ());
                 if let crate::geometry::G2BlendFirstShape::Full {
                     support: Some(support),
                 } = &construction.first_shape
                 {
-                    surfaces.insert_unique(support.surface.as_str(), ())?;
+                    surfaces.insert_unique(support.surface.as_str(), ());
                 }
             }
             ProceduralSurfaceDefinition::VariableBlend(definition_payload) => {
@@ -399,13 +396,13 @@ pub(super) fn check_carrier_reachability(
 
                 for side in &construction.sides {
                     if let Some(surface) = &side.surface {
-                        surfaces.insert_unique(surface.surface.as_str(), ())?;
+                        surfaces.insert_unique(surface.surface.as_str(), ());
                     }
                     if let Some(curve) = &side.curve {
-                        curves.insert_unique(curve.curve.as_str(), ())?;
+                        curves.insert_unique(curve.curve.as_str(), ());
                     }
                 }
-                curves.insert_unique(construction.slice.as_str(), ())?;
+                curves.insert_unique(construction.slice.as_str(), ());
                 curves.extend_unique(
                     [
                         construction
@@ -417,7 +414,7 @@ pub(super) fn check_carrier_reachability(
                     .into_iter()
                     .flatten()
                     .map(super::super::ids::CurveId::as_str),
-                )?;
+                );
             }
             ProceduralSurfaceDefinition::RevisionCompoundLoft { construction } => {
                 for member in construction.base_profile().iter().chain(
@@ -426,22 +423,22 @@ pub(super) fn check_carrier_reachability(
                         .iter()
                         .flat_map(|entry| &entry.profile),
                 ) {
-                    curves.insert_unique(member.profile.id.as_str(), ())?;
+                    curves.insert_unique(member.profile.id.as_str(), ());
                     if let Some(surface) = member.form.surface() {
-                        surfaces.insert_unique(surface.as_str(), ())?;
+                        surfaces.insert_unique(surface.as_str(), ());
                     }
                 }
                 for path in std::iter::once(construction.base_path())
                     .chain(construction.entries().iter().map(|entry| &entry.path))
                 {
                     if let Some(curve) = &path.path {
-                        curves.insert_unique(curve.id.as_str(), ())?;
+                        curves.insert_unique(curve.id.as_str(), ());
                     }
                     curves.extend_unique(
                         path.auxiliaries
                             .iter()
                             .map(super::super::ids::CurveId::as_str),
-                    )?;
+                    );
                 }
                 curves.extend_unique(
                     [
@@ -456,18 +453,18 @@ pub(super) fn check_carrier_reachability(
                     .into_iter()
                     .flatten()
                     .map(super::super::ids::CurveId::as_str),
-                )?;
+                );
             }
             ProceduralSurfaceDefinition::RevisionG2Blend { construction } => {
                 for side in construction.sides() {
                     if let Some(surface) = &side.surface {
-                        surfaces.insert_unique(surface.surface.as_str(), ())?;
+                        surfaces.insert_unique(surface.surface.as_str(), ());
                     }
                     if let Some(curve) = &side.curve {
-                        curves.insert_unique(curve.curve.as_str(), ())?;
+                        curves.insert_unique(curve.curve.as_str(), ());
                     }
                 }
-                curves.insert_unique(construction.center().as_str(), ())?;
+                curves.insert_unique(construction.center().as_str(), ());
             }
             ProceduralSurfaceDefinition::VertexBlend(definition_payload) => {
                 let construction = definition_payload.construction();
@@ -476,12 +473,12 @@ pub(super) fn check_carrier_reachability(
                     match &boundary.geometry {
                         crate::geometry::VertexBlendBoundaryGeometry::Circle { curve, .. }
                         | crate::geometry::VertexBlendBoundaryGeometry::Plane { curve, .. } => {
-                            curves.insert_unique(curve.as_str(), ())?;
+                            curves.insert_unique(curve.as_str(), ());
                         }
                         crate::geometry::VertexBlendBoundaryGeometry::Pcurve {
                             surface, ..
                         } => {
-                            surfaces.insert_unique(surface.as_str(), ())?;
+                            surfaces.insert_unique(surface.as_str(), ());
                         }
                         crate::geometry::VertexBlendBoundaryGeometry::Degenerate { .. } => {}
                     }
@@ -490,26 +487,26 @@ pub(super) fn check_carrier_reachability(
             ProceduralSurfaceDefinition::Extrusion(definition_payload) => {
                 let directrix = definition_payload.directrix();
                 {
-                    curves.insert_unique(directrix.as_str(), ())?;
+                    curves.insert_unique(directrix.as_str(), ());
                 }
             }
             ProceduralSurfaceDefinition::LinearSweep(definition_payload) => {
-                curves.insert_unique(definition_payload.directrix().as_str(), ())?;
+                curves.insert_unique(definition_payload.directrix().as_str(), ());
             }
             ProceduralSurfaceDefinition::Revolution(definition_payload) => {
                 let directrix = definition_payload.directrix();
                 {
-                    curves.insert_unique(directrix.as_str(), ())?;
+                    curves.insert_unique(directrix.as_str(), ());
                 }
             }
             ProceduralSurfaceDefinition::AxisRevolution(definition_payload) => {
-                curves.insert_unique(definition_payload.directrix().as_str(), ())?;
+                curves.insert_unique(definition_payload.directrix().as_str(), ());
             }
             ProceduralSurfaceDefinition::Sweep(definition_payload) => {
                 let profile = definition_payload.profile();
                 let spine = definition_payload.spine();
                 let native = definition_payload.native();
-                curves.extend_unique([profile.as_str(), spine.as_str()])?;
+                curves.extend_unique([profile.as_str(), spine.as_str()]);
                 if let Some(native) = native {
                     let formulas = match &native.layout {
                         crate::geometry::SweepSurfaceLayout::ProfileFirst { formulas, .. } => {
@@ -521,7 +518,7 @@ pub(super) fn check_carrier_reachability(
                         crate::geometry::SweepSurfaceLayout::ExplicitGuide {
                             guide_curve, ..
                         } => {
-                            curves.insert_unique(guide_curve.as_str(), ())?;
+                            curves.insert_unique(guide_curve.as_str(), ());
                             &[]
                         }
                         crate::geometry::SweepSurfaceLayout::ExplicitSurface {
@@ -529,9 +526,9 @@ pub(super) fn check_carrier_reachability(
                             auxiliary_curve,
                             ..
                         } => {
-                            surfaces.insert_unique(support_surface.as_str(), ())?;
+                            surfaces.insert_unique(support_surface.as_str(), ());
                             if let Some(curve) = auxiliary_curve {
-                                curves.insert_unique(curve.as_str(), ())?;
+                                curves.insert_unique(curve.as_str(), ());
                             }
                             &[]
                         }
@@ -556,34 +553,34 @@ pub(super) fn check_carrier_reachability(
             ProceduralSurfaceDefinition::Offset(definition_payload) => {
                 let support = definition_payload.support();
                 {
-                    surfaces.insert_unique(support.as_str(), ())?;
+                    surfaces.insert_unique(support.as_str(), ());
                 }
             }
             ProceduralSurfaceDefinition::Replica {
                 source: support, ..
             } => {
-                surfaces.insert_unique(support.as_str(), ())?;
+                surfaces.insert_unique(support.as_str(), ());
             }
             ProceduralSurfaceDefinition::Subset(definition_payload) => {
                 let support = definition_payload.support();
                 {
-                    surfaces.insert_unique(support.as_str(), ())?;
+                    surfaces.insert_unique(support.as_str(), ());
                 }
             }
             ProceduralSurfaceDefinition::ParallelOffset(definition_payload) => {
                 let support = definition_payload.support();
                 {
-                    surfaces.insert_unique(support.as_str(), ())?;
+                    surfaces.insert_unique(support.as_str(), ());
                 }
             }
             ProceduralSurfaceDefinition::Ruled { first, second, .. } => {
-                curves.extend_unique([first.as_str(), second.as_str()])?;
+                curves.extend_unique([first.as_str(), second.as_str()]);
             }
             ProceduralSurfaceDefinition::Sum(definition_payload) => {
                 curves.extend_unique([
                     definition_payload.first().as_str(),
                     definition_payload.second().as_str(),
-                ])?;
+                ]);
             }
             ProceduralSurfaceDefinition::Blend(definition_payload) => {
                 let supports = definition_payload.supports();
@@ -591,24 +588,24 @@ pub(super) fn check_carrier_reachability(
                 let native = definition_payload.native();
 
                 for support in supports.iter().flatten() {
-                    surfaces.insert_unique(support.surface.as_str(), ())?;
+                    surfaces.insert_unique(support.surface.as_str(), ());
                 }
                 if let Some(spine) = spine {
-                    curves.insert_unique(spine.as_str(), ())?;
+                    curves.insert_unique(spine.as_str(), ());
                 }
                 if let Some(native) = native {
-                    curves.insert_unique(native.slice.as_str(), ())?;
+                    curves.insert_unique(native.slice.as_str(), ());
                     for side in &native.sides {
                         if let Some(curve) = &side.curve {
-                            curves.insert_unique(curve.curve.as_str(), ())?;
+                            curves.insert_unique(curve.curve.as_str(), ());
                         }
                         if let Some(surface) = &side.surface {
-                            surfaces.insert_unique(surface.surface.as_str(), ())?;
+                            surfaces.insert_unique(surface.surface.as_str(), ());
                         }
                     }
                     if let Some(side) = &native.third {
-                        curves.insert_unique(side.curve.as_str(), ())?;
-                        surfaces.insert_unique(side.surface.as_str(), ())?;
+                        curves.insert_unique(side.curve.as_str(), ());
+                        surfaces.insert_unique(side.surface.as_str(), ());
                     }
                 }
             }
@@ -622,31 +619,28 @@ pub(super) fn check_carrier_reachability(
                 boundaries,
                 ..
             } => {
-                surfaces.insert_unique(support.as_str(), ())?;
-                curves.extend_unique(boundaries.iter().map(super::super::ids::CurveId::as_str))?;
+                surfaces.insert_unique(support.as_str(), ());
+                curves.extend_unique(boundaries.iter().map(super::super::ids::CurveId::as_str));
             }
             ProceduralSurfaceDefinition::Deformable(definition_payload) => {
                 let construction = definition_payload.construction();
 
-                surfaces.insert_unique(construction.support.as_str(), ())?;
+                surfaces.insert_unique(construction.support.as_str(), ());
                 if let crate::geometry::DeformableSurfaceData::SurfaceCurve {
                     surface, curve, ..
                 }
                 | crate::geometry::DeformableSurfaceData::Full { surface, curve, .. } =
                     &construction.data
                 {
-                    surfaces.insert_unique(surface.as_str(), ())?;
-                    curves.insert_unique(curve.as_str(), ())?;
+                    surfaces.insert_unique(surface.as_str(), ());
+                    curves.insert_unique(curve.as_str(), ());
                 }
             }
         }
     }
     for procedural in &ir.model.procedural_curves {
-        if let Some(curve) = curve_owners
-            .get_unique(ctx, procedural.id.as_str())?
-            .copied()
-        {
-            curves.insert_unique(curve.as_str(), ())?;
+        if let Some(curve) = curve_owners.get_unique(procedural.id.as_str()).copied() {
+            curves.insert_unique(curve.as_str(), ());
         }
         match procedural.definition() {
             ProceduralCurveDefinition::Exact { .. } | ProceduralCurveDefinition::Helix(_) => {}
@@ -658,7 +652,7 @@ pub(super) fn check_carrier_reachability(
             } => {
                 for side in context.sides() {
                     if let Some(surface) = &side.surface {
-                        surfaces.insert_unique(surface.as_str(), ())?;
+                        surfaces.insert_unique(surface.as_str(), ());
                     }
                 }
                 for formula in std::iter::once(primary).chain(additional) {
@@ -674,12 +668,12 @@ pub(super) fn check_carrier_reachability(
                     components
                         .iter()
                         .map(|component| component.component.as_str()),
-                )?;
+                );
             }
             ProceduralCurveDefinition::Intersection { context, .. } => {
                 for side in context.sides() {
                     if let Some(surface) = &side.surface {
-                        surfaces.insert_unique(surface.as_str(), ())?;
+                        surfaces.insert_unique(surface.as_str(), ());
                     }
                 }
             }
@@ -689,8 +683,7 @@ pub(super) fn check_carrier_reachability(
             } => {
                 let supports = intersection.supports();
 
-                surfaces
-                    .extend_unique(supports.iter().map(super::super::ids::SurfaceId::as_str))?;
+                surfaces.extend_unique(supports.iter().map(super::super::ids::SurfaceId::as_str));
             }
             ProceduralCurveDefinition::ThreeSurfaceIntersection(definition_payload) => {
                 let context = definition_payload.context();
@@ -698,22 +691,22 @@ pub(super) fn check_carrier_reachability(
 
                 for side in context.sides().iter().chain(std::iter::once(third)) {
                     if let Some(surface) = &side.surface {
-                        surfaces.insert_unique(surface.as_str(), ())?;
+                        surfaces.insert_unique(surface.as_str(), ());
                     }
                 }
             }
             ProceduralCurveDefinition::SurfaceCurve { family } => {
                 for side in family.context().sides() {
                     if let Some(surface) = &side.surface {
-                        surfaces.insert_unique(surface.as_str(), ())?;
+                        surfaces.insert_unique(surface.as_str(), ());
                     }
                 }
             }
             ProceduralCurveDefinition::Silhouette(definition_payload) => {
-                surfaces.insert_unique(definition_payload.cast_surface().as_str(), ())?;
+                surfaces.insert_unique(definition_payload.cast_surface().as_str(), ());
                 for side in definition_payload.context().sides() {
                     if let Some(surface) = &side.surface {
-                        surfaces.insert_unique(surface.as_str(), ())?;
+                        surfaces.insert_unique(surface.as_str(), ());
                     }
                 }
             }
@@ -721,10 +714,10 @@ pub(super) fn check_carrier_reachability(
                 let context = definition_payload.context();
                 let base = definition_payload.base();
                 {
-                    curves.insert_unique(base.as_str(), ())?;
+                    curves.insert_unique(base.as_str(), ());
                     for side in context.sides() {
                         if let Some(surface) = &side.surface {
-                            surfaces.insert_unique(surface.as_str(), ())?;
+                            surfaces.insert_unique(surface.as_str(), ());
                         }
                     }
                 }
@@ -735,14 +728,14 @@ pub(super) fn check_carrier_reachability(
                     crate::geometry::SpringLayout::ContextFirst { supports, .. } => {
                         for support in supports {
                             if let crate::geometry::SpringSupport::Surface(surface) = support {
-                                surfaces.insert_unique(surface.as_str(), ())?;
+                                surfaces.insert_unique(surface.as_str(), ());
                             }
                         }
                     }
                     crate::geometry::SpringLayout::CacheFirst { context, .. } => {
                         for side in context.sides() {
                             if let Some(surface) = &side.surface {
-                                surfaces.insert_unique(surface.as_str(), ())?;
+                                surfaces.insert_unique(surface.as_str(), ());
                             }
                         }
                     }
@@ -753,11 +746,11 @@ pub(super) fn check_carrier_reachability(
                 let source = definition_payload.source();
                 {
                     if let crate::geometry::DeformableCurveSource::Curve { curve } = source {
-                        curves.insert_unique(curve.as_str(), ())?;
+                        curves.insert_unique(curve.as_str(), ());
                     }
                     for side in context.sides() {
                         if let Some(surface) = &side.surface {
-                            surfaces.insert_unique(surface.as_str(), ())?;
+                            surfaces.insert_unique(surface.as_str(), ());
                         }
                     }
                 }
@@ -766,10 +759,10 @@ pub(super) fn check_carrier_reachability(
                 let context = definition_payload.context();
                 let source = definition_payload.source();
 
-                curves.insert_unique(source.as_str(), ())?;
+                curves.insert_unique(source.as_str(), ());
                 for side in context.sides() {
                     if let Some(surface) = &side.surface {
-                        surfaces.insert_unique(surface.as_str(), ())?;
+                        surfaces.insert_unique(surface.as_str(), ());
                     }
                 }
             }
@@ -778,13 +771,13 @@ pub(super) fn check_carrier_reachability(
                 let side = definition_payload.side();
                 let range = definition_payload.range();
                 {
-                    curves.insert_unique(source.as_str(), ())?;
+                    curves.insert_unique(source.as_str(), ());
                     if let crate::geometry::OffsetSide::Direction {
                         support: Some(support),
                         ..
                     } = side
                     {
-                        surfaces.insert_unique(support.as_str(), ())?;
+                        surfaces.insert_unique(support.as_str(), ());
                     }
                     if let Some(crate::geometry::CurveOffsetRange::Variable {
                         distance_law:
@@ -792,14 +785,14 @@ pub(super) fn check_carrier_reachability(
                         ..
                     }) = range
                     {
-                        curves.insert_unique(function.as_str(), ())?;
+                        curves.insert_unique(function.as_str(), ());
                     }
                 }
             }
             ProceduralCurveDefinition::SpatialOffset(definition_payload) => {
                 let source = definition_payload.source();
                 {
-                    curves.insert_unique(source.as_str(), ())?;
+                    curves.insert_unique(source.as_str(), ());
                 }
             }
             ProceduralCurveDefinition::TwoSidedOffset(definition_payload) => {
@@ -807,7 +800,7 @@ pub(super) fn check_carrier_reachability(
                 {
                     for side in context.sides() {
                         if let Some(surface) = &side.surface {
-                            surfaces.insert_unique(surface.as_str(), ())?;
+                            surfaces.insert_unique(surface.as_str(), ());
                         }
                     }
                 }
@@ -815,31 +808,31 @@ pub(super) fn check_carrier_reachability(
             ProceduralCurveDefinition::VectorOffset(definition_payload) => {
                 let source = definition_payload.source();
                 {
-                    curves.insert_unique(source.as_str(), ())?;
+                    curves.insert_unique(source.as_str(), ());
                 }
             }
             ProceduralCurveDefinition::Replica { source, .. } => {
-                curves.insert_unique(source.as_str(), ())?;
+                curves.insert_unique(source.as_str(), ());
             }
             ProceduralCurveDefinition::Subset(definition_payload) => {
                 let source = definition_payload.source();
                 {
-                    curves.insert_unique(source.as_str(), ())?;
+                    curves.insert_unique(source.as_str(), ());
                 }
             }
             ProceduralCurveDefinition::BlendSpine { blend_surface } => {
                 if let Some(surface) = blend_surface {
-                    surfaces.insert_unique(surface.as_str(), ())?;
+                    surfaces.insert_unique(surface.as_str(), ());
                 }
             }
             ProceduralCurveDefinition::Unknown { .. } => {}
         }
     }
     for link in &unknown_links {
-        surfaces.insert_unique(link.as_ref(), ())?;
-        curves.insert_unique(link.as_ref(), ())?;
+        surfaces.insert_unique(link.as_ref(), ());
+        curves.insert_unique(link.as_ref(), ());
     }
-    let composite_segments = BorrowedIdentities::build(ctx, |add| {
+    let composite_segments = BorrowedIdentities::build(|add| {
         for curve in &ir.model.curves {
             if let CurveGeometry::Solved(SolvedCurveGeometry::Composite { segments, .. }) =
                 &curve.geometry
@@ -856,10 +849,10 @@ pub(super) fn check_carrier_reachability(
     let mut next = 0;
     while let Some(curve) = reachable_curves.get(next).copied() {
         next += 1;
-        if let Some(segments) = composite_segments.get(ctx, curve)? {
+        if let Some(segments) = composite_segments.get(curve) {
             for segment in *segments {
                 let identity = segment.curve.as_str();
-                if curves.insert_unique(identity, ())? {
+                if curves.insert_unique(identity, ()) {
                     reachable_curves.push(identity);
                 }
             }
@@ -869,7 +862,7 @@ pub(super) fn check_carrier_reachability(
         ($arena:ident, $reachable:ident, $kind:literal) => {
             for entity in &ir.model.$arena {
                 let id = entity.id.as_str();
-                if !$reachable.contains(ctx, id)? {
+                if !$reachable.contains(id) {
                     super::record_finding(
                         findings,
                         Check::CarrierReachability,
@@ -894,7 +887,7 @@ pub(super) fn check_parameter_domains(
     ir: &CadIr,
     findings: &mut Vec<Finding>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let curves = crate::index::identities::BorrowedIdentities::build(ctx, |add| {
+    let curves = crate::index::identities::BorrowedIdentities::build(|add| {
         for curve in &ir.model.curves {
             add(curve.id.as_str(), &curve.geometry)?;
         }
@@ -906,7 +899,7 @@ pub(super) fn check_parameter_domains(
         };
         let mut valid = true;
         let curve = match edge.curve() {
-            Some(id) => curves.get(ctx, id.as_str())?.copied(),
+            Some(id) => curves.get(id.as_str()).copied(),
             None => None,
         };
         if let Some(curve) = curve {
@@ -974,7 +967,7 @@ pub(super) fn check_parameter_domains(
             );
         }
     }
-    let pcurves = crate::index::identities::BorrowedIdentities::build(ctx, |add| {
+    let pcurves = crate::index::identities::BorrowedIdentities::build(|add| {
         for pcurve in &ir.model.pcurves {
             add(pcurve.id.as_str(), &pcurve.geometry)?;
         }
@@ -983,7 +976,7 @@ pub(super) fn check_parameter_domains(
     for coedge in &ir.model.coedges {
         if let Some(use_curve) = &coedge.use_curve {
             let [start, end] = use_curve.parameter_range.endpoints();
-            let geometry = curves.get(ctx, use_curve.curve.as_str())?.copied();
+            let geometry = curves.get(use_curve.curve.as_str()).copied();
             let mut valid = geometry.is_some();
             if let Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs))) = geometry {
                 valid &= crate::eval::nurbs_curve_parameter_domain(nurbs)
@@ -1009,7 +1002,7 @@ pub(super) fn check_parameter_domains(
             else {
                 continue;
             };
-            let geometry = pcurves.get(ctx, use_.pcurve.as_str())?.copied();
+            let geometry = pcurves.get(use_.pcurve.as_str()).copied();
             let mut valid = geometry.is_some();
             if let Some(geometry) = geometry {
                 let domain = pcurve_parameter_domain(ctx, geometry)?

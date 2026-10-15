@@ -19,7 +19,7 @@ fn geometric_checks_reuse_the_prepared_index_without_copying_native_identities()
             })
             .collect(),
     );
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir);
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
     let arena = DecodeArena::new();
@@ -52,9 +52,9 @@ fn geometric_vertex_indexes_keep_last_duplicate_and_skip_missing_points() {
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     {
-        let positions = super::super::vertex_positions(&ctx, &ir).unwrap();
+        let positions = super::super::vertex_positions(&ir).unwrap();
         assert_eq!(
-            positions.get(&ctx, vertex.id.as_str()).unwrap(),
+            positions.get(vertex.id.as_str()),
             Some(&(
                 Point3::new(7.0, 8.0, 9.0),
                 vertex.tolerance.map(crate::scalar::PositiveReal::get)

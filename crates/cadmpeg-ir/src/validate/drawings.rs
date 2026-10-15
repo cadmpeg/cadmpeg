@@ -11,23 +11,22 @@ use crate::report::{
 };
 
 pub(super) fn check_drawings(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
-    all_ids: &BorrowedIdentities<'_, '_>,
+    all_ids: &BorrowedIdentities<'_>,
     findings: &mut Vec<Finding>,
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     let mut orders = std::collections::BTreeSet::new();
     for drawing in &ir.model.drawings {
-        let mut refs_valid = all_ids.contains(ctx, &drawing.object)?
-            && all_ids.contains(ctx, &drawing.native_ref)?;
+        let mut refs_valid =
+            all_ids.contains(&drawing.object) && all_ids.contains(&drawing.native_ref);
         if refs_valid {
             if let Some(id) = &drawing.template {
-                refs_valid = all_ids.contains(ctx, id.as_str())?;
+                refs_valid = all_ids.contains(id.as_str());
             }
         }
         if refs_valid {
             for id in &drawing.assets {
-                if !all_ids.contains(ctx, id)? {
+                if !all_ids.contains(id) {
                     refs_valid = false;
                     break;
                 }
@@ -37,7 +36,7 @@ pub(super) fn check_drawings(
             'groups: for targets in drawing.relationships.values() {
                 for target in targets {
                     if let Some(id) = target.local_target() {
-                        if !all_ids.contains(ctx, id)? {
+                        if !all_ids.contains(id) {
                             refs_valid = false;
                             break 'groups;
                         }
@@ -56,7 +55,6 @@ pub(super) fn check_drawings(
             );
         }
     }
-    Ok(())
 }
 
 #[cfg(test)]
@@ -81,12 +79,10 @@ mod tests {
     #[test]
     fn drawings_report_the_second_duplicate_order() {
         let ir = fixture();
-        let ctx = cadmpeg_test_support::service_decode_context();
         let ids =
-            super::BorrowedIdentities::build(&ctx, |add| add("test:source:unknown#record", ()))
-                .unwrap();
+            super::BorrowedIdentities::build(|add| add("test:source:unknown#record", ())).unwrap();
         let mut findings = Vec::new();
-        check_drawings(&ctx, &ir, &ids, &mut findings).unwrap();
+        check_drawings(&ir, &ids, &mut findings);
         assert_eq!(findings.len(), 1);
         assert_eq!(
             findings[0].entity.as_deref(),
