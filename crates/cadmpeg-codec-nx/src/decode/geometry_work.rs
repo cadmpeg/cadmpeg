@@ -33,7 +33,7 @@ pub(super) const MAX_COUPLED_SUPPORT_UV_GEOMETRY_WORK: usize = 8_000_000;
 /// Local geometry work slice plus the cache of successful blend-geometry
 /// certificates earned within the same slice.
 pub(super) struct GeometryWorkBudget<'a> {
-    work: WorkBudget<'static>,
+    work: WorkBudget,
     pub(super) ctx: &'a DecodeContext<'a>,
     blend_frame_cache: Rc<RefCell<super::blend::BlendSurfaceFrameCache>>,
 }
@@ -67,7 +67,7 @@ impl<'a> GeometryWorkBudget<'a> {
 }
 
 impl Deref for GeometryWorkBudget<'_> {
-    type Target = WorkBudget<'static>;
+    type Target = WorkBudget;
 
     fn deref(&self) -> &Self::Target {
         &self.work

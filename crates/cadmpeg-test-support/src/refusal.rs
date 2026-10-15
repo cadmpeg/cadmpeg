@@ -118,17 +118,17 @@ mod tests {
     #[test]
     fn normal_policy_replay_suspends_enclosing_probes() {
         let error = cadmpeg_core::decode::test_support::at_charge(
-            ResourceDimension::WorkUnits,
+            ResourceDimension::Entities,
             "before",
             0,
             || {
-                resource_limit_at(ResourceDimension::WorkUnits, "target", |cap| {
+                resource_limit_at(ResourceDimension::Entities, "target", |cap| {
                     let arena = DecodeArena::new();
                     let mut policy = DecodePolicy::desktop();
-                    policy.limits.max_work_units = cap;
+                    policy.limits.max_entities = cap;
                     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-                    ctx.charge_work(3, "before")?;
-                    ctx.charge_work(7, "target")
+                    ctx.charge_entities(3, "before")?;
+                    ctx.charge_entities(7, "target")
                 })
             },
         );
@@ -141,20 +141,20 @@ mod tests {
     #[test]
     fn resource_boundary_uses_one_probe_and_one_normal_policy_run() {
         let mut calls = 0;
-        let error = resource_limit_at(ResourceDimension::WorkUnits, "target", |cap| {
+        let error = resource_limit_at(ResourceDimension::Entities, "target", |cap| {
             calls += 1;
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::desktop();
-            policy.limits.max_work_units = cap;
+            policy.limits.max_entities = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-            ctx.charge_work(1, "before")?;
-            ctx.charge_work(2, "before")?;
-            ctx.charge_work(7, "target")
+            ctx.charge_entities(1, "before")?;
+            ctx.charge_entities(2, "before")?;
+            ctx.charge_entities(7, "target")
         });
         assert_eq!(calls, 2);
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "target"
+            if limit.dimension == ResourceDimension::Entities && limit.operation == "target"
                 && limit.used == 3 && limit.additional == 7 && limit.limit == 9)
         );
     }
@@ -163,18 +163,18 @@ mod tests {
     fn cached_setup_replays_the_stable_normal_policy_boundary() {
         let mut cached = false;
         let mut calls = 0;
-        let error = resource_limit_at(ResourceDimension::WorkUnits, "target", |cap| {
+        let error = resource_limit_at(ResourceDimension::Entities, "target", |cap| {
             calls += 1;
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::desktop();
-            policy.limits.max_work_units = cap;
+            policy.limits.max_entities = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
             if !cached {
-                ctx.charge_work(9, "prime cache")?;
+                ctx.charge_entities(9, "prime cache")?;
                 cached = true;
             }
-            ctx.charge_work(3, "before")?;
-            ctx.charge_work(20, "target")
+            ctx.charge_entities(3, "before")?;
+            ctx.charge_entities(20, "target")
         });
         assert_eq!(calls, 4);
         assert!(

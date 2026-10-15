@@ -915,7 +915,7 @@ pub(in crate::families) fn parse_from_records_budgeted(
     records: &[B5Record],
     frames: &[ObjectFrame],
     require_topology: bool,
-    budget: Option<&WorkBudget<'_>>,
+    budget: Option<&WorkBudget>,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Option<B5Graph>, CodecError> {
     let mut by_id = HashMap::new();
@@ -960,7 +960,7 @@ fn parse_from_records_with_class21(
     bytes: &[u8],
     (records, frames): (&[B5Record], &[ObjectFrame]),
     require_topology: bool,
-    budget: Option<&WorkBudget<'_>>,
+    budget: Option<&WorkBudget>,
     refusal: &mut crate::nurbs::LaneRefusals,
     prepared: PreparedB5Graph<'_, '_>,
 ) -> Result<Option<B5Graph>, CodecError> {
@@ -5232,7 +5232,7 @@ fn records_from_frames(bytes: &[u8], frames: &[ObjectFrame]) -> Vec<B5Record> {
 fn records_from_frames_budgeted(
     bytes: &[u8],
     frames: &[ObjectFrame],
-    budget: Option<&WorkBudget<'_>>,
+    budget: Option<&WorkBudget>,
 ) -> Vec<B5Record> {
     let (mut records, candidates) = framed_records_and_dependency_candidates(bytes, frames, budget);
     admit_dependency_records(bytes, &mut records, &candidates, budget)
@@ -5245,7 +5245,7 @@ fn records_from_frames_budgeted(
 fn records_from_indexed_frames_budgeted(
     bytes: &[u8],
     frames: &[ObjectFrame],
-    budget: Option<&WorkBudget<'_>>,
+    budget: Option<&WorkBudget>,
 ) -> Option<Vec<B5Record>> {
     let (mut records, candidates) =
         indexed_topology_records_and_dependency_candidates(bytes, frames, budget)?;
@@ -5261,7 +5261,7 @@ fn admit_dependency_records(
     bytes: &[u8],
     records: &mut Vec<B5Record>,
     candidates: &DependencyCandidates,
-    budget: Option<&WorkBudget<'_>>,
+    budget: Option<&WorkBudget>,
 ) -> Vec<B5Record> {
     let mut existing = HashSet::new();
     let mut pending = HashSet::new();
@@ -5324,7 +5324,7 @@ fn admit_dependency_records(
 fn framed_records_and_dependency_candidates(
     bytes: &[u8],
     frames: &[ObjectFrame],
-    budget: Option<&WorkBudget<'_>>,
+    budget: Option<&WorkBudget>,
 ) -> (Vec<B5Record>, DependencyCandidates) {
     if budget.is_some_and(|budget| !budget.charge_by(frames.len())) {
         return (Vec::new(), HashMap::new());
@@ -5387,7 +5387,7 @@ fn framed_records_and_dependency_candidates(
 fn indexed_topology_records_and_dependency_candidates(
     bytes: &[u8],
     frames: &[ObjectFrame],
-    budget: Option<&WorkBudget<'_>>,
+    budget: Option<&WorkBudget>,
 ) -> Option<(Vec<B5Record>, DependencyCandidates)> {
     let mut records = Vec::<(usize, B5Record)>::new();
     let mut seen = HashMap::<u32, ObjectFrame>::new();
@@ -5797,7 +5797,7 @@ struct IndexedObjectRun {
 /// only object run in the reconstructed logical streams.
 pub(in crate::families) fn select_object_stream_population(
     streams: &[impl AsRef<[u8]>],
-    budget: Option<&WorkBudget<'_>>,
+    budget: Option<&WorkBudget>,
 ) -> ObjectStreamSelection {
     let mut stream_ranges = Vec::new();
     for stream in streams {

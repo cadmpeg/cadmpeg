@@ -527,7 +527,7 @@ const MAX_ATTRIBUTE_DEFINITION_SCAN_WORK: usize = 1 << 26;
 /// Returns `None` when `budget` runs out.
 fn attribute_identifiers<'a>(
     bytes: &'a [u8],
-    budget: &WorkBudget<'_>,
+    budget: &WorkBudget,
 ) -> Option<BTreeMap<u32, Option<AttributeIdentifier<'a>>>> {
     let mut index = BTreeMap::new();
     for offset in 0..bytes.len() {

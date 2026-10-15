@@ -748,10 +748,10 @@ struct IncidenceComponentSearch<'a, 'v> {
     pub(crate) solution_visitor: Option<MeshEndpointSolutionVisitor<'v>>,
     pub(crate) partial_solution_filter: Option<MeshPartialEndpointConstraint<'a>>,
     pub(crate) dead_states: HashSet<Vec<Option<[usize; 2]>>>,
-    pub(crate) budget: &'a WorkBudget<'a>,
-    pub(crate) degree_support_budget: &'a WorkBudget<'a>,
-    pub(crate) coordinate_propagation_budget: &'a WorkBudget<'a>,
-    pub(crate) boundary_propagation_budget: &'a WorkBudget<'a>,
+    pub(crate) budget: &'a WorkBudget,
+    pub(crate) degree_support_budget: &'a WorkBudget,
+    pub(crate) coordinate_propagation_budget: &'a WorkBudget,
+    pub(crate) boundary_propagation_budget: &'a WorkBudget,
     pub(crate) state: IncidenceSearchState,
 }
 
@@ -870,7 +870,7 @@ impl FaceFactorGraph {
     fn compile(
         ctx: &DecodeContext<'_>,
         domains: &[MeshFaceEndpointConfigurations],
-        budget: &WorkBudget<'_>,
+        budget: &WorkBudget,
     ) -> Result<Option<Self>, CodecError> {
         let mut edge_sets = Vec::new();
 
@@ -980,7 +980,7 @@ impl FaceFactorGraph {
         &self,
         active: &mut [Vec<u64>],
         initial: impl IntoIterator<Item = usize>,
-        budget: &WorkBudget<'_>,
+        budget: &WorkBudget,
     ) -> Option<bool> {
         let mut queue = VecDeque::new();
         for arc in initial {
@@ -1020,7 +1020,7 @@ impl FaceFactorGraph {
         Some(true)
     }
 
-    fn propagate_all(&self, active: &mut [Vec<u64>], budget: &WorkBudget<'_>) -> Option<bool> {
+    fn propagate_all(&self, active: &mut [Vec<u64>], budget: &WorkBudget) -> Option<bool> {
         self.propagate(active, 0..self.arcs.len(), budget)
     }
 
@@ -1028,7 +1028,7 @@ impl FaceFactorGraph {
         &self,
         domain: usize,
         active: &mut [Vec<u64>],
-        budget: &WorkBudget<'_>,
+        budget: &WorkBudget,
     ) -> Option<bool> {
         self.propagate(active, self.incoming[domain].iter().copied(), budget)
     }
@@ -1129,7 +1129,7 @@ fn retain_configuration_masks(domains: &mut [MeshFaceEndpointConfigurations], ac
 fn prune_face_configuration_support(
     ctx: &DecodeContext<'_>,
     domains: &mut [MeshFaceEndpointConfigurations],
-    budget: &WorkBudget<'_>,
+    budget: &WorkBudget,
 ) -> Result<bool, CodecError> {
     let mut edge_sets = Vec::new();
 
@@ -1236,7 +1236,7 @@ fn prune_face_configuration_support(
 fn prune_face_configuration_singleton_support(
     ctx: &DecodeContext<'_>,
     domains: &mut [MeshFaceEndpointConfigurations],
-    budget: &WorkBudget<'_>,
+    budget: &WorkBudget,
 ) -> Result<bool, CodecError> {
     let Some(graph) = FaceFactorGraph::compile(ctx, domains, budget)? else {
         return Ok(true);
@@ -1326,7 +1326,7 @@ fn prune_ordered_face_endpoint_support(
     ctx: &DecodeContext<'_>,
     domains: &[MeshFaceBoundaryDomain],
     choices: &mut [Vec<[usize; 2]>],
-    budget: &WorkBudget<'_>,
+    budget: &WorkBudget,
 ) -> Result<bool, CodecError> {
     loop {
         let mut changed = false;
@@ -1407,7 +1407,7 @@ pub(super) fn prune_implicit_ordered_face_endpoint_support(
     domains: &[MeshFaceBoundaryDomain],
     choices: &mut [Vec<[usize; 2]>],
     coordinate_domains: &MeshCoordinateRootDomains,
-    budget: &WorkBudget<'_>,
+    budget: &WorkBudget,
 ) -> Result<bool, CodecError> {
     loop {
         let mut changed = false;
@@ -1790,7 +1790,7 @@ fn advance_compact_boundary_domains<'a>(
     assignment: &[Option<[usize; 2]>],
     selected: Option<(usize, [usize; 2])>,
     mut states: Vec<MeshQuotientGaugeState>,
-    budget: &WorkBudget<'_>,
+    budget: &WorkBudget,
 ) -> Result<CompactBoundaryAdvanceOutcome, CodecError> {
     const MAX_QUOTIENT_STATES: usize = 4_096;
 
@@ -1969,7 +1969,7 @@ pub(super) fn compact_boundary_domains_jointly_viable<'a>(
     assignment: &[Option<[usize; 2]>],
     selected: Option<(usize, [usize; 2])>,
     quotient: &MeshQuotient,
-    budget: &WorkBudget<'_>,
+    budget: &WorkBudget,
 ) -> Result<bool, CodecError> {
     let initial = vec![(quotient.clone(), HashSet::new())];
     Ok(matches!(
@@ -3631,7 +3631,7 @@ pub(super) fn partial_face_orientability_viable(
     assignment: &[Option<[usize; 2]>],
     edge_faces: &[[usize; 2]],
     face_edges: &[Vec<usize>],
-    budget: &WorkBudget<'_>,
+    budget: &WorkBudget,
 ) -> Result<bool, CodecError> {
     if !edge_faces.iter().any(|faces| faces[0] != faces[1]) {
         return Ok(true);
@@ -4825,7 +4825,7 @@ pub(crate) fn reconstruct_incidence_candidates(
     edge_faces: &[[usize; 2]],
     endpoints: IncidenceEndpointDomains<'_>,
     face_count: usize,
-    budget: &WorkBudget<'_>,
+    budget: &WorkBudget,
 ) -> Result<Option<StandardTopologyDraft>, CodecError> {
     const MAX_TOPOLOGY_ASSIGNMENTS: usize = 256;
 

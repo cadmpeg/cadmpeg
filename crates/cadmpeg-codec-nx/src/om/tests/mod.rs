@@ -15,7 +15,7 @@ fn unique_candidate_stops_after_second_hit() {
 }
 
 /// The registry budget the container gives one payload's section search.
-pub(super) fn section_budget() -> cadmpeg_core::decode::WorkBudget<'static> {
+pub(super) fn section_budget() -> cadmpeg_core::decode::WorkBudget {
     cadmpeg_core::decode::WorkBudget::new(super::MAX_INDEXED_SECTION_REGISTRY_WORK)
 }
 

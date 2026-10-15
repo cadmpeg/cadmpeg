@@ -3172,7 +3172,7 @@ fn blend_transfer_contact<'a>(
     }))
 }
 
-pub(super) type TransferBudget<'a> = WorkBudget<'a>;
+pub(super) type TransferBudget<'a> = WorkBudget;
 
 #[cfg(test)]
 fn new_transfer_budget() -> TransferBudget<'static> {

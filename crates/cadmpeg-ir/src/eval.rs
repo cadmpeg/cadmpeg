@@ -261,7 +261,7 @@ impl Ord for SurfacePatchQueueEntry {
 fn rational_surface_patches_with_budget(
     ctx: &DecodeContext<'_>,
     surface: &NurbsSurface,
-    budget: &WorkBudget<'_>,
+    budget: &WorkBudget,
 ) -> Result<Option<Vec<RationalBezierSurfacePatch>>, ResourceLimit> {
     if !budget.charge() {
         return Ok(None);
@@ -361,7 +361,7 @@ fn rational_surface_residual_patches(
     ctx: &DecodeContext<'_>,
     surface: &NurbsSurface,
     point: Point3,
-    budget: &WorkBudget<'_>,
+    budget: &WorkBudget,
 ) -> Result<Option<Vec<RationalBezierSurfacePatch>>, ResourceLimit> {
     if !point.is_finite() {
         return Ok(None);
@@ -465,7 +465,7 @@ pub fn nurbs_surface_parameter_segment_chord_bound_with_budget(
     surface: &NurbsSurface,
     parameters: [Point2; 2],
     chord: [Point3; 2],
-    budget: &WorkBudget<'_>,
+    budget: &WorkBudget,
 ) -> Result<Option<f64>, CodecError> {
     let _depth = ctx.enter_nested("IR surface segment depth")?;
     let result = (|| -> Result<Option<f64>, CodecError> {
@@ -563,7 +563,7 @@ pub fn nurbs_surface_parameter_segment_chord_bound_with_budget(
 
 fn rational_patch_distance_bounds_with_budget(
     patch: &RationalBezierSurfacePatch,
-    budget: &WorkBudget<'_>,
+    budget: &WorkBudget,
 ) -> Option<(f64, f64)> {
     if !budget.charge() {
         return None;
@@ -603,7 +603,7 @@ fn rational_patch_distance_bounds_with_budget(
 fn split_rational_surface_patch(
     patch: &RationalBezierSurfacePatch,
     split_u: bool,
-    budget: &WorkBudget<'_>,
+    budget: &WorkBudget,
 ) -> Option<[RationalBezierSurfacePatch; 2]> {
     let (degree, line_count) = if split_u {
         (patch.u_degree, patch.v_degree + 1)
@@ -670,7 +670,7 @@ fn refine_nurbs_surface_parameters(
     start: FinitePoint2,
     u_domain: ParameterInterval,
     v_domain: ParameterInterval,
-    budget: &WorkBudget<'_>,
+    budget: &WorkBudget,
 ) -> Result<Option<FinitePoint2>, ResourceLimit> {
     let distance = |position: Point3| position.distance(point);
     let [start_u, start_v] = start.coordinates();
@@ -779,7 +779,7 @@ fn complete_nurbs_surface_starts(
     point: Point3,
     seed: Option<FinitePoint2>,
     fit_tolerance: Option<f64>,
-    budget: &WorkBudget<'_>,
+    budget: &WorkBudget,
 ) -> Result<Option<Vec<FinitePoint2>>, ResourceLimit> {
     const MAX_PATCHES: usize = 1_000_000;
 
@@ -1044,7 +1044,7 @@ fn solve_nurbs_surface_parameter(
     point: Point3,
     seed: Option<Point2>,
     fit_tolerance: Option<f64>,
-    budget: &WorkBudget<'_>,
+    budget: &WorkBudget,
 ) -> Result<Option<(FinitePoint2, f64)>, ResourceLimit> {
     let seed = seed.and_then(FinitePoint2::new);
     let Some(u_degree) = usize::try_from(surface.u_degree()).ok() else {
@@ -1182,7 +1182,7 @@ pub fn nurbs_surface_closest_parameter_with_budget(
     surface: &NurbsSurface,
     point: Point3,
     seed: Option<Point2>,
-    budget: &WorkBudget<'_>,
+    budget: &WorkBudget,
 ) -> Result<Option<FinitePoint2>, ResourceLimit> {
     let result = solve_nurbs_surface_parameter(ctx, surface, point, seed, None, budget)?;
 
@@ -1364,7 +1364,7 @@ pub fn nurbs_surface_parameter_within_tolerance_with_budget(
     point: Point3,
     seed: Option<Point2>,
     tolerance: f64,
-    budget: &WorkBudget<'_>,
+    budget: &WorkBudget,
 ) -> Result<Option<FinitePoint2>, ResourceLimit> {
     let Some(tolerance) = NonNegativeReal::new(tolerance) else {
         return Ok(None);
@@ -1382,7 +1382,7 @@ pub fn nurbs_surface_parameter_within_nonnegative_tolerance_with_budget(
     point: Point3,
     seed: Option<Point2>,
     tolerance: NonNegativeReal,
-    budget: &WorkBudget<'_>,
+    budget: &WorkBudget,
 ) -> Result<Option<FinitePoint2>, ResourceLimit> {
     let tolerance = tolerance.get();
     let result = solve_nurbs_surface_parameter(ctx, surface, point, seed, Some(tolerance), budget)?;

@@ -3074,7 +3074,7 @@ fn boundary_endpoint_support(
     ctx: &DecodeContext<'_>,
     boundary: &[MeshBoundaryEdgeCandidate],
     edge_candidates: &[Vec<[usize; 2]>],
-    budget: &WorkBudget<'_>,
+    budget: &WorkBudget,
 ) -> Result<Option<BoundaryEndpointSupport>, CodecError> {
     #[derive(Clone, Copy)]
     struct State {
