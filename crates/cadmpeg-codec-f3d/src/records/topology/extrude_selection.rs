@@ -10,7 +10,6 @@ use crate::records::mesh::DesignRelaxedGuidText;
 use crate::records::references::DesignClassTag;
 use crate::records::serde_column::SliceColumn;
 use crate::records::sketch_relations::SketchRelationOperand;
-use cadmpeg_core::CodecError;
 use serde::Deserialize;
 use serde::Serialize;
 use std::num::NonZeroU32;
@@ -151,12 +150,6 @@ pub(crate) struct DesignExtrudeSelectionGroupWire {
 }
 
 impl DesignExtrudeSelectionGroup {
-    pub(crate) fn from_wire_charged(
-        wire: DesignExtrudeSelectionGroupWire,
-    ) -> Result<Self, CodecError> {
-        Self::from_wire_inner(wire).map_err(CodecError::Malformed)
-    }
-
     fn from_wire_inner(wire: DesignExtrudeSelectionGroupWire) -> Result<Self, String> {
         if wire.members.len() != wire.member_offsets.len() {
             return Err("members and member_offsets must have equal lengths".into());

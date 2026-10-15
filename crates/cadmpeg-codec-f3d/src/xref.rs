@@ -21,9 +21,8 @@ use cadmpeg_ir::products::{ExternalDocument, Occurrence, OccurrenceParent, Proto
 
 use crate::bytes::utf16::Utf16View;
 use crate::bytes::{
-    is_guid_prefix, is_guid_relaxed, lp_ascii_filtered_view, lp_ascii_strict,
-    lp_ascii_strict_charged, lp_utf16_bounded, lp_utf16_bounded_view, take_reference,
-    take_reference_charged,
+    is_guid_prefix, is_guid_relaxed, lp_ascii_filtered_view, lp_ascii_strict, lp_utf16_bounded,
+    lp_utf16_bounded_view, take_owned_reference, take_reference,
 };
 use crate::container::ContainerScan;
 use crate::layout::component_insert_grouped_identity_carrier as grouped_identity_layout;
@@ -614,7 +613,7 @@ fn bind_occurrences(
                 placement_failures.push(reference.ordinal);
             }
 
-            expanded.push(copy_reference_charged(reference, None));
+            expanded.push(copy_reference(reference, None));
             continue;
         }
         for (occurrence_ordinal, transform) in occurrences.into_iter().enumerate() {
@@ -622,7 +621,7 @@ fn bind_occurrences(
                 "f3d:xref:reference#{}-occurrence-{occurrence_ordinal}",
                 reference.ordinal
             );
-            let mut occurrence = copy_reference_charged(reference, Some(occurrence_id));
+            let mut occurrence = copy_reference(reference, Some(occurrence_id));
             occurrence.occurrence_ordinal = ordinal_at(occurrence_ordinal)?;
             occurrence.transform = transform
                 .map(crate::records::xref::XrefPlacementTransform::try_from)
@@ -637,7 +636,7 @@ fn bind_occurrences(
     Ok(())
 }
 
-fn copy_reference_charged(source: &XrefReference, occurrence_id: Option<String>) -> XrefReference {
+fn copy_reference(source: &XrefReference, occurrence_id: Option<String>) -> XrefReference {
     XrefReference {
         id: match occurrence_id {
             Some(id) => id,
@@ -958,8 +957,8 @@ fn repeated_target_occurrence_placement_details(
         return Ok(None);
     }
     at += 1;
-    let (type_guid, next) = xref_some!(lp_ascii_strict_charged(body, at, 36..=36));
-    if !is_guid_relaxed(&type_guid) {
+    let (type_guid, next) = xref_some!(lp_ascii_strict(body, at, 36..=36));
+    if !is_guid_relaxed(type_guid) {
         return Ok(None);
     }
     at = next;
@@ -1000,7 +999,7 @@ fn repeated_target_occurrence_placement_details(
         return Ok(None);
     }
     at += 1;
-    let reference = take_reference_charged(body, &mut at);
+    let reference = take_owned_reference(body, &mut at);
     xref_some!(reference);
     Ok(
         (at == body.len()).then_some(RepeatedTargetPlacementDetails {
@@ -1438,10 +1437,10 @@ fn take_legacy_occurrence_reference(body: &[u8], at: &mut usize) -> Option<()> {
 fn occurrence_path(body: &[u8]) -> Option<(Vec<String>, usize)> {
     // Header: the LP-ASCII decimal class tag, the u64 entity ID, and the
     // LP-ASCII record name.
-    let class_tag = lp_ascii_strict_charged(body, 0, 3..=3);
+    let class_tag = lp_ascii_strict(body, 0, 3..=3);
     let (_, after_tag) = class_tag?;
     let mut at = after_tag.checked_add(8)?;
-    let name = lp_ascii_strict_charged(body, at, 0..=256);
+    let name = lp_ascii_strict(body, at, 0..=256);
     let (_, after_name) = name?;
     at = after_name;
     if body.get(at) != Some(&1) {
@@ -1455,7 +1454,7 @@ fn occurrence_path(body: &[u8]) -> Option<(Vec<String>, usize)> {
     at += 4;
     let mut link_names = Vec::new();
     for _ in 0..count {
-        let element = take_reference_charged(body, &mut at);
+        let element = take_owned_reference(body, &mut at);
         let element = element?;
         if let Some(link_name) = element.link_name() {
             let name = {

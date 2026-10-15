@@ -2274,9 +2274,7 @@ mod tests {
     use cadmpeg_core::decode::u64_from_index;
 
     use super::{
-        decode_index_positions, decode_mesh_container as decode_mesh_container_charged,
-        decode_packed_direction, decode_triangles, inflate_stream as inflate_stream_charged,
-        message_pack_name_table as message_pack_name_table_charged, protobuf_fields,
+        decode_index_positions, decode_packed_direction, decode_triangles, protobuf_fields,
         require_version_2_descriptor, stream_descriptor, MeshAttributeAddressing,
         MeshAttributeDomain, MeshContainer, MeshElements, MeshStream, StreamDescriptorValue,
         CHANNEL_GROUP, CHANNEL_RESOURCE, CHANNEL_ROLE, CHANNEL_STREAMS, CHUNK_NAME_TABLE,
@@ -2289,13 +2287,13 @@ mod tests {
     };
     use cadmpeg_core::CodecError;
     fn decode_mesh_container(bytes: &[u8]) -> Result<MeshContainer, CodecError> {
-        crate::test_support::with_decode_context(|ctx| decode_mesh_container_charged(ctx, bytes))
+        crate::test_support::with_decode_context(|ctx| super::decode_mesh_container(ctx, bytes))
     }
     fn message_pack_name_table(bytes: &[u8]) -> Result<Vec<(String, u64)>, CodecError> {
-        message_pack_name_table_charged(bytes).map(|table| table.entries)
+        super::message_pack_name_table(bytes).map(|table| table.entries)
     }
     fn inflate_stream(bytes: &[u8]) -> Result<MeshStream, CodecError> {
-        crate::test_support::with_decode_context(|ctx| inflate_stream_charged(ctx, bytes))
+        crate::test_support::with_decode_context(|ctx| super::inflate_stream(ctx, bytes))
     }
 
     #[test]
@@ -2310,7 +2308,7 @@ mod tests {
                 policy.limits.max_decompressed_bytes_per_expand = 1023;
             }
             crate::test_support::with_decode_policy(&policy, |ctx| {
-                let error = inflate_stream_charged(ctx, &chunk[12..])
+                let error = super::inflate_stream(ctx, &chunk[12..])
                     .err()
                     .expect("expansion limit");
                 let CodecError::ResourceLimit(limit) = error else {
@@ -2328,7 +2326,7 @@ mod tests {
     fn paramesh_stream_ceiling_is_not_implemented() {
         let body = raw_stream_body(&[0x80], super::MAX_STREAM_BYTES + 1, &[]);
         crate::test_support::with_decode_context(|ctx| {
-            let error = inflate_stream_charged(ctx, &body)
+            let error = super::inflate_stream(ctx, &body)
                 .err()
                 .expect("stream ceiling");
             assert!(matches!(error, CodecError::NotImplemented(_)), "{error:?}");
@@ -3250,7 +3248,7 @@ mod tests {
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_decompressed_bytes_total = 0;
         crate::test_support::with_decode_policy(&policy, |ctx| {
-            assert_malformed(decode_mesh_container_charged(ctx, &bytes));
+            assert_malformed(super::decode_mesh_container(ctx, &bytes));
             assert!(ctx.resource_refusal().is_none());
         });
     }

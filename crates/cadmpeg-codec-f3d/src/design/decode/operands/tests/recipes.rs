@@ -74,10 +74,7 @@ fn parse_vertex_recipe(
 fn surface_patch_long_field_rejected_before_copy() {
     let mut program = vec![0; 7];
     program.extend_from_slice(&[2, 1, 2, 3, -1]);
-    assert!(
-        crate::design::decode::operands::surface_patch_recipe_structure_with_context(&program, 4)
-            .is_none()
-    );
+    assert!(crate::design::decode::operands::surface_patch_recipe_structure(&program, 4).is_none());
 }
 
 #[test]

@@ -1069,7 +1069,7 @@ fn validate_configurations(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
     for configuration in &ctx.native.design_configurations {
         let name = configuration.entry_name().as_str();
         if !entry_names.insert(name) {
-            let id = configuration.id_charged();
+            let id = configuration.id();
             push_constant_finding(
                 findings,
                 Check::NativeLinks,
@@ -1085,7 +1085,7 @@ fn validate_configurations(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
         .filter(|configuration| !configuration.variants().is_empty());
     let first = nonempty_tables.next();
     if nonempty_tables.next().is_some() {
-        let id = first.map(super::records::configuration::DesignConfiguration::id_charged);
+        let id = first.map(super::records::configuration::DesignConfiguration::id);
         push_constant_finding(
             findings,
             Check::NativeLinks,
@@ -6458,7 +6458,7 @@ fn validate_edge_operands<'a>(
                 scope.kind() == crate::records::feature::scope::DesignFeatureKind::SurfacePatch
             })
             .and_then(|_| {
-                design::decode::operands::surface_patch_recipe_structure_with_context(
+                design::decode::operands::surface_patch_recipe_structure(
                     &operand.recipe_program,
                     operand.recipe_references.len(),
                 )
@@ -6579,11 +6579,11 @@ fn validate_edge_treatment_vertex_operands<'a>(
                     && group.record_index == operand.group_record_index
             });
         let group = groups.next();
-        let expected_id = crate::ids::native_scoped_id_charged(
+        let expected_id = crate::ids::native_scoped_id(
             stream,
             "edge-treatment-vertex-operand",
             operand.recipe.byte_offset(),
-        )?;
+        );
         let valid = operand.id == expected_id
             && scope.is_some_and(|scope| {
                 design::decode::operands::has_edge_recipe_operands(&scope.kind())

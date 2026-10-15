@@ -217,7 +217,7 @@ pub(crate) struct DesignMeshTextureTable {
 }
 
 impl DesignMeshTextureTable {
-    pub(crate) fn new_charged(
+    pub(crate) fn new(
         record: DesignMeshRecordIdentity,
         resources: Vec<DesignMeshTextureResource>,
     ) -> Result<Self, CodecError> {

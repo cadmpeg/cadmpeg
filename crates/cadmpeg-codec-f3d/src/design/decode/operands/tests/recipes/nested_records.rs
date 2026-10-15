@@ -1016,16 +1016,14 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         [2, 3, -1, 0, 0, -1, 4, -1, 0, 0, -1]
     );
     assert_eq!(extended_payload.sides[0].entries.len(), 1);
-    let surface_patch =
-        crate::design::decode::operands::surface_patch_recipe_structure_with_context(
-            &[
-                0, -1, 1, 1, -1, 2, -1, 2, 2, -1, 1, -1, 2, 0, -1, 0, 0, -1, 2, -1, 0, 0, -1, 1, 0,
-                2, 1, 1, 1, 2, 1, 2, -1, 2, 3, -1, 1, -1, 2, 0, -1, 0, 0, -1, 3, -1, 0, 0, -1, 0,
-                -1,
-            ],
-            4,
-        )
-        .expect("SurfacePatch two-clause recipe structure");
+    let surface_patch = crate::design::decode::operands::surface_patch_recipe_structure(
+        &[
+            0, -1, 1, 1, -1, 2, -1, 2, 2, -1, 1, -1, 2, 0, -1, 0, 0, -1, 2, -1, 0, 0, -1, 1, 0, 2,
+            1, 1, 1, 2, 1, 2, -1, 2, 3, -1, 1, -1, 2, 0, -1, 0, 0, -1, 3, -1, 0, 0, -1, 0, -1,
+        ],
+        4,
+    )
+    .expect("SurfacePatch two-clause recipe structure");
     assert_eq!(surface_patch.clauses.len(), 2);
     assert_eq!(surface_patch.clauses[0].face_reference_ordinals, [2, 1]);
     assert_eq!(surface_patch.clauses[0].edge_reference_ordinals, [0, 2]);
@@ -1036,7 +1034,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     assert_eq!(surface_patch.clauses[1].entries.len(), 0);
     assert!(surface_patch.clauses[1].entries.is_empty());
     assert!(
-        crate::design::decode::operands::surface_patch_recipe_structure_with_context(
+        crate::design::decode::operands::surface_patch_recipe_structure(
             &[
                 0, -1, 1, 1, -1, 2, -1, 2, 2, -1, 1, -1, 2, 0, -1, 0, 0, -1, 2, -1, 0, 0, -1, 1, 0,
                 2, 1, 1, 1, 2, 1, 2, -1, 2, 3, -1, 1, -1, 2, 0, -1, 0, 0, -1, 3, -1, 0, 0, -1, 0,
@@ -1047,7 +1045,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         .is_none()
     );
     assert!(
-        crate::design::decode::operands::surface_patch_recipe_structure_with_context(
+        crate::design::decode::operands::surface_patch_recipe_structure(
             &[
                 0, -1, 1, 1, -1, 2, -1, 2, 2, -1, 1, -1, 2, 0, -1, 0, 0, -1, 2, -1, 0, 0, -1, 1, 0,
                 2, 1, 1, 1, 2, 1, 2, -1, 2, 3, -1, 1, -1, 2, 0, -1, 0, 0, -1, 3, -1, 0, 0, -1, 0,
