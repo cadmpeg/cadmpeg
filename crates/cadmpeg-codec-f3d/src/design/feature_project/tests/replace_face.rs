@@ -83,8 +83,7 @@ fn body_recipe_selection_resolves_historical_faces() {
     let (scope, group, operand) = body_recipe_limit_fixture();
     let operands = [operand];
     assert!(matches!(
-        { crate::design::face_resolve::resolved_body_recipe_selection(&scope, &group, &operands,) }
-            .unwrap(),
+        { crate::design::face_resolve::resolved_body_recipe_selection(&scope, &group, &operands,) },
         Some(FaceSelection::Historical { .. })
     ));
 }
@@ -258,7 +257,6 @@ fn replace_face_projects_role_order_and_historical_inputs() {
         std::slice::from_ref(&target),
         std::slice::from_ref(&replacement),
     )
-    .unwrap()
     .expect("typed ReplaceFace");
     assert!(matches!(
         definition, FeatureDefinition::Operation(FeatureOperation::ReplaceFace {
@@ -278,8 +276,7 @@ fn replace_face_projects_role_order_and_historical_inputs() {
         &[target_group.clone(), replacement_group.clone()],
         std::slice::from_ref(&target),
         std::slice::from_ref(&replacement),
-    )
-    .unwrap();
+    );
     assert!(matches!(
         reversed,
         Some(FeatureDefinition::Operation(
@@ -296,7 +293,6 @@ fn replace_face_projects_role_order_and_historical_inputs() {
         std::slice::from_ref(&target),
         std::slice::from_ref(&replacement)
     )
-    .unwrap()
     .is_none());
 
     let mut invalid_scope = scope;
@@ -313,7 +309,6 @@ fn replace_face_projects_role_order_and_historical_inputs() {
         std::slice::from_ref(&target),
         std::slice::from_ref(&replacement)
     )
-    .unwrap()
     .is_none());
 }
 
@@ -396,7 +391,6 @@ fn surface_trim_projects_body_target_and_curve_tool() {
         &[target_group.clone(), tool_group.clone()],
         std::slice::from_ref(&body),
     )
-    .unwrap()
     .expect("typed SurfaceTrim");
     assert!(matches!(
         definition,

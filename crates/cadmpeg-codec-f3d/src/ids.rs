@@ -6,12 +6,10 @@
 
 use crate::records::feature::combine::DesignCombineExternalBodyIdentity;
 
-#[cfg(test)]
 use crate::records::feature::{
     assembly::{DesignAssemblyAxialSelectorIdentity, DesignAssemblyLegacySelection},
     scope::DesignParameterScope,
 };
-#[cfg(test)]
 use crate::records::{parameters::DesignParameter, sketch_placement::DesignSketchPlacement};
 
 /// The scheme prefix shared by every `f3d:` URN. Used to strip or test the
@@ -236,7 +234,6 @@ pub(crate) fn neutral_root_occurrence_id(
 
 /// Neutral occurrence identity for an external component-insert scope whose
 /// target document is not present in the container.
-#[cfg(test)]
 pub(crate) fn neutral_component_insert_occurrence_id(
     scope: &DesignParameterScope,
 ) -> cadmpeg_ir::ids::OccurrenceId {
@@ -295,7 +292,6 @@ pub(crate) fn configuration_entry_id(
 
 /// The neutral configuration key for `variant_name` under `entry_name`, with
 /// both names length-prefixed into `#{len}:{key}{len}:{key}` segments.
-#[cfg(test)]
 pub(crate) fn neutral_configuration_id(
     entry_name: &str,
     variant_name: &str,
@@ -315,7 +311,6 @@ pub(crate) fn neutral_configuration_id(
 }
 
 /// The neutral feature key for a parameter `scope`.
-#[cfg(test)]
 pub(crate) fn neutral_feature_id(scope: &DesignParameterScope) -> cadmpeg_ir::features::FeatureId {
     neutral_feature_id_parts(
         native_stream(&scope.id).unwrap_or(DEFAULT_STREAM),
@@ -327,7 +322,6 @@ pub(crate) fn neutral_feature_id(scope: &DesignParameterScope) -> cadmpeg_ir::fe
 
 /// The neutral feature key from its `stream`, `kind`, ordinal, and scope record
 /// index, with `stream` and `kind` length-prefixed into `#{len}:{key}` segments.
-#[cfg(test)]
 pub(crate) fn neutral_feature_id_parts(
     stream: &str,
     kind: &str,
@@ -378,7 +372,6 @@ pub(crate) fn neutral_combine_external_body_id(
 }
 
 /// Feature-input-local connector key for one pathless axial assembly selector.
-#[cfg(test)]
 pub(crate) fn neutral_assembly_axial_object_id(
     identity: &DesignAssemblyAxialSelectorIdentity,
 ) -> String {
@@ -424,7 +417,6 @@ pub(crate) fn neutral_assembly_axial_object_id(
 
 /// Feature-input-local connector key for one direct legacy `As-built` face
 /// selection.
-#[cfg(test)]
 pub(crate) fn neutral_assembly_legacy_object_id(
     selection: &DesignAssemblyLegacySelection,
 ) -> String {
@@ -458,7 +450,6 @@ pub(crate) fn neutral_asset_id(entry_name: &str) -> cadmpeg_ir::assets::AssetId 
 }
 
 /// The neutral parameter key for a design `parameter`.
-#[cfg(test)]
 pub(crate) fn neutral_parameter_id(
     parameter: &DesignParameter,
 ) -> cadmpeg_ir::features::ParameterId {
@@ -470,7 +461,6 @@ pub(crate) fn neutral_parameter_id(
 
 /// The neutral parameter key from its `stream` and indexed-record identity, with
 /// `stream` length-prefixed into a `#{len}:{key}` segment.
-#[cfg(test)]
 pub(crate) fn neutral_parameter_id_parts(
     stream: &str,
     record_index: u32,
@@ -487,7 +477,6 @@ pub(crate) fn neutral_parameter_id_parts(
 }
 
 /// The neutral planar-sketch key for a sketch `placement`.
-#[cfg(test)]
 pub(crate) fn neutral_sketch_id(
     placement: &DesignSketchPlacement,
 ) -> cadmpeg_ir::sketches::SketchId {
@@ -498,7 +487,6 @@ pub(crate) fn neutral_sketch_id(
 }
 
 /// The neutral spatial-sketch key for a sketch `placement`.
-#[cfg(test)]
 pub(crate) fn neutral_spatial_sketch_id(
     placement: &DesignSketchPlacement,
 ) -> cadmpeg_ir::sketches::SpatialSketchId {
@@ -510,7 +498,6 @@ pub(crate) fn neutral_spatial_sketch_id(
 
 /// The shared body of a sketch or spatial-sketch placement key: the placement's
 /// stream, escaped, joined to its entity suffix by `@`.
-#[cfg(test)]
 fn sketch_placement_key(placement: &DesignSketchPlacement) -> cadmpeg_ir::ids::IdentityKey {
     let stream = native_stream(&placement.id).unwrap_or(DEFAULT_STREAM);
     cadmpeg_ir::identity_key!("@")
@@ -519,7 +506,6 @@ fn sketch_placement_key(placement: &DesignSketchPlacement) -> cadmpeg_ir::ids::I
 }
 
 /// The neutral planar-sketch point-entity key under `sketch`.
-#[cfg(test)]
 pub(crate) fn neutral_sketch_point_id(
     sketch: &cadmpeg_ir::sketches::SketchId,
     persistent_id: u64,
@@ -535,7 +521,6 @@ pub(crate) fn neutral_sketch_point_id(
 }
 
 /// The neutral planar-sketch curve-entity key under `sketch`.
-#[cfg(test)]
 pub(crate) fn neutral_sketch_curve_id(
     sketch: &cadmpeg_ir::sketches::SketchId,
     primary_id: u64,
@@ -548,7 +533,6 @@ pub(crate) fn neutral_sketch_curve_id(
 }
 
 /// The neutral planar-sketch text-entity key under `sketch`.
-#[cfg(test)]
 pub(crate) fn neutral_sketch_text_id(
     sketch: &cadmpeg_ir::sketches::SketchId,
     persistent_id: u64,
@@ -565,7 +549,6 @@ pub(crate) fn neutral_sketch_text_id(
 
 /// The source-local neutral key for a planar sketch record that has no
 /// persistent entity identity.
-#[cfg(test)]
 pub(crate) fn neutral_sketch_record_id(
     sketch: &cadmpeg_ir::sketches::SketchId,
     record_index: u32,
@@ -581,7 +564,6 @@ pub(crate) fn neutral_sketch_record_id(
 }
 
 /// The neutral spatial-sketch curve-entity key under `sketch`.
-#[cfg(test)]
 pub(crate) fn neutral_spatial_sketch_curve_id(
     sketch: &cadmpeg_ir::sketches::SpatialSketchId,
     primary_id: u64,
@@ -594,7 +576,6 @@ pub(crate) fn neutral_spatial_sketch_curve_id(
 }
 
 /// The neutral spatial-sketch point-entity key under `sketch`.
-#[cfg(test)]
 pub(crate) fn neutral_spatial_sketch_point_id(
     sketch: &cadmpeg_ir::sketches::SpatialSketchId,
     persistent_id: u64,
@@ -611,7 +592,6 @@ pub(crate) fn neutral_spatial_sketch_point_id(
 
 /// The source-local neutral key for a spatial-sketch record that has no
 /// persistent entity identity.
-#[cfg(test)]
 pub(crate) fn neutral_spatial_sketch_record_id(
     sketch: &cadmpeg_ir::sketches::SpatialSketchId,
     record_index: u32,
@@ -627,7 +607,6 @@ pub(crate) fn neutral_spatial_sketch_record_id(
 }
 
 /// The neutral spatial-sketch surface-entity key under `sketch`.
-#[cfg(test)]
 pub(crate) fn neutral_spatial_sketch_surface_id(
     sketch: &cadmpeg_ir::sketches::SpatialSketchId,
     persistent_id: u64,
@@ -644,7 +623,6 @@ pub(crate) fn neutral_spatial_sketch_surface_id(
 
 /// A single-tag sketch-entity key: the escaped owning-sketch key, length-
 /// prefixed, followed by a one-character tag (`p`/`t`/`s`/`x`) and one id.
-#[cfg(test)]
 fn sketch_entity_tagged(
     sketch_key: &str,
     tag: cadmpeg_ir::ids::IdentityKey,
@@ -660,7 +638,6 @@ fn sketch_entity_tagged(
 
 /// A curve sketch-entity key: the escaped owning-sketch key, length-prefixed,
 /// followed by `c`, the primary id, and the colon-joined secondary id.
-#[cfg(test)]
 fn sketch_entity_curve(
     sketch_key: &str,
     primary_id: u64,
@@ -676,7 +653,6 @@ fn sketch_entity_curve(
 }
 
 /// The neutral sketch-constraint key for `native_ref` at `record_index`.
-#[cfg(test)]
 pub(crate) fn neutral_sketch_constraint_id(
     native_ref: &str,
     record_index: u32,
@@ -694,7 +670,6 @@ pub(crate) fn neutral_sketch_constraint_id(
 
 /// The neutral dimension-constraint key derived from a `parameter` key and a
 /// dimension `form`, with the parameter key tail and form length-prefixed.
-#[cfg(test)]
 pub(crate) fn neutral_dimension_constraint_id(
     parameter: &cadmpeg_ir::features::ParameterId,
     form: &str,
