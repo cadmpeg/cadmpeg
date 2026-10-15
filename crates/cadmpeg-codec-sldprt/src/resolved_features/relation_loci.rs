@@ -3551,10 +3551,7 @@ where
     if let Some(locus) =
         borrowed_marker_point_locus(ctx, marker, index.markers_by_id(), index.loci_by_marker)?
     {
-        if let Some(entity) = index
-            .entities
-            .entity(ctx, locus_entity(locus), OPERATION)?
-        {
+        if let Some(entity) = index.entities.entity(ctx, locus_entity(locus), OPERATION)? {
             if in_sketch(ctx, entity, sketch, OPERATION)?
                 && profile_locus_point_charged(
                     ctx,
@@ -3700,10 +3697,7 @@ where
         else {
             continue;
         };
-        let Some(entity) = index
-            .entities
-            .entity(ctx, locus_entity(locus), OPERATION)?
-        else {
+        let Some(entity) = index.entities.entity(ctx, locus_entity(locus), OPERATION)? else {
             continue;
         };
         if in_sketch(ctx, entity, sketch, OPERATION)?
