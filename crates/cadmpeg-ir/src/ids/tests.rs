@@ -458,47 +458,13 @@ fn const_whitespace_grammar_matches_runtime_identity_grammar_for_every_scalar() 
 }
 
 #[test]
-fn typed_identity_copy_refuses_retained_bytes_before_duplication() {
+fn typed_identity_copy_preserves_the_identity() {
     let id = crate::sketches::SketchId::mint("synthetic:test:sketch#42").expect("valid fixture ID");
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes =
-        u64::try_from(id.as_str().len()).expect("identity length fits u64") - 1;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root");
-    let error = id
-        .try_clone_for_decode(&ctx, "typed identity copy")
-        .expect_err("copy exceeds cap");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-            && resource.operation == "typed identity copy")
-    );
-    let service = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &service)
-        .expect("empty root");
+    let ctx = cadmpeg_test_support::service_decode_context();
     assert_eq!(
         id.try_clone_for_decode(&ctx, "typed identity copy")
             .expect("service copy"),
         id
-    );
-}
-
-#[test]
-fn local_identity_copy_refuses_one_below_retained_need() {
-    let id = super::HistoricalFaceId::mint("synthetic-face-42").expect("valid local identity");
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = u64::try_from(id.as_str().len()).expect("length") - 1;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root");
-    let error = id
-        .try_clone_for_decode(&ctx, "local identity copy")
-        .expect_err("one below need");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-            && resource.operation == "local identity copy")
     );
 }
 
@@ -525,62 +491,29 @@ fn local_identity_copy_succeeds_under_service_profile() {
 }
 
 #[test]
-fn identity_grammar_admits_only_the_scalars_inspected() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    for (text, visits, valid) in [
-        ("", 0, false),
-        (":unread", 1, false),
-        ("a::unread", 3, false),
-        ("a:b:c:d#unread", 6, false),
-        ("a:b:c#", 6, false),
-        ("a:b:c#é", 7, true),
-        ("a:b:c#:", 7, true),
-        ("a:b:c#\u{2003}unread", 7, false),
-        ("a:b:c##unread", 7, false),
-        ("abc", 3, false),
+fn identity_grammar_admits_only_three_components_and_one_key() {
+    for (text, valid) in [
+        ("", false),
+        (":unread", false),
+        ("a::unread", false),
+        ("a:b:c:d#unread", false),
+        ("a:b:c#", false),
+        ("a:b:c#é", true),
+        ("a:b:c#:", true),
+        ("a:b:c#\u{2003}unread", false),
+        ("a:b:c##unread", false),
+        ("abc", false),
     ] {
-        for allowance in 0..=visits {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = allowance;
-            policy.limits.max_retained_bytes = 0;
-            policy.limits.max_materialized_bytes = 0;
-            policy.limits.max_collection_items = 0;
-            policy.limits.max_recursion_depth = 0;
-            let arena = DecodeArena::new();
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let result = super::Identity::admit_text(text.to_owned(), |work| {
-                ctx.charge_work_limit(work, "identity grammar visit")
-            });
-            if allowance < visits {
-                let original = result.unwrap_err();
-                assert_eq!(original.dimension, ResourceDimension::WorkUnits);
-                assert_eq!(original.operation, "identity grammar visit");
-                assert_eq!(original.additional, 1);
-                assert!(
-                    matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit == original)
-                );
-            } else {
-                let result = result.unwrap();
-                assert_eq!(result.is_ok(), valid, "{text:?}");
-                assert_eq!(
-                    result.map_or_else(|text| text, super::Identity::into_string),
-                    text
-                );
-                ctx.finish_session().unwrap();
-            }
-        }
+        let result =
+            super::Identity::admit_text(
+                text.to_owned(),
+                |_| Ok::<(), std::convert::Infallible>(()),
+            )
+            .unwrap();
+        assert_eq!(result.is_ok(), valid, "{text:?}");
+        assert_eq!(
+            result.map_or_else(|text| text, super::Identity::into_string),
+            text
+        );
     }
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let original = ctx
-        .charge_work_limit(1, "original grammar refusal")
-        .unwrap_err();
-    assert_eq!(
-        super::Identity::admit_text(String::new(), |work| ctx
-            .charge_work_limit(work, "empty grammar"))
-        .unwrap_err(),
-        original
-    );
 }

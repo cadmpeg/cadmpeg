@@ -4,7 +4,7 @@
 use std::convert::Infallible;
 use std::fmt::Display;
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext, DepthGuard, ResourceLimit};
+use cadmpeg_core::decode::{DecodeContext, DepthGuard, ResourceLimit};
 use cadmpeg_core::CodecError;
 use serde::Serializer;
 
@@ -56,11 +56,10 @@ impl Admission for &DecodeContext<'_> {
         Self: 'scope;
 
     fn enter(&self) -> Result<DepthGuard<'_>, CodecError> {
-        self.charge_work(1, "walk document digest")?;
         self.enter_nested("walk document digest")
     }
-    fn text(&self, bytes: usize) -> Result<(), CodecError> {
-        self.charge_work(u64_from_index(bytes), "scan document digest text")
+    fn text(&self, _bytes: usize) -> Result<(), CodecError> {
+        Ok(())
     }
     fn resource(error: CodecError) -> Option<ResourceLimit> {
         match error {
@@ -73,14 +72,6 @@ impl Admission for &DecodeContext<'_> {
         inner: S,
         value: &T,
     ) -> Result<Result<S::Ok, S::Error>, CodecError> {
-        let mut storage = self.reserve_scoped(0, "format document digest text")?;
-        let text = storage.with_storage(|| {
-            self.format_retained(format_args!("{value}"), "format document digest text")
-        })?;
-        self.text(text.len())?;
-        let result = inner.serialize_str(&text);
-        drop(text);
-        drop(storage);
-        Ok(result)
+        Ok(inner.collect_str(value))
     }
 }

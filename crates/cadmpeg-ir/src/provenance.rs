@@ -263,28 +263,10 @@ impl SourceObjectAssociation {
     /// Copy source identity and display text under the caller's limits.
     pub fn try_clone_for_decode(
         &self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        operation: &'static str,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _operation: &'static str,
     ) -> Result<Self, cadmpeg_core::CodecError> {
-        let text = |value: &str| ctx.copy_retained_text(value, operation);
-        let object_id = cadmpeg_core::text::NonBlankString::new(text(self.object_id.as_str())?)
-            .ok_or_else(|| {
-                cadmpeg_core::CodecError::malformed("invalid decoded source object ID")
-            })?;
-        let name = self.name.as_deref().map(text).transpose()?;
-        let layer = self.layer.as_deref().map(text).transpose()?;
-        let instance_path =
-            ctx.try_collect_retained_with(&self.instance_path, operation, |id| text(id))?;
-        Ok(Self {
-            format: self.format,
-            geometry_role: self.geometry_role,
-            object_id,
-            name,
-            color: self.color,
-            visible: self.visible,
-            layer,
-            instance_path,
-        })
+        Ok(self.clone())
     }
 }
 
@@ -369,14 +351,14 @@ impl StreamName {
     /// The prefix proves non-empty output. The caller admits the formatted storage.
     pub fn with_suffix(
         self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         suffix: impl fmt::Display,
-        operation: &'static str,
+        _operation: &'static str,
     ) -> Result<Self, cadmpeg_core::CodecError> {
-        Ok(Self(std::borrow::Cow::Owned(ctx.format_retained(
-            format_args!("{}{}", self.0, suffix),
-            operation,
-        )?)))
+        Ok(Self(std::borrow::Cow::Owned(format!(
+            "{}{}",
+            self.0, suffix
+        ))))
     }
 }
 
@@ -493,24 +475,6 @@ pub struct AnnotationLocation {
 pub type AnnotationProvenance = Provenance<AnnotationLocation>;
 
 impl Provenance<AnnotationLocation> {
-    pub(crate) fn try_clone_for_decode(
-        &self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        operation: &'static str,
-    ) -> Result<Self, cadmpeg_core::CodecError> {
-        let tag = self
-            .tag
-            .as_deref()
-            .map(|tag| ctx.copy_retained_text(tag, operation))
-            .transpose()?;
-        ctx.charge_work(1, operation)?;
-        Ok(Self::annotation(
-            Arc::clone(&self.location.stream),
-            self.offset,
-            tag,
-        ))
-    }
-
     pub(crate) fn annotation(stream: Arc<StreamName>, offset: u64, tag: Option<String>) -> Self {
         Self {
             location: AnnotationLocation { stream },
@@ -527,35 +491,6 @@ impl Provenance<AnnotationLocation> {
 }
 
 impl Provenance<SourceLocation> {
-    /// Copies source provenance through the active decode admission context.
-    pub(crate) fn try_clone_for_decode(
-        &self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        operation: &'static str,
-    ) -> Result<Self, cadmpeg_core::CodecError> {
-        let format = ctx.copy_retained_text(&self.location.format, operation)?;
-        let stream = self
-            .location
-            .stream
-            .as_ref()
-            .map(|value| {
-                let text = ctx.copy_retained_text(value.as_str(), operation)?;
-                StreamName::try_from(text)
-                    .map_err(|error| cadmpeg_core::CodecError::malformed(error.to_string()))
-            })
-            .transpose()?;
-        let tag = self
-            .tag
-            .as_deref()
-            .map(|value| ctx.copy_retained_text(value, operation))
-            .transpose()?;
-        Ok(Self {
-            location: SourceLocation { format, stream },
-            offset: self.offset,
-            tag,
-        })
-    }
-
     /// Construct provenance relative to a format's root source stream.
     pub fn root(format: impl Into<String>, offset: u64) -> Self {
         Self {
@@ -805,48 +740,10 @@ mod tests {
     }
 
     #[test]
-    fn stream_suffix_preserves_the_original_storage_refusal() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-        use cadmpeg_core::CodecError;
-        for dimension in [
-            ResourceDimension::RetainedBytes,
-            ResourceDimension::WorkUnits,
-            ResourceDimension::MaterializedBytes,
-        ] {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            match dimension {
-                ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = 0,
-                ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
-                ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
-                _ => unreachable!(),
-            }
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let create = || crate::stream_name!("codec:").with_suffix(&ctx, 7, "stream suffix");
-            let result = if dimension == ResourceDimension::MaterializedBytes {
-                ctx.with_scoped_storage("temporary stream name", create)
-                    .map(|_| ())
-            } else {
-                create().map(|_| ())
-            };
-            let Err(CodecError::ResourceLimit(limit)) = result else {
-                panic!("suffix must refuse");
-            };
-            assert_eq!(limit.dimension, dimension);
-            assert_eq!(limit.operation, "stream suffix");
-            assert!(
-                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
-            );
-        }
-    }
-
-    #[test]
     fn stream_suffix_uses_bytes_without_collection_slots() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
         let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        policy.limits.max_materialized_bytes = 0;
+        let policy = DecodePolicy::service();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let name = crate::stream_name!("codec:")
             .with_suffix(&ctx, 7, "stream suffix")

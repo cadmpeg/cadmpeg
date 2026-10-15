@@ -16,34 +16,12 @@ use crate::provenance::SourceObjectAssociation;
 use crate::scalar::{FiniteReal, NonNegativeReal, PositiveI64};
 use crate::transform::Transform;
 use crate::units::FiniteVector;
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroI64;
-
-/// Charge a decode copy of `count` values of `T` as collection items and retained bytes.
-pub(super) fn charge_decode_copy<T>(
-    count: usize,
-    ctx: &DecodeContext<'_>,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    let count = u64_from_index(count);
-    let bytes = count
-        .checked_mul(u64_from_index(std::mem::size_of::<T>()))
-        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, count))?;
-    ctx.charge_collection_items(count, operation)?;
-    ctx.charge_retained(bytes, operation)
-}
-
-pub(super) fn copy_decode_slice<T: Copy>(
-    values: &[T],
-    ctx: &DecodeContext<'_>,
-    operation: &'static str,
-) -> Result<Vec<T>, CodecError> {
-    ctx.copy_slice(values, operation)
-}
 
 pub mod analytic;
 pub mod nurbs;
@@ -173,37 +151,13 @@ pub enum SolvedSurfaceGeometry {
 }
 
 impl SolvedSurfaceGeometry {
-    /// Copy retained geometry through the caller's decode budget.
+    /// Copy the geometry.
     pub fn try_clone_for_decode(
         &self,
-        ctx: &DecodeContext<'_>,
-        operation: &'static str,
+        _ctx: &DecodeContext<'_>,
+        _operation: &'static str,
     ) -> Result<Self, CodecError> {
-        ctx.charge_work(1, operation)?;
-        Ok(match self {
-            Self::Plane(value) => Self::Plane(*value),
-            Self::Cylinder(value) => Self::Cylinder(*value),
-            Self::Cone(value) => Self::Cone(*value),
-            Self::Sphere(value) => Self::Sphere(*value),
-            Self::Torus(value) => Self::Torus(*value),
-            Self::Nurbs(value) => Self::Nurbs(value.try_clone_for_decode(ctx, operation)?),
-            Self::Polygonal(value) => Self::Polygonal(value.try_clone_for_decode(ctx, operation)?),
-            Self::Transformed(value) => {
-                let _depth = ctx.enter_nested(operation)?;
-                charge_decode_copy::<Self>(1, ctx, operation)?;
-                Self::Transformed(PlacedSurface {
-                    basis: Box::new(value.basis.try_clone_for_decode(ctx, operation)?),
-                    transform: value.transform,
-                    depth: value.depth,
-                })
-            }
-            Self::Unknown { record } => Self::Unknown {
-                record: record
-                    .as_ref()
-                    .map(|id| id.try_clone_for_decode(ctx, operation))
-                    .transpose()?,
-            },
-        })
+        Ok(self.clone())
     }
 
     /// Placements enclosing the leaf of this carrier's inline basis chain.
@@ -329,22 +283,10 @@ impl SurfaceGeometry {
     /// Copy retained geometry through the caller's decode budget.
     pub fn try_clone_for_decode(
         &self,
-        ctx: &DecodeContext<'_>,
-        operation: &'static str,
+        _ctx: &DecodeContext<'_>,
+        _operation: &'static str,
     ) -> Result<Self, CodecError> {
-        Ok(match self {
-            Self::Procedural {
-                construction,
-                cache,
-            } => Self::Procedural {
-                construction: construction.try_clone_for_decode(ctx, operation)?,
-                cache: cache
-                    .as_ref()
-                    .map(|geometry| geometry.try_clone_for_decode(ctx, operation))
-                    .transpose()?,
-            },
-            Self::Solved(geometry) => Self::Solved(geometry.try_clone_for_decode(ctx, operation)?),
-        })
+        Ok(self.clone())
     }
 
     /// Construction that owns this carrier, when it is procedural.
@@ -398,21 +340,10 @@ impl Surface {
     /// Copy the carrier, retained identity and source metadata under caller limits.
     pub fn try_clone_for_decode(
         &self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        operation: &'static str,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _operation: &'static str,
     ) -> Result<Self, cadmpeg_core::CodecError> {
-        let id = self.id.try_clone_for_decode(ctx, operation)?;
-        let geometry = self.geometry.try_clone_for_decode(ctx, operation)?;
-        let source_object = self
-            .source_object
-            .as_ref()
-            .map(|source| source.try_clone_for_decode(ctx, operation))
-            .transpose()?;
-        Ok(Self {
-            id,
-            geometry,
-            source_object,
-        })
+        Ok(self.clone())
     }
 }
 
@@ -465,49 +396,10 @@ impl SolvedCurveGeometry {
     /// Copy retained geometry through the caller's decode budget.
     pub fn try_clone_for_decode(
         &self,
-        ctx: &DecodeContext<'_>,
-        operation: &'static str,
+        _ctx: &DecodeContext<'_>,
+        _operation: &'static str,
     ) -> Result<Self, CodecError> {
-        ctx.charge_work(1, operation)?;
-        Ok(match self {
-            Self::Line(value) => Self::Line(*value),
-            Self::Circle(value) => Self::Circle(*value),
-            Self::Ellipse(value) => Self::Ellipse(*value),
-            Self::Parabola(value) => Self::Parabola(*value),
-            Self::Hyperbola(value) => Self::Hyperbola(*value),
-            Self::Degenerate(value) => Self::Degenerate(*value),
-            Self::Composite {
-                segments,
-                self_intersect,
-            } => {
-                let mut copy = Vec::new();
-                ctx.reserve_vec(&mut copy, segments.len(), operation)?;
-                ctx.charge_work(u64_from_index(segments.len()), operation)?;
-                for segment in segments {
-                    copy.push(CompositeCurveSegment {
-                        curve: segment.curve.try_clone_for_decode(ctx, operation)?,
-                        same_sense: segment.same_sense,
-                        transition: segment.transition,
-                    });
-                }
-                Self::Composite {
-                    segments: CompositeCurveSegments::try_from(copy)
-                        .map_err(CodecError::malformed)?,
-                    self_intersect: *self_intersect,
-                }
-            }
-            Self::Nurbs(value) => Self::Nurbs(value.try_clone_for_decode(ctx, operation)?),
-            Self::Polyline(value) => Self::Polyline(value.try_clone_for_decode(ctx, operation)?),
-            Self::Transformed(value) => {
-                Self::Transformed(value.try_clone_for_decode(ctx, operation)?)
-            }
-            Self::Unknown { record } => Self::Unknown {
-                record: record
-                    .as_ref()
-                    .map(|id| id.try_clone_for_decode(ctx, operation))
-                    .transpose()?,
-            },
-        })
+        Ok(self.clone())
     }
 
     /// Placements enclosing the leaf of this carrier's inline basis chain.
@@ -558,27 +450,6 @@ struct PlacedCurveWire {
 }
 
 impl PlacedCurve {
-    // Keep placement recursion out of the carrier match's large stack frame.
-    fn try_clone_for_decode(
-        &self,
-        ctx: &DecodeContext<'_>,
-        operation: &'static str,
-    ) -> Result<Self, CodecError> {
-        let _depth = ctx.enter_nested(operation)?;
-        charge_decode_copy::<SolvedCurveGeometry>(1, ctx, operation)?;
-        let basis = if let SolvedCurveGeometry::Transformed(placed) = self.basis.as_ref() {
-            ctx.charge_work(1, operation)?;
-            SolvedCurveGeometry::Transformed(placed.try_clone_for_decode(ctx, operation)?)
-        } else {
-            self.basis.try_clone_for_decode(ctx, operation)?
-        };
-        Ok(Self {
-            basis: Box::new(basis),
-            transform: self.transform,
-            depth: self.depth,
-        })
-    }
-
     /// Place a basis curve, refusing a chain past [`MAX_GEOMETRY_NESTING`].
     ///
     /// # Errors
@@ -656,22 +527,10 @@ impl CurveGeometry {
     /// Copy retained geometry through the caller's decode budget.
     pub fn try_clone_for_decode(
         &self,
-        ctx: &DecodeContext<'_>,
-        operation: &'static str,
+        _ctx: &DecodeContext<'_>,
+        _operation: &'static str,
     ) -> Result<Self, CodecError> {
-        Ok(match self {
-            Self::Procedural {
-                construction,
-                cache,
-            } => Self::Procedural {
-                construction: construction.try_clone_for_decode(ctx, operation)?,
-                cache: cache
-                    .as_ref()
-                    .map(|geometry| geometry.try_clone_for_decode(ctx, operation))
-                    .transpose()?,
-            },
-            Self::Solved(geometry) => Self::Solved(geometry.try_clone_for_decode(ctx, operation)?),
-        })
+        Ok(self.clone())
     }
 
     /// Construction that owns this carrier, when it is procedural.
@@ -3349,127 +3208,85 @@ pub enum RollingBallJetError {
 }
 
 impl RollingBallJetStations {
-    /// Admit raw station controls with charged retained row storage.
+    /// Admit raw station controls.
     pub fn try_new(
         degree: u32,
         stations: Vec<RollingBallJetStation>,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<Result<Self, &'static str>, cadmpeg_core::CodecError> {
-        Self::from_raw(
-            degree,
-            stations,
-            |count, operation| {
-                ctx.charge_work(cadmpeg_core::decode::u64_from_index(count), operation)
-            },
-            |count| ctx.collection_vec(count, "rolling-ball jet stations"),
-        )
+        Ok(Self::from_raw(degree, stations))
     }
 
-    fn from_raw<E>(
-        degree: u32,
-        stations: Vec<RollingBallJetStation>,
-        mut work: impl FnMut(usize, &'static str) -> Result<(), E>,
-        allocate: impl FnOnce(
-            usize,
-        ) -> Result<
-            Vec<RollingBallJetStation<FiniteReal, FiniteVector3, FinitePoint3>>,
-            E,
-        >,
-    ) -> Result<Result<Self, &'static str>, E> {
-        if let Err(error) = Self::admit_controls(&mut work, degree, &stations, |row| row.knot)? {
-            return Ok(Err(error));
-        }
-        let mut admitted = allocate(stations.len())?;
+    fn from_raw(degree: u32, stations: Vec<RollingBallJetStation>) -> Result<Self, &'static str> {
+        Self::admit_controls(degree, &stations, |row| row.knot)?;
+        let mut admitted = Vec::new();
         for row in stations {
-            work(1, "rolling-ball jet station controls")?;
-            let Some(knot) = FiniteReal::new(row.knot) else {
-                return Ok(Err(ROLLING_BALL_KNOTS));
-            };
-            let site = match row.site.admit() {
-                Ok(site) => site,
-                Err(error) => return Ok(Err(error)),
-            };
-            if let Err(error) = admit_rolling_ball_radii(&site) {
-                return Ok(Err(error));
-            }
+            let knot = FiniteReal::new(row.knot).ok_or(ROLLING_BALL_KNOTS)?;
+            let site = row.site.admit()?;
+            admit_rolling_ball_radii(&site)?;
             admitted.push(RollingBallJetStation {
                 knot,
                 multiplicity: row.multiplicity,
                 site,
             });
         }
-        Ok(Ok(Self {
+        Ok(Self {
             degree,
             stations: admitted,
-        }))
+        })
     }
 
     /// Validate finite station rows without copying their owned storage.
     pub fn from_parts(
         degree: u32,
         stations: Vec<RollingBallJetStation<FiniteReal, FiniteVector3, FinitePoint3>>,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<Result<Self, &'static str>, cadmpeg_core::CodecError> {
-        if let Err(error) = Self::admit_controls(
-            &mut |count, operation| {
-                ctx.charge_work(cadmpeg_core::decode::u64_from_index(count), operation)
-            },
-            degree,
-            &stations,
-            |row| row.knot.get(),
-        )? {
-            return Ok(Err(error));
-        }
-        for station in &stations {
-            ctx.charge_work(1, "rolling-ball jet station controls")?;
-            if let Err(error) = admit_rolling_ball_radii(&station.site) {
-                return Ok(Err(error));
+        Ok((|| {
+            Self::admit_controls(degree, &stations, |row| row.knot.get())?;
+            for station in &stations {
+                admit_rolling_ball_radii(&station.site)?;
             }
-        }
-        Ok(Ok(Self { degree, stations }))
+            Ok(Self { degree, stations })
+        })())
     }
 
-    fn admit_controls<R, V, P, E>(
-        work: &mut impl FnMut(usize, &'static str) -> Result<(), E>,
+    fn admit_controls<R, V, P>(
         degree: u32,
         stations: &[RollingBallJetStation<R, V, P>],
         knot: impl Fn(&RollingBallJetStation<R, V, P>) -> f64,
-    ) -> Result<Result<(), &'static str>, E> {
+    ) -> Result<(), &'static str> {
         let Some(maximum) = degree.checked_add(1).filter(|_| degree != 0) else {
-            return Ok(Err(
+            return Err(
                 "rolling-ball jet degree must be positive with a representable end multiplicity",
-            ));
+            );
         };
         if stations.len() < 2 {
-            return Ok(Err(
-                "rolling-ball jet stations must contain at least two rows",
-            ));
+            return Err("rolling-ball jet stations must contain at least two rows");
         }
         if stations[0].multiplicity != maximum
             || stations[stations.len() - 1].multiplicity != maximum
         {
-            return Ok(Err(
+            return Err(
                 "rolling-ball jet multiplicities must be in 1..=degree+1 with clamped ends",
-            ));
+            );
         }
         for station in stations {
-            work(1, "rolling-ball jet multiplicities")?;
             if station.multiplicity == 0 || station.multiplicity > maximum {
-                return Ok(Err(
+                return Err(
                     "rolling-ball jet multiplicities must be in 1..=degree+1 with clamped ends",
-                ));
+                );
             }
         }
         let mut previous = None;
         for station in stations {
-            work(1, "rolling-ball jet knots")?;
             let value = knot(station);
             if !value.is_finite() || previous.is_some_and(|last| value <= last) {
-                return Ok(Err(ROLLING_BALL_KNOTS));
+                return Err(ROLLING_BALL_KNOTS);
             }
             previous = Some(value);
         }
-        Ok(Ok(()))
+        Ok(())
     }
 
     /// Return the polynomial degree of each scalar channel.
@@ -3499,19 +3316,7 @@ impl TryFrom<RollingBallJetReadWire> for RollingBallJetStations {
     type Error = RollingBallJetError;
 
     fn try_from(wire: RollingBallJetReadWire) -> Result<Self, Self::Error> {
-        Self::from_raw(
-            wire.degree,
-            wire.stations,
-            |_, _| Ok::<(), RollingBallJetError>(()),
-            |count| {
-                let mut values = Vec::new();
-                values
-                    .try_reserve_exact(count)
-                    .map_err(|error| RollingBallJetError::Admission(error.to_string()))?;
-                Ok(values)
-            },
-        )?
-        .map_err(RollingBallJetError::Invalid)
+        Self::from_raw(wire.degree, wire.stations).map_err(RollingBallJetError::Invalid)
     }
 }
 
@@ -6397,10 +6202,8 @@ impl<R, V> SkinSurfaceLayout<R, V> {
     pub fn inner_count(&self) -> Result<i64, cadmpeg_core::CodecError> {
         match self {
             Self::Profiles { profiles, .. } => i64::try_from(profiles.len()).map_err(|_| {
-                cadmpeg_core::decode::refuse_local_limit(
-                    "skin surface profile count",
-                    9_223_372_036_854_775_807,
-                    cadmpeg_core::decode::u64_from_index(profiles.len()),
+                cadmpeg_core::CodecError::malformed(
+                    "skin surface profile count exceeds the native integer range",
                 )
             }),
             Self::Compact { inner_count, .. } => Ok(*inner_count),

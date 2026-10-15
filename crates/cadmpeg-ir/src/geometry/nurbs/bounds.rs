@@ -32,7 +32,7 @@ pub fn speed_bound<const N: usize>(
 
 /// Evaluate a speed bound from admitted pole accessors without copying poles or weights.
 pub fn speed_bound_by<const N: usize>(
-    ctx: &DecodeContext<'_>,
+    _ctx: &DecodeContext<'_>,
     degree: u32,
     knots: &[f64],
     point_count: usize,
@@ -40,32 +40,22 @@ pub fn speed_bound_by<const N: usize>(
     weight_at: impl Fn(usize) -> f64,
     origin: [f64; N],
 ) -> Result<Option<FiniteReal>, ResourceLimit> {
-    macro_rules! work {
-        ($operation:expr) => {
-            if let Err(limit) = ctx.charge_work_limit(1, $operation) {
-                return Some(Err(limit));
-            }
-        };
-    }
     let result = (|| {
         let order = usize::try_from(degree).ok()?;
         if point_count <= order || knots.len() != point_count.checked_add(order)?.checked_add(1)? {
             return None;
         }
         for value in knots.iter().chain(origin.iter()) {
-            work!("IR rational speed finite coordinate visit");
             if !value.is_finite() {
                 return None;
             }
         }
         for pair in knots.windows(2) {
-            work!("IR rational speed knot order comparison");
             if pair[0] > pair[1] {
                 return None;
             }
         }
         for index in 0..point_count {
-            work!("IR rational speed pole validation");
             let weight = weight_at(index);
             if !weight.is_finite()
                 || weight <= 0.0
@@ -76,12 +66,10 @@ pub fn speed_bound_by<const N: usize>(
         }
         let mut scale = 0.0_f64;
         for index in 0..point_count {
-            work!("IR rational speed weight scale visit");
             scale = scale.max(weight_at(index));
         }
         let mut minimum = f64::INFINITY;
         for index in 0..point_count {
-            work!("IR rational speed minimum weight visit");
             minimum = minimum.min(weight_at(index) / scale);
         }
         if minimum <= 0.0 {
@@ -92,7 +80,6 @@ pub fn speed_bound_by<const N: usize>(
         let mut weight_speed = 0.0_f64;
         let mut previous: Option<[f64; N]> = None;
         for index in 0..point_count {
-            work!("IR rational speed control bound visit");
             let point = point_at(index)?;
             let weight = weight_at(index) / scale;
             let relative: [f64; N] = std::array::from_fn(|axis| point[axis] - origin[axis]);
@@ -146,83 +133,14 @@ pub fn speed_bound_by<const N: usize>(
             Some(value) => value.quotient(denominator.finish()?).ok()?.get(),
             None => 0.0,
         };
-        FiniteReal::new(numerator_speed / minimum + correction).map(Ok)
+        FiniteReal::new(numerator_speed / minimum + correction)
     })();
-    result.transpose()
+    Ok(result)
 }
 
 #[cfg(test)]
 mod tests {
     use super::speed_bound;
-
-    #[test]
-    fn rational_speed_bound_admits_every_pass_without_allocating() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-        use cadmpeg_core::CodecError;
-        use std::cell::Cell;
-        let knots = [0., 0., 1., 1.];
-        let points = [[0., 0.], [1., 0.]];
-        // Six finite coordinates, three knot comparisons, and four two-pole passes.
-        let work = 6 + 3 + 4 * 2;
-        for cap in 0..work {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-            let called = Cell::new(false);
-            let limit = super::speed_bound_by(
-                &ctx,
-                1,
-                &knots,
-                2,
-                |index| {
-                    called.set(true);
-                    points.get(index).copied()
-                },
-                |_| 1.,
-                [0., 0.],
-            )
-            .expect_err("every pass requires admission");
-            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-            if cap <= 9 {
-                assert!(!called.get());
-            }
-            assert_eq!(
-                limit.operation,
-                if cap < 6 {
-                    "IR rational speed finite coordinate visit"
-                } else if cap < 9 {
-                    "IR rational speed knot order comparison"
-                } else if cap < 11 {
-                    "IR rational speed pole validation"
-                } else if cap < 13 {
-                    "IR rational speed weight scale visit"
-                } else if cap < 15 {
-                    "IR rational speed minimum weight visit"
-                } else {
-                    "IR rational speed control bound visit"
-                }
-            );
-            assert!(
-                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
-            );
-        }
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = work;
-        policy.limits.max_retained_bytes = 0;
-        policy.limits.max_materialized_bytes = 0;
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        assert_eq!(
-            super::speed_bound(&ctx, 1, &knots, &points, None, [0., 0.])
-                .expect("exact work")
-                .map(crate::scalar::FiniteReal::get),
-            Some(1.)
-        );
-        ctx.finish_session()
-            .expect("zero allocation and exact visits");
-    }
 
     #[test]
     fn implicit_unit_weights_match_explicit_unit_weights() {

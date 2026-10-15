@@ -4,7 +4,7 @@
 use std::convert::Infallible;
 use std::fmt;
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
 use crate::ids::{ProceduralCurveId, ProceduralSurfaceId};
@@ -72,11 +72,10 @@ impl ModelAdmission for StandardAdmission {
     }
     fn reserve<T>(
         &self,
-        values: &mut Vec<T>,
-        count: usize,
+        _values: &mut Vec<T>,
+        _count: usize,
         _operation: &'static str,
     ) -> Result<(), Infallible> {
-        values.reserve(count);
         Ok(())
     }
     fn surface_id(
@@ -98,36 +97,36 @@ impl ModelAdmission for StandardAdmission {
 impl ModelAdmission for DecodeContext<'_> {
     type Error = CodecError;
 
-    fn work(&self, count: usize, operation: &'static str) -> Result<(), CodecError> {
-        self.charge_work(u64_from_index(count), operation)
+    fn work(&self, _count: usize, _operation: &'static str) -> Result<(), CodecError> {
+        Ok(())
     }
     fn text(
         &self,
         args: fmt::Arguments<'_>,
-        operation: &'static str,
+        _operation: &'static str,
     ) -> Result<String, CodecError> {
-        self.format_retained(args, operation)
+        Ok(args.to_string())
     }
     fn reserve<T>(
         &self,
-        values: &mut Vec<T>,
-        count: usize,
-        operation: &'static str,
+        _values: &mut Vec<T>,
+        _count: usize,
+        _operation: &'static str,
     ) -> Result<(), CodecError> {
-        self.reserve_vec(values, count, operation)
+        Ok(())
     }
     fn surface_id(
         &self,
         id: &ProceduralSurfaceId,
-        operation: &'static str,
+        _operation: &'static str,
     ) -> Result<ProceduralSurfaceId, CodecError> {
-        id.try_clone_for_decode(self, operation)
+        Ok(id.clone())
     }
     fn curve_id(
         &self,
         id: &ProceduralCurveId,
-        operation: &'static str,
+        _operation: &'static str,
     ) -> Result<ProceduralCurveId, CodecError> {
-        id.try_clone_for_decode(self, operation)
+        Ok(id.clone())
     }
 }

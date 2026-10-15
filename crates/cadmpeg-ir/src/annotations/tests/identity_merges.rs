@@ -33,7 +33,7 @@ fn remapping_refuses_collisions_across_tables_without_mutation() {
     let error = annotations
         .map_ids(
             &ctx,
-            |_| ctx.copy_retained_text("test:model:point#merged", "test remapped identity"),
+            |_| Ok("test:model:point#merged".to_owned()),
             "remap annotation identities",
         )
         .unwrap()
@@ -83,7 +83,7 @@ fn remapping_calls_once_per_identity_and_preserves_each_annotation() {
             &ctx,
             |id| {
                 calls.push(id.to_owned());
-                ctx.format_retained(format_args!("{id}-mapped"), "test remapped identity")
+                Ok(format!("{id}-mapped"))
             },
             "remap annotation identities",
         )
@@ -256,79 +256,4 @@ fn charged_remapping_preserves_collision_text_and_tables() {
         if message == "annotation identity collision at merged")
     );
     assert_eq!(annotations, before);
-}
-
-#[test]
-fn empty_annotation_append_returns_an_existing_session_refusal() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    use cadmpeg_core::CodecError;
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let CodecError::ResourceLimit(first) = ctx
-        .charge_work(1, "existing annotation refusal")
-        .unwrap_err()
-    else {
-        panic!("work must refuse");
-    };
-    let mut annotations = crate::annotations::Annotations::default();
-    assert!(
-        matches!(annotations.append(&ctx, crate::annotations::Annotations::default(), "empty annotation append"), Err(CodecError::ResourceLimit(original)) if original == first)
-    );
-    assert_eq!(annotations, crate::annotations::Annotations::default());
-    assert!(
-        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == first)
-    );
-}
-
-#[test]
-fn annotation_remap_destination_refusal_preserves_both_source_tables() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-    for shared in [false, true] {
-        let setup = cadmpeg_test_support::service_decode_context();
-        let stream =
-            StreamHandle::new(&setup, crate::stream_name!("source"), "source handle").unwrap();
-        let mut builder = AnnotationBuilder::new();
-        builder
-            .note(&setup, "a", &stream, 7, Some("first"))
-            .unwrap();
-        builder
-            .note(&setup, "b", &stream, 9, Some("second"))
-            .unwrap();
-        if shared {
-            builder.exactness(&setup, "a", Exactness::Inferred).unwrap();
-        }
-        let mut annotations = builder.build();
-        let before = annotations.clone();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        // Both callback keys and the first provenance node fit. A shared key
-        // also fits its required copy; the next destination node does not.
-        let retained = 2 * "mapped-a".len()
-            + usize::from(shared) * "mapped-a".len()
-            + std::mem::size_of::<(String, crate::provenance::AnnotationProvenance)>();
-        policy.limits.max_retained_bytes = u64::try_from(retained).unwrap();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let mut calls = Vec::new();
-        let result = annotations.map_ids(
-            &ctx,
-            |id| {
-                calls.push(id.to_owned());
-                ctx.format_retained(format_args!("mapped-{id}"), "mapped identity")
-            },
-            "remap destinations",
-        );
-        let Err(CodecError::ResourceLimit(limit)) = result else {
-            panic!("a later destination node must refuse");
-        };
-        assert_eq!(calls, ["a", "b"]);
-        assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
-        assert_eq!(limit.operation, "remap destinations");
-        assert_eq!(annotations, before);
-        assert!(
-            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
-        );
-    }
 }

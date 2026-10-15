@@ -160,9 +160,13 @@ fn resource_refused_append_restores_neutral_native_and_parent_state() {
     let mut ir = crate::examples::unit_cube().unwrap();
     let before = ir.clone();
     let staged = staged_document();
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_recursion_depth = 0;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let result = ir.try_append(&ctx, staged.model, staged.native, |_| {
-        ctx.charge_work(u64::MAX / 2, "test append callback refusal")?;
+        let _depth = ctx.enter_nested("test append callback refusal")?;
         Ok(Ok::<(), ()>(()))
     });
     let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = result else {
@@ -173,42 +177,4 @@ fn resource_refused_append_restores_neutral_native_and_parent_state() {
     assert!(
         matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == limit)
     );
-}
-
-#[test]
-fn append_storage_refusal_precedes_visible_mutation() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    for dimension in [
-        ResourceDimension::CollectionItems,
-        ResourceDimension::MaterializedBytes,
-        ResourceDimension::RetainedBytes,
-        ResourceDimension::WorkUnits,
-    ] {
-        let mut ir = crate::examples::unit_cube().unwrap();
-        ir.native
-            .namespace_mut("test")
-            .arenas_mut()
-            .insert("existing".into(), Vec::new());
-        let before = ir.clone();
-        let staged = staged_document();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        match dimension {
-            ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
-            ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
-            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = 0,
-            ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
-            _ => panic!("test dimension"),
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result = ir.try_append(&ctx, staged.model, staged.native, |_| Ok(Ok::<(), ()>(())));
-        let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = result else {
-            panic!("append storage must refuse");
-        };
-        assert_eq!(limit.dimension, dimension);
-        assert_eq!(ir, before);
-        assert!(
-            matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == limit)
-        );
-    }
 }

@@ -2,7 +2,7 @@
 //! Focused validation checks for carriers parameterization.
 
 use crate::index::identities::BorrowedIdentities;
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
 use crate::document::CadIr;
@@ -26,14 +26,13 @@ fn collect_law_curves<'a, R, V, P>(
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
     let _depth = ctx.enter_nested("carrier law nesting")?;
-    ctx.charge_work(1, "carrier law visit")?;
+
     match expression {
         crate::geometry::LawExpression::Edge { curve, .. } => {
             curves.insert_unique(curve.id.as_str(), ())?;
         }
         crate::geometry::LawExpression::Algebraic { operands, .. } => {
             for operand in operands {
-                ctx.charge_work(1, "carrier reference scan")?;
                 collect_law_curves(operand, curves, ctx)?;
             }
         }
@@ -53,69 +52,50 @@ pub(super) fn check_carrier_reachability(
     // The links are collected first: a product record parses them from its
     // text, and the identity sets below borrow them.
     let mut unknown_links = Vec::new();
-    view.visit(
-        |work| ctx.charge_work(u64_from_index(work), "carrier native arena scan"),
-        |_, arena, records| {
-            ctx.charge_work(
-                u64_from_index(arena.len()),
-                "carrier native arena comparison",
-            )?;
-            if arena == "unknowns" {
-                for record in records.records() {
-                    ctx.charge_work(1, "carrier reference scan")?;
-                    for link in record.links(ctx)? {
-                        ctx.push_vec(&mut unknown_links, link?, "collect carrier native links")?;
-                    }
-                }
+    view.visit::<cadmpeg_core::CodecError>(|_, arena, records| {
+        if arena == "unknowns" {
+            for record in records.records() {
+                unknown_links.extend(record.links());
             }
-            Ok(())
-        },
-    )?;
+        }
+        Ok(())
+    })?;
     let mut surfaces = BorrowedIdentities::build(ctx, |_| Ok(()))?;
     let mut curves = BorrowedIdentities::build(ctx, |_| Ok(()))?;
     let mut pcurves = BorrowedIdentities::build(ctx, |_| Ok(()))?;
     let mut points = BorrowedIdentities::build(ctx, |_| Ok(()))?;
     for face in &ir.model.faces {
-        ctx.charge_work(1, "carrier reference scan")?;
         surfaces.insert_unique(face.surface.as_str(), ())?;
     }
     for edge in &ir.model.edges {
-        ctx.charge_work(1, "carrier reference scan")?;
         if let Some(curve) = edge.curve() {
             curves.insert_unique(curve.as_str(), ())?;
         }
     }
     for coedge in &ir.model.coedges {
-        ctx.charge_work(1, "carrier reference scan")?;
         if let Some(use_) = &coedge.use_curve {
             curves.insert_unique(use_.curve.as_str(), ())?;
         }
         for use_ in &coedge.pcurves {
-            ctx.charge_work(1, "carrier reference scan")?;
             pcurves.insert_unique(use_.pcurve.as_str(), ())?;
         }
     }
     for surface in &ir.model.surfaces {
-        ctx.charge_work(1, "carrier reference scan")?;
         if surface.source_object.is_some() {
             surfaces.insert_unique(surface.id.as_str(), ())?;
         }
     }
     for curve in &ir.model.curves {
-        ctx.charge_work(1, "carrier reference scan")?;
         if curve.source_object.is_some() {
             curves.insert_unique(curve.id.as_str(), ())?;
         }
     }
     for loop_ in &ir.model.loops {
-        ctx.charge_work(1, "carrier reference scan")?;
         for use_ in loop_.vertex_pcurves() {
-            ctx.charge_work(1, "carrier reference scan")?;
             pcurves.insert_unique(use_.pcurve.as_str(), ())?;
         }
     }
     for surface in &ir.model.procedural_surfaces {
-        ctx.charge_work(1, "carrier reference scan")?;
         if let ProceduralSurfaceDefinition::CurveBounded {
             boundary_pcurves, ..
         } = surface.definition()
@@ -128,18 +108,15 @@ pub(super) fn check_carrier_reachability(
         }
     }
     for vertex in &ir.model.vertices {
-        ctx.charge_work(1, "carrier reference scan")?;
         points.insert_unique(vertex.point.as_str(), ())?;
     }
     for point in &ir.model.points {
-        ctx.charge_work(1, "carrier reference scan")?;
         if point.source_object.is_some() {
             points.insert_unique(point.id.as_str(), ())?;
         }
     }
     let surface_owners = BorrowedIdentities::build(ctx, |add| {
         for surface in &ir.model.surfaces {
-            ctx.charge_work(1, "carrier reference scan")?;
             if let Some(procedural) = surface.geometry.procedural_construction() {
                 add(procedural.as_str(), &surface.id)?;
             }
@@ -148,7 +125,6 @@ pub(super) fn check_carrier_reachability(
     })?;
     let curve_owners = BorrowedIdentities::build(ctx, |add| {
         for curve in &ir.model.curves {
-            ctx.charge_work(1, "carrier reference scan")?;
             if let Some(procedural) = curve.geometry.procedural_construction() {
                 add(procedural.as_str(), &curve.id)?;
             }
@@ -156,7 +132,6 @@ pub(super) fn check_carrier_reachability(
         Ok(())
     })?;
     for binding in &ir.model.appearance_bindings {
-        ctx.charge_work(1, "carrier reference scan")?;
         match &binding.target {
             crate::appearance::AppearanceTarget::Surface(id) => {
                 surfaces.insert_unique(id.as_str(), ())?;
@@ -170,17 +145,13 @@ pub(super) fn check_carrier_reachability(
             _ => {}
         }
     }
-    ctx.charge_work(
-        u64_from_index(ir.model.presentation_layers.len()),
-        "carrier presentation layer scan",
-    )?;
+
     for item in ir
         .model
         .presentation_layers
         .iter()
         .flat_map(|layer| &layer.items)
     {
-        ctx.charge_work(1, "carrier reference scan")?;
         match item {
             crate::presentation::PresentationItem::Surface { surface } => {
                 surfaces.insert_unique(surface.as_str(), ())?;
@@ -196,7 +167,6 @@ pub(super) fn check_carrier_reachability(
     }
 
     for procedural in &ir.model.procedural_surfaces {
-        ctx.charge_work(1, "carrier reference scan")?;
         if let Some(surface) = surface_owners
             .get_unique(ctx, procedural.id.as_str())?
             .copied()
@@ -231,9 +201,7 @@ pub(super) fn check_carrier_reachability(
             ProceduralSurfaceDefinition::Loft(definition_payload) => {
                 let sections = definition_payload.sections();
 
-                ctx.charge_work(u64_from_index(sections.len()), "carrier loft section scan")?;
                 for entry in sections.iter().flat_map(|section| &section.entries) {
-                    ctx.charge_work(1, "carrier reference scan")?;
                     if let Some(curve) = &entry.path.path {
                         curves.insert_unique(curve.id.as_str(), ())?;
                     }
@@ -245,7 +213,6 @@ pub(super) fn check_carrier_reachability(
                             .map(super::super::ids::CurveId::as_str),
                     )?;
                     for member in &entry.profile {
-                        ctx.charge_work(1, "carrier reference scan")?;
                         curves.insert_unique(member.profile.id.as_str(), ())?;
                         if let Some(surface) = member.form.surface() {
                             surfaces.insert_unique(surface.as_str(), ())?;
@@ -284,7 +251,6 @@ pub(super) fn check_carrier_reachability(
                     .iter()
                     .chain(extra_scales.into_iter().flatten())
                 {
-                    ctx.charge_work(1, "carrier reference scan")?;
                     curves.insert_unique(scale.path.as_str(), ())?;
                     curves.extend_unique(
                         scale
@@ -293,7 +259,6 @@ pub(super) fn check_carrier_reachability(
                             .map(super::super::ids::CurveId::as_str),
                     )?;
                     for member in &scale.members {
-                        ctx.charge_work(1, "carrier reference scan")?;
                         curves.insert_unique(member.curve.as_str(), ())?;
                         surfaces.insert_unique(member.data.surface.as_str(), ())?;
                     }
@@ -335,7 +300,6 @@ pub(super) fn check_carrier_reachability(
                     .iter()
                     .chain(extra_scales.into_iter().flatten())
                 {
-                    ctx.charge_work(1, "carrier reference scan")?;
                     curves.insert_unique(scale.path.as_str(), ())?;
                     curves.extend_unique(
                         scale
@@ -344,7 +308,6 @@ pub(super) fn check_carrier_reachability(
                             .map(super::super::ids::CurveId::as_str),
                     )?;
                     for member in &scale.members {
-                        ctx.charge_work(1, "carrier reference scan")?;
                         curves.insert_unique(member.curve.as_str(), ())?;
                         surfaces.insert_unique(member.data.surface.as_str(), ())?;
                     }
@@ -356,7 +319,6 @@ pub(super) fn check_carrier_reachability(
                     crate::geometry::SkinSurfaceLayout::Profiles { profiles, path, .. } => {
                         curves.insert_unique(path.as_str(), ())?;
                         for profile in profiles {
-                            ctx.charge_work(1, "carrier reference scan")?;
                             curves.insert_unique(profile.curve.as_str(), ())?;
                             surfaces.insert_unique(profile.data.surface.as_str(), ())?;
                         }
@@ -372,7 +334,6 @@ pub(super) fn check_carrier_reachability(
                 }
                 curves.insert_unique(construction.parameter_curve.as_str(), ())?;
                 for variable in construction.formula.variables() {
-                    ctx.charge_work(1, "carrier reference scan")?;
                     collect_law_curves(variable, &mut curves, ctx)?;
                 }
             }
@@ -381,25 +342,19 @@ pub(super) fn check_carrier_reachability(
                 for formula in
                     std::iter::once(&construction.primary).chain(&construction.additional)
                 {
-                    ctx.charge_work(1, "carrier reference scan")?;
                     for variable in formula.variables() {
-                        ctx.charge_work(1, "carrier reference scan")?;
                         collect_law_curves(variable, &mut curves, ctx)?;
                     }
                 }
             }
             ProceduralSurfaceDefinition::Net(definition_payload) => {
                 let construction = definition_payload.construction();
-                ctx.charge_work(
-                    u64_from_index(construction.sections.len()),
-                    "carrier net section scan",
-                )?;
+
                 for entry in construction
                     .sections
                     .iter()
                     .flat_map(|section| &section.entries)
                 {
-                    ctx.charge_work(1, "carrier reference scan")?;
                     if let Some(curve) = &entry.path.path {
                         curves.insert_unique(curve.id.as_str(), ())?;
                     }
@@ -411,7 +366,6 @@ pub(super) fn check_carrier_reachability(
                             .map(super::super::ids::CurveId::as_str),
                     )?;
                     for member in &entry.profile {
-                        ctx.charge_work(1, "carrier reference scan")?;
                         curves.insert_unique(member.profile.id.as_str(), ())?;
                         if let Some(surface) = member.form.surface() {
                             surfaces.insert_unique(surface.as_str(), ())?;
@@ -419,9 +373,7 @@ pub(super) fn check_carrier_reachability(
                     }
                 }
                 for formula in construction.formulas.iter() {
-                    ctx.charge_work(1, "carrier reference scan")?;
                     for variable in formula.variables() {
-                        ctx.charge_work(1, "carrier reference scan")?;
                         collect_law_curves(variable, &mut curves, ctx)?;
                     }
                 }
@@ -430,7 +382,6 @@ pub(super) fn check_carrier_reachability(
                 let construction = definition_payload.construction();
 
                 for side in [&construction.first, &construction.second] {
-                    ctx.charge_work(1, "carrier reference scan")?;
                     surfaces.insert_unique(side.surface.as_str(), ())?;
                     curves.insert_unique(side.curve.as_str(), ())?;
                 }
@@ -447,7 +398,6 @@ pub(super) fn check_carrier_reachability(
                 let construction = definition_payload.construction();
 
                 for side in &construction.sides {
-                    ctx.charge_work(1, "carrier reference scan")?;
                     if let Some(surface) = &side.surface {
                         surfaces.insert_unique(surface.surface.as_str(), ())?;
                     }
@@ -470,17 +420,12 @@ pub(super) fn check_carrier_reachability(
                 )?;
             }
             ProceduralSurfaceDefinition::RevisionCompoundLoft { construction } => {
-                ctx.charge_work(
-                    u64_from_index(construction.entries().len()),
-                    "carrier revision profile entry scan",
-                )?;
                 for member in construction.base_profile().iter().chain(
                     construction
                         .entries()
                         .iter()
                         .flat_map(|entry| &entry.profile),
                 ) {
-                    ctx.charge_work(1, "carrier reference scan")?;
                     curves.insert_unique(member.profile.id.as_str(), ())?;
                     if let Some(surface) = member.form.surface() {
                         surfaces.insert_unique(surface.as_str(), ())?;
@@ -489,7 +434,6 @@ pub(super) fn check_carrier_reachability(
                 for path in std::iter::once(construction.base_path())
                     .chain(construction.entries().iter().map(|entry| &entry.path))
                 {
-                    ctx.charge_work(1, "carrier reference scan")?;
                     if let Some(curve) = &path.path {
                         curves.insert_unique(curve.id.as_str(), ())?;
                     }
@@ -516,7 +460,6 @@ pub(super) fn check_carrier_reachability(
             }
             ProceduralSurfaceDefinition::RevisionG2Blend { construction } => {
                 for side in construction.sides() {
-                    ctx.charge_work(1, "carrier reference scan")?;
                     if let Some(surface) = &side.surface {
                         surfaces.insert_unique(surface.surface.as_str(), ())?;
                     }
@@ -530,7 +473,6 @@ pub(super) fn check_carrier_reachability(
                 let construction = definition_payload.construction();
 
                 for boundary in &construction.boundaries {
-                    ctx.charge_work(1, "carrier reference scan")?;
                     match &boundary.geometry {
                         crate::geometry::VertexBlendBoundaryGeometry::Circle { curve, .. }
                         | crate::geometry::VertexBlendBoundaryGeometry::Plane { curve, .. } => {
@@ -605,9 +547,7 @@ pub(super) fn check_carrier_reachability(
                         }
                     };
                     for formula in formulas {
-                        ctx.charge_work(1, "carrier reference scan")?;
                         for variable in formula.variables() {
-                            ctx.charge_work(1, "carrier reference scan")?;
                             collect_law_curves(variable, &mut curves, ctx)?;
                         }
                     }
@@ -651,7 +591,6 @@ pub(super) fn check_carrier_reachability(
                 let native = definition_payload.native();
 
                 for support in supports.iter().flatten() {
-                    ctx.charge_work(1, "carrier reference scan")?;
                     surfaces.insert_unique(support.surface.as_str(), ())?;
                 }
                 if let Some(spine) = spine {
@@ -660,7 +599,6 @@ pub(super) fn check_carrier_reachability(
                 if let Some(native) = native {
                     curves.insert_unique(native.slice.as_str(), ())?;
                     for side in &native.sides {
-                        ctx.charge_work(1, "carrier reference scan")?;
                         if let Some(curve) = &side.curve {
                             curves.insert_unique(curve.curve.as_str(), ())?;
                         }
@@ -704,7 +642,6 @@ pub(super) fn check_carrier_reachability(
         }
     }
     for procedural in &ir.model.procedural_curves {
-        ctx.charge_work(1, "carrier reference scan")?;
         if let Some(curve) = curve_owners
             .get_unique(ctx, procedural.id.as_str())?
             .copied()
@@ -720,15 +657,12 @@ pub(super) fn check_carrier_reachability(
                 ..
             } => {
                 for side in context.sides() {
-                    ctx.charge_work(1, "carrier reference scan")?;
                     if let Some(surface) = &side.surface {
                         surfaces.insert_unique(surface.as_str(), ())?;
                     }
                 }
                 for formula in std::iter::once(primary).chain(additional) {
-                    ctx.charge_work(1, "carrier reference scan")?;
                     for variable in formula.formula().variables() {
-                        ctx.charge_work(1, "carrier reference scan")?;
                         collect_law_curves(variable, &mut curves, ctx)?;
                     }
                 }
@@ -744,7 +678,6 @@ pub(super) fn check_carrier_reachability(
             }
             ProceduralCurveDefinition::Intersection { context, .. } => {
                 for side in context.sides() {
-                    ctx.charge_work(1, "carrier reference scan")?;
                     if let Some(surface) = &side.surface {
                         surfaces.insert_unique(surface.as_str(), ())?;
                     }
@@ -764,7 +697,6 @@ pub(super) fn check_carrier_reachability(
                 let third = definition_payload.third();
 
                 for side in context.sides().iter().chain(std::iter::once(third)) {
-                    ctx.charge_work(1, "carrier reference scan")?;
                     if let Some(surface) = &side.surface {
                         surfaces.insert_unique(surface.as_str(), ())?;
                     }
@@ -772,7 +704,6 @@ pub(super) fn check_carrier_reachability(
             }
             ProceduralCurveDefinition::SurfaceCurve { family } => {
                 for side in family.context().sides() {
-                    ctx.charge_work(1, "carrier reference scan")?;
                     if let Some(surface) = &side.surface {
                         surfaces.insert_unique(surface.as_str(), ())?;
                     }
@@ -781,7 +712,6 @@ pub(super) fn check_carrier_reachability(
             ProceduralCurveDefinition::Silhouette(definition_payload) => {
                 surfaces.insert_unique(definition_payload.cast_surface().as_str(), ())?;
                 for side in definition_payload.context().sides() {
-                    ctx.charge_work(1, "carrier reference scan")?;
                     if let Some(surface) = &side.surface {
                         surfaces.insert_unique(surface.as_str(), ())?;
                     }
@@ -793,7 +723,6 @@ pub(super) fn check_carrier_reachability(
                 {
                     curves.insert_unique(base.as_str(), ())?;
                     for side in context.sides() {
-                        ctx.charge_work(1, "carrier reference scan")?;
                         if let Some(surface) = &side.surface {
                             surfaces.insert_unique(surface.as_str(), ())?;
                         }
@@ -805,7 +734,6 @@ pub(super) fn check_carrier_reachability(
                 match layout {
                     crate::geometry::SpringLayout::ContextFirst { supports, .. } => {
                         for support in supports {
-                            ctx.charge_work(1, "carrier reference scan")?;
                             if let crate::geometry::SpringSupport::Surface(surface) = support {
                                 surfaces.insert_unique(surface.as_str(), ())?;
                             }
@@ -813,7 +741,6 @@ pub(super) fn check_carrier_reachability(
                     }
                     crate::geometry::SpringLayout::CacheFirst { context, .. } => {
                         for side in context.sides() {
-                            ctx.charge_work(1, "carrier reference scan")?;
                             if let Some(surface) = &side.surface {
                                 surfaces.insert_unique(surface.as_str(), ())?;
                             }
@@ -829,7 +756,6 @@ pub(super) fn check_carrier_reachability(
                         curves.insert_unique(curve.as_str(), ())?;
                     }
                     for side in context.sides() {
-                        ctx.charge_work(1, "carrier reference scan")?;
                         if let Some(surface) = &side.surface {
                             surfaces.insert_unique(surface.as_str(), ())?;
                         }
@@ -842,7 +768,6 @@ pub(super) fn check_carrier_reachability(
 
                 curves.insert_unique(source.as_str(), ())?;
                 for side in context.sides() {
-                    ctx.charge_work(1, "carrier reference scan")?;
                     if let Some(surface) = &side.surface {
                         surfaces.insert_unique(surface.as_str(), ())?;
                     }
@@ -881,7 +806,6 @@ pub(super) fn check_carrier_reachability(
                 let context = definition_payload.context();
                 {
                     for side in context.sides() {
-                        ctx.charge_work(1, "carrier reference scan")?;
                         if let Some(surface) = &side.surface {
                             surfaces.insert_unique(surface.as_str(), ())?;
                         }
@@ -912,13 +836,11 @@ pub(super) fn check_carrier_reachability(
         }
     }
     for link in &unknown_links {
-        ctx.charge_work(1, "carrier reference scan")?;
         surfaces.insert_unique(link.as_ref(), ())?;
         curves.insert_unique(link.as_ref(), ())?;
     }
     let composite_segments = BorrowedIdentities::build(ctx, |add| {
         for curve in &ir.model.curves {
-            ctx.charge_work(1, "carrier reference scan")?;
             if let CurveGeometry::Solved(SolvedCurveGeometry::Composite { segments, .. }) =
                 &curve.geometry
             {
@@ -927,26 +849,18 @@ pub(super) fn check_carrier_reachability(
         }
         Ok(())
     })?;
-    let mut queue_storage = ctx.reserve_scoped(0, "carrier traversal queue")?;
     let mut reachable_curves = Vec::new();
     for curve in curves.identities() {
-        ctx.charge_work(1, "carrier reference scan")?;
-        queue_storage.with_storage(|| {
-            ctx.push_vec(&mut reachable_curves, curve, "carrier traversal slots")
-        })?;
+        reachable_curves.push(curve);
     }
     let mut next = 0;
     while let Some(curve) = reachable_curves.get(next).copied() {
-        ctx.charge_work(1, "carrier traversal pop")?;
         next += 1;
         if let Some(segments) = composite_segments.get(ctx, curve)? {
             for segment in *segments {
-                ctx.charge_work(1, "carrier reference scan")?;
                 let identity = segment.curve.as_str();
                 if curves.insert_unique(identity, ())? {
-                    queue_storage.with_storage(|| {
-                        ctx.push_vec(&mut reachable_curves, identity, "carrier traversal slots")
-                    })?;
+                    reachable_curves.push(identity);
                 }
             }
         }
@@ -954,17 +868,15 @@ pub(super) fn check_carrier_reachability(
     macro_rules! check_orphans {
         ($arena:ident, $reachable:ident, $kind:literal) => {
             for entity in &ir.model.$arena {
-                ctx.charge_work(1, "carrier orphan row")?;
                 let id = entity.id.as_str();
                 if !$reachable.contains(ctx, id)? {
                     super::record_finding(
-                        ctx,
                         findings,
                         Check::CarrierReachability,
                         Severity::Error,
                         Some(id),
                         format_args!("orphan {} carrier", $kind),
-                    )?;
+                    );
                 }
             }
         };
@@ -989,7 +901,6 @@ pub(super) fn check_parameter_domains(
         Ok(())
     })?;
     for edge in &ir.model.edges {
-        ctx.charge_work(1, "parameter-domain edge scan")?;
         let Some([start, end]) = edge.param_range().map(crate::units::FiniteVector::get) else {
             continue;
         };
@@ -1055,13 +966,12 @@ pub(super) fn check_parameter_domains(
         }
         if !valid {
             super::record_finding(
-                ctx,
                 findings,
                 Check::ParameterDomain,
                 Severity::Error,
                 Some(edge.id.as_str()),
                 format_args!("edge parameter range is outside its canonical carrier domain"),
-            )?;
+            );
         }
     }
     let pcurves = crate::index::identities::BorrowedIdentities::build(ctx, |add| {
@@ -1071,7 +981,6 @@ pub(super) fn check_parameter_domains(
         Ok(())
     })?;
     for coedge in &ir.model.coedges {
-        ctx.charge_work(1, "parameter-domain coedge scan")?;
         if let Some(use_curve) = &coedge.use_curve {
             let [start, end] = use_curve.parameter_range.endpoints();
             let geometry = curves.get(ctx, use_curve.curve.as_str())?.copied();
@@ -1085,17 +994,15 @@ pub(super) fn check_parameter_domains(
             }
             if !valid {
                 super::record_finding(
-                    ctx,
                     findings,
                     Check::ParameterDomain,
                     Severity::Error,
                     Some(coedge.id.as_str()),
                     format_args!("coedge use-curve range is outside its carrier domain"),
-                )?;
+                );
             }
         }
         for use_ in &coedge.pcurves {
-            ctx.charge_work(1, "parameter-domain pcurve use scan")?;
             let Some([start, end]) = use_
                 .parameter_range
                 .map(crate::geometry::DirectedParameterRange::endpoints)
@@ -1121,13 +1028,12 @@ pub(super) fn check_parameter_domains(
             }
             if !valid {
                 super::record_finding(
-                    ctx,
                     findings,
                     Check::ParameterDomain,
                     Severity::Error,
                     Some(coedge.id.as_str()),
                     format_args!("coedge pcurve range is outside its carrier domain"),
-                )?;
+                );
             }
         }
     }
@@ -1164,7 +1070,7 @@ fn pcurve_requires_bounded_domain(
     geometry: &PcurveGeometry,
 ) -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
     let _depth = ctx.enter_nested_limit("pcurve bounded domain nesting")?;
-    ctx.charge_work_limit(1, "pcurve bounded domain visit")?;
+
     Ok(match geometry {
         PcurveGeometry::Nurbs { .. } | PcurveGeometry::PolarNurbs { .. } => true,
         PcurveGeometry::Transformed(placed) => pcurve_requires_bounded_domain(ctx, placed.basis())?,

@@ -133,7 +133,6 @@ impl<P> PcurveNurbsPoles<P> {
             ctx,
             points,
             weights,
-            &mut None,
             |index, weight| admit_weight(ctx, "pcurve poles", index, weight),
         ))
     }
@@ -148,7 +147,6 @@ impl<P> PcurveNurbsPoles<P> {
             ctx,
             points,
             weights,
-            &mut None,
             |index, weight| admit_finite_weight(ctx, "pcurve poles", index, weight),
         ))
     }
@@ -169,7 +167,6 @@ impl<P> PcurveNurbsPoles<P> {
             ctx,
             points,
             weights,
-            &mut None,
             |_, weight| Ok(weight),
         ))
     }
@@ -262,7 +259,6 @@ impl PoleValue<FinitePoint2> for Point2 {
 }
 
 impl PoleValue<FinitePoint2> for FinitePoint2 {
-    const RETAINS_POLE_STORAGE: bool = true;
     fn admit(self) -> Option<FinitePoint2> {
         Some(self)
     }
@@ -1509,7 +1505,6 @@ impl<P, S> PolarNurbsPoles<P, S> {
             ctx,
             poles,
             weights,
-            &mut None,
             |index, weight| admit_weight(ctx, "polar poles", index, weight),
         ))
     }
@@ -1530,7 +1525,6 @@ impl<P, S> PolarNurbsPoles<P, S> {
             ctx,
             poles,
             weights,
-            &mut None,
             |_, weight| Ok(weight),
         ))
     }
@@ -1615,24 +1609,10 @@ impl PolarPcurveNurbs {
     /// Copy the admitted knot and pole lanes through the decode budget.
     pub fn try_clone_for_decode(
         &self,
-        ctx: &DecodeContext<'_>,
-        operation: &'static str,
+        _ctx: &DecodeContext<'_>,
+        _operation: &'static str,
     ) -> Result<Self, CodecError> {
-        let knots = self.knots.try_clone_for_decode(ctx, operation)?;
-        let poles = match &self.poles {
-            PolarNurbsPoles::Polynomial { poles } => PolarNurbsPoles::Polynomial {
-                poles: super::copy_decode_slice(poles, ctx, operation)?,
-            },
-            PolarNurbsPoles::Rational { poles } => PolarNurbsPoles::Rational {
-                poles: super::copy_decode_slice(poles, ctx, operation)?,
-            },
-        };
-        Ok(Self {
-            degree: self.degree,
-            knots,
-            poles,
-            periodic: self.periodic,
-        })
+        Ok(self.clone())
     }
 
     /// Build a polar NURBS from its pole rows.
@@ -1683,18 +1663,9 @@ impl PolarPcurveNurbs {
         periodic: bool,
     ) -> Result<Result<Self, NurbsError>, CodecError> {
         super::nurbs::admitted::finish((|| {
-            let mut storage = if weights.is_some() {
-                Some(ctx.reserve_scoped(0, "IR polar paired poles")?)
-            } else {
-                None
-            };
-            let poles = construction::pair_polar_lanes(
-                ctx,
-                poles,
-                weights,
-                &mut storage,
-                |index, weight| admit_weight(ctx, "polar poles", index, weight),
-            )?;
+            let poles = construction::pair_polar_lanes(ctx, poles, weights, |index, weight| {
+                admit_weight(ctx, "polar poles", index, weight)
+            })?;
             construction::build_polar(ctx, degree, knots, poles, periodic)
         })())
     }
@@ -1718,15 +1689,8 @@ impl PolarPcurveNurbs {
         periodic: bool,
     ) -> Result<Result<Self, NurbsError>, CodecError> {
         super::nurbs::admitted::finish((|| {
-            let mut storage = if weights.is_some() {
-                Some(ctx.reserve_scoped(0, "IR polar paired poles")?)
-            } else {
-                None
-            };
             let poles =
-                construction::pair_polar_lanes(ctx, poles, weights, &mut storage, |_, weight| {
-                    Ok(weight)
-                })?;
+                construction::pair_polar_lanes(ctx, poles, weights, |_, weight| Ok(weight))?;
             construction::build_polar(ctx, degree, knots, poles, periodic)
         })())
     }
@@ -1829,24 +1793,10 @@ impl PcurveNurbs {
     /// Copy the admitted knot and pole lanes through the decode budget.
     pub fn try_clone_for_decode(
         &self,
-        ctx: &DecodeContext<'_>,
-        operation: &'static str,
+        _ctx: &DecodeContext<'_>,
+        _operation: &'static str,
     ) -> Result<Self, CodecError> {
-        let knots = self.knots.try_clone_for_decode(ctx, operation)?;
-        let poles = match &self.poles {
-            PcurveNurbsPoles::Polynomial { points } => PcurveNurbsPoles::Polynomial {
-                points: super::copy_decode_slice(points, ctx, operation)?,
-            },
-            PcurveNurbsPoles::Rational { points } => PcurveNurbsPoles::Rational {
-                points: super::copy_decode_slice(points, ctx, operation)?,
-            },
-        };
-        Ok(Self {
-            degree: self.degree,
-            knots,
-            poles,
-            periodic: self.periodic,
-        })
+        Ok(self.clone())
     }
 
     /// Map admitted pole positions in place without allocating storage.
@@ -1857,10 +1807,8 @@ impl PcurveNurbs {
     pub fn try_map_control_points_in_place<E>(
         &mut self,
         mut map: impl FnMut(FinitePoint2) -> Result<FinitePoint2, E>,
-        ctx: &DecodeContext<'_>,
+        _ctx: &DecodeContext<'_>,
     ) -> Result<Result<(), E>, CodecError> {
-        let count = cadmpeg_core::decode::u64_from_index(self.poles.count());
-        ctx.charge_work(count, "IR pcurve in-place pole edit")?;
         Ok((|| {
             match &mut self.poles {
                 PcurveNurbsPoles::Polynomial { points } => {
@@ -1878,50 +1826,32 @@ impl PcurveNurbs {
         })())
     }
 
-    /// Scale every pole position in place, charging one unit of work per pole.
+    /// Scale every pole position in place.
     ///
     /// A non-finite result refuses with the poles scaled so far left in place,
     /// so the caller discards the curve on refusal.
-    pub(crate) fn scale_points(
-        &mut self,
-        ctx: &DecodeContext<'_>,
-        scale: PositiveReal,
-    ) -> Result<Result<(), NurbsError>, CodecError> {
-        fn scale_point(
-            ctx: &DecodeContext<'_>,
-            point: &mut FinitePoint2,
-            scale: PositiveReal,
-        ) -> Result<Result<(), NurbsError>, CodecError> {
-            ctx.charge_work(1, "IR sketch NURBS unit scaling work")?;
+    pub(crate) fn scale_points(&mut self, scale: PositiveReal) -> Result<(), NurbsError> {
+        fn scale_point(point: &mut FinitePoint2, scale: PositiveReal) -> Result<(), NurbsError> {
             let raw = point.get();
-            let Some(scaled) =
-                FinitePoint2::new(Point2::new(raw.u * scale.get(), raw.v * scale.get()))
-            else {
-                return Ok(Err(NurbsError::Structure(ctx.copy_retained_text(
-                    "control_points contains a non-finite point",
-                    "IR NURBS refusal text",
-                )?)));
-            };
-            *point = scaled;
-            Ok(Ok(()))
+            *point = FinitePoint2::new(Point2::new(raw.u * scale.get(), raw.v * scale.get()))
+                .ok_or_else(|| {
+                    NurbsError::Structure("control_points contains a non-finite point".to_owned())
+                })?;
+            Ok(())
         }
         match &mut self.poles {
             PcurveNurbsPoles::Polynomial { points } => {
                 for point in points {
-                    if let Err(error) = scale_point(ctx, point, scale)? {
-                        return Ok(Err(error));
-                    }
+                    scale_point(point, scale)?;
                 }
             }
             PcurveNurbsPoles::Rational { points } => {
                 for pole in points {
-                    if let Err(error) = scale_point(ctx, &mut pole.point, scale)? {
-                        return Ok(Err(error));
-                    }
+                    scale_point(&mut pole.point, scale)?;
                 }
             }
         }
-        Ok(Ok(()))
+        Ok(())
     }
 
     /// Build a parameter-space NURBS with consistent cardinalities.
@@ -1963,7 +1893,6 @@ impl PcurveNurbs {
             &StandardNurbsAdmission,
             points,
             self.weights(),
-            &mut None,
             |_, weight| Ok(weight),
         )?;
         super::nurbs::build_curve(
@@ -1995,18 +1924,10 @@ impl PcurveNurbs {
         periodic: bool,
     ) -> Result<Result<Self, NurbsError>, CodecError> {
         super::nurbs::admitted::finish((|| {
-            let mut storage = if weights.is_some() && !P::RETAINS_POLE_STORAGE {
-                Some(ctx.reserve_scoped(0, "IR pcurve paired poles")?)
-            } else {
-                None
-            };
-            let poles = construction::pair_pcurve_lanes(
-                ctx,
-                control_points,
-                weights,
-                &mut storage,
-                |index, weight| admit_weight(ctx, "pcurve poles", index, weight),
-            )?;
+            let poles =
+                construction::pair_pcurve_lanes(ctx, control_points, weights, |index, weight| {
+                    admit_weight(ctx, "pcurve poles", index, weight)
+                })?;
             construction::build_pcurve(ctx, degree, knots, poles, periodic)
         })())
     }
@@ -2022,14 +1943,10 @@ impl PcurveNurbs {
         periodic: bool,
     ) -> Result<Result<Self, NurbsError>, CodecError> {
         super::nurbs::admitted::finish((|| {
-            let mut storage = None;
-            let poles = construction::pair_pcurve_lanes(
-                ctx,
-                control_points,
-                weights,
-                &mut storage,
-                |index, weight| admit_finite_weight(ctx, "pcurve poles", index, weight),
-            )?;
+            let poles =
+                construction::pair_pcurve_lanes(ctx, control_points, weights, |index, weight| {
+                    admit_finite_weight(ctx, "pcurve poles", index, weight)
+                })?;
             construction::build_pcurve(ctx, degree, knots, poles, periodic)
         })())
     }
@@ -2050,18 +1967,10 @@ impl PcurveNurbs {
         periodic: bool,
     ) -> Result<Result<Self, NurbsError>, CodecError> {
         super::nurbs::admitted::finish((|| {
-            let mut storage = if weights.is_some() && !P::RETAINS_POLE_STORAGE {
-                Some(ctx.reserve_scoped(0, "IR pcurve paired poles")?)
-            } else {
-                None
-            };
-            let poles = construction::pair_pcurve_lanes(
-                ctx,
-                control_points,
-                weights,
-                &mut storage,
-                |_, weight| Ok(weight),
-            )?;
+            let poles =
+                construction::pair_pcurve_lanes(ctx, control_points, weights, |_, weight| {
+                    Ok(weight)
+                })?;
             construction::build_pcurve(ctx, degree, knots, poles, periodic)
         })())
     }
@@ -2084,7 +1993,7 @@ impl PcurveNurbs {
     pub fn replace_admitted_control_points(
         &mut self,
         positions: &[FinitePoint2],
-        ctx: &DecodeContext<'_>,
+        _ctx: &DecodeContext<'_>,
     ) -> Result<bool, CodecError> {
         let count = match &self.poles {
             PcurveNurbsPoles::Polynomial { points } => points.len(),
@@ -2093,10 +2002,7 @@ impl PcurveNurbs {
         if positions.len() != count {
             return Ok(false);
         }
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(count),
-            "IR pcurve pole replacement",
-        )?;
+
         match &mut self.poles {
             PcurveNurbsPoles::Polynomial { points } => {
                 for (point, position) in points.iter_mut().zip(positions) {
@@ -2118,11 +2024,8 @@ impl PcurveNurbs {
     pub fn try_map_control_points<E>(
         &mut self,
         map: impl Fn(usize, FinitePoint2) -> Result<FinitePoint2, E>,
-        ctx: &DecodeContext<'_>,
+        _ctx: &DecodeContext<'_>,
     ) -> Result<Result<(), E>, CodecError> {
-        let count = cadmpeg_core::decode::u64_from_index(self.poles.count());
-        ctx.charge_work(count, "IR pole edit validation")?;
-        ctx.charge_work(count, "IR pole edit mutation")?;
         Ok((|| {
             match &self.poles {
                 PcurveNurbsPoles::Polynomial { points } => {
@@ -2168,12 +2071,8 @@ impl PcurveNurbs {
     }
 
     /// Reverse poles, weights, and the signed knot parameterization together.
-    pub fn reverse_parameterization(&mut self, ctx: &DecodeContext<'_>) -> Result<(), CodecError> {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(self.poles.count() / 2),
-            "IR signed pole reversal",
-        )?;
-        self.knots.reverse_negated(ctx)?;
+    pub fn reverse_parameterization(&mut self, _ctx: &DecodeContext<'_>) -> Result<(), CodecError> {
+        self.knots.reverse_negated();
         self.poles.reverse();
         Ok(())
     }
@@ -2306,58 +2205,13 @@ impl From<CodecError> for PcurveCoordinateScaleError {
 }
 
 impl PcurveGeometry {
-    /// Copy a decoded parameter curve through the caller's collection budget.
+    /// Copy the parameter curve. Nesting is bounded at construction.
     pub fn try_clone_for_decode(
         &self,
-        ctx: &DecodeContext<'_>,
-        operation: &'static str,
+        _ctx: &DecodeContext<'_>,
+        _operation: &'static str,
     ) -> Result<Self, CodecError> {
-        ctx.charge_work(1, operation)?;
-        Ok(match self {
-            Self::Line(value) => Self::Line(*value),
-            Self::PolarHarmonic(value) => Self::PolarHarmonic(*value),
-            Self::PolarNurbs { nurbs } => Self::PolarNurbs {
-                nurbs: nurbs.try_clone_for_decode(ctx, operation)?,
-            },
-            Self::SphericalGreatCircle(value) => Self::SphericalGreatCircle(*value),
-            Self::Circle(value) => Self::Circle(*value),
-            Self::Ellipse(value) => Self::Ellipse(*value),
-            Self::Harmonic(value) => Self::Harmonic(*value),
-            Self::Parabola(value) => Self::Parabola(*value),
-            Self::Hyperbola(value) => Self::Hyperbola(*value),
-            Self::Hyperbolic(value) => Self::Hyperbolic(*value),
-            Self::Nurbs { nurbs } => Self::Nurbs {
-                nurbs: nurbs.try_clone_for_decode(ctx, operation)?,
-            },
-            Self::Transformed(value) => {
-                let _depth = ctx.enter_nested(operation)?;
-                super::charge_decode_copy::<Self>(1, ctx, operation)?;
-                Self::Transformed(PlacedPcurve {
-                    basis: Box::new(value.basis.try_clone_for_decode(ctx, operation)?),
-                    transform: value.transform,
-                    depth: value.depth,
-                })
-            }
-            Self::Trimmed(value) => {
-                let _depth = ctx.enter_nested(operation)?;
-                super::charge_decode_copy::<Self>(1, ctx, operation)?;
-                Self::Trimmed(TrimmedPcurve {
-                    parameter_range: value.parameter_range,
-                    same_sense: value.same_sense,
-                    basis: Box::new(value.basis.try_clone_for_decode(ctx, operation)?),
-                    depth: value.depth,
-                })
-            }
-            Self::Offset(value) => {
-                let _depth = ctx.enter_nested(operation)?;
-                super::charge_decode_copy::<Self>(1, ctx, operation)?;
-                Self::Offset(OffsetPcurve {
-                    distance: value.distance,
-                    basis: Box::new(value.basis.try_clone_for_decode(ctx, operation)?),
-                    depth: value.depth,
-                })
-            }
-        })
+        Ok(self.clone())
     }
 
     /// Nesting carriers enclosing the leaf of this carrier's inline chain.
@@ -2390,24 +2244,14 @@ impl PcurveGeometry {
         let policy = cadmpeg_core::decode::DecodePolicy::default();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
             .map_err(PcurveCoordinateScaleError::from)?;
-        let (candidate, storage) = ctx
-            .with_scoped_storage("stage pcurve coordinate scale", || {
-                self.try_clone_for_decode(&ctx, "stage pcurve coordinate scale")
-            })
-            .map_err(PcurveCoordinateScaleError::from)?;
-        let candidate = match candidate
+        let candidate = match self
+            .clone()
             .scaled_coordinates_owned(&ctx, scales)
             .map_err(PcurveCoordinateScaleError::from)?
         {
             Ok(candidate) => candidate,
-            Err(message) => {
-                return Err(PcurveCoordinateScaleError::Invalid(
-                    ctx.copy_retained_text(message, "pcurve coordinate scale refusal")
-                        .map_err(PcurveCoordinateScaleError::from)?,
-                ))
-            }
+            Err(message) => return Err(PcurveCoordinateScaleError::Invalid(message.to_owned())),
         };
-        storage.commit().map_err(PcurveCoordinateScaleError::from)?;
         *self = candidate;
         Ok(())
     }
@@ -2422,7 +2266,7 @@ impl PcurveGeometry {
         ctx: &DecodeContext<'_>,
     ) -> Result<Option<(Point2, Point2)>, ResourceLimit> {
         let _depth = ctx.enter_nested_limit("pcurve line parameter nesting")?;
-        ctx.charge_work_limit(1, "pcurve line parameter visit")?;
+
         Ok(match self {
             Self::Line(line_pcurve) => {
                 let origin = line_pcurve.origin().as_raw();

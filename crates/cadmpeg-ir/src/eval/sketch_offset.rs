@@ -6,80 +6,59 @@ use crate::features::FiniteVector3;
 use crate::geometry::pcurve::{PcurveNurbs, PcurveNurbsPoles};
 use crate::math::{Point2, Vector3};
 use crate::scalar::FiniteReal;
-use cadmpeg_core::decode::{DecodeContext, ResourceLimit};
 
 const EPS_EVAL_CLAMPED_NURBS_PCURVE_ENDPOINT_FRAMES_E12: f64 = 1.0e-12;
 const EPS_EVAL_FITTED_NURBS_OFFSET_CANDIDATE_E12: f64 = 1.0e-12;
 const EPS_EVAL_FITTED_NURBS_OFFSET_CANDIDATE_E9: f64 = 1.0e-9;
 
 pub(super) fn clamped_nurbs_pcurve_endpoint_frames(
-    ctx: &DecodeContext<'_>,
     curve: &PcurveNurbs,
-) -> Result<Option<[(Point2, Point2); 2]>, ResourceLimit> {
+) -> Option<[(Point2, Point2); 2]> {
     let knots = curve.knots();
     let points = curve.pole_rows();
-    let Some(domain) = nurbs_pcurve_parameter_domain(curve.degree(), knots, points.count()) else {
-        return Ok(None);
-    };
+    let domain = nurbs_pcurve_parameter_domain(curve.degree(), knots, points.count())?;
     let [lower, upper] = domain.endpoints();
     let degree = cadmpeg_core::decode::index_from_u32(curve.degree());
     for knot in knots.iter().take(degree + 1) {
-        ctx.charge_work_limit(1, "sketch NURBS endpoint knot scan")?;
         if *knot != lower {
-            return Ok(None);
+            return None;
         }
     }
     for knot in knots.iter().skip(points.count()).take(degree + 1) {
-        ctx.charge_work_limit(1, "sketch NURBS endpoint knot scan")?;
         if *knot != upper {
-            return Ok(None);
+            return None;
         }
     }
     if let PcurveNurbsPoles::Rational { points } = points {
         for pole in points {
-            ctx.charge_work_limit(1, "sketch NURBS endpoint weight scan")?;
             if pole.weight.get() <= 0.0 {
-                return Ok(None);
+                return None;
             }
         }
     }
-    let Some(start) = points.point_at(0).map(crate::units::FinitePoint2::get) else {
-        return Ok(None);
-    };
-    let Some(last) = points.count().checked_sub(1) else {
-        return Ok(None);
-    };
-    let Some(end) = points.point_at(last).map(crate::units::FinitePoint2::get) else {
-        return Ok(None);
-    };
+    let start = points.point_at(0).map(crate::units::FinitePoint2::get)?;
+    let last = points.count().checked_sub(1)?;
+    let end = points.point_at(last).map(crate::units::FinitePoint2::get)?;
     let mut start_tangent = None;
     for index in 1..points.count() {
-        ctx.charge_work_limit(1, "sketch NURBS endpoint tangent scan")?;
-        let Some(point) = points.point_at(index) else {
-            return Ok(None);
-        };
+        let point = points.point_at(index)?;
         let tangent = Point2::new(point.u - start.u, point.v - start.v);
         if tangent.u.hypot(tangent.v) > EPS_EVAL_CLAMPED_NURBS_PCURVE_ENDPOINT_FRAMES_E12 {
             start_tangent = Some(tangent);
             break;
         }
     }
-    let Some(start_tangent) = start_tangent else {
-        return Ok(None);
-    };
+    let start_tangent = start_tangent?;
     let mut end_tangent = None;
     for index in (0..last).rev() {
-        ctx.charge_work_limit(1, "sketch NURBS endpoint tangent scan")?;
-        let Some(point) = points.point_at(index) else {
-            return Ok(None);
-        };
+        let point = points.point_at(index)?;
         let tangent = Point2::new(end.u - point.u, end.v - point.v);
         if tangent.u.hypot(tangent.v) > EPS_EVAL_CLAMPED_NURBS_PCURVE_ENDPOINT_FRAMES_E12 {
             end_tangent = Some(tangent);
             break;
         }
     }
-    Ok(end_tangent.map(|end_tangent| [(start, start_tangent), (end, end_tangent)]))
+    end_tangent.map(|end_tangent| [(start, start_tangent), (end, end_tangent)])
 }
 
 pub(super) fn fitted_nurbs_offset_candidate(
@@ -150,8 +129,6 @@ pub(super) fn fitted_nurbs_offset_candidate(
 mod tests {
     use crate::geometry::pcurve::PcurveNurbs;
     use crate::math::Point2;
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
 
     fn curve(v: f64, weights: Option<Vec<f64>>) -> PcurveNurbs {
         PcurveNurbs::from_lanes(
@@ -171,39 +148,10 @@ mod tests {
     }
 
     #[test]
-    fn sketch_nurbs_endpoint_scans_preserve_first_and_later_original_refusals() {
-        let curve = curve(0.0, Some(vec![1.0, 2.0, 1.0]));
-        for (cap, operation) in [
-            (0, "sketch NURBS endpoint knot scan"),
-            (2, "sketch NURBS endpoint knot scan"),
-            (4, "sketch NURBS endpoint weight scan"),
-            (6, "sketch NURBS endpoint weight scan"),
-            (7, "sketch NURBS endpoint tangent scan"),
-            (8, "sketch NURBS endpoint tangent scan"),
-        ] {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let limit = super::clamped_nurbs_pcurve_endpoint_frames(&ctx, &curve).unwrap_err();
-            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-            assert_eq!(limit.operation, operation);
-            assert!(
-                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
-            );
-        }
-    }
-
-    #[test]
-    fn fitted_sketch_nurbs_offset_borrows_all_rows_without_storage() {
+    fn fitted_sketch_nurbs_offset_measures_the_frame_distance() {
         let source = crate::sketches::SketchGeometry::nurbs(curve(0.0, Some(vec![1.0, 2.0, 1.0])));
         let result = crate::sketches::SketchGeometry::nurbs(curve(1.0, None));
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 0;
-        policy.limits.max_materialized_bytes = 0;
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let ctx = cadmpeg_test_support::service_decode_context();
         let distance =
             super::super::fitted_nurbs_offset_frame_distance(&ctx, &source, &result, 0.0)
                 .unwrap()
@@ -213,29 +161,10 @@ mod tests {
     }
 
     #[test]
-    fn fitted_sketch_nurbs_offset_preserves_result_curve_scan_refusal() {
-        let source = crate::sketches::SketchGeometry::nurbs(curve(0.0, None));
-        let result = crate::sketches::SketchGeometry::nurbs(curve(1.0, None));
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        // The source reads four endpoint knots and the first tangent at each end.
-        policy.limits.max_work_units = 6;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let limit = super::super::fitted_nurbs_offset_frame_distance(&ctx, &source, &result, 0.0)
-            .unwrap_err();
-        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-        assert_eq!(limit.operation, "sketch NURBS endpoint knot scan");
-        assert!(
-            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
-        );
-    }
-
-    #[test]
     fn sketch_nurbs_endpoint_frames_keep_weight_and_degenerate_absence() {
-        let ctx = cadmpeg_test_support::service_decode_context();
         let negative_weight = curve(0.0, Some(vec![1.0, -1.0, 1.0]));
         assert_eq!(
-            super::clamped_nurbs_pcurve_endpoint_frames(&ctx, &negative_weight).unwrap(),
+            super::clamped_nurbs_pcurve_endpoint_frames(&negative_weight),
             None
         );
         let degenerate = PcurveNurbs::from_lanes(
@@ -249,12 +178,10 @@ mod tests {
         .expect("fixture pcurve construction admission")
         .unwrap();
         assert_eq!(
-            super::clamped_nurbs_pcurve_endpoint_frames(&ctx, &degenerate).unwrap(),
+            super::clamped_nurbs_pcurve_endpoint_frames(&degenerate),
             None
         );
-        let offset = super::clamped_nurbs_pcurve_endpoint_frames(&ctx, &curve(0.0, None))
-            .unwrap()
-            .unwrap();
+        let offset = super::clamped_nurbs_pcurve_endpoint_frames(&curve(0.0, None)).unwrap();
         assert_eq!(
             offset,
             [
