@@ -3516,7 +3516,7 @@ fn hem_direction_from_transition<'a>(
     previous: &AsmHistoricalTopology,
     transition: &AsmHistoricalTransition,
 ) -> Option<cadmpeg_ir::features::SheetMetalHemDirection> {
-    (*cylinders).clone().next()?;
+    cylinders.clone().next()?;
     let edge_context = selection::historical_edge_context(edge_slot, previous);
     let mut candidate = None;
     for (ordinal, incident) in edge_context.incident_loops.iter().enumerate() {
@@ -3555,7 +3555,7 @@ fn hem_direction_from_transition<'a>(
             continue;
         }
         let normal = plane.normal.scale(1.0 / length);
-        let Some(first_cylinder) = (*cylinders).clone().next() else {
+        let Some(first_cylinder) = cylinders.clone().next() else {
             continue;
         };
         let first = normal.dot(first_cylinder.origin.vector_from(plane.origin));
@@ -3567,14 +3567,14 @@ fn hem_direction_from_transition<'a>(
                 + plane.origin.x.abs()
                 + plane.origin.y.abs()
                 + plane.origin.z.abs()
-                + (*cylinders).clone().fold(0.0_f64, |scale, cylinder| {
+                + cylinders.clone().fold(0.0_f64, |scale, cylinder| {
                     scale
                         .max(cylinder.origin.x.abs())
                         .max(cylinder.origin.y.abs())
                         .max(cylinder.origin.z.abs())
                 }));
         if first.abs() <= sign_tolerance
-            || (*cylinders).clone().any(|cylinder| {
+            || cylinders.clone().any(|cylinder| {
                 let offset = normal.dot(cylinder.origin.vector_from(plane.origin));
                 !offset.is_finite()
                     || offset.abs() <= sign_tolerance
@@ -4015,7 +4015,7 @@ fn direct_face_recipe_candidates(
         .filter(|reference| reference.design_reference == i64::from(recipe_record_index))
         .flat_map(|reference| &reference.candidate_faces)
     {
-        faces.push((face).clone());
+        faces.push(face.clone());
     }
     faces.sort_by(|left, right| left.as_str().cmp(right.as_str()));
     faces.dedup();
@@ -6585,7 +6585,7 @@ fn terminal_edge_recipe_reference_faces(
         } else {
             &reference.candidate_faces
         };
-        let faces = (faces).clone();
+        let faces = faces.clone();
 
         selected.push(faces);
         Ok::<(), cadmpeg_core::CodecError>(())

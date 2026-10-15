@@ -894,7 +894,7 @@ pub(crate) fn project_spatial_sketch_design(
     let mut spatial_ids = HashSet::<cadmpeg_ir::sketches::SpatialSketchId>::new();
     for entity in &entities {
         if !spatial_ids.contains(&entity.sketch) {
-            spatial_ids.insert((entity.sketch).clone());
+            spatial_ids.insert(entity.sketch.clone());
         }
     }
     let mut sketches = Vec::new();
@@ -1014,8 +1014,7 @@ pub(crate) fn project_spatial_sketch_constraints(
             }
             let mut members = Vec::new();
             for entity in &semantic_entities {
-                let id = (entity.id()).clone();
-                members.push(id);
+                members.push(entity.id().clone());
             }
             let mut distinct = HashSet::new();
             for member in &members {
@@ -1043,8 +1042,8 @@ pub(crate) fn project_spatial_sketch_constraints(
                         };
                     if let Some((point, surface)) = point_on_surface {
                         Definition::PointOnSurface {
-                            point: (point.id()).clone(),
-                            surface: (surface.id()).clone(),
+                            point: point.id().clone(),
+                            surface: surface.id().clone(),
                         }
                     } else {
                         let (
@@ -1077,8 +1076,8 @@ pub(crate) fn project_spatial_sketch_constraints(
                             return Ok(None);
                         }
                         Definition::Coincident {
-                            first: (first.id()).clone(),
-                            second: (second.id()).clone(),
+                            first: first.id().clone(),
+                            second: second.id().clone(),
                         }
                     }
                 }
@@ -1102,8 +1101,8 @@ pub(crate) fn project_spatial_sketch_constraints(
                         return Ok(None);
                     }
                     Definition::Tangent {
-                        first: (first.id()).clone(),
-                        second: (second.id()).clone(),
+                        first: first.id().clone(),
+                        second: second.id().clone(),
                     }
                 }
                 SketchConstraintKind::Midpoint => {
@@ -1138,8 +1137,8 @@ pub(crate) fn project_spatial_sketch_constraints(
                         return Ok(None);
                     }
                     Definition::Midpoint {
-                        point: (point.id()).clone(),
-                        entity: (line.id()).clone(),
+                        point: point.id().clone(),
+                        entity: line.id().clone(),
                     }
                 }
                 kind @ (SketchConstraintKind::Horizontal | SketchConstraintKind::Vertical) => {
@@ -1166,7 +1165,7 @@ pub(crate) fn project_spatial_sketch_constraints(
                         return Ok(None);
                     }
                     Definition::ParallelToDirection {
-                        entity: (entity.id()).clone(),
+                        entity: entity.id().clone(),
                         direction,
                     }
                 }
@@ -1177,7 +1176,7 @@ pub(crate) fn project_spatial_sketch_constraints(
             else {
                 return Ok(None);
             };
-            let sketch = (sketch).clone();
+            let sketch = sketch.clone();
             let native_ref = relation.id.clone();
             Ok(Some(SpatialSketchConstraint {
                 id: crate::design::identity::neutral_sketch_constraint_id(

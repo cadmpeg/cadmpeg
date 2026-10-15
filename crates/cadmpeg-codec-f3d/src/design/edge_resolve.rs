@@ -211,8 +211,7 @@ fn surface_patch_grouped_recipe_edges(operands: &[&DesignEdgeOperand]) -> Surfac
         {
             return SurfacePatchRecipeEdges::Inconclusive;
         }
-        let copied = (edge).clone();
-        edges.push(copied);
+        edges.push(edge.clone());
     }
     if has_absent_member {
         return SurfacePatchRecipeEdges::Absent;

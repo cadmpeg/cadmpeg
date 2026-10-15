@@ -147,7 +147,7 @@ fn sketch_arrangement_faces(
                 ) || sketch_geometry_parameter_range(&entity.geometry).is_some()
             })
         {
-            let entity = (entity.id()).clone();
+            let entity = entity.id().clone();
             candidate_uses.push(SketchEntityUse {
                 entity,
                 reversed: false,
@@ -155,7 +155,7 @@ fn sketch_arrangement_faces(
         }
     } else {
         for use_ in sketch.profiles.iter().flat_map(|profile| profile.iter()) {
-            let entity = (use_.entity).clone();
+            let entity = use_.entity.clone();
             candidate_uses.push(SketchEntityUse {
                 entity,
                 reversed: use_.reversed,
@@ -175,7 +175,7 @@ fn sketch_arrangement_faces(
         ] {
             arrangement_node(&mut nodes, point, tolerance);
         }
-        let id = (entity.id()).clone();
+        let id = entity.id().clone();
         pending.push(SketchProfileBoundaryUse {
             entity: id,
             parameter_range: geometric!(
@@ -217,7 +217,7 @@ fn sketch_arrangement_faces(
                 end += std::f64::consts::TAU;
             }
             let range = [start, end];
-            let id = (use_.entity).clone();
+            let id = use_.entity.clone();
             pending.push(SketchProfileBoundaryUse {
                 entity: id,
                 parameter_range: geometric!(cadmpeg_ir::geometry::DirectedParameterRange::new(
@@ -241,7 +241,7 @@ fn sketch_arrangement_faces(
         )?);
         for parameters in parameters.windows(2) {
             let range = [parameters[0], parameters[1]];
-            let id = (boundary.entity).clone();
+            let id = boundary.entity.clone();
             let parameter_range =
                 geometric!(cadmpeg_ir::geometry::DirectedParameterRange::new(range).ok());
             let polyline = geometric!(profile_use_polyline(
@@ -2869,7 +2869,7 @@ pub(super) fn closed_sketch_profiles(
             SketchGeometryDefinition::Circle { .. }
                 | SketchGeometryDefinition::Ellipse { bounds: None, .. }
         ) {
-            let id = (entity.id()).clone();
+            let id = entity.id().clone();
             let profile = vec![SketchEntityUse {
                 entity: id,
                 reversed: false,
@@ -3003,7 +3003,7 @@ pub(super) fn closed_sketch_profiles(
         let start_node = edge_nodes[first_edge][0];
         let mut current_node = edge_nodes[first_edge][1];
         let mut profile = Vec::new();
-        let first_id = (edges[first_edge].0.id()).clone();
+        let first_id = edges[first_edge].0.id().clone();
         profile.push(SketchEntityUse {
             entity: first_id,
             reversed: false,
@@ -3022,7 +3022,7 @@ pub(super) fn closed_sketch_profiles(
             let reversed = stored_end == current_node;
             current_node = if reversed { stored_start } else { stored_end };
             visited[next_edge] = true;
-            let id = (edges[next_edge].0.id()).clone();
+            let id = edges[next_edge].0.id().clone();
             profile.push(SketchEntityUse {
                 entity: id,
                 reversed,
@@ -3119,7 +3119,7 @@ fn branched_line_profiles(
                 (stored_start, stored_end)
             };
             twice_area += from.u * to.v - from.v * to.u;
-            let id = (edges[edge].0.id()).clone();
+            let id = edges[edge].0.id().clone();
             profile.push(SketchEntityUse {
                 entity: id,
                 reversed,
@@ -3313,7 +3313,7 @@ fn tangent_nested_line_profile(
                 position
             };
             let edge = cycles[index][offset];
-            let entity = (edges[edge].0.id()).clone();
+            let entity = edges[edge].0.id().clone();
             profile.push(SketchEntityUse {
                 entity,
                 reversed: reverse,
