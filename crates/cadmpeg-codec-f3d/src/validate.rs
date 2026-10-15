@@ -5082,6 +5082,12 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     )
                 });
             let has_one_along_carrier = along_count <= 1 && (along_count == 1 || has_fixed_along);
+            let has_fixed_against = scope
+                .fixed_extrude_parameters()
+                .as_ref()
+                .is_some_and(|fixed| fixed.against_distance.is_some());
+            let has_one_against_carrier =
+                against_count <= 1 && (against_count == 1 || has_fixed_against);
             let class_296_two_faces_layout = scope
                 .reference_count_offset()
                 .checked_sub(scope.byte_offset())
@@ -5120,9 +5126,8 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         && (!prologue.direction_reversed() || class_296_two_faces_layout)
                 }
                 records::feature::extrude::DesignExtrudeExtent::TwoSidedDistance => {
-                    along_count == 1
-                        && !has_fixed_extrude_parameters
-                        && against_count == 1
+                    has_one_along_carrier
+                        && has_one_against_carrier
                         && side_one_offset_count == 0
                         && !prologue.direction_reversed()
                 }
