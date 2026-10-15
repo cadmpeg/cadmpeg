@@ -5276,7 +5276,7 @@ fn edge_recipe_side_sequences<'w>(
             if !budget.charge() {
                 return Ok(Vec::new());
             }
-            following.insert(0, copy_recipe_side(&side));
+            following.insert(0, side.clone());
             out.push(RecipeSideSequence {
                 sides: following,
                 remaining: tail,
@@ -5284,15 +5284,6 @@ fn edge_recipe_side_sequences<'w>(
         }
     }
     Ok(out)
-}
-
-fn copy_recipe_side(side: &DesignTopologyRecipeSide) -> DesignTopologyRecipeSide {
-    DesignTopologyRecipeSide {
-        header_value: side.header_value,
-        scalars: side.scalars.clone(),
-        payload_prefix: side.payload_prefix.clone(),
-        entries: side.entries.clone(),
-    }
 }
 
 fn recipe_delimiter(words: &[i32]) -> Option<&[i32]> {

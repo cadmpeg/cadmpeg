@@ -48,27 +48,6 @@ struct SketchArrangementFace {
     polyline: Vec<Point2>,
 }
 
-fn copy_arrangement_boundary(
-    boundary: &cadmpeg_ir::features::SketchProfileBoundaryUse,
-) -> cadmpeg_ir::features::SketchProfileBoundaryUse {
-    cadmpeg_ir::features::SketchProfileBoundaryUse {
-        entity: (boundary.entity).clone(),
-        parameter_range: boundary.parameter_range,
-        reversed: boundary.reversed,
-    }
-}
-
-fn copy_arrangement_boundary_run(
-    boundaries: &[cadmpeg_ir::features::SketchProfileBoundaryUse],
-) -> Vec<cadmpeg_ir::features::SketchProfileBoundaryUse> {
-    let mut copy = Vec::new();
-    for boundary in boundaries {
-        let boundary = copy_arrangement_boundary(boundary);
-        copy.push(boundary);
-    }
-    copy
-}
-
 pub(super) fn arrangement_region_containing_points(
     sketch: &cadmpeg_ir::sketches::Sketch,
     entities: &[cadmpeg_ir::sketches::SketchEntity],
@@ -109,8 +88,7 @@ pub(super) fn arrangement_region_containing_points(
     }
     if boundary_count == 1 {
         let face = geometric!(boundary);
-        let boundary = copy_arrangement_boundary_run(&face.boundary);
-        return Ok(SketchProfileRegion::trimmed(boundary, Vec::new()).ok());
+        return Ok(SketchProfileRegion::trimmed(face.boundary.clone(), Vec::new()).ok());
     }
     let mut interior = None;
     let mut interior_count = 0;
@@ -141,8 +119,7 @@ pub(super) fn arrangement_region_containing_points(
         return Ok(None);
     }
     let face = geometric!(interior);
-    let boundary = copy_arrangement_boundary_run(&face.boundary);
-    Ok(SketchProfileRegion::trimmed(boundary, Vec::new()).ok())
+    Ok(SketchProfileRegion::trimmed(face.boundary.clone(), Vec::new()).ok())
 }
 
 fn sketch_arrangement_faces(
@@ -426,7 +403,7 @@ fn sketch_arrangement_faces(
                 }
                 visited[index][usize::from(reverse)] = true;
                 let edge = &edges[index];
-                let mut use_ = copy_arrangement_boundary(&edge.boundary);
+                let mut use_ = edge.boundary.clone();
                 if reverse {
                     use_.reversed = !use_.reversed;
                 }

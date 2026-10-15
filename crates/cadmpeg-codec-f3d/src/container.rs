@@ -30,23 +30,6 @@ use cadmpeg_asm::{acis_header, asm_header};
 use crate::dialect::F3dDialect;
 use crate::manifest;
 
-pub(crate) fn copy_summary_entries(entries: &[ContainerEntry]) -> Vec<ContainerEntry> {
-    let mut copied = Vec::new();
-    for entry in entries {
-        let mut attributes = BTreeMap::new();
-        for (key, value) in &entry.attributes {
-            attributes.insert(key.to_owned(), value.to_owned());
-        }
-        copied.push(ContainerEntry {
-            name: entry.name.clone(),
-            role: entry.role,
-            storage: entry.storage.clone(),
-            attributes,
-        });
-    }
-    copied
-}
-
 /// Write-path local cap for nested Protein rewriting (`patch_protein_appearances`).
 /// Decode opens nested archives through `ArchiveSnapshot` / `begin_expand`, so
 /// session `ResourceLimits` bind there instead of these constants.
@@ -641,7 +624,7 @@ pub(crate) fn summarize(
     ContainerSummary::classified(
         dialects,
         cadmpeg_ir::ContainerKind::Zip,
-        copy_summary_entries(&scan.entries),
+        scan.entries.clone(),
         Vec::new(),
         summary_notes(scan, SummaryScope::ContainerOnly),
     )

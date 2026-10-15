@@ -1242,8 +1242,7 @@ fn multiple_extrude_profile_groups_merge_only_exact_same_kind_selections() {
         ),
     ];
     assert_eq!(
-        { crate::design::profile_select::merge_resolved_profile_selections(&sketch, &loops,) }
-            .unwrap(),
+        { crate::design::profile_select::merge_resolved_profile_selections(&sketch, &loops,) },
         Some(cadmpeg_ir::features::ProfileRef::Planar(
             cadmpeg_ir::features::PlanarProfileRef::sketch_profiles(sketch.clone(), vec![3, 1, 2],)
                 .unwrap()
@@ -1267,8 +1266,7 @@ fn multiple_extrude_profile_groups_merge_only_exact_same_kind_selections() {
         ),
     ];
     assert_eq!(
-        { crate::design::profile_select::merge_resolved_profile_selections(&sketch, &regions,) }
-            .unwrap(),
+        { crate::design::profile_select::merge_resolved_profile_selections(&sketch, &regions,) },
         Some(cadmpeg_ir::features::ProfileRef::Planar(
             cadmpeg_ir::features::PlanarProfileRef::sketch_regions(
                 sketch.clone(),
@@ -1287,8 +1285,7 @@ fn multiple_extrude_profile_groups_merge_only_exact_same_kind_selections() {
                 &sketch,
                 &[loops[0].clone(), regions[0].clone()],
             )
-        }
-        .unwrap(),
+        },
         None
     );
     assert_eq!(
@@ -1306,8 +1303,7 @@ fn multiple_extrude_profile_groups_merge_only_exact_same_kind_selections() {
                     ),
                 ],
             )
-        }
-        .unwrap(),
+        },
         None
     );
 }

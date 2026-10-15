@@ -84,44 +84,11 @@ pub(crate) fn decode_types(scan: &ContainerScan) -> Result<Vec<SegmentType>, Cod
     {
         let meta = scan.parsed_metastream(&entry.entry.name)?;
         for design_type in &meta.types {
-            out.push(copy_design_type(design_type, &entry.entry.name)?);
+            let id = design_record_id(&entry.entry.name, ":design-type#", design_type.byte_offset);
+            out.push(SegmentType::try_new(id, design_type.clone()).map_err(CodecError::Malformed)?);
         }
     }
     Ok(out)
-}
-
-fn copy_design_type(
-    design_type: &SegmentTypeData,
-    stream: &str,
-) -> Result<SegmentType, CodecError> {
-    use crate::records::identity::ReferenceRun;
-
-    let entities = if let Some(rows) = design_type.entities.located_rows() {
-        let mut copied = Vec::new();
-        copied.extend_from_slice(rows);
-        ReferenceRun::located(copied)
-    } else {
-        let mut copied = Vec::new();
-        copied.extend(design_type.entities.values().copied());
-        ReferenceRun::unlocated(copied)
-    };
-    let module = String::from_utf8(design_type.module.as_bytes().to_vec())
-        .map_err(|_| CodecError::Malformed("F3D Design module text is invalid UTF-8".into()))?;
-    let id = design_record_id(stream, ":design-type#", design_type.byte_offset);
-    SegmentType::try_new(
-        id,
-        crate::records::entity_header::SegmentTypeData {
-            byte_offset: design_type.byte_offset,
-            type_guid: design_type.type_guid.clone(),
-            type_guid_offset: design_type.type_guid_offset,
-            base_type_guid: design_type.base_type_guid.clone(),
-            version: design_type.version,
-            version_offset: design_type.version_offset,
-            module,
-            entities,
-        },
-    )
-    .map_err(CodecError::Malformed)
 }
 
 fn insert_component_naming_space(
