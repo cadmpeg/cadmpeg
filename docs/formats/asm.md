@@ -370,9 +370,14 @@ All model-space lengths are cm→mm ×10; unit vectors/ratios/angles/knots are n
 
 Each layout is fixed-size. Offsets are record-relative from the `0x11` byte.
 
-**`plane`**: origin (`0x13`) + unit normal (`0x14`) + unit UV-reference direction (`0x14`). Evaluation `S(u,v) = origin + u·u_dir + v·v_dir`, `v_dir = normal × u_dir`.
+**`plane`**: origin (`0x13`) + unit normal (`0x14`) + unit UV-reference direction (`0x14`) + v-sense logical (`FALSE` = `forward_v`, `TRUE` = `reverse_v`) + four optional parameter bounds. Evaluation `S(u,v) = origin + u·u_dir + v·v_dir`. `v_dir = normal × u_dir` for `forward_v` and `v_dir = -(normal × u_dir)` for `reverse_v`.
 
-An embedded or face-bound pcurve on a plane stores its first coordinate as a native length along `u_dir` and its second coordinate as a native length opposite `v_dir`. An embedded or face-bound pcurve on a `cone` stores normalized generator distance first and azimuth angle second. Let `sine`, `cosine`, and `u_scale` be the three stored cone chart fields after the ratio. The axial distance is `first × direction × cosine × u_scale`, where `direction` is `-1` when `sine × cosine < 0` and `1` otherwise. Neutral projection converts plane coordinates to document length units and converts cone coordinates to `(azimuth, axial distance)`.
+An embedded or face-bound pcurve on an analytic support stores its control points in the support's native parameterization `(first, second)`:
+
+- On a `plane`, `first` and `second` are the native lengths `u` and `v` of the plane evaluation.
+- On a `cone`, `first` is a normalized generator distance and `second` is the azimuth. Let `sine`, `cosine`, and `u_scale` be the three stored cone chart fields after the ratio. The axial distance is `first × direction × cosine × u_scale`, where `direction` is `-1` when `sine × cosine < 0` and `1` otherwise.
+
+Neutral projection converts plane coordinates to document length units and cone coordinates to `(azimuth, axial distance)`.
 
 **`cone` (161 B, covers cylinders)**: order: origin (`0x13`), axis (`0x14`), `ref × r_major` (`0x14`, magnitude = base major radius), `ratio = r_minor/r_major` (f64, 1.0 = circular), `0x0b 0x0b`, `sin(half_angle)` (f64, 0 ⇒ cylinder), `cos(half_angle)` (f64), `u_scale` u-parameter scale (f64), 5×`0x0b`. A non-unit ratio defines an elliptical cone whose minor radius is `r_major · ratio`; zero sine with a non-unit ratio is an elliptical cylinder. **Half-angle rule:** `half_angle = asin(|sine|)`. The angle is the acute branch even when both stored sine and cosine are negative. **Sign rules:** the base major radius is the major-axis vector's magnitude; `u_scale` usually equals it but diverges on offset-derived surfaces and is not a radius. The signed major-radius slope `sine / cosine` is the radius change per unit axis distance: `r_major(d) = r_base + d · sine / cosine` at signed distance `d` along the axis from the origin. A negative `cosine` points the surface normal toward the axis; face senses are stored relative to that inward normal.
 
@@ -515,7 +520,7 @@ A `pcurve` record has two byte-level forms, discriminated by the `0x04` int at r
 - **discriminator == 0 → wrapped form**: a `0x0a`/`0x0b` `wrapper_reversed` boolean, then one balanced subtype payload. An `exp_par_cur` payload owns an inline 2D `nubs` or rational `nurbs` block; a `ref N` payload delegates to subtype-table entry `N`. 2D poles are stored as `(u,v)` pairs (8+8 B each, **not** 24); `nurbs` stores one homogeneous weight after each pole.
 - **discriminator != 0 (1, 2, −1, −2) → ref form (72 B)**: a `0x0c` ref to the intcurve carrying the UV curve, then two parameter doubles. No wrapper boolean (its absence is structural).
 
-UV poles are dimensionless surface parameters. `wrapper_reversed` is the inline curve's fit-convention bit, independent of coedge sense and of the parameter-interval sign.
+UV poles are coordinates of the support's native parameterization (§6.2). `wrapper_reversed` is the inline curve's fit-convention bit, independent of coedge sense and of the parameter-interval sign.
 
 The inline control polygon is followed by a `DOUBLE` parameter-space fit tolerance. After the nested support-surface scope, four ordered trailing booleans precede two final `DOUBLE` values storing the pcurve parameter interval `(t_start, t_end)`. The four booleans are retained and regenerated independently. The balanced `exp_par_cur` scope contains exactly one BS2 carrier; that structurally owned block is the pcurve even when the scope is reached through `ref N` or contains references to other BS2 blocks. A wrapped `ref N` stores the interval immediately after its balanced reference and has no boolean tail or inline fit-tolerance carrier. Nonzero-discriminator ref-form pcurves store the same interval immediately after their intcurve reference and have no wrapper, boolean tail, or inline fit-tolerance carrier. Its selector magnitude names the ordered intcurve slot (`1` for `pcur1`, `2` for `pcur2`); a negative selector reverses the selected pcurve and composes with the intcurve's own reversed sense. The decoder follows that slot and does not enumerate every reachable BS2 block. A lifted BS3 cache, a support carrier, or a BS2-compatible interpretation of a 3D block is not an additional pcurve candidate. The selected slot must contain a BS2 carrier and its paired support slot must be non-null and resolve as an analytic, NURBS, or typed procedural surface. A cacheless procedural support is present even when it has no standalone `SurfaceGeometry` cache. A null support slot, missing pcurve slot, invalid selector, or malformed typed reference leaves the pcurve undecoded.
 
@@ -531,7 +536,7 @@ One pcurve carrier may span a longer parameter domain than an edge using it. The
 
 Coedge sense is the edge-use orientation for a pcurve inherited from its surface: `effective_pcurve = flip_pcurve(surface_pcurve, coedge.sense)`. The stored 2D B-spline poles and knots retain their native order. `wrapper_reversed` is separate from coedge sense.
 
-An explicit pcurve reference belongs to a free-form B-spline face. Analytic plane, cylinder, cone, sphere, and torus faces store `-1` in the coedge pcurve field; their UV boundary is not serialized as a pcurve record.
+A coedge pcurve field stores `-1` or a reference to a pcurve record on the face's support. The support is analytic or free-form; §6.2 gives the native chart of each analytic support.
 
 ### 6.5 `nubs`/`nurbs` blocks (B-spline curves and surfaces)
 

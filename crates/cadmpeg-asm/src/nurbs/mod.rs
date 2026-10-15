@@ -30,4 +30,5 @@ pub mod proc_curve;
 pub mod proc_surface;
 pub mod reader;
 pub mod subtypes;
+pub mod support_chart;
 pub mod toks;

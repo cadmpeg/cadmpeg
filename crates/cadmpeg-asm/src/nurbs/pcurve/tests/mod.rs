@@ -231,9 +231,11 @@ fn exact_curve_selector_uses_its_cache_first_support_slot() {
         .transpose()
         .expect("resource allocation did not fail")
         .unwrap_or_else(|| panic!("exact curve pcurve at width {int_width}"));
+        // A `forward_v` plane stores native lengths along `u_dir` and
+        // `normal × u_dir`.
         assert_eq!(
             pcurve.control_points()[1],
-            cadmpeg_ir::math::Point2::new(10.0, -10.0)
+            cadmpeg_ir::math::Point2::new(10.0, 10.0)
         );
         assert!(crate::nurbs::proc_curve::pcurve_for_selector_with_chart(
             &asm_decode_ctx,

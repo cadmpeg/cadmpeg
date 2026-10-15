@@ -23,6 +23,7 @@ use super::native_bytes::{
 };
 use crate::writer::primitives::{native_bool, unique_knot_count};
 use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
+use cadmpeg_asm::nurbs::support_chart::NativeChart;
 
 const UNSET_VARIABLE_BLEND_TANGENT: f64 = 1.0e37;
 
@@ -5975,50 +5976,35 @@ fn native_support_pcurve_for_range(
     let (writer_ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &writer_arena, &writer_policy)?;
     let native = native_pcurve_geometry(pcurve, range)?;
-    let mut poles = native.pole_rows().to_raw();
-    match geometry {
+    // The chart of the native support fields `native_embedded_surface` writes:
+    // the neutral frame, forward senses, and `u_scale` equal to the radius.
+    let chart = match geometry {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)) => {
-            poles.edit_points(|point| {
-                point.u /= LEN_TO_MM;
-                point.v /= -LEN_TO_MM;
-                Ok(())
-            })?;
+            Some(NativeChart::Plane { reverse_v: false })
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
-            let radius = cylinder_surface.radius().get();
-            if radius <= f64::EPSILON {
-                return Err(CodecError::NotImplemented(
-                    "intcurve support has an invalid cone parameter scale".into(),
-                ));
-            }
-            poles.edit_points(|point| {
-                let neutral = *point;
-                point.u = neutral.v / radius;
-                point.v = neutral.u;
-                Ok(())
-            })?;
+            NativeChart::cone(0.0, 1.0, cylinder_surface.radius().get() / LEN_TO_MM)
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {
-            let radius = cone_surface.radius().get();
             let half_angle = cone_surface.half_angle().get();
-            let sine = half_angle.sin();
-            let cosine = half_angle.cos();
-            let direction = if sine * cosine < 0.0 { -1.0 } else { 1.0 };
-            let axial_scale = direction * radius * cosine;
-            if !axial_scale.is_finite() || axial_scale.abs() <= f64::EPSILON {
-                return Err(CodecError::NotImplemented(
-                    "intcurve support has an invalid cone axial parameter scale".into(),
-                ));
-            }
-            poles.edit_points(|point| {
-                let neutral = *point;
-                point.u = neutral.v / axial_scale;
-                point.v = neutral.u;
-                Ok(())
-            })?;
+            NativeChart::cone(
+                half_angle.sin(),
+                half_angle.cos(),
+                cone_surface.radius().get() / LEN_TO_MM,
+            )
         }
         _ => return Ok(native.into_owned()),
-    }
+    };
+    let chart = chart.ok_or_else(|| {
+        CodecError::NotImplemented(
+            "intcurve support has an invalid cone axial parameter scale".into(),
+        )
+    })?;
+    let mut poles = native.pole_rows().to_raw();
+    poles.edit_points(|point| {
+        *point = chart.native_point(*point);
+        Ok(())
+    })?;
     PcurveNurbs::new(
         &writer_ctx,
         native.degree(),
@@ -6092,39 +6078,64 @@ mod pcurve_chart_tests {
         }
     }
 
+    /// The native pcurve chart of each support `native_embedded_surface`
+    /// writes: plane lengths in centimetres and cone `(axial / (direction cos
+    /// r), azimuth)`.
     #[test]
-    fn cone_writer_inverts_signed_axial_projection() {
+    fn writer_native_support_pcurves_follow_the_native_charts() {
+        use cadmpeg_ir::geometry::analytic::{ConeSurface, CylinderSurface, PlaneSurface};
+        let origin = Point3::new(0.0, 0.0, 0.0);
+        let axis = Vector3::new(0.0, 0.0, 1.0);
+        let reference = Vector3::new(1.0, 0.0, 0.0);
+        let neutral = [Point2::new(1.25, 15.0), Point2::new(2.5, -3.0)];
+        let pcurve = PcurveGeometry::Nurbs {
+            nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                neutral.to_vec(),
+                None,
+                false,
+            )
+            .expect("fixture pcurve construction admission")
+            .expect("valid test pcurve"),
+        };
+        let solved = |geometry| SurfaceGeometry::Solved(geometry);
+        let mut cases = vec![
+            (
+                solved(SolvedSurfaceGeometry::Plane(
+                    PlaneSurface::try_new(origin, axis, reference).unwrap(),
+                )),
+                neutral.map(|p| Point2::new(p.u / 10.0, p.v / 10.0)),
+            ),
+            (
+                solved(SolvedSurfaceGeometry::Cylinder(
+                    CylinderSurface::try_new(origin, axis, reference, 12.0).unwrap(),
+                )),
+                neutral.map(|p| Point2::new(p.v / 12.0, p.u)),
+            ),
+        ];
         for half_angle in [0.5_f64, -0.5] {
-            let support = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
-                cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
-                    Point3::new(0.0, 0.0, 0.0),
-                    Vector3::new(0.0, 0.0, 1.0),
-                    Vector3::new(1.0, 0.0, 0.0),
-                    12.0,
-                    1.0,
-                    half_angle,
-                )
-                .unwrap(),
+            cases.push((
+                solved(SolvedSurfaceGeometry::Cone(
+                    ConeSurface::try_new(origin, axis, reference, 12.0, 1.0, half_angle).unwrap(),
+                )),
+                neutral.map(|p| {
+                    let direction = if half_angle < 0.0 { -1.0 } else { 1.0 };
+                    Point2::new(p.v / (direction * 12.0 * half_angle.cos()), p.u)
+                }),
             ));
-            let pcurve = PcurveGeometry::Nurbs {
-                nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
-                    &cadmpeg_test_support::service_decode_context(),
-                    1,
-                    vec![0.0, 0.0, 1.0, 1.0],
-                    vec![Point2::new(1.25, 15.0), Point2::new(2.5, -3.0)],
-                    None,
-                    false,
-                )
-                .expect("fixture pcurve construction admission")
-                .expect("valid test pcurve"),
-            };
-            let nurbs = native_support_pcurve(&support, &pcurve).expect("native cone chart");
-            let direction = if half_angle < 0.0 { -1.0 } else { 1.0 };
-            let axial_scale = direction * 12.0 * half_angle.cos();
-            assert_eq!(nurbs.control_points()[0].u, 15.0 / axial_scale);
-            assert_eq!(nurbs.control_points()[0].v, 1.25);
-            assert_eq!(nurbs.control_points()[1].u, -3.0 / axial_scale);
-            assert_eq!(nurbs.control_points()[1].v, 2.5);
+        }
+        for (support, expected) in cases {
+            let nurbs = native_support_pcurve(&support, &pcurve).expect("native support chart");
+            for (point, expected) in nurbs.control_points().into_iter().zip(expected) {
+                let point = point.get();
+                assert!(
+                    (point.u - expected.u).abs() <= f64::EPSILON * 16.0
+                        && (point.v - expected.v).abs() <= f64::EPSILON * 16.0,
+                    "{support:?}: {point:?} != {expected:?}"
+                );
+            }
         }
     }
 }
