@@ -890,11 +890,11 @@ assigns control geometry, continuity, or terminal semantics.
 
 **Question.** Which serialized fields define the source body and subdivision roles of a body-writing `SUBDIVISION_BODY` operation?
 
-**Known.** `siemens_nx.md` §7.1 defines a body-writing `SUBDIVISION_BODY` record as a body-affecting subdivision-body construction. The label and body-write frame establish the family, but the record has no admitted object-index or payload relation assigning the source body or subdivision controls. Its body-identity segment use points to a plain stream without a unique model-body record.
+**Known.** `siemens_nx.md` §7.1 defines the operation label, body-write frame and owning parameter-class selector. The bounded header has four null object-index slots. The parameter class and its construction, mesh-constraint, settings and connection siblings declare no members. The admitted object, parameter and named-attribute relations assign no source body or subdivision controls. The body-identity segment use identifies a unique plain stream, but that stream has no decoded neutral body.
 
-**Need.** We must identify the source body and subdivision controls to construct a complete neutral subdivision-body operation and bind its result body.
+**Need.** A serialized source-body relation and subdivision controls, plus complete result-body storage that can be admitted as a neutral body.
 
-**Conflict.** The operation label and body-write relation identify the family, but the bounded record and unresolved segment-body relation do not assign unique source-body or subdivision roles.
+**Conflict.** The operation label, owning class and result-stream identity do not assign source-body or subdivision roles. A result-stream binding does not establish a decoded neutral body.
 
 ### OM-59. `TOPOLOGY_OPTIMIZATION` construction roles
 

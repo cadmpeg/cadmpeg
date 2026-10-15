@@ -2079,9 +2079,10 @@ copy or replace roles remain unresolved until the serialized construction
 relations assign them. A record without the body-write frame remains native.
 
 The `SUBDIVISION_BODY` operation label with a body-write frame identifies a
-body-affecting subdivision-body construction. Its source body and subdivision
-roles remain unresolved until the serialized construction relations assign
-them. A record without the body-write frame remains native.
+body-affecting subdivision-body construction. Its first payload selector names
+`UGS::ModlSubdiv::SubdivisionBodyFeatureParms` in the owning OM class list. The
+selector value is the class ordinal plus one. A record without the body-write
+frame remains native.
 
 The `TOPOLOGY_OPTIMIZATION` operation label with a body-write frame identifies
 a body-affecting topology-optimization construction. Its input and optimization
