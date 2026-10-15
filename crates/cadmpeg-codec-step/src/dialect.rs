@@ -205,28 +205,35 @@ impl StepDialect {
     ///   that matches nothing this codec declares is an unrecognized
     ///   declaration, unlike making no claim at all. Arcs that do not read as a
     ///   numeric object identifier reach the same place, through the same call.
-    fn from_schema_identifier(identifier: &str, object_identifier: Option<&[u64]>) -> Self {
-        let Some((name, object_identifier_text)) = split_schema_identifier(identifier) else {
-            return Self::Unknown;
+    fn from_schema_identifier(
+        ctx: &DecodeContext<'_>,
+        identifier: &str,
+        object_identifier: Option<&[u64]>,
+    ) -> Result<Self, CodecError> {
+        let Some((name, object_identifier_text)) = split_schema_identifier(ctx, identifier)? else {
+            return Ok(Self::Unknown);
         };
         let ap242_name = Part21Dialect::Ap242.schema_identifier();
         if name.eq_ignore_ascii_case(ap242_name) {
             if object_identifier_text.is_none() {
-                return Self::Part21(Part21Dialect::Ap242);
+                return Ok(Self::Part21(Part21Dialect::Ap242));
             }
-            return Self::ap242_edition(object_identifier).map_or(Self::Unknown, Self::Part21);
+            return Ok(Self::ap242_edition(object_identifier).map_or(Self::Unknown, Self::Part21));
         }
-        [
+        for row in [
             Part21Dialect::Schema(StepSchema::Ap203Edition1),
             Part21Dialect::Schema(StepSchema::Ap203Edition2),
             Part21Dialect::Schema(StepSchema::Ap214),
-        ]
-        .into_iter()
-        .find(|row| {
-            split_schema_identifier(row.schema_identifier())
-                .is_some_and(|(candidate, _)| name.eq_ignore_ascii_case(candidate))
-        })
-        .map_or(Self::Unknown, Self::Part21)
+        ] {
+            let candidate = row
+                .schema_identifier()
+                .split_once('{')
+                .map_or(row.schema_identifier(), |(name, _)| name.trim_end());
+            if name.eq_ignore_ascii_case(candidate) {
+                return Ok(Self::Part21(row));
+            }
+        }
+        Ok(Self::Unknown)
     }
 
     /// The AP242 edition row whose canonical object identifier the declaration
@@ -263,10 +270,16 @@ impl StepDialect {
         ctx: &DecodeContext<'_>,
     ) -> Result<DialectMatch, CodecError> {
         let first = exchange.schema_identifiers().next();
-        let object_identifier = exchange.primary_schema_object_identifier(ctx)?;
-        let dialect = first.map_or(Self::Unknown, |identifier| {
-            Self::from_schema_identifier(identifier, object_identifier.as_deref())
-        });
+        let (object_identifier, _object_storage) = ctx
+            .with_scoped_storage("STEP dialect object identifier storage", || {
+                exchange.primary_schema_object_identifier(ctx)
+            })?;
+        let dialect = match first {
+            Some(identifier) => {
+                Self::from_schema_identifier(ctx, identifier, object_identifier.as_deref())?
+            }
+            None => Self::Unknown,
+        };
 
         let mut declared = BTreeMap::new();
         if let Some(identifier) = first {
@@ -276,7 +289,7 @@ impl StepDialect {
                 ctx.copy_retained_text(identifier, "step_dialect_declared_text")?,
                 "step_dialect_declared_entries",
             )?;
-            if let Some((_, Some(arcs))) = split_schema_identifier(identifier) {
+            if let Some((_, Some(arcs))) = split_schema_identifier(ctx, identifier)? {
                 ctx.insert_btree_map(
                     &mut declared,
                     cadmpeg_core::nonblank_const!(DECLARED_LONG_FORM_ARCS),
@@ -328,7 +341,7 @@ pub(crate) fn dialect_loss(
         return Ok(None);
     };
     let operation = "step_dialect_unverified_loss_text";
-    let message = match matched.declared().get(DECLARED_FILE_SCHEMA_IDENTIFIER) {
+    let message = match ctx.get_btree_map(matched.declared(), DECLARED_FILE_SCHEMA_IDENTIFIER, "STEP dialect declaration lookup")? {
         Some(identifier) => ctx.format_retained(
             format_args!(
                 "FILE_SCHEMA identifier {identifier}; it satisfies no declared STEP dialect, so this decode read the exchange \
@@ -366,7 +379,10 @@ with the entity vocabulary verified for {FORMAT}:{}",
 /// caller owns the exact resource identities, row-to-occurrence map,
 /// schema/unit/context agreement, conflict policy, and retention of both source
 /// graphs.
-pub(crate) fn refuse_alternate_encoding(bytes: &[u8]) -> Result<(), CodecError> {
+pub(crate) fn refuse_alternate_encoding(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<(), CodecError> {
     let encoding = if crate::codec::is_part26_hdf5(bytes) {
         AlternateEncoding::Part26Hdf5
     } else if crate::codec::is_part28_xml(bytes) {
@@ -378,7 +394,10 @@ pub(crate) fn refuse_alternate_encoding(bytes: &[u8]) -> Result<(), CodecError> 
     };
     Err(CodecError::UnsupportedDialect {
         dialects: Box::new(DialectLayers::of(encoding.refused_match())),
-        message: encoding.refusal_message().into(),
+        message: ctx.copy_retained_text(
+            encoding.refusal_message(),
+            "STEP alternate encoding refusal message",
+        )?,
     })
 }
 

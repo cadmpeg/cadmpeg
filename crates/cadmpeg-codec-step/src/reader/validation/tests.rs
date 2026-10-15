@@ -148,29 +148,72 @@ fn validation_limit_result(
 }
 
 #[test]
-fn validation_property_name_refuses_retained_limit() {
-    use cadmpeg_core::decode::ResourceDimension;
-    use cadmpeg_core::CodecError;
-
-    assert!(matches!(
-        validation_limit_result(Some(1), None),
-        Err(CodecError::ResourceLimit(refusal))
-            if refusal.dimension == ResourceDimension::RetainedBytes
-                && refusal.operation == "step_string_text"
-    ));
+fn validation_property_name_refuses_materialized_limit() {
+    validation_property_text_refuses(None);
 }
 
 #[test]
-fn validation_property_description_refuses_retained_limit() {
-    use cadmpeg_core::decode::ResourceDimension;
-    use cadmpeg_core::CodecError;
+fn validation_property_description_refuses_materialized_limit() {
+    validation_property_text_refuses(Some(cadmpeg_core::decode::u64_from_index(
+        "description".len(),
+    )));
+}
 
-    assert!(matches!(
-        validation_limit_result(Some(cadmpeg_core::decode::u64_from_index("geometric validation property".len())), None),
-        Err(CodecError::ResourceLimit(refusal))
-            if refusal.dimension == ResourceDimension::RetainedBytes
-                && refusal.operation == "step_string_text"
-    ));
+fn validation_property_text_refuses(text_bytes: Option<u64>) {
+    use cadmpeg_core::decode::refusal_probe::RefusalProbe;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let (exchange, _) = crate::test_support::with_service_context(
+        VALIDATION_LIMIT_SOURCE,
+        crate::parse::parse_inner,
+    )
+    .expect("exchange");
+    let setup = cadmpeg_test_support::service_decode_context();
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    let geometry = crate::reader::geometry::decode(&exchange, &mut ir, &setup).expect("geometry");
+    // Source bytes and prior scratch allocations precede the selected string.
+    let probe = RefusalProbe::arm(
+        ResourceDimension::MaterializedBytes,
+        "step_string_text",
+        text_bytes,
+    );
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = u64::MAX;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(VALIDATION_LIMIT_SOURCE, &arena, &policy).expect("root");
+    let Err(CodecError::ResourceLimit(refusal)) =
+        super::decode(&exchange, &geometry.value, &mut ir.clone(), &ctx)
+    else {
+        panic!("selected string boundary");
+    };
+    assert_eq!(refusal.dimension, ResourceDimension::MaterializedBytes);
+    assert_eq!(refusal.operation, "step_string_text");
+    drop(probe);
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = refusal.used + refusal.additional - 1;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(VALIDATION_LIMIT_SOURCE, &arena, &policy).expect("root");
+    let Err(CodecError::ResourceLimit(replay)) =
+        super::decode(&exchange, &geometry.value, &mut ir, &ctx)
+    else {
+        panic!("string replay refusal");
+    };
+    assert_eq!(
+        (
+            replay.dimension,
+            replay.operation,
+            replay.used,
+            replay.additional
+        ),
+        (
+            refusal.dimension,
+            refusal.operation,
+            refusal.used,
+            refusal.additional
+        )
+    );
+    assert_eq!(ctx.resource_refusal(), Some(replay));
 }
 
 #[test]
@@ -189,23 +232,22 @@ fn validation_property_map_refuses_collection_limit() {
 #[test]
 fn validation_mesh_edges_refuse_collection_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
     let source = include_bytes!("../../../tests/fixtures/ap242_tessellation.p21");
     let result = StepCodec::default()
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("mesh validation source decodes");
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
-        .expect("root fits collection policy");
-    assert!(matches!(
-        super::mesh_properties(result.ir(), &ctx),
-        Err(CodecError::ResourceLimit(refusal))
-            if refusal.dimension == ResourceDimension::CollectionItems
-                && refusal.operation == "step_validation_mesh_edges"
-    ));
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems,
+        "step_validation_mesh_edges",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
+                .expect("root fits collection policy");
+            super::mesh_properties(result.ir(), &ctx)
+        },
+    );
 }
 
 #[test]
@@ -217,14 +259,23 @@ fn validation_mesh_triangles_refuse_work_limit() {
     let result = StepCodec::default()
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("mesh validation source decodes");
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(source, &arena, &policy).expect("root fits work policy");
+    // The mesh scan and body matching charge work before the first triangle,
+    // so the boundary is found by probing the triangle charge itself.
+    let refusal = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "step_validation_mesh_triangles",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
+                .expect("root fits work policy");
+            super::mesh_properties(result.ir(), &ctx)
+        },
+    );
     assert!(matches!(
-        super::mesh_properties(result.ir(), &ctx),
-        Err(CodecError::ResourceLimit(refusal))
+        refusal,
+        CodecError::ResourceLimit(refusal)
             if refusal.dimension == ResourceDimension::WorkUnits
                 && refusal.operation == "step_validation_mesh_triangles"
     ));
@@ -501,3 +552,157 @@ fn numerical_seventh_mesh_mass_properties_preserve_uniform_scale() {
         }
     }
 }
+
+mod equality;
+
+#[test]
+fn validation_point_number_parse_preserves_refusal() {
+    // Identity splitting reads the source text before the numeric parse.
+    // The ladder admits that split and refuses the parse one unit below its need.
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "STEP validation point number parse",
+        |limit| {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_work_units = limit;
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+            let result = super::step_id(&ctx, "step:data:point#7");
+            if let Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal)) = result {
+                assert_eq!(ctx.resource_refusal(), Some(*refusal));
+            }
+            result
+        },
+    );
+    let cadmpeg_core::CodecError::ResourceLimit(refusal) = error else {
+        panic!("numeric parse must preserve the refusal");
+    };
+    assert_eq!(refusal.operation, "STEP validation point number parse");
+}
+
+#[test]
+fn typed_omitted_descent_refuses_work_limit() {
+    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+    let value = crate::parse::Value::Typed("WRAP".into(), Box::new(crate::parse::Value::Omitted));
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "STEP typed validation measure descent",
+        |limit| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = limit;
+            crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
+                super::area_or_volume_measure(ctx, &value).map(|_| ())
+            })
+        },
+    );
+}
+
+#[test]
+fn typed_validation_reference_descent_refuses_work_limit() {
+    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+    let value = crate::parse::Value::Typed("WRAP".into(), Box::new(crate::parse::Value::Omitted));
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "STEP typed validation reference descent",
+        |limit| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = limit;
+            crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
+                super::collect_validation_references(
+                    &value,
+                    &std::collections::BTreeSet::new(),
+                    &mut std::collections::BTreeSet::new(),
+                    ctx,
+                )
+            })
+        },
+    );
+}
+
+#[test]
+fn validation_representation_items_refuse_only_first_visit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let items = vec!["#4"; 1024].join(",");
+    let source = std::str::from_utf8(VALIDATION_COLLECTION_SOURCE)
+        .unwrap()
+        .replace("'unused',(#4)", &format!("'unused',({items})"));
+    let (exchange, _) =
+        crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
+            .expect("validation exchange with a long item list");
+    let setup_arena = DecodeArena::new();
+    let setup_policy = DecodePolicy::service();
+    let (setup_ctx, _) =
+        DecodeContext::from_root_bytes(source.as_bytes(), &setup_arena, &setup_policy).unwrap();
+    assert_eq!(
+        super::super::representation::item_values(
+            &setup_ctx,
+            exchange.records().get(&2).expect("representation record"),
+        )
+        .unwrap()
+        .unwrap()
+        .len(),
+        1024
+    );
+    let mut setup_ir = cadmpeg_ir::document::CadIr::empty();
+    let geometry = crate::reader::geometry::decode(&exchange, &mut setup_ir, &setup_ctx)
+        .expect("geometry setup");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "STEP representation item traversal",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy).unwrap();
+            let mut ir = setup_ir.clone();
+            let error = super::decode(&exchange, &geometry.value, &mut ir, &ctx)
+                .err()
+                .expect("refuse the first representation item visit");
+            let CodecError::ResourceLimit(refusal) = error else {
+                panic!("representation item resource refusal");
+            };
+            assert_eq!(refusal.additional, 1);
+            assert_eq!(ctx.resource_refusal(), Some(refusal));
+            assert!(matches!(ctx.finish_session(),
+                Err(CodecError::ResourceLimit(sticky)) if sticky == refusal));
+            Err::<(), _>(CodecError::ResourceLimit(refusal))
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(refusal)
+        if refusal.operation == "STEP representation item traversal" && refusal.additional == 1));
+}
+
+#[test]
+fn validation_reference_list_refuses_only_first_visit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let value = crate::parse::Value::List(vec![crate::parse::Value::Reference(7); 1024]);
+    let validation_points = std::collections::BTreeSet::from([7]);
+    let mut referenced = std::collections::BTreeSet::new();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+    let error =
+        super::collect_validation_references(&value, &validation_points, &mut referenced, &ctx)
+            .expect_err("only the first list visit is refused");
+    let CodecError::ResourceLimit(refusal) = error else {
+        panic!("validation list resource refusal");
+    };
+    assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
+    assert_eq!(
+        refusal.operation,
+        "STEP collect validation references value traversal"
+    );
+    assert_eq!(refusal.used, 0);
+    assert_eq!(refusal.additional, 1);
+    assert!(referenced.is_empty());
+    assert_eq!(ctx.resource_refusal(), Some(refusal));
+    assert!(matches!(ctx.finish_session(),
+        Err(CodecError::ResourceLimit(sticky)) if sticky == refusal));
+}
+
+mod shared_units;

@@ -404,3 +404,23 @@ fn the_implementation_level_is_recorded_and_never_classified_on() {
         assert_eq!(matched.declared()[DECLARED_IMPLEMENTATION_LEVEL], level);
     }
 }
+
+#[test]
+fn schema_list_join_preserves_refusal() {
+    let exchange = exchange(&["AUTOMOTIVE_DESIGN", "CONFIG_CONTROL_DESIGN"], "2;1");
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "step_schema_identifier_list",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+            let result = exchange.joined_schema_identifiers(&ctx).map(|_| ());
+            if let Err(CodecError::ResourceLimit(refusal)) = &result {
+                assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
+            }
+            result
+        },
+    );
+}

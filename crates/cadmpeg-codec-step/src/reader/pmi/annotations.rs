@@ -3,7 +3,7 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::pmi::{PmiAnnotation, PmiDefinition, PmiTarget};
@@ -44,20 +44,35 @@ impl AnnotationIndex {
 }
 
 /// STEP records mapped to inserted PMI annotations.
-#[derive(Default)]
-pub(super) struct Annotations {
+pub(super) struct Annotations<'ctx, 'arena> {
     indices: BTreeMap<u64, AnnotationIndex>,
+    ctx: &'ctx DecodeContext<'arena>,
+    storage: ScopedReservation<'ctx>,
 }
 
-impl Annotations {
+impl<'ctx, 'arena> Annotations<'ctx, 'arena> {
+    pub(super) fn new(ctx: &'ctx DecodeContext<'arena>) -> Result<Self, CodecError> {
+        Ok(Self {
+            indices: BTreeMap::new(),
+            ctx,
+            storage: ctx.reserve_scoped(0, "STEP annotation index scratch")?,
+        })
+    }
+
     /// Insert an annotation and return its arena index.
     pub(super) fn push(
         &mut self,
-        ctx: &DecodeContext<'_>,
         ir: &mut CadIr,
         id: u64,
         draft: AnnotationDraft,
+        admitted_ir_entities: &mut u64,
     ) -> Result<AnnotationIndex, CodecError> {
+        let ctx = self.ctx;
+        ctx.admit_entities(
+            u64_from_index(ir.model.entity_count()) + 1,
+            admitted_ir_entities,
+            "step_pmi_annotation_entity",
+        )?;
         ctx.reserve_vec(&mut ir.model.pmi, 1, "step_pmi_annotation_arena")?;
         let index = AnnotationIndex(ir.model.pmi.len());
         ir.model.pmi.push(PmiAnnotation {
@@ -67,13 +82,18 @@ impl Annotations {
             visible: draft.visible,
             definition: draft.definition,
         });
-        ctx.insert_btree_map(&mut self.indices, id, index, "step_pmi_annotation_index")?;
+        self.storage.with_storage(|| {
+            ctx.insert_btree_map(&mut self.indices, id, index, "step_pmi_annotation_index")
+        })?;
         Ok(index)
     }
 
     /// The inserted annotation index for a STEP record.
-    pub(super) fn get(&self, id: u64) -> Option<AnnotationIndex> {
-        self.indices.get(&id).copied()
+    pub(super) fn get(&self, id: u64) -> Result<Option<AnnotationIndex>, CodecError> {
+        Ok(self
+            .ctx
+            .get_btree_map(&self.indices, &id, "STEP annotation index lookup")?
+            .copied())
     }
 }
 
@@ -93,9 +113,9 @@ mod tests {
         let (ctx, _) =
             DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
         let mut ir = CadIr::empty();
-        Annotations::default()
+        let mut annotations = Annotations::new(&ctx).expect("annotation index setup");
+        annotations
             .push(
-                &ctx,
                 &mut ir,
                 1,
                 AnnotationDraft {
@@ -106,8 +126,47 @@ mod tests {
                         identification: String::new(),
                     },
                 },
+                &mut 0,
             )
             .expect_err("limit must refuse one annotation")
+    }
+
+    #[test]
+    fn pmi_annotation_entity_refuses_before_publication() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_entities = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root");
+        let mut ir = CadIr::empty();
+        let mut annotations = Annotations::new(&ctx).expect("annotation index");
+        let mut admitted = 0;
+        let result = annotations.push(
+            &mut ir,
+            1,
+            AnnotationDraft {
+                name: None,
+                targets: Vec::new(),
+                visible: None,
+                definition: PmiDefinition::Datum {
+                    identification: String::new(),
+                },
+            },
+            &mut admitted,
+        );
+        let CodecError::ResourceLimit(original) = result.expect_err("annotation entity refuses")
+        else {
+            panic!("entity refusal");
+        };
+        assert_eq!(original.dimension, ResourceDimension::Entities);
+        assert_eq!(original.operation, "step_pmi_annotation_entity");
+        assert_eq!((original.used, original.additional), (0, 1));
+        assert_eq!(admitted, 0);
+        assert!(ir.model.pmi.is_empty());
+        assert!(annotations.indices.is_empty());
+        assert_eq!(ctx.resource_refusal(), Some(original));
+        drop(annotations);
+        assert!(matches!(ctx.finish_session(),
+            Err(CodecError::ResourceLimit(found)) if found == original));
     }
 
     #[test]
@@ -128,5 +187,91 @@ mod tests {
                 if limit.dimension == ResourceDimension::CollectionItems
                     && limit.operation == "step_pmi_annotation_index"
         ));
+    }
+    #[test]
+    fn annotation_index_lookup_preserves_refusal() {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            "STEP annotation index lookup",
+            |limit| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = limit;
+                let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).expect("root");
+                let mut annotations = Annotations::new(&ctx).expect("index");
+                annotations
+                    .push(
+                        &mut CadIr::empty(),
+                        1,
+                        AnnotationDraft {
+                            name: None,
+                            targets: Vec::new(),
+                            visible: None,
+                            definition: PmiDefinition::Datum {
+                                identification: String::new(),
+                            },
+                        },
+                        &mut 0,
+                    )
+                    .expect("annotation");
+                let result = annotations.get(1);
+                if let Err(CodecError::ResourceLimit(ref refusal)) = result {
+                    assert_eq!(ctx.resource_refusal(), Some(*refusal));
+                }
+                result
+            },
+        );
+        assert!(
+            matches!(error, CodecError::ResourceLimit(refusal) if refusal.operation == "STEP annotation index lookup")
+        );
+    }
+
+    #[test]
+    fn annotation_index_empty_lookup_preserves_original_session_refusal() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root");
+        let annotations = Annotations::new(&ctx).expect("original index context");
+        let CodecError::ResourceLimit(original) = ctx
+            .charge_work(1, "test original annotation refusal")
+            .expect_err("original caller refuses")
+        else {
+            panic!("resource refusal");
+        };
+        assert!(matches!(annotations.get(1),
+            Err(CodecError::ResourceLimit(refusal)) if refusal == original));
+        assert!(annotations.indices.is_empty());
+        drop(annotations);
+        assert!(matches!(ctx.finish_session(),
+            Err(CodecError::ResourceLimit(refusal)) if refusal == original));
+    }
+
+    #[test]
+    fn annotation_index_push_preserves_original_session_refusal_before_publication() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root");
+        let mut annotations = Annotations::new(&ctx).expect("original index context");
+        let mut ir = CadIr::empty();
+        let CodecError::ResourceLimit(original) = ctx
+            .charge_work(1, "test original annotation refusal")
+            .expect_err("original caller refuses")
+        else {
+            panic!("resource refusal");
+        };
+        assert!(matches!(annotations.push(&mut ir, 1, AnnotationDraft {
+            name: None,
+            targets: Vec::new(),
+            visible: None,
+            definition: PmiDefinition::Datum { identification: String::new() },
+        }, &mut 0), Err(CodecError::ResourceLimit(refusal)) if refusal == original));
+        assert!(ir.model.pmi.is_empty());
+        assert!(annotations.indices.is_empty());
+        drop(ir);
+        drop(annotations);
+        assert!(matches!(ctx.finish_session(),
+            Err(CodecError::ResourceLimit(refusal)) if refusal == original));
     }
 }

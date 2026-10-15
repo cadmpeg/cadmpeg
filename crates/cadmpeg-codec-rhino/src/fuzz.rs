@@ -104,8 +104,12 @@ pub fn object_record(data: &[u8]) {
     else {
         return;
     };
+    let Ok(mut workspace) = ctx.reserve_scoped(0, "Rhino fuzz object workspace") else {
+        return;
+    };
     let _probe = crate::objects::parse_object_record(
         &ctx,
+        &mut workspace,
         data,
         &record,
         selected_archive(data[0]),
@@ -245,8 +249,12 @@ pub fn hatch(data: &[u8]) {
     }
     let archive = selected_archive(data[0]);
     with_expand(data, |expand| {
+        let Ok(mut loops_storage) = expand.ctx().reserve_scoped(0, "Rhino fuzz hatch loops") else {
+            return;
+        };
         let _probe = crate::hatch::decode(
             expand,
+            &mut loops_storage,
             1..data.len(),
             crate::settings::MillimeterScale::IDENTITY,
             archive,
