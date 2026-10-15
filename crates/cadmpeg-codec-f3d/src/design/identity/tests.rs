@@ -58,15 +58,6 @@ fn neutral_component_insert_occurrence_id_preserves_bytes() {
 }
 
 #[test]
-fn neutral_assembly_joint_id_preserves_bytes() {
-    let scope = encoded_scope();
-    assert_eq!(
-        super::neutral_assembly_joint_id(&scope).unwrap(),
-        crate::ids::neutral_assembly_joint_id(&scope)
-    );
-}
-
-#[test]
 fn neutral_sketch_id_preserves_bytes() {
     let placement = encoded_placement();
     assert_eq!(
@@ -207,50 +198,5 @@ fn configuration_entry_id_preserves_bytes() {
             entry,
             &cadmpeg_ir::identity_component!("configuration"),
         )
-    );
-}
-
-#[test]
-fn history_input_prefix_preserves_bytes() {
-    let key = cadmpeg_ir::identity_key!("encoded%20ç");
-    assert_eq!(
-        super::history_input_prefix(key.as_str(), i64::MIN).unwrap(),
-        crate::ids::history_input_prefix(&key, i64::MIN)
-    );
-}
-
-#[test]
-fn feature_input_topology_id_preserves_bytes() {
-    let feature = cadmpeg_ir::features::FeatureId::mint("test:model:feature#encoded%20ç").unwrap();
-    assert_eq!(
-        super::feature_input_topology_id(&feature, i64::MIN).unwrap(),
-        crate::ids::feature_input_topology_id(&feature, i64::MIN)
-    );
-}
-
-#[test]
-fn history_input_edge_id_preserves_bytes() {
-    let prefix = cadmpeg_ir::identity_key!("encoded%20ç");
-    assert_eq!(
-        super::history_input_edge_id(&prefix, i64::MIN).unwrap(),
-        crate::ids::history_input_edge_id(&prefix, i64::MIN)
-    );
-}
-
-#[test]
-fn history_input_face_id_preserves_bytes() {
-    let prefix = cadmpeg_ir::identity_key!("encoded%20ç");
-    assert_eq!(
-        super::history_input_face_id(&prefix, i64::MIN).unwrap(),
-        crate::ids::history_input_face_id(&prefix, i64::MIN)
-    );
-}
-
-#[test]
-fn history_input_vertex_id_preserves_bytes() {
-    let prefix = cadmpeg_ir::identity_key!("encoded%20ç");
-    assert_eq!(
-        super::history_input_vertex_id(&prefix, i64::MIN).unwrap(),
-        crate::ids::history_input_vertex_id(&prefix, i64::MIN)
     );
 }

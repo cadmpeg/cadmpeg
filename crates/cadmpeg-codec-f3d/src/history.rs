@@ -1318,7 +1318,7 @@ pub(crate) fn bind_feature_body_selections(
                         let Some(body) = singleton_revised_input_body_across_state_chain(state, previous_state_id, &history_states) else {
                             return;
                         };
-                        let prefix = crate::ids::history_input_prefix(&feature_id.key(), previous_state_id);
+                        let prefix = crate::ids::feature_input_prefix(feature_id, previous_state_id);
                         let input_state = crate::ids::history_input_state_id(&prefix);
                         let body_id = crate::ids::history_input_body_id(&prefix, body);
                         let native_id = native.to_owned();
@@ -1577,7 +1577,7 @@ pub(crate) fn bind_feature_body_selections(
             let Some(body) = body else {
                 break 'feature_edit;
             };
-            let prefix = crate::ids::history_input_prefix(&feature_id.key(), previous_state_id);
+            let prefix = crate::ids::feature_input_prefix(feature_id, previous_state_id);
             let state_id = crate::ids::history_input_state_id(&prefix);
             let body_id = crate::ids::history_input_body_id(&prefix, body);
             let native = group_id.to_owned();
@@ -1929,7 +1929,7 @@ fn bind_body_recipe_body_selection(
         }
     }
 
-    let prefix = crate::ids::history_input_prefix(&feature_id.key(), previous_state_id);
+    let prefix = crate::ids::feature_input_prefix(feature_id, previous_state_id);
     let mut body_ids = Vec::new();
 
     for slot in body_slots {
@@ -2615,7 +2615,7 @@ fn bind_entity_face_groups(
             }
         }
     }
-    let prefix = crate::ids::history_input_prefix(&feature_id.key(), previous_state_id);
+    let prefix = crate::ids::feature_input_prefix(feature_id, previous_state_id);
     let state_id = crate::ids::history_input_state_id(&prefix);
     let mut topologies = input_topologies
         .iter_mut()
@@ -2685,7 +2685,7 @@ fn bind_hole_face_selection(
     let Some(source) = historical_brep_source(&candidate.history_id) else {
         return;
     };
-    let prefix = crate::ids::history_input_prefix(&feature_id.key(), previous_state_id);
+    let prefix = crate::ids::feature_input_prefix(feature_id, previous_state_id);
     let state_id = crate::ids::history_input_state_id(&prefix);
     let mut topologies = input_topologies
         .iter_mut()
@@ -2864,7 +2864,7 @@ fn bind_entity_selection_path(
         edge_slots.push(edge_slot);
     }
 
-    let prefix = crate::ids::history_input_prefix(&feature_id.key(), previous_state_id);
+    let prefix = crate::ids::feature_input_prefix(feature_id, previous_state_id);
     let mut edge_ids = Vec::new();
 
     for slot in edge_slots {
@@ -2932,7 +2932,7 @@ pub(crate) fn project_feature_input_topologies(
         let Some(topology) = state.topology() else {
             continue;
         };
-        let prefix = crate::ids::history_input_prefix(&feature.id.key(), previous_state_id);
+        let prefix = crate::ids::feature_input_prefix(&feature.id, previous_state_id);
         let Some(bodies) = project_input_members(&topology.bodies, |slot| {
             crate::ids::history_input_body_id(&prefix, slot)
         }) else {
@@ -3336,15 +3336,6 @@ fn point_matches(left: cadmpeg_ir::math::Point3, right: cadmpeg_ir::math::Point3
             let scale = left.abs().max(right.abs()).max(1.0);
             (left - right).abs() <= WORK_POINT_POSITION_TOLERANCE * scale
         })
-}
-
-#[cfg(test)]
-fn feature_input_prefix(
-    feature: &cadmpeg_ir::features::FeatureId,
-    previous_state_id: i64,
-) -> cadmpeg_ir::ids::IdentityKey {
-    let feature_key = feature.key();
-    crate::ids::history_input_prefix(&feature_key, previous_state_id)
 }
 
 fn unique_history_state(

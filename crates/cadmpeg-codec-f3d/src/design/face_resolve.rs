@@ -1024,17 +1024,16 @@ fn historical_face_selection_with_native(
         return Ok(None);
     }
     let feature = crate::design::identity::neutral_feature_id(scope)?;
-    let feature_key = crate::design::identity::identity_key(feature.as_str())?;
-    let prefix = crate::design::identity::history_input_prefix(feature_key, previous_state_id)?;
+    let prefix = crate::ids::feature_input_prefix(&feature, previous_state_id);
     let mut historical_faces = Vec::new();
     for face in faces {
-        let id = crate::design::identity::history_input_face_id(&prefix, face)?;
+        let id = crate::ids::history_input_face_id(&prefix, face);
         historical_faces.push(id);
     }
     let fallback_native = native.clone();
     Ok(Some(
         cadmpeg_ir::features::FaceSelection::historical(
-            crate::design::identity::feature_input_topology_id(&feature, previous_state_id)?,
+            crate::ids::feature_input_topology_id(&feature, previous_state_id),
             historical_faces,
             native,
         )

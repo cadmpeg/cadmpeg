@@ -400,7 +400,7 @@ fn feature_input_topology_projects_historical_vertices() {
         &[],
         &std::collections::HashMap::new(),
     );
-    let prefix = super::super::feature_input_prefix(&feature.id, 4);
+    let prefix = crate::ids::feature_input_prefix(&feature.id, 4);
     assert_eq!(projected.len(), 1);
     assert_eq!(
         projected[0].vertices.as_slice(),
