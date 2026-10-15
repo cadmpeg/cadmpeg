@@ -167,8 +167,10 @@ fn annotation_stream_refuses_retained_limit() {
     use cadmpeg_core::CodecError;
     use cadmpeg_ir::geometry::{Curve, CurveGeometry, SolvedCurveGeometry};
 
-    let records = [crate::test_support::sab::record(1, "straight".into(), Vec::new().into(), 0, 0)
-            .expect("indexed record fixture")];
+    let records = [
+        crate::test_support::sab::record(1, "straight".into(), Vec::new().into(), 0, 0)
+            .expect("indexed record fixture"),
+    ];
     let make_out = || AsmBrep {
         curves: vec![Curve {
             id: CurveId::mint("f3d:brep:entity#1").unwrap(),
@@ -207,8 +209,11 @@ fn annotation_stream_refuses_retained_limit() {
 
 #[test]
 fn synthetic_annotations_use_record_keys_independent_of_id_text() {
-    let records = [crate::test_support::sab::record(37, "spline".into(), Vec::new().into(), 1234, 0)
-                .expect("indexed record fixture")];
+    let records =
+        [
+            crate::test_support::sab::record(37, "spline".into(), Vec::new().into(), 1234, 0)
+                .expect("indexed record fixture"),
+        ];
     let by_index = records
         .iter()
         .map(|record| {
@@ -378,11 +383,16 @@ fn edge_annotation_range_derivation_preserves_record_lookup_results() {
     for name in [Some("ellipse"), Some("straight"), None] {
         let mut tokens = vec![crate::sab::Token::Long(0); 8];
         tokens.push(crate::sab::Token::Ref(37));
-        let mut records = vec![crate::test_support::sab::record(1, "edge".into(), tokens.into(), 123, 0)
-                    .expect("indexed record fixture")];
+        let mut records =
+            vec![
+                crate::test_support::sab::record(1, "edge".into(), tokens.into(), 123, 0)
+                    .expect("indexed record fixture"),
+            ];
         if let Some(name) = name {
-            records.push(crate::test_support::sab::record(37, name.into(), Vec::new().into(), 456, 0)
-                    .expect("indexed record fixture"));
+            records.push(
+                crate::test_support::sab::record(37, name.into(), Vec::new().into(), 456, 0)
+                    .expect("indexed record fixture"),
+            );
         }
         let by_index = records
             .iter()

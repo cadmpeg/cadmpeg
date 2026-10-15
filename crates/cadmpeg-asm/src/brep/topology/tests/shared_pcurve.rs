@@ -126,8 +126,10 @@ fn shared_pcurve_keeps_the_last_faces_support_chart() {
         let mut records = shared_records();
 
         for (index, name) in [(9, first), (10, second)] {
-            records.push(crate::test_support::sab::record(index, name.into(), Vec::new().into(), 0, 0)
-                    .expect("indexed record fixture"));
+            records.push(
+                crate::test_support::sab::record(index, name.into(), Vec::new().into(), 0, 0)
+                    .expect("indexed record fixture"),
+            );
         }
         records[0] = ref_record(0, "face", &[-1, -1, -1, -1, 2, -1, -1, 9]);
         records[1] = ref_record(1, "face", &[-1, -1, -1, -1, 3, -1, -1, 10]);

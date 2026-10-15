@@ -109,8 +109,7 @@ fn encode_regenerates_a_bounded_sheet_with_resolution_tolerances() {
     plan.write_to(&mut written).unwrap();
     let (global, _) =
         crate::test_support::parse_global(&crate::test_support::scan(&written).unwrap()).unwrap();
-    let context = global.length_context()
-        .unwrap();
+    let context = global.length_context().unwrap();
     assert_eq!(context.minimum_resolution_mm(), 0.01);
 
     let round_trip = IgesCodec
@@ -1708,8 +1707,7 @@ fn encode_declares_the_largest_topology_tolerance_as_minimum_resolution() {
     plan.write_to(&mut written).unwrap();
     let (global, _) =
         crate::test_support::parse_global(&crate::test_support::scan(&written).unwrap()).unwrap();
-    let context = global.length_context()
-        .unwrap();
+    let context = global.length_context().unwrap();
     assert_eq!(context.minimum_resolution_mm(), 0.25);
 
     let round_trip = IgesCodec

@@ -233,11 +233,12 @@ fn patch_asm_geometry(
         let Some(color) = entity_colors.get(&id) else {
             continue;
         };
-        let carrier = attribute_chain_color_carrier(ctx, entity, records_by_index.len(), |index| {
-            usize::try_from(index)
-                .ok()
-                .and_then(|index| records_by_index.get(&index).copied())
-        })?;
+        let carrier =
+            attribute_chain_color_carrier(ctx, entity, records_by_index.len(), |index| {
+                usize::try_from(index)
+                    .ok()
+                    .and_then(|index| records_by_index.get(&index).copied())
+            })?;
         let Some((attribute, decoded)) = carrier else {
             return Err(CodecError::NotImplemented(format!(
                 "F3D entity color {id} has no writable exact direct-color attribute"
@@ -459,7 +460,13 @@ fn patch_asm_geometry(
             )?;
         }
         if let Some(edit) = nurbs_surfaces.get(&id) {
-            asm_edits.patch_nurbs_surface(ctx, bytes, record, asm_nurbs_surface_edit(edit), None)?;
+            asm_edits.patch_nurbs_surface(
+                ctx,
+                bytes,
+                record,
+                asm_nurbs_surface_edit(edit),
+                None,
+            )?;
         }
         for side in 0..2 {
             let support_id = format!("f3d:brep:procedural_surface#{}:support{side}", record.index);
@@ -514,7 +521,8 @@ fn patch_asm_geometry(
         } else if matches!(record.head(), "edge" | "tedge") {
             if let Some(range) = edge_ranges.get(&id) {
                 for (index, value) in [(4usize, range[0]), (6, range[1])] {
-                    let offset = asm_edits.required_payload_field(ctx, bytes, record, index, 0x06)?;
+                    let offset =
+                        asm_edits.required_payload_field(ctx, bytes, record, index, 0x06)?;
                     AsmEditSet::patch_f64_payload(bytes, offset + 1, value)?;
                 }
             }
@@ -575,7 +583,8 @@ fn patch_asm_geometry(
                         )))
                     }
                 };
-                let offset = asm_edits.required_payload_field(ctx, bytes, record, field_index, 0x13)?;
+                let offset =
+                    asm_edits.required_payload_field(ctx, bytes, record, field_index, 0x13)?;
                 for (component, value) in [
                     point.x / LEN_TO_MM,
                     point.y / LEN_TO_MM,

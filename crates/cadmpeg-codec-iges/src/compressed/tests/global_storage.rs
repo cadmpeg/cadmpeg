@@ -26,7 +26,10 @@ fn compressed_global_stream_accounts_for_both_live_streams_and_releases_scratch(
             drop(second);
             assert_eq!(refusal.dimension, ResourceDimension::MaterializedBytes);
             assert_eq!(refusal.operation, "iges_compressed_global_digits");
-            assert_eq!((refusal.limit, refusal.used, refusal.additional), (cap, 144, 72));
+            assert_eq!(
+                (refusal.limit, refusal.used, refusal.additional),
+                (cap, 144, 72)
+            );
             assert_eq!(first.0, b"1H,,1H;");
             assert_eq!(ctx.resource_refusal(), Some(refusal));
             drop(first);

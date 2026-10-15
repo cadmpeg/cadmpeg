@@ -2,6 +2,7 @@
 //! Shared synthetic IGES byte-fixture builders for crate tests.
 #![allow(clippy::unwrap_used)]
 
+pub(crate) mod sequence_index;
 pub(crate) mod test_cards;
 pub(crate) mod test_curves_and_surfaces;
 pub(crate) mod test_drawing_and_trimming;
@@ -10,7 +11,6 @@ pub(crate) mod test_procedural_surfaces;
 pub(crate) mod test_solids_and_structure;
 pub(crate) mod test_surface_fixtures;
 pub(crate) mod test_tabulated_surfaces;
-pub(crate) mod sequence_index;
 
 /// Parses a scanned Global section with a test-owned decode session.
 pub(crate) fn parse_global(
@@ -169,4 +169,3 @@ pub(crate) fn with_policy_context<T>(
         .expect("test input is within policy limits");
     use_context(&ctx)
 }
-

@@ -171,7 +171,10 @@ fn global_summary_slots_are_scoped_and_note_text_is_retained() {
     drop(notes);
     drop(storage);
     let released = ctx
-        .reserve_scoped(materialized_peak, "test after released global summary slots")
+        .reserve_scoped(
+            materialized_peak,
+            "test after released global summary slots",
+        )
         .expect("dropping the returned vector releases its backing");
     drop(released);
     let retained = ctx
@@ -195,11 +198,11 @@ fn global_summary_slots_are_scoped_and_note_text_is_retained() {
 
 #[test]
 fn global_loss_slots_are_scoped_and_loss_text_is_retained() {
+    use crate::global::{Defect, Resolution, Value, FIELD_RECEIVER_PRODUCT, METADATA_CONSEQUENCE};
+    use crate::loss::IgesLossCode;
     use cadmpeg_core::decode::{
         u64_from_index, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension,
     };
-    use crate::global::{Defect, Resolution, Value, FIELD_RECEIVER_PRODUCT, METADATA_CONSEQUENCE};
-    use crate::loss::IgesLossCode;
 
     let code = IgesLossCode::GlobalMetadataFieldUnusable;
     let arena = DecodeArena::new();
@@ -313,10 +316,10 @@ fn global_loss_slots_are_scoped_and_loss_text_is_retained() {
 
 #[test]
 fn conditional_global_loss_slots_are_scoped_and_loss_text_is_retained() {
+    use crate::loss::IgesLossCode;
     use cadmpeg_core::decode::{
         u64_from_index, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension,
     };
-    use crate::loss::IgesLossCode;
 
     let global = v5_0_global_without_double_declarations();
     let codes = [

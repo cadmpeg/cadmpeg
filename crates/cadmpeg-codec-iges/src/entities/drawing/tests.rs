@@ -1191,9 +1191,8 @@ fn shared_drawing_property_names_do_not_repeat_text_comparisons() {
     }
     let bytes = owned_test_file(&entities);
     let setup_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (setup_ctx, _) = DecodeContext::from_root_bytes(
-        &bytes, &setup_arena, &DecodePolicy::service(),
-    ).unwrap();
+    let (setup_ctx, _) =
+        DecodeContext::from_root_bytes(&bytes, &setup_arena, &DecodePolicy::service()).unwrap();
     let (directory, global, assembly) = {
         let ctx = &setup_ctx;
         let scan = crate::card::scan_with_context(&bytes, ctx).unwrap();
@@ -1275,9 +1274,8 @@ fn assert_drawing_property_conflict_without_text_work(form: i64, first: &str, se
         },
     ]);
     let setup_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (setup_ctx, _) = DecodeContext::from_root_bytes(
-        &bytes, &setup_arena, &DecodePolicy::service(),
-    ).unwrap();
+    let (setup_ctx, _) =
+        DecodeContext::from_root_bytes(&bytes, &setup_arena, &DecodePolicy::service()).unwrap();
     let (directory, assembly) = {
         let ctx = &setup_ctx;
         let scan = crate::card::scan_with_context(&bytes, ctx).unwrap();
@@ -1358,21 +1356,29 @@ fn shared_view_associations_are_indexed_once() {
     }
     let bytes = owned_test_file(&entities);
     let setup_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (setup_ctx, _) = DecodeContext::from_root_bytes(
-        &bytes, &setup_arena, &DecodePolicy::service(),
-    ).unwrap();
+    let (setup_ctx, _) =
+        DecodeContext::from_root_bytes(&bytes, &setup_arena, &DecodePolicy::service()).unwrap();
     let (directory, global, assembly) = {
         let ctx = &setup_ctx;
         let scan = crate::card::scan_with_context(&bytes, ctx).unwrap();
         let (global, _, _global_storage) = crate::global::parse(&scan, ctx).unwrap();
-        let (directory, quarantined) = crate::directory::parse(&scan, global.global_table(), ctx).unwrap();
+        let (directory, quarantined) =
+            crate::directory::parse(&scan, global.global_table(), ctx).unwrap();
         assert!(quarantined.is_empty());
-        let assembly = crate::parameter::assemble_with_context(&scan, &directory, &[], &global, ctx).unwrap();
+        let assembly =
+            crate::parameter::assemble_with_context(&scan, &directory, &[], &global, ctx).unwrap();
         assert!(assembly.quarantined.is_empty());
         (directory, global, assembly)
     };
-    let entries = directory.iter().map(|entry| (entry.sequence, entry)).collect();
-    let records = assembly.records.iter().map(|record| (record.directory_sequence, record)).collect();
+    let entries = directory
+        .iter()
+        .map(|entry| (entry.sequence, entry))
+        .collect();
+    let records = assembly
+        .records
+        .iter()
+        .map(|record| (record.directory_sequence, record))
+        .collect();
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = DecodePolicy::service();
     // Tree lookups, node passes, and the one membership-index construction
@@ -1386,9 +1392,14 @@ fn shared_view_associations_are_indexed_once() {
     let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
     let mut ir = cadmpeg_ir::CadIr::empty();
     let outcome = super::project(
-        &mut ir, &directory, (&entries, &records),
-        &assembly.trailing_pointer_analysis, &global.length_context().unwrap(), &ctx,
-    ).unwrap();
+        &mut ir,
+        &directory,
+        (&entries, &records),
+        &assembly.trailing_pointer_analysis,
+        &global.length_context().unwrap(),
+        &ctx,
+    )
+    .unwrap();
     assert!(outcome.losses.is_empty(), "{:#?}", outcome.losses);
     assert_eq!(outcome.decoded.len(), count + 1);
     for entry in &directory {
@@ -1401,21 +1412,41 @@ fn shared_view_associations_are_indexed_once() {
 #[test]
 fn drawing_lookup_refusals_reach_decode() {
     for (bytes, operation) in [
-        (drawing_with_properties_file(), "iges drawing parameter lookup"),
-        (drawing_with_properties_file(), "iges drawing directory lookup"),
-        (drawing_with_properties_file(), "iges drawing trailing analysis lookup"),
-        (view_visibility_forms_file(), "iges view association index members"),
+        (
+            drawing_with_properties_file(),
+            "iges drawing parameter lookup",
+        ),
+        (
+            drawing_with_properties_file(),
+            "iges drawing directory lookup",
+        ),
+        (
+            drawing_with_properties_file(),
+            "iges drawing trailing analysis lookup",
+        ),
+        (
+            view_visibility_forms_file(),
+            "iges view association index members",
+        ),
     ] {
         cadmpeg_test_support::refusal::resource_limit_at(
-            ResourceDimension::WorkUnits, operation, |cap| {
+            ResourceDimension::WorkUnits,
+            operation,
+            |cap| {
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_work_units = cap;
-                IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions {
-                    policy, ..DecodeOptions::default()
-                }).map_err(|failure| match failure {
-                    cadmpeg_ir::codec::DecodeFailure::Codec(error) => error,
-                    other => panic!("unexpected decode failure: {other:?}"),
-                })
+                IgesCodec
+                    .decode(
+                        &mut Cursor::new(&bytes),
+                        &DecodeOptions {
+                            policy,
+                            ..DecodeOptions::default()
+                        },
+                    )
+                    .map_err(|failure| match failure {
+                        cadmpeg_ir::codec::DecodeFailure::Codec(error) => error,
+                        other => panic!("unexpected decode failure: {other:?}"),
+                    })
             },
         );
     }

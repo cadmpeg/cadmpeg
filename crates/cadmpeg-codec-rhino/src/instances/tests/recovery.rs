@@ -419,7 +419,8 @@ fn alternate_instance_paths_use_scratch_and_copy_only_stored_text() {
                     std::slice::from_ref(&record),
                     archive,
                     0x1000_0021,
-                ).map(drop)
+                )
+                .map(drop)
             },
         );
         let arena = DecodeArena::new();

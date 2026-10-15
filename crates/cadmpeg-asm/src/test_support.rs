@@ -94,13 +94,19 @@ pub(crate) fn with_entry_context(
                 }
                 _ => panic!("entry refusal dimension"),
             };
-            let Err(CodecError::ResourceLimit(first)) = refused else { panic!("original refusal"); };
+            let Err(CodecError::ResourceLimit(first)) = refused else {
+                panic!("original refusal");
+            };
             assert_eq!(first.dimension, dimension);
             first
         });
-        for _ in 0..64 { run(&ctx, original); }
+        for _ in 0..64 {
+            run(&ctx, original);
+        }
         match original {
-            Some(first) => assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first)),
+            Some(first) => assert!(
+                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first)
+            ),
             None => ctx.finish_session().unwrap(),
         }
     }

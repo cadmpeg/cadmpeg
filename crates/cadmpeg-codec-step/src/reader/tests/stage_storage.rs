@@ -68,8 +68,7 @@ fn product_claim_and_report_buffers_release_before_its_indices() {
                     &ctx,
                     super::super::DecodeMode::Decode(super::super::Packaging::Bare),
                 )?;
-                let geometry =
-                    crate::reader::geometry::decode(&exchange, &mut session.ir, &ctx)?;
+                let geometry = crate::reader::geometry::decode(&exchange, &mut session.ir, &ctx)?;
                 let (carrier_index, carrier_storage) = ctx
                     .with_scoped_storage("STEP carrier index scratch", || {
                         crate::reader::index::CarrierIndex::from_ir(&session.ir, &ctx)

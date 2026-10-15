@@ -124,10 +124,13 @@ fn cyclic_subtype_walk_scans_each_definition_payload_once() {
         Token::SubtypeClose,
         Token::SubtypeClose,
     ]);
-    let mut records = vec![crate::test_support::sab::record(0, "node".into(), tokens.into(), 0, 0)
-            .expect("indexed record fixture")];
+    let mut records = vec![
+        crate::test_support::sab::record(0, "node".into(), tokens.into(), 0, 0)
+            .expect("indexed record fixture"),
+    ];
     for index in 1..=count {
-        records.push(crate::test_support::sab::record(
+        records.push(
+            crate::test_support::sab::record(
                 index,
                 "ref".into(),
                 vec![
@@ -140,7 +143,8 @@ fn cyclic_subtype_walk_scans_each_definition_payload_once() {
                 0,
                 0,
             )
-            .expect("indexed record fixture"));
+            .expect("indexed record fixture"),
+        );
     }
     let table =
         SubtypeTable::from_records(&cadmpeg_test_support::service_decode_context(), &records)

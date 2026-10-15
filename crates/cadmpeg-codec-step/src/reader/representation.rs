@@ -46,8 +46,8 @@ pub(super) fn is_representation_name(name: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{item_values, parameters};
-    use crate::reader::ValueExt;
     use crate::parse::{PartialRecord, RawRecord, Value};
+    use crate::reader::ValueExt;
 
     #[test]
     fn shape_representation_with_parameters_uses_inherited_attributes() {
@@ -78,7 +78,10 @@ mod tests {
             assert_eq!(
                 item_values(ctx, &record)
                     .expect("representation items")
-                    .map(|values| values.iter().filter_map(ValueExt::reference).collect::<Vec<_>>()),
+                    .map(|values| values
+                        .iter()
+                        .filter_map(ValueExt::reference)
+                        .collect::<Vec<_>>()),
                 Some(vec![2, 3])
             );
         });

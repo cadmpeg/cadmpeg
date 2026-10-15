@@ -50,7 +50,8 @@ fn discarded_class_warnings_release_exact_scratch_with_descriptors_live() {
     assert_eq!(second.class_uuid, first.class_uuid);
     assert_eq!(first.class_data_range, second.class_data_range);
     assert!(first.class_data_range.is_empty());
-    let released = ctx.reserve_scoped(peak, "class diagnostic scratch reuse")
+    let released = ctx
+        .reserve_scoped(peak, "class diagnostic scratch reuse")
         .expect("returned descriptors retain no discarded warning backing");
     drop(released);
     assert_eq!(ctx.resource_refusal(), None);
@@ -63,15 +64,19 @@ fn assert_warning_refusal(cap: u64, operation: &'static str, used: u64, addition
     let mut policy = DecodePolicy::service();
     policy.limits.max_materialized_bytes = cap;
     let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-    let FramingError::Resource(original) = class_descriptor(
-        &ctx, &bytes, 0..bytes.len(), ArchiveVersion::V8,
-    ).unwrap_err() else { panic!("resource refusal"); };
+    let FramingError::Resource(original) =
+        class_descriptor(&ctx, &bytes, 0..bytes.len(), ArchiveVersion::V8).unwrap_err()
+    else {
+        panic!("resource refusal");
+    };
     assert_eq!(original.dimension, ResourceDimension::MaterializedBytes);
     assert_eq!(original.operation, operation);
     assert_eq!(original.used, used);
     assert_eq!(original.additional, additional);
     assert_eq!(ctx.resource_refusal(), Some(original));
-    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == original));
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == original)
+    );
 }
 
 #[test]
@@ -83,8 +88,12 @@ fn discarded_class_warning_refuses_actual_vector_backing() {
 fn discarded_class_warning_refuses_actual_message_bytes() {
     let (_, message_bytes) = wrapper_with_checksum_warning();
     let vector_bytes = diagnostic_capacity_bytes();
-    assert_warning_refusal(vector_bytes + message_bytes - 1,
-        "Rhino diagnostic message", vector_bytes, message_bytes);
+    assert_warning_refusal(
+        vector_bytes + message_bytes - 1,
+        "Rhino diagnostic message",
+        vector_bytes,
+        message_bytes,
+    );
 }
 
 #[test]
@@ -94,10 +103,17 @@ fn class_descriptor_scratch_preserves_the_original_refusal() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-    let CodecError::ResourceLimit(original) = ctx.charge_work(1, "class original refusal").unwrap_err()
-        else { panic!("original work refusal"); };
-    assert!(matches!(class_descriptor(&ctx, &bytes, 0..bytes.len(), ArchiveVersion::V8),
-        Err(FramingError::Resource(sticky)) if sticky == original));
+    let CodecError::ResourceLimit(original) =
+        ctx.charge_work(1, "class original refusal").unwrap_err()
+    else {
+        panic!("original work refusal");
+    };
+    assert!(
+        matches!(class_descriptor(&ctx, &bytes, 0..bytes.len(), ArchiveVersion::V8),
+        Err(FramingError::Resource(sticky)) if sticky == original)
+    );
     assert_eq!(ctx.resource_refusal(), Some(original));
-    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == original));
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == original)
+    );
 }

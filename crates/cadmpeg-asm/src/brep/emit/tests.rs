@@ -74,8 +74,10 @@ fn edge_continuity_copy_refuses_retained_limit() {
     tokens[3] = Token::Ref(1);
     tokens[5] = Token::Ref(2);
     tokens[10] = Token::Str("G1".into());
-    let records = [crate::test_support::sab::record(4, "edge".into(), tokens.into(), 0, 0)
-            .expect("indexed record fixture")];
+    let records = [
+        crate::test_support::sab::record(4, "edge".into(), tokens.into(), 0, 0)
+            .expect("indexed record fixture"),
+    ];
     let by_index = HashMap::from([(4, &records[0])]);
     let reach = Reachable {
         edges: HashSet::from([4]),
@@ -686,8 +688,10 @@ fn tolerant_coedge_extension_retains_the_release_band() {
             Token::Double(1.0),
         ];
         tokens.extend(suffix);
-        let records = [crate::test_support::sab::record(0, "tcoedge".into(), tokens.into(), 0, 0)
-                .expect("indexed record fixture")];
+        let records = [
+            crate::test_support::sab::record(0, "tcoedge".into(), tokens.into(), 0, 0)
+                .expect("indexed record fixture"),
+        ];
         let table = subtype_table(&records);
         let reach = Reachable {
             coedges: HashSet::from([0]),
@@ -1067,8 +1071,10 @@ fn evaluated_and_absent_vertex_slots_have_distinct_native_tail_wires() {
             Token::Double(0.07),
         ];
         tokens.extend(slot.map(Token::Double));
-        let records = [crate::test_support::sab::record(0, "tvertex".into(), tokens.into(), 0, 0)
-                .expect("indexed record fixture")];
+        let records = [
+            crate::test_support::sab::record(0, "tvertex".into(), tokens.into(), 0, 0)
+                .expect("indexed record fixture"),
+        ];
         let by_index = records
             .iter()
             .map(|record| {

@@ -761,9 +761,12 @@ fn missing_layer_parent_diagnostic_refuses_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root admitted");
-    let refusal =
-        super::super::report_layer_parent_references(&ctx, &metadata.layers, &mut Diagnostics::new())
-            .expect_err("one missing-parent warning exceeds zero collection items");
+    let refusal = super::super::report_layer_parent_references(
+        &ctx,
+        &metadata.layers,
+        &mut Diagnostics::new(),
+    )
+    .expect_err("one missing-parent warning exceeds zero collection items");
     assert!(matches!(
         refusal,
         cadmpeg_core::CodecError::ResourceLimit(limit)

@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::parameter::{ParameterRecord, Token, TokenValue};
-use cadmpeg_core::decode::{u64_from_index, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::decode::{
+    u64_from_index, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension,
+};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::Point3;
 use std::collections::BTreeMap;
@@ -14,10 +16,18 @@ fn brep_successful_definition_transfers_bytes_without_a_guard_registry() {
     let directory = [entry];
     let values = [502, 1, 0, 0, 0];
     let record = ParameterRecord::from_test_tokens(
-        1, 1..2, Vec::new(), values.len(),
-        values.into_iter().map(|value| Token {
-            value: TokenValue::Integer(value), span: 0..0,
-        }).collect(), Vec::new(),
+        1,
+        1..2,
+        Vec::new(),
+        values.len(),
+        values
+            .into_iter()
+            .map(|value| Token {
+                value: TokenValue::Integer(value),
+                span: 0..0,
+            })
+            .collect(),
+        Vec::new(),
     );
     let entries = BTreeMap::from([(1, &directory[0])]);
     let records = BTreeMap::from([(1, &record)]);
@@ -31,7 +41,9 @@ fn brep_successful_definition_transfers_bytes_without_a_guard_registry() {
     let point_bytes = size_of::<Point3>();
     let node_bytes = 11 * (size_of::<u32>() + size_of::<Vec<Point3>>())
         + 16 * size_of::<usize>()
-        + 2 * align_of::<u32>().max(align_of::<Vec<Point3>>()).max(align_of::<usize>());
+        + 2 * align_of::<u32>()
+            .max(align_of::<Vec<Point3>>())
+            .max(align_of::<usize>());
     let peak = u64_from_index(point_bytes + node_bytes);
     for cap in [peak - 1, peak] {
         let arena = DecodeArena::new();
@@ -43,7 +55,12 @@ fn brep_successful_definition_transfers_bytes_without_a_guard_registry() {
         let mut ir = cadmpeg_ir::CadIr::empty();
         let mut sequences = super::super::super::geometry::SourceSequences::default();
         let result = super::super::project(
-            &mut ir, &directory, (&entries, &records), &global, &ctx, &mut sequences,
+            &mut ir,
+            &directory,
+            (&entries, &records),
+            &global,
+            &ctx,
+            &mut sequences,
         );
         if cap < peak {
             let first = match result.as_ref() {
@@ -56,7 +73,9 @@ fn brep_successful_definition_transfers_bytes_without_a_guard_registry() {
             assert_eq!(first.limit, cap);
             assert_eq!(first.used, u64_from_index(point_bytes));
             assert_eq!(first.additional, u64_from_index(node_bytes));
-            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+            assert!(
+                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first)
+            );
         } else {
             let outcome = result.unwrap();
             assert!(outcome.decoded.is_empty());
@@ -64,7 +83,9 @@ fn brep_successful_definition_transfers_bytes_without_a_guard_registry() {
             assert!(ir.model.points.is_empty());
             drop(outcome);
             // All definition scratch is dead after project returns.
-            let storage = ctx.reserve_scoped(peak, "test released BRep definitions").unwrap();
+            let storage = ctx
+                .reserve_scoped(peak, "test released BRep definitions")
+                .unwrap();
             drop(storage);
             ctx.finish_session().unwrap();
         }
