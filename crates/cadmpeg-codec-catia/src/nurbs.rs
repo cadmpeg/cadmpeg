@@ -301,12 +301,6 @@ pub(crate) fn reverse_curve_geometry(
     }
 }
 
-/// Answer whether adjacent knots strictly increase. A repeated knot or a NaN
-/// pair fails.
-pub(crate) fn strictly_increasing(knots: &[f64]) -> bool {
-    knots.windows(2).all(|pair| pair[0] < pair[1])
-}
-
 /// Reflect knots without summing the interval endpoints. Subtracting from
 /// the nearer endpoint preserves small spans at large parameter offsets.
 fn reverse_knots(knots: &[f64], [lower, upper]: [f64; 2]) -> Vec<f64> {
