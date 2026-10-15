@@ -61,16 +61,8 @@ fn nurbs_curve(
     periodic: bool,
 ) -> CurveGeometry {
     CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-        NurbsCurve::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
-            degree,
-            knots,
-            control_points,
-            weights,
-            periodic,
-        )
-        .expect("fixture constructor admission")
-        .expect("cardinality-valid test curve"),
+        NurbsCurve::from_lanes(degree, knots, control_points, weights, periodic)
+            .expect("cardinality-valid test curve"),
     ))
 }
 
@@ -684,7 +676,6 @@ fn analytic_nurbs_endpoints_of_a_degree_sixteen_spline() {
     let mut knots = vec![0.0; 17];
     knots.extend(vec![1.0; 17]);
     let nurbs = NurbsCurve::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         16,
         knots,
         (0..17)
@@ -693,7 +684,6 @@ fn analytic_nurbs_endpoints_of_a_degree_sixteen_spline() {
         None,
         false,
     )
-    .expect("fixture constructor admission")
     .expect("degree-16 spline");
     let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs));
     assert_eq!(

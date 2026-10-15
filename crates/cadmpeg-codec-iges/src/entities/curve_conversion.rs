@@ -1,20 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact conversions from bounded analytic curves to NURBS carriers.
 
-use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsError, NurbsPoles3, WeightedPole3};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::{NonZeroReal, PositiveLength};
-
-#[derive(Debug, thiserror::Error)]
-pub(crate) enum CurveConversionError {
-    #[error(transparent)]
-    Carrier(#[from] NurbsError),
-    #[error(transparent)]
-    Resource(#[from] CodecError),
-}
 
 const EPS_CURVE_CONVERSION_EXACT_GEOMETRY: f64 = 1.0e-12;
 
@@ -50,9 +40,8 @@ pub(crate) fn circular_arc_nurbs(
     reference: Vector3,
     radius: PositiveLength,
     interval: [f64; 2],
-    ctx: &DecodeContext<'_>,
-) -> Result<Option<NurbsCurve>, CurveConversionError> {
-    elliptical_arc_nurbs(center, axis, reference, radius, radius, interval, ctx)
+) -> Result<Option<NurbsCurve>, NurbsError> {
+    elliptical_arc_nurbs(center, axis, reference, radius, radius, interval)
 }
 
 pub(crate) fn elliptical_arc_nurbs(
@@ -62,8 +51,7 @@ pub(crate) fn elliptical_arc_nurbs(
     major_radius: PositiveLength,
     minor_radius: PositiveLength,
     interval: [f64; 2],
-    ctx: &DecodeContext<'_>,
-) -> Result<Option<NurbsCurve>, CurveConversionError> {
+) -> Result<Option<NurbsCurve>, NurbsError> {
     let delta = interval[1] - interval[0];
     if !delta.is_finite() || delta <= 0.0 || delta > std::f64::consts::TAU + ANGULAR_TOLERANCE {
         return Ok(None);
@@ -139,12 +127,11 @@ pub(crate) fn elliptical_arc_nurbs(
         }
     }
     Ok(Some(NurbsCurve::new(
-        ctx,
         2,
         knots,
         NurbsPoles3::Rational { points: poles },
         false,
-    )??))
+    )?))
 }
 
 fn finite_arc_point(point: Point3) -> Result<FinitePoint3, NurbsError> {
@@ -158,8 +145,7 @@ pub(crate) fn parabolic_arc_nurbs(
     major_direction: Vector3,
     focal_distance: PositiveLength,
     interval: [f64; 2],
-    ctx: &DecodeContext<'_>,
-) -> Result<Option<NurbsCurve>, CurveConversionError> {
+) -> Result<Option<NurbsCurve>, NurbsError> {
     let [start, end] = interval;
     let delta = end - start;
     if !start.is_finite() || !end.is_finite() || start >= end {
@@ -221,12 +207,11 @@ pub(crate) fn parabolic_arc_nurbs(
         points.push(finite_arc_point(point)?);
     }
     Ok(Some(NurbsCurve::new(
-        ctx,
         2,
         knots,
         NurbsPoles3::Polynomial { points },
         false,
-    )??))
+    )?))
 }
 
 #[cfg(test)]

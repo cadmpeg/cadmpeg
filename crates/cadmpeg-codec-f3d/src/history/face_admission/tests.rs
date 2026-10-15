@@ -5,15 +5,14 @@ use cadmpeg_ir::features::{DistinctMembers, FaceSelection, FeatureId, FeatureInp
 use cadmpeg_ir::ids::FaceId;
 
 fn input(feature: &FeatureId, slot: i64) -> FeatureInputTopology {
-    let ctx = cadmpeg_test_support::service_decode_context();
     FeatureInputTopology {
         id: crate::ids::history_input_state_id_charged(feature, 4).unwrap(),
         input_of: feature.clone(),
         bodies: Default::default(),
-        faces: DistinctMembers::try_from(
-            vec![crate::ids::history_input_face_id_charged(feature, 4, slot).unwrap()],
-            &ctx,
+        faces: DistinctMembers::try_from(vec![crate::ids::history_input_face_id_charged(
+            feature, 4, slot,
         )
+        .unwrap()])
         .unwrap(),
         edges: Default::default(),
         vertices: Default::default(),
@@ -21,14 +20,11 @@ fn input(feature: &FeatureId, slot: i64) -> FeatureInputTopology {
     }
 }
 fn historical(input: &FeatureInputTopology, slot: i64) -> FaceSelection {
-    let ctx = cadmpeg_test_support::service_decode_context();
     FaceSelection::historical(
         input.id.clone(),
         vec![crate::ids::history_input_face_id_charged(&input.input_of, 4, slot).unwrap()],
         "f3d:design:face-operand#1".into(),
-        &ctx,
     )
-    .unwrap()
     .unwrap()
 }
 fn resolved(face: &str) -> FaceSelection {
@@ -85,28 +81,21 @@ fn historical_faces_require_one_emitted_feature_state_and_every_selected_member(
 
 #[test]
 fn hole_uses_emitted_historical_topology_for_a_face_absent_from_current_model() {
-    let ctx = cadmpeg_test_support::service_decode_context();
     let feature = FeatureId::mint("f3d:model:feature#hole").unwrap();
     let topologies = [input(&feature, 2)];
     let mut inputs = FaceInputs::new(&topologies, &[]);
     let mut selection = resolved("f3d:brep:entity#2");
     let mut losses = Vec::new();
-    inputs
-        .hole(&ctx, &feature, &mut selection, &mut losses)
-        .unwrap();
+    inputs.hole(&feature, &mut selection, &mut losses).unwrap();
     assert_eq!(selection, historical(&topologies[0], 2));
     assert!(losses.is_empty());
     let mut qualified = resolved("f3d:brep/body/brep:entity#2");
-    inputs
-        .hole(&ctx, &feature, &mut qualified, &mut losses)
-        .unwrap();
+    inputs.hole(&feature, &mut qualified, &mut losses).unwrap();
     assert_eq!(qualified, historical(&topologies[0], 2));
     assert!(losses.is_empty());
     for face in ["f3d:brep:entity#3", "f3d:brep/foreign/brep:entity#2"] {
         let mut selection = resolved(face);
-        inputs
-            .hole(&ctx, &feature, &mut selection, &mut losses)
-            .unwrap();
+        inputs.hole(&feature, &mut selection, &mut losses).unwrap();
         assert_eq!(
             selection,
             FaceSelection::Native("f3d:design:face-operand#1".into())
@@ -117,7 +106,6 @@ fn hole_uses_emitted_historical_topology_for_a_face_absent_from_current_model() 
 
 #[test]
 fn hole_keeps_a_surviving_current_face_and_refuses_an_unemitted_history() {
-    let ctx = cadmpeg_test_support::service_decode_context();
     let feature = FeatureId::mint("f3d:model:feature#hole").unwrap();
     let topologies = [input(&feature, 2)];
     let face = FaceId::mint("f3d:brep:entity#2").unwrap();
@@ -135,32 +123,19 @@ fn hole_keeps_a_surviving_current_face_and_refuses_an_unemitted_history() {
     let original = resolved(face.as_str());
     let mut selection = original.clone();
     let mut losses = Vec::new();
-    inputs
-        .hole(&ctx, &feature, &mut selection, &mut losses)
-        .unwrap();
+    inputs.hole(&feature, &mut selection, &mut losses).unwrap();
     assert_eq!(selection, original);
     assert!(losses.is_empty());
     let mut inputs = FaceInputs::new(&[], &current);
-    inputs
-        .hole(&ctx, &feature, &mut selection, &mut losses)
-        .unwrap();
+    inputs.hole(&feature, &mut selection, &mut losses).unwrap();
     assert_eq!(selection, original);
     assert!(losses.is_empty());
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (limited, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut inputs = FaceInputs::new(&topologies, &current);
-    inputs
-        .hole(&limited, &feature, &mut selection, &mut losses)
-        .unwrap();
+    inputs.hole(&feature, &mut selection, &mut losses).unwrap();
     assert_eq!(selection, original);
     assert!(losses.is_empty());
-    limited.finish_session().unwrap();
     let mut inputs = FaceInputs::new(&[], &[]);
-    inputs
-        .hole(&ctx, &feature, &mut selection, &mut losses)
-        .unwrap();
+    inputs.hole(&feature, &mut selection, &mut losses).unwrap();
     assert!(matches!(selection, FaceSelection::Native(_)));
     assert_eq!(losses.len(), 1);
 }
@@ -172,7 +147,6 @@ fn feature_admission_keeps_extrude_face_operands_native_without_an_input_topolog
         FeatureDefinition, FeatureEvaluation, FeatureOperation, LinearTermination,
         PlanarProfileRef, ProfileRef,
     };
-    let ctx = cadmpeg_test_support::service_decode_context();
     let id = FeatureId::mint("f3d:model:feature#extrude").unwrap();
     let topology = input(&id, 2);
     let mut features = [Feature {
@@ -196,9 +170,7 @@ fn feature_admission_keeps_extrude_face_operands_native_without_an_input_topolog
                                 .unwrap(),
                         ],
                         vec!["f3d:design:profile#1".into(), "f3d:design:profile#2".into()],
-                        &ctx,
                     )
-                    .unwrap()
                     .unwrap(),
                 ),
                 direction: ExtrudeDirection::default(),
@@ -227,7 +199,6 @@ fn feature_admission_keeps_extrude_face_operands_native_without_an_input_topolog
     let mut admitted = features.clone();
     let mut admitted_losses = Vec::new();
     super::admit_feature_input_faces(
-        &ctx,
         &mut admitted,
         std::slice::from_ref(&topology),
         &[],
@@ -240,7 +211,7 @@ fn feature_admission_keeps_extrude_face_operands_native_without_an_input_topolog
     );
     assert!(admitted_losses.is_empty());
     let mut losses = Vec::new();
-    super::admit_feature_input_faces(&ctx, &mut features, &[], &[], &mut losses).unwrap();
+    super::admit_feature_input_faces(&mut features, &[], &[], &mut losses).unwrap();
     assert!(
         matches!(features[0].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Extrude {
         profile: ProfileRef::Planar(PlanarProfileRef::Native(scope)),
@@ -250,13 +221,8 @@ fn feature_admission_keeps_extrude_face_operands_native_without_an_input_topolog
     }) if scope == "f3d:design:scope#extrude")
     );
     assert_eq!(losses.len(), 3);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (limited, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut untouched_losses = Vec::new();
     super::admit_feature_input_faces(
-        &limited,
         &mut features,
         std::slice::from_ref(&topology),
         &[],
@@ -264,13 +230,11 @@ fn feature_admission_keeps_extrude_face_operands_native_without_an_input_topolog
     )
     .unwrap();
     assert!(untouched_losses.is_empty());
-    limited.finish_session().unwrap();
 }
 
 #[test]
 fn feature_gate_changes_hole_namespace() {
     use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureEvaluation, FeatureOperation};
-    let ctx = cadmpeg_test_support::service_decode_context();
     let id = FeatureId::mint("f3d:model:feature#hole").unwrap();
     let topology = input(&id, 2);
     let original = Feature {
@@ -309,7 +273,6 @@ fn feature_gate_changes_hole_namespace() {
     let mut features = [original.clone()];
     let mut losses = Vec::new();
     super::admit_feature_input_faces(
-        &ctx,
         &mut features,
         std::slice::from_ref(&topology),
         &[],
@@ -328,8 +291,6 @@ fn feature_gate_changes_hole_namespace() {
 
 #[test]
 fn repeated_membership_queries_reuse_only_the_topologies_they_need() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    let source = cadmpeg_test_support::service_decode_context();
     let first = FeatureId::mint("f3d:model:feature#first").unwrap();
     let second = FeatureId::mint("f3d:model:feature#second").unwrap();
     let unused = FeatureId::mint("f3d:model:feature#unused").unwrap();
@@ -337,14 +298,10 @@ fn repeated_membership_queries_reuse_only_the_topologies_they_need() {
     topologies[2].faces = DistinctMembers::try_from(
         (0..128)
             .map(|slot| crate::ids::history_input_face_id_charged(&unused, 4, slot).unwrap())
-            .collect(),
-        &source,
+            .collect::<Vec<_>>(),
     )
     .unwrap();
     let original = [historical(&topologies[0], 2), historical(&topologies[1], 3)];
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::service();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut inputs = FaceInputs::new(&topologies, &[]);
     let mut losses = Vec::new();
     for _ in 0..1_000 {
@@ -355,5 +312,4 @@ fn repeated_membership_queries_reuse_only_the_topologies_they_need() {
         }
     }
     assert!(losses.is_empty());
-    ctx.finish_session().unwrap();
 }

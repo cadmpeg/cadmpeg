@@ -96,9 +96,7 @@ fn transition_profile_prefers_consistent_side_loops_and_combines_cap_boundaries(
         None
     );
     let region = crate::design::profile_select::ResolvedProfileSelection::Regions(vec![
-        SketchProfileRegion::loops(0, vec![1], &cadmpeg_test_support::service_decode_context())
-            .expect("fixture loop-region admission")
-            .unwrap(),
+        SketchProfileRegion::loops(0, vec![1]).unwrap(),
     ]);
     assert_eq!(
         transition_selection(vec![
@@ -127,13 +125,7 @@ fn transition_profile_prefers_consistent_side_loops_and_combines_cap_boundaries(
         transition_selection(vec![Some(region)]),
         Some(
             crate::design::profile_select::ResolvedProfileSelection::Regions(vec![
-                SketchProfileRegion::loops(
-                    0,
-                    vec![1],
-                    &cadmpeg_test_support::service_decode_context()
-                )
-                .expect("fixture loop-region admission")
-                .unwrap(),
+                SketchProfileRegion::loops(0, vec![1],).unwrap(),
             ])
         )
     );

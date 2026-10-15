@@ -112,35 +112,31 @@ fn unique_offset_data_store_rejects_a_second_matching_section() {
 
 #[test]
 fn nx_feature_source_content_orders_payload_text() {
-    crate::test_support::with_decode_context(|ctx| {
-        let text = FeaturePayloadString {
-            id: "text".into(),
-            operation_record: "record".into(),
-            ordinal: 0,
-            value: crate::payload_text::PayloadText::new("Through".to_owned()).unwrap(),
-            source_offset: 30,
-        };
-        let later = FeaturePayloadString {
-            id: "later".into(),
-            operation_record: "record".into(),
-            ordinal: 1,
-            value: crate::payload_text::PayloadText::new("Later".to_owned()).unwrap(),
-            source_offset: 40,
-        };
-        let content = crate::native::attach::feature_projection::feature_source_content(
-            ctx,
-            &[&later, &text],
-        )
-        .unwrap();
-        assert!(matches!(
-            &content[0],
-            cadmpeg_ir::features::FeatureSourceContent::Text(value) if value == "Through"
-        ));
-        assert!(matches!(
-            &content[1],
-            cadmpeg_ir::features::FeatureSourceContent::Text(value) if value == "Later"
-        ));
-    });
+    let text = FeaturePayloadString {
+        id: "text".into(),
+        operation_record: "record".into(),
+        ordinal: 0,
+        value: crate::payload_text::PayloadText::new("Through".to_owned()).unwrap(),
+        source_offset: 30,
+    };
+    let later = FeaturePayloadString {
+        id: "later".into(),
+        operation_record: "record".into(),
+        ordinal: 1,
+        value: crate::payload_text::PayloadText::new("Later".to_owned()).unwrap(),
+        source_offset: 40,
+    };
+    let content =
+        crate::native::attach::feature_projection::feature_source_content(&[&later, &text])
+            .unwrap();
+    assert!(matches!(
+        &content[0],
+        cadmpeg_ir::features::FeatureSourceContent::Text(value) if value == "Through"
+    ));
+    assert!(matches!(
+        &content[1],
+        cadmpeg_ir::features::FeatureSourceContent::Text(value) if value == "Later"
+    ));
 }
 
 #[test]
@@ -148,56 +144,49 @@ fn nx_boolean_projection_rejects_target_tool_alias_overlap() {
     use cadmpeg_ir::features::{BodySelection, BooleanKind, FeatureDefinition, FeatureOperation};
     use std::collections::BTreeMap;
 
-    crate::test_support::with_decode_context(|ctx| {
-        let operation = FeatureBooleanOperation {
-            id: "boolean#0".to_string(),
-            operation_label: "operation#0".to_string(),
-            kind: FeatureBooleanKind::Subtract,
-            target: crate::test_support::native_references::boolean_reference(10, 0),
-            tools: vec![crate::test_support::native_references::boolean_reference(
-                20, 1,
-            )],
-            source_offset: 0,
-        };
-        let roots = BTreeMap::from([(10, 10), (20, 10)]);
+    let operation = FeatureBooleanOperation {
+        id: "boolean#0".to_string(),
+        operation_label: "operation#0".to_string(),
+        kind: FeatureBooleanKind::Subtract,
+        target: crate::test_support::native_references::boolean_reference(10, 0),
+        tools: vec![crate::test_support::native_references::boolean_reference(
+            20, 1,
+        )],
+        source_offset: 0,
+    };
+    let roots = BTreeMap::from([(10, 10), (20, 10)]);
 
-        assert_eq!(
-            crate::native::attach::boolean_feature_definition(
-                ctx,
-                &operation,
-                &roots,
-                &crate::native::segments::BooleanOffsetStoreResolution::None,
-                &BTreeMap::new(),
-            )
-            .unwrap(),
-            FeatureDefinition::Operation(FeatureOperation::Combine {
-                operands: cadmpeg_ir::features::CombineOperands::new(
-                    BodySelection::Native("nx:om-object-index#10".to_string()),
-                    BodySelection::Native("nx:om-object-indices#20".to_string()),
-                    &cadmpeg_test_support::service_decode_context(),
-                )
-                .expect("operand admission")
-                .unwrap(),
-
-                op: BooleanKind::Cut,
-                keep_tools: false,
-            })
-        );
-
-        let missing_tool = BTreeMap::from([(10, 10)]);
-        assert!(matches!(
+    assert_eq!(
         crate::native::attach::boolean_feature_definition(
-            ctx,
             &operation,
-            &missing_tool,
+            &roots,
             &crate::native::segments::BooleanOffsetStoreResolution::None,
             &BTreeMap::new(),
-        ).unwrap(), FeatureDefinition::Operation(FeatureOperation::Combine {
-            operands,
+        )
+        .unwrap(),
+        FeatureDefinition::Operation(FeatureOperation::Combine {
+            operands: cadmpeg_ir::features::CombineOperands::new(
+                BodySelection::Native("nx:om-object-index#10".to_string()),
+                BodySelection::Native("nx:om-object-indices#20".to_string()),
+            )
+            .unwrap(),
 
-            ..
-        }) if matches!((operands.target(), operands.tools(),), (BodySelection::Native(target), BodySelection::Native(tools),) if target == "nx:om-object-index#10" && tools == "nx:om-object-indices#20")));
-    });
+            op: BooleanKind::Cut,
+            keep_tools: false,
+        })
+    );
+
+    let missing_tool = BTreeMap::from([(10, 10)]);
+    assert!(matches!(
+    crate::native::attach::boolean_feature_definition(&operation,
+        &missing_tool,
+        &crate::native::segments::BooleanOffsetStoreResolution::None,
+        &BTreeMap::new(),
+    ).unwrap(), FeatureDefinition::Operation(FeatureOperation::Combine {
+        operands,
+
+        ..
+    }) if matches!((operands.target(), operands.tools(),), (BodySelection::Native(target), BodySelection::Native(tools),) if target == "nx:om-object-index#10" && tools == "nx:om-object-indices#20")));
 }
 
 #[test]

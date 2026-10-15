@@ -7,7 +7,7 @@
 
 #[cfg(test)]
 use crate::wire::records::ConsolidatedPcurve;
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::analytic::ConeSurface;
@@ -2168,33 +2168,31 @@ fn parse_b2_spatial_circle(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Sp
 /// so the control-point and weight cardinalities are both `degree + 1`. The two
 /// knot limits occur twice and the second pair must reproduce the first pair.
 #[cfg(test)]
-fn b2_nurbs_curves(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Vec<B2NurbsCurve>, CodecError> {
+fn b2_nurbs_curves(data: &[u8]) -> Vec<B2NurbsCurve> {
     let records = consolidated_records(data);
-    b2_nurbs_curves_from_records(ctx, data, &records, &mut crate::nurbs::LaneRefusals::new())
+    b2_nurbs_curves_from_records(data, &records, &mut crate::nurbs::LaneRefusals::new())
 }
 
 pub(in crate::families) fn b2_nurbs_curves_from_records(
-    ctx: &DecodeContext<'_>,
     data: &[u8],
     records: &[ConsolidatedRecord],
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> Result<Vec<B2NurbsCurve>, CodecError> {
+) -> Vec<B2NurbsCurve> {
     let mut curves = Vec::new();
     for frame in family_frames_from_records(records, ConsolidatedFamily::B, 0x16) {
-        if let Some(curve) = parse_b2_nurbs_curve(ctx, data, frame, refusal)? {
+        if let Some(curve) = parse_b2_nurbs_curve(data, frame, refusal) {
             curves.push(curve);
         }
     }
-    Ok(curves)
+    curves
 }
 
 fn parse_b2_nurbs_curve(
-    ctx: &DecodeContext<'_>,
     data: &[u8],
     frame: ConsolidatedFrame,
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> Result<Option<B2NurbsCurve>, CodecError> {
-    let Some((degree, control_count, knot_start, knot_end, point_start, weight_start)) = (|| {
+) -> Option<B2NurbsCurve> {
+    let (degree, control_count, knot_start, knot_end, point_start, weight_start) = (|| {
         let mut at = frame.payload;
         let degree = compact_int(data, &mut at)?;
         let control_count = usize::try_from(degree.checked_add(1)?).ok()?;
@@ -2245,33 +2243,26 @@ fn parse_b2_nurbs_curve(
             point_start,
             weight_start,
         ))
-    })() else {
-        return Ok(None);
-    };
+    })()?;
     let mut control_points = Vec::new();
 
     for index in 0..control_count {
-        let Some(point) = f64_point(data, point_start + index * 24) else {
-            return Ok(None);
-        };
+        let point = f64_point(data, point_start + index * 24)?;
         control_points.push(point);
     }
     let mut weights = Vec::new();
 
     for index in 0..control_count {
-        let Some(weight) = f64_le(data, weight_start + index * 8)
-            .and_then(|weight| PositiveReal::new(weight.get()))
-        else {
-            return Ok(None);
-        };
+        let weight = f64_le(data, weight_start + index * 8)
+            .and_then(|weight| PositiveReal::new(weight.get()))?;
         weights.push(NonZeroReal::from(weight));
     }
     let mut knots = Vec::new();
 
     knots.extend(std::iter::repeat_with(|| knot_start).take(control_count));
     knots.extend(std::iter::repeat_with(|| knot_end).take(control_count));
-    Ok(crate::nurbs::note_refusal(
-        NurbsCurve::from_checked_lanes(ctx, degree, knots, control_points, Some(weights), false)?,
+    crate::nurbs::note_refusal(
+        NurbsCurve::from_checked_lanes(degree, knots, control_points, Some(weights), false),
         refusal,
         format_args!("b2 NURBS curve record at byte {}", frame.pos),
     )
@@ -2279,7 +2270,7 @@ fn parse_b2_nurbs_curve(
         pos: frame.pos,
         header_token: frame.header_token,
         geometry,
-    }))
+    })
 }
 
 /// Analytic cylinder support stored in a `b2 03 28` record.

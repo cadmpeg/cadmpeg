@@ -223,7 +223,6 @@ fn optional_localizer<T>(
 }
 
 fn localizer(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     reader: &mut BoundedReader<'_>,
     scale: MillimeterScale,
@@ -244,10 +243,10 @@ fn localizer(
     let offset = value.position();
     let interval = scale_interval(interval(&mut value)?.0.get(), scale, offset)?;
     let curve = optional_localizer(data, &mut value, archive, "curve", |child| {
-        crate::surfaces::read_nurbs_curve(ctx, child, scale)
+        crate::surfaces::read_nurbs_curve(child, scale)
     })?;
     let surface = optional_localizer(data, &mut value, archive, "surface", |child| {
-        crate::surfaces::read_nurbs_surface(ctx, child, scale)
+        crate::surfaces::read_nurbs_surface(child, scale)
     })?;
     value.skip_remaining()?;
     reader.skip(next - reader.position())?;
@@ -347,18 +346,18 @@ pub(crate) fn decode(
     let control = match outer.i32()? {
         1 => Control::Curve {
             start: control_child(data, &mut outer, archive, "morph start control", |reader| {
-                crate::surfaces::read_nurbs_curve(expand.ctx(), reader, scale)
+                crate::surfaces::read_nurbs_curve(reader, scale)
             })?,
             end: control_child(data, &mut outer, archive, "morph end control", |reader| {
-                crate::surfaces::read_nurbs_curve(expand.ctx(), reader, scale)
+                crate::surfaces::read_nurbs_curve(reader, scale)
             })?,
         },
         2 => Control::Surface {
             start: control_child(data, &mut outer, archive, "morph start control", |reader| {
-                crate::surfaces::read_nurbs_surface(expand.ctx(), reader, scale)
+                crate::surfaces::read_nurbs_surface(reader, scale)
             })?,
             end: control_child(data, &mut outer, archive, "morph end control", |reader| {
-                crate::surfaces::read_nurbs_surface(expand.ctx(), reader, scale)
+                crate::surfaces::read_nurbs_surface(reader, scale)
             })?,
         },
         3 => Control::Cage {
@@ -382,7 +381,7 @@ pub(crate) fn decode(
     };
     let captive_ids = captive_ids(data, &mut outer, archive)?;
 
-    let localizers = localizers(expand.ctx(), data, &mut outer, scale, archive)?;
+    let localizers = localizers(data, &mut outer, scale, archive)?;
     let (tolerance, quick_preview, preserve_structure) = if minor >= 1 {
         let tolerance = scaled_coordinate(outer.f64()?, scale)
             .and_then(NonNegativeReal::from_finite)
@@ -406,7 +405,6 @@ pub(crate) fn decode(
 }
 
 fn localizers(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     outer: &mut BoundedReader<'_>,
     scale: MillimeterScale,
@@ -428,7 +426,7 @@ fn localizers(
     let localizer_count = count(&mut list, 12, MAX_LOCALIZERS)?;
     let mut localizers = Vec::new();
     for _ in 0..localizer_count {
-        localizers.push(localizer(ctx, data, &mut list, scale, archive)?);
+        localizers.push(localizer(data, &mut list, scale, archive)?);
     }
     list.skip_remaining()?;
     outer.skip(list_next - outer.position())?;
@@ -937,7 +935,6 @@ mod tests {
     #[test]
     fn morph_projection_records_start_degree() {
         let curve = super::NurbsCurve::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![
@@ -947,7 +944,6 @@ mod tests {
             None,
             false,
         )
-        .expect("fixture constructor admission")
         .expect("valid test curve");
         let morph = super::Morph {
             source_range: 0..1,
@@ -1069,13 +1065,7 @@ mod tests {
             payload.extend(anonymous(1, 0, &surface_payload));
             let bytes = anonymous(1, 0, &payload);
             let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("localizer bounds");
-            let arena = cadmpeg_core::decode::DecodeArena::new();
-            let policy = cadmpeg_core::decode::DecodePolicy::service();
-            let (ctx, _) =
-                cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-                    .expect("localizer fixture fits service profile");
             let value = localizer(
-                &ctx,
                 &bytes,
                 &mut reader,
                 MillimeterScale::IDENTITY,

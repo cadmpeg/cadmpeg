@@ -791,9 +791,7 @@ fn cacheless_constant_rolling_ball_uses_its_spine_as_section_center() {
                 .expect("nonempty polyline fixture"),
             },
             0.0,
-            &cadmpeg_test_support::service_decode_context(),
         )
-        .expect("polyline construction admission")
         .unwrap(),
     ));
     let index = crate::index::ModelIndex::build(&ir);
@@ -1167,7 +1165,6 @@ fn steep_plane_support() -> SurfaceGeometry {
     let ramp_end = f64::from_bits(3.0_f64.to_bits() + 1);
     SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
         crate::geometry::nurbs::NurbsSurface::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             crate::geometry::nurbs::NurbsSurfaceAxis::new(
                 1,
                 vec![0.0, 0.0, 3.0, ramp_end, ramp_end],
@@ -1182,7 +1179,6 @@ fn steep_plane_support() -> SurfaceGeometry {
             ),
             false,
         )
-        .expect("fixture constructor admission")
         .expect("steep plane fixture"),
     ))
 }

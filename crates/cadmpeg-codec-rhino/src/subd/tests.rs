@@ -6,9 +6,8 @@ use cadmpeg_ir::subd;
 use cadmpeg_test_support::wire;
 
 use super::{
-    decode as decode_with_ctx, decode_mesh_proxy as decode_mesh_proxy_with_ctx, read_symmetry,
-    DecodedSubd, MeshProxyFingerprint, SubdEnumDiagnostic, SubdError, ANONYMOUS,
-    EMPTY_CONTENT_SHA1, SUBD_MESH_PROXY_USERDATA,
+    decode, decode_mesh_proxy, read_symmetry, DecodedSubd, MeshProxyFingerprint,
+    SubdEnumDiagnostic, SubdError, ANONYMOUS, EMPTY_CONTENT_SHA1, SUBD_MESH_PROXY_USERDATA,
 };
 use crate::chunks::{ArchiveVersion, BoundedReader, FramingError};
 use crate::loss::Diagnostics;
@@ -69,41 +68,6 @@ impl Default for Fixture {
             symmetry_coordinate_system: 0,
         }
     }
-}
-
-fn decode(
-    data: &[u8],
-    range: Range<usize>,
-    archive: ArchiveVersion,
-    scale: MillimeterScale,
-    id: cadmpeg_ir::ids::SubdId,
-) -> Result<Option<DecodedSubd>, SubdError> {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        data,
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )
-    .expect("service decode context");
-    decode_with_ctx(&ctx, data, range, archive, scale, id)
-}
-
-fn decode_mesh_proxy(
-    data: &[u8],
-    extra: &ClassUserdata,
-    archive: ArchiveVersion,
-    scale: MillimeterScale,
-    id: cadmpeg_ir::ids::SubdId,
-    fingerprint: MeshProxyFingerprint,
-) -> Result<Option<DecodedSubd>, SubdError> {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        data,
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )
-    .expect("service decode context");
-    decode_mesh_proxy_with_ctx(&ctx, data, extra, archive, scale, id, fingerprint)
 }
 
 fn anonymous(body: &[u8]) -> Vec<u8> {

@@ -217,7 +217,6 @@ pub(super) fn resolved_direct_face_selection(
 /// current-face slot. The caller must still admit the operand's exact recipe
 /// form; this helper only applies the unique historical-face proof.
 pub(super) fn resolved_historical_face_operand(
-    ctx: &DecodeContext<'_>,
     scope: &DesignParameterScope,
     operand: &DesignFaceOperand,
 ) -> Result<Option<cadmpeg_ir::features::FaceSelection>, CodecError> {
@@ -228,14 +227,13 @@ pub(super) fn resolved_historical_face_operand(
         return Ok(None);
     };
     let native = operand.id.clone();
-    historical_face_selection_with_native(ctx, scope, previous_state_id, vec![face_slot], native)
+    historical_face_selection_with_native(scope, previous_state_id, vec![face_slot], native)
 }
 
 /// Resolve the complete input-state body boundaries selected by a body-recipe
 /// group. Persistent-reference candidate faces identify each body; they do
 /// not define a partial target boundary.
 pub(super) fn resolved_body_recipe_selection(
-    ctx: &DecodeContext<'_>,
     scope: &DesignParameterScope,
     group: &DesignConstructionOperandGroup,
     operands: &[DesignBodyRecipeOperand],
@@ -300,14 +298,13 @@ pub(super) fn resolved_body_recipe_selection(
     let Some(state_id) = state_id else {
         return Ok(None);
     };
-    historical_face_selection_in_state(ctx, scope, group, state_id, faces)
+    historical_face_selection_in_state(scope, group, state_id, faces)
 }
 
 /// Resolve the complete input-state body boundaries selected by an Extrude
 /// target-shape group. Persistent-reference candidate faces identify each
 /// body; they do not define a partial target boundary.
 pub(super) fn resolved_body_recipe_shape(
-    ctx: &DecodeContext<'_>,
     scope: &DesignParameterScope,
     group: &DesignConstructionOperandGroup,
     operands: &[DesignBodyRecipeOperand],
@@ -318,24 +315,18 @@ pub(super) fn resolved_body_recipe_shape(
     {
         return Ok(None);
     }
-    resolved_body_recipe_selection(ctx, scope, group, operands)
+    resolved_body_recipe_selection(scope, group, operands)
 }
 
 pub(super) fn resolved_profile_face_group(
-    ctx: &DecodeContext<'_>,
     scope: &DesignParameterScope,
     group: &DesignConstructionOperandGroup,
     operands: &[DesignFaceOperand],
 ) -> Result<Option<cadmpeg_ir::features::ProfileRef>, CodecError> {
     use cadmpeg_ir::features::ProfileRef;
 
-    let Some(selection) = resolved_historical_face_group(
-        ctx,
-        scope,
-        scope.previous_history_state_id(),
-        group,
-        operands,
-    )?
+    let Some(selection) =
+        resolved_historical_face_group(scope, scope.previous_history_state_id(), group, operands)?
     else {
         return Ok(None);
     };
@@ -668,7 +659,7 @@ pub(crate) fn resolved_extrude_profile_face_group(
             }
         }
     }
-    let Some(selection) = historical_face_selection(ctx, scope, root, faces)? else {
+    let Some(selection) = historical_face_selection(scope, root, faces)? else {
         return Ok(None);
     };
     let cadmpeg_ir::features::FaceSelection::Historical {
@@ -735,7 +726,6 @@ fn resolved_extrude_profile_active_faces(
 /// group member. Any competing common clause or incomplete topology context
 /// keeps the native group unresolved.
 pub(super) fn resolved_loft_edge_profile_group(
-    ctx: &DecodeContext<'_>,
     scope: &DesignParameterScope,
     group: &DesignConstructionOperandGroup,
     operands: &[DesignEdgeOperand],
@@ -812,7 +802,7 @@ pub(super) fn resolved_loft_edge_profile_group(
     else {
         return Ok(None);
     };
-    let Some(selection) = historical_face_selection(ctx, scope, group, vec![face_slot])? else {
+    let Some(selection) = historical_face_selection(scope, group, vec![face_slot])? else {
         return Ok(None);
     };
     let cadmpeg_ir::features::FaceSelection::Historical {
@@ -981,7 +971,6 @@ fn loft_edge_profile_face_slot(
 }
 
 pub(super) fn resolved_historical_face_group(
-    ctx: &DecodeContext<'_>,
     scope: &DesignParameterScope,
     previous_state_id: Option<i64>,
     group: &DesignConstructionOperandGroup,
@@ -994,11 +983,10 @@ pub(super) fn resolved_historical_face_group(
     let Some(previous_state_id) = previous_state_id else {
         return Ok(None);
     };
-    historical_face_selection_in_state(ctx, scope, group, previous_state_id, faces)
+    historical_face_selection_in_state(scope, group, previous_state_id, faces)
 }
 
 fn historical_face_selection(
-    ctx: &DecodeContext<'_>,
     scope: &DesignParameterScope,
     group: &DesignConstructionOperandGroup,
     faces: Vec<i64>,
@@ -1006,22 +994,20 @@ fn historical_face_selection(
     let Some(previous_state_id) = scope.previous_history_state_id() else {
         return Ok(None);
     };
-    historical_face_selection_in_state(ctx, scope, group, previous_state_id, faces)
+    historical_face_selection_in_state(scope, group, previous_state_id, faces)
 }
 
 fn historical_face_selection_in_state(
-    ctx: &DecodeContext<'_>,
     scope: &DesignParameterScope,
     group: &DesignConstructionOperandGroup,
     previous_state_id: i64,
     faces: Vec<i64>,
 ) -> Result<Option<cadmpeg_ir::features::FaceSelection>, CodecError> {
     let native = group.id.clone();
-    historical_face_selection_with_native(ctx, scope, previous_state_id, faces, native)
+    historical_face_selection_with_native(scope, previous_state_id, faces, native)
 }
 
 fn historical_face_selection_with_native(
-    ctx: &DecodeContext<'_>,
     scope: &DesignParameterScope,
     previous_state_id: i64,
     faces: Vec<i64>,
@@ -1046,8 +1032,7 @@ fn historical_face_selection_with_native(
             crate::design::identity::feature_input_topology_id(&feature, previous_state_id)?,
             historical_faces,
             native,
-            ctx,
-        )?
+        )
         .unwrap_or(FaceSelection::Native(fallback_native)),
     ))
 }
@@ -1059,7 +1044,6 @@ fn historical_face_selection_with_native(
 /// other member must prove its preceding face slots, and at least one member
 /// must contribute a face.
 pub(super) fn resolved_historical_split_face_target_group(
-    ctx: &DecodeContext<'_>,
     scope: &DesignParameterScope,
     previous_state_id: Option<i64>,
     group: &DesignConstructionOperandGroup,
@@ -1078,7 +1062,7 @@ pub(super) fn resolved_historical_split_face_target_group(
     let Some(previous_state_id) = previous_state_id else {
         return Ok(None);
     };
-    historical_face_selection_in_state(ctx, scope, group, previous_state_id, faces)
+    historical_face_selection_in_state(scope, group, previous_state_id, faces)
 }
 
 /// Resolve a `SplitFace` target from the operation transition when the member
@@ -1091,7 +1075,6 @@ pub(super) fn resolved_historical_split_face_target_group(
 /// members have a nonempty preceding lane. Members with no updated candidate
 /// are context records and do not add a target face.
 pub(crate) fn resolved_historical_split_face_target_group_with_updated_faces(
-    ctx: &DecodeContext<'_>,
     scope: &DesignParameterScope,
     previous_state_id: Option<i64>,
     group: &DesignConstructionOperandGroup,
@@ -1104,7 +1087,7 @@ pub(crate) fn resolved_historical_split_face_target_group_with_updated_faces(
         return Ok(None);
     }
     if let Some(selection) =
-        resolved_historical_split_face_target_group(ctx, scope, previous_state_id, group, operands)?
+        resolved_historical_split_face_target_group(scope, previous_state_id, group, operands)?
     {
         return Ok(Some(selection));
     }
@@ -1115,7 +1098,7 @@ pub(crate) fn resolved_historical_split_face_target_group_with_updated_faces(
     let Some(previous_state_id) = previous_state_id else {
         return Ok(None);
     };
-    historical_face_selection_in_state(ctx, scope, group, previous_state_id, faces)
+    historical_face_selection_in_state(scope, group, previous_state_id, faces)
 }
 
 fn split_face_updated_target_slots(
@@ -2675,144 +2658,139 @@ mod tests {
 
     #[test]
     fn split_face_updated_transition_resolves_legacy_target_group() {
-        crate::test_support::with_decode_context(|decode_ctx| {
-            fn operand(record_index: u32, ordinal: u32, preceding: &[i64]) -> DesignFaceOperand {
-                let preceding = preceding.iter().copied().map(face).collect::<Vec<_>>();
-                serde_json::from_value(serde_json::json!({
-                    "id": format!("f3d:test:face-operand#{record_index}"),
-                    "scope_record_index": 100,
-                    "scope_reference_ordinal": 1,
-                    "group_record_index": 150,
-                    "group_member_ordinal": ordinal,
-                    "record_index": record_index,
-                    "byte_offset": 0,
-                    "class_tag": "277",
-                    "paired_byte_offset": 407,
-                    "paired_class_tag": "258",
-                    "recipe_record_index": record_index + 3,
-                    "recipe_record_byte_offset": 423,
-                    "recipe_id": format!("f3d:test:recipe#{record_index}"),
-                    "recipe_prefix_offset": 434,
-                    "recipe_prefix_bytes": "",
-                    "recipe_references": [],
-                    "recipe_kind": "bounded_face",
-                    "recipe_program_offset": 0,
-                    "recipe_program": [0, -1, 2],
-                    "recipe_node_offsets": [],
-                    "recipe_nodes": [],
-                    "candidate_faces": preceding,
-                    "preceding_candidate_faces": preceding,
-                    "next_record_index": record_index + 4,
-                    "next_byte_offset": 551
-                }))
-                .expect("legacy SplitFace target operand")
-            }
-
-            let scope: DesignParameterScope = serde_json::from_value(serde_json::json!({
-                "id": "f3d:test:scope#100",
-                "byte_offset": 0,
-                "class_tag": "277",
-                "record_index": 100,
-                "frame_length": 407,
-                "kind": "SplitFace",
-                "kind_offset": 65,
-                "feature_ordinal": 1,
-                "feature_ordinal_offset": 335,
-                "history_state_id": 50,
-                "history_state_id_offset": 57,
-                "previous_history_state_id": 49,
-                "previous_history_state_id_offset": 365,
-                "reference_count_offset": 9,
-                "reference_members": [150, 200, 201, 202],
-                "reference_member_offsets": [14, 25, 36, 47],
-                "paired_class_tag": "258",
-                "paired_byte_offset": 407
-            }))
-            .expect("legacy SplitFace scope");
-            let group: DesignConstructionOperandGroup = serde_json::from_value(serde_json::json!({
-                "id": "f3d:test:construction-group#150",
+        fn operand(record_index: u32, ordinal: u32, preceding: &[i64]) -> DesignFaceOperand {
+            let preceding = preceding.iter().copied().map(face).collect::<Vec<_>>();
+            serde_json::from_value(serde_json::json!({
+                "id": format!("f3d:test:face-operand#{record_index}"),
                 "scope_record_index": 100,
                 "scope_reference_ordinal": 1,
-                "record_index": 150,
+                "group_record_index": 150,
+                "group_member_ordinal": ordinal,
+                "record_index": record_index,
                 "byte_offset": 0,
-                "class_tag": "262",
-                "members": [200, 201, 202],
-                "member_offsets": [0, 11, 22],
-                "frame": {
-                    "member_count_offset": 0,
-                    "opaque_index": 1,
-                    "opaque_index_offset": 18,
-                    "opaque_scalar": 0.0,
-                    "opaque_scalar_offset": 22,
-                    "variant": false
-                },
-                "role": 0x0000_0010_0000_0000_u64,
-                "role_offset": 0,
+                "class_tag": "277",
+                "paired_byte_offset": 407,
                 "paired_class_tag": "258",
-                "paired_byte_offset": 0
+                "recipe_record_index": record_index + 3,
+                "recipe_record_byte_offset": 423,
+                "recipe_id": format!("f3d:test:recipe#{record_index}"),
+                "recipe_prefix_offset": 434,
+                "recipe_prefix_bytes": "",
+                "recipe_references": [],
+                "recipe_kind": "bounded_face",
+                "recipe_program_offset": 0,
+                "recipe_program": [0, -1, 2],
+                "recipe_node_offsets": [],
+                "recipe_nodes": [],
+                "candidate_faces": preceding,
+                "preceding_candidate_faces": preceding,
+                "next_record_index": record_index + 4,
+                "next_byte_offset": 551
             }))
-            .expect("legacy SplitFace target group");
-            let operands = vec![
-                operand(200, 0, &[10, 20]),
-                operand(201, 1, &[20, 30]),
-                operand(202, 2, &[30]),
-            ];
+            .expect("legacy SplitFace target operand")
+        }
 
-            let selection = resolved_historical_split_face_target_group_with_updated_faces(
-                decode_ctx,
+        let scope: DesignParameterScope = serde_json::from_value(serde_json::json!({
+            "id": "f3d:test:scope#100",
+            "byte_offset": 0,
+            "class_tag": "277",
+            "record_index": 100,
+            "frame_length": 407,
+            "kind": "SplitFace",
+            "kind_offset": 65,
+            "feature_ordinal": 1,
+            "feature_ordinal_offset": 335,
+            "history_state_id": 50,
+            "history_state_id_offset": 57,
+            "previous_history_state_id": 49,
+            "previous_history_state_id_offset": 365,
+            "reference_count_offset": 9,
+            "reference_members": [150, 200, 201, 202],
+            "reference_member_offsets": [14, 25, 36, 47],
+            "paired_class_tag": "258",
+            "paired_byte_offset": 407
+        }))
+        .expect("legacy SplitFace scope");
+        let group: DesignConstructionOperandGroup = serde_json::from_value(serde_json::json!({
+            "id": "f3d:test:construction-group#150",
+            "scope_record_index": 100,
+            "scope_reference_ordinal": 1,
+            "record_index": 150,
+            "byte_offset": 0,
+            "class_tag": "262",
+            "members": [200, 201, 202],
+            "member_offsets": [0, 11, 22],
+            "frame": {
+                "member_count_offset": 0,
+                "opaque_index": 1,
+                "opaque_index_offset": 18,
+                "opaque_scalar": 0.0,
+                "opaque_scalar_offset": 22,
+                "variant": false
+            },
+            "role": 0x0000_0010_0000_0000_u64,
+            "role_offset": 0,
+            "paired_class_tag": "258",
+            "paired_byte_offset": 0
+        }))
+        .expect("legacy SplitFace target group");
+        let operands = vec![
+            operand(200, 0, &[10, 20]),
+            operand(201, 1, &[20, 30]),
+            operand(202, 2, &[30]),
+        ];
+
+        let selection = resolved_historical_split_face_target_group_with_updated_faces(
+            &scope,
+            scope.previous_history_state_id(),
+            &group,
+            &operands,
+            &[10, 20, 30],
+        )
+        .expect("projection resource budget")
+        .expect("updated target transition proof");
+        let cadmpeg_ir::features::FaceSelection::Historical {
+            state,
+            faces,
+            native,
+        } = selection
+        else {
+            panic!("expected historical SplitFace target");
+        };
+        assert_eq!(
+            state,
+            feature_input_topology_id(&neutral_feature_id(&scope), 49)
+        );
+        assert_eq!(native.as_str(), group.id);
+        assert_eq!(
+            faces
+                .iter()
+                .map(|face| face.as_str().rsplit_once(':').unwrap().1)
+                .collect::<Vec<_>>(),
+            ["10", "20", "30"]
+        );
+        assert!(
+            resolved_historical_split_face_target_group_with_updated_faces(
                 &scope,
                 scope.previous_history_state_id(),
                 &group,
                 &operands,
-                &[10, 20, 30],
+                &[10, 20]
             )
             .expect("projection resource budget")
-            .expect("updated target transition proof");
-            let cadmpeg_ir::features::FaceSelection::Historical {
-                state,
-                faces,
-                native,
-            } = selection
-            else {
-                panic!("expected historical SplitFace target");
-            };
-            assert_eq!(
-                state,
-                feature_input_topology_id(&neutral_feature_id(&scope), 49)
-            );
-            assert_eq!(native.as_str(), group.id);
-            assert_eq!(
-                faces
-                    .iter()
-                    .map(|face| face.as_str().rsplit_once(':').unwrap().1)
-                    .collect::<Vec<_>>(),
-                ["10", "20", "30"]
-            );
-            assert!(
-                resolved_historical_split_face_target_group_with_updated_faces(
-                    decode_ctx,
-                    &scope,
-                    scope.previous_history_state_id(),
-                    &group,
-                    &operands,
-                    &[10, 20]
-                )
-                .expect("projection resource budget")
-                .is_none()
-            );
-            assert!(
-                resolved_historical_split_face_target_group_with_updated_faces(
-                    decode_ctx,
-                    &scope,
-                    scope.previous_history_state_id(),
-                    &group,
-                    &operands,
-                    &[10, 20, 40]
-                )
-                .expect("projection resource budget")
-                .is_none()
-            );
-        });
+            .is_none()
+        );
+        assert!(
+            resolved_historical_split_face_target_group_with_updated_faces(
+                &scope,
+                scope.previous_history_state_id(),
+                &group,
+                &operands,
+                &[10, 20, 40]
+            )
+            .expect("projection resource budget")
+            .is_none()
+        );
     }
 
     #[test]
@@ -3285,39 +3263,32 @@ mod tests {
 
     #[test]
     fn historical_face_group_resolves_historical_selection() {
-        crate::test_support::with_decode_context(|decode_ctx| {
-            let (mut operand, group, _) = start_geometry_fixture();
-            operand.resolved_face_slots = vec![10];
-            let scope = loft_scope();
-            let selection = resolved_historical_face_group(
-                decode_ctx,
-                &scope,
-                scope.previous_history_state_id(),
-                &group,
-                std::slice::from_ref(&operand),
-            )
-            .unwrap()
-            .unwrap();
-            assert!(matches!(
-                selection,
-                cadmpeg_ir::features::FaceSelection::Historical { .. }
-            ));
-        });
+        let (mut operand, group, _) = start_geometry_fixture();
+        operand.resolved_face_slots = vec![10];
+        let scope = loft_scope();
+        let selection = resolved_historical_face_group(
+            &scope,
+            scope.previous_history_state_id(),
+            &group,
+            std::slice::from_ref(&operand),
+        )
+        .unwrap()
+        .unwrap();
+        assert!(matches!(
+            selection,
+            cadmpeg_ir::features::FaceSelection::Historical { .. }
+        ));
     }
 
     #[test]
     fn historical_face_operand_resolves_from_preceding_face() {
-        crate::test_support::with_decode_context(|decode_ctx| {
-            let (mut operand, _, _) = start_geometry_fixture();
-            operand.candidate_faces = vec![face(10)];
-            operand.preceding_candidate_faces = vec![face(10)];
-            let scope = loft_scope();
-            assert!(
-                resolved_historical_face_operand(decode_ctx, &scope, &operand)
-                    .unwrap()
-                    .is_some()
-            );
-        });
+        let (mut operand, _, _) = start_geometry_fixture();
+        operand.candidate_faces = vec![face(10)];
+        operand.preceding_candidate_faces = vec![face(10)];
+        let scope = loft_scope();
+        assert!(resolved_historical_face_operand(&scope, &operand)
+            .unwrap()
+            .is_some());
     }
 
     #[test]
@@ -3377,7 +3348,7 @@ mod tests {
             edge_operand(3, 100, 0, 3, 202),
         ];
         assert!(matches!(
-            crate::test_support::with_decode_context(|decode_ctx| super::resolved_loft_edge_profile_group(decode_ctx, &scope, &group, &operands)).unwrap(),
+            super::resolved_loft_edge_profile_group(&scope, &group, &operands).unwrap(),
             Some(cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::HistoricalFaces {
                 state,
                 faces,
@@ -3479,18 +3450,13 @@ mod tests {
 
     #[test]
     fn loft_face_profile_resolves_face_slot_group() {
-        crate::test_support::with_decode_context(|decode_ctx| {
-            let (mut operand, group, _) = start_geometry_fixture();
-            operand.resolved_face_slots = vec![10];
-            let scope = loft_scope();
-            assert!(resolved_profile_face_group(
-                decode_ctx,
-                &scope,
-                &group,
-                std::slice::from_ref(&operand)
-            )
-            .unwrap()
-            .is_some());
-        });
+        let (mut operand, group, _) = start_geometry_fixture();
+        operand.resolved_face_slots = vec![10];
+        let scope = loft_scope();
+        assert!(
+            resolved_profile_face_group(&scope, &group, std::slice::from_ref(&operand))
+                .unwrap()
+                .is_some()
+        );
     }
 }

@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Historical body recipe selections.
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::features::{BodySelection, FeatureId};
 
 fn selection_fixture() -> (
@@ -115,10 +114,8 @@ fn selection_fixture() -> (
 
 fn bind() -> Result<BodySelection, cadmpeg_core::CodecError> {
     let (scope, groups, operands, mut selection) = selection_fixture();
-    let ctx = cadmpeg_test_support::service_decode_context();
     let feature = FeatureId::mint("f3d:model:feature#body").unwrap();
     super::super::bind_body_recipe_body_selection(
-        &ctx,
         &mut selection,
         &feature,
         1,
@@ -158,7 +155,7 @@ fn face_geometry() -> (
     (body, region, shell)
 }
 
-fn bind_direct(native_set: bool) -> Result<BodySelection, cadmpeg_core::CodecError> {
+fn bind_direct(native_set: bool) -> BodySelection {
     let (scope, groups, mut operands, mut selection) = selection_fixture();
     let (body, region, shell) = face_geometry();
     if native_set {
@@ -183,11 +180,7 @@ fn bind_direct(native_set: bool) -> Result<BodySelection, cadmpeg_core::CodecErr
         regions: std::slice::from_ref(&region),
         shells: std::slice::from_ref(&shell),
     };
-    let policy = DecodePolicy::service();
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    if let Err(error) = super::super::bind_direct_body_recipe_body_selection(
-        &ctx,
+    super::super::bind_direct_body_recipe_body_selection(
         &mut selection,
         &scope,
         &inputs,
@@ -198,14 +191,8 @@ fn bind_direct(native_set: bool) -> Result<BodySelection, cadmpeg_core::CodecErr
             inputs.construction_recipes,
             inputs.persistent_design_links,
         ),
-    ) {
-        if let cadmpeg_core::CodecError::ResourceLimit(first) = &error {
-            assert!(matches!(ctx.finish_session(),
-                Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == *first));
-        }
-        return Err(error);
-    }
-    Ok(selection)
+    );
+    selection
 }
 
 fn face_candidate() -> (bool, bool) {
@@ -293,13 +280,10 @@ fn body_recipe_keeps_historical_selection() {
 
 #[test]
 fn direct_body_recipe_keeps_resolved_selection() {
-    assert!(matches!(
-        bind_direct(false).unwrap(),
-        BodySelection::Resolved { .. }
-    ));
+    assert!(matches!(bind_direct(false), BodySelection::Resolved { .. }));
     // A resolved row indexes its body and its native identity separately.
     assert!(matches!(
-        bind_direct(true).unwrap(),
+        bind_direct(true),
         BodySelection::ResolvedSet { .. }
     ));
 }

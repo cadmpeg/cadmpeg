@@ -398,9 +398,7 @@ fn full_round_fillet_with_automatic_sides_is_complete() {
                         },
                         FullRoundSideSelection::Automatic,
                         FullRoundSideSelection::Automatic,
-                        &cadmpeg_test_support::service_decode_context(),
                     )
-                    .expect("operand admission")
                     .unwrap(),
                 ]
                 .try_into()
@@ -544,9 +542,7 @@ fn face_selection_resolution_accepts_complete_generated_and_partial_members() {
             vec![HistoricalFaceId::mint("test:model:face#1").expect("identity grammar")],
             vec!["native:missing-face".into()],
             "native:historical-face".into(),
-            &cadmpeg_test_support::service_decode_context()
         )
-        .expect("selection storage is admitted")
         .unwrap()
     ));
 }
@@ -1059,10 +1055,10 @@ fn coil_completeness_requires_neutral_placement_and_boolean_targets() {
         CoilResult::Boolean {
             operation: cadmpeg_ir::features::BooleanKind::Cut,
             targets: BodySelection::Bodies(
-                cadmpeg_ir::features::DistinctMembers::try_from(
-                    vec![BodyId::mint("test:model:body#1").expect("identity grammar")],
-                    &cadmpeg_test_support::service_decode_context()
+                cadmpeg_ir::features::DistinctMembers::try_from(vec![BodyId::mint(
+                    "test:model:body#1"
                 )
+                .expect("identity grammar")],)
                 .expect("distinct bodies")
             ),
         },
@@ -1213,10 +1209,10 @@ fn body_copy_features_require_resolved_body_selection() {
     use cadmpeg_ir::ids::BodyId;
 
     let resolved = BodySelection::Resolved {
-        bodies: cadmpeg_ir::features::DistinctMembers::try_from(
-            vec![BodyId::mint("test:model:body#result").expect("identity grammar")],
-            &cadmpeg_test_support::service_decode_context(),
+        bodies: cadmpeg_ir::features::DistinctMembers::try_from(vec![BodyId::mint(
+            "test:model:body#result",
         )
+        .expect("identity grammar")])
         .expect("distinct bodies"),
         native: "native:body-selection".into(),
     };
@@ -1245,10 +1241,10 @@ fn split_body_requires_resolved_target_and_tool_selections() {
     use cadmpeg_ir::ids::{BodyId, FaceId};
 
     let resolved_target = BodySelection::Resolved {
-        bodies: cadmpeg_ir::features::DistinctMembers::try_from(
-            vec![BodyId::mint("test:model:body#target").expect("identity grammar")],
-            &cadmpeg_test_support::service_decode_context(),
+        bodies: cadmpeg_ir::features::DistinctMembers::try_from(vec![BodyId::mint(
+            "test:model:body#target",
         )
+        .expect("identity grammar")])
         .expect("distinct bodies"),
         native: "native:target".into(),
     };

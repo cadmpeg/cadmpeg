@@ -305,12 +305,6 @@ pub fn unit_cube() -> Result<CadIr, ExampleError> {
 
 /// A canonical fixture covering directed `SubD` and a Sum procedural surface.
 pub fn directed_subd_sum() -> Result<CadIr, ExampleError> {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::default(),
-    )?;
     let mut ir = CadIr::empty();
     ir.model.curves = vec![
         Curve {
@@ -437,8 +431,7 @@ pub fn directed_subd_sum() -> Result<CadIr, ExampleError> {
                 )
             })?],
             Vec::new(),
-            &ctx,
-        )?
+        )
         .map_err(|_| {
             crate::geometry::ProceduralGeometryError::Payload("invalid directed SubD example cage")
         })?,

@@ -638,7 +638,6 @@ fn child_with_type(
 }
 
 fn legacy_spline(
-    ctx: &DecodeContext<'_>,
     data: &[u8],
     range: std::ops::Range<usize>,
     scale: MillimeterScale,
@@ -746,19 +745,17 @@ fn legacy_spline(
         }
     }
     NurbsCurve::from_checked_lanes(
-        ctx,
         u32::try_from(order - 1)
             .map_err(|_| CodecError::Malformed("V1 spline degree overflow".to_string()))?,
         knots,
         control_points,
         weights,
         closed == 2,
-    )?
+    )
     .map_err(|error| CodecError::Malformed(error.to_string()))
 }
 
 fn legacy_curve_segments(
-    ctx: &DecodeContext<'_>,
     data: &[u8],
     range: std::ops::Range<usize>,
     scale: MillimeterScale,
@@ -811,7 +808,7 @@ fn legacy_curve_segments(
             .ok_or_else(|| {
                 CodecError::Malformed("V1 spline has no spline-stuff chunk".to_string())
             })?;
-        segments.push(legacy_spline(ctx, data, spline_stuff.body(), scale)?);
+        segments.push(legacy_spline(data, spline_stuff.body(), scale)?);
         reader
             .skip(spline.next_offset() - reader.position())
             .map_err(|error| malformed(&error))?;
@@ -826,7 +823,7 @@ fn legacy_curve(
     scale: MillimeterScale,
 ) -> Result<NurbsCurve, CodecError> {
     let offset = range.start;
-    let segments = legacy_curve_segments(ctx, data, range, scale)?;
+    let segments = legacy_curve_segments(data, range, scale)?;
     crate::curves::join_nurbs_segments(ctx, segments, offset)
         .map(|joined| joined.curve)
         .map_err(geometry_error)
@@ -1361,7 +1358,6 @@ fn v1_direct_record(
 }
 
 fn legacy_surface(
-    ctx: &DecodeContext<'_>,
     data: &[u8],
     range: std::ops::Range<usize>,
     scale: MillimeterScale,
@@ -1484,7 +1480,6 @@ fn legacy_surface(
     let row_len = counts[1];
 
     NurbsSurface::from_checked_lanes(
-        ctx,
         NurbsSurfaceAxis::new(
             u32::try_from(orders[0] - 1)
                 .map_err(|_| CodecError::Malformed("V1 surface degree overflow".to_string()))?,
@@ -1502,7 +1497,7 @@ fn legacy_surface(
             weights.map(|values| values.chunks(row_len).map(<[_]>::to_vec).collect()),
         ),
         false,
-    )?
+    )
     .map_err(|error| CodecError::Malformed(error.to_string()))
 }
 
@@ -2004,13 +1999,13 @@ fn append_legacy_brep(
                 model.pcurves.push(Pcurve {
                     id: pcurve_id.clone(),
                     geometry: PcurveGeometry::Nurbs {
-                        nurbs: PcurveNurbs::from_checked_lanes(ctx,
+                        nurbs: PcurveNurbs::from_checked_lanes(
                             trim.pcurve.degree(),
                             pcurve_knots,
                             pcurve_points,
                             pcurve_weights,
                             trim.pcurve.periodic(),
-                        )?
+                        )
                         .map_err(|error| CodecError::Malformed(error.to_string()))?,
                     },
                     metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
@@ -2276,7 +2271,7 @@ fn legacy_face(
         ));
     }
     let surface_chunk = nested_chunk(data, &mut reader, TCODE_LEGACY_SRF)?;
-    let surface = legacy_surface(ctx, data, surface_chunk.body(), scale)?;
+    let surface = legacy_surface(data, surface_chunk.body(), scale)?;
     if boundary_count > reader.remaining() / 8 {
         return Err(CodecError::Malformed(
             "V1 face boundary count exceeds the remaining bytes".to_string(),
@@ -2766,7 +2761,7 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                 }
             }
         } else if chunk.typecode == TCODE_LEGACY_CRV && !chunk.short() {
-            match legacy_curve_segments(ctx, data, chunk.body().clone(), scale) {
+            match legacy_curve_segments(data, chunk.body().clone(), scale) {
                 Ok(segments) => {
                     for segment in segments {
                         ctx.charge_entities(9, "Rhino V1 curve topology")?;
@@ -3225,22 +3220,10 @@ mod tests {
         let spline_stuff = super::child_with_type(&data, spline.body(), TCODE_LEGACY_SPLSTUFF)
             .expect("V1 spline child framing")
             .expect("V1 spline-stuff child");
-        let service_arena = cadmpeg_core::decode::DecodeArena::new();
-        let (service_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &data,
-            &service_arena,
-            &cadmpeg_core::decode::DecodePolicy::service(),
-        )
-        .expect("V1 line fits service input limit");
         assert_eq!(
-            super::legacy_spline(
-                &service_ctx,
-                &data,
-                spline_stuff.body(),
-                super::MillimeterScale::IDENTITY,
-            )
-            .expect("service admits spline poles")
-            .pole_count(),
+            super::legacy_spline(&data, spline_stuff.body(), super::MillimeterScale::IDENTITY)
+                .expect("service admits spline poles")
+                .pole_count(),
             2
         );
     }
@@ -3264,15 +3247,8 @@ mod tests {
         };
         for (weight, valid) in [(2.0, true), (0.0, false)] {
             let data = spline(weight);
-            let arena = cadmpeg_core::decode::DecodeArena::new();
-            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-                &data,
-                &arena,
-                &cadmpeg_core::decode::DecodePolicy::service(),
-            )
-            .expect("V1 spline input admitted");
             let result =
-                super::legacy_spline(&ctx, &data, 0..data.len(), super::MillimeterScale::IDENTITY);
+                super::legacy_spline(&data, 0..data.len(), super::MillimeterScale::IDENTITY);
             if valid {
                 assert_eq!(
                     result
@@ -3296,23 +3272,11 @@ mod tests {
         let data = legacy_surface();
         let surface =
             chunk_at(&data, 0, data.len(), ArchiveVersion::V1, false).expect("V1 surface wrapper");
-        let service_arena = cadmpeg_core::decode::DecodeArena::new();
-        let (service_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &data,
-            &service_arena,
-            &cadmpeg_core::decode::DecodePolicy::service(),
-        )
-        .expect("V1 surface fits service input limit");
         assert_eq!(
-            super::legacy_surface(
-                &service_ctx,
-                &data,
-                surface.body(),
-                super::MillimeterScale::IDENTITY,
-            )
-            .expect("service admits surface poles")
-            .pole_grid()
-            .u_count(),
+            super::legacy_surface(&data, surface.body(), super::MillimeterScale::IDENTITY)
+                .expect("service admits surface poles")
+                .pole_grid()
+                .u_count(),
             2
         );
     }
@@ -3352,19 +3316,8 @@ mod tests {
             let data = surface(weight);
             let wrapper = chunk_at(&data, 0, data.len(), ArchiveVersion::V1, false)
                 .expect("V1 rational surface wrapper");
-            let arena = cadmpeg_core::decode::DecodeArena::new();
-            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-                &data,
-                &arena,
-                &cadmpeg_core::decode::DecodePolicy::service(),
-            )
-            .expect("V1 surface input admitted");
-            let result = super::legacy_surface(
-                &ctx,
-                &data,
-                wrapper.body(),
-                super::MillimeterScale::IDENTITY,
-            );
+            let result =
+                super::legacy_surface(&data, wrapper.body(), super::MillimeterScale::IDENTITY);
             if valid {
                 let decoded = result.expect("rational surface");
                 assert_eq!(decoded.weights().map(|rows| rows[0][0].get()), Some(weight));

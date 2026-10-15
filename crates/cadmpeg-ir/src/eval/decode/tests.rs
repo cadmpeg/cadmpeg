@@ -9,7 +9,6 @@ use cadmpeg_core::CodecError;
 
 fn curve() -> NurbsCurve {
     NurbsCurve::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         2,
         vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
         vec![
@@ -20,13 +19,11 @@ fn curve() -> NurbsCurve {
         None,
         false,
     )
-    .expect("fixture constructor admission")
     .expect("finite line spline")
 }
 
 fn heap_curve() -> NurbsCurve {
     NurbsCurve::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         4,
         vec![0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0],
         vec![
@@ -39,7 +36,6 @@ fn heap_curve() -> NurbsCurve {
         None,
         false,
     )
-    .expect("admitted high-degree fixture")
     .expect("finite high-degree line")
 }
 
@@ -59,16 +55,7 @@ fn heap_support_curve() -> NurbsCurve {
             )
         })
         .collect();
-    NurbsCurve::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
-        DEGREE,
-        knots,
-        points,
-        None,
-        false,
-    )
-    .expect("admitted high-degree fixture")
-    .expect("finite high-degree line")
+    NurbsCurve::from_lanes(DEGREE, knots, points, None, false).expect("finite high-degree line")
 }
 
 #[test]
@@ -96,7 +83,6 @@ fn admitted_surface_point_keeps_both_axis_bases_inline() {
     use crate::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
     use crate::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
     let surface = NurbsSurface::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         NurbsSurfaceAxis::new(
             4,
             vec![0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0],
@@ -119,7 +105,6 @@ fn admitted_surface_point_keeps_both_axis_bases_inline() {
         ),
         false,
     )
-    .expect("fixture constructor admission")
     .expect("finite plane spline");
     let geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface));
     let arena = DecodeArena::new();
@@ -208,14 +193,12 @@ fn reusable_nurbs_evaluator_keeps_constant_and_linear_spans_inline() {
                 })
                 .collect();
             let curve = NurbsCurve::from_lanes(
-                &cadmpeg_test_support::service_decode_context(),
                 degree,
                 knots,
                 points,
                 rational.then(|| vec![1.0; count]),
                 false,
             )
-            .expect("fixture constructor admission")
             .expect("fixed span");
             let mut policy = DecodePolicy::service();
             policy.limits.max_recursion_depth = 0;
@@ -375,7 +358,6 @@ fn a_prior_session_refusal_precedes_no_value_at_scratch_and_entries() {
     let geometry = CurveGeometry::Solved(solved_curve.clone());
     let pcurve = PcurveGeometry::Nurbs {
         nurbs: PcurveNurbs::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             2,
             vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
             vec![
@@ -386,11 +368,9 @@ fn a_prior_session_refusal_precedes_no_value_at_scratch_and_entries() {
             Some(vec![1.0; 3]),
             false,
         )
-        .unwrap()
         .unwrap(),
     };
     let surface = NurbsSurface::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         NurbsSurfaceLanes::new(
@@ -402,7 +382,6 @@ fn a_prior_session_refusal_precedes_no_value_at_scratch_and_entries() {
         ),
         false,
     )
-    .unwrap()
     .unwrap();
     let solved_surface = SolvedSurfaceGeometry::Nurbs(surface.clone());
     let surface_geometry = SurfaceGeometry::Solved(solved_surface.clone());

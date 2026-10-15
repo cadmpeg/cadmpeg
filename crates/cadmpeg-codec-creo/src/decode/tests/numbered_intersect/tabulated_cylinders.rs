@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::super::parameter_slot;
-use super::placed_tabulated_cylinder_directrix;
-use crate::decode::sweep::nurbs::signed_unit_chart;
+use crate::decode::sweep::nurbs::{placed_tabulated_cylinder_directrix, signed_unit_chart};
 use cadmpeg_ir::math::Point3;
 
 #[test]

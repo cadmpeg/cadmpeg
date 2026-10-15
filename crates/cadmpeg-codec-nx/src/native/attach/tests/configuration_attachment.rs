@@ -5,12 +5,11 @@ use cadmpeg_ir::{AnnotationBuilder, CadIr};
 
 #[test]
 fn configuration_attachment_preserves_active_relation() {
-    let ir = crate::test_support::with_decode_context(|ctx| {
+    let ir = {
         let mut ir = CadIr::empty();
         let mut annotations = AnnotationBuilder::new();
         let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
         super::super::attach_configurations(
-            ctx,
             &mut ir,
             std::iter::once((
                 "nx:arrangements:configuration#0",
@@ -23,7 +22,7 @@ fn configuration_attachment_preserves_active_relation() {
         )
         .unwrap();
         ir
-    });
+    };
     let [configuration] = ir.model.configurations.as_slice() else {
         panic!("one configuration");
     };

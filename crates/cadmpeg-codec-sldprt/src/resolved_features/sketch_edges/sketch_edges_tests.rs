@@ -72,14 +72,12 @@ fn projected_sketch_nurbs_edge_projects() {
     ]);
     let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
         NurbsCurve::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
             None,
             false,
         )
-        .expect("fixture constructor admission")
         .expect("valid curve"),
     ));
     let curves = HashMap::from([(&curve_id, &geometry)]);
@@ -88,15 +86,7 @@ fn projected_sketch_nurbs_edge_projects() {
         u_axis: Vector3::new(1.0, 0.0, 0.0),
         v_axis: Vector3::new(0.0, 1.0, 0.0),
     };
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )
-    .expect("empty root fits service policy");
     assert!(super::project_edge(
-        &ctx,
         &edge,
         &vertices,
         &points,
@@ -104,7 +94,6 @@ fn projected_sketch_nurbs_edge_projects() {
         frame,
         &mut crate::lane_refusal::LaneRefusals::new(),
     )
-    .expect("service budget")
     .is_some());
 }
 
@@ -154,7 +143,6 @@ fn sketch_projection_shares_endpoint_constraint() {
 
 #[test]
 fn sketch_projection_projects_opaque_curve() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
     use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, UnknownId, VertexId};
     use cadmpeg_ir::math::{Point3, Vector3};
@@ -187,11 +175,7 @@ fn sketch_projection_projects_opaque_curve() {
         u_axis: Vector3::new(1.0, 0.0, 0.0),
         v_axis: Vector3::new(0.0, 1.0, 0.0),
     };
-    let arena = DecodeArena::new();
-    let (service, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("empty root");
     assert!(super::project_edge(
-        &service,
         &edge,
         &vertices,
         &points,
@@ -199,6 +183,5 @@ fn sketch_projection_projects_opaque_curve() {
         frame,
         &mut crate::lane_refusal::LaneRefusals::new(),
     )
-    .expect("service budget")
     .is_some());
 }

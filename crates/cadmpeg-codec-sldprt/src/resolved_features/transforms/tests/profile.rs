@@ -205,14 +205,7 @@ fn repeated_native_edge_vectors_project_one_neutral_edge_each() {
     };
     let mut features = vec![producer, target];
 
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )
-    .expect("edge selection fixture context");
-    project_compact_edge_selections(&ctx, &mut features, &[], &[lane]).unwrap();
+    project_compact_edge_selections(&mut features, &[], &[lane]).unwrap();
 
     let FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) =
         features[1].evaluation.definition()
@@ -1102,11 +1095,7 @@ fn dissected_child_classification_does_not_imply_profile_alias() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::try_from(
-            dependencies,
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .unwrap(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::try_from(dependencies).unwrap(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
@@ -1151,10 +1140,10 @@ fn dissected_child_classification_does_not_imply_profile_alias() {
             ordinal: 3,
             name: None,
             suppressed: Some(false),
-            dependencies: cadmpeg_ir::features::DistinctMembers::try_from(
-                vec![FeatureId::mint("synthetic:test:id#child").expect("identity grammar")],
-                &cadmpeg_test_support::service_decode_context(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::try_from(vec![FeatureId::mint(
+                "synthetic:test:id#child",
             )
+            .expect("identity grammar")])
             .unwrap(),
             source_properties: BTreeMap::new(),
             source_tag: None,
@@ -1191,11 +1180,12 @@ fn dissected_child_classification_does_not_imply_profile_alias() {
     multi_consumer.id =
         FeatureId::mint("synthetic:test:id#multi-consumer").expect("identity grammar");
     multi_consumer.ordinal = 4;
-    multi_consumer.dependencies = cadmpeg_ir::features::DistinctMembers::try_from(
-        vec![FeatureId::mint("synthetic:test:id#multi-child").expect("identity grammar")],
-        &cadmpeg_test_support::service_decode_context(),
-    )
-    .unwrap();
+    multi_consumer.dependencies =
+        cadmpeg_ir::features::DistinctMembers::try_from(vec![FeatureId::mint(
+            "synthetic:test:id#multi-child",
+        )
+        .expect("identity grammar")])
+        .unwrap();
     multi_consumer.evaluation.edit(|definition, _| {
         let FeatureDefinition::Operation(FeatureOperation::Extrude { profile, .. }) = definition
         else {
@@ -1233,13 +1223,7 @@ fn dissected_child_classification_does_not_imply_profile_alias() {
     };
     let sketches = vec![sketch(single.clone(), 1), sketch(multiple, 2)];
 
-    project_dissected_sketches(
-        &cadmpeg_test_support::service_decode_context(),
-        &mut features,
-        &sketches,
-        std::slice::from_ref(&history),
-    )
-    .unwrap();
+    project_dissected_sketches(&mut features, &sketches, std::slice::from_ref(&history));
 
     assert!(matches!(
         features[1].evaluation.definition(),

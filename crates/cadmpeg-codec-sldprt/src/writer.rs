@@ -4086,15 +4086,7 @@ mod nurbs_write_tests {
 
     #[test]
     fn writes_surface_degree_from_stored_descriptor() {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[],
-            &arena,
-            &cadmpeg_core::decode::DecodePolicy::service(),
-        )
-        .unwrap();
         let surface = NurbsSurface::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(9, vec![0.0; 20], false),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0; 4], false),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
@@ -4106,7 +4098,6 @@ mod nurbs_write_tests {
             ),
             false,
         )
-        .expect("fixture constructor admission")
         .expect("valid high-degree surface");
 
         let mut bytes = Vec::new();
@@ -4119,8 +4110,7 @@ mod nurbs_write_tests {
             "test:surface#high-degree",
         )
         .expect("stored degree is representable");
-        let carrier = crate::brep::spline::scan_surface_carriers(&ctx, &bytes, &mut Vec::new())
-            .expect("surface scan")
+        let carrier = crate::brep::spline::scan_surface_carriers(&bytes, &mut Vec::new())
             .remove(&2)
             .expect("surface carrier");
         let Some(SolvedSurfaceGeometry::Nurbs(decoded)) = carrier.geometry.solved() else {
@@ -4132,15 +4122,7 @@ mod nurbs_write_tests {
 
     #[test]
     fn writes_surface_shape_from_stored_counts() {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[],
-            &arena,
-            &cadmpeg_core::decode::DecodePolicy::service(),
-        )
-        .unwrap();
         let surface = NurbsSurface::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                 2,
                 vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
@@ -4160,7 +4142,6 @@ mod nurbs_write_tests {
             ),
             false,
         )
-        .expect("fixture constructor admission")
         .expect("valid asymmetric surface");
 
         let mut bytes = Vec::new();
@@ -4173,8 +4154,7 @@ mod nurbs_write_tests {
             "test:surface#ambiguous-shape",
         )
         .expect("stored counts disambiguate the surface");
-        let carrier = crate::brep::spline::scan_surface_carriers(&ctx, &bytes, &mut Vec::new())
-            .expect("surface scan")
+        let carrier = crate::brep::spline::scan_surface_carriers(&bytes, &mut Vec::new())
             .remove(&2)
             .expect("surface carrier");
         let Some(SolvedSurfaceGeometry::Nurbs(decoded)) = carrier.geometry.solved() else {

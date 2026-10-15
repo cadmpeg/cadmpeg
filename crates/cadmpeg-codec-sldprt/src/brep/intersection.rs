@@ -12,8 +12,7 @@
 use std::collections::HashMap;
 
 use cadmpeg_core::bytes::find_iter;
-use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
-use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::{u64_from_index, View};
 use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::math::{Point2, Point3};
 use cadmpeg_ir::report::loss::LossNote;
@@ -340,13 +339,12 @@ fn distance(a: [f64; 3], b: [f64; 3]) -> f64 {
 
 /// Build the derived polyline curve for one validated composite.
 fn solved_curve(
-    ctx: &DecodeContext<'_>,
     chart: &Chart,
     start: [f64; 3],
     end: [f64; 3],
     record_attr: u16,
     refusal: &mut crate::lane_refusal::LaneRefusals,
-) -> Result<Option<(CurveGeometry, Vec<f64>, bool)>, CodecError> {
+) -> Option<(CurveGeometry, Vec<f64>, bool)> {
     let mut parameter = chart.base_parameter;
     let mut parameters = Vec::new();
     parameters.push(parameter);
@@ -371,7 +369,7 @@ fn solved_curve(
         points.reverse();
         true
     } else {
-        return Ok(None);
+        return None;
     };
     let (first, last) = if reversed {
         (parameter, chart.base_parameter)
@@ -387,22 +385,22 @@ fn solved_curve(
         .map(|p| Point3::new(p[0] * LEN_TO_MM, p[1] * LEN_TO_MM, p[2] * LEN_TO_MM))
         .collect::<Vec<_>>();
     let nurbs = match cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
-        ctx, 1, knots, controls, None, false,
-    )? {
+        1, knots, controls, None, false,
+    ) {
         Ok(nurbs) => nurbs,
         Err(error) => {
             refusal.note(
                 format_args!("sldprt intersection chart curve for record attr {record_attr}"),
                 &error,
-            )?;
-            return Ok(None);
+            );
+            return None;
         }
     };
-    Ok(Some((
+    Some((
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
         parameters,
         reversed,
-    )))
+    ))
 }
 
 fn solved_support_uv(
@@ -469,15 +467,14 @@ fn nearest_term(
 /// or inconsistent optional UV record does not invalidate the model-space
 /// curve; only a unique complete width-4 record supplies solved pcurves.
 pub(super) fn scan_intersection_carriers(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     lane_refusals: &mut Vec<LossNote>,
-) -> Result<HashMap<u16, IntersectionCarrier>, CodecError> {
+) -> HashMap<u16, IntersectionCarrier> {
     let charts = chart_records(bytes);
     let terms = term_records(bytes);
     let uvs = uv_records(bytes);
     if charts.is_empty() || terms.is_empty() {
-        return Ok(HashMap::new());
+        return HashMap::new();
     }
     let mut out = HashMap::new();
     for (offset, body, _) in composite_records(bytes) {
@@ -515,7 +512,7 @@ pub(super) fn scan_intersection_carriers(
             };
             let endpoint_displacement = start_distance + end_distance;
             let Some((geometry, parameters, reversed)) =
-                solved_curve(ctx, chart, start, end, attr, &mut chart_refusal)?
+                solved_curve(chart, start, end, attr, &mut chart_refusal)
             else {
                 continue;
             };
@@ -578,20 +575,13 @@ pub(super) fn scan_intersection_carriers(
             },
         });
     }
-    Ok(out)
+    out
 }
 
 #[cfg(test)]
 mod tests {
     #[test]
     fn numerical_ranges_short_chart_chord_preserves_parameter_increment() {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[],
-            &arena,
-            &cadmpeg_core::decode::DecodePolicy::service(),
-        )
-        .unwrap();
         let endpoints = [[0., 0., 0.], [1e-200, 0., 0.]];
         let chart = super::Chart {
             endpoints,
@@ -601,14 +591,12 @@ mod tests {
             chordal_error: 1e-210,
         };
         let (_, parameters, reversed) = super::solved_curve(
-            &ctx,
             &chart,
             endpoints[0],
             endpoints[1],
             0,
             &mut crate::lane_refusal::LaneRefusals::new(),
         )
-        .expect("curve admission")
         .unwrap();
         assert_eq!(parameters, vec![0., 1.]);
         assert!(!reversed);
@@ -759,14 +747,12 @@ mod tests {
             chordal_error: 0.00001,
         };
         assert!(super::solved_curve(
-            &cadmpeg_test_support::service_decode_context(),
             &chart,
             POINTS[0],
             POINTS[2],
             9,
             &mut crate::lane_refusal::LaneRefusals::new(),
         )
-        .expect("service curve")
         .is_some());
     }
 
@@ -786,13 +772,6 @@ mod tests {
 
     #[test]
     fn marker_three_uv_has_two_values_per_chart_point() {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[],
-            &arena,
-            &cadmpeg_core::decode::DecodePolicy::service(),
-        )
-        .unwrap();
         let points = (0..9)
             .map(|index| [f64::from(index) * 0.01, 0.0, 0.0])
             .collect::<Vec<_>>();
@@ -815,20 +794,11 @@ mod tests {
         assert_eq!(chart.interior_points.len() + 2, 9);
         assert!(uv.width == UvWidth::Two);
         assert_eq!(uv.values.len(), (chart.interior_points.len() + 2) * 2);
-        assert!(scan_intersection_carriers(&ctx, &bytes, &mut Vec::new())
-            .expect("intersection scan")
-            .contains_key(&9));
+        assert!(scan_intersection_carriers(&bytes, &mut Vec::new()).contains_key(&9));
     }
 
     #[test]
     fn width_two_uv_is_legal_without_a_paired_support_cache() {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[],
-            &arena,
-            &cadmpeg_core::decode::DecodePolicy::service(),
-        )
-        .unwrap();
         let mut record = vec![0, 0xcc];
         record.extend_from_slice(&6_u32.to_be_bytes());
         record.extend_from_slice(&7_u16.to_be_bytes());
@@ -842,8 +812,7 @@ mod tests {
         bytes.extend(term(5, POINTS[0]));
         bytes.extend(term(6, POINTS[2]));
         bytes.extend(record);
-        let carriers =
-            scan_intersection_carriers(&ctx, &bytes, &mut Vec::new()).expect("intersection scan");
+        let carriers = scan_intersection_carriers(&bytes, &mut Vec::new());
         let carrier = carriers
             .get(&9)
             .expect("width-two support leaves the curve available");
@@ -852,15 +821,7 @@ mod tests {
 
     #[test]
     fn consistent_composite_yields_polyline() {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[],
-            &arena,
-            &cadmpeg_core::decode::DecodePolicy::service(),
-        )
-        .unwrap();
-        let carriers = scan_intersection_carriers(&ctx, &stream(), &mut Vec::new())
-            .expect("intersection scan");
+        let carriers = scan_intersection_carriers(&stream(), &mut Vec::new());
         let carrier = carriers.get(&9).expect("composite decoded");
         let Some(SolvedCurveGeometry::Nurbs(curve)) = carrier.carrier.geometry.solved() else {
             panic!("expected a NURBS polyline");
@@ -890,21 +851,13 @@ mod tests {
 
     #[test]
     fn intersection_data_entity_uses_the_same_composite_payload() {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[],
-            &arena,
-            &cadmpeg_core::decode::DecodePolicy::service(),
-        )
-        .unwrap();
         let mut bytes = intersection_data(9, [2, 3, 4, 5, 6, 7]);
         bytes.extend(chart(4, &POINTS));
         bytes.extend(term(5, POINTS[0]));
         bytes.extend(term(6, POINTS[2]));
         bytes.extend(uv(7, POINTS.len()));
 
-        let carrier = scan_intersection_carriers(&ctx, &bytes, &mut Vec::new())
-            .expect("intersection scan")
+        let carrier = scan_intersection_carriers(&bytes, &mut Vec::new())
             .remove(&9)
             .expect("intersection-data entity decoded");
         assert_eq!(carrier.carrier.offset, 0);
@@ -916,13 +869,6 @@ mod tests {
 
     #[test]
     fn negative_chart_scale_reverses_curve_and_uv_caches_atomically() {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[],
-            &arena,
-            &cadmpeg_core::decode::DecodePolicy::service(),
-        )
-        .unwrap();
         let mut bytes = composite(9, [2, 3, 4, 5, 6, 7]);
         let mut chart = chart(4, &POINTS);
         chart[16..24].copy_from_slice(&(-1.0f64).to_be_bytes());
@@ -931,8 +877,7 @@ mod tests {
         bytes.extend(term(6, POINTS[2]));
         bytes.extend(uv(7, POINTS.len()));
 
-        let carriers =
-            scan_intersection_carriers(&ctx, &bytes, &mut Vec::new()).expect("intersection scan");
+        let carriers = scan_intersection_carriers(&bytes, &mut Vec::new());
         let carrier = carriers.get(&9).expect("decreasing chart decoded");
         let Some(SolvedCurveGeometry::Nurbs(curve)) = carrier.carrier.geometry.solved() else {
             panic!("expected a NURBS polyline");
@@ -955,41 +900,25 @@ mod tests {
 
     #[test]
     fn seam_row_uv_count_is_accepted() {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[],
-            &arena,
-            &cadmpeg_core::decode::DecodePolicy::service(),
-        )
-        .unwrap();
         let mut bytes = composite(9, [2, 3, 4, 5, 6, 7]);
         bytes.extend(chart(4, &POINTS));
         bytes.extend(term(5, POINTS[0]));
         bytes.extend(term(6, POINTS[2]));
         bytes.extend(uv(7, POINTS.len() + 1));
-        let carriers =
-            scan_intersection_carriers(&ctx, &bytes, &mut Vec::new()).expect("intersection scan");
+        let carriers = scan_intersection_carriers(&bytes, &mut Vec::new());
         let carrier = carriers.get(&9).expect("seam-row carrier decoded");
         assert!(carrier.support_data.support_uv.is_none());
     }
 
     #[test]
     fn exact_terminator_replaces_an_approximate_chart_endpoint() {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[],
-            &arena,
-            &cadmpeg_core::decode::DecodePolicy::service(),
-        )
-        .unwrap();
         let end = [0.011, 0.01, 0.0];
         let mut bytes = composite(9, [2, 3, 4, 5, 6, 7]);
         bytes.extend(chart(4, &POINTS));
         bytes.extend(term(5, POINTS[0]));
         bytes.extend(term(6, end));
         bytes.extend(uv(7, POINTS.len()));
-        let carriers =
-            scan_intersection_carriers(&ctx, &bytes, &mut Vec::new()).expect("intersection scan");
+        let carriers = scan_intersection_carriers(&bytes, &mut Vec::new());
         let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) = &carriers
             .get(&9)
             .expect("composite decoded")
@@ -1006,13 +935,6 @@ mod tests {
 
     #[test]
     fn missing_chart_sentinels_reject_the_chart() {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[],
-            &arena,
-            &cadmpeg_core::decode::DecodePolicy::service(),
-        )
-        .unwrap();
         let mut bytes = composite(9, [2, 3, 4, 5, 6, 7]);
         let mut bad = chart(4, &POINTS);
         let at = bad.len() - POINTS.len() * 24 - 16;
@@ -1021,20 +943,11 @@ mod tests {
         bytes.extend(term(5, POINTS[0]));
         bytes.extend(term(6, POINTS[2]));
         bytes.extend(uv(7, POINTS.len()));
-        assert!(scan_intersection_carriers(&ctx, &bytes, &mut Vec::new())
-            .expect("intersection scan")
-            .is_empty());
+        assert!(scan_intersection_carriers(&bytes, &mut Vec::new()).is_empty());
     }
 
     #[test]
     fn ring_composite_with_one_char_label_and_no_uv_record_decodes() {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[],
-            &arena,
-            &cadmpeg_core::decode::DecodePolicy::service(),
-        )
-        .unwrap();
         let ring = [
             [0.0, 0.0, 0.0],
             [0.01, 0.0, 0.0],
@@ -1051,8 +964,7 @@ mod tests {
             term.extend_from_slice(&value.to_be_bytes());
         }
         bytes.extend(term);
-        let carriers =
-            scan_intersection_carriers(&ctx, &bytes, &mut Vec::new()).expect("intersection scan");
+        let carriers = scan_intersection_carriers(&bytes, &mut Vec::new());
         let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) = &carriers
             .get(&9)
             .expect("ring composite decoded")
@@ -1067,33 +979,18 @@ mod tests {
 
     #[test]
     fn mismatched_optional_uv_count_does_not_reject_the_curve() {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[],
-            &arena,
-            &cadmpeg_core::decode::DecodePolicy::service(),
-        )
-        .unwrap();
         let mut bytes = composite(9, [2, 3, 4, 5, 6, 7]);
         bytes.extend(chart(4, &POINTS));
         bytes.extend(term(5, POINTS[0]));
         bytes.extend(term(6, POINTS[2]));
         bytes.extend(uv(7, POINTS.len() + 2));
-        let carriers =
-            scan_intersection_carriers(&ctx, &bytes, &mut Vec::new()).expect("intersection scan");
+        let carriers = scan_intersection_carriers(&bytes, &mut Vec::new());
         assert!(carriers.contains_key(&9));
         assert!(carriers[&9].support_data.support_uv.is_none());
     }
 
     #[test]
     fn extended_chart_stride_is_selected_by_witnesses() {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[],
-            &arena,
-            &cadmpeg_core::decode::DecodePolicy::service(),
-        )
-        .unwrap();
         let chart_bytes = extended_chart(4, &POINTS, [0.5, 0.0, 0.0]);
         let (_, candidates) = chart_candidates(&chart_bytes, 2).expect("chart candidates");
         assert_eq!(candidates.len(), 2);
@@ -1104,8 +1001,7 @@ mod tests {
         bytes.extend(term(6, POINTS[2]));
         bytes.extend(uv(7, POINTS.len()));
 
-        let carriers =
-            scan_intersection_carriers(&ctx, &bytes, &mut Vec::new()).expect("intersection scan");
+        let carriers = scan_intersection_carriers(&bytes, &mut Vec::new());
         let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) = &carriers
             .get(&9)
             .expect("extended chart decoded")
@@ -1127,13 +1023,6 @@ mod tests {
 
     #[test]
     fn ambiguous_chart_stride_does_not_select_first_candidate() {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[],
-            &arena,
-            &cadmpeg_core::decode::DecodePolicy::service(),
-        )
-        .unwrap();
         let end = POINTS[2];
         let mut chart_bytes = extended_chart(4, &[POINTS[0], end], [0.5, 0.0, 0.0]);
         let bare_endpoint = 2 + 6 + 52 + 24;
@@ -1149,8 +1038,6 @@ mod tests {
         bytes.extend(term(5, POINTS[0]));
         bytes.extend(term(6, end));
         bytes.extend(uv(7, 2));
-        assert!(scan_intersection_carriers(&ctx, &bytes, &mut Vec::new())
-            .expect("intersection scan")
-            .is_empty());
+        assert!(scan_intersection_carriers(&bytes, &mut Vec::new()).is_empty());
     }
 }

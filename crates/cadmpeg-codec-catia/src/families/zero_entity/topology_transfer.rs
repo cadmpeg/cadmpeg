@@ -194,19 +194,14 @@ pub(super) fn transfer_closed_face_topology(
                     let oriented_endpoints = loop_record.oriented_model_endpoints[member_index];
                     let pcurve = match support.pcurve.as_ref() {
                         Some(pcurve) => {
-                            let geometry = match super::records::zero_entity_neutral_pcurve(
-                                admission.context(),
+                            let geometry = super::records::zero_entity_neutral_pcurve(
                                 surface_geometry,
                                 pcurve,
                                 &format_args!(
                                     "zero-entity support record #{support_record_ordinal}"
                                 ),
                                 refusal,
-                            ) {
-                                Ok(Some(geometry)) => geometry,
-                                Ok(None) => return None,
-                                Err(error) => return Some(Err(error)),
-                            };
+                            )?;
                             let parameter_range = pcurve_parameter_range(&geometry)?;
                             Some(OccurrencePcurve {
                                 id: admitted!(crate::resource::compose_u32_id(
@@ -303,16 +298,11 @@ pub(super) fn transfer_closed_face_topology(
                         )
                     {
                         let reversed_geometry = crate::nurbs::reverse_curve_geometry(
-                            admission.context(),
                             &curve_geometry,
                             parameter_range,
                             refusal,
                             "zero-entity edge curve reversed onto its coedge",
                         );
-                        let reversed_geometry = match reversed_geometry {
-                            Ok(geometry) => geometry,
-                            Err(error) => return Some(Err(error)),
-                        };
                         let curve = ir
                             .model
                             .curves

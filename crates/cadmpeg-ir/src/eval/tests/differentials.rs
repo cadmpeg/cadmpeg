@@ -17,7 +17,6 @@ const EPS_RATIONAL_ARC_IDENTITY: f64 = 1.0e-11;
 #[test]
 fn bilinear_surface_partials_follow_stored_parameterization() {
     let surface = NurbsSurface::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         NurbsSurfaceLanes::new(
@@ -29,7 +28,6 @@ fn bilinear_surface_partials_follow_stored_parameterization() {
         ),
         false,
     )
-    .expect("fixture constructor admission")
     .unwrap();
     let partials = nurbs_surface_partials(
         crate::eval::admission::EvaluationAdmission::Standard,
@@ -46,7 +44,6 @@ fn bilinear_surface_partials_follow_stored_parameterization() {
 #[test]
 fn quadratic_surface_second_partials_follow_stored_parameterization() {
     let surface = NurbsSurface::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0], false),
         NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0], false),
         NurbsSurfaceLanes::new(
@@ -67,7 +64,6 @@ fn quadratic_surface_second_partials_follow_stored_parameterization() {
         ),
         false,
     )
-    .expect("fixture constructor admission")
     .unwrap();
     let partials = nurbs_surface_second_partials(
         crate::eval::admission::EvaluationAdmission::Standard,
@@ -256,7 +252,6 @@ fn analytic_and_rational_curve_derivatives_are_exact() {
 
     let arc = SolvedCurveGeometry::Nurbs(
         NurbsCurve::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             2,
             vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
             vec![
@@ -267,7 +262,6 @@ fn analytic_and_rational_curve_derivatives_are_exact() {
             Some(vec![1.0, std::f64::consts::FRAC_1_SQRT_2, 1.0]),
             false,
         )
-        .expect("fixture constructor admission")
         .unwrap(),
     );
     for parameter in [0.0, 0.5, 1.0] {
@@ -314,9 +308,7 @@ fn analytic_and_rational_curve_derivatives_are_exact() {
                 .expect("nonempty polyline fixture"),
             },
             0.0,
-            &cadmpeg_test_support::service_decode_context(),
         )
-        .expect("polyline construction admission")
         .unwrap(),
     );
     assert_eq!(
@@ -343,7 +335,6 @@ fn analytic_and_rational_curve_derivatives_are_exact() {
 #[test]
 fn rational_surface_partials_apply_the_weight_quotient_rule() {
     let surface = NurbsSurface::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         NurbsSurfaceLanes::new(
@@ -356,7 +347,6 @@ fn rational_surface_partials_apply_the_weight_quotient_rule() {
         ),
         false,
     )
-    .expect("fixture constructor admission")
     .unwrap();
     let partials = nurbs_surface_partials(
         crate::eval::admission::EvaluationAdmission::Standard,
@@ -386,7 +376,6 @@ fn rational_surface_partials_apply_the_weight_quotient_rule() {
 #[test]
 fn rational_surface_isocurves_preserve_the_tensor_product_parameterization() {
     let surface = NurbsSurface::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         NurbsSurfaceLanes::new(
@@ -399,7 +388,6 @@ fn rational_surface_isocurves_preserve_the_tensor_product_parameterization() {
         ),
         false,
     )
-    .expect("fixture constructor admission")
     .unwrap();
     for (axis, fixed) in [
         (SurfaceParameterAxis::U, 0.25),

@@ -1167,10 +1167,6 @@ fn generated_projected_brep_c2_curve(
     v_axis: cadmpeg_ir::math::Vector3,
 ) -> Result<([u8; 16], Vec<u8>), CodecError> {
     use cadmpeg_ir::topology::Sense;
-    let writer_arena = cadmpeg_core::decode::DecodeArena::new();
-    let writer_policy = cadmpeg_core::decode::DecodePolicy::desktop();
-    let (writer_ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &writer_arena, &writer_policy)?;
 
     Ok(match edge.curve {
         WritableEdgeCurve::Line(_) => {
@@ -1211,11 +1207,11 @@ fn generated_projected_brep_c2_curve(
                 })?] + projected.knots()[projected.pole_count()];
                 projected.reverse_parameterization();
                 projected
-                    .edit_knots(&writer_ctx, |knots| {
+                    .edit_knots(|knots| {
                         for knot in knots {
                             *knot += sum;
                         }
-                    })?
+                    })
                     .map_err(|error| CodecError::NotImplemented(error.to_string()))?;
                 canonicalize_native_curve_knots(&mut projected, edge.curve_id)?;
             }
@@ -1231,25 +1227,15 @@ fn canonicalize_native_curve_knots(
     curve: &mut cadmpeg_ir::geometry::nurbs::NurbsCurve,
     id: &str,
 ) -> Result<(), CodecError> {
-    // Native-canonical writer checks state an independent construction policy.
-    let writer_arena = cadmpeg_core::decode::DecodeArena::new();
-    let writer_policy = cadmpeg_core::decode::DecodePolicy::desktop();
-    let (writer_ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &writer_arena, &writer_policy)?;
     let order = usize::try_from(curve.degree())
         .map_err(|_| CodecError::Malformed("Rhino count exceeds address space".into()))?
         + 1;
     let count = curve.control_points().len();
     let stored = curve.knots()[1..curve.knots().len() - 1].to_vec();
-    let reconstructed =
-        crate::surfaces::reconstruct_knots(&stored, order, count).map_err(|error| match error {
-            crate::curves::GeometryError::Codec(CodecError::ResourceLimit(limit)) => {
-                CodecError::ResourceLimit(limit)
-            }
-            error => CodecError::NotImplemented(format!("curve {id}: {error}")),
-        })?;
+    let reconstructed = crate::surfaces::reconstruct_knots(&stored, order, count)
+        .map_err(|error| CodecError::NotImplemented(format!("curve {id}: {error}")))?;
     curve
-        .edit_knots(&writer_ctx, |knots| knots.copy_from_slice(&reconstructed))?
+        .edit_knots(|knots| knots.copy_from_slice(&reconstructed))
         .map_err(|error| CodecError::NotImplemented(format!("curve {id}: {error}")))?;
     Ok(())
 }

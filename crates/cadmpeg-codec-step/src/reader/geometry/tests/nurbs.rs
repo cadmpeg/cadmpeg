@@ -17,20 +17,13 @@ use crate::StepSchema;
 fn explicit_knot_expansion_retains_admitted_bits_and_refusal() {
     use crate::parse::Value;
 
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::service();
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
     let counts = Value::List(vec![Value::Integer(2), Value::Integer(1)]);
     let values = Value::List(vec![
         Value::Real(cadmpeg_ir::scalar::FiniteReal::new(-0.0).expect("finite fixture")),
         Value::Real(cadmpeg_ir::scalar::FiniteReal::new(0.5).expect("finite fixture")),
     ]);
     let knots: cadmpeg_ir::geometry::nurbs::KnotVector =
-        super::super::expand_knots(&counts, &values, 3, &ctx)
-            .expect("no resource refusal")
-            .expect("finite ordered knots");
+        super::super::expand_knots(&counts, &values, 3).expect("finite ordered knots");
     assert_eq!(knots.as_slice().len(), 3);
     assert_eq!(knots.as_slice()[0].to_bits(), (-0.0_f64).to_bits());
     assert_eq!(knots.as_slice()[1].to_bits(), (-0.0_f64).to_bits());
@@ -41,40 +34,28 @@ fn explicit_knot_expansion_retains_admitted_bits_and_refusal() {
         Value::Real(cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite fixture")),
         Value::Real(cadmpeg_ir::scalar::FiniteReal::new(0.5).expect("finite fixture")),
     ]);
-    assert!(super::super::expand_knots(&counts, &decreasing, 3, &ctx)
-        .expect("no resource refusal")
-        .is_none());
+    assert!(super::super::expand_knots(&counts, &decreasing, 3).is_none());
 }
 
 #[test]
 fn knot_constructors_move_one_admitted_value_vector() {
     use super::super::DefaultNurbsKnotKind;
     use crate::parse::Value;
-    use cadmpeg_core::decode::DecodePolicy;
 
-    let policy = DecodePolicy::service();
-    crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
-        let counts = Value::List(vec![Value::Integer(2), Value::Integer(1)]);
-        let values = Value::List(vec![
-            Value::Real(cadmpeg_ir::scalar::FiniteReal::ZERO),
-            Value::Real(cadmpeg_ir::scalar::FiniteReal::new(0.5).expect("finite knot")),
-        ]);
-        let knots = super::super::expand_knots(&counts, &values, 3, ctx)
-            .expect("one knot allocation")
-            .expect("ordered knots");
-        assert_eq!(knots.as_slice(), [0.0, 0.0, 0.5]);
-    });
+    let counts = Value::List(vec![Value::Integer(2), Value::Integer(1)]);
+    let values = Value::List(vec![
+        Value::Real(cadmpeg_ir::scalar::FiniteReal::ZERO),
+        Value::Real(cadmpeg_ir::scalar::FiniteReal::new(0.5).expect("finite knot")),
+    ]);
+    let knots = super::super::expand_knots(&counts, &values, 3).expect("ordered knots");
+    assert_eq!(knots.as_slice(), [0.0, 0.0, 0.5]);
     for (kind, expected) in [
         (DefaultNurbsKnotKind::Uniform, [-1.0, 0.0, 1.0, 2.0]),
         (DefaultNurbsKnotKind::QuasiUniform, [0.0, 0.0, 1.0, 1.0]),
         (DefaultNurbsKnotKind::Bezier, [0.0, 0.0, 1.0, 1.0]),
     ] {
-        crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
-            let knots = super::super::default_nurbs_knots(2, 1, kind, ctx)
-                .expect("one knot allocation")
-                .expect("default knots");
-            assert_eq!(knots.as_slice(), expected);
-        });
+        let knots = super::super::default_nurbs_knots(2, 1, kind).expect("default knots");
+        assert_eq!(knots.as_slice(), expected);
     }
 }
 

@@ -599,17 +599,14 @@ fn cosmetic_thread_accepts_repeated_carriers_with_distinct_owner_paths() {
         sketch_entities: Vec::new(),
     };
 
-    with_projection_context(|ctx| {
-        project_compact_surface_selections(
-            ctx,
-            &mut features,
-            std::slice::from_ref(&history),
-            &[
-                lane("one", selection("one", first_tail)),
-                lane("two", selection("two", second_tail)),
-            ],
-        )
-    })
+    project_compact_surface_selections(
+        &mut features,
+        std::slice::from_ref(&history),
+        &[
+            lane("one", selection("one", first_tail)),
+            lane("two", selection("two", second_tail)),
+        ],
+    )
     .unwrap();
 
     assert!(matches!(
@@ -676,10 +673,7 @@ fn compact_surface_selection_binds_surface_operation_face_slot() {
         references: Vec::new(),
         sketch_entities: Vec::new(),
     };
-    with_projection_context(|ctx| {
-        project_compact_surface_selections(ctx, &mut features, &[], &[lane])
-    })
-    .unwrap();
+    project_compact_surface_selections(&mut features, &[], &[lane]).unwrap();
 
     let FeatureDefinition::Operation(FeatureOperation::OffsetSurface { faces, .. }) =
         features[0].evaluation.definition()
@@ -770,10 +764,7 @@ fn compact_surface_selection_binds_full_round_fillet_face_sets() {
     for selection in &mut lane_two.surface_selections {
         selection.parent = lane_two.id.clone();
     }
-    with_projection_context(|ctx| {
-        project_compact_surface_selections(ctx, &mut features, &[], &[lane, lane_two])
-    })
-    .unwrap();
+    project_compact_surface_selections(&mut features, &[], &[lane, lane_two]).unwrap();
 
     let FeatureDefinition::Operation(FeatureOperation::FullRoundFillet { groups }) =
         features[1].evaluation.definition()
@@ -904,10 +895,7 @@ fn compact_surface_cut_binds_target_body_and_tool_face_by_vector_order() {
         selection.parent = lane2.id.clone();
     }
 
-    with_projection_context(|ctx| {
-        project_compact_surface_selections(ctx, &mut features, &[], &[lane, lane2])
-    })
-    .unwrap();
+    project_compact_surface_selections(&mut features, &[], &[lane, lane2]).unwrap();
 
     let FeatureDefinition::Operation(FeatureOperation::CutWithSurface {
         targets,
@@ -1019,10 +1007,7 @@ fn planar_surface_keeps_unresolved_definition_and_adds_defining_dependencies() {
         sketch_entities: Vec::new(),
     };
 
-    with_projection_context(|ctx| {
-        project_compact_surface_selections(ctx, &mut features, &[], &[lane])
-    })
-    .unwrap();
+    project_compact_surface_selections(&mut features, &[], &[lane]).unwrap();
 
     assert!(matches!(
         features[2].evaluation.definition(),
@@ -1143,17 +1128,14 @@ fn compact_surface_selection_accepts_semantic_lane_consensus() {
         sketch_entities: Vec::new(),
     };
 
-    with_projection_context(|ctx| {
-        project_compact_surface_selections(
-            ctx,
-            &mut features,
-            std::slice::from_ref(&history),
-            &[
-                lane("one", selection("one", first_signature.into())),
-                lane("two", selection("two", second_signature.into())),
-            ],
-        )
-    })
+    project_compact_surface_selections(
+        &mut features,
+        std::slice::from_ref(&history),
+        &[
+            lane("one", selection("one", first_signature.into())),
+            lane("two", selection("two", second_signature.into())),
+        ],
+    )
     .unwrap();
 
     let cadmpeg_ir::features::FeatureDefinition::Operation(
@@ -1181,17 +1163,14 @@ fn compact_surface_selection_accepts_semantic_lane_consensus() {
     });
     let mut conflicting = selection("conflicting", first_signature.into());
     conflicting.components[0].local_id = Some(8);
-    with_projection_context(|ctx| {
-        project_compact_surface_selections(
-            ctx,
-            &mut features,
-            std::slice::from_ref(&history),
-            &[
-                lane("one", selection("one", first_signature.into())),
-                lane("conflicting", conflicting),
-            ],
-        )
-    })
+    project_compact_surface_selections(
+        &mut features,
+        std::slice::from_ref(&history),
+        &[
+            lane("one", selection("one", first_signature.into())),
+            lane("conflicting", conflicting),
+        ],
+    )
     .unwrap();
     assert!(matches!(
         features[1].evaluation.definition(),
@@ -1325,10 +1304,7 @@ fn split_face_collects_distinct_generated_target_faces() {
         sketch_entities: Vec::new(),
     };
 
-    with_projection_context(|ctx| {
-        project_compact_surface_selections(ctx, &mut features, &[history], &[lane])
-    })
-    .unwrap();
+    project_compact_surface_selections(&mut features, &[history], &[lane]).unwrap();
 
     let FeatureDefinition::Operation(FeatureOperation::SplitFace { targets, .. }) =
         features[2].evaluation.definition()
@@ -1527,15 +1503,7 @@ fn variable_fillet_radii_join_control_vertices_to_edge_endpoints() {
         ),
         native_ref: Some("variable".into()),
     }];
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )
-    .expect("fillet fixture context");
     super::project_compact_edge_selections(
-        &ctx,
         &mut projected,
         std::slice::from_ref(&history),
         std::slice::from_ref(&lane),

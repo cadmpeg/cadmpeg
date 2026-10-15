@@ -28,10 +28,7 @@ fn polar_poles() -> Vec<PolarNurbsPole> {
 
 #[test]
 fn pcurve_construction_moves_admitted_lanes_and_admits_finite_knot_conversion() {
-    let setup = cadmpeg_test_support::service_decode_context();
-    let knots = KnotVector::new(&setup, knots())
-        .expect("setup admission")
-        .expect("knots");
+    let knots = KnotVector::new(knots()).expect("knots");
     let knot_address = knots.as_ptr();
     let points: Vec<_> = points()
         .into_iter()
@@ -45,9 +42,8 @@ fn pcurve_construction_moves_admitted_lanes_and_admits_finite_knot_conversion() 
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    let built = PcurveNurbs::new(&ctx, 1, knots, PcurveNurbsPoles::Rational { points }, false)
-        .expect("move requires no storage or visits")
-        .expect("valid");
+    let built =
+        PcurveNurbs::new(1, knots, PcurveNurbsPoles::Rational { points }, false).expect("valid");
     let PcurveNurbsPoles::Rational { points } = built.pole_rows() else {
         panic!("rational");
     };
@@ -58,10 +54,8 @@ fn pcurve_construction_moves_admitted_lanes_and_admits_finite_knot_conversion() 
 
 #[test]
 fn pcurve_construction_checks_weight_lanes_before_degree_and_knots() {
-    let ctx = cadmpeg_test_support::service_decode_context();
     assert_eq!(
-        PcurveNurbs::from_lanes(&ctx, 0, Vec::<f64>::new(), points(), Some(vec![0.0]), false)
-            .expect("construction admission"),
+        PcurveNurbs::from_lanes(0, Vec::<f64>::new(), points(), Some(vec![0.0]), false),
         Err(NurbsError::WeightLaneLength {
             field: "pcurve poles".into(),
             poles: 2,
@@ -70,14 +64,12 @@ fn pcurve_construction_checks_weight_lanes_before_degree_and_knots() {
     );
     assert_eq!(
         PolarPcurveNurbs::from_lanes(
-            &ctx,
             0,
             Vec::<f64>::new(),
             polar_poles(),
             Some(vec![1.0, 0.0]),
-            false
-        )
-        .expect("construction admission"),
+            false,
+        ),
         Err(NurbsError::UnusableWeight {
             field: "polar poles".into(),
             index: 1,

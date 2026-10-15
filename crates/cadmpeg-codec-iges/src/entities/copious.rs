@@ -534,10 +534,8 @@ pub(super) fn project(
             .ok_or_else(|| CodecError::malformed("copious-data curve: knots must be finite"))?;
         let mut raw_knots = Vec::new();
         raw_knots.extend(knots.into_iter().map(FiniteReal::get));
-        let nurbs = match KnotVector::new(ctx, raw_knots)? {
-            Err(error) => Err(error),
-            Ok(knots) => NurbsCurve::from_checked_lanes(ctx, 1, knots, positions, None, false)?,
-        };
+        let nurbs = KnotVector::new(raw_knots)
+            .and_then(|knots| NurbsCurve::from_checked_lanes(1, knots, positions, None, false));
 
         ctx.charge_entities(1, "iges_geometry_copious")?;
         ir.model.curves.push(Curve {

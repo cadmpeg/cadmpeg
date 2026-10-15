@@ -232,7 +232,7 @@ pub(super) fn revolution_surface(
         return Ok(None);
     };
     let [parameter_interval, native_angular_interval] = bounds;
-    let Some(directrix) = profile_nurbs(ctx, profile, parameter_interval, record, refusal)? else {
+    let Some(directrix) = profile_nurbs(profile, parameter_interval, record, refusal) else {
         return Ok(None);
     };
     let angular_interval = [
@@ -265,12 +265,11 @@ pub(super) fn revolution_surface(
 }
 
 fn profile_nurbs(
-    ctx: &DecodeContext<'_>,
     profile: &B5Profile,
     interval: [f64; 2],
     record: &dyn std::fmt::Display,
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> Result<Option<NurbsCurve>, CodecError> {
+) -> Option<NurbsCurve> {
     if !profile
         .parameter_range()
         .endpoints()
@@ -278,14 +277,13 @@ fn profile_nurbs(
         .zip(interval)
         .all(|(profile, surface)| profile.to_bits() == surface.to_bits())
     {
-        return Ok(None);
+        return None;
     }
-    Ok(match profile {
+    match profile {
         B5Profile::Line {
             point, direction, ..
         } => crate::nurbs::note_refusal(
             cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
-                ctx,
                 1,
                 vec![interval[0], interval[0], interval[1], interval[1]],
                 interval
@@ -296,7 +294,7 @@ fn profile_nurbs(
                     .collect::<Vec<_>>(),
                 None,
                 false,
-            )?,
+            ),
             refusal,
             format_args!("b5 line profile of a revolution surface: {record}"),
         ),
@@ -307,38 +305,33 @@ fn profile_nurbs(
             radius,
             ..
         } => rational_arc(
-            ctx,
             coordinates(*center),
             (direction_x.get(), direction_y.get()),
             radius.get(),
             interval,
             record,
             refusal,
-        )?,
-    })
+        ),
+    }
 }
 
 pub(super) fn rational_arc(
-    ctx: &DecodeContext<'_>,
     center: [f64; 3],
     (direction_x, direction_y): ([f64; 3], [f64; 3]),
     radius: f64,
     interval: [f64; 2],
     record: &dyn std::fmt::Display,
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> Result<Option<NurbsCurve>, CodecError> {
+) -> Option<NurbsCurve> {
     let angles = [interval[0] / radius, interval[1] / radius];
     let span_count = ((angles[1] - angles[0]).abs() / std::f64::consts::FRAC_PI_2).ceil();
     if !span_count.is_finite() || span_count > crate::MAX_EXACT_ARC_SPANS {
-        return Ok(None);
+        return None;
     }
     // `ceil` answers zero only for an angular span of exactly zero: an arc that
     // sweeps no angle states no span, which this route refuses as it refuses
     // every other degeneracy.
-    let Some(span_count) = truncate_f64_to_usize(span_count).and_then(std::num::NonZeroUsize::new)
-    else {
-        return Ok(None);
-    };
+    let span_count = truncate_f64_to_usize(span_count).and_then(std::num::NonZeroUsize::new)?;
     let span_count = span_count.get();
     let mut control_points = Vec::new();
 
@@ -347,26 +340,14 @@ pub(super) fn rational_arc(
     let mut knots = Vec::new();
 
     for span in 0..span_count {
-        let fraction0 = match f64_from_index(span) {
-            Some(value) => value,
-            None => return Ok(None),
-        } / match f64_from_index(span_count) {
-            Some(value) => value,
-            None => return Ok(None),
-        };
-        let fraction1 = match f64_from_index(span + 1) {
-            Some(value) => value,
-            None => return Ok(None),
-        } / match f64_from_index(span_count) {
-            Some(value) => value,
-            None => return Ok(None),
-        };
+        let fraction0 = f64_from_index(span)? / f64_from_index(span_count)?;
+        let fraction1 = f64_from_index(span + 1)? / f64_from_index(span_count)?;
         let angle0 = angles[0] + (angles[1] - angles[0]) * fraction0;
         let angle1 = angles[0] + (angles[1] - angles[0]) * fraction1;
         let middle = (angle0 + angle1) * 0.5;
         let middle_weight = ((angle1 - angle0) * 0.5).cos();
         if middle_weight <= f64::EPSILON {
-            return Ok(None);
+            return None;
         }
         if span == 0 {
             control_points.push(point3(circle_point(
@@ -394,22 +375,19 @@ pub(super) fn rational_arc(
             angle1,
         )));
         weights.push(1.0);
-        if append_quadratic_span_knots(&mut knots, interval, span, span_count).is_none() {
-            return Ok(None);
-        }
+        append_quadratic_span_knots(&mut knots, interval, span, span_count)?;
     }
-    Ok(crate::nurbs::note_refusal(
+    crate::nurbs::note_refusal(
         cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
-            ctx,
             2,
             knots,
             control_points,
             Some(weights),
             false,
-        )?,
+        ),
         refusal,
         format_args!("b5 rational arc profile of a revolution surface: {record}"),
-    ))
+    )
 }
 
 pub(super) fn revolve_nurbs(
@@ -506,8 +484,7 @@ pub(super) fn revolve_nurbs(
             .map(<[_]>::to_vec)
             .collect::<Vec<_>>();
         let surface = crate::nurbs::note_refusal(
-            match cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes(
-                ctx,
+            cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes(
                 cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                     profile.degree(),
                     profile_knots,
@@ -516,10 +493,7 @@ pub(super) fn revolve_nurbs(
                 cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(2, v_knots, false),
                 cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(point_rows, Some(weight_rows)),
                 false,
-            ) {
-                Ok(value) => value,
-                Err(error) => return Some(Err(error)),
-            },
+            ),
             refusal,
             format_args!("b5 revolution surface built from its profile: {record}"),
         )?;
@@ -1057,14 +1031,12 @@ mod tests {
         ]);
         let pcurve = |x| PcurveGeometry::Nurbs {
             nurbs: PcurveNurbs::from_lanes(
-                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![Point2::new(x, 0.0), Point2::new(x, 1.0)],
                 None,
                 false,
             )
-            .expect("fixture pcurve construction admission")
             .expect("valid support pcurve"),
         };
         let extrusion = ResolvedExtrusionSurface {
@@ -1182,14 +1154,12 @@ mod tests {
         use cadmpeg_ir::geometry::nurbs::NurbsCurve;
         use cadmpeg_ir::math::Point3;
         let profile = NurbsCurve::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 0.0, 1.0)],
             None,
             false,
         )
-        .expect("fixture constructor admission")
         .expect("valid revolution profile");
         let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
             revolve_nurbs(
@@ -1219,13 +1189,11 @@ mod carrier_resource_tests {
     fn nurbs_surface_carrier_result() {
         let surface = B5Surface::Nurbs(
             NurbsSurface::from_lanes(
-                &cadmpeg_test_support::service_decode_context(),
                 NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
                 NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
                 NurbsSurfaceLanes::new(vec![vec![Point3::new(0.0, 0.0, 0.0); 2]; 2], None),
                 false,
             )
-            .expect("fixture constructor admission")
             .expect("valid bilinear surface"),
         );
         let admitted = surface_carrier(&surface);

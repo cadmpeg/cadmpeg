@@ -754,7 +754,6 @@ fn same_basis_ruled_surface(
     first: &NurbsCurve,
     second: &NurbsCurve,
     weights: &[NonZeroReal],
-    ctx: &DecodeContext<'_>,
 ) -> Result<NurbsSurface, CodecError> {
     let mut pole_rows = Vec::new();
     for index in 0..first.pole_count() {
@@ -784,7 +783,6 @@ fn same_basis_ruled_surface(
     let u_knots = first.knots().to_vec();
     let v_knots = vec![0.0, 0.0, 1.0, 1.0];
     NurbsSurface::new(
-        ctx,
         NurbsSurfaceAxis::new(
             first.degree(),
             u_knots,
@@ -793,7 +791,7 @@ fn same_basis_ruled_surface(
         NurbsSurfaceAxis::new(1, v_knots, false),
         poles,
         false,
-    )?
+    )
     .map_err(CodecError::malformed)
 }
 
@@ -812,7 +810,6 @@ fn admit_surface_pole_count(pole_count: usize) -> Result<(), CodecError> {
 fn ruled_surface_carrier(
     first: &NurbsCurve,
     second: &NurbsCurve,
-    ctx: &DecodeContext<'_>,
 ) -> Result<Option<NurbsSurface>, cadmpeg_core::CodecError> {
     if first.degree() == second.degree()
         && first.knots() == second.knots()
@@ -823,7 +820,7 @@ fn ruled_surface_carrier(
                 return Ok(None);
             };
             admit_surface_pole_count(pole_count)?;
-            return same_basis_ruled_surface(first, second, &weights, ctx).map(Some);
+            return same_basis_ruled_surface(first, second, &weights).map(Some);
         }
     }
     let lanes = ruled_surface_span_lanes(first, second)?;
@@ -851,12 +848,11 @@ fn ruled_surface_carrier(
         pair_admitted_surface_poles(pole_rows, weight_rows).map_err(CodecError::malformed)?;
     Ok(Some(
         NurbsSurface::new(
-            ctx,
             NurbsSurfaceAxis::new(degree, u_knots, first.periodic() && second.periodic()),
             NurbsSurfaceAxis::new(1, v_knots, false),
             poles,
             false,
-        )?
+        )
         .map_err(cadmpeg_core::CodecError::malformed)?,
     ))
 }
@@ -1546,11 +1542,11 @@ pub(super) fn project(
             let knot_sum = second.knots()[0] + second.knots()[second.knots().len() - 1];
             second.reverse_parameterization();
             if second
-                .edit_knots(ctx, |knots| {
+                .edit_knots(|knots| {
                     for knot in knots {
                         *knot += knot_sum;
                     }
-                })?
+                })
                 .is_err()
             {
                 super::push_attributed_loss(
@@ -1562,7 +1558,7 @@ pub(super) fn project(
                 continue;
             }
         }
-        let surface = match ruled_surface_carrier(&first, &second, ctx) {
+        let surface = match ruled_surface_carrier(&first, &second) {
             Ok(Some(surface)) => surface,
             Ok(None) => {
                 super::push_geometry_loss(
@@ -1998,10 +1994,8 @@ pub(super) fn project(
         let u_knots = placed_directrix.knots().to_vec();
         let v_knots = vec![0.0, 0.0, 1.0, 1.0];
         let paired = pair_admitted_surface_poles(pole_rows, weights);
-        let construction = match paired {
-            Err(error) => Err(error),
-            Ok(poles) => NurbsSurface::new(
-                ctx,
+        let construction = paired.and_then(|poles| {
+            NurbsSurface::new(
                 NurbsSurfaceAxis::new(
                     placed_directrix.degree(),
                     u_knots,
@@ -2010,8 +2004,8 @@ pub(super) fn project(
                 NurbsSurfaceAxis::new(1, v_knots, false),
                 poles,
                 false,
-            )?,
-        };
+            )
+        });
         let surface = match construction {
             Ok(nurbs) => nurbs,
             Err(error) => {
@@ -2399,10 +2393,8 @@ pub(super) fn project(
         }
         let surface_id = crate::ids::surface(&crate::ids::Stem::directory(entry.sequence));
         let paired = pair_admitted_surface_poles(pole_rows, Some(weight_rows));
-        let construction = match paired {
-            Err(error) => Err(error),
-            Ok(poles) => NurbsSurface::new(
-                ctx,
+        let construction = paired.and_then(|poles| {
+            NurbsSurface::new(
                 NurbsSurfaceAxis::new(generatrix.degree(), u_knots, generatrix.periodic()),
                 NurbsSurfaceAxis::new(
                     2,
@@ -2414,8 +2406,8 @@ pub(super) fn project(
                 ),
                 poles,
                 false,
-            )?,
-        };
+            )
+        });
         let surface = match construction {
             Ok(nurbs) => nurbs,
             Err(error) => {
@@ -2714,10 +2706,9 @@ pub(super) fn project(
         let v_domain = [finite_v_knots[v_degree_usize], finite_v_knots[v_count]];
         let raw_u_knots = finite_u_knots.into_iter().map(FiniteReal::get).collect();
         let raw_v_knots = finite_v_knots.into_iter().map(FiniteReal::get).collect();
-        let (Ok(u_knots), Ok(v_knots)) = (
-            KnotVector::new(ctx, raw_u_knots)?,
-            KnotVector::new(ctx, raw_v_knots)?,
-        ) else {
+        let (Ok(u_knots), Ok(v_knots)) =
+            (KnotVector::new(raw_u_knots), KnotVector::new(raw_v_knots))
+        else {
             super::push_geometry_loss(
                 &mut losses,
                 entry,
@@ -2904,16 +2895,14 @@ pub(super) fn project(
             None
         };
         let paired = pair_admitted_surface_poles(pole_rows, weight_rows);
-        let construction = match paired {
-            Err(error) => Err(error),
-            Ok(poles) => NurbsSurface::new(
-                ctx,
+        let construction = paired.and_then(|poles| {
+            NurbsSurface::new(
                 NurbsSurfaceAxis::new(u_degree, u_knots, flags[3] == Some(1)),
                 NurbsSurfaceAxis::new(v_degree, v_knots, flags[4] == Some(1)),
                 poles,
                 false,
-            )?,
-        };
+            )
+        });
         let surface = match construction {
             Ok(nurbs) => nurbs,
             Err(error) => {

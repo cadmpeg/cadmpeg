@@ -260,7 +260,6 @@ mod tests {
 
     fn surface() -> NurbsSurface {
         NurbsSurface::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
             NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
             NurbsSurfaceLanes::new(
@@ -272,7 +271,6 @@ mod tests {
             ),
             false,
         )
-        .expect("fixture admission")
         .expect("unit square")
     }
 
@@ -308,7 +306,6 @@ mod tests {
     #[test]
     fn exact_point_witness_does_not_require_finite_derivatives() {
         let surface = NurbsSurface::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
             NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
             NurbsSurfaceLanes::new(
@@ -326,7 +323,6 @@ mod tests {
             ),
             false,
         )
-        .expect("finite pole admission")
         .expect("valid bilinear surface");
         crate::test_support::with_service_context(|ctx| {
             assert!(

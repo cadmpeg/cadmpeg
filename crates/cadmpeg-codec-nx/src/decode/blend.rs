@@ -77,14 +77,12 @@ mod tests {
         for domain in [1.0, 1e9, 1e200] {
             let line = PcurveGeometry::Nurbs {
                 nurbs: PcurveNurbs::from_lanes(
-                    &cadmpeg_test_support::service_decode_context(),
                     1,
                     vec![0., 0., domain, domain],
                     vec![Point2::new(0., 0.), Point2::new(1., 0.)],
                     None,
                     false,
                 )
-                .expect("fixture pcurve construction admission")
                 .unwrap(),
             };
             let result = super::closest_pcurve_parameter_from_seed(
@@ -278,14 +276,12 @@ mod tests {
                 let distance = super::homogeneous_residual_distance(&controls, 0.0, [0.0, 1.0]);
                 assert!((distance - 0.25).abs() <= 4.0 * f64::EPSILON);
                 let curve = NurbsCurve::from_lanes(
-                    &cadmpeg_test_support::service_decode_context(),
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
                     Some(vec![weight; 2]),
                     false,
                 )
-                .expect("fixture constructor admission")
                 .unwrap();
                 let parameter = super::closest_nurbs_curve_parameter_with_budget(
                     &curve,
@@ -307,14 +303,12 @@ mod tests {
         use cadmpeg_ir::geometry::nurbs::NurbsCurve;
 
         let curve = NurbsCurve::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
             None,
             false,
         )
-        .expect("fixture constructor admission")
         .expect("valid polynomial curve");
 
         crate::test_support::with_decode_context(|ctx| {

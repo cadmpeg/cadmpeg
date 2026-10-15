@@ -121,7 +121,6 @@ pub(super) fn linear_knots(parameters: &[f64]) -> Vec<f64> {
 }
 
 fn linear_pcurve_geometry(
-    ctx: &DecodeContext<'_>,
     parameters: &[f64],
     controls: &[Point2],
 ) -> Result<PcurveGeometry, cadmpeg_core::CodecError> {
@@ -131,14 +130,13 @@ fn linear_pcurve_geometry(
             cadmpeg_core::CodecError::malformed("control_points contains a non-finite point")
         })?);
     }
-    let knots = cadmpeg_ir::geometry::nurbs::KnotVector::new(ctx, linear_knots(parameters))??;
+    let knots = cadmpeg_ir::geometry::nurbs::KnotVector::new(linear_knots(parameters))?;
     let nurbs = cadmpeg_ir::geometry::pcurve::PcurveNurbs::new(
-        ctx,
         1,
         knots,
         cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Polynomial { points },
         false,
-    )??;
+    )?;
     Ok(PcurveGeometry::Nurbs { nurbs })
 }
 
@@ -658,11 +656,10 @@ pub(super) fn complete_ext11_support_uv(
     let geometry_budget =
         GeometryWorkBudget::from_context(ctx, super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK);
 
-    complete_ext11_support_uv_with_budget(ctx, ir, pending, &geometry_budget)
+    complete_ext11_support_uv_with_budget(ir, pending, &geometry_budget)
 }
 
 pub(super) fn complete_ext11_support_uv_with_budget(
-    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     pending: &[PendingExt11SupportUv],
     geometry_budget: &GeometryWorkBudget<'_>,
@@ -752,7 +749,7 @@ pub(super) fn complete_ext11_support_uv_with_budget(
             let Some(control_points) = control_points else {
                 continue;
             };
-            let replacement = linear_pcurve_geometry(ctx, parameters, &control_points)?;
+            let replacement = linear_pcurve_geometry(parameters, &control_points)?;
 
             replacements.push((procedural_id.clone(), side, replacement));
         }
@@ -807,7 +804,6 @@ pub(super) fn complete_support_uv_with_budget(
 ) -> Result<bool, cadmpeg_core::CodecError> {
     let mut endpoint_witnesses = BTreeMap::new();
     complete_support_uv_with_budget_and_endpoint_witnesses(
-        geometry_budget.ctx,
         ir,
         pending,
         (support_budget, geometry_budget),
@@ -817,7 +813,6 @@ pub(super) fn complete_support_uv_with_budget(
 }
 
 pub(super) fn complete_support_uv_with_budget_and_endpoint_witnesses(
-    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     pending: &[PendingExt11SupportUv],
     direct_budgets: (&SupportUvBudget<'_>, &GeometryWorkBudget<'_>),
@@ -841,7 +836,6 @@ pub(super) fn complete_support_uv_with_budget_and_endpoint_witnesses(
         geometry_budget.clear_blend_frame_cache();
         coupled_geometry_budget.clear_blend_frame_cache();
         lane_geometry_exhausted |= complete_support_uv_wave(
-            ctx,
             ir,
             SupportUvAttempts {
                 pending,
@@ -1107,7 +1101,6 @@ struct SupportUvAttempts<'inputs> {
 }
 
 fn complete_support_uv_wave(
-    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     support_uv_attempts: SupportUvAttempts<'_>,
     support_budget: &SupportUvBudget<'_>,
@@ -1556,7 +1549,7 @@ geometry_budget,
                         ];
                     }
                     let parameter_range = samples.parameter_range();
-                    let pcurve = linear_pcurve_geometry(ctx, parameters, &uv)?;
+                    let pcurve = linear_pcurve_geometry(parameters, &uv)?;
                     if let [Some(first), Some(last)] = endpoint_values {
                         let key = (owner.clone(), surface_id.clone());
 
@@ -1637,7 +1630,6 @@ geometry_budget,
     if !coupled_geometry_exhausted {
         coupled_geometry_budget.clear_blend_frame_cache();
         lane_geometry_exhausted |= complete_coupled_support_uv(
-            ctx,
             ir,
             pending,
             coupled_support_budget,
@@ -1745,7 +1737,6 @@ fn complete_blend_boundary_support_uv_with_index_and_budget(
 }
 
 fn complete_coupled_support_uv(
-    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     pending: &[PendingExt11SupportUv],
     coupled_support_budget: &SupportUvBudget<'_>,
@@ -1959,7 +1950,7 @@ fn complete_coupled_support_uv(
                     None
                 };
                 let parameter_range = samples.parameter_range();
-                let pcurve = linear_pcurve_geometry(ctx, parameters, &lanes[side])?;
+                let pcurve = linear_pcurve_geometry(parameters, &lanes[side])?;
                 if let Some([Some(first), Some(last)]) = endpoint_values {
                     let key = (owner.clone(), surfaces[side].clone());
 
@@ -2035,7 +2026,6 @@ pub(super) fn complete_coupled_support_uv_with_geometry_budget_for_test(
     let mut failed_attempts = BTreeMap::new();
 
     complete_coupled_support_uv(
-        ctx,
         ir,
         pending,
         &coupled_support_budget,
@@ -2685,7 +2675,6 @@ mod tests {
             let mut endpoint_witnesses = BTreeMap::new();
 
             complete_support_uv_with_budget_and_endpoint_witnesses(
-                ctx,
                 &mut ir,
                 &[],
                 (&support_budget, &geometry_budget),
@@ -2824,7 +2813,6 @@ mod tests {
                     SurfaceId::mint("test:model:entity#synthetic:coarse-nurbs-support")
                         .expect("identity grammar");
                 let nurbs = cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes(
-                    &cadmpeg_test_support::service_decode_context(),
                     cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                         1,
                         vec![0.0, 0.0, 1.0, 1.0],
@@ -2844,7 +2832,6 @@ mod tests {
                     ),
                     false,
                 )
-                .expect("fixture constructor admission")
                 .expect("valid test surface");
                 let geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs.clone()));
                 let mut ir = CadIr::empty();
@@ -2924,7 +2911,6 @@ mod tests {
             let geometry_budget = GeometryWorkBudget::from_context(ctx, 100);
             let mut endpoint_witnesses = BTreeMap::new();
             assert!(!complete_support_uv_with_budget_and_endpoint_witnesses(
-                ctx,
                 &mut ir,
                 &[],
                 (&support_budget, &geometry_budget),
@@ -2933,7 +2919,7 @@ mod tests {
             )
             .expect("an empty candidate list needs no model index"));
             assert!(endpoint_witnesses.is_empty());
-            super::complete_ext11_support_uv_with_budget(ctx, &mut ir, &[], &geometry_budget)
+            super::complete_ext11_support_uv_with_budget(&mut ir, &[], &geometry_budget)
                 .expect("empty serialized completion needs no model index");
             let validation =
                 super::invalidate_inconsistent_support_uv_with_validated_lanes_and_status(
@@ -2963,7 +2949,7 @@ mod tests {
             assert!(!geometry_budget.charge());
             let support_budget = cadmpeg_core::decode::WorkBudget::new(100);
             let mut ir = CadIr::empty();
-            super::complete_ext11_support_uv_with_budget(ctx, &mut ir, &[], &geometry_budget)
+            super::complete_ext11_support_uv_with_budget(&mut ir, &[], &geometry_budget)
                 .expect("an exhausted local slice skips serialized completion");
             super::invalidate_inconsistent_support_uv_with_validated_lanes_and_status(
                 ctx,

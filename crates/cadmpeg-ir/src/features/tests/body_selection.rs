@@ -29,11 +29,7 @@ fn ordered_members_reject_empty_sets_and_duplicates() {
                 )
             })
             .collect::<Vec<_>>();
-        assert!(
-            BodyMembers::try_from_rows(rows, &cadmpeg_test_support::service_decode_context())
-                .expect("selection storage is admitted")
-                .is_err()
-        );
+        assert!(BodyMembers::try_from_rows(rows).is_err());
         assert!(
             serde_json::from_value::<BodyMembers<BodyId>>(serde_json::json!(json_rows)).is_err()
         );
@@ -60,29 +56,20 @@ fn historical_body_members_refuse_the_deleted_parallel_arrays() {
                 )
             })
             .collect::<Vec<_>>();
-        assert!(
-            BodyMembers::try_from_rows(rows, &cadmpeg_test_support::service_decode_context())
-                .expect("selection storage is admitted")
-                .is_err()
-        );
+        assert!(BodyMembers::try_from_rows(rows).is_err());
     }
     assert!(cadmpeg_core::text::NonBlankString::new(" ").is_none());
 
-    let members = BodyMembers::try_from_rows(
-        vec![
-            BodyMember::new(
-                b.clone(),
-                cadmpeg_core::text::NonBlankString::new("native-first").expect("non-blank fixture"),
-            ),
-            BodyMember::new(
-                a.clone(),
-                cadmpeg_core::text::NonBlankString::new("native-second")
-                    .expect("non-blank fixture"),
-            ),
-        ],
-        &cadmpeg_test_support::service_decode_context(),
-    )
-    .expect("selection storage is admitted")
+    let members = BodyMembers::try_from_rows(vec![
+        BodyMember::new(
+            b.clone(),
+            cadmpeg_core::text::NonBlankString::new("native-first").expect("non-blank fixture"),
+        ),
+        BodyMember::new(
+            a.clone(),
+            cadmpeg_core::text::NonBlankString::new("native-second").expect("non-blank fixture"),
+        ),
+    ])
     .unwrap();
     assert_eq!(members.bodies().collect::<Vec<_>>(), [&b, &a]);
     assert_eq!(

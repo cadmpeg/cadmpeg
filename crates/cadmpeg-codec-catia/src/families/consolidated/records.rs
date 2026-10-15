@@ -1455,7 +1455,7 @@ pub(crate) fn resolve_consolidated_edge_blocks_from_records(
     records: &[ConsolidatedRecord],
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Vec<ResolvedConsolidatedEdgeBlock>, cadmpeg_core::CodecError> {
-    let surfaces = a5_surfaces_from_records(ctx, data, records, refusal)?;
+    let surfaces = a5_surfaces_from_records(data, records, refusal)?;
     let points = object_stream_vertices_from_records(data, records);
     let embedded = b2_embedded_cylinders_from_records(data, records).collect::<Vec<_>>();
     let standalone = b2_cylinders_from_records(data, records).collect::<Vec<_>>();
@@ -2084,7 +2084,6 @@ mod tests {
     fn nurbs_carrier_offset_preserves_tiny_nonzero_distance() {
         let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
             NurbsSurface::from_lanes(
-                &cadmpeg_test_support::service_decode_context(),
                 cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
@@ -2104,7 +2103,6 @@ mod tests {
                 ),
                 false,
             )
-            .expect("fixture constructor admission")
             .expect("valid unit-square surface"),
         ));
         let tiny = 1e-200;

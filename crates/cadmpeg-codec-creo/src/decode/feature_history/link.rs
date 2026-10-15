@@ -6,7 +6,6 @@ use super::super::uniqueness::{
     exactly_one, unique_feature_definition_for_transform, unique_feature_section_transform,
 };
 use crate::container::ContainerScan;
-use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::FeatureId as IrFeatureId;
@@ -15,7 +14,6 @@ use cadmpeg_ir::sketches::{SketchEntityUse, SketchGeometry, SketchGeometryDefini
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(in super::super) fn link_feature_sketch_history(
-    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &mut CadIr,
 ) -> Result<(), CodecError> {
@@ -66,9 +64,7 @@ pub(in super::super) fn link_feature_sketch_history(
         ) else {
             continue;
         };
-        feature
-            .dependencies
-            .insert(ctx, sketch_feature, "creo sketch history dependencies")?;
+        feature.dependencies.insert(sketch_feature);
     }
     Ok(())
 }

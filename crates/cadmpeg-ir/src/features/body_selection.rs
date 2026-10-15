@@ -7,81 +7,41 @@ use super::{
 use crate::ids::{FeatureInputTopologyId, HistoricalBodyId};
 
 impl BodySelection {
-    /// Admit decoded local operands with a charged uniqueness index.
-    pub fn local(
-        bodies: Vec<String>,
-        native: String,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
-        let bodies =
-            NativeSelections::new(bodies, ctx, "validate distinct decoded native selections")?;
-
-        Ok(bodies.and_then(|bodies| {
-            Ok(Self::Local {
-                bodies,
-                native: native.try_into()?,
-            })
-        }))
+    /// Admit decoded local operands and their native reference.
+    pub fn local(bodies: Vec<String>, native: String) -> Result<Self, BodySelectionError> {
+        Ok(Self::Local {
+            bodies: NativeSelections::try_from(bodies)?,
+            native: native.try_into()?,
+        })
     }
 
-    /// Admit selection members with the decode context.
+    /// Admit nonempty distinct historical members and their native reference.
     pub fn historical(
         state: FeatureInputTopologyId,
         bodies: Vec<HistoricalBodyId>,
         native: String,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
-        let bodies = match SelectionMembers::new(
-            bodies,
-            ctx,
-            "validate BodySelection historical members",
-        )? {
-            Ok(members) => members,
-            Err(error) => return Ok(Err(error)),
-        };
-
-        let native = match native.try_into() {
-            Ok(native) => native,
-            Err(error) => return Ok(Err(error)),
-        };
-        Ok(Ok(Self::Historical {
+    ) -> Result<Self, BodySelectionError> {
+        Ok(Self::Historical {
             state,
-            bodies,
-            native,
-        }))
+            bodies: SelectionMembers::try_from(bodies)?,
+            native: native.try_into()?,
+        })
     }
 
-    /// Admit selection members with the decode context.
+    /// Admit nonempty distinct generated members and their native reference.
     pub fn generated(
         bodies: Vec<GeneratedBodyRef>,
         native: String,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
-        let bodies =
-            match SelectionMembers::new(bodies, ctx, "validate BodySelection generated members")? {
-                Ok(members) => members,
-                Err(error) => return Ok(Err(error)),
-            };
-
-        let native = match native.try_into() {
-            Ok(native) => native,
-            Err(error) => return Ok(Err(error)),
-        };
-        Ok(Ok(Self::Generated { bodies, native }))
-    }
-}
-
-impl From<cadmpeg_core::decode::ResourceLimit> for BodySelectionError {
-    fn from(limit: cadmpeg_core::decode::ResourceLimit) -> Self {
-        Self::Resource(limit)
+    ) -> Result<Self, BodySelectionError> {
+        Ok(Self::Generated {
+            bodies: SelectionMembers::try_from(bodies)?,
+            native: native.try_into()?,
+        })
     }
 }
 
 impl From<BodySelectionError> for cadmpeg_core::CodecError {
     fn from(error: BodySelectionError) -> Self {
-        match error {
-            BodySelectionError::Resource(limit) => Self::ResourceLimit(limit),
-            error => Self::malformed(error.to_string()),
-        }
+        Self::malformed(error.to_string())
     }
 }

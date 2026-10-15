@@ -366,7 +366,6 @@ fn boundary_nurbs_endpoint_witnesses_use_the_intrinsic_domain() {
 
     let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
         NurbsCurve::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             2,
             vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
             vec![
@@ -377,7 +376,6 @@ fn boundary_nurbs_endpoint_witnesses_use_the_intrinsic_domain() {
             Some(vec![1.0, 2.0, 1.0]),
             false,
         )
-        .expect("fixture constructor admission")
         .expect("valid boundary NURBS"),
     ));
     assert_eq!(
@@ -393,13 +391,11 @@ fn boundary_nurbs_endpoint_witnesses_use_the_intrinsic_domain() {
         let replacement = true;
         edit::replace(&mut periodic, |previous| {
             cadmpeg_ir::geometry::nurbs::NurbsCurve::new(
-                &evaluation_ctx,
                 previous.degree(),
                 previous.knots().to_vec(),
                 previous.pole_rows().clone(),
                 replacement,
             )
-            .expect("fixture final NURBS admission")
         })
         .expect("admitted periodic fixture");
     };
@@ -611,7 +607,7 @@ fn projects_exact_planar_carriers_without_changing_parameters() {
         .expect("valid CircleCurve fixture"),
     ));
     assert!(
-        matches!(crate::decode::with_test_decode_ctx(|ctx| planar_curve_pcurve(ctx, &plane(), &circle, &"circle fixture", &mut crate::lane_refusal::LaneRefusals::new())).expect("service profile admits planar circle"), Some(PcurveGeometry::Circle(circle_pcurve))
+        matches!(planar_curve_pcurve(&plane(), &circle, &"circle fixture", &mut crate::lane_refusal::LaneRefusals::new()), Some(PcurveGeometry::Circle(circle_pcurve))
                 if {
                     let center = circle_pcurve.center();
         let x_axis = circle_pcurve.x_axis();
@@ -626,18 +622,16 @@ fn projects_exact_planar_carriers_without_changing_parameters() {
 
     let nurbs = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
         NurbsCurve::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![2.0, 2.0, 5.0, 5.0],
             vec![Point3::new(2.0, 4.0, 3.0), Point3::new(5.0, 7.0, 3.0)],
             Some(vec![2.0, 1.0]),
             false,
         )
-        .expect("fixture constructor admission")
         .expect("valid planar NURBS"),
     ));
     assert!(matches!(
-        crate::decode::with_test_decode_ctx(|ctx| planar_curve_pcurve(ctx, &plane(), &nurbs, &"nurbs fixture", &mut crate::lane_refusal::LaneRefusals::new())).expect("service profile admits planar NURBS"),
+        planar_curve_pcurve(&plane(), &nurbs, &"nurbs fixture", &mut crate::lane_refusal::LaneRefusals::new()),
         Some(PcurveGeometry::Nurbs { nurbs })
             if nurbs.degree() == 1
                 && nurbs.knots().as_slice() == [2.0, 2.0, 5.0, 5.0]
@@ -654,17 +648,13 @@ fn projects_exact_planar_carriers_without_changing_parameters() {
         )
         .expect("valid LineCurve fixture"),
     ));
-    assert!(
-        crate::decode::with_test_decode_ctx(|ctx| planar_curve_pcurve(
-            ctx,
-            &plane(),
-            &off_plane,
-            &"off-plane fixture",
-            &mut crate::lane_refusal::LaneRefusals::new()
-        ))
-        .expect("service profile admits off-plane candidate")
-        .is_none()
-    );
+    assert!(planar_curve_pcurve(
+        &plane(),
+        &off_plane,
+        &"off-plane fixture",
+        &mut crate::lane_refusal::LaneRefusals::new()
+    )
+    .is_none());
 }
 
 #[test]

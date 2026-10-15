@@ -24,7 +24,6 @@ fn sketch_constraint_loci_borrow_elements_in_order() {
 #[test]
 fn sketch_nurbs_endpoints_read_rational_poles_without_copying_all_rows() {
     let curve = crate::geometry::pcurve::PcurveNurbs::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, 0.5, 1.0, 1.0],
         vec![
@@ -35,7 +34,6 @@ fn sketch_nurbs_endpoints_read_rational_poles_without_copying_all_rows() {
         Some(vec![1.0, 2.0, 1.0]),
         false,
     )
-    .expect("fixture pcurve construction admission")
     .unwrap();
     let geometry = crate::sketches::SketchGeometry::nurbs(curve);
     let endpoints = (

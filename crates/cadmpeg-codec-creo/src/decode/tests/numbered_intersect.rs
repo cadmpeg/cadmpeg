@@ -46,7 +46,6 @@ use crate::decode::sketch::equations_coordinate::{
     SectionCoordinateEquation, SectionEquationFixture,
 };
 use crate::decode::surfaces::fc05_model_frame;
-use crate::decode::sweep::nurbs::placed_tabulated_cylinder_directrix as checked_tabulated_cylinder_directrix;
 use crate::decode::sweep::surfaces::{
     extruded_section_line, revolved_section_circle, revolved_section_surface,
 };
@@ -136,20 +135,6 @@ fn native_feature_dependency_ids_with_service(
 }
 
 const EPS_REVOLUTION_CONE_ANGLE: f64 = 1.0e-12;
-
-fn placed_tabulated_cylinder_directrix(
-    replay: &crate::surface::TabulatedCylinderCurveReplay,
-    parameters: &crate::surface::SurfaceParameterRecord,
-    chart_origin: Option<[f64; 3]>,
-    refusal: &mut crate::lane_refusal::LaneRefusals,
-) -> Option<(cadmpeg_ir::geometry::nurbs::NurbsCurve, [f64; 3])> {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("test decode context");
-    checked_tabulated_cylinder_directrix(&ctx, replay, parameters, chart_origin, refusal)
-        .expect("service profile admits tabulated directrix")
-}
 
 #[test]
 fn signed_distance_without_a_spanning_line_requires_equal_endpoint_coordinate() {

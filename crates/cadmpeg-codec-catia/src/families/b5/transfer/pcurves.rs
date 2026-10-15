@@ -293,14 +293,13 @@ pub(super) fn oriented_nurbs_range(
         if range[0] > range[1] {
             let sum = domain_start + domain_end;
             curve.reverse_parameterization();
-            match curve.edit_knots(ctx, |knots| {
-                for knot in knots {
-                    *knot += sum;
-                }
-            }) {
-                Err(error) => return Some(Err(error)),
-                Ok(result) => result.ok()?,
-            }
+            curve
+                .edit_knots(|knots| {
+                    for knot in knots {
+                        *knot += sum;
+                    }
+                })
+                .ok()?;
             range = [sum - range[0], sum - range[1]];
         }
         if !range[0].is_finite()
@@ -465,13 +464,12 @@ pub(super) fn lifted_curve_geometry(
                 .collect::<Vec<_>>()
         });
         return Ok(cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
-            ctx,
             pcurve.degree,
             knots,
             points,
             weights,
             false,
-        )?
+        )
         .ok()
         .map(SolvedCurveGeometry::Nurbs)
         .map(CurveGeometry::Solved));
@@ -757,13 +755,11 @@ pub(super) fn cylinder_helix(
         return Ok(None);
     };
     let Some(cache) = crate::nurbs::circular_helix_cache(
-        ctx,
         &definition,
         FIT_TOLERANCE,
         refusal,
         "b5 helix edge construction",
-    )?
-    else {
+    ) else {
         return Ok(None);
     };
     let poles = cache.curve.pole_rows();

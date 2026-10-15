@@ -42,7 +42,6 @@ fn line_entity(id: &SketchEntityId, sketch: &SketchId, end: [f64; 2]) -> SketchE
 #[test]
 fn borrowed_nurbs_profile_sampler_keeps_line_endpoints() {
     let nurbs = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![
@@ -52,7 +51,6 @@ fn borrowed_nurbs_profile_sampler_keeps_line_endpoints() {
         None,
         false,
     )
-    .expect("fixture constructor admission")
     .expect("linear NURBS fixture");
     assert_eq!(
         crate::decode::with_test_decode_ctx(|ctx| super::nurbs_profile_polyline(ctx, &nurbs, 0.01))
@@ -63,7 +61,6 @@ fn borrowed_nurbs_profile_sampler_keeps_line_endpoints() {
 
 fn linear_profile_curve() -> cadmpeg_ir::geometry::nurbs::NurbsCurve {
     cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![
@@ -73,7 +70,6 @@ fn linear_profile_curve() -> cadmpeg_ir::geometry::nurbs::NurbsCurve {
         None,
         false,
     )
-    .expect("fixture constructor admission")
     .expect("linear NURBS fixture")
 }
 
@@ -213,7 +209,6 @@ fn resolved_nurbs_profile_keeps_closed_source_geometry() {
     let entity_id =
         SketchEntityId::mint("creo:featdefs:sketch_entity#74:1").expect("identity grammar");
     let nurbs = PcurveNurbs::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         2,
         vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
         vec![
@@ -224,7 +219,6 @@ fn resolved_nurbs_profile_keeps_closed_source_geometry() {
         None,
         false,
     )
-    .expect("fixture pcurve construction admission")
     .expect("closed source NURBS");
     let mut ir = CadIr::empty();
     ir.model.sketches.push(sketch(&sketch_id, &entity_id));
@@ -282,14 +276,12 @@ fn forward_arc_sweep_reduces_a_wide_finite_angle_interval() {
 fn nurbs_profile_area_uses_finite_gauss_samples_on_a_wide_domain() {
     let geometry = SketchGeometry::nurbs(
         PcurveNurbs::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![-f64::MAX, -f64::MAX, f64::MAX, f64::MAX],
             vec![Point2::new(1.0, 0.0), Point2::new(1.0, 1.0)],
             None,
             false,
         )
-        .expect("fixture pcurve construction admission")
         .expect("wide finite sketch NURBS"),
     );
     let area = crate::decode::with_test_decode_ctx(|ctx| {
@@ -376,17 +368,14 @@ fn profile_joins_reject_duplicate_sketch_entity_ids() {
 
 #[test]
 fn circular_pcurve_quarter_circle_spans_quarter_turn() {
-    let pcurve = crate::decode::with_test_decode_ctx(|ctx| {
-        super::circular_pcurve(
-            ctx,
-            [0.0, 0.0],
-            1.0,
-            0.0,
-            std::f64::consts::FRAC_PI_2,
-            &"quarter circle",
-            &mut crate::lane_refusal::LaneRefusals::new(),
-        )
-    })
+    let pcurve = super::circular_pcurve(
+        [0.0, 0.0],
+        1.0,
+        0.0,
+        std::f64::consts::FRAC_PI_2,
+        &"quarter circle",
+        &mut crate::lane_refusal::LaneRefusals::new(),
+    )
     .expect("service allocation")
     .expect("quarter-circle geometry");
     assert_eq!(
@@ -422,17 +411,14 @@ fn extrusion_cap_pcurve_wraps_an_arc_stored_beyond_one_turn() {
         (false, [1.0, 0.0], [0.0, 1.0]),
         (true, [0.0, 1.0], [1.0, 0.0]),
     ] {
-        let pcurve = crate::decode::with_test_decode_ctx(|ctx| {
-            super::extrusion_cap_pcurve(
-                ctx,
-                &arc,
-                reversed,
-                start,
-                end,
-                &"wrapped arc cap",
-                &mut crate::lane_refusal::LaneRefusals::new(),
-            )
-        })
+        let pcurve = super::extrusion_cap_pcurve(
+            &arc,
+            reversed,
+            start,
+            end,
+            &"wrapped arc cap",
+            &mut crate::lane_refusal::LaneRefusals::new(),
+        )
         .expect("service allocation")
         .expect("quarter-turn cap geometry");
         // One quarter turn: the curve midpoint is the angular midpoint.
@@ -461,17 +447,14 @@ fn overflowing_circular_pcurve_records_refusal_text() {
     const REASON: &str = "control_points contains a non-finite point";
 
     let mut refusal = crate::lane_refusal::LaneRefusals::new();
-    let absent = crate::decode::with_test_decode_ctx(|ctx| {
-        super::circular_pcurve(
-            ctx,
-            [f64::MAX, f64::MAX],
-            f64::MAX,
-            0.0,
-            std::f64::consts::TAU,
-            &"extrusion feature 11 cap",
-            &mut refusal,
-        )
-    })
+    let absent = super::circular_pcurve(
+        [f64::MAX, f64::MAX],
+        f64::MAX,
+        0.0,
+        std::f64::consts::TAU,
+        &"extrusion feature 11 cap",
+        &mut refusal,
+    )
     .expect("service refusal text is admitted");
     assert!(absent.is_none());
     assert_eq!(
@@ -485,29 +468,23 @@ fn overflowing_circular_pcurve_records_refusal_text() {
 #[test]
 fn two_refused_circular_pcurves_state_two_records_each_naming_its_instance() {
     let mut refusal = crate::lane_refusal::LaneRefusals::new();
-    let first = crate::decode::with_test_decode_ctx(|ctx| {
-        super::circular_pcurve(
-            ctx,
-            [f64::MAX, f64::MAX],
-            f64::MAX,
-            0.0,
-            std::f64::consts::TAU,
-            &"extrusion feature 11 cap",
-            &mut refusal,
-        )
-    })
+    let first = super::circular_pcurve(
+        [f64::MAX, f64::MAX],
+        f64::MAX,
+        0.0,
+        std::f64::consts::TAU,
+        &"extrusion feature 11 cap",
+        &mut refusal,
+    )
     .expect("resource admission");
-    let second = crate::decode::with_test_decode_ctx(|ctx| {
-        super::circular_pcurve(
-            ctx,
-            [f64::MAX, f64::MAX],
-            f64::MAX,
-            0.0,
-            std::f64::consts::TAU,
-            &"extrusion feature 12 cap",
-            &mut refusal,
-        )
-    })
+    let second = super::circular_pcurve(
+        [f64::MAX, f64::MAX],
+        f64::MAX,
+        0.0,
+        std::f64::consts::TAU,
+        &"extrusion feature 12 cap",
+        &mut refusal,
+    )
     .expect("resource admission");
     assert!(first.is_none(), "the refused arc states no pcurve");
     assert!(second.is_none(), "the refused arc states no pcurve");
@@ -539,16 +516,9 @@ fn circular_pcurve_skips_unbounded_span_before_allocation() {
         let policy = DecodePolicy::service();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
         let mut refusal = crate::lane_refusal::LaneRefusals::new();
-        let pcurve = super::circular_pcurve(
-            &ctx,
-            [0.0, 0.0],
-            1.0,
-            start,
-            end,
-            &"oversized arc",
-            &mut refusal,
-        )
-        .expect("the segment ceiling skips the arc before allocation");
+        let pcurve =
+            super::circular_pcurve([0.0, 0.0], 1.0, start, end, &"oversized arc", &mut refusal)
+                .expect("the segment ceiling skips the arc before allocation");
         assert!(pcurve.is_none());
         assert!(ctx.resource_refusal().is_none());
         let records = refusal.take_records();
@@ -689,7 +659,6 @@ fn resolved_profile_nurbs_copy_keeps_knots_and_poles() {
         let sketch_id = SketchId::mint("creo:model:sketch#74").expect("ID");
         let entity_id = SketchEntityId::mint("creo:featdefs:sketch_entity#74:1").expect("ID");
         let curve = PcurveNurbs::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             2,
             vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
             vec![
@@ -700,7 +669,6 @@ fn resolved_profile_nurbs_copy_keeps_knots_and_poles() {
             rational.then(|| vec![1.0, 2.0, 1.0]),
             false,
         )
-        .expect("fixture pcurve construction admission")
         .expect("curve");
         let mut ir = CadIr::empty();
         ir.model.sketches.push(sketch(&sketch_id, &entity_id));
@@ -724,7 +692,6 @@ fn resolved_profile_nurbs_copy_keeps_knots_and_poles() {
 #[test]
 fn nurbs_profile_local_depth_ceiling_leaves_the_span_unsampled() {
     let curve = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         2,
         vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
         vec![
@@ -735,7 +702,6 @@ fn nurbs_profile_local_depth_ceiling_leaves_the_span_unsampled() {
         None,
         false,
     )
-    .expect("fixture constructor admission")
     .expect("curved fixture");
     crate::decode::with_test_decode_ctx(|ctx| {
         let mut evaluator = cadmpeg_ir::eval::decode::NurbsPointEvaluator::new(&curve);

@@ -775,12 +775,11 @@ pub(super) fn project(
                     continue;
                 };
                 let offset_nurbs = match NurbsCurve::new(
-                    ctx,
                     1,
                     knots,
                     NurbsPoles3::Polynomial { points: controls },
                     false,
-                )? {
+                ) {
                     Ok(nurbs) => nurbs,
                     Err(error) => {
                         super::push_geometry_loss(
@@ -1033,12 +1032,11 @@ pub(super) fn project(
                     continue;
                 };
                 let offset_nurbs = match NurbsCurve::new(
-                    ctx,
                     function_nurbs.degree(),
                     knots,
                     NurbsPoles3::Polynomial { points: controls },
                     false,
-                )? {
+                ) {
                     Ok(nurbs) => nurbs,
                     Err(error) => {
                         super::push_geometry_loss(

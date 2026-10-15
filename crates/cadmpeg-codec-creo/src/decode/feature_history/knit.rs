@@ -12,7 +12,6 @@ use crate::container::ContainerScan;
 use crate::decode::analytic::equations::PlaneEquation;
 use crate::vecmath::dot;
 use crate::vecmath::normalize;
-use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
@@ -468,7 +467,6 @@ pub(super) fn feature_result_surface_ids_by_feature(
 }
 
 pub(in super::super) fn feature_result_topology(
-    ctx: &DecodeContext<'_>,
     tables: &[crate::feature::entity::FeatureEntityTable],
     surface_rows: &[crate::surface::SurfaceRow],
     edge_ids: &[u32],
@@ -493,14 +491,8 @@ pub(in super::super) fn feature_result_topology(
     if faces.is_empty() && edges.is_empty() {
         return Ok(None);
     }
-    let Ok(members) = cadmpeg_ir::features::FeatureResultMembers::new(
-        Vec::new(),
-        faces,
-        edges,
-        Vec::new(),
-        ctx,
-        "creo feature result member distinctness",
-    )?
+    let Ok(members) =
+        cadmpeg_ir::features::FeatureResultMembers::new(Vec::new(), faces, edges, Vec::new())
     else {
         return Ok(None);
     };
@@ -562,7 +554,6 @@ pub(in super::super) fn emit_feature_result_topologies(
             continue;
         };
         let Some(state) = feature_result_topology(
-            ctx,
             &scan.features.entity_tables,
             &scan.surfaces.rows,
             result_edges.get(&feature_id).map_or(&[], Vec::as_slice),

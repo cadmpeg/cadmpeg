@@ -33,30 +33,24 @@ fn revolved_nurbs_surface_sweeps_the_directrix_through_nine_columns() {
     use cadmpeg_ir::math::{Point3, Vector3};
 
     let directrix = NurbsCurve::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![Point3::new(2.0, 0.0, 0.0), Point3::new(2.0, 0.0, 1.0)],
         None,
         false,
     )
-    .expect("fixture constructor admission")
     .expect("valid directrix");
     let axis = RevolutionAxis {
         origin: FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).expect("finite origin"),
         direction: FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0)).expect("axis direction"),
         reference: None,
     };
-    let surface = crate::decode::with_test_decode_ctx(|ctx| {
-        super::revolved_nurbs_surface(
-            ctx,
-            &directrix,
-            &axis,
-            &"revolved NURBS fixture",
-            &mut crate::lane_refusal::LaneRefusals::new(),
-        )
-    })
-    .expect("service allocation")
+    let surface = super::revolved_nurbs_surface(
+        &directrix,
+        &axis,
+        &"revolved NURBS fixture",
+        &mut crate::lane_refusal::LaneRefusals::new(),
+    )
     .expect("valid revolution surface");
     assert_eq!((surface.u_count(), surface.v_count()), (2, 9));
     assert_eq!(surface.u_knots().as_slice(), &[0.0, 0.0, 1.0, 1.0]);

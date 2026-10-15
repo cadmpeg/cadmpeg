@@ -189,11 +189,7 @@ fn split_face_case() -> Result<
         native_ref: Some(scope_id),
     }];
 
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
     super::super::bind_feature_face_selections(
-        &ctx,
         &mut features,
         &mut [],
         crate::history::FeatureFaceSelectionInputs {
@@ -625,11 +621,7 @@ fn unresolved_new_body_sweep_mode_follows_output_body_kind() {
                 scale: None,
                 allow_multi_profile_faces: None,
             }),
-            cadmpeg_ir::features::DistinctMembers::try_from(
-                outputs,
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .unwrap(),
+            cadmpeg_ir::features::DistinctMembers::try_from(outputs).unwrap(),
         ),
         native_ref: None,
     };
@@ -879,26 +871,10 @@ fn hole_face_case() -> Result<
     let mut input_topologies = vec![FeatureInputTopology {
         id: crate::ids::feature_input_topology_id(&feature_id, 1),
         input_of: feature_id.clone(),
-        bodies: cadmpeg_ir::features::DistinctMembers::try_from(
-            Vec::new(),
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .unwrap(),
-        faces: cadmpeg_ir::features::DistinctMembers::try_from(
-            Vec::new(),
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .unwrap(),
-        edges: cadmpeg_ir::features::DistinctMembers::try_from(
-            Vec::new(),
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .unwrap(),
-        vertices: cadmpeg_ir::features::DistinctMembers::try_from(
-            Vec::new(),
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .unwrap(),
+        bodies: cadmpeg_ir::features::DistinctMembers::try_from(Vec::new()).unwrap(),
+        faces: cadmpeg_ir::features::DistinctMembers::try_from(Vec::new()).unwrap(),
+        edges: cadmpeg_ir::features::DistinctMembers::try_from(Vec::new()).unwrap(),
+        vertices: cadmpeg_ir::features::DistinctMembers::try_from(Vec::new()).unwrap(),
         native_ref: None,
     }];
     let state = |state_id, transition| AsmDeltaState {
@@ -939,11 +915,7 @@ fn hole_face_case() -> Result<
         ],
     };
 
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
     bind_feature_face_selections(
-        &ctx,
         std::slice::from_mut(&mut feature),
         &mut input_topologies,
         crate::history::FeatureFaceSelectionInputs {

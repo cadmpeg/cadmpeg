@@ -1894,9 +1894,7 @@ impl TryFrom<NonEmptyMembers<SelectionMember>> for FeatureResultMembers {
                 .map_err(|_| BodySelectionError::Allocation)?;
             target.push(id);
         }
-        sorted
-            .validate(&membership::StandardAdmission)
-            .map_err(|_| FeatureResultMemberError::Members(BodySelectionError::Allocation))?
+        sorted.validate()
     }
 }
 
@@ -1907,32 +1905,23 @@ impl FeatureResultMembers {
         faces: Vec<NonBlankString>,
         edges: Vec<NonBlankString>,
         vertices: Vec<NonBlankString>,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        operation: &'static str,
-    ) -> Result<Result<Self, FeatureResultMemberError>, cadmpeg_core::decode::ResourceLimit> {
+    ) -> Result<Self, FeatureResultMemberError> {
         Self {
             bodies,
             faces,
             edges,
             vertices,
         }
-        .validate(&membership::DecodeAdmission {
-            _ctx: ctx,
-            _operation: operation,
-        })
+        .validate()
     }
 
-    fn validate<S: membership::Admission>(
-        self,
-        admission: &S,
-    ) -> Result<Result<Self, FeatureResultMemberError>, S::Error> {
-        admission.work(0)?;
+    fn validate(self) -> Result<Self, FeatureResultMemberError> {
         if self.bodies.is_empty()
             && self.faces.is_empty()
             && self.edges.is_empty()
             && self.vertices.is_empty()
         {
-            return Ok(Err(BodySelectionError::Empty.into()));
+            return Err(BodySelectionError::Empty.into());
         }
         for (error, values) in [
             (FeatureResultMemberError::RepeatedBody, &self.bodies),
@@ -1940,11 +1929,11 @@ impl FeatureResultMembers {
             (FeatureResultMemberError::RepeatedEdge, &self.edges),
             (FeatureResultMemberError::RepeatedVertex, &self.vertices),
         ] {
-            if !membership::distinct(admission, values, values.len(), |_| true)? {
-                return Ok(Err(error));
+            if !membership::distinct(values, |_| true) {
+                return Err(error);
             }
         }
-        Ok(Ok(self))
+        Ok(self)
     }
 }
 
@@ -2017,47 +2006,17 @@ pub struct FeatureContent(Vec<FeatureSourceContent>);
 impl TryFrom<Vec<FeatureSourceContent>> for FeatureContent {
     type Error = FeatureCollectionError;
     fn try_from(value: Vec<FeatureSourceContent>) -> Result<Self, Self::Error> {
-        Self::build(&membership::StandardAdmission, value)
-            .map_err(|_| FeatureCollectionError::Invalid("source content allocation failed"))?
-            .map_err(FeatureCollectionError::Invalid)
+        Self::build(value).map_err(FeatureCollectionError::Invalid)
     }
 }
 impl FeatureContent {
-    /// Admit distinct references while retaining repeated text and source order.
-    pub fn new(
-        value: Vec<FeatureSourceContent>,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        operation: &'static str,
-    ) -> Result<Self, FeatureCollectionError> {
-        Self::build(
-            &membership::DecodeAdmission {
-                _ctx: ctx,
-                _operation: operation,
-            },
-            value,
-        )?
-        .map_err(FeatureCollectionError::Invalid)
-    }
-
-    fn build<S: membership::Admission>(
-        admission: &S,
-        value: Vec<FeatureSourceContent>,
-    ) -> Result<Result<Self, &'static str>, S::Error> {
-        let mut count = 0;
-        for item in &value {
-            admission.work(1)?;
-            if !matches!(item, FeatureSourceContent::Text(_)) {
-                count += 1;
-            }
-        }
-        if !membership::distinct(admission, &value, count, |item| {
+    fn build(value: Vec<FeatureSourceContent>) -> Result<Self, &'static str> {
+        if !membership::distinct(&value, |item| {
             !matches!(item, FeatureSourceContent::Text(_))
-        })? {
-            return Ok(Err(
-                "source_content repeats a parameter or child-feature reference",
-            ));
+        }) {
+            return Err("source_content repeats a parameter or child-feature reference");
         }
-        Ok(Ok(Self(value)))
+        Ok(Self(value))
     }
 
     /// Constructs text-only content in source order, retaining repeated text.
@@ -2105,9 +2064,7 @@ impl<'a> IntoIterator for &'a FeatureContent {
 impl<'de> Deserialize<'de> for FeatureContent {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let values = Vec::<FeatureSourceContent>::deserialize(deserializer)?;
-        Self::build(&membership::StandardAdmission, values)
-            .map_err(serde::de::Error::custom)?
-            .map_err(serde::de::Error::custom)
+        Self::build(values).map_err(serde::de::Error::custom)
     }
 }
 /// One item in a source feature's mixed-content sequence.
@@ -2452,28 +2409,16 @@ macro_rules! selection_operands {
             pub fn new(
                 $first: $selection,
                 $second: $selection,
-                ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-            ) -> Result<Result<Self, &'static str>, cadmpeg_core::decode::ResourceLimit> {
-                Self::build(ctx, $first, $second)
-            }
-
-            fn build<S: selection_overlap::OverlapAdmission>(
-                admission: &S,
-                $first: $selection,
-                $second: $selection,
-            ) -> Result<Result<Self, &'static str>, S::Error> {
-                admission.work(0)?;
-                if !($arity)(&$first)
-                    || selection_overlap::$overlap(admission, &$first, &$second)?
-                {
-                    return Ok(Err(concat!(
+            ) -> Result<Self, &'static str> {
+                if !($arity)(&$first) || selection_overlap::$overlap(&$first, &$second) {
+                    return Err(concat!(
                         stringify!($first),
                         " and ",
                         stringify!($second),
                         " must have valid arity and disjoint membership"
-                    )));
+                    ));
                 }
-                Ok(Ok(Self { $first, $second }))
+                Ok(Self { $first, $second })
             }
 
             /// Return the first operand selection.
@@ -2495,9 +2440,7 @@ macro_rules! selection_operands {
                 let mut first = self.$first.clone();
                 let mut second = self.$second.clone();
                 edit(&mut first, &mut second);
-                *self = selection_overlap::standard_result(Self::build(
-                    &selection_overlap::StandardAdmission, first, second,
-                ))?;
+                *self = Self::new(first, second)?;
                 Ok(())
             }
             )?
@@ -2506,9 +2449,7 @@ macro_rules! selection_operands {
         impl<'de> Deserialize<'de> for $name {
             fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
                 let wire = $wire::deserialize(deserializer)?;
-                selection_overlap::standard_result(Self::build(
-                    &selection_overlap::StandardAdmission, wire.$first, wire.$second,
-                )).map_err(serde::de::Error::custom)
+                Self::new(wire.$first, wire.$second).map_err(serde::de::Error::custom)
             }
         }
     };
@@ -2596,57 +2537,31 @@ struct TreeChildrenWire {
 }
 
 impl TreeChildren {
-    /// Admit distinct children and an active member through the decode budget.
+    /// Admit distinct children and an active member that belongs to them.
     pub fn new(
         children: Vec<FeatureId>,
         active_child: Option<FeatureId>,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<Self, FeatureCollectionError> {
-        Self::build(
-            &membership::DecodeAdmission {
-                _ctx: ctx,
-                _operation: "validate active tree child",
-            },
-            &membership::DecodeAdmission {
-                _ctx: ctx,
-                _operation: "validate distinct decoded members",
-            },
-            children,
-            active_child,
-        )?
-        .map_err(FeatureCollectionError::Invalid)
+        Self::build(children, active_child).map_err(FeatureCollectionError::Invalid)
     }
 
-    fn build<S: membership::Admission>(
-        active_admission: &S,
-        member_admission: &S,
+    fn build(
         children: Vec<FeatureId>,
         active_child: Option<FeatureId>,
-    ) -> Result<Result<Self, &'static str>, S::Error> {
-        active_admission.work(0)?;
-        if let Some(active) = &active_child {
-            let mut present = false;
-            for child in &children {
-                active_admission.work(1)?;
-                if child.as_str().len() == active.as_str().len() {
-                    active_admission.work(child.as_str().len())?;
-                }
-                if child == active {
-                    present = true;
-                    break;
-                }
-            }
-            if !present {
-                return Ok(Err("active_child must belong to children"));
-            }
+    ) -> Result<Self, &'static str> {
+        if active_child
+            .as_ref()
+            .is_some_and(|active| !children.contains(active))
+        {
+            return Err("active_child must belong to children");
         }
-        if !membership::distinct(member_admission, &children, children.len(), |_| true)? {
-            return Ok(Err("members must be distinct"));
+        if !membership::distinct(&children, |_| true) {
+            return Err("members must be distinct");
         }
-        Ok(Ok(Self {
+        Ok(Self {
             children: DistinctMembers(children),
             active_child,
-        }))
+        })
     }
 
     /// Whether the node has no children.
@@ -2659,14 +2574,9 @@ impl TreeChildren {
         &self.active_child
     }
 
-    /// Add a child after admitting its membership comparisons and retained slot.
-    pub fn insert(
-        &mut self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        child: FeatureId,
-        operation: &'static str,
-    ) -> Result<(), cadmpeg_core::CodecError> {
-        self.children.insert(ctx, child, operation).map(|_| ())
+    /// Add a child unless it is already a member.
+    pub fn insert(&mut self, child: FeatureId) {
+        self.children.insert(child);
     }
 }
 
@@ -2688,14 +2598,7 @@ impl<'a> IntoIterator for &'a TreeChildren {
 impl<'de> Deserialize<'de> for TreeChildren {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let wire = TreeChildrenWire::deserialize(deserializer)?;
-        Self::build(
-            &membership::StandardAdmission,
-            &membership::StandardAdmission,
-            wire.children,
-            wire.active_child,
-        )
-        .map_err(serde::de::Error::custom)?
-        .map_err(serde::de::Error::custom)
+        Self::build(wire.children, wire.active_child).map_err(serde::de::Error::custom)
     }
 }
 
@@ -6292,66 +6195,38 @@ impl VertexSelection {
 }
 
 impl EdgeSelection {
-    /// Admit selection members with the decode context.
+    /// Admit nonempty distinct historical members and their native reference.
     pub fn historical(
         state: FeatureInputTopologyId,
         edges: Vec<HistoricalEdgeId>,
         native: String,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
-        let edges =
-            match SelectionMembers::new(edges, ctx, "validate EdgeSelection historical members")? {
-                Ok(members) => members,
-                Err(error) => return Ok(Err(error)),
-            };
-
-        let native = match NonBlankString::new(native).ok_or(BodySelectionError::BlankNativeMember)
-        {
-            Ok(native) => native,
-            Err(error) => return Ok(Err(error)),
-        };
-        Ok(Ok(Self::Historical {
+    ) -> Result<Self, BodySelectionError> {
+        let edges = SelectionMembers::try_from(edges)?;
+        let native = NonBlankString::new(native).ok_or(BodySelectionError::BlankNativeMember)?;
+        Ok(Self::Historical {
             state,
             edges,
             native,
-        }))
+        })
     }
 
-    /// Admit selection members with the decode context.
+    /// Admit distinct historical members, unresolved native members and their native reference.
     pub fn historical_partial(
         state: FeatureInputTopologyId,
         edges: Vec<HistoricalEdgeId>,
         unresolved: Vec<String>,
         native: String,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
-        let edges = match DistinctMembers::try_from(edges, ctx) {
-            Ok(members) => members,
-            Err(FeatureCollectionError::Resource(limit)) => return Err(limit),
-            Err(FeatureCollectionError::Invalid(_)) => {
-                return Ok(Err(BodySelectionError::RepeatedBody))
-            }
-        };
-        let unresolved = match NativeSelections::new(
-            unresolved,
-            ctx,
-            "validate EdgeSelection historical partial members",
-        )? {
-            Ok(members) => members,
-            Err(error) => return Ok(Err(error)),
-        };
-
-        let native = match NonBlankString::new(native).ok_or(BodySelectionError::BlankNativeMember)
-        {
-            Ok(native) => native,
-            Err(error) => return Ok(Err(error)),
-        };
-        Ok(Ok(Self::HistoricalPartial {
+    ) -> Result<Self, BodySelectionError> {
+        let edges =
+            DistinctMembers::try_from(edges).map_err(|_| BodySelectionError::RepeatedBody)?;
+        let unresolved = NativeSelections::try_from(unresolved)?;
+        let native = NonBlankString::new(native).ok_or(BodySelectionError::BlankNativeMember)?;
+        Ok(Self::HistoricalPartial {
             state,
             edges,
             unresolved,
             native,
-        }))
+        })
     }
 
     /// Admits generated members and their native reference.
@@ -6365,66 +6240,38 @@ impl EdgeSelection {
 }
 
 impl FaceSelection {
-    /// Admit selection members with the decode context.
+    /// Admit nonempty distinct historical members and their native reference.
     pub fn historical(
         state: FeatureInputTopologyId,
         faces: Vec<HistoricalFaceId>,
         native: String,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
-        let faces =
-            match SelectionMembers::new(faces, ctx, "validate FaceSelection historical members")? {
-                Ok(members) => members,
-                Err(error) => return Ok(Err(error)),
-            };
-
-        let native = match NonBlankString::new(native).ok_or(BodySelectionError::BlankNativeMember)
-        {
-            Ok(native) => native,
-            Err(error) => return Ok(Err(error)),
-        };
-        Ok(Ok(Self::Historical {
+    ) -> Result<Self, BodySelectionError> {
+        let faces = SelectionMembers::try_from(faces)?;
+        let native = NonBlankString::new(native).ok_or(BodySelectionError::BlankNativeMember)?;
+        Ok(Self::Historical {
             state,
             faces,
             native,
-        }))
+        })
     }
 
-    /// Admit selection members with the decode context.
+    /// Admit distinct historical members, unresolved native members and their native reference.
     pub fn historical_partial(
         state: FeatureInputTopologyId,
         faces: Vec<HistoricalFaceId>,
         unresolved: Vec<String>,
         native: String,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
-        let faces = match DistinctMembers::try_from(faces, ctx) {
-            Ok(members) => members,
-            Err(FeatureCollectionError::Resource(limit)) => return Err(limit),
-            Err(FeatureCollectionError::Invalid(_)) => {
-                return Ok(Err(BodySelectionError::RepeatedBody))
-            }
-        };
-        let unresolved = match NativeSelections::new(
-            unresolved,
-            ctx,
-            "validate FaceSelection historical partial members",
-        )? {
-            Ok(members) => members,
-            Err(error) => return Ok(Err(error)),
-        };
-
-        let native = match NonBlankString::new(native).ok_or(BodySelectionError::BlankNativeMember)
-        {
-            Ok(native) => native,
-            Err(error) => return Ok(Err(error)),
-        };
-        Ok(Ok(Self::HistoricalPartial {
+    ) -> Result<Self, BodySelectionError> {
+        let faces =
+            DistinctMembers::try_from(faces).map_err(|_| BodySelectionError::RepeatedBody)?;
+        let unresolved = NativeSelections::try_from(unresolved)?;
+        let native = NonBlankString::new(native).ok_or(BodySelectionError::BlankNativeMember)?;
+        Ok(Self::HistoricalPartial {
             state,
             faces,
             unresolved,
             native,
-        }))
+        })
     }
 
     /// Admits generated members and their native reference.
@@ -6511,28 +6358,18 @@ impl<'de> Deserialize<'de> for SelectionReference {
     }
 }
 
-/// Invalid collection membership or a decode resource refusal.
+/// Invalid collection membership.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum FeatureCollectionError {
     /// The collection violates its member constraint.
     #[error("{0}")]
     Invalid(&'static str),
-    /// The decode budget or allocator refused the operation.
-    #[error("decode resource limit: {0:?}")]
-    Resource(cadmpeg_core::decode::ResourceLimit),
-}
-
-impl From<cadmpeg_core::decode::ResourceLimit> for FeatureCollectionError {
-    fn from(limit: cadmpeg_core::decode::ResourceLimit) -> Self {
-        Self::Resource(limit)
-    }
 }
 
 impl From<FeatureCollectionError> for cadmpeg_core::CodecError {
     fn from(error: FeatureCollectionError) -> Self {
         match error {
             FeatureCollectionError::Invalid(message) => Self::malformed(message),
-            FeatureCollectionError::Resource(limit) => Self::ResourceLimit(limit),
         }
     }
 }
@@ -6549,18 +6386,11 @@ impl<T> Default for DistinctMembers<T> {
     }
 }
 
-impl<T: Eq + std::hash::Hash> DistinctMembers<T> {
-    /// Check uniqueness using a scoped index and the caller's work budget.
-    pub fn try_from(
-        value: Vec<T>,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ) -> Result<Self, FeatureCollectionError> {
-        const OPERATION: &str = "validate distinct decoded members";
-        let admission = membership::DecodeAdmission {
-            _ctx: ctx,
-            _operation: OPERATION,
-        };
-        if !membership::distinct(&admission, &value, value.len(), |_| true)? {
+impl<T: Eq + std::hash::Hash> TryFrom<Vec<T>> for DistinctMembers<T> {
+    type Error = FeatureCollectionError;
+    /// Admit members that are pairwise distinct, in source order.
+    fn try_from(value: Vec<T>) -> Result<Self, Self::Error> {
+        if !membership::distinct(&value, |_| true) {
             return Err(FeatureCollectionError::Invalid("members must be distinct"));
         }
         Ok(Self(value))
@@ -6568,35 +6398,9 @@ impl<T: Eq + std::hash::Hash> DistinctMembers<T> {
 }
 
 impl<T: PartialEq> DistinctMembers<T> {
-    /// Insert a member after admitting comparisons and a retained collection slot.
-    pub fn insert(
-        &mut self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        value: T,
-        operation: &'static str,
-    ) -> Result<bool, cadmpeg_core::CodecError> {
-        membership::insert(
-            &membership::DecodeAdmission {
-                _ctx: ctx,
-                _operation: operation,
-            },
-            &mut self.0,
-            value,
-        )
-        .map_err(Into::into)
-    }
-
-    /// Append distinct members in source order through the caller context.
-    pub fn append(
-        &mut self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        values: impl IntoIterator<Item = T>,
-        operation: &'static str,
-    ) -> Result<(), cadmpeg_core::CodecError> {
-        for value in values {
-            self.insert(ctx, value, operation)?;
-        }
-        Ok(())
+    /// Append a member unless it is already present, and return whether it was appended.
+    pub fn insert(&mut self, value: T) -> bool {
+        membership::insert(&mut self.0, value)
     }
 }
 
@@ -6625,10 +6429,7 @@ impl<T> DistinctMembers<T> {
 impl<T: PartialEq> Extend<T> for DistinctMembers<T> {
     fn extend<I: IntoIterator<Item = T>>(&mut self, iter: I) {
         for member in iter {
-            match membership::insert(&membership::StandardAdmission, &mut self.0, member) {
-                Ok(_) => {}
-                Err(error) => match error {},
-            }
+            membership::insert(&mut self.0, member);
         }
     }
 }
@@ -6659,17 +6460,7 @@ impl<'a, T> IntoIterator for &'a DistinctMembers<T> {
 impl<'de, T: Deserialize<'de> + Eq + std::hash::Hash> Deserialize<'de> for DistinctMembers<T> {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let values = Vec::<T>::deserialize(deserializer)?;
-        if !membership::distinct(
-            &membership::StandardAdmission,
-            &values,
-            values.len(),
-            |_| true,
-        )
-        .map_err(serde::de::Error::custom)?
-        {
-            return Err(serde::de::Error::custom("members must be distinct"));
-        }
-        Ok(Self(values))
+        Self::try_from(values).map_err(serde::de::Error::custom)
     }
 }
 /// Nonempty distinct selection members in source order.
@@ -6680,39 +6471,15 @@ pub struct SelectionMembers<T>(Vec<T>);
 
 impl<T: Eq + std::hash::Hash> TryFrom<Vec<T>> for SelectionMembers<T> {
     type Error = BodySelectionError;
+    /// Admit nonempty pairwise distinct members, in source order.
     fn try_from(value: Vec<T>) -> Result<Self, Self::Error> {
-        Self::build(&membership::StandardAdmission, value)
-            .map_err(|_| BodySelectionError::Allocation)?
-    }
-}
-impl<T: Eq + std::hash::Hash> SelectionMembers<T> {
-    /// Admit nonempty distinct members using a scoped uniqueness index.
-    pub fn new(
-        value: Vec<T>,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        operation: &'static str,
-    ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
-        Self::build(
-            &membership::DecodeAdmission {
-                _ctx: ctx,
-                _operation: operation,
-            },
-            value,
-        )
-    }
-
-    fn build<S: membership::Admission>(
-        admission: &S,
-        value: Vec<T>,
-    ) -> Result<Result<Self, BodySelectionError>, S::Error> {
-        admission.work(0)?;
         if value.is_empty() {
-            return Ok(Err(BodySelectionError::Empty));
+            return Err(BodySelectionError::Empty);
         }
-        if !membership::distinct(admission, &value, value.len(), |_| true)? {
-            return Ok(Err(BodySelectionError::RepeatedBody));
+        if !membership::distinct(&value, |_| true) {
+            return Err(BodySelectionError::RepeatedBody);
         }
-        Ok(Ok(Self(value)))
+        Ok(Self(value))
     }
 }
 
@@ -6749,9 +6516,7 @@ impl<'a, T> IntoIterator for &'a SelectionMembers<T> {
 impl<'de, T: Deserialize<'de> + Eq + std::hash::Hash> Deserialize<'de> for SelectionMembers<T> {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let values = Vec::<T>::deserialize(deserializer)?;
-        Self::build(&membership::StandardAdmission, values)
-            .map_err(serde::de::Error::custom)?
-            .map_err(serde::de::Error::custom)
+        Self::try_from(values).map_err(serde::de::Error::custom)
     }
 }
 /// Nonempty distinct nonblank native selection names.
@@ -6762,47 +6527,21 @@ pub struct NativeSelections(Vec<String>);
 
 impl TryFrom<Vec<String>> for NativeSelections {
     type Error = BodySelectionError;
+    /// Admit nonempty, nonblank, pairwise distinct native names, in source order.
     fn try_from(value: Vec<String>) -> Result<Self, Self::Error> {
-        Self::build(&membership::StandardAdmission, value)
-            .map_err(|_| BodySelectionError::Allocation)?
+        if value.is_empty() {
+            return Err(BodySelectionError::Empty);
+        }
+        if value.iter().any(|name| name.trim().is_empty()) {
+            return Err(BodySelectionError::BlankNativeMember);
+        }
+        if !membership::distinct(&value, |_| true) {
+            return Err(BodySelectionError::RepeatedNativeMember);
+        }
+        Ok(Self(value))
     }
 }
 impl NativeSelections {
-    /// Admit nonempty nonblank native names using a scoped uniqueness index.
-    pub fn new(
-        value: Vec<String>,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        operation: &'static str,
-    ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
-        Self::build(
-            &membership::DecodeAdmission {
-                _ctx: ctx,
-                _operation: operation,
-            },
-            value,
-        )
-    }
-
-    fn build<S: membership::Admission>(
-        admission: &S,
-        value: Vec<String>,
-    ) -> Result<Result<Self, BodySelectionError>, S::Error> {
-        admission.work(0)?;
-        if value.is_empty() {
-            return Ok(Err(BodySelectionError::Empty));
-        }
-        for name in &value {
-            admission.work(name.len())?;
-            if name.trim().is_empty() {
-                return Ok(Err(BodySelectionError::BlankNativeMember));
-            }
-        }
-        if !membership::distinct(admission, &value, value.len(), |_| true)? {
-            return Ok(Err(BodySelectionError::RepeatedNativeMember));
-        }
-        Ok(Ok(Self(value)))
-    }
-
     /// The native names in source order.
     pub fn as_slice(&self) -> &[String] {
         &self.0
@@ -6827,9 +6566,7 @@ impl std::ops::Deref for NativeSelections {
 impl<'de> Deserialize<'de> for NativeSelections {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let values = Vec::<String>::deserialize(deserializer)?;
-        Self::build(&membership::StandardAdmission, values)
-            .map_err(serde::de::Error::custom)?
-            .map_err(serde::de::Error::custom)
+        Self::try_from(values).map_err(serde::de::Error::custom)
     }
 }
 /// Failure to construct a body-selection member set.
@@ -6850,9 +6587,6 @@ pub enum BodySelectionError {
     /// The standard allocator refused context-free selection storage.
     #[error("selection member allocation failed")]
     Allocation,
-    /// The decode budget or allocator refused selection admission.
-    #[error("decode resource limit: {0:?}")]
-    Resource(cadmpeg_core::decode::ResourceLimit),
 }
 
 /// Native selection of the bodies a copy-and-paste operation introduces. The
@@ -6944,47 +6678,24 @@ pub struct BodyMembers<B>(Vec<BodyMember<B>>);
 
 impl<B> BodyMembers<B> {
     /// Construct checked rows from body/native pairs.
-    pub fn try_from_rows(
-        rows: Vec<BodyMember<B>>,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit>
+    pub fn try_from_rows(rows: Vec<BodyMember<B>>) -> Result<Self, BodySelectionError>
     where
         B: Eq + std::hash::Hash,
     {
-        Self::build(
-            &membership::DecodeAdmission {
-                _ctx: ctx,
-                _operation: "validate body selection members",
-            },
-            rows,
-        )
-    }
-
-    fn build<S: membership::Admission>(
-        admission: &S,
-        rows: Vec<BodyMember<B>>,
-    ) -> Result<Result<Self, BodySelectionError>, S::Error>
-    where
-        B: Eq + std::hash::Hash,
-    {
-        admission.work(0)?;
         if rows.is_empty() {
-            return Ok(Err(BodySelectionError::Empty));
+            return Err(BodySelectionError::Empty);
         }
-        let mut bodies = admission.index(rows.len())?;
-        let mut native = admission.index(rows.len())?;
+        let mut bodies = std::collections::HashSet::new();
+        let mut native = std::collections::HashSet::new();
         for row in &rows {
-            admission.work(1)?;
-            if !bodies.insert(&row.body)? {
-                return Ok(Err(BodySelectionError::RepeatedBody));
+            if !bodies.insert(&row.body) {
+                return Err(BodySelectionError::RepeatedBody);
             }
-            if !native.insert(&row.native)? {
-                return Ok(Err(BodySelectionError::RepeatedNativeMember));
+            if !native.insert(&row.native) {
+                return Err(BodySelectionError::RepeatedNativeMember);
             }
         }
-        drop(bodies);
-        drop(native);
-        Ok(Ok(Self(rows)))
+        Ok(Self(rows))
     }
 
     /// Count paired selection rows.
@@ -7022,9 +6733,7 @@ where
         D: serde::Deserializer<'de>,
     {
         let rows = Vec::<BodyMember<B>>::deserialize(deserializer)?;
-        Self::build(&membership::StandardAdmission, rows)
-            .map_err(serde::de::Error::custom)?
-            .map_err(serde::de::Error::custom)
+        Self::try_from_rows(rows).map_err(serde::de::Error::custom)
     }
 }
 
@@ -8241,23 +7950,13 @@ struct SketchProfileLoopsWire {
 }
 
 impl SketchProfileLoops {
-    /// Admit a whole-loop region with a scoped uniqueness index.
-    pub fn new(
-        outer: u32,
-        holes: Vec<u32>,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ) -> Result<Result<Self, &'static str>, cadmpeg_core::decode::ResourceLimit> {
-        let holes = match DistinctMembers::try_from(holes, ctx) {
-            Ok(holes) => holes,
-            Err(FeatureCollectionError::Resource(limit)) => return Err(limit),
-            Err(FeatureCollectionError::Invalid(_)) => return Ok(Err("holes must be distinct")),
-        };
-        for hole in holes.as_slice() {
-            if hole == &outer {
-                return Ok(Err("holes must not contain outer"));
-            }
+    /// Admit a whole-loop region with distinct holes that exclude its outer loop.
+    pub fn new(outer: u32, holes: Vec<u32>) -> Result<Self, &'static str> {
+        let holes = DistinctMembers::try_from(holes).map_err(|_| "holes must be distinct")?;
+        if holes.contains(&outer) {
+            return Err("holes must not contain outer");
         }
-        Ok(Ok(Self { outer, holes }))
+        Ok(Self { outer, holes })
     }
 
     /// The exterior-loop index.
@@ -8316,13 +8015,9 @@ pub enum SketchProfileRegion {
 }
 
 impl SketchProfileRegion {
-    /// Admit whole-loop regions with the decode context.
-    pub fn loops(
-        outer: u32,
-        holes: Vec<u32>,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ) -> Result<Result<Self, &'static str>, cadmpeg_core::decode::ResourceLimit> {
-        Ok(SketchProfileLoops::new(outer, holes, ctx)?.map(|loops| Self::Loops { loops }))
+    /// Admit a whole-loop region.
+    pub fn loops(outer: u32, holes: Vec<u32>) -> Result<Self, &'static str> {
+        SketchProfileLoops::new(outer, holes).map(|loops| Self::Loops { loops })
     }
 
     /// Admits a trimmed region whose exterior and hole rings are nonempty.
@@ -8971,85 +8666,46 @@ impl PlanarProfileRef {
         })
     }
 
-    /// Admit members with a scoped uniqueness index.
+    /// Admit nonempty distinct members.
     pub fn sketch_profiles(
         sketch: crate::sketches::SketchId,
         profiles: Vec<u32>,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
-        let profiles = match SelectionMembers::new(
-            profiles,
-            ctx,
-            "validate PlanarProfileRef sketch profiles profiles",
-        )? {
-            Ok(value) => value,
-            Err(error) => return Ok(Err(error)),
-        };
-        Ok(Ok(Self::SketchProfiles { sketch, profiles }))
+    ) -> Result<Self, BodySelectionError> {
+        let profiles = SelectionMembers::try_from(profiles)?;
+        Ok(Self::SketchProfiles { sketch, profiles })
     }
 
-    /// Admit members with a scoped uniqueness index.
+    /// Admit nonempty distinct members.
     pub fn sketch_entities(
         sketch: crate::sketches::SketchId,
         entities: Vec<crate::sketches::SketchEntityId>,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
-        let entities = match SelectionMembers::new(
-            entities,
-            ctx,
-            "validate PlanarProfileRef sketch entities entities",
-        )? {
-            Ok(value) => value,
-            Err(error) => return Ok(Err(error)),
-        };
-        Ok(Ok(Self::SketchEntities { sketch, entities }))
+    ) -> Result<Self, BodySelectionError> {
+        let entities = SelectionMembers::try_from(entities)?;
+        Ok(Self::SketchEntities { sketch, entities })
     }
 
-    /// Admit members with a scoped uniqueness index.
+    /// Admit nonempty distinct members.
     pub fn sketch_selection(
         sketch: crate::sketches::SketchId,
         selections: Vec<String>,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
-        let selections = match NativeSelections::new(
-            selections,
-            ctx,
-            "validate PlanarProfileRef sketch selection selections",
-        )? {
-            Ok(value) => value,
-            Err(error) => return Ok(Err(error)),
-        };
-        Ok(Ok(Self::SketchSelection { sketch, selections }))
+    ) -> Result<Self, BodySelectionError> {
+        let selections = NativeSelections::try_from(selections)?;
+        Ok(Self::SketchSelection { sketch, selections })
     }
 
-    /// Admit members with a scoped uniqueness index.
+    /// Admit nonempty distinct members.
     pub fn historical_faces(
         state: FeatureInputTopologyId,
         faces: Vec<HistoricalFaceId>,
         native: Vec<String>,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
-        let faces = match SelectionMembers::new(
-            faces,
-            ctx,
-            "validate PlanarProfileRef historical faces faces",
-        )? {
-            Ok(value) => value,
-            Err(error) => return Ok(Err(error)),
-        };
-        let native = match NativeSelections::new(
-            native,
-            ctx,
-            "validate PlanarProfileRef historical faces native",
-        )? {
-            Ok(value) => value,
-            Err(error) => return Ok(Err(error)),
-        };
-        Ok(Ok(Self::HistoricalFaces {
+    ) -> Result<Self, BodySelectionError> {
+        let faces = SelectionMembers::try_from(faces)?;
+        let native = NativeSelections::try_from(native)?;
+        Ok(Self::HistoricalFaces {
             state,
             faces,
             native,
-        }))
+        })
     }
     /// Admits generated profile curves and their native reference.
     pub fn generated(
@@ -9062,96 +8718,58 @@ impl PlanarProfileRef {
 }
 
 impl ProfileRef {
-    /// Admit members with a scoped uniqueness index.
+    /// Admit nonempty distinct members.
     pub fn spatial_sketch_profiles(
         sketch: crate::sketches::SpatialSketchId,
         profiles: Vec<u32>,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
-        let profiles = match SelectionMembers::new(
-            profiles,
-            ctx,
-            "validate ProfileRef spatial sketch profiles profiles",
-        )? {
-            Ok(value) => value,
-            Err(error) => return Ok(Err(error)),
-        };
-        Ok(Ok(Self::SpatialSketchProfiles { sketch, profiles }))
+    ) -> Result<Self, BodySelectionError> {
+        let profiles = SelectionMembers::try_from(profiles)?;
+        Ok(Self::SpatialSketchProfiles { sketch, profiles })
     }
 
-    /// Admit members with a scoped uniqueness index.
+    /// Admit nonempty distinct members.
     pub fn spatial_sketch_selection(
         sketch: crate::sketches::SpatialSketchId,
         selections: Vec<String>,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
-        let selections = match NativeSelections::new(
-            selections,
-            ctx,
-            "validate ProfileRef spatial sketch selection selections",
-        )? {
-            Ok(value) => value,
-            Err(error) => return Ok(Err(error)),
-        };
-        Ok(Ok(Self::SpatialSketchSelection { sketch, selections }))
+    ) -> Result<Self, BodySelectionError> {
+        let selections = NativeSelections::try_from(selections)?;
+        Ok(Self::SpatialSketchSelection { sketch, selections })
     }
 }
 
 impl PathRef {
-    /// Admit members with a scoped uniqueness index.
+    /// Admit nonempty distinct members.
     pub fn sketch_curves(
         sketch: crate::sketches::SketchId,
         curves: Vec<crate::sketches::SketchEntityId>,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
-        let curves =
-            match SelectionMembers::new(curves, ctx, "validate PathRef sketch curves curves")? {
-                Ok(value) => value,
-                Err(error) => return Ok(Err(error)),
-            };
-        Ok(Ok(Self::SketchCurves { sketch, curves }))
+    ) -> Result<Self, BodySelectionError> {
+        let curves = SelectionMembers::try_from(curves)?;
+        Ok(Self::SketchCurves { sketch, curves })
     }
 
-    /// Admit members with a scoped uniqueness index.
+    /// Admit nonempty distinct members.
     pub fn spatial_sketch_curves(
         sketch: crate::sketches::SpatialSketchId,
         curves: Vec<crate::sketches::SpatialSketchEntityId>,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
-        let curves = match SelectionMembers::new(
-            curves,
-            ctx,
-            "validate PathRef spatial sketch curves curves",
-        )? {
-            Ok(value) => value,
-            Err(error) => return Ok(Err(error)),
-        };
-        Ok(Ok(Self::SpatialSketchCurves { sketch, curves }))
+    ) -> Result<Self, BodySelectionError> {
+        let curves = SelectionMembers::try_from(curves)?;
+        Ok(Self::SpatialSketchCurves { sketch, curves })
     }
 
-    /// Admit members with a scoped uniqueness index.
+    /// Admit nonempty distinct members.
     pub fn historical_edges(
         state: FeatureInputTopologyId,
         edges: Vec<HistoricalEdgeId>,
         native: String,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
-        let edges =
-            match SelectionMembers::new(edges, ctx, "validate PathRef historical edges edges")? {
-                Ok(value) => value,
-                Err(error) => return Ok(Err(error)),
-            };
+    ) -> Result<Self, BodySelectionError> {
+        let edges = SelectionMembers::try_from(edges)?;
 
-        let native = match NonBlankString::new(native).ok_or(BodySelectionError::BlankNativeMember)
-        {
-            Ok(native) => native,
-            Err(error) => return Ok(Err(error)),
-        };
-        Ok(Ok(Self::HistoricalEdges {
+        let native = NonBlankString::new(native).ok_or(BodySelectionError::BlankNativeMember)?;
+        Ok(Self::HistoricalEdges {
             state,
             edges,
             native,
-        }))
+        })
     }
 }
 
@@ -9170,57 +8788,29 @@ pub struct ThreePointSelection(Box<[VertexSelection; 3]>);
 
 impl TryFrom<Box<[VertexSelection; 3]>> for ThreePointSelection {
     type Error = &'static str;
+    /// Admit three distinct vertex targets that use one historical input state.
     fn try_from(points: Box<[VertexSelection; 3]>) -> Result<Self, Self::Error> {
-        selection_overlap::standard_result(Self::build(
-            &selection_overlap::StandardAdmission,
-            points,
-        ))
-    }
-}
-
-impl ThreePointSelection {
-    /// Admit target and historical-state comparisons through the caller context.
-    pub fn new(
-        points: Box<[VertexSelection; 3]>,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ) -> Result<Result<Self, &'static str>, cadmpeg_core::decode::ResourceLimit> {
-        Self::build(ctx, points)
-    }
-
-    fn build<S: selection_overlap::OverlapAdmission>(
-        admission: &S,
-        points: Box<[VertexSelection; 3]>,
-    ) -> Result<Result<Self, &'static str>, S::Error> {
-        admission.work(0)?;
         for (first, second) in [(0, 1), (0, 2), (1, 2)] {
-            if selection_overlap::vertex_targets_equal(admission, &points[first], &points[second])?
-            {
-                return Ok(Err("points must select three distinct vertex targets"));
+            if selection_overlap::vertex_targets_equal(&points[first], &points[second]) {
+                return Err("points must select three distinct vertex targets");
             }
         }
         let mut state: Option<&FeatureInputTopologyId> = None;
         for point in points.iter() {
-            admission.work(1)?;
             if let VertexSelection::Historical {
                 state: candidate, ..
             } = point
             {
                 match state {
-                    Some(state)
-                        if !selection_overlap::text_equal(
-                            admission,
-                            state.as_str(),
-                            candidate.as_str(),
-                        )? =>
-                    {
-                        return Ok(Err("points must use the same input topology"));
+                    Some(state) if state.as_str() != candidate.as_str() => {
+                        return Err("points must use the same input topology");
                     }
                     Some(_) => {}
                     None => state = Some(candidate),
                 }
             }
         }
-        Ok(Ok(Self(points)))
+        Ok(Self(points))
     }
 }
 

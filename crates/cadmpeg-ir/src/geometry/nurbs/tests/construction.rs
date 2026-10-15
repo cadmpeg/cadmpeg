@@ -22,10 +22,7 @@ fn finite_points() -> Vec<FinitePoint3> {
 
 #[test]
 fn final_nurbs_construction_moves_admitted_storage_without_copy_or_scalar_readmission() {
-    let setup = cadmpeg_test_support::service_decode_context();
-    let curve_knots = KnotVector::new(&setup, knots())
-        .expect("setup")
-        .expect("knots");
+    let curve_knots = KnotVector::new(knots()).expect("knots");
     let knot_address = curve_knots.as_ptr();
     let points = finite_points();
     let point_address = points.as_ptr();
@@ -33,15 +30,8 @@ fn final_nurbs_construction_moves_admitted_storage_without_copy_or_scalar_readmi
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    let curve = NurbsCurve::new(
-        &ctx,
-        1,
-        curve_knots,
-        NurbsPoles3::Polynomial { points },
-        false,
-    )
-    .expect("owned admitted storage")
-    .expect("valid curve");
+    let curve = NurbsCurve::new(1, curve_knots, NurbsPoles3::Polynomial { points }, false)
+        .expect("valid curve");
     assert_eq!(curve.knots().as_ptr(), knot_address);
     let NurbsPoles3::Polynomial { points } = curve.pole_rows() else {
         panic!("polynomial");
@@ -49,12 +39,8 @@ fn final_nurbs_construction_moves_admitted_storage_without_copy_or_scalar_readmi
     assert_eq!(points.as_ptr(), point_address);
     ctx.finish_session()
         .expect("no input-sized operation needed");
-    let u_knots = KnotVector::new(&setup, knots())
-        .expect("setup")
-        .expect("knots");
-    let v_knots = KnotVector::new(&setup, knots())
-        .expect("setup")
-        .expect("knots");
+    let u_knots = KnotVector::new(knots()).expect("knots");
+    let v_knots = KnotVector::new(knots()).expect("knots");
     let rows = vec![finite_points(), finite_points()];
     let outer = rows.as_ptr();
     let inner = rows[0].as_ptr();
@@ -63,13 +49,11 @@ fn final_nurbs_construction_moves_admitted_storage_without_copy_or_scalar_readmi
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     let surface = NurbsSurface::new(
-        &ctx,
         NurbsSurfaceAxis::new(1, u_knots, false),
         NurbsSurfaceAxis::new(1, v_knots, false),
         NurbsPoleGrid::Polynomial { rows },
         true,
     )
-    .expect("two row-width visits")
     .expect("valid surface");
     let NurbsPoleGrid::Polynomial { rows } = surface.pole_grid() else {
         panic!("polynomial");
@@ -88,12 +72,9 @@ fn final_nurbs_construction_moves_admitted_storage_without_copy_or_scalar_readmi
 
 #[test]
 fn raw_curve_construction_moves_raw_knot_storage() {
-    let ctx = cadmpeg_test_support::service_decode_context();
     let knots = knots();
     let address = knots.as_ptr();
-    let curve = NurbsCurve::from_lanes(&ctx, 1, knots, raw_points(), None, false)
-        .expect("construction admission")
-        .expect("valid curve");
+    let curve = NurbsCurve::from_lanes(1, knots, raw_points(), None, false).expect("valid curve");
     assert_eq!(curve.knots().as_ptr(), address);
     assert_eq!(curve.knots().as_slice(), &[0.0, 0.0, 1.0, 1.0]);
 }

@@ -52,7 +52,6 @@ fn circular_item<T>(value: T) -> Vec<T> {
 }
 
 fn copy_circular_pcurve(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     geometry: &cadmpeg_ir::geometry::pcurve::PcurveGeometry,
 ) -> Result<cadmpeg_ir::geometry::pcurve::PcurveGeometry, cadmpeg_core::CodecError> {
     let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs } = geometry else {
@@ -61,7 +60,7 @@ fn copy_circular_pcurve(
         ));
     };
     Ok(cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs {
-        nurbs: super::nurbs::copy_pcurve_nurbs(ctx, nurbs)?,
+        nurbs: nurbs.clone(),
     })
 }
 
@@ -143,7 +142,6 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
             let mut refusal = crate::lane_refusal::LaneRefusals::new();
             let cap_record = format!("extrusion feature {feature_id} cap");
             let cap = circular_pcurve(
-                ctx,
                 section_center,
                 radius,
                 0.0,
@@ -216,7 +214,7 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
                 PcurveAdmission::Pending(source_carriers, &cap_surface_geometry),
                 circular_identity::<PcurveId>(feature_id, format_args!("pcurve:{side}:cap"))?,
                 transform.offset,
-                copy_circular_pcurve(ctx, &cap_geometry)?,
+                copy_circular_pcurve(&cap_geometry)?,
             )?;
             let side_pcurve = add_extrusion_pcurve(
                 ctx,
@@ -539,9 +537,8 @@ mod tests {
 
     #[test]
     fn circular_cap_copy_preserves_nurbs_pcurve() {
-        crate::decode::with_test_decode_ctx(|ctx| {
+        {
             let geometry = super::circular_pcurve(
-                ctx,
                 [0.0, 0.0],
                 1.0,
                 0.0,
@@ -555,10 +552,10 @@ mod tests {
                 panic!("circular cap is NURBS")
             };
             assert_eq!(
-                super::copy_circular_pcurve(ctx, &geometry).expect("copy"),
+                super::copy_circular_pcurve(&geometry).expect("copy"),
                 geometry
             );
-        });
+        };
     }
 
     #[test]

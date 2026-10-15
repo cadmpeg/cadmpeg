@@ -329,7 +329,6 @@ fn opposite_intersection_blend_contact_keeps_adaptive_fit_certification() {
     crate::test_support::with_decode_context(|geometry_ctx| {
         let source_pcurve = PcurveGeometry::Nurbs {
             nurbs: PcurveNurbs::from_lanes(
-                &cadmpeg_test_support::service_decode_context(),
                 2,
                 vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
                 vec![
@@ -340,7 +339,6 @@ fn opposite_intersection_blend_contact_keeps_adaptive_fit_certification() {
                 None,
                 false,
             )
-            .expect("fixture pcurve construction admission")
             .expect("valid blend-contact pcurve"),
         };
         let mut ir = blend_contact_transfer_fixture(1, &source_pcurve, CONTACT_FIT_TOLERANCE, true);
@@ -679,14 +677,12 @@ fn blend_contact_transfer_fixture(
     });
     let contact_pcurve = PcurveGeometry::Nurbs {
         nurbs: PcurveNurbs::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
             None,
             false,
         )
-        .expect("fixture pcurve construction admission")
         .expect("valid contact pcurve"),
     };
     let contact_surface = if contact_on_source_support {
@@ -991,7 +987,6 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
                 id: nurbs.clone(),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
                     NurbsSurface::from_lanes(
-                        &cadmpeg_test_support::service_decode_context(),
                         cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                             1,
                             vec![0.0, 0.0, 1.0, 1.0],
@@ -1011,7 +1006,6 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
                         ),
                         false,
                     )
-                    .expect("fixture constructor admission")
                     .expect("valid boundary surface"),
                 )),
                 source_object: None,
@@ -1039,14 +1033,12 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
             id: curve.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                 cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
-                    &cadmpeg_test_support::service_decode_context(),
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)],
                     None,
                     false,
                 )
-                .expect("fixture constructor admission")
                 .unwrap(),
             )),
             source_object: None,
@@ -1254,14 +1246,12 @@ fn exact_boundary_completion_preserves_existing_cache_fit_tolerance() {
             id: curve.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                 cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
-                    &cadmpeg_test_support::service_decode_context(),
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)],
                     None,
                     false,
                 )
-                .expect("fixture constructor admission")
                 .unwrap(),
             )),
             source_object: None,
