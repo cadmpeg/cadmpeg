@@ -771,13 +771,7 @@ fn parse_scalar_values(
         })
     })
     .collect::<Vec<_>>();
-    for index in 1..values.len() {
-        let mut at = index;
-        while at > 0 && values[at - 1].offset > values[at].offset {
-            values.swap(at - 1, at);
-            at -= 1;
-        }
-    }
+    values.sort_by_key(|value| value.offset);
     values
 }
 
@@ -1437,13 +1431,7 @@ fn parse_role_selectors(
         .collect::<Vec<_>>();
 
     roles.extend(field_bound_roles);
-    for index in 1..roles.len() {
-        let mut at = index;
-        while at > 0 && roles[at - 1].offset > roles[at].offset {
-            roles.swap(at - 1, at);
-            at -= 1;
-        }
-    }
+    roles.sort_by_key(|role| role.offset);
     roles.dedup_by_key(|role| role.offset);
     for role in &mut roles {
         role.field_code = role.end_offset().and_then(|offset| {
