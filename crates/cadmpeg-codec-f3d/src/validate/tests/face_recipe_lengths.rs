@@ -46,9 +46,23 @@ fn face_findings(
     operand_length: u64,
     recipe_byte_offset: u64,
 ) -> Vec<cadmpeg_ir::report::check::Finding> {
+    scope_face_findings(
+        crate::records::feature::scope::DesignFeatureKind::OffsetFaces,
+        kind,
+        operand_length,
+        recipe_byte_offset,
+    )
+}
+
+fn scope_face_findings(
+    scope_kind: crate::records::feature::scope::DesignFeatureKind,
+    kind: crate::records::recipes::ConstructionRecipeKind,
+    operand_length: u64,
+    recipe_byte_offset: u64,
+) -> Vec<cadmpeg_ir::report::check::Finding> {
     use crate::records::{
         decal::DesignRecordHeader,
-        feature::scope::{DesignFeatureKind, DesignParameterScope},
+        feature::scope::DesignParameterScope,
         recipes::ConstructionRecipe,
         references::DesignClassTag,
         topology::{face::DesignFaceOperand, face::DesignFaceOperandDraft},
@@ -61,7 +75,7 @@ fn face_findings(
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let mut scope = DesignParameterScope::empty(
         &format!("{stream}:design-parameter-scope#10"),
-        DesignFeatureKind::OffsetFaces,
+        scope_kind,
         10,
     );
     scope
@@ -136,6 +150,39 @@ fn face_findings(
             && finding.entity.as_deref() == Some(operand_id.as_str())
     })
     .collect::<Vec<_>>()
+}
+
+/// A direct `Hole` face operand selects its support face through a face or a
+/// bounded-face recipe.
+#[test]
+fn hole_face_operand_accepts_face_and_bounded_face_recipes() {
+    use crate::records::feature::scope::DesignFeatureKind;
+    use crate::records::recipes::ConstructionRecipeKind;
+
+    let face = scope_face_findings(
+        DesignFeatureKind::Hole,
+        ConstructionRecipeKind::Face,
+        16,
+        1_047,
+    );
+    assert!(face.is_empty(), "{face:#?}");
+    let bounded = scope_face_findings(
+        DesignFeatureKind::Hole,
+        ConstructionRecipeKind::BoundedFace,
+        24,
+        1_047,
+    );
+    assert!(bounded.is_empty(), "{bounded:#?}");
+    assert_eq!(
+        scope_face_findings(
+            DesignFeatureKind::Hole,
+            ConstructionRecipeKind::Body,
+            16,
+            1_047
+        )
+        .len(),
+        1
+    );
 }
 
 #[test]
