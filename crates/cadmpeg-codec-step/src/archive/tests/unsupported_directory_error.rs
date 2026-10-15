@@ -21,10 +21,12 @@ fn unsupported_compression_error_escapes_directory_scope_as_retained_text() {
     // witnesses: local-header offset 8 and central-header offset 10.
     cadmpeg_test_support::bytes::put_u16(&mut bytes, 8, 12);
     cadmpeg_test_support::bytes::put_u16(&mut bytes, central + 10, 12);
+    // The snapshot names the member by its ordinal, not its file-controlled
+    // name; the message leaving the directory scope is still copied as retained.
     crate::test_support::with_service_context(&bytes, |source, ctx| {
         assert!(
             matches!(crate::archive::open_root(ctx, View::over_retained(source)),
-            Err(CodecError::NotImplemented(message)) if message.contains(&name))
+            Err(CodecError::NotImplemented(message)) if message.ends_with(" for entry 0"))
         );
     });
     cadmpeg_test_support::refusal::resource_limit_at(
