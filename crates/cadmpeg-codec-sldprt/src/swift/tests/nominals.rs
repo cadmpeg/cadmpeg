@@ -1791,10 +1791,12 @@ fn rotational_disagreement_skips_unmeasured_feature_tails() {
         ("low".into(), cylinder_at([4.0, 0.0, 0.0], [0.0, 0.0, 1.0])),
         ("high".into(), cylinder_at([6.0, 0.0, 0.0], [0.0, 0.0, 1.0])),
     ];
-    features.extend((0..128).map(|index| (
-        format!("tail{index}"),
-        cylinder_at([50.0, 0.0, 0.0], [0.0, 0.0, 1.0]),
-    )));
+    features.extend((0..128).map(|index| {
+        (
+            format!("tail{index}"),
+            cylinder_at([50.0, 0.0, 0.0], [0.0, 0.0, 1.0]),
+        )
+    }));
     let mut prefix_work = None;
     for tail in [1, 128] {
         let mut hole = entity("GdtCompoundHole");
@@ -1802,29 +1804,42 @@ fn rotational_disagreement_skips_unmeasured_feature_tails() {
             reference("low", "GdtCylinder"),
             reference("high", "GdtCylinder"),
         ];
-        hole.features.references.extend((0..tail).map(|index|
-            reference(&format!("tail{index}"), "GdtCylinder")
-        ));
-        let mut index = features.iter().map(|(id, feature)| (id.as_str(), feature))
+        hole.features
+            .references
+            .extend((0..tail).map(|index| reference(&format!("tail{index}"), "GdtCylinder")));
+        let mut index = features
+            .iter()
+            .map(|(id, feature)| (id.as_str(), feature))
             .collect::<BTreeMap<_, _>>();
         index.insert("hole", &hole);
         let query = |ctx: &DecodeContext<'_>| {
             crate::swift::location_projection(ctx, "hole", &index, [1.0, 0.0, 0.0])
         };
-        for operation in ["scan SWIFT rotational features", "scan SWIFT child features"] {
+        for operation in [
+            "scan SWIFT rotational features",
+            "scan SWIFT child features",
+        ] {
             crate::test_support::work_refusal_at(operation, query);
         }
         let error = crate::test_support::work_refusal_at("measure rotational prefix work", |ctx| {
             assert_eq!(query(ctx)?, None);
             ctx.copy_retained_text("x", "measure rotational prefix work")
         });
-        let CodecError::ResourceLimit(limit) = error else { panic!("rotational prefix work") };
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("rotational prefix work")
+        };
         if let Some(expected) = prefix_work {
-            assert_eq!(limit.used, expected, "disagreement stops before the child tail");
+            assert_eq!(
+                limit.used, expected,
+                "disagreement stops before the child tail"
+            );
         } else {
             prefix_work = Some(limit.used);
         }
-        for operation in ["collect SWIFT rotational projections", "copy SWIFT feature traversal result"] {
+        for operation in [
+            "collect SWIFT rotational projections",
+            "copy SWIFT feature traversal result",
+        ] {
             let ctx = cadmpeg_test_support::service_decode_context();
             let _probe = RefusalProbe::arm(ResourceDimension::MaterializedBytes, operation, None);
             assert_eq!(query(&ctx).unwrap(), None);

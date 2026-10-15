@@ -34,7 +34,9 @@ fn native_surface_source_index_waits_for_payload_agreement() {
     ctx.finish_session().unwrap();
 }
 
-fn producer_fixture(identity: Option<&str>) -> (
+fn producer_fixture(
+    identity: Option<&str>,
+) -> (
     crate::records::FeatureInputLane,
     FeatureInputSurfaceSelection,
     Vec<crate::records::Feature>,
@@ -43,7 +45,11 @@ fn producer_fixture(identity: Option<&str>) -> (
     let (native, _) = owned_surface_fixture();
     let mut features = native.feature_histories[0].features.clone();
     if let Some(identity) = identity {
-        features.iter_mut().find(|feature| feature.source_value() == Some(7)).unwrap().id = identity.to_owned();
+        features
+            .iter_mut()
+            .find(|feature| feature.source_value() == Some(7))
+            .unwrap()
+            .id = identity.to_owned();
     }
     let feature = features
         .iter()
@@ -189,22 +195,31 @@ fn native_surface_validation_releases_producers_before_terminal_allocation() {
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
             // Apply the size filter only during discovery. The replay reaches
             // the same allocation through its ordinary global storage limit.
-            let _probe = (cap == u64::MAX).then(|| RefusalProbe::arm(
-                ResourceDimension::MaterializedBytes, PRODUCERS, Some(output_backing),
-            ));
+            let _probe = (cap == u64::MAX).then(|| {
+                RefusalProbe::arm(
+                    ResourceDimension::MaterializedBytes,
+                    PRODUCERS,
+                    Some(output_backing),
+                )
+            });
             let mut index = None;
             surface_selection_disagrees_with_payload(&ctx, &lane, &record, &features, &mut index)
                 .map_err(CodecError::from)
         },
     );
-    let CodecError::ResourceLimit(limit) = error else { panic!("producer output backing") };
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("producer output backing")
+    };
     assert_eq!(limit.additional, output_backing);
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
     policy.limits.max_materialized_bytes = limit.used + limit.additional;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut index = None;
-    assert!(!surface_selection_disagrees_with_payload(&ctx, &lane, &record, &features, &mut index).unwrap());
+    assert!(
+        !surface_selection_disagrees_with_payload(&ctx, &lane, &record, &features, &mut index)
+            .unwrap()
+    );
     drop(index);
     ctx.finish_session().unwrap();
 }

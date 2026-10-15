@@ -2415,11 +2415,7 @@ fn surface_selection_disagrees_with_payload<'feature, 'ctx>(
                     record.terminal_feature_ref.as_deref(),
                     features_by_source,
                 )?;
-            if !ctx.equal(
-                &producers,
-                &record.producer_feature_refs,
-                PAYLOAD_AGREEMENT,
-            )? {
+            if !ctx.equal(&producers, &record.producer_feature_refs, PAYLOAD_AGREEMENT)? {
                 return Ok(None);
             }
             Ok(Some((offset, &*features_by_source)))
