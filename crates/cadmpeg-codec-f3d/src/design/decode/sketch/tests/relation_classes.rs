@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_core::decode::u64_from_index;
-
 mod cast_limits;
 
 use crate::design::decode::sketch::{
@@ -12,10 +10,9 @@ use crate::records::sketch_relations::{SketchPatternDefinition, SketchPatternDir
 use crate::test_support::push_reference_u64;
 
 #[test]
-fn sketch_relation_assembly_refuses_collection_and_retained_limits() {
+fn sketch_relation_assembly_admits_a_plain_relation() {
     use crate::records::decal::DesignRecordHeader;
     use crate::records::sketch_relations::SketchRelationDefinition;
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     let record = relation_record(&[(300, 0)], &[], 201, 1, &[300]);
     let header = DesignRecordHeader {
@@ -24,114 +21,12 @@ fn sketch_relation_assembly_refuses_collection_and_retained_limits() {
         class_tag: crate::records::references::DesignClassTag::try_from("298".to_owned()).unwrap(),
         byte_offset: 0,
     };
-    for (collection_limit, retained_limit, auxiliary, dimension, operation) in [
-        (
-            Some(0),
-            None,
-            false,
-            ResourceDimension::CollectionItems,
-            "f3d sketch relation output",
-        ),
-        (
-            Some(3),
-            None,
-            true,
-            ResourceDimension::CollectionItems,
-            "f3d sketch relation auxiliary output",
-        ),
-        (
-            None,
-            Some(u64_from_index(
-                crate::ids::native_scope("BulkStream.dat").len(),
-            )),
-            false,
-            ResourceDimension::RetainedBytes,
-            "f3d sketch relation ID",
-        ),
-        (
-            None,
-            Some(u64_from_index(
-                format!(
-                    "{}:sketch-relation#7",
-                    crate::ids::native_scope("BulkStream.dat")
-                )
-                .len(),
-            )),
-            false,
-            ResourceDimension::RetainedBytes,
-            "f3d sketch relation raw bytes",
-        ),
-    ] {
-        let mut parsed = tested_parse_classed_sketch_relation(&record, SketchRelationClass::Plain)
-            .expect("plain relation parse");
-        if auxiliary {
-            parsed
-                .auxiliary_references
-                .push(crate::records::identity::Located {
-                    value: 301,
-                    offset: 0,
-                });
-        }
-        let definition =
-            SketchRelationDefinition::new(parsed.state, None).expect("plain relation definition");
-        let error = if retained_limit.is_some() {
-            crate::test_support::resource_refusal_at(dimension, operation, 0, |ctx| {
-                let mut parsed =
-                    tested_parse_classed_sketch_relation(&record, SketchRelationClass::Plain)
-                        .expect("plain relation parse");
-                if auxiliary {
-                    parsed
-                        .auxiliary_references
-                        .push(crate::records::identity::Located {
-                            value: 301,
-                            offset: 0,
-                        });
-                }
-                let definition = SketchRelationDefinition::new(parsed.state, None)
-                    .expect("plain relation definition");
-                admit_sketch_relation(
-                    ctx,
-                    &mut Vec::new(),
-                    "BulkStream.dat",
-                    &header,
-                    &record,
-                    parsed,
-                    definition,
-                )
-            })
-        } else {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::default();
-            if let Some(limit) = collection_limit {
-                policy.limits.max_collection_items = limit;
-            }
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            admit_sketch_relation(
-                &ctx,
-                &mut Vec::new(),
-                "BulkStream.dat",
-                &header,
-                &record,
-                parsed,
-                definition,
-            )
-            .expect_err("resource limit must refuse relation assembly")
-        };
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
-            if failure.dimension == dimension && failure.operation == operation)
-        );
-    }
     let parsed = tested_parse_classed_sketch_relation(&record, SketchRelationClass::Plain)
         .expect("plain relation parse");
     let definition =
         SketchRelationDefinition::new(parsed.state, None).expect("plain relation definition");
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::default();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut admitted = Vec::new();
     admit_sketch_relation(
-        &ctx,
         &mut admitted,
         "BulkStream.dat",
         &header,
@@ -155,79 +50,7 @@ fn tested_parse_classed_sketch_relation(
     payload: &[u8],
     class: SketchRelationClass,
 ) -> Option<crate::design::decode::sketch::ParsedSketchRelation> {
-    crate::design::test_support::with_test_decode_context(|ctx| {
-        parse_classed_sketch_relation(ctx, payload, class).unwrap()
-    })
-}
-
-#[test]
-fn sketch_relation_collections_refuse_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
-    let paired = relation_record(&[(300, 0)], &[], 201, 1, &[300]);
-    let mut frame_members = Vec::new();
-    push_reference_u64(&mut frame_members, 300);
-    push_reference_u64(&mut frame_members, 301);
-    let text_frame = relation_record(&[], &frame_members, 201, 1, &[]);
-    let mut glyph_members = Vec::new();
-    push_glyph_run(&mut glyph_members, 2, 5.0);
-    let text_path = relation_record(&[], &glyph_members, 201, 1, &[]);
-
-    for (record, class, limit, operation) in [
-        (
-            &paired,
-            SketchRelationClass::Plain,
-            0,
-            "f3d sketch relation paired members",
-        ),
-        (
-            &paired,
-            SketchRelationClass::Plain,
-            1,
-            "f3d sketch relation return members",
-        ),
-        (
-            &text_frame,
-            SketchRelationClass::TextFrame,
-            0,
-            "f3d sketch auxiliary relation references",
-        ),
-        (
-            &text_frame,
-            SketchRelationClass::TextFrame,
-            1,
-            "f3d sketch auxiliary relation references",
-        ),
-        (
-            &text_path,
-            SketchRelationClass::TextPath {
-                leading_flag: false,
-            },
-            0,
-            "f3d sketch text glyph transforms",
-        ),
-        (
-            &text_path,
-            SketchRelationClass::TextPath {
-                leading_flag: false,
-            },
-            1,
-            "f3d sketch auxiliary relation references",
-        ),
-    ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = parse_classed_sketch_relation(&ctx, record, class)
-            .err()
-            .expect("collection limit must refuse the relation");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
-            if failure.dimension == ResourceDimension::CollectionItems
-                && failure.operation == operation)
-        );
-    }
+    parse_classed_sketch_relation(payload, class).unwrap()
 }
 
 /// One absent reference.

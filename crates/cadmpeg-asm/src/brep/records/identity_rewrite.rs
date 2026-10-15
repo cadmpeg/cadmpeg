@@ -12,8 +12,8 @@ use cadmpeg_ir::schema::rewrite::typed::{IdentityMap, RewriteIdentities};
 macro_rules! scalar {
     ($($owner:ty),*) => {$(
         impl RewriteIdentities for $owner {
-            fn visit_identity_references(&self, ctx: &DecodeContext<'_>, _visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>) -> Result<(), CodecError> { ctx.charge_work(1, "walk ASM scalar reference") }
-            fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(self, ctx: &DecodeContext<'_>, _map: &mut IdentityMap<'_, F>) -> Result<Self, CodecError> { ctx.charge_work(1, "rewrite ASM scalar")?; Ok(self) }
+            fn visit_identity_references(&self, _ctx: &DecodeContext<'_>, _visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>) -> Result<(), CodecError> { Ok(()) }
+            fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(self, _ctx: &DecodeContext<'_>, _map: &mut IdentityMap<'_, F>) -> Result<Self, CodecError> { Ok(self) }
         }
     )*};
 }
@@ -32,7 +32,7 @@ impl RewriteIdentities for WireMembers {
         visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>,
     ) -> Result<(), CodecError> {
         let _depth = ctx.enter_nested("walk ASM wire members")?;
-        ctx.charge_work(1, "walk ASM wire members")?;
+
         match self {
             Self::Edges(edges) => edges.visit_identity_references(ctx, visitor),
             Self::Vertex(vertex) => vertex.visit_identity_references(ctx, visitor),
@@ -44,7 +44,7 @@ impl RewriteIdentities for WireMembers {
         map: &mut IdentityMap<'_, F>,
     ) -> Result<Self, CodecError> {
         let _depth = ctx.enter_nested("rewrite ASM wire members")?;
-        ctx.charge_work(1, "rewrite ASM wire members")?;
+
         Ok(match self {
             Self::Edges(edges) => Self::Edges(edges.rewrite_identities(ctx, map)?),
             Self::Vertex(vertex) => Self::Vertex(vertex.rewrite_identities(ctx, map)?),
@@ -59,9 +59,9 @@ impl RewriteIdentities for FaceSidedness {
         visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>,
     ) -> Result<(), CodecError> {
         let _depth = ctx.enter_nested("walk ASM face sidedness")?;
-        ctx.charge_work(1, "walk ASM face sidedness")?;
+
         self.source_namespace
-            .visit(ctx, "face-sidedness", self.record_index, visitor)?;
+            .visit("face-sidedness", self.record_index, visitor)?;
         self.face.visit_identity_references(ctx, visitor)
     }
     fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(
@@ -70,7 +70,7 @@ impl RewriteIdentities for FaceSidedness {
         map: &mut IdentityMap<'_, F>,
     ) -> Result<Self, CodecError> {
         let _depth = ctx.enter_nested("rewrite ASM face sidedness")?;
-        ctx.charge_work(1, "rewrite ASM face sidedness")?;
+
         self.source_namespace =
             self.source_namespace
                 .rewrite(ctx, "face-sidedness", self.record_index, map)?;
@@ -95,10 +95,10 @@ mod tests {
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
         let mut map = IdentityMap::new(&ctx, "qualify ASM typed record", |source: &str| {
-            ctx.format_retained(
-                format_args!("f3d:brep/source/{}", source.strip_prefix("f3d:").unwrap()),
-                "qualify ASM identity",
-            )
+            Ok(format!(
+                "f3d:brep/source/{}",
+                source.strip_prefix("f3d:").unwrap()
+            ))
         })
         .unwrap();
         let value = record().rewrite_identities(&ctx, &mut map).unwrap();
@@ -111,40 +111,25 @@ mod tests {
     }
 
     #[test]
-    fn asm_typed_rewrite_preserves_every_resource_refusal() {
-        for dimension in [
-            ResourceDimension::RetainedBytes,
-            ResourceDimension::MaterializedBytes,
-            ResourceDimension::CollectionItems,
-            ResourceDimension::WorkUnits,
-            ResourceDimension::RecursionDepth,
-        ] {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            match dimension {
-                ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = 0,
-                ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
-                ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
-                ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
-                ResourceDimension::RecursionDepth => policy.limits.max_recursion_depth = 0,
-                _ => panic!("ASM rewrite dimensions"),
-            }
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let mut map = IdentityMap::new(&ctx, "qualify ASM typed record", |source: &str| {
-                ctx.copy_retained_text(source, "qualify ASM identity")
-            })
-            .unwrap();
-            let CodecError::ResourceLimit(limit) =
-                record().rewrite_identities(&ctx, &mut map).unwrap_err()
-            else {
-                panic!("ASM rewrite must refuse");
-            };
-            assert_eq!(limit.dimension, dimension);
-            drop(map);
-            assert!(
-                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(first)) if first == limit)
-            );
-        }
+    fn asm_typed_rewrite_preserves_the_depth_refusal() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_recursion_depth = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut map = IdentityMap::new(&ctx, "qualify ASM typed record", |source: &str| {
+            Ok(source.to_owned())
+        })
+        .unwrap();
+        let CodecError::ResourceLimit(limit) =
+            record().rewrite_identities(&ctx, &mut map).unwrap_err()
+        else {
+            panic!("ASM rewrite must refuse");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::RecursionDepth);
+        drop(map);
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(first)) if first == limit)
+        );
     }
 
     #[test]
@@ -158,7 +143,7 @@ mod tests {
             let (ctx, _) =
                 DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
             let mut map = IdentityMap::new(&ctx, "qualify ASM typed record", |_source: &str| {
-                ctx.copy_retained_text(target, "qualify ASM identity")
+                Ok(target.to_owned())
             })
             .unwrap();
             let error = record().rewrite_identities(&ctx, &mut map).unwrap_err();

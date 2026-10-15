@@ -931,15 +931,13 @@ pub(super) fn fixed_kind_path_operations(
         .unwrap();
     assert_eq!(
         companion_owned_interval(
-            &cadmpeg_test_support::service_decode_context(),
             &companion,
             std::iter::empty(),
             &[],
             &[scope.clone()],
             &[],
-            100,
-        )
-        .unwrap(),
+            100
+        ),
         Some((58, 58))
     );
     scope
@@ -955,15 +953,13 @@ pub(super) fn fixed_kind_path_operations(
         .unwrap();
     assert_eq!(
         companion_owned_interval(
-            &cadmpeg_test_support::service_decode_context(),
             &companion,
             std::iter::empty(),
             &[],
             &[scope.clone()],
             &[],
-            100,
-        )
-        .unwrap(),
+            100
+        ),
         Some((58, 80))
     );
     scope
@@ -985,20 +981,17 @@ pub(super) fn fixed_kind_path_operations(
     };
     assert_eq!(
         companion_owned_interval(
-            &cadmpeg_test_support::service_decode_context(),
             &companion,
             std::iter::empty(),
             &[],
             &[scope.clone()],
             &[foreign_header],
-            100,
-        )
-        .unwrap(),
+            100
+        ),
         Some((58, 70))
     );
 
     let mut parameter = crate::design::decode::parameters::parse_design_parameter(
-        &cadmpeg_test_support::service_decode_context(),
         &parameter_record(None, "1", "User Parameter", None, "p", 1.0),
     )
     .unwrap()
@@ -1007,16 +1000,7 @@ pub(super) fn fixed_kind_path_operations(
     .expect("located parameter");
     parameter.id = "f3d:native:design-parameter#65".into();
     assert_eq!(
-        companion_owned_interval(
-            &cadmpeg_test_support::service_decode_context(),
-            &companion,
-            std::iter::once(&parameter),
-            &[],
-            &[],
-            &[],
-            100,
-        )
-        .unwrap(),
+        companion_owned_interval(&companion, std::iter::once(&parameter), &[], &[], &[], 100),
         Some((58, 65))
     );
     let recipe = ConstructionRecipe {
@@ -1031,7 +1015,6 @@ pub(super) fn fixed_kind_path_operations(
         }),
     };
     let bound = bind_parameter_companion_payloads(
-        &cadmpeg_test_support::service_decode_context(),
         vec![companion.clone()],
         &crate::design::decode::parameters::ParameterCompanionInputs {
             parameters: std::slice::from_ref(&parameter),
@@ -1076,7 +1059,6 @@ pub(super) fn fixed_kind_path_operations(
         .expect("valid module registration"),
     };
     let bound = bind_parameter_companion_payloads(
-        &cadmpeg_test_support::service_decode_context(),
         vec![companion],
         &crate::design::decode::parameters::ParameterCompanionInputs {
             parameters: &[],

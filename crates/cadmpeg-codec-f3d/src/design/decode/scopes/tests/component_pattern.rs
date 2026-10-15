@@ -13,11 +13,10 @@ use crate::records::feature::scope::{
 };
 use crate::records::identity::Located;
 use crate::records::sketch_placement::SketchPlacementMatrix;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use std::num::NonZeroU32;
 
 #[test]
-fn component_pattern_generated_instances_refuse_collection_limit() {
+fn component_pattern_keeps_seed_and_generated_instances() {
     const COMPONENT: &str = "11111111-2222-4333-8444-555555555555";
     const SEED: &str = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
     const GENERATED: &str = "aaaaaaaa-bbbb-4ccc-8ddd-ffffffffffff";
@@ -74,6 +73,7 @@ fn component_pattern_generated_instances_refuse_collection_limit() {
                     },
                 },
             ])),
+            instance_search_capped: false,
         })
         .unwrap();
     let mut scope = DesignParameterScope::empty(
@@ -93,34 +93,7 @@ fn component_pattern_generated_instances_refuse_collection_limit() {
     if let DesignScopePayloadMut::RectangularPattern(slot) = scope.payload_mut() {
         *slot = Some(construction);
     }
-    for skip in 0..3 {
-        let error = crate::test_support::resource_refusal_at(
-            ResourceDimension::RetainedBytes,
-            "retain F3D pattern GUID",
-            skip,
-            |ctx| bind_component_pattern_occurrences(ctx, &mut scope.clone(), &occurrences),
-        );
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
-            if failure.dimension == ResourceDimension::RetainedBytes
-                && failure.operation == "retain F3D pattern GUID")
-        );
-    }
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = bind_component_pattern_occurrences(&ctx, &mut scope, &occurrences).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
-        if failure.dimension == ResourceDimension::CollectionItems
-            && failure.operation == "f3d component pattern generated instances")
-    );
-
-    let arena = DecodeArena::new();
-    policy.limits.max_collection_items = 1;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    bind_component_pattern_occurrences(&ctx, &mut scope, &occurrences).unwrap();
+    bind_component_pattern_occurrences(&mut scope, &occurrences).unwrap();
     let Some(DesignRectangularPatternInstances::Components {
         component_guid,
         seed,

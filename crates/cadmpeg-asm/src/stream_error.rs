@@ -46,7 +46,7 @@ pub enum StreamFailure {
     Malformed(StreamError),
     /// A valid source length cannot be represented in the destination unit.
     NotImplemented(StreamError),
-    /// The active decode policy refused materialization or work.
+    /// The active decode policy refused a counted resource.
     Resource(cadmpeg_core::decode::ResourceLimit),
     /// A context operation failed outside the stream grammar.
     Operation(OperationFailure),
@@ -92,34 +92,27 @@ impl StreamFailure {
     /// Keep a caller's existing framing classification for syntax errors.
     pub fn into_codec_error(
         self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         parse: impl FnOnce(StreamError) -> cadmpeg_core::CodecError,
     ) -> cadmpeg_core::CodecError {
         match self {
             Self::Parse(error) => parse(error),
             Self::Malformed(error) => cadmpeg_core::CodecError::malformed(error),
-            Self::NotImplemented(error) => match unsupported_message(ctx, &error) {
-                Ok(message) => cadmpeg_core::CodecError::NotImplemented(message),
-                Err(refusal) => refusal,
-            },
+            Self::NotImplemented(error) => {
+                cadmpeg_core::CodecError::NotImplemented(unsupported_message(&error))
+            }
             Self::Resource(error) => error.into(),
             Self::Operation(error) => error.into_codec_error(),
         }
     }
 }
 
-fn unsupported_message(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    error: &StreamError,
-) -> Result<String, cadmpeg_core::CodecError> {
+fn unsupported_message(error: &StreamError) -> String {
     let prefix = match error.format {
         StreamFormat::Text => "SAT parse",
         StreamFormat::Binary => "SAB framing",
     };
-    ctx.format_retained(
-        format_args!("{prefix} failed at byte {}: {}", error.offset, error.reason),
-        "ASM stream error text",
-    )
+    format!("{prefix} failed at byte {}: {}", error.offset, error.reason)
 }
 
 impl From<StreamError> for StreamFailure {
@@ -150,8 +143,8 @@ impl std::error::Error for StreamFailure {}
 
 #[cfg(test)]
 mod tests {
-    use super::{OperationFailure, StreamError, StreamFailure, StreamFormat};
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use super::{OperationFailure, StreamFailure};
+    use cadmpeg_core::decode::{ResourceDimension, ResourceFailure, ResourceLimit};
     use cadmpeg_core::CodecError;
 
     #[test]
@@ -179,9 +172,13 @@ mod tests {
     #[test]
     fn stream_resource_variant_contains_only_the_original_refusal() {
         crate::test_support::with_service_context(&[], |ctx| {
-            let CodecError::ResourceLimit(refusal) = ctx.refuse_codec_limit("stream refusal", 3, 2)
-            else {
-                panic!("resource-only core refusal");
+            let refusal = ResourceLimit {
+                dimension: ResourceDimension::RetainedBytes,
+                reason: ResourceFailure::BudgetExceeded,
+                limit: 2,
+                used: 2,
+                additional: 1,
+                operation: "stream refusal",
             };
             assert_eq!(
                 OperationFailure::try_from(CodecError::ResourceLimit(refusal)).unwrap_err(),
@@ -197,27 +194,5 @@ mod tests {
             }
         })
         .expect("service test context");
-    }
-
-    #[test]
-    fn unsupported_stream_error_text_refuses_retained_limit() {
-        let error = StreamError {
-            format: StreamFormat::Text,
-            offset: 12,
-            reason: "x".repeat(32),
-        };
-        let expected = error.to_string();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(expected.len()) - 1;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty test input fits input limit");
-        let error =
-            StreamFailure::NotImplemented(error).into_codec_error(&ctx, CodecError::malformed);
-        let CodecError::ResourceLimit(refusal) = error else {
-            panic!("expected resource refusal, got {error:?}");
-        };
-        assert_eq!(refusal.dimension, ResourceDimension::RetainedBytes);
-        assert_eq!(refusal.operation, "ASM stream error text");
     }
 }

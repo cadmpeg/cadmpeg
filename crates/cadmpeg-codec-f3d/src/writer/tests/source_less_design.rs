@@ -1110,16 +1110,12 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     let mut inconsistent = round_trip.ir().clone();
     f3d_native_mut(&mut inconsistent).sketch_relations[0]
         .try_edit(|draft| {
-            draft
-                .members
-                .resolve(
-                    &cadmpeg_test_support::service_decode_context(),
-                    |record_index| crate::records::sketch_relations::SketchRelationOperand::Point {
-                        record_index,
-                        persistent_id: Some(u64::MAX),
-                    },
-                )
-                .unwrap();
+            draft.members.resolve(|record_index| {
+                crate::records::sketch_relations::SketchRelationOperand::Point {
+                    record_index,
+                    persistent_id: Some(u64::MAX),
+                }
+            });
         })
         .unwrap();
     assert!(crate::test_support::with_decode_context(|ctx| {
@@ -1155,7 +1151,6 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     second_owner.entity_id = crate::records::identity::DesignEntityId::from_parts("0", 278);
     entities.push(second_owner);
     let error = crate::design::decode::sketch::bind_sketch_graph(
-        &cadmpeg_test_support::service_decode_context(),
         &entities,
         &mut points,
         &mut curves,

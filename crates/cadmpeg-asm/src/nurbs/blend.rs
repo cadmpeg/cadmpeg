@@ -53,7 +53,7 @@ pub(super) fn cyl_spl_sur(
     resolver: Option<&SubtypeTable>,
 ) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
     let names = ["cyl_spl_sur", "cylsur"];
-    let (start, _) = propagate_resource!(toks::find_owned_subtype_marker(ctx, toks, &names)?);
+    let (start, _) = toks::find_owned_subtype_marker(toks, &names)?;
     let scope = toks::subtype_span(toks, start)?;
     let span = scope.tokens();
     let mut cur = Cur::at(span, 2);
@@ -120,7 +120,8 @@ pub(super) fn cyl_spl_sur(
         let interval = [cur.take_f64()?, cur.take_f64()?];
         let direction = cur.take_vector3()?;
         let native_position = cur.take_position()?;
-        let cache = propagate_resource!(scope.owned_marker_positions(ctx))
+        let cache = scope
+            .owned_marker_positions()
             .into_iter()
             .rev()
             .find_map(|at| surface_block(ctx, span, at));
@@ -665,9 +666,7 @@ fn rolling_ball_third_side(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     cur: &mut Cur<'_>,
 ) -> Option<Result<EmbeddedRollingBallThirdSide, cadmpeg_core::CodecError>> {
-    let label = propagate_resource!(
-        ctx.copy_retained_text(cur.take_str()?, "ASM rolling ball third-side label")
-    );
+    let label = cur.take_str()?.to_owned();
     let surface = propagate_resource!(embedded_surface(ctx, cur)?);
     let (curve, curve_end) = propagate_resource!(curve_block(ctx, cur.toks(), cur.pos())?);
     cur.set_pos(curve_end);
@@ -768,10 +767,7 @@ fn variable_blend_value(
             let terminal = if matches!(cur.peek(), Some(Token::Double(_))) {
                 VariableBlendTerminal::Double(cur.take_f64()?)
             } else {
-                VariableBlendTerminal::Text(propagate_resource!(ctx.copy_retained_text(
-                    blend_value_name(cur)?,
-                    "ASM variable blend terminal text"
-                )))
+                VariableBlendTerminal::Text(blend_value_name(cur)?.to_owned())
             };
             VariableBlendValuePayload::Functional {
                 discriminator,
@@ -811,11 +807,7 @@ fn variable_blend_value(
             if count > 100_000 {
                 return None;
             }
-            let mut points =
-                match ctx.collection_vec(count, "decode variable blend interpolation points") {
-                    Ok(points) => points,
-                    Err(error) => return Some(Err(error)),
-                };
+            let mut points = Vec::new();
             for _ in 0..count {
                 let parameter = cur.take_f64()?;
                 let radius = cur.take_f64()? * LEN_TO_MM;
@@ -880,11 +872,7 @@ pub(super) fn var_blend_spl_sur(
     reference_context: Option<&SubtypeTable>,
 ) -> Option<Result<ParsedVariableBlend, cadmpeg_core::CodecError>> {
     use cadmpeg_ir::geometry::VariableBlendCrossSection;
-    let (start, name) = propagate_resource!(toks::find_owned_subtype_marker(
-        ctx,
-        toks,
-        VARIABLE_BLEND_NAMES
-    )?);
+    let (start, name) = toks::find_owned_subtype_marker(toks, VARIABLE_BLEND_NAMES)?;
     let subtype = match name {
         "var_blend_spl_sur" | "varblendsplsur" => {
             cadmpeg_ir::geometry::VariableBlendSurfaceSubtype::VariableBlend
@@ -1304,7 +1292,7 @@ pub(super) fn vertex_blend_spl_sur(
     resolver: Option<&SubtypeTable>,
 ) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
     let names = ["VBL_SURF", "vertexblendsur"];
-    let (start, name) = propagate_resource!(toks::find_owned_subtype_marker(ctx, toks, &names)?);
+    let (start, name) = toks::find_owned_subtype_marker(toks, &names)?;
     let span = toks::subtype_span(toks, start)?.tokens();
     let mut cur = Cur::at(span, 2);
     // The revision-gated layout stores the revision integer before the
@@ -1327,10 +1315,7 @@ pub(super) fn vertex_blend_spl_sur(
     if count > 100_000 {
         return None;
     }
-    let mut boundaries = match ctx.collection_vec(count, "ASM vertex blend boundaries") {
-        Ok(boundaries) => boundaries,
-        Err(error) => return Some(Err(error)),
-    };
+    let mut boundaries = Vec::new();
     for _ in 0..count {
         boundaries.push(if revision.is_some() {
             match revision_vertex_blend_boundary(ctx, &mut cur, resolver)? {
@@ -1368,7 +1353,7 @@ pub(super) fn full_rb_blend_spl_sur(
         "sss_blend_spl_sur",
         "sssblndsur",
     ];
-    let (start, name) = propagate_resource!(toks::find_owned_subtype_marker(ctx, toks, &names)?);
+    let (start, name) = toks::find_owned_subtype_marker(toks, &names)?;
     let has_third = name == "sss_blend_spl_sur" || name == "sssblndsur";
     let span = toks::subtype_span(toks, start)?.tokens();
     let mut cur = Cur::at(span, 2);
@@ -1463,7 +1448,7 @@ pub(super) fn compact_rb_blend_spl_sur(
     toks: &[Token],
 ) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
     let names = ["rb_blend_spl_sur", "rbblnsur", "pipe_spl_sur", "pipesur"];
-    let (start, _) = propagate_resource!(toks::find_owned_subtype_marker(ctx, toks, &names)?);
+    let (start, _) = toks::find_owned_subtype_marker(toks, &names)?;
     let span = toks::subtype_span(toks, start)?.tokens();
     let mut cur = Cur::at(span, 2);
     let mut supports = [None, None];
@@ -1522,73 +1507,12 @@ pub(super) fn compact_rb_blend_spl_sur(
 
 #[cfg(test)]
 mod variable_blend_value_tests {
-    use super::{rolling_ball_third_side, variable_blend_value, UNSET_VARIABLE_BLEND_TANGENT};
+    use super::{variable_blend_value, UNSET_VARIABLE_BLEND_TANGENT};
     use crate::kernel_header::RefWidth;
     use crate::nurbs::toks::Cur;
     use crate::sab::Token;
     use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
     use cadmpeg_ir::geometry::VariableBlendValuePayload;
-
-    #[test]
-    fn rolling_ball_third_side_label_refuses_retained_limit() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-        use cadmpeg_core::CodecError;
-
-        let tokens = [Token::Str("label".into())];
-        let mut cur = Cur::at(&tokens, 0);
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 4;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty test input fits input limit");
-        let Some(Err(CodecError::ResourceLimit(refusal))) = rolling_ball_third_side(&ctx, &mut cur)
-        else {
-            panic!("label copy must refuse retained limit");
-        };
-        assert_eq!(refusal.dimension, ResourceDimension::RetainedBytes);
-        assert_eq!(refusal.operation, "ASM rolling ball third-side label");
-    }
-
-    #[test]
-    fn variable_blend_terminal_text_refuses_retained_limit() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-        use cadmpeg_core::CodecError;
-
-        let tokens = [
-            Token::Str("functional".into()),
-            Token::Enum(0),
-            Token::True,
-            Token::Double(0.0),
-            Token::Double(1.0),
-            Token::Ident("nubs".into()),
-            Token::Long(1),
-            Token::Enum(0),
-            Token::Long(2),
-            Token::Double(0.0),
-            Token::Long(1),
-            Token::Double(1.0),
-            Token::Long(1),
-            Token::Double(0.0),
-            Token::Double(0.0),
-            Token::Double(1.0),
-            Token::Double(0.0),
-            Token::Str("terminal".into()),
-        ];
-        let mut cur = Cur::at(&tokens, 0);
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 7 + cadmpeg_core::decode::u64_from_index(
-            4 * std::mem::size_of::<f64>() + 2 * std::mem::size_of::<cadmpeg_ir::math::Point2>(),
-        );
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty test input fits input limit");
-        let Some(Err(CodecError::ResourceLimit(refusal))) = variable_blend_value(&ctx, &mut cur, 0)
-        else {
-            panic!("terminal text copy must refuse retained limit");
-        };
-        assert_eq!(refusal.dimension, ResourceDimension::RetainedBytes);
-        assert_eq!(refusal.operation, "ASM variable blend terminal text");
-    }
 
     #[test]
     fn variable_blend_value_refuses_recursion_limit() {
@@ -1812,59 +1736,6 @@ mod variable_blend_value_tests {
             nurbs.control_points()[1],
             cadmpeg_ir::math::Point2::new(10.0, 1.0)
         );
-    }
-
-    #[test]
-    fn variable_blend_interpolation_points_refuse_collection_limit() {
-        let mut bytes = Vec::new();
-        text(&mut bytes, "interp");
-        integer(&mut bytes, 0x15, 0);
-        bytes.push(0x0a);
-        double(&mut bytes, 0.0);
-        double(&mut bytes, 1.0);
-        bytes.push(0x0d);
-        bytes.push(4);
-        bytes.extend_from_slice(b"nubs");
-        integer(&mut bytes, 0x04, 1);
-        integer(&mut bytes, 0x15, 0);
-        integer(&mut bytes, 0x04, 2);
-        double(&mut bytes, 0.0);
-        integer(&mut bytes, 0x04, 1);
-        double(&mut bytes, 1.0);
-        integer(&mut bytes, 0x04, 1);
-        for value in [0.0, 0.0, 1.0, 1.0] {
-            double(&mut bytes, value);
-        }
-        integer(&mut bytes, 0x15, 2);
-        integer(&mut bytes, 0x04, 1);
-        double(&mut bytes, 0.5);
-        double(&mut bytes, 1.5);
-        double(&mut bytes, 0.0);
-        double(&mut bytes, 1.0);
-        bytes.push(0x13);
-        for value in [1.0_f64, 2.0, 3.0] {
-            bytes.extend_from_slice(&value.to_le_bytes());
-        }
-        bytes.push(0x14);
-        for value in [0.0_f64, 0.0, 1.0] {
-            bytes.extend_from_slice(&value.to_le_bytes());
-        }
-        let tokens = crate::nurbs::toks::lex_test_span(&bytes, RefWidth::Eight)
-            .expect("valid interpolation value");
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-                .expect("input is within the root byte limit");
-        let mut cur = Cur::at(&tokens, 0);
-        let result = variable_blend_value(&ctx, &mut cur, 0)
-            .expect("interpolation grammar reaches its point collection");
-        assert!(matches!(
-            result,
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-        ));
     }
 
     #[test]

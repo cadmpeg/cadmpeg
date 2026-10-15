@@ -28,7 +28,6 @@ use super::{count_kind, id, AsmBrep, Carriers, DecodePurpose, Reachable, WireShe
 /// Pass 1: classify carriers and decode analytic geometry. Returns the seeded
 /// carrier maps and the set of carriers whose native normal is inward.
 pub(super) fn decode_analytic_carriers(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     records: &[Record],
 ) -> Result<(Carriers, HashSet<i64>), cadmpeg_core::CodecError> {
     let mut surface_geo: HashMap<i64, SurfaceGeometry> = HashMap::new();
@@ -36,47 +35,33 @@ pub(super) fn decode_analytic_carriers(
     let mut curve_geo: HashMap<i64, CurveGeometry> = HashMap::new();
     for r in records {
         if is_analytic_surface(r.head()) {
-            if let Some((geometry, inward)) = decode_surface(ctx, r).transpose()? {
+            if let Some((geometry, inward)) = decode_surface(r) {
                 if inward {
-                    ctx.insert_hash_set(
-                        &mut inward_normal_surfaces,
-                        i64::try_from(r.index).map_err(|_| {
-                            ctx.refuse_codec_limit(
-                                "ASM record index",
-                                9_223_372_036_854_775_807,
-                                cadmpeg_core::decode::u64_from_index(r.index),
-                            )
-                        })?,
-                        "ASM topology inward_normal_surfaces",
-                    )?;
+                    inward_normal_surfaces.insert(i64::try_from(r.index).map_err(|_| {
+                        cadmpeg_core::CodecError::malformed(
+                            "ASM record index exceeds the i64 range",
+                        )
+                    })?);
                 }
-                ctx.insert_hash_map(
-                    &mut surface_geo,
+                surface_geo.insert(
                     i64::try_from(r.index).map_err(|_| {
-                        ctx.refuse_codec_limit(
-                            "ASM record index",
-                            9_223_372_036_854_775_807,
-                            cadmpeg_core::decode::u64_from_index(r.index),
+                        cadmpeg_core::CodecError::malformed(
+                            "ASM record index exceeds the i64 range",
                         )
                     })?,
                     SurfaceGeometry::Solved(geometry),
-                    "ASM topology surface_geo",
-                )?;
+                );
             }
         } else if is_analytic_curve(r.head()) {
-            if let Some(g) = decode_curve(ctx, r).transpose()? {
-                ctx.insert_hash_map(
-                    &mut curve_geo,
+            if let Some(g) = decode_curve(r) {
+                curve_geo.insert(
                     i64::try_from(r.index).map_err(|_| {
-                        ctx.refuse_codec_limit(
-                            "ASM record index",
-                            9_223_372_036_854_775_807,
-                            cadmpeg_core::decode::u64_from_index(r.index),
+                        cadmpeg_core::CodecError::malformed(
+                            "ASM record index exceeds the i64 range",
                         )
                     })?,
                     g,
-                    "ASM topology curve_geo",
-                )?;
+                );
             }
         }
     }
@@ -138,11 +123,7 @@ pub(super) fn keep_faces_and_carriers(
             continue;
         }
         let Some(surf_ref) = r.ref_at(7) else {
-            count_kind(
-                ctx,
-                &mut out.stats.missing_face_surface_kinds,
-                "null-reference",
-            )?;
+            count_kind(&mut out.stats.missing_face_surface_kinds, "null-reference");
             continue;
         };
         let Some(surf_rec) = by_index.get(&surf_ref) else {
@@ -150,28 +131,18 @@ pub(super) fn keep_faces_and_carriers(
             // cannot be emitted (the IR requires one), so it is dropped.
 
             count_kind(
-                ctx,
                 &mut out.stats.missing_face_surface_kinds,
                 "dangling-reference",
-            )?;
+            );
             continue;
         };
-        ctx.insert_hash_set(
-            kept_faces,
-            i64::try_from(r.index).map_err(|_| {
-                ctx.refuse_codec_limit(
-                    "ASM record index",
-                    9_223_372_036_854_775_807,
-                    cadmpeg_core::decode::u64_from_index(r.index),
-                )
-            })?,
-            "ASM topology kept_faces",
-        )?;
+        kept_faces.insert(i64::try_from(r.index).map_err(|_| {
+            cadmpeg_core::CodecError::malformed("ASM record index exceeds the i64 range")
+        })?);
         if purpose == DecodePurpose::History {
             let native_kind = (surf_rec.head() == "spline")
-                .then(|| nurbs::toks::owned_construction_subtype(ctx, &surf_rec.tokens))
-                .flatten()
-                .transpose()?;
+                .then(|| nurbs::toks::owned_construction_subtype(&surf_rec.tokens))
+                .flatten();
             if native_kind
                 .as_deref()
                 .is_some_and(|kind| kind.contains("blend"))
@@ -181,23 +152,15 @@ pub(super) fn keep_faces_and_carriers(
                     &surf_rec.tokens,
                     token_table,
                 ) {
-                    ctx.insert_hash_map(
-                        procedural_surface_defs,
-                        surf_ref,
-                        procedural?,
-                        "ASM topology procedural_surface_defs",
-                    )?;
+                    procedural_surface_defs.insert(surf_ref, procedural?);
                 }
             }
-            if !surface_geo.contains_key(&surf_ref) {
-                ctx.insert_hash_map(
-                    surface_geo,
-                    surf_ref,
-                    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
-                    "ASM topology surface_geo",
-                )?;
-            }
-            ctx.insert_hash_set(kept_surfaces, surf_ref, "ASM topology kept_surfaces")?;
+            surface_geo
+                .entry(surf_ref)
+                .or_insert(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
+                    record: None,
+                }));
+            kept_surfaces.insert(surf_ref);
             continue;
         }
         if let Some(procedural) = nurbs::proc_surface::procedural_surface_resolving_refs(
@@ -205,16 +168,11 @@ pub(super) fn keep_faces_and_carriers(
             &surf_rec.tokens,
             token_table,
         ) {
-            ctx.insert_hash_map(
-                procedural_surface_defs,
-                surf_ref,
-                procedural?,
-                "ASM topology procedural_surface_defs",
-            )?;
+            procedural_surface_defs.insert(surf_ref, procedural?);
         }
         if let Some(procedural) = procedural_surface_defs.get(&surf_ref) {
-            if let Some(geometry) = analytic_procedural_surface(ctx, procedural.definition()) {
-                ctx.insert_hash_map(surface_geo, surf_ref, geometry?, "ASM topology surface_geo")?;
+            if let Some(geometry) = analytic_procedural_surface(procedural.definition()) {
+                surface_geo.insert(surf_ref, geometry);
             }
         }
         let exact_cacheless_construction =
@@ -231,23 +189,16 @@ pub(super) fn keep_faces_and_carriers(
             if let Some(ns) =
                 nurbs::core::surface_cache_resolving_refs(ctx, &surf_rec.tokens, token_table)
             {
-                ctx.insert_hash_map(
-                    surface_geo,
+                surface_geo.insert(
                     surf_ref,
                     SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(ns?)),
-                    "ASM topology surface_geo",
-                )?;
+                );
                 if surf_rec.head() == "spline" && !procedural_surface_defs.contains_key(&surf_ref) {
-                    ctx.insert_hash_set(
-                        cached_unknown_procedural_surfaces,
-                        surf_ref,
-                        "ASM topology cached_unknown_procedural_surfaces",
-                    )?;
+                    cached_unknown_procedural_surfaces.insert(surf_ref);
                     count_kind(
-                        ctx,
                         &mut out.stats.other_record_kinds,
                         "cached-procedural-surface-untyped",
-                    )?;
+                    );
                 }
                 out.stats.nurbs_surfaces += 1;
             }
@@ -259,8 +210,7 @@ pub(super) fn keep_faces_and_carriers(
                     .is_some_and(|procedural| {
                         procedural_surface_definition_is_exact_carrier(procedural.definition())
                     });
-            ctx.insert_hash_map(
-                surface_geo,
+            surface_geo.insert(
                 surf_ref,
                 if construction_is_exact_carrier {
                     SurfaceGeometry::Procedural {
@@ -274,50 +224,30 @@ pub(super) fn keep_faces_and_carriers(
                     }
                 } else {
                     SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
-                        record: Some(unknown_record_id(ctx, surf_rec, format)?),
+                        record: Some(unknown_record_id(surf_rec, format)?),
                     })
                 },
-                "ASM topology surface_geo",
-            )?;
+            );
             if !construction_is_exact_carrier {
-                ctx.insert_hash_set(
-                    undecoded_carriers,
-                    surf_ref,
-                    "ASM topology undecoded_carriers",
-                )?;
+                undecoded_carriers.insert(surf_ref);
             }
         }
         if surface_geo.contains_key(&surf_ref) {
-            ctx.insert_hash_set(kept_surfaces, surf_ref, "ASM topology kept_surfaces")?;
+            kept_surfaces.insert(surf_ref);
         } else {
-            ctx.insert_hash_set(
-                unknown_surface_records,
-                surf_ref,
-                "ASM topology unknown_surface_records",
-            )?;
-            ctx.insert_hash_set(
-                undecoded_carriers,
-                surf_ref,
-                "ASM topology undecoded_carriers",
-            )?;
+            unknown_surface_records.insert(surf_ref);
+            undecoded_carriers.insert(surf_ref);
             if surf_rec.head() == "mesh_surface" && surf_rec.chunks().next().is_none() {
                 if !out.mesh_surface_sentinels.iter().any(|sentinel| {
                     usize::try_from(sentinel.record_index).ok() == Some(surf_rec.index)
                 }) {
-                    ctx.reserve_vec(
-                        &mut out.mesh_surface_sentinels,
-                        1,
-                        "ASM mesh surface sentinels",
-                    )?;
                     out.mesh_surface_sentinels.push(MeshSurfaceSentinel {
                         source_namespace:
                             crate::brep::records::identity::NativeRecordNamespace::new(format),
                         surface: SurfaceId::from(id(format, surf_ref)),
                         record_index: u32::try_from(surf_rec.index).map_err(|_| {
-                            ctx.refuse_codec_limit(
-                                "ASM native record index",
-                                u64::from(u32::MAX),
-                                cadmpeg_core::decode::u64_from_index(surf_rec.index),
+                            cadmpeg_core::CodecError::malformed(
+                                "ASM native record index exceeds the u32 range",
                             )
                         })?,
                     });
@@ -325,15 +255,14 @@ pub(super) fn keep_faces_and_carriers(
                 out.stats.mesh_surface_faces += 1;
             } else {
                 let native_kind = if surf_rec.head() == "spline" {
-                    nurbs::toks::owned_construction_subtype(ctx, &surf_rec.tokens).transpose()?
+                    nurbs::toks::owned_construction_subtype(&surf_rec.tokens)
                 } else {
                     None
                 };
                 count_kind(
-                    ctx,
                     &mut out.stats.unknown_surface_kinds,
                     native_kind.as_deref().unwrap_or_else(|| surf_rec.head()),
-                )?;
+                );
             }
         }
     }
@@ -375,7 +304,7 @@ pub(super) fn walk_reachable_topology(
         ..
     } = &mut *reach;
     // Walk each kept face's loops and coedge rings, collecting supporting graph.
-    let face_indices = ctx.collect_vec(kept_faces.iter().copied(), "ASM reachable face walk")?;
+    let face_indices = kept_faces.iter().copied().collect::<Vec<_>>();
     for face_idx in face_indices {
         let Some(face) = by_index.get(&face_idx) else {
             continue;
@@ -383,41 +312,36 @@ pub(super) fn walk_reachable_topology(
         let mut loop_ref = face.ref_at(4);
         let mut loop_guard = HashSet::new();
         while let Some(li) = loop_ref {
-            if !ctx.insert_hash_set(&mut loop_guard, li, "ASM topology loop_guard")? {
+            if !loop_guard.insert(li) {
                 break;
             }
             let Some(lp) = by_index.get(&li) else { break };
             if lp.head() != "loop" {
                 break;
             }
-            ctx.insert_hash_set(kept_loops, li, "ASM topology kept_loops")?;
+            kept_loops.insert(li);
             // Ring-walk coedges via chunk[3] = next.
             if let Some(first_ce) = lp.ref_at(4) {
                 let mut ce_ref = Some(first_ce);
                 let mut ce_guard = HashSet::new();
                 while let Some(ci) = ce_ref {
-                    if !ctx.insert_hash_set(&mut ce_guard, ci, "ASM topology ce_guard")? {
+                    if !ce_guard.insert(ci) {
                         break;
                     }
                     let Some(ce) = by_index.get(&ci) else { break };
                     if !is_coedge_record(ce) {
                         break;
                     }
-                    ctx.insert_hash_set(kept_coedges, ci, "ASM topology kept_coedges")?;
+                    kept_coedges.insert(ci);
                     if let Some(pc) = coedge_pcurve_ref(ce) {
                         if let Some(prec) = by_index.get(&pc) {
                             if purpose == DecodePurpose::History {
-                                if !pcurve_geo.contains_key(&super::PcurveRecordIndex(pc)) {
-                                    ctx.insert_hash_map(
-                                        pcurve_geo,
-                                        super::PcurveRecordIndex(pc),
-                                        PcurveGeometry::Line(
-                                            cadmpeg_ir::geometry::pcurve::LinePcurve::U_AXIS,
-                                        ),
-                                        "ASM topology pcurve_geo",
-                                    )?;
-                                }
-                                ctx.insert_hash_set(kept_pcurves, pc, "ASM topology kept_pcurves")?;
+                                pcurve_geo.entry(super::PcurveRecordIndex(pc)).or_insert(
+                                    PcurveGeometry::Line(
+                                        cadmpeg_ir::geometry::pcurve::LinePcurve::U_AXIS,
+                                    ),
+                                );
+                                kept_pcurves.insert(pc);
                             } else {
                                 // An inline `exp_par_cur` owns its first BS2 field.
                                 // A wrapped subtype ref resolves that same typed
@@ -496,37 +420,19 @@ pub(super) fn walk_reachable_topology(
                                         .map(|range| (decoded, range)))
                                 }).transpose()?.flatten();
                                 if let Some((decoded, parameter_range)) = decoded {
-                                    ctx.insert_hash_map(
-                                        pcurve_geo,
+                                    pcurve_geo.insert(
                                         super::PcurveRecordIndex(pc),
                                         PcurveGeometry::Nurbs { nurbs: decoded },
-                                        "ASM topology pcurve_geo",
-                                    )?;
-                                    ctx.insert_hash_map(
-                                        pcurve_parameter_ranges,
-                                        super::CoedgeRecordIndex(ci),
-                                        parameter_range,
-                                        "ASM topology pcurve_parameter_ranges",
-                                    )?;
-                                    ctx.insert_hash_set(
-                                        kept_pcurves,
-                                        pc,
-                                        "ASM topology kept_pcurves",
-                                    )?;
+                                    );
+                                    pcurve_parameter_ranges
+                                        .insert(super::CoedgeRecordIndex(ci), parameter_range);
+                                    kept_pcurves.insert(pc);
                                 } else {
-                                    count_kind(
-                                        ctx,
-                                        &mut out.stats.undecoded_pcurve_kinds,
-                                        prec.head(),
-                                    )?;
+                                    count_kind(&mut out.stats.undecoded_pcurve_kinds, prec.head());
                                 }
                             }
                         } else {
-                            count_kind(
-                                ctx,
-                                &mut out.stats.undecoded_pcurve_kinds,
-                                "dangling-reference",
-                            )?;
+                            count_kind(&mut out.stats.undecoded_pcurve_kinds, "dangling-reference");
                         }
                     }
                     if let Some(ei) = ce.ref_at(6) {
@@ -534,24 +440,14 @@ pub(super) fn walk_reachable_topology(
                             // An edge is shared by two coedges; process (and
                             // count its curve loss) only the first time it is
                             // reached so shared edges are not double-counted.
-                            if is_edge_record(edge)
-                                && ctx.insert_hash_set(kept_edges, ei, "ASM topology kept_edges")?
-                            {
+                            if is_edge_record(edge) && kept_edges.insert(ei) {
                                 for slot in [3usize, 5] {
                                     if let Some(vi) = edge.ref_at(slot) {
                                         if let Some(v) = by_index.get(&vi) {
                                             if is_vertex_record(v) {
-                                                ctx.insert_hash_set(
-                                                    kept_vertices,
-                                                    vi,
-                                                    "ASM topology kept_vertices",
-                                                )?;
+                                                kept_vertices.insert(vi);
                                                 if let Some(pi) = vertex_point_ref(v) {
-                                                    ctx.insert_hash_set(
-                                                        kept_points,
-                                                        pi,
-                                                        "ASM topology kept_points",
-                                                    )?;
+                                                    kept_points.insert(pi);
                                                 }
                                             }
                                         }
@@ -559,17 +455,13 @@ pub(super) fn walk_reachable_topology(
                                 }
                                 match edge.ref_at(8) {
                                     Some(cv) if curve_geo.contains_key(&cv) => {
-                                        ctx.insert_hash_set(
-                                            kept_curves,
-                                            cv,
-                                            "ASM topology kept_curves",
-                                        )?;
+                                        kept_curves.insert(cv);
                                     }
                                     Some(cv) => {
                                         if let Some(crec) = by_index.get(&cv) {
                                             if purpose == DecodePurpose::History {
-                                                ctx.insert_hash_map(curve_geo, cv, CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }), "ASM topology curve_geo")?;
-                                                ctx.insert_hash_set(kept_curves, cv, "ASM topology kept_curves")?;
+                                                curve_geo.insert(cv, CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }));
+                                                kept_curves.insert(cv);
                                             // A procedural curve carries an inline
                                             // 3D B-spline cache in most subtypes.
                                             } else if let Some(decoded) =
@@ -588,14 +480,14 @@ pub(super) fn walk_reachable_topology(
                                                 if record_reversed(crec) {
                                                     curve.reverse_parameterization(ctx)?;
                                                 }
-                                                ctx.insert_hash_map(curve_geo, cv, CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)), "ASM topology curve_geo")?;
-                                                ctx.insert_hash_map(procedural_curve_defs, cv, super::ProceduralCurveSource::Cached {
+                                                curve_geo.insert(cv, CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)));
+                                                procedural_curve_defs.insert(cv, super::ProceduralCurveSource::Cached {
                                                         construction: Box::new(decoded.construction),
                                                         cache_fit_tolerance: decoded.cache_fit_tolerance,
                                                         parsed_domain,
-                                                    }, "ASM topology procedural_curve_defs")?;
+                                                    });
                                                 out.stats.nurbs_curves += 1;
-                                                ctx.insert_hash_set(kept_curves, cv, "ASM topology kept_curves")?;
+                                                kept_curves.insert(cv);
                                             } else if let Some(definition) =
                                                 nurbs::proc_curve::cacheless_procedural_curve_resolving_refs(
                                                     ctx,
@@ -609,7 +501,7 @@ pub(super) fn walk_reachable_topology(
                                                     Some(definition)
                                                 })
                                             {
-                                                ctx.insert_hash_map(curve_geo, cv, CurveGeometry::Procedural {
+                                                curve_geo.insert(cv, CurveGeometry::Procedural {
                                                     construction: brep_id!(
                                                         format,
                                                         ProceduralCurveId,
@@ -617,24 +509,19 @@ pub(super) fn walk_reachable_topology(
                                                         cv
                                                     ),
                                                         cache: None,
-                                                    }, "ASM topology curve_geo")?;
-                                                ctx.insert_hash_map(procedural_curve_defs, cv, super::ProceduralCurveSource::Cacheless(Box::new(definition)), "ASM topology procedural_curve_defs")?;
-                                                ctx.insert_hash_set(kept_curves, cv, "ASM topology kept_curves")?;
+                                                    });
+                                                procedural_curve_defs.insert(cv, super::ProceduralCurveSource::Cacheless(Box::new(definition)));
+                                                kept_curves.insert(cv);
                                             } else {
-                                                ctx.insert_hash_set(undecoded_carriers, cv, "ASM topology undecoded_carriers")?;
+                                                undecoded_carriers.insert(cv);
 
-                                                count_kind(
-                                                    ctx,
-                                                    &mut out.stats.procedural_curve_kinds,
-                                                    crec.head(),
-                                                )?;
+                                                count_kind(&mut out.stats.procedural_curve_kinds, crec.head());
                                             }
                                         } else {
                                             count_kind(
-                                                ctx,
                                                 &mut out.stats.procedural_curve_kinds,
                                                 "dangling-reference",
-                                            )?;
+                                            );
                                         }
                                     }
                                     _ => {}
@@ -665,10 +552,7 @@ pub(super) fn collect_wire_topology(
     reach: &mut Reachable,
 ) -> Result<WireShellTopology, cadmpeg_core::CodecError> {
     let TopologyContext {
-        ctx,
-        by_index,
-        format,
-        ..
+        by_index, format, ..
     } = inputs;
     let mut wire_edges_by_shell = HashMap::<i64, Vec<i64>>::new();
     let mut free_vertices_by_shell = HashMap::<i64, Vec<i64>>::new();
@@ -676,11 +560,7 @@ pub(super) fn collect_wire_topology(
     if let Some(limit) = saved_entity_limit {
         for edge in records {
             let edge_index = i64::try_from(edge.index).map_err(|_| {
-                ctx.refuse_codec_limit(
-                    "ASM record index",
-                    9_223_372_036_854_775_807,
-                    cadmpeg_core::decode::u64_from_index(edge.index),
-                )
+                cadmpeg_core::CodecError::malformed("ASM record index exceeds the i64 range")
             })?;
             if !(1..limit).contains(&edge_index) || !is_edge_record(edge) {
                 continue;
@@ -688,23 +568,19 @@ pub(super) fn collect_wire_topology(
             let already_owned = reach.edges.contains(&edge_index);
             keep_wire_edge(inputs, out, edge_index, carriers, reach)?;
             if !already_owned && reach.edges.contains(&edge_index) {
-                ctx.push_vec(&mut saved_free_edges, edge_index, "ASM saved free edges")?;
+                saved_free_edges.push(edge_index);
             }
         }
     }
     for shell in records.iter().filter(|record| record.head() == "shell") {
         let shell_index = i64::try_from(shell.index).map_err(|_| {
-            ctx.refuse_codec_limit(
-                "ASM record index",
-                9_223_372_036_854_775_807,
-                cadmpeg_core::decode::u64_from_index(shell.index),
-            )
+            cadmpeg_core::CodecError::malformed("ASM record index exceeds the i64 range")
         })?;
         let mut wire_guard = HashSet::new();
-        for root in shell_wire_roots(ctx, shell, by_index)? {
+        for root in shell_wire_roots(shell, by_index) {
             let mut wire_ref = Some(root);
             while let Some(wire_index) = wire_ref {
-                if !ctx.insert_hash_set(&mut wire_guard, wire_index, "ASM topology wire_guard")? {
+                if !wire_guard.insert(wire_index) {
                     break;
                 }
                 let Some(wire) = by_index
@@ -723,11 +599,7 @@ pub(super) fn collect_wire_topology(
                     let mut coedge_ref = Some(first_coedge);
                     let mut coedge_guard = HashSet::new();
                     while let Some(coedge_index) = coedge_ref {
-                        if !ctx.insert_hash_set(
-                            &mut coedge_guard,
-                            coedge_index,
-                            "ASM topology coedge_guard",
-                        )? {
+                        if !coedge_guard.insert(coedge_index) {
                             break;
                         }
                         let Some(coedge) = by_index
@@ -738,16 +610,12 @@ pub(super) fn collect_wire_topology(
                         };
                         if let Some(edge_index) = coedge.ref_at(6) {
                             if !wire_edges.contains(&edge_index) {
-                                ctx.push_vec(&mut wire_edges, edge_index, "ASM wire edges")?;
+                                wire_edges.push(edge_index);
                             }
-                            ctx.admit_hash_map_entry(
-                                &mut wire_edges_by_shell,
-                                &shell_index,
-                                "ASM wire edges by shell",
-                            )?;
+
                             let edges = wire_edges_by_shell.entry(shell_index).or_default();
                             if !edges.contains(&edge_index) {
-                                ctx.push_vec(edges, edge_index, "ASM shell wire edges")?;
+                                edges.push(edge_index);
                             }
                             keep_wire_edge(inputs, out, edge_index, carriers, reach)?;
                         }
@@ -767,49 +635,36 @@ pub(super) fn collect_wire_topology(
                     None
                 };
                 if let Some(vertex) = free_vertex {
-                    ctx.insert_hash_set(
-                        &mut reach.vertices,
-                        vertex,
-                        "ASM topology reach.vertices",
-                    )?;
-                    ctx.admit_hash_map_entry(
-                        &mut free_vertices_by_shell,
-                        &shell_index,
-                        "ASM free vertices by shell",
-                    )?;
+                    reach.vertices.insert(vertex);
+
                     let vertices = free_vertices_by_shell.entry(shell_index).or_default();
                     if !vertices.contains(&vertex) {
-                        ctx.push_vec(vertices, vertex, "ASM shell free vertices")?;
+                        vertices.push(vertex);
                     }
                     if let Some(point) = by_index
                         .get(&vertex)
                         .and_then(|record| vertex_point_ref(record))
                     {
-                        ctx.insert_hash_set(&mut reach.points, point, "ASM topology reach.points")?;
+                        reach.points.insert(point);
                     }
                 }
                 if let Some(side) = side {
-                    ctx.reserve_vec(&mut out.wire_topologies, 1, "ASM wire topologies")?;
                     out.wire_topologies.push(WireTopology {
                         source_namespace:
                             crate::brep::records::identity::NativeRecordNamespace::new(format),
                         shell: ShellId::from(id(format, shell_index)),
                         record_index: u32::try_from(wire.index).map_err(|_| {
-                            ctx.refuse_codec_limit(
-                                "ASM native record index",
-                                u64::from(u32::MAX),
-                                cadmpeg_core::decode::u64_from_index(wire.index),
+                            cadmpeg_core::CodecError::malformed(
+                                "ASM native record index exceeds the u32 range",
                             )
                         })?,
                         members: match free_vertex {
                             Some(vertex) => WireMembers::Vertex(VertexId::from(id(format, vertex))),
                             None => WireMembers::Edges(
-                                ctx.collect_vec(
-                                    wire_edges
-                                        .into_iter()
-                                        .map(|edge| EdgeId::from(id(format, edge))),
-                                    "ASM wire member edges",
-                                )?,
+                                wire_edges
+                                    .into_iter()
+                                    .map(|edge| EdgeId::from(id(format, edge)))
+                                    .collect::<Vec<_>>(),
                             ),
                         },
                         side,
@@ -859,7 +714,7 @@ fn keep_wire_edge(
     else {
         return Ok(());
     };
-    if !ctx.insert_hash_set(kept_edges, edge_index, "ASM topology kept_edges")? {
+    if !kept_edges.insert(edge_index) {
         return Ok(());
     }
     for slot in [3usize, 5] {
@@ -868,9 +723,9 @@ fn keep_wire_edge(
                 .get(&vertex_index)
                 .filter(|vertex| is_vertex_record(vertex))
             {
-                ctx.insert_hash_set(kept_vertices, vertex_index, "ASM topology kept_vertices")?;
+                kept_vertices.insert(vertex_index);
                 if let Some(point_index) = vertex_point_ref(vertex) {
-                    ctx.insert_hash_set(kept_points, point_index, "ASM topology kept_points")?;
+                    kept_points.insert(point_index);
                 }
             }
         }
@@ -879,24 +734,18 @@ fn keep_wire_edge(
         return Ok(());
     };
     if curve_geo.contains_key(&curve_index) {
-        ctx.insert_hash_set(kept_curves, curve_index, "ASM topology kept_curves")?;
+        kept_curves.insert(curve_index);
     } else {
         let Some(curve_record) = by_index.get(&curve_index) else {
-            count_kind(
-                ctx,
-                &mut out.stats.procedural_curve_kinds,
-                "dangling-reference",
-            )?;
+            count_kind(&mut out.stats.procedural_curve_kinds, "dangling-reference");
             return Ok(());
         };
         if purpose == DecodePurpose::History {
-            ctx.insert_hash_map(
-                curve_geo,
+            curve_geo.insert(
                 curve_index,
                 CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
-                "ASM topology curve_geo",
-            )?;
-            ctx.insert_hash_set(kept_curves, curve_index, "ASM topology kept_curves")?;
+            );
+            kept_curves.insert(curve_index);
             return Ok(());
         }
         if let Some(decoded) = nurbs::proc_curve::procedural_curve_resolving_refs(
@@ -911,23 +760,19 @@ fn keep_wire_edge(
             if record_reversed(curve_record) {
                 curve.reverse_parameterization(ctx)?;
             }
-            ctx.insert_hash_map(
-                curve_geo,
+            curve_geo.insert(
                 curve_index,
                 CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
-                "ASM topology curve_geo",
-            )?;
-            ctx.insert_hash_map(
-                procedural_curve_defs,
+            );
+            procedural_curve_defs.insert(
                 curve_index,
                 super::ProceduralCurveSource::Cached {
                     construction: Box::new(decoded.construction),
                     cache_fit_tolerance: decoded.cache_fit_tolerance,
                     parsed_domain,
                 },
-                "ASM topology procedural_curve_defs",
-            )?;
-            ctx.insert_hash_set(kept_curves, curve_index, "ASM topology kept_curves")?;
+            );
+            kept_curves.insert(curve_index);
             out.stats.nurbs_curves += 1;
         } else if let Some(definition) =
             nurbs::proc_curve::cacheless_procedural_curve_resolving_refs(
@@ -944,8 +789,7 @@ fn keep_wire_edge(
                 Some(definition)
             })
         {
-            ctx.insert_hash_map(
-                curve_geo,
+            curve_geo.insert(
                 curve_index,
                 CurveGeometry::Procedural {
                     construction: brep_id!(
@@ -956,27 +800,16 @@ fn keep_wire_edge(
                     ),
                     cache: None,
                 },
-                "ASM topology curve_geo",
-            )?;
-            ctx.insert_hash_map(
-                procedural_curve_defs,
+            );
+            procedural_curve_defs.insert(
                 curve_index,
                 super::ProceduralCurveSource::Cacheless(Box::new(definition)),
-                "ASM topology procedural_curve_defs",
-            )?;
-            ctx.insert_hash_set(kept_curves, curve_index, "ASM topology kept_curves")?;
+            );
+            kept_curves.insert(curve_index);
         } else {
-            ctx.insert_hash_set(
-                undecoded_carriers,
-                curve_index,
-                "ASM topology undecoded_carriers",
-            )?;
+            undecoded_carriers.insert(curve_index);
 
-            count_kind(
-                ctx,
-                &mut out.stats.procedural_curve_kinds,
-                curve_record.head(),
-            )?;
+            count_kind(&mut out.stats.procedural_curve_kinds, curve_record.head());
         }
     }
     Ok(())
@@ -985,7 +818,6 @@ fn keep_wire_edge(
 /// Partition kept edges' curve references by sense so a carrier shared across
 /// both senses can emit a `:reversed` clone beside its forward orientation.
 pub(super) fn classify_edge_curve_senses(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     records: &[Record],
     reach: &Reachable,
 ) -> Result<(HashSet<i64>, HashSet<i64>), cadmpeg_core::CodecError> {
@@ -1000,11 +832,7 @@ pub(super) fn classify_edge_curve_senses(
         if !is_edge_record(r)
             || !kept_edges.contains(
                 &(i64::try_from(r.index).map_err(|_| {
-                    ctx.refuse_codec_limit(
-                        "ASM record index",
-                        9_223_372_036_854_775_807,
-                        cadmpeg_core::decode::u64_from_index(r.index),
-                    )
+                    cadmpeg_core::CodecError::malformed("ASM record index exceeds the i64 range")
                 })?),
             )
         {
@@ -1014,99 +842,87 @@ pub(super) fn classify_edge_curve_senses(
             continue;
         };
         match sense_at(r, 9) {
-            Sense::Reversed => ctx.insert_hash_set(
-                &mut reversed_curve_refs,
-                curve,
-                "ASM topology reversed_curve_refs",
-            )?,
-            Sense::Forward => ctx.insert_hash_set(
-                &mut forward_curve_refs,
-                curve,
-                "ASM topology forward_curve_refs",
-            )?,
+            Sense::Reversed => reversed_curve_refs.insert(curve),
+            Sense::Forward => forward_curve_refs.insert(curve),
         };
     }
     Ok((reversed_curve_refs, forward_curve_refs))
 }
 
 pub(super) fn ring_coedges(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     loop_rec: &Record,
     by_index: &HashMap<i64, &Record>,
     kept: &HashSet<i64>,
     format: IdFormat,
-) -> Result<Vec<CoedgeId>, cadmpeg_core::CodecError> {
+) -> Vec<CoedgeId> {
     let id = |i: i64| CoedgeId::from(super::id(format, i));
     let mut out = Vec::new();
     let Some(first) = loop_rec.ref_at(4) else {
-        return Ok(out);
+        return out;
     };
     let mut cur = Some(first);
     let mut guard = HashSet::new();
     while let Some(ci) = cur {
-        if !ctx.insert_hash_set(&mut guard, ci, "ASM topology guard")? || !kept.contains(&ci) {
+        if !guard.insert(ci) || !kept.contains(&ci) {
             break;
         }
-        ctx.push_vec(&mut out, id(ci), "ASM ring coedges")?;
+        out.push(id(ci));
         let Some(ce) = by_index.get(&ci) else { break };
         cur = ce.ref_at(3);
         if cur == Some(first) {
             break;
         }
     }
-    Ok(out)
+    out
 }
 
 pub(super) fn loop_chain(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     face_rec: &Record,
     by_index: &HashMap<i64, &Record>,
     kept: &HashSet<i64>,
     format: IdFormat,
-) -> Result<Vec<LoopId>, cadmpeg_core::CodecError> {
+) -> Vec<LoopId> {
     let id = |i: i64| LoopId::from(super::id(format, i));
     let mut out = Vec::new();
     let mut cur = face_rec.ref_at(4);
     let mut guard = HashSet::new();
     while let Some(li) = cur {
-        if !ctx.insert_hash_set(&mut guard, li, "ASM topology guard")? {
+        if !guard.insert(li) {
             break;
         }
         if kept.contains(&li) {
-            ctx.push_vec(&mut out, id(li), "ASM face loops")?;
+            out.push(id(li));
         }
         let Some(lp) = by_index.get(&li) else { break };
         cur = lp.ref_at(3);
     }
-    Ok(out)
+    out
 }
 
 fn face_chain(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     shell_rec: &Record,
     by_index: &HashMap<i64, &Record>,
     kept: &HashSet<i64>,
     format: IdFormat,
-) -> Result<Vec<FaceId>, cadmpeg_core::CodecError> {
+) -> Vec<FaceId> {
     let id = |i: i64| FaceId::from(super::id(format, i));
     let mut out = Vec::new();
     let mut cur = shell_rec.ref_at(5);
     let mut guard = HashSet::new();
     while let Some(fi) = cur {
-        if !ctx.insert_hash_set(&mut guard, fi, "ASM topology guard")? {
+        if !guard.insert(fi) {
             break;
         }
         if kept.contains(&fi) {
-            ctx.push_vec(&mut out, id(fi), "ASM shell faces")?;
+            out.push(id(fi));
         }
         let Some(f) = by_index.get(&fi) else { break };
         cur = f.ref_at(3);
     }
-    Ok(out)
+    out
 }
 
 pub(super) fn subshell_ancestor_shells(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     records: &[Record],
     by_index: &HashMap<i64, &Record>,
 ) -> Result<HashMap<i64, i64>, cadmpeg_core::CodecError> {
@@ -1115,25 +931,21 @@ pub(super) fn subshell_ancestor_shells(
         let mut owner = record.ref_at(3);
         let mut guard = HashSet::new();
         while let Some(index) = owner {
-            if !ctx.insert_hash_set(&mut guard, index, "ASM topology guard")? {
+            if !guard.insert(index) {
                 break;
             }
             let Some(parent) = by_index.get(&index) else {
                 break;
             };
             if parent.head() == "shell" {
-                ctx.insert_hash_map(
-                    &mut out,
+                out.insert(
                     i64::try_from(record.index).map_err(|_| {
-                        ctx.refuse_codec_limit(
-                            "ASM record index",
-                            9_223_372_036_854_775_807,
-                            cadmpeg_core::decode::u64_from_index(record.index),
+                        cadmpeg_core::CodecError::malformed(
+                            "ASM record index exceeds the i64 range",
                         )
                     })?,
                     index,
-                    "ASM topology out",
-                )?;
+                );
                 break;
             }
             if parent.head() != "subshell" {
@@ -1146,17 +958,16 @@ pub(super) fn subshell_ancestor_shells(
 }
 
 pub(super) fn shell_faces(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     shell: &Record,
     by_index: &HashMap<i64, &Record>,
     kept: &HashSet<i64>,
     format: IdFormat,
-) -> Result<Vec<FaceId>, cadmpeg_core::CodecError> {
-    let mut out = face_chain(ctx, shell, by_index, kept, format)?;
-    let mut pending = ctx.collect_vec(shell.ref_at(4), "ASM pending subshells")?;
+) -> Vec<FaceId> {
+    let mut out = face_chain(shell, by_index, kept, format);
+    let mut pending = shell.ref_at(4).into_iter().collect::<Vec<_>>();
     let mut guard = HashSet::new();
     while let Some(index) = pending.pop() {
-        if !ctx.insert_hash_set(&mut guard, index, "ASM topology guard")? {
+        if !guard.insert(index) {
             break;
         }
         let Some(record) = by_index
@@ -1165,29 +976,25 @@ pub(super) fn shell_faces(
         else {
             break;
         };
-        for face in face_chain_from(ctx, record.ref_at(6), by_index, kept, format)? {
-            ctx.push_vec(&mut out, face, "ASM shell faces")?;
+        for face in face_chain_from(record.ref_at(6), by_index, kept, format) {
+            out.push(face);
         }
         if let Some(next) = record.ref_at(4) {
-            ctx.push_vec(&mut pending, next, "ASM pending subshells")?;
+            pending.push(next);
         }
         if let Some(child) = record.ref_at(5) {
-            ctx.push_vec(&mut pending, child, "ASM pending subshells")?;
+            pending.push(child);
         }
     }
-    Ok(out)
+    out
 }
 
-pub(super) fn shell_wire_roots(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    shell: &Record,
-    by_index: &HashMap<i64, &Record>,
-) -> Result<Vec<i64>, cadmpeg_core::CodecError> {
-    let mut out = ctx.collect_vec(shell.ref_at(6), "ASM shell wire roots")?;
-    let mut pending = ctx.collect_vec(shell.ref_at(4), "ASM pending subshells")?;
+pub(super) fn shell_wire_roots(shell: &Record, by_index: &HashMap<i64, &Record>) -> Vec<i64> {
+    let mut out = shell.ref_at(6).into_iter().collect::<Vec<_>>();
+    let mut pending = shell.ref_at(4).into_iter().collect::<Vec<_>>();
     let mut guard = HashSet::new();
     while let Some(index) = pending.pop() {
-        if !ctx.insert_hash_set(&mut guard, index, "ASM topology guard")? {
+        if !guard.insert(index) {
             break;
         }
         let Some(record) = by_index
@@ -1197,40 +1004,39 @@ pub(super) fn shell_wire_roots(
             break;
         };
         if let Some(wire) = record.ref_at(7) {
-            ctx.push_vec(&mut out, wire, "ASM shell wire roots")?;
+            out.push(wire);
         }
         if let Some(next) = record.ref_at(4) {
-            ctx.push_vec(&mut pending, next, "ASM pending subshells")?;
+            pending.push(next);
         }
         if let Some(child) = record.ref_at(5) {
-            ctx.push_vec(&mut pending, child, "ASM pending subshells")?;
+            pending.push(child);
         }
     }
-    Ok(out)
+    out
 }
 
 fn face_chain_from(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     mut current: Option<i64>,
     by_index: &HashMap<i64, &Record>,
     kept: &HashSet<i64>,
     format: IdFormat,
-) -> Result<Vec<FaceId>, cadmpeg_core::CodecError> {
+) -> Vec<FaceId> {
     let mut out = Vec::new();
     let mut guard = HashSet::new();
     while let Some(index) = current {
-        if !ctx.insert_hash_set(&mut guard, index, "ASM topology guard")? {
+        if !guard.insert(index) {
             break;
         }
         if kept.contains(&index) {
-            ctx.push_vec(&mut out, FaceId::from(id(format, index)), "ASM shell faces")?;
+            out.push(FaceId::from(id(format, index)));
         }
         let Some(face) = by_index.get(&index) else {
             break;
         };
         current = face.ref_at(3);
     }
-    Ok(out)
+    out
 }
 
 /// Whether `index` names a record with one of `heads` whose owner slot refers
@@ -1250,52 +1056,50 @@ fn owned_child<'a>(
 }
 
 pub(super) fn shell_chain(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     region_rec: &Record,
     by_index: &HashMap<i64, &Record>,
     emitted_shells: &HashSet<i64>,
     format: IdFormat,
-) -> Result<Vec<ShellId>, cadmpeg_core::CodecError> {
+) -> Vec<ShellId> {
     let id = |i: i64| ShellId::from(super::id(format, i));
     let mut out = Vec::new();
     let mut cur = region_rec.ref_at(4);
     let mut guard = HashSet::new();
     while let Some(si) = cur {
-        if !ctx.insert_hash_set(&mut guard, si, "ASM topology guard")? {
+        if !guard.insert(si) {
             break;
         }
         let Some(s) = owned_child(by_index, si, &["shell"], 7, region_rec) else {
             break;
         };
         if emitted_shells.contains(&si) {
-            ctx.push_vec(&mut out, id(si), "ASM region shells")?;
+            out.push(id(si));
         }
         cur = s.ref_at(3);
     }
-    Ok(out)
+    out
 }
 
 pub(super) fn region_chain(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     body_rec: &Record,
     by_index: &HashMap<i64, &Record>,
     format: IdFormat,
-) -> Result<Vec<RegionId>, cadmpeg_core::CodecError> {
+) -> Vec<RegionId> {
     let id = |i: i64| RegionId::from(super::id(format, i));
     let mut out = Vec::new();
     let mut cur = body_rec.ref_at(3);
     let mut guard = HashSet::new();
     while let Some(li) = cur {
-        if !ctx.insert_hash_set(&mut guard, li, "ASM topology guard")? {
+        if !guard.insert(li) {
             break;
         }
         let Some(l) = owned_child(by_index, li, &["region", "lump"], 5, body_rec) else {
             break;
         };
-        ctx.push_vec(&mut out, id(li), "ASM body regions")?;
+        out.push(id(li));
         cur = l.ref_at(3);
     }
-    Ok(out)
+    out
 }
 
 #[cfg(test)]

@@ -35,15 +35,10 @@ use crate::test_support::zip_test::{
 use crate::test_support::{lp_ascii, lp_utf16};
 use crate::F3dCodec;
 
-use super::{merge_definition_catalog_record, DefinitionCatalog, RECORD_MARKER, STREAM_HEADER_LEN};
-
-fn decode_definition_catalog_record(
-    record: &[u8],
-) -> Result<super::DefinitionCatalog, cadmpeg_core::CodecError> {
-    crate::test_support::with_decode_context(|ctx| {
-        super::decode_definition_catalog_record(ctx, record)
-    })
-}
+use super::{
+    decode_definition_catalog_record, merge_definition_catalog_record, DefinitionCatalog,
+    RECORD_MARKER, STREAM_HEADER_LEN,
+};
 
 #[test]
 fn legacy_face_selector_refuses_short_carriers_without_indexing() {
@@ -197,8 +192,7 @@ fn definition_catalog_uses_page_boundaries_when_payload_contains_a_start_marker(
     logical.extend_from_slice(&1_u32.to_le_bytes());
     lp_ascii(&mut logical, "");
 
-    let paged = crate::test_support::with_decode_context(|ctx| super::page_logical(ctx, &logical))
-        .expect("page catalog record");
+    let paged = super::page_logical(&logical).expect("page catalog record");
     let frames =
         cadmpeg_protein::framing::record_frames_for_edit(&paged).expect("frame catalog pages");
     let [frame] = frames.as_slice() else {
@@ -210,110 +204,6 @@ fn definition_catalog_uses_page_boundaries_when_payload_contains_a_start_marker(
     assert_eq!(decoded.asset_id, "Prism-001");
     assert_eq!(decoded.category.as_deref(), Some(category.as_str()));
 }
-
-#[test]
-fn definition_catalog_schema_refuses_retained_limit() {
-    let mut record = RECORD_MARKER.to_vec();
-    lp_ascii(&mut record, "GenericSchema");
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("test decode context");
-    let error = super::decode_definition_catalog_record(&ctx, &record)
-        .expect_err("catalog schema must exceed retained budget");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "retain F3D UTF-8 string")
-    );
-}
-
-fn catalog_field_refusal(retained_before: u64) -> cadmpeg_core::CodecError {
-    let mut record = RECORD_MARKER.to_vec();
-    lp_ascii(&mut record, "S");
-    record.push(0);
-    lp_ascii(&mut record, "A");
-    lp_ascii(&mut record, "B");
-    record.extend_from_slice(&3u32.to_le_bytes());
-    for field in ["C", "G", "H", "D"] {
-        lp_ascii(&mut record, field);
-    }
-    record.extend_from_slice(&1u32.to_le_bytes());
-    lp_ascii(&mut record, "E");
-    record.extend_from_slice(&0u32.to_le_bytes());
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = retained_before;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("test decode context");
-    super::decode_definition_catalog_record(&ctx, &record)
-        .expect_err("catalog field must exceed retained budget")
-}
-
-macro_rules! catalog_field_limit_test {
-    ($name:ident, $retained_before:literal) => {
-        #[test]
-        fn $name() {
-            let error = catalog_field_refusal($retained_before);
-            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.operation == "retain F3D UTF-8 string"));
-        }
-    };
-}
-
-catalog_field_limit_test!(definition_catalog_asset_refuses_retained_limit, 1);
-catalog_field_limit_test!(definition_catalog_base_refuses_retained_limit, 2);
-catalog_field_limit_test!(definition_catalog_category_refuses_retained_limit, 3);
-catalog_field_limit_test!(definition_catalog_group_refuses_retained_limit, 4);
-catalog_field_limit_test!(definition_catalog_subgroup_refuses_retained_limit, 5);
-catalog_field_limit_test!(definition_catalog_description_refuses_retained_limit, 6);
-catalog_field_limit_test!(definition_catalog_extension_refuses_retained_limit, 7);
-
-#[test]
-fn fixed_material_schema_refuses_retained_limit() {
-    let mut record = RECORD_MARKER.to_vec();
-    lp_ascii(&mut record, "GenericSchema");
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("test decode context");
-    let error = super::decode_fixed_record(&ctx, &record)
-        .expect_err("fixed material schema must exceed retained budget");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "retain F3D UTF-8 string")
-    );
-}
-
-fn fixed_material_field_refusal(retained_before: u64) -> cadmpeg_core::CodecError {
-    let mut record = RECORD_MARKER.to_vec();
-    for field in ["S", "G", "B", "L"] {
-        lp_ascii(&mut record, field);
-    }
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = retained_before;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("test decode context");
-    super::decode_fixed_record(&ctx, &record)
-        .expect_err("fixed material field must exceed retained budget")
-}
-
-macro_rules! fixed_material_field_limit_test {
-    ($name:ident, $retained_before:literal) => {
-        #[test]
-        fn $name() {
-            let error = fixed_material_field_refusal($retained_before);
-            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.operation == "retain F3D UTF-8 string"));
-        }
-    };
-}
-
-fixed_material_field_limit_test!(fixed_material_guid_refuses_retained_limit, 1);
-fixed_material_field_limit_test!(fixed_material_base_refuses_retained_limit, 2);
-fixed_material_field_limit_test!(fixed_material_library_refuses_retained_limit, 3);
 
 #[test]
 fn definition_catalog_version_one_omits_category() {
@@ -390,36 +280,19 @@ fn definition_catalog_uses_asset_and_schema_identity() {
         }
     }
 
-    crate::test_support::with_decode_context(|ctx| {
-        let mut definitions = std::collections::HashMap::new();
-        merge_definition_catalog_record(
-            ctx,
-            &mut definitions,
-            definition("Prism-256", "Metal/Steel"),
-        )
-        .unwrap();
-        merge_definition_catalog_record(
-            ctx,
-            &mut definitions,
-            definition("Prism-256", "Metal/Steel"),
-        )
-        .unwrap();
-        assert_eq!(definitions.len(), 1);
+    let mut definitions = std::collections::HashMap::new();
+    merge_definition_catalog_record(&mut definitions, definition("Prism-256", "Metal/Steel"));
+    merge_definition_catalog_record(&mut definitions, definition("Prism-256", "Metal/Steel"));
+    assert_eq!(definitions.len(), 1);
 
-        merge_definition_catalog_record(
-            ctx,
-            &mut definitions,
-            definition("Prism-256", "Metal/Stainless"),
-        )
-        .unwrap();
-        let key = ("Prism-256".to_owned(), "PrismMetalSchema".to_owned());
-        assert_eq!(definitions[&key].category, None);
+    merge_definition_catalog_record(&mut definitions, definition("Prism-256", "Metal/Stainless"));
+    let key = ("Prism-256".to_owned(), "PrismMetalSchema".to_owned());
+    assert_eq!(definitions[&key].category, None);
 
-        let mut second_schema = definition("Prism-256", "Metal/Steel");
-        second_schema.schema = "GenericSchema".into();
-        merge_definition_catalog_record(ctx, &mut definitions, second_schema).unwrap();
-        assert_eq!(definitions.len(), 2);
-    });
+    let mut second_schema = definition("Prism-256", "Metal/Steel");
+    second_schema.schema = "GenericSchema".into();
+    merge_definition_catalog_record(&mut definitions, second_schema);
+    assert_eq!(definitions.len(), 2);
 }
 
 #[test]
@@ -1592,12 +1465,7 @@ fn body_visibility_maps_asm_keys_through_member_nodes() {
     let bytes = zip.finish().unwrap().into_inner();
 
     with_scan(&bytes, |scan| {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let policy = cadmpeg_core::decode::DecodePolicy::default();
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let visibility =
-            crate::design::decode::body::decode_all_body_visibility(&ctx, scan).unwrap();
+        let visibility = crate::design::decode::body::decode_all_body_visibility(scan).unwrap();
         assert_eq!(
             visibility
                 .get(&("BREP.synthetic.smbh".into(), 3))
@@ -1694,19 +1562,18 @@ fn a_body_node_candidate_reads_the_strings_between_the_marker_and_the_visual_tok
         ("node-a".to_string(), 7u64),
         ("node-b".to_string(), 9u64),
     ]);
-    let ctx = cadmpeg_test_support::service_decode_context();
     assert_eq!(
-        crate::materials::body_node_candidate(&ctx, &strings, 3, &nodes).unwrap(),
+        crate::materials::body_node_candidate(&strings, 3, &nodes),
         Some(7),
         "the window ends before the visual token"
     );
     assert_eq!(
-        crate::materials::body_node_candidate(&ctx, &strings, 2, &nodes).unwrap(),
+        crate::materials::body_node_candidate(&strings, 2, &nodes),
         None,
         "a window with no candidate names no entity"
     );
     assert_eq!(
-        crate::materials::body_node_candidate(&ctx, &strings, 4, &nodes).unwrap(),
+        crate::materials::body_node_candidate(&strings, 4, &nodes),
         None,
         "two candidates that disagree name no entity"
     );
@@ -1723,8 +1590,7 @@ fn a_protein_appearance_record_truncated_past_its_guid_is_refused() {
     super::push_lp(&mut logical, "GenericSchema").unwrap();
     super::push_lp(&mut logical, guid).unwrap();
     logical.extend_from_slice(&u32::MAX.to_le_bytes());
-    let instance =
-        crate::test_support::with_decode_context(|ctx| super::page_logical(ctx, &logical)).unwrap();
+    let instance = super::page_logical(&logical).unwrap();
 
     let options = crate::zip_write::file_options(CompressionMethod::Stored);
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
@@ -1753,6 +1619,5 @@ fn a_protein_appearance_record_truncated_past_its_guid_is_refused() {
 }
 
 mod assignment_losses;
-mod limits;
 
 mod appearance_assignments;
