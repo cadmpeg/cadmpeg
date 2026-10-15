@@ -14,6 +14,7 @@ mod copy_paste_bodies;
 mod derived_instance;
 mod fixed_kind_operations;
 mod fixed_kind_tail;
+mod fixed_scalar_frames;
 mod flange;
 mod history_admission;
 mod legacy_class_397;

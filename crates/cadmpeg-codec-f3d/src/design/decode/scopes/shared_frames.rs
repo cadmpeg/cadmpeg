@@ -69,7 +69,7 @@ pub(super) fn exact_fixed_scalar(
                     || marked_record_reference(bytes, start + 48).is_none()
                     || marked_record_reference(bytes, start + 67)
                         != View::u32_le_at(bytes, start + 25)
-                    || bytes.get(start + 78..start + 80) != Some(&[0; 2])
+                    || !matches!(bytes.get(start + 78..start + 80), Some([0, 0] | [1, 0 | 1]))
                     || marked_record_reference(bytes, start + 80).is_none()
                     || bytes.get(start + 85..start + 92) != Some(&[0; 7])
                     || marked_record_reference(bytes, start + 92)
