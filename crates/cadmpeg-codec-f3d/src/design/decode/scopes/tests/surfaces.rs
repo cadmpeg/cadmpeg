@@ -1366,10 +1366,12 @@ fn base_feature_scope_decodes_shared_body_based_on_faces_envelope() {
             offset: u64_from_index(class_377::BODY_ENTITY_SUFFIX)
         }
     );
-    assert_eq!(
-        construction.body_reference_records().collect::<Vec<_>>(),
-        [201]
-    );
+    assert!(matches!(
+        construction.body_reference_records(),
+        crate::records::feature::base_feature::DesignBaseFeatureBodyReferenceSource::SingleBody(
+            &201
+        )
+    ));
     assert_eq!(*parameter_body_record, 198);
     assert_eq!(
         *parameter_body_record_offset,

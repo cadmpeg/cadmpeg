@@ -139,10 +139,10 @@ fn parallel_line_set_candidate_refuses_collection_limit() {
 }
 
 #[test]
-fn parallel_line_carrier_candidate_refuses_collection_limit() {
+fn parallel_line_carrier_candidate_refuses_work_limit() {
     fixture(
         "f3d parallel line carrier candidate",
-        ResourceDimension::CollectionItems,
+        ResourceDimension::WorkUnits,
     );
 }
 
@@ -178,4 +178,19 @@ fn planar_carrier_output_id_retained_refuses_limit() {
 #[test]
 fn planar_carrier_output_member_collection_refuses_limit() {
     fixture("f3d atomic member", ResourceDimension::CollectionItems);
+}
+
+#[test]
+fn planar_carrier_queries_refuse_actual_source_work() {
+    for operation in [
+        "f3d parallel line set source",
+        "f3d parallel line set sketch identity",
+        "f3d planar line carrier source",
+        "f3d planar line carrier member agreement",
+        "f3d planar line carrier pair source",
+        "f3d planar line carrier first span search",
+        "f3d planar line carrier second span search",
+    ] {
+        fixture(operation, ResourceDimension::WorkUnits);
+    }
 }

@@ -817,11 +817,13 @@ fn gui_property_identity_refuses_at_retained_limit() {
             super::super::append_native_provider(
                 ctx,
                 text,
-                xml.root_element(),
-                0,
+                (xml.root_element(), 0),
                 None,
                 &mut Vec::new(),
                 &mut Vec::new(),
+                &mut ctx
+                    .reserve_scoped(0, "test GUI diagnostics")
+                    .expect("owner"),
             )
         },
     );
@@ -839,11 +841,13 @@ fn gui_provider_record_identity_refuses_at_retained_limit() {
             super::super::append_native_provider(
                 ctx,
                 text,
-                xml.root_element(),
-                0,
+                (xml.root_element(), 0),
                 None,
                 &mut Vec::new(),
                 &mut Vec::new(),
+                &mut ctx
+                    .reserve_scoped(0, "test GUI diagnostics")
+                    .expect("owner"),
             )
         },
     );
@@ -860,11 +864,13 @@ fn gui_provider_object_identity_refuses_at_retained_limit() {
             super::super::append_native_provider(
                 ctx,
                 text,
-                xml.root_element(),
-                0,
+                (xml.root_element(), 0),
                 Some("fcstd:native:object#Owner With Spaces"),
                 &mut Vec::new(),
                 &mut Vec::new(),
+                &mut ctx
+                    .reserve_scoped(0, "test GUI diagnostics")
+                    .expect("owner"),
             )
         },
     );
@@ -1128,7 +1134,6 @@ fn gui_state_records_refuse_at_caller_limit() {
                 text,
                 &xml,
                 None,
-                None,
                 &super::super::GuiSources {
                     entries: &std::collections::BTreeMap::new(),
                     objects: &[],
@@ -1137,6 +1142,9 @@ fn gui_state_records_refuse_at_caller_limit() {
                     element_maps: &[],
                     requires_alpha_conversion: false,
                 },
+                &mut ctx
+                    .reserve_scoped(0, "test GUI diagnostics")
+                    .expect("owner"),
             )
             .map(|_| ())
         },
@@ -1177,7 +1185,6 @@ fn gui_object_name_index_refuses_at_caller_limit() {
                 text,
                 &xml,
                 None,
-                None,
                 &super::super::GuiSources {
                     entries: &std::collections::BTreeMap::new(),
                     objects: std::slice::from_ref(&object),
@@ -1186,6 +1193,9 @@ fn gui_object_name_index_refuses_at_caller_limit() {
                     element_maps: &[],
                     requires_alpha_conversion: false,
                 },
+                &mut ctx
+                    .reserve_scoped(0, "test GUI diagnostics")
+                    .expect("owner"),
             )
             .map(|_| ())
         },
@@ -1551,11 +1561,13 @@ fn assert_gui_provider_service(xml: &str) {
     super::super::append_native_provider(
         &ctx,
         xml,
-        document.root_element(),
-        0,
+        (document.root_element(), 0),
         None,
         &mut providers,
         &mut properties,
+        &mut ctx
+            .reserve_scoped(0, "test GUI diagnostics")
+            .expect("owner"),
     )
     .expect("service profile admits the GUI provider");
 }
@@ -1572,11 +1584,13 @@ fn gui_provider_record_refuses_at_caller_limit() {
             super::super::append_native_provider(
                 ctx,
                 xml,
-                document.root_element(),
-                0,
+                (document.root_element(), 0),
                 None,
                 &mut Vec::new(),
                 &mut Vec::new(),
+                &mut ctx
+                    .reserve_scoped(0, "test GUI diagnostics")
+                    .expect("owner"),
             )
         },
     );
@@ -1598,11 +1612,13 @@ fn gui_provider_property_nodes_refuse_at_caller_limit() {
             super::super::append_native_provider(
                 ctx,
                 xml,
-                document.root_element(),
-                0,
+                (document.root_element(), 0),
                 None,
                 &mut Vec::new(),
                 &mut Vec::new(),
+                &mut ctx
+                    .reserve_scoped(0, "test GUI diagnostics")
+                    .expect("owner"),
             )
         },
     );
@@ -1624,11 +1640,13 @@ fn gui_side_entry_reference_refuses_at_caller_limit() {
             super::super::append_native_provider(
                 ctx,
                 xml,
-                document.root_element(),
-                0,
+                (document.root_element(), 0),
                 None,
                 &mut Vec::new(),
                 &mut Vec::new(),
+                &mut ctx
+                    .reserve_scoped(0, "test GUI diagnostics")
+                    .expect("owner"),
             )
         },
     );
@@ -1711,11 +1729,13 @@ fn y4_2_gui_provider_xml_copy_refuses_at_the_retained_byte_limit() {
             super::super::append_native_provider(
                 ctx,
                 xml,
-                document.root_element(),
-                0,
+                (document.root_element(), 0),
                 None,
                 &mut Vec::new(),
                 &mut Vec::new(),
+                &mut ctx
+                    .reserve_scoped(0, "test GUI diagnostics")
+                    .expect("owner"),
             )
         },
     );
@@ -1733,11 +1753,13 @@ fn y4_2_gui_property_xml_copy_refuses_at_the_retained_byte_limit() {
             super::super::append_native_provider(
                 ctx,
                 xml,
-                document.root_element(),
-                0,
+                (document.root_element(), 0),
                 None,
                 &mut Vec::new(),
                 &mut Vec::new(),
+                &mut ctx
+                    .reserve_scoped(0, "test GUI diagnostics")
+                    .expect("owner"),
             )
         },
     );
@@ -1755,11 +1777,13 @@ fn y4_2_gui_property_values_are_admitted_before_allocation() {
             super::super::append_native_provider(
                 ctx,
                 xml,
-                document.root_element(),
-                0,
+                (document.root_element(), 0),
                 None,
                 &mut Vec::new(),
                 &mut Vec::new(),
+                &mut ctx
+                    .reserve_scoped(0, "test GUI diagnostics")
+                    .expect("owner"),
             )
         },
     );

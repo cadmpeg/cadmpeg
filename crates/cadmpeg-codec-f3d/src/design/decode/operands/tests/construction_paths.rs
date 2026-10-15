@@ -87,7 +87,14 @@ fn legacy_loft_body_carrier_output_refuses_collection_and_id_limits() {
     })
     .expect("class-322 legacy Loft carrier");
     let stream = "Design/BulkStream.dat";
-    let native_scope_len = u64::try_from(crate::ids::native_scope(stream).len()).unwrap();
+    let native_scope_len = u64::try_from(
+        crate::test_support::with_decode_context(|ctx| {
+            crate::ids::native_scope(ctx, stream, "retain F3D native scope")
+                .expect("test F3D native identity")
+        })
+        .len(),
+    )
+    .unwrap();
     for (collection_limit, retained_limit, dimension, operation) in [
         (
             0,

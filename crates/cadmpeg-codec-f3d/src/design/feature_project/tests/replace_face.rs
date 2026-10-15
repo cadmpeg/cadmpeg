@@ -79,7 +79,7 @@ fn body_recipe_limit_fixture() -> (
 }
 
 fn assert_body_recipe_collection_limit(operation: &'static str) {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use cadmpeg_core::CodecError;
 
     let (scope, group, operand) = body_recipe_limit_fixture();
@@ -93,20 +93,24 @@ fn assert_body_recipe_collection_limit(operation: &'static str) {
         .unwrap(),
         Some(FaceSelection::Historical { .. })
     ));
-    for limit in 0..12 {
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = limit;
-        let arena = DecodeArena::new();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation,
+        |limit| {
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_collection_items = limit;
+            let arena = DecodeArena::new();
 
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        if matches!(crate::design::face_resolve::resolved_body_recipe_selection(&ctx, &scope, &group, &operands), Err(CodecError::ResourceLimit(failure))
-                if failure.dimension == ResourceDimension::CollectionItems
-                    && failure.operation == operation)
-        {
-            return;
-        }
-    }
-    panic!("no body recipe collection refusal at {operation}");
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+
+            (crate::design::face_resolve::resolved_body_recipe_selection(
+                &ctx, &scope, &group, &operands,
+            ))
+            .map(|_| ())
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(failure)
+        if failure.operation == operation && failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
 }
 
 #[test]
@@ -338,6 +342,37 @@ fn replace_face_projects_role_order_and_historical_inputs() {
         .is_none()
     );
 
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_retained_bytes = 0;
+    crate::test_support::with_decode_policy(&policy, |ctx| {
+        assert!(project_replace_face(
+            ctx,
+            &scope,
+            &[replacement_group.clone(), target_group.clone()],
+            &[],
+            std::slice::from_ref(&replacement)
+        )
+        .unwrap()
+        .is_none());
+        assert_eq!(ctx.resource_refusal(), None);
+    });
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "f3d ReplaceFace accepted output",
+        0,
+        |ctx| {
+            project_replace_face(
+                ctx,
+                &scope,
+                &[replacement_group.clone(), target_group.clone()],
+                std::slice::from_ref(&target),
+                std::slice::from_ref(&replacement),
+            )
+        },
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure) if failure.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes && failure.operation == "f3d ReplaceFace accepted output")
+    );
     let mut invalid_scope = scope;
     invalid_scope
         .try_edit(|draft| {
@@ -573,6 +608,52 @@ fn surface_trim_binds_selected_cells_without_inventing_a_side() {
         },
     )
     .unwrap();
+
+    let mut invalid_operation = operation.clone();
+    invalid_operation.trailing_value = 0;
+    let mut invalid_feature = feature.clone();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    bind_surface_trim_cell_selections(
+        &ctx,
+        std::slice::from_mut(&mut invalid_feature),
+        std::slice::from_ref(&scope),
+        std::slice::from_ref(&invalid_operation),
+    )
+    .unwrap();
+    assert!(matches!(
+        invalid_feature.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::TrimSurface {
+            keep: cadmpeg_ir::features::TrimRegion::Unresolved,
+            ..
+        })
+    ));
+    assert_eq!(ctx.resource_refusal(), None);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "f3d SurfaceTrim accepted cell selection",
+        |limit| {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+            policy.limits.max_retained_bytes = limit;
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            bind_surface_trim_cell_selections(
+                &ctx,
+                std::slice::from_mut(&mut feature.clone()),
+                std::slice::from_ref(&scope),
+                std::slice::from_ref(&operation),
+            )
+        },
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
+        if failure.operation == "f3d SurfaceTrim accepted cell selection"
+            && failure.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+    );
 
     crate::test_support::with_decode_context(|decode_ctx| {
         bind_surface_trim_cell_selections(

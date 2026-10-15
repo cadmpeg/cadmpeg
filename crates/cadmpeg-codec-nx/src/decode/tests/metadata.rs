@@ -7,7 +7,7 @@ use cadmpeg_core::decode::ResourceDimension;
 fn metadata_unknown_stream_slots_refuse_at_collection_limit() {
     let scan = crate::decode::Scan {
         container: crate::container::Container {
-            data: Vec::new().into(),
+            data: [].as_slice().into(),
             physical_size: 0,
             layout: crate::container::test_modern_layout(0x06),
             entries: Vec::new(),
@@ -50,7 +50,7 @@ fn metadata_unknown_stream_slots_refuse_at_collection_limit() {
 fn metadata_source_refuses_retained_attribute_limit() {
     let scan = crate::decode::Scan {
         container: crate::container::Container {
-            data: Vec::new().into(),
+            data: [].as_slice().into(),
             physical_size: 0,
             layout: crate::container::test_modern_layout(0x06),
             entries: Vec::new(),
@@ -124,7 +124,7 @@ fn metadata_unknown_stream_refuses_work_limit() {
 fn untransferred_stream_report_refuses_loss_code_retained_limit() {
     let scan = crate::decode::Scan {
         container: crate::container::Container {
-            data: Vec::new().into(),
+            data: [].as_slice().into(),
             physical_size: 0,
             layout: crate::container::test_modern_layout(0x06),
             entries: Vec::new(),
@@ -176,7 +176,7 @@ fn untransferred_stream_report_refuses_loss_code_retained_limit() {
 fn untransferred_stream_report_refuses_loss_collection_limit() {
     let scan = crate::decode::Scan {
         container: crate::container::Container {
-            data: Vec::new().into(),
+            data: [].as_slice().into(),
             physical_size: 0,
             layout: crate::container::test_modern_layout(0x06),
             entries: Vec::new(),
@@ -227,7 +227,7 @@ fn untransferred_stream_report_refuses_loss_collection_limit() {
 fn container_body_refuses_loss_code_retained_limit() {
     let scan = crate::decode::Scan {
         container: crate::container::Container {
-            data: Vec::new().into(),
+            data: [].as_slice().into(),
             physical_size: 0,
             layout: crate::container::test_modern_layout(0x06),
             entries: Vec::new(),
@@ -262,7 +262,7 @@ fn container_body_refuses_loss_code_retained_limit() {
 fn container_body_refuses_loss_collection_limit() {
     let scan = crate::decode::Scan {
         container: crate::container::Container {
-            data: Vec::new().into(),
+            data: [].as_slice().into(),
             physical_size: 0,
             layout: crate::container::test_modern_layout(0x06),
             entries: Vec::new(),

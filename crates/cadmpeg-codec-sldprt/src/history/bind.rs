@@ -86,8 +86,7 @@ pub(crate) fn bind_unique_sketch_feature(
     let _sketch_index;
     let sketches_by_name;
     (sketches_by_name, _sketch_index) = ctx.unique_index(
-        sketches
-            .iter()
+        ctx.admit_iter(sketches, "scan SLDPRT sketch names")?
             .filter_map(|sketch| sketch.name.as_deref().map(|name| (name, sketch))),
         BIND_OPERATION,
     )?;
@@ -885,13 +884,11 @@ fn face_owner_bodies<'a, 'ctx>(
 }
 
 /// A body identity from its emitted text, or `None` when the text is not an
-/// identity. The validation scan is admitted with the copy.
+/// identity. The IR constructor admits the copy and visited grammar work.
 fn output_body_id(ctx: &DecodeContext<'_>, id: &str) -> Result<Option<BodyId>, CodecError> {
     const OPERATION: &str = "retain SLDPRT feature output body";
     let (body, storage) = ctx.with_scoped_storage(OPERATION, || {
-        let text = ctx.copy_retained_text(id, OPERATION)?;
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(text.len()), OPERATION)?;
-        Ok::<_, CodecError>(BodyId::mint(text).ok())
+        Ok::<_, CodecError>(BodyId::mint_for_decode(ctx, id, OPERATION)?.ok())
     })?;
     match body {
         Some(body) => Ok(Some(storage.commit_value(body)?)),

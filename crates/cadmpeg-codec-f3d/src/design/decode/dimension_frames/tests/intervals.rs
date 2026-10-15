@@ -19,7 +19,12 @@ pub(super) fn parameter_at(record_index: u32, byte_offset: u64) -> DesignParamet
     .unwrap();
     parameter.id = format!(
         "{}:design-parameter#{byte_offset}",
-        crate::ids::native_scope(STREAM)
+        crate::test_support::with_decode_context(|ctx| crate::ids::native_scope(
+            ctx,
+            STREAM,
+            "retain F3D native scope"
+        )
+        .expect("test F3D native identity"))
     );
     parameter.record_index = record_index;
     let mut wire = serde_json::to_value(&parameter).unwrap();
@@ -46,7 +51,15 @@ fn companion_intervals_end_at_every_parameter_record() {
     // interval ends at the first of them.
     let parameters = [parameter_at(301, 100), parameter_at(301, 200)];
     let companion = DesignParameterCompanion::unbound(
-        format!("{}:parameter-companion#0", crate::ids::native_scope(STREAM)),
+        format!(
+            "{}:parameter-companion#0",
+            crate::test_support::with_decode_context(|ctx| crate::ids::native_scope(
+                ctx,
+                STREAM,
+                "retain F3D native scope"
+            )
+            .expect("test F3D native identity"))
+        ),
         0,
         crate::records::references::DesignClassTag::try_from("408".to_owned()).unwrap(),
         11,
@@ -55,7 +68,10 @@ fn companion_intervals_end_at_every_parameter_record() {
         42,
     );
     let ctx = cadmpeg_test_support::service_decode_context();
-    let scope = crate::ids::native_scope(STREAM);
+    let scope = crate::test_support::with_decode_context(|ctx| {
+        crate::ids::native_scope(ctx, STREAM, "retain F3D native scope")
+            .expect("test F3D native identity")
+    });
     let mut intervals =
         super::super::CompanionIntervals::new(&ctx, &parameters, &[], &[], &[]).unwrap();
     assert_eq!(
@@ -198,7 +214,12 @@ pub(super) fn owner_at(
         crate::records::parameters::DesignParameterOwnerWire {
             id: format!(
                 "{}:design-parameter-owner#{record_index}",
-                crate::ids::native_scope(STREAM)
+                crate::test_support::with_decode_context(|ctx| crate::ids::native_scope(
+                    ctx,
+                    STREAM,
+                    "retain F3D native scope"
+                )
+                .expect("test F3D native identity"))
             ),
             byte_offset,
             frame_length: 104,

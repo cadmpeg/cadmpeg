@@ -325,6 +325,16 @@ pub(crate) struct HistoricalBinding {
     pub(crate) state_ids: Vec<i64>,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for HistoricalBinding {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        (&self.kind, &self.entity_ref, &self.state_ids).decode_cost(ctx, operation)
+    }
+}
+
 #[derive(Deserialize)]
 // Field names are the native record serialized keys.
 struct OptionalHistoricalBindingWire {

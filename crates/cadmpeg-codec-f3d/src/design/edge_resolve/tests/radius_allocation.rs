@@ -14,23 +14,25 @@ fn assert_radius_refusal(operation: &'static str, identity_route: bool) {
     ];
     let mut persistent = identity(10, &[(17, 3.0), (18, 3.0)]);
     persistent.resolved_edge_slot = Some(19);
-    for limit in 0..64 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result = if identity_route {
-            radius_edge_identity_group_candidates(&[&persistent], 3.0, &ctx)
-        } else {
-            crate::design::edge_resolve::radius_edge_group_candidates(&[&recipe], 3.0, &ctx)
-        };
-        match result {
-            Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
-            Err(CodecError::ResourceLimit(_)) => {}
-            other => panic!("expected radius refusal at {operation}: {other:?}"),
-        }
-    }
-    panic!("no radius refusal at {operation}");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation,
+        |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let result = if identity_route {
+                radius_edge_identity_group_candidates(&[&persistent], 3.0, &ctx)
+            } else {
+                crate::design::edge_resolve::radius_edge_group_candidates(&[&recipe], 3.0, &ctx)
+            };
+
+            (result).map(|_| ())
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(failure)
+        if failure.operation == operation && failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
 }
 
 #[test]

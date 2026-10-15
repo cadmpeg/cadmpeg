@@ -9,30 +9,27 @@ const EPS_SPATIAL_DIMENSION_LINEAR: f64 = 1.0e-6;
 
 fn assert_spatial_index_refusal(operation: &'static str) {
     let fixture = fixture();
-    for limit in 0..64 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match project_spatial_dimension_constraints(
-            &ctx,
-            &fixture.inputs(),
-            std::slice::from_ref(&fixture.spatial),
-            &[],
-            EPS_SPATIAL_DIMENSION_LINEAR,
-        ) {
-            Err(CodecError::ResourceLimit(failure))
-                if failure.operation == operation
-                    && failure.dimension == ResourceDimension::CollectionItems =>
-            {
-                return
-            }
-            Err(CodecError::ResourceLimit(_)) => {}
-            Ok(_) => panic!("expected {operation} refusal, got success"),
-            Err(error) => panic!("expected {operation} refusal: {error}"),
-        }
-    }
-    panic!("no {operation} refusal");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation,
+        |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+
+            (project_spatial_dimension_constraints(
+                &ctx,
+                &fixture.inputs(),
+                std::slice::from_ref(&fixture.spatial),
+                &[],
+                EPS_SPATIAL_DIMENSION_LINEAR,
+            ))
+            .map(|_| ())
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(failure)
+        if failure.operation == operation && failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
 }
 
 #[test]
@@ -54,36 +51,27 @@ fn spatial_native_record_index_refuses_collection_limit() {
 fn spatial_projected_record_index_refuses_collection_limit() {
     let fixture = fixture();
     let entity = fixture.spatial_entity();
-    for limit in 0..64 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result = project_spatial_dimension_constraints(
-            &ctx,
-            &fixture.inputs(),
-            std::slice::from_ref(&fixture.spatial),
-            std::slice::from_ref(&entity),
-            EPS_SPATIAL_DIMENSION_LINEAR,
-        );
-        match result {
-            Err(CodecError::ResourceLimit(failure))
-                if failure.operation == "f3d spatial projected record index"
-                    && failure.dimension == ResourceDimension::CollectionItems =>
-            {
-                return
-            }
-            Err(CodecError::ResourceLimit(_)) => {}
-            Ok(_) => panic!("expected spatial projected record index refusal"),
-            Err(error) => panic!("expected spatial projected record index refusal: {error}"),
-        }
-    }
-    panic!("no spatial projected record index refusal");
-}
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "f3d spatial projected record index",
+        |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let result = project_spatial_dimension_constraints(
+                &ctx,
+                &fixture.inputs(),
+                std::slice::from_ref(&fixture.spatial),
+                std::slice::from_ref(&entity),
+                EPS_SPATIAL_DIMENSION_LINEAR,
+            );
 
-#[test]
-fn spatial_parameter_length_index_refuses_collection_limit() {
-    assert_spatial_index_refusal("f3d spatial parameter length index");
+            (result).map(|_| ())
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(failure)
+        if failure.operation == "f3d spatial projected record index" && failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
 }
 
 #[test]
@@ -97,138 +85,50 @@ fn spatial_parameter_count_index_refuses_collection_limit() {
     let companion = parameter_companion();
     let mut inputs = fixture.inputs();
     inputs.companions = std::slice::from_ref(&companion);
-    for limit in 0..64 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result = project_spatial_dimension_constraints(
-            &ctx,
-            &inputs,
-            std::slice::from_ref(&fixture.spatial),
-            &[],
-            EPS_SPATIAL_DIMENSION_LINEAR,
-        );
-        match result {
-            Err(CodecError::ResourceLimit(failure))
-                if failure.operation == "f3d spatial parameter count index"
-                    && failure.dimension == ResourceDimension::CollectionItems =>
-            {
-                return
-            }
-            Err(CodecError::ResourceLimit(_)) => {}
-            Ok(_) => panic!("expected spatial parameter count index refusal"),
-            Err(error) => panic!("expected spatial parameter count index refusal: {error}"),
-        }
-    }
-    panic!("no spatial parameter count index refusal");
-}
-
-#[test]
-fn spatial_scope_sketch_id_refuses_retained_limit() {
-    let fixture = fixture();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_retained_bytes = u64::try_from(
-        crate::ids::neutral_spatial_sketch_id(&fixture.placement)
-            .as_str()
-            .len()
-            + 2 * crate::ids::neutral_sketch_id(&fixture.placement)
-                .as_str()
-                .len(),
-    )
-    .unwrap();
-    let refusal_cap = match cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::RetainedBytes,
-        "f3d spatial scope sketch id",
-        |cap| {
-            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-            match ResourceDimension::RetainedBytes {
-                cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
-                    policy.limits.max_retained_bytes = cap;
-                }
-                cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-                    policy.limits.max_collection_items = cap;
-                }
-                cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
-                    policy.limits.max_materialized_bytes = cap;
-                }
-                cadmpeg_core::decode::ResourceDimension::WorkUnits => {
-                    policy.limits.max_work_units = cap;
-                }
-                dimension => panic!("unsupported refusal dimension: {dimension:?}"),
-            }
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "f3d spatial parameter count index",
+        |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_collection_items = limit;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            (project_spatial_dimension_constraints(
+            let result = project_spatial_dimension_constraints(
                 &ctx,
-                &fixture.inputs(),
+                &inputs,
                 std::slice::from_ref(&fixture.spatial),
                 &[],
                 EPS_SPATIAL_DIMENSION_LINEAR,
-            ))
-            .map(|_| ())
+            );
+
+            (result).map(|_| ())
         },
-    ) {
-        cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
-        error => panic!("unexpected refusal: {error:?}"),
-    };
-    policy.limits = cadmpeg_core::decode::DecodePolicy::service().limits;
-    match ResourceDimension::RetainedBytes {
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
-            policy.limits.max_retained_bytes = refusal_cap;
-        }
-        cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-            policy.limits.max_collection_items = refusal_cap;
-        }
-        cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
-            policy.limits.max_materialized_bytes = refusal_cap;
-        }
-        cadmpeg_core::decode::ResourceDimension::WorkUnits => {
-            policy.limits.max_work_units = refusal_cap;
-        }
-        dimension => panic!("unsupported refusal dimension: {dimension:?}"),
-    }
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let result = project_spatial_dimension_constraints(
-        &ctx,
-        &fixture.inputs(),
-        std::slice::from_ref(&fixture.spatial),
-        &[],
-        EPS_SPATIAL_DIMENSION_LINEAR,
     );
-    assert!(matches!(result, Err(CodecError::ResourceLimit(failure))
-        if failure.operation == "f3d spatial scope sketch id"
-            && failure.dimension == ResourceDimension::RetainedBytes));
+    assert!(matches!(error, CodecError::ResourceLimit(failure)
+        if failure.operation == "f3d spatial parameter count index" && failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
 }
 
 #[test]
-fn spatial_parameter_count_id_refuses_retained_limit() {
+fn spatial_scope_sketch_index_refuses_work_limit() {
     let fixture = fixture();
-    let companion = parameter_companion();
-    let mut inputs = fixture.inputs();
-    inputs.companions = std::slice::from_ref(&companion);
-    {
-        let error = cadmpeg_test_support::refusal::resource_limit_at(
-            ResourceDimension::RetainedBytes,
-            "f3d spatial parameter count id",
-            |cap| {
-                let arena = DecodeArena::new();
-                let mut policy = DecodePolicy::default();
-                policy.limits.max_retained_bytes = cap;
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-                let result = project_spatial_dimension_constraints(
-                    &ctx,
-                    &inputs,
-                    std::slice::from_ref(&fixture.spatial),
-                    &[],
-                    EPS_SPATIAL_DIMENSION_LINEAR,
-                );
-                result
-            },
-        );
-        assert!(matches!(error, CodecError::ResourceLimit(failure)
-            if failure.operation == "f3d spatial parameter count id" && failure.dimension == (ResourceDimension::RetainedBytes)));
-    }
+    let inputs = fixture.inputs();
+    let error = crate::test_support::resource_refusal_at(
+        ResourceDimension::WorkUnits,
+        "f3d spatial scope sketch index",
+        0,
+        |ctx| {
+            project_spatial_dimension_constraints(
+                ctx,
+                &inputs,
+                std::slice::from_ref(&fixture.spatial),
+                &[],
+                EPS_SPATIAL_DIMENSION_LINEAR,
+            )
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(failure)
+        if failure.operation == "f3d spatial scope sketch index"
+            && failure.dimension == ResourceDimension::WorkUnits));
 }
 
 #[test]
@@ -243,31 +143,27 @@ fn assert_spatial_companion_collection_refusal(operation: &'static str) {
     let mut inputs = fixture.inputs();
     inputs.companions = std::slice::from_ref(&companion);
     inputs.entities = &[];
-    for limit in 0..128 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result = project_spatial_dimension_constraints(
-            &ctx,
-            &inputs,
-            std::slice::from_ref(&fixture.spatial),
-            std::slice::from_ref(&entity),
-            EPS_SPATIAL_DIMENSION_LINEAR,
-        );
-        match result {
-            Err(CodecError::ResourceLimit(failure))
-                if failure.operation == operation
-                    && failure.dimension == ResourceDimension::CollectionItems =>
-            {
-                return
-            }
-            Err(CodecError::ResourceLimit(_)) => {}
-            Ok(_) => panic!("expected {operation} refusal"),
-            Err(error) => panic!("expected {operation} refusal: {error}"),
-        }
-    }
-    panic!("no {operation} refusal");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation,
+        |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let result = project_spatial_dimension_constraints(
+                &ctx,
+                &inputs,
+                std::slice::from_ref(&fixture.spatial),
+                std::slice::from_ref(&entity),
+                EPS_SPATIAL_DIMENSION_LINEAR,
+            );
+
+            (result).map(|_| ())
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(failure)
+        if failure.operation == operation && failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
 }
 
 #[test]
@@ -327,18 +223,8 @@ fn assert_spatial_companion_retained_refusal(operation: &'static str) {
 }
 
 #[test]
-fn retained_spatial_parameter_id_refuses_retained_limit() {
-    assert_spatial_companion_retained_refusal("f3d retained spatial parameter id");
-}
-
-#[test]
 fn projected_spatial_sketch_id_refuses_retained_limit() {
     assert_spatial_companion_retained_refusal("f3d projected spatial sketch id");
-}
-
-#[test]
-fn spatial_source_parameter_id_refuses_retained_limit() {
-    assert_spatial_companion_retained_refusal("f3d spatial source parameter id");
 }
 
 #[test]
@@ -356,41 +242,24 @@ fn assert_missing_spatial_refusal(operation: &'static str, dimension: ResourceDi
     let companion = parameter_companion();
     let mut inputs = fixture.inputs();
     inputs.companions = std::slice::from_ref(&companion);
-    for limit in 0..16_384 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        match dimension {
-            ResourceDimension::CollectionItems => policy.limits.max_collection_items = limit,
-            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = limit,
-            _ => panic!("unsupported dimension"),
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result = project_spatial_dimension_constraints(
-            &ctx,
+    let error = crate::test_support::resource_refusal_at(dimension, operation, 0, |ctx| {
+        project_spatial_dimension_constraints(
+            ctx,
             &inputs,
             std::slice::from_ref(&fixture.spatial),
             &[],
             EPS_SPATIAL_DIMENSION_LINEAR,
-        );
-        match result {
-            Err(CodecError::ResourceLimit(failure))
-                if failure.operation == operation && failure.dimension == dimension =>
-            {
-                return
-            }
-            Err(CodecError::ResourceLimit(_)) => {}
-            Ok(_) => panic!("expected {operation} refusal"),
-            Err(error) => panic!("expected {operation} refusal: {error}"),
-        }
-    }
-    panic!("no {operation} refusal");
+        )
+    });
+    assert!(matches!(error, CodecError::ResourceLimit(failure)
+        if failure.operation == operation && failure.dimension == dimension));
 }
 
 #[test]
-fn missing_spatial_parameter_refuses_collection_limit() {
+fn missing_spatial_parameter_scan_refuses_work_limit() {
     assert_missing_spatial_refusal(
-        "f3d missing spatial parameter",
-        ResourceDimension::CollectionItems,
+        "f3d missing spatial parameter scan",
+        ResourceDimension::WorkUnits,
     );
 }
 

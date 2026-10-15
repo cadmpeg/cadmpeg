@@ -386,7 +386,7 @@ fn display_jt_index_requires_every_declared_header() {
         let physical_size = cadmpeg_core::decode::u64_from_index(data.len());
         let data_len = cadmpeg_core::decode::u64_from_index(data.len());
         let container = Container {
-            data: data.clone().into(),
+            data: (&data[..]).into(),
             physical_size,
             layout: crate::container::test_modern_layout(6),
             entries: vec![DirEntry {
@@ -488,10 +488,12 @@ fn display_jt_index_requires_every_declared_header() {
         assert_eq!(sequences[0].framed_byte_len(), 48);
         assert_eq!(sequences[0].tail, [6, 5]);
 
-        let mut malformed_compression = container.clone();
-        malformed_compression.data.to_mut()[193..197].copy_from_slice(
+        let mut malformed_compression_bytes = data.clone();
+        malformed_compression_bytes[193..197].copy_from_slice(
             &(u32::try_from(compressed.len()).expect("fixture value fits u32") + 2).to_le_bytes(),
         );
+        let mut malformed_compression = container.clone();
+        malformed_compression.data = malformed_compression_bytes.as_slice().into();
         assert!(
             with_jt_context(&malformed_compression, |ctx| super::display_jt_segments(
                 ctx,
@@ -502,8 +504,10 @@ fn display_jt_index_requires_every_declared_header() {
             .is_empty()
         );
 
+        let mut malformed_bytes = data.clone();
+        malformed_bytes[28] = b'X';
         let mut malformed = container;
-        malformed.data.to_mut()[28] = b'X';
+        malformed.data = malformed_bytes.as_slice().into();
         assert!(super::display_jt_indices(ctx, &malformed)
             .unwrap()
             .is_empty());
@@ -532,7 +536,7 @@ fn display_jt_shape_lod_requires_canonical_end_marker_and_tail() {
     let physical_size = cadmpeg_core::decode::u64_from_index(data.len());
     let data_len = cadmpeg_core::decode::u64_from_index(data.len());
     let container = Container {
-        data: data.into(),
+        data: (&data[..]).into(),
         physical_size,
         layout: crate::container::test_modern_layout(6),
         entries: vec![DirEntry {
@@ -579,12 +583,10 @@ fn display_jt_shape_lod_requires_canonical_end_marker_and_tail() {
         assert!(serde_json::from_value::<super::DisplayJtShapeLodElement>(invalid).is_err());
     }
 
+    let mut malformed_bytes = data.clone();
+    *malformed_bytes.last_mut().expect("required invariant") = 1;
     let mut malformed = container;
-    *malformed
-        .data
-        .to_mut()
-        .last_mut()
-        .expect("required invariant") = 1;
+    malformed.data = malformed_bytes.as_slice().into();
     assert!(
         with_jt_context(&malformed, |ctx| super::display_jt_shape_lod_elements(
             ctx,
@@ -656,7 +658,7 @@ fn display_jt_shape_lod_binding_resolves_property_table_segment_reference() {
     let physical_size = cadmpeg_core::decode::u64_from_index(data.len());
     let data_len = cadmpeg_core::decode::u64_from_index(data.len());
     let container = Container {
-        data: data.into(),
+        data: (&data[..]).into(),
         physical_size,
         layout: crate::container::test_modern_layout(6),
         entries: vec![DirEntry {
@@ -1664,6 +1666,7 @@ fn display_jt_material_accumulation_respects_inhibit_final_and_force() {
         shininess: super::JtShininess::new(1.0).unwrap(),
         source_offset: 0,
     };
+    let ctx = cadmpeg_test_support::service_decode_context();
     let mut path = super::DisplayJtPath {
         matrix: [[0.0; 4]; 4],
         final_transform: false,
@@ -1672,6 +1675,7 @@ fn display_jt_material_accumulation_respects_inhibit_final_and_force() {
         final_material: false,
         node_path: Vec::new(),
         instance_path: Vec::new(),
+        instance_storage: ctx.provisional_retained("test instance path").unwrap(),
     };
     super::accumulate_display_jt_material(&mut path, &material([0.1, 0.2, 0.3, 0.4], 0x01, 1 << 8));
     assert_eq!(
@@ -1860,7 +1864,7 @@ fn jt9_topology_packets_retain_decoded_primal_values() {
     let physical_size = cadmpeg_core::decode::u64_from_index(data.len());
     let data_len = cadmpeg_core::decode::u64_from_index(data.len());
     let container = crate::container::Container {
-        data: data.into(),
+        data: (&data[..]).into(),
         physical_size,
         layout: crate::container::test_modern_layout(1),
         entries: vec![crate::container::DirEntry {

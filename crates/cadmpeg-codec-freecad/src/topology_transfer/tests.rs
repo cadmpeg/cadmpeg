@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 mod connectivity_storage;
+mod consumer_demand;
 mod numeric_text;
 mod range_admission;
 mod source_indices;

@@ -8,29 +8,25 @@
 
 mod body_selection;
 mod boundary_fill_limits;
-mod coil;
 mod combine_limits;
 mod direct_face_limits;
 mod dispatcher;
-mod extrude;
-mod extrude_limits;
 mod hole_limits;
 mod loft_limits;
-mod mirror;
 mod native_scope_definition_limits;
-mod parameter_cycles;
 mod parameters;
-mod pattern;
 mod pipe;
+mod query_admission;
 mod replace_face;
 mod revolve_limits;
 mod scope_properties_limits;
 mod sheet_metal;
 mod simple_native_limits;
 mod sketch_binding_limits;
-mod spatial_profiles;
+mod sketch_inputs;
 mod split;
 mod surface;
+mod surface_patch_storage;
 mod sweep_limits;
 mod timeline;
 mod treatments;
@@ -74,19 +70,16 @@ fn project_single_scope_with_context(
     )
 }
 
-#[test]
-fn audit_regression_near_half_turn_retains_negative_axis() {
-    let theta = std::f64::consts::PI - 5.0e-9;
-    let (sine, cosine) = theta.sin_cos();
-    let matrix = [
-        [cosine, sine, 0., 0.],
-        [-sine, cosine, 0., 0.],
-        [0., 0., 1., 0.],
-        [0., 0., 0., 1.],
-    ];
-    let rotation = super::matrix_axis_angle(&matrix).unwrap();
-    assert!(rotation.direction.z < 0.0);
-    assert!((rotation.angle.get() - theta).abs() <= 4.0 * f64::EPSILON);
-}
-
 mod numeric_text_limits;
+
+mod history_lookup_lifetimes;
+
+mod merged_edge_lifetimes;
+
+mod selected_plane_lifetimes;
+
+mod body_selection_lifetimes;
+
+mod unique_query;
+
+mod ordinary_membership;

@@ -410,16 +410,25 @@ impl DesignTimelineFrame {
                 "timeline.item_record_index_offsets must start after the item count".into(),
             );
         }
-        if items.windows(2).any(|pair| {
-            pair[0]
-                .offset
-                .checked_add(11)
-                .is_none_or(|minimum| pair[1].offset < minimum)
-        }) || items
-            .iter()
-            .any(|item| item.offset.checked_add(10).is_none_or(|after| after > end))
-        {
-            return Err("timeline.item_record_index_offsets overlap or exceed the frame".into());
+        admission
+            .work(
+                cadmpeg_core::decode::u64_from_index(items.len()),
+                "validate F3D timeline item offsets",
+            )
+            .map_err(DesignTimelineFrameError::Resource)?;
+        let mut previous_offset: Option<u64> = None;
+        for item in &items {
+            let overlaps = previous_offset.is_some_and(|previous| {
+                previous
+                    .checked_add(11)
+                    .is_none_or(|minimum| item.offset < minimum)
+            });
+            if overlaps || item.offset.checked_add(10).is_none_or(|after| after > end) {
+                return Err(
+                    "timeline.item_record_index_offsets overlap or exceed the frame".into(),
+                );
+            }
+            previous_offset = Some(item.offset);
         }
         // The offset check above leaves `items` in ascending offset order.
         let mut seen = std::collections::BTreeMap::new();
@@ -814,7 +823,7 @@ impl DesignEntityHeader {
             .flat_map(|list| list.references.iter().map(|row| &row.value))
     }
 
-    /// Member run owned by a sketch registration.
+    /// Borrows the sketch member run when this registration has one.
     pub(crate) fn sketch_members(&self) -> Option<&ReferenceRun<u32>> {
         match &self.registration.0 {
             DesignEntityRegistrationKind::Sketch { members, .. } => Some(members),
@@ -824,12 +833,9 @@ impl DesignEntityHeader {
 
     /// Member record indices.
     pub(crate) fn member_values(&self) -> impl Iterator<Item = &u32> {
-        match &self.registration.0 {
-            DesignEntityRegistrationKind::Sketch { members, .. } => Some(members),
-            DesignEntityRegistrationKind::Other(_) => None,
-        }
-        .into_iter()
-        .flat_map(ReferenceRun::values)
+        self.sketch_members()
+            .into_iter()
+            .flat_map(ReferenceRun::values)
     }
 
     /// Whether the entity belongs to the sketch module.

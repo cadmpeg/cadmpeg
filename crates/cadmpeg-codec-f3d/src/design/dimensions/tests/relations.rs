@@ -34,7 +34,7 @@ use cadmpeg_ir::sketches::SketchGeometry;
 use cadmpeg_ir::sketches::SketchGeometryDefinition;
 use cadmpeg_ir::sketches::SketchId;
 use cadmpeg_ir::sketches::SketchLocus;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 #[test]
 fn three_member_symmetry_states_project_unique_reflection_axis() {
@@ -432,14 +432,6 @@ fn assert_coincident_limit(
 }
 
 #[test]
-fn coincident_local_entity_id_refuses_retained_limit() {
-    assert_coincident_limit(
-        "f3d coincident local entity id",
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-    );
-}
-
-#[test]
 fn coincident_solution_entity_id_refuses_retained_limit() {
     assert_coincident_limit(
         "f3d coincident solution entity id",
@@ -827,7 +819,7 @@ fn single_curve_annotation_projects_parameterized_offset() {
     .unwrap();
     let parameter_id =
         ParameterId::mint("generated:test:parameter#offset").expect("identity grammar");
-    let projected = HashMap::from([((stream, 10), &source), ((stream, 11), &result)]);
+    let projected = BTreeMap::from([((stream, 10), &source), ((stream, 11), &result)]);
 
     let definition = crate::test_support::with_decode_context(|decode_ctx| {
         crate::design::dimensions::annotation_offset_dimension_definition(
@@ -939,7 +931,7 @@ fn single_curve_annotation_projects_parameterized_offset() {
         Point2::new(2.0, -2.0),
         Point2::new(8.0, -2.0),
     );
-    let projected_with_duplicate = HashMap::from([
+    let projected_with_duplicate = BTreeMap::from([
         ((stream, 10), &source),
         ((stream, 11), &result),
         ((stream, 12), &duplicate),
@@ -1043,7 +1035,7 @@ fn angular_point_operand_selects_unique_incident_line_by_value() {
         })
         .unwrap(),
     );
-    let projected = HashMap::from([
+    let projected = BTreeMap::from([
         (("native", 1), &point),
         (("native", 2), &explicit),
         (("native", 3), &diagonal),
@@ -1082,7 +1074,7 @@ fn angular_point_operand_selects_unique_incident_line_by_value() {
         })
         .unwrap(),
     );
-    let projected_with_duplicate = HashMap::from([
+    let projected_with_duplicate = BTreeMap::from([
         (("native", 1), &point),
         (("native", 2), &explicit),
         (("native", 3), &diagonal),

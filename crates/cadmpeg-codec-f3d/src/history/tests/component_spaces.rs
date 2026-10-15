@@ -9,7 +9,7 @@
 use crate::history::{
     bind_historical_recipe_reference_candidates, direct_face_recipe_candidates,
     historical_recipe_faces, recipe_reference_common_vertex,
-    selection::bind_extrude_selection_history,
+    selection::{bind_extrude_selection_history, historical_extrude_selection_identity_kind},
 };
 use crate::history_records::{
     AsmDeltaState, AsmHistoricalCoedge, AsmHistoricalEdge, AsmHistoricalRelation,
@@ -26,11 +26,15 @@ fn extrude_history_identity_resolves_only_in_context_component_breps() {
             AsmHistoricalEntityKind::Loop => topology.loops.push(42),
             _ => panic!("test history kind"),
         }
-        let id = crate::ids::native_scoped_id(
-            &format!("Asset/Breps.BlobParts/{blob}"),
-            "asm-history",
-            0,
-        );
+        let id = crate::test_support::with_decode_context(|ctx| {
+            crate::ids::native_scoped_id(
+                ctx,
+                &format!("Asset/Breps.BlobParts/{blob}"),
+                "asm-history",
+                0,
+            )
+            .expect("test F3D native identity")
+        });
         AsmHistory {
             states: vec![AsmDeltaState {
                 id: format!("{id}:state#{state_id}"),
@@ -60,7 +64,10 @@ fn extrude_history_identity_resolves_only_in_context_component_breps() {
     let design_stream = "Asset/Design1/BulkStream.dat";
     let naming_spaces = vec![
         crate::records::recipes::DesignComponentNamingSpace {
-            id: crate::ids::native_design_component_naming_space_id(design_stream, 0),
+            id: crate::test_support::with_decode_context(|ctx| {
+                crate::ids::native_design_component_naming_space_id(ctx, design_stream, 0)
+                    .expect("test F3D native identity")
+            }),
             byte_offset: 0,
             component_record_index: 10,
             context_uuid: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
@@ -70,7 +77,10 @@ fn extrude_history_identity_resolves_only_in_context_component_breps() {
             context_uuid_offset: 12,
         },
         crate::records::recipes::DesignComponentNamingSpace {
-            id: crate::ids::native_design_component_naming_space_id(design_stream, 100),
+            id: crate::test_support::with_decode_context(|ctx| {
+                crate::ids::native_design_component_naming_space_id(ctx, design_stream, 100)
+                    .expect("test F3D native identity")
+            }),
             byte_offset: 100,
             component_record_index: 20,
             context_uuid: "ffffffff-eeee-4ddd-8ccc-bbbbbbbbbbbb"
@@ -83,7 +93,10 @@ fn extrude_history_identity_resolves_only_in_context_component_breps() {
     let binding = |at, entity_suffix, blob_name: &str| {
         crate::records::bodies::DesignBodyBinding::try_from(
             crate::records::bodies::DesignBodyBindingWire::<String> {
-                id: crate::ids::native_design_body_binding_id(design_stream, at),
+                id: crate::test_support::with_decode_context(|ctx| {
+                    crate::ids::native_design_body_binding_id(ctx, design_stream, at)
+                        .expect("test F3D native identity")
+                }),
                 stream: design_stream.into(),
                 pair_count: 1,
                 pair_ordinal: 0,
@@ -109,7 +122,15 @@ fn extrude_history_identity_resolves_only_in_context_component_breps() {
     let mut members = vec![
         crate::records::topology::extrude_selection::DesignExtrudeSelectionMember::try_new(
             crate::records::topology::extrude_selection::DesignExtrudeSelectionMemberDraft {
-                id: crate::ids::native_scoped_id(design_stream, "extrude-selection-member", 400),
+                id: crate::test_support::with_decode_context(|ctx| {
+                    crate::ids::native_scoped_id(
+                        ctx,
+                        design_stream,
+                        "extrude-selection-member",
+                        400,
+                    )
+                    .expect("test F3D native identity")
+                }),
                 group_record_index: 1,
                 group_member_ordinal: 0,
                 record_index: 2,
@@ -166,6 +187,235 @@ fn extrude_history_identity_resolves_only_in_context_component_breps() {
 }
 
 #[test]
+fn component_history_context_comparison_propagates_work_refusal() {
+    let design_stream = "Asset/Design1/BulkStream.dat";
+    let naming_spaces = [crate::records::recipes::DesignComponentNamingSpace {
+        id: crate::test_support::with_decode_context(|ctx| {
+            crate::ids::native_design_component_naming_space_id(ctx, design_stream, 0)
+                .expect("test F3D native identity")
+        }),
+        byte_offset: 0,
+        component_record_index: 10,
+        context_uuid: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+            .to_owned()
+            .try_into()
+            .expect("GUID"),
+        context_uuid_offset: 12,
+    }];
+    let member =
+        crate::records::topology::extrude_selection::DesignExtrudeSelectionMember::try_new(
+            crate::records::topology::extrude_selection::DesignExtrudeSelectionMemberDraft {
+                id: crate::test_support::with_decode_context(|ctx| {
+                    crate::ids::native_scoped_id(
+                        ctx,
+                        design_stream,
+                        "extrude-selection-member",
+                        400,
+                    )
+                    .expect("test F3D native identity")
+                }),
+                group_record_index: 1,
+                group_member_ordinal: 0,
+                record_index: 2,
+                byte_offset: 400,
+                class_tag: crate::records::references::DesignClassTag::try_from("300".to_owned())
+                    .unwrap(),
+                local_id: 42,
+                local_id_offset: 421,
+                asset_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
+                    "11111111-2222-4333-8444-555555555555".to_owned(),
+                )
+                .unwrap(),
+                asset_id_offset: 433,
+                context_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
+                    "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee".to_owned(),
+                )
+                .unwrap(),
+                context_id_offset: 505,
+                tail_slot_present: false,
+                tail_slot_offset: 581,
+                resolved_geometry: None,
+                operand_identity_ids: Vec::new(),
+                historical: None,
+                next_record_index: 3,
+                next_byte_offset: 590,
+            },
+        )
+        .unwrap();
+
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "compare F3D component context UUID",
+        0,
+        |decode| {
+            historical_extrude_selection_identity_kind(decode, &member, &naming_spaces, &[], &[])
+                .map(|_| ())
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "compare F3D component context UUID"
+    ));
+}
+
+struct ComponentHistorySelectionFixture {
+    member: crate::records::topology::extrude_selection::DesignExtrudeSelectionMember,
+    naming_spaces: [crate::records::recipes::DesignComponentNamingSpace; 1],
+    body_bindings: [crate::records::bodies::DesignBodyBinding; 1],
+    histories: [AsmHistory; 2],
+}
+
+fn component_history_selection_fixture() -> ComponentHistorySelectionFixture {
+    let design_stream = "Asset/Design1/BulkStream.dat";
+    let naming_spaces = [crate::records::recipes::DesignComponentNamingSpace {
+        id: crate::test_support::with_decode_context(|ctx| {
+            crate::ids::native_design_component_naming_space_id(ctx, design_stream, 0)
+                .expect("test F3D native identity")
+        }),
+        byte_offset: 0,
+        component_record_index: 10,
+        context_uuid: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+            .to_owned()
+            .try_into()
+            .expect("GUID"),
+        context_uuid_offset: 12,
+    }];
+    let body_bindings = [crate::records::bodies::DesignBodyBinding::try_from(
+        crate::records::bodies::DesignBodyBindingWire::<String> {
+            id: crate::test_support::with_decode_context(|ctx| {
+                crate::ids::native_design_body_binding_id(ctx, design_stream, 200)
+                    .expect("test F3D native identity")
+            }),
+            stream: design_stream.into(),
+            pair_count: 1,
+            pair_ordinal: 0,
+            asm_body_key: 1,
+            asm_body_key_offset: 200,
+            entity_suffix: 15,
+            entity_suffix_offset: 208,
+            blob_name: "BREP.fixture-alpha.smbh".into(),
+            blob_name_offset: 216,
+            body: None,
+        },
+    )
+    .unwrap()];
+    let history_id = crate::test_support::with_decode_context(|ctx| {
+        crate::ids::native_scoped_id(
+            ctx,
+            "Asset/Breps.BlobParts/BREP.fixture-alpha.smbh",
+            "asm-history",
+            0,
+        )
+        .expect("test F3D native identity")
+    });
+    let history = AsmHistory {
+        id: history_id,
+        byte_offset: 0,
+        preamble: None,
+        record_table_binding_budget_exceeded: false,
+        states: Vec::new(),
+    };
+    let histories = [history.clone(), history];
+    let member =
+        crate::records::topology::extrude_selection::DesignExtrudeSelectionMember::try_new(
+            crate::records::topology::extrude_selection::DesignExtrudeSelectionMemberDraft {
+                id: crate::test_support::with_decode_context(|ctx| {
+                    crate::ids::native_scoped_id(
+                        ctx,
+                        design_stream,
+                        "extrude-selection-member",
+                        400,
+                    )
+                    .expect("test F3D native identity")
+                }),
+                group_record_index: 1,
+                group_member_ordinal: 0,
+                record_index: 2,
+                byte_offset: 400,
+                class_tag: crate::records::references::DesignClassTag::try_from("300".to_owned())
+                    .unwrap(),
+                local_id: 42,
+                local_id_offset: 421,
+                asset_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
+                    "11111111-2222-4333-8444-555555555555".to_owned(),
+                )
+                .unwrap(),
+                asset_id_offset: 433,
+                context_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
+                    "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee".to_owned(),
+                )
+                .unwrap(),
+                context_id_offset: 505,
+                tail_slot_present: false,
+                tail_slot_offset: 581,
+                resolved_geometry: None,
+                operand_identity_ids: Vec::new(),
+                historical: None,
+                next_record_index: 3,
+                next_byte_offset: 590,
+            },
+        )
+        .unwrap();
+    ComponentHistorySelectionFixture {
+        member,
+        naming_spaces,
+        body_bindings,
+        histories,
+    }
+}
+
+#[test]
+fn component_history_blob_scan_propagates_work_refusal() {
+    let fixture = component_history_selection_fixture();
+    let operation = "match F3D component history blobs";
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        operation,
+        0,
+        |decode| {
+            historical_extrude_selection_identity_kind(
+                decode,
+                &fixture.member,
+                &fixture.naming_spaces,
+                &fixture.body_bindings,
+                &fixture.histories,
+            )
+            .map(|_| ())
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}
+
+#[test]
+fn component_history_id_dedup_propagates_work_refusal() {
+    let fixture = component_history_selection_fixture();
+    let operation = "compare F3D component history IDs";
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        operation,
+        0,
+        |decode| {
+            historical_extrude_selection_identity_kind(
+                decode,
+                &fixture.member,
+                &fixture.naming_spaces,
+                &fixture.body_bindings,
+                &fixture.histories,
+            )
+            .map(|_| ())
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}
+
+#[test]
 fn historical_recipe_join_unions_fragments_without_raw_selector_equality() {
     let mut topology = AsmHistoricalTopology {
         faces: vec![10, 11, 12],
@@ -205,7 +455,7 @@ fn historical_recipe_join_unions_fragments_without_raw_selector_equality() {
     };
 
     crate::test_support::with_decode_context(|decode_ctx| {
-        bind_historical_recipe_reference_candidates(decode_ctx, &mut reference, &topology)
+        bind_reference(decode_ctx, &mut reference, &topology)
     })
     .unwrap();
 
@@ -316,66 +566,74 @@ fn recipe_limit_case() -> (
 
 #[test]
 fn historical_recipe_live_faces_refuse_collection_limit() {
-    let (topology, mut reference) = recipe_limit_case();
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error =
-        bind_historical_recipe_reference_candidates(&ctx, &mut reference, &topology).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index F3D live recipe faces")
+    let operation = "index F3D live recipe faces";
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation,
+        0,
+        |decode| {
+            let (topology, mut reference) = recipe_limit_case();
+            bind_reference(decode, &mut reference, &topology)
+        },
     );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
 }
 
 #[test]
 fn historical_recipe_live_edges_refuse_collection_limit() {
-    let (topology, mut reference) = recipe_limit_case();
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 1;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error =
-        bind_historical_recipe_reference_candidates(&ctx, &mut reference, &topology).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index F3D live recipe edges")
+    let operation = "index F3D live recipe edges";
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation,
+        0,
+        |decode| {
+            let (topology, mut reference) = recipe_limit_case();
+            bind_reference(decode, &mut reference, &topology)
+        },
     );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
 }
 
 #[test]
 fn historical_recipe_face_candidates_refuse_collection_limit() {
-    let (topology, mut reference) = recipe_limit_case();
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 2;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error =
-        bind_historical_recipe_reference_candidates(&ctx, &mut reference, &topology).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D recipe reference faces")
+    let operation = "collect F3D recipe reference faces";
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation,
+        0,
+        |decode| {
+            let (topology, mut reference) = recipe_limit_case();
+            bind_reference(decode, &mut reference, &topology)
+        },
     );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
 }
 
 #[test]
 fn historical_recipe_edge_candidates_refuse_collection_limit() {
-    let (topology, mut reference) = recipe_limit_case();
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 3;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error =
-        bind_historical_recipe_reference_candidates(&ctx, &mut reference, &topology).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D recipe reference edges")
+    let operation = "collect F3D recipe reference edges";
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation,
+        0,
+        |decode| {
+            let (topology, mut reference) = recipe_limit_case();
+            bind_reference(decode, &mut reference, &topology)
+        },
     );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
 }
 
 #[test]
@@ -392,7 +650,7 @@ fn historical_recipe_identity_refuses_retained_limit() {
             policy.limits.max_retained_bytes = cap;
             let (ctx, _) =
                 cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            bind_historical_recipe_reference_candidates(&ctx, &mut reference, &topology)
+            bind_reference(&ctx, &mut reference, &topology)
         },
     ) {
         cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
@@ -400,8 +658,7 @@ fn historical_recipe_identity_refuses_retained_limit() {
     };
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error =
-        bind_historical_recipe_reference_candidates(&ctx, &mut reference, &topology).unwrap_err();
+    let error = bind_reference(&ctx, &mut reference, &topology).unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "retain F3D historical face identity")
@@ -410,17 +667,56 @@ fn historical_recipe_identity_refuses_retained_limit() {
 
 #[test]
 fn historical_recipe_face_list_refuses_collection_limit() {
-    let (topology, _) = recipe_limit_case();
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 1;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = historical_recipe_faces(&ctx, 301, &topology).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D historical recipe faces")
+    let operation = "collect F3D historical recipe faces";
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation,
+        0,
+        |decode| {
+            let (topology, _) = recipe_limit_case();
+            recipe_faces(decode, 301, &topology).map(|_| ())
+        },
     );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}
+
+#[test]
+fn historical_recipe_face_identity_refuses_validation_work() {
+    let operation = "validate F3D historical face identity";
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        operation,
+        0,
+        |decode| {
+            let (topology, _) = recipe_limit_case();
+            recipe_faces(decode, 301, &topology).map(|_| ())
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}
+
+#[test]
+fn historical_recipe_edge_identity_refuses_validation_work() {
+    let operation = "validate F3D historical edge identity";
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        operation,
+        0,
+        |decode| {
+            let (topology, mut reference) = recipe_limit_case();
+            bind_reference(decode, &mut reference, &topology)
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
 }
 
 #[test]
@@ -540,4 +836,22 @@ fn corner_recipe_intersects_vertex_sets_across_fragment_unions() {
         .unwrap(),
         Some(3)
     );
+}
+
+fn bind_reference(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    reference: &mut crate::records::dimensions::DesignRecipeReference,
+    topology: &AsmHistoricalTopology,
+) -> Result<(), cadmpeg_core::CodecError> {
+    let index = crate::history::recipe_topology_index(ctx, topology)?;
+    bind_historical_recipe_reference_candidates(ctx, reference, &index)
+}
+
+fn recipe_faces(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    design_reference: i64,
+    topology: &AsmHistoricalTopology,
+) -> Result<Vec<cadmpeg_ir::ids::FaceId>, cadmpeg_core::CodecError> {
+    let index = crate::history::recipe_topology_index(ctx, topology)?;
+    historical_recipe_faces(ctx, design_reference, &index)
 }

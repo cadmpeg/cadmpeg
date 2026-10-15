@@ -15,18 +15,12 @@ use super::{
     push_form_cage_id, FormCageSerializers,
 };
 
-fn parsed_serializers(
+fn parsed_serializers<'ctx>(
+    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     records: &crate::design::decode::sketch::IndexedRecordOffsets,
-) -> FormCageSerializers {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::default(),
-    )
-    .unwrap();
-    form_cage_serializers(&ctx, bytes, records).unwrap()
+) -> FormCageSerializers<'ctx> {
+    form_cage_serializers(ctx, bytes, records).unwrap()
 }
 
 #[test]
@@ -331,35 +325,37 @@ fn form_cage_surface_refuses_collection_limit() {
 
 #[test]
 fn serializer_joins_surface_to_exact_cage_entry_name() {
-    let entry_name = "TSpline.00000000-0000-0000-0000-000000000000.tsm";
-    for class in [b"315", b"349", b"360", b"431", b"446"] {
-        let mut serializer = indexed_frame(class, 8305, 132);
-        serializer[21..25].copy_from_slice(&48u32.to_le_bytes());
-        for (ordinal, code_unit) in entry_name.encode_utf16().enumerate() {
-            let at = 25 + ordinal * 2;
-            serializer[at..at + 2].copy_from_slice(&code_unit.to_le_bytes());
+    crate::test_support::with_decode_context(|cage_ctx| {
+        let entry_name = "TSpline.00000000-0000-0000-0000-000000000000.tsm";
+        for class in [b"315", b"349", b"360", b"431", b"446"] {
+            let mut serializer = indexed_frame(class, 8305, 132);
+            serializer[21..25].copy_from_slice(&48u32.to_le_bytes());
+            for (ordinal, code_unit) in entry_name.encode_utf16().enumerate() {
+                let at = 25 + ordinal * 2;
+                serializer[at..at + 2].copy_from_slice(&code_unit.to_le_bytes());
+            }
+            serializer[121] = 1;
+            serializer[122..130].copy_from_slice(&8304u64.to_le_bytes());
+            let following = indexed_frame(b"457", 8306, 15);
+            let bytes = [serializer, following].concat();
+            assert_eq!(
+                parsed_serializers(
+                    cage_ctx,
+                    &bytes,
+                    &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+                )
+                .entry_name(cage_ctx, 8304)
+                .unwrap(),
+                Some(entry_name)
+            );
         }
-        serializer[121] = 1;
-        serializer[122..130].copy_from_slice(&8304u64.to_le_bytes());
-        let following = indexed_frame(b"457", 8306, 15);
-        let bytes = [serializer, following].concat();
-        assert_eq!(
-            parsed_serializers(
-                &bytes,
-                &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
-            )
-            .entry_name(8304),
-            Some(entry_name)
-        );
-    }
+    });
 }
 
 fn assert_form_serializer_refusal(
     dimension: cadmpeg_core::decode::ResourceDimension,
-    limit: u64,
     operation: &'static str,
 ) {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
 
     let entry_name = "TSpline.00000000-0000-0000-0000-000000000000.tsm";
@@ -374,27 +370,22 @@ fn assert_form_serializer_refusal(
     let following = indexed_frame(b"457", 8306, 15);
     let bytes = [serializer, following].concat();
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    match dimension {
-        ResourceDimension::CollectionItems => policy.limits.max_collection_items = limit,
-        ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = limit,
-        ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = limit,
-        _ => panic!("test dimension must be a serializer allocation dimension"),
-    }
-
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(matches!(form_cage_serializers(&ctx, &bytes, &records),
-        Err(CodecError::ResourceLimit(failure))
-            if failure.operation == operation && failure.dimension == dimension));
+    let error = crate::test_support::resource_refusal_at(dimension, operation, 0, |ctx| {
+        let serializers = form_cage_serializers(ctx, &bytes, &records)?;
+        if operation == "f3d form serializer entry lookup" {
+            serializers.entry_name(ctx, 8304)?;
+        }
+        Ok(())
+    });
+    assert!(matches!(error, CodecError::ResourceLimit(failure)
+        if failure.operation == operation && failure.dimension == dimension));
 }
 
 #[test]
-fn form_serializer_offset_refuses_collection_limit() {
+fn form_serializer_source_refuses_work_limit() {
     assert_form_serializer_refusal(
-        cadmpeg_core::decode::ResourceDimension::CollectionItems,
-        0,
-        "f3d form serializer offset",
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "f3d form serializer source",
     );
 }
 
@@ -402,7 +393,6 @@ fn form_serializer_offset_refuses_collection_limit() {
 fn form_serializer_name_refuses_materialized_limit() {
     assert_form_serializer_refusal(
         cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
-        47,
         "f3d form serializer name materialization",
     );
 }
@@ -427,59 +417,61 @@ fn form_serializer_name_refuses_work_limit() {
         ResourceDimension::WorkUnits,
         "f3d form serializer name materialization",
         0,
-        |ctx| form_cage_serializers(ctx, &bytes, &records),
+        |ctx| form_cage_serializers(ctx, &bytes, &records).map(|_| ()),
     );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "f3d form serializer name materialization"));
 }
 
 #[test]
-fn form_serializer_entry_name_refuses_retained_limit() {
+fn form_serializer_entry_lookup_refuses_work_limit() {
     assert_form_serializer_refusal(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-        47,
-        "f3d form serializer entry name",
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "f3d form serializer entry lookup",
     );
 }
 
 #[test]
-fn form_serializer_unicode_name_refuses_exact_retained_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
+fn form_serializer_unicode_name_refuses_materialized_limit() {
+    crate::test_support::with_decode_context(|cage_ctx| {
+        use cadmpeg_core::decode::ResourceDimension;
+        use cadmpeg_core::CodecError;
 
-    let entry_name = format!("TSpline.{}😀.tsm", "é".repeat(34));
-    assert_eq!(entry_name.encode_utf16().count(), 48);
-    let mut serializer = indexed_frame(b"315", 8305, 132);
-    serializer[21..25].copy_from_slice(&48u32.to_le_bytes());
-    for (ordinal, code_unit) in entry_name.encode_utf16().enumerate() {
-        let at = 25 + ordinal * 2;
-        serializer[at..at + 2].copy_from_slice(&code_unit.to_le_bytes());
-    }
-    serializer[121] = 1;
-    serializer[122..130].copy_from_slice(&8304u64.to_le_bytes());
-    let following = indexed_frame(b"457", 8306, 15);
-    let bytes = [serializer, following].concat();
-    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
-    assert_eq!(
-        parsed_serializers(&bytes, &records).entry_name(8304),
-        Some(entry_name.as_str())
-    );
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_retained_bytes = u64::try_from(entry_name.len()).unwrap() - 1;
-
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(matches!(form_cage_serializers(&ctx, &bytes, &records),
-        Err(CodecError::ResourceLimit(failure))
-            if failure.dimension == ResourceDimension::RetainedBytes
-                && failure.operation == "f3d form serializer entry name"));
+        let entry_name = format!("TSpline.{}😀.tsm", "é".repeat(34));
+        assert_eq!(entry_name.encode_utf16().count(), 48);
+        let mut serializer = indexed_frame(b"315", 8305, 132);
+        serializer[21..25].copy_from_slice(&48u32.to_le_bytes());
+        for (ordinal, code_unit) in entry_name.encode_utf16().enumerate() {
+            let at = 25 + ordinal * 2;
+            serializer[at..at + 2].copy_from_slice(&code_unit.to_le_bytes());
+        }
+        serializer[121] = 1;
+        serializer[122..130].copy_from_slice(&8304u64.to_le_bytes());
+        let following = indexed_frame(b"457", 8306, 15);
+        let bytes = [serializer, following].concat();
+        let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+        assert_eq!(
+            parsed_serializers(cage_ctx, &bytes, &records)
+                .entry_name(cage_ctx, 8304)
+                .unwrap(),
+            Some(entry_name.as_str())
+        );
+        let error = crate::test_support::resource_refusal_at(
+            ResourceDimension::MaterializedBytes,
+            "f3d form serializer name materialization",
+            0,
+            |ctx| form_cage_serializers(ctx, &bytes, &records).map(|_| ()),
+        );
+        assert!(matches!(error, CodecError::ResourceLimit(failure)
+        if failure.dimension == ResourceDimension::MaterializedBytes
+            && failure.operation == "f3d form serializer name materialization"));
+    });
 }
 
 #[test]
 fn form_serializer_entry_index_refuses_collection_limit() {
     assert_form_serializer_refusal(
         cadmpeg_core::decode::ResourceDimension::CollectionItems,
-        2,
         "f3d form serializer entry index",
     );
 }
@@ -488,79 +480,87 @@ fn form_serializer_entry_index_refuses_collection_limit() {
 fn form_serializer_order_refuses_collection_limit() {
     assert_form_serializer_refusal(
         cadmpeg_core::decode::ResourceDimension::CollectionItems,
-        3,
         "f3d form serializer order",
     );
 }
 
 #[test]
 fn serializer_joins_class_335_surface_with_class_331_pair() {
-    let entry_name = "TSpline.00000000-0000-0000-0000-000000000000.tsm";
-    let mut serializer = indexed_frame(b"335", 8305, 132);
-    serializer[21..25].copy_from_slice(&48u32.to_le_bytes());
-    for (ordinal, code_unit) in entry_name.encode_utf16().enumerate() {
-        let at = 25 + ordinal * 2;
-        serializer[at..at + 2].copy_from_slice(&code_unit.to_le_bytes());
-    }
-    serializer[121] = 1;
-    serializer[122..130].copy_from_slice(&8304u64.to_le_bytes());
-    let following = indexed_frame(b"331", 8306, 15);
-    let surface = indexed_frame(b"358", 8304, 15);
-    let bytes = [serializer, following, surface].concat();
-    assert_eq!(
-        parsed_serializers(
-            &bytes,
-            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+    crate::test_support::with_decode_context(|cage_ctx| {
+        let entry_name = "TSpline.00000000-0000-0000-0000-000000000000.tsm";
+        let mut serializer = indexed_frame(b"335", 8305, 132);
+        serializer[21..25].copy_from_slice(&48u32.to_le_bytes());
+        for (ordinal, code_unit) in entry_name.encode_utf16().enumerate() {
+            let at = 25 + ordinal * 2;
+            serializer[at..at + 2].copy_from_slice(&code_unit.to_le_bytes());
+        }
+        serializer[121] = 1;
+        serializer[122..130].copy_from_slice(&8304u64.to_le_bytes());
+        let following = indexed_frame(b"331", 8306, 15);
+        let surface = indexed_frame(b"358", 8304, 15);
+        let bytes = [serializer, following, surface].concat();
+        assert_eq!(
+            parsed_serializers(
+                cage_ctx,
+                &bytes,
+                &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            )
+            .entry_name(cage_ctx, 8304)
+            .unwrap(),
+            Some(entry_name)
+        );
+
+        let mut wrong_pair = bytes.clone();
+        wrong_pair[132 + 4..132 + 7].copy_from_slice(b"457");
+        assert!(!parsed_serializers(
+            cage_ctx,
+            &wrong_pair,
+            &crate::design::test_support::indexed_record_offsets_for_test(&wrong_pair),
         )
-        .entry_name(8304),
-        Some(entry_name)
-    );
+        .ordered
+        .contains(&8304));
 
-    let mut wrong_pair = bytes.clone();
-    wrong_pair[132 + 4..132 + 7].copy_from_slice(b"457");
-    assert!(!parsed_serializers(
-        &wrong_pair,
-        &crate::design::test_support::indexed_record_offsets_for_test(&wrong_pair),
-    )
-    .ordered
-    .contains(&8304));
-
-    let mut nonzero_tail = bytes;
-    nonzero_tail[131] = 1;
-    assert!(!parsed_serializers(
-        &nonzero_tail,
-        &crate::design::test_support::indexed_record_offsets_for_test(&nonzero_tail),
-    )
-    .ordered
-    .contains(&8304));
+        let mut nonzero_tail = bytes;
+        nonzero_tail[131] = 1;
+        assert!(!parsed_serializers(
+            cage_ctx,
+            &nonzero_tail,
+            &crate::design::test_support::indexed_record_offsets_for_test(&nonzero_tail),
+        )
+        .ordered
+        .contains(&8304));
+    });
 }
 
 #[test]
 fn serializers_preserve_primary_frame_order() {
-    let names = [
-        "TSpline.00000000-0000-0000-0000-000000000000.tsm",
-        "TSpline.11111111-1111-1111-1111-111111111111.tsm",
-    ];
-    let mut chunks = Vec::new();
-    for (ordinal, (name, surface)) in names.iter().zip([8304u64, 8307]).enumerate() {
-        let record = 8305 + u32::try_from(ordinal).expect("fixture value fits u32") * 2;
-        let mut serializer = indexed_frame(b"315", record, 132);
-        serializer[21..25].copy_from_slice(&48u32.to_le_bytes());
-        for (name_ordinal, code_unit) in name.encode_utf16().enumerate() {
-            let at = 25 + name_ordinal * 2;
-            serializer[at..at + 2].copy_from_slice(&code_unit.to_le_bytes());
+    crate::test_support::with_decode_context(|cage_ctx| {
+        let names = [
+            "TSpline.00000000-0000-0000-0000-000000000000.tsm",
+            "TSpline.11111111-1111-1111-1111-111111111111.tsm",
+        ];
+        let mut chunks = Vec::new();
+        for (ordinal, (name, surface)) in names.iter().zip([8304u64, 8307]).enumerate() {
+            let record = 8305 + u32::try_from(ordinal).expect("fixture value fits u32") * 2;
+            let mut serializer = indexed_frame(b"315", record, 132);
+            serializer[21..25].copy_from_slice(&48u32.to_le_bytes());
+            for (name_ordinal, code_unit) in name.encode_utf16().enumerate() {
+                let at = 25 + name_ordinal * 2;
+                serializer[at..at + 2].copy_from_slice(&code_unit.to_le_bytes());
+            }
+            serializer[121] = 1;
+            serializer[122..130].copy_from_slice(&surface.to_le_bytes());
+            chunks.push(serializer);
+            chunks.push(indexed_frame(b"457", record + 1, 15));
         }
-        serializer[121] = 1;
-        serializer[122..130].copy_from_slice(&surface.to_le_bytes());
-        chunks.push(serializer);
-        chunks.push(indexed_frame(b"457", record + 1, 15));
-    }
-    let bytes = chunks.concat();
-    let serializers = parsed_serializers(
-        &bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
-    );
-    assert_eq!(serializers.ordered, vec![8304, 8307]);
+        let bytes = chunks.concat();
+        let serializers = parsed_serializers(
+            cage_ctx,
+            &bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        );
+        assert_eq!(serializers.ordered, vec![8304, 8307]);
+    });
 }
 
 fn class_328_form_fixture() -> (
@@ -897,29 +897,35 @@ fn rejects_legacy_form_owner_with_wrong_nested_class() {
 
 #[test]
 fn duplicate_surface_serializers_stay_ambiguous() {
-    let entry_name = "TSpline.00000000-0000-0000-0000-000000000000.tsm";
-    let mut chunks = Vec::new();
-    for (ordinal, surface) in [8304u64, 8307, 8304, 8304].into_iter().enumerate() {
-        let record = 8400 + u32::try_from(ordinal).expect("fixture value fits u32") * 2;
-        let mut serializer = indexed_frame(b"315", record, 132);
-        serializer[21..25].copy_from_slice(&48u32.to_le_bytes());
-        for (name_ordinal, code_unit) in entry_name.encode_utf16().enumerate() {
-            let at = 25 + name_ordinal * 2;
-            serializer[at..at + 2].copy_from_slice(&code_unit.to_le_bytes());
+    crate::test_support::with_decode_context(|cage_ctx| {
+        let entry_name = "TSpline.00000000-0000-0000-0000-000000000000.tsm";
+        let mut chunks = Vec::new();
+        for (ordinal, surface) in [8304u64, 8307, 8304, 8304].into_iter().enumerate() {
+            let record = 8400 + u32::try_from(ordinal).expect("fixture value fits u32") * 2;
+            let mut serializer = indexed_frame(b"315", record, 132);
+            serializer[21..25].copy_from_slice(&48u32.to_le_bytes());
+            for (name_ordinal, code_unit) in entry_name.encode_utf16().enumerate() {
+                let at = 25 + name_ordinal * 2;
+                serializer[at..at + 2].copy_from_slice(&code_unit.to_le_bytes());
+            }
+            serializer[121] = 1;
+            serializer[122..130].copy_from_slice(&surface.to_le_bytes());
+            chunks.push(serializer);
+            chunks.push(indexed_frame(b"457", record + 1, 15));
         }
-        serializer[121] = 1;
-        serializer[122..130].copy_from_slice(&surface.to_le_bytes());
-        chunks.push(serializer);
-        chunks.push(indexed_frame(b"457", record + 1, 15));
-    }
-    let bytes = chunks.concat();
-    let serializers = parsed_serializers(
-        &bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
-    );
-    assert_eq!(serializers.ordered, vec![8304, 8307]);
-    assert_eq!(serializers.entry_name(8304), None);
-    assert_eq!(serializers.entry_name(8307), Some(entry_name));
+        let bytes = chunks.concat();
+        let serializers = parsed_serializers(
+            cage_ctx,
+            &bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        );
+        assert_eq!(serializers.ordered, vec![8304, 8307]);
+        assert_eq!(serializers.entry_name(cage_ctx, 8304).unwrap(), None);
+        assert_eq!(
+            serializers.entry_name(cage_ctx, 8307).unwrap(),
+            Some(entry_name)
+        );
+    });
 }
 
 #[test]
@@ -993,3 +999,5 @@ fn class_328_form_metadata_rejects_each_duplicate_member_without_heap_growth() {
         );
     }
 }
+
+mod binder_limits;
