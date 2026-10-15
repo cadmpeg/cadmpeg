@@ -2562,15 +2562,17 @@ plain stream cannot substitute for it. Authored curve networks, mesh directions,
 continuity, and result preference remain unresolved.
 
 A body-writing `CONE` operation identifies a body-affecting conical primitive.
-Its dimensions, placement, angular extent, and Boolean result mode remain
-unresolved until the serialized construction roles establish a complete
-primitive. A record without the body-write frame remains native because the
-label alone does not assign a body result.
+Its dimensions and placement remain unresolved until the serialized
+construction roles establish a complete primitive. A complete create core
+assigns the Boolean result mode as specified below. A record without the
+body-write frame remains native because the label alone does not assign a
+body result.
 
 A body-writing `SPHERE` operation identifies a body-affecting spherical
-primitive. Its center, radius, placement, angular extent, and Boolean result
-mode remain unresolved until the serialized construction roles establish a
-complete primitive. A record without the body-write frame remains native
+primitive. Its authored construction type, center, and diameter-expression
+binding remain unresolved until serialized construction roles establish a
+complete primitive. A complete subtract core assigns the Boolean result mode
+as specified below. A record without the body-write frame remains native
 because the label alone does not assign a body result.
 
 An operation labeled `THREADS` or `DETAILED_THREAD` with a body-write frame
@@ -2669,8 +2671,9 @@ Its selected faces and motion law remain unresolved until a serialized
 relation establishes the complete construction.
 
 The native operation record retains a complete core as `core`, with `kind`
-equal to `move_face`, `cylinder`, or `move_object`, and `bytes` equal to its
-exact hexadecimal bytes. Wire admission replays the complete family grammar,
+equal to `move_face`, `cylinder`, `cone`, `sphere`, or `move_object`, and
+`bytes` equal to its exact hexadecimal bytes. Wire admission replays the
+complete family grammar,
 requires the core length to equal the payload length, and checks its SHA-256
 against the payload digest. Native model checking admits these records through
 the same wire validator. A core ends the operation record; following lanes are
@@ -2719,6 +2722,43 @@ has no trailing bytes. The mode is retained as source property
 `cylinder.boolean_mode`. The six scalar slots retain their exact encoding;
 they do not bind dimension expressions, an authored origin, or an authored
 axis. The native references do not by themselves establish those roles.
+
+The `CONE` create core selects `UGS::CONE_PARMS` and uses the cylinder
+scalar encoding for six slots. It starts with the owning selector,
+`00 00 01 00`, one control byte, six scalars, thirteen payload references,
+`01`, one auxiliary payload reference, two `ff` bytes, thirteen `01`
+bytes, nine `ff` bytes, and four zero bytes. The body-write and result
+association frames use the cylinder grammar with association kind `01`.
+The inherited frame and repeated ordinal use the cylinder create grammar;
+the terminal feature reference is non-null. No trailing bytes are part of
+the core. Source property `cone.boolean_mode` is `create`. The scalar and
+reference lanes do not bind an authored base point or dimension expression.
+
+The `SPHERE` subtract core selects `UGS::SPHERE_PARMS`. It starts with
+`00 00 01 00`, one control byte, six cylinder-encoded scalar slots, four
+payload references, `ff`, one payload reference, `01`, nine `ff` bytes,
+and four zero bytes. A body-write frame follows. Its result association
+uses `00 00 00 0b 00 f0 01 02`, kind `02`, one relation-object token,
+`01`, five zero bytes, and a secondary body relation ending `97 75`.
+The association token admits packed body-reference encodings; it is not
+restricted to the feature-reference grammar.
+
+The sphere inherited frame starts `0d 01 02 01`. Branch byte `00` has two
+zero bytes. Branch byte `01` has `02 11 00`, one feature reference, and
+`01 01 00 00`. Both branches continue with one journal feature reference,
+`01 01 01 01`, and a byte count of three-byte states. The count is at least
+two; the first and last states are byte-identical. Middle states are
+opaque. Then follow `01 00 00 ff 0d c0 1f ff fd 01 00 00`, two feature
+references, `01 03 01 01 01`, mode `03 00 01`, three zero bytes, one
+byte-identically repeated feature reference, one non-null terminal feature
+reference, and zero. The core consumes its complete bounded payload.
+Source property `sphere.boolean_mode` is `subtract`.
+
+A result sphere carrier supplies its center and radius; its effective
+diameter is twice the radius. A sphere face is trimmed through its loops
+and adjacent faces. That trimming does not define an authored angular
+extent. Carrier dimensions and orientation do not assign the construction
+type or bind a native center or diameter expression.
 
 **Persistent-handle identity.** `e0 + handle:u32 BE` values are persistent handles forming a cross-stream bridge (RMFastLoad ↔ UG_PART OM ↔ EXTREFSTREAM). Equal handle values group their ordered distinct bounded OM records, offset-store control blocks, and indexed EXTREFSTREAM records under one native handle identity. A second family is a four-byte big-endian word whose high nibble is `0xC` and low 28 bits are the reference value. In an externally bounded object record, that second token is a typed reference only when it immediately follows one complete `e0 + handle:u32 BE` token; an unpaired high-nibble-`c` word remains field data. Both tokens remain within the same record and form one `(e0-handle, c-ref)` pair.
 

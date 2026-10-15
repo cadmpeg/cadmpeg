@@ -6831,12 +6831,12 @@ fn operation_source_properties(
     }
 
     insert_operation_source_property(ctx, properties, "operation_record", &record.id)?;
-    if let Some(mode) = record
+    if let Some((key, mode)) = record
         .core
         .as_ref()
-        .and_then(crate::om::operation_core::OperationCore::cylinder_boolean_mode)
+        .and_then(crate::om::operation_core::OperationCore::boolean_property)
     {
-        insert_operation_source_property(ctx, properties, "cylinder.boolean_mode", mode)?;
+        insert_operation_source_property(ctx, properties, key, mode)?;
     }
     if let Some(tables) = record
         .linked_face_payload

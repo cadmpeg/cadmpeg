@@ -19,6 +19,8 @@ pub(crate) enum OperationCore {
     CurveMesh(#[serde(deserialize_with = "deserialize_curve_mesh")] NativeBytes<Vec<u8>>),
     CopyFace(#[serde(deserialize_with = "deserialize_copy_face")] NativeBytes<Vec<u8>>),
     Cylinder(#[serde(deserialize_with = "deserialize_cylinder")] NativeBytes<Vec<u8>>),
+    Cone(#[serde(deserialize_with = "deserialize_cone")] NativeBytes<Vec<u8>>),
+    Sphere(#[serde(deserialize_with = "deserialize_sphere")] NativeBytes<Vec<u8>>),
     MoveObject(#[serde(deserialize_with = "deserialize_move_object")] NativeBytes<Vec<u8>>),
 }
 
@@ -41,6 +43,16 @@ fn deserialize_move_object<'de, D: serde::Deserializer<'de>>(
     d: D,
 ) -> Result<NativeBytes<Vec<u8>>, D::Error> {
     deserialize_frame(d, frames::Family::MoveObject)
+}
+fn deserialize_cone<'de, D: serde::Deserializer<'de>>(
+    d: D,
+) -> Result<NativeBytes<Vec<u8>>, D::Error> {
+    deserialize_frame(d, frames::Family::Cone)
+}
+fn deserialize_sphere<'de, D: serde::Deserializer<'de>>(
+    d: D,
+) -> Result<NativeBytes<Vec<u8>>, D::Error> {
+    deserialize_frame(d, frames::Family::Sphere)
 }
 
 fn deserialize_copy_face<'de, D: serde::Deserializer<'de>>(
@@ -66,16 +78,21 @@ impl OperationCore {
         match self {
             Self::MoveFace(core) => core.as_bytes(),
             Self::Cylinder(bytes)
+            | Self::Cone(bytes)
+            | Self::Sphere(bytes)
             | Self::MoveObject(bytes)
             | Self::CopyFace(bytes)
             | Self::CurveMesh(bytes) => bytes,
         }
     }
-    pub(crate) fn cylinder_boolean_mode(&self) -> Option<&'static str> {
-        match self {
-            Self::Cylinder(bytes) => frames::read(bytes, frames::Family::Cylinder)?.mode,
-            _ => None,
-        }
+    pub(crate) fn boolean_property(&self) -> Option<(&'static str, &'static str)> {
+        let (bytes, family, key) = match self {
+            Self::Cylinder(bytes) => (bytes, frames::Family::Cylinder, "cylinder.boolean_mode"),
+            Self::Cone(bytes) => (bytes, frames::Family::Cone, "cone.boolean_mode"),
+            Self::Sphere(bytes) => (bytes, frames::Family::Sphere, "sphere.boolean_mode"),
+            _ => return None,
+        };
+        Some((key, frames::read(bytes, family)?.mode?))
     }
 }
 
@@ -84,6 +101,8 @@ pub(crate) enum CoreView<'a> {
     CopyFace(&'a [u8]),
     CurveMesh(&'a [u8]),
     Cylinder(&'a [u8]),
+    Cone(&'a [u8]),
+    Sphere(&'a [u8]),
     MoveObject(&'a [u8]),
 }
 impl CoreView<'_> {
@@ -91,6 +110,8 @@ impl CoreView<'_> {
         match self {
             Self::MoveFace(core) => core.byte_len,
             Self::Cylinder(bytes)
+            | Self::Cone(bytes)
+            | Self::Sphere(bytes)
             | Self::MoveObject(bytes)
             | Self::CopyFace(bytes)
             | Self::CurveMesh(bytes) => bytes.len(),
@@ -107,6 +128,12 @@ impl CoreView<'_> {
             )),
             Self::Cylinder(bytes) => Ok(OperationCore::Cylinder(
                 ctx.copy_slice(bytes, "NX bounded cylinder core")?.into(),
+            )),
+            Self::Cone(bytes) => Ok(OperationCore::Cone(
+                ctx.copy_slice(bytes, "NX bounded cone core")?.into(),
+            )),
+            Self::Sphere(bytes) => Ok(OperationCore::Sphere(
+                ctx.copy_slice(bytes, "NX bounded sphere core")?.into(),
             )),
             Self::MoveObject(bytes) => Ok(OperationCore::MoveObject(
                 ctx.copy_slice(bytes, "NX bounded object-motion core")?
@@ -149,6 +176,8 @@ pub(crate) fn core_for_decode<'a>(
     }
     let (family, owner) = match record.name() {
         "CYLINDER" => (frames::Family::Cylinder, "UGS::CYLINDER_PARMS"),
+        "CONE" => (frames::Family::Cone, "UGS::CONE_PARMS"),
+        "SPHERE" => (frames::Family::Sphere, "UGS::SPHERE_PARMS"),
         "MOVE_OBJECT" => (
             frames::Family::MoveObject,
             "UGS::ModlFeature::MoveObjectParms",
@@ -189,6 +218,8 @@ pub(crate) fn core_for_decode<'a>(
     let bytes = &record.payload()[..frame.byte_len];
     Ok(Some(match family {
         frames::Family::Cylinder => CoreView::Cylinder(bytes),
+        frames::Family::Cone => CoreView::Cone(bytes),
+        frames::Family::Sphere => CoreView::Sphere(bytes),
         frames::Family::MoveObject => CoreView::MoveObject(bytes),
     }))
 }

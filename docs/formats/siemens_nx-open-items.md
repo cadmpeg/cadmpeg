@@ -838,13 +838,13 @@ assigns control geometry, continuity, or terminal semantics.
 
 ### OM-52. `CONE` construction roles
 
-**Question.** Which serialized fields define the dimensions, placement, angular extent, and Boolean result mode of a `CONE` operation?
+**Question.** Which serialized relations bind the authored dimensions and base-point placement of a `CONE` operation?
 
-**Known.** `siemens_nx.md` §7.1 "A body-writing `CONE` operation identifies" defines the body-affecting conical primitive. The record carries a body-write frame and object-index values, but no neutral output or admitted field assigns the primitive construction roles. A record without the body-write frame remains native because its label does not assign a body result.
+**Known.** `siemens_nx.md` §7.1 "The `CONE` create core selects" defines the complete native create frame, six scalar slots, thirteen payload references, one auxiliary reference, result association and repeated ordinal. Source property `cone.boolean_mode` retains create mode. Result carriers and circular boundaries establish cone geometry independently of authored construction bindings.
 
-**Need.** We must identify the conical dimensions, placement frame, angular extent, and result mode to construct a complete neutral cone primitive and bind its result body.
+**Need.** Bind compact references and storage fragments to unique dimension expressions and a base-point object. Distinguish the builder direction from the cone carrier's canonical axis.
 
-**Conflict.** The operation label and body-write relation identify the family, but the bounded payload and object-index lanes do not assign unique dimensions, placement, angular-extent, or result-mode roles.
+**Conflict.** Numeric ordinal selections can cover both cone and unrelated expressions. A carrier half-angle is not a sweep angle, and a result point or axis does not establish its serialized construction relation. An association index equal to one expression index plus one does not define an expression selector.
 
 ### OM-53. Body-writing thread construction roles
 
@@ -858,13 +858,13 @@ assigns control geometry, continuity, or terminal semantics.
 
 ### OM-54. Body-writing `SPHERE` construction roles
 
-**Question.** Which serialized fields define the center, radius, placement, angular extent, and Boolean result mode of a body-writing `SPHERE` operation?
+**Question.** Which serialized relations bind a body-writing `SPHERE` operation to its construction type, center object and diameter expression?
 
-**Known.** `siemens_nx.md` §7.1 defines a body-writing `SPHERE` record as a body-affecting spherical primitive. The record carries a body-write frame and object-index values, but no neutral output or admitted field assigns the primitive construction roles. A record without the body-write frame remains native because its label does not assign a body result.
+**Known.** `siemens_nx.md` §7.1 "The `SPHERE` subtract core selects" defines the complete native frame, six scalar slots, five payload references, packed result-association token, secondary body relation and counted inherited-state branches. Source property `sphere.boolean_mode` retains subtract mode. The analytic result carrier supplies center and radius; face loops define trimming.
 
-**Need.** We must identify the spherical dimensions, placement frame, angular extent, and result mode to construct a complete neutral sphere primitive and bind its result body.
+**Need.** Join the native references to unique center and diameter inputs and distinguish center-plus-diameter construction from construction through an arc. Assign inherited controls only through a discriminating native relation.
 
-**Conflict.** The operation label and body-write relation identify a body-affecting sphere family, but the bounded payload and object-index lanes do not assign unique center, radius, placement, angular-extent, or result-mode roles.
+**Conflict.** Several expressions can equal the effective diameter. Six direction scalars do not supply a center, and a hemispherical face does not define an authored half-sweep. Numeric table ordinals and object identities are separate namespaces; no generic binding follows from their equality.
 
 ### OM-55. `DELETE FACE` construction roles
 

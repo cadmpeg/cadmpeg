@@ -3,6 +3,8 @@ use super::{core_for_decode, OperationCore};
 use crate::om::operation_record::OperationPayload;
 use cadmpeg_ir::native::bytes::NativeBytes;
 
+mod primitives;
+
 fn inherited() -> Vec<u8> {
     b"\x0d\x01\x02\x01\0\0\0\x01\x01\x01\x01\x01\x02\x03\x04\x05\x03\x04\x05\x01\0\0\xff\0\xff\x09\xc0\x1f\xff\xff\x01\0\0".to_vec()
 }
@@ -68,7 +70,10 @@ fn complete_native_cores_admit_each_boolean_mode_and_exact_scalar_width() {
             let value = wire("cylinder", bytes.clone());
             let core: OperationCore = serde_json::from_value(value.clone()).unwrap();
             assert_eq!(core.as_bytes(), bytes);
-            assert_eq!(core.cylinder_boolean_mode(), Some(expected));
+            assert_eq!(
+                core.boolean_property(),
+                Some(("cylinder.boolean_mode", expected))
+            );
             assert_eq!(serde_json::to_value(&core).unwrap(), value);
             let record = Record {
                 id: "nx:feature:core#0",
@@ -109,7 +114,7 @@ fn object_motion_null_terminal_bounds_the_following_lane_and_checks_registry() {
         let value = wire("move_object", bytes.clone());
         let core: OperationCore = serde_json::from_value(value.clone()).unwrap();
         assert_eq!(core.as_bytes(), bytes);
-        assert_eq!(core.cylinder_boolean_mode(), None);
+        assert_eq!(core.boolean_property(), None);
         assert_eq!(serde_json::to_value(core).unwrap(), value);
         let mut classes: Vec<_> = [
             "UGS::ModlFeature::MoveObjectParms",
