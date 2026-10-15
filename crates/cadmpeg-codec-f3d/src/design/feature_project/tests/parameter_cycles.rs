@@ -174,6 +174,11 @@ fn parameter_ordering_within_its_cap_orders_a_reversed_chain() {
         assert_eq!(parameter.dependencies.as_slice(), [dependency.id.clone()]);
         assert!(dependency.ordinal < parameter.ordinal);
     }
+    assert!(decoded
+        .report()
+        .losses
+        .iter()
+        .all(|loss| loss.code != F3dLossCode::ParameterOrderBudgetExceeded.kind()));
 }
 
 #[test]
@@ -202,4 +207,13 @@ fn parameter_ordering_past_its_cap_keeps_source_ordinals_and_reports_dropped_edg
     assert!(loss
         .message
         .starts_with("2999 decoded parameter expression symbol(s)"));
+    let skip = decoded
+        .report()
+        .losses
+        .iter()
+        .find(|loss| loss.code == F3dLossCode::ParameterOrderBudgetExceeded.kind())
+        .unwrap();
+    assert!(skip
+        .message
+        .starts_with("1 Design parameter owner scope(s) keep their source ordinals"));
 }

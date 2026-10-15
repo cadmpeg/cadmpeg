@@ -630,22 +630,23 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             })
             .unwrap();
         let scopes = vec![sketch_scope, scope.clone()];
-        let (mut features, _) = crate::test_support::with_decode_context(|ctx| {
-            let scopes = &scopes;
-            let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
-            crate::design::feature_project::project_parameter_design_with_edge_identities(
-                ctx,
-                &crate::design::feature_project::ProjectInputs {
-                    native: std::slice::from_ref(&owned_along),
-                    owners: std::slice::from_ref(&owner),
-                    scopes,
-                    placements: std::slice::from_ref(&placement),
-                    timelines: &timelines,
-                    ..Default::default()
-                },
-            )
-            .expect("test projection has a synthetic exact timeline")
-        });
+        let crate::design::feature_project::ProjectedParameterDesign { mut features, .. } =
+            crate::test_support::with_decode_context(|ctx| {
+                let scopes = &scopes;
+                let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+                crate::design::feature_project::project_parameter_design_with_edge_identities(
+                    ctx,
+                    &crate::design::feature_project::ProjectInputs {
+                        native: std::slice::from_ref(&owned_along),
+                        owners: std::slice::from_ref(&owner),
+                        scopes,
+                        placements: std::slice::from_ref(&placement),
+                        timelines: &timelines,
+                        ..Default::default()
+                    },
+                )
+                .expect("test projection has a synthetic exact timeline")
+            });
         let sketches = [cadmpeg_ir::sketches::Sketch {
             id: neutral_sketch_id(&placement),
             name: None,
@@ -693,7 +694,10 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             [sketch_feature.id.clone()]
         );
 
-        let (mut spatial_features, _) = crate::test_support::with_decode_context(|ctx| {
+        let crate::design::feature_project::ProjectedParameterDesign {
+            features: mut spatial_features,
+            ..
+        } = crate::test_support::with_decode_context(|ctx| {
             let scopes = &scopes;
             let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
             crate::design::feature_project::project_parameter_design_with_edge_identities(
@@ -772,7 +776,10 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             [spatial_feature.id.clone()]
         );
 
-        let (mut open_spatial_features, _) = crate::test_support::with_decode_context(|ctx| {
+        let crate::design::feature_project::ProjectedParameterDesign {
+            features: mut open_spatial_features,
+            ..
+        } = crate::test_support::with_decode_context(|ctx| {
             let scopes = &scopes;
             let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
             crate::design::feature_project::project_parameter_design_with_edge_identities(

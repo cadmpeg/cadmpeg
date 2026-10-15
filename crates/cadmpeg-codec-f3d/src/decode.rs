@@ -2518,7 +2518,7 @@ impl<'a> F3dDecodeSession<'a> {
         self.ir.model.configurations = crate::design::configurations::project_configurations(
             &self.native.design_configurations,
         )?;
-        (self.ir.model.features, self.ir.model.parameters) =
+        let projected =
             crate::design::feature_project::project_parameter_design_with_edge_identities(
                 self.ctx,
                 &crate::design::feature_project::ProjectInputs {
@@ -2545,6 +2545,18 @@ impl<'a> F3dDecodeSession<'a> {
                     face_boundaries: &self.native.asm_face_boundaries,
                 },
             )?;
+        self.ir.model.features = projected.features;
+        self.ir.model.parameters = projected.parameters;
+        if projected.unordered_parameter_scopes != 0 {
+            push_loss_vec(
+                &mut self.report.losses,
+                F3dLossCode::ParameterOrderBudgetExceeded,
+                format_args!(
+                    "{} Design parameter owner scope(s) keep their source ordinals and drop their same-scope dependency edges because ordering exceeded its work cap.",
+                    projected.unordered_parameter_scopes
+                ),
+            );
+        }
         crate::design::feature_project::bind_surface_trim_cell_selections(
             &mut self.ir.model.features,
             &self.native.design_parameter_scopes,

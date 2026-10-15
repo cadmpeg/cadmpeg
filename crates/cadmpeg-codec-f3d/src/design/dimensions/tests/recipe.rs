@@ -1182,7 +1182,10 @@ fn expression_dependency_audit_counts_only_unprojected_same_stream_names() {
         parameter("A", 2, "Width + External", "Half"),
         parameter("B", 1, "1 mm", "External"),
     ];
-    let (_, mut projected) = crate::test_support::with_decode_context(|ctx| {
+    let crate::design::feature_project::ProjectedParameterDesign {
+        parameters: mut projected,
+        ..
+    } = crate::test_support::with_decode_context(|ctx| {
         let scopes = &[];
         let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
         crate::design::feature_project::project_parameter_design_with_edge_identities(
