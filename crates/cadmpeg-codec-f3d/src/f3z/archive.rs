@@ -82,32 +82,13 @@ impl ArchiveSession<'_> {
     }
 }
 
-fn insert_member_charged<'a>(
-    ctx: &DecodeContext<'_>,
-    members: &mut BTreeMap<String, ClassifiedMember<'a>>,
-    path: &str,
-    member: ClassifiedMember<'a>,
-) -> Result<(), CodecError> {
-    if let Some(existing) = members.get_mut(path) {
-        *existing = member;
-        return Ok(());
-    }
-    let key = ctx.copy_retained_text(path, "retain F3Z member index path")?;
-    let previous = ctx.insert_btree_map(members, key, member, "index F3Z archive members")?;
-    drop(previous);
-    Ok(())
-}
-
 /// Resolves the archive manifest to the F3D member that owns the model.
 pub(super) fn model_root(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan<'_>,
 ) -> Result<(String, Option<String>), CodecError> {
     let manifest_bytes = scan.entry_bytes(MANIFEST_ENTRY)?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(manifest_bytes.len()),
-        "validate F3Z JSON UTF-8",
-    )?;
+
     let text = std::str::from_utf8(manifest_bytes).map_err(|error| {
         CodecError::malformed(format_args!("{MANIFEST_ENTRY} is not valid JSON: {error}"))
     })?;
@@ -152,59 +133,37 @@ pub(super) fn classify_members<'a>(
             Ok(member_scan) => member_scan,
             Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
             Err(error) => {
-                let message = ctx.format_retained(
-                    format_args!("{error}"),
-                    "retain F3Z unreadable member error",
-                )?;
-                super::push_loss(
-                    ctx,
-                    &mut losses,
-                    F3dLossCode::XrefMemberUndecoded,
-                    format_args!(
+                let message = format!("{error}");
+                super::push_loss(&mut losses, F3dLossCode::XrefMemberUndecoded, format_args!(
                         "xref {member_path}: member could not be scanned as an F3D document ({message}); its source bytes remain retained"
-                    ),
-                )?;
-                insert_member_charged(
-                    ctx,
-                    &mut members,
-                    member_path,
+                    ));
+                members.insert(
+                    member_path.to_owned(),
                     ClassifiedMember::Unreadable(message),
-                )?;
+                );
                 continue;
             }
         };
         let (member_layers, mut member_losses) =
             crate::dialect::classify_layers(ctx, &member_scan)?;
         for loss in &mut member_losses {
-            loss.message = ctx.format_retained(
-                format_args!("archive member {member_path}: {}", loss.message),
-                "prefix F3Z member classification loss",
-            )?;
+            loss.message = format!("archive member {member_path}: {}", loss.message);
         }
-        ctx.append_vec(
-            &mut losses,
-            &mut { member_losses },
-            "append F3Z report losses",
-        )?;
-        ctx.append_vec(
-            &mut losses,
-            &mut { merge_member_layers(ctx, &mut layers, &member_layers, member_path)? },
-            "append F3Z report losses",
-        )?;
-        ctx.charge_collection_items(1, "retain F3Z member scan")?;
-        insert_member_charged(
+        losses.append(&mut member_losses);
+        losses.extend(merge_member_layers(
             ctx,
-            &mut members,
+            &mut layers,
+            &member_layers,
             member_path,
+        )?);
+
+        members.insert(
+            member_path.to_owned(),
             ClassifiedMember::Scanned(Box::new(member_scan)),
-        )?;
+        );
     }
-    ctx.append_vec(
-        &mut losses,
-        &mut { crate::dialect::dialect_losses(ctx, &layers)? },
-        "append F3Z report losses",
-    )?;
-    crate::report::header_losses(ctx, scan, &mut losses)?;
+    losses.extend(crate::dialect::dialect_losses(&layers));
+    crate::report::header_losses(scan, &mut losses)?;
     Ok(ArchiveSession {
         members,
         layers,
@@ -223,11 +182,8 @@ pub(super) fn merge_member_layers(
     for matched in member.iter() {
         let matched = matched.try_clone_for_decode(ctx, "copy dialect layers")?;
         let instance = match matched.instance() {
-            Some(nested) => ctx.format_retained(
-                format_args!("{member_path}/{nested}"),
-                "retain F3Z dialect layer instance",
-            )?,
-            None => ctx.copy_retained_text(member_path, "retain F3Z dialect layer instance")?,
+            Some(nested) => format!("{member_path}/{nested}"),
+            None => member_path.to_owned(),
         };
         let matched = matched
             .with_declared_entry(
@@ -248,14 +204,9 @@ pub(super) fn merge_member_layers(
         {
             let format = rejected.format();
             let collision_instance = rejected.instance().unwrap_or("unidentified");
-            super::push_loss(
-                ctx,
-                &mut losses,
-                F3dLossCode::DialectLayerCollision,
-                format_args!(
+            super::push_loss(&mut losses, F3dLossCode::DialectLayerCollision, format_args!(
                     "archive member {member_path} produced a duplicate {format} dialect layer at instance {collision_instance}; the later layer was omitted"
-                ),
-            )?;
+                ));
         }
     }
     Ok(losses)
@@ -267,17 +218,11 @@ fn model_root_member(
     archive_root: &str,
 ) -> Result<(String, Option<String>), CodecError> {
     if crate::container::is_f3d_name(archive_root) {
-        return Ok((
-            ctx.copy_retained_text(archive_root, "retain F3Z model root")?,
-            None,
-        ));
+        return Ok((archive_root.to_owned(), None));
     }
 
     let description_bytes = scan.entry_bytes(DESIGN_DESCRIPTION_ENTRY)?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(description_bytes.len()),
-        "validate F3Z JSON UTF-8",
-    )?;
+
     let text = std::str::from_utf8(description_bytes).map_err(|error| {
         CodecError::malformed(format_args!(
             "{DESIGN_DESCRIPTION_ENTRY} is not valid JSON: {error}"
@@ -299,21 +244,14 @@ fn model_root_member(
         for object in &graph.design_objects {
             let mut is_root = false;
             for id in &graph.root_ids {
-                ctx.charge_work(1, "match F3Z root object ID")?;
                 if *id == object.id {
                     is_root = true;
                     break;
                 }
             }
-            if is_root {
-                ctx.charge_work(
-                    cadmpeg_core::decode::u64_from_index(object.relative_path.len()),
-                    "match F3Z root object path",
-                )?;
-                if object.relative_path == archive_root {
-                    root = Some(object);
-                    break;
-                }
+            if is_root && object.relative_path == archive_root {
+                root = Some(object);
+                break;
             }
         }
         let Some(root) = root else {
@@ -333,7 +271,6 @@ fn model_root_member(
                 .filter(|reference| reference.reference_type == "DERIVED")
             {
                 for id in &reference.ids {
-                    ctx.charge_work(1, "match F3Z derived model reference")?;
                     if *id == object.id {
                         derived = true;
                         break;
@@ -344,25 +281,16 @@ fn model_root_member(
                 }
             }
             if derived {
-                ctx.reserve_vec(&mut candidates, 1, "collect F3Z model candidates")?;
-                candidates.push(ctx.copy_retained_text(
-                    &object.relative_path,
-                    "retain F3Z model candidate name",
-                )?);
+                candidates.push(object.relative_path.clone());
             }
         }
     }
-    ctx.stable_sort_by(
-        &mut candidates,
-        Ord::cmp,
-        String::len,
-        "sort F3Z model candidates",
-    )?;
+    candidates.sort_by(Ord::cmp);
     candidates.dedup();
     match candidates.as_slice() {
         [model_root] => Ok((
-            ctx.copy_retained_text(model_root, "retain F3Z selected model root")?,
-            Some(ctx.copy_retained_text(archive_root, "retain F3Z drawing root")?),
+            model_root.to_owned(),
+            Some(archive_root.to_owned()),
         )),
         _ => Err(CodecError::malformed(format_args!(
             "f3z root member {archive_root} is not an f3d document and has {} unambiguous derived f3d model members",
@@ -374,31 +302,7 @@ fn model_root_member(
 #[cfg(test)]
 mod tests {
     #[test]
-    fn drawing_root_search_preserves_work_refusal() {
-        let description = br#"{"designDescription":{"designGraphs":[{"rootIds":[1,2],"designObjects":[{"id":2,"relativePath":"drawing.f2d","contentType":"f2d","references":[]}] }]}}"#;
-        let bytes = crate::test_support::assembly_test::f3z_archive_with_design_description(
-            "drawing.f2d",
-            &[("drawing.f2d", b"drawing"), ("model.f3d", b"model")],
-            description,
-        );
-        crate::test_support::with_decode_context(|scan_ctx| {
-            let scan =
-                crate::container::scan(scan_ctx, cadmpeg_core::decode::View::over_retained(&bytes))
-                    .unwrap();
-            let error = crate::test_support::resource_refusal_at(
-                cadmpeg_core::decode::ResourceDimension::WorkUnits,
-                "match F3Z root object ID",
-                0,
-                |ctx| super::model_root_member(ctx, &scan, "drawing.f2d"),
-            );
-            let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
-                panic!("root scan must refuse");
-            };
-            assert_eq!(limit.operation, "match F3Z root object ID");
-        });
-    }
-    #[test]
-    fn manifest_extensions_preserve_work_and_depth_refusals() {
+    fn manifest_extensions_preserve_depth_refusal() {
         let bytes = crate::test_support::assembly_test::f3z_archive(
             r#"model.f3d","extension":[[[0]]],"spare":"unused"#,
             &[("model.f3d", b"model")],
@@ -406,72 +310,20 @@ mod tests {
         crate::test_support::with_decode_context(|scan_ctx| {
             let root = cadmpeg_core::decode::View::over_retained(&bytes);
             let scan = crate::container::scan(scan_ctx, root).unwrap();
-            for dimension in [
-                cadmpeg_core::decode::ResourceDimension::WorkUnits,
-                cadmpeg_core::decode::ResourceDimension::RecursionDepth,
-            ] {
-                let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-                match dimension {
-                    cadmpeg_core::decode::ResourceDimension::WorkUnits => {
-                        policy.limits.max_work_units = cadmpeg_core::decode::u64_from_index(
-                            scan.entry_bytes("Manifest.json").unwrap().len(),
-                        );
-                    }
-                    cadmpeg_core::decode::ResourceDimension::RecursionDepth => {
-                        policy.limits.max_recursion_depth = 1;
-                    }
-                    _ => unreachable!(),
-                }
-                crate::test_support::with_decode_policy(&policy, |ctx| {
-                    let error = super::model_root(ctx, &scan).unwrap_err();
-                    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
-                        panic!("manifest scan must refuse");
-                    };
-                    assert_eq!(limit.dimension, dimension);
-                    assert_eq!(limit.operation, "parse F3Z manifest JSON");
-                    assert_eq!(Some(limit), ctx.resource_refusal());
-                });
-            }
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_recursion_depth = 1;
+            crate::test_support::with_decode_policy(&policy, |ctx| {
+                let error = super::model_root(ctx, &scan).unwrap_err();
+                let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+                    panic!("manifest scan must refuse");
+                };
+                assert_eq!(
+                    limit.dimension,
+                    cadmpeg_core::decode::ResourceDimension::RecursionDepth
+                );
+                assert_eq!(limit.operation, "parse F3Z manifest JSON");
+                assert_eq!(Some(limit), ctx.resource_refusal());
+            });
         });
-    }
-
-    #[test]
-    fn f3z_member_index_refuses_collection_limit() {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = super::insert_member_charged(
-            &ctx,
-            &mut std::collections::BTreeMap::new(),
-            "part.f3d",
-            super::ClassifiedMember::Unreadable("bad member".to_owned()),
-        )
-        .unwrap_err();
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "index F3Z archive members")
-        );
-    }
-
-    #[test]
-    fn f3z_member_index_path_refuses_retained_limit() {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_retained_bytes = 0;
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = super::insert_member_charged(
-            &ctx,
-            &mut std::collections::BTreeMap::new(),
-            "part.f3d",
-            super::ClassifiedMember::Unreadable("bad member".to_owned()),
-        )
-        .unwrap_err();
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "retain F3Z member index path")
-        );
     }
 }

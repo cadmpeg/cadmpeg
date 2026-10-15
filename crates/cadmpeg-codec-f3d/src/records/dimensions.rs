@@ -3,9 +3,7 @@
 
 use cadmpeg_ir::native::bytes::NativeBytes;
 
-use crate::records::admission::RecordAdmission;
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
-use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::u64_from_index;
 
 use super::identity::Located;
 use super::recipes::ConstructionRecipeKind;
@@ -94,43 +92,6 @@ pub(crate) struct DesignRecipeReference {
     /// different native selector, before a historical state supersedes them.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) alternate_selector_edges: Vec<EdgeId>,
-}
-
-impl DesignRecipeReference {
-    pub(crate) fn try_clone_for_decode(
-        &self,
-        ctx: &DecodeContext<'_>,
-        operation: &'static str,
-    ) -> Result<Self, CodecError> {
-        Ok(Self {
-            selector: self.selector,
-            selector_offset: self.selector_offset,
-            token: ctx.copy_retained_text(&self.token, operation)?,
-            token_offset: self.token_offset,
-            design_reference: self.design_reference,
-            design_reference_offset: self.design_reference_offset,
-            candidate_faces: ctx.try_collect_retained_with(
-                &self.candidate_faces,
-                operation,
-                |id| id.try_clone_for_decode(ctx, operation),
-            )?,
-            candidate_edges: ctx.try_collect_retained_with(
-                &self.candidate_edges,
-                operation,
-                |id| id.try_clone_for_decode(ctx, operation),
-            )?,
-            alternate_selector_faces: ctx.try_collect_retained_with(
-                &self.alternate_selector_faces,
-                operation,
-                |id| id.try_clone_for_decode(ctx, operation),
-            )?,
-            alternate_selector_edges: ctx.try_collect_retained_with(
-                &self.alternate_selector_edges,
-                operation,
-                |id| id.try_clone_for_decode(ctx, operation),
-            )?,
-        })
-    }
 }
 
 /// Paired-locus frame nested under a dimensional parameter companion.
@@ -696,41 +657,15 @@ pub(crate) struct DesignDimensionAnnotationFrameDraft {
     pub(crate) owner_reference_offset: u64,
 }
 
-enum AnnotationFrameBuildError {
-    Invalid(String),
-    Resource(cadmpeg_core::CodecError),
-}
-
-impl From<&'static str> for AnnotationFrameBuildError {
-    fn from(message: &'static str) -> Self {
-        Self::Invalid(message.into())
-    }
-}
-
-impl From<String> for AnnotationFrameBuildError {
-    fn from(message: String) -> Self {
-        Self::Invalid(message)
-    }
-}
-
 impl DesignDimensionAnnotationFrame {
     /// Admit an annotation frame using the source decode budget.
-    pub(crate) fn try_new_charged(
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    pub(crate) fn try_new(
         draft: DesignDimensionAnnotationFrameDraft,
     ) -> Result<Self, cadmpeg_core::CodecError> {
-        Self::try_new_inner(RecordAdmission::Charged(ctx), draft).map_err(|error| match error {
-            AnnotationFrameBuildError::Invalid(message) => {
-                cadmpeg_core::CodecError::malformed(message)
-            }
-            AnnotationFrameBuildError::Resource(error) => error,
-        })
+        Self::try_new_inner(draft).map_err(cadmpeg_core::CodecError::malformed)
     }
 
-    fn try_new_inner(
-        admission: RecordAdmission<'_, '_>,
-        draft: DesignDimensionAnnotationFrameDraft,
-    ) -> Result<Self, AnnotationFrameBuildError> {
+    fn try_new_inner(draft: DesignDimensionAnnotationFrameDraft) -> Result<Self, String> {
         if draft.operands.is_empty() {
             return Err("operands must not be empty".into());
         }
@@ -789,32 +724,20 @@ impl DesignDimensionAnnotationFrame {
             }
         }
         // The return members must be the operands' geometry indices as a multiset.
-        let operand_members = admission
-            .collect_vec(
-                draft
-                    .operands
-                    .iter()
-                    .filter_map(|operand| operand.geometry_record_index),
-                "index F3D annotation operands",
-            )
-            .map_err(AnnotationFrameBuildError::Resource)?;
-        let return_members = admission
-            .collect_vec(
-                draft.return_members.iter().map(|member| member.value),
-                "index F3D annotation return members",
-            )
-            .map_err(AnnotationFrameBuildError::Resource)?;
+        let operand_members = draft
+            .operands
+            .iter()
+            .filter_map(|operand| operand.geometry_record_index)
+            .collect::<Vec<_>>();
+        let return_members = draft
+            .return_members
+            .iter()
+            .map(|member| member.value)
+            .collect::<Vec<_>>();
         let mut unmatched = std::collections::BTreeMap::new();
         for index in &operand_members {
             let count = unmatched.get(index).copied().unwrap_or(0usize);
-            admission
-                .insert_btree_map(
-                    &mut unmatched,
-                    *index,
-                    count + 1,
-                    "count F3D annotation operand geometry indices",
-                )
-                .map_err(AnnotationFrameBuildError::Resource)?;
+            unmatched.insert(*index, count + 1);
         }
         let mut members_agree = return_members.len() == operand_members.len();
         for member in &return_members {
@@ -823,14 +746,7 @@ impl DesignDimensionAnnotationFrame {
                 members_agree = false;
                 break;
             }
-            admission
-                .insert_btree_map(
-                    &mut unmatched,
-                    *member,
-                    count - 1,
-                    "match F3D annotation return members",
-                )
-                .map_err(AnnotationFrameBuildError::Resource)?;
+            unmatched.insert(*member, count - 1);
         }
         if !members_agree {
             return Err("return_members disagree with operands geometry indices".into());
@@ -843,27 +759,22 @@ impl DesignDimensionAnnotationFrame {
             class_tag: draft.class_tag,
             record_index: draft.record_index,
             frame_length: draft.frame_length,
-            operands: admission
-                .collect_vec(
-                    draft
-                        .operands
-                        .into_iter()
-                        .map(|operand| DesignDimensionAnnotationLocus {
-                            geometry_record_index: operand.geometry_record_index,
-                            role: operand.role,
-                        }),
-                    "retain F3D annotation operands",
-                )
-                .map_err(AnnotationFrameBuildError::Resource)?,
+            operands: draft
+                .operands
+                .into_iter()
+                .map(|operand| DesignDimensionAnnotationLocus {
+                    geometry_record_index: operand.geometry_record_index,
+                    role: operand.role,
+                })
+                .collect::<Vec<_>>(),
             entity_genesis: draft.entity_genesis,
             annotation_bytes: (draft.annotation_bytes).into(),
             governing_owner_record_index: draft.governing_owner_record_index,
-            return_members: admission
-                .collect_vec(
-                    draft.return_members.into_iter().map(|member| member.value),
-                    "retain F3D annotation return members",
-                )
-                .map_err(AnnotationFrameBuildError::Resource)?,
+            return_members: draft
+                .return_members
+                .into_iter()
+                .map(|member| member.value)
+                .collect::<Vec<_>>(),
             paired_class_tag: draft.paired_class_tag,
             owner_reference: draft.owner_reference,
         })
@@ -1104,32 +1015,25 @@ impl TryFrom<DesignDimensionAnnotationFrameWire> for DesignDimensionAnnotationFr
                 .ok_or("return_members must contain nonzero geometry indices")?;
             return_members.push(Located { value, offset });
         }
-        Self::try_new_inner(
-            RecordAdmission::Admitted,
-            DesignDimensionAnnotationFrameDraft {
-                return_members,
-                id: wire.id,
-                companion_record_index: wire.companion_record_index,
-                governing_companion_record_index: wire.governing_companion_record_index,
-                byte_offset: wire.byte_offset,
-                class_tag: wire.class_tag.try_into()?,
-                record_index: wire.record_index,
-                frame_length: wire.frame_length,
-                operands: wire.operands,
-                entity_genesis: wire.entity_genesis,
-                annotation_bytes: wire.annotation_bytes.into_inner(),
-                annotation_byte_offset: wire.annotation_byte_offset,
-                governing_owner_record_index: wire.governing_owner_record_index,
-                governing_owner_reference_offset: wire.governing_owner_reference_offset,
-                paired_class_tag: wire.paired_class_tag.try_into()?,
-                paired_byte_offset: wire.paired_byte_offset,
-                owner_reference: wire.owner_reference,
-                owner_reference_offset: wire.owner_reference_offset,
-            },
-        )
-        .map_err(|error| match error {
-            AnnotationFrameBuildError::Invalid(message) => message,
-            AnnotationFrameBuildError::Resource(error) => error.to_string(),
+        Self::try_new_inner(DesignDimensionAnnotationFrameDraft {
+            return_members,
+            id: wire.id,
+            companion_record_index: wire.companion_record_index,
+            governing_companion_record_index: wire.governing_companion_record_index,
+            byte_offset: wire.byte_offset,
+            class_tag: wire.class_tag.try_into()?,
+            record_index: wire.record_index,
+            frame_length: wire.frame_length,
+            operands: wire.operands,
+            entity_genesis: wire.entity_genesis,
+            annotation_bytes: wire.annotation_bytes.into_inner(),
+            annotation_byte_offset: wire.annotation_byte_offset,
+            governing_owner_record_index: wire.governing_owner_record_index,
+            governing_owner_reference_offset: wire.governing_owner_reference_offset,
+            paired_class_tag: wire.paired_class_tag.try_into()?,
+            paired_byte_offset: wire.paired_byte_offset,
+            owner_reference: wire.owner_reference,
+            owner_reference_offset: wire.owner_reference_offset,
         })
     }
 }

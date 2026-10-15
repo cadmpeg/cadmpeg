@@ -17,14 +17,7 @@ use crate::test_support::manifest_test::write_synthetic_manifests;
 use crate::test_support::streams_test::design_metastream_with_records;
 use crate::test_support::zip_test::with_scan;
 
-fn decode_component_naming_spaces(
-    scan: &crate::container::ContainerScan<'_>,
-) -> Result<Vec<crate::records::recipes::DesignComponentNamingSpace>, cadmpeg_core::CodecError> {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-    super::decode_component_naming_spaces(&ctx, scan)
-}
+use super::decode_component_naming_spaces;
 
 #[test]
 fn bulk_metadata_reuses_the_parsed_type_table() {
@@ -49,9 +42,8 @@ fn bulk_metadata_reuses_the_parsed_type_table() {
     zip.write_all(&meta).unwrap();
     let bytes = zip.finish().unwrap().into_inner();
     with_scan(&bytes, |scan| {
-        let ctx = cadmpeg_test_support::service_decode_context();
-        let first = super::metadata_for_bulk_stream(&ctx, scan, bulk_name)?.unwrap();
-        let second = super::metadata_for_bulk_stream(&ctx, scan, bulk_name)?.unwrap();
+        let first = super::metadata_for_bulk_stream(scan, bulk_name)?.unwrap();
+        let second = super::metadata_for_bulk_stream(scan, bulk_name)?.unwrap();
         assert!(std::rc::Rc::ptr_eq(&first, &second));
         assert_eq!(first.types.len(), 1);
         assert_eq!(
@@ -68,9 +60,7 @@ fn bulk_metadata_reuses_the_parsed_type_table() {
 }
 
 #[test]
-fn design_type_copy_refuses_table_entities_module_and_id_limits() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
+fn design_type_copy_keeps_table_entities_module_and_id() {
     let meta_name = "FusionAssetName[Active]/Design1/MetaStream.dat";
     let meta = design_metastream_with_records(
         &[(
@@ -91,45 +81,7 @@ fn design_type_copy_refuses_table_entities_module_and_id_limits() {
     zip.start_file(meta_name, stored).unwrap();
     zip.write_all(&meta).unwrap();
     let archive = zip.finish().unwrap().into_inner();
-    let arena = DecodeArena::new();
-    for (allowance, operation) in [
-        (3, "f3d design type table"),
-        (4, "f3d design type registered entities"),
-    ] {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = allowance;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = with_scan(&archive, |scan| super::decode_types(&ctx, scan))
-            .err()
-            .unwrap();
-        assert!(matches!(error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == operation
-        ));
-    }
-    for operation in [
-        "f3d design type module",
-        "f3d native stream key",
-        "f3d design type id suffix",
-    ] {
-        let error = cadmpeg_test_support::refusal::resource_limit_at(
-            ResourceDimension::RetainedBytes,
-            operation,
-            |cap| {
-                let mut policy = DecodePolicy::service();
-                policy.limits.max_retained_bytes = cap;
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-                with_scan(&archive, |scan| super::decode_types(&ctx, scan))
-            },
-        );
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == operation)
-        );
-    }
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    let types = with_scan(&archive, |scan| super::decode_types(&ctx, scan)).unwrap();
+    let types = with_scan(&archive, super::decode_types).unwrap();
     assert_eq!(types.len(), 1);
     assert_eq!(types[0].module, "Component");
     assert_eq!(
@@ -144,8 +96,6 @@ fn design_type_copy_refuses_table_entities_module_and_id_limits() {
 
 #[test]
 fn stream_type_indexes_refuse_limits_and_match_escaped_scope() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
     let prefix = "Fusion% Asset:Name[Active]/Design1/";
     let bulk_name = format!("{prefix}BulkStream.dat");
     let meta_name = format!("{prefix}MetaStream.dat");
@@ -158,48 +108,20 @@ fn stream_type_indexes_refuse_limits_and_match_escaped_scope() {
     )
     .unwrap();
     let types = [design_type];
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::stream_types_by_entity(&ctx, &types, &bulk_name)
-        .err()
-        .unwrap();
-    assert!(matches!(error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "f3d stream types by entity"
-    ));
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::stream_types_by_class_tag(&ctx, &types, &bulk_name)
-        .err()
-        .unwrap();
-    assert!(matches!(error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "f3d stream types by class tag"
-    ));
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    let by_entity = super::stream_types_by_entity(&ctx, &types, &bulk_name).unwrap();
+    let by_entity = super::stream_types_by_entity(&types, &bulk_name);
     assert_eq!(by_entity.get(&17), Some(&(type_guid, 7)));
-    let by_class = super::stream_types_by_class_tag(&ctx, &types, &bulk_name).unwrap();
+    let by_class = super::stream_types_by_class_tag(&types, &bulk_name);
     assert_eq!(
         by_class
             .get(&256)
             .map(|design_type| design_type.type_guid.as_str()),
         Some(type_guid)
     );
-    assert!(
-        super::stream_types_by_entity(&ctx, &types, "other/BulkStream.dat")
-            .unwrap()
-            .is_empty()
-    );
+    assert!(super::stream_types_by_entity(&types, "other/BulkStream.dat").is_empty());
 }
 
 #[test]
-fn design_primary_frames_charge_registration_and_frame_storage() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
+fn design_primary_frames_index_one_registered_frame() {
     let mut bytes = Vec::new();
     lp_ascii(&mut bytes, "256");
     bytes.extend_from_slice(&42_u32.to_le_bytes());
@@ -214,36 +136,13 @@ fn design_primary_frames_charge_registration_and_frame_storage() {
         records: vec![crate::design::test_support::primary_record(42, 0)],
         secondary_records: Vec::new(),
     };
-    let arena = DecodeArena::new();
-    for (allowance, operation) in [
-        (0, "frame F3D primary records"),
-        (1, "index F3D primary entities"),
-        (2, "f3d registered primary entities"),
-        (3, "f3d design primary frames"),
-    ] {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = allowance;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = super::design_primary_frames(&ctx, &bytes, &meta)
-            .err()
-            .unwrap();
-        assert!(matches!(error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == operation
-        ));
-    }
-    crate::design::test_support::with_test_decode_context(|ctx| {
-        let frames = super::design_primary_frames(ctx, &bytes, &meta).unwrap();
-        assert_eq!(frames.len(), 1);
-        assert_eq!(frames[0].entity_id, 42);
-    });
+    let frames = super::design_primary_frames(&bytes, &meta).unwrap();
+    assert_eq!(frames.len(), 1);
+    assert_eq!(frames[0].entity_id, 42);
 }
 
 #[test]
-fn typed_primary_frames_charge_all_collections() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
+fn typed_primary_frames_index_one_typed_frame() {
     let mut bytes = Vec::new();
     lp_ascii(&mut bytes, "256");
     bytes.extend_from_slice(&42_u32.to_le_bytes());
@@ -259,38 +158,13 @@ fn typed_primary_frames_charge_all_collections() {
         records: vec![crate::design::test_support::primary_record(42, 0)],
         secondary_records: Vec::new(),
     };
-    let arena = DecodeArena::new();
-    for (allowance, operation) in [
-        (0, "f3d typed primary entities"),
-        (1, "frame F3D primary records"),
-        (2, "index F3D primary entities"),
-        (3, "f3d registered primary entities"),
-        (4, "f3d design primary frames"),
-        (5, "f3d resolved primary entities"),
-        (6, "f3d typed primary frames"),
-    ] {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = allowance;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = super::typed_primary_frames(&ctx, &bytes, &meta, type_guid, "test")
-            .err()
-            .unwrap();
-        assert!(matches!(error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == operation
-        ));
-    }
-    crate::design::test_support::with_test_decode_context(|ctx| {
-        let frames = super::typed_primary_frames(ctx, &bytes, &meta, type_guid, "test").unwrap();
-        assert_eq!(frames.len(), 1);
-        assert_eq!(frames[0].entity_id, 42);
-    });
+    let frames = super::typed_primary_frames(&bytes, &meta, type_guid, "test").unwrap();
+    assert_eq!(frames.len(), 1);
+    assert_eq!(frames[0].entity_id, 42);
 }
 
 #[test]
-fn feature_timeline_item_limit_refuses_before_counted_vector_allocation() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+fn feature_timeline_items_follow_the_counted_vector() {
     use std::collections::HashMap;
 
     let mut bulk = Vec::new();
@@ -307,31 +181,7 @@ fn feature_timeline_item_limit_refuses_before_counted_vector_allocation() {
         }
     }
     let frame = 0..bulk.len();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 1;
-    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::parse_feature_timeline_record(
-        &limited,
-        &bulk,
-        "Design/BulkStream.dat",
-        frame.clone(),
-        ("256", 35),
-        0,
-        &HashMap::new(),
-    )
-    .unwrap_err();
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "admit F3D timeline item slots"
-    ));
-
-    let (service, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let admitted = super::parse_feature_timeline_record(
-        &service,
         &bulk,
         "Design/BulkStream.dat",
         frame,
@@ -339,7 +189,6 @@ fn feature_timeline_item_limit_refuses_before_counted_vector_allocation() {
         0,
         &HashMap::new(),
     )
-    .unwrap()
     .unwrap();
     assert_eq!(
         admitted
@@ -353,8 +202,7 @@ fn feature_timeline_item_limit_refuses_before_counted_vector_allocation() {
 }
 
 #[test]
-fn feature_timeline_id_refuses_prefix_and_suffix_limits() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+fn feature_timeline_id_escapes_its_stream_scope() {
     use std::collections::HashMap;
 
     let stream = "Fusion% Asset:Name[Active]/Design1/BulkStream.dat";
@@ -366,36 +214,7 @@ fn feature_timeline_id_refuses_prefix_and_suffix_limits() {
     bulk.extend_from_slice(&17_u64.to_le_bytes());
     bulk.extend_from_slice(&[0, 0]);
     bulk.extend_from_slice(&0_u32.to_le_bytes());
-    let arena = DecodeArena::new();
-    let prefix_len = u64_from_index(crate::ids::native_scope(stream).len());
-    let suffix_len = u64_from_index(":design-feature-timeline#0".len());
-    for (allowance, operation) in [
-        (prefix_len - 1, "f3d native stream key"),
-        (prefix_len + suffix_len - 1, "retain F3D timeline identity"),
-    ] {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = allowance;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = super::parse_feature_timeline_record(
-            &ctx,
-            &bulk,
-            stream,
-            0..bulk.len(),
-            ("256", 35),
-            0,
-            &HashMap::new(),
-        )
-        .err()
-        .unwrap();
-        assert!(matches!(error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == operation
-        ));
-    }
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let timeline = super::parse_feature_timeline_record(
-        &ctx,
         &bulk,
         stream,
         0..bulk.len(),
@@ -403,16 +222,13 @@ fn feature_timeline_id_refuses_prefix_and_suffix_limits() {
         0,
         &HashMap::new(),
     )
-    .unwrap()
     .unwrap();
     let expected_id = crate::ids::native_design_feature_timeline_id(stream, 0);
     assert_eq!(timeline.id(), &expected_id);
 }
 
 #[test]
-fn timeline_collection_growth_refuses_at_map_child_and_output() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
+fn feature_timelines_decode_one_timeline_record() {
     let mut bulk = Vec::new();
     lp_ascii(&mut bulk, "256");
     bulk.extend_from_slice(&35_u64.to_le_bytes());
@@ -450,26 +266,7 @@ fn timeline_collection_growth_refuses_at_map_child_and_output() {
         .unwrap();
     zip.write_all(&meta).unwrap();
     let archive = zip.finish().unwrap().into_inner();
-    let arena = DecodeArena::new();
-    for (allowance, operation) in [
-        (5, "index F3D timeline entity"),
-        (6, "index F3D timeline type GUID"),
-        (9, "retain F3D feature timeline"),
-    ] {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = allowance;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = with_scan(&archive, |scan| super::decode_feature_timelines(&ctx, scan))
-            .err()
-            .unwrap();
-        assert!(matches!(error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == operation
-        ));
-    }
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    let admitted = with_scan(&archive, |scan| super::decode_feature_timelines(&ctx, scan)).unwrap();
+    let admitted = with_scan(&archive, super::decode_feature_timelines).unwrap();
     assert_eq!(admitted.len(), 1);
     assert_eq!(admitted[0].record_index.get(), 35);
 }
@@ -592,9 +389,7 @@ fn component_naming_space_binds_component_entity_to_context_uuid() {
 }
 
 #[test]
-fn component_naming_space_refuses_each_collection_and_id_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
+fn component_naming_space_keeps_context_and_id() {
     let bulk_name = "FusionAssetName[Active]/Design1/BulkStream.dat";
     let context_uuid = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
     let meta = design_metastream_with_records(
@@ -620,116 +415,13 @@ fn component_naming_space_refuses_each_collection_and_id_limit() {
         .unwrap();
     zip.write_all(&meta).unwrap();
     let archive = zip.finish().unwrap().into_inner();
-    let arena = DecodeArena::new();
-    for (allowance, operation) in [
-        (3, "f3d component naming registered entities"),
-        (4, "f3d component naming spaces by entity"),
-        (5, "f3d component naming spaces output"),
-    ] {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = allowance;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = with_scan(&archive, |scan| {
-            super::decode_component_naming_spaces(&ctx, scan)
-        })
-        .err()
-        .unwrap();
-        assert!(matches!(error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == operation
-        ));
-    }
-    for operation in [
-        "f3d native stream key",
-        "f3d component naming space id suffix",
-    ] {
-        let error = cadmpeg_test_support::refusal::resource_limit_at(
-            ResourceDimension::RetainedBytes,
-            operation,
-            |cap| {
-                let mut policy = DecodePolicy::service();
-                policy.limits.max_retained_bytes = cap;
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-                with_scan(&archive, |scan| {
-                    super::decode_component_naming_spaces(&ctx, scan)
-                })
-            },
-        );
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == operation)
-        );
-    }
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    let spaces = with_scan(&archive, |scan| {
-        super::decode_component_naming_spaces(&ctx, scan)
-    })
-    .unwrap();
+    let spaces = with_scan(&archive, super::decode_component_naming_spaces).unwrap();
     assert_eq!(spaces.len(), 1);
     assert_eq!(spaces[0].context_uuid.as_str(), context_uuid);
     assert_eq!(
         spaces[0].id,
         crate::ids::native_design_component_naming_space_id(bulk_name, 2)
     );
-}
-
-#[test]
-fn component_naming_uuid_refuses_retained_limit_in_both_reference_forms() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
-    const TYPE_GUID: &str = "11111111-2222-3333-4444-555555555555";
-    const UUID: &str = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
-    let meta = design_metastream_with_records(
-        &[(
-            TYPE_GUID,
-            "21F379C8-CAFD-4985-B461-767673A4C502",
-            0,
-            "Component",
-            &[17],
-        )],
-        &[],
-    );
-    for inline_type in [false, true] {
-        let mut bulk = vec![0xaa, 0xbb, 1];
-        bulk.extend_from_slice(&17u64.to_le_bytes());
-        if inline_type {
-            bulk.extend_from_slice(
-                &(u32::try_from(TYPE_GUID.len()).expect("fixture value fits u32")).to_le_bytes(),
-            );
-            bulk.extend_from_slice(TYPE_GUID.as_bytes());
-        }
-        bulk.extend_from_slice(&[0, 0]);
-        crate::test_support::lp_utf16(&mut bulk, UUID);
-        let stored = crate::zip_write::file_options(CompressionMethod::Stored);
-        let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
-        write_synthetic_manifests(&mut zip, stored);
-        zip.start_file("FusionAssetName[Active]/Design1/BulkStream.dat", stored)
-            .unwrap();
-        zip.write_all(&bulk).unwrap();
-        zip.start_file("FusionAssetName[Active]/Design1/MetaStream.dat", stored)
-            .unwrap();
-        zip.write_all(&meta).unwrap();
-        let archive = zip.finish().unwrap().into_inner();
-        let arena = DecodeArena::new();
-        let error = cadmpeg_test_support::refusal::resource_limit_at(
-            ResourceDimension::RetainedBytes,
-            "f3d Design UTF-16 text",
-            |cap| {
-                let mut policy = DecodePolicy::service();
-                policy.limits.max_retained_bytes = cap;
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-                with_scan(&archive, |scan| {
-                    super::decode_component_naming_spaces(&ctx, scan)
-                })
-            },
-        );
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
-            if refusal.dimension == ResourceDimension::RetainedBytes
-                && refusal.operation == "f3d Design UTF-16 text")
-        );
-    }
 }
 
 #[test]
@@ -781,10 +473,7 @@ fn design_feature_timeline_versions_share_variable_width_local_references() {
             &[(35, 0)],
         );
         let decoded = with_scan(&archive(&meta, &bulk), |scan| {
-            crate::design::decode::meta::decode_feature_timelines(
-                &cadmpeg_test_support::service_decode_context(),
-                scan,
-            )
+            crate::design::decode::meta::decode_feature_timelines(scan)
         })
         .expect("exact feature timeline");
         let [timeline] = decoded.as_slice() else {
@@ -820,10 +509,7 @@ fn design_feature_timeline_versions_share_variable_width_local_references() {
             .expect("fixture offset fits address space");
         duplicate[second_offset..second_offset + 8].copy_from_slice(&101_u64.to_le_bytes());
         let error = with_scan(&archive(&meta, &duplicate), |scan| {
-            crate::design::decode::meta::decode_feature_timelines(
-                &cadmpeg_test_support::service_decode_context(),
-                scan,
-            )
+            crate::design::decode::meta::decode_feature_timelines(scan)
         })
         .expect_err("duplicate timeline items must be rejected");
         assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
@@ -835,10 +521,7 @@ fn design_feature_timeline_versions_share_variable_width_local_references() {
             .expect("inline type GUID");
         mismatched_inline_type[inline_type_at] = b'2';
         let error = with_scan(&archive(&meta, &mismatched_inline_type), |scan| {
-            crate::design::decode::meta::decode_feature_timelines(
-                &cadmpeg_test_support::service_decode_context(),
-                scan,
-            )
+            crate::design::decode::meta::decode_feature_timelines(scan)
         })
         .expect_err("an inline type GUID must match the target registration");
         assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
@@ -855,10 +538,7 @@ fn design_feature_timeline_versions_share_variable_width_local_references() {
         &[(35, 0)],
     );
     let error = with_scan(&archive(&unsupported_meta, &bulk), |scan| {
-        crate::design::decode::meta::decode_feature_timelines(
-            &cadmpeg_test_support::service_decode_context(),
-            scan,
-        )
+        crate::design::decode::meta::decode_feature_timelines(scan)
     })
     .expect_err("an unsupported timeline version must not use a known frame speculatively");
     assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
@@ -881,10 +561,7 @@ fn design_feature_timeline_versions_share_variable_width_local_references() {
             &[(35, 0)],
         );
         let error = with_scan(&archive(&incompatible_meta, &bulk), |scan| {
-            crate::design::decode::meta::decode_feature_timelines(
-                &cadmpeg_test_support::service_decode_context(),
-                scan,
-            )
+            crate::design::decode::meta::decode_feature_timelines(scan)
         })
         .expect_err("incompatible timeline registration metadata must be rejected");
         assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));

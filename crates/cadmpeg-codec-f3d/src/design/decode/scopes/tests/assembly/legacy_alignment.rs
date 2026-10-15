@@ -170,16 +170,13 @@ fn legacy_as_built_421_alignment_retains_ordered_limits_without_operand_projecti
                 1_006,
             ),
         ];
-        let alignment = crate::design::test_support::with_test_decode_context(|ctx| {
-            exact_assembly_alignment(
-                ctx,
-                &bytes,
-                &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
-                &scope,
-                &owners,
-            )
-            .unwrap()
-        })
+        let alignment = exact_assembly_alignment(
+            &bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &scope,
+            &owners,
+        )
+        .unwrap()
         .expect("exact 421-byte As-built alignment");
         assert!((alignment.angle() - 0.25).abs() <= EPS_EXACT_FIXTURE);
         for (actual, expected) in alignment.offset().into_iter().zip([1.0, 2.0, 3.0]) {

@@ -361,10 +361,10 @@ fn native_scope_field_rewrite_matches_the_typed_nested_vertex_walk() {
         .unwrap();
     let record = &native.arenas()["design_parameter_scopes"][0];
     let remap = |id: &str| {
-        ctx.format_retained(
-            format_args!("f3d:occurrence:{}", id.strip_prefix("f3d:model:").unwrap()),
-            "test native identity",
-        )
+        Ok(format!(
+            "f3d:occurrence:{}",
+            id.strip_prefix("f3d:model:").unwrap()
+        ))
     };
     let expected =
         cadmpeg_ir::schema::rewrite::identities(&ctx, "test typed walk", scope.clone(), remap)

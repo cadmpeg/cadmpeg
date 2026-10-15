@@ -121,48 +121,12 @@ fn draft(base: u64) -> Draft {
     }
 }
 
-fn assert_annotation_collection_limit(limit: u64, operation: &'static str) {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = Frame::try_new_charged(&ctx, draft(100)).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == operation)
-    );
-}
-
-#[test]
-fn annotation_operand_index_refuses_collection_limit() {
-    assert_annotation_collection_limit(2, "index F3D annotation operands");
-}
-
-#[test]
-fn annotation_return_index_refuses_collection_limit() {
-    assert_annotation_collection_limit(5, "index F3D annotation return members");
-}
-
-#[test]
-fn annotation_operand_run_refuses_collection_limit() {
-    assert_annotation_collection_limit(9, "retain F3D annotation operands");
-}
-
-#[test]
-fn annotation_return_run_refuses_collection_limit() {
-    assert_annotation_collection_limit(12, "retain F3D annotation return members");
-}
-
 #[test]
 fn annotation_frame_preserves_nulls_duplicate_geometry_and_return_order() {
     let original = draft(100);
-    let frame = crate::test_support::with_decode_context(|ctx| {
-        Frame::try_new_charged(ctx, original.clone())
-    })
-    .map_err(|error| error.to_string())
-    .unwrap();
+    let frame = Frame::try_new(original.clone())
+        .map_err(|error| error.to_string())
+        .unwrap();
     assert_eq!(frame.clone().into_draft(), original);
     assert_eq!(
         frame
@@ -181,11 +145,9 @@ fn annotation_frame_preserves_nulls_duplicate_geometry_and_return_order() {
         operand.geometry_record_index = None;
     }
     all_null.return_members.clear();
-    assert!(
-        crate::test_support::with_decode_context(|ctx| Frame::try_new_charged(ctx, all_null))
-            .map_err(|error| error.to_string())
-            .is_ok()
-    );
+    assert!(Frame::try_new(all_null)
+        .map_err(|error| error.to_string())
+        .is_ok());
 }
 
 #[test]
@@ -193,10 +155,9 @@ fn annotation_frame_borrowed_wire_matches_owned_wire_bytes() {
     for companion in [None, Some(1)] {
         let mut input = draft(100);
         input.companion_record_index = companion;
-        let frame =
-            crate::test_support::with_decode_context(|ctx| Frame::try_new_charged(ctx, input))
-                .map_err(|error| error.to_string())
-                .unwrap();
+        let frame = Frame::try_new(input)
+            .map_err(|error| error.to_string())
+            .unwrap();
         let owned = super::DesignDimensionAnnotationFrameWire::from(frame.clone());
         assert_eq!(
             serde_json::to_vec(&frame).unwrap(),
@@ -212,10 +173,9 @@ fn annotation_frame_native_retained_limit_refuses_before_clone() {
         id: &'static str,
         value: &'a Frame,
     }
-    let frame =
-        crate::test_support::with_decode_context(|ctx| Frame::try_new_charged(ctx, draft(100)))
-            .map_err(|error| error.to_string())
-            .unwrap();
+    let frame = Frame::try_new(draft(100))
+        .map_err(|error| error.to_string())
+        .unwrap();
     let record = NestedRecord {
         id: "f3d:native:annotation-frame#0",
         value: &frame,
@@ -230,10 +190,9 @@ fn annotation_frame_native_retained_limit_refuses_before_clone() {
 
 #[test]
 fn annotation_frame_rejects_stale_offsets_and_changed_multisets() {
-    let frame =
-        crate::test_support::with_decode_context(|ctx| Frame::try_new_charged(ctx, draft(100)))
-            .map_err(|error| error.to_string())
-            .unwrap();
+    let frame = Frame::try_new(draft(100))
+        .map_err(|error| error.to_string())
+        .unwrap();
     let wire = serde_json::to_value(&frame).unwrap();
     for field in [
         "annotation_byte_offset",
@@ -270,19 +229,17 @@ fn annotation_frame_rejects_stale_offsets_and_changed_multisets() {
         .contains("return_members"));
     let mut empty = draft(100);
     empty.operands.clear();
-    assert!(
-        crate::test_support::with_decode_context(|ctx| Frame::try_new_charged(ctx, empty))
-            .map_err(|error| error.to_string())
-            .unwrap_err()
-            .contains("operands")
-    );
+    assert!(Frame::try_new(empty)
+        .map_err(|error| error.to_string())
+        .unwrap_err()
+        .contains("operands"));
 }
 
 #[test]
 fn annotation_frame_rejects_unrepresentable_extents() {
     let valid = draft(u64::MAX - 320);
     assert_eq!(
-        crate::test_support::with_decode_context(|ctx| Frame::try_new_charged(ctx, valid.clone()))
+        Frame::try_new(valid.clone())
             .map_err(|error| error.to_string())
             .unwrap()
             .owner_reference_offset(),
@@ -290,20 +247,16 @@ fn annotation_frame_rejects_unrepresentable_extents() {
     );
     let mut overflow = valid;
     overflow.frame_length += 1;
-    assert!(
-        crate::test_support::with_decode_context(|ctx| Frame::try_new_charged(ctx, overflow))
-            .map_err(|error| error.to_string())
-            .unwrap_err()
-            .contains("owner_reference_offset")
-    );
+    assert!(Frame::try_new(overflow)
+        .map_err(|error| error.to_string())
+        .unwrap_err()
+        .contains("owner_reference_offset"));
     let mut overflow = draft(0);
     overflow.byte_offset = u64::MAX;
-    assert!(
-        crate::test_support::with_decode_context(|ctx| Frame::try_new_charged(ctx, overflow))
-            .map_err(|error| error.to_string())
-            .unwrap_err()
-            .contains("annotation_byte_offset")
-    );
+    assert!(Frame::try_new(overflow)
+        .map_err(|error| error.to_string())
+        .unwrap_err()
+        .contains("annotation_byte_offset"));
 }
 
 fn locus_pair(has_first: bool) -> super::DesignDimensionLocusPair {

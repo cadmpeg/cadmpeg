@@ -214,13 +214,9 @@ fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
             draft.feature_ordinal_offset = u64_from_index(compact::FEATURE_ORDINAL);
         })
         .unwrap();
-    let compact_construction = exact_base_feature_construction(
-        &cadmpeg_test_support::service_decode_context(),
-        &compact_bytes,
-        &compact_scope,
-    )
-    .unwrap()
-    .expect("class-452 compact Base Feature frame is canonical");
+    let compact_construction = exact_base_feature_construction(&compact_bytes, &compact_scope)
+        .unwrap()
+        .expect("class-452 compact Base Feature frame is canonical");
     let DesignBaseFeatureConstruction::LegacyBodyBasedOnFaces {
         form,
         scope_reference,
@@ -300,13 +296,9 @@ fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
     );
 
     compact_bytes[compact::MODE] = 1;
-    let mode_one = exact_base_feature_construction(
-        &cadmpeg_test_support::service_decode_context(),
-        &compact_bytes,
-        &compact_scope,
-    )
-    .unwrap()
-    .expect("mode-one class-452 compact frame is canonical");
+    let mode_one = exact_base_feature_construction(&compact_bytes, &compact_scope)
+        .unwrap()
+        .expect("mode-one class-452 compact frame is canonical");
     let DesignBaseFeatureConstruction::LegacyBodyBasedOnFaces { form, .. } = mode_one else {
         panic!("class-452 compact mode-one frame selected the wrong form");
     };
@@ -411,13 +403,9 @@ fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
             draft.feature_ordinal_offset = u64_from_index(expanded::FEATURE_ORDINAL);
         })
         .unwrap();
-    let expanded_construction = exact_base_feature_construction(
-        &cadmpeg_test_support::service_decode_context(),
-        &expanded_bytes,
-        &expanded_scope,
-    )
-    .unwrap()
-    .expect("class-452 expanded Base Feature frame is canonical");
+    let expanded_construction = exact_base_feature_construction(&expanded_bytes, &expanded_scope)
+        .unwrap()
+        .expect("class-452 expanded Base Feature frame is canonical");
     let DesignBaseFeatureConstruction::LegacyBodyBasedOnFaces {
         form,
         scope_reference,
@@ -447,23 +435,19 @@ fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
 
     let mut invalid_mode = compact_bytes;
     invalid_mode[compact::MODE] = 2;
-    assert!(exact_base_feature_construction(
-        &cadmpeg_test_support::service_decode_context(),
-        &invalid_mode,
-        &compact_scope
-    )
-    .unwrap()
-    .is_none());
+    assert!(
+        exact_base_feature_construction(&invalid_mode, &compact_scope)
+            .unwrap()
+            .is_none()
+    );
 
     let mut invalid_count = expanded_bytes.clone();
     put_u32(&mut invalid_count, expanded::BODY_COUNT, 1);
-    assert!(exact_base_feature_construction(
-        &cadmpeg_test_support::service_decode_context(),
-        &invalid_count,
-        &expanded_scope
-    )
-    .unwrap()
-    .is_none());
+    assert!(
+        exact_base_feature_construction(&invalid_count, &expanded_scope)
+            .unwrap()
+            .is_none()
+    );
 
     let mut invalid_scope_reference = expanded_bytes;
     put_u32_reference(
@@ -471,11 +455,9 @@ fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
         expanded::SCOPE_REFERENCE_MARKER,
         999,
     );
-    assert!(exact_base_feature_construction(
-        &cadmpeg_test_support::service_decode_context(),
-        &invalid_scope_reference,
-        &expanded_scope
-    )
-    .unwrap()
-    .is_none());
+    assert!(
+        exact_base_feature_construction(&invalid_scope_reference, &expanded_scope)
+            .unwrap()
+            .is_none()
+    );
 }

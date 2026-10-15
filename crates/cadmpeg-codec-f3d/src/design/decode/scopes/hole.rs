@@ -13,7 +13,7 @@ use crate::records::feature::hole::DesignHoleConstruction;
 use crate::records::feature::hole::DesignHoleFaceSelection;
 use crate::records::feature::scope;
 use crate::records::feature::scope::DesignParameterScope;
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
 use std::collections::HashMap;
@@ -51,7 +51,6 @@ const EPS_HOLE_DIRECTION_NORM: f64 = 1.0e-12;
 /// before the paired header. The type GUID and version select the layout; the
 /// dynamic class tag does not.
 pub(in crate::design::decode) fn exact_hole_construction(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
@@ -62,11 +61,7 @@ pub(in crate::design::decode) fn exact_hole_construction(
         if &scope.kind() != required_scope_kind {
             return None;
         }
-        let face_selection =
-            match exact_hole_face_selection(ctx, bytes, records, scope, stream_types) {
-                Ok(face_selection) => face_selection,
-                Err(error) => return Some(Err(error)),
-            };
+        let face_selection = exact_hole_face_selection(bytes, records, scope, stream_types);
         let mut candidate = None;
         for record_index in scope.reference_members().values() {
             let Some((type_guid, version)) = stream_types.get(&u64::from(*record_index)) else {
@@ -90,7 +85,6 @@ pub(in crate::design::decode) fn exact_hole_construction(
                     continue;
                 };
                 let next = match hole_construction_frame_at(
-                    ctx,
                     bytes,
                     start,
                     paired_at,
@@ -117,12 +111,11 @@ pub(in crate::design::decode) fn exact_hole_construction(
 }
 
 fn exact_hole_face_selection(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     stream_types: &HashMap<u64, (&str, u32)>,
-) -> Result<Option<DesignHoleFaceSelection>, CodecError> {
+) -> Option<DesignHoleFaceSelection> {
     let mut candidate = None;
     for record_index in scope.reference_members().values() {
         if stream_types.get(&u64::from(*record_index)) != Some(&(HOLE_FACE_SELECTION_TYPE_GUID, 1))
@@ -142,17 +135,14 @@ fn exact_hole_face_selection(
                 continue;
             }
             let Ok(start_offset) = u64::try_from(start) else {
-                return Ok(None);
+                return None;
             };
             let Some(frame) = parse_entity_selection_frame(
-                ctx,
                 bytes,
                 *record_index,
                 start_offset,
                 class_tag.as_str(),
-            )
-            .transpose()?
-            else {
+            ) else {
                 continue;
             };
             let Ok(asset_id) =
@@ -183,15 +173,14 @@ fn exact_hole_face_selection(
                 next_byte_offset: frame.next_byte_offset,
             };
             if candidate.replace(next).is_some() {
-                return Ok(None);
+                return None;
             }
         }
     }
-    Ok(candidate)
+    candidate
 }
 
 fn hole_construction_frame_at(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     paired_at: usize,
@@ -248,11 +237,6 @@ fn hole_construction_frame_at(
         }
 
         let mut input_records = Vec::new();
-        if let Err(error) =
-            ctx.reserve_vec(&mut input_records, input_count, "f3d Hole input records")
-        {
-            return Some(Err(error));
-        }
         for _ in 0..input_count {
             let reference_at = cursor;
             let reference = take_reference(body, &mut cursor)?;

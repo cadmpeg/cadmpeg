@@ -812,9 +812,7 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
 }
 
 #[test]
-fn edge_flange_native_height_target_id_refuses_retained_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
+fn edge_flange_unresolved_to_object_keeps_native_target() {
     use cadmpeg_ir::features::{
         FeatureDefinition, FeatureOperation, SheetMetalFlangeHeight, SheetMetalFlangeHeightTarget,
     };
@@ -824,54 +822,26 @@ fn edge_flange_native_height_target_id_refuses_retained_limit() {
     })
     .unwrap()
     .expect("unresolved to-object EdgeFlange");
-    let FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange {
-        height:
-            SheetMetalFlangeHeight::ToObject {
-                target: SheetMetalFlangeHeightTarget::Native(native),
+    assert!(matches!(
+        definition,
+        FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange {
+            height: SheetMetalFlangeHeight::ToObject {
+                target: SheetMetalFlangeHeightTarget::Native(_),
                 ..
             },
-        ..
-    }) = definition
-    else {
-        panic!("native to-object target");
-    };
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_retained_bytes = u64::try_from(native.len() - 1).unwrap();
-
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let result = edge_flange_to_object_fixture(&ctx, false, false);
-    assert!(
-        matches!(result, Err(CodecError::ResourceLimit(ref failure))
-        if failure.operation == "f3d EdgeFlange native height target id"
-            && failure.dimension == ResourceDimension::RetainedBytes),
-        "expected native height target refusal, got {result:?}"
-    );
+            ..
+        })
+    ));
 }
 
 #[test]
-fn edge_flange_two_sided_edge_width_refuses_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
+fn edge_flange_two_sided_projects() {
     assert!(
         crate::test_support::with_decode_context(|decode_ctx| edge_flange_to_object_fixture(
             decode_ctx, true, true
         ))
         .unwrap()
         .is_some()
-    );
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 0;
-
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let result = edge_flange_to_object_fixture(&ctx, true, true);
-    assert!(
-        matches!(result, Err(CodecError::ResourceLimit(ref failure))
-        if failure.operation == "f3d EdgeFlange two-sided edge width"
-            && failure.dimension == ResourceDimension::CollectionItems),
-        "expected two-sided edge width refusal, got {result:?}"
     );
 }
 
@@ -968,12 +938,7 @@ fn surface_patch_continuity_needs_every_boundary_to_agree() {
     };
     let uniform_continuity = |scope: &DesignParameterScope| {
         cadmpeg_ir::features::NonEmptyMembers::try_from(
-            crate::test_support::with_decode_context(|decode_ctx| {
-                crate::design::feature_project::surface_patch_boundary_continuities(
-                    decode_ctx, scope,
-                )
-            })
-            .unwrap(),
+            crate::design::feature_project::surface_patch_boundary_continuities(scope),
         )
         .ok()
         .map(|conditions| cadmpeg_ir::features::FilledSurfaceContinuity { conditions })
@@ -999,10 +964,7 @@ fn surface_patch_continuity_needs_every_boundary_to_agree() {
         boundary(DesignPatchContinuity::Connected),
     ]);
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            crate::design::feature_project::surface_patch_boundary_continuities(decode_ctx, &mixed)
-        })
-        .unwrap(),
+        crate::design::feature_project::surface_patch_boundary_continuities(&mixed),
         vec![SurfaceContinuity::Tangent, SurfaceContinuity::Contact]
     );
     assert!(uniform_continuity(&mixed).is_none());
@@ -1013,18 +975,16 @@ fn surface_patch_continuity_needs_every_boundary_to_agree() {
         ))]))
         .is_none()
     );
-    assert!(crate::test_support::with_decode_context(|decode_ctx| {
-        crate::design::feature_project::surface_patch_boundary_continuities(
-            decode_ctx,
-            &scope_with(vec![boundary(DesignPatchContinuity::Unknown(9))]),
-        )
-    })
-    .unwrap()
-    .is_empty());
+    assert!(
+        crate::design::feature_project::surface_patch_boundary_continuities(&scope_with(vec![
+            boundary(DesignPatchContinuity::Unknown(9)),
+        ]))
+        .is_empty()
+    );
 }
 
 #[test]
-fn surface_patch_reference_occupancy_reports_limit_and_preserves_boundary_endpoints() {
+fn surface_patch_reference_occupancy_preserves_boundary_endpoints() {
     use crate::records::{
         feature::{
             scope::DesignParameterScope,
@@ -1035,8 +995,7 @@ fn surface_patch_reference_occupancy_reports_limit_and_preserves_boundary_endpoi
             construction::DesignConstructionOperandGroupFrame,
         },
     };
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
+
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, SurfaceContinuity};
 
     let mut scope = DesignParameterScope::empty(
@@ -1149,22 +1108,6 @@ fn surface_patch_reference_occupancy_reports_limit_and_preserves_boundary_endpoi
                 ][..],
             )
     ));
-
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 3;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).unwrap();
-    let error = crate::design::feature_project::project_surface_patch(
-        &ctx,
-        &scope,
-        &shifted_groups,
-        &[],
-        &[],
-    )
-    .expect_err("ten occupancy slots exceed the remaining collection limit");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "f3d surface-patch reference occupancy"));
 
     scope
         .try_edit(|draft| {
@@ -1448,44 +1391,5 @@ fn hem_scope_projects_each_decoded_owner_layout() {
             length: cadmpeg_ir::scalar::PositiveLength::new(100.0).unwrap(),
             radius: cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap(),
         }
-    );
-}
-
-#[test]
-fn surface_patch_continuities_refuse_collection_limit() {
-    use crate::records::feature::scope::DesignParameterScope;
-    use crate::records::feature::surface_ops::{DesignPatchContinuity, DesignSurfacePatchBoundary};
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-    let mut scope = DesignParameterScope::empty(
-        "f3d:test:scope#1",
-        crate::records::feature::scope::DesignFeatureKind::SurfacePatch,
-        1,
-    );
-    if let crate::records::feature::scope::DesignScopePayloadMut::SurfacePatch(slot) =
-        scope.payload_mut()
-    {
-        *slot = vec![
-            DesignSurfacePatchBoundary {
-                scope_reference_ordinal: 0,
-                record_index: 0,
-                is_seed_selection: false,
-                continuity: DesignPatchContinuity::Connected,
-                flip: 2,
-                scale: crate::test_support::real(-1.0),
-                model_reference: 0,
-            };
-            2
-        ];
-    }
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 1;
-
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(
-        matches!(crate::design::feature_project::surface_patch_boundary_continuities(&ctx, &scope),
-        Err(CodecError::ResourceLimit(failure)) if failure.dimension == ResourceDimension::CollectionItems
-            && failure.operation == "f3d surface-patch continuity")
     );
 }

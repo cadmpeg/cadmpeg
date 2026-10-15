@@ -1,11 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Whole-body operations: scale and copy-paste bodies.
 
-use crate::records::admission::RecordAdmission;
 use crate::records::identity::Located;
 use crate::records::references::DesignClassTag;
 use crate::records::serde_column::SliceColumn;
-use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
 use serde::{Deserialize, Serialize};
@@ -211,17 +209,6 @@ impl Serialize for DesignCopyPasteBodiesOperation {
     }
 }
 
-enum CopyPasteBodiesError {
-    Payload(String),
-    Resource(CodecError),
-}
-
-impl From<&'static str> for CopyPasteBodiesError {
-    fn from(message: &'static str) -> Self {
-        Self::Payload(message.into())
-    }
-}
-
 pub(crate) struct CopyPasteRecordLocation {
     pub(crate) record_index: u32,
     pub(crate) class_tag: DesignClassTag,
@@ -229,26 +216,19 @@ pub(crate) struct CopyPasteRecordLocation {
 }
 
 impl DesignCopyPasteBodiesOperation {
-    pub(crate) fn try_new_charged(
-        ctx: &DecodeContext<'_>,
+    pub(crate) fn try_new(
         bodies: Vec<DesignCopiedBody>,
         body_group: CopyPasteRecordLocation,
         relation: CopyPasteRecordLocation,
     ) -> Result<Self, CodecError> {
-        Self::try_new_inner(RecordAdmission::Charged(ctx), bodies, body_group, relation).map_err(
-            |error| match error {
-                CopyPasteBodiesError::Payload(message) => CodecError::Malformed(message),
-                CopyPasteBodiesError::Resource(error) => error,
-            },
-        )
+        Self::try_new_inner(bodies, body_group, relation).map_err(CodecError::Malformed)
     }
 
     fn try_new_inner(
-        admission: RecordAdmission<'_, '_>,
         bodies: Vec<DesignCopiedBody>,
         body_group: CopyPasteRecordLocation,
         relation: CopyPasteRecordLocation,
-    ) -> Result<Self, CopyPasteBodiesError> {
+    ) -> Result<Self, String> {
         let CopyPasteRecordLocation {
             record_index: body_group_record_index,
             class_tag: body_group_class_tag,
@@ -282,12 +262,7 @@ impl DesignCopyPasteBodiesOperation {
                 if suffixes.contains(&suffix) {
                     return Err("source and copied body suffixes must be pairwise distinct".into());
                 }
-                {
-                    let operation = "index F3D copied body suffixes";
-                    admission
-                        .reserve_set(&mut suffixes, 1, operation)
-                        .map_err(CopyPasteBodiesError::Resource)?;
-                }
+                {}
                 suffixes.insert(suffix);
             }
             if body.operand.offset != operand_offset
@@ -386,7 +361,6 @@ impl TryFrom<DesignCopyPasteBodiesOperationWire> for DesignCopyPasteBodiesOperat
                 ),
         );
         Self::try_new_inner(
-            RecordAdmission::Admitted,
             bodies,
             CopyPasteRecordLocation {
                 record_index: wire.body_group_record_index,
@@ -399,10 +373,6 @@ impl TryFrom<DesignCopyPasteBodiesOperationWire> for DesignCopyPasteBodiesOperat
                 byte_offset: wire.relation_byte_offset,
             },
         )
-        .map_err(|error| match error {
-            CopyPasteBodiesError::Payload(message) => message,
-            CopyPasteBodiesError::Resource(error) => error.to_string(),
-        })
     }
 }
 
