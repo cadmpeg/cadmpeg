@@ -179,7 +179,7 @@ Every old revision belongs to stable entity slot `new` for an update and slot `o
 
 - Model-space lengths are stored in centimetres in both widths.
 - Model-space points, radii, length-bearing vectors, 3D control points, and length tolerances convert to millimetres by ×10.
-- Unit vectors, ratios, angles, knot parameters, non-length enums, and homogeneous weights are dimensionless. Pcurve coordinates use the parameter units of their support carrier.
+- Unit vectors, ratios, angles, knot parameters, non-length enums, and homogeneous weights are dimensionless. Pcurve coordinates use the parameter units of their support carrier: on a `plane` they are lengths and convert by ×10.
 - The header `scale` field is metadata, not a coordinate multiplier (§1).
 
 An analytic surface is untrimmed; its extent is independent of the face's vertex hull.
@@ -675,7 +675,7 @@ The second line holds exactly three UTF-8 product strings — product family, pr
 
 The third line holds exactly three kernel doubles in the binary order: `scale`, `resabs`, and `resnor`. The `resabs` and `resnor` tolerances are finite nonnegative error bounds.
 
-**Unit rule.** In the text encoding, a finite positive `scale` is the stream's length unit in millimetres per unit. The value `-1` declares the unit unset. A model-space length equals its stored value multiplied by `scale` millimetres. A stream with no units line or an unset unit declares no length unit. This differs from the binary encoding, whose lengths are centimetres and whose `scale` word is not a coordinate multiplier (§4). Dimensionless values — unit vectors, ratios, angles, knots, parameters, and pcurve coordinates — do not take the unit.
+**Unit rule.** In the text encoding, a finite positive `scale` is the stream's length unit in millimetres per unit. The value `-1` declares the unit unset. A model-space length equals its stored value multiplied by `scale` millimetres. A stream with no units line or an unset unit declares no length unit. This differs from the binary encoding, whose lengths are centimetres and whose `scale` word is not a coordinate multiplier (§4). The coordinates of a pcurve on a `plane` support, embedded or face-bound, are lengths along the plane's parameter directions (§6.2) and take the unit. Dimensionless values — unit vectors, ratios, angles, knots, parameters, and the coordinates of a pcurve on any other support — do not take the unit.
 
 ### 7.2 Record grammar
 

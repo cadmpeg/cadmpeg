@@ -238,6 +238,7 @@ pub fn has_text_magic(bytes: &[u8]) -> bool {
 // Primitive fields
 // ---------------------------------------------------------------------------
 
+mod plane_pcurves;
 mod segments;
 
 /// One whitespace-delimited field, before typing.
@@ -694,6 +695,7 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, Stream
     // Length conversion into the binary centimetre convention: the stream
     // stores lengths in `scale` millimetres per unit.
     let mut scale = header.scale().get();
+    let mut segment_scales = vec![(0, scale)];
     let mut record_count = header.record_count;
     let mut segment_start = 0;
     let mut record_segments = Vec::new();
@@ -768,6 +770,7 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, Stream
             )
             .map_err(StreamFailure::from_operation)?;
             scale = next_header.scale().get();
+            segment_scales.push((records.len(), scale));
             record_count = next_header.record_count;
             segment_start = records.len();
             reader.pos = end;
@@ -937,6 +940,13 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, Stream
         record_segments.push(segment_start..records.len());
         segments::rebase(&mut records, &record_segments).map_err(StreamFailure::from_operation)?;
     }
+    plane_pcurves::convert(&mut records, &segment_scales).map_err(|index| {
+        StreamFailure::NotImplemented(StreamError {
+            format: StreamFormat::Text,
+            offset: records[index].offset,
+            reason: TypeFailure::UnrepresentableLength.reason().to_string(),
+        })
+    })?;
     Ok(TextStream {
         header,
         records,
@@ -1482,6 +1492,9 @@ fn try_shape(
 enum BsKind {
     /// Two unscaled surface parameters per pole.
     Parameter,
+    /// Two lengths per pole along the parameter directions of a plane
+    /// support.
+    PlaneLength,
     /// Three model-space lengths per pole.
     Model,
 }
@@ -1544,9 +1557,10 @@ fn bs_curve_block(cur: &mut Cur<'_, '_, '_>, kind: BsKind, out: &mut Vec<Token>)
     let knots = cur.long()?;
     push_token!(cur, out, Token::Long(knots));
     let poles = spline_poles(cur, knots, degree, out)?;
-    let coords = match kind {
-        BsKind::Parameter => 2,
-        BsKind::Model => 3,
+    let (coords, scaled_coords) = match kind {
+        BsKind::Parameter => (2, 0),
+        BsKind::PlaneLength => (2, 2),
+        BsKind::Model => (3, 3),
     };
     let per_pole = coords + usize::from(rational);
     if poles > (cur.prims.len() - cur.pos) / per_pole {
@@ -1555,7 +1569,7 @@ fn bs_curve_block(cur: &mut Cur<'_, '_, '_>, kind: BsKind, out: &mut Vec<Token>)
     for _ in 0..poles {
         for coordinate in 0..per_pole {
             let value = cur.num()?;
-            let scaled = matches!(kind, BsKind::Model) && coordinate < coords;
+            let scaled = coordinate < scaled_coords;
             push_token!(
                 cur,
                 out,
@@ -1729,8 +1743,9 @@ fn sense_word(cur: &mut Cur<'_, '_, '_>, out: &mut Vec<Token>) -> Option<()> {
 
 /// One nullable support-surface slot: the `null_surface` sentinel, a `spline`
 /// reference or inline construction with its boolean and four optional
-/// bounds, or an embedded analytic surface ([`asm.md` §6.3]).
-fn nullable_surface(cur: &mut Cur<'_, '_, '_>, out: &mut Vec<Token>) -> Option<()> {
+/// bounds, or an embedded analytic surface ([`asm.md` §6.3]). Returns the
+/// coordinate domain of the pcurves on the support.
+fn nullable_surface(cur: &mut Cur<'_, '_, '_>, out: &mut Vec<Token>) -> Option<BsKind> {
     let word = match cur.peek()? {
         Prim::Word(word) => word.as_str(),
         _ => return None,
@@ -1739,7 +1754,7 @@ fn nullable_surface(cur: &mut Cur<'_, '_, '_>, out: &mut Vec<Token>) -> Option<(
         "null_surface" => {
             cur.bump();
             push_token!(cur, out, Token::Ident("null_surface".to_string()));
-            Some(())
+            Some(BsKind::Parameter)
         }
         "spline" => {
             cur.bump();
@@ -1749,7 +1764,7 @@ fn nullable_surface(cur: &mut Cur<'_, '_, '_>, out: &mut Vec<Token>) -> Option<(
             for _ in 0..4 {
                 cur.opt_bound(out)?;
             }
-            Some(())
+            Some(BsKind::Parameter)
         }
         "plane" => {
             cur.bump();
@@ -1760,7 +1775,7 @@ fn nullable_surface(cur: &mut Cur<'_, '_, '_>, out: &mut Vec<Token>) -> Option<(
             for _ in 0..4 {
                 cur.opt_bound(out)?;
             }
-            Some(())
+            Some(BsKind::PlaneLength)
         }
         "cone" => {
             cur.bump();
@@ -1776,7 +1791,7 @@ fn nullable_surface(cur: &mut Cur<'_, '_, '_>, out: &mut Vec<Token>) -> Option<(
             for _ in 0..4 {
                 cur.opt_bound(out)?;
             }
-            Some(())
+            Some(BsKind::Parameter)
         }
         "sphere" => {
             cur.bump();
@@ -1787,7 +1802,7 @@ fn nullable_surface(cur: &mut Cur<'_, '_, '_>, out: &mut Vec<Token>) -> Option<(
             for _ in 0..4 {
                 cur.opt_bound(out)?;
             }
-            Some(())
+            Some(BsKind::Parameter)
         }
         "torus" => {
             cur.bump();
@@ -1805,21 +1820,21 @@ fn nullable_surface(cur: &mut Cur<'_, '_, '_>, out: &mut Vec<Token>) -> Option<(
             for _ in 0..4 {
                 cur.opt_bound(out)?;
             }
-            Some(())
+            Some(BsKind::Parameter)
         }
         _ => None,
     }
 }
 
 /// One nullable BS2 parameter-curve slot: the `nullbs` sentinel or an inline
-/// 2D block without a fit-tolerance field.
-fn nullable_bs2(cur: &mut Cur<'_, '_, '_>, out: &mut Vec<Token>) -> Option<()> {
+/// 2D block in coordinate domain `kind` without a fit-tolerance field.
+fn nullable_bs2(cur: &mut Cur<'_, '_, '_>, kind: BsKind, out: &mut Vec<Token>) -> Option<()> {
     if matches!(cur.peek(), Some(Prim::Word(word)) if word == "nullbs") {
         cur.bump();
         push_token!(cur, out, Token::Ident("nullbs".to_string()));
         return Some(());
     }
-    bs_curve_block(cur, BsKind::Parameter, out)
+    bs_curve_block(cur, kind, out)
 }
 
 /// The shared cache-first intcurve context ([`asm.md` §6.3]): serializer
@@ -1835,10 +1850,10 @@ fn cache_first_curve_context(cur: &mut Cur<'_, '_, '_>, out: &mut Vec<Token>) ->
     bs_curve_block(cur, BsKind::Model, out)?;
     let tolerance = cur.num()?;
     push_token!(cur, out, Token::Double(cur.length(tolerance)?));
-    nullable_surface(cur, out)?;
-    nullable_surface(cur, out)?;
-    nullable_bs2(cur, out)?;
-    nullable_bs2(cur, out)?;
+    let first = nullable_surface(cur, out)?;
+    let second = nullable_surface(cur, out)?;
+    nullable_bs2(cur, first, out)?;
+    nullable_bs2(cur, second, out)?;
     cur.opt_bound(out)?;
     cur.opt_bound(out)?;
     for _ in 0..3 {
@@ -3071,6 +3086,89 @@ mod tests {
         assert_eq!(
             stream.framing[0].kind,
             super::StreamDiagnosticKind::Terminator
+        );
+    }
+
+    /// An inch stream: one stream unit is 25.4 mm, so a stream length is 2.54
+    /// binary centimetres.
+    fn inch_stream(body: &str) -> Vec<u8> {
+        let mut text = String::from("23200 0 2 2 \n");
+        text.push_str("16 Autodesk Neutron 21 ASM 232.4.0.65535 OSX 9 Synthetic \n");
+        text.push_str("25.4 1e-06 1.0e-10 \n");
+        text.push_str(body);
+        text.push_str("End-of-ASM-data \n");
+        text.into_bytes()
+    }
+
+    /// The pole coordinates of the BS2 block whose marker is the `ordinal`-th
+    /// `nubs` identifier of `tokens`.
+    fn bs2_poles(tokens: &[Token], ordinal: usize) -> Vec<f64> {
+        let marker = tokens
+            .iter()
+            .enumerate()
+            .filter(|(_, token)| matches!(token, Token::Ident(name) if name == "nubs"))
+            .nth(ordinal)
+            .map(|(pos, _)| pos)
+            .expect("BS2 marker");
+        // Degree 1, two unique knots: marker, degree, closure, count, two
+        // knot pairs, then two poles.
+        tokens[marker + 8..marker + 12]
+            .iter()
+            .map(|token| match token {
+                Token::Double(value) => *value,
+                other => panic!("pole coordinate {other:?}"),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn plane_support_pcurve_lengths_take_the_stream_unit() {
+        // A plane support's pcurve stores lengths; a cone support's pcurve
+        // stores a generator coordinate and an angle.
+        let stream = parse(&inch_stream(
+            "intcurve-curve $-1 -1 $-1 forward { int_int_cur 23100 full nubs 1 open 2 0 1 1 1 \
+             1 2 3 4 5 6 0 plane 0 0 0 0 0 1 1 0 0 reverse_v I I I I cone 0 0 0 0 0 1 1 0 0 1 \
+             I I 0 1 1 forward I I I I nubs 1 open 2 0 1 1 1 1 2 3 4 nubs 1 open 2 0 1 1 1 1 2 \
+             3 4 I I 0 0 0 0 } I I #\n",
+        ))
+        .expect("intersection curve");
+        let tokens = &stream.records[0].tokens;
+        let plane = bs2_poles(tokens, 1);
+        let cone = bs2_poles(tokens, 2);
+        for (converted, stored) in plane.iter().zip([1.0, 2.0, 3.0, 4.0]) {
+            assert!(approx(*converted, stored * 2.54), "{plane:?}");
+        }
+        assert_eq!(cone, [1.0, 2.0, 3.0, 4.0]);
+    }
+
+    #[test]
+    fn face_bound_pcurve_on_a_plane_face_takes_the_stream_unit() {
+        let pcurve = |u: f64| {
+            format!(
+                "pcurve $-1 -1 $-1 0 forward {{ exp_par_cur nubs 1 open 2 0 1 1 1 {u} 2 3 4 0 \
+                 spline forward {{ ref 9 }} I I I I }} 0 0 #\n"
+            )
+        };
+        let mut body = String::from(
+            "face $-1 -1 $-1 $1 $2 $-1 $-1 $4 forward single #\n\
+             face $-1 -1 $-1 $-1 $3 $-1 $-1 $5 forward single #\n\
+             loop $-1 -1 $-1 $-1 $6 $0 #\n\
+             loop $-1 -1 $-1 $-1 $7 $1 #\n\
+             plane-surface $-1 -1 $-1 0 0 0 0 0 1 1 0 0 forward_v I I I I #\n\
+             cone-surface $-1 -1 $-1 0 0 0 0 0 1 1 0 0 1 I I 0 1 1 forward I I I I #\n\
+             coedge $-1 -1 $-1 $6 $6 $-1 $-1 forward $2 0 $8 #\n\
+             coedge $-1 -1 $-1 $7 $7 $-1 $-1 forward $3 0 $9 #\n",
+        );
+        body.push_str(&pcurve(1.0));
+        body.push_str(&pcurve(1.0));
+        let stream = parse(&inch_stream(&body)).expect("two faces");
+        let plane = bs2_poles(&stream.records[8].tokens, 0);
+        for (converted, stored) in plane.iter().zip([1.0, 2.0, 3.0, 4.0]) {
+            assert!(approx(*converted, stored * 2.54), "{plane:?}");
+        }
+        assert_eq!(
+            bs2_poles(&stream.records[9].tokens, 0),
+            [1.0, 2.0, 3.0, 4.0]
         );
     }
 }
