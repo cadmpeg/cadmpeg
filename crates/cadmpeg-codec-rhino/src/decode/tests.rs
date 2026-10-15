@@ -1297,7 +1297,7 @@ fn extrusion_caps_build_outer_and_hole_loops_with_opposite_face_senses() {
         }
         assert_eq!(
             cadmpeg_ir::validate_neutral(&ir, Vec::new())
-                .expect("resource allocation did not fail")
+                .expect("validate the neutral model")
                 .error_count(),
             0
         );
@@ -1319,7 +1319,7 @@ fn phase5_freeze_shared_admissibility_fixtures() {
         cadmpeg_ir::RHINO_DRAFT_CHECKS,
         Vec::new(),
     )
-    .expect("resource allocation did not fail")
+    .expect("admit the model")
     .is_ok());
     assert!(cadmpeg_ir::admit(
         &cadmpeg_test_support::service_decode_context(),
@@ -1327,7 +1327,7 @@ fn phase5_freeze_shared_admissibility_fixtures() {
         cadmpeg_ir::RHINO_INSTANCE_CHECKS,
         Vec::new()
     )
-    .expect("resource allocation did not fail")
+    .expect("admit the model")
     .is_ok());
 
     assert!(!cadmpeg_ir::admit_with_annotations(
@@ -1337,7 +1337,7 @@ fn phase5_freeze_shared_admissibility_fixtures() {
         cadmpeg_ir::RHINO_DRAFT_CHECKS,
         Vec::new(),
     )
-    .expect("resource allocation did not fail")
+    .expect("admit the model")
     .is_ok());
     assert!(!cadmpeg_ir::admit(
         &cadmpeg_test_support::service_decode_context(),
@@ -1345,7 +1345,7 @@ fn phase5_freeze_shared_admissibility_fixtures() {
         cadmpeg_ir::RHINO_INSTANCE_CHECKS,
         Vec::new()
     )
-    .expect("resource allocation did not fail")
+    .expect("admit the model")
     .is_ok());
 }
 
@@ -1434,7 +1434,7 @@ fn decode_context_transitions_object_status_once_and_links_unknowns() {
             1
         );
         let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-            .expect("resource allocation did not fail");
+            .expect("validate the neutral model");
         assert_eq!(validation.error_count(), 0);
     });
 }

@@ -149,7 +149,7 @@ fn polyedge_segment_uuid_resolves_to_the_single_record_that_owns_it() {
         .any(|loss| loss.message.starts_with("reference.")));
     assert!(
         cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -172,7 +172,7 @@ fn polyedge_segment_uuid_that_names_no_record_is_charged_and_left_unbound() {
     );
     assert!(
         cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -201,7 +201,7 @@ fn polyedge_segment_uuid_owned_by_two_records_is_charged_as_ambiguous() {
         .any(|loss| { loss.code == crate::loss::RhinoLossCode::ReferenceMemberAmbiguous.kind() }));
     assert!(
         cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }

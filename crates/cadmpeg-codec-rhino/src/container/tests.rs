@@ -30,7 +30,7 @@ fn flat_legacy_source_metadata_records_archive_version() {
         ArchiveVersion::V1.classify(None),
         super::SourceMetaDetail::FlatLegacyArchive,
     )
-    .expect("service profile admits source metadata");
+    .expect("build the source metadata");
     assert_eq!(
         meta.attributes.get("archive_version"),
         Some(&"1".to_string())
@@ -49,8 +49,7 @@ fn container_only_result_reports_notes_and_scan_loss() {
     let mut scan = crate::test_support::test_dump::scan_with_objects(&[]);
     scan.warnings = crate::loss::Diagnostics::new();
     scan.warnings.push("fixture warning");
-    let decoded =
-        super::container_only_result(&scan).expect("service profile admits notes and loss");
+    let decoded = super::container_only_result(&scan).expect("compute the container only result");
     assert_eq!(decoded.body.notes.len(), 2);
     assert_eq!(decoded.body.losses.len(), 1);
 }

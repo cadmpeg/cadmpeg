@@ -1760,7 +1760,7 @@ pub(crate) mod tests {
                 &mut Diagnostics::new(),
             )
         })
-        .expect("service profile admits the cache");
+        .expect("read mesh cache");
         assert_eq!(meshes.len(), 1);
     }
 

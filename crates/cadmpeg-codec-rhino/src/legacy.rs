@@ -3136,12 +3136,7 @@ mod tests {
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::Entities)
         );
         assert_eq!(
-            decode_v1(&data)
-                .expect("service profile admits the point")
-                .ir
-                .model
-                .bodies
-                .len(),
+            decode_v1(&data).expect("decode v1").ir.model.bodies.len(),
             1
         );
     }
@@ -3150,41 +3145,20 @@ mod tests {
     fn v1_omitted_typecode_reports_one_loss() {
         let mut data = archive(&[]);
         data.extend(chunk(0x1234_5678, b"unsupported"));
-        assert_eq!(
-            decode_v1(&data)
-                .expect("service profile admits the record")
-                .body
-                .losses
-                .len(),
-            1
-        );
+        assert_eq!(decode_v1(&data).expect("decode v1").body.losses.len(), 1);
     }
 
     #[test]
     fn v1_malformed_direct_record_adds_a_diagnostic_note() {
         let mut data = archive(&[]);
         data.extend(chunk(TCODE_TEXT_BLOCK, b"invalid direct record"));
-        assert_eq!(
-            decode_v1(&data)
-                .expect("service profile admits the diagnostic")
-                .body
-                .notes
-                .len(),
-            3
-        );
+        assert_eq!(decode_v1(&data).expect("decode v1").body.notes.len(), 3);
     }
 
     #[test]
     fn v1_empty_archive_reports_eight_coverage_nodes() {
         let data = archive(&[]);
-        assert_eq!(
-            decode_v1(&data)
-                .expect("service profile admits the report")
-                .body
-                .coverage
-                .len(),
-            8
-        );
+        assert_eq!(decode_v1(&data).expect("decode v1").body.coverage.len(), 8);
     }
 
     #[test]
@@ -3193,7 +3167,7 @@ mod tests {
         data.extend(rhinoio_curve_object());
         assert_eq!(
             decode_v1(&data)
-                .expect("service admits direct curve")
+                .expect("decode v1")
                 .ir
                 .native
                 .namespace("rhino")
@@ -3222,7 +3196,7 @@ mod tests {
             .expect("V1 spline-stuff child");
         assert_eq!(
             super::legacy_spline(&data, spline_stuff.body(), super::MillimeterScale::IDENTITY)
-                .expect("service admits spline poles")
+                .expect("compute the legacy spline")
                 .pole_count(),
             2
         );
@@ -3274,7 +3248,7 @@ mod tests {
             chunk_at(&data, 0, data.len(), ArchiveVersion::V1, false).expect("V1 surface wrapper");
         assert_eq!(
             super::legacy_surface(&data, surface.body(), super::MillimeterScale::IDENTITY)
-                .expect("service admits surface poles")
+                .expect("compute the legacy surface")
                 .pole_grid()
                 .u_count(),
             2
@@ -3338,7 +3312,7 @@ mod tests {
         data.extend(v1_annotation_records().remove(1));
         assert_eq!(
             decode_v1(&data)
-                .expect("service admits leader")
+                .expect("decode v1")
                 .ir
                 .native
                 .namespace("rhino")
@@ -3798,12 +3772,7 @@ mod tests {
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::Entities)
         );
         assert_eq!(
-            decode_v1(&data)
-                .expect("service admits curve")
-                .ir
-                .model
-                .curves
-                .len(),
+            decode_v1(&data).expect("decode v1").ir.model.curves.len(),
             1
         );
     }
@@ -3823,12 +3792,7 @@ mod tests {
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::Entities)
         );
         assert_eq!(
-            decode_v1(&data)
-                .expect("service admits Brep")
-                .ir
-                .model
-                .bodies
-                .len(),
+            decode_v1(&data).expect("decode v1").ir.model.bodies.len(),
             1
         );
     }
@@ -3837,12 +3801,7 @@ mod tests {
     fn v1_face_archive_decodes_one_body() {
         let data = legacy_face_archive();
         assert_eq!(
-            decode_v1(&data)
-                .expect("service admits Brep")
-                .ir
-                .model
-                .bodies
-                .len(),
+            decode_v1(&data).expect("decode v1").ir.model.bodies.len(),
             1
         );
     }
@@ -4134,7 +4093,7 @@ mod tests {
         assert_eq!(model.surfaces.len(), 1);
         assert_eq!(wire::coverage(result.report())["legacy_v1_breps"], 1);
         let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail");
+            .expect("validate the neutral model");
         assert!(report.is_ok(), "{report:?}");
     }
 
@@ -4148,7 +4107,7 @@ mod tests {
         assert_eq!(result.ir().model.faces.len(), 1);
         assert_eq!(wire::coverage(result.report())["legacy_v1_breps"], 1);
         let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail");
+            .expect("validate the neutral model");
         assert!(report.is_ok(), "{report:?}");
     }
 
