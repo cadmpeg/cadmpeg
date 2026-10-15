@@ -4103,6 +4103,11 @@ pub(super) fn feature_operation_records(
                     )?
                     .map(|core| core.retain(ctx))
                     .transpose()?,
+                    linked_face_payload: crate::om::linked_face::payload_for_decode(
+                        ctx,
+                        record.payload_view(),
+                        &section.types,
+                    )?,
                 })
             })();
             let item = match item {

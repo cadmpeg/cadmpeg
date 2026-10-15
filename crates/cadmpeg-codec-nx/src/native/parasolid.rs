@@ -37,6 +37,7 @@ use crate::printable_string::PrintableString;
 use entity51_wire::Entity51Wire;
 pub(super) mod named_fields;
 use named_fields::NamedField;
+pub(super) mod body_id;
 mod body_revision_wire;
 mod chart_wire;
 mod support_uv_wire;

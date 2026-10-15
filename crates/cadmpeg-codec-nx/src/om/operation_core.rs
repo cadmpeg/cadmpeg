@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Family-qualified complete native cores; no authored construction is inferred.
 
+mod copy_face;
+mod curve_mesh;
 mod frames;
 
 use super::move_face::{CoreView as MoveFaceView, MoveFaceCore};
@@ -14,6 +16,8 @@ use serde::{Deserialize, Serialize};
 #[serde(tag = "kind", content = "bytes", rename_all = "snake_case")]
 pub(crate) enum OperationCore {
     MoveFace(MoveFaceCore),
+    CurveMesh(#[serde(deserialize_with = "deserialize_curve_mesh")] NativeBytes<Vec<u8>>),
+    CopyFace(#[serde(deserialize_with = "deserialize_copy_face")] NativeBytes<Vec<u8>>),
     Cylinder(#[serde(deserialize_with = "deserialize_cylinder")] NativeBytes<Vec<u8>>),
     MoveObject(#[serde(deserialize_with = "deserialize_move_object")] NativeBytes<Vec<u8>>),
 }
@@ -39,11 +43,32 @@ fn deserialize_move_object<'de, D: serde::Deserializer<'de>>(
     deserialize_frame(d, frames::Family::MoveObject)
 }
 
+fn deserialize_copy_face<'de, D: serde::Deserializer<'de>>(
+    d: D,
+) -> Result<NativeBytes<Vec<u8>>, D::Error> {
+    let bytes = NativeBytes::<Vec<u8>>::deserialize(d)?;
+    copy_face::read(&bytes)
+        .ok_or_else(|| serde::de::Error::custom("core: invalid complete face-copy frame"))?;
+    Ok(bytes)
+}
+
+fn deserialize_curve_mesh<'de, D: serde::Deserializer<'de>>(
+    d: D,
+) -> Result<NativeBytes<Vec<u8>>, D::Error> {
+    let bytes = NativeBytes::<Vec<u8>>::deserialize(d)?;
+    curve_mesh::read(&bytes)
+        .ok_or_else(|| serde::de::Error::custom("core: invalid complete curve-mesh frame"))?;
+    Ok(bytes)
+}
+
 impl OperationCore {
     pub(crate) fn as_bytes(&self) -> &[u8] {
         match self {
             Self::MoveFace(core) => core.as_bytes(),
-            Self::Cylinder(bytes) | Self::MoveObject(bytes) => bytes,
+            Self::Cylinder(bytes)
+            | Self::MoveObject(bytes)
+            | Self::CopyFace(bytes)
+            | Self::CurveMesh(bytes) => bytes,
         }
     }
     pub(crate) fn cylinder_boolean_mode(&self) -> Option<&'static str> {
@@ -56,6 +81,8 @@ impl OperationCore {
 
 pub(crate) enum CoreView<'a> {
     MoveFace(MoveFaceView<'a>),
+    CopyFace(&'a [u8]),
+    CurveMesh(&'a [u8]),
     Cylinder(&'a [u8]),
     MoveObject(&'a [u8]),
 }
@@ -63,12 +90,21 @@ impl CoreView<'_> {
     pub(crate) fn byte_len(&self) -> usize {
         match self {
             Self::MoveFace(core) => core.byte_len,
-            Self::Cylinder(bytes) | Self::MoveObject(bytes) => bytes.len(),
+            Self::Cylinder(bytes)
+            | Self::MoveObject(bytes)
+            | Self::CopyFace(bytes)
+            | Self::CurveMesh(bytes) => bytes.len(),
         }
     }
     pub(crate) fn retain(&self, ctx: &DecodeContext<'_>) -> Result<OperationCore, CodecError> {
         match self {
             Self::MoveFace(core) => Ok(OperationCore::MoveFace(core.retain(ctx)?)),
+            Self::CurveMesh(bytes) => Ok(OperationCore::CurveMesh(
+                ctx.copy_slice(bytes, "NX bounded curve-mesh core")?.into(),
+            )),
+            Self::CopyFace(bytes) => Ok(OperationCore::CopyFace(
+                ctx.copy_slice(bytes, "NX bounded face-copy core")?.into(),
+            )),
             Self::Cylinder(bytes) => Ok(OperationCore::Cylinder(
                 ctx.copy_slice(bytes, "NX bounded cylinder core")?.into(),
             )),
@@ -88,6 +124,28 @@ pub(crate) fn core_for_decode<'a>(
     if record.name() == "MOVE_FACE" {
         return super::move_face::core_for_decode(ctx, record, classes)
             .map(|core| core.map(CoreView::MoveFace));
+    }
+    if matches!(record.name(), "COPY_FACE" | "THRU_CURVE_MESH") {
+        ctx.charge_work(
+            u64_from_index(record.payload().len()),
+            "NX complete profile or face-copy core",
+        )?;
+        let selects = |selectors: &[u8], expected: &[&str]| {
+            selectors.iter().zip(expected).all(|(selector, expected)| {
+                classes
+                    .get(usize::from(*selector) - 1)
+                    .is_some_and(|class| class.name == *expected)
+            })
+        };
+        return Ok(if record.name() == "COPY_FACE" {
+            copy_face::read(record.payload())
+                .filter(|s| selects(s, &copy_face::CLASSES))
+                .map(|_| CoreView::CopyFace(record.payload()))
+        } else {
+            curve_mesh::read(record.payload())
+                .filter(|s| selects(s, &curve_mesh::CLASSES))
+                .map(|_| CoreView::CurveMesh(record.payload()))
+        });
     }
     let (family, owner) = match record.name() {
         "CYLINDER" => (frames::Family::Cylinder, "UGS::CYLINDER_PARMS"),

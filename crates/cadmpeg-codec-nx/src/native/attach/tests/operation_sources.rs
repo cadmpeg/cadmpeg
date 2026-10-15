@@ -30,6 +30,7 @@ fn operation_source_properties_require_unique_owned_structures() {
             payload_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(b"payload-hash"),
             stable_identity: None,
             core: None,
+            linked_face_payload: None,
             span: crate::native::features::operation_record::OperationRecordSpan::new(100, 110, 10)
                 .unwrap(),
         };

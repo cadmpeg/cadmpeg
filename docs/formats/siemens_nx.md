@@ -2245,14 +2245,63 @@ selected source faces and associativity, copy, and sew controls remain
 unresolved. Result body ownership does not identify the source face selection.
 
 The `COPY_FACE` operation label identifies a body-affecting face-copy
-construction. Its source faces, target body, associativity, and sew controls
-remain unresolved until the serialized construction roles establish a complete
-operation.
+construction owned by `UGS::ModlDirect::CopyFaceParms`. Its complete core
+starts with the owner selector and `00 00 01 00`, followed by a feature-index
+token. An ordered label map has prefix `01, count:u8`, with count at least 2.
+Each of its `count - 1` entries contains the `UGS::LABEL_tag_labels` selector,
+`01 02`, a local ordinal starting at 2, and a feature-index token. The map ends
+with `ff ff`. The next components select `UGS::ModlDirect::FaceRecognition`,
+`UGS::ModlUtils::OrientXpress`, and `UGS::ModlDirect::Constrain::ManagerOptions`
+in the same owning registry. Their payload-index tokens address column-store
+fragments. Such fragments can split logical rows and scalar encodings; they
+are not standalone selected-face objects.
 
-The `LINKED_FACE` operation label identifies a body-affecting linked-face
-construction. Its source face, target body, associativity, and link-update
-controls remain unresolved until the serialized construction roles establish a
-complete operation.
+The result body-write frame precedes a `UGS::CM_RECIPE_tags` component. That
+component starts with `00`, then two atoms, then `01, count` and `count - 1`
+feature-index tokens. An atom is one-byte zero or ordinary signed shifted
+binary64. Clearing its sign bit changes the value. The recipe count equals the
+label-map count. The inherited suffix includes two byte-identical three-byte
+tuples, a nine-byte state lane, two byte-identical local-ordinal feature-index
+tokens, a terminal feature-index token, and `00`. The complete core has no
+trailing bytes. Header inputs, recipe values, result topology tags, and equal
+expression values alone assign no authored source-face, motion, target-body,
+paste, or reverse-direction control.
+
+The `LINKED_FACE` operation label identifies a WAVE face link owned by
+`UGS::ModlFeature::ExtractFaceParms`. A link creates a sheet body in its
+destination part. Its named cache describes an external source body and face,
+destination part, assembly context, and position-dependence. A destination part
+is not a target body to modify.
+
+The payload starts with the owner selector, `00 00 01 00`, four tagged words
+`01 00 00 00 00`, six zero bytes, and `01 02`. A `UGS::CM_track_map` component
+contains `selector ff`, a feature-index token, `01, count:u8`, and `count - 1`
+entries `selector ff, feature-index`, followed by `ff`. Count is at least 2.
+The following `UGS::ModlUtils::CachedWaveLinkData` component contains three
+`01 03` text lanes with respectively two, two, and four strings, then
+`00 01 03`. A string is `03, length:u8, UTF-8[length - 2], 00`, with length at
+least 2 and no embedded NUL. An empty string is `03 02 00`.
+
+Three `UGS::ModlUtils::CachedAttributes` tables follow in source-body,
+source-face, and WAVE-context order. Each table has `selector 01 0a`, nine key
+strings, `01 0a`, and nine value strings in the same order. The first two key
+lists are `Name`, `Type`, `Parent_Part`, `Last_Modified_By`, `Modified_Date`,
+`Handle`, `PIO_Handle`, `Defining_Feature`, and `WV_Part_Spec`. The third list is
+`Rules`, `Parent_Part`, `Description`, `Interpart_Link_Type`, `Assembly_Context`,
+`Context_Time_Stamp`, `Arrangement`, `Cached_Referenced_Entities`, and
+`Cached_Referenced_Time_Stamps`. An empty string terminates the cache. The
+following bounded payload tail remains unassigned. The complete retained
+payload, including that tail, must match its payload length and digest.
+
+`Type = Body` and `Type = Face` identify the first two tables. The face table's
+`Handle` is distinct from `PIO_Handle`; an empty latter value supplies no handle.
+For a face handle of the form `RM<part>.prt R<eight decimal digits>00000000`,
+the decimal sequence resolves in the named source part through one
+`UGS/ObjectState` attribute instance and one owning type-14 face reference.
+This rule does not apply to hexadecimal source-body handles. A source face in
+another part is not a local result-face identity. `Interpart_Link_Type =
+Position Dependent` names position-dependence; invariant `Rules` and timestamp
+strings do not assign associativity or timestamp-update policy.
 
 The `SYMBOLIC_THREAD` operation label identifies a non-geometric cosmetic-thread
 annotation. Complete type-`03` profile, designation, and mode text frames remain
@@ -2480,9 +2529,37 @@ curves on adjacent sheets and sheet-local topology attributes do not establish
 a bridge-feature identity or an authored source-curve relation.
 
 The `THRU_CURVE_MESH` operation label identifies a through-curve mesh surface
-construction. Its curve networks, mesh directions, continuity, and result mode
-remain unresolved until the serialized construction roles establish a complete
-surface.
+construction owned by `UGS::FF_CURVE_MESH_PARMS`. Its complete core starts with
+the owner selector, `00 00 01 00`, and three payload-index tokens. The following
+`UGS::MODL_refit_data` component contains two ordered profile groups. Each
+group starts with `01, count:u8`, with count at least 2, and contains
+`count - 1` `UGS::CM_profile` members. Each member carries two payload-index
+tokens; its second token follows `00 00 00 00 00 ff 01 02`. Group 0 has an
+additional `01 02` after the first token and ends each member with `00 89 5c`;
+group 1 ends each member with `00 1d`. The refit selector repeats after both
+groups. Two ordinary shifted binary64 atoms must have identical encodings.
+Three further payload-index tokens precede the result body-write frame. The
+inherited suffix contains duplicated three-byte tuples and local ordinals,
+the nine-byte state lane, terminal index, and final `00`; the complete core
+has no trailing bytes. Class selectors resolve in the owning registry.
+
+Profile and header indices address physical column fragments; a fragment
+boundary can split a 32-character token. They do not identify authored source
+curves, and the ordered groups do not name primary and cross directions.
+Result-boundary geometry does not assign authored continuity controls or a
+requested Solid/Sheet preference.
+
+A mesh body-write identity can resolve through the named Parasolid `body_id`
+attribute. This relation requires one definition of that name in a stream,
+one instance of that definition, one trailing reference, and one referenced
+type-82 record containing exactly one equal unsigned integer. Its declared
+field code 0 stays an ignored extension; the actual type-82 record establishes
+the stored integer family. Duplicate matches across streams are unresolved.
+The instance's first leading reference identifies the owning body XMT in that
+stream. A result body requires that exact decoded body identity. A partition
+stream without decoded body topology supplies no neutral output; an unrelated
+plain stream cannot substitute for it. Authored curve networks, mesh directions,
+continuity, and result preference remain unresolved.
 
 A body-writing `CONE` operation identifies a body-affecting conical primitive.
 Its dimensions, placement, angular extent, and Boolean result mode remain

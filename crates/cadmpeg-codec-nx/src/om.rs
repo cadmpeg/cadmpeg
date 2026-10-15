@@ -32,6 +32,7 @@ pub(crate) mod body_write;
 pub(crate) mod common_frame;
 mod core_reader;
 pub(crate) mod direct_reference;
+pub(crate) mod linked_face;
 pub(crate) mod move_face;
 pub(crate) mod operation_core;
 use body_write::{BodyWriteFrame, BodyWriteIndex};

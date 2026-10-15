@@ -808,33 +808,33 @@ assigns control geometry, continuity, or terminal semantics.
 
 ### OM-49. `COPY_FACE` construction roles
 
-**Question.** Which serialized fields define the source faces, target body, associativity, and sew controls of a `COPY_FACE` operation?
+**Question.** Which serialized relations bind the selected source faces, authored motion, target body, paste mode, and reverse direction?
 
-**Known.** `siemens_nx.md` §7.1 "The `COPY_FACE` operation label identifies" defines the body-affecting face-copy construction. Every record carries two input blocks and a body-write frame, but no neutral output or admitted field assigns the source-face or target-body roles.
+**Known.** `siemens_nx.md` §7.1 "The `COPY_FACE` operation label identifies" defines the complete core, ordered label map, signed recipe atoms, scoped construction references, and result body write. Header and payload references select storage fragments. Result geometry and topology tags can establish a face-set correspondence and a net rigid transform.
 
-**Need.** We must identify the source face selection, target body, associativity mode, and sew policy to construct a complete neutral face-copy operation and bind its result body.
+**Need.** Bind authored selection and motion to the operation, distinguish paste and reverse controls, and identify a target body when the operation uses one.
 
-**Conflict.** The operation label, input blocks, and body-write relation identify the family, but the bounded payload and object-index lanes do not assign unique source-face, target-body, associativity, or sew roles.
+**Conflict.** A result-face tag need not use the source-face namespace. Equal expression or recipe values do not bind an authored parameter. A shared result GROUP and column index can have equal numbers in different namespaces. The face-copy API does not establish serialized associativity or sew controls.
 
 ### OM-50. `LINKED_FACE` construction roles
 
-**Question.** Which serialized fields define the source face, target body, associativity, and link-update controls of a `LINKED_FACE` operation?
+**Question.** Which serialized fields select associativity and creation-timestamp versus final-source-body update?
 
-**Known.** `siemens_nx.md` §7.1 "The `LINKED_FACE` operation label identifies" defines the body-affecting linked-face construction. Every record carries a body-write frame, but no neutral output or admitted field assigns the source-face, target-body, or associativity roles.
+**Known.** `siemens_nx.md` §7.1 "The `LINKED_FACE` operation label identifies" defines the named source-body, source-face and WAVE-context tables, source-handle relation, destination part, position-dependence, and exact retained payload. The link creates a sheet body in the destination part; a target body to modify is not required. Body writes can remain unresolved or bind to streams without decoded face topology.
 
-**Need.** We must identify the source face, target body, link-update mode, and associativity policy to construct a complete neutral linked-face operation and bind its result body.
+**Need.** Assign associativity and timestamp-update controls through changed native values with independent policy evidence. Assign the unparsed payload tail and recover missing result topology.
 
-**Conflict.** The operation label and body-write relation identify the family, but the bounded payload and object-index lanes do not assign unique source-face, target-body, associativity, or link-update roles.
+**Conflict.** An invariant `Rules` string is not an associativity Boolean. A timestamp value is not a timestamp-policy Boolean. A numeric equality with a segment object index is insufficient when the persistent identity belongs to the alias namespace. A source-body hexadecimal handle does not follow the narrow decimal source-face sequence rule.
 
 ### OM-51. `THRU_CURVE_MESH` construction roles
 
-**Question.** Which serialized fields define the curve networks, mesh directions, continuity, and result mode of a `THRU_CURVE_MESH` operation?
+**Question.** Which serialized relations assign the authored curve networks, primary/cross directions, four continuity controls, and requested result preference?
 
-**Known.** `siemens_nx.md` §7.1 "The `THRU_CURVE_MESH` operation label identifies" defines the through-curve mesh surface construction. Every record carries two input blocks and a body-write frame, but no neutral output or admitted field assigns the curve-network or surface-construction roles.
+**Known.** `siemens_nx.md` §7.1 "The `THRU_CURVE_MESH` operation label identifies" defines the complete core, two ordered profile groups, physical-fragment references, and exact named `body_id` result relation. An exact decoded body establishes result kind and boundary geometry. A joined partition without decoded topology leaves its result kind unresolved.
 
-**Need.** We must identify the ordered curve networks, mesh directions, continuity conditions, and result mode to construct a complete neutral through-curve mesh surface and bind its result body.
+**Need.** Reconstruct logical construction rows across fragment boundaries and bind source curves, order, directions, continuity objects and constraint faces. Distinguish a requested preference from the resulting body kind.
 
-**Conflict.** The operation label, input blocks, and body-write relation identify the family, but the bounded payload and object-index lanes do not assign unique curve-network, mesh-direction, continuity, or result-mode roles.
+**Conflict.** Two storage indices are not two curve objects. Geometric boundary directions do not name native groups primary or cross. G0-compatible geometry and public G0 defaults do not assign a serialized control byte. A sheet result does not prove an explicit Sheet preference. A count-only match must not replace an unresolved partition result with an unclaimed plain stream.
 
 ### OM-52. `CONE` construction roles
 

@@ -42,6 +42,7 @@ pub(in crate::native) struct FeatureOperationRecord {
     pub(in crate::native) stable_identity: Option<String>,
     pub(in crate::native) span: OperationRecordSpan,
     pub(in crate::native) core: Option<crate::om::operation_core::OperationCore>,
+    pub(in crate::native) linked_face_payload: Option<crate::om::linked_face::LinkedFacePayload>,
 }
 
 #[derive(serde::Serialize)]
@@ -57,6 +58,8 @@ struct OperationRecordRef<'a> {
     stable_identity: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     core: Option<&'a crate::om::operation_core::OperationCore>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    linked_face_payload: Option<&'a crate::om::linked_face::LinkedFacePayload>,
     payload_source_offset: u64,
     source_offset: u64,
 }
@@ -73,6 +76,7 @@ impl serde::Serialize for FeatureOperationRecord {
             payload_sha256: &self.payload_sha256,
             stable_identity: self.stable_identity.as_deref(),
             core: self.core.as_ref(),
+            linked_face_payload: self.linked_face_payload.as_ref(),
             payload_source_offset: self.span.payload_source_offset,
             source_offset: self.span.source_offset,
         }
@@ -102,6 +106,12 @@ struct OperationRecordWire {
         deserialize_with = "deserialize_core"
     )]
     core: Option<crate::om::operation_core::OperationCore>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_linked_face_payload"
+    )]
+    linked_face_payload: Option<crate::om::linked_face::LinkedFacePayload>,
     payload_source_offset: u64,
     source_offset: u64,
 }
@@ -125,6 +135,7 @@ impl From<FeatureOperationRecord> for OperationRecordWire {
             payload_sha256: value.payload_sha256,
             stable_identity: value.stable_identity,
             core: value.core,
+            linked_face_payload: value.linked_face_payload,
             payload_source_offset: value.span.payload_source_offset,
             source_offset: value.span.source_offset,
         }
@@ -140,15 +151,25 @@ impl TryFrom<OperationRecordWire> for FeatureOperationRecord {
         if span.byte_len() != wire.byte_len {
             return Err("byte_len: length disagrees with record and payload span");
         }
-        if let Some(core) = &wire.core {
-            if cadmpeg_core::decode::u64_from_index(core.as_bytes().len()) != wire.payload_byte_len
-            {
-                return Err("core: complete core and payload lengths disagree");
+        if wire.core.is_some() && wire.linked_face_payload.is_some() {
+            return Err("linked_face_payload/core: two representations cannot own one payload");
+        }
+        for bytes in [
+            wire.core
+                .as_ref()
+                .map(crate::om::operation_core::OperationCore::as_bytes),
+            wire.linked_face_payload
+                .as_ref()
+                .map(crate::om::linked_face::LinkedFacePayload::as_bytes),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            if cadmpeg_core::decode::u64_from_index(bytes.len()) != wire.payload_byte_len {
+                return Err("core/linked_face_payload: complete payload lengths disagree");
             }
-            if cadmpeg_ir::hash::digest::Sha256Digest::digest(core.as_bytes())
-                != wire.payload_sha256
-            {
-                return Err("core: bytes disagree with payload_sha256");
+            if cadmpeg_ir::hash::digest::Sha256Digest::digest(bytes) != wire.payload_sha256 {
+                return Err("core/linked_face_payload: bytes disagree with payload_sha256");
             }
         }
         Ok(Self {
@@ -159,6 +180,7 @@ impl TryFrom<OperationRecordWire> for FeatureOperationRecord {
             payload_sha256: wire.payload_sha256,
             stable_identity: wire.stable_identity,
             core: wire.core,
+            linked_face_payload: wire.linked_face_payload,
             span,
         })
     }
@@ -316,4 +338,10 @@ cadmpeg_core::named_optional_field!(
     deserialize_core,
     crate::om::operation_core::OperationCore,
     "core"
+);
+
+cadmpeg_core::named_optional_field!(
+    deserialize_linked_face_payload,
+    crate::om::linked_face::LinkedFacePayload,
+    "linked_face_payload"
 );

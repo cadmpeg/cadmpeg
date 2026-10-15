@@ -2879,6 +2879,89 @@ fn attach_feature_operations(
         &mut conflicting_body_output_writes,
         &identity_candidates,
     )?;
+    let mut mesh_body_ids = BTreeMap::new();
+    let mut body_id_candidates = BTreeMap::new();
+    let mut body_id_reservation = ctx.reserve_scoped(0, "NX mesh body_id output index")?;
+    for record in operation_records {
+        ctx.charge_work(1, "NX mesh operation core selection")?;
+        if !matches!(
+            record.core,
+            Some(crate::om::operation_core::OperationCore::CurveMesh(_))
+        ) {
+            continue;
+        }
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(operation_records.len()),
+            "NX mesh operation record ownership",
+        )?;
+        if operation_records
+            .iter()
+            .filter(|r| r.id == record.id)
+            .count()
+            != 1
+        {
+            continue;
+        }
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(operation_body_writes.len()),
+            "NX mesh body write ownership",
+        )?;
+        for write in operation_body_writes
+            .iter()
+            .filter(|w| w.operation_record == record.id)
+        {
+            let Some(matched) = super::parasolid::body_id::resolve(
+                ctx,
+                write.frame.body_identity(),
+                &model.parasolid.attribute_definitions,
+                &model.parasolid.entity_51_records,
+                &model.parasolid.entity_52_integer_records,
+            )?
+            else {
+                continue;
+            };
+            let (prefix, prefix_len) = stream_prefix(matched.stream, true)?;
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(ir.model.bodies.len()),
+                "NX exact body_id result owner",
+            )?;
+            let mut bodies = ir.model.bodies.iter().filter(|b| {
+                let id = b.id.as_str().as_bytes();
+                id.strip_prefix(&prefix[..prefix_len])
+                    .and_then(|s| std::str::from_utf8(s).ok())
+                    .and_then(|s| s.parse::<u32>().ok())
+                    == Some(matched.body_xmt)
+            });
+            if let Some(body) = bodies.next().filter(|_| bodies.next().is_none()) {
+                let owned = body_id_reservation.with_storage(|| {
+                    body.id.try_clone_for_decode(ctx, "NX body_id result owner")
+                })?;
+                body_id_reservation.with_storage(|| {
+                    ctx.insert_btree_map(
+                        &mut body_id_candidates,
+                        write.id.as_str(),
+                        owned,
+                        "NX body_id result index",
+                    )
+                })?;
+            }
+            body_id_reservation.with_storage(|| {
+                ctx.insert_btree_map(
+                    &mut mesh_body_ids,
+                    write.id.as_str(),
+                    matched,
+                    "NX mesh body_id evidence index",
+                )
+            })?;
+        }
+    }
+    merge_operation_body_outputs(
+        ctx,
+        &mut body_output_reservation,
+        &mut body_image_outputs_by_write,
+        &mut conflicting_body_output_writes,
+        &body_id_candidates,
+    )?;
     let (partition_candidates, _partition_candidate_reservation) =
         operation_body_group_partition_outputs_by_write(
             ctx,
@@ -3400,6 +3483,32 @@ fn attach_feature_operations(
                 format_args!("body_write.{ordinal}.body_image_object_index"),
                 format_args!("{}", write.frame.body_image().value()),
             )?;
+            if let Some(matched) = mesh_body_ids.get(write.id.as_str()) {
+                for (field, value) in [
+                    ("definition", matched.definition),
+                    ("attribute_record", matched.entity),
+                    ("value_record", matched.value_record),
+                ] {
+                    insert_source_property(
+                        ctx,
+                        &mut source_properties,
+                        format_args!("body_write.{ordinal}.body_id.{field}"),
+                        format_args!("{value}"),
+                    )?;
+                }
+                insert_source_property(
+                    ctx,
+                    &mut source_properties,
+                    format_args!("body_write.{ordinal}.body_id.stream_ordinal"),
+                    format_args!("{}", matched.stream),
+                )?;
+                insert_source_property(
+                    ctx,
+                    &mut source_properties,
+                    format_args!("body_write.{ordinal}.body_id.body_xmt"),
+                    format_args!("{}", matched.body_xmt),
+                )?;
+            }
             if let Some(use_) = operation_body_image_segment_uses
                 .iter()
                 .find(|use_| use_.operation_body_write == write.id)
@@ -6728,6 +6837,27 @@ fn operation_source_properties(
         .and_then(crate::om::operation_core::OperationCore::cylinder_boolean_mode)
     {
         insert_operation_source_property(ctx, properties, "cylinder.boolean_mode", mode)?;
+    }
+    if let Some(tables) = record
+        .linked_face_payload
+        .as_ref()
+        .and_then(crate::om::linked_face::LinkedFacePayload::tables)
+    {
+        let [body, face, wave] = tables;
+        if body[1] == "Body" && face[1] == "Face" {
+            for (key, value) in [
+                ("linked_face.source_part", face[2]),
+                ("linked_face.source_face_handle", face[5]),
+                ("linked_face.source_face_definition", face[7]),
+                ("linked_face.source_part_specification", face[8]),
+                ("linked_face.destination_part", wave[1]),
+                ("linked_face.interpart_link_type", wave[3]),
+                ("linked_face.assembly_context", wave[4]),
+                ("linked_face.arrangement", wave[6]),
+            ] {
+                insert_operation_source_property(ctx, properties, key, value)?;
+            }
+        }
     }
     let contiguous_common_frames = common_frames
         .iter()
