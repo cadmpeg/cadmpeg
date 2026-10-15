@@ -5580,7 +5580,7 @@ const EPS_OFFSET_SWEEP: f64 = 1.0e-12;
 
 fn exact_centered_entity_relation(
     entities: &[&cadmpeg_ir::sketches::SketchEntity],
-) -> Option<Result<cadmpeg_ir::sketches::SketchConstraintDefinitionInput, CodecError>> {
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
     use cadmpeg_ir::sketches::{
         SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition,
     };
@@ -5608,16 +5608,16 @@ fn exact_centered_entity_relation(
     if let (Some(first_radius), Some(second_radius)) = (first_radius, second_radius) {
         let scale = 1.0 + first_radius.abs().max(second_radius.abs());
         if (first_radius - second_radius).abs() <= EPS_CENTERED_RELATION * scale {
-            return Some(Ok(Definition::Coradial {
+            return Some(Definition::Coradial {
                 first: first.id().clone(),
                 second: second.id().clone(),
-            }));
+            });
         }
     }
-    Some(Ok(Definition::Concentric {
+    Some(Definition::Concentric {
         first: first.id().clone(),
         second: second.id().clone(),
-    }))
+    })
 }
 
 fn exact_counted_dimension_relation(
@@ -5627,7 +5627,7 @@ fn exact_counted_dimension_relation(
         SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition, SketchLocus,
     };
 
-    if let Some(definition) = exact_centered_entity_relation(entities).transpose()? {
+    if let Some(definition) = exact_centered_entity_relation(entities) {
         return Ok(Some(definition));
     }
     if let Some((first, second, axis)) = reflected_symmetry(entities) {
