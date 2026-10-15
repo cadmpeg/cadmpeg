@@ -961,12 +961,10 @@ fn arrangement_retain_cycle_edges(
         let charged = arrangement_cycle_work(edges.len(), node_count)
             .is_some_and(|work| budget.charge_by(work));
         if !charged {
+            // An exhausted budget leaves the edges as they are; the caller
+            // then projects no arrangement.
             budget.exhaust();
-            // A session refusal propagates. An exhausted local slice leaves
-            // the edges as they are; the caller then projects no arrangement.
-            return ctx
-                .resource_refusal()
-                .map_or(Ok(()), |limit| Err(CodecError::ResourceLimit(limit)));
+            return Ok(());
         }
         let mut keep = Vec::new();
         for (index, edge) in edges.iter().enumerate() {
