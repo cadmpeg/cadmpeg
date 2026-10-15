@@ -699,14 +699,14 @@ fn geometric_membership_rejects_large_residuals_and_short_line_false_positives()
         },
     ] {
         let geometry = SketchGeometry::try_from(definition).unwrap();
-        assert!(!point_lies_on_sketch_geometry(
-            Point2::new(short_length / 2.0, 0.0001),
-            &geometry
-        ));
-        assert!(point_lies_on_sketch_geometry(
-            Point2::new(short_length / 2.0, 0.0),
-            &geometry
-        ));
+        assert!(
+            !point_lies_on_sketch_geometry(Point2::new(short_length / 2.0, 0.0001), &geometry,)
+                .expect("resource allocation did not fail")
+        );
+        assert!(
+            point_lies_on_sketch_geometry(Point2::new(short_length / 2.0, 0.0), &geometry,)
+                .expect("resource allocation did not fail")
+        );
     }
     let ellipse = SketchGeometry::try_from(SketchGeometryDefinition::Ellipse {
         center: Point2::new(0.0, 0.0),
@@ -718,12 +718,12 @@ fn geometric_membership_rejects_large_residuals_and_short_line_false_positives()
         bounds: None,
     })
     .unwrap();
-    assert!(!point_lies_on_sketch_geometry(
-        Point2::new(1e200, 0.0),
-        &ellipse
-    ));
-    assert!(point_lies_on_sketch_geometry(
-        Point2::new(1.0, 0.0),
-        &ellipse
-    ));
+    assert!(
+        !point_lies_on_sketch_geometry(Point2::new(1e200, 0.0), &ellipse,)
+            .expect("resource allocation did not fail")
+    );
+    assert!(
+        point_lies_on_sketch_geometry(Point2::new(1.0, 0.0), &ellipse,)
+            .expect("resource allocation did not fail")
+    );
 }
