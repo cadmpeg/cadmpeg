@@ -36,13 +36,6 @@ fn standard_color(number: i64) -> Option<Color> {
     Color::new(r, g, b, 1.0)
 }
 
-fn retained_utf8(bytes: &[u8]) -> Option<String> {
-    let Ok(value) = std::str::from_utf8(bytes) else {
-        return None;
-    };
-    Some(value.to_string())
-}
-
 fn push_presentation_loss(
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     entry: &DirectoryEntry,
@@ -450,7 +443,7 @@ pub(super) fn project(
         let name = match record.value(4) {
             None | Some(crate::parameter::TokenValue::Omitted) => None,
             Some(crate::parameter::TokenValue::String(_)) => match record.string(4) {
-                Some(bytes) => retained_utf8(bytes),
+                Some(bytes) => std::str::from_utf8(bytes).ok().map(str::to_owned),
                 None => None,
             },
             Some(crate::parameter::TokenValue::Integer(0))
@@ -676,10 +669,7 @@ pub(super) fn project(
                 );
             }
         } else {
-            body.name = match first {
-                Some(name) => retained_utf8(name.as_bytes()),
-                None => None,
-            };
+            body.name = first.map(str::to_owned);
         }
     }
 

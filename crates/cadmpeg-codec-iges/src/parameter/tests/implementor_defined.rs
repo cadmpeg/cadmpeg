@@ -39,13 +39,11 @@ fn type406_implementor_defined_forms_use_common_count_boundary() {
             Some(expected_start)
         );
 
-        let analysis = {
-            analyze_trailing_pointer_groups_for_global_table(
-                &record,
-                &directory,
-                crate::global::GlobalTable::V5Later,
-            )
-        };
+        let analysis = analyze_trailing_pointer_groups_for_global_table(
+            &record,
+            &directory,
+            crate::global::GlobalTable::V5Later,
+        );
         assert_eq!(
             analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
             1,
@@ -114,13 +112,11 @@ fn type406_implementor_defined_malformed_count_or_span_suppresses_generic_recove
     ] {
         let record = token_parameter_record(1, values);
         assert_eq!(entity_primary_end(&record, &directory), Some(expected_end));
-        let analysis = {
-            analyze_trailing_pointer_groups_for_global_table(
-                &record,
-                &directory,
-                crate::global::GlobalTable::V5Later,
-            )
-        };
+        let analysis = analyze_trailing_pointer_groups_for_global_table(
+            &record,
+            &directory,
+            crate::global::GlobalTable::V5Later,
+        );
         assert_eq!(
             analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
             0
