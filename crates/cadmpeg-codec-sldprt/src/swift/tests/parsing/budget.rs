@@ -1021,8 +1021,8 @@ fn swift_literal_related_names_do_not_charge_the_unmatched_text_extent() {
 
 #[test]
 fn swift_related_descriptors_copy_only_bound_entities() {
-    use cadmpeg_core::decode::{refusal_probe::RefusalProbe, View};
     use super::put_pstr;
+    use cadmpeg_core::decode::{refusal_probe::RefusalProbe, View};
     let related_entity = entity("GdtCylinder");
     for operation in ["copy SWIFT related name", "copy SWIFT related class"] {
         for invalid_entity in [true, false] {
@@ -1039,11 +1039,13 @@ fn swift_related_descriptors_copy_only_bound_entities() {
                     encode_entity(&related_entity, &mut payload);
                 }
                 let arena = DecodeArena::new();
-                let (ctx, mut cursor) = DecodeContext::from_root_bytes(
-                    &payload, &arena, &DecodePolicy::service(),
-                ).unwrap();
+                let (ctx, mut cursor) =
+                    DecodeContext::from_root_bytes(&payload, &arena, &DecodePolicy::service())
+                        .unwrap();
                 let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None);
-                assert!(crate::swift::read_related(&ctx, &mut cursor, 0).unwrap().is_none());
+                assert!(crate::swift::read_related(&ctx, &mut cursor, 0)
+                    .unwrap()
+                    .is_none());
                 ctx.finish_session().unwrap();
             }
         }
@@ -1058,9 +1060,11 @@ fn swift_related_descriptors_copy_only_bound_entities() {
         });
         let ctx = cadmpeg_test_support::service_decode_context();
         let objects = crate::swift::read_related(&ctx, &mut View::over_retained(&payload), 0)
-            .unwrap().unwrap();
+            .unwrap()
+            .unwrap();
         assert_eq!(objects.len(), 1);
-        assert_eq!(objects[0].name, "NomCylinder");
-        assert_eq!(objects[0].class, related_entity.class);
+        let object = objects.first().expect("bound related object");
+        assert_eq!(object.name, "NomCylinder");
+        assert_eq!(object.class, related_entity.class);
     }
 }
