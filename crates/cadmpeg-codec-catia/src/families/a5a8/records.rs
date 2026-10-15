@@ -1794,8 +1794,8 @@ fn a5_surface(
         return Ok(None);
     };
     at += 1;
-    if !crate::nurbs::strictly_increasing(&u_distinct)
-        || !crate::nurbs::strictly_increasing(&v_distinct)
+    if !cadmpeg_ir::geometry::nurbs::knots_strictly_increasing(&u_distinct)
+        || !cadmpeg_ir::geometry::nurbs::knots_strictly_increasing(&v_distinct)
     {
         return Ok(None);
     }
