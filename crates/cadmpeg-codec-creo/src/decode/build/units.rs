@@ -1218,7 +1218,6 @@ pub(in crate::decode) fn scale_sketch_geometry(
     geometry
         .scaled_lengths_owned(scale)
         .map_err(|error| match error {
-            SketchLengthScaleError::Resource(limit) => CodecError::ResourceLimit(limit),
             SketchLengthScaleError::LengthOverflow => {
                 CodecError::malformed("Creo scaled length must be finite")
             }
