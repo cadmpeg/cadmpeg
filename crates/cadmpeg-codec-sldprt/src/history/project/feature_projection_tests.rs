@@ -396,7 +396,7 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
         ("e", "<MOD-DIAM>5.5"),
     ]);
     let construction = hole_sketch_construction(&counterbore)
-        .expect("resource budget")
+        .expect("compute the hole sketch construction")
         .expect("required invariant");
     assert_eq!(
         construction.diameter,
@@ -426,7 +426,7 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
         ("e", "118°"),
     ]);
     let construction = hole_sketch_construction(&threaded)
-        .expect("resource budget")
+        .expect("compute the hole sketch construction")
         .expect("required invariant");
     assert_eq!(
         construction.diameter,
@@ -455,7 +455,7 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
         ("f", "<MOD-DIAM>10.29"),
     ]);
     let construction = hole_sketch_construction(&tapered_thread)
-        .expect("resource budget")
+        .expect("compute the hole sketch construction")
         .expect("tapered thread profile");
     assert_eq!(
         construction.diameter,
@@ -495,7 +495,7 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
         ("f", "<MOD-DIAM>4.55"),
     ]);
     let construction = hole_sketch_construction(&counterbore_with_exit_countersink)
-        .expect("resource budget")
+        .expect("compute the hole sketch construction")
         .expect("dual-ended profile");
     assert_eq!(
         construction.diameter,
@@ -530,7 +530,7 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
         ("g", "<MOD-DIAM>9.95"),
     ]);
     let construction = hole_sketch_construction(&counterdrill)
-        .expect("resource budget")
+        .expect("compute the hole sketch construction")
         .expect("counterdrill profile");
     assert_eq!(
         construction.diameter,
@@ -568,7 +568,7 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
         ("e", "6"),
     ]);
     assert!(hole_sketch_construction(&placement_dimensions)
-        .expect("resource budget")
+        .expect("compute the hole sketch construction")
         .is_none());
 
     let unsupported_countersink = profile(&[
@@ -578,7 +578,7 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
         ("angle", "82°"),
     ]);
     assert!(hole_sketch_construction(&unsupported_countersink)
-        .expect("resource budget")
+        .expect("compute the hole sketch construction")
         .is_none());
 
     let unsupported_counterbore = profile(&[
@@ -588,7 +588,7 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
         ("depth", "6"),
     ]);
     assert!(hole_sketch_construction(&unsupported_counterbore)
-        .expect("resource budget")
+        .expect("compute the hole sketch construction")
         .is_none());
 
     let mut native_profile = profile(&[("diameter", "<MOD-DIAM>6.6"), ("depth", "9.4")]);
@@ -604,7 +604,7 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
         &HashMap::new(),
         &[native_owned.clone(), native_profile],
     )
-    .expect("resource budget")
+    .expect("project hole")
     .unwrap();
     assert!(matches!(
         projected, FeatureDefinition::Operation(FeatureOperation::Hole {
@@ -638,7 +638,7 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
         &HashMap::new(),
         std::slice::from_ref(&canonical),
     )
-    .expect("resource budget")
+    .expect("project hole")
     .unwrap();
     let FeatureDefinition::Operation(FeatureOperation::Hole {
         ref shape,
@@ -1323,7 +1323,7 @@ fn hole_profile_rejects_more_than_supported_dimension_roles() {
         profile.content.push(FeatureContent::Dimension(name.into()));
     }
     assert!(hole_sketch_construction(&profile)
-        .expect("resource budget")
+        .expect("compute the hole sketch construction")
         .is_none());
 }
 
@@ -1338,7 +1338,7 @@ fn hole_profile_parameter_fallback_requires_no_dimension_content() {
         .parameters
         .insert(cadmpeg_core::nonblank_literal!("depth"), "9".into());
     let construction = hole_sketch_construction(&profile)
-        .expect("resource budget")
+        .expect("compute the hole sketch construction")
         .expect("fallback hole dimensions");
     assert_eq!(construction.diameter.get(), 5.0);
     assert_eq!(
@@ -1351,6 +1351,6 @@ fn hole_profile_parameter_fallback_requires_no_dimension_content() {
         .content
         .push(FeatureContent::Dimension("missing".into()));
     assert!(hole_sketch_construction(&profile)
-        .expect("resource budget")
+        .expect("compute the hole sketch construction")
         .is_none());
 }

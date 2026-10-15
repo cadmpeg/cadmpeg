@@ -458,7 +458,7 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
         &entities,
         std::slice::from_ref(&lane),
     )
-    .expect("transform resource admission");
+    .expect("compute the profile loci by marker");
     assert_eq!(
         loci["sldprt:feature-input:sketch-entity#qualified-curve:qualified-point"],
         vec![SketchLocus::End(
@@ -618,7 +618,7 @@ fn relation_point_coexists_with_nonpoint_native_carrier() {
         &entities,
         std::slice::from_ref(&lane),
     )
-    .expect("transform resource admission");
+    .expect("compute the profile loci by marker");
     let point_entity = entities
         .iter()
         .find(|entity| {

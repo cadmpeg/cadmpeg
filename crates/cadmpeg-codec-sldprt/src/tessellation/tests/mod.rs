@@ -89,7 +89,8 @@ fn decoded_references(payload: &[u8], range: ByteRange) -> Vec<PersistentSurface
         &cadmpeg_core::decode::DecodePolicy::service(),
     )
     .expect("root");
-    persistent_surface_references(&ctx, payload, range).expect("service profile admits references")
+    persistent_surface_references(&ctx, payload, range)
+        .expect("compute the persistent surface references")
 }
 
 fn table() -> Vec<u8> {

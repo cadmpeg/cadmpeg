@@ -27,7 +27,7 @@ fn decoded_object_names(payload: &[u8], parent: &str) -> Vec<crate::records::Fea
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(payload, &arena, &policy)
         .expect("test context");
     crate::resolved_features::names::object_names(&ctx, payload, parent)
-        .expect("service profile admits names")
+        .expect("compute the object names")
 }
 
 #[test]

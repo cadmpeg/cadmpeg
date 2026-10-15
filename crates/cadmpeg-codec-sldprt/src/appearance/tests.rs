@@ -499,7 +499,7 @@ fn decode_does_not_bind_color_to_an_unemitted_face() {
     );
     assert!(
         cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }

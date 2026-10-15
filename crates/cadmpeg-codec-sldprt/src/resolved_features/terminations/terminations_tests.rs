@@ -77,11 +77,11 @@ fn compact_extrusion_to_face_requires_a_single_face_reference_child() {
     payload[134..138].copy_from_slice(&7u32.to_le_bytes());
     assert_eq!(
         compact_extrusion_to_face_at(&path_ctx, &payload, 0, payload.len())
-            .expect("component path resource admission"),
+            .expect("parse the compact extrusion to face"),
         Some(100)
     );
     let path = compact_single_face_reference_path_at(&path_ctx, &payload, 100)
-        .expect("component path resource admission")
+        .expect("parse the compact single face reference path")
         .expect("required invariant");
     assert_eq!(path.len(), 1);
     assert_eq!(path[0].instance, Some(0x8032));
@@ -92,11 +92,11 @@ fn compact_extrusion_to_face_requires_a_single_face_reference_child() {
         payload[92..96].copy_from_slice(&selector);
         assert_eq!(
             compact_extrusion_to_face_at(&path_ctx, &payload, 0, payload.len())
-                .expect("component path resource admission"),
+                .expect("parse the compact extrusion to face"),
             Some(100)
         );
         let path = compact_single_face_reference_path_at(&path_ctx, &payload, 100)
-            .expect("component path resource admission")
+            .expect("parse the compact single face reference path")
             .expect("lane subtype must not change the component path");
         assert_eq!(path.len(), 1);
         assert_eq!(path[0].local_id, Some(7));
@@ -106,13 +106,13 @@ fn compact_extrusion_to_face_requires_a_single_face_reference_child() {
     payload[35..39].copy_from_slice(&[0xe4, 0x82, 0x07, 0x81]);
     assert_eq!(
         compact_extrusion_to_face_at(&path_ctx, &payload, 0, payload.len())
-            .expect("component path resource admission"),
+            .expect("parse the compact extrusion to face"),
         Some(100)
     );
     payload[37..39].copy_from_slice(&[0xff, 0xff]);
     assert_eq!(
         compact_extrusion_to_face_at(&path_ctx, &payload, 0, payload.len())
-            .expect("component path resource admission"),
+            .expect("parse the compact extrusion to face"),
         None
     );
     payload[37..39].copy_from_slice(&[0x07, 0x81]);
@@ -144,14 +144,14 @@ fn compact_extrusion_to_face_requires_a_single_face_reference_child() {
     payload[22] = 1;
     assert_eq!(
         compact_extrusion_to_face_at(&path_ctx, &payload, 0, payload.len())
-            .expect("component path resource admission"),
+            .expect("parse the compact extrusion to face"),
         Some(100)
     );
 
     payload[88..92].fill(0);
     assert_eq!(
         compact_extrusion_to_face_at(&path_ctx, &payload, 0, payload.len())
-            .expect("component path resource admission"),
+            .expect("parse the compact extrusion to face"),
         None
     );
 }
@@ -192,13 +192,13 @@ fn compact_extrusion_to_face_accepts_root_adjusted_component_paths() {
     slotted[162..182].fill(0);
     slotted[182..186].copy_from_slice(&101u32.to_le_bytes());
     let path = compact_single_face_reference_path_at(&path_ctx, &slotted, 100)
-        .expect("component path resource admission")
+        .expect("parse the compact single face reference path")
         .expect("required invariant");
     assert_eq!(path.len(), 2);
     assert_eq!(path[1].instance, Some(0x8034));
     assert_eq!(
         compact_extrusion_to_face_at(&path_ctx, &slotted, 0, slotted.len())
-            .expect("component path resource admission"),
+            .expect("parse the compact extrusion to face"),
         Some(100)
     );
 
@@ -209,13 +209,13 @@ fn compact_extrusion_to_face_accepts_root_adjusted_component_paths() {
     entry(&mut aligned, 176, 0x830d, 3, 1);
     aligned[196..204].copy_from_slice(&[0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0]);
     let path = compact_single_face_reference_path_at(&path_ctx, &aligned, 100)
-        .expect("component path resource admission")
+        .expect("parse the compact single face reference path")
         .expect("required invariant");
     assert_eq!(path.len(), 3);
     assert_eq!(path[2].type_signature, [3; 12]);
     assert_eq!(
         compact_extrusion_to_face_at(&path_ctx, &aligned, 0, aligned.len())
-            .expect("component path resource admission"),
+            .expect("parse the compact extrusion to face"),
         Some(100)
     );
 }
@@ -246,13 +246,13 @@ fn compact_extrusion_to_face_accepts_the_legacy_end_spec_token() {
 
     assert_eq!(
         compact_extrusion_to_face_at(&path_ctx, &payload, 0, payload.len())
-            .expect("component path resource admission"),
+            .expect("parse the compact extrusion to face"),
         Some(100)
     );
     payload[0] = 2;
     assert_eq!(
         compact_extrusion_to_face_at(&path_ctx, &payload, 0, payload.len())
-            .expect("component path resource admission"),
+            .expect("parse the compact extrusion to face"),
         None
     );
 }
@@ -287,13 +287,13 @@ fn compact_extrusion_to_face_accepts_a_declared_width_two_child() {
 
     assert_eq!(
         compact_extrusion_to_face_at(&path_ctx, &payload, 0, payload.len())
-            .expect("component path resource admission"),
+            .expect("parse the compact extrusion to face"),
         Some(marker)
     );
     payload[33] = 0;
     assert_eq!(
         compact_extrusion_to_face_at(&path_ctx, &payload, 0, payload.len())
-            .expect("component path resource admission"),
+            .expect("parse the compact extrusion to face"),
         None
     );
 }
@@ -325,7 +325,7 @@ fn compact_extrusion_to_face_preserves_an_unparsed_declared_face_child() {
 
     assert_eq!(
         compact_extrusion_to_face_at(&path_ctx, &payload, anchor, payload.len())
-            .expect("component path resource admission"),
+            .expect("parse the compact extrusion to face"),
         Some(body)
     );
 
@@ -333,7 +333,7 @@ fn compact_extrusion_to_face_preserves_an_unparsed_declared_face_child() {
     lane_token[..2].copy_from_slice(&[0x0c, 0x8e]);
     assert_eq!(
         compact_extrusion_to_face_at(&path_ctx, &lane_token, 0, lane_token.len())
-            .expect("component path resource admission"),
+            .expect("parse the compact extrusion to face"),
         Some(body - anchor)
     );
 
@@ -345,14 +345,14 @@ fn compact_extrusion_to_face_preserves_an_unparsed_declared_face_child() {
     ]);
     assert_eq!(
         compact_extrusion_to_face_at(&path_ctx, &payload, anchor, payload.len())
-            .expect("component path resource admission"),
+            .expect("parse the compact extrusion to face"),
         Some(body)
     );
 
     payload[nested + 2] = 3;
     assert_eq!(
         compact_extrusion_to_face_at(&path_ctx, &payload, anchor, payload.len())
-            .expect("component path resource admission"),
+            .expect("parse the compact extrusion to face"),
         None
     );
     payload[nested + 2] = 2;
@@ -360,7 +360,7 @@ fn compact_extrusion_to_face_preserves_an_unparsed_declared_face_child() {
     payload[body + 4] = 3;
     assert_eq!(
         compact_extrusion_to_face_at(&path_ctx, &payload, anchor, payload.len())
-            .expect("component path resource admission"),
+            .expect("parse the compact extrusion to face"),
         None
     );
 }
@@ -416,7 +416,7 @@ fn compact_extrusion_to_face_prefers_a_modern_marker_over_a_legacy_body_alias() 
 
     assert_eq!(
         compact_extrusion_to_face_at(&path_ctx, &payload, anchor, payload.len())
-            .expect("component path resource admission"),
+            .expect("parse the compact extrusion to face"),
         Some(marker)
     );
 }
@@ -780,13 +780,13 @@ fn compact_extrusion_to_face_preserves_an_unparsed_framed_face_path() {
 
     assert_eq!(
         compact_extrusion_to_face_at(&path_ctx, &payload, 0, payload.len())
-            .expect("component path resource admission"),
+            .expect("parse the compact extrusion to face"),
         Some(marker)
     );
     payload[marker - 12..marker - 8].fill(0);
     assert_eq!(
         compact_extrusion_to_face_at(&path_ctx, &payload, 0, payload.len())
-            .expect("component path resource admission"),
+            .expect("parse the compact extrusion to face"),
         None
     );
 }
@@ -852,7 +852,7 @@ fn compact_extrusion_to_face_accepts_the_long_declared_face_path() {
     let boundary = payload.len();
     assert_eq!(
         compact_extrusion_to_face_at(&path_ctx, &payload, anchor, boundary)
-            .expect("component path resource admission"),
+            .expect("parse the compact extrusion to face"),
         Some(marker)
     );
 
@@ -860,12 +860,12 @@ fn compact_extrusion_to_face_accepts_the_long_declared_face_path() {
     assert!(second > marker);
     assert_eq!(
         compact_extrusion_to_face_at(&path_ctx, &payload, anchor, boundary)
-            .expect("component path resource admission"),
+            .expect("parse the compact extrusion to face"),
         Some(marker)
     );
     assert_eq!(
         compact_extrusion_to_face_at(&path_ctx, &payload, anchor, payload.len())
-            .expect("component path resource admission"),
+            .expect("parse the compact extrusion to face"),
         None
     );
 
@@ -873,7 +873,7 @@ fn compact_extrusion_to_face_accepts_the_long_declared_face_path() {
     payload[second - 8] = 1;
     assert_eq!(
         compact_extrusion_to_face_at(&path_ctx, &payload, anchor, payload.len())
-            .expect("component path resource admission"),
+            .expect("parse the compact extrusion to face"),
         None
     );
 }
@@ -920,11 +920,11 @@ fn compact_extrusion_to_face_accepts_extended_legacy_face_path_padding() {
 
     assert_eq!(
         compact_extrusion_to_face_at(&path_ctx, &payload, 0, payload.len())
-            .expect("component path resource admission"),
+            .expect("parse the compact extrusion to face"),
         Some(body)
     );
     let path = legacy_single_face_reference_path_at(&path_ctx, &payload, body)
-        .expect("component path resource admission")
+        .expect("parse the legacy single face reference path")
         .expect("required invariant");
     assert_eq!(
         path.iter().map(|entry| entry.local_id).collect::<Vec<_>>(),
@@ -933,7 +933,7 @@ fn compact_extrusion_to_face_accepts_extended_legacy_face_path_padding() {
     payload[body + 47] = 0xfe;
     assert_eq!(
         compact_extrusion_to_face_at(&path_ctx, &payload, 0, payload.len())
-            .expect("component path resource admission"),
+            .expect("parse the compact extrusion to face"),
         None
     );
 }
@@ -1204,7 +1204,7 @@ fn legacy_single_face_reference_requires_a_unique_counted_path() {
     payload[entry + 20..entry + 28].copy_from_slice(&[0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0]);
 
     let path = legacy_single_face_reference_path_at(&path_ctx, &payload, 0)
-        .expect("component path resource admission")
+        .expect("parse the legacy single face reference path")
         .expect("required invariant");
     assert_eq!(path.len(), 1);
     assert_eq!(path[0].instance, Some(0x8032));
@@ -1214,14 +1214,14 @@ fn legacy_single_face_reference_requires_a_unique_counted_path() {
     payload[entry + 1] = 0;
     assert_eq!(
         legacy_single_face_reference_path_at(&path_ctx, &payload, 0)
-            .expect("component path resource admission"),
+            .expect("parse the legacy single face reference path"),
         None
     );
     payload[entry + 1] = 0x80;
     payload[control + 30] = 2;
     assert_eq!(
         legacy_single_face_reference_path_at(&path_ctx, &payload, 0)
-            .expect("component path resource admission"),
+            .expect("parse the legacy single face reference path"),
         None
     );
 }
@@ -1245,13 +1245,13 @@ fn compact_extrusion_to_vertex_accepts_both_point_reference_forms() {
     payload.extend_from_slice(&[0; 12]);
     let marker = selection_vector_tail(&mut payload, &[4, 7]);
     let (found, kind) = compact_extrusion_to_vertex_at(&path_ctx, &payload, 0, payload.len())
-        .expect("component path resource admission")
+        .expect("parse the compact extrusion to vertex")
         .expect("required invariant");
     assert_eq!(found, marker);
     assert_eq!(kind, CompactPointReferenceKind::Point);
     assert_eq!(kind.endpoint_selector(), None);
     let path = compact_single_face_reference_path_at(&path_ctx, &payload, marker)
-        .expect("component path resource admission")
+        .expect("parse the compact single face reference path")
         .expect("required invariant");
     assert_eq!(path.last().expect("required invariant").local_id, Some(7));
 
@@ -1259,14 +1259,14 @@ fn compact_extrusion_to_vertex_accepts_both_point_reference_forms() {
     payload[38] = 0x40;
     assert_eq!(
         compact_extrusion_to_vertex_at(&path_ctx, &payload, 0, payload.len())
-            .expect("component path resource admission"),
+            .expect("parse the compact extrusion to vertex"),
         None
     );
     payload[38] = 0;
     payload[18] = 4;
     assert_eq!(
         compact_extrusion_to_vertex_at(&path_ctx, &payload, 0, payload.len())
-            .expect("component path resource admission"),
+            .expect("parse the compact extrusion to vertex"),
         None
     );
     payload[18] = 3;
@@ -1282,7 +1282,7 @@ fn compact_extrusion_to_vertex_accepts_both_point_reference_forms() {
     payload.extend_from_slice(&[0; 12]);
     let marker = selection_vector_tail(&mut payload, &[2]);
     let (found, kind) = compact_extrusion_to_vertex_at(&path_ctx, &payload, 0, payload.len())
-        .expect("component path resource admission")
+        .expect("parse the compact extrusion to vertex")
         .expect("required invariant");
     assert_eq!(found, marker);
     assert!(matches!(
@@ -1294,7 +1294,7 @@ fn compact_extrusion_to_vertex_accepts_both_point_reference_forms() {
     let endpoint_selector_value: u32 = 0x0012_3456;
     payload[marker - 4..marker].copy_from_slice(&endpoint_selector_value.to_le_bytes());
     let (_, kind) = compact_extrusion_to_vertex_at(&path_ctx, &payload, 0, payload.len())
-        .expect("component path resource admission")
+        .expect("parse the compact extrusion to vertex")
         .expect("required invariant");
     assert_eq!(kind.endpoint_selector(), Some(endpoint_selector_value));
 }
@@ -1320,7 +1320,7 @@ fn compact_extrusion_to_vertex_requires_one_reference_in_the_feature_interval() 
     assert!(marker > 270);
     assert_eq!(
         compact_extrusion_to_vertex_at(&path_ctx, &payload, 0, payload.len())
-            .expect("component path resource admission")
+            .expect("parse the compact extrusion to vertex")
             .map(|(found, _)| found),
         Some(marker)
     );
@@ -1330,13 +1330,13 @@ fn compact_extrusion_to_vertex_requires_one_reference_in_the_feature_interval() 
     assert!(second > marker);
     assert_eq!(
         compact_extrusion_to_vertex_at(&path_ctx, &payload, 0, boundary)
-            .expect("component path resource admission")
+            .expect("parse the compact extrusion to vertex")
             .map(|(found, _)| found),
         Some(marker)
     );
     assert_eq!(
         compact_extrusion_to_vertex_at(&path_ctx, &payload, 0, payload.len())
-            .expect("component path resource admission"),
+            .expect("parse the compact extrusion to vertex"),
         None
     );
 }
@@ -1371,7 +1371,7 @@ fn compact_extrusion_offset_from_face_requires_the_late_face_reference() {
     let end = payload.len();
     assert_eq!(
         compact_extrusion_offset_from_face_at(&path_ctx, &payload, 0, end)
-            .expect("component path resource admission"),
+            .expect("parse the compact extrusion offset from face"),
         Some(marker)
     );
 
@@ -1384,12 +1384,12 @@ fn compact_extrusion_offset_from_face_requires_the_late_face_reference() {
     assert!(second > marker + 200);
     assert_eq!(
         compact_extrusion_offset_from_face_at(&path_ctx, &payload, 0, end)
-            .expect("component path resource admission"),
+            .expect("parse the compact extrusion offset from face"),
         Some(marker)
     );
     assert_eq!(
         compact_extrusion_offset_from_face_at(&path_ctx, &payload, 0, payload.len())
-            .expect("component path resource admission"),
+            .expect("parse the compact extrusion offset from face"),
         None
     );
 
@@ -1397,7 +1397,7 @@ fn compact_extrusion_offset_from_face_requires_the_late_face_reference() {
     payload[18] = 6;
     assert_eq!(
         compact_extrusion_offset_from_face_at(&path_ctx, &payload, 0, end)
-            .expect("component path resource admission"),
+            .expect("parse the compact extrusion offset from face"),
         None
     );
     payload[18] = 5;
@@ -1408,7 +1408,7 @@ fn compact_extrusion_offset_from_face_requires_the_late_face_reference() {
     payload[anchor] = 0;
     assert_eq!(
         compact_extrusion_offset_from_face_at(&path_ctx, &payload, 0, end)
-            .expect("component path resource admission"),
+            .expect("parse the compact extrusion offset from face"),
         None
     );
 }

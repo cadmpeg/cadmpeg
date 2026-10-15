@@ -125,7 +125,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
         &entities,
         std::slice::from_ref(&lane),
     )
-    .expect("transform resource admission");
+    .expect("compute the profile loci by marker");
     assert!(joins.contains_key("marker-a"));
     assert!(joins.contains_key("marker-b"));
     assert!(joins.contains_key("marker-c"));
@@ -840,7 +840,7 @@ fn line_handle_interior_points_identify_profile_entities() {
         &entities,
         std::slice::from_ref(&lane),
     )
-    .expect("transform resource admission");
+    .expect("compute the profile loci by marker");
     for (marker, entity) in [
         ("horizontal-marker", &line_ids[0]),
         ("vertical-marker", &line_ids[1]),
@@ -1055,7 +1055,7 @@ fn symmetry_invariant_marker_identifies_profile_entity() {
     let mut entities = vec![entity];
     entities.extend(points);
     let joins = profile_loci_by_marker(&resource_ctx, &[feature], &[], &entities, &[lane])
-        .expect("transform resource admission");
+        .expect("compute the profile loci by marker");
     assert_eq!(
         joins["circle-marker"],
         vec![cadmpeg_ir::sketches::SketchLocus::Entity(circle)]

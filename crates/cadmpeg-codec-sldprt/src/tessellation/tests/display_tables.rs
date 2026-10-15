@@ -193,7 +193,7 @@ fn display_table_reads_as_a_mesh() {
     let (ctx, _) =
         DecodeContext::from_root_bytes(&payload, &arena, &DecodePolicy::service()).expect("root");
     assert!(parse_table(&ctx, &payload, 0)
-        .expect("service profile admits vertices")
+        .expect("parse table")
         .is_some());
 }
 
