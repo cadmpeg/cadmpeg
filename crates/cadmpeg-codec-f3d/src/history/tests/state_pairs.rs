@@ -42,6 +42,7 @@ use crate::history::terminal_edge_recipe_reference_faces;
 use crate::history::unique_history_state;
 use crate::history::unique_history_state_pair;
 use crate::history::EdgeBoundaryContext;
+use crate::history::FaceBoundaryArena;
 use crate::history_records::AsmDeltaState;
 use crate::history_records::AsmHistoricalEdge;
 use crate::history_records::AsmHistoricalEntityDelta;
@@ -51,6 +52,7 @@ use crate::history_records::AsmHistoricalTransition;
 use crate::history_records::AsmHistory;
 use crate::history_records::AsmHistoryRecord;
 use crate::records::topology::body_recipe::AsmHistoricalEntityKind;
+use crate::records::topology::historical_context::AsmFaceBoundary;
 use std::collections::{BTreeSet, HashMap, HashSet};
 
 #[test]
@@ -1393,19 +1395,30 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
         alternate_selector_faces: Vec::new(),
         alternate_selector_edges: Vec::new(),
     };
+    let boundary_state = |state_id: i64, byte_offset: u64| AsmDeltaState {
+        id: format!("f3d:test:asm-delta-state#{byte_offset:010}"),
+        byte_offset,
+        ..change_state(state_id)
+    };
+    let result_state = boundary_state(2, 20);
+    let preceding_state = boundary_state(1, 10);
+    let mut face_boundaries = FaceBoundaryArena::default();
     let context = edge_recipe_reference_context(
         2,
         &reference,
         EdgeBoundaryContext {
+            state: &result_state,
             topology: &topology,
             boundary_edges: &[7, 99],
         },
         EdgeBoundaryContext {
+            state: &preceding_state,
             topology: &topology,
             boundary_edges: &[7, 98],
         },
         &HashSet::from([7]),
         &mut crate::history::topology_cache::TopologyQueryCache::default(),
+        &mut face_boundaries,
     );
     assert_eq!(context.reference_ordinal, 2);
     assert_eq!(
@@ -1424,15 +1437,32 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
             ]),
         }],
     };
-    assert_eq!(context.result_face_boundaries, [boundary.clone()]);
+    let face_boundaries = face_boundaries.into_records();
+    let stored = |state: &AsmDeltaState| AsmFaceBoundary {
+        id: AsmFaceBoundary::identity(&state.id, state.byte_offset, 4).unwrap(),
+        parent: state.id.clone(),
+        face_slot: boundary.face_slot,
+        loops: boundary.loops.clone(),
+    };
+    assert_eq!(
+        face_boundaries,
+        [stored(&preceding_state), stored(&result_state)]
+    );
+    assert_eq!(context.result_face_boundary_ids, [stored(&result_state).id]);
     assert_eq!(context.result_shared_edge_slots, [7]);
     assert_eq!(
         context.preceding_faces,
         [FaceId::mint(id(4)).expect("identity grammar")]
     );
-    assert_eq!(context.preceding_face_boundaries, [boundary]);
+    assert_eq!(
+        context.preceding_face_boundary_ids,
+        [stored(&preceding_state).id]
+    );
     assert_eq!(context.preceding_support_face_slots, [4]);
-    assert_eq!(context.preceding_support_face_boundaries.len(), 1);
+    assert_eq!(
+        context.preceding_support_face_boundary_ids,
+        [stored(&preceding_state).id]
+    );
     assert_eq!(context.shared_edge_slots, [7]);
     assert_eq!(context.changed_shared_edge_slots, [7]);
     assert_eq!(context.changed_reference_edge_slots, [7]);
@@ -1442,15 +1472,18 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
         2,
         &reference,
         EdgeBoundaryContext {
+            state: &result_state,
             topology: &topology,
             boundary_edges: &[7, 99],
         },
         EdgeBoundaryContext {
+            state: &preceding_state,
             topology: &topology,
             boundary_edges: &[7, 98],
         },
         &HashSet::from([7]),
         &mut crate::history::topology_cache::TopologyQueryCache::default(),
+        &mut FaceBoundaryArena::default(),
     );
     assert_eq!(
         alternate_context.result_faces,
@@ -1465,15 +1498,18 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
         2,
         &reference,
         EdgeBoundaryContext {
+            state: &result_state,
             topology: &topology,
             boundary_edges: &[99],
         },
         EdgeBoundaryContext {
+            state: &preceding_state,
             topology: &topology,
             boundary_edges: &[98],
         },
         &HashSet::from([7]),
         &mut crate::history::topology_cache::TopologyQueryCache::default(),
+        &mut FaceBoundaryArena::default(),
     );
     assert!(support_only_context.shared_edge_slots.is_empty());
     assert_eq!(support_only_context.changed_reference_edge_slots, [7]);
