@@ -118,7 +118,7 @@ mod tests {
         );
     }
 
-    /// The FreeCAD validator's own use of one dimension on an empty namespace,
+    /// The validator's own use of one dimension on an empty namespace,
     /// read from the refusal of an oversized follow-up charge.
     #[cfg(feature = "fcstd")]
     fn codec_usage(ir: &CadIr, dimension: ResourceDimension) -> u64 {
